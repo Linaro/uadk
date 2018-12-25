@@ -1,0 +1,32 @@
+WD User Land Demonstration
+==========================
+
+This directory contains some applications and libraries to demonstrate how a
+
+WrapDrive application can be constructed.
+
+
+As a demo, we try to make it simple and clear for understanding. It is not
+
+supposed to be used in business scenario.
+
+
+The directory contains the following elements:
+
+wd.[ch]
+	A demonstration WrapDrive fundamental library which wraps the basic
+	operations to the WrapDrive-ed device.
+
+wd_adapter.[ch]
+	User driver adaptor for wd.[ch]
+
+wd_utils.[ch]
+	Some utitlities function used by WD and its drivers
+
+drv/*
+	User drivers. It helps to fulfill the semantic of wd.[ch] for
+	particular hardware
+
+test/*
+	Test applications to use the wrapdrive library
+
