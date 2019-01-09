@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 #include "config.h"
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -7,14 +8,9 @@
 #include <unistd.h>
 #include <getopt.h>
 #include "../wd.h"
-#include "../smm.h"
-#include "../drv/hisi_qm_udrv.h"
-
-/* statistic */
-static int st_send = 0;
-static int st_send_retries = 0;
-static int st_recv = 0;
-static int st_recv_retries = 0;
+#include "../wd_sched.h"
+#include "drv/hisi_qm_udrv.h"
+#include "zip_usr_if.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
@@ -22,8 +18,7 @@ do { \
 		if (errno) \
 			perror(msg); \
 		else \
-			fprintf(stderr, #cond); \
-		fprintf(stderr, "\n" msg, ##__VA_ARGS__); \
+			fprintf(stderr, msg, ##__VA_ARGS__); \
 		exit(EXIT_FAILURE); \
 	} \
 } while (0)
@@ -31,171 +26,193 @@ do { \
 #define ZLIB 0
 #define GZIP 1
 
-#if ENABLE_NOIOMMU
-#define SS_REGION_SIZE (2*1024*1024)
-#else
-#define SS_REGION_SIZE (16*1024*1024)
-#endif
-
 #define ZLIB_HEADER "\x78\x9c"
 #define ZLIB_HEADER_SZ 2
 
 #define GZIP_HEADER "\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03"
 #define GZIP_HEADER_SZ 10
 
-#define BLOCK_SIZE 512000
+/* bytes of data for a request */
+static int block_size = 512000;
+static int req_cache_num = 4;
+static int q_num = 1;
 
-/*
- * Global init function for hizip. This is a single queue version, can be
- * extend to multi-queue in the future
- */
-static struct wd_queue q;
-static void *ss_region;
-int hizip_init(int alg_type) {
-	int ret;
+static struct hizip_priv {
+	int alg_type;
+	int dw9;
+	int total_len;
+	struct hisi_zip_sqe *msgs;
+	FILE *sfile, *dfile;
+} hizip_priv;
 
-	memset((void *)&q, 0, sizeof(q));
-	if (alg_type == ZLIB)
-		q.capa.alg = "zlib";
-	else
-		q.capa.alg = "gzip";
+static struct wd_scheduler sched = {
+	.priv = &hizip_priv,
+};
 
-	ret = wd_request_queue(&q);
-	if (ret)
-		return ret;
+static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
+{
+	struct wd_msg *wd_msg = &sched->msgs[i];
+	struct hisi_zip_sqe *msg;
+	struct hizip_priv *priv = sched->priv;
+	void *data_in, *data_out;
 
-#ifndef CONFIG_IOMMU_SVA
-	ss_region = wd_reserve_memory(&q, SS_REGION_SIZE);
-	if (!ss_region) {
-		ret = -ENOMEM;
-		goto out_with_queue;
+	msg = wd_msg->msg = &priv->msgs[i];
+	msg->dw9 = priv->dw9;
+	msg->dest_avail_out = sched->msg_data_size;
+	if (sched->qs[0].dev_flags & UACCE_DEV_NOIOMMU) {
+		data_in = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_in);
+		data_out = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_out);
+	} else {
+		data_in = wd_msg->data_in;
+		data_out = wd_msg->data_out;
+	}
+	msg->source_addr_l = (__u64)data_in & 0xffffffff;
+	msg->source_addr_h = (__u64)data_in >> 32;
+	msg->dest_addr_l = (__u64)data_out & 0xffffffff;
+	msg->dest_addr_h = (__u64)data_out >> 32;
+
+	dbg("init sched cache %d: %p, %p\n", i, wd_msg, msg);
+}
+
+static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
+{
+	size_t ilen, sz;
+	struct hisi_zip_sqe *m = msg->msg;
+
+	ilen = hizip_priv.total_len > block_size ?
+		block_size : hizip_priv.total_len;
+	hizip_priv.total_len -= ilen;
+
+	sz = fread(msg->data_in, 1, ilen, hizip_priv.sfile);
+	SYS_ERR_COND(sz != ilen, "read");
+
+	m->input_data_length = ilen;
+
+	dbg("zip input(%p, %p): %x, %x, %x, %x, %d, %d\n",
+	    msg, m,
+	    m->source_addr_l, m->source_addr_h,
+	    m->dest_addr_l, m->dest_addr_h,
+	    m->dest_avail_out, m->input_data_length);
+
+	return 0;
+}
+
+static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
+{
+	size_t sz;
+	struct hisi_zip_sqe *m = msg->msg;
+	__u32 status = m->dw3 & 0xff;
+	__u32 type = m->dw9 & 0xff;
+
+	dbg("zip output(%p, %p): %x, %x, %x, %x, %d, %d\n",
+	    msg, m,
+	    m->source_addr_l, m->source_addr_h,
+	    m->dest_addr_l, m->dest_addr_h,
+	    m->dest_avail_out, m->input_data_length);
+
+	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
+		     status, type);
+
+	if (hizip_priv.alg_type == ZLIB) {
+		sz = fwrite(ZLIB_HEADER, 1, ZLIB_HEADER_SZ, hizip_priv.dfile);
+		SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "write");
+	} else {
+		sz = fwrite(GZIP_HEADER, 1, GZIP_HEADER_SZ, hizip_priv.dfile);
+		SYS_ERR_COND(sz != GZIP_HEADER_SZ, "write");
 	}
 
-	ret = smm_init(ss_region, SS_REGION_SIZE, 0xFFF);
+	sz = fwrite(msg->data_out, 1, m->produced, hizip_priv.dfile);
+	SYS_ERR_COND(sz != m->produced, "write");
+	return 0;
+}
+
+int hizip_init(int alg_type)
+{
+	int ret = -ENOMEM, i;
+	char *alg;
+	struct hisi_qm_priv *priv;
+
+	sched.q_num = q_num;
+	sched.ss_region_size = 0; /* let system make decision */
+	sched.msg_cache_num = req_cache_num;
+	sched.msg_data_size = block_size;
+	sched.init_cache = hizip_wd_sched_init_cache;
+	sched.input = hizip_wd_sched_input;
+	sched.output = hizip_wd_sched_output;
+
+	sched.qs = calloc(q_num, sizeof(*sched.qs));
+	if (!sched.qs)
+		return -ENOMEM;
+
+	hizip_priv.msgs = calloc(req_cache_num, sizeof(*hizip_priv.msgs));
+	if (!hizip_priv.msgs)
+		goto err_with_qs;
+
+
+	hizip_priv.alg_type = alg_type;
+	if (alg_type == ZLIB) {
+		alg = "zlib";
+		hizip_priv.dw9 = 2;
+	} else {
+		alg = "gzip";
+		hizip_priv.dw9 = 3;
+	}
+
+	for (i = 0; i < q_num; i++) {
+		sched.qs[i].capa.alg = alg;
+		priv = (struct hisi_qm_priv *)sched.qs[i].capa.priv;
+		priv->sqe_size = sizeof(struct hisi_zip_sqe);
+	}
+	ret = wd_sched_init(&sched);
 	if (ret)
-		goto out_with_queue;
-#endif
+		goto err_with_msgs;
 
 	return 0;
 
-out_with_queue:
-	wd_release_queue(&q);
+err_with_msgs:
+	free(hizip_priv.msgs);
+err_with_qs:
+	free(sched.qs);
 	return ret;
 }
 
 void hizip_fini()
 {
-	wd_release_queue(&q);
-	fprintf(stderr, "send %d retries: %d, recv %d retries: %d\n",
-		st_send, st_send_retries, st_recv, st_recv_retries);
+	wd_sched_fini(&sched);
+	free(hizip_priv.msgs);
+	free(sched.qs);
 }
 
-static inline void *hizip_malloc(size_t size)
+void hizip_deflate(FILE *source, FILE *dest)
 {
-#ifdef CONFIG_IOMMU_SVA
-	return malloc(size);
-#else
-	return smm_alloc(ss_region, size);
-#endif
-}
-
-static inline void hizip_free(void *ptr)
-{
-#ifdef CONFIG_IOMMU_SVA
-	free(ptr);
-#else
-	smm_free(ss_region, ptr);
-#endif
-}
-
-static void hizip_sync_req(__u64 in, __u64 out,
-			   size_t ilen, size_t*olen, int dw9)
-{
-	struct hisi_qm_msg msg, *recv_msg;
-	int ret;
-
-	memset(&msg, 0, sizeof(msg)); /* todo: we don't need to copy so much */
-	msg.input_date_length = ilen;
-	msg.dw9 = dw9;
-	msg.dest_avail_out = *olen;
-	msg.source_addr_l = in & 0xffffffff;
-	msg.source_addr_h = in >> 32;
-	msg.dest_addr_l = out & 0xffffffff;
-	msg.dest_addr_h = out >> 32;
-
-	do {
-		st_send++;
-		ret = wd_send(&q, &msg);
-		if (ret == -EBUSY) {
-			usleep(1);
-			st_send_retries++;
-			continue;
-		}
-		SYS_ERR_COND(ret, "wd_send");
-	} while (ret);
-
-	do {
-		st_recv++;
-		ret = wd_recv(&q, (void **)&recv_msg);
-		SYS_ERR_COND(ret == -EIO, "wd_recv");
-		if (ret == -EAGAIN) {
-			usleep(1);
-			st_recv_retries++;
-			continue;
-		}
-	} while (ret);
-
-	*olen = recv_msg->produced;
-}
-
-void hizip_deflate(FILE *source, FILE *dest,  int type)
-{
-	__u64 in, out;
-	void *a;
-	int total_len, fd;
-	size_t sz, ilen;
+	int fd;
 	struct stat s;
+	int ret;
 
 	fd = fileno(source);
 	SYS_ERR_COND(fstat(fd, &s) < 0, "fstat");
-	total_len = s.st_size;
-	SYS_ERR_COND(!total_len, "input file length zero");
+	hizip_priv.total_len = s.st_size;
+	SYS_ERR_COND(!hizip_priv.total_len, "input file length zero");
+	hizip_priv.sfile = source;
+	hizip_priv.dfile = dest;
 
-	a = hizip_malloc(BLOCK_SIZE * 2);
-	SYS_ERR_COND(!a, "hizip_malloc!");
-	in = (__u64)a;
-	out = (__u64)a + BLOCK_SIZE;
+	/* ZLIB engine can do only one time with buffer less than 16M */
+	if (hizip_priv.alg_type == ZLIB) {
+		SYS_ERR_COND(hizip_priv.total_len > block_size,
+			     "zip total_len(%d) > block_size(%d)\n",
+			     hizip_priv.total_len, block_size);
+		SYS_ERR_COND(block_size > 16 * 1024 * 1024,
+			     "block_size (%d) > 16MB hw limit!\n",
+			     hizip_priv.total_len);
+	}
 
-	if (type == ZLIB) {
-		SYS_ERR_COND(total_len > 16 * 1024 * 1024,
-			     "total_len(%d) > 16MB)!", total_len);
-		SYS_ERR_COND(total_len > BLOCK_SIZE,
-			     "zip total_len(%d) > BLOCK_SIZE", total_len);
-
-		sz = fread(a, 1, total_len, source);
-		SYS_ERR_COND(sz != total_len, "read");
-
-		sz = BLOCK_SIZE;
-		hizip_sync_req(in, out, total_len, &sz, 2);
-		fwrite(ZLIB_HEADER, 1, ZLIB_HEADER_SZ, dest);
-		fwrite(a + BLOCK_SIZE, 1, sz, dest);
-	} else {
-		while (total_len) {
-			ilen = total_len > BLOCK_SIZE ? BLOCK_SIZE : total_len;
-			total_len -= ilen;
-
-			sz = fread(a, 1, ilen, source);
-			SYS_ERR_COND(sz != ilen, "read");
-
-			sz = BLOCK_SIZE;
-			hizip_sync_req(in, out, ilen, &sz, 3);
-			fwrite(GZIP_HEADER, 1, GZIP_HEADER_SZ, dest);
-			fwrite(a + BLOCK_SIZE, 1, sz, dest);
-		}
+	while (hizip_priv.total_len || !wd_sched_empty(&sched)) {
+		dbg("request loop: total_len=%d\n", hizip_priv.total_len);
+		ret = wd_sched_work(&sched, hizip_priv.total_len);
+		SYS_ERR_COND(ret < 0, "wd_sched_work");
 	}
 
 	fclose(dest);
-	hizip_free(a);
 }
 
 int main(int argc, char *argv[])
@@ -204,13 +221,31 @@ int main(int argc, char *argv[])
 	int ret, opt;
 	int show_help = 0;
 
-	while ((opt = getopt(argc, argv, "zgh")) != -1) {
+	while ((opt = getopt(argc, argv, "zghq:b:dc:")) != -1) {
 		switch (opt) {
 		case 'z':
 			alg_type = ZLIB;
 			break;
 		case 'g':
 			alg_type = GZIP;
+			break;
+		case 'q':
+			q_num = atoi(optarg);
+			if (q_num <= 0)
+				show_help = 1;
+			break;
+		case 'b':
+			block_size = atoi(optarg);
+			if (block_size  <= 0)
+				show_help = 1;
+			break;
+		case 'c':
+			req_cache_num = atoi(optarg);
+			if (req_cache_num <= 0)
+				show_help = 1;
+			break;
+		case 'd':
+			SYS_ERR_COND(0, "decompress function to be added\n");
 			break;
 		default:
 			show_help = 1;
@@ -219,12 +254,12 @@ int main(int argc, char *argv[])
 	}
 
 	SYS_ERR_COND(show_help || optind > argc,
-		     "test_hisi_zip -[g|z] < in > out");
+		     "test_hisi_zip -[g|z] [-q q_num] < in > out");
 
 	ret = hizip_init(alg_type);
 	SYS_ERR_COND(ret, "hizip init fail\n");
 
-	hizip_deflate(stdin, stdout, alg_type);
+	hizip_deflate(stdin, stdout);
 
 	hizip_fini();
 	return EXIT_SUCCESS;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "../config.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "../wd.h"
+#include "../wd_sched.h"
 #include "wd_dummy_usr_if.h"
 #include "dummy_hw_usr_if.h"
 
@@ -16,7 +16,7 @@
 	perror(msg); \
 	exit(EXIT_FAILURE); }
 
-void *shm;
+struct wd_dummy_cpy_msg *msgs;
 
 int wd_dummy_memcpy(struct wd_queue *q, void *dst, void *src, size_t size)
 {
@@ -34,71 +34,78 @@ int wd_dummy_memcpy(struct wd_queue *q, void *dst, void *src, size_t size)
 	return wd_recv_sync(q, (void **)&resp, 1000);
 }
 
-int wd_dummy_request_memcpy_queue(struct wd_queue *q, int max_copy_size)
+static void wd_dummy_sched_init_cache(struct wd_scheduler *sched, int i)
 {
-	q->capa.alg = "memcpy";
-	return wd_request_queue(q);
+	sched->msgs[i].msg = &msgs[i];
+	msgs[i].src_addr = sched->msgs[i].data_in;
+	msgs[i].tgt_addr = sched->msgs[i].data_out;
+	msgs[i].size = sched->msg_data_size;
 }
 
-static void test_fork() {
-	pid_t pid = fork();
+static int input_num = 10;
+static int wd_dummy_sched_input(struct wd_msg *msg, void *priv)
+{
+	SYS_ERR_COND(input_num <= 0, "input");
+	input_num--;
+	memset(msg->data_in, '0'+input_num, CPSZ);
+	memset(msg->data_out, 'x', CPSZ);
 
-	SYS_ERR_COND(pid<0, "fork");
-
-	if (!pid) {
-		sleep(1);
-		exit(0);
-	}
+	return 0;
 }
 
-static void _do_test(struct wd_queue *q)
+static int wd_dummy_sched_output(struct wd_msg *msg, void *priv)
 {
-	int ret, i;
-	char *s, *t;
+	int i;
+	char *in, *out;
 
-	//init user data (to be copied)
-	s = shm;
-	SYS_ERR_COND(!s, "malloc saddr");
-	memset(s, 'x', CPSZ);
-
-	t = shm+CPSZ;
-	SYS_ERR_COND(!t, "malloc taddr");
-	memset(t, 'y', CPSZ);
-
-	test_fork();
-
-	ret = wd_dummy_memcpy(q, t, s, CPSZ);
-	SYS_ERR_COND(ret, "acce cpy");
-
-	//verify result
 	for (i = 0; i < CPSZ; i++) {
-		if(t[i] != 'x') {
+		in = (char *)msg->data_in;
+		out = (char *)msg->data_out;
+		if(in[i] != out[i]) {
 			printf("verify result fail on %d\n", i);
 			break;
 		}
 
 	}
+	printf("verify result (%d) success %d\n", in[0], input_num);
 
-	if (i == CPSZ)
-		printf("test success\n");
+	return 0;
 }
 
-#define REP_TEST 2
+struct wd_scheduler sched = {
+	.q_num = 2,
+	.ss_region_size = 0,
+	.msg_cache_num = 4,
+	.msg_data_size = CPSZ,
+	.init_cache = wd_dummy_sched_init_cache,
+	.input = wd_dummy_sched_input,
+	.output = wd_dummy_sched_output,
+};
+
 int main(int argc, char *argv[])
 {
-	struct wd_queue q;
 	int ret, i;
+	int max_step = 20;
 
-	ret = wd_dummy_request_memcpy_queue(&q, 4096);
-	SYS_ERR_COND(ret, "wd_request_queue");
+	sched.qs = calloc(sched.q_num, sizeof(*sched.qs));
+	SYS_ERR_COND(!sched.qs, "calloc");
 
-	shm = wd_reserve_memory(&q, CPSZ*4);
-	SYS_ERR_COND(!shm, "preserve memory");
+	msgs = calloc(sched.msg_cache_num, sizeof(*msgs));
+	SYS_ERR_COND(!msgs, "calloc");
 
-	for (i = 0; i < REP_TEST; i++)
-		_do_test(&q);
+	for (i = 0; i < sched.q_num; i++)
+		sched.qs[i].capa.alg = "memcpy";
 
-	wd_release_queue(&q);
+	ret = wd_sched_init(&sched);
+	SYS_ERR_COND(ret, "wd_sched_init");
 
+	while(input_num || !wd_sched_empty(&sched)) {
+		ret = wd_sched_work(&sched, input_num);
+		SYS_ERR_COND(ret < 0, "wd_sched_work");
+		SYS_ERR_COND(max_step-- < 0, "max_step");
+	}
+
+	wd_sched_fini(&sched);
+	free(sched.qs);
 	return EXIT_SUCCESS;
 }

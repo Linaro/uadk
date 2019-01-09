@@ -30,20 +30,6 @@ AC_ARG_ENABLE([sva],
   [sva=false]
 )
 
-dnl "enalbe noiommu for the driver to use iommu pass-through mode"
-AC_ARG_ENABLE([noiommu],
-	AS_HELP_STRING([--disable-noiommu], [enable support for NOIOMMU]),
-	[ AS_IF([test "x$enable_noiommu" = "xyes"],
-		AC_DEFINE(ENABLE_NOIOMMU, 1, [Support for NOIOMMU])
-		noiommu=true
-	],
-	[noiommu=false])
-  ],
-  [noiommu=false]
-)
-
-# Checks for libraries.
-
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h sys/ioctl.h sys/time.h unistd.h])
 

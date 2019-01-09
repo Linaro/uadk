@@ -6,22 +6,33 @@
 
 
 #include "wd_adapter.h"
+#include "./drv/dummy_drv.h"
 #include "./drv/hisi_qm_udrv.h"
 #include "./drv/wd_drv.h"
 
 static struct wd_drv_dio_if hw_dio_tbl[] = { {
-#if ENABLE_NOIOMMU
+		.hw_type = "dummy_v1",
+		.ss_offset = DUMMY_SS_START,
+		.open = dummy_set_queue_dio,
+		.close = dummy_unset_queue_dio,
+		.send = dummy_add_to_dio_q,
+		.recv = dummy_get_from_dio_q,
+		.flush = dummy_flush,
+	}, {
 		.hw_type = HISI_QM_API_VER_BASE UACCE_API_VER_NOIOMMU_SUBFIX,
-#else
+		.ss_offset = QM_SS_START,
+		.open = hisi_qm_set_queue_dio,
+		.close = hisi_qm_unset_queue_dio,
+		.send = hisi_qm_add_to_dio_q,
+		.recv = hisi_qm_get_from_dio_q,
+	}, {
 		.hw_type = HISI_QM_API_VER_BASE,
-#endif
 		.ss_offset = QM_SS_START,
 		.open = hisi_qm_set_queue_dio,
 		.close = hisi_qm_unset_queue_dio,
 		.send = hisi_qm_add_to_dio_q,
 		.recv = hisi_qm_get_from_dio_q,
 	},
-	/* Add other drivers direct IO operations here */
 };
 
 /* todo: there should be some stable way to match the device and the driver */
@@ -39,7 +50,7 @@ int drv_open(struct wd_queue *q)
 			return hw_dio_tbl[q->hw_type_id].open(q);
 		}
 	}
-	WD_ERR("No matching driver to use!\n");
+	WD_ERR("No matching driver to use (%s)!\n", q->hw_type);
 	errno = ENODEV;
 	return -ENODEV;
 }
@@ -72,11 +83,12 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	if (q->ss_va == MAP_FAILED)
 		return NULL;
 
-#if ENABLE_NOIOMMU
-	errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_PA, &q->ss_pa);
-	if (errno)
-		return NULL;
-#endif
+	if (q->dev_flags & UACCE_DEV_NOIOMMU) {
+		errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_PA, &q->ss_pa);
+		if (errno)
+			return NULL;
+	} else
+		q->ss_pa = q->ss_va;
 
 	return q->ss_va;
 }

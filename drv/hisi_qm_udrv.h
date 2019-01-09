@@ -7,40 +7,12 @@
 #include "wd.h"
 #include "include/qm_usr_if.h"
 
-/* this is unnecessary big, the hardware should optimize it */
-struct hisi_qm_msg {
-	__u32 consumed;
-	__u32 produced;
-	__u32 comp_date_length;
-	__u32 dw3;
-	__u32 input_date_length;
-	__u32 lba_l;
-	__u32 lba_h;
-	__u32 dw7;
-	__u32 dw8;
-	__u32 dw9;
-	__u32 dw10;
-	__u32 priv_info;
-	__u32 dw12;
-	__u32 tag;
-	__u32 dest_avail_out;
-	__u32 rsvd0;
-	__u32 comp_head_addr_l;
-	__u32 comp_head_addr_h;
-	__u32 source_addr_l;
-	__u32 source_addr_h;
-	__u32 dest_addr_l;
-	__u32 dest_addr_h;
-	__u32 stream_ctx_addr_l;
-	__u32 stream_ctx_addr_h;
-	__u32 cipher_key1_addr_l;
-	__u32 cipher_key1_addr_h;
-	__u32 cipher_key2_addr_l;
-	__u32 cipher_key2_addr_h;
-	__u32 rsvd1[4];
+struct hisi_qm_priv {
+	__u16 sqe_size;
 };
 
 int hisi_qm_set_queue_dio(struct wd_queue *q);
+int hisi_qm_set_queue_dio_noiommu(struct wd_queue *q);
 void hisi_qm_unset_queue_dio(struct wd_queue *q);
 int hisi_qm_add_to_dio_q(struct wd_queue *q, void *req);
 int hisi_qm_get_from_dio_q(struct wd_queue *q, void **resp);

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
 /* This file is shared bewteen WD user space and kernel */
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
 //#include "config.h"
 #include <stdlib.h>
 #include <unistd.h>
@@ -29,6 +29,7 @@ struct _dev_info {
 	int flags;
 	int ref;
 	int is_load;
+	int available_instances;
 	char alg_path[PATH_STR_SIZE];
 	char dev_root[PATH_STR_SIZE];
 	char name[WD_NAME_SIZE];
@@ -40,7 +41,6 @@ struct _dev_info {
 
 struct _alg_info {
 	int type;
-	int available_instances;
 	struct wd_capa capa;
 	char alg_root[PATH_STR_SIZE];
 	char name[WD_NAME_SIZE];
@@ -114,6 +114,10 @@ static struct _dev_info *_get_cache_dev(const char *dev_name)
 	return NULL;
 }
 
+/*
+ * Query devices that match the algorithm. All matched devices are stored in
+ * adev[].
+ */
 static int _get_alg_cache_dev(struct wd_capa *capa, struct _dev_info **adev)
 {
 	struct _dev_info *dinfo;
@@ -122,15 +126,11 @@ static int _get_alg_cache_dev(struct wd_capa *capa, struct _dev_info **adev)
 
 	TAILQ_FOREACH(dinfo, &wd_dev_cache_list, next) {
 		alg = dinfo->alg_list;
-		while (alg && capa) {
-			if (_capa_check(alg, capa)) {
-				alg = alg->next;
+		for (; (cnt < MAX_MATCH_DEV) && alg && capa; alg = alg->next) {
+			if (_capa_check(alg, capa) < 0) {
 				continue;
 			}
-			if (cnt == MAX_MATCH_DEV)
-				break;
-			adev[cnt] = dinfo;
-			cnt++;
+			adev[cnt++] = dinfo;
 		}
 	}
 	return cnt;
@@ -167,6 +167,7 @@ static int _get_dev_info(struct _dev_info *dinfo)
 	size_t sz;
 
 	dinfo->numa_dis = _get_int_attr(dinfo, "numa_distance");
+	dinfo->available_instances = _get_int_attr(dinfo, "available_instances");
 	dinfo->node_id = _get_int_attr(dinfo, "node_id");
 	if (dinfo->node_id < 0)
 		WD_ERR("warn: kernel numa not enabled!\n");
@@ -251,6 +252,25 @@ static int _filter_out_match_ones(const char *name, struct _dev_info **adev)
 	return -ENODEV;
 }
 
+/*
+ * Check whether the device path could be opened. If fails to open, avoid to
+ * add it into the device list.
+ */
+static int _verify_dev_open(char *name)
+{
+	char dev_path[PATH_STR_SIZE];
+	int fd;
+
+	if (name == NULL)
+		return -ENODEV;
+	snprintf(dev_path, PATH_STR_SIZE, "%s/%s", "/dev", name);
+	fd = open(dev_path, O_RDWR | O_CLOEXEC);
+	if (fd < 0)
+		return -errno;
+	close(fd);
+	return 0;
+}
+
 static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 {
 	struct dirent *device;
@@ -278,6 +298,8 @@ static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 		if (dinfo) {
 			if (_get_alg_info(dinfo, capa) < 0)
 				continue;
+			if (_verify_dev_open(dinfo->name) < 0)
+				continue;
 			adev[dev_cnt] = dinfo;
 			dev_cnt++;
 			if (dev_cnt == MAX_MATCH_DEV)
@@ -297,6 +319,8 @@ static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 		if (_get_dev_info(dinfo) < 0)
 			continue;
 		strncpy(dinfo->name, device->d_name, WD_NAME_SIZE);
+		if (_verify_dev_open(dinfo->name) < 0)
+			continue;
 		if (_get_alg_info(dinfo, capa) < 0)
 			continue;
 		dinfo->class = wd_class;
@@ -341,11 +365,12 @@ int wd_request_queue(struct wd_queue *q)
 		return -ENODEV;
 retry_next_dev:
 	snprintf(q->dev_path, PATH_STR_SIZE, "%s/%s",
-		"/dev/", dev_list[i]->name);
+		"/dev", dev_list[i]->name);
 	q->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
 	if (q->fd == -1)
 		return -ENODEV;
 	q->hw_type = dev_list[i]->api;
+	q->dev_flags = dev_list[i]->flags;
 	ret = drv_open(q);
 	if (ret) {
 		i++;
@@ -422,7 +447,8 @@ void *wd_reserve_memory(struct wd_queue *q, size_t size)
 	return drv_reserve_mem(q, size);
 }
 
-int wd_share_preserved_memory(struct wd_queue *q, struct wd_queue *target_q)
+int wd_share_reserved_memory(struct wd_queue *q, struct wd_queue *target_q)
 {
 	return ioctl(q->fd, UACCE_CMD_SHARE_SVAS, target_q->fd);
 }
+

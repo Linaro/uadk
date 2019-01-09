@@ -9,7 +9,7 @@
 
 /* page number for queue file region */
 #define QM_DOORBELL_PAGE_NR	1
-#define QM_DKO_PAGE_NR		3
+#define QM_DKO_PAGE_NR		4
 #define QM_DUS_PAGE_NR		36
 
 #define QM_DOORBELL_PG_START 0

@@ -31,6 +31,12 @@ typedef int bool;
 #define WD_ERR(format, args...) fprintf(stderr, format, ##args)
 #endif
 
+#ifdef DEBUG_LOG
+#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
+#else
+#define dbg(msg, ...)
+#endif
+
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
 
 #define dsb(opt)	asm volatile("dsb " #opt : : : "memory")
@@ -93,10 +99,19 @@ struct wd_queue {
 	int iommu_type;
 	char dev_path[PATH_STR_SIZE];
 	void *ss_va;
-#if ENABLE_NOIOMMU
 	void *ss_pa;
-#endif
+	int dev_flags;
 };
+
+static inline void *wd_get_pa_from_va(struct wd_queue *q, void *va)
+{
+	return va - q->ss_va + q->ss_pa;
+}
+
+static inline void *wd_get_va_from_pa(struct wd_queue *q, void *pa)
+{
+	return pa - q->ss_pa + q->ss_va;
+}
 
 extern int wd_request_queue(struct wd_queue *q);
 extern void wd_release_queue(struct wd_queue *q);
