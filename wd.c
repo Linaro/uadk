@@ -252,25 +252,6 @@ static int _filter_out_match_ones(const char *name, struct _dev_info **adev)
 	return -ENODEV;
 }
 
-/*
- * Check whether the device path could be opened. If fails to open, avoid to
- * add it into the device list.
- */
-static int _verify_dev_open(char *name)
-{
-	char dev_path[PATH_STR_SIZE];
-	int fd;
-
-	if (name == NULL)
-		return -ENODEV;
-	snprintf(dev_path, PATH_STR_SIZE, "%s/%s", "/dev", name);
-	fd = open(dev_path, O_RDWR | O_CLOEXEC);
-	if (fd < 0)
-		return -errno;
-	close(fd);
-	return 0;
-}
-
 static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 {
 	struct dirent *device;
@@ -298,8 +279,6 @@ static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 		if (dinfo) {
 			if (_get_alg_info(dinfo, capa) < 0)
 				continue;
-			if (_verify_dev_open(dinfo->name) < 0)
-				continue;
 			adev[dev_cnt] = dinfo;
 			dev_cnt++;
 			if (dev_cnt == MAX_MATCH_DEV)
@@ -319,8 +298,6 @@ static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 		if (_get_dev_info(dinfo) < 0)
 			continue;
 		strncpy(dinfo->name, device->d_name, WD_NAME_SIZE);
-		if (_verify_dev_open(dinfo->name) < 0)
-			continue;
 		if (_get_alg_info(dinfo, capa) < 0)
 			continue;
 		dinfo->class = wd_class;
