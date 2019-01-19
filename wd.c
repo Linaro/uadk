@@ -168,6 +168,8 @@ static int _get_dev_info(struct _dev_info *dinfo)
 
 	dinfo->numa_dis = _get_int_attr(dinfo, "numa_distance");
 	dinfo->available_instances = _get_int_attr(dinfo, "available_instances");
+	if (dinfo->available_instances < 0)
+		WD_ERR("no available_instances got\n");
 	dinfo->node_id = _get_int_attr(dinfo, "node_id");
 	if (dinfo->node_id < 0)
 		WD_ERR("warn: kernel numa not enabled!\n");
@@ -296,6 +298,8 @@ static int _find_available_res(struct wd_capa *capa, struct _dev_info **adev)
 		SYS_CLASS_DIR"/"UACCE_CLASS_NAME"/", PATH_STR_SIZE);
 		(void)strcat(dinfo->dev_root, device->d_name);
 		if (_get_dev_info(dinfo) < 0)
+			continue;
+		if (dinfo->available_instances <=0)
 			continue;
 		strncpy(dinfo->name, device->d_name, WD_NAME_SIZE);
 		if (_get_alg_info(dinfo, capa) < 0)
