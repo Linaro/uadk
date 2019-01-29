@@ -150,17 +150,26 @@ static bool _is_matched_alg(char *algs, char *alg)
 static void _copy_if_better(struct _dev_info *old, struct _dev_info *new,
 			    struct wd_capa *capa)
 {
+	dbg("try accelerator %s (inst_num=%d)...", new->name,
+	    new->available_instances);
+
 	/* Does the new dev match the need? */
 	if (new->available_instances <=0 ||
 	    !_is_matched_alg(new->algs, capa->alg))
-		return;
+		goto out;
 
 	/* todo: priority, latency, throughput and etc. check */
 
 	/* Is the new dev better? */
 	if (!old->name[0] ||
-	    new->available_instances > old->available_instances)
+	    new->available_instances > old->available_instances) {
 		memcpy(old, new, sizeof(*old));
+		dbg("adopted\n");
+		return;
+	}
+
+out:
+	dbg("ignored\n");
 }
 
 static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
@@ -222,12 +231,15 @@ int wd_request_queue(struct wd_queue *q)
 	struct _dev_info *dev;
 
 	dev = _find_available_res(&q->capa, q->dev_path);
-	if (!dev)
+	if (!dev) {
+		dbg("cannot find available dev\n");
 		return -ENODEV;
+	}
 
 	snprintf(q->dev_path, PATH_STR_SIZE, "%s/%s", "/dev", dev->name);
 	q->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
 	if (q->fd == -1) {
+		dbg("fail to open %s\n", q->dev_path);
 		ret = -ENODEV;
 		goto err_with_dev;
 	}
@@ -240,8 +252,10 @@ int wd_request_queue(struct wd_queue *q)
 		goto err_with_fd;
 
 	ret = ioctl(q->fd, UACCE_CMD_START);
-	if (ret)
+	if (ret) {
+		dbg("fail to start %s\n", q->dev_path);
 		goto err_with_drv_openned;
+	}
 
 	return 0;
 

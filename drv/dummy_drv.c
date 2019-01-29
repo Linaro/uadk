@@ -26,7 +26,6 @@ int dummy_set_queue_dio(struct wd_queue *q)
 {
 	int ret = 0;
 	struct dummy_q_priv *priv;
-	void *dus;
 
 	printf("dummy_set_queue_dio\n");
 	alloc_obj(priv);
@@ -39,7 +38,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	q->priv = priv;
 	priv->head = 0;
 	priv->resp_tail = 0;
-	priv->reg = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+	priv->reg = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, UACCE_QFRT_SS, 0);
 	if (priv->reg == MAP_FAILED) {
 		DUMMY_ERR("mmap bd fail (%d)\n", errno);
 		if (errno)
@@ -49,26 +48,14 @@ int dummy_set_queue_dio(struct wd_queue *q)
 		goto out_with_priv;
 	}
 
-	dus = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
-	if (dus == MAP_FAILED) {
-		DUMMY_ERR("mmap dus fail (%d)\n", errno);
-		if (errno)
-			ret = errno;
-		else
-			ret = -EIO;
-		goto out_with_priv_map;
-	}
-
 	if (memcmp(priv->reg->hw_tag, DUMMY_HW_TAG, DUMMY_HW_TAG_SZ)) {
 		DUMMY_ERR("hw detection fail\n");
 		ret = -EIO;
-		goto out_with_dus;
+		goto out_with_priv_map;
 	}
 
 	return 0;
 
-out_with_dus:
-	munmap(dus, PAGE_SIZE);
 out_with_priv_map:
 	munmap(priv->reg, PAGE_SIZE);
 out_with_priv:

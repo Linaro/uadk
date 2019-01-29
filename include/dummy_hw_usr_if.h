@@ -15,16 +15,6 @@
 #define DUMMY_HW_TAG_SZ 	8
 #define DUMMY_HW_TAG 		"WDDUMMY"
 
-#if 0 //kenny
-/* mmio:	1 page (used for bd) (off=0)
- * dus:		2 page (no use yet, just for test) (off=1)
- * ss:		(off = 3)
- */
-#define DUMMY_MMIO_START 0
-#define DUMMY_DUS_START (PAGE_SIZE*1)
-#define DUMMY_SS_START  (PAGE_SIZE*3)
-#endif
-
 /* the format of the device ring space, which is of drv */
 #define ring_bd wd_dummy_cpy_msg
 

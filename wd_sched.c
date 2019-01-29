@@ -134,7 +134,6 @@ static int __sync_send(struct wd_scheduler *sched) {
 			return ret;
 	} while (ret);
 
-	//sched->q_h = (sched->q_h + 1) % sched->q_num;
 	return 0;
 }
 

@@ -92,6 +92,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 
 	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	if (vaddr == MAP_FAILED) {
+		dbg("mmap dus fail\n");
 		ret = -errno;
 		goto err_with_info;
 	}
@@ -102,6 +103,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
 			    has_dko ? UACCE_QFRT_DKO : UACCE_QFRT_DUS, 0);
 	if (vaddr == MAP_FAILED) {
+		dbg("mmap mmio fail\n");
 		ret = -errno;
 		goto err_with_dus;
 	}
@@ -120,6 +122,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	if (has_dko) {
 		vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
 		if (vaddr == MAP_FAILED) {
+			dbg("mmap dko fail\n");
 			ret = -errno;
 			wd_drv_unmmap_qfr(q,
 				info->doorbell_base - QM_DOORBELL_OFFSET,

@@ -67,7 +67,7 @@ static int wd_dummy_sched_output(struct wd_msg *msg, void *priv)
 		}
 
 	}
-	printf("verify result (%d) success %d\n", in[0], input_num);
+	printf("verify result (%d) success (remained=%d)\n", in[0], input_num);
 
 	return 0;
 }
