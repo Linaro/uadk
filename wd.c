@@ -36,6 +36,7 @@ struct _dev_info {
 	char api[WD_NAME_SIZE];
 	DIR *class;
 	struct _alg_info *alg_list;
+	unsigned long qfrs_pg_start[UACCE_QFRT_MAX];
 	TAILQ_ENTRY(_dev_info) next;
 };
 
@@ -136,13 +137,14 @@ static int _get_alg_cache_dev(struct wd_capa *capa, struct _dev_info **adev)
 	return cnt;
 }
 
-static int _get_int_attr(struct _dev_info *dinfo, char *attr)
+static size_t _get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
-	int fd, val, size;
+	int fd;
+	size_t size;
 
 	size = snprintf(attr_file, PATH_STR_SIZE, "%s/"UACCE_DEV_ATTRS"/%s",
-			dinfo->dev_root, attr);
+			dev_root, attr);
 	if (size < 0)
 		return -EINVAL;
 
@@ -151,44 +153,80 @@ static int _get_int_attr(struct _dev_info *dinfo, char *attr)
 		WD_ERR("open %s fail!\n", attr_file);
 		return fd;
 	}
-	size = read(fd, &val, sizeof(int));
+	size = read(fd, buf, sz);
 	if (size <= 0) {
 		WD_ERR("read nothing at %s!\n", attr_file);
-		return -ENODEV;
+		size = -ENODEV;
 	}
 
-	return atoi((char *)&val);
+	close(fd);
+	return size;
+}
+
+static int _get_int_attr(struct _dev_info *dinfo, char *attr)
+{
+	size_t size;
+	char buf[MAX_ATTR_STR_SIZE];
+
+	size = _get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
+	if (size < 0)
+		return size;
+
+	return atoi((char *)&buf);
+}
+
+static size_t _get_str_attr(struct _dev_info *dinfo, char *attr, char *buf,
+			 size_t buf_sz)
+{
+	size_t size;
+
+	size = _get_raw_attr(dinfo->dev_root, attr, buf, buf_sz);
+	if (size < 0) {
+		buf[0] = '\0';
+		return size;
+	}
+	buf[size - 1] = '\0'; /* remove the last "\n" */
+	if (size > 1 && buf[size-2]=='\n')
+		buf[size - 2] = '\0';
+	return size;
+}
+
+static void _get_ul_vec_attr(struct _dev_info *dinfo, char *attr,
+			       unsigned long *vec, int vec_sz)
+{
+	char buf[MAX_ATTR_STR_SIZE];
+	int size, i, j;
+	char *begin, *end;
+
+	size = _get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
+	if (size < 0) {
+		for (i = 0; i < vec_sz; i++)
+			vec[i] = 0;
+		return;
+	}
+
+	begin = buf;
+	for (i = 0; i < vec_sz; i++) {
+		vec[i] = strtoul(begin, &end, 0);
+		if (!end)
+			break;
+		begin = end;
+	}
+
+	for (j = i; j < vec_sz; j++)
+		vec[j] = 0;
 }
 
 static int _get_dev_info(struct _dev_info *dinfo)
 {
-	char api[PATH_STR_SIZE];
-	int fd, ret;
-	size_t sz;
-
 	dinfo->numa_dis = _get_int_attr(dinfo, "numa_distance");
-	dinfo->available_instances = _get_int_attr(dinfo, "available_instances");
-	if (dinfo->available_instances < 0)
-		WD_ERR("no available_instances got\n");
+	dinfo->available_instances = _get_int_attr(dinfo,
+						   "available_instances");
 	dinfo->node_id = _get_int_attr(dinfo, "node_id");
-	if (dinfo->node_id < 0)
-		WD_ERR("warn: kernel numa not enabled!\n");
 	dinfo->flags = _get_int_attr(dinfo, "flags");
-	ret = snprintf(api, PATH_STR_SIZE, "%s/"UACCE_DEV_ATTRS"/api",
-		      dinfo->dev_root);
-	if (ret < 0)
-		return -EINVAL;
-	fd = open(api, O_RDONLY, 0);
-	if (fd < 0) {
-		WD_ERR("open %s fail!\n", api);
-		return fd;
-	}
-	sz = read(fd, dinfo->api, WD_NAME_SIZE);
-	if (sz <= 0 || sz > WD_NAME_SIZE) {
-		WD_ERR("read nothing at %s!\n", api);
-		return -ENODEV;
-	}
-	dinfo->api[sz - 1] = '\0';
+	_get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
+	_get_ul_vec_attr(dinfo, "qfrs_pg_start", dinfo->qfrs_pg_start,
+			   UACCE_QFRT_MAX);
 
 	return 0;
 }

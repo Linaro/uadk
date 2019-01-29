@@ -50,7 +50,7 @@ int drv_open(struct wd_queue *q)
 			return hw_dio_tbl[q->hw_type_id].open(q);
 		}
 	}
-	WD_ERR("No matching driver to use (%s)!\n", q->hw_type);
+	WD_ERR("No matched driver to use (%s)!\n", q->hw_type);
 	errno = ENODEV;
 	return -ENODEV;
 }

@@ -15,6 +15,7 @@
 
 #define SYS_VAL_SIZE		16
 #define PATH_STR_SIZE		256
+#define MAX_ATTR_STR_SIZE	256
 #define WD_NAME_SIZE		64
 
 typedef int bool;
