@@ -39,7 +39,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	q->priv = priv;
 	priv->head = 0;
 	priv->resp_tail = 0;
-	priv->reg = wd_drv_mmap(q, PAGE_SIZE, DUMMY_MMIO_START);
+	priv->reg = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
 	if (priv->reg == MAP_FAILED) {
 		DUMMY_ERR("mmap bd fail (%d)\n", errno);
 		if (errno)
@@ -49,7 +49,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 		goto out_with_priv;
 	}
 
-	dus = wd_drv_mmap(q, PAGE_SIZE*2, DUMMY_DUS_START);
+	dus = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	if (dus == MAP_FAILED) {
 		DUMMY_ERR("mmap dus fail (%d)\n", errno);
 		if (errno)

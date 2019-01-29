@@ -69,12 +69,9 @@ int wd_sched_init(struct wd_scheduler *sched)
 #endif
 
 	if (!sched->ss_region) {
-		fprintf(stderr, "fail to reserve %ld ss_region\n",
-			sched->ss_region_size);
 		ret = -ENOMEM;
 		goto out_with_queues;
 	}
-
 
 #ifndef CONFIG_IOMMU_SVA
 	for (k = 1; k < sched->q_num; k++) {

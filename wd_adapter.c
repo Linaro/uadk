@@ -12,7 +12,6 @@
 
 static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.hw_type = "dummy_v1",
-		.ss_offset = DUMMY_SS_START,
 		.open = dummy_set_queue_dio,
 		.close = dummy_unset_queue_dio,
 		.send = dummy_add_to_dio_q,
@@ -20,14 +19,12 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.flush = dummy_flush,
 	}, {
 		.hw_type = HISI_QM_API_VER_BASE UACCE_API_VER_NOIOMMU_SUBFIX,
-		.ss_offset = QM_SS_START,
 		.open = hisi_qm_set_queue_dio,
 		.close = hisi_qm_unset_queue_dio,
 		.send = hisi_qm_add_to_dio_q,
 		.recv = hisi_qm_get_from_dio_q,
 	}, {
 		.hw_type = HISI_QM_API_VER_BASE,
-		.ss_offset = QM_SS_START,
 		.open = hisi_qm_set_queue_dio,
 		.close = hisi_qm_unset_queue_dio,
 		.send = hisi_qm_add_to_dio_q,
@@ -78,7 +75,7 @@ void drv_flush(struct wd_queue *q)
 
 void *drv_reserve_mem(struct wd_queue *q, size_t size)
 {
-	q->ss_va = wd_drv_mmap(q, size, hw_dio_tbl[q->hw_type_id].ss_offset);
+	q->ss_va = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, UACCE_QFRT_INVALID, size);
 
 	if (q->ss_va == MAP_FAILED)
 		return NULL;

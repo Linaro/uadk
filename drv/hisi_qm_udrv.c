@@ -82,6 +82,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	struct hisi_qm_priv *priv = (struct hisi_qm_priv *)&q->capa.priv;
 	void *vaddr;
 	int ret;
+	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
 
 	alloc_obj(info);
 	if (!info)
@@ -89,7 +90,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 
 	q->priv = info;
 
-	vaddr = wd_drv_mmap(q, QM_DUS_SIZE, QM_DUS_START);
+	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	if (vaddr == MAP_FAILED) {
 		ret = -errno;
 		goto err_with_info;
@@ -98,7 +99,8 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	info->sq_base = vaddr;
 	info->cq_base = vaddr + info->sqe_size * QM_Q_DEPTH;
 
-	vaddr = wd_drv_mmap(q, QM_DOORBELL_SIZE, QM_DOORBELL_START);
+	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
+			    has_dko ? UACCE_QFRT_DKO : UACCE_QFRT_DUS, 0);
 	if (vaddr == MAP_FAILED) {
 		ret = -errno;
 		goto err_with_dus;
@@ -115,12 +117,13 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	}
 
 
-	if (!(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID))) {
-		vaddr = wd_drv_mmap(q, QM_DKO_SIZE, QM_DKO_START);
+	if (has_dko) {
+		vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
 		if (vaddr == MAP_FAILED) {
 			ret = -errno;
-			munmap(info->doorbell_base - QM_DOORBELL_OFFSET,
-			       QM_DOORBELL_SIZE);
+			wd_drv_unmmap_qfr(q,
+				info->doorbell_base - QM_DOORBELL_OFFSET,
+				UACCE_QFRT_MMIO, UACCE_QFRT_DKO, 0);
 			goto err_with_dus;
 		}
 		info->dko_base = vaddr;
@@ -131,7 +134,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	return 0;
 
 err_with_dus:
-	munmap(info->sq_base, QM_DUS_SIZE);
+	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 err_with_info:
 	free(info);
 	return ret;
@@ -140,11 +143,17 @@ err_with_info:
 void hisi_qm_unset_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
+	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
 
-	if (!(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID)))
-		munmap(info->dko_base, QM_DKO_SIZE);
-	munmap(info->doorbell_base - QM_DOORBELL_OFFSET, QM_DOORBELL_SIZE);
-	munmap(info->sq_base, QM_DUS_SIZE);
+	if (has_dko) {
+		wd_drv_unmmap_qfr(q, info->dko_base,
+				  UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, info->doorbell_base - QM_DOORBELL_OFFSET,
+				  UACCE_QFRT_MMIO, UACCE_QFRT_DKO, 0);
+	} else
+		wd_drv_unmmap_qfr(q, info->doorbell_base - QM_DOORBELL_OFFSET,
+				  UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	free(info);
 	q->priv = NULL;
 }

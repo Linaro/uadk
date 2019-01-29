@@ -73,7 +73,7 @@ static int wd_dummy_sched_output(struct wd_msg *msg, void *priv)
 }
 
 struct wd_scheduler sched = {
-	.q_num = 2,
+	.q_num = 3,
 	.ss_region_size = 0,
 	.msg_cache_num = 4,
 	.msg_data_size = CPSZ,

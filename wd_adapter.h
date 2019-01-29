@@ -18,7 +18,6 @@
 
 struct wd_drv_dio_if {
 	char *hw_type;
-	size_t ss_offset;
 	int (*open)(struct wd_queue *q);
 	void (*close)(struct wd_queue *q);
 	int (*send)(struct wd_queue *q, void *req);

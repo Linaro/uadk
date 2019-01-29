@@ -96,12 +96,14 @@ struct wd_queue {
 	char *hw_type;
 	int hw_type_id;
 	void *priv; /* private data used by the drv layer */
+	void *dev_info;
 	int fd;
 	int iommu_type;
 	char dev_path[PATH_STR_SIZE];
 	void *ss_va;
 	void *ss_pa;
 	int dev_flags;
+	unsigned long qfrs_pg_start[UACCE_QFRT_MAX];
 };
 
 static inline void *wd_get_pa_from_va(struct wd_queue *q, void *va)
