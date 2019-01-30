@@ -50,6 +50,7 @@ static void __fini_cache(struct wd_scheduler *sched)
 int wd_sched_init(struct wd_scheduler *sched)
 {
 	int ret, i, j, k;
+	int flags = 0;
 
 	for (i = 0; i < sched->q_num; i++) {
 		ret = wd_request_queue(&sched->qs[i]);
@@ -61,25 +62,26 @@ int wd_sched_init(struct wd_scheduler *sched)
 		sched->ss_region_size = 4096 + /* add 1 page extra */
 			sched->msg_cache_num * sched->msg_data_size * 2;
 
-#ifdef CONFIG_IOMMU_SVA
-	sched->ss_region = malloc(sched->ss_region_size);
-#else
-	sched->ss_region = wd_reserve_memory(&sched->qs[0],
-			sched->ss_region_size);
-#endif
+	flags = sched->qs[0].dev_flags;
+
+	if (flags & UACCE_DEV_PASID)
+		sched->ss_region = malloc(sched->ss_region_size);
+	else
+		sched->ss_region = wd_reserve_memory(&sched->qs[0],
+			           sched->ss_region_size);
 
 	if (!sched->ss_region) {
 		ret = -ENOMEM;
 		goto out_with_queues;
 	}
 
-#ifndef CONFIG_IOMMU_SVA
-	for (k = 1; k < sched->q_num; k++) {
-		ret = wd_share_reserved_memory(&sched->qs[k], &sched->qs[0]);
-		if (ret)
-			goto out_with_queues;
+	if (!(flags & UACCE_DEV_PASID)) {
+		for (k = 1; k < sched->q_num; k++) {
+			ret = wd_share_reserved_memory(&sched->qs[k], &sched->qs[0]);
+			if (ret)
+				goto out_with_queues;
+		}
 	}
-#endif
 
 	sched->cl = sched->msg_cache_num;
 
@@ -94,10 +96,10 @@ int wd_sched_init(struct wd_scheduler *sched)
 	return 0;
 
 out_with_queues:
-#ifdef CONFIG_IOMMU_SVA
-	if (sched->ss_region)
-		free(sched->ss_region);
-#endif
+	if (flags & UACCE_DEV_PASID) {
+		if (sched->ss_region)
+			free(sched->ss_region);
+	}
 	for (j = i-1; j >= 0; j--)
 		wd_release_queue(&sched->qs[j]);
 	return ret;
@@ -106,12 +108,13 @@ out_with_queues:
 void wd_sched_fini(struct wd_scheduler *sched)
 {
 	int i;
+	int flags = sched->qs[0].dev_flags;
 
 	__fini_cache(sched);
-#ifdef CONFIG_IOMMU_SVA
-	if (sched->ss_region)
-		free(sched->ss_region);
-#endif
+	if (flags & UACCE_DEV_PASID) {
+		if (sched->ss_region)
+			free(sched->ss_region);
+	}
 	for (i = sched->q_num - 1; i >= 0; i--)
 		wd_release_queue(&sched->qs[i]);
 }
