@@ -26,6 +26,9 @@ do { \
 #define ZLIB 0
 #define GZIP 1
 
+#define DEFLATE 0
+#define INFLATE 1
+
 #define ZLIB_HEADER "\x78\x9c"
 #define ZLIB_HEADER_SZ 2
 
@@ -39,6 +42,7 @@ static int q_num = 1;
 
 static struct hizip_priv {
 	int alg_type;
+	int op_type;
 	int dw9;
 	int total_len;
 	struct hisi_zip_sqe *msgs;
@@ -82,6 +86,19 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 	ilen = hizip_priv.total_len > block_size ?
 		block_size : hizip_priv.total_len;
 	hizip_priv.total_len -= ilen;
+	if (hizip_priv.op_type == INFLATE) {
+		if (hizip_priv.alg_type == ZLIB) {
+			sz = fread(msg->data_in, 1, ZLIB_HEADER_SZ,
+				   hizip_priv.sfile);
+			SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "read");
+			ilen -= ZLIB_HEADER_SZ;
+		} else {
+			sz = fread(msg->data_in, 1, GZIP_HEADER_SZ,
+				   hizip_priv.sfile);
+			SYS_ERR_COND(sz != GZIP_HEADER_SZ, "read");
+			ilen -= GZIP_HEADER_SZ;
+		}
+	}
 
 	sz = fread(msg->data_in, 1, ilen, hizip_priv.sfile);
 	SYS_ERR_COND(sz != ilen, "read");
@@ -112,21 +129,24 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 
 	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
 		     status, type);
+	if (hizip_priv.op_type == DEFLATE) {
 
-	if (hizip_priv.alg_type == ZLIB) {
-		sz = fwrite(ZLIB_HEADER, 1, ZLIB_HEADER_SZ, hizip_priv.dfile);
-		SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "write");
-	} else {
-		sz = fwrite(GZIP_HEADER, 1, GZIP_HEADER_SZ, hizip_priv.dfile);
-		SYS_ERR_COND(sz != GZIP_HEADER_SZ, "write");
+		if (hizip_priv.alg_type == ZLIB) {
+			sz = fwrite(ZLIB_HEADER, 1, ZLIB_HEADER_SZ,
+				    hizip_priv.dfile);
+			SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "write");
+		} else {
+			sz = fwrite(GZIP_HEADER, 1, GZIP_HEADER_SZ,
+				    hizip_priv.dfile);
+			SYS_ERR_COND(sz != GZIP_HEADER_SZ, "write");
+		}
 	}
-
 	sz = fwrite(msg->data_out, 1, m->produced, hizip_priv.dfile);
 	SYS_ERR_COND(sz != m->produced, "write");
 	return 0;
 }
 
-int hizip_init(int alg_type)
+int hizip_init(int alg_type, int op_type)
 {
 	int ret = -ENOMEM, i;
 	char *alg;
@@ -150,6 +170,7 @@ int hizip_init(int alg_type)
 
 
 	hizip_priv.alg_type = alg_type;
+	hizip_priv.op_type = op_type;
 	if (alg_type == ZLIB) {
 		alg = "zlib";
 		hizip_priv.dw9 = 2;
@@ -162,6 +183,7 @@ int hizip_init(int alg_type)
 		sched.qs[i].capa.alg = alg;
 		priv = (struct hisi_qm_priv *)sched.qs[i].capa.priv;
 		priv->sqe_size = sizeof(struct hisi_zip_sqe);
+		priv->op_type = hizip_priv.op_type;
 	}
 	ret = wd_sched_init(&sched);
 	if (ret)
@@ -215,10 +237,23 @@ void hizip_deflate(FILE *source, FILE *dest)
 	fclose(dest);
 }
 
+void hizip_def(FILE *source, FILE *dest, int alg_type, int op_type)
+{
+	int ret;
+
+	ret = hizip_init(alg_type, op_type);
+	SYS_ERR_COND(ret, "hizip init fail\n");
+
+	hizip_deflate(stdin, stdout);
+
+	hizip_fini();
+}
+
 int main(int argc, char *argv[])
 {
 	int alg_type = GZIP;
-	int ret, opt;
+	int op_type = DEFLATE;
+	int opt;
 	int show_help = 0;
 
 	while ((opt = getopt(argc, argv, "zghq:b:dc:")) != -1) {
@@ -245,6 +280,7 @@ int main(int argc, char *argv[])
 				show_help = 1;
 			break;
 		case 'd':
+			op_type = INFLATE;
 			SYS_ERR_COND(0, "decompress function to be added\n");
 			break;
 		default:
@@ -256,11 +292,7 @@ int main(int argc, char *argv[])
 	SYS_ERR_COND(show_help || optind > argc,
 		     "test_hisi_zip -[g|z] [-q q_num] < in > out");
 
-	ret = hizip_init(alg_type);
-	SYS_ERR_COND(ret, "hizip init fail\n");
+	hizip_def(stdin, stdout, alg_type, op_type);
 
-	hizip_deflate(stdin, stdout);
-
-	hizip_fini();
 	return EXIT_SUCCESS;
 }

@@ -9,6 +9,7 @@
 
 struct hisi_qm_priv {
 	__u16 sqe_size;
+	__u16 op_type;
 };
 
 int hisi_qm_set_queue_dio(struct wd_queue *q);

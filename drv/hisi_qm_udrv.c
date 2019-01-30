@@ -132,6 +132,10 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		info->dko_base = vaddr;
 	}
 
+	ret = ioctl(q->fd, UACCE_CMD_QM_SET_OPTYPE, priv->op_type);
+	if (ret < 0)
+		fprintf(stderr, "hisi qm set op_type fail, use default!\n");
+
 	dbg("create hisi qm queue (sqe = %p, %d)\n", info->sq_base,
 	    info->sqe_size);
 	return 0;
