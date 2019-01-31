@@ -143,17 +143,10 @@ static int _get_dev_info(struct _dev_info *dinfo)
 static bool _is_matched_alg(char *algs, char *alg)
 {
 	char *s;
-	size_t len = strlen(alg);
 
-	while (1) {
-		s = strstr(algs, alg);
-		if (s) {
-			if (s[len] == '\n' || s[len] == '\0')
-				return 1;
-			else
-				algs = s + len;
-		} else
-			break;
+	while ((s = strsep(&algs, "\n"))) {
+		if (!strncmp(s, alg, strlen(s)))
+			return 1;
 	}
 	return 0;
 }
