@@ -72,6 +72,11 @@ static int _get_int_attr(struct _dev_info *dinfo, char *attr)
 	return atoi((char *)&buf);
 }
 
+/*
+ * Get string from an attr of sysfs. '\n' is used as a token of substring.
+ * So '\n' could be in the middle of the string or at the last of the string.
+ * Now remove the token '\n' at the end of the string to avoid confusion.
+ */
 static size_t _get_str_attr(struct _dev_info *dinfo, char *attr, char *buf,
 			 size_t buf_sz)
 {
@@ -82,9 +87,15 @@ static size_t _get_str_attr(struct _dev_info *dinfo, char *attr, char *buf,
 		buf[0] = '\0';
 		return size;
 	}
-	buf[size - 1] = '\0'; /* remove the last "\n" */
-	if (size > 1 && buf[size-2]=='\n')
-		buf[size - 2] = '\0';
+
+	if (size == buf_sz)
+		size = size - 1;
+
+	buf[size] = '\0';
+	while ((size > 1) && (buf[size - 1] == '\n')) {
+		buf[size - 1] = '\0';
+		size = size - 1;
+	}
 	return size;
 }
 
