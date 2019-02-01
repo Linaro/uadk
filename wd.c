@@ -26,6 +26,7 @@ struct _dev_info {
 	int ref;
 	int is_load;
 	int available_instances;
+	int weight;
 	char alg_path[PATH_STR_SIZE];
 	char dev_root[PATH_STR_SIZE];
 	char name[WD_NAME_SIZE];
@@ -136,6 +137,17 @@ static int _get_dev_info(struct _dev_info *dinfo)
 	_get_str_attr(dinfo, "algorithms", dinfo->algs, MAX_ATTR_STR_SIZE);
 	_get_ul_vec_attr(dinfo, "qfrs_pg_start", dinfo->qfrs_pg_start,
 			   UACCE_QFRT_MAX);
+	/*
+	 * Use available_instances as the base of weight.
+	 * Remote NUMA node cuts the weight.
+	 */
+	if (dinfo->available_instances > 0)
+		dinfo->weight = dinfo->available_instances;
+	else
+		dinfo->weight = 0;
+	/* Check whether it's the remote distance. */
+	if (dinfo->numa_dis)
+		dinfo->weight = dinfo->weight >> 2;
 
 	return 0;
 }
@@ -165,8 +177,7 @@ static void _copy_if_better(struct _dev_info *old, struct _dev_info *new,
 	/* todo: priority, latency, throughput and etc. check */
 
 	/* Is the new dev better? */
-	if (!old->name[0] ||
-	    new->available_instances > old->available_instances) {
+	if (!old->name[0] || (new->weight > old->weight)) {
 		memcpy(old, new, sizeof(*old));
 		dbg("adopted\n");
 		return;
