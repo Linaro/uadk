@@ -32,6 +32,8 @@ struct hisi_qm_queue_info {
 	void *cq_base;
 	int sqe_size;
 	void *doorbell_base;
+	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
+		  __u16 index, __u8 priority);
 	void *dko_base;
 	__u16 sq_tail_index;
 	__u16 sq_head_index;
@@ -42,13 +44,30 @@ struct hisi_qm_queue_info {
 	int is_sq_full;
 };
 
-int hacc_db(struct hisi_qm_queue_info *q, __u8 cmd, __u16 index, __u8 priority)
+int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
+	       __u16 index, __u8 priority)
 {
 	void *base = q->doorbell_base;
 	__u16 sqn = q->sqn;
 	__u64 doorbell = 0;
 
 	doorbell = (__u64)sqn | ((__u64)cmd << 16);
+	doorbell |= ((__u64)index | ((__u64)priority << 16)) << 32;
+
+	*((__u64 *)base) = doorbell;
+
+	return 0;
+}
+
+/* Only Hi1620 CS, we just need version 2 doorbell. */
+static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
+		      __u16 index, __u8 priority)
+{
+	void *base = q->doorbell_base;
+	__u16 sqn = q->sqn & 0x3ff;
+	__u64 doorbell = 0;
+
+	doorbell = (__u64)sqn | ((__u64)(cmd & 0xf) << 12);
 	doorbell |= ((__u64)index | ((__u64)priority << 16)) << 32;
 
 	*((__u64 *)base) = doorbell;
@@ -107,13 +126,22 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		ret = -errno;
 		goto err_with_dus;
 	}
-	info->doorbell_base = vaddr + QM_DOORBELL_OFFSET;
+	if (strstr(q->hw_type, HISI_QM_API_VER2_BASE)) {
+		info->db = hacc_db_v2;
+		info->doorbell_base = vaddr + QM_V2_DOORBELL_OFFSET;
+	} else if (strstr(q->hw_type, HISI_QM_API_VER_BASE)) {
+		info->db = hacc_db_v1;
+		info->doorbell_base = vaddr + QM_DOORBELL_OFFSET;
+	} else {
+		ret = -EINVAL;
+		goto err_with_dus;
+	}
 	info->sq_tail_index = 0;
 	info->sq_head_index = 0;
 	info->cq_head_index = 0;
 	info->cqc_phase = 1;
 	info->is_sq_full = 0;
-	if (!info->sqe_size || !info->sqe_size) {
+	if (!info->sqe_size) {
 		ret = -EINVAL;
 		goto err_with_dus;
 	}
@@ -184,7 +212,7 @@ int hisi_qm_add_to_dio_q(struct wd_queue *q, void *req)
 	else
 		i++;
 
-	hacc_db(info, DOORBELL_CMD_SQ, i, 0);
+	info->db(info, DOORBELL_CMD_SQ, i, 0);
 
 	info->sq_tail_index = i;
 
@@ -231,7 +259,7 @@ int hisi_qm_get_from_dio_q(struct wd_queue *q, void **resp)
 	} else
 		i++;
 
-	hacc_db(info, DOORBELL_CMD_CQ, i, 0);
+	info->db(info, DOORBELL_CMD_CQ, i, 0);
 
 	info->cq_head_index = i;
 	info->sq_head_index = i;

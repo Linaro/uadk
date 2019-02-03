@@ -18,6 +18,7 @@
 #define QM_SS_PAGE_START (QM_DUS_PAGE_START + QM_DUS_PAGE_NR)
 
 #define QM_DOORBELL_OFFSET      0x340
+#define QM_V2_DOORBELL_OFFSET   0x0
 
 struct cqe {
 	__le32 rsvd0;
@@ -30,6 +31,7 @@ struct cqe {
 };
 
 #define HISI_QM_API_VER_BASE "hisi_qm_v1"
+#define HISI_QM_API_VER2_BASE "hisi_qm_v2"
 
 #define UACCE_CMD_QM_SET_OPTYPE	_IO('H', 10)
 

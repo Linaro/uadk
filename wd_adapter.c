@@ -24,7 +24,19 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.send = hisi_qm_add_to_dio_q,
 		.recv = hisi_qm_get_from_dio_q,
 	}, {
+		.hw_type = HISI_QM_API_VER2_BASE UACCE_API_VER_NOIOMMU_SUBFIX,
+		.open = hisi_qm_set_queue_dio,
+		.close = hisi_qm_unset_queue_dio,
+		.send = hisi_qm_add_to_dio_q,
+		.recv = hisi_qm_get_from_dio_q,
+	}, {
 		.hw_type = HISI_QM_API_VER_BASE,
+		.open = hisi_qm_set_queue_dio,
+		.close = hisi_qm_unset_queue_dio,
+		.send = hisi_qm_add_to_dio_q,
+		.recv = hisi_qm_get_from_dio_q,
+	}, {
+		.hw_type = HISI_QM_API_VER2_BASE,
 		.open = hisi_qm_set_queue_dio,
 		.close = hisi_qm_unset_queue_dio,
 		.send = hisi_qm_add_to_dio_q,
