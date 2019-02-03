@@ -9,3 +9,5 @@ test_hisi_zip_LDADD=../.libs/libwd.a
 test_dummy_SOURCES=test_dummy.c
 
 test_dummy_LDADD=../.libs/libwd.a
+
+SUBDIRS=. hisi_hpre_test

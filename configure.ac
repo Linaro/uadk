@@ -49,5 +49,6 @@ AC_FUNC_MMAP
 AC_CHECK_FUNCS([memset munmap])
 
 AC_CONFIG_FILES([Makefile
-                 test/Makefile])
+                 test/Makefile
+                 test/hisi_hpre_test/Makefile])
 AC_OUTPUT
