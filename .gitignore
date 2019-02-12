@@ -42,6 +42,8 @@
 *.tab.[ch]
 *.tar
 *.xz
+*.scan
+*.log
 Module.symvers
 modules.builtin
 
@@ -158,3 +160,4 @@ missing
 stamp-h1
 test/test_dummy
 test/test_hisi_zip
+test/hisi_hpre_test/test_hisi_hpre

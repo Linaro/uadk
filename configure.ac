@@ -9,6 +9,7 @@ AC_CONFIG_HEADERS([config.h])
 # Checks for programs.
 AC_PROG_AWK
 AC_PROG_CC
+AC_PROG_CPP
 AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
@@ -29,6 +30,12 @@ AC_ARG_ENABLE([sva],
   ],
   [sva=false]
 )
+
+AC_ARG_WITH(openssl_dir,
+	AS_HELP_STRING([--with-openssl_dir], [Path to OpenSSL source code]))
+AC_SUBST(with_openssl_dir)
+
+AM_CONDITIONAL([WITH_OPENSSL_DIR], [test -n "$with_openssl_dir"])
 
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h sys/ioctl.h sys/time.h unistd.h])

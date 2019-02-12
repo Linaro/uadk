@@ -10,4 +10,6 @@ test_dummy_SOURCES=test_dummy.c
 
 test_dummy_LDADD=../.libs/libwd.a
 
+if WITH_OPENSSL_DIR
 SUBDIRS=. hisi_hpre_test
+endif

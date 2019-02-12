@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef __HISI_TEST_HPRE_H
 #define __HISI_TEST_HPRE_H
 
