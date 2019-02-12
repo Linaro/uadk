@@ -111,8 +111,8 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 					   hizip_priv.sfile);
 				memcpy(&ilen, msg->data_in + 6, 4);
 				dbg("gzip iuput len %ld\n", ilen);
-				SYS_ERR_COND(ilen > block_size,
-				    "gzip protocol_len(%ld) > block_size(%d)\n",
+				SYS_ERR_COND(ilen > block_size * 2,
+				    "gzip protocol_len(%ld) > dmabuf_size(%d)\n",
 				    ilen, block_size);
 				real_len = GZIP_HEADER_SZ
 					+ GZIP_EXTRA_SZ + ilen;
@@ -183,7 +183,9 @@ int hizip_init(int alg_type, int op_type)
 	sched.q_num = q_num;
 	sched.ss_region_size = 0; /* let system make decision */
 	sched.msg_cache_num = req_cache_num;
-	sched.msg_data_size = block_size;
+	sched.msg_data_size = block_size * 2; /* use twice size of the input
+						 data, hope it is engouth for
+						 output */
 	sched.init_cache = hizip_wd_sched_init_cache;
 	sched.input = hizip_wd_sched_input;
 	sched.output = hizip_wd_sched_output;
