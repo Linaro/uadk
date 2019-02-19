@@ -2,6 +2,7 @@
 //#include "config.h"
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -275,6 +276,9 @@ int wd_request_queue(struct wd_queue *q)
 		ret = -ENODEV;
 		goto err_with_dev;
 	}
+	/* make this process can receive async signal from kernel */
+	fcntl(q->fd, F_SETOWN, getpid());
+	fcntl(q->fd, F_SETFL, fcntl(q->fd, F_GETFL) | FASYNC);
 	q->hw_type = dev->api;
 	q->dev_flags = dev->flags;
 	q->dev_info = dev;
@@ -362,4 +366,3 @@ int wd_share_reserved_memory(struct wd_queue *q, struct wd_queue *target_q)
 {
 	return ioctl(q->fd, UACCE_CMD_SHARE_SVAS, target_q->fd);
 }
-
