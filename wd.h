@@ -50,7 +50,9 @@ typedef int bool;
 #define rmb()
 #define wmb()
 #define mb()
+#ifndef __UT__
 #error "no platform mb, define one before compiling"
+#endif
 
 #endif
 
