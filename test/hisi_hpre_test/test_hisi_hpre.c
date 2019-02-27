@@ -36,12 +36,17 @@ struct rsa_st {
 	int xxx;
 };
 
+struct dh_st {
+	int xxx;
+};
+
 struct bn_gencb_st {
 	int xxx;
 };
 
 /* stub definitions */
 typedef struct rsa_st RSA;
+typedef struct dh_st DH;
 typedef struct bignum_st BIGNUM;
 typedef struct bn_gencb_st BN_GENCB;
 
@@ -51,6 +56,8 @@ enum alg_op_type {
 	RSA_PUB_EN,
 	RSA_PRV_DE,
 	MAX_RSA_TYPE,
+	DH_GEN1,
+	DH_GEN2,
 	HPRE_MAX_OP_TYPE,
 };
 
@@ -58,6 +65,8 @@ enum alg_op_mode {
 	HPRE_ALG_INVLD_MODE,
 	RSA_COM_MD,
 	RSA_CRT_MD,
+	DH_COM_MD,
+	DH_G2,
 	HPRE_MAX_OP_MODE,
 };
 
@@ -100,6 +109,22 @@ struct wd_rsa_ctx {
 	struct hpre_queue_mempool *pool;
 };
 
+struct wd_dh_udata {
+	void *tag;
+	struct wd_dh_op_data *opdata;
+};
+
+struct wd_dh_ctx {
+	struct wd_dh_msg cache_msg;
+	struct wd_queue *q;
+	struct wd_dh_msg *recv_msg;
+	wd_dh_cb cb;
+	char  alg[32];
+	__u32 key_size;
+	__u16 is_g2;
+	struct hpre_queue_mempool *pool;
+};
+
 static int key_bits = 2048;
 static int openssl_check;
 static RSA *hpre_test_rsa;
@@ -108,6 +133,7 @@ BIGNUM *BN_new(void);
 int BN_bn2bin(const BIGNUM *a, unsigned char *to);
 BIGNUM *BN_bin2bn(const unsigned char *s, int len, BIGNUM *ret);
 void BN_free(BIGNUM *a);
+BIGNUM *BN_dup(const BIGNUM *a);
 RSA *RSA_new(void);
 void RSA_free(RSA *rsa);
 int BN_set_word(BIGNUM *a, BN_ULONG w);
@@ -126,6 +152,17 @@ int RSA_public_encrypt(int flen, const unsigned char *from,
 		       unsigned char *to, RSA *rsa, int padding);
 int RSA_private_decrypt(int flen, const unsigned char *from,
 			unsigned char *to, RSA *rsa, int padding);
+DH *DH_new(void);
+void DH_free(DH *r);
+int DH_generate_parameters_ex(DH *dh, int prime_len, int generator,
+			      BN_GENCB *cb);
+void DH_get0_pqg(const DH *dh,
+		 const BIGNUM **p, const BIGNUM **q, const BIGNUM **g);
+int DH_generate_key(DH *dh);
+void DH_get0_key(const DH *dh, const BIGNUM **pub_key,
+		const BIGNUM **priv_key);
+int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g);
+int DH_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh);
 
 struct hpre_queue_mempool *hpre_test_mempool_create(struct wd_queue *q,
 	unsigned int block_size, unsigned int block_num);
@@ -403,12 +440,14 @@ static int hpre_fill_rsa_sqe(struct wd_rsa_ctx *ctx,
 	return 0;
 }
 
-int hpre_test_wd_send(struct wd_rsa_ctx *ctx, struct wd_rsa_msg *msg)
+int hpre_test_wd_rsa_send(struct wd_rsa_ctx *ctx, struct wd_rsa_msg *msg)
 {
 	struct wd_queue *q = ctx->q;
 	struct hisi_hpre_sqe *hw_msg;
 	int ret;
 
+	if (ctx->recv_msg)
+		return -EBUSY;
 	hw_msg = malloc(sizeof(struct hisi_hpre_sqe));
 	if (!hw_msg)
 		return -ENOMEM;
@@ -422,7 +461,7 @@ int hpre_test_wd_send(struct wd_rsa_ctx *ctx, struct wd_rsa_msg *msg)
 	return wd_send(q, hw_msg);
 }
 
-int hpre_test_wd_recv(struct wd_rsa_ctx *ctx, struct wd_rsa_msg **resp)
+int hpre_test_wd_rsa_recv(struct wd_rsa_ctx *ctx, struct wd_rsa_msg **resp)
 {
 	struct wd_queue *q = ctx->q;
 	struct hisi_hpre_sqe *hw_msg;
@@ -444,7 +483,12 @@ int hpre_test_wd_recv(struct wd_rsa_ctx *ctx, struct wd_rsa_msg **resp)
 		HPRE_TST_PRT("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
 		      hw_msg->done, hw_msg->etype);
 		hpre_sqe_dump(hw_msg);
-		return -1;
+		if (hw_msg->done == 0x1) {
+			ret = 0;
+		} else {
+			ret = 1;
+			rsa_msg->status = -1;
+		}
 	}
 	phy = (((__u64)(hw_msg->hi_out) << 32) | (hw_msg->low_out));
 	va = pa_to_va(q, phy);
@@ -469,6 +513,7 @@ int hpre_test_wd_recv(struct wd_rsa_ctx *ctx, struct wd_rsa_msg **resp)
 	}
 	*resp = rsa_msg;
 	free(hw_msg);
+	ctx->recv_msg = NULL;
 	return ret;
 }
 
@@ -619,16 +664,15 @@ int wd_do_rsa(void *ctx, struct wd_rsa_op_data *opdata)
 		return -EINVAL;
 	}
 	ctxt->cache_msg.op_type = (__u8)opdata->op_type;
-	ctxt->cache_msg.status = -1;
 
-	ret = hpre_test_wd_send(ctxt, &ctxt->cache_msg);
+	ret = hpre_test_wd_rsa_send(ctxt, &ctxt->cache_msg);
 	if (ret) {
 		HPRE_TST_PRT("%s():wd_send err!\n", __func__);
 		return ret;
 	}
 
 recv_again:
-	ret = hpre_test_wd_recv(ctxt, &resp);
+	ret = hpre_test_wd_rsa_recv(ctxt, &resp);
 	if (!ret) {
 		i++;
 		usleep(1 + i * 100);
@@ -642,6 +686,8 @@ recv_again:
 		HPRE_TST_PRT("%s:timeout err!\n", __func__);
 		return -1;
 	}
+	if (resp->status < 0)
+		return -1;
 	opdata->out = (void *)resp->out;
 	opdata->out_bytes = resp->outbytes;
 
@@ -677,7 +723,7 @@ int wd_rsa_op(void *ctx, struct wd_rsa_op_data *opdata, void *tag)
 	}
 	msg->udata = (__u64)udata;
 	msg->op_type = (__u8)opdata->op_type;
-	ret = hpre_test_wd_send(context, (void *)msg);
+	ret = hpre_test_wd_rsa_send(context, (void *)msg);
 	if (ret < 0) {
 		HPRE_TST_PRT("wd send request fail!\n");
 		return -1;
@@ -695,7 +741,7 @@ int wd_rsa_poll(void *rsa_ctx, int num)
 	struct wd_rsa_udata *udata;
 
 	do {
-		ret = hpre_test_wd_recv(ctx, &resp);
+		ret = hpre_test_wd_rsa_recv(ctx, &resp);
 		if (ret < 1)
 			break;
 		count++;
@@ -712,6 +758,302 @@ int wd_rsa_poll(void *rsa_ctx, int num)
 void wd_del_rsa_ctx(void *rsa_ctx)
 {
 	struct wd_rsa_ctx *ctx = rsa_ctx;
+
+	if (ctx)
+		hpre_test_mempool_destroy(ctx->pool);
+}
+
+
+static int hpre_fill_dh_sqe(struct wd_dh_ctx *ctx,
+			     struct wd_dh_msg *dh_msg,
+			     struct hisi_hpre_sqe *hw_msg)
+{
+	char *alg = ctx->alg;
+	struct wd_queue *q = ctx->q;
+	unsigned long long phy;
+	struct hpre_queue_mempool *pool = ctx->pool;
+	void *out_buf;
+	void *g, *x, *p;
+
+	if (strncmp(alg, "dh", 2))  {
+		HPRE_TST_PRT("\nalg=%s,rsa/dh algos support only now!", alg);
+		return -1;
+	}
+	if (ctx->is_g2 && dh_msg->op_type != WD_DH_PHASE2)
+		hw_msg->alg = HPRE_ALG_DH_G2;
+	else
+		hw_msg->alg = HPRE_ALG_DH;
+	hw_msg->task_len1 = dh_msg->pbytes / 8 - 1;
+	if (dh_msg->op_type == WD_DH_PHASE1 ||
+	  dh_msg->op_type == WD_DH_PHASE2) {
+		if (ctx->is_g2 && dh_msg->op_type == WD_DH_PHASE1) {
+			hw_msg->low_in = 0;
+			hw_msg->hi_in = 0;
+		} else {
+			g = hpre_test_alloc_buf(ctx->pool);
+			if (!g)
+				return -ENOMEM;
+			memcpy(g, (void *)dh_msg->g, ctx->key_size);
+			(void)hpre_bn_format(g, ctx->key_size);
+			phy = va_to_pa(q, g);
+			hw_msg->low_in = (__u32)(phy & 0xffffffff);
+			hw_msg->hi_in = (__u32)((phy >> 32) & 0xffffffff);
+		}
+		x = hpre_test_alloc_buf(ctx->pool);
+		if (!x)
+			return -ENOMEM;
+		memcpy(x, (void *)dh_msg->x, ctx->key_size);
+		(void)hpre_bn_format(x, ctx->key_size);
+		p = x + ctx->key_size;
+		memcpy(p, (void *)dh_msg->p, ctx->key_size);
+		(void)hpre_bn_format(p, ctx->key_size);
+		phy = va_to_pa(q, x);
+		hw_msg->low_key = (__u32)(phy & 0xffffffff);
+		hw_msg->hi_key = (__u32)((phy >> 32) & 0xffffffff);
+
+	}
+	out_buf = hpre_test_alloc_buf(pool);
+	if (!out_buf)
+		return -ENOMEM;
+	memset(out_buf, 0, pool->block_size);
+	phy = va_to_pa(q, out_buf);
+	hw_msg->low_out = (__u32)(phy & 0xffffffff);
+	hw_msg->hi_out = (__u32)((phy >> 32) & 0xffffffff);
+
+	/* This need more processing logic. to do more */
+	hw_msg->tag = (__u32)dh_msg->udata;
+	hw_msg->done = 0x1;
+	hw_msg->etype = 0x0;
+	return 0;
+}
+
+
+int hpre_test_wd_dh_send(struct wd_dh_ctx *ctx, struct wd_dh_msg *msg)
+{
+	struct wd_queue *q = ctx->q;
+	struct hisi_hpre_sqe *hw_msg;
+	int ret;
+
+	if (ctx->recv_msg)
+		return -EBUSY;
+	hw_msg = malloc(sizeof(struct hisi_hpre_sqe));
+	if (!hw_msg)
+		return -ENOMEM;
+	memset((void *)hw_msg, 0, sizeof(struct hisi_hpre_sqe));
+	ctx->recv_msg = msg;
+	ctx->recv_msg->key = msg->key;
+	ctx->recv_msg->udata = msg->udata;
+	ret = hpre_fill_dh_sqe(ctx, msg, hw_msg);
+	if (ret)
+		return ret;
+	return wd_send(q, hw_msg);
+}
+
+int hpre_test_wd_dh_recv(struct wd_dh_ctx *ctx, struct wd_dh_msg **resp)
+{
+	struct wd_queue *q = ctx->q;
+	struct hisi_hpre_sqe *hw_msg;
+	int ret;
+	struct wd_dh_msg *dh_msg = ctx->recv_msg;
+	unsigned long long phy;
+	void *va;
+
+	ret = wd_recv(q, (void **)&hw_msg);
+	if (ret == -EAGAIN) {
+		return 0;
+	} else if (ret < 0) {
+		HPRE_TST_PRT("wd_recv fail!\n");
+		return ret;
+	} else {
+		ret = 1;
+	}
+	if (hw_msg->done != 0x3 || hw_msg->etype) {
+		HPRE_TST_PRT("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
+		      hw_msg->done, hw_msg->etype);
+		hpre_sqe_dump(hw_msg);
+		if (hw_msg->done == 0x1) {
+			ret = 0;
+		} else {
+			ret = 1;
+			dh_msg->status = -1;
+		}
+	}
+	phy = (((__u64)(hw_msg->hi_out) << 32) | (hw_msg->low_out));
+	va = pa_to_va(q, phy);
+	dh_msg->key_bytes = ctx->key_size;
+	memcpy((void *)dh_msg->key, va, dh_msg->key_bytes);
+	hpre_test_free_buf(ctx->pool, va);
+	if (!ctx->is_g2 || dh_msg->op_type == WD_DH_PHASE2) {
+		phy = (((__u64)(hw_msg->hi_in) << 32) | (hw_msg->low_in));
+		va = pa_to_va(q, phy);
+		hpre_test_free_buf(ctx->pool, va);
+	}
+	phy = (((__u64)(hw_msg->hi_key) << 32) | (hw_msg->low_key));
+	va = pa_to_va(q, phy);
+	hpre_test_free_buf(ctx->pool, va);
+	*resp = dh_msg;
+	free(hw_msg);
+	ctx->recv_msg = NULL;
+	return ret;
+}
+
+/* Before initiate this context, we should get a queue from WD */
+void *wd_create_dh_ctx(struct wd_queue *q, struct wd_dh_ctx_setup *setup)
+{
+	struct wd_dh_ctx *ctx;
+	void *pool;
+
+	if (!q || !setup) {
+		WD_ERR("%s(): input param err!\n", __func__);
+		return NULL;
+	}
+	if (strncmp(setup->alg, "dh", 2) || strncmp(q->capa.alg, "dh", 2)) {
+		HPRE_TST_PRT("%s(): algorithm mismatching!\n", __func__);
+		return NULL;
+	}
+	pool = hpre_test_mempool_create(q, sizeof(*ctx) +
+				(setup->key_bits >> 2), 16);
+	if (!pool) {
+		HPRE_TST_PRT("%s(): create ctx pool fail!\n", __func__);
+		return NULL;
+	}
+	ctx = hpre_test_alloc_buf(pool);
+	if (!ctx) {
+		HPRE_TST_PRT("Alloc ctx memory fail!\n");
+		return ctx;
+	}
+	memset(ctx, 0, sizeof(*ctx) + (setup->key_bits >> 2));
+	ctx->q = q;
+	ctx->pool = pool;
+	strncpy(ctx->alg, q->capa.alg, strlen(q->capa.alg));
+	ctx->cache_msg.aflags = setup->aflags;
+	ctx->cache_msg.pbytes = setup->key_bits >> 3;
+	ctx->cache_msg.alg = ctx->alg;
+
+	ctx->cb = setup->cb;
+	ctx->is_g2 = setup->is_g2;
+	ctx->key_size = setup->key_bits >> 3;
+
+	return ctx;
+}
+
+int wd_do_dh(void *ctx, struct wd_dh_op_data *opdata)
+{
+	struct wd_dh_ctx *ctxt = ctx;
+	struct wd_dh_msg *resp;
+	int ret, i = 0;
+
+	if (!ctx || !opdata) {
+		WD_ERR("%s(): input param err!\n", __func__);
+		return -1;
+	}
+	if (opdata->op_type == WD_DH_PHASE1 ||
+	    opdata->op_type == WD_DH_PHASE2) {
+		ctxt->cache_msg.p = (__u64)opdata->p;
+		ctxt->cache_msg.g = (__u64)opdata->g;
+		ctxt->cache_msg.x = (__u64)opdata->x;
+		ctxt->cache_msg.pbytes = (__u16)opdata->pbytes;
+		ctxt->cache_msg.gbytes = (__u16)opdata->gbytes;
+		ctxt->cache_msg.xbytes = (__u16)opdata->xbytes;
+		ctxt->cache_msg.key = (__u64)opdata->key;
+		ctxt->cache_msg.op_type = opdata->op_type;
+	} else {
+		WD_ERR("%s():operatinal type err!\n", __func__);
+		return -1;
+	}
+	ret = hpre_test_wd_dh_send(ctxt, &ctxt->cache_msg);
+	if (ret) {
+		WD_ERR("%s(): hpre_test_wd_dh_send err!\n", __func__);
+		return ret;
+	}
+recv_again:
+	ret = hpre_test_wd_dh_recv(ctxt, &resp);
+	if (!ret) {
+		i++;
+		usleep(1 + i * 100);
+		if (i < 400) {
+			goto recv_again;
+		}
+	} else if (ret < 0) {
+		return ret;
+	}
+	if (i >= 400) {
+		HPRE_TST_PRT("%s:timeout err!\n", __func__);
+		return -1;
+	}
+	if (resp->status < 0)
+		return -1;
+	opdata->key_bytes = resp->key_bytes;
+	return 0;
+}
+
+int wd_dh_op(void *ctx, struct wd_dh_op_data *opdata, void *tag)
+{
+	struct wd_dh_ctx *context = ctx;
+	struct wd_dh_msg *msg = &context->cache_msg;
+	int ret;
+	struct wd_dh_udata *udata;
+
+	msg->status = 0;
+
+	/* malloc now, as need performance we should rewrite mem management */
+	udata = malloc(sizeof(*udata));
+	if (!udata) {
+		WD_ERR("malloc udata fail!\n");
+		return -1;
+	}
+	udata->tag = tag;
+	udata->opdata = opdata;
+	if (opdata->op_type == WD_DH_PHASE1 ||
+	    opdata->op_type == WD_DH_PHASE2) {
+		msg->p = (__u64)opdata->p;
+		msg->g = (__u64)opdata->g;
+		msg->x = (__u64)opdata->x;
+		msg->pbytes = (__u16)opdata->pbytes;
+		msg->gbytes = (__u16)opdata->gbytes;
+		msg->xbytes = (__u16)opdata->xbytes;
+		msg->key = (__u64)opdata->key;
+	} else {
+		WD_ERR("%s():operatinal type err!\n", __func__);
+		return -1;
+	}
+
+	msg->udata = (__u64)udata;
+	ret = hpre_test_wd_dh_send(context, msg);
+	if (ret < 0) {
+		WD_ERR("wd send request fail!\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int wd_dh_poll(void *dh_ctx, int num)
+{
+	int ret, count = 0;
+	struct wd_dh_msg *resp;
+	struct wd_dh_ctx *ctx = dh_ctx;
+	unsigned int status;
+	struct wd_dh_udata *udata;
+
+	do {
+		ret = hpre_test_wd_dh_recv(ctx, &resp);
+		if (ret < 1)
+			break;
+		count++;
+		udata = (void *)resp->udata;
+		udata->opdata->key_bytes = (__u16)resp->key_bytes;
+		status = resp->status;
+		ctx->cb(udata->tag, status, (void *)udata->opdata);
+		free(udata);
+	} while (--num);
+
+	return count;
+}
+
+void wd_del_dh_ctx(void *dh_ctx)
+{
+	struct wd_dh_ctx *ctx = dh_ctx;
 
 	if (ctx)
 		hpre_test_mempool_destroy(ctx->pool);
@@ -1171,8 +1513,231 @@ void hpre_test_free_buf(struct hpre_queue_mempool *pool, void *pbuf)
 	(void)sem_post(&pool->sem);
 }
 
+int hpre_dh_test(enum alg_op_type op_type, void *c, __u8 *in, int in_size,
+		 __u8 *out, int key_bits, __u8 *key)
+{
+#define DH_GENERATOR_2          2
+#define DH_GENERATOR_5          5
+	DH *a = NULL, *b = NULL;
+	int ret, generator = DH_GENERATOR_5;
+	struct wd_dh_op_data opdata_a;
+	struct wd_dh_op_data opdata_b;
+	struct wd_dh_ctx *ctx = c;
+	const BIGNUM *ap = NULL, *ag = NULL,
+		*apub_key = NULL, *apriv_key = NULL;
+	const BIGNUM *bp = NULL, *bg = NULL,
+		*bpub_key = NULL, *bpriv_key = NULL;
+	unsigned char *ap_bin = NULL, *ag_bin = NULL,
+		*apub_key_bin = NULL, *apriv_key_bin = NULL;
+	unsigned char *bp_bin = NULL, *bg_bin = NULL,
+		*bpub_key_bin = NULL, *bpriv_key_bin = NULL;
+	unsigned char *abuf = NULL;
+
+	a = DH_new();
+	b = DH_new();
+	if (!a || !b) {
+		HPRE_TST_PRT("\nNew DH fail!");
+		return -1;
+	}
+	if (ctx->is_g2)
+		generator = DH_GENERATOR_2;
+
+	/* Alice generates DH parameters */
+	ret = DH_generate_parameters_ex(a, key_bits, generator, NULL);
+	if (!ret) {
+		HPRE_TST_PRT("\nDH_generate_parameters_ex fail!");
+		goto dh_err;
+	}
+	DH_get0_pqg(a, &ap, NULL, &ag);
+	bp = BN_dup(ap);
+	bg = BN_dup(ag);
+	if (!bp || !bg) {
+		HPRE_TST_PRT("\nbn dump fail!");
+		ret = -1;
+		goto dh_err;
+	}
+	/* Set the same parameters on Bob as Alice :) */
+	DH_set0_pqg(b, (BIGNUM *)bp, NULL, (BIGNUM *)bg);
+	if (!DH_generate_key(a)) {
+		HPRE_TST_PRT("\na DH_generate_key fail!");
+		ret = -1;
+		goto dh_err;
+	}
+	DH_get0_key(a, &apub_key, &apriv_key);
+	ag_bin = malloc(ctx->key_size * 4);
+	if (!ag_bin) {
+		HPRE_TST_PRT("\nmalloc paras fail!");
+		ret = -ENOMEM;
+		goto dh_err;
+	}
+	ap_bin = ag_bin + ctx->key_size;
+	apriv_key_bin = ap_bin + ctx->key_size;
+	memset(ag_bin, 0, ctx->key_size * 4);
+	BN_bn2bin(ag, ag_bin);
+	BN_bn2bin(ap, ap_bin);
+	BN_bn2bin(apriv_key, apriv_key_bin);
+	opdata_a.g = ag_bin;
+	opdata_a.p = ap_bin;
+	opdata_a.x = apriv_key_bin;
+	opdata_a.key = apriv_key_bin + ctx->key_size;
+	opdata_a.gbytes = ctx->key_size;
+	opdata_a.pbytes = ctx->key_size;
+	opdata_a.xbytes = ctx->key_size;
+	opdata_a.op_type = WD_DH_PHASE1;
+
+	/* Alice computes public key */
+	ret = wd_do_dh(ctx, &opdata_a);
+	if (ret) {
+		HPRE_TST_PRT("\na wd_do_dh fail!");
+		goto dh_err;
+	}
+	if (openssl_check) {
+		apub_key_bin = malloc(ctx->key_size);
+		if (!apub_key_bin) {
+			HPRE_TST_PRT("\nmalloc apub_key_bin fail!");
+			ret = -ENOMEM;
+			goto dh_err;
+		}
+		ret = BN_bn2bin(apub_key, apub_key_bin);
+		if (!ret) {
+			HPRE_TST_PRT("\napub_key bn 2 bin fail!");
+			goto dh_err;
+		}
+		ret = hpre_bn_format(apub_key_bin, ctx->key_size);
+		if (ret) {
+			HPRE_TST_PRT("\nhpre_bn_format bpub_key bin fail!");
+			goto dh_err;
+		}
+		if (memcmp(apub_key_bin, opdata_a.key, ctx->key_size)) {
+			HPRE_TST_PRT("\nAlice HPRE DH key gen pub mismatch!");
+			ret = -EINVAL;
+			goto dh_err;
+		}
+	}
+	if (!DH_generate_key(b)) {
+		HPRE_TST_PRT("\nb DH_generate_key fail!");
+		ret = -1;
+		goto dh_err;
+	}
+	DH_get0_key(b, &bpub_key, &bpriv_key);
+	bg_bin = malloc(ctx->key_size * 4);
+	if (!bg_bin) {
+		HPRE_TST_PRT("\nmalloc paras fail!");
+		ret = -1;
+		goto dh_err;
+	}
+	bp_bin = bg_bin + ctx->key_size;
+	bpriv_key_bin = bp_bin + ctx->key_size;
+	memset(bg_bin, 0, ctx->key_size * 4);
+	BN_bn2bin(bg, bg_bin);
+	BN_bn2bin(bp, bp_bin);
+	BN_bn2bin(bpriv_key, bpriv_key_bin);
+	opdata_b.g = bg_bin;
+	opdata_b.p = bp_bin;
+	opdata_b.x = bpriv_key_bin;
+	opdata_b.key = bpriv_key_bin + ctx->key_size;
+	opdata_b.gbytes = ctx->key_size;
+	opdata_b.pbytes = ctx->key_size;
+	opdata_b.xbytes = ctx->key_size;
+	opdata_b.op_type = WD_DH_PHASE1;
+
+	/* Bob computes public key */
+	ret = wd_do_dh(ctx, &opdata_b);
+	if (ret) {
+		HPRE_TST_PRT("\nb wd_do_dh fail!");
+		goto dh_err;
+	}
+	if (openssl_check) {
+		bpub_key_bin = malloc(ctx->key_size);
+		if (!bpub_key_bin) {
+			HPRE_TST_PRT("\nmalloc bpub_key_bin fail!");
+			ret = -1;
+			goto dh_err;
+		}
+		ret = BN_bn2bin(bpub_key, bpub_key_bin);
+		if (!ret) {
+			HPRE_TST_PRT("\nbpub_key bn 2 bin fail!");
+			goto dh_err;
+		}
+		ret = hpre_bn_format(bpub_key_bin, ctx->key_size);
+		if (ret) {
+			HPRE_TST_PRT("\nhpre_bn_format bpub_key bin fail!");
+			goto dh_err;
+		}
+		if (memcmp(bpub_key_bin, opdata_b.key, ctx->key_size)) {
+			HPRE_TST_PRT("\nBob HPRE DH key gen pub mismatch!");
+			ret = -EINVAL;
+			goto dh_err;
+		}
+	}
+	/* Alice computes private key with OpenSSL */
+	abuf = malloc(ctx->key_size);
+	if (!abuf) {
+		HPRE_TST_PRT("\nmalloc abuf fail!");
+		ret = -ENOMEM;
+		goto dh_err;
+	}
+	memset(abuf, 0, ctx->key_size);
+	if (openssl_check) {
+		ret = DH_compute_key(abuf, bpub_key, a);
+		if (!ret) {
+			HPRE_TST_PRT("\nDH_compute_key fail!");
+			ret = -1;
+			goto dh_err;
+		}
+	}
+	ap_bin = ag_bin + ctx->key_size;
+	apriv_key_bin = ap_bin + ctx->key_size;
+	memset(ag_bin, 0, ctx->key_size * 4);
+	BN_bn2bin(bpub_key, ag_bin);
+	BN_bn2bin(ap, ap_bin);
+	BN_bn2bin(apriv_key, apriv_key_bin);
+	opdata_a.g = ag_bin;/* bob's public key here */
+	opdata_a.p = ap_bin;
+	opdata_a.x = apriv_key_bin;
+	opdata_a.key = apriv_key_bin + ctx->key_size;
+	opdata_a.gbytes = ctx->key_size;
+	opdata_a.pbytes = ctx->key_size;
+	opdata_a.xbytes = ctx->key_size;
+	opdata_a.op_type = WD_DH_PHASE2;
+
+	/* Alice computes private key with HPRE */
+	ret = wd_do_dh(ctx, &opdata_a);
+	if (ret) {
+		HPRE_TST_PRT("\na wd_do_dh fail!");
+		goto dh_err;
+	}
+	if (openssl_check) {
+		ret = hpre_bn_format(abuf, ctx->key_size);
+		if (ret) {
+			HPRE_TST_PRT("\nhpre_bn_format bpub_key bin fail!");
+			goto dh_err;
+		}
+		if (memcmp(abuf, opdata_a.key, ctx->key_size)) {
+			HPRE_TST_PRT("\nAlice HPRE DH gen privkey mismatch!");
+			ret = -EINVAL;
+			goto dh_err;
+		}
+	}
+	HPRE_TST_PRT("\nHPRE DH generate key sucessfully!");
+dh_err:
+	DH_free(a);
+	DH_free(b);
+	if (ag_bin)
+		free(ag_bin);
+	if (bg_bin)
+		free(bg_bin);
+	if (apub_key_bin)
+		free(apub_key_bin);
+	if (bpub_key_bin)
+		free(bpub_key_bin);
+	if (abuf)
+		free(abuf);
+	return ret;
+}
+
 /* return the output bytes of data */
-int hpre_test_op(enum alg_op_type op_type, void *c, __u8 *in, int in_size,
+int hpre_test_rsa_op(enum alg_op_type op_type, void *c, __u8 *in, int in_size,
 		 __u8 *out, int key_bits, __u8 *key)
 {
 	struct wd_rsa_op_data opdata;
@@ -1290,6 +1855,7 @@ int main(int argc, char *argv[])
 	struct hisi_qm_priv *priv;
 	struct wd_queue q;
 	struct wd_rsa_ctx_setup setup;
+	struct wd_dh_ctx_setup dh_setup;
 	void *ctx = NULL;
 
 	if (!argv[1] || !argv[6]) {
@@ -1307,6 +1873,12 @@ int main(int argc, char *argv[])
 	} else if (!strcmp(argv[1], "-gen")) {
 		HPRE_TST_PRT("RSA key generation\n");
 		alg_op_type = RSA_KEY_GEN;
+	} else if (!strcmp(argv[1], "-gen1")) {
+		HPRE_TST_PRT("DH key generation\n");
+		alg_op_type = DH_GEN1;
+	} else if (!strcmp(argv[1], "-gen2")) {
+		HPRE_TST_PRT("DH key generation\n");
+		alg_op_type = DH_GEN2;
 	} else if (!strcmp(argv[1], "--help")) {
 		HPRE_TST_PRT("[version]:1.0\n");
 		HPRE_TST_PRT("./test_hisi_hpre [op_type] [key_size] ");
@@ -1315,6 +1887,8 @@ int main(int argc, char *argv[])
 		HPRE_TST_PRT("         -en  = rsa pubkey encrypto\n");
 		HPRE_TST_PRT("         -de  = rsa priv key decrypto\n");
 		HPRE_TST_PRT("         -gen  = rsa key gen\n");
+		HPRE_TST_PRT("         -gen1  = DH key generate phase1\n");
+		HPRE_TST_PRT("         -gen2  = DH key generate phase2\n");
 		HPRE_TST_PRT("         -check  = use openssl sw alg check\n");
 		HPRE_TST_PRT("         --help  = usage\n");
 		HPRE_TST_PRT("Example for rsa key2048bits encrypto");
@@ -1336,15 +1910,22 @@ int main(int argc, char *argv[])
 	} else {
 		key_bits = 2048;
 	}
-	HPRE_TST_PRT("RSA key size=%d bits\n", key_bits);
+	HPRE_TST_PRT("RSA/DH key size=%d bits\n", key_bits);
 	if (!strcmp(argv[3], "-crt")) {
 		HPRE_TST_PRT("RSA CRT mode\n");
 		mode = RSA_CRT_MD;
-	} else if (!strcmp(argv[3], "-com")) {
+	} else if (!strcmp(argv[3], "-com") && alg_op_type < MAX_RSA_TYPE) {
 		HPRE_TST_PRT("RSA Common mode\n");
 		mode = RSA_COM_MD;
+	} else if (!strcmp(argv[3], "-com") && alg_op_type > MAX_RSA_TYPE) {
+		HPRE_TST_PRT("DH Common mode\n");
+		mode = DH_COM_MD;
+	} else if (!strcmp(argv[3], "-g2")) {
+		HPRE_TST_PRT("DH g2 mode\n");
+		mode = DH_G2;
 	} else {
-		HPRE_TST_PRT("please input a mode:<-crt> <-com> for rsa!\n");
+		HPRE_TST_PRT("please input a mode:<-crt> <-com>for rsa!");
+		HPRE_TST_PRT("and:<-g2> <-com>for dh!");
 		return -EINVAL;
 	}
 	in_file = argv[4];
@@ -1354,6 +1935,9 @@ int main(int argc, char *argv[])
 	priv = (void *)q.capa.priv;
 	if (alg_op_type < MAX_RSA_TYPE && alg_op_type > 0) {
 		q.capa.alg = "rsa";
+	} else if (alg_op_type < HPRE_MAX_OP_TYPE &&
+		alg_op_type > MAX_RSA_TYPE) {
+		q.capa.alg = "dh";
 	} else {
 		HPRE_TST_PRT("\nop type err!");
 		return -EINVAL;
@@ -1365,39 +1949,58 @@ int main(int argc, char *argv[])
 		return ret;
 	}
 	HPRE_TST_PRT("\nGet a WD HPRE queue of %s successfully!", q.capa.alg);
-	setup.alg = q.capa.alg;
-	setup.key_bits = key_bits;
 	if (alg_op_type < MAX_RSA_TYPE && mode == RSA_CRT_MD) {
 		setup.is_crt = 1;
 	} else if (alg_op_type < MAX_RSA_TYPE && mode == RSA_COM_MD) {
 		setup.is_crt = 0;
+	} else if (alg_op_type > MAX_RSA_TYPE &&
+		alg_op_type < HPRE_MAX_OP_TYPE && mode == DH_COM_MD) {
+		dh_setup.is_g2 = 0;
+	} else if (alg_op_type > MAX_RSA_TYPE &&
+		alg_op_type < HPRE_MAX_OP_TYPE && mode == DH_G2) {
+		dh_setup.is_g2 = 1;
 	} else {
 		HPRE_TST_PRT("\nop type or mode err!");
 		ret = -EINVAL;
 		goto release_q;
 	}
-	ctx = wd_create_rsa_ctx(&q, &setup);
-	if (!ctx) {
-		ret = -ENOMEM;
-		HPRE_TST_PRT("\ncreate rsa ctx fail!");
-		goto release_q;
+	if (!strncmp(q.capa.alg, "rsa", 3)) {
+		setup.alg = q.capa.alg;
+		setup.key_bits = key_bits;
+		ctx = wd_create_rsa_ctx(&q, &setup);
+		if (!ctx) {
+			ret = -ENOMEM;
+			HPRE_TST_PRT("\ncreate rsa ctx fail!");
+			goto release_q;
+		}
+	} else if (!strncmp(q.capa.alg, "dh", 2)) {
+		dh_setup.alg = q.capa.alg;
+		dh_setup.key_bits = key_bits;
+		ctx = wd_create_dh_ctx(&q, &dh_setup);
+		if (!ctx) {
+			ret = -ENOMEM;
+			HPRE_TST_PRT("\ncreate dh ctx fail!");
+			goto release_q;
+		}
 	}
 	if (alg_op_type == RSA_KEY_GEN) {
 		/* As generate key, we take in_file for storing public key
 		 * and out_file for storing private key.
 		 */
-		return  hpre_test_op(alg_op_type, ctx, (__u8 *)in_file,
+		return  hpre_test_rsa_op(alg_op_type, ctx, (__u8 *)in_file,
 				     key_bits >> 3, (__u8 *)out_file,
 				     key_bits, (__u8 *)key_file);
-	}
-	if (alg_op_type == RSA_PUB_EN && (mode == RSA_CRT_MD ||
-		mode == RSA_COM_MD))
+	} else if (alg_op_type < HPRE_MAX_OP_TYPE &&
+		alg_op_type > MAX_RSA_TYPE) {
+		return hpre_dh_test(0, ctx, NULL, 0, NULL, key_bits, NULL);
+	} else if (alg_op_type == RSA_PUB_EN && (mode == RSA_CRT_MD ||
+		mode == RSA_COM_MD)) {
 		read_size = pub_key_size = key_bits >> 2;
-	else if (alg_op_type == RSA_PRV_DE && mode == RSA_CRT_MD)
+	} else if (alg_op_type == RSA_PRV_DE && mode == RSA_CRT_MD) {
 		read_size = priv_key_size = (key_bits >> 4)  * 5;
-	else if (alg_op_type == RSA_PRV_DE && mode == RSA_COM_MD)
+	} else if (alg_op_type == RSA_PRV_DE && mode == RSA_COM_MD) {
 		read_size = priv_key_size = key_bits >> 2;
-	else {
+	} else {
 		HPRE_TST_PRT("op=%d mode=%d CMD err!\n", alg_op_type, mode);
 		ret = -EINVAL;
 		goto release_q;
@@ -1470,10 +2073,10 @@ int main(int argc, char *argv[])
 		}
 		if (alg_op_type == RSA_PUB_EN) {
 			memcpy(temp_in, tp_in, op_size);
-			ret = hpre_test_op(alg_op_type, ctx, temp_in, op_size,
+			ret = hpre_test_rsa_op(alg_op_type, ctx, temp_in, op_size,
 				out, key_bits, key);
 		} else {
-			ret = hpre_test_op(alg_op_type, ctx, tp_in, op_size,
+			ret = hpre_test_rsa_op(alg_op_type, ctx, tp_in, op_size,
 				out, key_bits, key);
 		}
 		if (ret < 0) {
