@@ -99,6 +99,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info;
 	struct hisi_qm_priv *priv = (struct hisi_qm_priv *)&q->capa.priv;
+	struct hisi_qp_ctx qp_ctx;
 	void *vaddr;
 	int ret;
 	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
@@ -159,13 +160,15 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		}
 		info->dko_base = vaddr;
 	}
-
-	ret = ioctl(q->fd, UACCE_CMD_QM_SET_OPTYPE, priv->op_type);
+	qp_ctx.qc_type = priv->op_type;
+	ret = ioctl(q->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0)
-		fprintf(stderr, "hisi qm set op_type fail, use default!\n");
+		fprintf(stderr, "hisi qm set qc_type fail, use default!\n");
 
-	dbg("create hisi qm queue (sqe = %p, %d)\n", info->sq_base,
-	    info->sqe_size);
+	info->sqn = qp_ctx.id;
+
+	dbg("create hisi qm queue (id = %d, sqe = %p, size = %d, type = %d)\n",
+	    info->sqn, info->sq_base, info->sqe_size, qp_ctx.qc_type);
 	return 0;
 
 err_with_dus:
@@ -265,9 +268,4 @@ int hisi_qm_get_from_dio_q(struct wd_queue *q, void **resp)
 	info->sq_head_index = i;
 
 	return ret;
-}
-
-int hisi_qm_set_optype(struct wd_queue *q, __u16 type)
-{
-	return ioctl(q->fd, UACCE_CMD_QM_SET_OPTYPE, type);
 }
