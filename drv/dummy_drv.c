@@ -12,6 +12,7 @@
 #include "dummy_drv.h"
 
 struct dummy_q_priv {
+	int ver;
 	/* local mirror of the register space */
 	int head;		/* queue head */
 	int resp_tail;		/* resp tail in the queue */
@@ -20,6 +21,7 @@ struct dummy_q_priv {
 	 * in the kernel side: when get from queue, tail++ but don't exceed head-1 */
 
 	struct dummy_hw_queue_reg *reg;
+	uint64_t *db;
 };
 
 int dummy_set_queue_dio(struct wd_queue *q)
@@ -27,7 +29,6 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	int ret = 0;
 	struct dummy_q_priv *priv;
 
-	printf("dummy_set_queue_dio\n");
 	alloc_obj(priv);
 	if (!priv) {
 		DUMMY_ERR("No memory for dummy queue!\n");
@@ -38,26 +39,49 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	q->priv = priv;
 	priv->head = 0;
 	priv->resp_tail = 0;
-	priv->reg = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, UACCE_QFRT_SS, 0);
+	priv->ver = q->qfrs_pg_start[UACCE_QFRT_DUS] == UACCE_QFRT_INVALID ?
+			1 : 2;
+
+	printf("dummy_set_queue_dio ver=%d\n", priv->ver);
+	if (priv->ver == 2) {
+		priv->db = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+		if (priv->db == MAP_FAILED) {
+			DUMMY_ERR("mmap db fail (%d)\n", errno);
+			if (errno)
+				ret = errno;
+			else
+				ret = -EIO;
+			goto out_with_priv;
+		}
+	}
+
+	priv->reg = wd_drv_mmap_qfr(q,
+			priv->ver==1 ? UACCE_QFRT_MMIO : UACCE_QFRT_DUS,
+			UACCE_QFRT_SS, 0);
 	if (priv->reg == MAP_FAILED) {
 		DUMMY_ERR("mmap bd fail (%d)\n", errno);
 		if (errno)
 			ret = errno;
 		else
 			ret = -EIO;
-		goto out_with_priv;
+		goto out_with_db_map;
 	}
 
-	if (memcmp(priv->reg->hw_tag, DUMMY_HW_TAG, DUMMY_HW_TAG_SZ)) {
+	/* detect hardware for v1 (v2 can be detected only after start) */
+	if (priv->ver == 1 &&
+	    memcmp(priv->reg->hw_tag, DUMMY_HW_TAG, DUMMY_HW_TAG_SZ)) {
 		DUMMY_ERR("hw detection fail\n");
 		ret = -EIO;
-		goto out_with_priv_map;
+		goto out_with_bd_map;
 	}
 
 	return 0;
 
-out_with_priv_map:
+out_with_bd_map:
 	munmap(priv->reg, PAGE_SIZE);
+out_with_db_map:
+	if (priv->ver == 2)
+		munmap(priv->db, PAGE_SIZE);
 out_with_priv:
 	free_obj(priv);
 	q->priv = NULL;
@@ -92,6 +116,9 @@ int dummy_add_to_dio_q(struct wd_queue *q, void *req) {
 		priv->head = (priv->head + 1) % bd_num;
 		wd_reg_write(&priv->reg->head, priv->head);
 		printf("add to queue, new head=%d, %d\n", priv->head, priv->reg->head);
+
+		if (priv->ver == 2)
+			wd_reg_write(priv->db, 1);
 	}
 
 	return 0;
@@ -121,7 +148,10 @@ int dummy_get_from_dio_q(struct wd_queue *q, void **resp)
 
 void dummy_flush(struct wd_queue *q)
 {
-	/* use ioctl to flush, this is just for dummy driver, in pratical, this
-	 * should be a read or write to hardware, avoiding syscall */
-	ioctl(q->fd, DUMMY_CMD_FLUSH);
+	struct dummy_q_priv *priv = (struct dummy_q_priv *)q->priv;
+
+	if (priv->ver == 1)
+		ioctl(q->fd, DUMMY_CMD_FLUSH);
+	else
+		wd_reg_write(priv->db, 1);
 }

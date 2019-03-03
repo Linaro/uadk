@@ -18,6 +18,13 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.recv = dummy_get_from_dio_q,
 		.flush = dummy_flush,
 	}, {
+		.hw_type = "dummy_v2",
+		.open = dummy_set_queue_dio,
+		.close = dummy_unset_queue_dio,
+		.send = dummy_add_to_dio_q,
+		.recv = dummy_get_from_dio_q,
+		.flush = dummy_flush,
+	}, {
 		.hw_type = HISI_QM_API_VER_BASE UACCE_API_VER_NOIOMMU_SUBFIX,
 		.open = hisi_qm_set_queue_dio,
 		.close = hisi_qm_unset_queue_dio,
