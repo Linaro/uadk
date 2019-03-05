@@ -191,7 +191,7 @@ static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
 {
 	struct dirent *device;
 	struct _dev_info dinfo, *dinfop = NULL;
-	DIR *wd_class;
+	DIR *wd_class = NULL;
 	const char *name;
 
 	dinfop = calloc(1, sizeof(*dinfop));
@@ -228,15 +228,19 @@ static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
 	}
 
 	if (!dinfop->name[0]) {
+		WD_ERR("Get no matching device!\n");
 		errno = -ENODEV;
 		goto err_with_dinfop;
 	}
 
+	closedir(wd_class);
 	return dinfop;
 
 err_with_dinfop:
 	free(dinfop);
 err:
+	if (wd_class)
+		closedir(wd_class);
 	return NULL;
 }
 
@@ -263,8 +267,10 @@ int wd_request_queue(struct wd_queue *q)
 	q->dev_info = dev;
 	memcpy(q->qfrs_pg_start, dev->qfrs_pg_start, sizeof(q->qfrs_pg_start));
 	ret = drv_open(q);
-	if (ret)
+	if (ret) {
+		dbg("fail to init the queue by driver!\n");
 		goto err_with_fd;
+	}
 
 	ret = ioctl(q->fd, UACCE_CMD_START);
 	if (ret) {
