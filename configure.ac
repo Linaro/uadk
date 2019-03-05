@@ -38,7 +38,7 @@ AC_SUBST(with_openssl_dir)
 AM_CONDITIONAL([WITH_OPENSSL_DIR], [test -n "$with_openssl_dir"])
 
 # Checks for header files.
-AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h sys/ioctl.h sys/time.h unistd.h])
+AC_CHECK_HEADERS([fcntl.h limits.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/time.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_CHECK_HEADER_STDBOOL
@@ -53,7 +53,7 @@ AC_TYPE_UINT8_T
 # Checks for library functions.
 AC_FUNC_MALLOC
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([memset munmap])
+AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
 AC_CONFIG_FILES([Makefile
                  test/Makefile

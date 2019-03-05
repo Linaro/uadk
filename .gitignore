@@ -160,6 +160,7 @@ missing
 stamp-h1
 test/test_dummy
 test/test_hisi_zip
+test/test_hisi_zlib
 test/hisi_hpre_test/test_hisi_hpre
 *.gcda
 *.ut
