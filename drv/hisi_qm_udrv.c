@@ -98,7 +98,7 @@ static int hisi_qm_recv_sqe(void *sqe,
 int hisi_qm_set_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info;
-	struct hisi_qm_priv *priv = (struct hisi_qm_priv *)&q->capa.priv;
+	struct hisi_qm_priv *priv = (struct hisi_qm_priv *)q->capa.priv;
 	struct hisi_qp_ctx qp_ctx;
 	void *vaddr;
 	int ret;
@@ -162,8 +162,10 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	}
 	qp_ctx.qc_type = priv->op_type;
 	ret = ioctl(q->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
-	if (ret < 0)
+	if (ret < 0) {
 		fprintf(stderr, "hisi qm set qc_type fail, use default!\n");
+		return ret;
+	}
 
 	info->sqn = qp_ctx.id;
 
@@ -182,15 +184,23 @@ void hisi_qm_unset_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
 	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
+	void *base;
+
+	if (strstr(q->hw_type, HISI_QM_API_VER2_BASE)) {
+		base = info->doorbell_base - QM_V2_DOORBELL_OFFSET;
+	} else if (strstr(q->hw_type, HISI_QM_API_VER_BASE)) {
+		base = info->doorbell_base - QM_DOORBELL_OFFSET;
+	} else {
+		WD_ERR("hw type mismatch!\n");
+		return;
+	}
 
 	if (has_dko) {
 		wd_drv_unmmap_qfr(q, info->dko_base,
 				  UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
-		wd_drv_unmmap_qfr(q, info->doorbell_base - QM_DOORBELL_OFFSET,
-				  UACCE_QFRT_MMIO, UACCE_QFRT_DKO, 0);
+		wd_drv_unmmap_qfr(q, base, UACCE_QFRT_MMIO, UACCE_QFRT_DKO, 0);
 	} else
-		wd_drv_unmmap_qfr(q, info->doorbell_base - QM_DOORBELL_OFFSET,
-				  UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, base, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
 	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	free(info);
 	q->priv = NULL;
