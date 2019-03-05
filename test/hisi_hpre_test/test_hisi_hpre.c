@@ -2,8 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#define __USE_GNU
+#include <sched.h>
+#include <pthread.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/syscall.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -20,6 +24,7 @@
 #define RSA_NO_PADDING          3
 #define HPRE_TST_MAX_Q		1
 #define HPRE_PADDING_SZ		16
+#define TEST_MAX_THRD		128
 
 struct bignum_st {
 	BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
@@ -125,9 +130,40 @@ struct wd_dh_ctx {
 	struct hpre_queue_mempool *pool;
 };
 
+struct test_hpre_pthread_dt {
+	int cpu_id;
+	enum alg_op_type op_type;
+};
+struct q_dev_info {
+	int node_id;
+	int numa_dis;
+	int iommu_type;
+	int flags;
+	int ref;
+	int is_load;
+	int available_instances;
+	int weight;
+	char alg_path[PATH_STR_SIZE];
+	char dev_root[PATH_STR_SIZE];
+	char name[WD_NAME_SIZE];
+	char api[WD_NAME_SIZE];
+	char algs[MAX_ATTR_STR_SIZE];
+	unsigned long qfrs_pg_start[UACCE_QFRT_MAX];
+};
+
 static int key_bits = 2048;
 static int openssl_check;
+static int with_log = 0;
+static int is_system_test = 0;
 static RSA *hpre_test_rsa;
+static pthread_t system_test_thrds[TEST_MAX_THRD];
+static struct test_hpre_pthread_dt test_thrds_data[TEST_MAX_THRD];
+static char *rsa_op_str[WD_RSA_GENKEY + 1] = {
+	"invalid_op",
+	"rsa_sign",
+	"rsa_verify",
+	"rsa_keygen",
+};
 /* OpenSSL RSA and BN APIs */
 BIGNUM *BN_new(void);
 int BN_bn2bin(const BIGNUM *a, unsigned char *to);
@@ -155,9 +191,9 @@ int RSA_private_decrypt(int flen, const unsigned char *from,
 DH *DH_new(void);
 void DH_free(DH *r);
 int DH_generate_parameters_ex(DH *dh, int prime_len, int generator,
-			      BN_GENCB *cb);
+                              BN_GENCB *cb);
 void DH_get0_pqg(const DH *dh,
-		 const BIGNUM **p, const BIGNUM **q, const BIGNUM **g);
+                 const BIGNUM **p, const BIGNUM **q, const BIGNUM **g);
 int DH_generate_key(DH *dh);
 void DH_get0_key(const DH *dh, const BIGNUM **pub_key,
 		const BIGNUM **priv_key);
@@ -170,6 +206,34 @@ void hpre_test_mempool_destroy(struct hpre_queue_mempool *pool);
 void *hpre_test_alloc_buf(struct hpre_queue_mempool *pool);
 void hpre_test_free_buf(struct hpre_queue_mempool *pool, void *buf);
 
+static inline int _get_cpu_id(int thr, __u64 core_mask)
+{
+	int i, cnt = 0;
+
+
+	for (i = 1; i < 64; i ++) {
+		if (core_mask & (0x1 << i)) {
+			if (thr == cnt)
+				return i;
+			cnt++;
+		}
+	}
+
+	return 0;
+}
+
+static inline int _get_one_bits(__u64 val)
+{
+	int count = 0;
+
+	while (val) {
+		if (val % 2 == 1)
+			count++;
+		val = val / 2;
+	}
+
+	return count;
+}
 
 void hpre_sqe_dump(struct hisi_hpre_sqe *sqe)
 {
@@ -841,7 +905,7 @@ int hpre_test_wd_dh_send(struct wd_dh_ctx *ctx, struct wd_dh_msg *msg)
 		return -ENOMEM;
 	memset((void *)hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 	ctx->recv_msg = msg;
-	ctx->recv_msg->key = msg->key;
+	ctx->recv_msg->key= msg->key;
 	ctx->recv_msg->udata = msg->udata;
 	ret = hpre_fill_dh_sqe(ctx, msg, hw_msg);
 	if (ret)
@@ -1061,7 +1125,7 @@ void wd_del_dh_ctx(void *dh_ctx)
 
 static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			    char *privkey_file,
-			    char *crt_privkey_file)
+			    char *crt_privkey_file, int is_file)
 {
 	int ret, bits;
 	RSA *test_rsa;
@@ -1106,7 +1170,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 
 	BN_bn2bin(e, pubkey->e);
 	BN_bn2bin(n, pubkey->n);
-	if (pubkey_file) {
+	if (pubkey_file && is_file) {
 		ret = hpre_test_write_to_file(pubkey->e, key_bits >> 2,
 					pubkey_file, -1, 1);
 		if (ret < 0)
@@ -1121,7 +1185,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	BN_bn2bin(p, prikey->pkey2.p);
 	BN_bn2bin(q, prikey->pkey2.q);
 	BN_bn2bin(iqmp, prikey->pkey2.qinv);
-	if (crt_privkey_file) {
+	if (crt_privkey_file && is_file) {
 		ret = hpre_test_write_to_file(prikey->pkey2.dq,
 			(key_bits >> 4) * 5, crt_privkey_file, -1, 0);
 		if (ret < 0)
@@ -1137,7 +1201,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	/* common mode private key */
 	BN_bn2bin(d, prikey->pkey1.d);
 	BN_bn2bin(n, prikey->pkey1.n);
-	if (privkey_file) {
+	if (privkey_file && is_file) {
 		ret = hpre_test_write_to_file(prikey->pkey1.d,
 					(key_bits >> 2),
 					privkey_file, -1, 0);
@@ -1153,7 +1217,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	}
 	RSA_free(test_rsa);
 	BN_free(e_value);
-	return ret;
+	return 0;
 gen_fail:
 	RSA_free(test_rsa);
 	BN_free(e_value);
@@ -1746,7 +1810,8 @@ int hpre_test_rsa_op(enum alg_op_type op_type, void *c, __u8 *in, int in_size,
 
 	if (op_type == RSA_KEY_GEN) {
 		/* use openSSL generate key and store them to files at first */
-		ret = test_rsa_key_gen(ctx, (char *)in, (char *)out, (char *)key);
+		ret = test_rsa_key_gen(ctx, (char *)in,
+			(char *)out, (char *)key, 1);
 		if (ret < 0)
 			return ret;
 	} else {
@@ -1839,9 +1904,197 @@ type_err:
 	return ret;
 }
 
+void  *_hpre_sys_test_thread(void *data)
+{
+	struct wd_queue q;
+	int ret, cpuid, i = 0;
+	struct hisi_qm_priv *priv;
+	struct test_hpre_pthread_dt *pdata = data;
+	cpu_set_t mask;
+	struct wd_rsa_ctx_setup setup;
+	void *ctx = NULL;
+	struct wd_rsa_op_data opdata;
+	void *key_info = NULL, *in, *out;
+	struct timeval start_tval, end_tval;
+	float time, speed;
+	enum alg_op_type op_type;
+
+	CPU_ZERO(&mask);
+	cpuid = pdata->cpu_id;
+	op_type = pdata->op_type;
+	CPU_SET(cpuid, &mask);
+	if (cpuid) {
+		ret = pthread_setaffinity_np(pthread_self(),
+				sizeof(mask), &mask);
+		if (ret < 0) {
+			HPRE_TST_PRT("\nProc-%d, thrd-%d:set affinity fail!",
+				getpid(), (int)syscall(__NR_gettid));
+			return NULL;
+		}
+		HPRE_TST_PRT("\nProc-%d, thrd-%d bind to cpu-%d!",
+			    getpid(), (int)syscall(__NR_gettid), cpuid);
+	}
+	memset((void *)&q, 0, sizeof(q));
+	priv = (void *)q.capa.priv;
+	q.capa.alg = "rsa";
+	priv->sqe_size = sizeof(struct hisi_hpre_sqe);
+request_queue:
+	ret = wd_request_queue(&q);
+	if (ret) {
+		HPRE_TST_PRT("\nProc-%d, thrd-%d:request queue t-%d fail!",
+			getpid(), (int)syscall(__NR_gettid), i);
+		return NULL;
+	}
+	if (pdata->op_type == HPRE_ALG_INVLD_TYPE) {
+		i++;
+		if (with_log && !(i & 0x1ff)) {
+			struct q_dev_info *info = q.dev_info;
+
+			HPRE_TST_PRT("Proc-%d, %d-TD request %dQs at %dnode\n",
+				getpid(), (int)syscall(__NR_gettid),
+				i, info->node_id);
+		}
+		usleep(1);
+		goto fail_release;
+	}
+	setup.is_crt = 1;
+	setup.alg = q.capa.alg;
+	setup.key_bits = key_bits;
+	ctx = wd_create_rsa_ctx(&q, &setup);
+	if (!ctx) {
+		HPRE_TST_PRT("\nProc-%d, %d-TD:create %s ctx fail!",
+			getpid(), (int)syscall(__NR_gettid), setup.alg);
+		goto fail_release;
+	}
+	/* Just make sure memory size is enough */
+	key_info = malloc((key_bits >> 3) * 16);
+	if (!key_info) {
+		HPRE_TST_PRT("\nthrd-%d:malloc key!",
+			(int)syscall(__NR_gettid));
+		goto fail_release;
+	}
+	memset(key_info, 0, (key_bits >> 3) * 16);
+	in = key_info + (key_bits >> 3) * 4;
+	out = in + (key_bits >> 3) * 4;
+	ret = test_rsa_key_gen(ctx, NULL, NULL, key_info, 0);
+	if (ret) {
+		HPRE_TST_PRT("\nthrd-%d:Openssl key gen fail!",
+			(int)syscall(__NR_gettid));
+		return NULL;
+	}
+
+	/* always key size bytes input */
+	opdata.in_bytes = (key_bits >> 3);
+	if (op_type == RSA_KEY_GEN) {
+		opdata.op_type = WD_RSA_GENKEY;
+	} else if (op_type == RSA_PUB_EN) {
+		opdata.op_type = WD_RSA_VERIFY;
+	} else if (op_type == RSA_PRV_DE) {
+		opdata.op_type = WD_RSA_SIGN;
+	} else {
+		HPRE_TST_PRT("\nthrd-%d:optype=%d err!",
+			(int)syscall(__NR_gettid), op_type);
+		goto fail_release;
+	}
+	if (opdata.op_type == WD_RSA_GENKEY) {
+		ret = hpre_test_fill_keygen_opdata(ctx, &opdata);
+		if (ret) {
+			HPRE_TST_PRT("\nthrd-%d:fill key gen opdata fail!",
+				(int)syscall(__NR_gettid));
+			return NULL;
+		}
+	} else {
+		opdata.in = in;
+		opdata.out  = out;
+	}
+	gettimeofday(&start_tval, NULL);
+	while (1) {
+		ret = wd_do_rsa(ctx, &opdata);
+		if (ret) {
+			HPRE_TST_PRT("\nProc-%d, T-%d:hpre %s %dth fail!",
+				     getpid(), (int)syscall(__NR_gettid),
+				     rsa_op_str[opdata.op_type], i);
+			return NULL;
+		}
+		i++;
+		if (openssl_check) {
+			ret = hpre_test_result_check(ctx, &opdata, key_info);
+			if (ret) {
+				HPRE_TST_PRT("\nP-%d,T-%d:hpre %s %dth mismth",
+					     getpid(), (int)syscall(__NR_gettid),
+					     rsa_op_str[opdata.op_type], i);
+				return NULL;
+			}
+		}
+		if (with_log && !(i & 0x1ff)) {
+			gettimeofday(&end_tval, NULL);
+			time = (float)((end_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+				(end_tval.tv_usec - start_tval.tv_usec));
+			speed = 1 / (time / i) * 1000;
+			HPRE_TST_PRT("Proc-%d, %d-TD %s %dtimes,%0.0fus, %0.3fkops\n",
+				getpid(), (int)syscall(__NR_gettid),
+				rsa_op_str[opdata.op_type], i, time, speed);
+		}
+	}
+
+fail_release:
+	if (key_info)
+		free(key_info);
+	if (ctx)
+		wd_del_rsa_ctx(ctx);
+	wd_release_queue(&q);
+	if (pdata->op_type == HPRE_ALG_INVLD_TYPE)
+		goto request_queue;
+	return NULL;
+}
+
+static int hpre_sys_test(int thread_num, __u64 lcore_mask,
+			 __u64 hcore_mask, enum alg_op_type op_type)
+{
+	int i, ret, cnt;
+	int h_cpuid;
+
+	if ( _get_one_bits(lcore_mask) > 0)
+		cnt =  _get_one_bits(lcore_mask);
+	else
+		cnt = thread_num;
+	for (i = 0; i < cnt; i++) {
+		test_thrds_data[i].op_type = op_type;
+		test_thrds_data[i].cpu_id = _get_cpu_id(i, lcore_mask);
+		ret = pthread_create(&system_test_thrds[i], NULL,
+			  _hpre_sys_test_thread, &test_thrds_data[i]);
+		if (ret) {
+			HPRE_TST_PRT("\nCreate %dth thread fail!", i);
+			return ret;
+		}
+	}
+	for (i = 0; i < thread_num - cnt; i++) {
+		h_cpuid = _get_cpu_id(i, hcore_mask);
+		if (h_cpuid > 0)
+			h_cpuid += 64;
+		test_thrds_data[i + cnt].op_type = op_type;
+		test_thrds_data[i + cnt].cpu_id =  h_cpuid;
+		ret = pthread_create(&system_test_thrds[i + cnt], NULL,
+			  _hpre_sys_test_thread, &test_thrds_data[i + cnt]);
+		if (ret) {
+			HPRE_TST_PRT("\nCreate %dth thread fail!", i);
+			return ret;
+		}
+	}
+	for (i = 0; i < thread_num; i++) {
+		ret = pthread_join(system_test_thrds[i], NULL);
+		if (ret) {
+			HPRE_TST_PRT("\nJoin %dth thread fail!", i);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
-	enum alg_op_type alg_op_type;
+	enum alg_op_type alg_op_type = HPRE_ALG_INVLD_TYPE;
 	enum alg_op_mode mode;
 	__u8 *in = NULL, *tp_in, *temp_in = NULL;
 	__u8 *out = NULL;
@@ -1857,13 +2110,106 @@ int main(int argc, char *argv[])
 	struct wd_rsa_ctx_setup setup;
 	struct wd_dh_ctx_setup dh_setup;
 	void *ctx = NULL;
+	int thread_num, bits;
+	__u64 core_mask[2];
 
 	if (!argv[1] || !argv[6]) {
-		HPRE_TST_PRT("pls use ./test_hisi_hpre -h get more details!\n");
+		HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
 		return -EINVAL;
+	}
+	if (!strcmp(argv[1], "-system-qt")) {
+		is_system_test = 1;
+		HPRE_TST_PRT("Now doing system queue mng test!\n");
+	} else if (!strcmp(argv[1], "-system-gen")) {
+		alg_op_type = RSA_KEY_GEN;
+		is_system_test = 1;
+		HPRE_TST_PRT("Now doing system key gen test!\n");
+	} else if (!strcmp(argv[1], "-system-vrf")) {
+		alg_op_type = RSA_PUB_EN;
+		is_system_test = 1;
+		HPRE_TST_PRT("Now doing system verify test!\n");
+	} else if (!strcmp(argv[1], "-system-sgn")) {
+		alg_op_type = RSA_PRV_DE;
+		is_system_test = 1;
+		HPRE_TST_PRT("Now doing system sign test!\n");
+	} else {
+		goto basic_function_test;
 	}
 	if (argv[7] && !strcmp(argv[7], "-check"))
 		openssl_check = 1;
+
+	/* Do sys test for performance and mult threads/process scenarioes */
+	if (is_system_test) {
+		if (!strcmp(argv[2], "-t")) {
+			thread_num = strtoul((char *)argv[3], NULL, 10);
+			if (thread_num <= 0 || thread_num > TEST_MAX_THRD) {
+				HPRE_TST_PRT("Invalid threads num:%d!",
+						thread_num);
+				HPRE_TST_PRT("Now set threads num as 2\n");
+				thread_num = 2;
+			}
+		} else {
+			HPRE_TST_PRT("./test_hisi_hpre --help get details\n");
+			return -EINVAL;
+		}
+		if (strcmp(argv[4], "-c")) {
+			HPRE_TST_PRT("./test_hisi_hpre --help get details\n");
+			return -EINVAL;
+		}
+
+		if (argv[5][0] != '0' || argv[5][1] != 'x') {
+			HPRE_TST_PRT("Err:coremask should be hex!\n");
+			return -EINVAL;
+		}
+		if (strlen(argv[5]) > 34) {
+			HPRE_TST_PRT("Warning: coremask is cut!\n");
+			argv[5][34] = 0;
+		}
+		if (strlen(argv[5]) <= 18) {
+			core_mask[0] = strtoull(argv[5], NULL, 16);
+			if (core_mask[0] & 0x1) {
+				HPRE_TST_PRT("Warn:cannot bind to core 0,");
+				HPRE_TST_PRT("now run without binding\n");
+				core_mask[0] = 0x0; /* no binding */
+			}
+			core_mask[1] = 0;
+		} else {
+			int offset = 0;
+			char *temp;
+
+			offset = strlen(argv[5]) - 16;
+			core_mask[0] = strtoull(&argv[5][offset], NULL, 16);
+			if (core_mask[0] & 0x1) {
+				HPRE_TST_PRT("Warn:cannot bind to core 0,");
+				HPRE_TST_PRT("now run without binding\n");
+				core_mask[0] = 0x0; /* no binding */
+			}
+			temp = malloc(64);
+			strcpy(temp, argv[5]);
+			temp[offset] = 0;
+			core_mask[1] = strtoull(temp, NULL, 16);
+		}
+		bits = _get_one_bits(core_mask[0]);
+		bits += _get_one_bits(core_mask[1]);
+		if (thread_num > bits) {
+			HPRE_TST_PRT("Coremask not covers all thrds,");
+			HPRE_TST_PRT("Bind first %d thrds!\n", bits);
+		} else if (thread_num < bits) {
+			HPRE_TST_PRT("Coremask overflow,");
+			HPRE_TST_PRT("Just try to bind all thrds!\n");
+		}
+		if (!strcmp(argv[6], "-log"))
+			with_log = 1;
+		else
+			with_log = 0;
+		HPRE_TST_PRT("Proc-%d: starts %d threads bind to %s",
+				getpid(), thread_num, argv[5]);
+		HPRE_TST_PRT(" lcoremask=0x%llx, hcoremask=0x%llx\n",
+				core_mask[0], core_mask[1]);
+		return hpre_sys_test(thread_num, core_mask[0],
+				core_mask[1], alg_op_type);
+	}
+basic_function_test:
 	if (!strcmp(argv[1], "-en")) {
 		alg_op_type = RSA_PUB_EN;
 		HPRE_TST_PRT("RSA public key encrypto\n");
@@ -1889,12 +2235,17 @@ int main(int argc, char *argv[])
 		HPRE_TST_PRT("         -gen  = rsa key gen\n");
 		HPRE_TST_PRT("         -gen1  = DH key generate phase1\n");
 		HPRE_TST_PRT("         -gen2  = DH key generate phase2\n");
+		HPRE_TST_PRT("      [sw_check]:\n");
 		HPRE_TST_PRT("         -check  = use openssl sw alg check\n");
 		HPRE_TST_PRT("         --help  = usage\n");
 		HPRE_TST_PRT("Example for rsa key2048bits encrypto");
 		HPRE_TST_PRT(" in.txt for out.en:\n");
 		HPRE_TST_PRT("./test_hisi_hpre -en 2048 -crt in.txt");
 		HPRE_TST_PRT(" out.en pubkey\n");
+		HPRE_TST_PRT("Example for system test:\n");
+		HPRE_TST_PRT("./test_hisi_hpre -system-gen/system-vrf/system-");
+		HPRE_TST_PRT("sgn/system-qt -t <thread_");
+		HPRE_TST_PRT("num> -c <core_mask> -log/no-log -check\n");
 		return 0;
 	} else {
 		HPRE_TST_PRT("Unknown option\n");
@@ -1954,10 +2305,10 @@ int main(int argc, char *argv[])
 	} else if (alg_op_type < MAX_RSA_TYPE && mode == RSA_COM_MD) {
 		setup.is_crt = 0;
 	} else if (alg_op_type > MAX_RSA_TYPE &&
-		alg_op_type < HPRE_MAX_OP_TYPE && mode == DH_COM_MD) {
+		alg_op_type < HPRE_MAX_OP_TYPE &&mode == DH_COM_MD) {
 		dh_setup.is_g2 = 0;
 	} else if (alg_op_type > MAX_RSA_TYPE &&
-		alg_op_type < HPRE_MAX_OP_TYPE && mode == DH_G2) {
+		alg_op_type < HPRE_MAX_OP_TYPE &&mode == DH_G2) {
 		dh_setup.is_g2 = 1;
 	} else {
 		HPRE_TST_PRT("\nop type or mode err!");
