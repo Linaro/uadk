@@ -18,7 +18,7 @@
 #define QM_SS_PAGE_START (QM_DUS_PAGE_START + QM_DUS_PAGE_NR)
 
 #define QM_DOORBELL_OFFSET      0x340
-#define QM_V2_DOORBELL_OFFSET   0x0
+#define QM_V2_DOORBELL_OFFSET   0x1000
 
 struct cqe {
 	__le32 rsvd0;

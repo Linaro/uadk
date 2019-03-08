@@ -18,6 +18,9 @@
 
 #define SYS_CLASS_DIR	"/sys/class"
 
+unsigned int page_size = 0;
+unsigned int page_shift = 0;
+
 struct _dev_info {
 	int node_id;
 	int numa_dis;
@@ -248,6 +251,12 @@ int wd_request_queue(struct wd_queue *q)
 {
 	int ret;
 	struct _dev_info *dev;
+
+	if(!page_size) {
+		ret = get_page_size();
+		if (ret)
+			return ret;
+	}
 
 	dev = _find_available_res(&q->capa, q->dev_path);
 	if (!dev) {

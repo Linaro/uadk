@@ -78,10 +78,10 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	return 0;
 
 out_with_bd_map:
-	munmap(priv->reg, PAGE_SIZE);
+	munmap(priv->reg, page_size);
 out_with_db_map:
 	if (priv->ver == 2)
-		munmap(priv->db, PAGE_SIZE);
+		munmap(priv->db, page_size);
 out_with_priv:
 	free_obj(priv);
 	q->priv = NULL;

@@ -56,6 +56,21 @@ typedef int bool;
 
 #endif
 
+extern unsigned int page_shift;
+extern unsigned int page_size;
+
+static inline int get_page_size()
+{
+	page_size = getpagesize();
+	page_shift = ((1 << 12) == page_size ? 12 :
+			((1 << 14) == page_size ? 14 : 16));
+	if ((1 << page_shift) != page_size) {
+		dbg("Unsupported page_size : %d\n",page_size);
+		return -EINVAL;
+	} else
+		return 0;
+}
+
 static inline void wd_reg_write(void *reg_addr, uint32_t value)
 {
 	*((volatile uint32_t *)reg_addr) = value;
