@@ -25,6 +25,7 @@
 #define HPRE_TST_MAX_Q		1
 #define HPRE_PADDING_SZ		16
 #define TEST_MAX_THRD		128
+#define MAX_TRY_TIMES	10000
 
 struct bignum_st {
 	BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
@@ -133,6 +134,7 @@ struct wd_dh_ctx {
 struct test_hpre_pthread_dt {
 	int cpu_id;
 	enum alg_op_type op_type;
+	int thread_num;
 };
 struct q_dev_info {
 	int node_id;
@@ -153,9 +155,11 @@ struct q_dev_info {
 
 static int key_bits = 2048;
 static int openssl_check;
+static int only_soft;
 static int with_log = 0;
 static int is_system_test = 0;
-static RSA *hpre_test_rsa;
+static __thread RSA *hpre_test_rsa;
+static __thread int balance;
 static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct test_hpre_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static char *rsa_op_str[WD_RSA_GENKEY + 1] = {
@@ -208,11 +212,12 @@ void hpre_test_free_buf(struct hpre_queue_mempool *pool, void *buf);
 
 static inline int _get_cpu_id(int thr, __u64 core_mask)
 {
-	int i, cnt = 0;
+	__u64 i;
+	int cnt = 0;
 
 
 	for (i = 1; i < 64; i ++) {
-		if (core_mask & (0x1 << i)) {
+		if (core_mask & (0x1ull << i)) {
 			if (thr == cnt)
 				return i;
 			cnt++;
@@ -717,6 +722,7 @@ int wd_do_rsa(void *ctx, struct wd_rsa_op_data *opdata)
 	struct wd_rsa_msg *resp;
 	int ret, i = 0;
 
+#define BALANCE_THRHD	1280
 	if (opdata->op_type == WD_RSA_SIGN ||
 	    opdata->op_type == WD_RSA_VERIFY ||
 	    opdata->op_type == WD_RSA_GENKEY) {
@@ -736,22 +742,25 @@ int wd_do_rsa(void *ctx, struct wd_rsa_op_data *opdata)
 	}
 
 recv_again:
+	if (opdata->op_type != WD_RSA_VERIFY)
+		usleep(1);
 	ret = hpre_test_wd_rsa_recv(ctxt, &resp);
 	if (!ret) {
 		i++;
-		usleep(1 + i * 100);
-		if (i < 400) {
+		if (balance > BALANCE_THRHD)
+			usleep(1);
+		if (i < MAX_TRY_TIMES)
 			goto recv_again;
-		}
 	} else if (ret < 0) {
 		return ret;
 	}
-	if (i >= 400) {
+	if (i == MAX_TRY_TIMES) {
 		HPRE_TST_PRT("%s:timeout err!\n", __func__);
 		return -1;
 	}
 	if (resp->status < 0)
 		return -1;
+	balance = i;
 	opdata->out = (void *)resp->out;
 	opdata->out_bytes = resp->outbytes;
 
@@ -1196,6 +1205,10 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			goto gen_fail;
 		HPRE_TST_PRT("\nRSA CRT private key was written to %s!",
 				crt_privkey_file);
+	} else if (crt_privkey_file && !is_file) {
+		memcpy(crt_privkey_file, prikey->pkey2.dq, (key_bits >> 4) * 5);
+		memcpy(crt_privkey_file + (key_bits >> 4) * 5,
+			pubkey->e, (key_bits >> 2));
 	}
 
 	/* common mode private key */
@@ -1448,10 +1461,10 @@ int hpre_test_result_check(struct wd_rsa_ctx *ctx,
 		ret = RSA_public_encrypt(opdata->in_bytes, opdata->in, ssl_out,
 			hpre_test_rsa, RSA_NO_PADDING);
 		if (ret != (int)opdata->in_bytes) {
-			HPRE_TST_PRT("\nopenssl pub encrypto fail!");
+			HPRE_TST_PRT("\nopenssl pub encrypto fail!ret=%d", ret);
 			return -ENOMEM;
 		}
-		if (memcmp(ssl_out, opdata->out, ctx->key_size)) {
+		if (!only_soft && memcmp(ssl_out, opdata->out, ctx->key_size)) {
 			HPRE_TST_PRT("\npub encrypto result  mismatch!");
 			return -EINVAL;
 		}
@@ -1546,10 +1559,10 @@ int hpre_test_result_check(struct wd_rsa_ctx *ctx,
 		ret = RSA_private_decrypt(opdata->in_bytes, opdata->in, ssl_out,
 			hpre_test_rsa, RSA_NO_PADDING);
 		if (ret != (int)opdata->in_bytes) {
-				HPRE_TST_PRT("\nopenssl pub encrypto fail!");
+			HPRE_TST_PRT("\nopenssl priv decrypto fail!ret=%d", ret);
 			return -ENOMEM;
 		}
-		if (memcmp(ssl_out, opdata->out, ctx->key_size)) {
+		if (!only_soft && memcmp(ssl_out, opdata->out, ret)) {
 			HPRE_TST_PRT("\nprv decrypto result  mismatch!");
 			return -EINVAL;
 		}
@@ -1918,10 +1931,14 @@ void  *_hpre_sys_test_thread(void *data)
 	struct timeval start_tval, end_tval;
 	float time, speed;
 	enum alg_op_type op_type;
+	int thread_num, log_intval[8] = {0x1ff, 0x3ff, 0x7ff,
+		0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff};
+	int intval_index = 0;
 
 	CPU_ZERO(&mask);
 	cpuid = pdata->cpu_id;
 	op_type = pdata->op_type;
+	thread_num = pdata->thread_num;
 	CPU_SET(cpuid, &mask);
 	if (cpuid) {
 		ret = pthread_setaffinity_np(pthread_self(),
@@ -1947,7 +1964,8 @@ request_queue:
 	}
 	if (pdata->op_type == HPRE_ALG_INVLD_TYPE) {
 		i++;
-		if (with_log && !(i & 0x1ff)) {
+		intval_index += thread_num / 16;
+		if (with_log && !(i & log_intval[intval_index])) {
 			struct q_dev_info *info = q.dev_info;
 
 			HPRE_TST_PRT("Proc-%d, %d-TD request %dQs at %dnode\n",
@@ -1974,8 +1992,8 @@ request_queue:
 		goto fail_release;
 	}
 	memset(key_info, 0, (key_bits >> 3) * 16);
-	in = key_info + (key_bits >> 3) * 4;
-	out = in + (key_bits >> 3) * 4;
+	in = key_info + (key_bits >> 3) * 5;
+	out = in + (key_bits >> 3) * 5;
 	ret = test_rsa_key_gen(ctx, NULL, NULL, key_info, 0);
 	if (ret) {
 		HPRE_TST_PRT("\nthrd-%d:Openssl key gen fail!",
@@ -2009,16 +2027,26 @@ request_queue:
 	}
 	gettimeofday(&start_tval, NULL);
 	while (1) {
-		ret = wd_do_rsa(ctx, &opdata);
-		if (ret) {
-			HPRE_TST_PRT("\nProc-%d, T-%d:hpre %s %dth fail!",
-				     getpid(), (int)syscall(__NR_gettid),
-				     rsa_op_str[opdata.op_type], i);
-			return NULL;
+		if (!only_soft) {
+			ret = wd_do_rsa(ctx, &opdata);
+			if (ret) {
+				HPRE_TST_PRT("\nProc-%d, T-%d:hpre %s %dth fail!",
+					     getpid(), (int)syscall(__NR_gettid),
+					     rsa_op_str[opdata.op_type], i);
+				return NULL;
+			}
 		}
 		i++;
-		if (openssl_check) {
-			ret = hpre_test_result_check(ctx, &opdata, key_info);
+		if (openssl_check || only_soft) {
+			void *check_key;
+
+			if (opdata.op_type == WD_RSA_SIGN)
+				check_key = key_info;
+			if (opdata.op_type == WD_RSA_VERIFY)
+				check_key = key_info + 5 * (key_bits >> 4);
+			else
+				check_key = key_info;
+			ret = hpre_test_result_check(ctx, &opdata, check_key);
 			if (ret) {
 				HPRE_TST_PRT("\nP-%d,T-%d:hpre %s %dth mismth",
 					     getpid(), (int)syscall(__NR_gettid),
@@ -2026,7 +2054,14 @@ request_queue:
 				return NULL;
 			}
 		}
-		if (with_log && !(i & 0x1ff)) {
+		if (opdata.op_type == WD_RSA_VERIFY)
+			intval_index++;
+		intval_index += ((thread_num >> 3) - (key_bits >> 11));
+		if (intval_index <= 0)
+			intval_index = 0;
+		if (intval_index > 7)
+			intval_index = 7;
+		if (with_log && !(i & log_intval[intval_index])) {
 			gettimeofday(&end_tval, NULL);
 			time = (float)((end_tval.tv_sec - start_tval.tv_sec) * 1000000 +
 				(end_tval.tv_usec - start_tval.tv_usec));
@@ -2051,14 +2086,16 @@ fail_release:
 static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 			 __u64 hcore_mask, enum alg_op_type op_type)
 {
-	int i, ret, cnt;
+	int i, ret, cnt = 0;
 	int h_cpuid;
 
-	if ( _get_one_bits(lcore_mask) > 0)
+	if (_get_one_bits(lcore_mask) > 0)
 		cnt =  _get_one_bits(lcore_mask);
-	else
+	else if (_get_one_bits(lcore_mask) == 0 &&
+		_get_one_bits(hcore_mask) == 0)
 		cnt = thread_num;
 	for (i = 0; i < cnt; i++) {
+		test_thrds_data[i].thread_num = thread_num;
 		test_thrds_data[i].op_type = op_type;
 		test_thrds_data[i].cpu_id = _get_cpu_id(i, lcore_mask);
 		ret = pthread_create(&system_test_thrds[i], NULL,
@@ -2072,6 +2109,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 		h_cpuid = _get_cpu_id(i, hcore_mask);
 		if (h_cpuid > 0)
 			h_cpuid += 64;
+		test_thrds_data[i].thread_num = thread_num;
 		test_thrds_data[i + cnt].op_type = op_type;
 		test_thrds_data[i + cnt].cpu_id =  h_cpuid;
 		ret = pthread_create(&system_test_thrds[i + cnt], NULL,
@@ -2137,7 +2175,17 @@ int main(int argc, char *argv[])
 	}
 	if (argv[7] && !strcmp(argv[7], "-check"))
 		openssl_check = 1;
-
+	if (argv[7] && !strcmp(argv[7], "-soft"))
+		only_soft = 1;
+	if (argv[8]) {
+		key_bits = strtoul(argv[8], NULL, 10);
+		if (key_bits != 1024 && key_bits != 2048 &&
+		    key_bits != 3072 && key_bits != 4096) {
+			key_bits = 2048;
+		}
+	} else {
+		key_bits = 2048;
+	}
 	/* Do sys test for performance and mult threads/process scenarioes */
 	if (is_system_test) {
 		if (!strcmp(argv[2], "-t")) {
