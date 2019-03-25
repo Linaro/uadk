@@ -130,7 +130,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	if (strstr(q->hw_type, HISI_QM_API_VER2_BASE)) {
 		info->db = hacc_db_v2;
 		info->doorbell_base = vaddr;
-		if (page_size > 4096)
+		if (page_size > PAGE_SIZE_4K)
 			info->doorbell_base = vaddr + QM_V2_DOORBELL_OFFSET;
 	} else if (strstr(q->hw_type, HISI_QM_API_VER_BASE)) {
 		info->db = hacc_db_v1;
@@ -189,7 +189,9 @@ void hisi_qm_unset_queue_dio(struct wd_queue *q)
 	void *base;
 
 	if (strstr(q->hw_type, HISI_QM_API_VER2_BASE)) {
-		base = info->doorbell_base - QM_V2_DOORBELL_OFFSET;
+		base = info->doorbell_base;
+		if (page_size > PAGE_SIZE_4K)
+			base = info->doorbell_base - QM_V2_DOORBELL_OFFSET;
 	} else if (strstr(q->hw_type, HISI_QM_API_VER_BASE)) {
 		base = info->doorbell_base - QM_DOORBELL_OFFSET;
 	} else {

@@ -17,6 +17,10 @@
 #define PATH_STR_SIZE		256
 #define MAX_ATTR_STR_SIZE	256
 #define WD_NAME_SIZE		64
+#define PAGE_SIZE_4K		4096
+#define PAGE_SHIFT_4K		12
+#define PAGE_SHIFT_16K		14
+#define PAGE_SHIFT_64K		16
 
 typedef int bool;
 
@@ -62,8 +66,10 @@ extern unsigned int page_size;
 static inline int get_page_size()
 {
 	page_size = getpagesize();
-	page_shift = ((1 << 12) == page_size ? 12 :
-			((1 << 14) == page_size ? 14 : 16));
+	page_shift = ((1 << PAGE_SHIFT_4K) == page_size ? PAGE_SHIFT_4K :
+		     ((1 << PAGE_SHIFT_16K) == page_size ? PAGE_SHIFT_16K :
+		     PAGE_SHIFT_64K));
+
 	if ((1 << page_shift) != page_size) {
 		dbg("Unsupported page_size : %d\n",page_size);
 		return -EINVAL;
