@@ -18,6 +18,10 @@
 
 #define SYS_CLASS_DIR	"/sys/class"
 
+#ifdef WITH_LOG_FILE
+FILE *flog_fd = NULL;
+#endif
+
 unsigned int page_size = 0;
 unsigned int page_shift = 0;
 
@@ -260,14 +264,14 @@ int wd_request_queue(struct wd_queue *q)
 
 	dev = _find_available_res(&q->capa, q->dev_path);
 	if (!dev) {
-		dbg("cannot find available dev\n");
+		WD_ERR("cannot find available dev\n");
 		return -ENODEV;
 	}
 
 	snprintf(q->dev_path, PATH_STR_SIZE, "%s/%s", "/dev", dev->name);
 	q->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
 	if (q->fd == -1) {
-		dbg("fail to open %s\n", q->dev_path);
+		WD_ERR("fail to open %s\n", q->dev_path);
 		ret = -ENODEV;
 		goto err_with_dev;
 	}
@@ -277,13 +281,13 @@ int wd_request_queue(struct wd_queue *q)
 	memcpy(q->qfrs_pg_start, dev->qfrs_pg_start, sizeof(q->qfrs_pg_start));
 	ret = drv_open(q);
 	if (ret) {
-		dbg("fail to init the queue by driver!\n");
+		WD_ERR("fail to init the queue by driver!\n");
 		goto err_with_fd;
 	}
 
 	ret = ioctl(q->fd, UACCE_CMD_START);
 	if (ret) {
-		dbg("fail to start %s\n", q->dev_path);
+		WD_ERR("fail to start %s\n", q->dev_path);
 		goto err_with_drv_openned;
 	}
 
