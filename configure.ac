@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([wrapdrive], [0.1], [liguozhu@hisilicon.com])
+AC_INIT([warpdrive], [0.1], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -30,6 +30,12 @@ AC_ARG_ENABLE([sva],
   ],
   [sva=false]
 )
+
+AC_ARG_WITH(log_file,
+	AS_HELP_STRING([--with-log_file], [File to write log]),
+	WITH_LOG_FILE=$withvar, WITH_LOG_FILE=)
+AC_SUBST(with_log_file)
+AM_CONDITIONAL([WITH_LOG_FILE], [test -n "$with_log_file"])
 
 AC_ARG_WITH(openssl_dir,
 	AS_HELP_STRING([--with-openssl_dir], [Path to OpenSSL source code]))

@@ -96,13 +96,17 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 {
 	q->ss_va = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, UACCE_QFRT_INVALID, size);
 
-	if (q->ss_va == MAP_FAILED)
+	if (q->ss_va == MAP_FAILED) {
+		WD_ERR("wd drv mmap fail!\n");
 		return NULL;
+	}
 
 	if (q->dev_flags & UACCE_DEV_NOIOMMU) {
 		errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_PA, &q->ss_pa);
-		if (errno)
+		if (errno) {
+			WD_ERR("get PA fail!\n");
 			return NULL;
+		}
 	} else
 		q->ss_pa = q->ss_va;
 

@@ -105,14 +105,16 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
 
 	alloc_obj(info);
-	if (!info)
-		return -1;
+	if (!info) {
+		WD_ERR("no mem!\n");
+		return -ENOMEM;
+	}
 
 	q->priv = info;
 
 	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	if (vaddr == MAP_FAILED) {
-		dbg("mmap dus fail\n");
+		WD_ERR("mmap dus fail\n");
 		ret = -errno;
 		goto err_with_info;
 	}
@@ -123,7 +125,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
 			    has_dko ? UACCE_QFRT_DKO : UACCE_QFRT_DUS, 0);
 	if (vaddr == MAP_FAILED) {
-		dbg("mmap mmio fail\n");
+		WD_ERR("mmap mmio fail\n");
 		ret = -errno;
 		goto err_with_dus;
 	}
@@ -136,6 +138,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		info->db = hacc_db_v1;
 		info->doorbell_base = vaddr + QM_DOORBELL_OFFSET;
 	} else {
+		WD_ERR("hw version mismatch!\n");
 		ret = -EINVAL;
 		goto err_with_dus;
 	}
@@ -145,15 +148,15 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	info->cqc_phase = 1;
 	info->is_sq_full = 0;
 	if (!info->sqe_size) {
+		WD_ERR("sqe size =%d err!\n", info->sqe_size);
 		ret = -EINVAL;
 		goto err_with_dus;
 	}
 
-
 	if (has_dko) {
 		vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
 		if (vaddr == MAP_FAILED) {
-			dbg("mmap dko fail\n");
+			WD_ERR("mmap dko fail!\n");
 			ret = -errno;
 			wd_drv_unmmap_qfr(q,
 				info->doorbell_base - QM_DOORBELL_OFFSET,
@@ -165,7 +168,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	qp_ctx.qc_type = priv->op_type;
 	ret = ioctl(q->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
-		fprintf(stderr, "hisi qm set qc_type fail, use default!\n");
+		WD_ERR("hisi qm set qc_type fail, use default!\n");
 		return ret;
 	}
 
@@ -215,8 +218,10 @@ int hisi_qm_add_to_dio_q(struct wd_queue *q, void *req)
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
 	__u16 i;
 
-	if (info->is_sq_full)
+	if (info->is_sq_full) {
+		WD_ERR("queue is full!\n");
 		return -EBUSY;
+	}
 
 	i = info->sq_tail_index;
 
@@ -249,7 +254,7 @@ int hisi_qm_get_from_dio_q(struct wd_queue *q, void **resp)
 	if (info->cqc_phase == CQE_PHASE(cqe)) {
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
-			fprintf(stderr, "CQE_SQ_HEAD_INDEX(%d) error\n", j);
+			WD_ERR("CQE_SQ_HEAD_INDEX(%d) error\n", j);
 			errno = -EIO;
 			return -EIO;
 		}
@@ -257,7 +262,7 @@ int hisi_qm_get_from_dio_q(struct wd_queue *q, void **resp)
 		ret = hisi_qm_recv_sqe(info->sq_base + j * info->sqe_size,
 				info, i);
 		if (ret < 0) {
-			fprintf(stderr, "recv sqe error %d\n", j);
+			WD_ERR("recv sqe error %d\n", j);
 			errno = -EIO;
 			return -EIO;
 		}
