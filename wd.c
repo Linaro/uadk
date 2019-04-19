@@ -23,9 +23,6 @@
 FILE *flog_fd = NULL;
 #endif
 
-unsigned int page_size = 0;
-unsigned int page_shift = 0;
-
 struct _dev_info {
 	int node_id;
 	int numa_dis;
@@ -40,7 +37,7 @@ struct _dev_info {
 	char name[WD_NAME_SIZE];
 	char api[WD_NAME_SIZE];
 	char algs[MAX_ATTR_STR_SIZE];
-	unsigned long qfrs_pg_start[UACCE_QFRT_MAX];
+	unsigned long qfrs_offset[UACCE_QFRT_MAX];
 };
 
 static size_t _get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
@@ -143,8 +140,8 @@ static int _get_dev_info(struct _dev_info *dinfo)
 	dinfo->flags = _get_int_attr(dinfo, "flags");
 	_get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
 	_get_str_attr(dinfo, "algorithms", dinfo->algs, MAX_ATTR_STR_SIZE);
-	_get_ul_vec_attr(dinfo, "qfrs_pg_start", dinfo->qfrs_pg_start,
-			   UACCE_QFRT_MAX);
+	_get_ul_vec_attr(dinfo, "qfrs_offset", dinfo->qfrs_offset,
+			 UACCE_QFRT_MAX);
 	/*
 	 * Use available_instances as the base of weight.
 	 * Remote NUMA node cuts the weight.
@@ -257,12 +254,6 @@ int wd_request_queue(struct wd_queue *q)
 	int ret;
 	struct _dev_info *dev;
 
-	if(!page_size) {
-		ret = get_page_size();
-		if (ret)
-			return ret;
-	}
-
 	dev = _find_available_res(&q->capa, q->dev_path);
 	if (!dev) {
 		WD_ERR("cannot find available dev\n");
@@ -282,7 +273,7 @@ int wd_request_queue(struct wd_queue *q)
 	q->hw_type = dev->api;
 	q->dev_flags = dev->flags;
 	q->dev_info = dev;
-	memcpy(q->qfrs_pg_start, dev->qfrs_pg_start, sizeof(q->qfrs_pg_start));
+	memcpy(q->qfrs_offset, dev->qfrs_offset, sizeof(q->qfrs_offset));
 	ret = drv_open(q);
 	if (ret) {
 		WD_ERR("fail to init the queue by driver!\n");

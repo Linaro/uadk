@@ -39,7 +39,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	q->priv = priv;
 	priv->head = 0;
 	priv->resp_tail = 0;
-	priv->ver = q->qfrs_pg_start[UACCE_QFRT_DUS] == UACCE_QFRT_INVALID ?
+	priv->ver = q->qfrs_offset[UACCE_QFRT_DUS] == UACCE_QFRT_INVALID ?
 			1 : 2;
 
 	printf("dummy_set_queue_dio ver=%d\n", priv->ver);
@@ -56,7 +56,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	}
 
 	priv->reg = wd_drv_mmap_qfr(q,
-			priv->ver==1 ? UACCE_QFRT_MMIO : UACCE_QFRT_DUS,
+			priv->ver == 1 ? UACCE_QFRT_MMIO : UACCE_QFRT_DUS,
 			UACCE_QFRT_SS, 0);
 	if (priv->reg == MAP_FAILED) {
 		DUMMY_ERR("mmap bd fail (%d)\n", errno);
@@ -78,10 +78,13 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	return 0;
 
 out_with_bd_map:
-	munmap(priv->reg, page_size);
+	if (priv->ver == 1)
+		wd_drv_unmmap_qfr(q, priv->reg, UACCE_QFRT_MMIO, UACCE_QFRT_SS, 0);
+	else
+		wd_drv_unmmap_qfr(q, priv->reg, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 out_with_db_map:
 	if (priv->ver == 2)
-		munmap(priv->db, page_size);
+		wd_drv_unmmap_qfr(q, priv->db, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
 out_with_priv:
 	free_obj(priv);
 	q->priv = NULL;

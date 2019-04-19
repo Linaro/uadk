@@ -17,10 +17,6 @@
 #define PATH_STR_SIZE		256
 #define MAX_ATTR_STR_SIZE	256
 #define WD_NAME_SIZE		64
-#define PAGE_SIZE_4K		4096
-#define PAGE_SHIFT_4K		12
-#define PAGE_SHIFT_16K		14
-#define PAGE_SHIFT_64K		16
 
 typedef int bool;
 
@@ -72,23 +68,6 @@ extern FILE *flog_fd;
 
 #endif
 
-extern unsigned int page_shift;
-extern unsigned int page_size;
-
-static inline int get_page_size()
-{
-	page_size = getpagesize();
-	page_shift = ((1 << PAGE_SHIFT_4K) == page_size ? PAGE_SHIFT_4K :
-		     ((1 << PAGE_SHIFT_16K) == page_size ? PAGE_SHIFT_16K :
-		     PAGE_SHIFT_64K));
-
-	if ((1 << page_shift) != page_size) {
-		dbg("Unsupported page_size : %d\n",page_size);
-		return -EINVAL;
-	} else
-		return 0;
-}
-
 static inline void wd_reg_write(void *reg_addr, uint32_t value)
 {
 	*((volatile uint32_t *)reg_addr) = value;
@@ -138,7 +117,7 @@ struct wd_queue {
 	void *ss_va;
 	void *ss_pa;
 	int dev_flags;
-	unsigned long qfrs_pg_start[UACCE_QFRT_MAX];
+	unsigned long qfrs_offset[UACCE_QFRT_MAX];
 };
 
 static inline void *wd_get_pa_from_va(struct wd_queue *q, void *va)
