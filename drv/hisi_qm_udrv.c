@@ -31,6 +31,7 @@ struct hisi_qm_queue_info {
 	void *sq_base;
 	void *cq_base;
 	int sqe_size;
+	void *mmio_base;
 	void *doorbell_base;
 	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
 		  __u16 index, __u8 priority);
@@ -129,18 +130,17 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		ret = -errno;
 		goto err_with_dus;
 	}
+	info->mmio_base = vaddr;
 	if (strstr(q->hw_type, HISI_QM_API_VER2_BASE)) {
 		info->db = hacc_db_v2;
-		info->doorbell_base = vaddr;
-		if (page_size > PAGE_SIZE_4K)
-			info->doorbell_base = vaddr + QM_V2_DOORBELL_OFFSET;
+		info->doorbell_base = vaddr + QM_V2_DOORBELL_OFFSET;
 	} else if (strstr(q->hw_type, HISI_QM_API_VER_BASE)) {
 		info->db = hacc_db_v1;
 		info->doorbell_base = vaddr + QM_DOORBELL_OFFSET;
 	} else {
 		WD_ERR("hw version mismatch!\n");
 		ret = -EINVAL;
-		goto err_with_dus;
+		goto err_with_mmio;
 	}
 	info->sq_tail_index = 0;
 	info->sq_head_index = 0;
@@ -150,7 +150,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	if (!info->sqe_size) {
 		WD_ERR("sqe size =%d err!\n", info->sqe_size);
 		ret = -EINVAL;
-		goto err_with_dus;
+		goto err_with_mmio;
 	}
 
 	if (has_dko) {
@@ -158,10 +158,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		if (vaddr == MAP_FAILED) {
 			WD_ERR("mmap dko fail!\n");
 			ret = -errno;
-			wd_drv_unmmap_qfr(q,
-				info->doorbell_base - QM_DOORBELL_OFFSET,
-				UACCE_QFRT_MMIO, UACCE_QFRT_DKO, 0);
-			goto err_with_dus;
+			goto err_with_mmio;
 		}
 		info->dko_base = vaddr;
 	}
@@ -169,7 +166,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	ret = ioctl(q->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("hisi qm set qc_type fail, use default!\n");
-		return ret;
+		goto err_with_dko;
 	}
 
 	info->sqn = qp_ctx.id;
@@ -177,7 +174,13 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	dbg("create hisi qm queue (id = %d, sqe = %p, size = %d, type = %d)\n",
 	    info->sqn, info->sq_base, info->sqe_size, qp_ctx.qc_type);
 	return 0;
-
+err_with_dko:
+	if (has_dko)
+		wd_drv_unmmap_qfr(q, info->dko_base, UACCE_QFRT_DKO,
+				  UACCE_QFRT_DUS, 0);
+err_with_mmio:
+	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
+			  UACCE_QFRT_DKO, 0);
 err_with_dus:
 	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 err_with_info:
@@ -189,25 +192,16 @@ void hisi_qm_unset_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
 	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
-	void *base;
-
-	if (strstr(q->hw_type, HISI_QM_API_VER2_BASE)) {
-		base = info->doorbell_base;
-		if (page_size > PAGE_SIZE_4K)
-			base = info->doorbell_base - QM_V2_DOORBELL_OFFSET;
-	} else if (strstr(q->hw_type, HISI_QM_API_VER_BASE)) {
-		base = info->doorbell_base - QM_DOORBELL_OFFSET;
-	} else {
-		WD_ERR("hw type mismatch!\n");
-		return;
-	}
 
 	if (has_dko) {
 		wd_drv_unmmap_qfr(q, info->dko_base,
 				  UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
-		wd_drv_unmmap_qfr(q, base, UACCE_QFRT_MMIO, UACCE_QFRT_DKO, 0);
-	} else
-		wd_drv_unmmap_qfr(q, base, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
+				  UACCE_QFRT_DKO, 0);
+	} else {
+		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
+				  UACCE_QFRT_DUS, 0);
+	}
 	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 	free(info);
 	q->priv = NULL;
