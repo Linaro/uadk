@@ -39,7 +39,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	q->priv = priv;
 	priv->head = 0;
 	priv->resp_tail = 0;
-	priv->ver = q->qfrs_offset[UACCE_QFRT_DUS] == UACCE_QFRT_INVALID ?
+	priv->ver = q->qfrs_offset[UACCE_QFRT_DUS] == UACCE_QFR_NA ?
 			1 : 2;
 
 	printf("dummy_set_queue_dio ver=%d\n", priv->ver);
