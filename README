@@ -30,3 +30,15 @@ drv/*
 test/*
 	Test applications to use the wrapdrive library
 
+
+Build in samples/warpdrive (for the case of PC host): ::
+        ./autogen.sh
+        ./conf.sh       # or simply ./configure if you build on target system
+        make
+
+Then you can get test_hisi_zip in the test subdirectory. Copy it to the target
+system and make sure the hisi_zip driver is enabled (the major and minor of
+the uacce chrdev can be gotten from the dmesg or sysfs), and run: ::
+        mknod /dev/ua1 c <major> <minior>
+        test/test_hisi_zip -z < data > data.zip
+        test/test_hisi_zip -g < data > data.gzip
