@@ -351,11 +351,8 @@ int qm_recv(struct wd_queue *q, void **resp)
 		if (!ret) {
 			wd_unspinlock(&info->rc_lock);
 			return 0;
-		} else if (ret < 0) {
-			wd_unspinlock(&info->rc_lock);
+		} else if (ret < 0)
 			WD_ERR("recv sqe error %u\n", j);
-			return -EIO;
-		}
 	} else {
 		wd_unspinlock(&info->rc_lock);
 		return 0;
@@ -368,5 +365,5 @@ int qm_recv(struct wd_queue *q, void **resp)
 		return -WD_HW_ERR;
 	}
 
-	return 1;
+	return ret;
 }
