@@ -904,7 +904,10 @@ int dh_hw_generate_pubkey(void* ctx, struct wcrypto_dh_op_data *opdata, __u32 is
 	keyBits = wcrypto_dh_key_bits(ctx);
 	keySize = keyBits >> 3;
 
-	g.data = opdata->pv;
+	g.data = malloc(keySize);
+	if (!g.data)
+		return -ENOMEM;
+
 	x = opdata->x_p;
 	p = opdata->x_p + keySize;
 	memset(g.data, 0, keySize);
@@ -930,7 +933,7 @@ int dh_hw_generate_pubkey(void* ctx, struct wcrypto_dh_op_data *opdata, __u32 is
 		else
 			g_ctxg_set[DH_CTXG_BOB] = true;
 	}
-
+	free(g.data);
 	opdata->pbytes = BN_bn2bin(pSwData->p, p);
 	opdata->xbytes = BN_bn2bin(pSwData->x, x);
 	opdata->op_type = WCRYPTO_DH_PHASE1;
@@ -1156,9 +1159,18 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		HPRE_TST_PRT("pool alloc ag_bin fail!\n");
 		goto dh_err;
 	}
-	apriv_key_bin= ag_bin + key_size;
+	memset(ag_bin, 0, key_size * 2);
+	apriv_key_bin = wd_alloc_blk(pool);
+	if (!apriv_key_bin) {
+		HPRE_TST_PRT("pool alloc apriv_key_bin fail!\n");
+		goto dh_err;
+	}
+	memset(apriv_key_bin, 0, key_size * 2);
+
+	/* The hpre_UM tells us key_addr contains xa and p,
+	 * their addr should be together
+	 */
 	ap_bin= apriv_key_bin + key_size;
-	memset(ag_bin, 0, key_size * 4);
 
 	gbytes = BN_bn2bin(ag, ag_bin);
 	g.data = (char*)ag_bin;
@@ -1172,7 +1184,13 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		goto dh_err;
 	}
 	opdata_a.x_p = apriv_key_bin;
-	opdata_a.pri = ap_bin + key_size;
+	opdata_a.pri = wd_alloc_blk(pool);
+	if (!opdata_a.pri) {
+		HPRE_TST_PRT("pool alloc opdata_a.pri fail!\n");
+		goto dh_err;
+	}
+	memset(opdata_a.pri, 0, key_size * 2);
+
 	opdata_a.op_type = WCRYPTO_DH_PHASE1;
 
 	/* Alice computes public key */
@@ -1227,9 +1245,16 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		ret = -1;
 		goto dh_err;
 	}
-	bpriv_key_bin= bg_bin +key_size;
+	memset(bg_bin, 0, key_size * 2);
+
+	bpriv_key_bin= wd_alloc_blk(pool);
+	if (!bpriv_key_bin) {
+		HPRE_TST_PRT("pool alloc bpriv_key_bin fail!\n");
+		ret = -1;
+		goto dh_err;
+	}
+	memset(bpriv_key_bin, 0, key_size * 2);
 	bp_bin = bpriv_key_bin + key_size;
-	memset(bg_bin, 0, key_size * 4);
 	gbytes = BN_bn2bin(bg, bg_bin);
 	g.data = (char*)bg_bin;
 	g.bsize = gbytes;
@@ -1242,7 +1267,13 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 	opdata_b.pbytes = BN_bn2bin(bp, bp_bin);
 	opdata_b.xbytes = BN_bn2bin(bpriv_key, bpriv_key_bin);
 	opdata_b.x_p = bpriv_key_bin;
-	opdata_b.pri = bp_bin + key_size;
+	opdata_b.pri = wd_alloc_blk(pool);
+	if (!opdata_b.pri) {
+		HPRE_TST_PRT("pool alloc opdata_b.pri fail!\n");
+		ret = -1;
+		goto dh_err;
+	}
+	memset(opdata_b.pri, 0, key_size * 2);
 	opdata_b.op_type = WCRYPTO_DH_PHASE1;
 
 	/* Bob computes public key */
@@ -1303,15 +1334,23 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 	}
 
 	/* Alice computes private key with HW accelerator */
-	apriv_key_bin = ag_bin + key_size;
+	memset(ag_bin, 0, key_size * 2);
+	memset(apriv_key_bin, 0, key_size * 2);
 	ap_bin = apriv_key_bin + key_size;
-	memset(ag_bin, 0, key_size * 4);
+	memset(opdata_a.pri, 0, key_size * 2);
+
 	opdata_a.pvbytes = BN_bn2bin(bpub_key, ag_bin);
 	opdata_a.pv = ag_bin;/* bob's public key here */
 	opdata_a.pbytes = BN_bn2bin(ap, ap_bin);
 	opdata_a.xbytes = BN_bn2bin(apriv_key, apriv_key_bin);
 	opdata_a.x_p = apriv_key_bin;
-	opdata_a.pri = ap_bin +key_size;
+	opdata_a.pri = wd_alloc_blk(pool);
+	if (!opdata_a.pri) {
+		HPRE_TST_PRT("pool alloc opdata_a.pri fail!\n");
+		ret = -1;
+		goto dh_err;
+	}
+	memset(opdata_a.pri, 0, key_size * 2);
 	opdata_a.op_type = WCRYPTO_DH_PHASE2;
 
 	/* Alice computes private key with HPRE */
@@ -1349,8 +1388,18 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 	DH_free(b);
 	if (ag_bin)
 		wd_free_blk(pool, ag_bin);
+	if (apriv_key_bin)
+		wd_free_blk(pool, apriv_key_bin);
+	if (opdata_a.pri)
+		wd_free_blk(pool, opdata_a.pri);
+
 	if (bg_bin)
 		wd_free_blk(pool, bg_bin);
+	if (bpriv_key_bin)
+		wd_free_blk(pool, bpriv_key_bin);
+	if (opdata_b.pri)
+		wd_free_blk(pool, opdata_b.pri);
+
 	if (apub_key_bin)
 		free(apub_key_bin);
 	if (bpub_key_bin)
@@ -1557,8 +1606,8 @@ int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 
 	setup.ops.alloc = (void *)wd_alloc_blk;
 	setup.ops.free = (void *)wd_free_blk;
-//	setup.ops.dma_map = (void *)wd_blk_dma_map;
-//	setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+	setup.ops.dma_map = (void *)wd_blk_dma_map;
+	setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
 	setup.ops.usr = pool;
 	ctx = wcrypto_create_rsa_ctx(q, &setup);
 	if (!ctx) {
@@ -1605,13 +1654,6 @@ int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 			HPRE_TST_PRT("alloc in buffer fail!\n");
 			goto fail_release;
 		}
-#if 0
-		if (opdata.op_type == WCRYPTO_RSA_VERIFY)
-			*(__u64 *)opdata.in = 0x25219371273;
-		else
-			*(__u64 *)(opdata.in + key_size - 16) = 0x2341;
-#endif
-//		opdata.out = hpre_test_alloc_buf(pool, 4 * key_size);
 		opdata.out = wd_alloc_blk(pool);
 		if (!opdata.out) {
 			HPRE_TST_PRT("alloc out buffer fail!\n");
@@ -1669,7 +1711,6 @@ int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 #ifdef DEBUG
 			print_data(opdata.out, 16, "out");
 #endif
-//			memset(opdata.out, 0, hpre_test_pool_block_size(pool));
 		}
 		if (is_allow_print(i, op_type, thread_num)) {
 			gettimeofday(&end_tval, NULL);
@@ -1748,9 +1789,8 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 {
 	void **pool;
 	struct wd_blkpool_setup setup;
-	int block_size = 4 * 1024;
 	int i, ret, cnt = 0, j;
-	int block_num = 64; // 1000
+	int block_num = 512;
 	struct wd_queue *q;
 	int h_cpuid, qidx;
 
@@ -1782,7 +1822,10 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 				return ret;
 			}
 			memset(&setup, 0, sizeof(setup));
-			setup.block_size = block_size;
+			if (!strncmp(q[j].capa.alg, "dh", 2))
+				setup.block_size = key_bits >> 2;
+			else if (!strncmp(q[j].capa.alg, "rsa", 3))
+				setup.block_size = (key_bits >> 4) * 20;
 			setup.block_num = block_num;
 			setup.align_size = 64;
 
@@ -1978,9 +2021,9 @@ void *_rsa_async_op_test_thread(void *data)
 	setup.cb = (void *)_rsa_cb;
 
 	setup.ops.alloc = (void *)wd_alloc_blk;
-	setup.ops.free = wd_free_blk;
-//	setup.ops.dma_map = (void *)wd_blk_dma_map;
-//	setup.ops.dma_unmap = wd_blk_dma_unmap;
+	setup.ops.free =  (void *)wd_free_blk;
+	setup.ops.dma_map = (void *)wd_blk_dma_map;
+	setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
 	setup.ops.usr = pool;
 	ctx = wcrypto_create_rsa_ctx(q, &setup);
 	if (!ctx) {
@@ -2062,13 +2105,6 @@ void *_rsa_async_op_test_thread(void *data)
 			goto fail_release;
 		}
 		memset(opdata.in, 0, opdata.in_bytes);
-#if 0
-		if (opdata.op_type == WCRYPTO_RSA_VERIFY)
-			*(__u64 *)opdata.in = 0x25219371273;
-		else
-			*(__u64 *)(opdata.in + opdata.in_bytes - 16) = 0x2341;
-#endif
-//		opdata.out = hpre_test_alloc_buf(pool, 0);
 		opdata.out = wd_alloc_blk(pool);
 		if (!opdata.out) {
 			HPRE_TST_PRT("alloc out buffer fail!\n");
@@ -2221,7 +2257,7 @@ gen_fail:
 static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			 __u64 hcore_mask, enum alg_op_type op_type)
 {
-	unsigned int block_size = 4096, block_num = 1000;
+	unsigned int block_num = 512;
 	void *pool;
 	struct wd_blkpool_setup setup;
 	struct wd_queue q;
@@ -2236,7 +2272,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 	memset(&setup, 0, sizeof(setup));
-	setup.block_size = block_size;
+	setup.block_size = (key_bits >> 4) * 20;
 	setup.block_num = block_num;
 	setup.align_size = 64;
 
@@ -2320,7 +2356,6 @@ static void _dh_cb(const void *message, void *tag)
 	struct timeval start_tval, end_tval;
 	int i, pid, threadId;
 	const void *pkey = NULL;
-	void *g = NULL;
 	float time, speed;
 	int ret;
 	static int failTimes = 0;
@@ -2329,10 +2364,14 @@ static void _dh_cb(const void *message, void *tag)
 		HPRE_TST_PRT("pSwData NULL!\n");
 		return;
 	}
+	memset(&opdata, 0, sizeof(opdata));
+	if (msg->op_type == WCRYPTO_DH_PHASE2)
+		opdata.pv = (void *)msg->g;
+
+	opdata.x_p = (void *)msg->x_p;
 
 	opdata.pri = (void *)msg->out;
 	opdata.pri_bytes = msg->out_bytes;
-	g = (char*)opdata.pri - 3 * pSwData->keySize;
 	opdata.status = msg->result;
 	i = pSwData->times;
 	start_tval = pSwData->start_tval;
@@ -2366,14 +2405,15 @@ static void _dh_cb(const void *message, void *tag)
 	}
 
 err:
-	if (pSwData) {
-		free(pSwData);
-		pSwData = NULL;
-	}
+	if (msg->op_type == WCRYPTO_DH_PHASE2 && opdata.pv)
+		wd_free_blk(pool, opdata.pv);
+	if (opdata.x_p)
+		wd_free_blk(pool, opdata.x_p);
+	if (opdata.pri)
+		wd_free_blk(pool, opdata.pri);
 
-	if (g)
-		wd_free_blk(pool, g);
-	
+	if (pSwData)
+		free(pSwData);
 }
 
 static void *_dh_async_poll_test_thread(void *data)
@@ -2395,7 +2435,7 @@ static void *_dh_async_poll_test_thread(void *data)
 						 pid, thread_id);
 			return NULL;
 		}
-		HPRE_TST_PRT("Proc-%d, thrd-%d bind to cpu-%d!\n",
+		HPRE_TST_PRT("Proc-%d, poll thrd-%d bind to cpu-%d!\n",
 					 pid, thread_id, cpuid);
 	}
 
@@ -2410,21 +2450,38 @@ static void *_dh_async_poll_test_thread(void *data)
 	return NULL;
 }
 
-//static int init_opdata_param(struct hpre_queue_mempool *pool,
 static int init_opdata_param(void *pool,
 			     struct wcrypto_dh_op_data *opdata,
-			     int key_size)
+			     int key_size, enum dh_check_index step)
 {
 	unsigned char *ag_bin = NULL;
-	
-	ag_bin = wd_alloc_blk(pool);
-	if (!ag_bin) {
-		return -1;
+
+	memset(opdata, 0, sizeof(*opdata));
+	if (step == DH_ALICE_PRIVKEY) {
+		ag_bin = wd_alloc_blk(pool);
+		if (!ag_bin)
+			return -ENOMEM;
+		memset(ag_bin, 0, 2 * key_size);
+		opdata->pv = ag_bin;
 	}
-	memset(ag_bin, 0, 4 * key_size);
-	opdata->pv = ag_bin;
-	opdata->x_p = ag_bin + key_size;
-	opdata->pri = opdata->x_p + 2 * key_size;
+	
+	opdata->x_p = wd_alloc_blk(pool);
+	if (!opdata->x_p) {
+		if (ag_bin)
+			wd_free_blk(pool, ag_bin);
+		return -ENOMEM;
+	}
+	memset(opdata->x_p, 0, 2 * key_size);
+
+	opdata->pri = wd_alloc_blk(pool);
+	if (!opdata->pri) {
+		if (ag_bin)
+			wd_free_blk(pool, ag_bin);
+		wd_free_blk(pool, opdata->x_p);
+		return -ENOMEM;
+	}
+	memset(opdata->pri, 0, 2 * key_size);
+
 	return 0;
 }
 
@@ -2433,7 +2490,6 @@ static void *_hpre_dh_sys_test_thread(void *data)
 	int ret, cpuid, i = 0, j = 0;
 	struct test_hpre_pthread_dt *pdata = data;
 	const BIGNUM *pkey = NULL;
-	unsigned char *g = NULL;
 	struct wd_queue *q = NULL;
 	void *pool = NULL;
 	struct wcrypto_dh_op_data opdata_a;
@@ -2489,8 +2545,8 @@ static void *_hpre_dh_sys_test_thread(void *data)
 
 	dh_setup.ops.alloc = (void *)wd_alloc_blk;
 	dh_setup.ops.free = (void *)wd_free_blk;
-//	dh_setup.ops.dma_map = (void *)wd_blk_dma_map;
-//	dh_setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+	dh_setup.ops.dma_map = (void *)wd_blk_dma_map;
+	dh_setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
 	dh_setup.ops.usr = pool;
 	ctx_alice = wcrypto_create_dh_ctx(q, &dh_setup);
 	ctx_bob = wcrypto_create_dh_ctx(q, &dh_setup);
@@ -2537,7 +2593,7 @@ usleep(1000*1000);
 			}
 
 			if (!only_soft && !isHwTestPrehandler) {
-				ret = init_opdata_param(pool, opdata, key_size);
+				ret = init_opdata_param(pool, opdata, key_size, DH_ALICE_PUBKEY);
 				if (ret < 0) {
 					usleep(100);
 					continue;
@@ -2566,10 +2622,20 @@ usleep(1000*1000);
 					HPRE_TST_PRT("Proc-%d, T-%d:hpre dh %dth fail!,status %02x\n",
 						pid, thread_id, j, opdata->status);
 					if (ret) {
-						g = (unsigned char *)opdata->x_p - key_size;
-						if (g)
-//							hpre_test_free_buf(pool, g);
-							wd_free_blk(pool, g);
+							if (opdata->pv) {
+								wd_free_blk(pool, opdata->pv);
+								opdata->pv = NULL;
+							}
+
+							if (opdata->x_p) {
+								wd_free_blk(pool, opdata->x_p);
+								opdata->x_p = NULL;
+							}
+
+							if (opdata->pri) {
+								wd_free_blk(pool, opdata->pri);
+								opdata->pri = NULL;
+							}
 						goto fail_release;
 					}
 				}
@@ -2584,7 +2650,7 @@ usleep(1000*1000);
 			}
 			
 			if (!only_soft && !isHwTestPrehandler) {
-				ret = init_opdata_param(pool, opdata, key_size);
+				ret = init_opdata_param(pool, opdata, key_size, DH_ALICE_PRIVKEY);
 				if (ret < 0) {
 					usleep(100);
 					continue;
@@ -2613,10 +2679,20 @@ usleep(1000*1000);
 					HPRE_TST_PRT("Proc-%d, T-%d:hpre dh %dth fail!,status %02x\n",
 						pid, thread_id, j, opdata->status);
 					if (ret) {
-						g = (unsigned char *)opdata->x_p - key_size;
-						if (g)
-//							hpre_test_free_buf(pool, g);
-							wd_free_blk(pool, g);
+							if (opdata->pv) {
+								wd_free_blk(pool, opdata->pv);
+								opdata->pv = NULL;
+							}
+
+							if (opdata->x_p) {
+								wd_free_blk(pool, opdata->x_p);
+								opdata->x_p = NULL;
+							}
+
+							if (opdata->pri) {
+								wd_free_blk(pool, opdata->pri);
+								opdata->pri = NULL;
+							}
 						goto fail_release;
 					}
 				}
@@ -2645,11 +2721,19 @@ usleep(1000*1000);
 			}
 
 			if (isNeedFreeBuf) {
-				g = (unsigned char *)opdata->x_p - key_size;
-				if (g) {
-//					hpre_test_free_buf(pool, g);
-					wd_free_blk(pool, g);
-					g = NULL;
+				if (opdata->pv) {
+					wd_free_blk(pool, opdata->pv);
+					opdata->pv = NULL;
+				}
+
+				if (opdata->x_p) {
+					wd_free_blk(pool, opdata->x_p);
+					opdata->x_p = NULL;
+				}
+
+				if (opdata->pri) {
+					wd_free_blk(pool, opdata->pri);
+					opdata->pri = NULL;
 				}
 				isNeedFreeBuf = 0;
 			}
@@ -2678,12 +2762,10 @@ fail_release:
 static int dh_async_test(int thread_num, __u64 lcore_mask,
 			 __u64 hcore_mask, enum alg_op_type op_type)
 {
-//	struct hpre_queue_mempool *bufPool;
 	void *bufPool;
 	struct wd_blkpool_setup setup;
-	int block_size = 4 * 1024;
 	int i, ret, cnt = 0;
-	int block_num = 1000;
+	int block_num = 1024;
 	struct wd_queue *q;
 	int h_cpuid;
 
@@ -2701,7 +2783,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 	memset(&setup, 0, sizeof(setup));
-	setup.block_size = block_size;
+	setup.block_size = key_bits >> 2; // block_size;
 	setup.block_num = block_num;
 	setup.align_size = 64;
 
@@ -2730,7 +2812,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 
-	for (i = 1; i < cnt; i++) {
+	for (i = 1; i <= cnt; i++) {
 		test_thrds_data[i].pool = bufPool;
 		test_thrds_data[i].q = q;
 		test_thrds_data[i].thread_num = thread_num;
@@ -2744,7 +2826,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 		}
 	}
 
-	for (i = 0; i < thread_num - cnt; i++) {
+	for (i = 1; i <= thread_num - cnt; i++) {
 		h_cpuid = _get_cpu_id(i, hcore_mask);
 		if (h_cpuid > 0)
 			h_cpuid += 64;
@@ -2769,6 +2851,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 			return ret;
 		}
 	}
+	
 	free(q);
 	wd_blkpool_destroy(bufPool);
 
@@ -2802,8 +2885,7 @@ int main(int argc, char *argv[])
 	int ret = 0, in_size = 0, op_size;
 	int priv_key_size, pub_key_size, key_info_size;
 	int read_size, out_fd = -1, try_close = 1;
-	int block_size = 4096;
-	int block_num = 1000;
+	int block_num = 1024;
 	struct wd_queue q;
 	struct wcrypto_rsa_ctx_setup setup;
 	struct wcrypto_dh_ctx_setup dh_setup;
@@ -2849,7 +2931,6 @@ int main(int argc, char *argv[])
 	} else if (!strcmp(argv[1], "-system-agen1")) {
 		HPRE_TST_PRT("DH gen async\n");
 		alg_op_type = DH_ASYNC_GEN;
-printf("alg_op_type = %d\n", alg_op_type);
 		is_system_test = 1;
 	} else {
 		goto basic_function_test;
@@ -3084,7 +3165,10 @@ basic_function_test:
 
 	struct wd_blkpool_setup wsetup;
 	memset(&wsetup, 0, sizeof(wsetup));
-	wsetup.block_size = block_size;
+	if (!strncmp(q.capa.alg, "rsa", 3))
+		wsetup.block_size = (key_bits >> 4) * 7;
+	else if (!strncmp(q.capa.alg, "dh", 2))
+		wsetup.block_size = key_bits >> 2;
 	wsetup.block_num = block_num;
 	wsetup.align_size = 64;
 
@@ -3098,9 +3182,9 @@ basic_function_test:
 		setup.key_bits = key_bits;
 
 		setup.ops.alloc = (void *)wd_alloc_blk;
-		setup.ops.free = wd_free_blk;
-//		setup.ops.dma_map = (void *)wd_blk_dma_map;
-//		setup.ops.dma_unmap = wd_blk_dma_unmap;
+		setup.ops.free = (void *)wd_free_blk;
+		setup.ops.dma_map = (void *)wd_blk_dma_map;
+		setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
 		setup.ops.usr = pool;
 		ctx = wcrypto_create_rsa_ctx(&q, &setup);
 		if (!ctx) {
@@ -3112,9 +3196,9 @@ basic_function_test:
 		dh_setup.key_bits = key_bits;
 
 		dh_setup.ops.alloc = (void *)wd_alloc_blk;
-		dh_setup.ops.free = wd_free_blk;
-//	I	dh_setup.ops.dma_map = (void *)wd_blk_dma_map;
-//		dh_setup.ops.dma_unmap = wd_blk_dma_unmap;
+		dh_setup.ops.free = (void *)wd_free_blk;
+		dh_setup.ops.dma_map = (void *)wd_blk_dma_map;
+		dh_setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
 		dh_setup.ops.usr = pool;
 		ctx = wcrypto_create_dh_ctx(&q, &dh_setup);
 		if (!ctx) {
