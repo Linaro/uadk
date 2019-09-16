@@ -287,11 +287,15 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		WD_ERR("Invalid rsa operatin type!\n");
 		return -WD_EINVAL;
 	}
-	phy  = (uintptr_t)drv_dma_map(q, data, ret);
+
+	phy  = (uintptr_t)drv_dma_map(q, msg->key, ret);
 	if (!phy) {
 		WD_ERR("Dma map rsa key fail!\n");
 		return -WD_ENOMEM;
 	}
+
+	phy += (uintptr_t)data - (uintptr_t)msg->key;
+
 	hw_msg->low_key = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_key = HI_U32(phy);
 	return WD_SUCCESS;
@@ -324,11 +328,12 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		ret = wcrypto_rsa_kg_out_data(kout, (char **)&out);
 		if (ret < 0)
 			return ret;
-		phy = (uintptr_t)drv_dma_map(q, out, ret);
+		phy = (uintptr_t)drv_dma_map(q, kout, ret);
 		if (!phy) {
 			WD_ERR("Get rsa out buf dma address fail!\n");
 			return -WD_ENOMEM;
 		}
+		phy += (uintptr_t)out - (uintptr_t)kout;
 	}
 	hw_msg->low_out = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_out = HI_U32(phy);
