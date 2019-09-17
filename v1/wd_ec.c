@@ -8,13 +8,11 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include "wd_util.h"
 #include "wd_ec.h"
+#include "wd_util.h"
 
-#define WCRYPTO_EC_CTX_MSG_NUM		512
-#define WCRYPTO_EC_MAX_CTX		256
-#define WCRYPTO_EC_MAX_RETRY_CNT	10000000
-#define WCRYPTO_EC_INVALID_FLAG		0x7f
+#define EC_MAX_RETRY_CNT	10000000
+#define EC_INVALID_FLAG	0x7f
 
 struct wcrypto_ec_cache {
 	struct wcrypto_ec_tag tag;
@@ -27,52 +25,40 @@ struct wcrypto_ec_ctx {
 	__u8 cstatus[WCRYPTO_EC_CTX_MSG_NUM];
 	int cidx;
 	int ctx_id;
-	struct wd_queue *q;
-	wcrypto_cb cb;
 	__u8 *tbl_buf;
-
+	struct wd_queue *q;
+	struct wcrypto_ec_ctx_setup setup;
 };
 
-static int alloc_tbl_mem(__u8 *buf, struct wd_queue *q,
+static void alloc_tbl_mem(__u8 *buf, __u8 *pa,
 	struct wcrypto_ec_table *ec_table)
 {
-	ec_table->src_addr = (struct rde_src_tbl *)buf;
-	ec_table->src_addr_pa = (__u64)wd_dma_map(q,
-		(void *)ec_table->src_addr, 0);
-	if (!ec_table->src_addr_pa)
-		return -WD_ENOMEM;
+	ec_table->src_addr = (struct src_tbl *)buf;
+	ec_table->src_addr_pa = (__u64)pa;
 
 	ec_table->src_tag_addr =
-		(struct rde_src_tag_tbl *)(buf + sizeof(struct rde_src_tbl));
-	ec_table->src_tag_addr_pa = (__u64)wd_dma_map(q,
-		(void *)ec_table->src_tag_addr, 0);
-	if (!ec_table->src_tag_addr_pa)
-		return -WD_ENOMEM;
+		(struct src_tag_tbl *)(buf + sizeof(struct src_tbl));
+	ec_table->src_tag_addr_pa = (__u64)(pa + sizeof(struct src_tbl));
 
 	ec_table->dst_addr =
-		(struct rde_dst_tbl *)((__u8 *)ec_table->src_tag_addr +
-		sizeof(struct rde_src_tag_tbl));
-	ec_table->dst_addr_pa = (__u64)wd_dma_map(q,
-		(void *)ec_table->dst_addr, 0);
-	if (!ec_table->dst_addr_pa)
-		return -WD_ENOMEM;
+		(struct dst_tbl *)((__u8 *)ec_table->src_tag_addr +
+		sizeof(struct src_tag_tbl));
+	ec_table->dst_addr_pa =
+		(__u64)((__u8 *)ec_table->src_tag_addr_pa +
+		sizeof(struct src_tag_tbl));
 
 	ec_table->dst_tag_addr =
-		(struct rde_dst_tag_tbl *)((__u8 *)ec_table->dst_addr +
-		sizeof(struct rde_dst_tbl));
-	ec_table->dst_tag_addr_pa = (__u64)wd_dma_map(q,
-		(void *)ec_table->dst_tag_addr, 0);
-	if (!ec_table->dst_tag_addr_pa)
-		return -WD_ENOMEM;
+		(struct dst_tag_tbl *)((__u8 *)ec_table->dst_addr +
+		sizeof(struct dst_tbl));
+	ec_table->dst_tag_addr_pa =
+		(__u64)((__u8 *)ec_table->dst_addr_pa +
+		sizeof(struct dst_tbl));
 
 	ec_table->matrix = (__u8 *)ec_table->dst_tag_addr +
-		sizeof(struct rde_dst_tag_tbl);
-	ec_table->matrix_pa = (__u64)wd_dma_map(q,
-		(void *)ec_table->matrix, 0);
-	if (!ec_table->matrix_pa)
-		return -WD_ENOMEM;
-
-	return 0;
+		sizeof(struct dst_tag_tbl);
+	ec_table->matrix_pa =
+		(__u64)((__u8 *)ec_table->dst_tag_addr_pa +
+		sizeof(struct dst_tag_tbl));
 }
 
 static struct wcrypto_ec_cache *get_ec_cache(struct wcrypto_ec_ctx *ctx)
@@ -105,25 +91,49 @@ static void put_ec_cache(struct wcrypto_ec_ctx *ctx,
 	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
 }
 
+static int wcrypto_check_ctx_para(struct wd_queue *q,
+	struct wcrypto_ec_ctx_setup *setup)
+{
+	if (!q || !setup) {
+		WD_ERR("%s():  input param invalid!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (!setup->ops.alloc || !setup->ops.free ||
+		!setup->ops.dma_map || !setup->ops.dma_unmap) {
+		WD_ERR("%s(): wd_mm_ops should not be NULL!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (strncmp(q->capa.alg, "rde", strlen("rde"))) {
+		WD_ERR("%s(): alg mismatching!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 void *wcrypto_create_ec_ctx(struct wd_queue *q,
 	struct wcrypto_ec_ctx_setup *setup)
 {
 	struct q_info *qinfo;
 	struct wcrypto_ec_ctx *ctx;
 	int ctx_id, i;
+	__u8 *pa;
 
-	if (!q || !setup) {
-		WD_ERR("%s():  input param invalid!\n", __func__);
+	if (wcrypto_check_ctx_para(q, setup))
 		return NULL;
-	}
-
-	if (strncmp(q->capa.alg, "rde", strlen("rde"))) {
-		WD_ERR("%s(): alg mismatching!\n", __func__);
-		return NULL;
-	}
 
 	qinfo = q->info;
 	wd_spinlock(&qinfo->qlock);
+	if (!qinfo->ops.alloc && !qinfo->ops.dma_map)
+		memcpy(&qinfo->ops, &setup->ops, sizeof(setup->ops));
+
+	if (qinfo->ops.usr != setup->ops.usr) {
+		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("%s(): config different ops!\n", __func__);
+		return NULL;
+	}
 	qinfo->ctx_num++;
 	ctx_id = qinfo->ctx_num;
 	wd_unspinlock(&qinfo->qlock);
@@ -137,25 +147,35 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 		WD_ERR("%s() alloc ctx fail!\n", __func__);
 		return NULL;
 	}
+	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->q = q;
 	ctx->ctx_id = ctx_id;
-	ctx->cb = setup->cb;
-	ctx->tbl_buf = wd_reserve_memory(ctx->q,
-		WCRYPTO_EC_CTX_MSG_NUM * RDE_TLB_MEMSIZE);
+	ctx->tbl_buf = setup->ops.alloc(setup->ops.usr,
+		WCRYPTO_EC_CTX_MSG_NUM * WCRYPTO_EC_TBl_SIZE);
 	if (!ctx->tbl_buf) {
 		WD_ERR("%s() reserve memory fail!\n", __func__);
+		free(ctx);
 		return NULL;
 	}
+
+	pa = setup->ops.dma_map(setup->ops.usr, (void *)ctx->tbl_buf,
+		WCRYPTO_EC_CTX_MSG_NUM * WCRYPTO_EC_TBl_SIZE);
+	if (!pa) {
+		WD_ERR("%s() dma_map fail!\n", __func__);
+		setup->ops.free(setup->ops.usr, (void *)ctx->tbl_buf);
+		free(ctx);
+		return NULL;
+	}
+
 	for (i = 0; i < WCRYPTO_EC_CTX_MSG_NUM; i++) {
 		ctx->caches[i].msg.alg_type = WD_EC;
 		ctx->caches[i].msg.ec_type = setup->ec_type;
 		ctx->caches[i].msg.data_fmt = setup->data_fmt;
-		ctx->caches[i].msg.result = WCRYPTO_EC_INVALID_FLAG;
+		ctx->caches[i].msg.result = EC_INVALID_FLAG;
 		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
 		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
-		if (alloc_tbl_mem(ctx->tbl_buf + i * RDE_TLB_MEMSIZE,
-			ctx->q, &ctx->caches[i].table))
-			return NULL;
+		alloc_tbl_mem(ctx->tbl_buf + i * WCRYPTO_EC_TBl_SIZE,
+			pa + i * WCRYPTO_EC_TBl_SIZE, &ctx->caches[i].table);
 		ctx->caches[i].tag.tbl_addr = (__u64)&ctx->caches[i].table;
 		ctx->caches[i].msg.usr_data = (__u64)&ctx->caches[i].tag;
 	}
@@ -178,7 +198,7 @@ static void fill_ec_msg(struct wcrypto_ec_ctx *ctx,
 	msg->out = opdata->out;
 	msg->out_disk_num = opdata->out_disk_num;
 	msg->op_type = opdata->op_type;
-	msg->result = WCRYPTO_EC_INVALID_FLAG;
+	msg->result = EC_INVALID_FLAG;
 	msg->cid = ctx->ctx_id;
 }
 
@@ -187,7 +207,7 @@ int wcrypto_do_ec(void *ctx, struct wcrypto_ec_op_data *opdata, void *tag)
 	struct wcrypto_ec_ctx *cctx;
 	struct wcrypto_ec_msg *msg, *resp;
 	struct wcrypto_ec_cache *cache;
-	__u64 recv_count = 0;
+	__u64 rx_cnt = 0;
 	int ret = -WD_EINVAL;
 
 	if (!ctx || !opdata) {
@@ -200,7 +220,7 @@ int wcrypto_do_ec(void *ctx, struct wcrypto_ec_op_data *opdata, void *tag)
 	if (!cache)
 		return -WD_EBUSY;
 	if (tag) {
-		if (!cctx->cb) {
+		if (!cctx->setup.cb) {
 			WD_ERR("%s() ctx callback is null!\n", __func__);
 			goto cache_fail;
 		}
@@ -226,11 +246,11 @@ int wcrypto_do_ec(void *ctx, struct wcrypto_ec_op_data *opdata, void *tag)
 	resp = (void *)(uintptr_t)cctx->ctx_id;
 recv_again:
 	ret = wd_recv(cctx->q, (void **)&resp);
-	if (ret == -WD_HW_EACCESS || ret == -EIO) {
+	if (ret < 0) {
 		WD_ERR("%s():wd_recv fail!(ret:%d)\n", __func__, ret);
 		goto cache_fail;
 	} else if (ret == 0) {
-		if (++recv_count > WCRYPTO_EC_MAX_RETRY_CNT) {
+		if (++rx_cnt > EC_MAX_RETRY_CNT) {
 			WD_ERR("%s():wd_recv timeout!\n", __func__);
 			ret = -WD_ETIMEDOUT;
 			goto cache_fail;
@@ -276,7 +296,7 @@ int wcrypto_ec_poll(struct wd_queue *q, int num)
 		if (resp) {
 			tag = (void *)resp->usr_data;
 			ctx = tag->wcrypto_tag.ctx;
-			ctx->cb(resp, tag->wcrypto_tag.tag);
+			ctx->setup.cb(resp, tag->wcrypto_tag.tag);
 			put_ec_cache(ctx, (struct wcrypto_ec_cache *)tag);
 			resp = NULL;
 			count++;
@@ -291,6 +311,7 @@ void wcrypto_del_ec_ctx(void *ctx)
 {
 	struct q_info *qinfo;
 	struct wcrypto_ec_ctx *cctx;
+	struct wd_mm_ops *ops;
 
 	if (!ctx) {
 		WD_ERR("%s(): input param err!\n", __func__);
@@ -301,6 +322,8 @@ void wcrypto_del_ec_ctx(void *ctx)
 	qinfo = cctx->q->info;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	if (!qinfo->ctx_num)
+		memset(&qinfo->ops, 0, sizeof(qinfo->ops));
 	if (qinfo->ctx_num < 0) {
 		WD_ERR("%s(): repeat del comp ctx!\n", __func__);
 		wd_unspinlock(&qinfo->qlock);
@@ -308,6 +331,9 @@ void wcrypto_del_ec_ctx(void *ctx)
 	}
 	wd_unspinlock(&qinfo->qlock);
 
+	ops = &cctx->setup.ops;
+	if (ops && ops->free)
+		ops->free(ops->usr, (void *)cctx->tbl_buf);
 	free(cctx);
 }
 

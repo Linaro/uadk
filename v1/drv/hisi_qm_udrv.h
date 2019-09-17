@@ -68,6 +68,34 @@ struct qm_queue_info {
 	struct wd_queue *q;
 };
 
+struct wd_sgl_entry {
+	__u8 *buf;	/* Start address of page data, 64bit */
+	void *page_ctrl;
+	__u32 len;	/* Valid data length in Byte */
+	__u32 pad;
+	__u32 pad0;
+	__u32 pad1;
+};
+
+struct wd_sgl {
+	/* next sgl point, to make up chain, 64bit */
+	struct wd_sgl *next;
+	/* sum of entry_sum_in_sgl in sgl chain */
+	__u16 entry_sum_in_chain;
+	/* valid sgl_entry num in this sgl */
+	__u16 entry_sum_in_sgl;
+	/* sgl_entry num in this sgl */
+	__u16 entry_num_in_sgl;
+	__u8 pad0[2];
+	__u64 serial_num;
+	__u32 flag;
+	__u32 cpu_id;
+	__u8 pad1[8];
+	__u8 reserved[24];
+	/* sgl_entry point */
+	struct wd_sgl_entry entries[0];
+};
+
 int qm_init_queue(struct wd_queue *q);
 void qm_uninit_queue(struct wd_queue *q);
 int qm_send(struct wd_queue *q, void *msg);
