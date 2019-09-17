@@ -3,6 +3,7 @@
 #define __HISI_RDE_UDRV_H__
 
 #include <linux/types.h>
+#include "hisi_qm_udrv.h"
 
 #define RDE_FLEXEC_CMSIZE		1024
 #define RDE_MPCC_CMSIZE		2176
@@ -90,6 +91,23 @@ struct hisi_rde_sqe {
 	__u64 dst_addr;
 	__u64 dst_tag_addr;
 	__u64 dw7;
+};
+
+/**
+ * @brief sgl structure for rde.
+ * @note
+ * parity is just valid in update mode
+ */
+struct rde_sgl {
+	/* source and destination data block SGL address */
+	struct wd_sgl *ctrl;
+	/* offset of per data disk in the SGL chain */
+	__u32 buf_offset;
+	/* data disk is 0, parity disk is 1 */
+	__u8 parity;
+	__u8 reserve;
+	/* the index corresponding to src and dst disk */
+	__u8 column;
 };
 
 int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i);
