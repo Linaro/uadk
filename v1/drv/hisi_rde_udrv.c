@@ -13,12 +13,9 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/syscall.h>
-
 #include "wd.h"
 #include "wd_util.h"
 #include "wd_ec.h"
-#include "wd_ec_util.h"
-#include "hisi_qm_udrv.h"
 #include "hisi_rde_udrv.h"
 
 static __u16 g_ref_cnt;
@@ -33,7 +30,7 @@ static void rde_dump_sqe(struct hisi_rde_sqe *sqe)
 }
 
 #ifdef DEBUG
-static void rde_dump_table(struct wd_ec_table *tbl)
+static void rde_dump_table(struct wcrypto_ec_table *tbl)
 {
 	int i;
 
@@ -183,10 +180,10 @@ static void rde_table_package(struct hisi_rde_sqe *sqe,
 	struct wcrypto_ec_msg *msg,
 	struct wcrypto_ec_table *tbl)
 {
-	memset(tbl->src_addr, 0, sizeof(struct rde_src_tbl));
-	memset(tbl->dst_addr, 0, sizeof(struct rde_dst_tbl));
-	memset(tbl->src_tag_addr, 0, sizeof(struct rde_src_tag_tbl));
-	memset(tbl->dst_tag_addr, 0, sizeof(struct rde_dst_tag_tbl));
+	memset(tbl->src_addr, 0, sizeof(struct src_tbl));
+	memset(tbl->dst_addr, 0, sizeof(struct dst_tbl));
+	memset(tbl->src_tag_addr, 0, sizeof(struct src_tag_tbl));
+	memset(tbl->dst_tag_addr, 0, sizeof(struct dst_tag_tbl));
 	rde_fill_src_table(msg, tbl);
 	rde_fill_dst_table(msg, tbl);
 	if (pdata) {

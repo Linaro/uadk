@@ -6,7 +6,50 @@
 #include <errno.h>
 #include <linux/types.h>
 #include "wd.h"
-#include "wd_ec_util.h"
+
+#define SRC_ADDR_TABLE_NUM		48
+#define SRC_DIF_TABLE_NUM		20
+#define DST_ADDR_TABLE_NUM		26
+#define DST_DIF_TABLE_NUM		17
+#define WCRYPTO_EC_TBl_SIZE		4096
+#define WCRYPTO_EC_CTX_MSG_NUM	256
+#define WCRYPTO_EC_MAX_CTX	256
+
+/* src data addr table, should be 64byte aligned.*/
+struct src_tbl {
+	__u64 content[SRC_ADDR_TABLE_NUM];
+};
+
+/* src data dif table, should be 64byte aligned.*/
+struct src_tag_tbl {
+	__u64 content[SRC_DIF_TABLE_NUM];
+	__u64 reserve[4];
+};
+
+/* dst data addr table, should be 64byte aligned.*/
+struct dst_tbl {
+	__u64 content[DST_ADDR_TABLE_NUM];
+	__u64 reserve[6];
+};
+
+/* dst data dif table, should be 64byte aligned.*/
+struct dst_tag_tbl {
+	__u64 content[DST_DIF_TABLE_NUM];
+	__u64 reserve[7];
+};
+
+struct wcrypto_ec_table {
+	struct src_tbl *src_addr;
+	__u64 src_addr_pa;
+	struct dst_tbl *dst_addr;
+	__u64 dst_addr_pa;
+	struct src_tag_tbl *src_tag_addr;
+	__u64 src_tag_addr_pa;
+	struct dst_tag_tbl *dst_tag_addr;
+	__u64 dst_tag_addr_pa;
+	__u8 *matrix;
+	__u64 matrix_pa;
+};
 
 enum wcrypto_ec_type {
 	WCRYPTO_EC_MPCC = 0,
@@ -36,6 +79,54 @@ enum wcrypto_ec_blksize {
 	WCRYPTO_EC_BLK_4096 = 4096,
 	WCRYPTO_EC_BLK_4104 = 4104,
 	WCRYPTO_EC_BLK_4160 = 4160,
+};
+
+struct dif_gen {
+	__u32 page_layout_gen_type:4;
+	__u32 grd_gen_type:4;
+	__u32 ver_gen_type:4;
+	__u32 app_gen_type:4;
+	__u32 ref_gen_type:4;
+	__u32 page_layout_pad_type:2;
+	__u32 reserved:10;
+};
+
+struct dif_verify {
+	__u16 page_layout_pad_type:2;
+	__u16 grd_verify_type:4;
+	__u16 ref_verify_type:4;
+	__u16 reserved:6;
+};
+
+struct dif_ctrl {
+	struct dif_gen gen;
+	struct dif_verify verify;
+};
+
+/**
+ * general dif structure
+ * @lba: lba for dif ref field
+ * @priv: private info for dif ref field
+ * @ver: 8bit version
+ * @app: 8bit application information field
+ * @ctrl: dif gen and verify ctrl info
+ */
+struct wcrypto_dif {
+	__u64 lba;
+	__u32 priv;
+	__u8 ver;
+	__u8 app;
+	struct dif_ctrl ctrl;
+};
+
+/**
+ * EC dif format of Warpdrive
+ * @src_dif: dif of in disk
+ * @dst_dif: dif of out disk
+ */
+struct wcrypto_ec_priv_data {
+	struct wcrypto_dif src_dif;
+	struct wcrypto_dif dst_dif;
 };
 
 /**
