@@ -49,9 +49,6 @@ struct hisi_zip_sqe {
 	__u32 checksum;
 
 };
-#define DECOMP_STREAM_END 0x113
-#define DECOMP_STREAM_END_MASK 0x1ff
-#define STREAM_FLUSH_SHIFT 25
 
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
 int qm_parse_zip_sqe(void *msg,
