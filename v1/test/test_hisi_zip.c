@@ -122,7 +122,7 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 
 	m->in_size = ilen;
 	dbg("zip input ilen= %lu, block_size= %d, total_len= %d\n",
-	    ilen, zip_priv->block_size, zip_priv->total_len);
+	    ilen, block_size, hizip_priv.total_len);
 
 	dbg("zip input(%p, %p): %p, %p, %d, %d\n",
 	    msg, m,

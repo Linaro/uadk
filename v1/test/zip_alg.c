@@ -328,6 +328,8 @@ int hw_blk_decompress(int alg_type, int blksize,
 
 #define Z_OK            0
 #define Z_STREAM_END    1
+#define Z_STREAM_NEED_AGAIN   2
+
 #define Z_ERRNO (-1)
 #define Z_STREAM_ERROR (-EIO)
 
@@ -572,9 +574,10 @@ static int append_store_block(struct zip_stream *zstrm, int flush)
 		memcpy(zstrm->next_out + 5, &checksum, 4);
 		zstrm->total_out += 4;
 		zstrm->avail_out -= 4;
-	} else if (opdata->alg_type == WCRYPTO_GZIP) {  /*if gzip, CRC32 and ISIZE*/
+	} else if (opdata->alg_type == WCRYPTO_GZIP) {
 		checksum = ~checksum;
 		checksum = bit_reverse(checksum);
+		/* if gzip, CRC32 and ISIZE */
 		memcpy(zstrm->next_out + 5, &checksum, 4);
 		memcpy(zstrm->next_out + 9, &isize, 4);
 		zstrm->total_out += 8;
@@ -592,7 +595,7 @@ static int hw_send_and_recv(struct zip_stream *zstrm, int flush)
 	void *zip_ctx = opdata->ctx;
 	int ret = 0;
 
-	if (zstrm->avail_in == 0)
+	if (zstrm->avail_in == 0 && flush == WCRYPTO_FINISH)
 		return append_store_block(zstrm, flush);
 
 	opdata->flush = flush;
@@ -611,7 +614,7 @@ static int hw_send_and_recv(struct zip_stream *zstrm, int flush)
 	}
 
 	dbg("%s():output, inlen=%d, coms=%d, produced=%d, avail_out=%lu!\n",
-	    __func__, opdata->in_len, opdata->comsumed,
+	    __func__, opdata->in_len, opdata->consumed,
 	    opdata->produced, zstrm->avail_out);
 
 	zstrm->avail_in = opdata->in_len - opdata->consumed;
@@ -625,6 +628,8 @@ static int hw_send_and_recv(struct zip_stream *zstrm, int flush)
 
 	if (ret == 0 && flush == WCRYPTO_FINISH)
 		ret = Z_STREAM_END;
+	else if (ret == 0 && opdata->status == WCRYPTO_DECOMP_END_NOSPACE)
+		ret = Z_STREAM_NEED_AGAIN;    /* decomp_is_end region */
 	else if (ret == 0 && opdata->status == WCRYPTO_DECOMP_END)
 		ret = Z_STREAM_END;    /* decomp_is_end region */
 	else if (ret == 0 && opdata->status == WD_VERIFY_ERR)
@@ -849,11 +854,12 @@ int hw_stream_decompress(int alg_type, int blksize,
 			zstrm.avail_in = srclen;
 			srclen = 0;
 		}
-
-		if (zstrm.avail_in == 0) {
-			ret = Z_STREAM_END;
-			break;
-		}
+/*
+ *		if (zstrm.avail_in == 0) {
+ *			ret = Z_STREAM_END;
+ *			break;
+ *		}
+ */
 		/* finish compression if all of source has been read in */
 		do {
 			zstrm.avail_out = stream_chunk;
@@ -946,6 +952,8 @@ int hw_stream_def(FILE *source, FILE *dest,  int alg_type)
 		/* done when last data in file processed */
 	} while (flush != WCRYPTO_FINISH);
 
+	dbg("%s, end strm->total = %ld\n", __func__, zstrm.total_out);
+
 	ASSERT(ret == Z_STREAM_END);       /* stream will be complete */
 	hw_end(&zstrm);
 
@@ -975,8 +983,10 @@ int hw_stream_inf(FILE *source, FILE *dest,  int alg_type)
 			hw_end(&zstrm);
 			return Z_ERRNO;
 		}
-		if (zstrm.avail_in == 0)
-			break;
+/*
+ *		if (zstrm.avail_in == 0)
+ *			break;
+ */
 		/* finish compression if all of source has been read in */
 		do {
 			zstrm.avail_out = stream_chunk;
@@ -998,6 +1008,8 @@ int hw_stream_inf(FILE *source, FILE *dest,  int alg_type)
 
 		/* done when last data in file processed */
 	} while (ret != Z_STREAM_END);
+
+	dbg("%s, end strm->total = %ld\n", __func__, zstrm.total_out);
 
 	ASSERT(ret == Z_STREAM_END);            /* stream will be complete */
 	hw_end(&zstrm);
