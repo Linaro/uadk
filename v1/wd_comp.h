@@ -63,6 +63,8 @@ enum wcrypto_op_result {
 	WCRYPTO_STATUS_NULL,
 	WCRYPTO_COMP_END,
 	WCRYPTO_DECOMP_END,
+	WCRYPTO_DECOMP_END_NOSPACE,
+	WCRYPTO_DECOMP_NO_CRC,
 };
 
 enum wcrypto_comp_state {
