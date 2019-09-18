@@ -17,12 +17,17 @@
 #include "wd_comp.h"
 #include "hisi_zip_udrv.h"
 
+#define STREAM_FLUSH_SHIFT 25
 #define MIN_AVAILOUT_SIZE 4096
 #define STREAM_POS_SHIFT 2
 #define STREAM_MODE_SHIFT 1
-#define NEGACOMPRESS 0x0d
-#define CRC_ERR 0x10
-#define DECOMP_END 0x13
+
+#define HW_NEGACOMPRESS 0x0d
+#define HW_CRC_ERR 0x10
+#define HW_DECOMP_END 0x13
+
+#define HW_DECOMP_NO_CRC 0x04
+#define HW_DECOMP_NO_SPACE 0x01
 
 #ifdef DEBUG_LOG
 void zip_sqe_dump(struct hisi_zip_sqe *sqe)
@@ -123,15 +128,17 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
-	__u32 status = sqe->dw3 & 0xff;
-	__u32 type = sqe->dw9 & 0xff;
+	__u32 ctx_st = sqe->ctx_dw0 & 0x000f;
+	__u32 status = sqe->dw3 & 0x00ff;
+	__u32 type = sqe->dw9 & 0x00ff;
 
 	if (usr && sqe->tag != usr)
 		return 0;
 
-	if (status != 0 && status != NEGACOMPRESS &&
-	    status != CRC_ERR && status != DECOMP_END) {
-		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
+	if (status != 0 && status != HW_NEGACOMPRESS &&
+	    status != HW_CRC_ERR && status != HW_DECOMP_END) {
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%d)\n",
+		       ctx_st, status, type);
 #ifdef DEBUG_LOG
 		zip_sqe_dump(sqe);
 #endif
@@ -148,8 +155,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->humm_type = 0;
 	recv_msg->op_type = 0;
 	recv_msg->win_size = 0;
-	if ((sqe->dw3 & DECOMP_STREAM_END_MASK) == DECOMP_STREAM_END)
-		recv_msg->status = WCRYPTO_DECOMP_END;
+
 	recv_msg->ctx_priv0 = sqe->ctx_dw0;
 	recv_msg->ctx_priv1 = sqe->ctx_dw1;
 	recv_msg->ctx_priv2 = sqe->ctx_dw2;
@@ -157,8 +163,16 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->checksum = sqe->checksum;
 	recv_msg->tag = sqe->tag;
 
-	if (status == CRC_ERR)
+	if (status == HW_DECOMP_END)
+		recv_msg->status = WCRYPTO_DECOMP_END;
+	else if (status == HW_CRC_ERR) /* deflate type no crc, do normal*/
 		recv_msg->status = WD_VERIFY_ERR;
+	/* deflate type no crc, need return status */
+	if (ctx_st == HW_DECOMP_NO_CRC)
+		recv_msg->status = WCRYPTO_DECOMP_NO_CRC;
+	/* last block no space, need resend null size req */
+	else if (ctx_st == HW_DECOMP_NO_SPACE)
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	dbg("%s: %p, %p, %d\n", __func__, info->req_cache[i], sqe,
 	    info->sqe_size);
