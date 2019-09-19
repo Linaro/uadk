@@ -288,7 +288,7 @@ int wcrypto_ec_poll(struct wd_queue *q, int num)
 				break;
 			}
 			resp->result = WD_HW_EACCESS;
-		} else if (ret == -EIO) {
+		} else if (ret == -WD_EIO) {
 			WD_ERR("%s():io err!\n", __func__);
 			break;
 		} else if (ret == 0)

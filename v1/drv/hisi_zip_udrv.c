@@ -143,7 +143,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 #ifdef DEBUG_LOG
 		zip_sqe_dump(sqe);
 #endif
-		recv_msg->status = WD_MSG_PARA_ERR;
+		recv_msg->status = WD_IN_EPARA;
 	} else {
 		recv_msg->status = 0;
 	}

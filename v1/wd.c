@@ -413,7 +413,7 @@ int wd_request_queue(struct wd_queue *q)
 	dinfop = calloc(1, sizeof(struct q_info) + sizeof(*dinfop));
 	if (!dinfop) {
 		WD_ERR("calloc for queue info fail!\n");
-		return -ENOMEM;
+		return -WD_ENOMEM;
 	};
 	q->info = dinfop + 1;
 try_again:
@@ -523,7 +523,7 @@ int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms)
 
 	while (1) {
 		ret = wd_recv(q, resp);
-		if (ret == -EBUSY) {
+		if (ret == 0) {
 			ret = wd_wait(q, ms);
 			if (ret)
 				return ret;

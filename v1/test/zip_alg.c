@@ -634,8 +634,8 @@ static int hw_send_and_recv(struct zip_stream *zstrm, int flush)
 		ret = Z_STREAM_END;    /* decomp_is_end region */
 	else if (ret == 0 && opdata->status == WD_VERIFY_ERR)
 		ret = -WD_VERIFY_ERR;    /* crc err */
-	else if (ret == 0 && opdata->status == WD_MSG_PARA_ERR)
-		ret = -WD_MSG_PARA_ERR;    /* msg err */
+	else if (ret == 0 && opdata->status == WD_IN_EPARA)
+		ret = -WD_IN_EPARA;    /* msg err */
 
 	return ret;
 }
