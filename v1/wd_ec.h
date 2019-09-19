@@ -14,6 +14,9 @@
 #define WCRYPTO_EC_TBl_SIZE		4096
 #define WCRYPTO_EC_CTX_MSG_NUM	256
 #define WCRYPTO_EC_MAX_CTX	256
+#define SRC_TAG_TBL_RESERVE_LEN	4
+#define DST_TBL_RESERVE_LEN		6
+#define DST_TAG_TBL_RESERVE_LEN	7
 
 /* src data addr table, should be 64byte aligned.*/
 struct src_tbl {
@@ -23,19 +26,19 @@ struct src_tbl {
 /* src data dif table, should be 64byte aligned.*/
 struct src_tag_tbl {
 	__u64 content[SRC_DIF_TABLE_NUM];
-	__u64 reserve[4];
+	__u64 reserve[SRC_TAG_TBL_RESERVE_LEN];
 };
 
 /* dst data addr table, should be 64byte aligned.*/
 struct dst_tbl {
 	__u64 content[DST_ADDR_TABLE_NUM];
-	__u64 reserve[6];
+	__u64 reserve[DST_TBL_RESERVE_LEN];
 };
 
 /* dst data dif table, should be 64byte aligned.*/
 struct dst_tag_tbl {
 	__u64 content[DST_DIF_TABLE_NUM];
-	__u64 reserve[7];
+	__u64 reserve[DST_TAG_TBL_RESERVE_LEN];
 };
 
 struct wcrypto_ec_table {
