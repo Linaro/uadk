@@ -257,12 +257,12 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 		ret = wd_recv(q, (void **)&resp);
 		if (ret == 0)
 			break;
-		else if (ret == -WD_HW_ERR) {
+		else if (ret == -WD_HW_EACCESS) {
 			if (!resp) {
 				WD_ERR("recv err from req_cache!\n");
 				return ret;
 			}
-			resp->result = WD_HW_ERR;
+			resp->result = WD_HW_EACCESS;
 		}
 		else if (ret < 0) {
 			WD_ERR("recv err at digest poll!\n");
