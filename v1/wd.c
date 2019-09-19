@@ -176,6 +176,18 @@ static int is_alg_support(struct dev_info *dinfo, const char *alg)
 static int get_dev_info(struct dev_info *dinfo, const char *alg)
 {
 	int ret;
+	char buf[PATH_STR_SIZE] = {0};
+
+	ret = snprintf(buf, PATH_STR_SIZE, "%s/%s",
+						LINUX_DEV_DIR, dinfo->name);
+	if (ret <= 0) {
+		WD_ERR("snprintf err, ret %d!\n", ret);
+		return -EINVAL;
+	}
+
+	ret = access(buf, F_OK);
+	if (ret < 0)
+		return -ENODEV;
 
 	ret = get_int_attr(dinfo, "isolate");
 	if (ret < 0 || ret == 1)
