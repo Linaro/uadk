@@ -21,22 +21,25 @@
 #define MAX_ATTR_STR_SIZE	256
 #define WD_NAME_SIZE		64
 
-#define WD_HW_ERR		62
-
 /* WD error code */
 #define	WD_SUCCESS		0
 #define	WD_STREAM_END		1
+#define	WD_STREAM_START		2
+#define	WD_EIO			EIO
 #define	WD_EAGAIN		EAGAIN
 #define	WD_ENOMEM		ENOMEM
 #define	WD_EACCESS		EACCESS
 #define	WD_EBUSY		EBUSY
 #define	WD_ENODEV		ENODEV
 #define	WD_EINVAL		EINVAL
-#define	WD_ETIMEDOUT		ETIMEDOUT
-#define	WD_MSG_PARA_ERR	61
+#define	WD_ETIMEDOUT	ETIMEDOUT
+#define	WD_ADDR_ERR		61
 #define	WD_HW_EACCESS		62
 #define	WD_SGL_ERR		63
 #define	WD_VERIFY_ERR		64
+#define	WD_OUT_EPARA		66
+#define	WD_IN_EPARA		67
+#define	WD_ENOPROC		68
 
 typedef void (*wcrypto_cb)(const void *msg, void *tag);
 

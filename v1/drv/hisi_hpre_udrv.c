@@ -401,10 +401,14 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
 			hw_msg->done, hw_msg->etype);
-		if (hw_msg->done == HPRE_HW_TASK_INIT)
+		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			rsa_msg->result = WD_EINVAL;
-		else /* Need to indentify which hw err happened */
-			rsa_msg->result = WD_MSG_PARA_ERR;
+			ret = -WD_EINVAL;
+		} else { /* Need to indentify which hw err happened */
+			rsa_msg->result = WD_IN_EPARA;
+			ret = -WD_IN_EPARA;
+		}
+
 		if (hw_msg->alg == HPRE_ALG_KG_CRT) {
 			olen = CRT_GEN_PARAMS_SZ(kbytes);
 			ilen = GEN_PARAMS_SZ(kbytes);
@@ -419,6 +423,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 		ret = qm_rsa_out_transfer(rsa_msg, hw_msg, &ilen, &olen);
 		if (ret) {
 			WD_ERR("qm rsa out transfer fail!\n");
+			ret = -WD_OUT_EPARA;
 			goto err_with_bin;
 		}
 	}
@@ -550,10 +555,13 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
 			hw_msg->done, hw_msg->etype);
-		if (hw_msg->done == HPRE_HW_TASK_INIT)
+		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			dh_msg->result = WD_EINVAL;
-		else /* Need to indentify which hw err happened */
-			dh_msg->result = WD_MSG_PARA_ERR;
+			ret = -WD_EINVAL;
+		} else { /* Need to indentify which hw err happened */
+			dh_msg->result = WD_IN_EPARA;
+			ret = -WD_IN_EPARA;
+		}
 	} else {
 		kbytes = dh_msg->key_bytes;
 		dh_msg->result = WD_SUCCESS;

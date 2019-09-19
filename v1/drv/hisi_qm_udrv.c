@@ -257,7 +257,7 @@ int qm_send(struct wd_queue *q, void *req)
 
 	if (wd_reg_read(info->ds_base) == 1) {
 		WD_ERR("wd queue hw error happened before qm send!\n");
-		return -WD_HW_ERR;
+		return -WD_HW_EACCESS;
 	}
 	wd_spinlock(&info->sd_lock);
 	if (__atomic_load_n(&info->used, __ATOMIC_RELAXED) == QM_Q_DEPTH) {
@@ -281,7 +281,7 @@ int qm_send(struct wd_queue *q, void *req)
 	wd_unspinlock(&info->sd_lock);
 	if (wd_reg_read(info->ds_base) == 1) {
 		WD_ERR("wd queue hw error happened in qm send!\n");
-		return -WD_HW_ERR;
+		return -WD_HW_EACCESS;
 	}
 
 	return WD_SUCCESS;
@@ -330,7 +330,7 @@ int qm_recv(struct wd_queue *q, void **resp)
 
 	if (wd_reg_read(info->ds_base) == 1) {
 		qm_rx_from_cache(info, resp, info->cq_head_index);
-		return -WD_HW_ERR;
+		return -WD_HW_EACCESS;
 	}
 
 	wd_spinlock(&info->rc_lock);
@@ -342,7 +342,7 @@ int qm_recv(struct wd_queue *q, void **resp)
 		if (j >= QM_Q_DEPTH) {
 			wd_unspinlock(&info->rc_lock);
 			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", j);
-			return -EIO;
+			return -WD_EIO;
 		}
 		sqe = (void *)((uintptr_t)info->sq_base + j * info->sqe_size);
 		ret = info->sqe_parse[qinfo->atype](sqe,
@@ -362,7 +362,7 @@ int qm_recv(struct wd_queue *q, void **resp)
 
 	if (wd_reg_read(info->ds_base) == 1) {
 		WD_ERR("wd queue hw error happened in qm receive!\n");
-		return -WD_HW_ERR;
+		return -WD_HW_EACCESS;
 	}
 
 	return ret;

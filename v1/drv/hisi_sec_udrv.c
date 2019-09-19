@@ -382,11 +382,11 @@ int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 			|| sqe->type2.error_type) {
 			WD_ERR("SEC %s fail!done=0x%x, etype=0x%x\n", "cipher",
 			sqe->type2.done, sqe->type2.error_type);
-			cipher_msg->result = WD_MSG_PARA_ERR;
+			cipher_msg->result = WD_IN_EPARA;
 #ifdef DEBUG_LOG
 			sec_dump_bd((unsigned int *)sqe, SQE_WORD_NUMS);
 #endif
-			return -EIO;
+			return -WD_EIO;
 		} else
 			cipher_msg->result = WD_SUCCESS;
 
@@ -429,11 +429,11 @@ int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 			|| sqe->type2.error_type) {
 			WD_ERR("SEC %s fail!done=0x%x, etype=0x%x\n", "digest",
 			sqe->type2.done, sqe->type2.error_type);
-			digest_msg->result = WD_MSG_PARA_ERR;
+			digest_msg->result = WD_IN_EPARA;
 #ifdef DEBUG_LOG
 			sec_dump_bd((unsigned int *)sqe, SQE_WORD_NUMS);
 #endif
-			return -EIO;
+			return -WD_EIO;
 		} else
 			digest_msg->result = WD_SUCCESS;
 
