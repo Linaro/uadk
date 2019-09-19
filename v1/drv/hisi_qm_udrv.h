@@ -37,6 +37,11 @@
 #define CQE_SQ_NUM(cq)	((*((__u32 *)(cq) + 2)) >> 16)
 #define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
 
+/* wd sgl len */
+#define WD_SGL_PAD0_LEN			2
+#define WD_SGL_PAD1_LEN			8
+#define WD_SGL_RESERVERD_LEN	24
+
 struct qm_queue_info;
 
 typedef int (*qm_sqe_fill)(void *msg,
@@ -86,12 +91,12 @@ struct wd_sgl {
 	__u16 entry_sum_in_sgl;
 	/* sgl_entry num in this sgl */
 	__u16 entry_num_in_sgl;
-	__u8 pad0[2];
+	__u8 pad0[WD_SGL_PAD0_LEN];
 	__u64 serial_num;
 	__u32 flag;
 	__u32 cpu_id;
-	__u8 pad1[8];
-	__u8 reserved[24];
+	__u8 pad1[WD_SGL_PAD1_LEN];
+	__u8 reserved[WD_SGL_RESERVERD_LEN];
 	/* sgl_entry point */
 	struct wd_sgl_entry entries[0];
 };
