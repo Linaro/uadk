@@ -197,7 +197,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	resp = (void *)(uintptr_t)cctx->ctx_id;
 recv_again:
 	ret = wd_recv(cctx->q, (void **)&resp);
-	if (ret == -WD_HW_ERR) {
+	if (ret == -WD_HW_EACCESS) {
 		WD_ERR("wd_recv hw err!\n");
 		goto err_put_cache;
 	} else if (ret == 0) {
@@ -237,7 +237,7 @@ int wcrypto_comp_poll(struct wd_queue *q, int num)
 
 	do {
 		ret = wd_recv(q, (void **)&resp);
-		if (ret == -WD_HW_ERR) {
+		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
 			return ret;
 		} else if (ret == 0) {

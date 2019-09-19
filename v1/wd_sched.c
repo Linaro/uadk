@@ -212,7 +212,7 @@ static int __sync_wait(struct wd_scheduler *sched)
 		if (ret == 0) {
 			sched->stat[sched->q_t].recv_retries++;
 			continue;
-		} else if (ret == -EIO  || ret == -WD_HW_ERR)
+		} else if (ret == -WD_EIO  || ret == -WD_HW_EACCESS)
 			return ret;
 
 		if (recv_msg != sched->msgs[sched->c_t].msg) {
