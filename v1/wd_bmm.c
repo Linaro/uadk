@@ -16,7 +16,11 @@
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
 
+#define TAG_FREE 0x12345678  /* block is free */
+#define TAG_USED 0x87654321  /* block is busy */
+
 struct wd_blk_hd {
+	unsigned int blk_tag;
 	void *blk_dma;
 
 	TAILQ_ENTRY(wd_blk_hd) next;
@@ -67,7 +71,7 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *pool)
 		dma_end = wd_dma_map(q, va + act_blksz - 1, 0);
 		if (!dma_start || !dma_end) {
 			WD_ERR("wd_dma_map err.\n");
-			return -ENOMEM;
+			return -WD_ENOMEM;
 		}
 
 		if ((uintptr_t)dma_end - (uintptr_t)dma_start != act_blksz - 1)
@@ -75,23 +79,26 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *pool)
 
 		hd = va - sizeof(struct wd_blk_hd);
 		hd->blk_dma = dma_start;
+		hd->blk_tag = TAG_FREE;
 		TAILQ_INSERT_TAIL(&pool->head, hd, next);
 
 		dma_num++;
 	}
 
 	/*
-	 * if dma_num < 0.9 * user's block_num, we think the pool
+	 * if dma_num <= (1 / 1.15) * user's block_num, we think the pool
 	 * is created with failure.
 	 */
-#define NUM_TIMES	(9 / 10)
-	if (dma_num < pool->setup.block_num * NUM_TIMES) {
+#define NUM_TIMES	87 / 100
+	if (dma_num <= pool->setup.block_num * NUM_TIMES) {
 		WD_ERR("dma_num = %d, not enough.\n", dma_num);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	pool->free_blk_num = dma_num;
-	return 0;
+	pool->setup.block_num = dma_num;
+
+	return WD_SUCCESS;
 }
 
 static int usr_pool_init(struct wd_blkpool *pool)
@@ -113,36 +120,37 @@ static int usr_pool_init(struct wd_blkpool *pool)
 						      hd + 1, act_blksz);
 		if (!hd->blk_dma) {
 			WD_ERR("Usr blk map failed.\n");
-			return -ENOMEM;
+			return -WD_ENOMEM;
 		}
 
+		hd->blk_tag = TAG_FREE;
 		TAILQ_INSERT_TAIL(&pool->head, hd, next);
 	}
 
 	pool->free_blk_num = pool->setup.block_num;
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int para_valid_judge(struct wd_blkpool_setup *setup)
 {
 	if (!setup) {
 		WD_ERR("Invalid setup.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (setup->block_num == 0 || setup->block_size == 0) {
 		WD_ERR("Invalid block_size or block_num.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	/* check the params, and align_size must be 2^N */
 	if ((setup->align_size < 2) || setup->align_size > 0xffff ||
 	     (setup->align_size & (setup->align_size - 1))) {
 		WD_ERR("Invalid align_size.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
@@ -181,7 +189,6 @@ void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
 			goto err_pool_init;
 		}
 	} else {
-
 		/* use wd to reserve memory */
 		if (!q) {
 			WD_ERR("q is NULL.\n");
@@ -201,6 +208,7 @@ void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
 			/* release q will free the addr */
 			goto err_pool_alloc;
 		}
+		setup->block_num = pool->setup.block_num;
 	}
 
 	pool->alloc_failures = 0;
@@ -215,7 +223,6 @@ err_pool_init:
 err_pool_alloc:
 	free(pool);
 	return NULL;
-
 }
 
 void wd_blkpool_destroy(void *pool)
@@ -227,14 +234,13 @@ void wd_blkpool_destroy(void *pool)
 		return;
 	}
 
-	if (p->free_blk_num == p->setup.block_num) {
+	if (p->free_blk_num != p->setup.block_num) {
+		WD_ERR("Can not destroy pool, as it's in use.\n");
+	} else {
 		if (p->setup.ops.alloc)
 			free(p->usr_mem_start);
 
 		free(p);
-	}
-	else {
-		WD_ERR("Can not destroy pool, as it's in use.\n");
 	}
 }
 
@@ -251,7 +257,7 @@ void *wd_alloc_blk(void *pool)
 	wd_spinlock(&p->pool_lock);
 
 	hd = TAILQ_LAST(&p->head, wd_blk_list);
-	if (!hd) {
+	if (!hd || hd->blk_tag != TAG_FREE) {
 		p->alloc_failures++;
 		wd_unspinlock(&p->pool_lock);
 		WD_ERR("Failed to malloc blk.\n");
@@ -263,6 +269,7 @@ void *wd_alloc_blk(void *pool)
 	TAILQ_REMOVE(&p->head, hd, next);
 	p->free_blk_num--;
 	wd_unspinlock(&p->pool_lock);
+	hd->blk_tag = TAG_USED;
 
 	return (void *)(hd + 1);
 }
@@ -278,11 +285,15 @@ void wd_free_blk(void *pool, void *blk)
 	}
 
 	hd = wd_blk_head(blk);
-
-	wd_spinlock(&p->pool_lock);
-	TAILQ_INSERT_TAIL(&p->head, hd, next);
-	p->free_blk_num++;
-	wd_unspinlock(&p->pool_lock);
+	if (hd->blk_tag != TAG_USED) {
+		WD_ERR("Free block fail!\n");
+	} else {
+		wd_spinlock(&p->pool_lock);
+		TAILQ_INSERT_TAIL(&p->head, hd, next);
+		p->free_blk_num++;
+		wd_unspinlock(&p->pool_lock);
+		hd->blk_tag = TAG_FREE;
+	}
 }
 
 void *wd_blk_dma_map(void *pool, void *blk)
@@ -295,6 +306,10 @@ void *wd_blk_dma_map(void *pool, void *blk)
 	}
 
 	hd = wd_blk_head(blk);
+	if (hd->blk_tag != TAG_USED) {
+		WD_ERR("dma map fail!\n");
+		return NULL;
+	}
 	return hd->blk_dma;
 }
 
