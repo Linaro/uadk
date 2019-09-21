@@ -268,8 +268,8 @@ void *wd_alloc_blk(void *pool)
 	/* delete the blk from queue*/
 	TAILQ_REMOVE(&p->head, hd, next);
 	p->free_blk_num--;
-	wd_unspinlock(&p->pool_lock);
 	hd->blk_tag = TAG_USED;
+	wd_unspinlock(&p->pool_lock);
 
 	return (void *)(hd + 1);
 }
@@ -291,8 +291,8 @@ void wd_free_blk(void *pool, void *blk)
 		wd_spinlock(&p->pool_lock);
 		TAILQ_INSERT_TAIL(&p->head, hd, next);
 		p->free_blk_num++;
-		wd_unspinlock(&p->pool_lock);
 		hd->blk_tag = TAG_FREE;
+		wd_unspinlock(&p->pool_lock);
 	}
 }
 
