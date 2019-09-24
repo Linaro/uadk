@@ -821,14 +821,14 @@ int hw_stream_decompress(int alg_type, int blksize,
 			 unsigned char *dst, ulong *dstlen,
 			 unsigned char *src, ulong srclen)
 {
+	struct zip_stream zstrm;
+	ulong out_size = 0;
 	int have;
 	int ret;
-	struct zip_stream zstrm;
 
 	if (blksize < 0 || dst == NULL || src == NULL)
 		return -EINVAL;
 	stream_chunk = blksize;
-	*dstlen = 0;
 
 	if (alg_type == WCRYPTO_ZLIB) {
 		ret = hw_inflateInit(&zstrm);
@@ -870,9 +870,13 @@ int hw_stream_decompress(int alg_type, int blksize,
 				return ret;
 			}
 			have = stream_chunk - zstrm.avail_out;
+			if (zstrm.total_out > *dstlen) {
+				hw_end(&zstrm);
+				return -ENOMEM;
+			}
 			memcpy(dst, zstrm.next_out, have);
 			dst += have;
-			*dstlen += have;
+			out_size += have;
 		} while (zstrm.avail_in > 0);
 		ASSERT(zstrm.avail_in == 0);    /* all input will be used */
 
@@ -880,6 +884,8 @@ int hw_stream_decompress(int alg_type, int blksize,
 	} while (ret != Z_STREAM_END);
 
 	dbg("%s, end strm->total = %ld\n", __func__, zstrm.total_out);
+
+	*dstlen = out_size
 
 	ASSERT(ret == Z_STREAM_END);            /* stream will be complete */
 	hw_end(&zstrm);
