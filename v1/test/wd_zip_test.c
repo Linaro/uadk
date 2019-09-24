@@ -282,8 +282,8 @@ therad_no_affinity:
 							 pdata->src,
 							 pdata->src_len);
 				if (ret < 0)
-					WD_ERR("comp fail! id=%d tid=%d\n",
-						cpu_id, (int)tid);
+					WD_ERR("comp fail! id=%d tid=%d ret=%d\n",
+						cpu_id, (int)tid, ret);
 			} else {
 /* ret = compress(pdata->dst, &pdata->dst_len, pdata->src, pdata->src_len); */
 				ret = def(Z_DEFAULT_COMPRESSION,
@@ -291,8 +291,8 @@ therad_no_affinity:
 					  pdata->dst, &pdata->dst_len,
 					  pdata->src, pdata->src_len);
 				if (ret < 0)
-					WD_ERR("sw comp fail! id=%d tid=%d\n",
-						cpu_id, (int)tid);
+					WD_ERR("sw comp fail! id=%d tid=%d ret=%d\n",
+						cpu_id, (int)tid, ret);
 			}
 		} else if (pdata->op_type == WCRYPTO_INFLATE) {
 			if (pdata->hw_flag) {
@@ -303,8 +303,8 @@ therad_no_affinity:
 							   pdata->src,
 							   pdata->src_len);
 				if (ret < 0)
-					WD_ERR("decomp fail! id=%d tid=%d\n",
-						cpu_id, (int)tid);
+					WD_ERR("decomp fail! id=%d tid=%d ret=%d\n",
+						cpu_id, (int)tid, ret);
 			} else {
 /* ret = uncompress(pdata->dst, &pdata->dst_len, pdata->src, pdata->src_len); */
 				ret = inf(pdata->alg_type,
@@ -614,6 +614,9 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	if (sz != in_len)
 		WD_ERR("read file sz != in_len!\n");
 	count = in_len/block_size;
+
+	if (!count)
+			count = 1;
 
 	dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	    __func__, block_size, count, thread_num, in_len);
