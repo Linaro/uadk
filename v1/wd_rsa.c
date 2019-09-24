@@ -625,64 +625,46 @@ void wcrypto_get_rsa_prikey_params(struct wcrypto_rsa_prikey *pvk, struct wd_dtb
 	}
 }
 
-static int rsa_prikey2_param_set(struct wcrypto_rsa_prikey2 *pkey2,
-				struct wd_dtb *param,
-				enum wcrypto_rsa_crt_prikey_para type)
+static int rsa_set_param(struct wd_dtb *src, struct wd_dtb *dst)
 {
-	int ret = WD_SUCCESS;
+	if (!src || !dst || dst->dsize > src->bsize)
+		return -WD_EINVAL;
+
+	src->dsize = dst->dsize;
+	memset(src->data, 0, src->bsize);
+	memcpy(src->data, dst->data, dst->dsize);
+
+	return WD_SUCCESS;
+}
+
+static int rsa_prikey2_param_set(struct wcrypto_rsa_prikey2 *pkey2,
+				 struct wd_dtb *param,
+				 enum wcrypto_rsa_crt_prikey_para type)
+{
+	int ret;
 
 	if (param->dsize > pkey2->key_size || !param->data)
 		return -WD_EINVAL;
 
 	switch (type) {
 	case WD_CRT_PRIKEY_DQ:
-		if (param->dsize <= pkey2->dq.bsize) {
-			pkey2->dq.dsize = param->dsize;
-			memset(pkey2->dq.data, 0, pkey2->dq.bsize);
-			memcpy(pkey2->dq.data, param->data, param->dsize);
-		} else {
-			ret = -WD_EINVAL;
-		}
+		ret = rsa_set_param(&pkey2->dq, param);
 		break;
 
 	case WD_CRT_PRIKEY_DP:
-		if (param->dsize <= pkey2->dp.bsize) {
-			pkey2->dp.dsize = param->dsize;
-			memset(pkey2->dp.data, 0, pkey2->dp.bsize);
-			memcpy(pkey2->dp.data, param->data, param->dsize);
-		} else {
-			ret = -WD_EINVAL;
-		}
+		ret = rsa_set_param(&pkey2->dp, param);
 		break;
 
 	case WD_CRT_PRIKEY_QINV:
-		if (param->dsize <= pkey2->qinv.bsize) {
-			pkey2->qinv.dsize = param->dsize;
-			memset(pkey2->qinv.data, 0, pkey2->qinv.bsize);
-			memcpy(pkey2->qinv.data, param->data, param->dsize);
-		} else {
-			ret = -WD_EINVAL;
-		}
+		ret = rsa_set_param(&pkey2->qinv, param);
 		break;
 
 	case WD_CRT_PRIKEY_P:
-		if (param->dsize <= pkey2->p.bsize) {
-			pkey2->p.dsize = param->dsize;
-			memset(pkey2->p.data, 0, pkey2->p.bsize);
-			memcpy(pkey2->p.data, param->data, param->dsize);
-		} else {
-			ret = -WD_EINVAL;
-		}
+		ret = rsa_set_param(&pkey2->p, param);
 		break;
 
 	case WD_CRT_PRIKEY_Q:
-		if (param->dsize <= pkey2->q.bsize) {
-			pkey2->q.dsize = param->dsize;
-			memset(pkey2->q.data, 0, pkey2->q.bsize);
-			memcpy(pkey2->q.data, param->data, param->dsize);
-		} else {
-			ret = -WD_EINVAL;
-		}
+		ret = rsa_set_param(&pkey2->q, param);
 		break;
 
 	default:
