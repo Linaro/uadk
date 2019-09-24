@@ -128,16 +128,17 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
-	__u32 ctx_st = sqe->ctx_dw0 & 0x000f;
-	__u32 status = sqe->dw3 & 0x00ff;
-	__u32 type = sqe->dw9 & 0x00ff;
+	__u16 ctx_st = sqe->ctx_dw0 & 0x000f;
+	__u16 lstblk = sqe->dw3 & 0x0100;
+	__u16 status = sqe->dw3 & 0x00ff;
+	__u16 type = sqe->dw9 & 0x00ff;
 
 	if (usr && sqe->tag != usr)
 		return 0;
 
 	if (status != 0 && status != HW_NEGACOMPRESS &&
 	    status != HW_CRC_ERR && status != HW_DECOMP_END) {
-		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%d)\n",
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 		       ctx_st, status, type);
 #ifdef DEBUG_LOG
 		zip_sqe_dump(sqe);
@@ -163,7 +164,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->checksum = sqe->checksum;
 	recv_msg->tag = sqe->tag;
 
-	if (status == HW_DECOMP_END)
+	if ((status == HW_DECOMP_END) && lstblk)
 		recv_msg->status = WCRYPTO_DECOMP_END;
 	else if (status == HW_CRC_ERR) /* deflate type no crc, do normal*/
 		recv_msg->status = WD_VERIFY_ERR;
