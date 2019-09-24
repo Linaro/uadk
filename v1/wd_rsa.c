@@ -119,7 +119,7 @@ int wcrypto_rsa_kg_out_data(struct wcrypto_rsa_kg_out *ko, char **data)
 
 	*data = (char *)ko->data;
 
-	/* Todo: CRT need this size, but no CRT size is smaller */
+	/* CRT need this size, but no CRT size is smaller */
 	return (int)CRT_GEN_PARAMS_SZ(ko->key_size);
 }
 
