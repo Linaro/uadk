@@ -164,8 +164,10 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	}
 
 	cache = get_comp_cache(cctx);
-	if (!cache)
+	if (!cache) {
+		WD_ERR("do comp is busy, no more cache!\n");
 		return -WD_EBUSY;
+	}
 
 	msg = &cache->msg;
 	if (tag) {
@@ -263,8 +265,10 @@ void wcrypto_del_comp_ctx(void *ctx)
 	struct wcrypto_comp_ctx *cctx = ctx;
 	struct q_info *qinfo;
 
-	if (!cctx)
+	if (!cctx) {
+		WD_ERR("delete comp ctx is NULL!\n");
 		return;
+	}
 
 	qinfo = cctx->q->info;
 
