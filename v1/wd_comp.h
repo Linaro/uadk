@@ -65,6 +65,7 @@ enum wcrypto_op_result {
 	WCRYPTO_DECOMP_END,
 	WCRYPTO_DECOMP_END_NOSPACE,
 	WCRYPTO_DECOMP_NO_CRC,
+	WCRYPTO_DECOMP_BLK_NOSTART,
 };
 
 enum wcrypto_comp_state {
