@@ -26,8 +26,9 @@
 #define HW_CRC_ERR 0x10
 #define HW_DECOMP_END 0x13
 
-#define HW_DECOMP_NO_CRC 0x04
 #define HW_DECOMP_NO_SPACE 0x01
+#define HW_DECOMP_BLK_NOSTART 0x03
+#define HW_DECOMP_NO_CRC 0x04
 
 #ifdef DEBUG_LOG
 void zip_sqe_dump(struct hisi_zip_sqe *sqe)
@@ -168,12 +169,15 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		recv_msg->status = WCRYPTO_DECOMP_END;
 	else if (status == HW_CRC_ERR) /* deflate type no crc, do normal*/
 		recv_msg->status = WD_VERIFY_ERR;
+
 	/* deflate type no crc, need return status */
 	if (ctx_st == HW_DECOMP_NO_CRC)
 		recv_msg->status = WCRYPTO_DECOMP_NO_CRC;
 	/* last block no space, need resend null size req */
 	else if (ctx_st == HW_DECOMP_NO_SPACE)
 		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
+	else if (ctx_st == HW_DECOMP_BLK_NOSTART)
+		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
 
 	dbg("%s: %p, %p, %d\n", __func__, info->req_cache[i], sqe,
 	    info->sqe_size);
