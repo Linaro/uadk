@@ -318,7 +318,7 @@ void wd_blk_dma_unmap(void *pool, void *blk_dma, void *blk)
 	/* do nothting, but the func shoule */
 }
 
-int wd_get_free_blk_num(void *pool)
+unsigned int wd_get_free_blk_num(void *pool)
 {
 	struct wd_blkpool *p = pool;
 
@@ -330,7 +330,7 @@ int wd_get_free_blk_num(void *pool)
 	return __atomic_load_n(&p->free_blk_num, __ATOMIC_RELAXED);
 }
 
-int wd_blk_alloc_failures(void *pool)
+unsigned int wd_blk_alloc_failures(void *pool)
 {
 	struct wd_blkpool *p = pool;
 
