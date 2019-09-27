@@ -56,7 +56,8 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *pool)
 {
 	__u16 align_sz = pool->setup.align_size;
 	__u32 hd_sz = ALIGN(sizeof(struct wd_blk_hd), align_sz);
-	__u32 act_blksz = ALIGN(pool->setup.block_size, align_sz);
+	__u32 blk_size = pool->setup.block_size;
+	__u32 act_blksz = ALIGN(blk_size, align_sz);
 	void *dma_start, *dma_end, *va, *addr;
 	struct wd_blk_hd *hd = NULL;
 	unsigned int dma_num = 0;
@@ -67,14 +68,15 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *pool)
 
 	for (i = 0; i < pool->setup.block_num; i++) {
 		va = addr + hd_sz + (hd_sz + act_blksz) * i;
+
 		dma_start = wd_dma_map(q, va, 0);
-		dma_end = wd_dma_map(q, va + act_blksz - 1, 0);
+		dma_end = wd_dma_map(q, va + blk_size - 1, 0);
 		if (!dma_start || !dma_end) {
 			WD_ERR("wd_dma_map err.\n");
 			return -WD_ENOMEM;
 		}
 
-		if ((uintptr_t)dma_end - (uintptr_t)dma_start != act_blksz - 1)
+		if ((uintptr_t)dma_end - (uintptr_t)dma_start != blk_size - 1)
 			continue;
 
 		hd = va - sizeof(struct wd_blk_hd);
@@ -144,7 +146,7 @@ static int para_valid_judge(struct wd_blkpool_setup *setup)
 	}
 
 	/* check the params, and align_size must be 2^N */
-	if ((setup->align_size < 2) || setup->align_size > 0xffff ||
+	if ((setup->align_size < 2) || setup->align_size > 0x1000 ||
 	     (setup->align_size & (setup->align_size - 1))) {
 		WD_ERR("Invalid align_size.\n");
 		return -WD_EINVAL;
@@ -249,7 +251,7 @@ void *wd_alloc_blk(void *pool)
 	struct wd_blkpool *p = pool;
 	struct wd_blk_hd *hd;
 
-	if (!p) {
+	if (unlikely(!p)) {
 		WD_ERR("blk alloc err, pool is NULL!\n");
 		return NULL;
 	}
@@ -257,7 +259,7 @@ void *wd_alloc_blk(void *pool)
 	wd_spinlock(&p->pool_lock);
 
 	hd = TAILQ_LAST(&p->head, wd_blk_list);
-	if (!hd || hd->blk_tag != TAG_FREE) {
+	if (unlikely(!hd || hd->blk_tag != TAG_FREE)) {
 		p->alloc_failures++;
 		wd_unspinlock(&p->pool_lock);
 		WD_ERR("Failed to malloc blk.\n");
@@ -279,13 +281,13 @@ void wd_free_blk(void *pool, void *blk)
 	struct wd_blkpool *p = pool;
 	struct wd_blk_hd *hd;
 
-	if (!p || !blk) {
+	if (unlikely(!p || !blk)) {
 		WD_ERR("blk free err, pool is NULL!\n");
 		return;
 	}
 
 	hd = wd_blk_head(blk);
-	if (hd->blk_tag != TAG_USED) {
+	if (unlikely(hd->blk_tag != TAG_USED)) {
 		WD_ERR("Free block fail!\n");
 	} else {
 		wd_spinlock(&p->pool_lock);
@@ -296,24 +298,24 @@ void wd_free_blk(void *pool, void *blk)
 	}
 }
 
-void *wd_blk_dma_map(void *pool, void *blk)
+void *wd_blk_iova_map(void *pool, void *blk)
 {
 	struct wd_blk_hd *hd;
 
-	if (!pool || !blk) {
+	if (unlikely(!pool || !blk)) {
 		WD_ERR("blk map err, pool is NULL!\n");
 		return NULL;
 	}
 
 	hd = wd_blk_head(blk);
-	if (hd->blk_tag != TAG_USED) {
+	if (unlikely(hd->blk_tag != TAG_USED)) {
 		WD_ERR("dma map fail!\n");
 		return NULL;
 	}
 	return hd->blk_dma;
 }
 
-void wd_blk_dma_unmap(void *pool, void *blk_dma, void *blk)
+void wd_blk_iova_unmap(void *pool, void *blk_dma, void *blk)
 {
 	/* do nothting, but the func shoule */
 }
