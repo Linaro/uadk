@@ -27,6 +27,10 @@
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 #define GET_NEGATIVE(val)	(0 - (val))
 
+/* Required compiler attributes */
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+
 struct wd_lock {
 	__u32 lock;
 };

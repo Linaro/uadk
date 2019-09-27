@@ -1606,8 +1606,8 @@ int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 
 	setup.ops.alloc = (void *)wd_alloc_blk;
 	setup.ops.free = (void *)wd_free_blk;
-	setup.ops.dma_map = (void *)wd_blk_dma_map;
-	setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+	setup.ops.dma_map = (void *)wd_blk_iova_map;
+	setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
 	setup.ops.usr = pool;
 	ctx = wcrypto_create_rsa_ctx(q, &setup);
 	if (!ctx) {
@@ -2022,8 +2022,8 @@ void *_rsa_async_op_test_thread(void *data)
 
 	setup.ops.alloc = (void *)wd_alloc_blk;
 	setup.ops.free =  (void *)wd_free_blk;
-	setup.ops.dma_map = (void *)wd_blk_dma_map;
-	setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+	setup.ops.dma_map = (void *)wd_blk_iova_map;
+	setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
 	setup.ops.usr = pool;
 	ctx = wcrypto_create_rsa_ctx(q, &setup);
 	if (!ctx) {
@@ -2545,8 +2545,8 @@ static void *_hpre_dh_sys_test_thread(void *data)
 
 	dh_setup.ops.alloc = (void *)wd_alloc_blk;
 	dh_setup.ops.free = (void *)wd_free_blk;
-	dh_setup.ops.dma_map = (void *)wd_blk_dma_map;
-	dh_setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+	dh_setup.ops.dma_map = (void *)wd_blk_iova_map;
+	dh_setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
 	dh_setup.ops.usr = pool;
 	ctx_alice = wcrypto_create_dh_ctx(q, &dh_setup);
 	ctx_bob = wcrypto_create_dh_ctx(q, &dh_setup);
@@ -3183,8 +3183,8 @@ basic_function_test:
 
 		setup.ops.alloc = (void *)wd_alloc_blk;
 		setup.ops.free = (void *)wd_free_blk;
-		setup.ops.dma_map = (void *)wd_blk_dma_map;
-		setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+		setup.ops.dma_map = (void *)wd_blk_iova_map;
+		setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
 		setup.ops.usr = pool;
 		ctx = wcrypto_create_rsa_ctx(&q, &setup);
 		if (!ctx) {
@@ -3197,8 +3197,8 @@ basic_function_test:
 
 		dh_setup.ops.alloc = (void *)wd_alloc_blk;
 		dh_setup.ops.free = (void *)wd_free_blk;
-		dh_setup.ops.dma_map = (void *)wd_blk_dma_map;
-		dh_setup.ops.dma_unmap = (void *)wd_blk_dma_unmap;
+		dh_setup.ops.dma_map = (void *)wd_blk_iova_map;
+		dh_setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
 		dh_setup.ops.usr = pool;
 		ctx = wcrypto_create_dh_ctx(&q, &dh_setup);
 		if (!ctx) {

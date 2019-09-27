@@ -85,7 +85,7 @@ int test_alloc_free(unsigned int blk_sz, unsigned short blk_num,
 	if (ret != 0)
 		printf("can't create thread: %s\n", strerror(ret));
 
-	for (i = 3; i < 64; i++) {
+	for (i = 2; i < 64; i++) {
 		ret = pthread_create(&pid[i], NULL, wd_alloc_test, NULL);
 		if (ret != 0)
 			printf("can't create thread: %s\n", strerror(ret));
@@ -113,7 +113,7 @@ void *wd_alloc_test()
 		blk = wd_alloc_blk(pool);
 		printf("---alloc blk = %p\n", blk);
 
-		printf("dma_map %p = %p\n", blk, wd_blk_dma_map(pool, blk));
+		printf("dma_map %p = %p\n", blk, wd_blk_iova_map(pool, blk));
 
 		sleep(3);
 		if (blk) {

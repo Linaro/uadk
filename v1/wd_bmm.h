@@ -18,6 +18,6 @@ extern void *wd_alloc_blk(void *pool);
 extern void wd_free_blk(void *pool, void *blk);
 extern unsigned int wd_get_free_blk_num(void *pool);
 extern unsigned int wd_blk_alloc_failures(void *pool);
-extern void *wd_blk_dma_map(void *pool, void *blk);
-extern void wd_blk_dma_unmap(void *pool, void *blk_dma, void *blk);
+extern void *wd_blk_iova_map(void *pool, void *blk);
+extern void wd_blk_iova_unmap(void *pool, void *blk_dma, void *blk);
 #endif
