@@ -45,6 +45,7 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_zip_sqe *sqe = (struct hisi_zip_sqe *)info->sq_base + i;
 	struct wcrypto_comp_msg *msg = smsg;
+	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->udata;
 	uintptr_t phy_in, phy_out;
 	uintptr_t phy_ctxbuf = 0;
 	struct wd_queue *q = info->q;
@@ -108,7 +109,9 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->ctx_dw2 = msg->ctx_priv2;
 	sqe->isize = msg->isize;
 	sqe->checksum = msg->checksum;
-	sqe->tag = msg->tag;
+
+	if (tag)
+		sqe->tag = tag->ctx_id;
 
 	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
@@ -153,8 +156,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->produced = sqe->produced;
 	recv_msg->avail_out = sqe->dest_avail_out;
 	recv_msg->comp_lv = 0;
-	recv_msg->file_type = 0;
-	recv_msg->humm_type = 0;
 	recv_msg->op_type = 0;
 	recv_msg->win_size = 0;
 
@@ -163,7 +164,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->ctx_priv2 = sqe->ctx_dw2;
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
-	recv_msg->tag = sqe->tag;
 
 	if ((status == HW_DECOMP_END) && lstblk)
 		recv_msg->status = WCRYPTO_DECOMP_END;

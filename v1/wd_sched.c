@@ -115,9 +115,9 @@ int wd_sched_init(struct wd_scheduler *sched)
 	struct q_info *qinfo;
 
 	ret = wd_sched_preinit(sched);
-	if (ret < 0) {
+	if (ret < 0)
 		return -EINVAL;
-	}
+
 	qinfo = sched->qs[0].info;
 	flags = qinfo->dev_flags;
 	if (!(flags & UACCE_DEV_PASID)) {
@@ -208,7 +208,7 @@ static int __sync_wait(struct wd_scheduler *sched)
 	    sched->msgs[sched->c_h].msg);
 	do {
 		sched->stat[sched->q_t].recv++;
-		ret = wd_recv_sync(&sched->qs[sched->q_t], &recv_msg, WD_WAIT_MS);
+		ret = wd_recv(&sched->qs[sched->q_t], &recv_msg);
 		if (ret == 0) {
 			sched->stat[sched->q_t].recv_retries++;
 			continue;
