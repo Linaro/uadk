@@ -53,7 +53,7 @@ static struct wcrypto_comp_cache *get_comp_cache(struct wcrypto_comp_ctx *ctx)
 }
 
 static void put_comp_cache(struct wcrypto_comp_ctx *ctx,
-			     struct wcrypto_comp_cache *cache)
+			   struct wcrypto_comp_cache *cache)
 {
 	int idx = ((uintptr_t)cache - (uintptr_t)ctx->caches) /
 		sizeof(struct wcrypto_comp_cache);
@@ -65,8 +65,9 @@ static void put_comp_cache(struct wcrypto_comp_ctx *ctx,
 	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
 }
 
-static int fill_comp_msg(struct wcrypto_comp_ctx *ctx, struct wcrypto_comp_msg *msg,
-						struct wcrypto_comp_op_data *opdata)
+static int fill_comp_msg(struct wcrypto_comp_ctx *ctx,
+			 struct wcrypto_comp_msg *msg,
+			 struct wcrypto_comp_op_data *opdata)
 {
 	msg->avail_out = opdata->avail_out;
 	msg->src = opdata->in;
@@ -76,7 +77,6 @@ static int fill_comp_msg(struct wcrypto_comp_ctx *ctx, struct wcrypto_comp_msg *
 	msg->stream_pos = opdata->stream_pos;
 	msg->isize = opdata->isize;
 	msg->checksum = opdata->checksum;
-	msg->tag = ctx->ctx_id;
 	msg->status = 0;
 
 	return WD_SUCCESS;
@@ -87,7 +87,8 @@ static int fill_comp_msg(struct wcrypto_comp_ctx *ctx, struct wcrypto_comp_msg *
  * @q: wrapdrive queue, need requested by user.
  * @setup:setup data of user
  */
-void *wcrypto_create_comp_ctx(struct wd_queue *q, struct wcrypto_comp_ctx_setup *setup)
+void *wcrypto_create_comp_ctx(struct wd_queue *q,
+			      struct wcrypto_comp_ctx_setup *setup)
 {
 	struct wcrypto_comp_ctx *ctx;
 	struct q_info *qinfo;
