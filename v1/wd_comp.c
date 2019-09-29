@@ -31,6 +31,7 @@
 #define MAX_RETRY_COUNTS 200000000
 #define WD_COMP_MAX_CTX		256
 #define WD_COMP_CTX_MSGCACHE_NUM 512
+#define MAX_CTX_RSV_SIZE 65536
 
 struct wcrypto_comp_cache {
 	struct wcrypto_comp_tag tag;
@@ -40,12 +41,11 @@ struct wcrypto_comp_cache {
 struct wcrypto_comp_ctx {
 	struct wcrypto_comp_cache caches[WD_COMP_CTX_MSGCACHE_NUM];
 	__u8 cstatus[WD_COMP_CTX_MSGCACHE_NUM];
-	int c_tail;  /* start index for every search */
+	int c_tail; /* start index for every search */
 	int ctx_id;
+	void *ctx_buf; /* extra memory for stream mode */
 	struct wd_queue *q;
-	struct wcrypto_comp_msg *msg;
 	wcrypto_cb cb;
-	struct wcrypto_comp_op_data *udata;
 };
 
 static struct wcrypto_comp_cache *get_comp_cache(struct wcrypto_comp_ctx *ctx)
@@ -108,7 +108,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	struct wcrypto_comp_ctx *ctx;
 	struct wd_mm_br *br;
 	struct q_info *qinfo;
-	int ctx_id, i;
+	int ctx_id, cache_num, i;
 
 	if (!q || !setup) {
 		WD_ERR("err, input param invalid!\n");
@@ -158,12 +158,23 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	ctx->q = q;
 	ctx->ctx_id = ctx_id;
-	for (i = 0; i < WD_COMP_CTX_MSGCACHE_NUM; i++) {
+	if (setup->stream_mode == WCRYPTO_COMP_STATEFUL) {
+		cache_num = 1;
+		ctx->ctx_buf = setup->br.alloc(setup->br.usr, MAX_CTX_RSV_SIZE);
+		if (!ctx->ctx_buf) {
+			WD_ERR("alloc ctx rsv buf fail!\n");
+			free(ctx);
+			return NULL;
+		}
+	} else {
+		cache_num = WD_COMP_CTX_MSGCACHE_NUM;
+	}
+	for (i = 0; i < cache_num; i++) {
 		ctx->caches[i].msg.comp_lv = setup->comp_lv;
 		ctx->caches[i].msg.win_size = setup->win_size;
 		ctx->caches[i].msg.alg_type = setup->alg_type;
 		ctx->caches[i].msg.stream_mode = setup->stream_mode;
-		ctx->caches[i].msg.ctx_buf = setup->ctx_buf;
+		ctx->caches[i].msg.ctx_buf = ctx->ctx_buf;
 		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
 		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
 		ctx->caches[i].msg.udata = (uintptr_t)&ctx->caches[i].tag;
@@ -300,6 +311,7 @@ void wcrypto_del_comp_ctx(void *ctx)
 {
 	struct wcrypto_comp_ctx *cctx = ctx;
 	struct q_info *qinfo;
+	struct wd_mm_br *br;
 
 	if (!cctx) {
 		WD_ERR("delete comp ctx is NULL!\n");
@@ -307,10 +319,15 @@ void wcrypto_del_comp_ctx(void *ctx)
 	}
 
 	qinfo = cctx->q->qinfo;
+	br = &qinfo->br;
+	if (br && br->free && cctx->ctx_buf)
+		br->free(br->usr, cctx->ctx_buf);
 
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	if (qinfo->ctx_num < 0) {
+	if (!qinfo->ctx_num) {
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
+	} else if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error:repeat del comp ctx!\n");
 		return;

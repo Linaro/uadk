@@ -353,19 +353,19 @@ therad_no_affinity:
 
 static int out_len;
 
-void zip_callback(const void    *msg, void *tag)
+void zip_callback(const void *msg, void *tag)
 {
 	const struct wcrypto_comp_msg *respmsg = msg;
 
 	out_len = respmsg->produced;
 
-	dbg("[%s], ctx_id =%d comsume=%d, produce=%d\n",
-	    __func__, respmsg->tag, respmsg->in_cons,
-	    respmsg->produced);
+	dbg("[%s], cpu_id =%d consume=%d, produce=%d\n",
+	    __func__, ((struct user_comp_tag_info *)tag)->cpu_id,
+	    respmsg->in_cons, respmsg->produced);
 
 }
 
-void  *zip_sys_async_test_thread(void *args)
+void *zip_sys_async_test_thread(void *args)
 {
 	int cpu_id, ret;
 	cpu_set_t mask;
@@ -379,6 +379,7 @@ void  *zip_sys_async_test_thread(void *args)
 	void *zip_ctx;
 	struct wcrypto_comp_ctx_setup ctx_setup;
 	struct wcrypto_comp_op_data *opdata;
+	void *in, *out, *ss_buf;
 	void *src, *dst;
 	int loop;
 
@@ -407,6 +408,7 @@ therad_no_affinity:
 		fprintf(stderr, "alloc q fail, ret =%d\n", ret);
 		goto hw_q_free;
 	}
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
 
 	switch (pdata->alg_type) {
 	case 0:
@@ -421,7 +423,7 @@ therad_no_affinity:
 		ctx_setup.alg_type = WCRYPTO_ZLIB;
 		q->capa.alg = "zlib";
 	}
-	ctx_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
+	ctx_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 	q->capa.latency = 0;
 	q->capa.throughput = 0;
 	priv = &q->capa.priv;
@@ -436,26 +438,24 @@ therad_no_affinity:
 	ss_region_size = 4096 + DMEMSIZE * 2 + HW_CTX_SIZE;
 
 #ifdef CONFIG_IOMMU_SVA
-	ctx_setup.ss_buf = calloc(1, ss_region_size);
+	ss_buf = calloc(1, ss_region_size);
 #else
-	ctx_setup.ss_buf = wd_reserve_memory(q, ss_region_size);
+	ss_buf = wd_reserve_memory(q, ss_region_size);
 #endif
-	if (!ctx_setup.ss_buf) {
+	if (!ss_buf) {
 		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
 		ret = -ENOMEM;
 		goto release_q;
 	}
 
-	ret = smm_init(ctx_setup.ss_buf, ss_region_size, 0xF);
+	ret = smm_init(ss_buf, ss_region_size, 0xF);
 	if (ret)
 		goto buf_free;
 
-	src = ctx_setup.next_in = smm_alloc(ctx_setup.ss_buf, DMEMSIZE);
-	dst = ctx_setup.next_out = smm_alloc(ctx_setup.ss_buf, DMEMSIZE);
-	ctx_setup.ctx_buf = smm_alloc(ctx_setup.ss_buf, HW_CTX_SIZE);
+	src = in = smm_alloc(ss_buf, DMEMSIZE);
+	dst = out = smm_alloc(ss_buf, DMEMSIZE);
 
-	if (ctx_setup.next_in == NULL || ctx_setup.next_out == NULL ||
-		ctx_setup.ctx_buf == NULL) {
+	if (in == NULL || out == NULL) {
 		WD_ERR("not enough data ss_region memory for cache (bs=%d)\n",
 			DMEMSIZE);
 		goto buf_free;
@@ -474,8 +474,8 @@ therad_no_affinity:
 		fprintf(stderr, "alloc opdata fail, ret =%d\n", ret);
 		goto comp_ctx_free;
 	}
-	opdata->in = ctx_setup.next_in;
-	opdata->out = ctx_setup.next_out;
+	opdata->in = in;
+	opdata->out = out;
 	opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
 	memcpy(src, pdata->src, pdata->src_len);
@@ -529,8 +529,8 @@ comp_ctx_free:
 		wcrypto_del_comp_ctx(zip_ctx);
 buf_free:
 #ifdef CONFIG_IOMMU_SVA
-			if (ctx_setup.ss_buf)
-				free(ctx_setup.ss_buf);
+			if (ss_buf)
+				free(ss_buf);
 #endif
 
 release_q:
