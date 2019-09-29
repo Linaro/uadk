@@ -31,6 +31,7 @@
 #include "../wd_util.h" /* It is not API head, to be deleted */
 #include "../wd_sched.h"
 #include "../wd_comp.h"
+#include "../wd_bmm.h"
 
 #include "drv/hisi_qm_udrv.h"
 #include "drv/hisi_zip_udrv.h"
@@ -413,6 +414,16 @@ struct zip_stream {
 	void *reserved;   /* reserved for future use */
 };
 
+struct zip_ctl {
+	void *pool;
+	void *in;
+	void *out;
+	void *ctxbuf;
+	void *queue;
+	void *ctx;
+	void *opdata;
+};
+
 #define hw_deflateInit(strm, level) \
 	hw_deflateInit_(strm, level, HZLIB_VERSION, sizeof(struct zip_stream))
 #define hw_inflateInit(strm) \
@@ -430,20 +441,22 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 {
 	struct wcrypto_comp_ctx_setup ctx_setup;
 	struct wcrypto_comp_op_data *opdata;
+	struct wd_blkpool_setup mm_setup;
+	unsigned int block_mm_num = 3;
 	struct wcrypto_paras *priv;
-	void *zip_ctx;
-	size_t ss_region_size;
+	struct zip_ctl *ctl;
+	void *in, *out;
 	struct wd_queue *q;
+	void *zip_ctx;
+	void *pool;
 	int ret;
 
-	memset(&ctx_setup, 0, sizeof(ctx_setup));
 	q = calloc(1, sizeof(struct wd_queue));
 	if (q == NULL) {
 		ret = -ENOMEM;
 		fprintf(stderr, "alloc q fail, ret =%d\n", ret);
 		return ret;
 	}
-	ctx_setup.alg_type = alg_type;
 
 	switch (alg_type) {
 	case WCRYPTO_ZLIB:
@@ -456,7 +469,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 		ret = -EINVAL;
 		goto hw_q_free;
 	}
-	ctx_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
+
 	q->capa.latency = 0;
 	q->capa.throughput = 0;
 
@@ -469,37 +482,47 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	}
 	SYS_ERR_COND(ret, "wd_request_queue");
 
-	ss_region_size = 4096 + DMEMSIZE * 2 + HW_CTX_SIZE;
-
 #ifdef CONFIG_IOMMU_SVA
-	ctx_setup.ss_buf = calloc(1, ss_region_size);
-#else
-	ctx_setup.ss_buf = wd_reserve_memory(q, ss_region_size);
-#endif
-	if (!ctx_setup.ss_buf) {
-		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
-		ret = -ENOMEM;
-		goto release_q;
-	}
-
-	ret = smm_init(ctx_setup.ss_buf, ss_region_size, 0xF);
-	if (ret)
-		goto buf_free;
-
-	ctx_setup.next_in = smm_alloc(ctx_setup.ss_buf, DMEMSIZE);
-	ctx_setup.next_out = smm_alloc(ctx_setup.ss_buf, DMEMSIZE);
-	ctx_setup.ctx_buf = smm_alloc(ctx_setup.ss_buf, HW_CTX_SIZE);
-
-	if (ctx_setup.next_in == NULL || ctx_setup.next_out == NULL ||
-		ctx_setup.ctx_buf == NULL) {
+	in = calloc(1, DMEMSIZE);
+	out = calloc(1, DMEMSIZE);
+	ctx_buf = calloc(1, HW_CTX_SIZE);
+	if (in == NULL || out == NULL || ctx_buf == NULL) {
 		dbg("not enough data ss_region memory for cache (bs=%d)\n",
 			DMEMSIZE);
 		goto buf_free;
 	}
 
-	dbg("%s():va_in=%p, va_out=%p!\n",
-	    __func__, ctx_setup.next_in, ctx_setup.next_out);
+#else
+	memset(&mm_setup, 0, sizeof(mm_setup));
+	mm_setup.block_size = DMEMSIZE;
+	mm_setup.block_num = block_mm_num;
+	mm_setup.align_size = 128;
+	pool = wd_blkpool_create(q, &mm_setup);
+	if (!pool) {
+		WD_ERR("%s(): create pool fail!\n", __func__);
+		ret = -ENOMEM;
+		goto release_q;
+	}
+	in = wd_alloc_blk(pool);
+	out = wd_alloc_blk(pool);
 
+	if (in == NULL || out == NULL) {
+		dbg("not enough data ss_region memory for cache (bs=%d)\n",
+			DMEMSIZE);
+		goto buf_free;
+	}
+
+#endif
+
+	dbg("%s():va_in=%p, va_out=%p!\n", __func__, in, out);
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
+	ctx_setup.alg_type = alg_type;
+	ctx_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
+	ctx_setup.br.alloc = (void *)wd_alloc_blk;
+	ctx_setup.br.free = (void *)wd_free_blk;
+	ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
+	ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	ctx_setup.br.usr = pool;
 	zip_ctx = wcrypto_create_comp_ctx(q, &ctx_setup);
 	if (!zip_ctx) {
 		fprintf(stderr, "zip_alloc_comp_ctx fail, ret =%d\n", ret);
@@ -512,29 +535,49 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 		fprintf(stderr, "alloc opdata fail, ret =%d\n", ret);
 		goto comp_ctx_free;
 	}
-	opdata->in = ctx_setup.next_in;
-	opdata->out = ctx_setup.next_out;
-	opdata->in_temp = opdata->in;
+	opdata->in = in;
+	opdata->out = out;
 	opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 	opdata->alg_type = ctx_setup.alg_type;
 
-	opdata->ctx = zip_ctx;
-	opdata->q = q;
-	zstrm->next_in = ctx_setup.next_in;
-	zstrm->next_out = ctx_setup.next_out;
+	ctl = calloc(1, sizeof(struct zip_ctl));
+	if (ctl == NULL) {
+		ret = -ENOMEM;
+		fprintf(stderr, "alloc ctl fail, ret =%d\n", ret);
+		goto comp_opdata_free;
+	}
+	ctl->pool = pool;
+	ctl->in = in;  /* temp for opdata->in*/
+	ctl->out = out;
+	ctl->ctx = zip_ctx;
+	ctl->queue = q;
+	ctl->opdata = opdata;
 
-	zstrm->reserved = opdata;
+	zstrm->next_in = in;
+	zstrm->next_out = out;
+	zstrm->reserved = ctl;
 
 	return Z_OK;
 
+comp_opdata_free:
+	free(opdata);
 
 comp_ctx_free:
 	wcrypto_del_comp_ctx(zip_ctx);
 
 buf_free:
 #ifdef CONFIG_IOMMU_SVA
-			if (ctx_setup.ss_buf)
-				free(ctx_setup.ss_buf);
+	if (in)
+		free(in);
+	if (out)
+		free(out);
+#else
+	if (in)
+		wd_free_blk(pool, in);
+	if (out)
+		wd_free_blk(pool, out);
+
+	wd_blkpool_destroy(pool);
 #endif
 release_q:
 	wd_release_queue(q);
@@ -546,19 +589,32 @@ hw_q_free:
 
 static void hw_end(struct zip_stream *zstrm)
 {
-	struct wcrypto_comp_op_data *opdata = zstrm->reserved;
-	struct wd_queue *q = opdata->q;
-	void *zip_ctx = opdata->ctx;
+	struct zip_ctl *ctl = zstrm->reserved;
+	struct wcrypto_comp_op_data *opdata = ctl->opdata;
 
 #ifdef CONFIG_IOMMU_SVA
-	if (opdata->ss_buf)
-		free(opdata->ss_buf);
+		if (ctl->in)
+			free(ctl->in);
+		if (ctl->out)
+			free(ctl->out);
+#else
+		if (ctl->in)
+			wd_free_blk(ctl->pool, ctl->in);
+		if (ctl->out)
+			wd_free_blk(ctl->pool, ctl->out);
 #endif
-	wcrypto_del_comp_ctx(zip_ctx);
-	wd_release_queue(q);
-	free(q);
 
+	if (ctl->ctx)
+		wcrypto_del_comp_ctx(ctl->ctx);
+
+	if (ctl->queue) {
+		wd_release_queue(ctl->queue);
+		free(ctl->queue);
+	}
+
+	wd_blkpool_destroy(ctl->pool);
 	free(opdata);
+	free(ctl);
 }
 
 static unsigned int bit_reverse(register unsigned int x)
@@ -575,7 +631,8 @@ static unsigned int bit_reverse(register unsigned int x)
 static int append_store_block(struct zip_stream *zstrm, int flush)
 {
 	char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
-	struct wcrypto_comp_op_data *opdata = zstrm->reserved;
+	struct zip_ctl *ctl = zstrm->reserved;
+	struct wcrypto_comp_op_data *opdata = ctl->opdata;
 	__u32 checksum = opdata->checksum;
 	__u32 isize = opdata->isize;
 
@@ -607,8 +664,9 @@ static int append_store_block(struct zip_stream *zstrm, int flush)
 
 static int hw_send_and_recv(struct zip_stream *zstrm, int flush)
 {
-	struct wcrypto_comp_op_data *opdata = zstrm->reserved;
-	void *zip_ctx = opdata->ctx;
+	struct zip_ctl *ctl = zstrm->reserved;
+	struct wcrypto_comp_op_data *opdata = ctl->opdata;
+	void *zip_ctx = ctl->ctx;
 	int ret = 0;
 
 	if (zstrm->avail_in == 0 && flush == WCRYPTO_FINISH)
@@ -640,7 +698,7 @@ static int hw_send_and_recv(struct zip_stream *zstrm, int flush)
 	if (zstrm->avail_in > 0)
 		opdata->in += opdata->consumed;
 	if (zstrm->avail_in == 0)
-		opdata->in = opdata->in_temp;
+		opdata->in = ctl->in;  /* origin addr in */
 
 	if (ret == 0 && flush == WCRYPTO_FINISH)
 		ret = Z_STREAM_END;
