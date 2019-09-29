@@ -123,14 +123,14 @@ struct wcrypto_cipher_tag {
 	void *priv;
 };
 
-/*EC tag format of Warpdrive */
+/* EC tag format of Warpdrive */
 struct wcrypto_ec_tag {
 	struct wcrypto_cb_tag wcrypto_tag;
 	__u64 tbl_addr;
 	void *priv;
 };
 
-/*COMP tag format of Warpdrive */
+/* COMP tag format of Warpdrive */
 struct wcrypto_comp_tag {
 	struct wcrypto_cb_tag wcrypto_tag;
 	void *priv;

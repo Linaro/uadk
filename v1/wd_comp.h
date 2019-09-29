@@ -63,7 +63,7 @@ enum wcrypto_comp_flush_type {
 };
 
 enum wcrypto_comp_alg_type {
-	WCRYPTO_ZLIB  = 0x00,
+	WCRYPTO_ZLIB,
 	WCRYPTO_GZIP,
 };
 
@@ -92,7 +92,7 @@ enum wcrypto_comp_state {
 
 enum wcrypto_stream_status {
 	WCRYPTO_COMP_STREAM_OLD,
-	WCRYPTO_COMP_STREAM_NEW,
+	WCRYPTO_COMP_STREAM_NEW, /* indicates first packet */
 };
 
 /**
@@ -101,13 +101,10 @@ enum wcrypto_stream_status {
  * @alg_type:compressing algorithm type zlib/gzip
  * @op_type:operational types deflate/inflate
  * @stream_mode:stateless(block)/statefull
- * @comp_lv: compressing level;maybe support later
- * @win_size: window size of algorithm;maybe support later
+ * @comp_lv: compressing level;now reserved
+ * @win_size: window size of algorithm; now reserved
  * @data_fmt: buffer format
- * @ss_buf:field for user to alloc dma buffer
- * @next_in: next input byte
- * @next_out: next output byte should be put there
- * @ctx_buf: need extra memory for hw
+ * @br: memory operations from user
  */
 struct wcrypto_comp_ctx_setup {
 	wcrypto_cb cb;
@@ -117,10 +114,6 @@ struct wcrypto_comp_ctx_setup {
 	__u8 comp_lv;
 	__u16 win_size;
 	__u16 data_fmt;
-	void *ss_buf;
-	void *next_in;
-	void *next_out;
-	void *ctx_buf;
 	struct wd_mm_br br;
 };
 
@@ -129,29 +122,30 @@ struct wcrypto_comp_ctx_setup {
  * @alg_type:compressing algorithm type zlib/gzip
  * @flush:input and output, denotes flush type or data status
  * @stream_pos: denotes stream start
+ * @status:task status current time
  * @in:input data address
- * @in_len:input data size
  * @out:output data address
- * @in_temp:stash for in
+ * @in_len:input data size
+ * @avail_out:avail output size for hw
  * @consumed:output, denotes how many bytes are consumed this time
  * @produced:output, denotes how many bytes are produced this time
+ * @isize:gzip isize
+ * @checksum: protocol checksum
+ * @priv: private field for extend
  */
 struct wcrypto_comp_op_data {
 	__u8 alg_type;
 	__u8 flush;
 	__u8 stream_pos;
 	__u8 status;
+	__u8 *in;
+	__u8 *out;
 	__u32 in_len;
 	__u32 avail_out;
 	__u32 consumed;
 	__u32 produced;
-	__u8 *in;
-	__u8 *out;
-	__u8 *in_temp;
 	__u32 isize;
 	__u32 checksum;
-	struct wd_queue *q;
-	void *ctx;
 	void *priv;
 };
 
@@ -170,7 +164,6 @@ struct wcrypto_comp_msg {
 	__u32 produced;  /* produced bytes of current operation */
 	__u8 *src;       /* Input data VA, buf should be DMA-able. */
 	__u8 *dst;       /* Output data VA pointer */
-
 	__u32 tag;       /* User-defined request identifier */
 	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
@@ -179,7 +172,7 @@ struct wcrypto_comp_msg {
 	__u32 ctx_priv0; /* Denoted HW priv */
 	__u32 ctx_priv1; /* Denoted HW priv */
 	__u32 ctx_priv2; /* Denoted HW priv */
-	void *ctx_buf;   /* Denoted HW ctx cache */
+	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
 	__u64 udata;     /* Input user tag, indentify data of stream/user */
 };
 

@@ -151,7 +151,7 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 {
 	size_t sz;
 	struct wcrypto_comp_msg *m = msg->msg;
-	char gzip_extra[GZIP_EXTRA_SZ] = {0x00, 0x07, 0x48, 0x69, 0x00, 0x04,
+	char gzip_extra[GZIP_EXTRA_SZ] = {0x08, 0x00, 0x48, 0x69, 0x04, 0x00,
 					  0x00, 0x00, 0x00, 0x00};
 
 	dbg("%s()(%p, %p): %p, %p, inlen=%d, outlen=%d, coms=%d, out=%d\n",
