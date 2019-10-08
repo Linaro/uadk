@@ -49,7 +49,7 @@ static void wd_calc_memsize(struct wd_blkpool_setup *setup, unsigned long *size)
 	__u32 hd_size = ALIGN(sizeof(struct wd_blk_hd), setup->align_size);
 	__u32 act_blksize = ALIGN(setup->block_size, setup->align_size);
 
-	*size = (hd_size + act_blksize) * setup->block_num;
+	*size = (hd_size + act_blksize) * (unsigned long)setup->block_num;
 }
 
 static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *pool)
@@ -91,8 +91,8 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *pool)
 	 * if dma_num <= (1 / 1.15) * user's block_num, we think the pool
 	 * is created with failure.
 	 */
-#define NUM_TIMES	87 / 100
-	if (dma_num <= pool->setup.block_num * NUM_TIMES) {
+#define NUM_TIMES(x)	(87 * (x) / 100)
+	if (dma_num <= NUM_TIMES(pool->setup.block_num)) {
 		WD_ERR("dma_num = %d, not enough.\n", dma_num);
 		return -WD_EINVAL;
 	}
@@ -320,27 +320,29 @@ void wd_blk_iova_unmap(void *pool, void *blk_dma, void *blk)
 	/* do nothting, but the func shoule */
 }
 
-unsigned int wd_get_free_blk_num(void *pool)
+int wd_get_free_blk_num(void *pool, __u32 *free_num)
 {
 	struct wd_blkpool *p = pool;
 
-	if (!p) {
+	if (!p || !free_num) {
 		WD_ERR("get_free_blk_num err, pool is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return __atomic_load_n(&p->free_blk_num, __ATOMIC_RELAXED);
+	*free_num = __atomic_load_n(&p->free_blk_num, __ATOMIC_RELAXED);
+	return WD_SUCCESS;
 }
 
-unsigned int wd_blk_alloc_failures(void *pool)
+int wd_blk_alloc_failures(void *pool, __u32 *fail_num)
 {
 	struct wd_blkpool *p = pool;
 
-	if (!p) {
+	if (!p || !fail_num) {
 		WD_ERR("get_blk_alloc_failure err, pool is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return __atomic_load_n(&p->alloc_failures, __ATOMIC_RELAXED);
+	*fail_num = __atomic_load_n(&p->alloc_failures, __ATOMIC_RELAXED);
+	return WD_SUCCESS;
 }
 
