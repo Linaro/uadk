@@ -20,8 +20,8 @@ void *my_dma_map(void *usr, void *va, size_t sz);
 
 struct wd_blkpool *pool;
 
-int test_alloc_free(unsigned int blk_sz, unsigned short blk_num,
-		    unsigned short align_sz);
+int test_alloc_free(unsigned int blk_sz, unsigned int blk_num,
+		    unsigned int align_sz);
 
 int main(int argc, char *argv[])
 {
@@ -35,16 +35,16 @@ int main(int argc, char *argv[])
 	}
 
 	unsigned int blk_sz = atoi(argv[1]);
-	unsigned short blk_num = atoi(argv[2]);
-	unsigned short align_sz = atoi(argv[3]);
+	unsigned int blk_num = atoi(argv[2]);
+	unsigned int align_sz = atoi(argv[3]);
 
 	test_alloc_free(blk_sz, blk_num, align_sz);
 
 	return 0;
 }
 
-int test_alloc_free(unsigned int blk_sz, unsigned short blk_num,
-		    unsigned short align_sz)
+int test_alloc_free(unsigned int blk_sz, unsigned int blk_num,
+		    unsigned int align_sz)
 {
 	struct wd_blkpool_setup wsetup;
 	pthread_t pid[64];
@@ -126,22 +126,22 @@ void *wd_alloc_test()
 
 void *wd_getfreeNum_test()
 {
-	int num = 0;
+	unsigned int num = 0;
 
 	while (1) {
-		num = wd_get_free_blk_num(pool);
-		printf("free num = %d\n", num);
+		if (wd_get_free_blk_num(pool, &num) == WD_SUCCESS)
+			printf("free num = %u\n", num);
 		sleep(1);
 	}
 }
 
 void *wd_blk_alloc_failures_test()
 {
-	int num;
+	unsigned int num = 0;
 
 	while (1) {
-		num = wd_blk_alloc_failures(pool);
-		printf("alloc_fail_num = %d\n", num);
+		if (wd_blk_alloc_failures(pool, &num) == WD_SUCCESS)
+			printf("alloc_fail_num = %u\n", num);
 		sleep(1);
 	}
 }
