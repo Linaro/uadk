@@ -24,6 +24,12 @@
 #define INT_MAX_SIZE			10
 #define LINUX_CRTDIR_SIZE		1
 #define LINUX_PRTDIR_SIZE		2
+#define INSTANCE_RATIO_FOR_DEV_SCHED		4
+
+#define GET_WEIGHT(distance, instances) (\
+		((instances) & 0xffff) | (((distance) & 0xffff) << 16))
+#define GET_NODE_DISTANCE(weight) (((weight) >> 16) & 0xffff)
+#define GET_AVAILABLE_INSTANCES(weight) ((weight) & 0xffff)
 
 #ifdef WITH_LOG_FILE
 FILE *flog_fd = NULL;
@@ -173,10 +179,31 @@ static int is_alg_support(struct dev_info *dinfo, const char *alg)
 	return  alg_support_flag;
 }
 
+static bool is_weight_more(unsigned int new, unsigned int old)
+{
+	unsigned int ins_new, dis_new;
+	unsigned int ins_old, dis_old;
+
+	ins_new = GET_AVAILABLE_INSTANCES(new);
+	dis_new = GET_NODE_DISTANCE(new);
+	ins_old = GET_AVAILABLE_INSTANCES(old);
+	dis_old = GET_NODE_DISTANCE(old);
+
+	dbg("dis_new %u, ins_new %u,dis_old %u, ins_old %u\n",
+		dis_new, ins_new, dis_old, ins_old);
+
+	if (dis_new > dis_old)
+		return ins_new > ins_old * INSTANCE_RATIO_FOR_DEV_SCHED;
+	else if (dis_new == dis_old)
+		return ins_new > ins_old;
+	else
+		return ins_new * INSTANCE_RATIO_FOR_DEV_SCHED >= ins_old;
+}
+
 static int get_dev_info(struct dev_info *dinfo, const char *alg)
 {
-	int ret;
 	char buf[PATH_STR_SIZE] = {0};
+	int ret;
 
 	ret = snprintf(buf, PATH_STR_SIZE, "%s/%s",
 						LINUX_DEV_DIR, dinfo->name);
@@ -233,14 +260,12 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 		return ret;
 
 	/*
-	 * Use available_instances as the base of weight.
-	 * Remote NUMA node cuts the weight.
+	 * Use available_instances and numa_distance combine weight.
+	 * |	2 bytes	|	2bytes	|.
+	 * |numa_distance|available_instances|.
 	 */
-	dinfo->weight = dinfo->available_instances;
-
-	/* Check whether it's the remote distance. */
-	if (dinfo->numa_dis)
-		dinfo->weight = dinfo->weight >> 2;
+	dinfo->weight = GET_WEIGHT(dinfo->numa_dis,
+		dinfo->available_instances);
 
 	return 0;
 }
@@ -252,7 +277,8 @@ static void copy_if_better(struct dev_info *old, struct dev_info *new,
 	    new->available_instances);
 
 	/* Is the new dev better? */
-	if (old && (!old->name[0] || (new->weight > old->weight))) {
+	if (old && (!old->name[0]
+		|| (is_weight_more(new->weight, old->weight)))) {
 		memcpy(old, new, sizeof(*old));
 		dbg("adopted\n");
 		return;
@@ -489,7 +515,6 @@ void wd_release_queue(struct wd_queue *q)
 	}
 	wd_close_queue(q);
 	free((void *)qinfo->dev_info);
-	qinfo->dev_info = NULL;
 }
 
 int wd_send(struct wd_queue *q, void *req)
@@ -586,8 +611,16 @@ int wd_get_available_dev_num(const char *algorithm)
 
 int wd_get_node_id(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
-	const struct dev_info *dev = qinfo->dev_info;
+	const struct dev_info *dev = NULL;
+	struct q_info *qinfo = NULL;
+
+	if (!q || !q->info || !((struct q_info *)(q->info))->dev_info) {
+		WD_ERR("q, info or dev_info NULL!\n");
+		return -EINVAL;
+	}
+
+	qinfo = q->info;
+	dev = qinfo->dev_info;
 
 	return dev->node_id;
 }
