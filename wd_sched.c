@@ -64,7 +64,7 @@ int wd_sched_init(struct wd_scheduler *sched)
 
 	flags = sched->qs[0].dev_flags;
 
-	if (flags & UACCE_DEV_PASID)
+	if (flags & UACCE_DEV_SVA)
 		sched->ss_region = malloc(sched->ss_region_size);
 	else
 		sched->ss_region = wd_reserve_memory(&sched->qs[0],
@@ -75,7 +75,7 @@ int wd_sched_init(struct wd_scheduler *sched)
 		goto out_with_queues;
 	}
 
-	if (!(flags & UACCE_DEV_PASID)) {
+	if (!(flags & UACCE_DEV_SVA)) {
 		for (k = 1; k < sched->q_num; k++) {
 			ret = wd_share_reserved_memory(&sched->qs[k], &sched->qs[0]);
 			if (ret)
@@ -96,7 +96,7 @@ int wd_sched_init(struct wd_scheduler *sched)
 	return 0;
 
 out_with_queues:
-	if (flags & UACCE_DEV_PASID) {
+	if (flags & UACCE_DEV_SVA) {
 		if (sched->ss_region)
 			free(sched->ss_region);
 	}
@@ -111,7 +111,7 @@ void wd_sched_fini(struct wd_scheduler *sched)
 	int flags = sched->qs[0].dev_flags;
 
 	__fini_cache(sched);
-	if (flags & UACCE_DEV_PASID) {
+	if (flags & UACCE_DEV_SVA) {
 		if (sched->ss_region)
 			free(sched->ss_region);
 	}

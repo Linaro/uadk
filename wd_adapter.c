@@ -102,7 +102,7 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	}
 
 	if (q->dev_flags & UACCE_DEV_NOIOMMU) {
-		errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_PA, &q->ss_pa);
+		errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_DMA, &q->ss_pa);
 		if (errno) {
 			WD_ERR("get PA fail!\n");
 			return NULL;

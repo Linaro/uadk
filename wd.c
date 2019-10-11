@@ -17,7 +17,7 @@
 #include "wd.h"
 #include "wd_adapter.h"
 
-#define SYS_CLASS_DIR	"/sys/class"
+#define SYS_CLASS_DIR	"/sys/class/uacce"
 
 #ifdef WITH_LOG_FILE
 FILE *flog_fd = NULL;
@@ -46,7 +46,7 @@ static size_t _get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	int fd;
 	size_t size;
 
-	size = snprintf(attr_file, PATH_STR_SIZE, "%s/"UACCE_DEV_ATTRS"/%s",
+	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s",
 			dev_root, attr);
 	if (size < 0)
 		return -EINVAL;
@@ -206,7 +206,7 @@ static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
 		goto err;
 	}
 
-	wd_class = opendir(SYS_CLASS_DIR"/"UACCE_CLASS_NAME);
+	wd_class = opendir(SYS_CLASS_DIR);
 	if (!wd_class) {
 		WD_ERR("WD framework is not enabled on the system!\n");
 		errno = -ENODEV;
@@ -219,7 +219,7 @@ static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
 			continue;
 
 		(void)strncpy(dinfo.dev_root,
-			      SYS_CLASS_DIR "/" UACCE_CLASS_NAME "/",
+			      SYS_CLASS_DIR "/",
 			      PATH_STR_SIZE - 1);
 		(void)strncat(dinfo.dev_root, device->d_name, PATH_STR_SIZE - 1);
 		(void)strncpy(dinfo.name, name, WD_NAME_SIZE - 1);

@@ -103,7 +103,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	struct hisi_qp_ctx qp_ctx;
 	void *vaddr;
 	int ret;
-	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
+	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_SVA));
 
 	alloc_obj(info);
 	if (!info) {
@@ -191,7 +191,7 @@ err_with_info:
 void hisi_qm_unset_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
-	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
+	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_SVA));
 
 	if (has_dko) {
 		wd_drv_unmmap_qfr(q, info->dko_base,
