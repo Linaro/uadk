@@ -44,7 +44,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 
 	printf("dummy_set_queue_dio ver=%d\n", priv->ver);
 	if (priv->ver == 2) {
-		priv->db = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+		priv->db = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, 0);
 		if (priv->db == MAP_FAILED) {
 			DUMMY_ERR("mmap db fail (%d)\n", errno);
 			if (errno)
@@ -56,8 +56,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 	}
 
 	priv->reg = wd_drv_mmap_qfr(q,
-			priv->ver == 1 ? UACCE_QFRT_MMIO : UACCE_QFRT_DUS,
-			UACCE_QFRT_SS, 0);
+			priv->ver == 1 ? UACCE_QFRT_MMIO : UACCE_QFRT_DUS, 0);
 	if (priv->reg == MAP_FAILED) {
 		DUMMY_ERR("mmap bd fail (%d)\n", errno);
 		if (errno)
@@ -79,12 +78,12 @@ int dummy_set_queue_dio(struct wd_queue *q)
 
 out_with_bd_map:
 	if (priv->ver == 1)
-		wd_drv_unmmap_qfr(q, priv->reg, UACCE_QFRT_MMIO, UACCE_QFRT_SS, 0);
+		wd_drv_unmmap_qfr(q, priv->reg, UACCE_QFRT_MMIO, 0);
 	else
-		wd_drv_unmmap_qfr(q, priv->reg, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+		wd_drv_unmmap_qfr(q, priv->reg, UACCE_QFRT_DUS, 0);
 out_with_db_map:
 	if (priv->ver == 2)
-		wd_drv_unmmap_qfr(q, priv->db, UACCE_QFRT_MMIO, UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, priv->db, UACCE_QFRT_MMIO, 0);
 out_with_priv:
 	free_obj(priv);
 	q->priv = NULL;

@@ -113,7 +113,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 
 	q->priv = info;
 
-	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, 0);
 	if (vaddr == MAP_FAILED) {
 		WD_ERR("mmap dus fail\n");
 		ret = -errno;
@@ -123,8 +123,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	info->sq_base = vaddr;
 	info->cq_base = vaddr + info->sqe_size * QM_Q_DEPTH;
 
-	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
-			    has_dko ? UACCE_QFRT_DKO : UACCE_QFRT_DUS, 0);
+	vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, 0);
 	if (vaddr == MAP_FAILED) {
 		WD_ERR("mmap mmio fail\n");
 		ret = -errno;
@@ -154,7 +153,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	}
 
 	if (has_dko) {
-		vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
+		vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO, 0);
 		if (vaddr == MAP_FAILED) {
 			WD_ERR("mmap dko fail!\n");
 			ret = -errno;
@@ -176,13 +175,11 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	return 0;
 err_with_dko:
 	if (has_dko)
-		wd_drv_unmmap_qfr(q, info->dko_base, UACCE_QFRT_DKO,
-				  UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, info->dko_base, UACCE_QFRT_DKO, 0);
 err_with_mmio:
-	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-			  UACCE_QFRT_DKO, 0);
+	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
 err_with_dus:
-	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
 err_with_info:
 	free(info);
 	return ret;
@@ -195,14 +192,12 @@ void hisi_qm_unset_queue_dio(struct wd_queue *q)
 
 	if (has_dko) {
 		wd_drv_unmmap_qfr(q, info->dko_base,
-				  UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
-		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
 				  UACCE_QFRT_DKO, 0);
+		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
 	} else {
-		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-				  UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
 	}
-	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
 	free(info);
 	q->priv = NULL;
 }
