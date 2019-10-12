@@ -140,7 +140,7 @@ static int _get_dev_info(struct _dev_info *dinfo)
 	dinfo->flags = _get_int_attr(dinfo, "flags");
 	_get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
 	_get_str_attr(dinfo, "algorithms", dinfo->algs, MAX_ATTR_STR_SIZE);
-	_get_ul_vec_attr(dinfo, "qfrs_offset", dinfo->qfrs_offset,
+	_get_ul_vec_attr(dinfo, "qfrs_size", dinfo->qfrs_offset,
 			 UACCE_QFRT_MAX);
 	/*
 	 * Use available_instances as the base of weight.

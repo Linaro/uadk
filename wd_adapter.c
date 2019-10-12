@@ -94,7 +94,7 @@ void drv_flush(struct wd_queue *q)
 
 void *drv_reserve_mem(struct wd_queue *q, size_t size)
 {
-	q->ss_va = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, UACCE_QFRT_INVALID, size);
+	q->ss_va = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, size);
 
 	if (q->ss_va == MAP_FAILED) {
 		WD_ERR("wd drv mmap fail!\n");
