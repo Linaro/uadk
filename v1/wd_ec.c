@@ -99,9 +99,9 @@ static int wcrypto_check_ctx_para(struct wd_queue *q,
 		return -WD_EINVAL;
 	}
 
-	if (!setup->ops.alloc || !setup->ops.free ||
-		!setup->ops.dma_map || !setup->ops.dma_unmap) {
-		WD_ERR("%s(): wd_mm_ops should not be NULL!\n", __func__);
+	if (!setup->br.alloc || !setup->br.free ||
+		!setup->br.iova_map || !setup->br.iova_unmap) {
+		WD_ERR("%s(): wd_mm_br should not be NULL!\n", __func__);
 		return -WD_EINVAL;
 	}
 
@@ -124,14 +124,14 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 	if (wcrypto_check_ctx_para(q, setup))
 		return NULL;
 
-	qinfo = q->info;
+	qinfo = q->qinfo;
 	wd_spinlock(&qinfo->qlock);
-	if (!qinfo->ops.alloc && !qinfo->ops.dma_map)
-		memcpy(&qinfo->ops, &setup->ops, sizeof(setup->ops));
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 
-	if (qinfo->ops.usr != setup->ops.usr) {
+	if (qinfo->br.usr != setup->br.usr) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("%s(): config different ops!\n", __func__);
+		WD_ERR("%s(): config different br!\n", __func__);
 		return NULL;
 	}
 	qinfo->ctx_num++;
@@ -150,7 +150,7 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->q = q;
 	ctx->ctx_id = ctx_id;
-	ctx->tbl_buf = setup->ops.alloc(setup->ops.usr,
+	ctx->tbl_buf = setup->br.alloc(setup->br.usr,
 		WCRYPTO_EC_CTX_MSG_NUM * WCRYPTO_EC_TBl_SIZE);
 	if (!ctx->tbl_buf) {
 		WD_ERR("%s() reserve memory fail!\n", __func__);
@@ -158,17 +158,17 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 		return NULL;
 	}
 
-	pa = setup->ops.dma_map(setup->ops.usr, (void *)ctx->tbl_buf,
+	pa = setup->br.iova_map(setup->br.usr, (void *)ctx->tbl_buf,
 		WCRYPTO_EC_CTX_MSG_NUM * WCRYPTO_EC_TBl_SIZE);
 	if (!pa) {
-		WD_ERR("%s() dma_map fail!\n", __func__);
-		setup->ops.free(setup->ops.usr, (void *)ctx->tbl_buf);
+		WD_ERR("%s() iova_map fail!\n", __func__);
+		setup->br.free(setup->br.usr, (void *)ctx->tbl_buf);
 		free(ctx);
 		return NULL;
 	}
 
 	for (i = 0; i < WCRYPTO_EC_CTX_MSG_NUM; i++) {
-		ctx->caches[i].msg.alg_type = WD_EC;
+		ctx->caches[i].msg.alg_type = WCRYPTO_EC;
 		ctx->caches[i].msg.ec_type = setup->ec_type;
 		ctx->caches[i].msg.data_fmt = setup->data_fmt;
 		ctx->caches[i].msg.result = EC_INVALID_FLAG;
@@ -311,7 +311,7 @@ void wcrypto_del_ec_ctx(void *ctx)
 {
 	struct q_info *qinfo;
 	struct wcrypto_ec_ctx *cctx;
-	struct wd_mm_ops *ops;
+	struct wd_mm_br *br;
 
 	if (!ctx) {
 		WD_ERR("%s(): input param err!\n", __func__);
@@ -319,11 +319,11 @@ void wcrypto_del_ec_ctx(void *ctx)
 	}
 
 	cctx = ctx;
-	qinfo = cctx->q->info;
+	qinfo = cctx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	if (!qinfo->ctx_num)
-		memset(&qinfo->ops, 0, sizeof(qinfo->ops));
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
 		WD_ERR("%s(): repeat del comp ctx!\n", __func__);
 		wd_unspinlock(&qinfo->qlock);
@@ -331,9 +331,9 @@ void wcrypto_del_ec_ctx(void *ctx)
 	}
 	wd_unspinlock(&qinfo->qlock);
 
-	ops = &cctx->setup.ops;
-	if (ops && ops->free)
-		ops->free(ops->usr, (void *)cctx->tbl_buf);
+	br = &cctx->setup.br;
+	if (br && br->free)
+		br->free(br->usr, (void *)cctx->tbl_buf);
 	free(cctx);
 }
 

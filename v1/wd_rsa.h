@@ -7,61 +7,63 @@
 #include <linux/types.h>
 #include "wd.h"
 
-struct wcrypto_rsa_kg_in;
-struct wcrypto_rsa_kg_out;
-struct wcrypto_rsa_pubkey;
-struct wcrypto_rsa_prikey;
+struct wcrypto_rsa_kg_in; /* rsa key generation input parameters */
+struct wcrypto_rsa_kg_out; /* rsa key generation output parameters */
+struct wcrypto_rsa_pubkey; /* rsa public key */
+struct wcrypto_rsa_prikey; /* rsa private key */
 
+/* RSA operational types */
 enum wcrypto_rsa_op_type  {
-	WCRYPTO_RSA_INVALID,
-	WCRYPTO_RSA_SIGN,
-	WCRYPTO_RSA_VERIFY,
-	WCRYPTO_RSA_GENKEY,
+	WCRYPTO_RSA_INVALID, /* invalid rsa operation */
+	WCRYPTO_RSA_SIGN, /* RSA sign */
+	WCRYPTO_RSA_VERIFY, /* RSA verify */
+	WCRYPTO_RSA_GENKEY, /* RSA key generation */
 };
 
 /* RSA key types */
 enum wcrypto_rsa_key_type {
-	WCRYPTO_RSA_INVALID_KEY,
-	WCRYPTO_RSA_PUBKEY,
-	WCRYPTO_RSA_PRIKEY1,
-	WCRYPTO_RSA_PRIKEY2,
+	WCRYPTO_RSA_INVALID_KEY, /* invalid rsa key type */
+	WCRYPTO_RSA_PUBKEY, /* rsa publick key type */
+	WCRYPTO_RSA_PRIKEY1, /* invalid rsa private common key type */
+	WCRYPTO_RSA_PRIKEY2, /* invalid rsa private CRT key type */
 };
 
+/* RSA context setting up input parameters from user */
 struct wcrypto_rsa_ctx_setup {
-	wcrypto_cb cb;
-	__u16 data_fmt;
-	__u16 key_bits;
-	bool is_crt;
-	struct wd_mm_ops  ops;
+	wcrypto_cb cb; /* call back function from user */
+	__u16 data_fmt; /* data format denoted by enum wd_buff_type */
+	__u16 key_bits; /* RSA key bits */
+	bool is_crt; /* CRT mode or not */
+	struct wd_mm_br br; /* memory operations from user */
 };
 
 struct wcrypto_rsa_op_data {
-	enum wcrypto_rsa_op_type  op_type;
-	int status;
-	void *in;
-	void *out;
-	__u32 in_bytes;
-	__u32 out_bytes;
+	enum wcrypto_rsa_op_type op_type; /* rsa operation type */
+	int status; /* rsa operation status */
+	void *in; /* rsa operation input address, should be DMA-able */
+	void *out; /* rsa operation output address, should be DMA-able */
+	__u32 in_bytes; /* rsa operation input bytes */
+	__u32 out_bytes; /* rsa operation output bytes */
 };
 
 /* RSA message format of Warpdrive */
 struct wcrypto_rsa_msg {
-	__u8 alg_type:3;	 /* Denoted by enum wcrypto_type */
-	__u8 op_type:2;	/* Denoted by enum wcrypto_rsa_op_type  */
-	__u8 key_type:2;	/* Denoted by enum wcrypto_rsa_key_type */
-	__u8 data_fmt:1;	/* Data format, denoted by enum wd_buff_type */
-	__u8 result;	/* Data format, denoted by enum wcrypto_op_result */
-	__u16 in_bytes;	/* Input data bytes */
-	__u16 out_bytes;	/* Output data bytes */
-	__u16 key_bytes;	/* Input key bytes */
-	/**
-	 * Input data VA, buf should be from section 1.3.2,
-	 * the same in the following.
+	__u8 alg_type:3; /* Denoted by enum wcrypto_type */
+	__u8 op_type:2; /* Denoted by enum wcrypto_rsa_op_type  */
+	__u8 key_type:2; /* Denoted by enum wcrypto_rsa_key_type */
+	__u8 data_fmt:1; /* Data format, denoted by enum wd_buff_type */
+	__u8 result; /* Data format, denoted by WD error code */
+	__u16 in_bytes; /* Input data bytes */
+	__u16 out_bytes; /* Output data bytes */
+	__u16 key_bytes; /* Input key bytes */
+	__u8 *in; /* Input data VA, buf should be DMA buffer. */
+	__u8 *out; /* Output data VA pointer, should be DMA buffer */
+	__u8 *key; /* Input key VA pointer, should be DMA buffer */
+
+	/*
+	 * Input user tag, used for indentify data stream/user:
+	 * struct wcrypto_cb_tag
 	 */
-	__u8 *in;
-	__u8 *out;	/* Output data VA pointer */
-	__u8 *key;	/* Input key VA pointer */
-	/* Input user tag,which is used for ndentify data stream/user */
 	__u64 usr_data;
 };
 

@@ -264,8 +264,8 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	 * |	2 bytes	|	2bytes	|.
 	 * |numa_distance|available_instances|.
 	 */
-	dinfo->weight = GET_WEIGHT(dinfo->numa_dis,
-		dinfo->available_instances);
+	dinfo->weight = GET_WEIGHT((__u32)dinfo->numa_dis,
+		(__u32)dinfo->available_instances);
 
 	return 0;
 }
@@ -392,7 +392,7 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 {
 	struct q_info *qinfo;
 
-	qinfo = q->info;
+	qinfo = q->qinfo;
 	qinfo->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
 	if (qinfo->fd == -1) {
 		qinfo->fd = 0;
@@ -413,7 +413,7 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 static int wd_start_queue(struct wd_queue *q)
 {
 	int ret;
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	ret = ioctl(qinfo->fd, UACCE_CMD_START);
 	if (ret)
@@ -422,7 +422,7 @@ static int wd_start_queue(struct wd_queue *q)
 }
 static void wd_close_queue(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	close(qinfo->fd);
 }
@@ -434,14 +434,14 @@ int wd_request_queue(struct wd_queue *q)
 
 	if (!q) {
 		WD_ERR("input param q is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	dinfop = calloc(1, sizeof(struct q_info) + sizeof(*dinfop));
 	if (!dinfop) {
 		WD_ERR("calloc for queue info fail!\n");
 		return -WD_ENOMEM;
 	};
-	q->info = dinfop + 1;
+	q->qinfo = dinfop + 1;
 try_again:
 	ret = find_available_res(q, dinfop, NULL);
 	if (ret) {
@@ -449,7 +449,7 @@ try_again:
 		goto err_with_dev;
 	}
 	ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
-	if (ret == -ENODEV) {
+	if (ret == -WD_ENODEV) {
 		try_cnt++;
 		if (try_cnt < _TRY_REQUEST_TIMES) {
 			memset(dinfop, 0, sizeof(*dinfop));
@@ -482,11 +482,11 @@ void wd_release_queue(struct wd_queue *q)
 	struct wd_ss_region_list *head;
 	struct q_info *qinfo, *sqinfo;
 
-	if (!q || !q->info) {
+	if (!q || !q->qinfo) {
 		WD_ERR("release queue param error!\n");
 		return;
 	}
-	qinfo = q->info;
+	qinfo = q->qinfo;
 	if (__atomic_load_n(&qinfo->ref, __ATOMIC_RELAXED)) {
 		WD_ERR("q(%s) is busy, release fail!\n", q->capa.alg);
 		return;
@@ -529,7 +529,7 @@ int wd_recv(struct wd_queue *q, void **resp)
 
 static int wd_wait(struct wd_queue *q, __u16 ms)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct pollfd fds[1];
 	int ret;
 
@@ -559,23 +559,37 @@ int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms)
 
 void *wd_reserve_memory(struct wd_queue *q, size_t size)
 {
+	if (!q || !size) {
+		WD_ERR("wd reserve mem: param err!\n");
+		return NULL;
+	}
+
 	return drv_reserve_mem(q, size);
 }
 
 int wd_share_reserved_memory(struct wd_queue *q,
 			struct wd_queue *target_q)
 {
+	const struct dev_info *info, *tgt_info;
+	struct q_info *qinfo, *tqinfo;
 	int ret;
-	struct q_info *qinfo = q->info, *tqinfo = target_q->info;
-	const struct dev_info *info = qinfo->dev_info;
-	const struct dev_info *tgt_info = tqinfo->dev_info;
+
+	if (!q || !target_q || !q->qinfo || !target_q->qinfo) {
+		WD_ERR("wd share reserved mem: param err!\n");
+		return -WD_EINVAL;
+	}
+
+	qinfo = q->qinfo;
+	tqinfo = target_q->qinfo;
+	tgt_info = tqinfo->dev_info;
+	info = qinfo->dev_info;
 
 	if (((qinfo->dev_flags & UACCE_DEV_NOIOMMU) &&
 		!(tqinfo->dev_flags & UACCE_DEV_NOIOMMU)) ||
 		(!(qinfo->dev_flags & UACCE_DEV_NOIOMMU) &&
 		(tqinfo->dev_flags & UACCE_DEV_NOIOMMU))) {
 		WD_ERR("IOMMU type mismatching as share mem!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	if (info->node_id != tgt_info->node_id)
 		WD_ERR("Warn: the 2 queues is not at the same node!\n");
@@ -598,7 +612,13 @@ int wd_share_reserved_memory(struct wd_queue *q,
 int wd_get_available_dev_num(const char *algorithm)
 {
 	struct wd_queue q;
-	int num = 0, ret;
+	int num = -1;
+	int ret;
+
+	if (!algorithm) {
+		WD_ERR("get dev num, param err!\n");
+		return -WD_EINVAL;
+	}
 
 	memset(&q, 0, sizeof(q));
 	q.capa.alg = algorithm;
@@ -614,21 +634,28 @@ int wd_get_node_id(struct wd_queue *q)
 	const struct dev_info *dev = NULL;
 	struct q_info *qinfo = NULL;
 
-	if (!q || !q->info || !((struct q_info *)(q->info))->dev_info) {
+	if (!q || !q->qinfo || !((struct q_info *)(q->qinfo))->dev_info) {
 		WD_ERR("q, info or dev_info NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
-	qinfo = q->info;
+	qinfo = q->qinfo;
 	dev = qinfo->dev_info;
 
 	return dev->node_id;
 }
 
-void *wd_dma_map(struct wd_queue *q, void *va, size_t sz)
+void *wd_iova_map(struct wd_queue *q, void *va, size_t sz)
 {
-	struct q_info *qinfo = q->info;
 	struct wd_ss_region *rgn;
+	struct q_info *qinfo;
+
+	if (!q || !va) {
+		WD_ERR("wd iova map: param err!\n");
+		return NULL;
+	}
+
+	qinfo = q->qinfo;
 
 	TAILQ_FOREACH(rgn, qinfo->head, next) {
 		if (rgn->va <= va && va < rgn->va + rgn->size)
@@ -639,7 +666,7 @@ void *wd_dma_map(struct wd_queue *q, void *va, size_t sz)
 	return NULL;
 }
 
-void wd_dma_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
+void wd_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
 {
 	/* For no-iommu, dma-unmap doing nothing */
 }
@@ -647,8 +674,15 @@ void wd_dma_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
 void *wd_dma_to_va(struct wd_queue *q, void *dma)
 {
 	struct wd_ss_region *rgn;
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo;
 	uintptr_t va;
+
+	if (!q || !q->qinfo || !dma) {
+		WD_ERR("wd dma to va, param err!\n");
+		return NULL;
+	}
+
+	qinfo = q->qinfo;
 
 	TAILQ_FOREACH(rgn, qinfo->head, next) {
 		if (rgn->pa <= (uintptr_t)dma &&
@@ -664,7 +698,7 @@ void *wd_dma_to_va(struct wd_queue *q, void *dma)
 void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt,
 				    enum uacce_qfrt qfrt_next, size_t size)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	off_t off;
 	void *ptr;
 
@@ -681,7 +715,7 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 				     enum uacce_qfrt qfrt,
 				     enum uacce_qfrt qfrt_next, size_t size)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	if (!addr)
 		return;

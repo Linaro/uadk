@@ -45,7 +45,7 @@ static inline int _get_one_bits(__u64 val)
 void mmt_show_ss_slices(struct wd_queue *q)
 {
 	struct wd_ss_region *rgn;
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	int i = 0;
 
 	TAILQ_FOREACH(rgn, qinfo->head, next) {
@@ -57,7 +57,7 @@ void mmt_show_ss_slices(struct wd_queue *q)
 
 static inline unsigned long long va_to_pa(struct wd_queue *q, void *va)
 {
-	return (unsigned long long)wd_dma_map(q, va, 0);
+	return (unsigned long long)wd_iova_map(q, va, 0);
 }
 
 static inline void *pa_to_va(struct wd_queue *q, unsigned long long pa)

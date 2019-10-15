@@ -200,7 +200,7 @@ int hizip_init(int alg_type, int op_type)
 
 	for (i = 0; i < q_num; i++) {
 		sched.qs[i].capa.alg = alg;
-		priv = (struct wcrypto_paras *)sched.qs[i].capa.priv;
+		priv = &sched.qs[i].capa.priv;
 		priv->direction = hizip_priv.op_type;
 	}
 	ret = wd_sched_init(&sched);

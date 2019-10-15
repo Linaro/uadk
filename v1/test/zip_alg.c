@@ -203,7 +203,7 @@ static int hizip_init(struct wd_scheduler *sched, int alg_type, int op_type,
 
 	for (i = 0; i < sched->q_num; i++) {
 		sched->qs[i].capa.alg = alg;
-		priv = (struct wcrypto_paras *)sched->qs[i].capa.priv;
+		priv = &sched->qs[i].capa.priv;
 		priv->direction = zip_priv->op_type;
 	}
 
@@ -444,7 +444,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	q->capa.latency = 0;
 	q->capa.throughput = 0;
 
-	priv = (struct wcrypto_paras *)q->capa.priv;
+	priv = &q->capa.priv;
 	priv->direction = comp_optype;
 	ret = wd_request_queue(q);
 	if (ret) {

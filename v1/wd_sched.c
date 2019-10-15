@@ -79,7 +79,7 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 		sched->ss_region_size = EXTRA_SIZE + /* add 1 page extra */
 			sched->msg_cache_num * (sched->msg_data_size << 0x1);
 
-	qinfo = sched->qs[0].info;
+	qinfo = sched->qs[0].qinfo;
 	flags = qinfo->dev_flags;
 	if (flags & UACCE_DEV_PASID)
 		sched->ss_region = malloc(sched->ss_region_size);
@@ -118,7 +118,7 @@ int wd_sched_init(struct wd_scheduler *sched)
 	if (ret < 0)
 		return -EINVAL;
 
-	qinfo = sched->qs[0].info;
+	qinfo = sched->qs[0].qinfo;
 	flags = qinfo->dev_flags;
 	if (!(flags & UACCE_DEV_PASID)) {
 		for (k = 1; k < sched->q_num; k++) {
@@ -162,7 +162,7 @@ out_with_queues:
 void wd_sched_fini(struct wd_scheduler *sched)
 {
 	int i;
-	struct q_info *qinfo = sched->qs[0].info;
+	struct q_info *qinfo = sched->qs[0].qinfo;
 	unsigned int flags = qinfo->dev_flags;
 
 	__fini_cache(sched);
