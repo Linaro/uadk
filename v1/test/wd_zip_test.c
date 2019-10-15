@@ -409,7 +409,7 @@ therad_no_affinity:
 	ctx_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
 	q->capa.latency = 0;
 	q->capa.throughput = 0;
-	priv = (struct wcrypto_paras *)q->capa.priv;
+	priv = &q->capa.priv;
 	priv->direction = pdata->op_type;
 	ret = wd_request_queue(q);
 	if (ret) {

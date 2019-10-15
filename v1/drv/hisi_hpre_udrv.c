@@ -288,7 +288,7 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		return -WD_EINVAL;
 	}
 
-	phy  = (uintptr_t)drv_dma_map(q, msg->key, ret);
+	phy  = (uintptr_t)drv_iova_map(q, msg->key, ret);
 	if (!phy) {
 		WD_ERR("Dma map rsa key fail!\n");
 		return -WD_ENOMEM;
@@ -310,14 +310,14 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	void *out;
 
 	if (msg->op_type != WCRYPTO_RSA_GENKEY) {
-		phy = (uintptr_t)drv_dma_map(q, msg->in, msg->key_bytes);
+		phy = (uintptr_t)drv_iova_map(q, msg->in, msg->key_bytes);
 		if (!phy) {
 			WD_ERR("Get rsa in buf dma address fail!\n");
 			return -WD_ENOMEM;
 		}
 		hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
 		hw_msg->hi_in = HI_U32(phy);
-		phy = (uintptr_t)drv_dma_map(q, msg->out, msg->key_bytes);
+		phy = (uintptr_t)drv_iova_map(q, msg->out, msg->key_bytes);
 		if (!phy) {
 			WD_ERR("Get rsa out key dma address fail!\n");
 			return -WD_ENOMEM;
@@ -328,7 +328,7 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		ret = wcrypto_rsa_kg_out_data(kout, (char **)&out);
 		if (ret < 0)
 			return ret;
-		phy = (uintptr_t)drv_dma_map(q, kout, ret);
+		phy = (uintptr_t)drv_iova_map(q, kout, ret);
 		if (!phy) {
 			WD_ERR("Get rsa out buf dma address fail!\n");
 			return -WD_ENOMEM;
@@ -431,8 +431,8 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 err_with_bin:
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_in = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
-	drv_dma_unmap(q, rsa_msg->out, (void *)(uintptr_t)dma_out, olen);
-	drv_dma_unmap(q, NULL, (void *)(uintptr_t)dma_in, ilen);
+	drv_iova_unmap(q, rsa_msg->out, (void *)(uintptr_t)dma_out, olen);
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in, ilen);
 	return ret;
 }
 
@@ -457,7 +457,7 @@ static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 		WD_ERR("dh p para format fail!\n");
 		return ret;
 	}
-	phy = (uintptr_t)drv_dma_map(q, (void *)x,
+	phy = (uintptr_t)drv_iova_map(q, (void *)x,
 				GEN_PARAMS_SZ(msg->key_bytes));
 	if (!phy) {
 		WD_ERR("get dh xp para dma address fail!\n");
@@ -475,7 +475,7 @@ static int qm_final_fill_dh_sqe(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	uintptr_t phy;
 
-	phy = (uintptr_t)drv_dma_map(q, msg->out, msg->key_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->key_bytes);
 	if (!phy) {
 		WD_ERR("Get dh out buf dma address fail!\n");
 		return -WD_ENOMEM;
@@ -521,7 +521,7 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 				WD_ERR("dh g para format fail!\n");
 				return ret;
 			}
-			phy = (uintptr_t)drv_dma_map(q, (void *)msg->g,
+			phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
 						msg->key_bytes);
 			if (!phy) {
 				WD_ERR("Get dh g para dma address fail!\n");
@@ -571,11 +571,11 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_key = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 	dma_in = DMA_ADDR(hw_msg->hi_in, hw_msg->hi_in);
-	drv_dma_unmap(q, dh_msg->out, (void *)(uintptr_t)dma_out,
+	drv_iova_unmap(q, dh_msg->out, (void *)(uintptr_t)dma_out,
 				dh_msg->key_bytes);
-	drv_dma_unmap(q, NULL, (void *)(uintptr_t)dma_in,
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in,
 		GEN_PARAMS_SZ(dh_msg->key_bytes));
-	drv_dma_unmap(q, NULL, (void *)(uintptr_t)dma_key, dh_msg->key_bytes);
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_key, dh_msg->key_bytes);
 	return ret;
 }
 

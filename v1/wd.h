@@ -44,9 +44,9 @@
 typedef void (*wcrypto_cb)(const void *msg, void *tag);
 
 struct wcrypto_cb_tag {
-	void *ctx;
-	void *tag;
-	int ctx_id;
+	void *ctx; /* user: context or other user relatives */
+	void *tag; /* to store user tag */
+	int ctx_id; /* user id: context ID or other user identifier */
 };
 
 struct wcrypto_paras {
@@ -61,15 +61,17 @@ typedef void *(*wd_alloc)(void *usr, size_t size);
 typedef void (*wd_free)(void *usr, void *va);
 
  /* memory VA to DMA address map */
-typedef void *(*wd_dmap)(void *usr, void *va, size_t sz);
-typedef void (*wd_undmap)(void *usr, void *va, void *dma, size_t sz);
+typedef void *(*wd_map)(void *usr, void *va, size_t sz);
+typedef void (*wd_unmap)(void *usr, void *va, void *dma, size_t sz);
 
 /* Memory from user, it is given at ctx creating. */
-struct wd_mm_ops {
-	wd_alloc alloc;
-	wd_free free;
-	wd_dmap dma_map;
-	wd_undmap dma_unmap;
+struct wd_mm_br {
+	wd_alloc alloc; /* Memory allocation */
+	wd_free free; /* Memory free */
+	wd_map iova_map; /* get iova from user space VA */
+
+	/* destroy the mapping between the PA of VA and iova */
+	wd_unmap iova_unmap;
 	void *usr; /* data for the above operations */
 };
 
@@ -81,14 +83,14 @@ struct wd_dtb {
 };
 
 enum wcrypto_type {
-	WD_RSA,
-	WD_DH,
-	WD_CIPHER,
-	WD_DIGEST,
-	WD_COMP,
-	WD_EC,
-	WD_RNG,
-	WD_MAX_ALG,
+	WCRYPTO_RSA,
+	WCRYPTO_DH,
+	WCRYPTO_CIPHER,
+	WCRYPTO_DIGEST,
+	WCRYPTO_COMP,
+	WCRYPTO_EC,
+	WCRYPTO_RNG,
+	WCRYPTO_MAX_ALG,
 };
 
 enum wd_buff_type {
@@ -129,13 +131,15 @@ struct wd_capa {
 	int throughput;
 	int latency;
 	__u32 flags;
-	__u8 priv[WD_CAPA_PRIV_DATA_SIZE]; /* For algorithm parameters */
+
+	/* For algorithm parameters, now it is defined in extending notions */
+	struct wcrypto_paras priv;
 };
 
 struct wd_queue {
 	struct wd_capa capa;
 	char dev_path[PATH_STR_SIZE]; /* if denote dev name, get its Q */
-	void *info; /* queue private */
+	void *qinfo; /* queue private */
 };
 
 extern int wd_request_queue(struct wd_queue *q);
@@ -148,7 +152,7 @@ extern int wd_share_reserved_memory(struct wd_queue *q,
 				    struct wd_queue *target_q);
 extern int wd_get_available_dev_num(const char *algorithm);
 extern int wd_get_node_id(struct wd_queue *q);
-extern void *wd_dma_map(struct wd_queue *q, void *va, size_t sz);
-extern void wd_dma_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
+extern void *wd_iova_map(struct wd_queue *q, void *va, size_t sz);
+extern void wd_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
 extern void *wd_dma_to_va(struct wd_queue *q, void *dma);
 #endif

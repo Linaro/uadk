@@ -1604,11 +1604,11 @@ int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 	setup.is_crt = 1;
 	setup.key_bits = key_bits;
 
-	setup.ops.alloc = (void *)wd_alloc_blk;
-	setup.ops.free = (void *)wd_free_blk;
-	setup.ops.dma_map = (void *)wd_blk_iova_map;
-	setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
-	setup.ops.usr = pool;
+	setup.br.alloc = (void *)wd_alloc_blk;
+	setup.br.free = (void *)wd_free_blk;
+	setup.br.iova_map = (void *)wd_blk_iova_map;
+	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.usr = pool;
 	ctx = wcrypto_create_rsa_ctx(q, &setup);
 	if (!ctx) {
 		HPRE_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
@@ -2020,11 +2020,11 @@ void *_rsa_async_op_test_thread(void *data)
 	setup.key_bits = key_bits;
 	setup.cb = (void *)_rsa_cb;
 
-	setup.ops.alloc = (void *)wd_alloc_blk;
-	setup.ops.free =  (void *)wd_free_blk;
-	setup.ops.dma_map = (void *)wd_blk_iova_map;
-	setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
-	setup.ops.usr = pool;
+	setup.br.alloc = (void *)wd_alloc_blk;
+	setup.br.free =  (void *)wd_free_blk;
+	setup.br.iova_map = (void *)wd_blk_iova_map;
+	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.usr = pool;
 	ctx = wcrypto_create_rsa_ctx(q, &setup);
 	if (!ctx) {
 		HPRE_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
@@ -2543,11 +2543,11 @@ static void *_hpre_dh_sys_test_thread(void *data)
 	key_size = key_bits >> 3;
 	dh_setup.cb = _dh_cb;
 
-	dh_setup.ops.alloc = (void *)wd_alloc_blk;
-	dh_setup.ops.free = (void *)wd_free_blk;
-	dh_setup.ops.dma_map = (void *)wd_blk_iova_map;
-	dh_setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
-	dh_setup.ops.usr = pool;
+	dh_setup.br.alloc = (void *)wd_alloc_blk;
+	dh_setup.br.free = (void *)wd_free_blk;
+	dh_setup.br.iova_map = (void *)wd_blk_iova_map;
+	dh_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	dh_setup.br.usr = pool;
 	ctx_alice = wcrypto_create_dh_ctx(q, &dh_setup);
 	ctx_bob = wcrypto_create_dh_ctx(q, &dh_setup);
 	if (!ctx_alice || !ctx_bob) {
@@ -3181,11 +3181,11 @@ basic_function_test:
 	if (!strncmp(q.capa.alg, "rsa", 3)) {
 		setup.key_bits = key_bits;
 
-		setup.ops.alloc = (void *)wd_alloc_blk;
-		setup.ops.free = (void *)wd_free_blk;
-		setup.ops.dma_map = (void *)wd_blk_iova_map;
-		setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
-		setup.ops.usr = pool;
+		setup.br.alloc = (void *)wd_alloc_blk;
+		setup.br.free = (void *)wd_free_blk;
+		setup.br.iova_map = (void *)wd_blk_iova_map;
+		setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		setup.br.usr = pool;
 		ctx = wcrypto_create_rsa_ctx(&q, &setup);
 		if (!ctx) {
 			ret = -ENOMEM;
@@ -3195,11 +3195,11 @@ basic_function_test:
 	} else if (!strncmp(q.capa.alg, "dh", 2)) {
 		dh_setup.key_bits = key_bits;
 
-		dh_setup.ops.alloc = (void *)wd_alloc_blk;
-		dh_setup.ops.free = (void *)wd_free_blk;
-		dh_setup.ops.dma_map = (void *)wd_blk_iova_map;
-		dh_setup.ops.dma_unmap = (void *)wd_blk_iova_unmap;
-		dh_setup.ops.usr = pool;
+		dh_setup.br.alloc = (void *)wd_alloc_blk;
+		dh_setup.br.free = (void *)wd_free_blk;
+		dh_setup.br.iova_map = (void *)wd_blk_iova_map;
+		dh_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		dh_setup.br.usr = pool;
 		ctx = wcrypto_create_dh_ctx(&q, &dh_setup);
 		if (!ctx) {
 			ret = -ENOMEM;
