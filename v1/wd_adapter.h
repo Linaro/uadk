@@ -17,12 +17,16 @@
 #include "wd.h"
 
 struct wd_drv_dio_if {
+	/* vendor tag which is used to select right vendor driver */
 	char *hw_type;
+	/* user space WD queue initiation */
 	int (*open)(struct wd_queue *q);
+	/* user space WD queue uninitiation */
 	void (*close)(struct wd_queue *q);
+	/* Send WCRYPTO message to WD queue */
 	int (*send)(struct wd_queue *q, void *req);
+	/* Receive WCRYPTO msg from WD queue */
 	int (*recv)(struct wd_queue *q, void **req);
-	void (*flush)(struct wd_queue *q);
 };
 
 extern int drv_open(struct wd_queue *q);

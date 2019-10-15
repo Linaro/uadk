@@ -80,7 +80,7 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		return NULL;
 	}
 
-	qinfo = q->info;
+	qinfo = q->qinfo;
 	if (strncmp(q->capa.alg, "dh", strlen("dh"))) {
 		WD_ERR("%s(): algorithm mismatch!\n", __func__);
 		return NULL;
@@ -89,12 +89,12 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 	/* lock at ctx creating */
 	wd_spinlock(&qinfo->qlock);
 
-	if (!qinfo->ops.alloc && !qinfo->ops.dma_map)
-		memcpy(&qinfo->ops, &setup->ops, sizeof(setup->ops));
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 
-	if (qinfo->ops.usr != setup->ops.usr) {
+	if (qinfo->br.usr != setup->br.usr) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("err: qinfo and setup mm ops.usr mismatch!\n");
+		WD_ERR("err: qinfo and setup mm br.usr mismatch!\n");
 		return NULL;
 	}
 
@@ -122,23 +122,25 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		ctx->cookies[i].msg.is_g2 = (__u8)setup->is_g2;
 		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
 		ctx->cookies[i].msg.key_bytes = ctx->key_size;
-		ctx->cookies[i].msg.alg_type = WD_DH;
+		ctx->cookies[i].msg.alg_type = WCRYPTO_DH;
 		ctx->cookies[i].tag.ctx = ctx;
 		ctx->cookies[i].tag.ctx_id = ctx_id;
 		ctx->cookies[i].msg.usr_data = (__u64)&ctx->cookies[i].tag;
 	}
 
-	ctx->g.data = ctx->setup.ops.alloc(ctx->setup.ops.usr, ctx->key_size);
+	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
 	ctx->g.bsize = ctx->key_size;
 	return ctx;
 }
 
 bool wcrypto_dh_is_g2(void *ctx)
 {
-	if (ctx)
-		return ((struct wcrypto_dh_ctx *)ctx)->setup.is_g2;
+	if (!ctx) {
+		WD_ERR("dh is g2 judge, ctx NULL, return false!\n");
+		return false;
+	}
 
-	return false;
+	return ((struct wcrypto_dh_ctx *)ctx)->setup.is_g2;
 }
 
 int wcrypto_dh_key_bits(void *ctx)
@@ -308,19 +310,19 @@ void wcrypto_del_dh_ctx(void *ctx)
 	struct q_info *qinfo;
 
 	if (!ctx) {
-		WD_ERR("Delete dh ctx is NULL!\n");
+		WD_ERR("Delete dh param err!\n");
 		return;
 	}
 
 	cx = ctx;
-	qinfo = cx->q->info;
+	qinfo = cx->q->qinfo;
 	st = &cx->setup;
 
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 
 	if (!qinfo->ctx_num) {
-		memset(&qinfo->ops, 0, sizeof(qinfo->ops));
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	} else if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error:repeat del dh ctx!\n");
@@ -329,8 +331,8 @@ void wcrypto_del_dh_ctx(void *ctx)
 
 	wd_unspinlock(&qinfo->qlock);
 
-	if (st->ops.free && &cx->g.data)
-		st->ops.free(st->ops.usr, &cx->g.data);
+	if (st->br.free && cx->g.data)
+		st->br.free(st->br.usr, cx->g.data);
 
 	free(ctx);
 }

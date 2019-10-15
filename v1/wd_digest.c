@@ -70,10 +70,10 @@ static void put_digest_cookie(struct wcrypto_digest_ctx *ctx,
 
 static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
-	struct wd_mm_ops *ops = &(ctx->setup.ops);
+	struct wd_mm_br *br = &(ctx->setup.br);
 
-	if (ops && ops->free && ctx->key)
-		ops->free(ops->usr, ctx->key);
+	if (br && br->free && ctx->key)
+		br->free(br->usr, ctx->key);
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -89,14 +89,14 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		return NULL;
 	}
 	if (setup->mode == WCRYPTO_DIGEST_HMAC) {
-		if (!setup->ops.alloc || !setup->ops.free ||
-			!setup->ops.dma_map || !setup->ops.dma_unmap) {
-			WD_ERR("create digest ctx user mm ops err!\n");
+		if (!setup->br.alloc || !setup->br.free ||
+			!setup->br.iova_map || !setup->br.iova_unmap) {
+			WD_ERR("create digest ctx user mm br err!\n");
 			return NULL;
 		}
 	}
 
-	qinfo = q->info;
+	qinfo = q->qinfo;
 	if (strncmp(q->capa.alg, "digest", strlen("digest"))) {
 		WD_ERR("%s(): algorithm mismatching!\n", __func__);
 		return NULL;
@@ -104,11 +104,11 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 
 	/*lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
-	if (!qinfo->ops.alloc && !qinfo->ops.dma_map)
-		memcpy(&qinfo->ops, &setup->ops, sizeof(setup->ops));
-	if (qinfo->ops.usr != setup->ops.usr) {
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
+	if (qinfo->br.usr != setup->br.usr) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("Err mm ops in creating digest ctx!\n");
+		WD_ERR("Err mm br in creating digest ctx!\n");
 		return NULL;
 	}
 	qinfo->ctx_num++;
@@ -129,7 +129,7 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 	ctx->q = q;
 	ctx->ctx_id = ctx_id;
 	if (setup->mode == WCRYPTO_DIGEST_HMAC) {
-		ctx->key = setup->ops.alloc(setup->ops.usr, MAX_HMAC_KEY_SIZE);
+		ctx->key = setup->br.alloc(setup->br.usr, MAX_HMAC_KEY_SIZE);
 		if (!ctx->key) {
 			WD_ERR("alloc digest ctx key fail!\n");
 			free(ctx);
@@ -138,7 +138,7 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 	}
 
 	for (i = 0; i < WD_DIGEST_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WD_DIGEST;
+		ctx->cookies[i].msg.alg_type = WCRYPTO_DIGEST;
 		ctx->cookies[i].msg.alg = setup->alg;
 		ctx->cookies[i].msg.mode = setup->mode;
 		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
@@ -288,11 +288,11 @@ void wcrypto_del_digest_ctx(void *ctx)
 		return;
 	}
 	cx = ctx;
-	qinfo = cx->q->info;
+	qinfo = cx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	if (!qinfo->ctx_num)
-		memset(&qinfo->ops, 0, sizeof(qinfo->ops));
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("errer:repeat del digest ctx!\n");

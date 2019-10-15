@@ -67,8 +67,8 @@ int test_alloc_free(unsigned int blk_sz, unsigned int blk_num,
 
 #ifdef USERS
 	/* for user's memory */
-	wsetup.ops.alloc = (void *)my_alloc;
-	wsetup.ops.dma_map = (void *)my_dma_map;
+	wsetup.br.alloc = (void *)my_alloc;
+	wsetup.br.wd_iova_map = (void *)my_dma_map;
 #endif
 
 	pool = wd_blkpool_create(&q, &wsetup);
@@ -113,7 +113,7 @@ void *wd_alloc_test()
 		blk = wd_alloc_blk(pool);
 		printf("---alloc blk = %p\n", blk);
 
-		printf("dma_map %p = %p\n", blk, wd_blk_iova_map(pool, blk));
+		printf("wd_iova_map %p = %p\n", blk, wd_blk_iova_map(pool, blk));
 
 		sleep(3);
 		if (blk) {

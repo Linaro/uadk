@@ -17,22 +17,22 @@ void wd_unspinlock(struct wd_lock *lock)
 	__atomic_clear(&lock->lock, __ATOMIC_RELEASE);
 }
 
-void *drv_dma_map(struct wd_queue *q, void *va, size_t sz)
+void *drv_iova_map(struct wd_queue *q, void *va, size_t sz)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
-	if (qinfo->ops.dma_map)
-		return (void *)qinfo->ops.dma_map(qinfo->ops.usr, va, sz);
+	if (qinfo->br.iova_map)
+		return (void *)qinfo->br.iova_map(qinfo->br.usr, va, sz);
 	else
-		return wd_dma_map(q, va, sz);
+		return wd_iova_map(q, va, sz);
 }
 
-void drv_dma_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
+void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
-	if (qinfo->ops.dma_unmap)
-		qinfo->ops.dma_unmap(qinfo->ops.usr, va, dma, sz);
+	if (qinfo->br.iova_unmap)
+		qinfo->br.iova_unmap(qinfo->br.usr, va, dma, sz);
 	else
-		wd_dma_unmap(q, va, dma, sz);
+		wd_iova_unmap(q, va, dma, sz);
 }

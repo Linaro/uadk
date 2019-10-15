@@ -66,8 +66,8 @@ struct qm_queue_info {
 	int used;
 	int sqe_size;
 	void *req_cache[QM_Q_DEPTH];
-	qm_sqe_fill sqe_fill[WD_MAX_ALG];
-	qm_sqe_parse sqe_parse[WD_MAX_ALG];
+	qm_sqe_fill sqe_fill[WCRYPTO_MAX_ALG];
+	qm_sqe_parse sqe_parse[WCRYPTO_MAX_ALG];
 	struct wd_lock sd_lock;
 	struct wd_lock rc_lock;
 	struct wd_queue *q;

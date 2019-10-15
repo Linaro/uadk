@@ -31,14 +31,14 @@ enum wcrypto_cipher_mode {
  * @cb: call back functions of user
  * @alg: cipher algorithm type; denoted by enum wcrypto_cipher_alg
  * @mode:cipher algorithm mode; denoted by enum wcrypto_cipher_mode
- * @ops: memory from user, it is given at ctx creating
+ * @br: memory from user, it is given at ctx creating
  * @data_fmt: data format, denoted by enum wcrypto_buff_type
  */
 struct wcrypto_cipher_ctx_setup {
 	wcrypto_cb cb;
 	enum wcrypto_cipher_alg alg;
 	enum wcrypto_cipher_mode mode;
-	struct wd_mm_ops ops;
+	struct wd_mm_br br;
 	__u16 data_fmt;
 };
 

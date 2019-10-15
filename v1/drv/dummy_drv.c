@@ -28,7 +28,7 @@ int dummy_set_queue_dio(struct wd_queue *q)
 {
 	int ret = 0;
 	struct dummy_q_priv *priv;
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	priv = calloc(1, sizeof(*priv));
 	if (!priv) {
@@ -94,7 +94,7 @@ out:
 
 void dummy_unset_queue_dio(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;
 
 	ASSERT(priv);
@@ -106,7 +106,7 @@ void dummy_unset_queue_dio(struct wd_queue *q)
 
 int dummy_add_to_dio_q(struct wd_queue *q, void *req)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;
 	int bd_num;
 
@@ -132,7 +132,7 @@ int dummy_add_to_dio_q(struct wd_queue *q, void *req)
 
 int dummy_get_from_dio_q(struct wd_queue *q, void **resp)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;
 	int bd_num = priv->reg->ring_bd_num;
 	int ret;
@@ -155,7 +155,7 @@ int dummy_get_from_dio_q(struct wd_queue *q, void **resp)
 
 void dummy_flush(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;
 
 	if (priv->ver == 1)

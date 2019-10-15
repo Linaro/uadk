@@ -56,7 +56,7 @@ static int qm_db_v2(struct qm_queue_info *q, __u8 cmd,
 
 static int qm_set_queue_regions(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	unsigned int has_dko = !(qinfo->dev_flags &
 				(UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
 	struct qm_queue_info *info = qinfo->priv;
@@ -91,7 +91,7 @@ static int qm_set_queue_regions(struct wd_queue *q)
 
 static void qm_unset_queue_regions(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
 	if (info->dko_base) {
@@ -109,41 +109,41 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 static int qm_set_queue_alg_info(struct wd_queue *q)
 {
 	const char *alg = q->capa.alg;
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 	int ret = WD_SUCCESS;
 
 	if (!strncmp(alg, "rsa", strlen("rsa"))) {
-		qinfo->atype = WD_RSA;
+		qinfo->atype = WCRYPTO_RSA;
 		info->sqe_size = QM_HPRE_BD_SIZE;
-		info->sqe_fill[WD_RSA] = qm_fill_rsa_sqe;
-		info->sqe_parse[WD_RSA] = qm_parse_rsa_sqe;
+		info->sqe_fill[WCRYPTO_RSA] = qm_fill_rsa_sqe;
+		info->sqe_parse[WCRYPTO_RSA] = qm_parse_rsa_sqe;
 	} else if (!strncmp(alg, "dh", strlen("dh"))) {
-		qinfo->atype = WD_DH;
+		qinfo->atype = WCRYPTO_DH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
-		info->sqe_fill[WD_DH] = qm_fill_dh_sqe;
-		info->sqe_parse[WD_DH] = qm_parse_dh_sqe;
+		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
+		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
 	} else if (!strncmp(alg, "zlib", strlen("zlib")) ||
 				!strncmp(alg, "gzip", strlen("gzip"))) {
-		qinfo->atype = WD_COMP;
+		qinfo->atype = WCRYPTO_COMP;
 		info->sqe_size = QM_ZIP_BD_SIZE;
-		info->sqe_fill[WD_COMP] = qm_fill_zip_sqe;
-		info->sqe_parse[WD_COMP] = qm_parse_zip_sqe;
+		info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe;
+		info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe;
 	} else if (!strncmp(alg, "cipher", strlen("cipher"))) {
-		qinfo->atype = WD_CIPHER;
+		qinfo->atype = WCRYPTO_CIPHER;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		info->sqe_fill[WD_CIPHER] = qm_fill_cipher_sqe;
-		info->sqe_parse[WD_CIPHER] = qm_parse_cipher_sqe;
+		info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
+		info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
 	} else if (!strncmp(alg, "digest", strlen("digest"))) {
-		qinfo->atype = WD_DIGEST;
+		qinfo->atype = WCRYPTO_DIGEST;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		info->sqe_fill[WD_DIGEST] = qm_fill_digest_sqe;
-		info->sqe_parse[WD_DIGEST] = qm_parse_digest_sqe;
+		info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
+		info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
 	} else if (!strncmp(alg, "rde", strlen("rde"))) {
-		qinfo->atype = WD_EC;
+		qinfo->atype = WCRYPTO_EC;
 		info->sqe_size = QM_RDE_BD_SIZE;
-		info->sqe_fill[WD_EC] = qm_fill_rde_sqe;
-		info->sqe_parse[WD_EC] = qm_parse_rde_sqe;
+		info->sqe_fill[WCRYPTO_EC] = qm_fill_rde_sqe;
+		info->sqe_parse[WCRYPTO_EC] = qm_parse_rde_sqe;
 	} else { /* To be extended */
 		WD_ERR("queue alg err!\n");
 		ret = -WD_EINVAL;
@@ -154,8 +154,8 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 
 static int qm_set_queue_info(struct wd_queue *q)
 {
-	struct wcrypto_paras *priv = (void *)q->capa.priv;
-	struct q_info *qinfo = q->info;
+	struct wcrypto_paras *priv = &q->capa.priv;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 	struct hisi_qp_ctx qp_ctx;
 	int ret;
@@ -201,7 +201,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 
 int qm_init_queue(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info;
 	int ret = -ENOMEM;
 
@@ -230,7 +230,7 @@ err_with_regions:
 
 void qm_uninit_queue(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	qm_unset_queue_regions(q);
 	free(qinfo->priv);
@@ -250,7 +250,7 @@ static void qm_tx_update(struct qm_queue_info *info, __u16 idx)
 
 int qm_send(struct wd_queue *q, void *req)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 	__u16 i;
 	int ret;
@@ -321,7 +321,7 @@ static void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u16 idx)
 }
 int qm_recv(struct wd_queue *q, void **resp)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 	void *sqe = NULL;
 	struct cqe *cqe;

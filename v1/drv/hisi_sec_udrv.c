@@ -204,28 +204,28 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		return ret;
 	}
 
-	phy = (uintptr_t)drv_dma_map(q, msg->in, msg->in_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (!phy) {
 		WD_ERR("Get msg in dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->type2.data_src_addr_h = HI_U32(phy);
-	phy = (uintptr_t)drv_dma_map(q, msg->out, msg->out_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (!phy) {
 		WD_ERR("Get msg out dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->type2.data_dst_addr_h = HI_U32(phy);
-	phy = (uintptr_t)drv_dma_map(q, msg->key, msg->key_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
 	if (!phy) {
 		WD_ERR("Get key dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->type2.c_key_addr_h = HI_U32(phy);
-	phy = (uintptr_t)drv_dma_map(q, msg->iv, msg->iv_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->iv, msg->iv_bytes);
 	if (!phy) {
 		WD_ERR("Get iv dma address fail!\n");
 		return -WD_ENOMEM;
@@ -319,7 +319,7 @@ int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	sqe->auth = AUTH_MAC_CALCULATE;
 	sqe->type2.a_len = msg->in_bytes;
 
-	phy = (uintptr_t)drv_dma_map(q, msg->in, msg->in_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (!phy) {
 		WD_ERR("Get msg in dma address fail!\n");
 		return -WD_ENOMEM;
@@ -327,7 +327,7 @@ int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	sqe->type2.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->type2.data_src_addr_h = HI_U32(phy);
 
-	phy = (uintptr_t)drv_dma_map(q, msg->out, msg->out_bytes);
+	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (!phy) {
 		WD_ERR("Get msg out dma address fail!\n");
 		return -WD_ENOMEM;
@@ -337,7 +337,7 @@ int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	if (msg->mode == WCRYPTO_DIGEST_HMAC) {
 		sqe->type2.a_key_len = msg->key_bytes / WORD_BYTES;
-		phy = (uintptr_t)drv_dma_map(q, msg->key, msg->key_bytes);
+		phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
 		if (!phy) {
 			WD_ERR("Get hmac key dma address fail!\n");
 			return -WD_ENOMEM;
@@ -392,19 +392,19 @@ int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 
 		dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
 				sqe->type2.data_src_addr_l);
-		drv_dma_unmap(q, cipher_msg->in, (void *)dma_addr,
+		drv_iova_unmap(q, cipher_msg->in, (void *)dma_addr,
 				cipher_msg->in_bytes);
 		dma_addr = DMA_ADDR(sqe->type2.data_dst_addr_h,
 				sqe->type2.data_dst_addr_l);
-		drv_dma_unmap(q, cipher_msg->out, (void *)dma_addr,
+		drv_iova_unmap(q, cipher_msg->out, (void *)dma_addr,
 				cipher_msg->out_bytes);
 		dma_addr = DMA_ADDR(sqe->type2.c_key_addr_h,
 				sqe->type2.c_key_addr_l);
-		drv_dma_unmap(q, cipher_msg->key, (void *)dma_addr,
+		drv_iova_unmap(q, cipher_msg->key, (void *)dma_addr,
 				cipher_msg->key_bytes);
 		dma_addr = DMA_ADDR(sqe->type2.c_ivin_addr_h,
 				sqe->type2.c_ivin_addr_l);
-		drv_dma_unmap(q, cipher_msg->iv, (void *)dma_addr,
+		drv_iova_unmap(q, cipher_msg->iv, (void *)dma_addr,
 				cipher_msg->iv_bytes);
 	}
 
@@ -439,16 +439,16 @@ int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 
 		dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
 				sqe->type2.data_src_addr_l);
-		drv_dma_unmap(q, digest_msg->in, (void *)dma_addr,
+		drv_iova_unmap(q, digest_msg->in, (void *)dma_addr,
 				digest_msg->in_bytes);
 		dma_addr = DMA_ADDR(sqe->type2.mac_addr_h,
 				sqe->type2.mac_addr_l);
-		drv_dma_unmap(q, digest_msg->out, (void *)dma_addr,
+		drv_iova_unmap(q, digest_msg->out, (void *)dma_addr,
 				digest_msg->out_bytes);
 		if (digest_msg->mode == WCRYPTO_DIGEST_HMAC) {
 			dma_addr = DMA_ADDR(sqe->type2.a_key_addr_h,
 				sqe->type2.a_key_addr_h);
-			drv_dma_unmap(q, digest_msg->key, (void *)dma_addr,
+			drv_iova_unmap(q, digest_msg->key, (void *)dma_addr,
 				digest_msg->key_bytes);
 		}
 	}
