@@ -137,13 +137,13 @@ struct wcrypto_ec_priv_data {
  * @ec_type: denoted by enum wcrypto_ec_type
  * @cb: call back functions of user
  * @data_fmt: denoted by enum wcrypto_buff_type
- * @ops: memory from user, it is given at ctx creating
+ * @br: memory from user, it is given at ctx creating
  */
 struct wcrypto_ec_ctx_setup {
 	enum wcrypto_ec_type ec_type;
 	wcrypto_cb cb;
 	__u16 data_fmt;
-	struct wd_mm_ops ops;
+	struct wd_mm_br br;
 };
 
 /**

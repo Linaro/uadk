@@ -110,7 +110,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		return NULL;
 	}
 
-	qinfo = q->info;
+	qinfo = q->qinfo;
 
 	/* lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
@@ -271,7 +271,7 @@ void wcrypto_del_comp_ctx(void *ctx)
 		return;
 	}
 
-	qinfo = cctx->q->info;
+	qinfo = cctx->q->qinfo;
 
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;

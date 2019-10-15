@@ -18,14 +18,12 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.close = dummy_unset_queue_dio,
 		.send = dummy_add_to_dio_q,
 		.recv = dummy_get_from_dio_q,
-		.flush = dummy_flush,
 	}, {
 		.hw_type = "dummy_v2",
 		.open = dummy_set_queue_dio,
 		.close = dummy_unset_queue_dio,
 		.send = dummy_add_to_dio_q,
 		.recv = dummy_get_from_dio_q,
-		.flush = dummy_flush,
 	}, {
 		.hw_type = HISI_QM_API_VER_BASE UACCE_API_VER_NOIOMMU_SUBFIX,
 		.open = qm_init_queue,
@@ -58,7 +56,7 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 
 int drv_open(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	int i;
 
 	/* todo: try to find another dev if the user driver is not available */
@@ -76,28 +74,28 @@ int drv_open(struct wd_queue *q)
 
 void drv_close(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	hw_dio_tbl[qinfo->hw_type_id].close(q);
 }
 
 int drv_send(struct wd_queue *q, void *req)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	return hw_dio_tbl[qinfo->hw_type_id].send(q, req);
 }
 
 int drv_recv(struct wd_queue *q, void **req)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 
 	return hw_dio_tbl[qinfo->hw_type_id].recv(q, req);
 }
 
 void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rg;
 
 	rg = TAILQ_LAST(&qinfo->ss_list, wd_ss_region_list);
@@ -113,7 +111,7 @@ void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 
 void drv_show_ss_slices(struct wd_queue *q)
 {
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rgn;
 	int i = 0;
 
@@ -127,7 +125,7 @@ void drv_show_ss_slices(struct wd_queue *q)
 void *drv_reserve_mem(struct wd_queue *q, size_t size)
 {
 	struct wd_ss_region *rgn = NULL;
-	struct q_info *qinfo = q->info;
+	struct q_info *qinfo = q->qinfo;
 	unsigned long info = 0;
 	unsigned long i = 0;
 	void *ptr = NULL;
