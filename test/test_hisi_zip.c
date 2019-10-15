@@ -320,7 +320,7 @@ int main(int argc, char *argv[])
 	}
 
 	SYS_ERR_COND(show_help || optind > argc,
-		     "test_hisi_zip -[g|z] [-q q_num] < in > out");
+		     "test_hisi_zip -[g|z] [-q q_num] < in > out\n");
 
 	hizip_def(stdin, stdout, alg_type, op_type);
 
