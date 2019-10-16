@@ -104,33 +104,6 @@ static size_t _get_str_attr(struct _dev_info *dinfo, char *attr, char *buf,
 	}
 	return size;
 }
-
-static void _get_ul_vec_attr(struct _dev_info *dinfo, char *attr,
-			       unsigned long *vec, int vec_sz)
-{
-	char buf[MAX_ATTR_STR_SIZE];
-	int size, i, j;
-	char *begin, *end;
-
-	size = _get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
-	if (size < 0) {
-		for (i = 0; i < vec_sz; i++)
-			vec[i] = 0;
-		return;
-	}
-
-	begin = buf;
-	for (i = 0; i < vec_sz; i++) {
-		vec[i] = strtoul(begin, &end, 0);
-		if (!end)
-			break;
-		begin = end;
-	}
-
-	for (j = i; j < vec_sz; j++)
-		vec[j] = 0;
-}
-
 static int _get_dev_info(struct _dev_info *dinfo)
 {
 	dinfo->numa_dis = _get_int_attr(dinfo, "numa_distance");
@@ -140,8 +113,12 @@ static int _get_dev_info(struct _dev_info *dinfo)
 	dinfo->flags = _get_int_attr(dinfo, "flags");
 	_get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
 	_get_str_attr(dinfo, "algorithms", dinfo->algs, MAX_ATTR_STR_SIZE);
-	_get_ul_vec_attr(dinfo, "qfrs_size", dinfo->qfrs_offset,
-			 UACCE_QFRT_MAX);
+
+	dinfo->qfrs_offset[UACCE_QFRT_MMIO] = _get_int_attr(dinfo, "qfrt_mmio_size");
+	dinfo->qfrs_offset[UACCE_QFRT_DKO] = _get_int_attr(dinfo, "qfrt_dko_size");
+	dinfo->qfrs_offset[UACCE_QFRT_DUS] = _get_int_attr(dinfo, "qfrt_dus_size");
+	dinfo->qfrs_offset[UACCE_QFRT_SS] = _get_int_attr(dinfo, "qfrt_ss_size");
+
 	/*
 	 * Use available_instances as the base of weight.
 	 * Remote NUMA node cuts the weight.
