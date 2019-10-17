@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include "include/uacce.h"
+#include "config.h"
 
 #define SYS_VAL_SIZE		16
 #define PATH_STR_SIZE		256

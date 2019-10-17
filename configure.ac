@@ -31,6 +31,16 @@ AC_ARG_ENABLE([sva],
   [sva=false]
 )
 
+AC_ARG_ENABLE([debug-log],
+	AS_HELP_STRING([--enable-debug-log], [enable debug logging globally]),
+	[ AS_IF([test "x$enable_debug_log" = "xyes"],
+		AC_DEFINE(DEBUG_LOG, 1, [Enable debug log])
+		debug_log=true,
+		debug_log=false)
+	],
+	[debug_log=false]
+)
+
 AC_ARG_WITH(log_file,
 	AS_HELP_STRING([--with-log_file], [File to write log]),
 	WITH_LOG_FILE=$withvar, WITH_LOG_FILE=)
