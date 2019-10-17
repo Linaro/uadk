@@ -311,7 +311,7 @@ int main(int argc, char *argv[])
 			break;
 		case 'd':
 			op_type = INFLATE;
-			SYS_ERR_COND(0, "decompress function to be added\n");
+			SYS_ERR_COND(1, "decompress function to be added\n");
 			break;
 		default:
 			show_help = 1;
