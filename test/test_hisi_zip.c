@@ -142,7 +142,7 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	struct hisi_zip_sqe *m = msg->msg;
 	__u32 status = m->dw3 & 0xff;
 	__u32 type = m->dw9 & 0xff;
-	char gzip_extra[GZIP_EXTRA_SZ] = {0x00, 0x07, 0x48, 0x69, 0x00, 0x04,
+	char gzip_extra[GZIP_EXTRA_SZ] = {0x08, 0x00, 0x48, 0x69, 0x04, 0x00,
 					  0x00, 0x00, 0x00, 0x00};
 
 	dbg("zip output(%p, %p): %x, %x, %x, %x, %d, %d, consume=%d, out=%d\n",
