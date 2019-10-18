@@ -1,33 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0+
 #include "config.h"
 #include <assert.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/time.h>
-#include <unistd.h>
 #include <getopt.h>
 #include "../wd.h"
 #include "../wd_sched.h"
 #include "drv/hisi_qm_udrv.h"
+#include "test_lib.h"
 #include "zip_usr_if.h"
-
-#define SYS_ERR_COND(cond, msg, ...) \
-do { \
-	if (cond) { \
-		if (errno) \
-			perror(msg); \
-		else \
-			fprintf(stderr, msg, ##__VA_ARGS__); \
-		exit(EXIT_FAILURE); \
-	} \
-} while (0)
-
-#define ZLIB 0
-#define GZIP 1
-
-#define DEFLATE 0
-#define INFLATE 1
 
 #define ZLIB_HEADER "\x78\x9c"
 #define ZLIB_HEADER_SZ 2
