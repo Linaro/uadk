@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "wd.h"
+#include "wd_sched.h"
+#include "zip_usr_if.h"
+
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
 	if (cond) { \
@@ -18,10 +22,30 @@ do { \
 	} \
 } while (0)
 
+struct test_options {
 #define ZLIB 0
 #define GZIP 1
+	int alg_type;
 
 #define DEFLATE 0
 #define INFLATE 1
+	int op_type;
+
+	/* bytes of data for a request */
+	int block_size;
+	int req_cache_num;
+	int q_num;
+	unsigned long total_len;
+};
+
+struct test_ops {
+	void (*init_cache)(struct wd_scheduler *sched, int i);
+	int (*input)(struct wd_msg *msg, void *priv);
+	int (*output)(struct wd_msg *msg, void *priv);
+};
+
+int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
+		    struct test_ops *ops, void *priv);
+void hizip_test_fini(struct wd_scheduler *sched);
 
 #endif /* TEST_LIB_H_ */
