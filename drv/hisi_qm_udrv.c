@@ -100,7 +100,7 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info;
 	struct hisi_qm_priv *priv = (struct hisi_qm_priv *)q->capa.priv;
-	struct hisi_qp_ctx qp_ctx;
+	struct hisi_qp_ctx qp_ctx = {0};
 	void *vaddr;
 	int ret;
 	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_SVA));
