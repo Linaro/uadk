@@ -5,11 +5,8 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <getopt.h>
-#include "../wd.h"
-#include "../wd_sched.h"
 #include "drv/hisi_qm_udrv.h"
 #include "test_lib.h"
-#include "zip_usr_if.h"
 
 #define ZLIB_HEADER "\x78\x9c"
 #define ZLIB_HEADER_SZ 2
