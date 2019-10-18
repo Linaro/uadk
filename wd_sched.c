@@ -125,7 +125,7 @@ static int __sync_send(struct wd_scheduler *sched) {
 	dbg("send ci(%d) to q(%d): %p\n", sched->c_h, sched->q_h,
 	    sched->msgs[sched->c_h].msg);
 	do {
-		sched->stat[sched->c_h].send++;
+		sched->stat[sched->q_h].send++;
 		ret = wd_send(&sched->qs[sched->q_h],
 			      sched->msgs[sched->c_h].msg);
 		if (ret == -EBUSY) {
