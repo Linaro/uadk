@@ -41,6 +41,12 @@ AC_ARG_ENABLE([debug-log],
 	[debug_log=false]
 )
 
+AC_CHECK_LIB(z, zlibVersion,
+	     [ AC_DEFINE(HAVE_ZLIB, 1, [Have zlib])
+	       have_zlib=true ],
+	     [ have_zlib=false ])
+AM_CONDITIONAL([HAVE_ZLIB], [test "x$have_zlib" = "xtrue"])
+
 AC_ARG_WITH(log_file,
 	AS_HELP_STRING([--with-log_file], [File to write log]),
 	WITH_LOG_FILE=$withvar, WITH_LOG_FILE=)

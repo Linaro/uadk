@@ -137,18 +137,76 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 	return 0;
 }
 
+struct check_rand_ctx {
+	int off;
+	unsigned long global_off;
+	__u32 last;
+	unsigned short state[3];
+};
+
+static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
+{
+	int i;
+	int *j;
+	__u32 n;
+	struct check_rand_ctx *rand_ctx = opaque;
+
+	j = &rand_ctx->off;
+	for (i = 0; i < size; i += 4) {
+		if (*j) {
+			/* Somthing left from a previous run */
+			n = rand_ctx->last;
+		} else {
+			n = nrand48(rand_ctx->state);
+			rand_ctx->last = n;
+		}
+		for (; *j < 4 && i + *j < size; (*j)++) {
+			char expected = (n >> (8 * *j)) & 0xff;
+			char actual = buf[i + *j];
+
+			if (expected != actual) {
+				WD_ERR("Invalid decompressed char at offet %lu: expected 0x%x != 0x%x\n",
+				       rand_ctx->global_off + i + *j, expected,
+				       actual);
+				return -EINVAL;
+			}
+		}
+		if (*j == 4)
+			*j = 0;
+	}
+	rand_ctx->global_off += size;
+	return 0;
+}
+
 static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 {
+	struct hizip_priv *hizip_priv = priv;
 	struct hisi_zip_sqe *m = msg->msg;
 	__u32 status = m->dw3 & 0xff;
 	__u32 type = m->dw9 & 0xff;
+	int ret;
+
+	__u32 seed = 0;
+	struct check_rand_ctx rand_ctx = {
+		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
+	};
 	
 	dbg_sqe("zip output", m);
 
 	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
 		     status, type);
 
-	/* TODO: check output */
+	ret = hizip_check_output(msg->data_out, m->produced, hizip_check_rand,
+				 &rand_ctx);
+	if (ret)
+		return ret;
+
+	if (rand_ctx.global_off != m->consumed) {
+		WD_ERR("Invalid output size %lu != %u\n", rand_ctx.global_off,
+		       m->consumed);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 

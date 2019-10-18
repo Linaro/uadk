@@ -48,4 +48,23 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		    struct test_ops *ops, void *priv);
 void hizip_test_fini(struct wd_scheduler *sched);
 
+typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
+#ifdef HAVE_ZLIB
+int hizip_check_output(void *buf, unsigned int size,
+		       check_output_fn check_output, void *opaque);
+#else
+static inline int hizip_check_output(void *buf, unsigned int size,
+				     check_output_fn check_output,
+				     void *opaque)
+{
+	static bool printed = false;
+
+	if (!printed) {
+		WD_ERR("no zlib available, output buffer won't be checked\n");
+		printed = true;
+	}
+	return 0;
+}
+#endif
+
 #endif /* TEST_LIB_H_ */

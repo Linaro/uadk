@@ -11,6 +11,11 @@ test_hisi_zip_LDADD=../.libs/libwd.a
 test_hisi_zlib_LDADD=../.libs/libwd.a
 test_bind_api_LDADD=../.libs/libwd.a
 
+if HAVE_ZLIB
+test_bind_api_SOURCES+=test_zlib.c
+test_bind_api_LDADD+=-lz
+endif
+
 test_dummy_SOURCES=test_dummy.c
 
 test_dummy_LDADD=../.libs/libwd.a
