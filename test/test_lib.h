@@ -36,6 +36,10 @@ struct test_options {
 	int req_cache_num;
 	int q_num;
 	unsigned long total_len;
+
+#define INJECT_SIG_BIND		(1UL << 0)
+#define INJECT_SIG_WORK		(1UL << 1)
+	unsigned long faults;
 };
 
 struct test_ops {

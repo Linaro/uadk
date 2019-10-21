@@ -5,6 +5,8 @@
  * - what happens on fork
  * - multiple threads binding to the same device
  */
+#include <signal.h>
+#include <sys/types.h>
 
 #include "test_lib.h"
 
@@ -190,7 +192,10 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	struct check_rand_ctx rand_ctx = {
 		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
 	};
-	
+
+	if (hizip_priv->opts->faults & INJECT_SIG_WORK)
+		kill(0, SIGTERM);
+
 	dbg_sqe("zip output", m);
 
 	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
@@ -256,6 +261,9 @@ static int run_test(struct test_options *opts)
 		goto out_with_out_buf;
 	}
 
+	if (opts->faults & INJECT_SIG_BIND)
+		kill(0, SIGTERM);
+
 	while (hizip_priv.total_len || !wd_sched_empty(&sched)) {
 		dbg("request loop: total_len=%d\n", hizip_priv.total_len);
 		ret = wd_sched_work(&sched, hizip_priv.total_len);
@@ -288,12 +296,25 @@ int main(int argc, char **argv)
 		.total_len	= opts.block_size * 10,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:s:q:")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = atoi(optarg);
 			if (opts.block_size  <= 0)
 				show_help = 1;
+			break;
+		case 'k':
+			switch (optarg[0]) {
+			case 'b':
+				opts.faults |= INJECT_SIG_BIND;
+				break;
+			case 'w':
+				opts.faults |= INJECT_SIG_WORK;
+				break;
+			default:
+				SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
+				break;
+			}
 			break;
 		case 'q':
 			opts.q_num = atoi(optarg);
@@ -319,6 +340,9 @@ int main(int argc, char **argv)
 	SYS_ERR_COND(show_help || optind > argc,
 		     "test_bind_api [opts]\n"
 		     "  -b <size>     block size\n"
+		     "  -k <mode>     kill thread\n"
+		     "                  'bind' kills the process after bind\n"
+		     "                  'work' kills the process while the queue is working\n"
 		     "  -q <num>      number of queues\n"
 		     "  -s <size>     total size\n"
 		    );
