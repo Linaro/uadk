@@ -18,6 +18,9 @@
 #define MAX_ATTR_STR_SIZE	256
 #define WD_NAME_SIZE		64
 
+#define UACCE_QFRT_MAX		4
+#define UACCE_QFR_NA ((unsigned long)-1)
+
 typedef int bool;
 
 #ifndef true
