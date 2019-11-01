@@ -20,38 +20,41 @@
 #include <linux/types.h>
 #include "hisi_qm_udrv.h"
 
-#define RDE_FLEXEC_CMSIZE		1024
+#define RDE_FLEXEC_CMSIZE	1024
 #define RDE_MPCC_CMSIZE		2176
+#define RDE_MPCC_MAX_CMLEN	17
+#define RDE_FLEXEC_MAX_CMLEN	32
 #define RDE_PER_SRC_COEF_SIZE	32
 #define RDE_PER_SRC_COEF_TIMES	4
-#define RDE_MEM_SAVE_SHIFT		2
-#define RDE_BUF_TYPE_SHIFT		3
-#define RDE_EC_TYPE_SHIFT		5
+#define RDE_MEM_SAVE_SHIFT	2
+#define RDE_BUF_TYPE_SHIFT	3
+#define RDE_EC_TYPE_SHIFT	5
 #define RDE_UPD_GN_FLAG		0x80
-#define RDE_UPD_PARITY_SHIFT		7
-#define RDE_SGL_OFFSET_SHIFT		8
-#define RDE_COEF_GF_SHIFT		32
-#define RDE_LBA_BLK			8
-#define RDE_LBA_DWORD_CNT		5
+#define RDE_UPD_PARITY_SHIFT	7
+#define RDE_SGL_OFFSET_SHIFT	8
+#define RDE_COEF_GF_SHIFT	32
+#define RDE_LBA_BLK		8
+#define RDE_LBA_DWORD_CNT	5
 #define DIF_CHK_GRD_CTRL_SHIFT	4
 #define DIF_CHK_REF_CTRL_SHIFT	32
-#define DIF_LBA_SHIFT			32
+#define DIF_LBA_SHIFT		32
 #define DIF_GEN_PAD_CTRL_SHIFT	32
 #define DIF_GEN_REF_CTRL_SHIFT	35
 #define DIF_GEN_APP_CTRL_SHIFT	38
 #define DIF_GEN_VER_CTRL_SHIFT	41
 #define DIF_GEN_GRD_CTRL_SHIFT	44
-#define DIF_APP_TAG_SHIFT		48
-#define DIF_VERSION_SHIFT		56
+#define DIF_APP_TAG_SHIFT	48
+#define DIF_VERSION_SHIFT	56
 #define RDE_TASK_STATUS		0x80
 #define RDE_STATUS_MSK		0x7f
-#define RDE_DONE_MSK			0x1
+#define RDE_DONE_MSK		0x1
 #define RDE_DONE_SHIFT		7
 
 #define RDE_GN_CNT(i)	(((i + 1) % 2 == 0) ? (i + 1) >> 1 : (i + 2) >> 1)
 #define RDE_GN_FLAG(i)		(((i + 1) % 2 == 0) ? 2 : 1)
 #define RDE_GN_SHIFT(x)	(RDE_COEF_GF_SHIFT * (x == 1 ? 1 : 0))
 #define RDE_LBA_CNT(i)	((i % 2 == 0) ? (i >> 1) : ((i - 1) >> 1))
+#define RDE_LBA_SHIFT(i) (DIF_LBA_SHIFT * ((i % 2) ^ 1))
 
 enum {
 	CM_ENCODE = 0, /* encode type */
@@ -108,21 +111,61 @@ struct hisi_rde_sqe {
 	__u64 dw7;
 };
 
-/**
- * @brief sgl structure for rde.
- * @note
- * parity is just valid in update mode
- */
-struct rde_sgl {
-	/* source and destination data block SGL address */
+struct blk_dif_gen {
+	__u32 page_layout_gen_type:4;
+	__u32 grd_gen_type:4;
+	__u32 ver_gen_type:4;
+	__u32 app_gen_type:4;
+	__u32 ref_gen_type:4;
+	__u32 page_layout_pad_type:2;
+	__u32 reserved:10;
+};
+
+struct blk_dif_verify {
+	__u16 page_layout_pad_type:2;
+	__u16 grd_verify_type:4;
+	__u16 ref_verify_type:4;
+	__u16 reserved:6;
+};
+
+struct blk_dif_ctrl {
+	struct blk_dif_gen gen;
+	struct blk_dif_verify verify;
+};
+
+struct wd_ec_dif {
+	__u64 lba;
+	__u32 priv;
+	__u8 ver;
+	__u8 app;
+	struct blk_dif_ctrl ctrl;
+};
+
+struct wd_ec_sgl {
 	struct wd_sgl *ctrl;
-	/* offset of per data disk in the SGL chain */
 	__u32 buf_offset;
-	/* data disk is 0, parity disk is 1 */
 	__u8 parity;
 	__u8 reserve;
-	/* the index corresponding to src and dst disk */
 	__u8 column;
+};
+
+struct wd_ec_udata {
+	void *src_data;
+	void *dst_data;
+	__u32 src_num;
+	__u32 dst_num;
+	__u32 block_size;
+	__u32 input_block;
+	__u32 data_len;
+	__u32 buf_type;
+	struct wd_ec_dif src_dif;
+	struct wd_ec_dif dst_dif;
+	__u8 cm_load;
+	__u8 cm_len;
+	__u8 alg_blk_size;
+	__u8 mem_saving;
+	void *coe_matrix;
+	void *priv;
 };
 
 int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i);

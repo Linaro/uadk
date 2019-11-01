@@ -99,54 +99,6 @@ enum wcrypto_ec_blksize {
 	WCRYPTO_EC_BLK_4160 = 4160,
 };
 
-struct dif_gen {
-	__u32 page_layout_gen_type:4;
-	__u32 grd_gen_type:4;
-	__u32 ver_gen_type:4;
-	__u32 app_gen_type:4;
-	__u32 ref_gen_type:4;
-	__u32 page_layout_pad_type:2;
-	__u32 reserved:10;
-};
-
-struct dif_verify {
-	__u16 page_layout_pad_type:2;
-	__u16 grd_verify_type:4;
-	__u16 ref_verify_type:4;
-	__u16 reserved:6;
-};
-
-struct dif_ctrl {
-	struct dif_gen gen;
-	struct dif_verify verify;
-};
-
-/**
- * general dif structure
- * @lba: lba for dif ref field
- * @priv: private info for dif ref field
- * @ver: 8bit version
- * @app: 8bit application information field
- * @ctrl: dif gen and verify ctrl info
- */
-struct wcrypto_dif {
-	__u64 lba;
-	__u32 priv;
-	__u8 ver;
-	__u8 app;
-	struct dif_ctrl ctrl;
-};
-
-/**
- * EC dif format of Warpdrive
- * @src_dif: dif of in disk
- * @dst_dif: dif of out disk
- */
-struct wcrypto_ec_priv_data {
-	struct wcrypto_dif src_dif;
-	struct wcrypto_dif dst_dif;
-};
-
 /**
  * different contexts for different users/threads
  * @ec_type: denoted by enum wcrypto_ec_type
@@ -195,12 +147,12 @@ struct wcrypto_ec_op_data {
 
 /**
  * EC message format of Warpdrive
- *@alg_type: denoted by enum wcrypto_type
- *@ec_type: denoted by enum wcrypto_ec_type
- *@op_type: denoted by enum wcrypto_ec_op_type
- *@result: denoted by WD error code
- *@usr_data: wcrypto_ec_tag
- *@cid: ctx_id
+ * @alg_type: denoted by enum wcrypto_type
+ * @ec_type: denoted by enum wcrypto_ec_type
+ * @op_type: denoted by enum wcrypto_ec_op_type
+ * @result: denoted by WD error code
+ * @usr_data: wcrypto_ec_tag
+ * @cid: ctx_id
  */
 struct wcrypto_ec_msg {
 	__u8 alg_type;
