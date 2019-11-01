@@ -45,34 +45,34 @@ struct wcrypto_ec_ctx {
 	struct wcrypto_ec_ctx_setup setup;
 };
 
-static void alloc_tbl_mem(__u8 *buf, __u8 *pa,
+static void alloc_tbl_mem(const __u8 *buf, const __u8 *pa,
 	struct wcrypto_ec_table *ec_table)
 {
 	ec_table->src_addr = (struct src_tbl *)buf;
-	ec_table->src_addr_pa = (__u64)pa;
+	ec_table->src_addr_pa = (uintptr_t)pa;
 
 	ec_table->src_tag_addr =
 		(struct src_tag_tbl *)(buf + sizeof(struct src_tbl));
-	ec_table->src_tag_addr_pa = (__u64)(pa + sizeof(struct src_tbl));
+	ec_table->src_tag_addr_pa = (uintptr_t)(pa + sizeof(struct src_tbl));
 
 	ec_table->dst_addr =
 		(struct dst_tbl *)((__u8 *)ec_table->src_tag_addr +
 		sizeof(struct src_tag_tbl));
 	ec_table->dst_addr_pa =
-		(__u64)((__u8 *)ec_table->src_tag_addr_pa +
+		(uintptr_t)((__u8 *)ec_table->src_tag_addr_pa +
 		sizeof(struct src_tag_tbl));
 
 	ec_table->dst_tag_addr =
 		(struct dst_tag_tbl *)((__u8 *)ec_table->dst_addr +
 		sizeof(struct dst_tbl));
 	ec_table->dst_tag_addr_pa =
-		(__u64)((__u8 *)ec_table->dst_addr_pa +
+		(uintptr_t)((__u8 *)ec_table->dst_addr_pa +
 		sizeof(struct dst_tbl));
 
 	ec_table->matrix = (__u8 *)ec_table->dst_tag_addr +
 		sizeof(struct dst_tag_tbl);
 	ec_table->matrix_pa =
-		(__u64)((__u8 *)ec_table->dst_tag_addr_pa +
+		(uintptr_t)((__u8 *)ec_table->dst_tag_addr_pa +
 		sizeof(struct dst_tag_tbl));
 }
 
@@ -96,7 +96,7 @@ static struct wcrypto_ec_cache *get_ec_cache(struct wcrypto_ec_ctx *ctx)
 static void put_ec_cache(struct wcrypto_ec_ctx *ctx,
 	struct wcrypto_ec_cache *cache)
 {
-	int idx = ((unsigned long)cache - (unsigned long)ctx->caches) /
+	int idx = ((uintptr_t)cache - (uintptr_t)ctx->caches) /
 		sizeof(struct wcrypto_ec_cache);
 
 	if (idx < 0 || idx >= WCRYPTO_EC_CTX_MSG_NUM) {
@@ -153,7 +153,7 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 	ctx_id = qinfo->ctx_num;
 	wd_unspinlock(&qinfo->qlock);
 	if (ctx_id > WCRYPTO_EC_MAX_CTX) {
-		WD_ERR("%s() create too mant ctx!\n", __func__);
+		WD_ERR("%s() create too many ctx!\n", __func__);
 		return NULL;
 	}
 
@@ -191,8 +191,8 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
 		alloc_tbl_mem(ctx->tbl_buf + i * WCRYPTO_EC_TBl_SIZE,
 			pa + i * WCRYPTO_EC_TBl_SIZE, &ctx->caches[i].table);
-		ctx->caches[i].tag.tbl_addr = (__u64)&ctx->caches[i].table;
-		ctx->caches[i].msg.usr_data = (__u64)&ctx->caches[i].tag;
+		ctx->caches[i].tag.tbl_addr = (uintptr_t)&ctx->caches[i].table;
+		ctx->caches[i].msg.usr_data = (uintptr_t)&ctx->caches[i].tag;
 	}
 
 	return ctx;
@@ -243,9 +243,9 @@ int wcrypto_do_ec(void *ctx, struct wcrypto_ec_op_data *opdata, void *tag)
 	}
 
 	if (opdata->priv)
-		cache->tag.priv_data = (__u64)opdata->priv;
+		cache->tag.priv = opdata->priv;
 	else
-		cache->tag.priv_data = 0;
+		cache->tag.priv = NULL;
 
 	msg = &cache->msg;
 	fill_ec_msg(cctx, msg, opdata);
@@ -309,17 +309,16 @@ int wcrypto_ec_poll(struct wd_queue *q, int num)
 		} else if (ret == 0)
 			break;
 		if (resp) {
-			tag = (void *)resp->usr_data;
+			tag = (void *)(uintptr_t)resp->usr_data;
 			ctx = tag->wcrypto_tag.ctx;
 			ctx->setup.cb(resp, tag->wcrypto_tag.tag);
 			put_ec_cache(ctx, (struct wcrypto_ec_cache *)tag);
 			resp = NULL;
 			count++;
 		}
-
 	} while (--num);
 
-	return ((ret == 0) ? count : ret);
+	return ((ret >= 0) ? count : ret);
 }
 
 void wcrypto_del_ec_ctx(void *ctx)
@@ -340,7 +339,7 @@ void wcrypto_del_ec_ctx(void *ctx)
 	if (!qinfo->ctx_num)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
-		WD_ERR("%s(): repeat del comp ctx!\n", __func__);
+		WD_ERR("%s(): repeat del ec ctx!\n", __func__);
 		wd_unspinlock(&qinfo->qlock);
 		return;
 	}
