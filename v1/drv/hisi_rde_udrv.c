@@ -44,7 +44,6 @@ static void rde_dump_sqe(struct hisi_rde_sqe *sqe)
 		WD_ERR("sqe-word[%d]: 0x%llx.\n", i, *((__u64 *)sqe + i));
 }
 
-#ifdef DEBUG
 static void rde_dump_table(struct wcrypto_ec_table *tbl)
 {
 	int i;
@@ -61,7 +60,6 @@ static void rde_dump_table(struct wcrypto_ec_table *tbl)
 				i, tbl->dst_addr->content[i]);
 	}
 }
-#endif
 
 static __u32 rde_get_matrix_len(__u8 ec_type, __u8 cm_len)
 {
@@ -90,7 +88,7 @@ static void rde_fill_src_table(struct wcrypto_ec_msg *msg,
 	__u32 sgl_data;
 	__u32 gn_cnt, gn_flag, cur_cnt;
 	__u8 num = msg->in_disk_num;
-	struct rde_sgl *sgl_src = (struct rde_sgl *)msg->in;
+	struct wd_ec_sgl *sgl_src = (struct wd_ec_sgl *)msg->in;
 	__u8 mode = msg->op_type;
 
 	for (i = 0; i < num; i++) {
@@ -104,7 +102,7 @@ static void rde_fill_src_table(struct wcrypto_ec_msg *msg,
 		cur_cnt = gn_cnt - gn_flag;
 		tbl->src_addr->content[cur_cnt] |=
 			((__u64)sgl_data << RDE_GN_SHIFT(gn_flag));
-		tbl->src_addr->content[gn_cnt] = (__u64)(sgl_src->ctrl);
+		tbl->src_addr->content[gn_cnt] = (uintptr_t)(sgl_src->ctrl);
 		sgl_src++;
 	}
 }
@@ -116,7 +114,7 @@ static void rde_fill_dst_table(struct wcrypto_ec_msg *msg,
 	__u32 sgl_data;
 	__u32 gn_cnt, gn_flag, cur_cnt;
 	__u8 num = msg->out_disk_num;
-	struct rde_sgl *sgl_dst = (struct rde_sgl *)msg->out;
+	struct wd_ec_sgl *sgl_dst = (struct wd_ec_sgl *)msg->out;
 
 	for (i = 0; i < num; i++) {
 		gn = sgl_dst->column;
@@ -127,7 +125,7 @@ static void rde_fill_dst_table(struct wcrypto_ec_msg *msg,
 		cur_cnt = gn_cnt - gn_flag;
 		tbl->dst_addr->content[cur_cnt] |=
 			((__u64)sgl_data << RDE_GN_SHIFT(gn_flag));
-		tbl->dst_addr->content[gn_cnt] = (__u64)(sgl_dst->ctrl);
+		tbl->dst_addr->content[gn_cnt] = (uintptr_t)(sgl_dst->ctrl);
 		sgl_dst++;
 	}
 }
@@ -139,8 +137,8 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 	__u32 lba_info_cnt = 0, chk_info_cnt = 0;
 	__u32 cur_cnt1 = 0, cur_cnt2 = 0;
 	__u8 num = msg->in_disk_num;
-	struct wcrypto_ec_tag *tag = (void *)msg->usr_data;
-	struct wcrypto_ec_priv_data *pdata = (void *)tag->priv_data;
+	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wd_ec_udata *pdata = tag->priv;
 	__u8 grd = pdata->src_dif.ctrl.verify.grd_verify_type;
 	__u8 ref = pdata->src_dif.ctrl.verify.ref_verify_type;
 
@@ -153,8 +151,7 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 			((__u64)(grd << DIF_CHK_GRD_CTRL_SHIFT | ref) <<
 			(RDE_LBA_BLK * (i % RDE_LBA_BLK)));
 		tbl->src_tag_addr->content[cur_cnt2] |=
-			((__u64)pdata->src_dif.priv <<
-			(DIF_LBA_SHIFT * ((i % 2) ^ 1)));
+			((__u64)pdata->src_dif.priv << RDE_LBA_SHIFT(i));
 	}
 }
 
@@ -163,8 +160,8 @@ static void rde_fill_dst_dif_table(struct wcrypto_ec_msg *msg,
 {
 	__u8 i;
 	__u8 num = msg->out_disk_num;
-	struct wcrypto_ec_tag *tag = (void *)msg->usr_data;
-	struct wcrypto_ec_priv_data *pdata = (void *)tag->priv_data;
+	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wd_ec_udata *pdata = tag->priv;
 
 	for (i = 0; i < num; i++) {
 		tbl->dst_tag_addr->content[i] |=
@@ -191,7 +188,7 @@ static void rde_fill_dst_dif_table(struct wcrypto_ec_msg *msg,
 }
 
 static void rde_table_package(struct hisi_rde_sqe *sqe,
-	struct wcrypto_ec_priv_data *pdata,
+	struct wd_ec_udata *pdata,
 	struct wcrypto_ec_msg *msg,
 	struct wcrypto_ec_table *tbl)
 {
@@ -212,19 +209,56 @@ static void rde_table_package(struct hisi_rde_sqe *sqe,
 			pdata->dst_dif.ctrl.gen.page_layout_pad_type;
 		sqe->dif_type = (pdata->dst_dif.ctrl.gen.grd_gen_type) ?
 			RDE_DIF : NO_RDE_DIF;
-		rde_fill_src_dif_table(msg, tbl);
-		rde_fill_dst_dif_table(msg, tbl);
+		if (sqe->dif_type == RDE_DIF) {
+			rde_fill_src_dif_table(msg, tbl);
+			rde_fill_dst_dif_table(msg, tbl);
+		}
 	}
+}
+
+static int rde_check_sqe_para(struct wcrypto_ec_msg *msg)
+{
+	if (!msg->block_num || !msg->coef_matrix_len) {
+		WD_ERR("wrong transfer_size or coef_matrix_len.\n");
+		return -WD_EINVAL;
+	}
+
+	if (msg->coef_matrix_load && !msg->coef_matrix) {
+		WD_ERR("wrong coef_matrix addr.\n");
+		return -WD_EINVAL;
+	}
+
+	if (!msg->in || !msg->out) {
+		WD_ERR("wrong in or out addr.\n");
+		return -WD_EINVAL;
+	}
+
+	if (msg->ec_type == WCRYPTO_EC_MPCC) {
+		if (msg->coef_matrix_len > RDE_MPCC_MAX_CMLEN) {
+			WD_ERR("wrong mpcc cm len.\n");
+			return -WD_EINVAL;
+		}
+	} else if (msg->ec_type == WCRYPTO_EC_FLEXEC) {
+		if (msg->coef_matrix_len > RDE_FLEXEC_MAX_CMLEN) {
+			WD_ERR("wrong flexec cm len.\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	return 0;
 }
 
 int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_rde_sqe *sqe = (struct hisi_rde_sqe *)info->sq_base + i;
 	struct wcrypto_ec_msg *msg = rmsg;
-	struct wcrypto_ec_tag *tag = (void *)msg->usr_data;
-	struct wcrypto_ec_table *tbl = (void *)tag->tbl_addr;
-	struct wcrypto_ec_priv_data *pdata = (void *)tag->priv_data;
+	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wcrypto_ec_table *tbl = (void *)(uintptr_t)tag->tbl_addr;
+	struct wd_ec_udata *pdata = tag->priv;
 	__u32 len;
+
+	if (rde_check_sqe_para(msg))
+		return -WD_EINVAL;
 
 	memset((void *)sqe, 0, sizeof(*sqe));
 	sqe->op_tag = __sync_fetch_and_add(&g_ref_cnt, 1);
@@ -256,11 +290,6 @@ int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i)
 
 	info->req_cache[i] = msg;
 
-#ifdef DEBUG
-	rde_dump_sqe(sqe);
-	rde_dump_table(tbl);
-#endif
-
 	return 0;
 }
 
@@ -268,12 +297,16 @@ int qm_parse_rde_sqe(void *hw_msg,
 	const struct qm_queue_info *info, __u16 i, __u16 usr)
 {
 	struct wcrypto_ec_msg *recv_msg;
+	struct wcrypto_ec_tag *tag;
+	struct wcrypto_ec_table *tbl;
 	struct hisi_rde_sqe *sqe;
 
 	if (!info->req_cache[i])
 		return -WD_EINVAL;
 
 	recv_msg = info->req_cache[i];
+	tag = (void *)(uintptr_t)recv_msg->usr_data;
+	tbl = (void *)(uintptr_t)tag->tbl_addr;
 	sqe = hw_msg;
 	if (usr && usr != recv_msg->cid)
 		return 0;
@@ -283,9 +316,12 @@ int qm_parse_rde_sqe(void *hw_msg,
 			(sqe->status >> RDE_DONE_SHIFT) & RDE_DONE_MSK,
 			sqe->status & RDE_STATUS_MSK);
 		rde_dump_sqe(sqe);
+		rde_dump_table(tbl);
+		recv_msg->result = (sqe->status & RDE_STATUS_MSK);
+		return -WD_EIO;
 	}
 
-	recv_msg->result = (sqe->status & RDE_STATUS_MSK);
+	recv_msg->result = 0;
 
 	return 1;
 }
