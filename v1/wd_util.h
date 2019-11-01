@@ -97,7 +97,7 @@ struct wcrypto_cipher_tag {
 struct wcrypto_ec_tag {
 	struct wcrypto_cb_tag wcrypto_tag;
 	__u64 tbl_addr;
-	__u64 priv_data;
+	void *priv;
 };
 
 #ifdef DEBUG_LOG
