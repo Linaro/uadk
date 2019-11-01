@@ -46,6 +46,7 @@
 #define WD_DH_CTX_MSG_NUM		64
 #define DH_GENERATOR_2			2
 #define DH_GENERATOR_5			5
+#define TEST_CNT		10
 
 struct bignum_st {
 	BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
@@ -141,6 +142,7 @@ struct async_test_openssl_param {
 static int key_bits = 2048;
 static int openssl_check;
 static int only_soft;
+static int performance_test;
 static int with_log;
 static int is_system_test;
 static int ctx_num_per_q = 1;
@@ -161,6 +163,18 @@ static char *rsa_op_str[WCRYPTO_RSA_GENKEY + 1] = {
 		"rsa_sign",
 		"rsa_verify",
 		"rsa_keygen",
+};
+
+static char *dh_op_str[WCRYPTO_DH_PHASE2] = {
+		"ph1",
+		"ph2",
+};
+
+static char *rsa_op_str_perf[WCRYPTO_RSA_GENKEY + 1] = {
+		"invalid_op",
+		"sign",
+		"verify",
+		"gen",
 };
 
 /* OpenSSL RSA and BN APIs */
@@ -1602,7 +1616,7 @@ int hpre_sys_qmng_test(int thread_num)
 int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 			enum alg_op_type op_type)
 {
-	int pid = getpid(), ret = 0, i = 0;
+	int pid = getpid(), ret = 0, i = 0, cnt =0;
 	int thread_id = (int)syscall(__NR_gettid);
 	struct wcrypto_rsa_ctx_setup setup;
 	struct wcrypto_rsa_op_data opdata;
@@ -1675,8 +1689,28 @@ int hpre_sys_func_test(int thread_num, int cpuid, void *pool, void *queue,
 			goto fail_release;
 		}
 	}
-	gettimeofday(&start_tval, NULL);
+
+	if (!performance_test)
+		gettimeofday(&start_tval, NULL);
 	while (1) {
+		if (performance_test) {
+			if (!cnt) {
+				gettimeofday(&start_tval, NULL);
+			} else if (cnt == TEST_CNT) {
+				gettimeofday(&end_tval, NULL);
+				time = (float)((end_tval.tv_sec -start_tval.tv_sec) * 1000000 +
+						end_tval.tv_usec - start_tval.tv_usec);
+				speed = 1 / (time / TEST_CNT) * 1000;
+				HPRE_TST_PRT("\r\nPID(%d)-thread-%d:%s CRT mode %dbits %s time %0.0f us, pkt len ="
+					" %d bytes, %0.3f Kops", getpid(), (int)syscall(__NR_gettid), "rsa",
+					key_bits, rsa_op_str_perf[opdata.op_type], time, key_bits / 8, speed);
+				ret = 0;
+				goto fail_release;
+			}
+
+			cnt++;
+		}
+
 		if (!only_soft) {
 			ret = wcrypto_do_rsa(ctx, &opdata, tag);
 			if (ret || opdata.status) {
@@ -1897,7 +1931,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 	}
 	free(q);
 	for (j = 0; j < q_num; j++)
-		wd_blkpool_destroy(pool[i]);
+		wd_blkpool_destroy(pool[j]);
 	free(pool);
 	return 0;
 }
@@ -2502,7 +2536,7 @@ static int init_opdata_param(void *pool,
 
 static void *_hpre_dh_sys_test_thread(void *data)
 {
-	int ret, cpuid, i = 0, j = 0;
+	int ret, cpuid, i = 0, j = 0, cnt = 0, opstr_idx = 0;
 	struct test_hpre_pthread_dt *pdata = data;
 	const BIGNUM *pkey = NULL;
 	struct wd_queue *q = NULL;
@@ -2578,7 +2612,36 @@ static void *_hpre_dh_sys_test_thread(void *data)
 
 usleep(1000*1000);
 	while (1) {
-		steps = i % 3 + 1;
+		if (performance_test && i >= 3) {
+			if (!cnt) {
+				gettimeofday(&start_tval, NULL);
+			} else if (cnt == TEST_CNT) {
+				gettimeofday(&end_tval, NULL);
+				time = (float)((end_tval.tv_sec -start_tval.tv_sec) * 1000000 +
+						end_tval.tv_usec - start_tval.tv_usec);
+				speed = 1 / (time / TEST_CNT) * 1000;
+				HPRE_TST_PRT("\r\nPID(%d)-thread-%d:%s g2 mode %dbits kgen %s time %0.0f us, pkt len ="
+					" %d bytes, %0.3f Kops", getpid(), (int)syscall(__NR_gettid), "dh",
+					key_bits, dh_op_str[opstr_idx],time, key_bits / 8, speed);
+				cnt = 0;
+				gettimeofday(&start_tval, NULL);
+				if (!opstr_idx)
+					opstr_idx = 1;
+				else
+					goto fail_release;
+			}
+
+			if (!opstr_idx)
+				steps = 1;
+			else
+				steps = 3;
+
+			cnt++;
+
+		} else {
+			steps = i % 3 + 1;
+		}
+
 		if (steps == DH_BOB_PUBKEY) {
 			isAlice = false;
 			opdata = &opdata_b;
@@ -2595,8 +2658,10 @@ usleep(1000*1000);
 
 		if (i >= 3)
 			j = i - 3;
-		else
+		else {
 			j = i;
+			cnt = 0;
+		}
 
 		if (steps != DH_ALICE_PRIVKEY) {
 			if (only_soft || isHwTestPrehandler) {
@@ -2956,10 +3021,6 @@ int main(int argc, char *argv[])
 		only_soft = 1;
 	if (argv[8]) {
 		key_bits = strtoul(argv[8], NULL, 10);
-		if (key_bits != 1024 && key_bits != 2048 &&
-			key_bits != 3072 && key_bits != 4096) {
-			key_bits = 2048;
-		}
 	} else {
 		key_bits = 2048;
 	}
@@ -3024,10 +3085,18 @@ int main(int argc, char *argv[])
 			HPRE_TST_PRT("Coremask overflow,\n");
 			HPRE_TST_PRT("Just try to bind all thrds!\n");
 		}
-		if (!strcmp(argv[6], "-log"))
+		if (!strcmp(argv[6], "-log")) {
 			with_log = 1;
-		else
+			performance_test = 0;
+		} else if (!strcmp(argv[6], "-performance")) {
 			with_log = 0;
+			openssl_check = 0;
+			performance_test = 1;
+		} else {
+			with_log = 0;
+			performance_test = 0;
+		}
+
 		if (argv[9]) {
 			ctx_num_per_q = strtoul(argv[9], NULL, 10);
 			if (ctx_num_per_q <= 0) {
@@ -3234,7 +3303,9 @@ basic_function_test:
 		return 0;
 #endif
 	} else if (alg_op_type == DH_GEN) {
-		return hpre_dh_test(ctx, pool);
+		ret = hpre_dh_test(ctx, pool);
+		wcrypto_del_dh_ctx(ctx);
+		return ret;
 	} else if (alg_op_type == RSA_PUB_EN && (mode == RSA_CRT_MD ||
 		   mode == RSA_COM_MD)) {
 		read_size = pub_key_size = key_bits >> 2;
