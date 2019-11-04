@@ -317,11 +317,9 @@ int qm_parse_rde_sqe(void *hw_msg,
 			sqe->status & RDE_STATUS_MSK);
 		rde_dump_sqe(sqe);
 		rde_dump_table(tbl);
-		recv_msg->result = (sqe->status & RDE_STATUS_MSK);
-		return -WD_EIO;
 	}
 
-	recv_msg->result = 0;
+	recv_msg->result = (sqe->status & RDE_STATUS_MSK);
 
 	return 1;
 }
