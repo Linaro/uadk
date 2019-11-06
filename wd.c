@@ -114,8 +114,8 @@ static int _get_dev_info(struct _dev_info *dinfo)
 	_get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
 	_get_str_attr(dinfo, "algorithms", dinfo->algs, MAX_ATTR_STR_SIZE);
 
-	dinfo->qfrs_offset[UACCE_QFRT_MMIO] = _get_int_attr(dinfo, "qfrt_mmio_size");
-	dinfo->qfrs_offset[UACCE_QFRT_DUS] = _get_int_attr(dinfo, "qfrt_dus_size");
+	dinfo->qfrs_offset[UACCE_QFRT_MMIO] = _get_int_attr(dinfo, "region_mmio_size");
+	dinfo->qfrs_offset[UACCE_QFRT_DUS] = _get_int_attr(dinfo, "region_dus_size");
 
 	/*
 	 * Use available_instances as the base of weight.
