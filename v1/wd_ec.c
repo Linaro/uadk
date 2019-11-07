@@ -59,20 +59,20 @@ static void alloc_tbl_mem(const __u8 *buf, const __u8 *pa,
 		(struct dst_tbl *)((__u8 *)ec_table->src_tag_addr +
 		sizeof(struct src_tag_tbl));
 	ec_table->dst_addr_pa =
-		(uintptr_t)((__u8 *)ec_table->src_tag_addr_pa +
+		(uintptr_t)((__u8 *)(uintptr_t)ec_table->src_tag_addr_pa +
 		sizeof(struct src_tag_tbl));
 
 	ec_table->dst_tag_addr =
 		(struct dst_tag_tbl *)((__u8 *)ec_table->dst_addr +
 		sizeof(struct dst_tbl));
 	ec_table->dst_tag_addr_pa =
-		(uintptr_t)((__u8 *)ec_table->dst_addr_pa +
+		(uintptr_t)((__u8 *)(uintptr_t)ec_table->dst_addr_pa +
 		sizeof(struct dst_tbl));
 
 	ec_table->matrix = (__u8 *)ec_table->dst_tag_addr +
 		sizeof(struct dst_tag_tbl);
 	ec_table->matrix_pa =
-		(uintptr_t)((__u8 *)ec_table->dst_tag_addr_pa +
+		(uintptr_t)((__u8 *)(uintptr_t)ec_table->dst_tag_addr_pa +
 		sizeof(struct dst_tag_tbl));
 }
 

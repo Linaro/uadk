@@ -29,15 +29,8 @@
 #define RDE_MEM_SAVE_SHIFT	2
 #define RDE_BUF_TYPE_SHIFT	3
 #define RDE_EC_TYPE_SHIFT	5
-#define RDE_UPD_GN_FLAG		0x80
-#define RDE_UPD_PARITY_SHIFT	7
 #define RDE_SGL_OFFSET_SHIFT	8
-#define RDE_COEF_GF_SHIFT	32
-#define RDE_LBA_BLK		8
-#define RDE_LBA_DWORD_CNT	5
-#define DIF_CHK_GRD_CTRL_SHIFT	4
 #define DIF_CHK_REF_CTRL_SHIFT	32
-#define DIF_LBA_SHIFT		32
 #define DIF_GEN_PAD_CTRL_SHIFT	32
 #define DIF_GEN_REF_CTRL_SHIFT	35
 #define DIF_GEN_APP_CTRL_SHIFT	38
@@ -50,11 +43,18 @@
 #define RDE_DONE_MSK		0x1
 #define RDE_DONE_SHIFT		7
 
-#define RDE_GN_CNT(i)	(((i + 1) % 2 == 0) ? (i + 1) >> 1 : (i + 2) >> 1)
-#define RDE_GN_FLAG(i)		(((i + 1) % 2 == 0) ? 2 : 1)
-#define RDE_GN_SHIFT(x)	(RDE_COEF_GF_SHIFT * (x == 1 ? 1 : 0))
-#define RDE_LBA_CNT(i)	((i % 2 == 0) ? (i >> 1) : ((i - 1) >> 1))
-#define RDE_LBA_SHIFT(i) (DIF_LBA_SHIFT * ((i % 2) ^ 1))
+
+#define RDE_UPDATE_GN(mode, parity) \
+	((WCRYPTO_EC_UPDATE ^ mode) ? 0 : (0x80 & (parity << 7)))
+#define RDE_GN_CNT(i)   (((i + 1) % 2 == 0) ? (i + 1) >> 1 : (i + 2) >> 1)
+#define RDE_GN_FLAG(i)  (((i + 1) % 2 == 0) ? 2 : 1)
+#define RDE_GN_SHIFT(i) (32 * (i == 1 ? 1 : 0))
+#define RDE_LBA_CNT(i)  ((i / 8 + 1) + \
+	((i % 2 == 0) ? (i >> 1) : ((i - 1) >> 1)))
+#define RDE_CHK_CTRL_CNT(i)    ((i / 8) * 5)
+#define RDE_LBA_SHIFT(i)       (32 * ((i % 2) ^ 1))
+#define RDE_CHK_CTRL_VALUE(grd, ref, i) \
+	((__u64)(grd << 4 | ref) << (8 * (i % 8)))
 
 enum {
 	CM_ENCODE = 0, /* encode type */
@@ -79,6 +79,44 @@ enum {
 enum {
 	NO_RDE_DIF = 0, /* without DIF */
 	RDE_DIF = 1, /* DIF */
+};
+
+struct hisi_rde_hw_error {
+	__u8 status;
+	const char *msg;
+};
+
+enum {
+	RDE_STATUS_NULL = 0,
+	RDE_BD_ADDR_NO_ALIGN = 0x2,
+	RDE_BD_RD_BUS_ERR = 0x3,
+	RDE_IO_ABORT = 0x4,
+	RDE_BD_ERR = 0x5,
+	RDE_ECC_ERR = 0x6,
+	RDE_SGL_ADDR_ERR = 0x7,
+	RDE_SGL_PARA_ERR = 0x8,
+	RDE_DATA_RD_BUS_ERR = 0x1c,
+	RDE_DATA_WR_BUS_ERR = 0x1d,
+	RDE_CRC_CHK_ERR = 0x1e,
+	RDE_REF_CHK_ERR = 0x1f,
+	RDE_DISK0_VERIFY = 0x20,
+	RDE_DISK1_VERIFY = 0x21,
+	RDE_DISK2_VERIFY = 0x22,
+	RDE_DISK3_VERIFY = 0x23,
+	RDE_DISK4_VERIFY = 0x24,
+	RDE_DISK5_VERIFY = 0x25,
+	RDE_DISK6_VERIFY = 0x26,
+	RDE_DISK7_VERIFY = 0x27,
+	RDE_DISK8_VERIFY = 0x28,
+	RDE_DISK9_VERIFY = 0x29,
+	RDE_DISK10_VERIFY = 0x2a,
+	RDE_DISK11_VERIFY = 0x2b,
+	RDE_DISK12_VERIFY = 0x2c,
+	RDE_DISK13_VERIFY = 0x2d,
+	RDE_DISK14_VERIFY = 0x2e,
+	RDE_DISK15_VERIFY = 0x2f,
+	RDE_DISK16_VERIFY = 0x30,
+	RDE_CHAN_TMOUT = 0x31,
 };
 
 struct hisi_rde_sqe {
