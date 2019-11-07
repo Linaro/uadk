@@ -99,6 +99,13 @@ enum wcrypto_ec_blksize {
 	WCRYPTO_EC_BLK_4160 = 4160,
 };
 
+enum wcrypto_ec_op_result {
+	WCRYPTO_EC_STATUS_NULL,
+	WCRYPTO_EC_IN_EPARA,
+	WCRYPTO_EC_DIF_CHK_ERR,
+	WCRYPTO_EC_DATA_VERIFY_ERR,
+};
+
 /**
  * different contexts for different users/threads
  * @ec_type: denoted by enum wcrypto_ec_type
@@ -141,7 +148,7 @@ struct wcrypto_ec_op_data {
 	__u8 out_disk_num;
 	__u8 alg_blk_size;
 	__u16 block_size;
-	__u16 block_num;
+	__u32 block_num;
 	void *priv;
 };
 
@@ -166,7 +173,7 @@ struct wcrypto_ec_msg {
 	__u8 out_disk_num;
 	__u8 alg_blk_size;
 	__u16 block_size;
-	__u16 block_num;
+	__u32 block_num;
 	__u32 cid;
 	__u8 *coef_matrix;
 	void *in;
