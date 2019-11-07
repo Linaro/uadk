@@ -28,13 +28,46 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/syscall.h>
-#include "wd.h"
 #include "wd_util.h"
 #include "wd_ec.h"
 #include "hisi_rde_udrv.h"
 
 static __u16 g_ref_cnt;
 
+static const struct hisi_rde_hw_error rde_hw_error[] = {
+	{.status = RDE_BD_ADDR_NO_ALIGN, .msg = "rde bd addr no align err"},
+	{.status = RDE_BD_RD_BUS_ERR, .msg = "rde bd read bus err"},
+	{.status = RDE_IO_ABORT, .msg = "rde io abort err"},
+	{.status = RDE_BD_ERR, .msg = "rde bd config err"},
+	{.status = RDE_ECC_ERR, .msg = "rde ecc err"},
+	{.status = RDE_SGL_ADDR_ERR, .msg = "rde sgl/prp read bus err"},
+	{.status = RDE_SGL_PARA_ERR, .msg = "rde sgl/prp config err"},
+	{.status = RDE_DATA_RD_BUS_ERR, .msg = "rde data read bus err"},
+	{.status = RDE_DATA_WR_BUS_ERR, .msg = "rde data write bus err"},
+	{.status = RDE_CRC_CHK_ERR, .msg = "rde data or parity disk grd err"},
+	{.status = RDE_REF_CHK_ERR, .msg = "rde data or parity disk ref err"},
+	{.status = RDE_DISK0_VERIFY, .msg = "rde parity disk0 err"},
+	{.status = RDE_DISK1_VERIFY, .msg = "rde parity disk1 err"},
+	{.status = RDE_DISK2_VERIFY, .msg = "rde parity disk2 err"},
+	{.status = RDE_DISK3_VERIFY, .msg = "rde parity disk3 err"},
+	{.status = RDE_DISK4_VERIFY, .msg = "rde parity disk4 err"},
+	{.status = RDE_DISK5_VERIFY, .msg = "rde parity disk5 err"},
+	{.status = RDE_DISK6_VERIFY, .msg = "rde parity disk6 err"},
+	{.status = RDE_DISK7_VERIFY, .msg = "rde parity disk7 err"},
+	{.status = RDE_DISK8_VERIFY, .msg = "rde parity disk8 err"},
+	{.status = RDE_DISK9_VERIFY, .msg = "rde parity disk9 err"},
+	{.status = RDE_DISK10_VERIFY, .msg = "rde parity disk10 err"},
+	{.status = RDE_DISK11_VERIFY, .msg = "rde parity disk11 err"},
+	{.status = RDE_DISK12_VERIFY, .msg = "rde parity disk12 err"},
+	{.status = RDE_DISK13_VERIFY, .msg = "rde parity disk13 err"},
+	{.status = RDE_DISK14_VERIFY, .msg = "rde parity disk14 err"},
+	{.status = RDE_DISK15_VERIFY, .msg = "rde parity disk15 err"},
+	{.status = RDE_DISK16_VERIFY, .msg = "rde parity disk16 err"},
+	{.status = RDE_CHAN_TMOUT, .msg = "rde channel timeout err"},
+	{ /* sentinel */ }
+};
+
+#ifdef DEBUG_LOG
 static void rde_dump_sqe(struct hisi_rde_sqe *sqe)
 {
 	int i;
@@ -50,16 +83,29 @@ static void rde_dump_table(struct wcrypto_ec_table *tbl)
 
 	for (i = 0; i < SRC_ADDR_TABLE_NUM; i++) {
 		if (tbl->src_addr->content[i])
-			WD_ERR("src addr info[%d] content is 0x%llx\n",
+			WD_ERR("table0 info[%d] is 0x%llx\n",
 				i, tbl->src_addr->content[i]);
+	}
+
+	for (i = 0; i < SRC_DIF_TABLE_NUM; i++) {
+		if (tbl->src_tag_addr->content[i])
+			WD_ERR("table1 info[%d] is 0x%llx\n",
+				i, tbl->src_tag_addr->content[i]);
 	}
 
 	for (i = 0; i < DST_ADDR_TABLE_NUM; i++) {
 		if (tbl->dst_addr->content[i])
-			WD_ERR("dst addr info[%d] content is 0x%llx\n",
+			WD_ERR("table2 info[%d] is 0x%llx\n",
 				i, tbl->dst_addr->content[i]);
 	}
+
+	for (i = 0; i < DST_DIF_TABLE_NUM; i++) {
+		if (tbl->dst_tag_addr->content[i])
+			WD_ERR("table3 info[%d] is 0x%llx\n",
+				i, tbl->dst_tag_addr->content[i]);
+	}
 }
+#endif
 
 static __u32 rde_get_matrix_len(__u8 ec_type, __u8 cm_len)
 {
@@ -92,9 +138,7 @@ static void rde_fill_src_table(struct wcrypto_ec_msg *msg,
 	__u8 mode = msg->op_type;
 
 	for (i = 0; i < num; i++) {
-		gn = sgl_src->column +
-			((WCRYPTO_EC_UPDATE ^ mode) ? 0 : (RDE_UPD_GN_FLAG &
-			(sgl_src->parity << RDE_UPD_PARITY_SHIFT)));
+		gn = sgl_src->column + RDE_UPDATE_GN(mode, sgl_src->parity);
 		sgl_data = (sgl_src->buf_offset <<
 			RDE_SGL_OFFSET_SHIFT) | (__u32)gn;
 		gn_cnt = RDE_GN_CNT(i) + i;
@@ -134,7 +178,6 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 	struct wcrypto_ec_table *tbl)
 {
 	__u8 i;
-	__u32 lba_info_cnt = 0, chk_info_cnt = 0;
 	__u32 cur_cnt1 = 0, cur_cnt2 = 0;
 	__u8 num = msg->in_disk_num;
 	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
@@ -143,13 +186,10 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 	__u8 ref = pdata->src_dif.ctrl.verify.ref_verify_type;
 
 	for (i = 0; i < num; i++) {
-		chk_info_cnt = i / RDE_LBA_BLK + 1;
-		lba_info_cnt = RDE_LBA_CNT(i);
-		cur_cnt1 = (i / RDE_LBA_BLK) * RDE_LBA_DWORD_CNT;
-		cur_cnt2 = chk_info_cnt + lba_info_cnt;
+		cur_cnt1 = RDE_CHK_CTRL_CNT(i);
+		cur_cnt2 = RDE_LBA_CNT(i);
 		tbl->src_tag_addr->content[cur_cnt1] |=
-			((__u64)(grd << DIF_CHK_GRD_CTRL_SHIFT | ref) <<
-			(RDE_LBA_BLK * (i % RDE_LBA_BLK)));
+			RDE_CHK_CTRL_VALUE(grd, ref, i);
 		tbl->src_tag_addr->content[cur_cnt2] |=
 			((__u64)pdata->src_dif.priv << RDE_LBA_SHIFT(i));
 	}
@@ -290,36 +330,59 @@ int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i)
 
 	info->req_cache[i] = msg;
 
+#ifdef DEBUG_LOG
+	rde_dump_sqe(sqe);
+	rde_dump_table(tbl);
+#endif
+
 	return 0;
+}
+
+static __u8 rde_hw_error_log(__u8 err_sts)
+{
+	const struct hisi_rde_hw_error *err = rde_hw_error;
+
+	while(err->msg) {
+		if (err_sts == err->status) {
+			WD_ERR("%s [error status=0x%x] found.\n",
+				err->msg, err->status);
+			break;
+		}
+
+		err++;
+	}
+
+	if (err_sts < RDE_CRC_CHK_ERR || err_sts > RDE_DISK16_VERIFY)
+		return WCRYPTO_EC_IN_EPARA;
+	else if (err_sts >= RDE_CRC_CHK_ERR && err_sts <= RDE_REF_CHK_ERR)
+		return WCRYPTO_EC_DIF_CHK_ERR;
+	else
+		return WCRYPTO_EC_DATA_VERIFY_ERR;
 }
 
 int qm_parse_rde_sqe(void *hw_msg,
 	const struct qm_queue_info *info, __u16 i, __u16 usr)
 {
 	struct wcrypto_ec_msg *recv_msg;
-	struct wcrypto_ec_tag *tag;
-	struct wcrypto_ec_table *tbl;
 	struct hisi_rde_sqe *sqe;
+	__u8 err_status = 0;
 
 	if (!info->req_cache[i])
 		return -WD_EINVAL;
 
 	recv_msg = info->req_cache[i];
-	tag = (void *)(uintptr_t)recv_msg->usr_data;
-	tbl = (void *)(uintptr_t)tag->tbl_addr;
 	sqe = hw_msg;
 	if (usr && usr != recv_msg->cid)
 		return 0;
 
+	err_status = sqe->status & RDE_STATUS_MSK;
+	recv_msg->result = 0;
 	if (sqe->status != RDE_TASK_STATUS) {
-		WD_ERR("task done flag is 0x%x, err status is 0x%x.\n",
-			(sqe->status >> RDE_DONE_SHIFT) & RDE_DONE_MSK,
-			sqe->status & RDE_STATUS_MSK);
+		recv_msg->result = rde_hw_error_log(err_status);
+#ifdef DEBUG_LOG
 		rde_dump_sqe(sqe);
-		rde_dump_table(tbl);
+#endif
 	}
-
-	recv_msg->result = (sqe->status & RDE_STATUS_MSK);
 
 	return 1;
 }
