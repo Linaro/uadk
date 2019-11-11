@@ -80,6 +80,36 @@ struct q_info {
 	struct wd_lock qlock;
 };
 
+struct wd_dif_gen {
+	__u32 page_layout_gen_type:4;
+	__u32 grd_gen_type:4;
+	__u32 ver_gen_type:4;
+	__u32 app_gen_type:4;
+	__u32 ref_gen_type:4;
+	__u32 page_layout_pad_type:2;
+	__u32 reserved:10;
+};
+
+struct wd_dif_verify {
+	__u16 page_layout_pad_type:2;
+	__u16 grd_verify_type:4;
+	__u16 ref_verify_type:4;
+	__u16 reserved:6;
+};
+
+struct wd_dif_ctrl {
+	struct wd_dif_gen gen;
+	struct wd_dif_verify verify;
+};
+
+struct wd_dif {
+	__u64 lba;
+	__u32 priv_info;
+	__u8 ver;
+	__u8 app;
+	struct wd_dif_ctrl ctrl;
+};
+
 /* Digest tag format of Warpdrive */
 struct wcrypto_digest_tag {
 	struct wcrypto_cb_tag wcrypto_tag;
