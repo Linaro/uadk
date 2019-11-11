@@ -27,6 +27,9 @@
 #include "hisi_qm_udrv.h"
 
 typedef unsigned int __u32;
+typedef unsigned char __u8;
+typedef unsigned short __u16;
+typedef unsigned long long __u64;
 
 struct hisi_sec_sqe_type1 {
 	__u32 rsvd2:6;
@@ -197,6 +200,14 @@ struct hisi_sec_sqe {
 	};
 };
 
+struct wd_sec_udata {
+	__u32 src_offset;
+	__u32 dst_offset;
+	struct wd_dif dif;
+	__u16 block_size;
+	__u16 gran_num;
+};
+
 enum C_ALG {
 	C_ALG_DES  = 0x0,
 	C_ALG_3DES = 0x1,
@@ -277,10 +288,16 @@ enum {
 	SCENE_IPSEC = 0x1,
 	SCENE_SSL_TLS = 0x3,
 	SCENE_DTLS = 0x4,
+	SCENE_STORAGE = 0x5,
 	SCENE_NAS = 0x6,
 	SCENE_STREAM = 0x7,
 	SCENE_PBKDF2 = 0x8,
 	SCENE_SMB = 0x9,
+};
+
+enum {
+	CI_GEN_BY_ADDR = 0x0,
+	CI_GEN_BY_LBA  = 0X3,
 };
 
 enum {
