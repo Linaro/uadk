@@ -70,7 +70,7 @@ static struct wcrypto_cipher_cookie *get_cipher_cookie(struct wcrypto_cipher_ctx
 static void put_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 	struct wcrypto_cipher_cookie *cookie)
 {
-	int idx = ((unsigned long)cookie - (unsigned long)ctx->cookies) /
+	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
 		sizeof(struct wcrypto_cipher_cookie);
 
 	if (idx < 0 || idx >= WCRYPTO_CIPHER_CTX_MSG_NUM) {
@@ -151,7 +151,7 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		ctx->cookies[i].msg.mode = setup->mode;
 		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
 		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (__u64)&ctx->cookies[i].tag;
+		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
 	}
 
 	return ctx;
@@ -213,6 +213,9 @@ int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 		}
 		cookie->tag.wcrypto_tag.tag = tag;
 	}
+
+	cookie->tag.priv = opdata->priv;
+
 	req = &cookie->msg;
 	ret = cipher_request_init(req, opdata, ctxt);
 	if (ret)
@@ -243,7 +246,7 @@ recv_again:
 	opdata->out = (void *)resp->out;
 	opdata->out_bytes = resp->out_bytes;
 	opdata->status = resp->result;
-	ret = WD_SUCCESS;
+	ret = GET_NEGATIVE(opdata->status);
 
 fail_with_cookie:
 	put_cipher_cookie(ctxt, cookie);
@@ -268,13 +271,12 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 				return ret;
 			}
 			resp->result = WD_HW_EACCESS;
-		}
-		else if (ret < 0) {
+		} else if (ret < 0) {
 			WD_ERR("recv err at cipher poll!\n");
 			return ret;
 		}
 		count++;
-		tag = (void *)resp->usr_data;
+		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
 		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
 		put_cipher_cookie(ctx, (struct wcrypto_cipher_cookie *)tag);
