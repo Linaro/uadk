@@ -71,7 +71,7 @@ static struct wcrypto_digest_cookie *get_digest_cookie(struct wcrypto_digest_ctx
 static void put_digest_cookie(struct wcrypto_digest_ctx *ctx,
 		struct wcrypto_digest_cookie *cookie)
 {
-	int idx = ((unsigned long)cookie - (unsigned long)ctx->cookies) /
+	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
 		sizeof(struct wcrypto_digest_cookie);
 
 	if (idx < 0 || idx >= WD_DIGEST_CTX_MSG_NUM) {
@@ -80,8 +80,6 @@ static void put_digest_cookie(struct wcrypto_digest_ctx *ctx,
 	}
 	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
 }
-
-
 
 static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
@@ -159,7 +157,7 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
 		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
 		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (__u64)&ctx->cookies[i].tag;
+		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
 	}
 
 	return ctx;
@@ -253,7 +251,7 @@ recv_again:
 	opdata->out = (void *)resp->out;
 	opdata->out_bytes = resp->out_bytes;
 	opdata->status = resp->result;
-	ret = WD_SUCCESS;
+	ret = GET_NEGATIVE(opdata->status);
 
 fail_with_cookie:
 	put_digest_cookie(ctxt, cookie);
@@ -278,13 +276,12 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 				return ret;
 			}
 			resp->result = WD_HW_EACCESS;
-		}
-		else if (ret < 0) {
+		} else if (ret < 0) {
 			WD_ERR("recv err at digest poll!\n");
 			return ret;
 		}
 		count++;
-		tag = (void *)resp->usr_data;
+		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
 		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
 		put_digest_cookie(ctx, (struct wcrypto_digest_cookie *)tag);

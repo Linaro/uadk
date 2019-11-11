@@ -39,6 +39,7 @@ enum wcrypto_cipher_mode {
 	WCRYPTO_CIPHER_CBC,
 	WCRYPTO_CIPHER_CTR,
 	WCRYPTO_CIPHER_XTS,
+	WCRYPTO_CIPHER_OFB,
 };
 
 /**
