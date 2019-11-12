@@ -149,45 +149,15 @@ struct hisi_rde_sqe {
 	__u64 dw7;
 };
 
-struct blk_dif_gen {
-	__u32 page_layout_gen_type:4;
-	__u32 grd_gen_type:4;
-	__u32 ver_gen_type:4;
-	__u32 app_gen_type:4;
-	__u32 ref_gen_type:4;
-	__u32 page_layout_pad_type:2;
-	__u32 reserved:10;
-};
-
-struct blk_dif_verify {
-	__u16 page_layout_pad_type:2;
-	__u16 grd_verify_type:4;
-	__u16 ref_verify_type:4;
-	__u16 reserved:6;
-};
-
-struct blk_dif_ctrl {
-	struct blk_dif_gen gen;
-	struct blk_dif_verify verify;
-};
-
-struct wd_ec_dif {
-	__u64 lba;
-	__u32 priv;
-	__u8 ver;
-	__u8 app;
-	struct blk_dif_ctrl ctrl;
-};
-
-struct wd_ec_sgl {
-	struct wd_sgl *ctrl;
+struct wd_rde_sgl {
+	struct wd_sgl *sgl;
 	__u32 buf_offset;
 	__u8 parity;
 	__u8 reserve;
 	__u8 column;
 };
 
-struct wd_ec_udata {
+struct wd_rde_udata {
 	void *src_data;
 	void *dst_data;
 	__u32 src_num;
@@ -196,8 +166,8 @@ struct wd_ec_udata {
 	__u32 input_block;
 	__u32 data_len;
 	__u32 buf_type;
-	struct wd_ec_dif src_dif;
-	struct wd_ec_dif dst_dif;
+	struct wd_dif src_dif;
+	struct wd_dif dst_dif;
 	__u8 cm_load;
 	__u8 cm_len;
 	__u8 alg_blk_size;
