@@ -34,7 +34,7 @@
 
 static __u16 g_ref_cnt;
 
-static const struct hisi_rde_hw_error rde_hw_error[] = {
+static const struct hisi_rde_hw_error g_rde_hw_error[] = {
 	{.status = RDE_BD_ADDR_NO_ALIGN, .msg = "rde bd addr no align err"},
 	{.status = RDE_BD_RD_BUS_ERR, .msg = "rde bd read bus err"},
 	{.status = RDE_IO_ABORT, .msg = "rde io abort err"},
@@ -134,20 +134,20 @@ static void rde_fill_src_table(struct wcrypto_ec_msg *msg,
 	__u32 sgl_data;
 	__u32 gn_cnt, gn_flag, cur_cnt;
 	__u8 num = msg->in_disk_num;
-	struct wd_ec_sgl *sgl_src = (struct wd_ec_sgl *)msg->in;
+	struct wd_rde_sgl *rde_sgl = (struct wd_rde_sgl *)msg->in;
 	__u8 mode = msg->op_type;
 
 	for (i = 0; i < num; i++) {
-		gn = sgl_src->column + RDE_UPDATE_GN(mode, sgl_src->parity);
-		sgl_data = (sgl_src->buf_offset <<
+		gn = rde_sgl->column + RDE_UPDATE_GN(mode, rde_sgl->parity);
+		sgl_data = (rde_sgl->buf_offset <<
 			RDE_SGL_OFFSET_SHIFT) | (__u32)gn;
 		gn_cnt = RDE_GN_CNT(i) + i;
 		gn_flag = RDE_GN_FLAG(i);
 		cur_cnt = gn_cnt - gn_flag;
 		tbl->src_addr->content[cur_cnt] |=
 			((__u64)sgl_data << RDE_GN_SHIFT(gn_flag));
-		tbl->src_addr->content[gn_cnt] = (uintptr_t)(sgl_src->ctrl);
-		sgl_src++;
+		tbl->src_addr->content[gn_cnt] = (uintptr_t)(rde_sgl->sgl);
+		rde_sgl++;
 	}
 }
 
@@ -158,19 +158,19 @@ static void rde_fill_dst_table(struct wcrypto_ec_msg *msg,
 	__u32 sgl_data;
 	__u32 gn_cnt, gn_flag, cur_cnt;
 	__u8 num = msg->out_disk_num;
-	struct wd_ec_sgl *sgl_dst = (struct wd_ec_sgl *)msg->out;
+	struct wd_rde_sgl *rde_sgl = (struct wd_rde_sgl *)msg->out;
 
 	for (i = 0; i < num; i++) {
-		gn = sgl_dst->column;
-		sgl_data = (sgl_dst->buf_offset <<
+		gn = rde_sgl->column;
+		sgl_data = (rde_sgl->buf_offset <<
 			RDE_SGL_OFFSET_SHIFT) | (__u32)gn;
 		gn_cnt = RDE_GN_CNT(i) + i;
 		gn_flag = RDE_GN_FLAG(i);
 		cur_cnt = gn_cnt - gn_flag;
 		tbl->dst_addr->content[cur_cnt] |=
 			((__u64)sgl_data << RDE_GN_SHIFT(gn_flag));
-		tbl->dst_addr->content[gn_cnt] = (uintptr_t)(sgl_dst->ctrl);
-		sgl_dst++;
+		tbl->dst_addr->content[gn_cnt] = (uintptr_t)(rde_sgl->sgl);
+		rde_sgl++;
 	}
 }
 
@@ -181,7 +181,7 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 	__u32 cur_cnt1 = 0, cur_cnt2 = 0;
 	__u8 num = msg->in_disk_num;
 	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
-	struct wd_ec_udata *pdata = tag->priv;
+	struct wd_rde_udata *pdata = tag->priv;
 	__u8 grd = pdata->src_dif.ctrl.verify.grd_verify_type;
 	__u8 ref = pdata->src_dif.ctrl.verify.ref_verify_type;
 
@@ -191,7 +191,7 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 		tbl->src_tag_addr->content[cur_cnt1] |=
 			RDE_CHK_CTRL_VALUE(grd, ref, i);
 		tbl->src_tag_addr->content[cur_cnt2] |=
-			((__u64)pdata->src_dif.priv << RDE_LBA_SHIFT(i));
+			((__u64)pdata->src_dif.priv_info << RDE_LBA_SHIFT(i));
 	}
 }
 
@@ -201,7 +201,7 @@ static void rde_fill_dst_dif_table(struct wcrypto_ec_msg *msg,
 	__u8 i;
 	__u8 num = msg->out_disk_num;
 	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
-	struct wd_ec_udata *pdata = tag->priv;
+	struct wd_rde_udata *pdata = tag->priv;
 
 	for (i = 0; i < num; i++) {
 		tbl->dst_tag_addr->content[i] |=
@@ -219,7 +219,8 @@ static void rde_fill_dst_dif_table(struct wcrypto_ec_msg *msg,
 		tbl->dst_tag_addr->content[i] |=
 			((__u64)(pdata->dst_dif.ctrl.gen.grd_gen_type) <<
 			DIF_GEN_GRD_CTRL_SHIFT);
-		tbl->dst_tag_addr->content[i] |= (__u64)pdata->dst_dif.priv;
+		tbl->dst_tag_addr->content[i] |=
+			(__u64)pdata->dst_dif.priv_info;
 		tbl->dst_tag_addr->content[i] |=
 			((__u64)(pdata->dst_dif.app) << DIF_APP_TAG_SHIFT);
 		tbl->dst_tag_addr->content[i] |=
@@ -228,7 +229,7 @@ static void rde_fill_dst_dif_table(struct wcrypto_ec_msg *msg,
 }
 
 static void rde_table_package(struct hisi_rde_sqe *sqe,
-	struct wd_ec_udata *pdata,
+	struct wd_rde_udata *pdata,
 	struct wcrypto_ec_msg *msg,
 	struct wcrypto_ec_table *tbl)
 {
@@ -294,7 +295,7 @@ int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_ec_msg *msg = rmsg;
 	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wcrypto_ec_table *tbl = (void *)(uintptr_t)tag->tbl_addr;
-	struct wd_ec_udata *pdata = tag->priv;
+	struct wd_rde_udata *pdata = tag->priv;
 	__u32 len;
 
 	if (rde_check_sqe_para(msg))
@@ -340,9 +341,9 @@ int qm_fill_rde_sqe(void *rmsg, struct qm_queue_info *info, __u16 i)
 
 static __u8 rde_hw_error_log(__u8 err_sts)
 {
-	const struct hisi_rde_hw_error *err = rde_hw_error;
+	const struct hisi_rde_hw_error *err = g_rde_hw_error;
 
-	while(err->msg) {
+	while (err->msg) {
 		if (err_sts == err->status) {
 			WD_ERR("%s [error status=0x%x] found.\n",
 				err->msg, err->status);
@@ -365,7 +366,7 @@ int qm_parse_rde_sqe(void *hw_msg,
 {
 	struct wcrypto_ec_msg *recv_msg;
 	struct hisi_rde_sqe *sqe;
-	__u8 err_status = 0;
+	__u8 err_status;
 
 	if (!info->req_cache[i])
 		return -WD_EINVAL;
