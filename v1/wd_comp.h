@@ -80,6 +80,9 @@ enum wcrypto_op_result {
 	WCRYPTO_DECOMP_END_NOSPACE,
 	WCRYPTO_DECOMP_NO_CRC,
 	WCRYPTO_DECOMP_BLK_NOSTART,
+	WCRYPTO_SRC_DIF_ERR,
+	WCRYPTO_DST_DIF_ERR,
+	WCRYPTO_NEGTIVE_COMP_ERR,
 };
 
 enum wcrypto_comp_state {
@@ -118,6 +121,7 @@ struct wcrypto_comp_ctx_setup {
 	void *next_in;
 	void *next_out;
 	void *ctx_buf;
+	struct wd_mm_br br;
 };
 
 /**
@@ -148,6 +152,7 @@ struct wcrypto_comp_op_data {
 	__u32 checksum;
 	struct wd_queue *q;
 	void *ctx;
+	void *priv;
 };
 
 struct wcrypto_comp_msg {
@@ -156,15 +161,17 @@ struct wcrypto_comp_msg {
 	__u8 flush_type; /* Denoted by enum wcrypto_comp_flush_type */
 	__u8 stream_mode;/* Denoted by enum wcrypto_comp_state */
 	__u8 stream_pos; /* Denoted by enum wcrypto_stream_status */
-	__u8 comp_lv;	 /* Denoted by enum wcrypto_comp_level */
-	__u8 data_fmt;	 /* Data format, denoted by enum wd_buff_type */
-	__u8 win_sz;	 /* Denoted by enum wcrypto_comp_win_type */
+	__u8 comp_lv;    /* Denoted by enum wcrypto_comp_level */
+	__u8 data_fmt;   /* Data format, denoted by enum wd_buff_type */
+	__u8 win_sz;     /* Denoted by enum wcrypto_comp_win_type */
 	__u32 in_size;   /* Input data bytes */
 	__u32 avail_out; /* Output buffer size */
 	__u32 in_cons;   /* consumed bytes of input data */
 	__u32 produced;  /* produced bytes of current operation */
 	__u8 *src;       /* Input data VA, buf should be DMA-able. */
 	__u8 *dst;       /* Output data VA pointer */
+
+	__u32 tag;       /* User-defined request identifier */
 	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
