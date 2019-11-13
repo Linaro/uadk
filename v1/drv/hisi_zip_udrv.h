@@ -65,6 +65,22 @@ struct hisi_zip_sqe {
 
 };
 
+#define HZ_BUF_TYPE_SHIFT 8
+#define HZ_ALIGN_SIZE_SHIFT 16
+#define HZ_GRD_GTYPE_SHIFT 4
+#define HZ_VER_GTYPE_SHIFT 8
+#define HZ_APP_GTYPE_SHIFT 12
+#define HZ_APP_SHIFT 16
+#define HZ_VER_SHIFT 24
+#define HZ_PAD_TYPE_SHIFT 4
+#define HZ_GRD_VTYPE_SHIFT 8
+#define HZ_REF_VTYPE_SHIFT 12
+#define HZ_BLK_SIZE_SHIFT 16
+#define HZ_CTX_ST_MASK 0x000f
+#define HZ_LSTBLK_MASK 0x0100
+#define HZ_STATUS_MASK 0xff
+#define HZ_REQ_TYPE_MASK 0xff
+
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
 int qm_parse_zip_sqe(void *msg,
 		     const struct qm_queue_info *info, __u16 i, __u16 usr);
