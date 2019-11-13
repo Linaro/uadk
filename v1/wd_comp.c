@@ -33,7 +33,7 @@
 #define WD_COMP_CTX_MSGCACHE_NUM 512
 
 struct wcrypto_comp_cache {
-	struct wcrypto_cb_tag tag;
+	struct wcrypto_comp_tag tag;
 	struct wcrypto_comp_msg msg;
 };
 
@@ -91,6 +91,7 @@ static int fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 	msg->stream_pos = opdata->stream_pos;
 	msg->isize = opdata->isize;
 	msg->checksum = opdata->checksum;
+	msg->tag = ctx->ctx_id;
 	msg->status = 0;
 
 	return WD_SUCCESS;
@@ -105,6 +106,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 			      struct wcrypto_comp_ctx_setup *setup)
 {
 	struct wcrypto_comp_ctx *ctx;
+	struct wd_mm_br *br;
 	struct q_info *qinfo;
 	int ctx_id, i;
 
@@ -128,6 +130,18 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	/* lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
+	br = &setup->br;
+	if (br->alloc && br->free &&
+		br->iova_map && br->iova_unmap) {
+		if (!qinfo->br.alloc && !qinfo->br.iova_map)
+			memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
+		if (qinfo->br.usr != setup->br.usr) {
+			wd_unspinlock(&qinfo->qlock);
+			WD_ERR("Err mm br in creating comp ctx!\n");
+			return NULL;
+		}
+	}
+
 	qinfo->ctx_num++;
 	ctx_id = qinfo->ctx_num;
 	wd_unspinlock(&qinfo->qlock);
@@ -150,9 +164,9 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		ctx->caches[i].msg.alg_type = setup->alg_type;
 		ctx->caches[i].msg.stream_mode = setup->stream_mode;
 		ctx->caches[i].msg.ctx_buf = setup->ctx_buf;
-		ctx->caches[i].tag.ctx = ctx;
-		ctx->caches[i].tag.ctx_id = ctx_id;
-		ctx->caches[i].msg.udata = (__u64)&ctx->caches[i].tag;
+		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
+		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
+		ctx->caches[i].msg.udata = (uintptr_t)&ctx->caches[i].tag;
 	}
 	ctx->cb = setup->cb;
 
@@ -191,8 +205,10 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 			ret = -WD_EINVAL;
 			goto err_put_cache;
 		}
-		cache->tag.tag = tag;
+		cache->tag.wcrypto_tag.tag = tag;
 	}
+
+	cache->tag.priv = opdata->priv;
 
 	ret = fill_comp_msg(cctx, msg, opdata);
 	if (ret) {
@@ -246,29 +262,34 @@ int wcrypto_comp_poll(struct wd_queue *q, int num)
 {
 	struct wcrypto_comp_msg *resp = NULL;
 	struct wcrypto_comp_ctx *ctx;
-	struct wcrypto_cb_tag *tag;
+	struct wcrypto_comp_tag *tag;
 	int count = 0;
 	int ret;
 
 	do {
 		ret = wd_recv(q, (void **)&resp);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
-			return ret;
-		} else if (ret == 0) {
-			WD_ERR("wd_recv need again!\n");
+		if (ret == 0)
 			break;
+		else if (ret == -WD_HW_EACCESS) {
+			if (!resp) {
+				WD_ERR("recv err from req_cache!\n");
+				return ret;
+			}
+			resp->status = WD_HW_EACCESS;
+		} else if (ret < 0) {
+			WD_ERR("recv err at qm receive!\n");
+			return ret;
 		}
 
 		count++;
-		tag = (void *)resp->udata;
-		ctx = tag->ctx;
-		ctx->cb(resp, tag->tag);
+		tag = (void *)(uintptr_t)resp->udata;
+		ctx = tag->wcrypto_tag.ctx;
+		ctx->cb(resp, tag->wcrypto_tag.tag);
 		put_comp_cache(ctx, (struct wcrypto_comp_cache *)tag);
 		resp = NULL;
 	} while (--num);
 
-	return count;
+	return ret < 0 ? ret : count;
 }
 
 /**

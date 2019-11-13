@@ -130,6 +130,12 @@ struct wcrypto_ec_tag {
 	void *priv;
 };
 
+/*COMP tag format of Warpdrive */
+struct wcrypto_comp_tag {
+	struct wcrypto_cb_tag wcrypto_tag;
+	void *priv;
+};
+
 #ifdef DEBUG_LOG
 #define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
 #else

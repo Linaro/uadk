@@ -40,10 +40,29 @@
 #define HW_NEGACOMPRESS 0x0d
 #define HW_CRC_ERR 0x10
 #define HW_DECOMP_END 0x13
+#define HW_IN_DATA_DIF_CHECK_ERR 0xf
+#define HW_UNCOMP_DIF_CHECK_ERR 0x12
 
 #define HW_DECOMP_NO_SPACE 0x01
 #define HW_DECOMP_BLK_NOSTART 0x03
 #define HW_DECOMP_NO_CRC 0x04
+
+struct hisi_zip_sgl {
+	__u32 in_sge_data_off;
+	__u32 out_sge_data_off;
+	void *ctrl;
+};
+
+struct hisi_zip_udata {
+	struct hisi_zip_sgl sgl;
+	struct wd_dif dif;
+	void *comp_head;
+	__u8 buf_type;
+	__u16 block_size;
+	__u16 align_size;
+	__u8 req_type;
+	void *priv;
+};
 
 #ifdef DEBUG_LOG
 void zip_sqe_dump(struct hisi_zip_sqe *sqe)
@@ -52,15 +71,44 @@ void zip_sqe_dump(struct hisi_zip_sqe *sqe)
 
 	WD_ERR("[%s][%d]sqe info:\n", __func__, __LINE__);
 	for (i = 0; i < sizeof(struct hisi_zip_sqe) / sizeof(int); i++)
-		WD_ERR("sqe-word[%d]: 0x%x.\n", i, *((int *)sqe+i));
+		WD_ERR("sqe-word[%d]: 0x%x.\n", i, *((int *)sqe + i));
 }
 #endif
+
+static void qm_fill_zip_sqe_with_priv(struct hisi_zip_sqe *sqe, void *priv)
+{
+	struct hisi_zip_udata *udata = priv;
+
+	if (!udata)
+		return;
+
+	sqe->lba_l = udata->dif.lba & QM_L32BITS_MASK;
+	sqe->lba_h = udata->dif.lba >> QM_HADDR_SHIFT;
+	sqe->dw7 = udata->sgl.in_sge_data_off;
+	sqe->dw8 = udata->sgl.out_sge_data_off;
+	sqe->dw9 = udata->req_type | udata->buf_type << HZ_BUF_TYPE_SHIFT |
+		udata->align_size << HZ_ALIGN_SIZE_SHIFT;
+	sqe->dw10 = udata->dif.ctrl.gen.page_layout_gen_type |
+		udata->dif.ctrl.gen.grd_gen_type << HZ_GRD_GTYPE_SHIFT |
+		udata->dif.ctrl.gen.ver_gen_type << HZ_VER_GTYPE_SHIFT |
+		udata->dif.ctrl.gen.app_gen_type << HZ_APP_GTYPE_SHIFT |
+		udata->dif.app << HZ_APP_SHIFT | udata->dif.ver << HZ_VER_SHIFT;
+	sqe->priv_info = udata->dif.priv_info;
+	sqe->dw12 = udata->dif.ctrl.gen.ref_gen_type |
+		udata->dif.ctrl.gen.page_layout_pad_type << HZ_PAD_TYPE_SHIFT |
+		udata->dif.ctrl.verify.grd_verify_type << HZ_GRD_VTYPE_SHIFT |
+		udata->dif.ctrl.verify.ref_verify_type << HZ_REF_VTYPE_SHIFT |
+		udata->block_size << HZ_BLK_SIZE_SHIFT;
+	sqe->comp_head_addr_l = (uintptr_t)udata->comp_head & QM_L32BITS_MASK;
+	sqe->comp_head_addr_h = (uintptr_t)udata->comp_head >> QM_HADDR_SHIFT;
+}
+
 
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_zip_sqe *sqe = (struct hisi_zip_sqe *)info->sq_base + i;
 	struct wcrypto_comp_msg *msg = smsg;
-	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->udata;
+	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)msg->udata;
 	uintptr_t phy_in, phy_out;
 	uintptr_t phy_ctxbuf = 0;
 	struct wd_queue *q = info->q;
@@ -76,7 +124,7 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		sqe->dw9 = HW_GZIP;
 		break;
 	default:
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (qinfo->dev_flags & UACCE_DEV_NOIOMMU) {
@@ -101,7 +149,8 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	} else {
 		phy_in = (uintptr_t)msg->src;
 		phy_out = (uintptr_t)msg->dst;
-		phy_ctxbuf = (uintptr_t)msg->ctx_buf;
+		if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
+			phy_ctxbuf = (uintptr_t)msg->ctx_buf;
 	}
 
 	msg->flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
@@ -125,9 +174,9 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->ctx_dw2 = msg->ctx_priv2;
 	sqe->isize = msg->isize;
 	sqe->checksum = msg->checksum;
-
+	sqe->tag = msg->tag;
 	if (tag)
-		sqe->tag = tag->ctx_id;
+		qm_fill_zip_sqe_with_priv(sqe, tag->priv);
 
 	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
@@ -148,10 +197,10 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
-	__u16 ctx_st = sqe->ctx_dw0 & 0x000f;
-	__u16 lstblk = sqe->dw3 & 0x0100;
-	__u16 status = sqe->dw3 & 0x00ff;
-	__u16 type = sqe->dw9 & 0x00ff;
+	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
+	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
+	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
+	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 
 	if (usr && sqe->tag != usr)
 		return 0;
@@ -174,17 +223,23 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->comp_lv = 0;
 	recv_msg->op_type = 0;
 	recv_msg->win_size = 0;
-
 	recv_msg->ctx_priv0 = sqe->ctx_dw0;
 	recv_msg->ctx_priv1 = sqe->ctx_dw1;
 	recv_msg->ctx_priv2 = sqe->ctx_dw2;
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
+	recv_msg->tag = sqe->tag;
 
 	if ((status == HW_DECOMP_END) && lstblk)
 		recv_msg->status = WCRYPTO_DECOMP_END;
 	else if (status == HW_CRC_ERR) /* deflate type no crc, do normal*/
 		recv_msg->status = WD_VERIFY_ERR;
+	else if (status == HW_IN_DATA_DIF_CHECK_ERR)
+		recv_msg->status = WCRYPTO_SRC_DIF_ERR;
+	else if (status == HW_UNCOMP_DIF_CHECK_ERR)
+		recv_msg->status = WCRYPTO_DST_DIF_ERR;
+	else if (status == HW_NEGACOMPRESS)
+		recv_msg->status = WCRYPTO_NEGTIVE_COMP_ERR;
 
 	/* deflate type no crc, need return status */
 	if (ctx_st == HW_DECOMP_NO_CRC)
