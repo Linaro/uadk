@@ -375,8 +375,7 @@ static int fill_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	if (ret != WD_SUCCESS)
 		return ret;
 
-	if (tag)
-		sqe->type1.tag = tag->wcrypto_tag.ctx_id;
+	sqe->type1.tag = tag->wcrypto_tag.ctx_id;
 
 	return ret;
 }
@@ -454,14 +453,13 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_cipher_msg *msg = message;
 	struct wd_queue *q = info->q;
 	struct wcrypto_cipher_tag *tag = (void *)(uintptr_t)msg->usr_data;
-	struct wd_sec_udata *udata = tag->priv;
 	uintptr_t temp;
 	int ret;
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
 	sqe = (struct hisi_sec_sqe *)temp;
 
-	if (udata)
+	if (tag && tag->priv)
 		ret = fill_cipher_bd1(q, sqe, msg, tag);
 	else
 		ret = fill_cipher_bd2(q, sqe, msg, tag);
