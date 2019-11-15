@@ -154,7 +154,7 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 		info->sqe_size = QM_SEC_BD_SIZE;
 		info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
 		info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
-	} else if (!strncmp(alg, "rde", strlen("rde"))) {
+	} else if (!strncmp(alg, "ec", strlen("ec"))) {
 		qinfo->atype = WCRYPTO_EC;
 		info->sqe_size = QM_RDE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_EC] = qm_fill_rde_sqe;
