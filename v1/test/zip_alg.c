@@ -436,6 +436,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	struct wd_queue *q;
 	int ret;
 
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
 	q = calloc(1, sizeof(struct wd_queue));
 	if (q == NULL) {
 		ret = -ENOMEM;
