@@ -120,7 +120,7 @@ static int wcrypto_check_ctx_para(struct wd_queue *q,
 		return -WD_EINVAL;
 	}
 
-	if (strncmp(q->capa.alg, "rde", strlen("rde"))) {
+	if (strncmp(q->capa.alg, "ec", strlen("ec"))) {
 		WD_ERR("%s(): alg mismatching!\n", __func__);
 		return -WD_EINVAL;
 	}
