@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include <errno.h>
 #include <sys/mman.h>
 #include <string.h>
@@ -104,12 +105,62 @@ static size_t _get_str_attr(struct _dev_info *dinfo, char *attr, char *buf,
 	}
 	return size;
 }
+
+static int _get_int_attr_index(char *attr_file, int index)
+{
+	char buf[MAX_ATTR_STR_SIZE];
+	char *begin, *end;
+	int size, i;
+	int ret = 0;
+	int fd;
+
+	fd = open(attr_file, O_RDONLY, 0);
+	if (fd < 0) {
+		WD_ERR("open %s fail!\n", attr_file);
+		ret = -ENODEV;
+		goto out;
+	}
+	size = read(fd, buf, MAX_ATTR_STR_SIZE);
+	if (size <= 0) {
+		WD_ERR("read nothing at %s!\n", attr_file);
+		ret = -ENODEV;
+		goto out;
+	}
+
+	begin = buf;
+	for (i = 0; i <= index; i++) {
+		ret = strtoul(begin, &end, 0);
+		if (!end) {
+			WD_ERR("index %d exceeded at %s!\n", index, attr_file);
+			ret = 0;
+			break;
+		}
+		begin = end;
+	}
+out:
+	close(fd);
+	return ret;
+}
+
+static void _get_numa_info(struct _dev_info *dinfo)
+{
+	int cpu, node;
+	char attr[PATH_STR_SIZE];
+
+	syscall(SYS_getcpu, &cpu, &node, NULL);
+	snprintf(attr, PATH_STR_SIZE, "%s%d/%s",
+                 "/sys/bus/node/devices/node", node, "distance");
+	/* dinfo->node_id is device numa node id */
+	dinfo->node_id = _get_int_attr(dinfo, "device/numa_node");
+	/* dinfo->numa_dis is current cpu node distance with device numa node */
+	dinfo->numa_dis = _get_int_attr_index(attr, dinfo->node_id);
+}
+
 static int _get_dev_info(struct _dev_info *dinfo)
 {
-	dinfo->numa_dis = _get_int_attr(dinfo, "numa_distance");
+	_get_numa_info(dinfo);
 	dinfo->available_instances = _get_int_attr(dinfo,
 						   "available_instances");
-	dinfo->node_id = _get_int_attr(dinfo, "node_id");
 	dinfo->flags = _get_int_attr(dinfo, "flags");
 	_get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
 	_get_str_attr(dinfo, "algorithms", dinfo->algs, MAX_ATTR_STR_SIZE);
@@ -125,9 +176,10 @@ static int _get_dev_info(struct _dev_info *dinfo)
 		dinfo->weight = dinfo->available_instances;
 	else
 		dinfo->weight = 0;
-	/* Check whether it's the remote distance. */
+
+	/* simply multify with device numa_dis */
 	if (dinfo->numa_dis)
-		dinfo->weight = dinfo->weight >> 2;
+		dinfo->weight = dinfo->weight * dinfo->numa_dis;
 
 	return 0;
 }
