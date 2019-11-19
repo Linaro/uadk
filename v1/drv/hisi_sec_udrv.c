@@ -602,7 +602,7 @@ static void parse_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	__u64 dma_addr;
 
 	if (sqe->type1.done != SEC_HW_TASK_DONE	|| sqe->type1.error_type) {
-		WD_ERR("SEC BD2 %s fail!done=0x%x, etype=0x%x\n", "cipher",
+		WD_ERR("SEC BD1 %s fail!done=0x%x, etype=0x%x\n", "cipher",
 		sqe->type1.done, sqe->type1.error_type);
 		cipher_msg->result = WD_IN_EPARA;
 	} else
