@@ -1203,8 +1203,8 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 
 	gbytes = BN_bn2bin(ag, ag_bin);
 	g.data = (char*)ag_bin;
-	g.bsize = gbytes;
-	g.dsize = key_size;
+	g.bsize = key_size;
+	g.dsize = gbytes;
 	opdata_a.pbytes = BN_bn2bin(ap, ap_bin);
 	opdata_a.xbytes = BN_bn2bin(apriv_key, apriv_key_bin);
 	ret = wcrypto_set_dh_g(c, &g);
@@ -1228,6 +1228,7 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		HPRE_TST_PRT("a wcrypto_do_dh fail!\n");
 		goto dh_err;
 	}
+
 	if (openssl_check) {
 		apub_key_bin = malloc(key_size);
 		if (!apub_key_bin) {
@@ -2977,6 +2978,12 @@ int main(int argc, char *argv[])
 		HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
 		return -EINVAL;
 	}
+
+	if (argv[7] && !strcmp(argv[7], "-check"))
+		openssl_check = 1;
+	if (argv[7] && !strcmp(argv[7], "-soft"))
+		only_soft = 1;
+
 	if (!strcmp(argv[1], "-system-qt")) {
 		is_system_test = 1;
 		HPRE_TST_PRT("Now doing system queue mng test!\n");
@@ -3015,10 +3022,7 @@ int main(int argc, char *argv[])
 	} else {
 		goto basic_function_test;
 	}
-	if (argv[7] && !strcmp(argv[7], "-check"))
-		openssl_check = 1;
-	if (argv[7] && !strcmp(argv[7], "-soft"))
-		only_soft = 1;
+
 	if (argv[8]) {
 		key_bits = strtoul(argv[8], NULL, 10);
 	} else {
