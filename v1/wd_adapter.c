@@ -23,6 +23,7 @@
 #include "wd_adapter.h"
 #include "./drv/dummy_drv.h"
 #include "./drv/hisi_qm_udrv.h"
+#include "./drv/hisi_rng_udrv.h"
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -63,6 +64,12 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+	}, {
+		.hw_type = "hisi-trng-v2",
+		.open = rng_init_queue,
+		.close = rng_uninit_queue,
+		.send = rng_send,
+		.recv = rng_recv,
 	},
 };
 
