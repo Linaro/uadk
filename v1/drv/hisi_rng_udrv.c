@@ -93,8 +93,8 @@ int rng_send(struct wd_queue *q, void *req)
 
 static int rng_read(struct rng_queue_info *info, struct wcrypto_rng_msg *msg)
 {
-	int max = msg->in_bytes;
-	int currsize = 0;
+	__u32 max = msg->in_bytes;
+	__u32 currsize = 0;
 	int recv_count = 0;
 	int val;
 
@@ -134,6 +134,7 @@ int rng_recv(struct wd_queue *q, void **resp)
 	__u16 usr = (__u16)(uintptr_t)*resp;
 	struct wcrypto_rng_msg *msg;
 	struct wcrypto_cb_tag *tag;
+	__u32 currsize = 0;
 	int ret;
 
 	wd_spinlock(&info->lock);
@@ -151,13 +152,13 @@ int rng_recv(struct wd_queue *q, void **resp)
 	if (usr && tag->ctx_id != usr)
 		return 0;
 
-	ret = rng_read(info, msg);
-	if (!ret) {
+	currsize = rng_read(info, msg);
+	if (!currsize) {
 		WD_ERR("random data err!\n");
 		return -WD_EINVAL;
 	}
 
-	msg->out_bytes = ret;
+	msg->out_bytes = currsize;
 	*resp = msg;
 
 	return 1;
