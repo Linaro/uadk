@@ -24,18 +24,18 @@ struct wcrypto_rng_ctx_setup {
 };
 
 struct wcrypto_rng_msg {
-	__u8 alg_type;		/* Denoted by enum wcrypto_type */
-	__u16 out_bytes;	/* output bytes */
 	__u8 *out;		/* Result address */
-	__u16 in_bytes;		/* input bytes */
 	__u64 usr_tag;
 	int tag;
+	__u32 out_bytes;	/* output bytes */
+	__u32 in_bytes;		/* input bytes */
+	__u8 alg_type;		/* Denoted by enum wcrypto_type */
 };
 
 struct wcrypto_rng_op_data {
 	void *out;		/* output */
-	__u16 in_bytes;		/* input bytes */
-	__u16 out_bytes;	/* output bytes */
+	__u32 in_bytes;		/* input bytes */
+	__u32 out_bytes;	/* output bytes */
 };
 
 void *wcrypto_create_rng_ctx(struct wd_queue *q,
