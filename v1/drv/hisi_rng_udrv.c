@@ -135,7 +135,6 @@ int rng_recv(struct wd_queue *q, void **resp)
 	struct wcrypto_rng_msg *msg;
 	struct wcrypto_cb_tag *tag;
 	__u32 currsize = 0;
-	int ret;
 
 	wd_spinlock(&info->lock);
 	msg = info->req_cache[info->recv_idx];
