@@ -217,10 +217,13 @@ int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 		}
 		cookie->tag.wcrypto_tag.tag = tag;
 	}
+	cookie->tag.priv = opdata->priv;
+
 	req = &cookie->msg;
 	ret = digest_request_init(req, opdata, ctxt);
 	if (ret)
 		goto fail_with_cookie;
+
 	if (!opdata->has_next) {
 		cookie->tag.long_data_len = ctxt->io_bytes;
 		ctxt->io_bytes = 0;
