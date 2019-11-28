@@ -126,42 +126,65 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	const char *alg = q->capa.alg;
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	int ret = WD_SUCCESS;
+	struct wcrypto_paras *priv = &q->capa.priv;
+	int ret = -WD_EINVAL;
 
 	if (!strncmp(alg, "rsa", strlen("rsa"))) {
 		qinfo->atype = WCRYPTO_RSA;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_RSA] = qm_fill_rsa_sqe;
 		info->sqe_parse[WCRYPTO_RSA] = qm_parse_rsa_sqe;
+		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "dh", strlen("dh"))) {
 		qinfo->atype = WCRYPTO_DH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
 		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
+		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "zlib", strlen("zlib")) ||
 				!strncmp(alg, "gzip", strlen("gzip"))) {
 		qinfo->atype = WCRYPTO_COMP;
 		info->sqe_size = QM_ZIP_BD_SIZE;
 		info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe;
 		info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe;
+		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "cipher", strlen("cipher"))) {
 		qinfo->atype = WCRYPTO_CIPHER;
 		info->sqe_size = QM_SEC_BD_SIZE;
 		info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
 		info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
+		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "digest", strlen("digest"))) {
 		qinfo->atype = WCRYPTO_DIGEST;
 		info->sqe_size = QM_SEC_BD_SIZE;
 		info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
 		info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
+		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "ec", strlen("ec"))) {
 		qinfo->atype = WCRYPTO_EC;
 		info->sqe_size = QM_RDE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_EC] = qm_fill_rde_sqe;
 		info->sqe_parse[WCRYPTO_EC] = qm_parse_rde_sqe;
+		ret = WD_SUCCESS;
+	} else if (!strncmp(alg, "xts(aes)", strlen("xts(aes)")) ||
+		!strncmp(alg, "xts(sm4)", strlen("xts(sm4)"))) {
+		qinfo->atype = WCRYPTO_CIPHER;
+		if (strstr(q->dev_path, "zip")) {
+			info->sqe_size = QM_ZIP_BD_SIZE;
+			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_zip_cipher_sqe;
+			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_zip_cipher_sqe;
+			ret = WD_SUCCESS;
+		} else if (strstr(q->dev_path, "sec")) {
+			priv->direction = 0;
+			info->sqe_size = QM_SEC_BD_SIZE;
+			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
+			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
+			ret = WD_SUCCESS;
+		} else {/* To be extended */
+			WD_ERR("queue xts alg engine err!\n");
+		}
 	} else { /* To be extended */
 		WD_ERR("queue alg err!\n");
-		ret = -WD_EINVAL;
 	}
 
 	return ret;

@@ -24,6 +24,12 @@ enum hw_comp_alg_type {
 	HW_GZIP,
 };
 
+enum hw_zip_cipher_alg_type {
+	HW_XTS_AES_128 = 0x10,
+	HW_XTS_AES_256 = 0x20,
+	HW_XTS_SM4_128 = 0x30,
+};
+
 enum hw_flush {
 	HZ_SYNC_FLUSH,
 	HZ_FINISH,
@@ -84,4 +90,8 @@ struct hisi_zip_sqe {
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
 int qm_parse_zip_sqe(void *msg,
 		     const struct qm_queue_info *info, __u16 i, __u16 usr);
+int qm_fill_zip_cipher_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
+int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
+		     __u16 i, __u16 usr);
+
 #endif
