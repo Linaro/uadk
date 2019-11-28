@@ -34,6 +34,19 @@
 #define MAX_CIPHER_KEY_SIZE		64
 #define MAX_CIPHER_RETRY_CNT	20000000
 
+#define DES_KEY_SIZE 8
+#define SM4_KEY_SIZE 16
+#define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
+#define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
+#define XTS_MODE_KEY_DIVISOR 2
+
+#define DES_WEAK_KEY_NUM 4
+__u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
+	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
+
 struct wcrypto_cipher_cookie {
 	struct wcrypto_cipher_tag tag;
 	struct wcrypto_cipher_msg msg;
@@ -157,19 +170,63 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 	return ctx;
 }
 
+static int is_des_weak_key(const __u64 *key, __u16 keylen)
+{
+	int i;
+
+	for (i = 0; i < DES_WEAK_KEY_NUM; i++)
+		if (*key == des_weak_key[i])
+			return 1;
+
+	return 0;
+}
+
 int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_cipher_ctx *ctxt = ctx;
+	__u16 length = key_len;
+	int ret = WD_SUCCESS;
 
 	if (!ctx || !key) {
-		WD_ERR("%s(): input param err!\n", __func__);
+		WD_ERR("%s: input param err!\n", __func__);
 		return -WD_EINVAL;
+	}
+
+	if (ctxt->setup.mode == WCRYPTO_CIPHER_XTS)
+		length = key_len / XTS_MODE_KEY_DIVISOR;
+
+	switch (ctxt->setup.alg) {
+	case WCRYPTO_CIPHER_SM4:
+		if (length != SM4_KEY_SIZE)
+			ret = -WD_EINVAL;
+		break;
+	case WCRYPTO_CIPHER_AES:
+		if ((length != AES_KEYSIZE_128) && (length != AES_KEYSIZE_192) &&
+			(length != AES_KEYSIZE_256))
+			ret = -WD_EINVAL;
+		break;
+	case WCRYPTO_CIPHER_DES:
+		if (length != DES_KEY_SIZE || is_des_weak_key((__u64 *)key, length))
+			ret = -WD_EINVAL;
+		break;
+	case WCRYPTO_CIPHER_3DES:
+		if ((length != SEC_3DES_2KEY_SIZE) && (length != SEC_3DES_3KEY_SIZE))
+			ret = -WD_EINVAL;
+		break;
+	default:
+		WD_ERR("%s: input alg err!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (ret != WD_SUCCESS) {
+		WD_ERR("%s: input key length err!\n", __func__);
+		return ret;
 	}
 
 	ctxt->key_bytes = key_len;
 	memcpy(ctxt->key, key, key_len);
 
-	return WD_SUCCESS;
+	return ret;
 }
 
 static int cipher_request_init(struct wcrypto_cipher_msg *req,
