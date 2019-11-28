@@ -119,7 +119,9 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		WD_ERR("create cipher ctx user mm br err!\n");
 		return NULL;
 	}
-	if (strncmp(q->capa.alg, "cipher", strlen("cipher"))) {
+	if (strncmp(q->capa.alg, "cipher", strlen("cipher")) &&
+		strncmp(q->capa.alg, "xts(aes)", strlen("xts(aes)")) &&
+		strncmp(q->capa.alg, "xts(sm4)", strlen("xts(sm4)"))) {
 		WD_ERR("%s(): algorithm mismatching!\n", __func__);
 		return NULL;
 	}

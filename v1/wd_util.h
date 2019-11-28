@@ -41,6 +41,10 @@
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 #define GET_NEGATIVE(val)	(0 - (val))
+#define XTS_MODE_KEY_DIVISOR	2
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
 
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
@@ -108,6 +112,14 @@ struct wd_dif {
 	__u8 ver;
 	__u8 app;
 	struct wd_dif_ctrl ctrl;
+};
+
+struct wd_sec_udata {
+	__u32 src_offset;
+	__u32 dst_offset;
+	struct wd_dif dif;
+	__u16 block_size;
+	__u16 gran_num;
 };
 
 /* Digest tag format of Warpdrive */

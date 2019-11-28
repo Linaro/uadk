@@ -200,14 +200,6 @@ struct hisi_sec_sqe {
 	};
 };
 
-struct wd_sec_udata {
-	__u32 src_offset;
-	__u32 dst_offset;
-	struct wd_dif dif;
-	__u16 block_size;
-	__u16 gran_num;
-};
-
 enum C_ALG {
 	C_ALG_DES  = 0x0,
 	C_ALG_3DES = 0x1,
