@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include "wd_util.h"
 #include "wd_comp.h"
+#include "wd_cipher.h"
 #include "hisi_zip_udrv.h"
 
 #define STREAM_FLUSH_SHIFT 25
@@ -46,6 +47,10 @@
 #define HW_DECOMP_NO_SPACE 0x01
 #define HW_DECOMP_BLK_NOSTART 0x03
 #define HW_DECOMP_NO_CRC 0x04
+#define ZIP_DIF_LEN 8
+#define ZIP_PAD_LEN 56
+#define lower_32_bits(phy) ((__u32)((__u64)(phy)))
+#define upper_32_bits(phy) ((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
 
 struct hisi_zip_sgl {
 	__u32 in_sge_data_off;
@@ -178,7 +183,6 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	if (tag)
 		qm_fill_zip_sqe_with_priv(sqe, tag->priv);
 
-	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
 
 	dbg("%s, %p, %p, %d\n", __func__, info->req_cache[i], sqe,
@@ -193,8 +197,6 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		     __u16 i, __u16 usr)
 {
-	ASSERT(info->req_cache[i]);
-
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
@@ -255,3 +257,161 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 
 	return 1;
 }
+
+static void qm_fill_zip_cipher_sqe_with_priv(struct hisi_zip_sqe *sqe, void *priv)
+{
+	struct wd_sec_udata *udata = priv;
+	__u32 dif_size = 0;
+	__u32 pad_size = 0;
+
+	if (!udata)
+		return;
+
+	sqe->lba_l = lower_32_bits(udata->dif.lba);
+	sqe->lba_h = upper_32_bits(udata->dif.lba);
+	sqe->dw7 = udata->src_offset;
+	sqe->dw8 = udata->dst_offset;
+	sqe->dw10 = (udata->dif.ctrl.gen.page_layout_gen_type) |
+		(udata->dif.ctrl.gen.grd_gen_type << HZ_GRD_GTYPE_SHIFT) |
+		(udata->dif.ctrl.gen.ver_gen_type << HZ_VER_GTYPE_SHIFT) |
+		(udata->dif.ctrl.gen.app_gen_type << HZ_APP_GTYPE_SHIFT) |
+		(udata->dif.app << HZ_APP_SHIFT) | (udata->dif.ver << HZ_VER_SHIFT);
+	sqe->priv_info = udata->dif.priv_info;
+	sqe->dw12 = (udata->dif.ctrl.gen.ref_gen_type) |
+		(udata->dif.ctrl.gen.page_layout_pad_type << HZ_PAD_TYPE_SHIFT) |
+		(udata->dif.ctrl.verify.grd_verify_type << HZ_GRD_VTYPE_SHIFT) |
+		(udata->dif.ctrl.verify.ref_verify_type << HZ_REF_VTYPE_SHIFT) |
+		(udata->block_size << HZ_BLK_SIZE_SHIFT);
+
+	if (udata->dif.ctrl.gen.grd_gen_type) {
+		dif_size = ZIP_DIF_LEN;
+		if (udata->dif.ctrl.gen.page_layout_gen_type)
+			pad_size = ZIP_PAD_LEN;
+	}
+
+	sqe->input_data_length =
+		(udata->block_size + dif_size + pad_size) * udata->gran_num;
+	sqe->dest_avail_out = sqe->input_data_length;
+}
+
+static int fill_zip_cipher_alg(struct wcrypto_cipher_msg *msg,
+		struct hisi_zip_sqe *sqe, __u16 *key_len)
+{
+	int ret = -WD_EINVAL;
+	__u16 len;
+
+	if (msg->mode != WCRYPTO_CIPHER_XTS)
+		return -WD_EINVAL;
+
+	len = msg->key_bytes / XTS_MODE_KEY_DIVISOR;
+
+	switch (msg->alg) {
+	case WCRYPTO_CIPHER_SM4:
+		sqe->dw9 = HW_XTS_SM4_128;
+		ret = WD_SUCCESS;
+		break;
+	case WCRYPTO_CIPHER_AES:
+		if (len == AES_KEYSIZE_128) {
+			sqe->dw9 = HW_XTS_AES_128;
+			ret = WD_SUCCESS;
+		} else if (len == AES_KEYSIZE_256) {
+			sqe->dw9 = HW_XTS_AES_256;
+			ret = WD_SUCCESS;
+		} else {
+			WD_ERR("Zip invalid AES key size!\n");
+		}
+		break;
+	default:
+		WD_ERR("Zip invalid cipher type!\n");
+		break;
+	}
+
+	*key_len = len;
+	return ret;
+}
+
+int qm_fill_zip_cipher_sqe(void *send_msg, struct qm_queue_info *info, __u16 i)
+{
+	struct hisi_zip_sqe *sqe = (struct hisi_zip_sqe *)info->sq_base + i;
+	struct wcrypto_cipher_msg *msg = send_msg;
+	struct wcrypto_cipher_tag *cipher_tag = (void *)(uintptr_t)msg->usr_data;
+	uintptr_t phy;
+	struct wd_queue *q = info->q;
+	__u16 key_len;
+	int ret;
+
+	memset((void *)sqe, 0, sizeof(*sqe));
+
+	ret = fill_zip_cipher_alg(msg, sqe, &key_len);
+	if (ret)
+		return ret;
+
+	phy = (uintptr_t)msg->in;
+	sqe->source_addr_l = lower_32_bits(phy);
+	sqe->source_addr_h = upper_32_bits(phy);
+
+	phy = (uintptr_t)msg->out;
+	sqe->dest_addr_l = lower_32_bits(phy);
+	sqe->dest_addr_h = upper_32_bits(phy);
+	sqe->dw9 |= msg->data_fmt << HZ_BUF_TYPE_SHIFT;
+
+	phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
+	if (!phy) {
+		WD_ERR("Get zip key buf dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->cipher_key1_addr_l = lower_32_bits(phy);
+	sqe->cipher_key1_addr_h = upper_32_bits(phy);
+
+	phy += key_len;
+	sqe->cipher_key2_addr_l = lower_32_bits(phy);
+	sqe->cipher_key2_addr_h = upper_32_bits(phy);
+	if (cipher_tag) {
+		sqe->tag = cipher_tag->wcrypto_tag.ctx_id;
+		qm_fill_zip_cipher_sqe_with_priv(sqe, cipher_tag->priv);
+	}
+
+	info->req_cache[i] = msg;
+
+#ifdef DEBUG_LOG
+	zip_sqe_dump(sqe);
+#endif
+
+	return WD_SUCCESS;
+}
+
+int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
+			__u16 i, __u16 usr)
+{
+	struct wcrypto_cipher_msg *recv_msg = info->req_cache[i];
+	struct hisi_zip_sqe *sqe = hw_msg;
+	struct wd_queue *q = info->q;
+	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
+	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
+	__u64 dma_addr;
+
+	if (usr && sqe->tag != usr)
+		return 0;
+
+	if (status == 0)
+		recv_msg->result = 0;
+	else if (status == HW_IN_DATA_DIF_CHECK_ERR)
+		recv_msg->result = WCRYPTO_SRC_DIF_ERR;
+	else {
+		WD_ERR("bad status(s=0x%x, t=%u)\n", status, type);
+#ifdef DEBUG_LOG
+		zip_sqe_dump(sqe);
+#endif
+		recv_msg->result = WD_IN_EPARA;
+	}
+
+	dma_addr = DMA_ADDR(sqe->cipher_key1_addr_h, sqe->cipher_key1_addr_l);
+	drv_iova_unmap(q, recv_msg->key, (void *)(uintptr_t)dma_addr,
+		recv_msg->key_bytes);
+
+	dbg("%s: %p, %p, %d\n", __func__, info->req_cache[i], sqe,
+		info->sqe_size);
+
+	return 1;
+}
+
