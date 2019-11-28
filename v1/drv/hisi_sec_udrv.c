@@ -344,13 +344,23 @@ static int fill_cipher_bd1_addr(struct wd_queue *q,
 	sqe->type1.data_dst_addr_l = phy & QM_L32BITS_MASK;
 	sqe->type1.data_dst_addr_h = phy >> QM_HADDR_SHIFT;
 
+	if (msg->iv) {
+		phy = (uintptr_t)drv_iova_map(q, msg->iv, msg->iv_bytes);
+		if (!phy) {
+			WD_ERR("Get IV dma address fail for bd1\n");
+			return -WD_ENOMEM;
+		}
+		sqe->type1.c_ivin_addr_l = phy & QM_L32BITS_MASK;
+		sqe->type1.c_ivin_addr_h = phy >> QM_HADDR_SHIFT;
+	}
+
 	return WD_SUCCESS;
 }
 
 static int fill_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_cipher_msg *msg, struct wcrypto_cipher_tag *tag)
 {
-	int ret = WD_SUCCESS;
+	int ret;
 	struct wd_sec_udata *udata = tag->priv;
 
 	sqe->type = BD_TYPE1;
@@ -382,29 +392,10 @@ static int fill_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	return ret;
 }
 
-static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
-		struct wcrypto_cipher_msg *msg, struct wcrypto_cipher_tag *tag)
+static int fill_cipher_bd2_addr(struct wd_queue *q,
+		struct wcrypto_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
-	int ret = WD_SUCCESS;
 	uintptr_t phy;
-
-	sqe->type = BD_TYPE2;
-	sqe->scene = SCENE_IPSEC;
-
-	sqe->de = DATA_DST_ADDR_ENABLE;
-	sqe->type2.c_len = msg->in_bytes;
-
-	ret = qm_fill_cipher_alg(msg, sqe);
-	if (ret != WD_SUCCESS) {
-		WD_ERR("qm_fill_cipher_alg fail!\n");
-		return ret;
-	}
-
-	ret = qm_fill_cipher_mode(msg, sqe);
-	if (ret != WD_SUCCESS) {
-		WD_ERR("qm_fill_cipher_mode fail!\n");
-		return ret;
-	}
 
 	if (msg->mode == WCRYPTO_CIPHER_OFB) {
 		if (msg->in == msg->out) {
@@ -443,10 +434,94 @@ static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	sqe->type2.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->type2.c_ivin_addr_h = HI_U32(phy);
 
+	return WD_SUCCESS;
+}
+
+static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+		struct wcrypto_cipher_msg *msg, struct wcrypto_cipher_tag *tag)
+{
+	int ret;
+
+	sqe->type = BD_TYPE2;
+	sqe->scene = SCENE_IPSEC;
+
+	sqe->de = DATA_DST_ADDR_ENABLE;
+	sqe->type2.c_len = msg->in_bytes;
+
+	ret = qm_fill_cipher_alg(msg, sqe);
+	if (ret != WD_SUCCESS) {
+		WD_ERR("qm_fill_cipher_alg fail!\n");
+		return ret;
+	}
+
+	ret = qm_fill_cipher_mode(msg, sqe);
+	if (ret != WD_SUCCESS) {
+		WD_ERR("qm_fill_cipher_mode fail!\n");
+		return ret;
+	}
+
+	ret = fill_cipher_bd2_addr(q, msg, sqe);
+	if (ret != WD_SUCCESS)
+		return ret;
+
 	if (tag)
 		sqe->type2.tag = tag->wcrypto_tag.ctx_id;
 
 	return ret;
+}
+
+static int cipher_para_check(struct wcrypto_cipher_msg *msg)
+{
+	switch (msg->alg) {
+	case WCRYPTO_CIPHER_SM4:
+		switch (msg->mode) {
+		case WCRYPTO_CIPHER_ECB:
+		case WCRYPTO_CIPHER_CBC:
+		case WCRYPTO_CIPHER_OFB:
+		case WCRYPTO_CIPHER_CTR:
+		case WCRYPTO_CIPHER_XTS:
+			break;
+		default:
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_CIPHER_AES:
+		switch (msg->mode) {
+		case WCRYPTO_CIPHER_ECB:
+		case WCRYPTO_CIPHER_CBC:
+		case WCRYPTO_CIPHER_OFB:
+		case WCRYPTO_CIPHER_CTR:
+		case WCRYPTO_CIPHER_XTS:
+			break;
+		default:
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_CIPHER_DES:
+		switch (msg->mode) {
+		case WCRYPTO_CIPHER_ECB:
+		case WCRYPTO_CIPHER_CBC:
+		case WCRYPTO_CIPHER_OFB:
+			break;
+		default:
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_CIPHER_3DES:
+		switch (msg->mode) {
+		case WCRYPTO_CIPHER_ECB:
+		case WCRYPTO_CIPHER_CBC:
+		case WCRYPTO_CIPHER_OFB:
+			break;
+		default:
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
 }
 
 int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
@@ -457,6 +532,13 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_cipher_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	uintptr_t temp;
 	int ret;
+
+	ret = cipher_para_check(msg);
+	if (ret) {
+		WD_ERR("Invalid cipher alg = %d and mode = %d combination\n",
+			msg->alg, msg->mode);
+		return ret;
+	}
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
 	sqe = (struct hisi_sec_sqe *)temp;
