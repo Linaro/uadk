@@ -538,6 +538,8 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
 	sqe = (struct hisi_sec_sqe *)temp;
 
+	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
+
 	if (tag && tag->priv)
 		ret = fill_cipher_bd1(q, sqe, msg, tag);
 	else
@@ -768,6 +770,8 @@ int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
 	sqe = (struct hisi_sec_sqe *)temp;
+
+	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
 
 	if (tag && tag->priv)
 		ret = fill_digest_bd1(q, sqe, msg, tag);
