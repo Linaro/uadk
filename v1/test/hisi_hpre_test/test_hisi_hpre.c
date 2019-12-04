@@ -110,6 +110,7 @@ struct dh_sw_alg_result {
 	const BIGNUM *x;
 	const BIGNUM *pub_key;//first step
 	const unsigned char *priv_key;//second step, need user malloc
+	int priv_key_size;
 };
 
 struct dh_user_tag_info {
@@ -342,31 +343,6 @@ int hpre_test_write_to_file(__u8 *out, int size, char *out_file,
 
 	/* to be fixed */
 	return fd;
-}
-
-static int hpre_bn_format(void *buff, int len, int buf_len)
-{
-	int i = buf_len - 1;
-	int j = 0;
-	unsigned char *buf = buff;
-
-	if (!buf || len <= 0) {
-		HPRE_TST_PRT("%s params err!\n", __func__);
-		return -1;
-	}
-	if (len == buf_len)
-		return 0;
-
-	if (len < buf_len)
-		return  -1;
-
-	for (j = len - 1; j >= 0; j--, i--) {
-		if (i >= 0)
-			buf[j] = buf[i];
-		else
-			buf[j] = 0;
-	}
-	return 0;
 }
 
 static int test_rsa_key_gen(void *ctx, char *pubkey_file,
@@ -896,7 +872,9 @@ int dh_sw_generate_pubkey(void *ctx, __u32 isAlice)
 
 int dh_sw_generate_privkey(void*ctx, __u32 isAlice)
 {
-	struct dh_sw_alg_result *pdata = NULL;
+	struct dh_sw_alg_result *pdata_bob = NULL;
+	struct dh_sw_alg_result *pdata_alice = NULL;
+
 	int ret =0;
 
 	if (!ctx) {
@@ -904,12 +882,14 @@ int dh_sw_generate_privkey(void*ctx, __u32 isAlice)
 	}
 
 	if (isAlice) {
-		pdata = get_bob_param();
-		ret = DH_compute_key((unsigned char *)get_alice_privkey(), pdata->pub_key, alice);
+		pdata_bob = get_bob_param();
+		pdata_alice = get_alice_param();
+		ret = DH_compute_key((unsigned char *)get_alice_privkey(), pdata_bob->pub_key, alice);
 		if (!ret) {
 			HPRE_TST_PRT("DH_compute_key fail!\n");
 			return -1;
 		}
+		pdata_alice->priv_key_size = ret;
 		ret = 0;
 	} else {
 		HPRE_TST_PRT("bob dont generate privkey now!\n");
@@ -1041,34 +1021,13 @@ const void* get_check_sw_alg_result(enum dh_check_index idx)
 	return pkey;
 }
 
-static int test_hpre_bin_to_crypto_bin(char *dst, char *src, int para_size)
-{
-	int i = 0, j = 0, cnt = 0;
-
-	if (!dst || !src || para_size <= 0) {
-		HPRE_TST_PRT("%s params err!\n", __func__);
-		return -WD_EINVAL;
-	}
-	while (!src[j])
-		j++;
-	if (j == 0 && src == dst)
-		return WD_SUCCESS;
-	for (i = 0, cnt = j; i < para_size; j++, i++) {
-		if (i < para_size - cnt)
-			dst[i] = src[j];
-		else
-			dst[i] = 0;
-	}
-
-	return WD_SUCCESS;
-}
-
 int dh_result_check(enum dh_check_index idx, int keySize,
 					struct wcrypto_dh_op_data opdata, 
 					const void *pkey)
 {
 	unsigned char *pkeyBin = NULL;
-	int ret, needFree = 0, i;
+	int ret, needFree = 0, bin_size;
+	struct dh_sw_alg_result *pdata_alice = NULL;
 
 	if (pkey == NULL) {
 		HPRE_TST_PRT("pkey NULL!\n");
@@ -1090,21 +1049,18 @@ int dh_result_check(enum dh_check_index idx, int keySize,
 			HPRE_TST_PRT("apub_key bn 2 bin fail!\n");
 			goto dh_err;
 		}
+		bin_size = ret;
 	}
-	else
+	else {
 		pkeyBin = (unsigned char *)pkey;
-
-	for (i = keySize - 1; pkeyBin[i] == 0 && i >= 0; i--) {
-		ret = test_hpre_bin_to_crypto_bin(opdata.pri, opdata.pri, keySize);
-		if (ret) {
-			HPRE_TST_PRT("dh out share key format fail!\n");
-			goto dh_err;
-		}
-		break;
+		pdata_alice = get_alice_param();
+		bin_size = pdata_alice->priv_key_size;
 	}
+
 	ret = 0;
-	if (memcmp(pkeyBin, opdata.pri, keySize)) {
-		HPRE_TST_PRT("key %d gen mismatch!\n", idx);
+
+	if (memcmp(pkeyBin, opdata.pri, bin_size)) {
+		HPRE_TST_PRT("key %d gen mismatch, dsize %d!\n", idx, bin_size);
 		ret = -EINVAL;
 	}
 
@@ -1123,7 +1079,6 @@ int dh_result_check(enum dh_check_index idx, int keySize,
 	return ret;
 }
 
-
 int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 {
 	DH *a = NULL, *b = NULL;
@@ -1140,9 +1095,10 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 			*bpub_key_bin = NULL, *bpriv_key_bin = NULL;
 	unsigned char *abuf = NULL;
 	struct wd_dtb g;
+
 	__u32 gbytes;
 	void *tag = NULL;
-	int key_size, key_bits, i;
+	int key_size, key_bits, bin_size = 0;
 
 	if (!pool) {
 		HPRE_TST_PRT("pool null!\n");
@@ -1175,6 +1131,7 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		ret = -1;
 		goto dh_err;
 	}
+
 	/* Set the same parameters on Bob as Alice :) */
 	DH_set0_pqg(b, (BIGNUM *)bp, NULL, (BIGNUM *)bg);
 	if (!DH_generate_key(a)) {
@@ -1239,27 +1196,18 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		ret = BN_bn2bin(apub_key, apub_key_bin);
 		if (!ret) {
 			HPRE_TST_PRT("apub_key bn 2 bin fail!\n");
+			ret = -1;
 			goto dh_err;
 		}
-		ret = hpre_bn_format(apub_key_bin, key_size, key_size);
-		if (ret) {
-			HPRE_TST_PRT("hpre_bn_format bpub_key bin fail!\n");
-			goto dh_err;
-		}
+		bin_size = ret;
 
-		for (i = key_size - 1; apub_key_bin[i] == 0 && i >= 0; i--) {
-			ret = test_hpre_bin_to_crypto_bin(opdata_a.pri, opdata_a.pri, key_size);
-			if (ret) {
-				HPRE_TST_PRT("dh out share key format fail!\n");
-				goto dh_err;
-			}
-			ret = 0;
-			break;
-		}
-
-		if (memcmp(apub_key_bin, opdata_a.pri, key_size)) {
-			HPRE_TST_PRT("Alice HPRE DH key gen pub mismatch!\n");
+		if (memcmp(apub_key_bin, opdata_a.pri, bin_size)) {
+			HPRE_TST_PRT("Alice HPRE DH key gen pub mismatch, dsize %d!\n", bin_size);
 			ret = -EINVAL;
+#ifdef DEBUG
+			print_data(apub_key_bin, key_size, "SOFT");
+			print_data(opdata_a.pri, key_size, "HARDWATE");
+#endif
 			goto dh_err;
 		}
 	}
@@ -1324,25 +1272,15 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 			HPRE_TST_PRT("bpub_key bn 2 bin fail!\n");
 			goto dh_err;
 		}
-		ret = hpre_bn_format(bpub_key_bin, key_size, key_size);
-		if (ret) {
-			HPRE_TST_PRT("hpre_bn_format bpub_key bin fail!\n");
-			goto dh_err;
-		}
+		bin_size = ret;
 
-		for (i = key_size - 1; bpub_key_bin[i] == 0 && i >= 0; i--) {
-			ret = test_hpre_bin_to_crypto_bin(opdata_b.pri, opdata_b.pri, key_size);
-			if (ret) {
-				HPRE_TST_PRT("dh out share key format fail!\n");
-				goto dh_err;
-			}
-			ret = 0;
-			break;
-		}
-
-		if (memcmp(bpub_key_bin, opdata_b.pri, key_size)) {
-			HPRE_TST_PRT("Bob HPRE DH key gen pub mismatch!\n");
+		if (memcmp(bpub_key_bin, opdata_b.pri, bin_size)) {
+			HPRE_TST_PRT("Bob HPRE DH key gen pub mismatch, dsize %d!\n", bin_size);
 			ret = -EINVAL;
+#ifdef DEBUG
+			print_data(bpub_key_bin, key_size, "SOFT");
+			print_data(opdata_b.pri, key_size, "HARDWATE");
+#endif
 			goto dh_err;
 		}
 	}
@@ -1353,6 +1291,7 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		ret = -ENOMEM;
 		goto dh_err;
 	}
+
 	memset(abuf, 0, key_size);
 	if (openssl_check) {
 		ret = DH_compute_key(abuf, bpub_key, a);
@@ -1361,6 +1300,7 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 			ret = -1;
 			goto dh_err;
 		}
+		bin_size = ret;
 	}
 
 	/* Alice computes private key with HW accelerator */
@@ -1390,28 +1330,18 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 		goto dh_err;
 	}
 	if (openssl_check) {
-		ret = hpre_bn_format(abuf, key_size, key_size);
-		if (ret) {
-			HPRE_TST_PRT("hpre_bn_format bpub_key bin fail!\n");
-			goto dh_err;
-		}
-
-		for (i = key_size - 1; abuf[i] == 0 && i >= 0; i--) {
-			ret = test_hpre_bin_to_crypto_bin(opdata_a.pri, opdata_a.pri, key_size);
-			if (ret) {
-				HPRE_TST_PRT("dh out share key format fail!\n");
-				goto dh_err;
-			}
-			ret = 0;
-			break;
-		}
-
-		if (memcmp(abuf, opdata_a.pri, key_size)) {
+		if (memcmp(abuf, opdata_a.pri, bin_size)) {
 			HPRE_TST_PRT("Alice HPRE DH gen privkey mismatch!\n");
 			ret = -EINVAL;
+#ifdef DEBUG
+			print_data(abuf, key_size, "SOFT");
+			print_data(opdata_a.pri, key_size, "HARDWATE");
+#endif
 			goto dh_err;
 		}
 	}
+
+	ret = 0;
 	HPRE_TST_PRT("HPRE DH generate key sucessfully!\n");
 	dh_err:
 	DH_free(a);

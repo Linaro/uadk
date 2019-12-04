@@ -435,15 +435,17 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 			ilen = kbytes;
 		}
 	} else {
+
 		ret = qm_rsa_out_transfer(rsa_msg, hw_msg, &ilen, &olen);
 		if (ret) {
 			WD_ERR("qm rsa out transfer fail!\n");
-			ret = -WD_OUT_EPARA;
-			goto err_with_bin;
+			rsa_msg->result = WD_OUT_EPARA;
+		} else {
+			rsa_msg->result = WD_SUCCESS;
 		}
 	}
+
 	ret = 1;
-err_with_bin:
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_in = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 	drv_iova_unmap(q, rsa_msg->out, (void *)(uintptr_t)dma_out, olen);
@@ -466,12 +468,14 @@ static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 		WD_ERR("dh x para format fail!\n");
 		return ret;
 	}
+
 	ret = qm_crypto_bin_to_hpre_bin(p, (const char *)p,
 				msg->key_bytes, msg->pbytes);
 	if (ret) {
 		WD_ERR("dh p para format fail!\n");
 		return ret;
 	}
+
 	phy = (uintptr_t)drv_iova_map(q, (void *)x,
 				GEN_PARAMS_SZ(msg->key_bytes));
 	if (!phy) {
@@ -507,6 +511,18 @@ static int qm_final_fill_dh_sqe(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	return WD_SUCCESS;
 }
 
+static int qm_dh_out_transfer(struct wcrypto_dh_msg *msg)
+{
+	int i = 0;
+
+	while (!msg->out[i])
+		i++;
+	msg->out_bytes = msg->key_bytes - i;
+
+	return qm_hpre_bin_to_crypto_bin((char *)msg->out,
+		(const char *)msg->out, msg->key_bytes);
+}
+
 int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_hpre_sqe *hw_msg;
@@ -529,6 +545,7 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 			hw_msg->low_in = 0;
 			hw_msg->hi_in = 0;
 		} else {
+
 			ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
 				(const char *)msg->g, msg->key_bytes,
 				msg->gbytes);
@@ -545,6 +562,7 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 			hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
 			hw_msg->hi_in = HI_U32(phy);
 		}
+
 		ret = qm_fill_dh_xp_params(q, msg, hw_msg);
 		if (ret)
 			return ret;
@@ -561,7 +579,6 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 	struct hisi_hpre_sqe *hw_msg = msg;
 	struct wd_queue *q = info->q;
 	__u64 dma_out, dma_in, dma_key;
-	__u16 kbytes;
 	int ret;
 
 	ASSERT(dh_msg);
@@ -578,10 +595,15 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 			ret = -WD_IN_EPARA;
 		}
 	} else {
-		kbytes = dh_msg->key_bytes;
-		dh_msg->result = WD_SUCCESS;
-		dh_msg->out_bytes = kbytes;
+		ret = qm_dh_out_transfer(dh_msg);
+		if (ret) {
+			dh_msg->result = WD_OUT_EPARA;
+			WD_ERR("parse dh format fail!\n");
+		} else {
+			dh_msg->result = WD_SUCCESS;
+		}
 	}
+
 	ret = 1;
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_key = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
