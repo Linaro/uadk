@@ -94,6 +94,8 @@ void drv_flush(struct wd_queue *q)
 
 void *drv_reserve_mem(struct wd_queue *q, size_t size)
 {
+	int errno;
+
 	q->ss_va = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, size);
 
 	if (q->ss_va == MAP_FAILED) {
@@ -101,14 +103,11 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 		return NULL;
 	}
 
-	if (q->dev_flags & UACCE_DEV_NOIOMMU) {
-		errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_DMA, &q->ss_pa);
-		if (errno) {
-			WD_ERR("get PA fail!\n");
-			return NULL;
-		}
-	} else
-		q->ss_pa = q->ss_va;
+	errno = (long)ioctl(q->fd, UACCE_CMD_GET_SS_DMA, &q->ss_pa);
+	if (errno) {
+		WD_ERR("get PA fail!\n");
+		return NULL;
+	}
 
 	return q->ss_va;
 }

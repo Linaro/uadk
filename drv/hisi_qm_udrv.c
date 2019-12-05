@@ -103,7 +103,6 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	struct hisi_qp_ctx qp_ctx = {0};
 	void *vaddr;
 	int ret;
-	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_SVA));
 
 	alloc_obj(info);
 	if (!info) {
@@ -152,20 +151,11 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 		goto err_with_mmio;
 	}
 
-	if (has_dko) {
-		vaddr = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO, 0);
-		if (vaddr == MAP_FAILED) {
-			WD_ERR("mmap dko fail!\n");
-			ret = -errno;
-			goto err_with_mmio;
-		}
-		info->dko_base = vaddr;
-	}
 	qp_ctx.qc_type = priv->op_type;
 	ret = ioctl(q->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("hisi qm set qc_type fail, use default!\n");
-		goto err_with_dko;
+		goto err_with_mmio;
 	}
 
 	info->sqn = qp_ctx.id;
@@ -173,9 +163,6 @@ int hisi_qm_set_queue_dio(struct wd_queue *q)
 	dbg("create hisi qm queue (id = %d, sqe = %p, size = %d, type = %d)\n",
 	    info->sqn, info->sq_base, info->sqe_size, qp_ctx.qc_type);
 	return 0;
-err_with_dko:
-	if (has_dko)
-		wd_drv_unmmap_qfr(q, info->dko_base, UACCE_QFRT_DKO, 0);
 err_with_mmio:
 	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
 err_with_dus:
@@ -188,15 +175,8 @@ err_with_info:
 void hisi_qm_unset_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
-	int has_dko = !(q->dev_flags & (UACCE_DEV_NOIOMMU | UACCE_DEV_SVA));
 
-	if (has_dko) {
-		wd_drv_unmmap_qfr(q, info->dko_base,
-				  UACCE_QFRT_DKO, 0);
-		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
-	} else {
-		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
-	}
+	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
 	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
 	free(info);
 	q->priv = NULL;

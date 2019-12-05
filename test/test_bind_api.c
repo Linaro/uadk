@@ -255,7 +255,7 @@ static int run_test(struct test_options *opts)
 	}
 
 	flags = sched.qs[0].dev_flags;
-	if (!(flags & UACCE_DEV_SVA) || (flags & UACCE_DEV_NOIOMMU)) {
+	if (!(flags & UACCE_DEV_SVA)) {
 		ret = -ENODEV;
 		WD_ERR("This test requires SVA to be supported\n");
 		goto out_with_out_buf;

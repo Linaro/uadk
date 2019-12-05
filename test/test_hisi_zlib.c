@@ -151,14 +151,14 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 			goto buf_free;
 	}
 
-	if (zstrm->q->dev_flags & UACCE_DEV_NOIOMMU) {
+	if (zstrm->q->dev_flags & UACCE_DEV_SVA) {
+		zstrm->next_in_pa = zstrm->next_in;
+		zstrm->next_out_pa = zstrm->next_out;
+	} else {
 		zstrm->next_in_pa = wd_get_pa_from_va(zstrm->q, zstrm->next_in);
 		zstrm->next_out_pa = wd_get_pa_from_va(zstrm->q,
 						       zstrm->next_out);
 		zstrm->ctx_buf = wd_get_pa_from_va(zstrm->q, zstrm->ctx_buf);
-	} else {
-		zstrm->next_in_pa = zstrm->next_in;
-		zstrm->next_out_pa = zstrm->next_out;
 	}
 
 	zstrm->workspace = dma_buf;

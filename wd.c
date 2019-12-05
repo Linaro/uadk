@@ -167,6 +167,7 @@ static int _get_dev_info(struct _dev_info *dinfo)
 
 	dinfo->qfrs_offset[UACCE_QFRT_MMIO] = _get_int_attr(dinfo, "region_mmio_size");
 	dinfo->qfrs_offset[UACCE_QFRT_DUS] = _get_int_attr(dinfo, "region_dus_size");
+	dinfo->qfrs_offset[UACCE_QFRT_SS] = 0;
 
 	/*
 	 * Use available_instances as the base of weight.
