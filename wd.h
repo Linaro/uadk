@@ -141,6 +141,4 @@ extern int wd_recv(struct wd_queue *q, void **resp);
 extern void wd_flush(struct wd_queue *q);
 extern int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
 extern void *wd_reserve_memory(struct wd_queue *q, size_t size);
-extern int wd_share_reserved_memory(struct wd_queue *q,
-				    struct wd_queue *target_q);
 #endif

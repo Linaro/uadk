@@ -220,12 +220,13 @@ out:
 	dbg("ignored\n");
 }
 
-static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
+static struct _dev_info *_find_available_res(struct wd_capa *capa, struct wd_queue *q)
 {
 	struct dirent *device;
 	struct _dev_info dinfo, *dinfop = NULL;
 	DIR *wd_class = NULL;
 	const char *name;
+	char *path = q->dev_path;
 
 	dinfop = calloc(1, sizeof(*dinfop));
 	if (!dinfop) {
@@ -258,6 +259,8 @@ static struct _dev_info *_find_available_res(struct wd_capa *capa, char *path)
 			} else
 				_copy_if_better(dinfop, &dinfo, capa);
 		}
+		if (!(q->dev_flags & UACCE_DEV_SVA))
+			break;
 	}
 
 	if (!dinfop->name[0]) {
@@ -282,7 +285,7 @@ int wd_request_queue(struct wd_queue *q)
 	int ret;
 	struct _dev_info *dev;
 
-	dev = _find_available_res(&q->capa, q->dev_path);
+	dev = _find_available_res(&q->capa, q);
 	if (!dev) {
 		WD_ERR("cannot find available dev\n");
 		return -ENODEV;
@@ -379,9 +382,4 @@ void wd_flush(struct wd_queue *q)
 void *wd_reserve_memory(struct wd_queue *q, size_t size)
 {
 	return drv_reserve_mem(q, size);
-}
-
-int wd_share_reserved_memory(struct wd_queue *q, struct wd_queue *target_q)
-{
-	return ioctl(q->fd, UACCE_CMD_SHARE_SVAS, target_q->fd);
 }

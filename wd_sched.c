@@ -49,7 +49,7 @@ static void __fini_cache(struct wd_scheduler *sched)
 
 int wd_sched_init(struct wd_scheduler *sched)
 {
-	int ret, i, j, k;
+	int ret, i, j;
 	int flags = 0;
 
 	for (i = 0; i < sched->q_num; i++) {
@@ -73,14 +73,6 @@ int wd_sched_init(struct wd_scheduler *sched)
 	if (!sched->ss_region) {
 		ret = -ENOMEM;
 		goto out_with_queues;
-	}
-
-	if (!(flags & UACCE_DEV_SVA)) {
-		for (k = 1; k < sched->q_num; k++) {
-			ret = wd_share_reserved_memory(&sched->qs[k], &sched->qs[0]);
-			if (ret)
-				goto out_with_queues;
-		}
 	}
 
 	sched->cl = sched->msg_cache_num;

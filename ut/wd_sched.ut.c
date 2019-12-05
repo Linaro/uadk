@@ -22,10 +22,6 @@ void *wd_reserve_memory(struct wd_queue *q, size_t size) {
 	return NULL;
 }
 
-int wd_share_reserved_memory(struct wd_queue *q, struct wd_queue *target_q) {
-	return 0;
-}
-
 struct wd_queue *last_used_sq, *last_used_rq;
 int wd_send(struct wd_queue *q, void *req) {
 	last_used_sq = q;
