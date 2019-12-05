@@ -20,7 +20,6 @@
 
 enum {
         UACCE_DEV_SVA = 0x1,
-        UACCE_DEV_NOIOMMU = 0x100,
 };
 
 #define UACCE_API_VER_NOIOMMU_SUBFIX	"_noiommu"
@@ -28,7 +27,6 @@ enum {
 enum uacce_qfrt {
 	UACCE_QFRT_MMIO = 0,	/* device mmio region */
 	UACCE_QFRT_DUS = 1,	/* device user share */
-	UACCE_QFRT_DKO,         /* device kernel-only */
-	UACCE_QFRT_SS,          /* static share memory */
+	UACCE_QFRT_SS = 2,      /* static share memory */
 };
 #endif

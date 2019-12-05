@@ -50,12 +50,13 @@ static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
 	msg = wd_msg->msg = &priv->msgs[i];
 	msg->dw9 = priv->dw9;
 	msg->dest_avail_out = sched->msg_data_size;
-	if (sched->qs[0].dev_flags & UACCE_DEV_NOIOMMU) {
-		data_in = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_in);
-		data_out = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_out);
-	} else {
+
+	if (sched->qs[0].dev_flags & UACCE_DEV_SVA) {
 		data_in = wd_msg->data_in;
 		data_out = wd_msg->data_out;
+	} else {
+		data_in = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_in);
+		data_out = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_out);
 	}
 	msg->source_addr_l = (__u64)data_in & 0xffffffff;
 	msg->source_addr_h = (__u64)data_in >> 32;
