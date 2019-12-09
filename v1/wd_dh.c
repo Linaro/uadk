@@ -140,7 +140,7 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		ctx->cookies[i].msg.alg_type = WCRYPTO_DH;
 		ctx->cookies[i].tag.ctx = ctx;
 		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (__u64)&ctx->cookies[i].tag;
+		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
 	}
 
 	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
@@ -308,7 +308,7 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num)
 		}
 
 		count++;
-		tag = (void *)resp->usr_data;
+		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
 		put_dh_cookie(ctx, (struct wcrypto_dh_cookie *)tag);
