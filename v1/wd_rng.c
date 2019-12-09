@@ -121,7 +121,7 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 		ctx->cookies[i].msg.alg_type = WCRYPTO_RNG;
 		ctx->cookies[i].tag.ctx = ctx;
 		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_tag = (__u64)&ctx->cookies[i].tag;
+		ctx->cookies[i].msg.usr_tag = (uintptr_t)&ctx->cookies[i].tag;
 	}
 
 	return ctx;
@@ -171,7 +171,7 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 		}
 
 		count++;
-		tag = (void *)resp->usr_tag;
+		tag = (void *)(uintptr_t)resp->usr_tag;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
 		put_rng_cookie(ctx, (struct wcrypto_rng_cookie *)tag);
