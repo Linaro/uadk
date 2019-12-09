@@ -123,7 +123,7 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *p)
 	unsigned int dma_num = 0;
 	unsigned int i, act_num;
 
-	p->act_start = (void *)ALIGN((unsigned long)p->usr_mem_start,
+	p->act_start = (void *)ALIGN((uintptr_t)p->usr_mem_start,
 				     p->setup.align_size);
 
 	act_num = p->act_mem_sz / (p->act_hd_sz + p->act_blk_sz);
@@ -179,7 +179,7 @@ static int usr_pool_init(struct wd_blkpool *p)
 	struct wd_blk_hd *hd = NULL;
 	int i;
 
-	p->act_start = (void *)ALIGN((unsigned long)p->usr_mem_start,
+	p->act_start = (void *)ALIGN((uintptr_t)p->usr_mem_start,
 				     sp->align_size);
 	for (i = 0; i < sp->block_num; i++) {
 		hd = p->act_start + (p->act_hd_sz + p->act_blk_sz) * i;

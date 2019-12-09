@@ -466,7 +466,7 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 		ctx->cookies[i].msg.alg_type = WCRYPTO_RSA;
 		ctx->cookies[i].tag.ctx = ctx;
 		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (__u64)&ctx->cookies[i].tag;
+		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
 	}
 
 	return ctx;
@@ -917,7 +917,7 @@ int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num)
 			return ret;
 		}
 		count++;
-		tag = (void *)resp->usr_data;
+		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
 		put_rsa_cookie(ctx, (struct wcrypto_rsa_cookie *)tag);
