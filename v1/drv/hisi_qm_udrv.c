@@ -180,7 +180,7 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
 			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
 			ret = WD_SUCCESS;
-		} else {/* To be extended */
+		} else { /* To be extended */
 			WD_ERR("queue xts alg engine err!\n");
 		}
 	} else { /* To be extended */
