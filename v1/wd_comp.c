@@ -30,7 +30,7 @@
 #define MAX_ALG_LEN 32
 #define MAX_RETRY_COUNTS 200000000
 #define WD_COMP_MAX_CTX		256
-#define WD_COMP_CTX_MSGCACHE_NUM 512
+#define WD_COMP_CTX_MSGCACHE_NUM 1024
 #define MAX_CTX_RSV_SIZE 65536
 
 struct wcrypto_comp_cache {
@@ -204,10 +204,8 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	}
 
 	cache = get_comp_cache(cctx);
-	if (!cache) {
-		WD_ERR("do comp is busy, no more cache!\n");
+	if (!cache)
 		return -WD_EBUSY;
-	}
 
 	msg = &cache->msg;
 	if (tag) {
