@@ -10,18 +10,13 @@
 
 #include "test_lib.h"
 
-/*
- * I observed a worst case of 1.041x expansion with random data, but let's say 2
- * just in case. TODO: reduce this
- */
-#define EXPANSION_RATIO	2
-
 struct hizip_priv {
 	struct test_options *opts;
 	char *in_buf;
 	char *out_buf;
 	unsigned long total_len;
 	struct hisi_zip_sqe *msgs;
+	int flags;
 };
 
 static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
@@ -36,7 +31,7 @@ static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
 		msg->dw9 = HW_ZLIB;
 	else
 		msg->dw9 = HW_GZIP;
-	msg->dest_avail_out = sched->msg_data_size * EXPANSION_RATIO;
+	msg->dest_avail_out = sched->msg_data_size;
 
 	/*
 	 * This test doesn't use the data_in and data_out prepared by
@@ -44,6 +39,18 @@ static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
 	 * buffers to avoid a memcpy.
 	 * TODO: don't alloc buffers
 	 */
+
+	if (!(priv->flags & UACCE_DEV_SVA)) {
+		void *data_in, *data_out;
+
+		data_in = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_in);
+		data_out = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_out);
+
+		msg->source_addr_l = (__u64)data_in & 0xffffffff;
+		msg->source_addr_h = (__u64)data_in >> 32;
+		msg->dest_addr_l = (__u64)data_out & 0xffffffff;
+		msg->dest_addr_h = (__u64)data_out >> 32;
+	}
 }
 
 #ifdef DEBUG_LOG
@@ -121,15 +128,19 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 			in_buf[i + j] = (n >> (8 * j)) & 0xff;
 	}
 
-	msg->data_in = in_buf;
-	msg->data_out = out_buf;
+	if (!(hizip_priv->flags & UACCE_DEV_SVA)) {
+		memcpy(msg->data_in, in_buf, ilen);
+	} else {
+		msg->data_in = in_buf;
+		msg->data_out = out_buf;
 
-	m->source_addr_l = (__u64)in_buf & 0xffffffff;
-	m->source_addr_h = (__u64)in_buf >> 32;
-	m->dest_addr_l = (__u64)out_buf & 0xffffffff;
-	m->dest_addr_h = (__u64)out_buf >> 32;
+		m->source_addr_l = (__u64)in_buf & 0xffffffff;
+		m->source_addr_h = (__u64)in_buf >> 32;
+		m->dest_addr_l = (__u64)out_buf & 0xffffffff;
+		m->dest_addr_h = (__u64)out_buf >> 32;
+	}
+
 	m->input_data_length = ilen;
-
 	hizip_priv->in_buf += ilen;
 	hizip_priv->out_buf += ilen * EXPANSION_RATIO;
 	hizip_priv->total_len -= ilen;
@@ -223,7 +234,6 @@ static struct test_ops test_ops = {
 
 static int run_test(struct test_options *opts)
 {
-	int flags;
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
@@ -254,12 +264,7 @@ static int run_test(struct test_options *opts)
 		goto out_with_out_buf;
 	}
 
-	flags = sched.qs[0].dev_flags;
-	if (!(flags & UACCE_DEV_SVA)) {
-		ret = -ENODEV;
-		WD_ERR("This test requires SVA to be supported\n");
-		goto out_with_out_buf;
-	}
+	hizip_priv.flags = sched.qs[0].dev_flags;
 
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(0, SIGTERM);
