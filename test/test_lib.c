@@ -15,7 +15,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	sched->ss_region_size = 0; /* let system make decision */
 	sched->msg_cache_num = opts->req_cache_num;
 	/* use twice the size of the input data, hope it is enough for output */
-	sched->msg_data_size = opts->block_size;
+	sched->msg_data_size = opts->block_size * EXPANSION_RATIO;
 
 	sched->priv = priv;
 	sched->init_cache = ops->init_cache;

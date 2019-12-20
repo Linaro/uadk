@@ -22,6 +22,12 @@ do { \
 	} \
 } while (0)
 
+/*
+ * I observed a worst case of 1.041x expansion with random data, but let's say 2
+ * just in case. TODO: reduce this
+ */
+#define EXPANSION_RATIO	2
+
 struct test_options {
 #define ZLIB 0
 #define GZIP 1
