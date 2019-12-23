@@ -59,15 +59,19 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int para_size)
 {
 	int i, j = 0, cnt;
+	int k = 0;
 
 	if (!dst || !src || para_size <= 0) {
 		WD_ERR("%s params err!\n", __func__);
-		return -WD_EINVAL;
+		return 0;
 	}
+
 	while (!src[j])
-		j++;
+		k = ++j;
+
 	if (j == 0 && src == dst)
-		return WD_SUCCESS;
+		return para_size;
+
 	for (i = 0, cnt = j; i < para_size; j++, i++) {
 		if (i < para_size - cnt)
 			dst[i] = src[j];
@@ -75,7 +79,7 @@ static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int para_size)
 			dst[i] = 0;
 	}
 
-	return WD_SUCCESS;
+	return para_size - k;
 }
 
 static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey, void **data)
@@ -200,17 +204,25 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 	ret = qm_hpre_bin_to_crypto_bin(bin0->data, (const char *)bin0->data,
 				bin0->bsize);
-	if (ret)
-		return ret;
+	if (!ret)
+		return -WD_EINVAL;
+
+	bin0->dsize = ret;
+
 	ret = qm_hpre_bin_to_crypto_bin(bin1->data, (const char *)bin1->data,
 				bin1->bsize);
-	if (ret)
-		return ret;
+	if (!ret)
+		return -WD_EINVAL;
+
+	bin1->dsize = ret;
+
 	if (bin2) {
 		ret = qm_hpre_bin_to_crypto_bin(bin2->data,
 			(const char *)bin2->data, bin2->bsize);
-		if (ret)
-			return ret;
+		if (!ret)
+			return -WD_EINVAL;
+
+		bin2->dsize = ret;
 	}
 	return WD_SUCCESS;
 }
@@ -226,34 +238,33 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 	struct wd_dtb d, n;
 	int ret;
 
-	wcrypto_get_rsa_kg_out_params(key, &n, &d);
-
 	msg->result = WD_SUCCESS;
 	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
 		msg->out_bytes = CRT_GEN_PARAMS_SZ(kbytes);
 		*in_len = GEN_PARAMS_SZ(kbytes);
 		*out_len = msg->out_bytes;
 		wcrypto_get_rsa_kg_out_crt_params(key, &qinv, &dq, &dp);
-		ret = qm_tri_bin_transfer(&d, &n, NULL);
-		if (ret) {
-			WD_ERR("parse rsa genkey2 d&&n format fail!\n");
-			return ret;
-		}
 		ret = qm_tri_bin_transfer(&qinv, &dq, &dp);
 		if (ret) {
 			WD_ERR("parse rsa genkey qinv&&dq&&dp format fail!\n");
 			return ret;
 		}
+
+		wcrypto_set_rsa_kg_out_crt_psz(key, qinv.dsize,
+					       dq.dsize, dp.dsize);
 	} else if (hw_msg->alg == HPRE_ALG_KG_STD) {
 		msg->out_bytes = GEN_PARAMS_SZ(kbytes);
 		*out_len = msg->out_bytes;
 		*in_len = GEN_PARAMS_SZ(kbytes);
 
+		wcrypto_get_rsa_kg_out_params(key, &d, &n);
 		ret = qm_tri_bin_transfer(&d, &n, NULL);
 		if (ret) {
 			WD_ERR("parse rsa genkey1 d&&n format fail!\n");
 			return ret;
 		}
+
+		wcrypto_set_rsa_kg_out_psz(key, d.dsize, n.dsize);
 	} else {
 		*in_len = kbytes;
 		msg->out_bytes = kbytes;
@@ -513,14 +524,16 @@ static int qm_final_fill_dh_sqe(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 
 static int qm_dh_out_transfer(struct wcrypto_dh_msg *msg)
 {
-	int i = 0;
+	int ret;
 
-	while (!msg->out[i])
-		i++;
-	msg->out_bytes = msg->key_bytes - i;
-
-	return qm_hpre_bin_to_crypto_bin((char *)msg->out,
+	ret = qm_hpre_bin_to_crypto_bin((char *)msg->out,
 		(const char *)msg->out, msg->key_bytes);
+	if (!ret)
+		return -WD_EINVAL;
+
+	msg->out_bytes = ret;
+
+	return WD_SUCCESS;
 }
 
 int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
