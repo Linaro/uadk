@@ -318,6 +318,24 @@ void wcrypto_get_rsa_kg_out_crt_params(struct wcrypto_rsa_kg_out *kout,
 	}
 }
 
+void wcrypto_set_rsa_kg_out_crt_psz(struct wcrypto_rsa_kg_out *kout,
+				    size_t qinv_sz,
+				    size_t dq_sz,
+				    size_t dp_sz)
+{
+	kout->qinvbytes = qinv_sz;
+	kout->dqbytes = dq_sz;
+	kout->dpbytes = dp_sz;
+}
+
+void wcrypto_set_rsa_kg_out_psz(struct wcrypto_rsa_kg_out *kout,
+				size_t d_sz,
+				size_t n_sz)
+{
+	kout->dbytes = d_sz;
+	kout->nbytes = n_sz;
+}
+
 static struct wcrypto_rsa_cookie *get_rsa_cookie(struct wcrypto_rsa_ctx *ctx)
 {
 	int idx = ctx->cidx;
