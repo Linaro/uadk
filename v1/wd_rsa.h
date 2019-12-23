@@ -121,6 +121,13 @@ void wcrypto_get_rsa_kg_out_crt_params(struct wcrypto_rsa_kg_out *kout,
 
 int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data);
 int wcrypto_rsa_kg_out_data(struct wcrypto_rsa_kg_out *ko, char **data);
+void wcrypto_set_rsa_kg_out_crt_psz(struct wcrypto_rsa_kg_out *kout,
+				    size_t qinv_sz,
+				    size_t dq_sz,
+				    size_t dp_sz);
+void wcrypto_set_rsa_kg_out_psz(struct wcrypto_rsa_kg_out *kout,
+				size_t d_sz,
+				size_t n_sz);
 
 /**
  * This is a pair of asynchronous mode RSA API as tag is not NULL,
