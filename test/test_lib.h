@@ -46,6 +46,9 @@ struct test_options {
 #define INJECT_SIG_BIND		(1UL << 0)
 #define INJECT_SIG_WORK		(1UL << 1)
 	unsigned long faults;
+
+#define PERFORMANCE		(1UL << 0)
+	unsigned long option;
 };
 
 struct test_ops {
