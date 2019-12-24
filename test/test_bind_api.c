@@ -94,39 +94,17 @@ static void dbg_sqe(const char *head, struct hisi_zip_sqe *m)
 
 static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 {
-	size_t i, j, ilen;
+	size_t ilen;
 	char *in_buf, *out_buf;
 	struct hisi_zip_sqe *m = msg->msg;
 	struct hizip_priv *hizip_priv = priv;
 	struct test_options *opts = hizip_priv->opts;
-
-	__u32 seed = 0;
-	/*
-	 * TODO: change state for each buffer, to make sure there is no TLB
-	 * aliasing. Can we store the seed into priv_info?
-	 */
-	//__u32 seed = hizip_priv->state++;
-	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
 
 	ilen = hizip_priv->total_len > opts->block_size ?
 		opts->block_size : hizip_priv->total_len;
 
 	in_buf = hizip_priv->in_buf;
 	out_buf = hizip_priv->out_buf;
-
-	/*
-	 * Prepare the input buffer with a reproducible sequence of numbers.
-	 * nrand48() returns a pseudo-random number in the interval [0; 2^31).
-	 * It's not really possible to compress a pseudo-random stream using
-	 * deflate, since it can't find any string repetition. As a result the
-	 * output size is bigger, with a ratio of 1.041.
-	 */
-	for (i = 0; i < ilen; i += 4) {
-		__u64 n = nrand48(rand_state);
-
-		for (j = 0; j < 4 && i + j < ilen; j++)
-			in_buf[i + j] = (n >> (8 * j)) & 0xff;
-	}
 
 	if (!(hizip_priv->flags & UACCE_DEV_SVA)) {
 		memcpy(msg->data_in, in_buf, ilen);
@@ -194,12 +172,16 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 {
 	struct hizip_priv *hizip_priv = priv;
+	struct test_options *opts = hizip_priv->opts;
 	struct hisi_zip_sqe *m = msg->msg;
 	__u32 status = m->dw3 & 0xff;
 	__u32 type = m->dw9 & 0xff;
 	int ret;
-
 	__u32 seed = 0;
+
+	if (opts->option & PERFORMANCE)
+		return 0;
+
 	struct check_rand_ctx rand_ctx = {
 		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
 	};
@@ -232,12 +214,58 @@ static struct test_ops test_ops = {
 	.output = hizip_wd_sched_output,
 };
 
+static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
+{
+	unsigned long remain_size;
+	__u32 block_size, size;
+	__u32 seed = 0;
+	char *in_buf;
+	size_t i, j;
+
+	/*
+	 * TODO: change state for each buffer, to make sure there is no TLB
+	 * aliasing. Can we store the seed into priv_info?
+	 */
+	//__u32 seed = hizip_priv->state++;
+	block_size = hizip_priv->opts->block_size;
+	remain_size = hizip_priv->total_len;
+	in_buf = hizip_priv->in_buf;
+
+	while (remain_size > 0) {
+		unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
+
+		if (remain_size > block_size)
+			size = block_size;
+		else
+			size = remain_size;
+		/*
+		 * Prepare the input buffer with a reproducible sequence of
+		 * numbers. nrand48() returns a pseudo-random number in the
+		 * interval [0; 2^31). It's not really possible to compress a
+		 * pseudo-random stream using deflate, since it can't find any
+		 * string repetition. As a result the output size is bigger,
+		 * with a ratio of 1.041.
+		 */
+		for (i = 0; i < size; i += 4) {
+			__u64 n = nrand48(rand_state);
+
+			for (j = 0; j < 4 && i + j < size; j++)
+				in_buf[i + j] = (n >> (8 * j)) & 0xff;
+		}
+
+		in_buf += size;
+		remain_size -= size;
+	}
+}
+
 static int run_test(struct test_options *opts)
 {
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
 	struct hizip_priv hizip_priv = {0};
+	struct timeval start_tval, end_tval;
+	float tc = 0, speed;
 
 	hizip_priv.opts = opts;
 	hizip_priv.msgs = calloc(opts->req_cache_num, sizeof(*hizip_priv.msgs));
@@ -258,6 +286,8 @@ static int run_test(struct test_options *opts)
 		goto out_with_in_buf;
 	}
 
+	hizip_prepare_input_data(&hizip_priv);
+
 	ret = hizip_test_init(&sched, opts, &test_ops, &hizip_priv);
 	if (ret) {
 		WD_ERR("hizip init fail with %d\n", ret);
@@ -269,6 +299,8 @@ static int run_test(struct test_options *opts)
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(0, SIGTERM);
 
+	gettimeofday(&start_tval, NULL);
+
 	while (hizip_priv.total_len || !wd_sched_empty(&sched)) {
 		dbg("request loop: total_len=%d\n", hizip_priv.total_len);
 		ret = wd_sched_work(&sched, hizip_priv.total_len);
@@ -278,7 +310,16 @@ static int run_test(struct test_options *opts)
 		}
 	}
 
+	gettimeofday(&end_tval, NULL);
+
 	hizip_test_fini(&sched);
+
+	tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
+	              end_tval.tv_usec - start_tval.tv_usec);
+
+	speed = opts->total_len / tc / 1024 / 1024 * 1000 * 1000;
+	fprintf(stderr,"Compress bz=%d, speed=%0.3f MB/s\n",
+		opts->block_size, speed);
 out_with_out_buf:
 	free(out_buf);
 out_with_in_buf:
@@ -301,7 +342,7 @@ int main(int argc, char **argv)
 		.total_len	= opts.block_size * 10,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:o:c:")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = atoi(optarg);
@@ -321,13 +362,28 @@ int main(int argc, char **argv)
 				break;
 			}
 			break;
+		case 'o':
+			switch (optarg[0]) {
+			case 'p':
+				opts.option |= PERFORMANCE;
+				break;
+			default:
+				SYS_ERR_COND(1, "invalid argument to -o: '%s'\n", optarg);
+				break;
+			}
+			break;
+		case 'c':
+			opts.req_cache_num = atoi(optarg);
+			if (opts.req_cache_num <= 0)
+				show_help = 1;
+			break;
 		case 'q':
 			opts.q_num = atoi(optarg);
 			if (opts.q_num <= 0)
 				show_help = 1;
 			break;
 		case 's':
-			opts.total_len = atoi(optarg);
+			opts.total_len = atol(optarg);
 			SYS_ERR_COND(opts.total_len <= 0, "invalid size '%s'\n", optarg);
 			break;
 		default:
@@ -348,7 +404,10 @@ int main(int argc, char **argv)
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
 		     "                  'work' kills the process while the queue is working\n"
+		     "  -o <mode>     options\n"
+		     "                  'perf' omit output check\n"
 		     "  -q <num>      number of queues\n"
+		     "  -c <num>      number of caches\n"
 		     "  -s <size>     total size\n"
 		    );
 
