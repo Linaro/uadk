@@ -72,8 +72,6 @@ static int qm_db_v2(struct qm_queue_info *q, __u8 cmd,
 static int qm_set_queue_regions(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
-	unsigned int has_dko = !(qinfo->dev_flags &
-				(UACCE_DEV_NOIOMMU | UACCE_DEV_PASID));
 	struct qm_queue_info *info = qinfo->priv;
 
 	info->sq_base = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
@@ -83,22 +81,12 @@ static int qm_set_queue_regions(struct wd_queue *q)
 		return -ENOMEM;
 	}
 
-	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, has_dko ?
-					UACCE_QFRT_DKO : UACCE_QFRT_DUS, 0);
+	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
+					UACCE_QFRT_DUS, 0);
 	if (info->mmio_base == MAP_FAILED) {
 		info->mmio_base = NULL;
 		WD_ERR("mmap mmio fail\n");
 		return -ENOMEM;
-	}
-
-	if (has_dko) {
-		info->dko_base = wd_drv_mmap_qfr(q, UACCE_QFRT_DKO,
-						UACCE_QFRT_DUS, 0);
-		if (info->dko_base == MAP_FAILED) {
-			info->dko_base = NULL;
-			WD_ERR("mmap dko fail!\n");
-			return -ENOMEM;
-		}
 	}
 
 	return 0;
@@ -109,15 +97,8 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	if (info->dko_base) {
-		wd_drv_unmmap_qfr(q, info->dko_base,
-				  UACCE_QFRT_DKO, UACCE_QFRT_DUS, 0);
-		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-				  UACCE_QFRT_DKO, 0);
-	} else {
-		wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-				  UACCE_QFRT_DUS, 0);
-	}
+	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
+			UACCE_QFRT_DUS, 0);
 	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
 }
 
