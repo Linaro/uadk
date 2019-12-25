@@ -288,6 +288,17 @@ static int run_test(struct test_options *opts)
 
 	hizip_prepare_input_data(&hizip_priv);
 
+	if (opts->option & PERFORMANCE) {
+		/* hack:
+		 * memset buffer and trigger page fault early in the cpu
+		 * instead of later in the SMMU
+		 * Enhance performance in sva case
+		 * no impact to non-sva case
+		 */
+		memset(out_buf, 5, hizip_priv.total_len * EXPANSION_RATIO);
+		memset(out_buf, 0, hizip_priv.total_len * EXPANSION_RATIO);
+	}
+
 	ret = hizip_test_init(&sched, opts, &test_ops, &hizip_priv);
 	if (ret) {
 		WD_ERR("hizip init fail with %d\n", ret);
