@@ -116,11 +116,12 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 		m->source_addr_h = (__u64)in_buf >> 32;
 		m->dest_addr_l = (__u64)out_buf & 0xffffffff;
 		m->dest_addr_h = (__u64)out_buf >> 32;
+
+		hizip_priv->out_buf += ilen * EXPANSION_RATIO;
 	}
 
 	m->input_data_length = ilen;
 	hizip_priv->in_buf += ilen;
-	hizip_priv->out_buf += ilen * EXPANSION_RATIO;
 	hizip_priv->total_len -= ilen;
 
 	dbg_sqe("zip input", m);
@@ -179,8 +180,15 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	int ret;
 	__u32 seed = 0;
 
-	if (opts->option & PERFORMANCE)
+	if (opts->option & PERFORMANCE) {
+		if (!(hizip_priv->flags & UACCE_DEV_SVA)) {
+			/* for performance test, simulate mmecpy in non-sva mode */
+			memcpy(hizip_priv->out_buf, msg->data_out, m->produced);
+			hizip_priv->out_buf += opts->block_size * EXPANSION_RATIO;
+		}
+
 		return 0;
+	}
 
 	struct check_rand_ctx rand_ctx = {
 		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
