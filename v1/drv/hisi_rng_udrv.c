@@ -49,7 +49,7 @@ int rng_init_queue(struct wd_queue *q)
 
 	qinfo->priv = info;
 	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
-					UACCE_QFRT_DKO, 0);
+					UACCE_QFRT_DUS, 0);
 	if (info->mmio_base == MAP_FAILED) {
 		info->mmio_base = NULL;
 		free(qinfo->priv);
@@ -67,7 +67,7 @@ void rng_uninit_queue(struct wd_queue *q)
 	struct rng_queue_info *info = qinfo->priv;
 
 	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-					UACCE_QFRT_DKO, 0);
+					UACCE_QFRT_DUS, 0);
 
 	free(qinfo->priv);
 	qinfo->priv = NULL;
