@@ -161,7 +161,7 @@ static int __sync_wait(struct wd_scheduler *sched) {
 }
 
 /* return number of msg in the sent cache or negative errno */
-int wd_sched_work(struct wd_scheduler *sched, int remained)
+int wd_sched_work(struct wd_scheduler *sched, unsigned long remained)
 {
 	int ret;
 
