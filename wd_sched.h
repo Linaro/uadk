@@ -43,7 +43,7 @@ struct wd_scheduler {
 
 extern int wd_sched_init(struct wd_scheduler *sched);
 extern void wd_sched_fini(struct wd_scheduler *sched);
-extern int wd_sched_work(struct wd_scheduler *sched, int have_input);
+extern int wd_sched_work(struct wd_scheduler *sched, unsigned long have_input);
 
 static inline bool wd_sched_empty(struct wd_scheduler *sched)
 {
