@@ -46,7 +46,7 @@ struct wcrypto_dh_ctx {
 	struct wcrypto_dh_cookie cookies[WD_DH_CTX_MSG_NUM];
 	__u8 cstatus[WD_DH_CTX_MSG_NUM];
 	int cidx;
-	int key_size;
+	__u32 key_size;
 	int ctx_id;
 	struct wd_queue *q;
 	struct wd_dtb g;
