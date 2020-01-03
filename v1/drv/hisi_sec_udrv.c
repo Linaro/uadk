@@ -64,11 +64,47 @@ static void sec_dump_bd(unsigned int *bd, unsigned int len)
 }
 #endif
 
-static int qm_fill_cipher_alg(struct wcrypto_cipher_msg *msg,
+static int get_aes_c_key_len(struct wcrypto_cipher_msg *msg, __u8 *c_key_len)
+{
+	__u16 len;
+
+	len = msg->key_bytes;
+	if (msg->mode == WCRYPTO_CIPHER_XTS)
+		len = len / XTS_MODE_KEY_DIVISOR;
+
+	if (len == AES_KEYSIZE_128)
+		*c_key_len = CKEY_LEN_128_BIT;
+	else if (len == AES_KEYSIZE_192)
+		*c_key_len = CKEY_LEN_192_BIT;
+	else if (len == AES_KEYSIZE_256)
+		*c_key_len = CKEY_LEN_256_BIT;
+	else {
+		WD_ERR("Invalid AES key size!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int get_3des_c_key_len(struct wcrypto_cipher_msg *msg, __u8 *c_key_len)
+{
+	if (msg->key_bytes == SEC_3DES_2KEY_SIZE)
+		*c_key_len = CKEY_LEN_3DES_2KEY;
+	else if (msg->key_bytes == SEC_3DES_3KEY_SIZE)
+		*c_key_len = CKEY_LEN_3DES_3KEY;
+	else {
+		WD_ERR("Invalid 3DES key size!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_cipher_bd2_alg(struct wcrypto_cipher_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
 	int ret = WD_SUCCESS;
-	__u16 len = 0;
+	__u8 c_key_len = 0;
 
 	switch (msg->alg) {
 	case WCRYPTO_CIPHER_SM4:
@@ -77,19 +113,8 @@ static int qm_fill_cipher_alg(struct wcrypto_cipher_msg *msg,
 		break;
 	case WCRYPTO_CIPHER_AES:
 		sqe->type2.c_alg = C_ALG_AES;
-		len = msg->key_bytes;
-		if (msg->mode == WCRYPTO_CIPHER_XTS)
-			len = len / XTS_MODE_KEY_DIVISOR;
-		if (len == AES_KEYSIZE_128)
-			sqe->type2.c_key_len = CKEY_LEN_128_BIT;
-		else if (len == AES_KEYSIZE_192)
-			sqe->type2.c_key_len = CKEY_LEN_192_BIT;
-		else if (len == AES_KEYSIZE_256)
-			sqe->type2.c_key_len = CKEY_LEN_256_BIT;
-		else {
-			WD_ERR("Invalid AES key size!\n");
-			ret = -WD_EINVAL;
-		}
+		ret = get_aes_c_key_len(msg, &c_key_len);
+		sqe->type2.c_key_len = c_key_len;
 		break;
 	case WCRYPTO_CIPHER_DES:
 		sqe->type2.c_alg = C_ALG_DES;
@@ -97,14 +122,8 @@ static int qm_fill_cipher_alg(struct wcrypto_cipher_msg *msg,
 		break;
 	case WCRYPTO_CIPHER_3DES:
 		sqe->type2.c_alg = C_ALG_3DES;
-		if (msg->key_bytes == SEC_3DES_2KEY_SIZE)
-			sqe->type2.c_key_len = CKEY_LEN_3DES_2KEY;
-		else if (msg->key_bytes == SEC_3DES_3KEY_SIZE)
-			sqe->type2.c_key_len = CKEY_LEN_3DES_3KEY;
-		else {
-			WD_ERR("Invalid 3DES key size!\n");
-			ret = -WD_EINVAL;
-		}
+		ret = get_3des_c_key_len(msg, &c_key_len);
+		sqe->type2.c_key_len = c_key_len;
 		break;
 	default:
 		WD_ERR("Invalid cipher type!\n");
@@ -115,7 +134,7 @@ static int qm_fill_cipher_alg(struct wcrypto_cipher_msg *msg,
 	return ret;
 }
 
-static int qm_fill_cipher_mode(struct wcrypto_cipher_msg *msg,
+static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
 	int ret = WD_SUCCESS;
@@ -222,7 +241,7 @@ static int fill_cipher_bd1_alg(struct wcrypto_cipher_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
 	int ret = WD_SUCCESS;
-	__u16 len = 0;
+	__u8 c_key_len = 0;
 
 	switch (msg->alg) {
 	case WCRYPTO_CIPHER_SM4:
@@ -231,19 +250,8 @@ static int fill_cipher_bd1_alg(struct wcrypto_cipher_msg *msg,
 		break;
 	case WCRYPTO_CIPHER_AES:
 		sqe->type1.c_alg = C_ALG_AES;
-		len = msg->key_bytes;
-		if (msg->mode == WCRYPTO_CIPHER_XTS)
-			len = len / XTS_MODE_KEY_DIVISOR;
-		if (len == AES_KEYSIZE_128)
-			sqe->type1.c_key_len = CKEY_LEN_128_BIT;
-		else if (len == AES_KEYSIZE_192)
-			sqe->type1.c_key_len = CKEY_LEN_192_BIT;
-		else if (len == AES_KEYSIZE_256)
-			sqe->type1.c_key_len = CKEY_LEN_256_BIT;
-		else {
-			WD_ERR("Invalid AES key size for bd1\n");
-			ret = -WD_EINVAL;
-		}
+		ret = get_aes_c_key_len(msg, &c_key_len);
+		sqe->type2.c_key_len = c_key_len;
 		break;
 	case WCRYPTO_CIPHER_DES:
 		sqe->type1.c_alg = C_ALG_DES;
@@ -251,14 +259,8 @@ static int fill_cipher_bd1_alg(struct wcrypto_cipher_msg *msg,
 		break;
 	case WCRYPTO_CIPHER_3DES:
 		sqe->type1.c_alg = C_ALG_3DES;
-		if (msg->key_bytes == SEC_3DES_2KEY_SIZE)
-			sqe->type1.c_key_len = CKEY_LEN_3DES_2KEY;
-		else if (msg->key_bytes == SEC_3DES_3KEY_SIZE)
-			sqe->type1.c_key_len = CKEY_LEN_3DES_3KEY;
-		else {
-			WD_ERR("Invalid 3DES key size for bd1\n");
-			ret = -WD_EINVAL;
-		}
+		ret = get_3des_c_key_len(msg, &c_key_len);
+		sqe->type2.c_key_len = c_key_len;
 		break;
 	default:
 		WD_ERR("Invalid cipher type for bd1\n");
@@ -443,15 +445,15 @@ static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	sqe->de = DATA_DST_ADDR_ENABLE;
 	sqe->type2.c_len = msg->in_bytes;
 
-	ret = qm_fill_cipher_alg(msg, sqe);
+	ret = fill_cipher_bd2_alg(msg, sqe);
 	if (ret != WD_SUCCESS) {
-		WD_ERR("qm_fill_cipher_alg fail!\n");
+		WD_ERR("fill_cipher_bd2_alg fail!\n");
 		return ret;
 	}
 
-	ret = qm_fill_cipher_mode(msg, sqe);
+	ret = fill_cipher_bd2_mode(msg, sqe);
 	if (ret != WD_SUCCESS) {
-		WD_ERR("qm_fill_cipher_mode fail!\n");
+		WD_ERR("fill_cipher_bd2_mode fail!\n");
 		return ret;
 	}
 
@@ -465,58 +467,80 @@ static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	return ret;
 }
 
+static int sm4_mode_check(int mode)
+{
+	switch (mode) {
+	case WCRYPTO_CIPHER_ECB:
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_OFB:
+	case WCRYPTO_CIPHER_CTR:
+	case WCRYPTO_CIPHER_XTS:
+		return WD_SUCCESS;
+	default:
+		return -WD_EINVAL;
+	}
+}
+
+static int aes_mode_check(int mode)
+{
+	switch (mode) {
+	case WCRYPTO_CIPHER_ECB:
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_OFB:
+	case WCRYPTO_CIPHER_CTR:
+	case WCRYPTO_CIPHER_XTS:
+		return WD_SUCCESS;
+	default:
+		return -WD_EINVAL;
+	}
+}
+
+static int des_mode_check(int mode)
+{
+	switch (mode) {
+	case WCRYPTO_CIPHER_ECB:
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_OFB:
+		return WD_SUCCESS;
+	default:
+		return -WD_EINVAL;
+	}
+}
+
+static int triple_des_mode_check(int mode)
+{
+	switch (mode) {
+	case WCRYPTO_CIPHER_ECB:
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_OFB:
+		return WD_SUCCESS;
+	default:
+		return -WD_EINVAL;
+	}
+}
+
 static int cipher_para_check(struct wcrypto_cipher_msg *msg)
 {
+	int ret = WD_SUCCESS;
+
 	switch (msg->alg) {
 	case WCRYPTO_CIPHER_SM4:
-		switch (msg->mode) {
-		case WCRYPTO_CIPHER_ECB:
-		case WCRYPTO_CIPHER_CBC:
-		case WCRYPTO_CIPHER_OFB:
-		case WCRYPTO_CIPHER_CTR:
-		case WCRYPTO_CIPHER_XTS:
-			break;
-		default:
-			return -WD_EINVAL;
-		}
+		ret = sm4_mode_check(msg->mode);
 		break;
 	case WCRYPTO_CIPHER_AES:
-		switch (msg->mode) {
-		case WCRYPTO_CIPHER_ECB:
-		case WCRYPTO_CIPHER_CBC:
-		case WCRYPTO_CIPHER_OFB:
-		case WCRYPTO_CIPHER_CTR:
-		case WCRYPTO_CIPHER_XTS:
-			break;
-		default:
-			return -WD_EINVAL;
-		}
+		ret = aes_mode_check(msg->mode);
 		break;
 	case WCRYPTO_CIPHER_DES:
-		switch (msg->mode) {
-		case WCRYPTO_CIPHER_ECB:
-		case WCRYPTO_CIPHER_CBC:
-		case WCRYPTO_CIPHER_OFB:
-			break;
-		default:
-			return -WD_EINVAL;
-		}
+		ret = des_mode_check(msg->mode);
 		break;
 	case WCRYPTO_CIPHER_3DES:
-		switch (msg->mode) {
-		case WCRYPTO_CIPHER_ECB:
-		case WCRYPTO_CIPHER_CBC:
-		case WCRYPTO_CIPHER_OFB:
-			break;
-		default:
-			return -WD_EINVAL;
-		}
+		ret = triple_des_mode_check(msg->mode);
 		break;
 	default:
 		return -WD_EINVAL;
 	}
 
-	return WD_SUCCESS;
+	return ret;
 }
 
 int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
@@ -557,7 +581,7 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	return ret;
 }
 
-static int qm_fill_digest_alg(struct wcrypto_digest_msg *msg,
+static int fill_digest_bd2_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
 	if (msg->alg < WCRYPTO_SM3 || msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
@@ -746,9 +770,9 @@ static int fill_digest_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		sqe->type2.a_key_addr_h = HI_U32(phy);
 	}
 
-	ret = qm_fill_digest_alg(msg, sqe);
+	ret = fill_digest_bd2_alg(msg, sqe);
 	if (ret != WD_SUCCESS) {
-		WD_ERR("qm_fill_digest_alg fail!\n");
+		WD_ERR("fill_digest_bd2_alg fail!\n");
 		return ret;
 	}
 	qm_fill_digest_long_bd(msg, sqe);

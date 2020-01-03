@@ -53,7 +53,8 @@ struct wcrypto_digest_ctx {
 
 static struct wcrypto_digest_cookie *get_digest_cookie(struct wcrypto_digest_ctx *ctx)
 {
-	int idx = ctx->cidx, cnt = 0;
+	int idx = ctx->cidx;
+	int cnt = 0;
 
 	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
 		idx++;
@@ -85,8 +86,50 @@ static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
 
+	if (ctx->key)
+		memset(ctx->key, 0, MAX_HMAC_KEY_SIZE);
+
 	if (br && br->free && ctx->key)
 		br->free(br->usr, ctx->key);
+}
+
+static int create_ctx_para_check(struct wd_queue *q,
+	struct wcrypto_digest_ctx_setup *setup)
+{
+	if (!q || !setup) {
+		WD_ERR("%s: input param err!\n", __func__);
+		return -WD_EINVAL;
+	}
+	if (setup->mode == WCRYPTO_DIGEST_HMAC) {
+		if (!setup->br.alloc || !setup->br.free ||
+			!setup->br.iova_map || !setup->br.iova_unmap) {
+			WD_ERR("create digest ctx user mm br err!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	if (strncmp(q->capa.alg, "digest", strlen("digest"))) {
+		WD_ERR("%s: algorithm mismatching!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static void init_digest_cookie(struct wcrypto_digest_ctx *ctx,
+	struct wcrypto_digest_ctx_setup *setup)
+{
+	int i;
+
+	for (i = 0; i < WD_DIGEST_CTX_MSG_NUM; i++) {
+		ctx->cookies[i].msg.alg_type = WCRYPTO_DIGEST;
+		ctx->cookies[i].msg.alg = setup->alg;
+		ctx->cookies[i].msg.mode = setup->mode;
+		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
+		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
+		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx->ctx_id;
+		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+	}
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -95,27 +138,13 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 {
 	struct q_info *qinfo;
 	struct wcrypto_digest_ctx *ctx;
-	int i, ctx_id;
+	int ctx_id;
 
-	if (!q || !setup) {
-		WD_ERR("%s(): input param err!\n", __func__);
+	if (create_ctx_para_check(q, setup))
 		return NULL;
-	}
-	if (setup->mode == WCRYPTO_DIGEST_HMAC) {
-		if (!setup->br.alloc || !setup->br.free ||
-			!setup->br.iova_map || !setup->br.iova_unmap) {
-			WD_ERR("create digest ctx user mm br err!\n");
-			return NULL;
-		}
-	}
 
 	qinfo = q->qinfo;
-	if (strncmp(q->capa.alg, "digest", strlen("digest"))) {
-		WD_ERR("%s(): algorithm mismatching!\n", __func__);
-		return NULL;
-	}
-
-	/*lock at ctx  creating/deleting */
+	/* lock at ctx creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
@@ -150,15 +179,7 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		}
 	}
 
-	for (i = 0; i < WD_DIGEST_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WCRYPTO_DIGEST;
-		ctx->cookies[i].msg.alg = setup->alg;
-		ctx->cookies[i].msg.mode = setup->mode;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
-	}
+	init_digest_cookie(ctx, setup);
 
 	return ctx;
 }
@@ -193,14 +214,44 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 	return WD_SUCCESS;
 }
 
+static int digest_recv_sync(struct wcrypto_digest_ctx *ctx,
+		struct wcrypto_digest_op_data *opdata)
+{
+	struct wcrypto_digest_msg *resp;
+	__u64 recv_count = 0;
+	int ret;
+
+	resp = (void *)(uintptr_t)ctx->ctx_id;
+	while (true) {
+		ret = wd_recv(ctx->q, (void **)&resp);
+		if (ret == 0) {
+			if (++recv_count > MAX_DIGEST_RETRY_CNT) {
+				WD_ERR("%s:wcrypto_recv timeout fail!\n", __func__);
+				ret = -WD_ETIMEDOUT;
+				break;
+			}
+		} else if (ret < 0) {
+			WD_ERR("do cipher wcrypto_recv err!\n");
+			break;
+		} else {
+			opdata->out = (void *)resp->out;
+			opdata->out_bytes = resp->out_bytes;
+			opdata->status = resp->result;
+			ret = GET_NEGATIVE(opdata->status);
+			break;
+		}
+	}
+
+	return ret;
+}
+
 int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 		void *tag)
 {
-	struct wcrypto_digest_msg *resp = NULL, *req;
+	struct wcrypto_digest_msg *req;
 	struct wcrypto_digest_ctx *ctxt = ctx;
 	struct wcrypto_digest_cookie *cookie;
 	int ret = -WD_EINVAL;
-	__u64 recv_count = 0;
 
 	if (!ctx || !opdata) {
 		WD_ERR("%s: input param err!\n", __func__);
@@ -237,24 +288,7 @@ int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 	if (tag)
 		return ret;
 
-	resp = (void *)(uintptr_t)ctxt->ctx_id;
-recv_again:
-	ret = wd_recv(ctxt->q, (void **)&resp);
-	if (!ret) {
-		if (++recv_count > MAX_DIGEST_RETRY_CNT) {
-			WD_ERR("%s:wcrypto_recv timeout fail!\n", __func__);
-			ret = -WD_ETIMEDOUT;
-			goto fail_with_cookie;
-		}
-		goto recv_again;
-	} else if (ret < 0) {
-		WD_ERR("do digest wcrypto_recv err!\n");
-		goto fail_with_cookie;
-	}
-	opdata->out = (void *)resp->out;
-	opdata->out_bytes = resp->out_bytes;
-	opdata->status = resp->result;
-	ret = GET_NEGATIVE(opdata->status);
+	ret = digest_recv_sync(ctxt, opdata);
 
 fail_with_cookie:
 	put_digest_cookie(ctxt, cookie);
@@ -266,7 +300,8 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_digest_ctx *ctx;
 	struct wcrypto_digest_msg *resp = NULL;
 	struct wcrypto_digest_tag *tag;
-	int ret, count = 0;
+	int ret;
+	int count = 0;
 
 	do {
 		resp = NULL;
