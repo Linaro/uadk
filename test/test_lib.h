@@ -49,6 +49,8 @@ struct test_options {
 
 #define PERFORMANCE		(1UL << 0)
 	unsigned long option;
+
+	bool verify;
 };
 
 struct test_ops {

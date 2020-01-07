@@ -186,8 +186,6 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 			memcpy(hizip_priv->out_buf, msg->data_out, m->produced);
 			hizip_priv->out_buf += opts->block_size * EXPANSION_RATIO;
 		}
-
-		return 0;
 	}
 
 	struct check_rand_ctx rand_ctx = {
@@ -201,6 +199,9 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 
 	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
 		     status, type);
+
+	if (!opts->verify)
+		return 0;
 
 	ret = hizip_check_output(msg->data_out, m->produced, hizip_check_rand,
 				 &rand_ctx);
@@ -359,9 +360,10 @@ int main(int argc, char **argv)
 		.q_num		= 1,
 		.block_size	= 512000,
 		.total_len	= opts.block_size * 10,
+		.verify		= false,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:o:c:")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:o:c:V")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = atoi(optarg);
@@ -405,6 +407,9 @@ int main(int argc, char **argv)
 			opts.total_len = atol(optarg);
 			SYS_ERR_COND(opts.total_len <= 0, "invalid size '%s'\n", optarg);
 			break;
+		case 'V':
+			opts.verify = true;
+			break;
 		default:
 			show_help = 1;
 			break;
@@ -424,10 +429,11 @@ int main(int argc, char **argv)
 		     "                  'bind' kills the process after bind\n"
 		     "                  'work' kills the process while the queue is working\n"
 		     "  -o <mode>     options\n"
-		     "                  'perf' omit output check\n"
+		     "                  'perf' prefaults the output pages\n"
 		     "  -q <num>      number of queues\n"
 		     "  -c <num>      number of caches\n"
 		     "  -s <size>     total size\n"
+		     "  -V            verify output\n"
 		    );
 
 	return run_test(&opts);
