@@ -41,6 +41,8 @@ struct test_options {
 	int block_size;
 	int req_cache_num;
 	int q_num;
+	int run_num;
+	int warmup_num;
 	unsigned long total_len;
 
 #define INJECT_SIG_BIND		(1UL << 0)

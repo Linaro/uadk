@@ -10,6 +10,13 @@
 
 #include "test_lib.h"
 
+#define MAX_RUNS	1024
+
+struct hizip_stats {
+	double			run_time;
+	double			speed;
+};
+
 struct hizip_priv {
 	struct test_options *opts;
 	char *in_buf;
@@ -267,14 +274,13 @@ static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
 	}
 }
 
-static int run_test(struct test_options *opts)
+static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
 	struct hizip_priv hizip_priv = {0};
 	struct timeval start_tval, end_tval;
-	float tc = 0, speed;
 
 	hizip_priv.opts = opts;
 	hizip_priv.msgs = calloc(opts->req_cache_num, sizeof(*hizip_priv.msgs));
@@ -334,12 +340,12 @@ static int run_test(struct test_options *opts)
 
 	hizip_test_fini(&sched);
 
-	tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
-	              end_tval.tv_usec - start_tval.tv_usec);
+	stats->run_time = (end_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+			  end_tval.tv_usec - start_tval.tv_usec;
+	stats->speed = opts->total_len / stats->run_time / 1024 / 1024 *
+		       1000 * 1000;
 
-	speed = opts->total_len / tc / 1024 / 1024 * 1000 * 1000;
-	fprintf(stderr,"Compress bz=%d, speed=%0.3f MB/s\n",
-		opts->block_size, speed);
+
 out_with_out_buf:
 	free(out_buf);
 out_with_in_buf:
@@ -347,6 +353,37 @@ out_with_in_buf:
 out_with_msgs:
 	free(hizip_priv.msgs);
 	return ret;
+}
+
+static int run_test(struct test_options *opts)
+{
+	int i;
+	int ret;
+	int n = opts->run_num;
+	int w = opts->warmup_num;
+	struct hizip_stats avg = {0};
+	struct hizip_stats stats[n];
+
+	for (i = 0; i < w; i++) {
+		ret = run_one_test(opts, &stats[0]);
+		if (ret < 0)
+			return ret;
+	}
+	for (i = 0; i < n; i++) {
+		ret = run_one_test(opts, &stats[i]);
+		if (ret < 0)
+			return ret;
+
+		avg.run_time += stats[i].run_time;
+		avg.speed += stats[i].speed;
+	}
+
+	avg.run_time /= n;
+	avg.speed /= n;
+
+	fprintf(stderr, "Compress bz=%d, speed=%0.3f MB/s (N=%d)\n",
+		opts->block_size, avg.speed, n);
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -358,12 +395,14 @@ int main(int argc, char **argv)
 		.op_type	= DEFLATE,
 		.req_cache_num	= 4,
 		.q_num		= 1,
+		.run_num	= 1,
+		.warmup_num	= 0,
 		.block_size	= 512000,
 		.total_len	= opts.block_size * 10,
 		.verify		= false,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:o:c:V")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = atoi(optarg);
@@ -398,6 +437,13 @@ int main(int argc, char **argv)
 			if (opts.req_cache_num <= 0)
 				show_help = 1;
 			break;
+		case 'n':
+			opts.run_num = atoi(optarg);
+			SYS_ERR_COND(opts.run_num > MAX_RUNS,
+				     "No more than %d runs supported\n", MAX_RUNS);
+			if (opts.run_num <= 0)
+				show_help = 1;
+			break;
 		case 'q':
 			opts.q_num = atoi(optarg);
 			if (opts.q_num <= 0)
@@ -409,6 +455,14 @@ int main(int argc, char **argv)
 			break;
 		case 'V':
 			opts.verify = true;
+			break;
+		case 'w':
+			opts.warmup_num = atoi(optarg);
+			SYS_ERR_COND(opts.warmup_num > MAX_RUNS,
+				     "No more than %d warmup runs supported\n",
+				     MAX_RUNS);
+			if (opts.warmup_num < 0)
+				show_help = 1;
 			break;
 		default:
 			show_help = 1;
@@ -428,12 +482,14 @@ int main(int argc, char **argv)
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
 		     "                  'work' kills the process while the queue is working\n"
+		     "  -n <num>      number of runs\n"
 		     "  -o <mode>     options\n"
 		     "                  'perf' prefaults the output pages\n"
 		     "  -q <num>      number of queues\n"
 		     "  -c <num>      number of caches\n"
 		     "  -s <size>     total size\n"
 		     "  -V            verify output\n"
+		     "  -w <num>      number of warmup runs\n"
 		    );
 
 	return run_test(&opts);
