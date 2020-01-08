@@ -5,16 +5,54 @@
  * - what happens on fork
  * - multiple threads binding to the same device
  */
+#include <fenv.h>
+#include <math.h>
 #include <signal.h>
+#include <time.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 #include <sys/types.h>
 
 #include "test_lib.h"
 
 #define MAX_RUNS	1024
 
+enum hizip_stats_variable {
+	ST_SEND,
+	ST_RECV,
+	ST_SEND_RETRY,
+	ST_RECV_RETRY,
+
+	ST_SETUP_TIME,
+	ST_RUN_TIME,
+	ST_CPU_TIME,
+
+	/* CPU usage */
+	ST_USER_TIME,
+	ST_SYSTEM_TIME,
+
+	/* Faults */
+	ST_MINFLT,
+	ST_MAJFLT,
+
+	/* Context switches */
+	ST_INVCTX,
+	ST_VCTX,
+
+	/* Signals */
+	ST_SIGNALS,
+
+	/* Aggregated */
+	ST_SPEED,
+	ST_TOTAL_SPEED,
+	ST_CPU_IDLE,
+	ST_FAULTS,
+
+	NUM_STATS
+};
+
 struct hizip_stats {
-	double			run_time;
-	double			speed;
+	double v[NUM_STATS];
 };
 
 struct hizip_priv {
@@ -276,11 +314,15 @@ static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
 
 static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
+	int i;
+	double v;
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
 	struct hizip_priv hizip_priv = {0};
-	struct timeval start_tval, end_tval;
+	struct timespec setup_time, start_time, end_time;
+	struct timespec setup_cputime, start_cputime, end_cputime;
+	struct rusage setup_rusage, start_rusage, end_rusage;
 
 	hizip_priv.opts = opts;
 	hizip_priv.msgs = calloc(opts->req_cache_num, sizeof(*hizip_priv.msgs));
@@ -302,6 +344,10 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	}
 
 	hizip_prepare_input_data(&hizip_priv);
+
+	clock_gettime(CLOCK_MONOTONIC_RAW, &setup_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &setup_cputime);
+	getrusage(RUSAGE_SELF, &setup_rusage);
 
 	if (opts->option & PERFORMANCE) {
 		/* hack:
@@ -325,7 +371,9 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(0, SIGTERM);
 
-	gettimeofday(&start_tval, NULL);
+	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
+	getrusage(RUSAGE_SELF, &start_rusage);
 
 	while (hizip_priv.total_len || !wd_sched_empty(&sched)) {
 		dbg("request loop: total_len=%d\n", hizip_priv.total_len);
@@ -336,15 +384,53 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		}
 	}
 
-	gettimeofday(&end_tval, NULL);
+	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_cputime);
+	getrusage(RUSAGE_SELF, &end_rusage);
+
+	stats->v[ST_SETUP_TIME] = (start_time.tv_sec - setup_time.tv_sec) *
+		1000000000 + start_time.tv_nsec - setup_time.tv_nsec;
+	stats->v[ST_RUN_TIME] = (end_time.tv_sec - start_time.tv_sec) *
+		1000000000 + end_time.tv_nsec - start_time.tv_nsec;
+
+	stats->v[ST_CPU_TIME] = (end_cputime.tv_sec - setup_cputime.tv_sec) *
+		1000000000 + end_cputime.tv_nsec - setup_cputime.tv_nsec;
+	stats->v[ST_USER_TIME] = (end_rusage.ru_utime.tv_sec -
+				  setup_rusage.ru_utime.tv_sec) * 1000000 +
+		end_rusage.ru_utime.tv_usec - setup_rusage.ru_utime.tv_usec;
+	stats->v[ST_SYSTEM_TIME] = (end_rusage.ru_stime.tv_sec -
+				    setup_rusage.ru_stime.tv_sec) * 1000000 +
+		end_rusage.ru_stime.tv_usec - setup_rusage.ru_stime.tv_usec;
+
+	stats->v[ST_MINFLT] = end_rusage.ru_minflt - setup_rusage.ru_minflt;
+	stats->v[ST_MAJFLT] = end_rusage.ru_majflt - setup_rusage.ru_majflt;
+
+	stats->v[ST_VCTX] = end_rusage.ru_nvcsw - setup_rusage.ru_nvcsw;
+	stats->v[ST_INVCTX] = end_rusage.ru_nivcsw - setup_rusage.ru_nivcsw;
+
+	stats->v[ST_SIGNALS] = end_rusage.ru_nsignals - setup_rusage.ru_nsignals;
+
+	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
+			    stats->v[ST_RECV_RETRY] = 0;
+	for (i = 0; i < opts->q_num; i++) {
+		stats->v[ST_SEND] += sched.stat[i].send;
+		stats->v[ST_RECV] += sched.stat[i].recv;
+		stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
+		stats->v[ST_RECV_RETRY] += sched.stat[i].recv_retries;
+	}
+
+	stats->v[ST_SPEED] = opts->total_len / (stats->v[ST_RUN_TIME] / 1000) /
+		1024 / 1024 * 1000 * 1000;
+
+	stats->v[ST_TOTAL_SPEED] = opts->total_len /
+		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
+		1024 / 1024 * 1000 * 1000;
+
+	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
+	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
+	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 
 	hizip_test_fini(&sched);
-
-	stats->run_time = (end_tval.tv_sec - start_tval.tv_sec) * 1000000 +
-			  end_tval.tv_usec - start_tval.tv_usec;
-	stats->speed = opts->total_len / stats->run_time / 1024 / 1024 *
-		       1000 * 1000;
-
 
 out_with_out_buf:
 	free(out_buf);
@@ -355,6 +441,63 @@ out_with_msgs:
 	return ret;
 }
 
+static int add_avg(struct hizip_stats *avg, struct hizip_stats *new)
+{
+	int i;
+
+	for (i = 0; i < NUM_STATS; i++)
+		/* TODO: overflow */
+		avg->v[i] += new->v[i];
+	return 0;
+}
+
+static int comp_avg(struct hizip_stats *avg, unsigned long n)
+{
+	int i;
+
+	for (i = 0; i < NUM_STATS; i++)
+		avg->v[i] /= n;
+	return 0;
+}
+
+static int add_std(struct hizip_stats *std, struct hizip_stats *avg,
+		   struct hizip_stats *new)
+{
+	int i;
+	double v;
+
+	for (i = 0; i < NUM_STATS; i++) {
+		v = new->v[i] - avg->v[i];
+		std->v[i] = v * v;
+	}
+	return 0;
+}
+
+static int comp_std(struct hizip_stats *std, struct hizip_stats *variation,
+		    struct hizip_stats *avg, unsigned long n)
+{
+	int i;
+
+	errno = 0;
+	feclearexcept(FE_ALL_EXCEPT);
+
+	for (i = 0; i < NUM_STATS; i++) {
+		std->v[i] = sqrt(std->v[i] / (n + 1));
+		variation->v[i] = std->v[i] / avg->v[i] * 100;
+	}
+
+	if (errno) {
+		fprintf(stderr, "math error %d\n", errno);
+		return 1;
+	} else if (fetestexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW |
+				FE_UNDERFLOW)) {
+		feraiseexcept(FE_ALL_EXCEPT);
+		return 1;
+	}
+	return 0;
+}
+
+
 static int run_test(struct test_options *opts)
 {
 	int i;
@@ -362,6 +505,8 @@ static int run_test(struct test_options *opts)
 	int n = opts->run_num;
 	int w = opts->warmup_num;
 	struct hizip_stats avg = {0};
+	struct hizip_stats std = {0};
+	struct hizip_stats variation = {0};
 	struct hizip_stats stats[n];
 
 	for (i = 0; i < w; i++) {
@@ -374,15 +519,51 @@ static int run_test(struct test_options *opts)
 		if (ret < 0)
 			return ret;
 
-		avg.run_time += stats[i].run_time;
-		avg.speed += stats[i].speed;
+		add_avg(&avg, &stats[i]);
 	}
+	comp_avg(&avg, n);
 
-	avg.run_time /= n;
-	avg.speed /= n;
+	/* Sum differences from mean */
+	for (i = 0; i < n; i++)
+		add_std(&std, &avg, &stats[i]);
 
-	fprintf(stderr, "Compress bz=%d, speed=%0.3f MB/s (N=%d)\n",
-		opts->block_size, avg.speed, n);
+	/* Compute standard deviation, and variation coefficient */
+	comp_std(&std, &variation, &avg, n);
+
+	fprintf(stderr,
+		"Compress bz=%d nb=%lu, speed=%.1f MB/s (±%0.1f%% N=%d) overall=%.1f MB/s (±%0.1f%%)\n",
+		opts->block_size, opts->total_len / opts->block_size,
+		avg.v[ST_SPEED], variation.v[ST_SPEED], n,
+		avg.v[ST_TOTAL_SPEED], variation.v[ST_TOTAL_SPEED]);
+
+	fprintf(stderr,
+		" send          %12.0f     ±%0.1f%%\n"
+		" recv          %12.0f     ±%0.1f%%\n"
+		" send retry    %12.0f     ±%0.1f%%\n"
+		" recv retry    %12.0f     ±%0.1f%%\n"
+		" setup time    %12.2f us  ±%0.1f%%\n"
+		" run time      %12.2f us  ±%0.1f%%\n"
+		" CPU time      %12.2f us  ±%0.1f%%\n"
+		" CPU idle      %12.2f %%   ±%0.1f%%\n"
+		" user time     %12.2f us  ±%0.1f%%\n"
+		" system time   %12.2f us  ±%0.1f%%\n"
+		" faults        %12.0f     ±%0.1f%%\n"
+		" voluntary cs  %12.0f     ±%0.1f%%\n"
+		" invol cs      %12.0f     ±%0.1f%%\n",
+		avg.v[ST_SEND],			variation.v[ST_SEND],
+		avg.v[ST_RECV],			variation.v[ST_RECV],
+		avg.v[ST_SEND_RETRY],		variation.v[ST_SEND_RETRY],
+		avg.v[ST_RECV_RETRY],		variation.v[ST_RECV_RETRY],
+		avg.v[ST_SETUP_TIME] / 1000,	variation.v[ST_SETUP_TIME],
+		avg.v[ST_RUN_TIME] / 1000,	variation.v[ST_RUN_TIME],
+		avg.v[ST_CPU_TIME] / 1000,	variation.v[ST_CPU_TIME],
+		avg.v[ST_CPU_IDLE],		variation.v[ST_CPU_IDLE],
+		avg.v[ST_USER_TIME],		variation.v[ST_USER_TIME],
+		avg.v[ST_SYSTEM_TIME],		variation.v[ST_SYSTEM_TIME],
+		avg.v[ST_FAULTS],		variation.v[ST_FAULTS],
+		avg.v[ST_VCTX],			variation.v[ST_VCTX],
+		avg.v[ST_INVCTX],		variation.v[ST_INVCTX]);
+
 	return 0;
 }
 

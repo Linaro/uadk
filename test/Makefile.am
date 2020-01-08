@@ -11,6 +11,9 @@ test_hisi_zip_LDADD=../.libs/libwd.a
 test_hisi_zlib_LDADD=../.libs/libwd.a
 test_bind_api_LDADD=../.libs/libwd.a
 
+# For statistics
+test_bind_api_LDADD+=-lm
+
 if HAVE_ZLIB
 test_bind_api_SOURCES+=test_zlib.c
 test_bind_api_LDADD+=-lz
