@@ -48,6 +48,8 @@ enum hizip_stats_variable {
 	ST_CPU_IDLE,
 	ST_FAULTS,
 
+	ST_COMPRESSION_RATIO,
+
 	NUM_STATS
 };
 
@@ -62,6 +64,7 @@ struct hizip_priv {
 	unsigned long total_len;
 	struct hisi_zip_sqe *msgs;
 	int flags;
+	size_t total_out;
 };
 
 static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
@@ -245,6 +248,8 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
 		     status, type);
 
+	hizip_priv->total_out += m->produced;
+
 	if (!opts->verify)
 		return 0;
 
@@ -418,6 +423,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
 		stats->v[ST_RECV_RETRY] += sched.stat[i].recv_retries;
 	}
+	stats->v[ST_COMPRESSION_RATIO] = (double)opts->total_len /
+					 hizip_priv.total_out * 100;
 
 	stats->v[ST_SPEED] = opts->total_len / (stats->v[ST_RUN_TIME] / 1000) /
 		1024 / 1024 * 1000 * 1000;
@@ -549,7 +556,8 @@ static int run_test(struct test_options *opts)
 		" system time   %12.2f us  ±%0.1f%%\n"
 		" faults        %12.0f     ±%0.1f%%\n"
 		" voluntary cs  %12.0f     ±%0.1f%%\n"
-		" invol cs      %12.0f     ±%0.1f%%\n",
+		" invol cs      %12.0f     ±%0.1f%%\n"
+		" compression   %12.0f %%   ±%0.1f%%\n",
 		avg.v[ST_SEND],			variation.v[ST_SEND],
 		avg.v[ST_RECV],			variation.v[ST_RECV],
 		avg.v[ST_SEND_RETRY],		variation.v[ST_SEND_RETRY],
@@ -562,7 +570,8 @@ static int run_test(struct test_options *opts)
 		avg.v[ST_SYSTEM_TIME],		variation.v[ST_SYSTEM_TIME],
 		avg.v[ST_FAULTS],		variation.v[ST_FAULTS],
 		avg.v[ST_VCTX],			variation.v[ST_VCTX],
-		avg.v[ST_INVCTX],		variation.v[ST_INVCTX]);
+		avg.v[ST_INVCTX],		variation.v[ST_INVCTX],
+		avg.v[ST_COMPRESSION_RATIO],	variation.v[ST_COMPRESSION_RATIO]);
 
 	return 0;
 }
