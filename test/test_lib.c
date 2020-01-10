@@ -11,6 +11,9 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	char *alg;
 	struct hisi_qm_priv *qm_priv;
 
+	if (opts->option & TEST_ZLIB)
+		return 0;
+
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
 	sched->msg_cache_num = opts->req_cache_num;
@@ -51,8 +54,10 @@ err_with_qs:
 /*
  * Release the scheduler
  */
-void hizip_test_fini(struct wd_scheduler *sched)
+void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 {
+	if (opts->option & TEST_ZLIB)
+		return;
 	wd_sched_fini(sched);
 	free(sched->qs);
 }
