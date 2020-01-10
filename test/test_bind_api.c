@@ -610,8 +610,8 @@ int main(int argc, char **argv)
 	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:")) != -1) {
 		switch (opt) {
 		case 'b':
-			opts.block_size = atoi(optarg);
-			if (opts.block_size  <= 0)
+			opts.block_size = strtol(optarg, NULL, 0);
+			if (opts.block_size <= 0)
 				show_help = 1;
 			break;
 		case 'k':
@@ -638,31 +638,31 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'c':
-			opts.req_cache_num = atoi(optarg);
+			opts.req_cache_num = strtol(optarg, NULL, 0);
 			if (opts.req_cache_num <= 0)
 				show_help = 1;
 			break;
 		case 'n':
-			opts.run_num = atoi(optarg);
+			opts.run_num = strtol(optarg, NULL, 0);
 			SYS_ERR_COND(opts.run_num > MAX_RUNS,
 				     "No more than %d runs supported\n", MAX_RUNS);
 			if (opts.run_num <= 0)
 				show_help = 1;
 			break;
 		case 'q':
-			opts.q_num = atoi(optarg);
+			opts.q_num = strtol(optarg, NULL, 0);
 			if (opts.q_num <= 0)
 				show_help = 1;
 			break;
 		case 's':
-			opts.total_len = atol(optarg);
+			opts.total_len = strtol(optarg, NULL, 0);
 			SYS_ERR_COND(opts.total_len <= 0, "invalid size '%s'\n", optarg);
 			break;
 		case 'V':
 			opts.verify = true;
 			break;
 		case 'w':
-			opts.warmup_num = atoi(optarg);
+			opts.warmup_num = strtol(optarg, NULL, 0);
 			SYS_ERR_COND(opts.warmup_num > MAX_RUNS,
 				     "No more than %d warmup runs supported\n",
 				     MAX_RUNS);
