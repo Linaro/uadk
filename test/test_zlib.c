@@ -66,3 +66,47 @@ out_free_buf:
 	free(out_buffer);
 	return ret;
 }
+
+int zlib_deflate(void *output, unsigned int out_size,
+		 void *input, unsigned int in_size,
+		 unsigned long *produced)
+{
+	int ret;
+	z_stream stream = {
+		.next_in	= input,
+		.avail_in	= in_size,
+		.next_out	= output,
+		.avail_out	= out_size,
+	};
+
+	/* Pass -15 to output raw deflate data */
+	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, -15, 9,
+			   Z_DEFAULT_STRATEGY);
+	if (ret != Z_OK) {
+		WD_ERR("zlib deflateInit: %d\n", ret);
+		return -EINVAL;
+	}
+
+	do {
+		ret = deflate(&stream, Z_FINISH);
+		if (ret == Z_STREAM_ERROR || ret == Z_BUF_ERROR) {
+			WD_ERR("zlib error %d - %s\n", ret, stream.msg);
+			ret = -ENOSR;
+			break;
+		} else if (!stream.avail_in) {
+			if (ret != Z_STREAM_END)
+				WD_ERR("unexpected deflate return value %d\n", ret);
+			*produced = stream.total_out;
+			ret = 0;
+			break;
+		} else if (!stream.avail_out) {
+			WD_ERR("No more output available\n");
+			ret = -ENOSPC;
+			break;
+		}
+	} while (ret == Z_OK);
+
+	deflateEnd(&stream);
+
+	return ret;
+}

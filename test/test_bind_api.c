@@ -262,6 +262,28 @@ static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
 	}
 }
 
+static int hizip_test_sched(struct wd_scheduler *sched,
+			    struct test_options *opts, struct hizip_priv *priv)
+{
+	int ret = 0;
+
+	if (opts->option & TEST_ZLIB)
+		return zlib_deflate(priv->out_buf, priv->total_len *
+				    EXPANSION_RATIO, priv->in_buf,
+				    priv->total_len, &priv->total_out);
+
+	while (priv->total_len || !wd_sched_empty(sched)) {
+		dbg("request loop: total_len=%d\n", priv->total_len);
+		ret = wd_sched_work(sched, priv->total_len);
+		if (ret < 0) {
+			WD_ERR("wd_sched_work: %d\n", ret);
+			break;
+		}
+	}
+
+	return ret;
+}
+
 static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 {
 	int i;
@@ -383,8 +405,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_with_out_buf;
 	}
-
-	hizip_priv.flags = sched.qs[0].dev_flags;
+	if (sched.qs)
+		hizip_priv.flags = sched.qs[0].dev_flags;
 
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(0, SIGTERM);
@@ -393,14 +415,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
 	getrusage(RUSAGE_SELF, &start_rusage);
 
-	while (hizip_priv.total_len || !wd_sched_empty(&sched)) {
-		dbg("request loop: total_len=%d\n", hizip_priv.total_len);
-		ret = wd_sched_work(&sched, hizip_priv.total_len);
-		if (ret < 0) {
-			WD_ERR("wd_sched_work: %d\n", ret);
-			break;
-		}
-	}
+	ret = hizip_test_sched(&sched, opts, &hizip_priv);
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_cputime);
@@ -430,7 +445,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
-	for (i = 0; i < opts->q_num; i++) {
+	for (i = 0; i < opts->q_num && sched.stat; i++) {
 		stats->v[ST_SEND] += sched.stat[i].send;
 		stats->v[ST_RECV] += sched.stat[i].recv;
 		stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
@@ -450,7 +465,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 
-	hizip_test_fini(&sched);
+	hizip_test_fini(&sched, opts);
 
 	ret = hizip_verify_output(out_buf, opts, &hizip_priv);
 
@@ -632,6 +647,9 @@ int main(int argc, char **argv)
 			case 'p':
 				opts.option |= PERFORMANCE;
 				break;
+			case 'z':
+				opts.option |= TEST_ZLIB;
+				break;
 			default:
 				SYS_ERR_COND(1, "invalid argument to -o: '%s'\n", optarg);
 				break;
@@ -690,6 +708,7 @@ int main(int argc, char **argv)
 		     "  -n <num>      number of runs\n"
 		     "  -o <mode>     options\n"
 		     "                  'perf' prefaults the output pages\n"
+		     "                  'zlib' use zlib instead of the device\n"
 		     "  -q <num>      number of queues\n"
 		     "  -c <num>      number of caches\n"
 		     "  -s <size>     total size\n"

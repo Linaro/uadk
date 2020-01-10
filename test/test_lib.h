@@ -50,6 +50,7 @@ struct test_options {
 	unsigned long faults;
 
 #define PERFORMANCE		(1UL << 0)
+#define TEST_ZLIB		(1UL << 1)
 	unsigned long option;
 
 	bool verify;
@@ -63,12 +64,14 @@ struct test_ops {
 
 int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		    struct test_ops *ops, void *priv);
-void hizip_test_fini(struct wd_scheduler *sched);
+void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts);
 
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 #ifdef HAVE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn check_output, void *opaque);
+int zlib_deflate(void *output, unsigned int out_size,
+		 void *input, unsigned int in_size, unsigned long *produced);
 #else
 static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 				     check_output_fn check_output,
@@ -81,6 +84,12 @@ static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 		printed = true;
 	}
 	return 0;
+}
+static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
+			       unsigned int in_size, unsigned long *produced)
+{
+	WD_ERR("no zlib available\n");
+	return -ENOSYS;
 }
 #endif
 
