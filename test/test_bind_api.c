@@ -67,6 +67,13 @@ struct hizip_priv {
 	size_t total_out;
 };
 
+struct check_rand_ctx {
+	int off;
+	unsigned long global_off;
+	__u32 last;
+	unsigned short state[3];
+};
+
 static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
 {
 	struct wd_msg *wd_msg = &sched->msgs[i];
@@ -177,47 +184,6 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 	return 0;
 }
 
-struct check_rand_ctx {
-	int off;
-	unsigned long global_off;
-	__u32 last;
-	unsigned short state[3];
-};
-
-static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
-{
-	int i;
-	int *j;
-	__u32 n;
-	struct check_rand_ctx *rand_ctx = opaque;
-
-	j = &rand_ctx->off;
-	for (i = 0; i < size; i += 4) {
-		if (*j) {
-			/* Somthing left from a previous run */
-			n = rand_ctx->last;
-		} else {
-			n = nrand48(rand_ctx->state);
-			rand_ctx->last = n;
-		}
-		for (; *j < 4 && i + *j < size; (*j)++) {
-			char expected = (n >> (8 * *j)) & 0xff;
-			char actual = buf[i + *j];
-
-			if (expected != actual) {
-				WD_ERR("Invalid decompressed char at offet %lu: expected 0x%x != 0x%x\n",
-				       rand_ctx->global_off + i + *j, expected,
-				       actual);
-				return -EINVAL;
-			}
-		}
-		if (*j == 4)
-			*j = 0;
-	}
-	rand_ctx->global_off += size;
-	return 0;
-}
-
 static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 {
 	struct hizip_priv *hizip_priv = priv;
@@ -225,8 +191,6 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	struct hisi_zip_sqe *m = msg->msg;
 	__u32 status = m->dw3 & 0xff;
 	__u32 type = m->dw9 & 0xff;
-	int ret;
-	__u32 seed = 0;
 
 	if (opts->option & PERFORMANCE) {
 		if (!(hizip_priv->flags & UACCE_DEV_SVA)) {
@@ -235,10 +199,6 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 			hizip_priv->out_buf += opts->block_size * EXPANSION_RATIO;
 		}
 	}
-
-	struct check_rand_ctx rand_ctx = {
-		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
-	};
 
 	if (hizip_priv->opts->faults & INJECT_SIG_WORK)
 		kill(0, SIGTERM);
@@ -249,21 +209,6 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 		     status, type);
 
 	hizip_priv->total_out += m->produced;
-
-	if (!opts->verify)
-		return 0;
-
-	ret = hizip_check_output(msg->data_out, m->produced, hizip_check_rand,
-				 &rand_ctx);
-	if (ret)
-		return ret;
-
-	if (rand_ctx.global_off != m->consumed) {
-		WD_ERR("Invalid output size %lu != %u\n", rand_ctx.global_off,
-		       m->consumed);
-		return -EINVAL;
-	}
-
 	return 0;
 }
 
@@ -315,6 +260,74 @@ static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
 		in_buf += size;
 		remain_size -= size;
 	}
+}
+
+static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
+{
+	int i;
+	int *j;
+	__u32 n;
+	struct check_rand_ctx *rand_ctx = opaque;
+
+	j = &rand_ctx->off;
+	for (i = 0; i < size; i += 4) {
+		if (*j) {
+			/* Somthing left from a previous run */
+			n = rand_ctx->last;
+		} else {
+			n = nrand48(rand_ctx->state);
+			rand_ctx->last = n;
+		}
+		for (; *j < 4 && i + *j < size; (*j)++) {
+			char expected = (n >> (8 * *j)) & 0xff;
+			char actual = buf[i + *j];
+
+			if (expected != actual) {
+				WD_ERR("Invalid decompressed char at offset %lu: expected 0x%x != 0x%x\n",
+				       rand_ctx->global_off + i + *j, expected,
+				       actual);
+				return -EINVAL;
+			}
+		}
+		if (*j == 4)
+			*j = 0;
+	}
+	rand_ctx->global_off += size;
+	return 0;
+}
+
+static int hizip_verify_output(char *out_buf, struct test_options *opts,
+			       struct hizip_priv *priv)
+{
+	int ret;
+	int seed = 0;
+	off_t off = 0;
+	size_t checked = 0;
+	size_t total_checked = 0;
+	struct check_rand_ctx rand_ctx = {
+		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
+	};
+
+	if (!opts->verify)
+		return 0;
+
+	do {
+		ret = hizip_check_output(out_buf + off, priv->total_out,
+					 &checked, hizip_check_rand, &rand_ctx);
+		if (ret) {
+			WD_ERR("Check output failed with %d\n", ret);
+			return ret;
+		}
+		total_checked += checked;
+		off += opts->block_size * EXPANSION_RATIO;
+	} while (!ret && total_checked < opts->total_len);
+
+	if (rand_ctx.global_off != opts->total_len) {
+		WD_ERR("Invalid output size %lu != %lu\n",
+		       rand_ctx.global_off, opts->total_len);
+		return -EINVAL;
+	}
+	return 0;
 }
 
 static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
@@ -438,6 +451,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 
 	hizip_test_fini(&sched);
+
+	ret = hizip_verify_output(out_buf, opts, &hizip_priv);
 
 out_with_out_buf:
 	free(out_buf);

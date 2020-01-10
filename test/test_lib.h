@@ -67,10 +67,10 @@ void hizip_test_fini(struct wd_scheduler *sched);
 
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 #ifdef HAVE_ZLIB
-int hizip_check_output(void *buf, unsigned int size,
+int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn check_output, void *opaque);
 #else
-static inline int hizip_check_output(void *buf, unsigned int size,
+static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 				     check_output_fn check_output,
 				     void *opaque)
 {

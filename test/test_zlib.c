@@ -8,12 +8,12 @@
  *
  * Return 0 on success, or an error.
  */
-int hizip_check_output(void *buf, unsigned int size,
+int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn compare_output, void *opaque)
 {
 	int ret, ret2;
 	unsigned char *out_buffer;
-	size_t out_buf_size = 0x10000;
+	const size_t out_buf_size = 0x100000;
 	z_stream stream = {
 		.next_in	= buf,
 		.avail_in	= size,
@@ -35,34 +35,29 @@ int hizip_check_output(void *buf, unsigned int size,
 	}
 
 	do {
-		ret = inflate(&stream, 0);
-
-		if (ret == Z_OK || ret == Z_STREAM_END) {
-			if (ret == Z_OK && stream.avail_out) {
-				WD_ERR("stream.avail_out = %d, should be zero\n",
-				       stream.avail_out);
-				break;
-			}
-
-			ret2 = compare_output(out_buffer, out_buf_size -
-					      stream.avail_out, opaque);
-
-			/* compare_output should print diagnostic messages. */
-			if (ret2) {
-				ret = Z_STREAM_END;
-				break;
-			}
-
-			if (!stream.avail_out) {
-				stream.next_out = out_buffer;
-				stream.avail_out = out_buf_size;
-			}
+		ret = inflate(&stream, Z_NO_FLUSH);
+		if (ret < 0 || ret == Z_NEED_DICT) {
+			WD_ERR("zlib error %d - %s\n", ret, stream.msg);
+			ret = -ENOSR;
+			break;
 		}
-	} while (ret == Z_OK);
 
-	if (ret != Z_OK && ret != Z_STREAM_END) {
-		WD_ERR("zlib error %d - %s\n", ret, stream.msg);
-	} else {
+		ret2 = compare_output(out_buffer, out_buf_size -
+				      stream.avail_out, opaque);
+		/* compare_output should print diagnostic messages. */
+		if (ret2) {
+			ret = Z_STREAM_ERROR;
+			break;
+		}
+
+		if (!stream.avail_out) {
+			stream.next_out = out_buffer;
+			stream.avail_out = out_buf_size;
+		}
+	} while (ret != Z_STREAM_END);
+
+	if (ret == Z_STREAM_END || ret == Z_OK) {
+		*checked = stream.total_out;
 		ret = 0;
 	}
 
