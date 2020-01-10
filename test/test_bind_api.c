@@ -275,9 +275,11 @@ static struct test_ops test_ops = {
 
 static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
 {
+	__u32 seed = 0;
+	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
+
 	unsigned long remain_size;
 	__u32 block_size, size;
-	__u32 seed = 0;
 	char *in_buf;
 	size_t i, j;
 
@@ -291,8 +293,6 @@ static void hizip_prepare_input_data(struct hizip_priv *hizip_priv)
 	in_buf = hizip_priv->in_buf;
 
 	while (remain_size > 0) {
-		unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
-
 		if (remain_size > block_size)
 			size = block_size;
 		else
