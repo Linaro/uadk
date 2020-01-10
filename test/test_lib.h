@@ -56,6 +56,11 @@ struct test_options {
 
 	bool verify;
 	bool verbose;
+
+#define STATS_NONE		0
+#define STATS_PRETTY		1
+#define STATS_CSV		2
+	unsigned long display_stats;
 };
 
 struct test_ops {
