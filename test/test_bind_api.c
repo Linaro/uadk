@@ -549,6 +549,55 @@ static int comp_std(struct hizip_stats *std, struct hizip_stats *variation,
 	return 0;
 }
 
+static const int csv_format_version = 1;
+
+static void output_csv_header(void)
+{
+	/* Keep in sync with output_csv_stats() */
+
+	/* Version number for this output format */
+	printf("fmt_version;");
+
+	/* Number of queue send/recv/wait */
+	printf("send;recv;send_retry;recv_retry;");
+
+	/* Time in ns */
+	printf("setup_time;run_time;cpu_time;");
+	printf("user_time;system_time;");
+
+	/* Number of faults, context switches, signals */
+	printf("minor_faults;major_faults;");
+	printf("involuntary_context_switches;voluntary_context_switches;");
+	printf("signals;");
+
+	/* Speed in MB/s */
+	printf("speed;total_speed;");
+	/* Percent of CPU idle time */
+	printf("cpu_idle;");
+	/* Compression ratio (output / input) in percent */
+	printf("compression_ratio");
+	printf("\n");
+}
+
+static void output_csv_stats(struct hizip_stats *s)
+{
+	/* Keep in sync with output_csv_header() */
+
+	printf("%d;", csv_format_version);
+	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
+	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
+	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
+	       s->v[ST_CPU_TIME]);
+	printf("%.0f;%.0f;", s->v[ST_USER_TIME] * 1000,
+	       s->v[ST_SYSTEM_TIME] * 1000);
+	printf("%.0f;%.0f;", s->v[ST_MINFLT], s->v[ST_MAJFLT]);
+	printf("%.0f;%.0f;", s->v[ST_INVCTX], s->v[ST_VCTX]);
+	printf("%.0f;", s->v[ST_SIGNALS]);
+	printf("%.3f;%.3f;", s->v[ST_SPEED], s->v[ST_TOTAL_SPEED]);
+	printf("%.3f;", s->v[ST_CPU_IDLE]);
+	printf("%.1f;", s->v[ST_COMPRESSION_RATIO]);
+	printf("\n");
+}
 
 static int run_test(struct test_options *opts)
 {
@@ -561,6 +610,9 @@ static int run_test(struct test_options *opts)
 	struct hizip_stats variation = {0};
 	struct hizip_stats stats[n];
 
+	if (opts->display_stats == STATS_CSV)
+		output_csv_header();
+
 	for (i = 0; i < w; i++) {
 		ret = run_one_test(opts, &stats[0]);
 		if (ret < 0)
@@ -571,8 +623,15 @@ static int run_test(struct test_options *opts)
 		if (ret < 0)
 			return ret;
 
-		add_avg(&avg, &stats[i]);
+		if (opts->display_stats == STATS_PRETTY)
+			add_avg(&avg, &stats[i]);
+		else if (opts->display_stats == STATS_CSV)
+			output_csv_stats(&stats[i]);
 	}
+
+	if (opts->display_stats != STATS_PRETTY)
+		return 0;
+
 	comp_avg(&avg, n);
 
 	/* Sum differences from mean */
@@ -638,14 +697,27 @@ int main(int argc, char **argv)
 		.total_len		= opts.block_size * 10,
 		.verify			= false,
 		.verbose		= false,
+		.display_stats		= STATS_PRETTY,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:l:vz")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:f:k:s:q:n:o:c:Vw:l:vz")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = strtol(optarg, NULL, 0);
 			if (opts.block_size <= 0)
 				show_help = 1;
+			break;
+		case 'f':
+			if (strcmp(optarg, "none") == 0) {
+				opts.display_stats = STATS_NONE;
+			} else if (strcmp(optarg, "csv") == 0) {
+				opts.display_stats = STATS_CSV;
+			} else if (strcmp(optarg, "pretty") == 0) {
+				opts.display_stats = STATS_PRETTY;
+			} else {
+				SYS_ERR_COND(1, "invalid argument to -f: '%s'\n", optarg);
+				break;
+			}
 			break;
 		case 'k':
 			switch (optarg[0]) {
@@ -730,6 +802,10 @@ int main(int argc, char **argv)
 
 	SYS_ERR_COND(show_help || optind > argc,
 		     "test_bind_api [opts]\n"
+		     "  -f <format>   output format for the statistics\n"
+		     "                  'none'   do not output statistics\n"
+		     "                  'pretty' human readable format\n"
+		     "                  'csv'    raw, machine readable\n"
 		     "  -b <size>     block size\n"
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
