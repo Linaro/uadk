@@ -45,7 +45,7 @@ static size_t _get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
 	int fd;
-	size_t size;
+	ssize_t size;
 
 	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s",
 			dev_root, attr);
