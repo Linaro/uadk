@@ -400,7 +400,6 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
 		 */
-		memset(out_buf, 5, hizip_priv.total_len * EXPANSION_RATIO);
 		memset(out_buf, 0, hizip_priv.total_len * EXPANSION_RATIO);
 	}
 
