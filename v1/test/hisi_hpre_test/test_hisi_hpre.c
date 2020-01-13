@@ -3864,7 +3864,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 	test_thrds_data[0].q = &q;
 	test_thrds_data[0].thread_num = 1;
 	test_thrds_data[0].op_type = op_type;
-	test_thrds_data[0].cpu_id = _get_cpu_id(0, lcore_mask);
+	test_thrds_data[0].cpu_id = 0;
 	ret = pthread_create(&system_test_thrds[0], NULL,
 		_rsa_async_poll_test_thread, &test_thrds_data[0]);
 	if (ret) {
@@ -3888,7 +3888,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 		test_thrds_data[i].q = &q;
 		test_thrds_data[i].thread_num = thread_num;
 		test_thrds_data[i].op_type = op_type;
-		test_thrds_data[i].cpu_id = _get_cpu_id(i, lcore_mask);
+		test_thrds_data[i].cpu_id = _get_cpu_id(i - 1, lcore_mask);
 		gettimeofday(&test_thrds_data[i].start_tval, NULL);
 		ret = pthread_create(&system_test_thrds[i], NULL,
 				    _rsa_async_op_test_thread, &test_thrds_data[i]);
@@ -3898,7 +3898,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 		}
 	}
 	for (i = 1; i <= thread_num - cnt; i++) {
-		h_cpuid = _get_cpu_id(i, hcore_mask);
+		h_cpuid = _get_cpu_id(i - 1, hcore_mask);
 		if (h_cpuid > 0)
 			h_cpuid += 64;
 		test_thrds_data[i + cnt].pool = pool;
@@ -3914,7 +3914,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			return ret;
 		}
 	}
-	for (i = 1; i < thread_num; i++) {
+	for (i = 1; i <= thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
@@ -4017,7 +4017,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 	test_thrds_data[0].q = q;
 	test_thrds_data[0].thread_num = 1;
 	test_thrds_data[0].op_type = op_type;
-	test_thrds_data[0].cpu_id = _get_cpu_id(0, lcore_mask);
+	test_thrds_data[0].cpu_id = 0;
 	ret = pthread_create(&system_test_thrds[0], NULL,
 			     _dh_async_poll_test_thread, &test_thrds_data[0]);
 	if (ret) {
@@ -4030,7 +4030,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 		test_thrds_data[i].q = q;
 		test_thrds_data[i].thread_num = thread_num;
 		test_thrds_data[i].op_type = op_type;
-		test_thrds_data[i].cpu_id = _get_cpu_id(i, lcore_mask);
+		test_thrds_data[i].cpu_id = _get_cpu_id(i - 1, lcore_mask);
 		gettimeofday(&test_thrds_data[i].start_tval, NULL);
 		ret = pthread_create(&system_test_thrds[i], NULL,
 				    _hpre_dh_sys_test_thread, &test_thrds_data[i]);
@@ -4041,7 +4041,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 	}
 
 	for (i = 1; i <= thread_num - cnt; i++) {
-		h_cpuid = _get_cpu_id(i, hcore_mask);
+		h_cpuid = _get_cpu_id(i - 1, hcore_mask);
 		if (h_cpuid > 0)
 			h_cpuid += 64;
 
@@ -4059,7 +4059,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 		}
 	}
 
-	for (i = 1; i < thread_num; i++) {
+	for (i = 1; i <= thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
