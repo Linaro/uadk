@@ -62,8 +62,8 @@ static struct wd_blk_hd *wd_blk_head(struct wd_blkpool *pool, void *blk)
 {
 	unsigned long offset = (unsigned long)((uintptr_t)blk -
 					       (uintptr_t)pool->act_start);
-	unsigned int sz = pool->act_hd_sz + pool->act_blk_sz;
-	unsigned int blk_idx = offset / sz;
+	unsigned long sz = pool->act_hd_sz + pool->act_blk_sz;
+	unsigned long blk_idx = offset / sz;
 
 	return (struct wd_blk_hd *)((uintptr_t)pool->act_start + blk_idx * sz);
 }
@@ -131,8 +131,8 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *p)
 	/* get dma addr and init blks */
 	for (i = 0; i < act_num; i++) {
 		va = (void *)((uintptr_t)p->act_start + p->act_hd_sz +
-			      (p->act_hd_sz + p->act_blk_sz) * i);
-
+			      (unsigned long)(p->act_hd_sz +
+			       p->act_blk_sz) * i);
 		dma_start = wd_iova_map(q, va, 0);
 		dma_end = wd_iova_map(q, va + blk_size - 1, 0);
 		if (!dma_start || !dma_end) {
@@ -248,7 +248,6 @@ err_pool_init:
 
 	return NULL;
 }
-
 
 void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
 {
