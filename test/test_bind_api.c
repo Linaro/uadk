@@ -5,13 +5,18 @@
  * - what happens on fork
  * - multiple threads binding to the same device
  */
+#include <asm/unistd.h>	/* For __NR_perf_event_open */
 #include <fenv.h>
+#include <inttypes.h>
 #include <math.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/types.h>
+
+#include <linux/perf_event.h>
 
 #include "test_lib.h"
 
@@ -47,6 +52,7 @@ enum hizip_stats_variable {
 	ST_TOTAL_SPEED,
 	ST_CPU_IDLE,
 	ST_FAULTS,
+	ST_IOPF,
 
 	ST_COMPRESSION_RATIO,
 
@@ -352,11 +358,127 @@ static int hizip_verify_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
+static int perf_event_open(struct perf_event_attr *attr,
+			   pid_t pid, int cpu, int group_fd,
+			   unsigned long flags)
+{
+	return syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);
+}
+
+static unsigned long long perf_event_put(int *perf_fds, int nr_fds);
+
+static int perf_event_get(const char *event_name, int **perf_fds, int *nr_fds)
+{
+	int ret;
+	int cpu;
+	FILE *fd;
+	int nr_cpus;
+	unsigned int event_id;
+	char event_id_file[256];
+	struct perf_event_attr event = {
+		.type		= PERF_TYPE_TRACEPOINT,
+		.size		= sizeof(event),
+		.disabled	= true,
+	};
+
+	*perf_fds = NULL;
+	*nr_fds = 0;
+
+	nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+	if (nr_cpus <= 0) {
+		WD_ERR("invalid number of CPUs\n");
+		return nr_cpus;
+	}
+
+	ret = snprintf(event_id_file, sizeof(event_id_file),
+		       "/sys/kernel/debug/tracing/events/%s/id", event_name);
+	if (ret >= sizeof(event_id_file)) {
+		WD_ERR("event_id buffer overflow\n");
+		return -EOVERFLOW;
+	}
+	fd = fopen(event_id_file, "r");
+	if (fd == NULL) {
+		ret = -errno;
+		WD_ERR("Couldn't open file %s\n", event_id_file);
+		return ret;
+	}
+
+	if (fscanf(fd, "%d", &event_id) != 1) {
+		WD_ERR("Couldn't parse file %s\n", event_id_file);
+		return -EINVAL;
+	}
+	event.config = event_id;
+
+	*perf_fds = calloc(nr_cpus, sizeof(int));
+	if (!*perf_fds)
+		return -ENOMEM;
+	*nr_fds = nr_cpus;
+
+	/*
+	 * An event is bound to either a CPU or a PID. If we want both, we need
+	 * to open the event on all CPUs. Note that we can't use a perf group
+	 * since they have to be on the same CPU.
+	 */
+	for (cpu = 0; cpu < nr_cpus; cpu++) {
+		int fd = perf_event_open(&event, -1, cpu, -1, 0);
+
+		if (fd < 0) {
+			WD_ERR("Couldn't get perf event %s on CPU%d: %d\n",
+			       event_name, cpu, errno);
+			perf_event_put(*perf_fds, cpu);
+			return fd;
+		}
+
+		ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+		ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+		(*perf_fds)[cpu] = fd;
+	}
+
+	return 0;
+}
+
+/*
+ * Closes the perf fd and return the sample count. If it wasn't open, return 0.
+ */
+static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
+{
+	int ret;
+	int cpu;
+	uint64_t count, total = 0;
+
+	if (!perf_fds)
+		return 0;
+
+	for (cpu = 0; cpu < nr_fds; cpu++) {
+		int fd = perf_fds[cpu];
+
+		if (fd <= 0) {
+			WD_ERR("Invalid perf fd %d\n", cpu);
+			continue;
+		}
+
+		ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+
+		ret = read(fd, &count, sizeof(count));
+		if (ret < sizeof(count))
+			WD_ERR("Couldn't read perf event for CPU%d\n", cpu);
+
+		total += count;
+		close(fd);
+
+	}
+
+	free(perf_fds);
+	return total;
+}
+
 static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
 	int i, j;
 	double v;
+	int nr_fds;
 	int ret = 0;
+	int *perf_fds;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
 	struct hizip_priv hizip_priv = {0}, hizip_save;
@@ -388,6 +510,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	}
 
 	hizip_prepare_input_data(&hizip_priv);
+
+	perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds);
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &setup_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &setup_cputime);
@@ -475,6 +599,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
 		1024 / 1024 * 1000 * 1000;
 
+	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
+
 	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
 	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
@@ -548,7 +674,7 @@ static int comp_std(struct hizip_stats *std, struct hizip_stats *variation,
 	return 0;
 }
 
-static const int csv_format_version = 2;
+static const int csv_format_version = 3;
 
 static void output_csv_header(void)
 {
@@ -566,6 +692,9 @@ static void output_csv_header(void)
 	/* Time in ns */
 	printf("setup_time;run_time;cpu_time;");
 	printf("user_time;system_time;");
+
+	/* Number of I/O page faults */
+	printf("iopf;");
 
 	/* Number of faults, context switches, signals */
 	printf("minor_faults;major_faults;");
@@ -593,12 +722,13 @@ static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 	       s->v[ST_CPU_TIME]);
 	printf("%.0f;%.0f;", s->v[ST_USER_TIME] * 1000,
 	       s->v[ST_SYSTEM_TIME] * 1000);
+	printf("%.0f;", s->v[ST_IOPF]);
 	printf("%.0f;%.0f;", s->v[ST_MINFLT], s->v[ST_MAJFLT]);
 	printf("%.0f;%.0f;", s->v[ST_INVCTX], s->v[ST_VCTX]);
 	printf("%.0f;", s->v[ST_SIGNALS]);
 	printf("%.3f;%.3f;", s->v[ST_SPEED], s->v[ST_TOTAL_SPEED]);
 	printf("%.3f;", s->v[ST_CPU_IDLE]);
-	printf("%.1f;", s->v[ST_COMPRESSION_RATIO]);
+	printf("%.1f", s->v[ST_COMPRESSION_RATIO]);
 	printf("\n");
 }
 
@@ -663,6 +793,7 @@ static int run_test(struct test_options *opts)
 		" user time     %12.2f us  ±%0.1f%%\n"
 		" system time   %12.2f us  ±%0.1f%%\n"
 		" faults        %12.0f     ±%0.1f%%\n"
+		" iopf          %12.0f     ±%0.1f%%\n"
 		" voluntary cs  %12.0f     ±%0.1f%%\n"
 		" invol cs      %12.0f     ±%0.1f%%\n"
 		" compression   %12.0f %%   ±%0.1f%%\n",
@@ -677,6 +808,7 @@ static int run_test(struct test_options *opts)
 		avg.v[ST_USER_TIME],		variation.v[ST_USER_TIME],
 		avg.v[ST_SYSTEM_TIME],		variation.v[ST_SYSTEM_TIME],
 		avg.v[ST_FAULTS],		variation.v[ST_FAULTS],
+		avg.v[ST_IOPF],			variation.v[ST_IOPF],
 		avg.v[ST_VCTX],			variation.v[ST_VCTX],
 		avg.v[ST_INVCTX],		variation.v[ST_INVCTX],
 		avg.v[ST_COMPRESSION_RATIO],	variation.v[ST_COMPRESSION_RATIO]);
