@@ -35,6 +35,7 @@
 #include "../../wd_rsa.h"
 #include "../../wd_dh.h"
 #include "../../wd_bmm.h"
+#include "../../wd_util.h"
 
 #define HPRE_TST_PRT		printf
 #define BN_ULONG		unsigned long
@@ -2165,10 +2166,20 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	int ret, bits;
 	RSA *test_rsa;
 	BIGNUM *p, *q, *e_value, *n, *e, *d, *dmp1, *dmq1, *iqmp;
-	struct wd_dtb *wd_e, *wd_d, *wd_n, *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
+	//struct wd_dtb *wd_e, *wd_d, *wd_n, *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
+	struct wd_dtb wd_e, wd_d, wd_n, wd_dq, wd_dp, wd_qinv, wd_q, wd_p;
 	struct wcrypto_rsa_pubkey *pubkey;
 	struct wcrypto_rsa_prikey *prikey;
 	u32 key_size = key_bits >> 3;
+
+	memset(&wd_e, 0, sizeof(wd_e));
+	memset(&wd_d, 0, sizeof(wd_d));
+	memset(&wd_n, 0, sizeof(wd_n));
+	memset(&wd_dq, 0, sizeof(wd_dq));
+	memset(&wd_dp, 0, sizeof(wd_dp));
+	memset(&wd_qinv, 0, sizeof(wd_qinv));
+	memset(&wd_q, 0, sizeof(wd_q));
+	memset(&wd_p, 0, sizeof(wd_p));
 
 	bits = wcrypto_rsa_key_bits(ctx);
 	test_rsa = RSA_new();
@@ -2201,21 +2212,32 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			 (const BIGNUM **)&q);
 	RSA_get0_crt_params((const RSA *)test_rsa, (const BIGNUM **)&dmp1,
 			(const BIGNUM **)&dmq1, (const BIGNUM **)&iqmp);
-	wcrypto_get_rsa_pubkey(ctx, &pubkey);
-	wcrypto_get_rsa_pubkey_params(pubkey, &wd_e, &wd_n);
+	//wcrypto_get_rsa_pubkey(ctx, &pubkey);
+	//wcrypto_get_rsa_pubkey_params(pubkey, &wd_e, &wd_n);
+	wd_e.bsize = key_size;
+	wd_e.data = malloc(GEN_PARAMS_SZ(key_size));
+	wd_n.bsize = wd_e.bsize;
+	wd_n.data = wd_e.data + wd_e.bsize;
 
-	wd_e->dsize = BN_bn2bin(e, (unsigned char *)wd_e->data);
-	if (wd_e->dsize > wd_e->bsize) {
+	wd_e.dsize = BN_bn2bin(e, (unsigned char *)wd_e.data);
+	if (wd_e.dsize > wd_e.bsize) {
 		HPRE_TST_PRT("e bn to bin overflow!\n");
 		goto gen_fail;
 	}
-	wd_n->dsize = BN_bn2bin(n, (unsigned char *)wd_n->data);
-	if (wd_n->dsize > wd_n->bsize) {
+	wd_n.dsize = BN_bn2bin(n, (unsigned char *)wd_n.data);
+	if (wd_n.dsize > wd_n.bsize) {
 		HPRE_TST_PRT("n bn to bin overflow!\n");
 		goto gen_fail;
 	}
+
+	if (wcrypto_set_rsa_pubkey_params(ctx, &wd_e, &wd_n))
+	{
+		HPRE_TST_PRT("set rsa pubkey failed %d!\n", ret);
+		goto gen_fail;
+	}
+
 	if (pubkey_file && is_file) {
-		ret = hpre_test_write_to_file((unsigned char *)wd_e->data, key_bits >> 2,
+		ret = hpre_test_write_to_file((unsigned char *)wd_e.data, key_bits >> 2,
 					  pubkey_file, -1, 1);
 		if (ret < 0)
 			goto gen_fail;
@@ -2232,90 +2254,145 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 		rsa_key_in->q_size = BN_bn2bin(q, (unsigned char *)rsa_key_in->q);
 	}
 
-	wcrypto_get_rsa_prikey(ctx, &prikey);
+	//wcrypto_get_rsa_prikey(ctx, &prikey);
 
 	if (wcrypto_rsa_is_crt(ctx)) {
-		wcrypto_get_rsa_crt_prikey_params(prikey, &wd_dq, &wd_dp, &wd_qinv, &wd_q, &wd_p);
+		//wcrypto_get_rsa_crt_prikey_params(prikey, &wd_dq, &wd_dp, &wd_qinv, &wd_q, &wd_p);
+		wd_dq.bsize = CRT_PARAM_SZ(key_size);
+		wd_dq.data = malloc(CRT_PARAMS_SZ(key_size));
+		wd_dp.bsize = CRT_PARAM_SZ(key_size);
+		wd_dp.data = wd_dq.data + wd_dq.bsize;
+		wd_qinv.bsize = CRT_PARAM_SZ(key_size);
+		wd_qinv.data = wd_dp.data + wd_dp.bsize;
+		wd_q.bsize = CRT_PARAM_SZ(key_size);
+		wd_q.data = wd_qinv.data + wd_qinv.bsize;
+		wd_p.bsize = CRT_PARAM_SZ(key_size);
+		wd_p.data = wd_q.data + wd_q.bsize;
+
 
 		/* CRT mode private key */
-		wd_dq->dsize = BN_bn2bin(dmq1, (unsigned char *)wd_dq->data);
-		if (wd_dq->dsize > wd_dq->bsize) {
+		wd_dq.dsize = BN_bn2bin(dmq1, (unsigned char *)wd_dq.data);
+		if (wd_dq.dsize > wd_dq.bsize) {
 			HPRE_TST_PRT("dq bn to bin overflow!\n");
 			goto gen_fail;
 		}
-		wd_dp->dsize = BN_bn2bin(dmp1, (unsigned char *)wd_dp->data);
-		if (wd_dp->dsize > wd_dp->bsize) {
+		wd_dp.dsize = BN_bn2bin(dmp1, (unsigned char *)wd_dp.data);
+		if (wd_dp.dsize > wd_dp.bsize) {
 			HPRE_TST_PRT("dp bn to bin overflow!\n");
 			goto gen_fail;
 		}
-		wd_q->dsize = BN_bn2bin(q, (unsigned char *)wd_q->data);
-		if (wd_q->dsize > wd_q->bsize) {
+		wd_q.dsize = BN_bn2bin(q, (unsigned char *)wd_q.data);
+		if (wd_q.dsize > wd_q.bsize) {
 			HPRE_TST_PRT("q bn to bin overflow!\n");
 			goto gen_fail;
 		}
-		wd_p->dsize = BN_bn2bin(p, (unsigned char *)wd_p->data);
-		if (wd_p->dsize > wd_p->bsize) {
+		wd_p.dsize = BN_bn2bin(p, (unsigned char *)wd_p.data);
+		if (wd_p.dsize > wd_p.bsize) {
 			HPRE_TST_PRT("p bn to bin overflow!\n");
 			goto gen_fail;
 		}
-		wd_qinv->dsize = BN_bn2bin(iqmp, (unsigned char *)wd_qinv->data);
-		if (wd_qinv->dsize > wd_qinv->bsize) {
+		wd_qinv.dsize = BN_bn2bin(iqmp, (unsigned char *)wd_qinv.data);
+		if (wd_qinv.dsize > wd_qinv.bsize) {
 			HPRE_TST_PRT("qinv bn to bin overflow!\n");
 			goto gen_fail;
 		}
+
+		if (wcrypto_set_rsa_crt_prikey_params(ctx, &wd_dq,
+					&wd_dp, &wd_qinv,
+					&wd_q, &wd_p))
+		{
+			HPRE_TST_PRT("set rsa crt prikey failed %d!\n", ret);
+			goto gen_fail;
+		}
+
 		if (crt_privkey_file && is_file) {
-			ret = hpre_test_write_to_file((unsigned char *)wd_dq->data,
+			ret = hpre_test_write_to_file((unsigned char *)wd_dq.data,
 						  (key_bits >> 4) * 5, crt_privkey_file, -1, 0);
 			if (ret < 0)
 				goto gen_fail;
-			ret = hpre_test_write_to_file((unsigned char *)wd_e->data,
+			ret = hpre_test_write_to_file((unsigned char *)wd_e.data,
 						  (key_bits >> 2), crt_privkey_file, ret, 1);
 			if (ret < 0)
 				goto gen_fail;
 			HPRE_TST_PRT("RSA CRT private key was written to %s!\n",
 						 crt_privkey_file);
 		} else if (crt_privkey_file && !is_file) {
-			memcpy(crt_privkey_file, wd_dq->data, (key_bits >> 4) * 5);
+			memcpy(crt_privkey_file, wd_dq.data, (key_bits >> 4) * 5);
 			memcpy(crt_privkey_file + (key_bits >> 4) * 5,
-				   wd_e->data, (key_bits >> 2));
+				   wd_e.data, (key_bits >> 2));
 		}
 
 	} else {
-		wcrypto_get_rsa_prikey_params(prikey, &wd_d, &wd_n);
+		//wcrypto_get_rsa_prikey_params(prikey, &wd_d, &wd_n);
+			wd_d.bsize = key_size;
+			wd_d.data = malloc(GEN_PARAMS_SZ(key_size));
+			wd_n.bsize =key_size;
+			wd_n.data = wd_d.data + wd_d.bsize;
+
 			/* common mode private key */
-			wd_d->dsize = BN_bn2bin(d, (unsigned char *)wd_d->data);
-			wd_n->dsize = BN_bn2bin(n, (unsigned char *)wd_n->data);
+			wd_d.dsize = BN_bn2bin(d, (unsigned char *)wd_d.data);
+			wd_n.dsize = BN_bn2bin(n, (unsigned char *)wd_n.data);
+
+			if (wcrypto_set_rsa_prikey_params(ctx, &wd_d, &wd_n))
+			{
+				HPRE_TST_PRT("set rsa prikey failed %d!\n", ret);
+				goto gen_fail;
+			}
+
 			if (privkey_file && is_file) {
-				ret = hpre_test_write_to_file((unsigned char *)wd_d->data,
+				ret = hpre_test_write_to_file((unsigned char *)wd_d.data,
 							  (key_size),
 							  privkey_file, -1, 0);
 				if (ret < 0)
 					goto gen_fail;
-				ret = hpre_test_write_to_file((unsigned char *)wd_n->data,
+				ret = hpre_test_write_to_file((unsigned char *)wd_n.data,
 							  (key_size),
 							  privkey_file, ret, 1);
 				if (ret < 0)
 					goto gen_fail;
 
-				ret = hpre_test_write_to_file((unsigned char *)wd_e->data,
+				ret = hpre_test_write_to_file((unsigned char *)wd_e.data,
 							  (key_size), privkey_file, ret, 1);
 				if (ret < 0)
 					goto gen_fail;
 				HPRE_TST_PRT("RSA common private key was written to %s!\n",
 							 privkey_file);
 			} else if (privkey_file && !is_file) {
-				memcpy(privkey_file, wd_d->data, key_size);
-				memcpy(privkey_file + key_size, wd_n->data, key_size);
-				memcpy(privkey_file + 2 * key_size, wd_e->data, key_size);
+				memcpy(privkey_file, wd_d.data, key_size);
+				memcpy(privkey_file + key_size, wd_n.data, key_size);
+				memcpy(privkey_file + 2 * key_size, wd_e.data, key_size);
 			}
 	}
 
 	RSA_free(test_rsa);
 	BN_free(e_value);
+
+	if (wd_e.data)
+		free(wd_e.data);
+
+	if (wcrypto_rsa_is_crt(ctx)) {
+		if (wd_dq.data)
+			free(wd_dq.data);
+	} else {
+		if (wd_d.data)
+			free(wd_d.data);
+	}
+
 	return 0;
 gen_fail:
 	RSA_free(test_rsa);
 	BN_free(e_value);
+
+	if (wd_e.data)
+		free(wd_e.data);
+
+	if (wcrypto_rsa_is_crt(ctx)) {
+		if (wd_dq.data)
+			free(wd_dq.data);
+	} else {
+		if (wd_d.data)
+			free(wd_d.data);
+	}
 
 	return ret;
 }

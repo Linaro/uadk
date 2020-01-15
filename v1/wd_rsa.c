@@ -579,7 +579,7 @@ int wcrypto_set_rsa_pubkey_params(void *ctx, struct wd_dtb *e, struct wd_dtb *n)
 	}
 
 	if (e) {
-		if (e->dsize > c->pubkey->key_size || e->data) {
+		if (e->dsize > c->pubkey->key_size || !e->data) {
 			WD_ERR("e err in set rsa public key!\n");
 			return -WD_EINVAL;
 		}
@@ -590,7 +590,7 @@ int wcrypto_set_rsa_pubkey_params(void *ctx, struct wd_dtb *e, struct wd_dtb *n)
 	}
 
 	if (n) {
-		if (n->dsize > c->pubkey->key_size || n->data) {
+		if (n->dsize > c->pubkey->key_size || !n->data) {
 			WD_ERR("n err in set rsa public key!\n");
 			return -WD_EINVAL;
 		}
@@ -628,7 +628,7 @@ int wcrypto_set_rsa_prikey_params(void *ctx, struct wd_dtb *d, struct wd_dtb *n)
 	}
 	pkey1 = &c->prikey->pkey1;
 	if (d) {
-		if (d->dsize > pkey1->key_size || d->data) {
+		if (d->dsize > pkey1->key_size || !d->data) {
 			WD_ERR("d err in set rsa private key1!\n");
 			return -WD_EINVAL;
 		}
@@ -638,7 +638,7 @@ int wcrypto_set_rsa_prikey_params(void *ctx, struct wd_dtb *d, struct wd_dtb *n)
 		memcpy(pkey1->d.data, d->data, d->dsize);
 	}
 	if (n) {
-		if (n->dsize > pkey1->key_size || n->data) {
+		if (n->dsize > pkey1->key_size || !n->data) {
 			WD_ERR("en err in set rsa private key1!\n");
 			return -WD_EINVAL;
 		}
