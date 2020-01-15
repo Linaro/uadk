@@ -548,7 +548,7 @@ static int comp_std(struct hizip_stats *std, struct hizip_stats *variation,
 	return 0;
 }
 
-static const int csv_format_version = 1;
+static const int csv_format_version = 2;
 
 static void output_csv_header(void)
 {
@@ -556,6 +556,9 @@ static void output_csv_header(void)
 
 	/* Version number for this output format */
 	printf("fmt_version;");
+
+	/* Job size, block size */
+	printf("total_size;block_size;");
 
 	/* Number of queue send/recv/wait */
 	printf("send;recv;send_retry;recv_retry;");
@@ -578,11 +581,12 @@ static void output_csv_header(void)
 	printf("\n");
 }
 
-static void output_csv_stats(struct hizip_stats *s)
+static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 {
 	/* Keep in sync with output_csv_header() */
 
 	printf("%d;", csv_format_version);
+	printf("%lu;%u;", opts->total_len, opts->block_size);
 	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
 	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
 	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
@@ -625,7 +629,7 @@ static int run_test(struct test_options *opts)
 		if (opts->display_stats == STATS_PRETTY)
 			add_avg(&avg, &stats[i]);
 		else if (opts->display_stats == STATS_CSV)
-			output_csv_stats(&stats[i]);
+			output_csv_stats(&stats[i], opts);
 	}
 
 	if (opts->display_stats != STATS_PRETTY)
