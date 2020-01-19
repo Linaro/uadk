@@ -245,7 +245,7 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_cipher_ctx *ctxt = ctx;
 	__u16 length = key_len;
-	int ret = WD_SUCCESS;
+	int ret;
 
 	if (!ctx || !key) {
 		WD_ERR("%s: input param err!\n", __func__);
@@ -276,6 +276,8 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 static int cipher_request_init(struct wcrypto_cipher_msg *req,
 	struct wcrypto_cipher_op_data *op, struct wcrypto_cipher_ctx *c)
 {
+	struct wd_sec_udata *udata = op->priv;
+
 	req->alg = c->setup.alg;
 	req->mode = c->setup.mode;
 	req->key = c->key;
@@ -287,6 +289,10 @@ static int cipher_request_init(struct wcrypto_cipher_msg *req,
 	req->in_bytes = op->in_bytes;
 	req->out = op->out;
 	req->out_bytes = op->out_bytes;
+	if (udata && udata->key) {
+		req->key = udata->key;
+		req->key_bytes = udata->key_bytes;
+	}
 
 	return WD_SUCCESS;
 }
