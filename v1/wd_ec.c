@@ -78,7 +78,8 @@ static void alloc_tbl_mem(const __u8 *buf, const __u8 *pa,
 
 static struct wcrypto_ec_cache *get_ec_cache(struct wcrypto_ec_ctx *ctx)
 {
-	int idx = ctx->cidx, cnt = 0;
+	int idx = ctx->cidx;
+	int cnt = 0;
 
 	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
 		idx++;
