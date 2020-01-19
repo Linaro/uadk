@@ -120,6 +120,8 @@ struct wd_sec_udata {
 	struct wd_dif dif;
 	__u16 block_size;
 	__u16 gran_num;
+	__u16 key_bytes;
+	__u8 *key;
 };
 
 /* Digest tag format of Warpdrive */
