@@ -2168,8 +2168,8 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	BIGNUM *p, *q, *e_value, *n, *e, *d, *dmp1, *dmq1, *iqmp;
 	//struct wd_dtb *wd_e, *wd_d, *wd_n, *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
 	struct wd_dtb wd_e, wd_d, wd_n, wd_dq, wd_dp, wd_qinv, wd_q, wd_p;
-	struct wcrypto_rsa_pubkey *pubkey;
-	struct wcrypto_rsa_prikey *prikey;
+	//struct wcrypto_rsa_pubkey *pubkey;
+	//struct wcrypto_rsa_prikey *prikey;
 	u32 key_size = key_bits >> 3;
 
 	memset(&wd_e, 0, sizeof(wd_e));
@@ -2262,13 +2262,12 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 		wd_dq.data = malloc(CRT_PARAMS_SZ(key_size));
 		wd_dp.bsize = CRT_PARAM_SZ(key_size);
 		wd_dp.data = wd_dq.data + wd_dq.bsize;
-		wd_qinv.bsize = CRT_PARAM_SZ(key_size);
-		wd_qinv.data = wd_dp.data + wd_dp.bsize;
 		wd_q.bsize = CRT_PARAM_SZ(key_size);
-		wd_q.data = wd_qinv.data + wd_qinv.bsize;
+		wd_q.data = wd_dp.data + wd_dp.bsize;
 		wd_p.bsize = CRT_PARAM_SZ(key_size);
 		wd_p.data = wd_q.data + wd_q.bsize;
-
+		wd_qinv.bsize = CRT_PARAM_SZ(key_size);
+		wd_qinv.data = wd_p.data + wd_p.bsize;
 
 		/* CRT mode private key */
 		wd_dq.dsize = BN_bn2bin(dmq1, (unsigned char *)wd_dq.data);
