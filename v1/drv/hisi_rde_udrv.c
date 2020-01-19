@@ -178,7 +178,8 @@ static void rde_fill_src_dif_table(struct wcrypto_ec_msg *msg,
 	struct wcrypto_ec_table *tbl)
 {
 	__u8 i;
-	__u32 cur_cnt1 = 0, cur_cnt2 = 0;
+	__u32 cur_cnt1 = 0;
+	__u32 cur_cnt2 = 0;
 	__u8 num = msg->in_disk_num;
 	struct wcrypto_ec_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_rde_udata *pdata = tag->priv;
