@@ -29,7 +29,7 @@
 #include "wd_digest.h"
 #include "wd_util.h"
 
-#define WD_DIGEST_CTX_MSG_NUM	64
+#define WD_DIGEST_CTX_MSG_NUM	1024
 #define WD_DIGEST_MAX_CTX		256
 #define MAX_HMAC_KEY_SIZE		128
 #define MAX_DIGEST_RETRY_CNT	20000000
