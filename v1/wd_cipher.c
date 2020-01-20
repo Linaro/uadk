@@ -29,7 +29,7 @@
 #include "wd_cipher.h"
 #include "wd_util.h"
 
-#define WCRYPTO_CIPHER_CTX_MSG_NUM	64
+#define WCRYPTO_CIPHER_CTX_MSG_NUM	1024
 #define WCRYPTO_CIPHER_MAX_CTX		256
 #define MAX_CIPHER_KEY_SIZE		64
 #define MAX_CIPHER_RETRY_CNT	20000000
