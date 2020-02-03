@@ -3299,7 +3299,7 @@ signal_handler(int signum)
 		printf("\nSignal %d received, preparing to exit...\n",
 				signum);
 #ifdef RTE_LIBRTE_PDUMP
-		/* uninitialize packet capture framework */
+		/* uninitialize framework */
 		rte_pdump_uninit();
 #endif
 #ifdef RTE_LIBRTE_LATENCY_STATS

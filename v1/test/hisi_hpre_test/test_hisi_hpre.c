@@ -2950,7 +2950,7 @@ int hpre_test_rsa_op(enum alg_op_type op_type, void *c, __u8 *in,
 		    int in_size,  __u8 *out,  __u8 *key)
 {
 	struct wcrypto_rsa_op_data opdata;
-	int ret, shift;
+	int ret, move;
 	void *tag;
 	int key_bits, key_size;
 
@@ -3002,9 +3002,9 @@ int hpre_test_rsa_op(enum alg_op_type op_type, void *c, __u8 *in,
 try_format_input:
 		/* Padding zero in this sample */
 		if (in_size < key_size && op_type == RSA_PUB_EN) {
-			shift =  key_size - in_size;
-			memmove(in + shift, in, in_size);
-			memset(in, 0, shift);
+			move =  key_size - in_size;
+			memmove(in + move, in, in_size);
+			memset(in, 0, move);
 		}
 	}
 
@@ -3044,11 +3044,11 @@ try_format_input:
 	if (op_type == RSA_PRV_DE) {
 		__u8 *tmp = opdata.out;
 
-		shift = 0;
-		while (!tmp[shift])
-			shift++;
-		opdata.out_bytes -= shift;
-		memmove(out, out + shift, opdata.out_bytes);
+		move = 0;
+		while (!tmp[move])
+			move++;
+		opdata.out_bytes -= move;
+		memmove(out, out + move, opdata.out_bytes);
 	}
 	return (int)opdata.out_bytes;
 type_err:
