@@ -2200,6 +2200,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 		ret = -1;
 		goto gen_fail;
 	}
+
 	ret = RSA_generate_key_ex(test_rsa, key_bits, e_value, NULL);
 	if (ret != 1) {
 		HPRE_TST_PRT("RSA_generate_key_ex fail!\n");
@@ -2212,6 +2213,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			 (const BIGNUM **)&q);
 	RSA_get0_crt_params((const RSA *)test_rsa, (const BIGNUM **)&dmp1,
 			(const BIGNUM **)&dmq1, (const BIGNUM **)&iqmp);
+
 	//wcrypto_get_rsa_pubkey(ctx, &pubkey);
 	//wcrypto_get_rsa_pubkey_params(pubkey, &wd_e, &wd_n);
 	wd_e.bsize = key_size;
@@ -2255,7 +2257,6 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	}
 
 	//wcrypto_get_rsa_prikey(ctx, &prikey);
-
 	if (wcrypto_rsa_is_crt(ctx)) {
 		//wcrypto_get_rsa_crt_prikey_params(prikey, &wd_dq, &wd_dp, &wd_qinv, &wd_q, &wd_p);
 		wd_dq.bsize = CRT_PARAM_SZ(key_size);
@@ -2275,21 +2276,25 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			HPRE_TST_PRT("dq bn to bin overflow!\n");
 			goto gen_fail;
 		}
+
 		wd_dp.dsize = BN_bn2bin(dmp1, (unsigned char *)wd_dp.data);
 		if (wd_dp.dsize > wd_dp.bsize) {
 			HPRE_TST_PRT("dp bn to bin overflow!\n");
 			goto gen_fail;
 		}
+
 		wd_q.dsize = BN_bn2bin(q, (unsigned char *)wd_q.data);
 		if (wd_q.dsize > wd_q.bsize) {
 			HPRE_TST_PRT("q bn to bin overflow!\n");
 			goto gen_fail;
 		}
+
 		wd_p.dsize = BN_bn2bin(p, (unsigned char *)wd_p.data);
 		if (wd_p.dsize > wd_p.bsize) {
 			HPRE_TST_PRT("p bn to bin overflow!\n");
 			goto gen_fail;
 		}
+
 		wd_qinv.dsize = BN_bn2bin(iqmp, (unsigned char *)wd_qinv.data);
 		if (wd_qinv.dsize > wd_qinv.bsize) {
 			HPRE_TST_PRT("qinv bn to bin overflow!\n");
@@ -2485,15 +2490,15 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 							&s_qinv, NULL, NULL);
 			wcrypto_get_rsa_kg_out_crt_params(out, &qinv, &dq, &dp);
 
-			if (memcmp(s_qinv->data, qinv.data, s_qinv->bsize)) {
+			if (memcmp(s_qinv->data, qinv.data, s_qinv->dsize)) {
 				HPRE_TST_PRT("keygen  qinv  mismatch!\n");
 				return -EINVAL;
 			}
-			if (memcmp(s_dq->data, dq.data, s_dq->bsize)) {
+			if (memcmp(s_dq->data, dq.data, s_dq->dsize)) {
 				HPRE_TST_PRT("keygen  dq mismatch!\n");
 				return -EINVAL;
 			}
-			if (memcmp(s_dp->data, dp.data, s_dp->bsize)) {
+			if (memcmp(s_dp->data, dp.data, s_dp->dsize)) {
 				HPRE_TST_PRT("keygen  dp  mismatch!\n");
 				return -EINVAL;
 			}
@@ -2506,11 +2511,11 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 			wcrypto_get_rsa_prikey_params(prikey, &s_d, &s_n);
 
 			/* check D */
-			if (memcmp(s_n->data, n.data, s_n->bsize)) {
+			if (memcmp(s_n->data, n.data, s_n->dsize)) {
 				HPRE_TST_PRT("key generate N result mismatching!\n");
 				return -EINVAL;
 			}
-			if (memcmp(s_d->data, d.data, s_d->bsize)) {
+			if (memcmp(s_d->data, d.data, s_d->dsize)) {
 				HPRE_TST_PRT("key generate D result mismatching!\n");
 				return -EINVAL;
 			}
@@ -2551,11 +2556,13 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 		}
 		free(ssl_out);
 	} else {
+
 		ssl_out = malloc(key_size);
 		if (!ssl_out) {
 			HPRE_TST_PRT("malloc ssl out fail!\n");
 			return -ENOMEM;
 		}
+
 		if (key && wcrypto_rsa_is_crt(ctx)) {
 			BIGNUM *dp, *dq, *iqmp, *p, *q;
 			int size = key_size / 2;
@@ -2610,6 +2617,7 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 				HPRE_TST_PRT("rsa set0_key crt err!\n");
 				return -EINVAL;
 			}
+
 		} else if (key && !wcrypto_rsa_is_crt(ctx)) {
 			BIGNUM *d;
 
@@ -2634,6 +2642,7 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 				return -EINVAL;
 			}
 		}
+
 		ret = RSA_private_decrypt(opdata->in_bytes, opdata->in, ssl_out,
 					hpre_test_rsa, RSA_NO_PADDING);
 		if (ret != (int)opdata->in_bytes) {
@@ -2645,11 +2654,13 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 		print_data(opdata->in, 16, "in");
 		print_data(ssl_out, 16, "ssl_out");
 #endif
+
 		if (!only_soft && memcmp(ssl_out, opdata->out, ret)) {
 			HPRE_TST_PRT("prv decrypto result  mismatch!\n");
 			return -EINVAL;
 		}
 		free(ssl_out);
+
 	}
 
 	return 0;
@@ -3175,6 +3186,7 @@ new_test_again:
 			HPRE_TST_PRT("alloc in buffer fail!\n");
 			goto fail_release;
 		}
+		memset(opdata.in, 0, opdata.in_bytes);
 		opdata.out = wd_alloc_blk(pdata->pool);
 		if (!opdata.out) {
 			HPRE_TST_PRT("alloc out buffer fail!\n");
@@ -3357,7 +3369,8 @@ void *_hpre_rsa_sys_test_thread(void *data)
 }
 
 static int hpre_sys_test(int thread_num, __u64 lcore_mask,
-			 __u64 hcore_mask, enum alg_op_type op_type)
+			 __u64 hcore_mask, enum alg_op_type op_type,
+			char *dev_path, unsigned int node_msk)
 {
 	void **pool;
 	struct wd_blkpool_setup setup;
@@ -3388,6 +3401,10 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 				q[j].capa.alg = "dh";
 			else
 				q[j].capa.alg = "rsa";
+
+			if (dev_path)
+				strncpy(q[j].dev_path, dev_path, sizeof(q[j].dev_path));
+			q[j].node_mask = node_msk;
 			ret = wd_request_queue(&q[j]);
 			if (ret) {
 				HPRE_TST_PRT("request queue %d fail!\n", j);
@@ -4189,6 +4206,8 @@ int main(int argc, char *argv[])
 	int thread_num, bits;
 	__u64 core_mask[2];
 	u32 value = 0;
+	char dev_path[PATH_STR_SIZE] = {0};
+	unsigned int node_msk = 0;
 
 	if (!argv[1] || !argv[6]) {
 		HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
@@ -4199,6 +4218,9 @@ int main(int argc, char *argv[])
 		openssl_check = 1;
 	if (argv[7] && !strcmp(argv[7], "-soft"))
 		only_soft = 1;
+
+	//wd_log log = wd_log_out;
+	//printf("ret %d\n", wd_register_log(log));
 
 	if (!strcmp(argv[1], "-system-qt")) {
 		is_system_test = 1;
@@ -4355,12 +4377,18 @@ int main(int argc, char *argv[])
 			if (!strcmp(argv[11], "-seconds") || 
 				!strcmp(argv[11], "-cycles")) {
 				value = strtoul(argv[12], NULL, 10);
-			}
-
-			if (!strcmp(argv[11], "-seconds")) {
-				t_seconds = value;
-			} else if (!strcmp(argv[11], "-cycles")) {
-				t_times = value;
+				if (!strcmp(argv[11], "-seconds")) {
+					t_seconds = value;
+				} else if (!strcmp(argv[11], "-cycles")) {
+					t_times = value;
+				} else {
+					HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
+					return -EINVAL;
+				}
+			} else if (!strcmp(argv[11], "-dev")) {
+				strncpy(dev_path, argv[12], sizeof(dev_path));
+			} else if (!strcmp(argv[11], "-node")) {
+				node_msk = strtoul(argv[12], NULL, 16);
 			} else {
 				HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
 				return -EINVAL;
@@ -4371,12 +4399,18 @@ int main(int argc, char *argv[])
 			if (!strcmp(argv[10], "-seconds") || 
 				!strcmp(argv[10], "-cycles")) {
 				value = strtoul(argv[11], NULL, 10);
-			}
-
-			if (!strcmp(argv[10], "-seconds")) {
-				t_seconds = value;
-			} else if (!strcmp(argv[10], "-cycles")) {
-				t_times = value;
+				if (!strcmp(argv[10], "-seconds")) {
+					t_seconds = value;
+				} else if (!strcmp(argv[11], "-cycles")) {
+					t_times = value;
+				} else {
+					HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
+					return -EINVAL;
+				}
+			} else if (!strcmp(argv[10], "-dev")) {
+				strncpy(dev_path, argv[11], sizeof(dev_path));
+			} else if (!strcmp(argv[10], "-node")) {
+				node_msk = strtoul(argv[11], NULL, 16);
 			} else {
 				HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
 				return -EINVAL;
@@ -4402,7 +4436,7 @@ int main(int argc, char *argv[])
 					 core_mask[0], core_mask[1]);
 		if (alg_op_type < MAX_RSA_SYNC_TYPE || alg_op_type == DH_GEN || alg_op_type == DH_COMPUTE)
 			return hpre_sys_test(thread_num, core_mask[0],
-					     core_mask[1], alg_op_type);
+					     core_mask[1], alg_op_type, dev_path, node_msk);
 		else if (alg_op_type > MAX_RSA_SYNC_TYPE && alg_op_type < MAX_RSA_ASYNC_TYPE)
 			return rsa_async_test(thread_num, core_mask[0],
 					      core_mask[1], alg_op_type);
@@ -4520,6 +4554,11 @@ basic_function_test:
 	if (argc >= 9) {
 		strncpy(q.dev_path, argv[8], sizeof(q.dev_path));
 		HPRE_TST_PRT("denote dev path:%s\n", argv[8]);
+	}
+
+	if (argc >= 10) {
+		q.node_mask = strtoul(argv[9], NULL, 16);
+		HPRE_TST_PRT("denote node_id %d\n", q.node_mask);
 	}
 
 	if (alg_op_type < MAX_RSA_ASYNC_TYPE && alg_op_type > HPRE_ALG_INVLD_TYPE) {

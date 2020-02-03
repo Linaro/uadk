@@ -160,17 +160,24 @@ bool wcrypto_dh_is_g2(void *ctx)
 
 int wcrypto_dh_key_bits(void *ctx)
 {
-	if (ctx)
-		return ((struct wcrypto_dh_ctx *)ctx)->setup.key_bits;
+	if (!ctx) {
+		WD_ERR("get dh key bits, ctx NULL!\n");
+		return 0;
+	}
 
-	return 0;
+	return ((struct wcrypto_dh_ctx *)ctx)->setup.key_bits;
 }
 
 int wcrypto_set_dh_g(void *ctx, struct wd_dtb *g)
 {
 	struct wcrypto_dh_ctx *cx = ctx;
 
-	if (ctx && g && g->dsize
+	if (!cx || !g) {
+		WD_ERR("param NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (g->dsize
 		&& g->bsize <= cx->g.bsize
 		&& g->dsize <= cx->g.bsize) {
 		memset(cx->g.data, 0, g->bsize);
@@ -186,8 +193,12 @@ int wcrypto_set_dh_g(void *ctx, struct wd_dtb *g)
 
 void wcrypto_get_dh_g(void *ctx, struct wd_dtb **g)
 {
-	if (ctx && g)
-		*g = &((struct wcrypto_dh_ctx *)ctx)->g;
+	if (!ctx || !g) {
+		WD_ERR("param NULL!\n");
+		return;
+	}
+
+	*g = &((struct wcrypto_dh_ctx *)ctx)->g;
 }
 
 static int dh_request_init(struct wcrypto_dh_msg *req, struct wcrypto_dh_op_data *op,
@@ -297,6 +308,11 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_cb_tag *tag;
 	int count = 0;
 	int ret;
+
+	if (!q) {
+		WD_ERR("q is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	do {
 		ret = wd_recv(q, (void **)&resp);

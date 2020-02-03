@@ -22,6 +22,10 @@
 #include <linux/types.h>
 #include "wd.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct wcrypto_rsa_kg_in; /* rsa key generation input parameters */
 struct wcrypto_rsa_kg_out; /* rsa key generation output parameters */
 struct wcrypto_rsa_pubkey; /* rsa public key */
@@ -136,4 +140,9 @@ void wcrypto_set_rsa_kg_out_psz(struct wcrypto_rsa_kg_out *kout,
 int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag);
 int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num);
 void wcrypto_del_rsa_ctx(void *ctx);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

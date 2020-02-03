@@ -120,8 +120,10 @@ enum wcrypto_rsa_crt_prikey_para {
 
 int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data)
 {
-	if (!ki || !data)
+	if (!ki || !data) {
+		WD_ERR("param is NULL!\n");
 		return -WD_EINVAL;
+	}
 
 	*data = (char *)ki->data;
 	return (int)GEN_PARAMS_SZ(ki->key_size);
@@ -129,8 +131,10 @@ int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data)
 
 int wcrypto_rsa_kg_out_data(struct wcrypto_rsa_kg_out *ko, char **data)
 {
-	if (!ko || !data)
+	if (!ko || !data) {
+		WD_ERR("param is NULL!\n");
 		return -WD_EINVAL;
+	}
 
 	*data = (char *)ko->data;
 
@@ -655,16 +659,19 @@ void wcrypto_get_rsa_prikey_params(struct wcrypto_rsa_prikey *pvk, struct wd_dtb
 {
 	struct wcrypto_rsa_prikey1 *pkey1;
 
-	if (pvk) {
-		pkey1 = &pvk->pkey1;
-		if (!pkey1)
-			return;
-
-		if (d)
-			*d = &pkey1->d;
-		if (n)
-			*n = &pkey1->n;
+	if (!pvk) {
+		WD_ERR("pvk is NULL!\n");
+		return;
 	}
+
+	pkey1 = &pvk->pkey1;
+	if (!pkey1)
+		return;
+
+	if (d)
+		*d = &pkey1->d;
+	if (n)
+		*n = &pkey1->n;
 }
 
 static int rsa_set_param(struct wd_dtb *src, struct wd_dtb *dst)
@@ -777,34 +784,45 @@ void wcrypto_get_rsa_crt_prikey_params(struct wcrypto_rsa_prikey *pvk,
 {
 	struct wcrypto_rsa_prikey2 *pkey2;
 
-	if (pvk) {
-		pkey2 = &pvk->pkey2;
-		if (!pkey2)
-			return;
-
-		if (dq)
-			*dq = &pkey2->dq;
-		if (dp)
-			*dp = &pkey2->dp;
-		if (qinv)
-			*qinv = &pkey2->qinv;
-		if (q)
-			*q = &pkey2->q;
-		if (p)
-			*p = &pkey2->p;
+	if (!pvk) {
+		WD_ERR("pvk is NULL!\n");
+		return;
 	}
+
+	pkey2 = &pvk->pkey2;
+	if (!pkey2)
+		return;
+
+	if (dq)
+		*dq = &pkey2->dq;
+	if (dp)
+		*dp = &pkey2->dp;
+	if (qinv)
+		*qinv = &pkey2->qinv;
+	if (q)
+		*q = &pkey2->q;
+	if (p)
+		*p = &pkey2->p;
 }
 
 void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey)
 {
-	if (ctx && pubkey)
-		*pubkey = ((struct wcrypto_rsa_ctx *)ctx)->pubkey;
+	if (!ctx || !pubkey) {
+		WD_ERR("param is NULL!\n");
+		return;
+	}
+
+	*pubkey = ((struct wcrypto_rsa_ctx *)ctx)->pubkey;
 }
 
 void wcrypto_get_rsa_prikey(void *ctx, struct wcrypto_rsa_prikey **prikey)
 {
-	if (ctx && prikey)
-		*prikey = ((struct wcrypto_rsa_ctx *)ctx)->prikey;
+	if (!ctx || !prikey) {
+		WD_ERR("param is NULL!\n");
+		return;
+	}
+
+	*prikey = ((struct wcrypto_rsa_ctx *)ctx)->prikey;
 }
 
 static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_data *op,
@@ -925,6 +943,11 @@ int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_cb_tag *tag;
 	int count = 0;
 	int ret;
+
+	if (!q) {
+		WD_ERR("q is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	do {
 		ret = wd_recv(q, (void **)&resp);

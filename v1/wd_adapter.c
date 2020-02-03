@@ -157,7 +157,9 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 
 	ptr = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, UACCE_QFRT_INVALID, size);
 	if (ptr == MAP_FAILED) {
-		WD_ERR("wd drv mmap fail!(errno=%d)\n", errno);
+		int value = errno;
+
+		WD_ERR("wd drv mmap fail!(err =%d)\n", value);
 		return NULL;
 	}
 	qinfo->ss_va = ptr;
