@@ -21,6 +21,10 @@
 #include "wd_digest.h"
 #include "wd_cipher.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define WD_RNG_CTX_MSG_NUM	256
 
 struct wcrypto_rng_ctx_setup {
@@ -66,5 +70,9 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 void wcrypto_del_rng_ctx(void *ctx);
 int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag);
 int wcrypto_rng_poll(struct wd_queue *q, unsigned int num);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

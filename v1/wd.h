@@ -16,6 +16,7 @@
 
 #ifndef __WD_H
 #define __WD_H
+
 #include <stdlib.h>
 #include <errno.h>
 #include <stdio.h>
@@ -30,6 +31,10 @@
 #include <limits.h>
 #include <assert.h>
 #include "include/uacce.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define SYS_VAL_SIZE		16
 #define PATH_STR_SIZE		256
@@ -57,6 +62,8 @@
 #define	WD_ENOPROC		68
 
 typedef void (*wcrypto_cb)(const void *msg, void *tag);
+
+typedef void (*wd_log)(const char *format, ...);
 
 struct wcrypto_cb_tag {
 	void *ctx; /* user: context or other user relatives */
@@ -123,7 +130,15 @@ enum wd_buff_type {
 
 #ifndef WD_ERR
 #ifndef WITH_LOG_FILE
-#define WD_ERR(format, args...) fprintf(stderr, format, ##args)
+extern wd_log log_out;
+
+#define __WD_FILENAME__ (strrchr(__FILE__, '/') ?	\
+		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)):__FILE__)
+
+#define WD_ERR(format, args...)	\
+	(log_out ? log_out("[%s, %d, %s]:"format,	\
+	__WD_FILENAME__, __LINE__, __func__, ##args) :	\
+	fprintf(stderr, format, ##args))
 #else
 extern FILE *flog_fd;
 #define WD_ERR(format, args...)				\
@@ -139,14 +154,12 @@ extern FILE *flog_fd;
 
 #define WD_CAPA_PRIV_DATA_SIZE	64
 
-
 /* Capabilities */
 struct wd_capa {
-	const char *alg;
-	int throughput;
-	int latency;
-	__u32 flags;
-
+	const char *alg;	/* Algorithm name */
+	int throughput;	/* throughput capability */
+	int latency;	/* latency capability */
+	__u32 flags;	/* other capabilities */
 	/* For algorithm parameters, now it is defined in extending notions */
 	struct wcrypto_paras priv;
 };
@@ -154,6 +167,7 @@ struct wd_capa {
 struct wd_queue {
 	struct wd_capa capa;
 	char dev_path[PATH_STR_SIZE]; /* if denote dev name, get its Q */
+	unsigned int node_mask; /* if denote dev node mask, get its Q */
 	void *qinfo; /* queue private */
 };
 
@@ -170,4 +184,10 @@ extern int wd_get_node_id(struct wd_queue *q);
 extern void *wd_iova_map(struct wd_queue *q, void *va, size_t sz);
 extern void wd_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
 extern void *wd_dma_to_va(struct wd_queue *q, void *dma);
+extern int wd_register_log(wd_log log);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
