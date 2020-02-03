@@ -22,6 +22,9 @@
 #include <linux/types.h>
 #include "wd.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 enum wcrypto_digest_alg {
 	WCRYPTO_SM3,
@@ -134,5 +137,10 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_digest_ctx(void *ctx);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
 

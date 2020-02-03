@@ -50,6 +50,8 @@
 FILE *flog_fd = NULL;
 #endif
 
+wd_log log_out = NULL;
+
 #define offsetof(t, m) ((size_t) &((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
@@ -285,19 +287,26 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	return 0;
 }
 
-static void copy_if_better(struct dev_info *old, struct dev_info *new,
-			    struct wd_capa *capa)
+static bool copy_if_better(struct dev_info *old, struct dev_info *new,
+			    struct wd_capa *capa, unsigned int node_mask)
 {
-	dbg("try accelerator %s (inst_num=%d)...", new->name,
-	    new->available_instances);
+	bool find_node = false;
+
+	dbg("try accelerator %s (inst_num=%d, node_id=%d)...\n", new->name,
+	    new->available_instances, new->node_id);
+
+	if (new->node_id >= 0 && ((1 << new->node_id) & node_mask))
+		find_node = true;
 
 	/* Is the new dev better? */
-	if (old && (!old->name[0]
-		|| (is_weight_more(new->weight, old->weight)))) {
+	if (old && (!old->name[0] || find_node ||
+		is_weight_more(new->weight, old->weight))) {
+
 		memcpy(old, new, sizeof(*old));
 		dbg("adopted\n");
-		return;
 	}
+
+	return find_node;
 }
 
 static void pre_init_dev(struct dev_info *dinfo, const char *name)
@@ -328,7 +337,9 @@ static int get_denoted_dev(struct wd_capa *capa, const char *dev,
 	return -ENODEV;
 }
 
-static int find_available_dev(struct dev_info *dinfop, struct wd_capa *capa)
+static int find_available_dev(struct dev_info *dinfop,
+				  struct wd_capa *capa,
+				  unsigned int node_mask)
 {
 	struct dirent *device;
 	DIR *wd_class = NULL;
@@ -352,8 +363,9 @@ static int find_available_dev(struct dev_info *dinfop, struct wd_capa *capa)
 			continue;
 		pre_init_dev(&dinfo, name);
 		if (!get_dev_info(&dinfo, capa->alg)) {
-			copy_if_better(dinfop, &dinfo, capa);
 			cnt++;
+			if (copy_if_better(dinfop, &dinfo, capa, node_mask))
+				break;
 		}
 	}
 	closedir(wd_class);
@@ -377,7 +389,7 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 			goto dev_path;
 	}
 
-	ret = find_available_dev(dinfop, capa);
+	ret = find_available_dev(dinfop, capa, q->node_mask);
 	if (ret <= 0 && dinfop) {
 		WD_ERR("get /%s path fail!\n", dinfop->name);
 		return -ENODEV;
@@ -738,3 +750,22 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 		size = qinfo->qfrs_offset[qfrt_next] - qinfo->qfrs_offset[qfrt];
 	munmap(addr, size);
 }
+
+int wd_register_log(wd_log log)
+{
+	if (!log) {
+		WD_ERR("param null!\n");
+		return -WD_EINVAL;
+	}
+
+	if (log_out) {
+		WD_ERR("can not duplicate register!\n");
+		return -WD_EINVAL;
+	}
+
+	log_out = log;
+	dbg("log register\n");
+
+	return WD_SUCCESS;
+}
+
