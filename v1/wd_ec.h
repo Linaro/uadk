@@ -22,6 +22,10 @@
 #include <linux/types.h>
 #include "wd.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SRC_ADDR_TABLE_NUM		48
 #define SRC_DIF_TABLE_NUM		20
 #define DST_ADDR_TABLE_NUM		26
@@ -209,5 +213,9 @@ int wcrypto_ec_poll(struct wd_queue *q, int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_ec_ctx(void *ctx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -20,6 +20,10 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum wcrypto_dh_op_type {
 	WCRYPTO_DH_INVALID, /* invalid DH operation */
 	WCRYPTO_DH_PHASE1, /* Phase1 DH key generate */
@@ -78,4 +82,9 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num);
 void wcrypto_del_dh_ctx(void *ctx);
 int wcrypto_set_dh_g(void *ctx, struct wd_dtb *g);
 void wcrypto_get_dh_g(void *ctx, struct wd_dtb **g);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

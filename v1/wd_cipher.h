@@ -22,6 +22,10 @@
 #include <linux/types.h>
 #include "wd.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum wcrypto_cipher_op_type {
 	WCRYPTO_CIPHER_ENCRYPTION,
 	WCRYPTO_CIPHER_DECRYPTION,
@@ -103,6 +107,7 @@ struct wcrypto_cipher_msg {
 	__u64 usr_data;	/* user identifier: struct wcrypto_cb_tag */
 };
 
+
 /**
  * wcrypto_create_cipher_ctx() - create a cipher context on the wrapdrive queue.
  * @q: wrapdrive queue, need requested by user.
@@ -140,6 +145,10 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_cipher_ctx(void *ctx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 
