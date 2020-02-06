@@ -324,33 +324,70 @@ void hizip_fini(void)
 	free(hizip_priv.msgs);
 }
 
-void hizip_read(struct hisi_zip_sqe *msg, size_t ilen)
+void hizip_read(int alg_type, int op_type, size_t ilen)
 {
-	unsigned long long int phys_in, phys_out;
-	size_t sz;
+	size_t sz, temp_len, real_len;
 
-	memset(msg, 0, sizeof(*msg));
+	temp_len = ilen;
+
+	if (op_type == INFLATE) {
+		if (alg_type == ZLIB) {
+			sz = fread(hizip_priv.data_in, 1, ZLIB_HEADER_SZ,
+				   hizip_priv.sfile);
+			SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "read zlib hd err");
+			ilen -= ZLIB_HEADER_SZ;
+		} else {
+			sz = fread(hizip_priv.data_in, 1, GZIP_HEADER_SZ,
+				   hizip_priv.sfile);
+			SYS_ERR_COND(sz != GZIP_HEADER_SZ, "read gzip hd err");
+			ilen -= GZIP_HEADER_SZ;
+			if (*((char *)hizip_priv.data_in + 3) == 0x04) {
+				sz = fread(hizip_priv.data_in, 1, GZIP_EXTRA_SZ,
+					   hizip_priv.sfile);
+				memcpy(&ilen, hizip_priv.data_in + 6, 4);
+				dbg("gzip input len %ld\n", ilen);
+				SYS_ERR_COND(ilen > block_size * 2,
+				   "gzip protocol_len(%ld) > dmabuf_size(%d)\n",
+				   ilen, block_size);
+				real_len = GZIP_HEADER_SZ + GZIP_EXTRA_SZ +
+					   ilen;
+				hizip_priv.total_len = hizip_priv.total_len +
+					   temp_len - real_len;
+			}
+		}
+	}
 	sz = fread(hizip_priv.data_in, 1, ilen, hizip_priv.sfile);
-	SYS_ERR_COND(sz != ilen, "read");
-	phys_in  = wd_get_pa_from_va(&hizip_priv.qs[0], hizip_priv.data_in);
-	phys_out = wd_get_pa_from_va(&hizip_priv.qs[0], hizip_priv.data_out);
-
-	msg->input_data_length = ilen;
-	msg->dw9 = hizip_priv.dw9;
-	/* Prevent overflow by large buffer. */
-	msg->dest_avail_out = block_size * 2;
-	msg->source_addr_l = phys_in & 0xffffffff;
-	msg->source_addr_h = phys_in >> 32;
-	msg->dest_addr_l = phys_out & 0xffffffff;
-	msg->dest_addr_h = phys_out >> 32;
+	SYS_ERR_COND(sz != ilen, "read data err");
 }
 
-void hizip_write(FILE *dest, size_t olen)
+void hizip_write(FILE *dest, struct hisi_zip_sqe *msg)
 {
-	size_t sz;
+	size_t sz, olen;
+	unsigned int status, type;
+	char gzip_extra[GZIP_EXTRA_SZ] = {0x08, 0x00, 0x48, 0x69, 0x04, 0x00,
+					  0x00, 0x00, 0x00, 0x00};
 
+	status = msg->dw3 & 0xff;
+	type = msg->dw9 & 0xff;
+	olen = msg->produced;
+
+	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
+		     status, type);
+
+	if (hizip_priv.op_type == DEFLATE) {
+		if (hizip_priv.alg_type == ZLIB) {
+			sz = fwrite(ZLIB_HEADER, 1, ZLIB_HEADER_SZ, dest);
+			SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "write zlib hd err");
+		} else {
+			sz = fwrite(GZIP_HEADER, 1, GZIP_HEADER_SZ, dest);
+			SYS_ERR_COND(sz != GZIP_HEADER_SZ, "write gzip hd err");
+			memcpy(gzip_extra + 6, &msg->produced, 4);
+			sz = fwrite(gzip_extra, 1, GZIP_EXTRA_SZ, dest);
+			SYS_ERR_COND(sz != GZIP_EXTRA_SZ, "write gzip ex err");
+		}
+	}
 	sz = fwrite(hizip_priv.data_out, 1, olen, dest);
-	SYS_ERR_COND(sz != olen, "write");
+	SYS_ERR_COND(sz != olen, "write data err");
 }
 
 void hizip_deflate(FILE *source, FILE *dest)
@@ -359,7 +396,8 @@ void hizip_deflate(FILE *source, FILE *dest)
 	struct stat s;
 	int ret;
 	struct hisi_zip_sqe msg, *recv_msg;
-	size_t ilen, real_len, olen;
+	size_t ilen, olen;
+	unsigned long long int phys_in, phys_out;
 
 	fd = fileno(source);
 	SYS_ERR_COND(fstat(fd, &s) < 0, "fstat");
@@ -369,12 +407,27 @@ void hizip_deflate(FILE *source, FILE *dest)
 	hizip_priv.dfile = dest;
 	olen = 0;
 
+	phys_in  = wd_get_pa_from_va(&hizip_priv.qs[0],
+				     hizip_priv.data_in);
+	phys_out = wd_get_pa_from_va(&hizip_priv.qs[0],
+				     hizip_priv.data_out);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.dw9 = hizip_priv.dw9;
+	/* Prevent overflow by large output buffer. */
+	msg.dest_avail_out = block_size * 2;
+	msg.source_addr_l = phys_in & 0xffffffff;
+	msg.source_addr_h = phys_in >> 32;
+	msg.dest_addr_l = phys_out & 0xffffffff;
+	msg.dest_addr_h = phys_out >> 32;
+
 	while (hizip_priv.total_len) {
 		ilen = hizip_priv.total_len > block_size ?
 			block_size : hizip_priv.total_len;
 		hizip_priv.total_len -= ilen;
+		msg.input_data_length = ilen;
 
-		hizip_read(&msg, ilen);
+		hizip_read(hizip_priv.alg_type, hizip_priv.op_type, ilen);
 
 		do {
 			ret = wd_send(&hizip_priv.qs[0], &msg);
@@ -394,7 +447,7 @@ void hizip_deflate(FILE *source, FILE *dest)
 
 		olen += recv_msg->produced;
 
-		hizip_write(dest, recv_msg->produced);
+		hizip_write(dest, recv_msg);
 	}
 }
 #endif /* WD_SCHED */
