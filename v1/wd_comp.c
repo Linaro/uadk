@@ -79,7 +79,7 @@ static void put_comp_cache(struct wcrypto_comp_ctx *ctx,
 	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
 }
 
-static int fill_comp_msg(struct wcrypto_comp_ctx *ctx,
+static void fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 			 struct wcrypto_comp_msg *msg,
 			 struct wcrypto_comp_op_data *opdata)
 {
@@ -93,8 +93,6 @@ static int fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 	msg->checksum = opdata->checksum;
 	msg->tag = ctx->ctx_id;
 	msg->status = 0;
-
-	return WD_SUCCESS;
 }
 
 /**
@@ -112,11 +110,6 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	if (!q || !setup) {
 		WD_ERR("err, input param invalid!\n");
-		return NULL;
-	}
-
-	if (strlen(q->capa.alg) > MAX_ALG_LEN) {
-		WD_ERR("err, alg len invalid!\n");
 		return NULL;
 	}
 
@@ -219,12 +212,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 
 	cache->tag.priv = opdata->priv;
 
-	ret = fill_comp_msg(cctx, msg, opdata);
-	if (ret) {
-		ret = -WD_EINVAL;
-		goto err_put_cache;
-	}
-
+	fill_comp_msg(cctx, msg, opdata);
 	ret = wd_send(cctx->q, msg);
 	if (ret < 0) {
 		WD_ERR("wd_send err!\n");
@@ -267,13 +255,18 @@ err_put_cache:
  * @q:wrapdrive queue
  * @num:how many respondings this poll has to get, 0 means get all finishings
  */
-int wcrypto_comp_poll(struct wd_queue *q, int num)
+int wcrypto_comp_poll(struct wd_queue *q, unsigned int num)
 {
 	struct wcrypto_comp_msg *resp = NULL;
 	struct wcrypto_comp_ctx *ctx;
 	struct wcrypto_comp_tag *tag;
 	int count = 0;
 	int ret;
+
+	if (!q) {
+		WD_ERR("%s(): input param err!\n", __func__);
+		return -WD_EINVAL;
+	}
 
 	do {
 		ret = wd_recv(q, (void **)&resp);
