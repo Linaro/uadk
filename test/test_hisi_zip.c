@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <getopt.h>
 #include "drv/hisi_qm_udrv.h"
+#include "smm.h"
 #include "test_lib.h"
 
 #define ZLIB_HEADER "\x78\x9c"
@@ -34,8 +35,15 @@ static struct hizip_priv {
 	int total_len;
 	struct hisi_zip_sqe *msgs;
 	FILE *sfile, *dfile;
+
+#ifndef WD_SCHED
+	struct wd_queue *qs;
+	int q_num;
+	void *data_in, *data_out;
+#endif
 } hizip_priv;
 
+#ifdef WD_SCHED
 static struct wd_scheduler sched = {
 	.priv = &hizip_priv,
 };
@@ -247,6 +255,149 @@ void hizip_deflate(FILE *source, FILE *dest)
 
 	fclose(dest);
 }
+#else
+
+static void *ss_region;
+
+int hizip_init(int alg_type, int op_type)
+{
+	int ret = -ENOMEM, i;
+	char *alg;
+	struct hisi_qm_priv *priv;
+	int ss_region_size;
+
+	req_cache_num = 1;
+	hizip_priv.msgs = calloc(req_cache_num, sizeof(*hizip_priv.msgs));
+	if (!hizip_priv.msgs)
+		return ret;
+
+	hizip_priv.alg_type = alg_type;
+	hizip_priv.op_type = op_type;
+	if (alg_type == ZLIB) {
+		alg = "zlib";
+		hizip_priv.dw9 = 2;
+	} else {
+		alg = "gzip";
+		hizip_priv.dw9 = 3;
+	}
+
+	hizip_priv.q_num = q_num;
+	hizip_priv.qs = calloc(q_num, sizeof(*hizip_priv.qs));
+	if (hizip_priv.qs == NULL) {
+		return -ENOMEM;
+	}
+	for (i = 0; i < q_num; i++) {
+		hizip_priv.qs[i].capa.alg = alg;
+		priv = (struct hisi_qm_priv *)hizip_priv.qs[i].capa.priv;
+		priv->sqe_size = sizeof(struct hisi_zip_sqe);
+		priv->op_type = hizip_priv.op_type;
+	}
+
+	/* smm_init() costs two pages, and each smm_alloc() costs one additional
+	 * page.
+	 */
+	ss_region_size = req_cache_num * (block_size * 2 + 4096) * 2 + 4096 * 2;
+	ret = wd_request_queue(&hizip_priv.qs[0]);
+	if (ret)
+		return ret;
+
+	ss_region = wd_reserve_memory(&hizip_priv.qs[0], ss_region_size);
+	if (!ss_region) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = smm_init(ss_region, ss_region_size, 0xFFF);
+	if (ret)
+		goto out;
+	hizip_priv.data_in = smm_alloc(ss_region, block_size * 2);
+	hizip_priv.data_out = smm_alloc(ss_region, block_size * 2);
+	return 0;
+out:
+	wd_release_queue(&hizip_priv.qs[0]);
+	return ret;
+}
+
+void hizip_fini(void)
+{
+	wd_release_queue(&hizip_priv.qs[0]);
+	free(hizip_priv.msgs);
+}
+
+void hizip_read(struct hisi_zip_sqe *msg, size_t ilen)
+{
+	unsigned long long int phys_in, phys_out;
+	size_t sz;
+
+	memset(msg, 0, sizeof(*msg));
+	sz = fread(hizip_priv.data_in, 1, ilen, hizip_priv.sfile);
+	SYS_ERR_COND(sz != ilen, "read");
+	phys_in  = wd_get_pa_from_va(&hizip_priv.qs[0], hizip_priv.data_in);
+	phys_out = wd_get_pa_from_va(&hizip_priv.qs[0], hizip_priv.data_out);
+
+	msg->input_data_length = ilen;
+	msg->dw9 = hizip_priv.dw9;
+	/* Prevent overflow by large buffer. */
+	msg->dest_avail_out = block_size * 2;
+	msg->source_addr_l = phys_in & 0xffffffff;
+	msg->source_addr_h = phys_in >> 32;
+	msg->dest_addr_l = phys_out & 0xffffffff;
+	msg->dest_addr_h = phys_out >> 32;
+}
+
+void hizip_write(FILE *dest, size_t olen)
+{
+	size_t sz;
+
+	sz = fwrite(hizip_priv.data_out, 1, olen, dest);
+	SYS_ERR_COND(sz != olen, "write");
+}
+
+void hizip_deflate(FILE *source, FILE *dest)
+{
+	int fd;
+	struct stat s;
+	int ret;
+	struct hisi_zip_sqe msg, *recv_msg;
+	size_t ilen, real_len, olen;
+
+	fd = fileno(source);
+	SYS_ERR_COND(fstat(fd, &s) < 0, "fstat");
+	hizip_priv.total_len = s.st_size;
+	SYS_ERR_COND(!hizip_priv.total_len, "input file length zero");
+	hizip_priv.sfile = source;
+	hizip_priv.dfile = dest;
+	olen = 0;
+
+	while (hizip_priv.total_len) {
+		ilen = hizip_priv.total_len > block_size ?
+			block_size : hizip_priv.total_len;
+		hizip_priv.total_len -= ilen;
+
+		hizip_read(&msg, ilen);
+
+		do {
+			ret = wd_send(&hizip_priv.qs[0], &msg);
+			if (ret == -EBUSY) {
+				usleep(1);
+				continue;
+			}
+		} while (ret);
+
+		do {
+			ret = wd_recv(&hizip_priv.qs[0], (void **)&recv_msg);
+			if (ret == -EAGAIN) {
+				usleep(1);
+				continue;
+			}
+		} while (ret);
+
+		olen += recv_msg->produced;
+
+		hizip_write(dest, recv_msg->produced);
+	}
+}
+#endif /* WD_SCHED */
 
 void hizip_def(FILE *source, FILE *dest, int alg_type, int op_type)
 {

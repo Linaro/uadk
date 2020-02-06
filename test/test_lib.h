@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "wd.h"
-#include "wd_sched.h"
 #include "zip_usr_if.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
@@ -69,6 +68,7 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 int hizip_test_default_input(struct wd_msg *msg, void *priv);
 int hizip_test_default_output(struct wd_msg *msg, void *priv);
 
+#if 0
 struct test_ops {
 	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
@@ -82,6 +82,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 		     struct hizip_test_context *priv);
 void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts);
+#endif
 
 void hizip_prepare_random_input_data(struct hizip_test_context *ctx);
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
