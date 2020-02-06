@@ -69,17 +69,6 @@ struct hisi_zip_udata {
 	void *priv;
 };
 
-#ifdef DEBUG_LOG
-void zip_sqe_dump(struct hisi_zip_sqe *sqe)
-{
-	int i;
-
-	WD_ERR("[%s][%d]sqe info:\n", __func__, __LINE__);
-	for (i = 0; i < sizeof(struct hisi_zip_sqe) / sizeof(int); i++)
-		WD_ERR("sqe-word[%d]: 0x%x.\n", i, *((int *)sqe + i));
-}
-#endif
-
 static void qm_fill_zip_sqe_with_priv(struct hisi_zip_sqe *sqe, void *priv)
 {
 	struct hisi_zip_udata *udata = priv;
@@ -195,12 +184,6 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 
 	info->req_cache[i] = msg;
 
-	dbg("%s, %p, %p, %d\n", __func__, info->req_cache[i], sqe,
-	    info->sqe_size);
-#ifdef DEBUG_LOG
-	zip_sqe_dump(sqe);
-#endif
-
 	return WD_SUCCESS;
 }
 
@@ -245,9 +228,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	    status != HW_CRC_ERR && status != HW_DECOMP_END) {
 		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 		       ctx_st, status, type);
-#ifdef DEBUG_LOG
-		zip_sqe_dump(sqe);
-#endif
 		recv_msg->status = WD_IN_EPARA;
 	} else {
 		recv_msg->status = 0;
@@ -267,9 +247,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->tag = sqe->tag;
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
-
-	dbg("%s: %p, %p, %d\n", __func__, info->req_cache[i], sqe,
-	    info->sqe_size);
 
 	return 1;
 }
@@ -389,10 +366,6 @@ int qm_fill_zip_cipher_sqe(void *send_msg, struct qm_queue_info *info, __u16 i)
 
 	info->req_cache[i] = msg;
 
-#ifdef DEBUG_LOG
-	zip_sqe_dump(sqe);
-#endif
-
 	return WD_SUCCESS;
 }
 
@@ -415,18 +388,12 @@ int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
 		recv_msg->result = WCRYPTO_SRC_DIF_ERR;
 	else {
 		WD_ERR("bad status(s=0x%x, t=%u)\n", status, type);
-#ifdef DEBUG_LOG
-		zip_sqe_dump(sqe);
-#endif
 		recv_msg->result = WD_IN_EPARA;
 	}
 
 	dma_addr = DMA_ADDR(sqe->cipher_key1_addr_h, sqe->cipher_key1_addr_l);
 	drv_iova_unmap(q, recv_msg->key, (void *)(uintptr_t)dma_addr,
 		recv_msg->key_bytes);
-
-	dbg("%s: %p, %p, %d\n", __func__, info->req_cache[i], sqe,
-		info->sqe_size);
 
 	return 1;
 }
