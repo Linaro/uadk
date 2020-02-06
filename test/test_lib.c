@@ -277,6 +277,7 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
+#if 0
 /*
  * Initialize the scheduler with the given options and operations.
  */
@@ -340,6 +341,7 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 
 	return ret;
 }
+#endif
 
 /*
  * Release the scheduler
