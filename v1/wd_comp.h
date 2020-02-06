@@ -197,7 +197,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag);
  * @q:wrapdrive queue
  * @num:how many respondings this poll has to get, 0 means get all finishings
  */
-int wcrypto_comp_poll(struct wd_queue *q, int num);
+int wcrypto_comp_poll(struct wd_queue *q, unsigned int num);
 
 /**
  * wcrypto_del_comp_ctx() - free compress context

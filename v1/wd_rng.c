@@ -160,6 +160,11 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 	int count = 0;
 	int ret;
 
+	if (!q) {
+		WD_ERR("%s(): input param err!\n", __func__);
+		return -WD_EINVAL;
+	}
+
 	do {
 		ret = wd_recv(q, (void **)&resp);
 		if (!ret)

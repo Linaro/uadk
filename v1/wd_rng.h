@@ -17,22 +17,45 @@
 #ifndef __WD_RNG_H
 #define __WD_RNG_H
 
+#include "wd.h"
+#include "wd_digest.h"
+#include "wd_cipher.h"
+
 #define WD_RNG_CTX_MSG_NUM	256
 
 struct wcrypto_rng_ctx_setup {
-	wcrypto_cb cb;		/* call back function from user */
+	wcrypto_cb cb;
+	__u16 data_fmt;	/* Data format, denoted by enum wd_buff_type */
+	enum wcrypto_type type;	/* Please refer to the definition of enum */
+	enum wcrypto_cipher_alg calg;	/* DRBG cipher algorithm */
+	enum wcrypto_cipher_mode cmode; /* DRBG cipher mode */
+	enum wcrypto_digest_alg dalg;	/* DRBG digest algorithm */
+	enum wcrypto_digest_mode dmode; /* DRBG digest mode */
 };
 
 struct wcrypto_rng_msg {
+	__u8 alg_type;		/* Denoted by enum wcrypto_type */
+	__u8 op_type;		/* Denoted by enum wcrypto_rng_op_type */
+	__u8 data_fmt;	/* Data format, denoted by enum wd_buff_type */
+	__u8 result;		/* Data format, denoted by WD error code */
 	__u8 *out;		/* Result address */
-	__u64 usr_tag;
-	int tag;
+	__u8 *in;		/* Input address */
 	__u32 out_bytes;	/* output bytes */
 	__u32 in_bytes;		/* input bytes */
-	__u8 alg_type;		/* Denoted by enum wcrypto_type */
+	__u64 usr_tag;		/* user identifier */
+};
+
+enum wcrypto_rng_op_type {
+	WCRYPTO_RNG_INVALID,	/* Invalid RNG operational type */
+	WCRYPTO_DRBG_RESEED,	/* seed operation */
+	WCRYPTO_DRBG_GEN,	/* deterministic random number generation */
+	WCRYPTO_TRNG_GEN,	/* true random number generation */
 };
 
 struct wcrypto_rng_op_data {
+	enum wcrypto_rng_op_type op_type;
+	__u32 status;		/* Operation result status */
+	void *in;		/* input */
 	void *out;		/* output */
 	__u32 in_bytes;		/* input bytes */
 	__u32 out_bytes;	/* output bytes */
