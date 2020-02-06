@@ -138,8 +138,7 @@ void drv_show_ss_slices(struct wd_queue *q)
 	int i = 0;
 
 	TAILQ_FOREACH(rgn, qinfo->head, next) {
-		WD_ERR("slice-%d:va=%p,pa=0x%llx,size=0x%lx\n",
-		       i, rgn->va, rgn->pa, rgn->size);
+		WD_ERR("slice-%d:size=0x%lx\n", i, rgn->size);
 		i++;
 	}
 }
