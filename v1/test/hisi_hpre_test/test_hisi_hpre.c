@@ -4183,7 +4183,27 @@ void *_hpre_sys_test_thread(void *data)
 		return _hpre_rsa_sys_test_thread(data);
 	}
 }
+void normal_register(const char *format)
+{
+    printf("wd log:%s", format);
+    return ;
+}
 
+void redirect_log_2_file(const char *format)
+{
+    FILE *fp;
+    fp = fopen("file.txt", "a+");
+    fprintf(fp,format,__FILE__, __LINE__, __func__);
+    fclose(fp);
+    return ;
+}
+
+void segmant_fault_register(const char *format)
+{
+    int *ptr = NULL;
+    *ptr = 0;
+    return ;
+}
 int main(int argc, char *argv[])
 {
 	void *pool = NULL;
@@ -4219,9 +4239,55 @@ int main(int argc, char *argv[])
 	if (argv[7] && !strcmp(argv[7], "-soft"))
 		only_soft = 1;
 
-	//wd_log log = wd_log_out;
-	//printf("ret %d\n", wd_register_log(log));
-
+    if (!strcmp(argv[argc-1], "-registerlog-0")){
+        ret = wd_register_log(NULL);
+        if (!ret){
+            printf("illegel to register null log interface");
+            return -EINVAL;
+        }
+        return 0;
+    }
+    if (!strcmp(argv[argc-1], "-registerlog-1")){
+        ret = wd_register_log(redirect_log_2_file);
+        if (ret){
+            printf("fail to register log interface");
+            return -EINVAL;
+        }
+        if (argc == 2){
+            char *error_info = "q, info or dev_info NULL!";
+            struct wd_queue *q = NULL;
+            char content[1024];
+            wd_get_node_id(q);
+            FILE *fp = NULL;
+            fp = fopen("file.txt", "r");
+            fgets(content,1024,fp);
+            if (strstr(content,error_info) == NULL){
+                return -EINVAL;
+            }
+            return 0;
+        }
+    }
+    if (!strcmp(argv[argc-1], "-registerlog-2")){
+        ret = wd_register_log(normal_register);
+        if (ret){
+            printf("fail to register log interface");
+            return -EINVAL;
+        }
+        if (!wd_register_log(normal_register)){
+            printf("illegel to register dumplicate log interface");
+            return -EINVAL;
+        }
+        return 0;
+    }
+    if (!strcmp(argv[argc-1], "-registerlog-3")){
+        ret = wd_register_log(segmant_fault_register);
+        if (ret){
+            printf("fail to register log interface");
+            return -EINVAL;
+        }
+        WD_ERR("segment fault");
+        return 0;
+    }
 	if (!strcmp(argv[1], "-system-qt")) {
 		is_system_test = 1;
 		HPRE_TST_PRT("Now doing system queue mng test!\n");
@@ -4494,6 +4560,10 @@ basic_function_test:
 		HPRE_TST_PRT("        -system-gen2  = DH phase 2 key generate synchronize test\n");
 		HPRE_TST_PRT("        -system-agen2  = DH phase 2 key generate asynchronize test\n");
 		HPRE_TST_PRT("        -gen1  = DH share key generate test\n");
+        HPRE_TST_PRT("        -registerlog-0  = register null log interface\n");
+        HPRE_TST_PRT("        -registerlog-1  = register normal log interface\n");
+        HPRE_TST_PRT("        -registerlog-2  = register dumplicate log interface\n");
+        HPRE_TST_PRT("        -registerlog-3  = register unnormal log interface\n");
 		HPRE_TST_PRT("    [thread_num]: start thread total\n");
 		HPRE_TST_PRT("    [core_mask]: mask for bind cpu core, as 0x3 bind to cpu-1 and cpu-2\n");
 		HPRE_TST_PRT("    [log]:\n");
