@@ -128,6 +128,8 @@ struct wd_msg {
 struct wd_dummy_priv {
 	struct wd_queue		*qs;
 	int			q_num;
+	int			q_send_idx;
+	int			q_recv_idx;
 	struct wd_msg		*caches;
 	int			cache_num;
 	int			cache_size;
@@ -138,7 +140,6 @@ struct wd_dummy_priv {
 	void			*src;
 	void			*dst;
 	void			*ss_region;
-	size_t			size;
 	int			input_num;
 };
 
@@ -149,32 +150,31 @@ int wd_dummy_init(struct wd_dummy_priv *priv)
 
 	priv->input_num		= 10;
 	priv->q_num		= 1;
+	priv->q_send_idx	= 0;
+	priv->q_recv_idx	= 0;
 	priv->cache_num		= 4;
 	priv->cache_size	= CPSZ;
-	priv->size		= CPSZ;
+	priv->avail_cache	= priv->cache_num;
+	priv->c_send_idx	= 0;
+	priv->c_recv_idx	= 0;
 
 	priv->qs = calloc(priv->q_num, sizeof(struct wd_queue));
 	SYS_ERR_COND(!priv->qs, "calloc qs");
 
-	for (i = 0; i < priv->q_num; i++) {
-		priv->qs[i].capa.alg = "memcpy";
-	}
-
 	priv->caches = calloc(priv->cache_num, sizeof(struct wd_msg));
 	SYS_ERR_COND(!priv->caches, "calloc caches");
-
-	priv->avail_cache	= priv->cache_num;
-	priv->c_send_idx	= 0;
-	priv->c_recv_idx	= 0;
 
 	priv->msgs = calloc(priv->cache_num, sizeof(struct wd_dummy_cpy_msg));
 	SYS_ERR_COND(!priv->msgs, "calloc msgs");
 
 	ss_region_size = priv->cache_num * CPSZ * 2 + 4096;
-	ret = wd_request_queue(&priv->qs[0]);
-	if (ret) {
-		fprintf(stderr, "Failed to request wd queue (%d)\n", ret);
-		return ret;
+	for (i = 0; i < priv->q_num; i++) {
+		priv->qs[i].capa.alg = "memcpy";
+		ret = wd_request_queue(&priv->qs[i]);
+		if (ret) {
+			fprintf(stderr, "Failed to request queue (%d)\n", ret);
+			return ret;
+		}
 	}
 
 	priv->ss_region = wd_reserve_memory(&priv->qs[0], ss_region_size);
@@ -193,9 +193,9 @@ int wd_dummy_init(struct wd_dummy_priv *priv)
 		priv->caches[i].data_out = smm_alloc(priv->ss_region,
 						     priv->cache_size);
 		priv->caches[i].msg	= &priv->msgs[i];
-		msgs[i].src_addr	= priv->caches[i].data_in;
-		msgs[i].tgt_addr	= priv->caches[i].data_out;
-		msgs[i].size		= priv->cache_size;
+		priv->msgs[i].src_addr	= priv->caches[i].data_in;
+		priv->msgs[i].tgt_addr	= priv->caches[i].data_out;
+		priv->msgs[i].size	= priv->cache_size;
 	}
 
 	return ret;
@@ -233,24 +233,34 @@ int wd_dummy_verify_output(struct wd_dummy_priv *priv, int msg_idx)
 	return 0;
 }
 
-#define MOV_INDEX(id) do { \
-	priv->id = (priv->id + 1) % priv->cache_num; \
-} while(0)
-
 int wd_dummy_work(struct wd_dummy_priv *priv, int remained_task)
 {
-	int ret;
-	void *recv_msg;
+	int	ret;
+	void	*recv_msg;
 
 	if (priv->avail_cache && remained_task) {
 		wd_dummy_input(priv, priv->c_send_idx);
-		wd_send(&priv->qs[0], priv->caches[priv->c_send_idx].msg);
-		MOV_INDEX(c_send_idx);
+		do {
+			ret = wd_send(&priv->qs[priv->q_send_idx],
+				      priv->caches[priv->c_send_idx].msg
+				      );
+			if (ret == -EBUSY) {
+				usleep(1);
+				continue;
+			} else if (ret < 0) {
+				return ret;
+			}
+		} while (ret);
+		priv->q_send_idx = (priv->q_send_idx + 1) % priv->q_num;
+		priv->c_send_idx = (priv->c_send_idx + 1) % priv->cache_num;
 		priv->avail_cache--;
 	} else {
 		do {
-			ret = wd_recv_sync(&priv->qs[0], &recv_msg, 1000);
-			if (ret == -EAGAIN) {
+			ret = wd_recv_sync(&priv->qs[priv->q_recv_idx],
+					   &recv_msg,
+					   1000
+					   );
+			if ((ret == -EAGAIN) || (ret == -EBUSY)) {
 				usleep(1);
 				continue;
 			} else if (ret == -EIO) {
@@ -258,7 +268,8 @@ int wd_dummy_work(struct wd_dummy_priv *priv, int remained_task)
 			}
 		} while (ret);
 		wd_dummy_verify_output(priv, priv->c_recv_idx);
-		MOV_INDEX(c_recv_idx);
+		priv->q_recv_idx = (priv->q_recv_idx + 1) % priv->q_num;
+		priv->c_recv_idx = (priv->c_recv_idx + 1) % priv->cache_num;
 		priv->avail_cache++;
 	}
 	return priv->avail_cache;
@@ -266,8 +277,10 @@ int wd_dummy_work(struct wd_dummy_priv *priv, int remained_task)
 
 int wd_dummy_fini(struct wd_dummy_priv *priv)
 {
-	free(priv->ss_region);
-	wd_release_queue(&priv->qs[0]);
+	int i;
+
+	for (i = 0; i < priv->q_num; i++)
+		wd_release_queue(&priv->qs[i]);
 	free(priv->msgs);
 	free(priv->qs);
 	return 0;
