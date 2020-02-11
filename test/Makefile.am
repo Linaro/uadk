@@ -1,6 +1,6 @@
 AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../include
 
-bin_PROGRAMS=test_hisi_zip test_hisi_zlib
+bin_PROGRAMS=test_hisi_zip test_hisi_zlib test_dummy
 
 test_hisi_zip_SOURCES=test_hisi_zip.c
 test_hisi_zlib_SOURCES=test_hisi_zlib.c

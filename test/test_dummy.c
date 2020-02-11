@@ -6,7 +6,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifdef WD_SCHED
 #include "../wd_sched.h"
+#else
+#include "wd.h"
+#include "smm.h"
+#endif
 #include "wd_dummy_usr_if.h"
 #include "dummy_hw_usr_if.h"
 
@@ -18,6 +23,7 @@
 
 struct wd_dummy_cpy_msg *msgs;
 
+#if 0
 int wd_dummy_memcpy(struct wd_queue *q, void *dst, void *src, size_t size)
 {
 	struct wd_dummy_cpy_msg req, *resp;
@@ -33,7 +39,9 @@ int wd_dummy_memcpy(struct wd_queue *q, void *dst, void *src, size_t size)
 
 	return wd_recv_sync(q, (void **)&resp, 1000);
 }
+#endif
 
+#ifdef WD_SCHED
 static void wd_dummy_sched_init_cache(struct wd_scheduler *sched, int i,
 				      void *priv)
 {
@@ -110,3 +118,178 @@ int main(int argc, char *argv[])
 	free(sched.qs);
 	return EXIT_SUCCESS;
 }
+#else
+struct wd_msg {
+	void *data_in;
+	void *data_out;
+	void *msg;	/* the hw share buffer itself */
+};
+
+struct wd_dummy_priv {
+	struct wd_queue		*qs;
+	int			q_num;
+	struct wd_msg		*caches;
+	int			cache_num;
+	int			cache_size;
+	int			avail_cache;
+	int			c_send_idx;
+	int			c_recv_idx;
+	struct wd_dummy_cpy_msg	*msgs;
+	void			*src;
+	void			*dst;
+	void			*ss_region;
+	size_t			size;
+	int			input_num;
+};
+
+int wd_dummy_init(struct wd_dummy_priv *priv)
+{
+	size_t	ss_region_size;
+	int	i, ret;
+
+	priv->input_num		= 10;
+	priv->q_num		= 1;
+	priv->cache_num		= 4;
+	priv->cache_size	= CPSZ;
+	priv->size		= CPSZ;
+
+	priv->qs = calloc(priv->q_num, sizeof(struct wd_queue));
+	SYS_ERR_COND(!priv->qs, "calloc qs");
+
+	for (i = 0; i < priv->q_num; i++) {
+		priv->qs[i].capa.alg = "memcpy";
+	}
+
+	priv->caches = calloc(priv->cache_num, sizeof(struct wd_msg));
+	SYS_ERR_COND(!priv->caches, "calloc caches");
+
+	priv->avail_cache	= priv->cache_num;
+	priv->c_send_idx	= 0;
+	priv->c_recv_idx	= 0;
+
+	priv->msgs = calloc(priv->cache_num, sizeof(struct wd_dummy_cpy_msg));
+	SYS_ERR_COND(!priv->msgs, "calloc msgs");
+
+	ss_region_size = priv->cache_num * CPSZ * 2 + 4096;
+	ret = wd_request_queue(&priv->qs[0]);
+	if (ret) {
+		fprintf(stderr, "Failed to request wd queue (%d)\n", ret);
+		return ret;
+	}
+
+	priv->ss_region = wd_reserve_memory(&priv->qs[0], ss_region_size);
+	if (priv->ss_region == NULL) {
+		ret = -ENOMEM;
+		return ret;
+	}
+
+	ret = smm_init(priv->ss_region, ss_region_size, 0xF);
+	if (ret)
+		goto out;
+
+	for (i = 0; i < priv->cache_num; i++) {
+		priv->caches[i].data_in	= smm_alloc(priv->ss_region,
+						    priv->cache_size);
+		priv->caches[i].data_out = smm_alloc(priv->ss_region,
+						     priv->cache_size);
+		priv->caches[i].msg	= &priv->msgs[i];
+		msgs[i].src_addr	= priv->caches[i].data_in;
+		msgs[i].tgt_addr	= priv->caches[i].data_out;
+		msgs[i].size		= priv->cache_size;
+	}
+
+	return ret;
+out:
+	wd_release_queue(&priv->qs[0]);
+	return ret;
+}
+
+int wd_dummy_input(struct wd_dummy_priv *priv, int msg_idx)
+{
+	int value;
+
+	value = '0' + --priv->input_num;
+	memset(priv->caches[msg_idx].data_in, value, priv->cache_size);
+	memset(priv->caches[msg_idx].data_out, 'x', priv->cache_size);
+	return 0;
+}
+
+int wd_dummy_verify_output(struct wd_dummy_priv *priv, int msg_idx)
+{
+	int	i, left;
+	char	*in, *out;
+
+	in	= (char *)priv->caches[msg_idx].data_in;
+	out	= (char *)priv->caches[msg_idx].data_out;
+
+	for (i = 0; i < priv->cache_size; i++) {
+		if (in[i] != out[i]) {
+			printf("Verify result failure on %d\n", i);
+			break;
+		}
+	}
+	left = priv->input_num;
+	printf("Verify result (%d) successfully (remained=%d)\n", in[0], left);
+	return 0;
+}
+
+#define MOV_INDEX(id) do { \
+	priv->id = (priv->id + 1) % priv->cache_num; \
+} while(0)
+
+int wd_dummy_work(struct wd_dummy_priv *priv, int remained_task)
+{
+	int ret;
+	void *recv_msg;
+
+	if (priv->avail_cache && remained_task) {
+		wd_dummy_input(priv, priv->c_send_idx);
+		wd_send(&priv->qs[0], priv->caches[priv->c_send_idx].msg);
+		MOV_INDEX(c_send_idx);
+		priv->avail_cache--;
+	} else {
+		do {
+			ret = wd_recv_sync(&priv->qs[0], &recv_msg, 1000);
+			if (ret == -EAGAIN) {
+				usleep(1);
+				continue;
+			} else if (ret == -EIO) {
+				return ret;
+			}
+		} while (ret);
+		wd_dummy_verify_output(priv, priv->c_recv_idx);
+		MOV_INDEX(c_recv_idx);
+		priv->avail_cache++;
+	}
+	return priv->avail_cache;
+}
+
+int wd_dummy_fini(struct wd_dummy_priv *priv)
+{
+	free(priv->ss_region);
+	wd_release_queue(&priv->qs[0]);
+	free(priv->msgs);
+	free(priv->qs);
+	return 0;
+}
+
+int main(int argc, char *argv[])
+{
+	int ret;
+
+	struct wd_dummy_priv *priv;
+
+	priv = calloc(1, sizeof(struct wd_dummy_priv));
+	if (priv == NULL)
+		return -ENOMEM;
+
+	wd_dummy_init(priv);
+	while (priv->input_num) {
+		ret = wd_dummy_work(priv, priv->input_num);
+		SYS_ERR_COND(ret < 0, "wd_dummy_work");
+	}
+	wd_dummy_fini(priv);
+	free(priv);
+	return 0;
+}
+#endif
