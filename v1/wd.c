@@ -295,7 +295,8 @@ static bool copy_if_better(struct dev_info *old, struct dev_info *new,
 	dbg("try accelerator %s (inst_num=%d, node_id=%d)...\n", new->name,
 	    new->available_instances, new->node_id);
 
-	if (new->node_id >= 0 && ((1 << new->node_id) & node_mask))
+	if (new->node_id >= 0 &&
+		((1 << (unsigned int)new->node_id) & node_mask))
 		find_node = true;
 
 	/* Is the new dev better? */
