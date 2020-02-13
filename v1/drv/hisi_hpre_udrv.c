@@ -378,6 +378,8 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	sqe = (uintptr_t)info->sq_base + i * info->sqe_size;
 	hw_msg = (struct hisi_hpre_sqe *)sqe;
 
+	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
+
 	if (msg->key_type == WCRYPTO_RSA_PRIKEY1 || msg->key_type == WCRYPTO_RSA_PUBKEY)
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	else if (msg->key_type == WCRYPTO_RSA_PRIKEY2)
@@ -546,6 +548,8 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	sqe = (uintptr_t)info->sq_base + i * info->sqe_size;
 	hw_msg = (struct hisi_hpre_sqe *)sqe;
+
+	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 
 	if (msg->is_g2 && msg->op_type != WCRYPTO_DH_PHASE2)
 		hw_msg->alg = HPRE_ALG_DH_G2;
