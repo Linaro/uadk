@@ -236,7 +236,6 @@ int wd_dummy_verify_output(struct wd_dummy_priv *priv, int msg_idx)
 int wd_dummy_work(struct wd_dummy_priv *priv, int remained_task)
 {
 	int	ret;
-	void	*recv_msg;
 
 	if (priv->avail_cache && remained_task) {
 		wd_dummy_input(priv, priv->c_send_idx);
@@ -257,7 +256,7 @@ int wd_dummy_work(struct wd_dummy_priv *priv, int remained_task)
 	} else {
 		do {
 			ret = wd_recv_sync(&priv->qs[priv->q_recv_idx],
-					   &recv_msg,
+					   &priv->caches[priv->c_recv_idx].msg,
 					   1000
 					   );
 			if ((ret == -EAGAIN) || (ret == -EBUSY)) {
