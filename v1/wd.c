@@ -334,7 +334,7 @@ static int get_denoted_dev(struct wd_capa *capa, const char *dev,
 	pre_init_dev(dinfop, dev);
 	if (!get_dev_info(dinfop, capa->alg))
 		return 0;
-	WD_ERR("fail to get dev %s!\n", dev);
+	WD_ERR("%s not available, will try other devices\n", dev);
 	return -ENODEV;
 }
 
@@ -344,6 +344,7 @@ static int find_available_dev(struct dev_info *dinfop,
 {
 	struct dirent *device;
 	DIR *wd_class = NULL;
+	bool find_node = false;
 	struct dev_info dinfo;
 	char *name;
 	int cnt = 0;
@@ -365,10 +366,16 @@ static int find_available_dev(struct dev_info *dinfop,
 		pre_init_dev(&dinfo, name);
 		if (!get_dev_info(&dinfo, capa->alg)) {
 			cnt++;
-			if (copy_if_better(dinfop, &dinfo, capa, node_mask))
+			if (copy_if_better(dinfop, &dinfo, capa, node_mask)) {
+				find_node = true;
 				break;
+			}
 		}
 	}
+
+	if (node_mask && !find_node)
+		WD_ERR("Device not available on nodemask 0x%x!\n", node_mask);
+
 	closedir(wd_class);
 	return cnt;
 }
@@ -386,6 +393,12 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 			WD_ERR("dinfop NULL!\n");
 			return -EINVAL;
 		}
+
+		if (q->node_mask) {
+			WD_ERR("dev and node cannot be denoted together!\n");
+			return -EINVAL;
+		}
+
 		if (!get_denoted_dev(capa, dev, dinfop))
 			goto dev_path;
 	}
