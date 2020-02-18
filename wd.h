@@ -14,6 +14,10 @@
 #include "include/uacce.h"
 #include "config.h"
 
+#ifndef WD_CONTEXT
+#define WD_CONTEXT
+#endif	/* WD_CONTEXT */
+
 #define SYS_VAL_SIZE		16
 #define PATH_STR_SIZE		256
 #define MAX_ATTR_STR_SIZE	256
@@ -21,6 +25,11 @@
 
 #define UACCE_QFRT_MAX		4
 #define UACCE_QFR_NA ((unsigned long)-1)
+
+#define WD_CAPA_PRIV_DATA_SIZE	64
+
+#define MAX_DEV_NAME_LEN		256
+#define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
 
 typedef int bool;
 
@@ -72,6 +81,31 @@ extern FILE *flog_fd;
 
 #endif
 
+/* Capabilities */
+struct wd_capa {
+	char *alg;
+	int throughput;
+	int latency;
+	__u32 flags;
+	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];/* For algorithm parameters */
+};
+
+struct wd_ctx {
+	int		fd;
+	char		node_path[MAX_DEV_NAME_LEN];
+	char		*dev_name;
+	char		*drv_name;
+	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
+	struct wd_drv	*drv;
+
+	void		*ss_va;
+	void		*ss_pa;
+
+	struct wd_capa	capa;
+
+	void		*priv;
+};
+
 static inline void wd_reg_write(void *reg_addr, uint32_t value)
 {
 	*((volatile uint32_t *)reg_addr) = value;
@@ -88,57 +122,12 @@ static inline uint32_t wd_reg_read(void *reg_addr)
 	return temp;
 }
 
-#define WD_CAPA_PRIV_DATA_SIZE	64
-
-#define alloc_obj(objp) do { \
-	objp = malloc(sizeof(*objp)); \
-	memset(objp, 0, sizeof(*objp)); \
-} while (0)
-
-#define free_obj(objp) do { \
-	if (objp) \
-		free(objp); \
-} while (0)
-
-/* Capabilities */
-struct wd_capa {
-	char *alg;
-	int throughput;
-	int latency;
-	__u32 flags;
-	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];/* For algorithm parameters */
-};
-
-struct wd_queue {
-	struct wd_capa capa;
-	char *hw_type;
-	int hw_type_id;
-	void *priv; /* private data used by the drv layer */
-	void *dev_info;
-	int fd;
-	int iommu_type;
-	char dev_path[PATH_STR_SIZE];
-	void *ss_va;
-	void *ss_pa;
-	int dev_flags;
-	unsigned long qfrs_offset[UACCE_QFRT_MAX];
-};
-
-static inline void *wd_get_pa_from_va(struct wd_queue *q, void *va)
-{
-	return va - q->ss_va + q->ss_pa;
-}
-
-static inline void *wd_get_va_from_pa(struct wd_queue *q, void *pa)
-{
-	return pa - q->ss_pa + q->ss_va;
-}
-
-extern int wd_request_queue(struct wd_queue *q);
-extern void wd_release_queue(struct wd_queue *q);
-extern int wd_send(struct wd_queue *q, void *req);
-extern int wd_recv(struct wd_queue *q, void **resp);
-extern void wd_flush(struct wd_queue *q);
-extern int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
-extern void *wd_reserve_memory(struct wd_queue *q, size_t size);
+extern int wd_request_ctx(struct wd_ctx *ctx, char *node_path);
+extern void wd_release_ctx(struct wd_ctx *ctx);
+extern void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
+			     size_t size);
+extern void wd_drv_unmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
+			     void *addr);
+extern void *wd_reserve_mem(struct wd_ctx *ctx, size_t size);
+extern void *wd_get_dma_from_va(struct wd_ctx *ctx, void *va);
 #endif
