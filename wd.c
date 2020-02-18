@@ -31,7 +31,7 @@ static struct wd_drv wd_drv_list[] = {
 };
 
 /* pick the name of accelerator */
-static char *get_accel_name(char *node_path, int apdx)
+static char *get_accel_name(char *node_path, int no_apdx)
 {
 	char	*name, *dash;
 	int	i, appendix, len;
@@ -50,7 +50,7 @@ static char *get_accel_name(char *node_path, int apdx)
 	if (strlen(name) == 0)
 		return NULL;
 
-	if (apdx) {
+	if (no_apdx) {
 		/* find '-' index in the name string */
 		appendix = 1;
 		dash = rindex(name, '-');
@@ -112,6 +112,9 @@ int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
 			}
 		}
 	}
+	ret = ioctl(ctx->fd, UACCE_CMD_START);
+	if (ret)
+		WD_ERR("fail to start on %s\n", node_path);
 	return ret;
 
 out_ctl:
@@ -130,7 +133,6 @@ void wd_release_ctx(struct wd_ctx *ctx)
 	close(ctx->fd);
 	free(ctx->drv_name);
 	free(ctx->dev_name);
-	free(ctx);
 }
 
 void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt, size_t size)
