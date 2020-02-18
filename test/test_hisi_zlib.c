@@ -3,10 +3,10 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <assert.h>
 #include <unistd.h>
 #include "../wd.h"
 #include "drv/hisi_qm_udrv.h"
-#include <assert.h>
 #include "zip_usr_if.h"
 #include "smm.h"
 
@@ -56,10 +56,18 @@ do { \
 
 #define cpu_to_be32(x) swab32(x)
 
+struct wd_drv {
+	char	drv_name[MAX_DEV_NAME_LEN];
+	int	(*alloc_ctx)(struct wd_ctx *ctx);
+	void	(*free_ctx)(struct wd_ctx *ctx);
+	int	(*send)(struct wd_ctx *ctx, void *req);
+	int	(*recv)(struct wd_ctx *ctx, void **resp);
+};
+
 struct zip_stream {
-	struct wd_queue *q;
-	int alg_type;
-	int stream_pos;
+	struct wd_ctx	*ctx;
+	int		alg_type;
+	int		stream_pos;
 	void *next_in;   /* next input byte */
 	void *next_in_pa;   /* next input byte */
 	void *temp_in_pa;   /* temp input byte */
@@ -89,35 +97,33 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	size_t ss_region_size;
 	struct hisi_qm_priv *priv;
 
-	zstrm->q = malloc(sizeof(struct wd_queue));
-	if (!zstrm->q) {
+	zstrm->ctx = malloc(sizeof(struct wd_ctx));
+	if (!zstrm->ctx) {
 		fputs("alloc zstrm fail!\n", stderr);
 		return -1;
 	}
-	memset((void *)zstrm->q, 0, sizeof(struct wd_queue));
+	memset((void *)zstrm->ctx, 0, sizeof(struct wd_ctx));
 
 	switch (alg_type) {
 	case 0:
 		zstrm->alg_type = HW_ZLIB;
-		zstrm->q->capa.alg = "zlib";
+		zstrm->ctx->capa.alg = "zlib";
 		break;
 	case 1:
 		zstrm->alg_type = HW_GZIP;
-		zstrm->q->capa.alg = "gzip";
+		zstrm->ctx->capa.alg = "gzip";
 		break;
 	default:
 		zstrm->alg_type = HW_ZLIB;
-		zstrm->q->capa.alg = "zlib";
+		zstrm->ctx->capa.alg = "zlib";
 	}
-	zstrm->q->capa.latency = 0;   /*todo..*/
-	zstrm->q->capa.throughput = 0;
-	priv = (struct hisi_qm_priv *)zstrm->q->capa.priv;
+	priv = (struct hisi_qm_priv *)zstrm->ctx->capa.priv;
 	priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	priv->op_type = comp_optype;
-	ret = wd_request_queue(zstrm->q);
+	ret = wd_request_ctx(zstrm->ctx, "/dev/hisi_zip-0");
 	if (ret) {
-		fprintf(stderr, "wd_request_queue fail ret =%d\n", ret);
-		goto zstrm_q_free;
+		fprintf(stderr, "wd_request_ctx fail ret =%d\n", ret);
+		goto out;
 	}
 	SYS_ERR_COND(ret, "wd_request_queue");
 
@@ -126,7 +132,7 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 #ifdef CONFIG_IOMMU_SVA
 		dma_buf = malloc(ss_region_size);
 #else
-		dma_buf = wd_reserve_memory(zstrm->q, ss_region_size);
+		dma_buf = wd_reserve_mem(zstrm->ctx, ss_region_size);
 #endif
 	if (!dma_buf) {
 		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
@@ -151,15 +157,11 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 			goto buf_free;
 	}
 
-	if (zstrm->q->dev_flags & UACCE_DEV_SVA) {
-		zstrm->next_in_pa = zstrm->next_in;
-		zstrm->next_out_pa = zstrm->next_out;
-	} else {
-		zstrm->next_in_pa = wd_get_pa_from_va(zstrm->q, zstrm->next_in);
-		zstrm->next_out_pa = wd_get_pa_from_va(zstrm->q,
-						       zstrm->next_out);
-		zstrm->ctx_buf = wd_get_pa_from_va(zstrm->q, zstrm->ctx_buf);
-	}
+	zstrm->next_in_pa = wd_get_dma_from_va(zstrm->ctx,
+					       zstrm->next_in);
+	zstrm->next_out_pa = wd_get_dma_from_va(zstrm->ctx,
+						zstrm->next_out);
+	zstrm->ctx_buf = wd_get_dma_from_va(zstrm->ctx, zstrm->ctx_buf);
 
 	zstrm->workspace = dma_buf;
 	zstrm->temp_in_pa = zstrm->next_in_pa;
@@ -170,9 +172,9 @@ buf_free:
 			free(dma_buf);
 #endif
 release_q:
-	wd_release_queue(zstrm->q);
-zstrm_q_free:
-	free(zstrm->q);
+	wd_release_ctx(zstrm->ctx);
+out:
+	free(zstrm->ctx);
 
 	return ret;
 }
@@ -185,8 +187,8 @@ void hw_end(struct zip_stream *zstrm)
 		free(zstrm->workspace);
 #endif
 
-	wd_release_queue(zstrm->q);
-	free(zstrm->q);
+	wd_release_ctx(zstrm->ctx);
+	free(zstrm->ctx);
 }
 
 unsigned int bit_reverse(register unsigned int x)
@@ -276,7 +278,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 		zstrm->total_out = 0;
 	}
 
-	ret = wd_send(zstrm->q, msg);
+	ret = zstrm->ctx->drv->send(zstrm->ctx, msg);
 	if (ret == -EBUSY) {
 		usleep(1);
 		goto recv_again;
@@ -284,7 +286,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 
 	SYS_ERR_COND(ret, "send fail!\n");
 recv_again:
-	ret = wd_recv(zstrm->q, (void **)&recv_msg);
+	ret = zstrm->ctx->drv->recv(zstrm->ctx, (void **)&recv_msg);
 	if (ret == -EIO) {
 		fputs(" wd_recv fail!\n", stderr);
 		goto msg_free;
