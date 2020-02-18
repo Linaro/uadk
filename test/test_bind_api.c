@@ -12,9 +12,11 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <linux/perf_event.h>
 
@@ -472,6 +474,22 @@ static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 	return total;
 }
 
+static void *mmap_alloc(size_t len)
+{
+	void *p;
+	long page_size = sysconf(_SC_PAGESIZE);
+
+	if (len % page_size) {
+		WD_ERR("unaligned allocation must use malloc\n");
+		return NULL;
+	}
+
+	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
+		 -1, 0);
+
+	return p == MAP_FAILED ? NULL : p;
+}
+
 static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
 	int i, j;
@@ -497,13 +515,14 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	hizip_priv.total_len = opts->total_len;
 
-	in_buf = hizip_priv.in_buf = malloc(hizip_priv.total_len);
+	in_buf = hizip_priv.in_buf = mmap_alloc(hizip_priv.total_len);
 	if (!in_buf) {
 		ret = -ENOMEM;
 		goto out_with_msgs;
 	}
 
-	out_buf = hizip_priv.out_buf = malloc(hizip_priv.total_len * EXPANSION_RATIO);
+	out_buf = hizip_priv.out_buf = mmap_alloc(hizip_priv.total_len *
+						  EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
@@ -610,9 +629,9 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 out_with_fini:
 	hizip_test_fini(&sched, opts);
 out_with_out_buf:
-	free(out_buf);
+	munmap(out_buf, hizip_priv.total_len);
 out_with_in_buf:
-	free(in_buf);
+	munmap(in_buf, hizip_priv.total_len * EXPANSION_RATIO);
 out_with_msgs:
 	free(hizip_priv.msgs);
 	return ret;
