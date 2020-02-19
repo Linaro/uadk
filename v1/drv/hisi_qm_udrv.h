@@ -19,11 +19,11 @@
 
 #include <linux/types.h>
 #include "config.h"
-#include "wd.h"
-#include "include/qm_usr_if.h"
-#include "wd_rsa.h"
-#include "wd_util.h"
-#include "wd_dh.h"
+#include "../wd.h"
+#include "../include/qm_usr_if.h"
+#include "../wd_rsa.h"
+#include "../wd_util.h"
+#include "../wd_dh.h"
 #include "../include/hpre_usr_if.h"
 
 #define QM_CQE_SIZE			16
