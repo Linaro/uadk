@@ -23,14 +23,14 @@
 #include <sched.h>
 #include <sys/time.h>
 #include <sys/syscall.h>
-#include "zlib.h"
+#include "../lib/zlib.h"
 
-#include "../wd.h"
+#include "../../wd.h"
 #include "zip_alg.h"
-#include "wd_util.h"
-#include "../wd_comp.h"
-#include "drv/hisi_qm_udrv.h"
-#include "smm.h"
+#include "../../wd_util.h"
+#include "../../wd_comp.h"
+#include "../../drv/hisi_qm_udrv.h"
+#include "../smm.h"
 enum mode {
 	MODE_BLOCK,
 	MODE_STREAM,
