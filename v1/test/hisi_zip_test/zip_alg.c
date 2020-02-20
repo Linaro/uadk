@@ -27,16 +27,16 @@
 #include <dirent.h>
 #include <sys/poll.h>
 
-#include "../wd.h"
-#include "../wd_util.h" /* It is not API head, to be deleted */
+#include "../../wd.h"
+#include "../../wd_util.h" /* It is not API head, to be deleted */
 #include "../wd_sched.h"
-#include "../wd_comp.h"
-#include "../wd_bmm.h"
+#include "../../wd_comp.h"
+#include "../../wd_bmm.h"
 
-#include "drv/hisi_qm_udrv.h"
-#include "drv/hisi_zip_udrv.h"
+#include "../../drv/hisi_qm_udrv.h"
+#include "../../drv/hisi_zip_udrv.h"
 #include "zip_alg.h"
-#include "smm.h"
+#include "../smm.h"
 
 
 #define ZLIB_HEADER "\x78\x9c"
