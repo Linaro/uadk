@@ -269,7 +269,7 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
-int hisi_qm_alloc_ctx(struct wd_ctx *ctx)
+int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa)
 {
 	struct hisi_qm_ctx		*ctx_priv;
 	struct hisi_qm_priv		*capa_priv;
@@ -278,7 +278,7 @@ int hisi_qm_alloc_ctx(struct wd_ctx *ctx)
 	int	i, size, ret;
 	char	*api_name;
 
-	capa_priv = (struct hisi_qm_priv *)ctx->capa.priv;
+	capa_priv = (struct hisi_qm_priv *)capa->priv;
 	if (capa_priv->sqe_size <= 0) {
 		WD_ERR("invalid sqe size (%d)\n", capa_priv->sqe_size);
 		return -EINVAL;
