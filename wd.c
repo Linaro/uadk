@@ -11,24 +11,11 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <assert.h>
-#include <dirent.h>
 #include <sys/poll.h>
 #include <ctype.h>
 
-#include "wd_internal.h"
+#include "wd.h"
 
-
-#define SYS_CLASS_DIR	"/sys/class/uacce"
-
-static struct wd_drv wd_drv_list[] = {
-	{
-		.drv_name	= "hisi_zip",
-		.alloc_ctx	= hisi_qm_alloc_ctx,
-		.free_ctx	= hisi_qm_free_ctx,
-		.send		= hisi_qm_send,
-		.recv		= hisi_qm_recv,
-	},
-};
 
 /* pick the name of accelerator */
 static char *get_accel_name(char *node_path, int no_apdx)
@@ -75,7 +62,7 @@ static char *get_accel_name(char *node_path, int no_apdx)
 
 int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
 {
-	int	i, ret = -EINVAL;
+	int	ret = -EINVAL;
 
 	if (!node_path || !ctx || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
 		return ret;
@@ -98,23 +85,10 @@ int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
 	ret = fcntl(ctx->fd, F_GETFL);
 	if (ret < 0)
 		goto out_ctl;
-	fcntl(ctx->fd, F_SETFL, ret | FASYNC);
+	ret = fcntl(ctx->fd, F_SETFL, ret | FASYNC);
+	if (ret < 0)
+		goto out_ctl;
 
-	/* match driver with accel name */
-	for (i = 0; i < ARRAY_SIZE(wd_drv_list); i++) {
-		if (!strncmp(wd_drv_list[i].drv_name, ctx->drv_name,
-			     strlen(ctx->drv_name))) {
-			ctx->drv = &wd_drv_list[i];
-			ret = ctx->drv->alloc_ctx(ctx);
-			if (ret < 0) {
-				WD_ERR("Failed to allocate hw (%d).\n", ret);
-				goto out_ctl;
-			}
-		}
-	}
-	ret = ioctl(ctx->fd, UACCE_CMD_START);
-	if (ret)
-		WD_ERR("fail to start on %s\n", node_path);
 	return ret;
 
 out_ctl:
@@ -129,10 +103,19 @@ out:
 void wd_release_ctx(struct wd_ctx *ctx)
 {
 
-	ctx->drv->free_ctx(ctx);
 	close(ctx->fd);
 	free(ctx->drv_name);
 	free(ctx->dev_name);
+}
+
+int wd_start_ctx(struct wd_ctx *ctx)
+{
+	int	ret;
+
+	ret = ioctl(ctx->fd, UACCE_CMD_START);
+	if (ret)
+		WD_ERR("fail to start on %s\n", ctx->node_path);
+	return ret;
 }
 
 void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt, size_t size)

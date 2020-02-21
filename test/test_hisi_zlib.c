@@ -56,14 +56,6 @@ do { \
 
 #define cpu_to_be32(x) swab32(x)
 
-struct wd_drv {
-	char	drv_name[MAX_DEV_NAME_LEN];
-	int	(*alloc_ctx)(struct wd_ctx *ctx);
-	void	(*free_ctx)(struct wd_ctx *ctx);
-	int	(*send)(struct wd_ctx *ctx, void *req);
-	int	(*recv)(struct wd_ctx *ctx, void **resp);
-};
-
 struct zip_stream {
 	struct wd_ctx	*ctx;
 	int		alg_type;
@@ -127,6 +119,14 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	}
 	SYS_ERR_COND(ret, "wd_request_queue");
 
+	ret = hisi_qm_alloc_ctx(zstrm->ctx);
+	if (ret)
+		goto out_qm;
+
+	ret = wd_start_ctx(zstrm->ctx);
+	if (ret)
+		goto out_start;
+
 	ss_region_size = 4096+ASIZE*2+HW_CTX_SIZE;
 
 #ifdef CONFIG_IOMMU_SVA
@@ -137,7 +137,7 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	if (!dma_buf) {
 		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
 		ret = -ENOMEM;
-		goto release_q;
+		goto out_start;
 	}
 
 	ret = smm_init(dma_buf, ss_region_size, 0xF);
@@ -171,7 +171,9 @@ buf_free:
 		if (dma_buf)
 			free(dma_buf);
 #endif
-release_q:
+out_start:
+	hisi_qm_free_ctx(zstrm->ctx);
+out_qm:
 	wd_release_ctx(zstrm->ctx);
 out:
 	free(zstrm->ctx);
@@ -278,7 +280,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 		zstrm->total_out = 0;
 	}
 
-	ret = zstrm->ctx->drv->send(zstrm->ctx, msg);
+	ret = hisi_qm_send(zstrm->ctx, msg);
 	if (ret == -EBUSY) {
 		usleep(1);
 		goto recv_again;
@@ -286,7 +288,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 
 	SYS_ERR_COND(ret, "send fail!\n");
 recv_again:
-	ret = zstrm->ctx->drv->recv(zstrm->ctx, (void **)&recv_msg);
+	ret = hisi_qm_recv(zstrm->ctx, (void **)&recv_msg);
 	if (ret == -EIO) {
 		fputs(" wd_recv fail!\n", stderr);
 		goto msg_free;
