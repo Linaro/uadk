@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS = -I m4 -I./include
 AUTOMAKE_OPTIONS = foreign subdir-objects
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing
+AM_CFLAGS=-Wall -fno-strict-aliasing
 
 if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
