@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-#include <dirent.h>
 
 #include "wd.h"
 #include "hisi_qm_udrv.h"
@@ -25,28 +24,6 @@
 #define CQE_PHASE(cq)	(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
 #define CQE_SQ_NUM(cq)	((*((__u32 *)(cq) + 2)) >> 16)
 #define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
-
-#define SYS_CLASS_DIR	"/sys/class/uacce"
-
-struct uacce_dev_info {
-	/* sysfs node content */
-	int		flags;
-	int		avail_instn;
-	char		api[WD_NAME_SIZE];
-	char		algs[MAX_ATTR_STR_SIZE];
-	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
-
-	char		name[WD_NAME_SIZE];
-	char		alg_path[PATH_STR_SIZE];
-	char		dev_root[PATH_STR_SIZE];
-
-	int		node_id;
-	int		iommu_type;
-	/*
-	int		ref;
-	int		is_load;
-	*/
-};
 
 struct hisi_qm_queue_info {
 	void *sq_base;
@@ -74,141 +51,8 @@ struct hisi_qm_type {
 };
 
 struct hisi_qm_ctx {
-	struct uacce_dev_info		*dev_info;
 	struct hisi_qm_queue_info	q_info;
 };
-
-static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
-{
-	char attr_file[PATH_STR_SIZE];
-	int fd;
-	ssize_t size;
-
-	if (!dev_root || !attr || !buf || (sz == 0))
-		return -EINVAL;
-
-	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s", dev_root, attr);
-	if (size < 0)
-		return -EINVAL;
-
-	fd = open(attr_file, O_RDONLY, 0);
-	if (fd < 0) {
-		WD_ERR("open %s fail (%d)!\n", attr_file, errno);
-		return -ENODEV;
-	}
-	size = read(fd, buf, sz);
-	if (size <= 0) {
-		WD_ERR("read nothing at %s!\n", attr_file);
-		size = -EIO;
-	}
-
-	close(fd);
-	return (int)size;
-}
-
-static int get_int_attr(struct uacce_dev_info *info, char *attr, int *val)
-{
-	int ret;
-	char buf[MAX_ATTR_STR_SIZE];
-
-	if (!info || !attr || !val)
-		return -EINVAL;
-
-	ret = get_raw_attr(info->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
-	if (ret < 0)
-		return ret;
-
-	*val = strtol(buf, NULL, 10);
-	return 0;
-}
-
-static int get_str_attr(struct uacce_dev_info *info, char *attr, char *buf,
-			size_t buf_sz)
-{
-	int ret;
-
-	if (!info || !attr || !buf || (buf_sz == 0))
-		return -EINVAL;
-
-	ret = get_raw_attr(info->dev_root, attr, buf, buf_sz);
-	if (ret < 0) {
-		buf[0] = '\0';
-		return ret;
-	}
-
-	if ((size_t)ret == buf_sz)
-		ret--;
-
-	buf[ret] = '\0';
-	while ((ret > 1) && (buf[ret - 1] == '\n')) {
-		buf[ret-- - 1] = '\0';
-	}
-	return ret;
-}
-
-static int get_dev_info(struct uacce_dev_info *info)
-{
-	int	value;
-
-	get_int_attr(info, "available_instances", &info->avail_instn);
-	get_int_attr(info, "flags", &info->flags);
-	get_str_attr(info, "api", info->api, WD_NAME_SIZE);
-	get_str_attr(info, "algorithms", info->algs, MAX_ATTR_STR_SIZE);
-	get_int_attr(info, "region_mmio_size", &value);
-	info->qfrs_offs[UACCE_QFRT_MMIO] = value;
-	get_int_attr(info, "region_dus_size", &value);
-	info->qfrs_offs[UACCE_QFRT_DUS] = value;
-	info->qfrs_offs[UACCE_QFRT_SS] = 0;
-
-	return 0;
-}
-
-struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
-{
-	struct uacce_dev_info	*info = NULL;
-	DIR			*class = NULL;
-	struct dirent		*dev = NULL;
-	char			*name = NULL;
-	int			len;
-
-	if (!dev_name)
-		return NULL;
-
-	info = calloc(1, sizeof(struct uacce_dev_info));
-	if (info == NULL)
-		return NULL;
-
-	class = opendir(SYS_CLASS_DIR);
-	if (!class) {
-		WD_ERR("WD framework is not enabled on the system!\n");
-		goto out;
-	}
-
-	while ((dev = readdir(class)) != NULL) {
-		name = dev->d_name;
-		if (!strncmp(dev_name, name, strlen(dev_name))) {
-			snprintf(info->dev_root, MAX_DEV_NAME_LEN - 1, "%s/%s",
-				 SYS_CLASS_DIR, dev_name);
-			len = WD_NAME_SIZE - 1;
-			if (len > strlen(name) + 1)
-				len = strlen(name) + 1;
-			strncpy(info->name, name, len);
-			get_dev_info(info);
-			break;
-		}
-	}
-	if (dev == NULL)
-		goto out_dir;
-
-	closedir(class);
-
-	return info;
-out_dir:
-	closedir(class);
-out:
-	free(info);
-	return NULL;
-}
 
 static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
 		      __u16 index, __u8 priority)
@@ -286,13 +130,8 @@ int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa)
 	ctx_priv = calloc(1, sizeof(struct hisi_qm_ctx));
 	if (ctx_priv == NULL)
 		return -ENOMEM;
-	ctx_priv->dev_info = read_uacce_sysfs(ctx->dev_name);
-	if (!ctx_priv->dev_info) {
-		WD_ERR("fail to read sysfs\n");
-		ret = -ENODEV;
-		goto out;
-	}
-	memcpy(&ctx->qfrs_offs, &ctx_priv->dev_info->qfrs_offs,
+
+	memcpy(&ctx->qfrs_offs, &ctx->dev_info->qfrs_offs,
 	       sizeof(ctx->qfrs_offs));
 
 	q_info = &ctx_priv->q_info;
@@ -300,7 +139,7 @@ int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa)
 	if (q_info->sq_base == MAP_FAILED) {
 		WD_ERR("fail to mmap DUS region\n");
 		ret = -errno;
-		goto out_dus;
+		goto out;
 	}
 	q_info->sqe_size = capa_priv->sqe_size;
 	q_info->cq_base = q_info->sq_base + capa_priv->sqe_size * QM_Q_DEPTH;
@@ -312,7 +151,7 @@ int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa)
 		goto out_mmio;
 	}
 	size = ARRAY_SIZE(qm_type);
-	api_name = ctx_priv->dev_info->api;
+	api_name = ctx->dev_info->api;
 	for (i = 0; i < size; i++) {
 		if (!strncmp(api_name, qm_type[i].qm_name, strlen(api_name))) {
 			q_info->db = qm_type[i].hacc_db;
@@ -346,8 +185,6 @@ out_qm:
 	wd_drv_unmap_qfr(ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
 out_mmio:
 	wd_drv_unmap_qfr(ctx, UACCE_QFRT_DUS, q_info->sq_base);
-out_dus:
-	free(ctx_priv->dev_info);
 out:
 	free(ctx_priv);
 	return ret;
@@ -364,7 +201,6 @@ void hisi_qm_free_ctx(struct wd_ctx *ctx)
 	q_info = &ctx_priv->q_info;
 	wd_drv_unmap_qfr(ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
 	wd_drv_unmap_qfr(ctx, UACCE_QFRT_DUS, q_info->sq_base);
-	free(ctx_priv->dev_info);
 	free(ctx_priv);
 }
 
