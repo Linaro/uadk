@@ -63,15 +63,6 @@ extern FILE *flog_fd;
 #define dbg(msg, ...)
 #endif
 
-/* Capabilities */
-struct wd_capa {
-	char *alg;
-	int throughput;
-	int latency;
-	__u32 flags;
-	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];/* For algorithm parameters */
-};
-
 struct wd_ctx {
 	int		fd;
 	char		node_path[MAX_DEV_NAME_LEN];
@@ -81,8 +72,6 @@ struct wd_ctx {
 
 	void		*ss_va;
 	void		*ss_pa;
-
-	struct wd_capa	capa;
 
 	void		*priv;
 };

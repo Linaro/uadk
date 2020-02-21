@@ -88,6 +88,7 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	void *dma_buf;
 	size_t ss_region_size;
 	struct hisi_qm_priv *priv;
+	struct hisi_qm_capa capa;
 
 	zstrm->ctx = malloc(sizeof(struct wd_ctx));
 	if (!zstrm->ctx) {
@@ -99,17 +100,17 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	switch (alg_type) {
 	case 0:
 		zstrm->alg_type = HW_ZLIB;
-		zstrm->ctx->capa.alg = "zlib";
+		capa.alg = "zlib";
 		break;
 	case 1:
 		zstrm->alg_type = HW_GZIP;
-		zstrm->ctx->capa.alg = "gzip";
+		capa.alg = "gzip";
 		break;
 	default:
 		zstrm->alg_type = HW_ZLIB;
-		zstrm->ctx->capa.alg = "zlib";
+		capa.alg = "zlib";
 	}
-	priv = (struct hisi_qm_priv *)zstrm->ctx->capa.priv;
+	priv = (struct hisi_qm_priv *)capa.priv;
 	priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	priv->op_type = comp_optype;
 	ret = wd_request_ctx(zstrm->ctx, "/dev/hisi_zip-0");
@@ -119,7 +120,7 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	}
 	SYS_ERR_COND(ret, "wd_request_queue");
 
-	ret = hisi_qm_alloc_ctx(zstrm->ctx);
+	ret = hisi_qm_alloc_ctx(zstrm->ctx, &capa);
 	if (ret)
 		goto out_qm;
 
