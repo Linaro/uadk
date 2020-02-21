@@ -130,11 +130,10 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 
 	ss_region_size = 4096+ASIZE*2+HW_CTX_SIZE;
 
-#ifdef CONFIG_IOMMU_SVA
-		dma_buf = malloc(ss_region_size);
-#else
+	if (wd_is_nosva(zstrm->ctx))
 		dma_buf = wd_reserve_mem(zstrm->ctx, ss_region_size);
-#endif
+	else
+		dma_buf = malloc(ss_region_size);
 	if (!dma_buf) {
 		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
 		ret = -ENOMEM;
@@ -168,10 +167,8 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	zstrm->temp_in_pa = zstrm->next_in_pa;
 	return Z_OK;
 buf_free:
-#ifdef CONFIG_IOMMU_SVA
-		if (dma_buf)
-			free(dma_buf);
-#endif
+	if (!wd_is_nosva(zstrm->ctx) && dma_buf)
+		free(dma_buf);
 out_start:
 	hisi_qm_free_ctx(zstrm->ctx);
 out_qm:
@@ -184,11 +181,8 @@ out:
 
 void hw_end(struct zip_stream *zstrm)
 {
-
-#ifdef CONFIG_IOMMU_SVA
-	if (zstrm->workspace)
+	if (!wd_is_nosva(zstrm->ctx) && zstrm->workspace)
 		free(zstrm->workspace);
-#endif
 
 	wd_release_ctx(zstrm->ctx);
 	free(zstrm->ctx);
