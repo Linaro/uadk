@@ -12,4 +12,9 @@ struct hisi_qm_priv {
 	__u16 op_type;
 };
 
+extern int hisi_qm_alloc_ctx(struct wd_ctx *ctx);
+extern void hisi_qm_free_ctx(struct wd_ctx *ctx);
+extern int hisi_qm_send(struct wd_ctx *ctx, void *req);
+extern int hisi_qm_recv(struct wd_ctx *ctx, void **resp);
+
 #endif
