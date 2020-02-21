@@ -63,24 +63,6 @@ extern FILE *flog_fd;
 #define dbg(msg, ...)
 #endif
 
-#if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
-
-#define dsb(opt)	asm volatile("dsb " #opt : : : "memory")
-#define rmb()		dsb(ld)
-#define wmb()		dsb(st)
-#define mb()		dsb(sy)
-
-#else
-
-#define rmb()
-#define wmb()
-#define mb()
-#ifndef __UT__
-#error "no platform mb, define one before compiling"
-#endif
-
-#endif
-
 /* Capabilities */
 struct wd_capa {
 	char *alg;
@@ -106,20 +88,34 @@ struct wd_ctx {
 	void		*priv;
 };
 
-static inline void wd_reg_write(void *reg_addr, uint32_t value)
+static inline uint32_t wd_ioread32(void *addr)
 {
-	*((volatile uint32_t *)reg_addr) = value;
-	wmb();
+	uint32_t ret;
+
+	ret = *((volatile uint32_t *)addr);
+	__sync_synchronize();
+	return ret;
 }
 
-static inline uint32_t wd_reg_read(void *reg_addr)
+static inline uint64_t wd_ioread64(void *addr)
 {
-	uint32_t temp;
+	uint64_t	ret;
 
-	temp = *((volatile uint32_t *)reg_addr);
-	rmb();
+	ret = *((volatile uint64_t *)addr);
+	__sync_synchronize();
+	return ret;
+}
 
-	return temp;
+static inline void wd_iowrite32(void *addr, uint32_t value)
+{
+	__sync_synchronize();
+	*((volatile uint32_t *)addr) = value;
+}
+
+static inline void wd_iowrite64(void *addr, uint64_t value)
+{
+	__sync_synchronize();
+	*((volatile uint64_t *)addr) = value;
 }
 
 extern int wd_request_ctx(struct wd_ctx *ctx, char *node_path);

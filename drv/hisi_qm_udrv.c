@@ -64,9 +64,7 @@ static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
 
 	doorbell = (__u64)sqn | ((__u64)cmd << 16);
 	doorbell |= ((__u64)index | ((__u64)priority << 16)) << 32;
-
-	*((__u64 *)base) = doorbell;
-
+	wd_iowrite64(base, doorbell);
 	return 0;
 }
 
@@ -80,9 +78,7 @@ static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
 
 	doorbell = (__u64)sqn | ((__u64)(cmd & 0xf) << 12);
 	doorbell |= ((__u64)index | ((__u64)priority << 16)) << 32;
-
-	*((__u64 *)base) = doorbell;
-
+	wd_iowrite64(base, doorbell);
 	return 0;
 }
 
@@ -233,8 +229,6 @@ int hisi_qm_send(struct wd_ctx *ctx, void *req)
 	i = q_info->sq_tail_index;
 
 	hisi_qm_fill_sqe(req, q_info, i);
-
-	mb(); /* make sure the request is all in memory before doorbell*/
 
 	if (i == (QM_Q_DEPTH - 1))
 		i = 0;
