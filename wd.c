@@ -259,6 +259,11 @@ int wd_start_ctx(struct wd_ctx *ctx)
 	return ret;
 }
 
+int wd_stop_ctx(struct wd_ctx *ctx)
+{
+	return ioctl(ctx->fd, UACCE_CMD_PUT_Q);
+}
+
 void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt, size_t size)
 {
 	off_t	off = qfrt * getpagesize();

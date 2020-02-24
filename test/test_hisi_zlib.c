@@ -137,7 +137,7 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	if (!dma_buf) {
 		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
 		ret = -ENOMEM;
-		goto out_start;
+		goto out_alloc;
 	}
 
 	ret = smm_init(dma_buf, ss_region_size, 0xF);
@@ -169,6 +169,8 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 buf_free:
 	if (!wd_is_nosva(zstrm->ctx) && dma_buf)
 		free(dma_buf);
+out_alloc:
+	wd_stop_ctx(zstrm->ctx);
 out_start:
 	hisi_qm_free_ctx(zstrm->ctx);
 out_qm:
@@ -181,9 +183,10 @@ out:
 
 void hw_end(struct zip_stream *zstrm)
 {
+	wd_stop_ctx(zstrm->ctx);
 	if (!wd_is_nosva(zstrm->ctx) && zstrm->workspace)
 		free(zstrm->workspace);
-
+	hisi_qm_free_ctx(zstrm->ctx);
 	wd_release_ctx(zstrm->ctx);
 	free(zstrm->ctx);
 }

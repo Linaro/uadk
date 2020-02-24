@@ -113,6 +113,7 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 extern int wd_request_ctx(struct wd_ctx *ctx, char *node_path);
 extern void wd_release_ctx(struct wd_ctx *ctx);
 extern int wd_start_ctx(struct wd_ctx *ctx);
+extern int wd_stop_ctx(struct wd_ctx *ctx);
 extern void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
 			     size_t size);
 extern void wd_drv_unmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,

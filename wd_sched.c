@@ -96,6 +96,7 @@ out_smm:
 		free(sched->ss_region);
 out_region:
 	for (i = 0; i < sched->q_num; i++) {
+		wd_stop_ctx(&sched->qs[i]);
 		sched->hw_free(&sched->qs[i]);
 		wd_release_ctx(&sched->qs[i]);
 	}
@@ -103,8 +104,10 @@ out_region:
 out_start:
 	sched->hw_free(&sched->qs[i]);
 out_hw_ctx:
-	for (j = i - 1; j >= 0; j--)
+	for (j = i - 1; j >= 0; j--) {
+		wd_stop_ctx(&sched->qs[j]);
 		sched->hw_free(&sched->qs[j]);
+	}
 	wd_release_ctx(&sched->qs[i]);
 out_ctx:
 	for (j = i - 1; j >= 0; j--)
@@ -120,6 +123,7 @@ void wd_sched_fini(struct wd_scheduler *sched)
 	if (!wd_is_nosva(&sched->qs[0]) && sched->ss_region)
 		free(sched->ss_region);
 	for (i = sched->q_num - 1; i >= 0; i--) {
+		wd_stop_ctx(&sched->qs[i]);
 		sched->hw_free(&sched->qs[i]);
 		wd_release_ctx(&sched->qs[i]);
 	}
