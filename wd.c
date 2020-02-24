@@ -11,7 +11,6 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <assert.h>
-#include <sys/poll.h>
 #include <ctype.h>
 #include <dirent.h>
 

@@ -6,11 +6,13 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif
 
-lib_LTLIBRARIES=libwd.la libhisi_qm.la
-libwd_la_SOURCES=wd.c wd.h \
-		 smm.c smm.h \
-		 bmm.c bmm.h
+lib_LTLIBRARIES=libwd.la libwd_sched.la libsmm.la libhisi_qm.la
+libwd_la_SOURCES=wd.c wd.h bmm.c bmm.h
 
-libhisi_qm_la_SOURCES= drv/hisi_qm_udrv.c drv/hisi_qm_udrv.h
+libwd_sched_la_SOURCES=wd_sched.c wd_sched.h
+
+libsmm_la_SOURCES=smm.c smm.h
+
+libhisi_qm_la_SOURCES=drv/hisi_qm_udrv.c drv/hisi_qm_udrv.h
 
 SUBDIRS=. test

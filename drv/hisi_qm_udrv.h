@@ -21,7 +21,7 @@ struct hisi_qm_capa {
 	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];/* For algorithm parameters */
 };
 
-extern int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa);
+extern int hisi_qm_alloc_ctx(struct wd_ctx *ctx, void *data);
 extern void hisi_qm_free_ctx(struct wd_ctx *ctx);
 extern int hisi_qm_send(struct wd_ctx *ctx, void *req);
 extern int hisi_qm_recv(struct wd_ctx *ctx, void **resp);

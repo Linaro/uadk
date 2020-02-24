@@ -3,6 +3,7 @@
 #ifndef __WD_SCHED_H__
 #define __WD_SCHED_H__
 
+#include <stdbool.h>
 #include "wd.h"
 
 struct wd_msg {
@@ -12,7 +13,7 @@ struct wd_msg {
 };
 
 struct wd_scheduler {
-	struct wd_queue *qs;
+	struct wd_ctx *qs;
 	int q_num;
 
 	void * ss_region;
@@ -28,7 +29,12 @@ struct wd_scheduler {
 
 	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
-	int (*output)(struct wd_msg *msg, void*priv);
+	int (*output)(struct wd_msg *msg, void *priv);
+	int (*hw_alloc)(struct wd_ctx *ctx, void *data);
+	void (*hw_free)(struct wd_ctx *ctx);
+	int (*hw_send)(struct wd_ctx *ctx, void *req);
+	int (*hw_recv)(struct wd_ctx *ctx, void **req);
+	void *data;	// used by hw_alloc
 
 	void *priv;
 
@@ -41,7 +47,7 @@ struct wd_scheduler {
 	} *stat;
 };
 
-extern int wd_sched_init(struct wd_scheduler *sched);
+extern int wd_sched_init(struct wd_scheduler *sched, char *node_path);
 extern void wd_sched_fini(struct wd_scheduler *sched);
 extern int wd_sched_work(struct wd_scheduler *sched, unsigned long have_input);
 
