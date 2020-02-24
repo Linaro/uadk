@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -113,8 +114,9 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
-int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa)
+int hisi_qm_alloc_ctx(struct wd_ctx *ctx, void *data)
 {
+	struct hisi_qm_capa		*capa;
 	struct hisi_qm_ctx		*ctx_priv;
 	struct hisi_qm_priv		*capa_priv;
 	struct hisi_qm_queue_info	*q_info;
@@ -122,6 +124,7 @@ int hisi_qm_alloc_ctx(struct wd_ctx *ctx, struct hisi_qm_capa *capa)
 	int	i, size, ret;
 	char	*api_name;
 
+	capa = (struct hisi_qm_capa *)data;
 	capa_priv = (struct hisi_qm_priv *)capa->priv;
 	if (capa_priv->sqe_size <= 0) {
 		WD_ERR("invalid sqe size (%d)\n", capa_priv->sqe_size);

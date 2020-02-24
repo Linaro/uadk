@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "config.h"
+#include <sys/poll.h>
 #include "wd_sched.h"
 #include "smm.h"
 
@@ -47,68 +48,110 @@ static void __fini_cache(struct wd_scheduler *sched)
 	free(sched->msgs);
 }
 
-int wd_sched_init(struct wd_scheduler *sched)
+int wd_sched_init(struct wd_scheduler *sched, char *node_path)
 {
 	int ret, i, j;
-	int flags = 0;
 
 	for (i = 0; i < sched->q_num; i++) {
-		ret = wd_request_queue(&sched->qs[i]);
+		ret = wd_request_ctx(&sched->qs[i], node_path);
 		if (ret)
-			goto out_with_queues;
+			goto out_ctx;
+		ret = sched->hw_alloc(&sched->qs[i], sched->data);
+		if (ret)
+			goto out_hw_ctx;
+		ret = wd_start_ctx(&sched->qs[i]);
+		if (ret)
+			goto out_start;
 	}
 
 	if (!sched->ss_region_size)
 		sched->ss_region_size = 4096 + /* add 1 page extra */
 			sched->msg_cache_num * sched->msg_data_size * 2;
 
-	flags = sched->qs[0].dev_flags;
-
-	if (flags & UACCE_DEV_SVA)
-		sched->ss_region = malloc(sched->ss_region_size);
+	if (wd_is_nosva(&sched->qs[0]))
+		sched->ss_region = wd_reserve_mem(&sched->qs[0],
+						  sched->ss_region_size);
 	else
-		sched->ss_region = wd_reserve_memory(&sched->qs[0],
-			           sched->ss_region_size);
+		sched->ss_region = malloc(sched->ss_region_size);
 
 	if (!sched->ss_region) {
 		ret = -ENOMEM;
-		goto out_with_queues;
+		goto out_region;
 	}
 
 	sched->cl = sched->msg_cache_num;
 
 	ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
 	if (ret)
-		goto out_with_queues;
+		goto out_smm;
 
 	ret = __init_cache(sched);
 	if (ret)
-		goto out_with_queues;
+		goto out_smm;
 
 	return 0;
 
-out_with_queues:
-	if (flags & UACCE_DEV_SVA) {
-		if (sched->ss_region)
-			free(sched->ss_region);
+out_smm:
+	if (!wd_is_nosva(&sched->qs[0]) && sched->ss_region)
+		free(sched->ss_region);
+out_region:
+	for (i = 0; i < sched->q_num; i++) {
+		sched->hw_free(&sched->qs[i]);
+		wd_release_ctx(&sched->qs[i]);
 	}
-	for (j = i-1; j >= 0; j--)
-		wd_release_queue(&sched->qs[j]);
+	return ret;
+out_start:
+	sched->hw_free(&sched->qs[i]);
+out_hw_ctx:
+	for (j = i - 1; j >= 0; j--)
+		sched->hw_free(&sched->qs[j]);
+	wd_release_ctx(&sched->qs[i]);
+out_ctx:
+	for (j = i - 1; j >= 0; j--)
+		wd_release_ctx(&sched->qs[j]);
 	return ret;
 }
 
 void wd_sched_fini(struct wd_scheduler *sched)
 {
 	int i;
-	int flags = sched->qs[0].dev_flags;
 
 	__fini_cache(sched);
-	if (flags & UACCE_DEV_SVA) {
-		if (sched->ss_region)
-			free(sched->ss_region);
+	if (!wd_is_nosva(&sched->qs[0]) && sched->ss_region)
+		free(sched->ss_region);
+	for (i = sched->q_num - 1; i >= 0; i--) {
+		sched->hw_free(&sched->qs[i]);
+		wd_release_ctx(&sched->qs[i]);
 	}
-	for (i = sched->q_num - 1; i >= 0; i--)
-		wd_release_queue(&sched->qs[i]);
+}
+
+static int wd_wait(struct wd_ctx *ctx, __u16 ms)
+{
+	struct pollfd	fds[1];
+	int ret;
+
+	fds[0].fd = ctx->fd;
+	fds[0].events = POLLIN;
+	ret = poll(fds, 1, ms);
+	if (ret == -1)
+		return -errno;
+	return 0;
+}
+
+static int wd_recv_sync(struct wd_scheduler *sched, struct wd_ctx *ctx,
+			void **resp, __u16 ms)
+{
+	int ret;
+
+	while (1) {
+		ret = sched->hw_recv(ctx, resp);
+		if (ret == -EBUSY) {
+			ret = wd_wait(ctx, ms);
+			if (ret)
+				return ret;
+		} else
+			return ret;
+	}
 }
 
 static int __sync_send(struct wd_scheduler *sched) {
@@ -118,8 +161,8 @@ static int __sync_send(struct wd_scheduler *sched) {
 	    sched->msgs[sched->c_h].msg);
 	do {
 		sched->stat[sched->q_h].send++;
-		ret = wd_send(&sched->qs[sched->q_h],
-			      sched->msgs[sched->c_h].msg);
+		ret = sched->hw_send(&sched->qs[sched->q_h],
+				     sched->msgs[sched->c_h].msg);
 		if (ret == -EBUSY) {
 			usleep(1);
 			sched->stat[sched->q_h].send_retries++;
@@ -141,7 +184,8 @@ static int __sync_wait(struct wd_scheduler *sched) {
 	    sched->msgs[sched->c_h].msg);
 	do {
 		sched->stat[sched->q_t].recv++;
-		ret = wd_recv_sync(&sched->qs[sched->q_t], &recv_msg, 1000);
+		ret = wd_recv_sync(sched, &sched->qs[sched->q_t],
+				   &recv_msg, 1000);
 		if (ret == -EAGAIN) {
 			usleep(1);
 			sched->stat[sched->q_t].recv_retries++;

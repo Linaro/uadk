@@ -14,10 +14,6 @@
 #include "include/uacce.h"
 #include "config.h"
 
-#ifndef WD_CONTEXT
-#define WD_CONTEXT
-#endif	/* WD_CONTEXT */
-
 #define SYS_VAL_SIZE		16
 #define PATH_STR_SIZE		256
 #define MAX_ATTR_STR_SIZE	256
@@ -30,16 +26,6 @@
 
 #define MAX_DEV_NAME_LEN		256
 #define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
-
-typedef int bool;
-
-#ifndef true
-#define true 1
-#endif
-
-#ifndef false
-#define false 0
-#endif
 
 #ifndef WD_ERR
 #ifndef WITH_LOG_FILE
@@ -134,4 +120,5 @@ extern void wd_drv_unmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
 extern int wd_is_nosva(struct wd_ctx *ctx);
 extern void *wd_reserve_mem(struct wd_ctx *ctx, size_t size);
 extern void *wd_get_dma_from_va(struct wd_ctx *ctx, void *va);
+
 #endif

@@ -2,7 +2,10 @@
 #ifndef __SMM_H
 #define __SMM_H
 
-#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include "config.h"
 
 extern int smm_init(void *pt_addr, size_t size, int align_mask);
 extern void *smm_alloc(void *pt_addr, size_t size);
