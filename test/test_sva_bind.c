@@ -104,7 +104,7 @@ static int run_one_child(struct priv_options *opts)
 		goto out_with_out_buf;
 	}
 	if (sched.qs)
-		ctx->flags = sched.qs[0].dev_flags;
+		ctx->is_nosva = wd_is_nosva(&sched.qs[0]);
 
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
