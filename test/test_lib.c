@@ -90,11 +90,11 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	 * TODO: don't alloc buffers
 	 */
 
-	if (!(ctx->flags & UACCE_DEV_SVA)) {
+	if (ctx->is_nosva) {
 		void *data_in, *data_out;
 
-		data_in = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_in);
-		data_out = wd_get_pa_from_va(&sched->qs[0], wd_msg->data_out);
+		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->data_in);
+		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->data_out);
 
 		msg->source_addr_l = (__u64)data_in & 0xffffffff;
 		msg->source_addr_h = (__u64)data_in >> 32;
@@ -117,7 +117,7 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	in_buf = ctx->in_buf;
 	out_buf = ctx->out_buf;
 
-	if (!(ctx->flags & UACCE_DEV_SVA)) {
+	if (ctx->is_nosva) {
 		memcpy(msg->data_in, in_buf, ilen);
 	} else {
 		msg->data_in = in_buf;
@@ -277,16 +277,15 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
-#if 0
 /*
  * Initialize the scheduler with the given options and operations.
  */
 int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		    struct test_ops *ops, void *priv)
 {
-	int ret = -ENOMEM, i;
-	char *alg;
+	int ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
+	struct hisi_qm_capa capa;
 
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
@@ -298,23 +297,25 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	sched->init_cache = ops->init_cache;
 	sched->input = ops->input;
 	sched->output = ops->output;
+	sched->hw_alloc = hisi_qm_alloc_ctx;
+	sched->hw_free = hisi_qm_free_ctx;
+	sched->hw_send = hisi_qm_send;
+	sched->hw_recv = hisi_qm_recv;
+	sched->data = &capa;
+	qm_priv = (struct hisi_qm_priv *)&capa.priv;
+	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
+	qm_priv->op_type = opts->op_type;
 
 	sched->qs = calloc(opts->q_num, sizeof(*sched->qs));
 	if (!sched->qs)
 		return -ENOMEM;
 
 	if (opts->alg_type == ZLIB)
-		alg = "zlib";
+		capa.alg = "zlib";
 	else
-		alg = "gzip";
+		capa.alg = "gzip";
 
-	for (i = 0; i < opts->q_num; i++) {
-		sched->qs[i].capa.alg = alg;
-		qm_priv = (struct hisi_qm_priv *)sched->qs[i].capa.priv;
-		qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
-		qm_priv->op_type = opts->op_type;
-	}
-	ret = wd_sched_init(sched);
+	ret = wd_sched_init(sched, "/dev/hisi_zip-1");
 	if (ret)
 		goto err_with_qs;
 
@@ -341,7 +342,6 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 
 	return ret;
 }
-#endif
 
 /*
  * Release the scheduler
