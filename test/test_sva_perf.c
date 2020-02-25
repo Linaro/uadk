@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Test the IOMMU SVA infrastructure of the Linux kernel.
- * - what happens when a process bound to a device is killed
- * - what happens on fork
- * - multiple threads binding to the same device
+ * Test performance of the SVA API
  */
 #include <asm/unistd.h>	/* For __NR_perf_event_open */
 #include <fenv.h>
@@ -207,9 +204,6 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 			hizip_priv->out_buf += opts->block_size * EXPANSION_RATIO;
 		}
 	}
-
-	if (hizip_priv->opts->faults & INJECT_SIG_WORK)
-		kill(0, SIGTERM);
 
 	dbg_sqe("zip output", m);
 
@@ -556,9 +550,6 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	hizip_save = hizip_priv;
 
-	if (opts->faults & INJECT_SIG_BIND)
-		kill(0, SIGTERM);
-
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
 	getrusage(RUSAGE_SELF, &start_rusage);
@@ -873,19 +864,6 @@ int main(int argc, char **argv)
 				break;
 			}
 			break;
-		case 'k':
-			switch (optarg[0]) {
-			case 'b':
-				opts.faults |= INJECT_SIG_BIND;
-				break;
-			case 'w':
-				opts.faults |= INJECT_SIG_WORK;
-				break;
-			default:
-				SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
-				break;
-			}
-			break;
 		case 'o':
 			switch (optarg[0]) {
 			case 'p':
@@ -961,9 +939,6 @@ int main(int argc, char **argv)
 		     "                  'pretty' human readable format\n"
 		     "                  'csv'    raw, machine readable\n"
 		     "  -b <size>     block size\n"
-		     "  -k <mode>     kill thread\n"
-		     "                  'bind' kills the process after bind\n"
-		     "                  'work' kills the process while the queue is working\n"
 		     "  -n <num>      number of runs\n"
 		     "  -o <mode>     options\n"
 		     "                  'perf' prefaults the output pages\n"
