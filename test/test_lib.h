@@ -63,15 +63,33 @@ struct test_options {
 	unsigned long display_stats;
 };
 
+struct hizip_test_context {
+	struct test_options *opts;
+	char *in_buf;
+	char *out_buf;
+	unsigned long total_len;
+	struct hisi_zip_sqe *msgs;
+	int flags;
+	size_t total_out;
+};
+
 struct test_ops {
 	void (*init_cache)(struct wd_scheduler *sched, int i);
 	int (*input)(struct wd_msg *msg, void *priv);
 	int (*output)(struct wd_msg *msg, void *priv);
 };
 
+extern struct test_ops test_ops;
+
 int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		    struct test_ops *ops, void *priv);
+int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
+		     struct hizip_test_context *priv);
 void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts);
+
+void hizip_prepare_random_input_data(struct hizip_test_context *ctx);
+int hizip_verify_random_output(char *out_buf, struct test_options *opts,
+			       struct hizip_test_context *ctx);
 
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 #ifdef HAVE_ZLIB
@@ -99,5 +117,14 @@ static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
 	return -ENOSYS;
 }
 #endif
+
+static inline void hizip_test_adjust_len(struct test_options *opts)
+{
+	/*
+	 * Align size to the next block. We allow non-power-of-two block sizes.
+	 */
+	opts->total_len = (opts->total_len + opts->block_size - 1) /
+		opts->block_size * opts->block_size;
+}
 
 #endif /* TEST_LIB_H_ */
