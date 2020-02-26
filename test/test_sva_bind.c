@@ -79,7 +79,7 @@ static int run_one_child(struct priv_options *opts)
 		ctx.flags = sched.qs[0].dev_flags;
 
 	if (copts->faults & INJECT_SIG_BIND)
-		kill(0, SIGTERM);
+		kill(getpid(), SIGTERM);
 
 	ret = hizip_test_sched(&sched, copts, &ctx);
 
