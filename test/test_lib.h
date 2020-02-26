@@ -61,6 +61,9 @@ struct test_options {
 #define STATS_PRETTY		1
 #define STATS_CSV		2
 	unsigned long display_stats;
+
+	/* When the test contains a fork() */
+	unsigned long children;
 };
 
 struct hizip_test_context {

@@ -13,6 +13,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "test_lib.h"
@@ -37,7 +38,7 @@ static void *mmap_alloc(size_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
-static int run_one_test(struct test_options *opts)
+static int run_one_child(struct test_options *opts)
 {
 	int ret = 0;
 	void *in_buf, *out_buf;
@@ -88,16 +89,72 @@ out_with_in_buf:
 	munmap(in_buf, ctx.total_len);
 out_with_msgs:
 	free(ctx.msgs);
-	return ret;
+	return ret < 0 ? -ret : ret;
+}
+
+static int run_one_test(struct test_options *opts)
+{
+	pid_t pid;
+	int i, ret;
+	pid_t *pids;
+	int nr_children = 0;
+
+	if (!opts->children)
+		return run_one_child(opts);
+
+	pids = calloc(opts->children, sizeof(pid_t));
+	if (!pids)
+		return -ENOMEM;
+
+	for (i = 0; i < opts->children; i++) {
+		pid = fork();
+		if (pid < 0) {
+			WD_ERR("cannot fork: %d\n", errno);
+			break;
+		} else if (pid > 0) {
+			/* Parent */
+			pids[nr_children++] = pid;
+			continue;
+		}
+
+		/* Child */
+		exit(run_one_child(opts));
+	}
+
+	dbg("%d children spawned\n", nr_children);
+	for (i = 0; i < nr_children; i++) {
+		int status;
+
+		pid = pids[i];
+
+		ret = waitpid(pid, &status, 0);
+		if (ret < 0) {
+			WD_ERR("wait(pid=%d) error %d\n", pid, errno);
+			continue;
+		}
+
+		if (WIFEXITED(status)) {
+			ret = WEXITSTATUS(status);
+			if (ret)
+				WD_ERR("child %d returned with %d\n",
+				       pid, ret);
+		} else if (WIFSIGNALED(status)) {
+			ret = WTERMSIG(status);
+			WD_ERR("child %d killed by sig %d\n", pid, ret);
+		} else {
+			WD_ERR("unexpected status for child %d\n", pid);
+		}
+	}
+
+	free(pids);
+	return 0;
 }
 
 static int run_test(struct test_options *opts)
 {
-	int i;
-	int ret;
-	int n = opts->run_num;
+	int i, ret;
 
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < opts->run_num; i++) {
 		ret = run_one_test(opts);
 		if (ret < 0)
 			return ret;
@@ -112,6 +169,7 @@ int main(int argc, char **argv)
 	struct test_options opts = {
 		.alg_type	= GZIP,
 		.op_type	= DEFLATE,
+		.children	= 0,
 		.req_cache_num	= 4,
 		.q_num		= 1,
 		.run_num	= 1,
@@ -121,11 +179,16 @@ int main(int argc, char **argv)
 		.display_stats	= STATS_PRETTY,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:n:c:V")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:f:k:s:q:n:c:V")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = strtol(optarg, NULL, 0);
 			if (opts.block_size <= 0)
+				show_help = 1;
+			break;
+		case 'f':
+			opts.children = strtol(optarg, NULL, 0);
+			if (opts.children < 0)
 				show_help = 1;
 			break;
 		case 'k':
@@ -176,6 +239,7 @@ int main(int argc, char **argv)
 	SYS_ERR_COND(show_help || optind > argc,
 		     "test_bind_api [opts]\n"
 		     "  -b <size>     block size\n"
+		     "  -f <children> number of children to create\n"
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
 		     "                  'work' kills the process while the queue is working\n"
