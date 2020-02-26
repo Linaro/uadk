@@ -267,9 +267,6 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	char *alg;
 	struct hisi_qm_priv *qm_priv;
 
-	if (opts->option & TEST_ZLIB)
-		return 0;
-
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
 	sched->msg_cache_num = opts->req_cache_num;
@@ -329,9 +326,66 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
  */
 void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 {
-	if (opts->option & TEST_ZLIB)
-		return;
 	wd_sched_fini(sched);
 	free(sched->qs);
 }
 
+int parse_common_option(const char opt, const char *optarg,
+			struct test_options *opts)
+{
+	switch (opt) {
+	case 'b':
+		opts->block_size = strtol(optarg, NULL, 0);
+		if (opts->block_size <= 0)
+			return 1;
+		break;
+	case 'k':
+		switch (optarg[0]) {
+		case 'b':
+			opts->faults |= INJECT_SIG_BIND;
+			break;
+		case 'w':
+			opts->faults |= INJECT_SIG_WORK;
+			break;
+		default:
+			SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
+			break;
+		}
+		break;
+	case 'c':
+		opts->req_cache_num = strtol(optarg, NULL, 0);
+		if (opts->req_cache_num <= 0)
+			return 1;
+		break;
+	case 'n':
+		opts->run_num = strtol(optarg, NULL, 0);
+		SYS_ERR_COND(opts->run_num > MAX_RUNS,
+			     "No more than %d runs supported\n", MAX_RUNS);
+		if (opts->run_num <= 0)
+			return 1;
+		break;
+	case 'q':
+		opts->q_num = strtol(optarg, NULL, 0);
+		if (opts->q_num <= 0)
+			return 1;
+		break;
+	case 's':
+		opts->total_len = strtol(optarg, NULL, 0);
+		SYS_ERR_COND(opts->total_len <= 0, "invalid size '%s'\n",
+			     optarg);
+		break;
+	case 'V':
+		opts->verify = true;
+		break;
+	case 'v':
+		opts->verbose = true;
+		break;
+	case 'z':
+		opts->alg_type = ZLIB;
+		break;
+	default:
+		return 1;
+	}
+
+	return 0;
+}

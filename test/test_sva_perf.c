@@ -19,8 +19,6 @@
 
 #include "test_lib.h"
 
-#define MAX_RUNS	1024
-
 enum hizip_stats_variable {
 	ST_SEND,
 	ST_RECV,
@@ -60,6 +58,22 @@ enum hizip_stats_variable {
 
 struct hizip_stats {
 	double v[NUM_STATS];
+};
+
+struct priv_options {
+	struct test_options common;
+
+	int warmup_num;
+	int compact_run_num;
+
+#define PERFORMANCE		(1UL << 0)
+#define TEST_ZLIB		(1UL << 1)
+	unsigned long option;
+
+#define STATS_NONE		0
+#define STATS_PRETTY		1
+#define STATS_CSV		2
+	unsigned long display_stats;
 };
 
 static int perf_event_open(struct perf_event_attr *attr,
@@ -192,7 +206,7 @@ static void *mmap_alloc(size_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
-static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
+static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
 	int i, j;
 	double v;
@@ -202,20 +216,21 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
 	struct hizip_test_context ctx = {0}, ctx_save;
+	struct test_options *copts = &opts->common;
 	struct timespec setup_time, start_time, end_time;
 	struct timespec setup_cputime, start_cputime, end_cputime;
 	struct rusage setup_rusage, start_rusage, end_rusage;
-	int stat_size = sizeof(*sched.stat) * opts->q_num;
+	int stat_size = sizeof(*sched.stat) * copts->q_num;
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
 
-	ctx.opts = opts;
-	ctx.msgs = calloc(opts->req_cache_num, sizeof(*ctx.msgs));
+	ctx.opts = copts;
+	ctx.msgs = calloc(copts->req_cache_num, sizeof(*ctx.msgs));
 	if (!ctx.msgs)
 		return -ENOMEM;
 
-	ctx.total_len = opts->total_len;
+	ctx.total_len = copts->total_len;
 
 	in_buf = ctx.in_buf = mmap_alloc(ctx.total_len);
 	if (!in_buf) {
@@ -247,10 +262,12 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		memset(out_buf, 0, ctx.total_len * EXPANSION_RATIO);
 	}
 
-	ret = hizip_test_init(&sched, opts, &test_ops, &ctx);
-	if (ret) {
-		WD_ERR("hizip init fail with %d\n", ret);
-		goto out_with_out_buf;
+	if (!(opts->option & TEST_ZLIB)) {
+		ret = hizip_test_init(&sched, copts, &test_ops, &ctx);
+		if (ret) {
+			WD_ERR("hizip init fail with %d\n", ret);
+			goto out_with_out_buf;
+		}
 	}
 	if (sched.qs)
 		ctx.flags = sched.qs[0].dev_flags;
@@ -264,13 +281,13 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	for (j = 0; j < opts->compact_run_num; j++) {
 		ctx = ctx_save;
 
-		ret = hizip_test_sched(&sched, opts, &ctx);
+		ret = hizip_test_sched(&sched, copts, &ctx);
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			goto out_with_fini;
 		}
 
-		for (i = 0; i < opts->q_num && sched.stat; i++) {
+		for (i = 0; i < copts->q_num && sched.stat; i++) {
 			stats->v[ST_SEND] += sched.stat[i].send;
 			stats->v[ST_RECV] += sched.stat[i].recv;
 			stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
@@ -306,13 +323,13 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stats->v[ST_SIGNALS] = end_rusage.ru_nsignals - setup_rusage.ru_nsignals;
 
 	/* check last loop is enough, same as below hizip_verify_output */
-	stats->v[ST_COMPRESSION_RATIO] = (double)opts->total_len /
+	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
 					 ctx.total_out * 100;
 
-	stats->v[ST_SPEED] = opts->compact_run_num * opts->total_len /
-		(stats->v[ST_RUN_TIME] / 1000) / 1024 / 1024 * 1000 * 1000;
+	stats->v[ST_SPEED] = copts->total_len / (stats->v[ST_RUN_TIME] / 1000) /
+		1024 / 1024 * 1000 * 1000;
 
-	stats->v[ST_TOTAL_SPEED] = opts->compact_run_num * opts->total_len /
+	stats->v[ST_TOTAL_SPEED] = opts->compact_run_num * copts->total_len /
 		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
 		1024 / 1024 * 1000 * 1000;
 
@@ -322,10 +339,11 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 
-	ret = hizip_verify_random_output(out_buf, opts, &ctx);
+	ret = hizip_verify_random_output(out_buf, copts, &ctx);
 
 out_with_fini:
-	hizip_test_fini(&sched, opts);
+	if (!(opts->option & TEST_ZLIB))
+		hizip_test_fini(&sched, copts);
 out_with_out_buf:
 	munmap(out_buf, ctx.total_len * EXPANSION_RATIO);
 out_with_in_buf:
@@ -427,12 +445,12 @@ static void output_csv_header(void)
 	printf("\n");
 }
 
-static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
+static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 {
 	/* Keep in sync with output_csv_header() */
 
 	printf("%d;", csv_format_version);
-	printf("%lu;%u;", opts->total_len, opts->block_size);
+	printf("%lu;%u;", opts->common.total_len, opts->common.block_size);
 	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
 	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
 	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
@@ -449,11 +467,11 @@ static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 	printf("\n");
 }
 
-static int run_test(struct test_options *opts)
+static int run_test(struct priv_options *opts)
 {
 	int i;
 	int ret;
-	int n = opts->run_num;
+	int n = opts->common.run_num;
 	int w = opts->warmup_num;
 	struct hizip_stats avg = {0};
 	struct hizip_stats std = {0};
@@ -493,11 +511,12 @@ static int run_test(struct test_options *opts)
 
 	fprintf(stderr,
 		"Compress bz=%d nb=%lu, speed=%.1f MB/s (±%0.1f%% N=%d) overall=%.1f MB/s (±%0.1f%%)\n",
-		opts->block_size, opts->total_len / opts->block_size,
+		opts->common.block_size,
+		opts->common.total_len / opts->common.block_size,
 		avg.v[ST_SPEED], variation.v[ST_SPEED], n,
 		avg.v[ST_TOTAL_SPEED], variation.v[ST_TOTAL_SPEED]);
 
-	if (opts->verbose)
+	if (opts->common.verbose)
 		fprintf(stderr,
 		" send          %12.0f     ±%0.1f%%\n"
 		" recv          %12.0f     ±%0.1f%%\n"
@@ -537,28 +556,25 @@ int main(int argc, char **argv)
 {
 	int opt;
 	int show_help = 0;
-	struct test_options opts = {
-		.alg_type		= GZIP,
-		.op_type		= DEFLATE,
-		.req_cache_num		= 4,
-		.q_num			= 1,
-		.run_num		= 1,
-		.warmup_num		= 0,
+	struct priv_options opts = {
+		.common = {
+			.alg_type	= GZIP,
+			.op_type	= DEFLATE,
+			.req_cache_num	= 4,
+			.q_num		= 1,
+			.run_num	= 1,
+			.block_size	= 512000,
+			.total_len	= opts.common.block_size * 10,
+			.verify		= false,
+			.verbose	= false,
+		},
 		.compact_run_num	= 1,
-		.block_size		= 512000,
-		.total_len		= opts.block_size * 10,
-		.verify			= false,
-		.verbose		= false,
+		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:f:k:s:q:n:o:c:Vw:l:vz")) != -1) {
+	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:l:o:w:")) != -1) {
 		switch (opt) {
-		case 'b':
-			opts.block_size = strtol(optarg, NULL, 0);
-			if (opts.block_size <= 0)
-				show_help = 1;
-			break;
 		case 'f':
 			if (strcmp(optarg, "none") == 0) {
 				opts.display_stats = STATS_NONE;
@@ -584,30 +600,6 @@ int main(int argc, char **argv)
 				break;
 			}
 			break;
-		case 'c':
-			opts.req_cache_num = strtol(optarg, NULL, 0);
-			if (opts.req_cache_num <= 0)
-				show_help = 1;
-			break;
-		case 'n':
-			opts.run_num = strtol(optarg, NULL, 0);
-			SYS_ERR_COND(opts.run_num > MAX_RUNS,
-				     "No more than %d runs supported\n", MAX_RUNS);
-			if (opts.run_num <= 0)
-				show_help = 1;
-			break;
-		case 'q':
-			opts.q_num = strtol(optarg, NULL, 0);
-			if (opts.q_num <= 0)
-				show_help = 1;
-			break;
-		case 's':
-			opts.total_len = strtol(optarg, NULL, 0);
-			SYS_ERR_COND(opts.total_len <= 0, "invalid size '%s'\n", optarg);
-			break;
-		case 'V':
-			opts.verify = true;
-			break;
 		case 'w':
 			opts.warmup_num = strtol(optarg, NULL, 0);
 			SYS_ERR_COND(opts.warmup_num > MAX_RUNS,
@@ -621,39 +613,27 @@ int main(int argc, char **argv)
 			if (opts.compact_run_num <= 0)
 				show_help = 1;
 			break;
-		case 'v':
-			opts.verbose = true;
-			break;
-		case 'z':
-			opts.alg_type = ZLIB;
-			break;
 		default:
-			show_help = 1;
+			show_help = parse_common_option(opt, optarg,
+							&opts.common);
 			break;
 		}
 	}
 
-	hizip_test_adjust_len(&opts);
+	hizip_test_adjust_len(&opts.common);
 
 	SYS_ERR_COND(show_help || optind > argc,
-		     "test_bind_api [opts]\n"
+		     COMMON_HELP
 		     "  -f <format>   output format for the statistics\n"
 		     "                  'none'   do not output statistics\n"
 		     "                  'pretty' human readable format\n"
 		     "                  'csv'    raw, machine readable\n"
-		     "  -b <size>     block size\n"
-		     "  -n <num>      number of runs\n"
 		     "  -o <mode>     options\n"
 		     "                  'perf' prefaults the output pages\n"
 		     "                  'zlib' use zlib instead of the device\n"
-		     "  -q <num>      number of queues\n"
-		     "  -c <num>      number of caches\n"
-		     "  -s <size>     total size\n"
-		     "  -V            verify output\n"
-		     "  -w <num>      number of warmup runs\n"
 		     "  -l <num>      number of compact runs\n"
-		     "  -v            display detailed performance information\n"
-		     "  -z            test zlib algorithm, default gzip\n"
+		     "  -w <num>      number of warmup runs\n",
+		     argv[0]
 		    );
 
 	return run_test(&opts);

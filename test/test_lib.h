@@ -41,29 +41,17 @@ struct test_options {
 	int block_size;
 	int req_cache_num;
 	int q_num;
-	int run_num;
-	int warmup_num;
-	int compact_run_num;
 	unsigned long total_len;
+
+#define MAX_RUNS	1024
+	int run_num;
 
 #define INJECT_SIG_BIND		(1UL << 0)
 #define INJECT_SIG_WORK		(1UL << 1)
 	unsigned long faults;
 
-#define PERFORMANCE		(1UL << 0)
-#define TEST_ZLIB		(1UL << 1)
-	unsigned long option;
-
 	bool verify;
 	bool verbose;
-
-#define STATS_NONE		0
-#define STATS_PRETTY		1
-#define STATS_CSV		2
-	unsigned long display_stats;
-
-	/* When the test contains a fork() */
-	unsigned long children;
 };
 
 struct hizip_test_context {
@@ -130,4 +118,22 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
+#define COMMON_OPTSTRING "hb:k:n:q:c:s:Vvz"
+
+#define COMMON_HELP "%s [opts]\n"					\
+	"  -b <size>     block size\n"					\
+	"  -k <mode>     kill thread\n"					\
+	"                  'bind' kills the process after bind\n"	\
+	"                  'work' kills the process while the queue is working\n" \
+	"  -n <num>      number of runs\n"				\
+	"  -q <num>      number of queues\n"				\
+	"  -c <num>      number of caches\n"				\
+	"  -s <size>     total size\n"					\
+	"  -V            verify output\n"				\
+	"  -v            display detailed performance information\n"	\
+	"  -z            test zlib algorithm, default gzip\n"		\
+	"\n\n"
+
+int parse_common_option(const char opt, const char *optarg,
+			struct test_options *opts);
 #endif /* TEST_LIB_H_ */
