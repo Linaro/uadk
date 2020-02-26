@@ -128,7 +128,7 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	__u32 type = m->dw9 & 0xff;
 
 	if (ctx->opts->faults & INJECT_SIG_WORK)
-		kill(0, SIGTERM);
+		kill(getpid(), SIGTERM);
 
 	dbg_sqe("zip output", m);
 
