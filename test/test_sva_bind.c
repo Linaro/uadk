@@ -18,7 +18,10 @@
 
 #include "test_lib.h"
 
-#define MAX_RUNS	1024
+struct priv_options {
+	struct test_options common;
+	int children;
+};
 
 static void *mmap_alloc(size_t len)
 {
@@ -38,19 +41,20 @@ static void *mmap_alloc(size_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
-static int run_one_child(struct test_options *opts)
+static int run_one_child(struct priv_options *opts)
 {
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
 	struct hizip_test_context ctx = {0};
+	struct test_options *copts = &opts->common;
 
-	ctx.opts = opts;
-	ctx.msgs = calloc(opts->req_cache_num, sizeof(*ctx.msgs));
+	ctx.opts = copts;
+	ctx.msgs = calloc(copts->req_cache_num, sizeof(*ctx.msgs));
 	if (!ctx.msgs)
-		return -ENOMEM;
+		return ENOMEM;
 
-	ctx.total_len = opts->total_len;
+	ctx.total_len = copts->total_len;
 
 	in_buf = ctx.in_buf = mmap_alloc(ctx.total_len);
 	if (!in_buf) {
@@ -66,7 +70,7 @@ static int run_one_child(struct test_options *opts)
 
 	hizip_prepare_random_input_data(&ctx);
 
-	ret = hizip_test_init(&sched, opts, &test_ops, &ctx);
+	ret = hizip_test_init(&sched, copts, &test_ops, &ctx);
 	if (ret) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_with_out_buf;
@@ -74,14 +78,14 @@ static int run_one_child(struct test_options *opts)
 	if (sched.qs)
 		ctx.flags = sched.qs[0].dev_flags;
 
-	if (opts->faults & INJECT_SIG_BIND)
+	if (copts->faults & INJECT_SIG_BIND)
 		kill(0, SIGTERM);
 
-	ret = hizip_test_sched(&sched, opts, &ctx);
+	ret = hizip_test_sched(&sched, copts, &ctx);
 
-	hizip_test_fini(&sched, opts);
+	hizip_test_fini(&sched, copts);
 
-	ret = hizip_verify_random_output(out_buf, opts, &ctx);
+	ret = hizip_verify_random_output(out_buf, copts, &ctx);
 
 out_with_out_buf:
 	munmap(out_buf, ctx.total_len * EXPANSION_RATIO);
@@ -92,7 +96,7 @@ out_with_msgs:
 	return ret < 0 ? -ret : ret;
 }
 
-static int run_one_test(struct test_options *opts)
+static int run_one_test(struct priv_options *opts)
 {
 	pid_t pid;
 	int i, ret;
@@ -150,11 +154,11 @@ static int run_one_test(struct test_options *opts)
 	return 0;
 }
 
-static int run_test(struct test_options *opts)
+static int run_test(struct priv_options *opts)
 {
 	int i, ret;
 
-	for (i = 0; i < opts->run_num; i++) {
+	for (i = 0; i < opts->common.run_num; i++) {
 		ret = run_one_test(opts);
 		if (ret < 0)
 			return ret;
@@ -166,88 +170,40 @@ int main(int argc, char **argv)
 {
 	int opt;
 	int show_help = 0;
-	struct test_options opts = {
-		.alg_type	= GZIP,
-		.op_type	= DEFLATE,
-		.children	= 0,
-		.req_cache_num	= 4,
-		.q_num		= 1,
-		.run_num	= 1,
-		.block_size	= 512000,
-		.total_len	= opts.block_size * 10,
-		.verify		= false,
-		.display_stats	= STATS_PRETTY,
+	struct priv_options opts = {
+		.common	= {
+			.alg_type	= GZIP,
+			.op_type	= DEFLATE,
+			.req_cache_num	= 4,
+			.q_num		= 1,
+			.run_num	= 1,
+			.block_size	= 512000,
+			.total_len	= opts.common.block_size * 10,
+			.verify		= true,
+		},
+		.children		= 0,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:f:k:s:q:n:c:V")) != -1) {
+	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:o:")) != -1) {
 		switch (opt) {
-		case 'b':
-			opts.block_size = strtol(optarg, NULL, 0);
-			if (opts.block_size <= 0)
-				show_help = 1;
-			break;
 		case 'f':
 			opts.children = strtol(optarg, NULL, 0);
 			if (opts.children < 0)
 				show_help = 1;
 			break;
-		case 'k':
-			switch (optarg[0]) {
-			case 'b':
-				opts.faults |= INJECT_SIG_BIND;
-				break;
-			case 'w':
-				opts.faults |= INJECT_SIG_WORK;
-				break;
-			default:
-				SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
-				break;
-			}
-			break;
-		case 'c':
-			opts.req_cache_num = strtol(optarg, NULL, 0);
-			if (opts.req_cache_num <= 0)
-				show_help = 1;
-			break;
-		case 'n':
-			opts.run_num = strtol(optarg, NULL, 0);
-			SYS_ERR_COND(opts.run_num > MAX_RUNS,
-				     "No more than %d runs supported\n", MAX_RUNS);
-			if (opts.run_num <= 0)
-				show_help = 1;
-			break;
-		case 'q':
-			opts.q_num = strtol(optarg, NULL, 0);
-			if (opts.q_num <= 0)
-				show_help = 1;
-			break;
-		case 's':
-			opts.total_len = strtol(optarg, NULL, 0);
-			SYS_ERR_COND(opts.total_len <= 0, "invalid size '%s'\n", optarg);
-			break;
-		case 'V':
-			opts.verify = true;
-			break;
 		default:
-			show_help = 1;
+			show_help = parse_common_option(opt, optarg,
+							&opts.common);
 			break;
 		}
 	}
 
-	hizip_test_adjust_len(&opts);
+	hizip_test_adjust_len(&opts.common);
 
 	SYS_ERR_COND(show_help || optind > argc,
-		     "test_bind_api [opts]\n"
-		     "  -b <size>     block size\n"
-		     "  -f <children> number of children to create\n"
-		     "  -k <mode>     kill thread\n"
-		     "                  'bind' kills the process after bind\n"
-		     "                  'work' kills the process while the queue is working\n"
-		     "  -n <num>      number of runs\n"
-		     "  -q <num>      number of queues\n"
-		     "  -c <num>      number of caches\n"
-		     "  -s <size>     total size\n"
-		     "  -V            verify output\n"
+		     COMMON_HELP
+		     "  -f <children> number of children to create\n",
+		     argv[0]
 		    );
 
 	return run_test(&opts);
