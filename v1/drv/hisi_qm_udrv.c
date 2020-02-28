@@ -190,8 +190,9 @@ static int qm_set_queue_info(struct wd_queue *q)
 			info->sqe_size * QM_Q_DEPTH);
 
 	/* The last 32 bits of DUS show device or qp statuses */
-	info->ds_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_SS] -
+	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_SS] -
 		qinfo->qfrs_offset[UACCE_QFRT_DUS] - sizeof(uint32_t);
+	info->ds_rx_base = info->ds_tx_base - sizeof(uint32_t);
 	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
 		info->db = qm_db_v2;
 		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
@@ -274,7 +275,7 @@ int qm_send(struct wd_queue *q, void *req)
 	__u16 i;
 	int ret;
 
-	if (wd_reg_read(info->ds_base) == 1) {
+	if (wd_reg_read(info->ds_tx_base) == 1) {
 		WD_ERR("wd queue hw error happened before qm send!\n");
 		return -WD_HW_EACCESS;
 	}
@@ -298,10 +299,6 @@ int qm_send(struct wd_queue *q, void *req)
 	mb();
 	qm_tx_update(info, i);
 	wd_unspinlock(&info->sd_lock);
-	if (wd_reg_read(info->ds_base) == 1) {
-		WD_ERR("wd queue hw error happened in qm send!\n");
-		return -WD_HW_EACCESS;
-	}
 
 	return WD_SUCCESS;
 }
@@ -347,7 +344,7 @@ int qm_recv(struct wd_queue *q, void **resp)
 	__u16 i, j;
 	int ret;
 
-	if (wd_reg_read(info->ds_base) == 1) {
+	if (wd_reg_read(info->ds_rx_base) == 1) {
 		qm_rx_from_cache(info, resp, info->cq_head_index);
 		return -WD_HW_EACCESS;
 	}
@@ -379,7 +376,7 @@ int qm_recv(struct wd_queue *q, void **resp)
 	qm_rx_update(info, resp, i);
 	wd_unspinlock(&info->rc_lock);
 
-	if (wd_reg_read(info->ds_base) == 1) {
+	if (wd_reg_read(info->ds_rx_base) == 1) {
 		WD_ERR("wd queue hw error happened in qm receive!\n");
 		return -WD_HW_EACCESS;
 	}

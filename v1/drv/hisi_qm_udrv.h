@@ -71,7 +71,8 @@ struct qm_queue_info {
 	void *doorbell_base;
 	int (*db)(struct qm_queue_info *q, __u8 cmd,
 		  __u16 index, __u8 priority);
-	void *ds_base;
+	void *ds_tx_base;
+	void *ds_rx_base;
 	__u16 sq_tail_index;
 	__u16 cq_head_index;
 	__u16 sqn;
