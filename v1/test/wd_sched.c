@@ -17,7 +17,7 @@
 #include "config.h"
 #include "wd_util.h"
 #include "wd_sched.h"
-#include "smm.h"
+#include "wd_bmm.h"
 
 #define EXTRA_SIZE		4096
 #define WD_WAIT_MS		1000
@@ -26,6 +26,8 @@ static int __init_cache(struct wd_scheduler *sched)
 {
 	int i;
 	int ret = -ENOMEM;
+	struct q_info *qinfo;
+	void *pool;
 
 	sched->msgs = calloc(sched->msg_cache_num, sizeof(*sched->msgs));
 	if (!sched->msgs) {
@@ -37,12 +39,11 @@ static int __init_cache(struct wd_scheduler *sched)
 		WD_ERR("calloc for sched->stat fail!\n");
 		goto err_with_msgs;
 	}
+	qinfo = sched->qs[0].qinfo;
+	pool = qinfo->br.usr;
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		sched->msgs[i].data_in = smm_alloc(sched->ss_region,
-						   sched->msg_data_size);
-		sched->msgs[i].data_out = smm_alloc(sched->ss_region,
-						    sched->msg_data_size);
-
+		sched->msgs[i].data_in = wd_alloc_blk(pool);
+		sched->msgs[i].data_out = wd_alloc_blk(pool);
 		if (!sched->msgs[i].data_in || !sched->msgs[i].data_out) {
 			dbg("not enough data ss_region memory "
 			    "for cache %d (bs=%d)\n", i, sched->msg_data_size);
@@ -66,9 +67,26 @@ err_with_msgs:
 
 static void __fini_cache(struct wd_scheduler *sched)
 {
+	struct q_info *qinfo = sched->qs[0].qinfo;
+	unsigned int flags = qinfo->dev_flags;
+	void *pool;
+	int i;
+
 	if (sched->stat) {
 		free(sched->stat);
 		sched->stat = NULL;
+	}
+	if (!(flags & UACCE_DEV_PASID)) {
+		pool = qinfo->br.usr;
+		if (pool) {
+			for (i = 0; i < sched->msg_cache_num; i++) {
+				if (sched->msgs[i].data_in)
+					wd_free_blk(pool, sched->msgs[i].data_in);
+				if (sched->msgs[i].data_out)
+					wd_free_blk(pool, sched->msgs[i].data_out);
+				}
+			wd_blkpool_destroy(pool);
+		}
 	}
 	if (sched->msgs) {
 		free(sched->msgs);
@@ -81,6 +99,8 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 	int ret, i, j;
 	unsigned int flags = 0;
 	struct q_info *qinfo;
+	struct wd_blkpool_setup mm_setup;
+	void *pool;
 
 	for (i = 0; i < sched->q_num; i++) {
 		ret = wd_request_queue(&sched->qs[i]);
@@ -96,16 +116,29 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 
 	qinfo = sched->qs[0].qinfo;
 	flags = qinfo->dev_flags;
-	if (flags & UACCE_DEV_PASID)
+	if (flags & UACCE_DEV_PASID) {
 		sched->ss_region = malloc(sched->ss_region_size);
-	else
-		sched->ss_region = wd_reserve_memory(&sched->qs[0],
-				   sched->ss_region_size);
-
-	if (!sched->ss_region) {
-		WD_ERR("fail to alloc sched ss region mem!\n");
-		ret = -ENOMEM;
-		goto out_with_queues;
+		if (!sched->ss_region) {
+			WD_ERR("fail to alloc sched ss region mem!\n");
+			ret = -ENOMEM;
+			goto out_with_queues;
+		}
+	} else {
+		memset(&mm_setup, 0, sizeof(mm_setup));
+		mm_setup.block_size = sched->msg_data_size;
+		mm_setup.block_num = sched->msg_cache_num << 0x1; /* in and out */
+		mm_setup.align_size = 128;
+		pool = wd_blkpool_create(&sched->qs[0], &mm_setup);
+		if (!pool) {
+			WD_ERR("%s(): create pool fail!\n", __func__);
+			ret = -ENOMEM;
+			goto out_with_queues;
+		}
+		qinfo->br.alloc = (void *)wd_alloc_blk;
+		qinfo->br.free = (void *)wd_free_blk;
+		qinfo->br.iova_map = (void *)wd_blk_iova_map;
+		qinfo->br.iova_unmap = (void *)wd_blk_iova_unmap;
+		qinfo->br.usr = pool;
 	}
 
 	return 0;
@@ -148,12 +181,6 @@ int wd_sched_init(struct wd_scheduler *sched)
 
 	sched->cl = sched->msg_cache_num;
 
-	ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
-	if (ret) {
-		WD_ERR("fail to init smm!\n");
-		goto out_with_queues;
-	}
-
 	ret = __init_cache(sched);
 	if (ret) {
 		WD_ERR("fail to init caches!\n");
@@ -187,6 +214,7 @@ void wd_sched_fini(struct wd_scheduler *sched)
 			sched->ss_region = NULL;
 		}
 	}
+
 	for (i = sched->q_num - 1; i >= 0; i--)
 		wd_release_queue(&sched->qs[i]);
 }

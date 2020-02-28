@@ -189,7 +189,7 @@ static int hizip_init(struct wd_scheduler *sched, int alg_type, int op_type,
 
 	sched->q_num = Q_NUM;
 	sched->ss_region_size = 0; /* let system make decision */
-	sched->msg_cache_num = REQ_CACHE_NUM;
+	sched->msg_cache_num = 1;
 	/* use twice size of the input data, hope it is engouth for output */
 	sched->msg_data_size = blk_size * 2;
 	sched->init_cache = hizip_wd_sched_init_cache;
