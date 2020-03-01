@@ -26,6 +26,9 @@
 
 #define MAX_DEV_NAME_LEN		256
 #define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
+#define MAX_ACCELS			512
+#define MAX_BYTES_FOR_ACCELS		(MAX_ACCELS >> 3)
+#define WD_DEV_MASK_MAGIC		0xa395deaf
 
 #ifndef WD_ERR
 #ifndef WITH_LOG_FILE
@@ -65,6 +68,11 @@ struct uacce_dev_info {
 	int		iommu_type;
 };
 
+struct uacce_dev_list {
+	struct uacce_dev_info	*info;
+	struct uacce_dev_list	*next;
+};
+
 struct wd_ctx {
 	int		fd;
 	char		node_path[MAX_DEV_NAME_LEN];
@@ -79,6 +87,15 @@ struct wd_ctx {
 
 	void		*priv;
 };
+
+struct wd_dev_mask {
+	unsigned char	*mask;
+	int		len;
+	unsigned int	magic;
+};
+
+typedef struct wd_dev_mask	wd_dev_mask_t;
+
 
 static inline uint32_t wd_ioread32(void *addr)
 {
@@ -121,5 +138,8 @@ extern void wd_drv_unmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
 extern int wd_is_nosva(struct wd_ctx *ctx);
 extern void *wd_reserve_mem(struct wd_ctx *ctx, size_t size);
 extern void *wd_get_dma_from_va(struct wd_ctx *ctx, void *va);
+
+extern int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask);
+
 
 #endif
