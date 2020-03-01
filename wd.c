@@ -19,6 +19,8 @@
 
 #define SYS_CLASS_DIR	"/sys/class/uacce"
 
+static struct uacce_dev_info *uacce_dev_list = NULL;
+
 static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
@@ -192,6 +194,181 @@ static char *get_accel_name(char *node_path, int no_apdx)
 	/* remove '-' and digits */
 	len = appendix ? strlen(name) - strlen(dash) : strlen(name);
 	return strndup(name, len);
+}
+
+static int get_accel_id(char *node_path, int *id)
+{
+	char	*dash;
+	int	i, appendix = 1;
+
+	if (!id)
+		return -EINVAL;
+	dash = rindex(node_path, '-');
+	if (!dash)
+		return -EINVAL;
+	for (i = 1; i < strlen(dash); i++) {
+		if (!isdigit(dash[i])) {
+			appendix = 0;
+			break;
+		}
+	}
+	/* treat dash as a part of name if there's no digit */
+	if (i == 1)
+		appendix = 0;
+	if (!appendix)
+		return -ENOENT;
+	*id = atoi(&dash[1]);
+	return 0;
+}
+
+static int wd_init_mask(wd_dev_mask_t *dev_mask)
+{
+	dev_mask->len = MAX_BYTES_FOR_ACCELS;
+	dev_mask->magic = WD_DEV_MASK_MAGIC;
+	dev_mask->mask = calloc(1, sizeof(char) * dev_mask->len);
+	if (!dev_mask->mask)
+		return -ENOMEM;
+	return 0;
+}
+
+/*
+ * Set mask by idx. If mask is invalid, initialize it, too.
+ */
+static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
+{
+	int	offs, tmp;
+	void	*p = NULL;
+
+	if ((!dev_mask) || (idx < 0))
+		return -EINVAL;
+	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC))
+		return -EINVAL;
+	if (idx >= dev_mask->len) {
+		tmp = dev_mask->len;
+		/* Extend the accel array. */
+		do {
+			dev_mask->len <<= 1;
+		} while (idx >= dev_mask->len);
+		/* If realloc() fails, original pointer is untouched. */
+		p = realloc(dev_mask->mask, sizeof(char) * dev_mask->len);
+		if (!p) {
+			dev_mask->len = tmp;
+			return -ENOMEM;
+		}
+		dev_mask->mask = p;
+	}
+	offs = idx >> 3;
+	dev_mask->mask[offs] |= 1 << (idx % 8);
+	return 0;
+}
+
+static int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx)
+{
+	int	offs, tmp;
+	void	*p = NULL;
+
+	if ((!dev_mask) || (idx < 0))
+		return -EINVAL;
+	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC))
+		return -EINVAL;
+	if (idx >= dev_mask->len) {
+		/* Extend the accel array. */
+		tmp = dev_mask->len;
+		do {
+			dev_mask->len <<= 1;
+		} while (idx >= dev_mask->len);
+		/* If realloc() fails, original pointer is untouched. */
+		p = realloc(dev_mask->mask, sizeof(char) * dev_mask->len);
+		if (!p) {
+			dev_mask->len = tmp;
+			return -ENOMEM;
+		}
+		dev_mask->mask = p;
+	}
+	offs = idx >> 3;
+	dev_mask->mask[offs] &= ~(1 << (idx % 8));
+	return 0;
+}
+
+static struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
+{
+	struct dirent	*dev = NULL;
+	DIR		*wd_class = NULL;
+	struct uacce_dev_list	*node = NULL, *head = NULL, *tail = NULL;
+	int		ret;
+
+	if (!dev_mask)
+		return NULL;
+	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC)) {
+		ret = wd_init_mask(dev_mask);
+		if (ret)
+			return NULL;
+	}
+	wd_class = opendir(SYS_CLASS_DIR);
+	if (!wd_class) {
+		WD_ERR("WarpDrive framework isn't enabled in system!\n");
+		return NULL;
+	}
+	while ((dev = readdir(wd_class)) != NULL) {
+		if (!strncmp(dev->d_name, ".", 1) ||
+		    !strncmp(dev->d_name, "..", 2))
+			continue;
+		node = calloc(1, sizeof(struct uacce_dev_list));
+		if (!node)
+			goto out;
+		node->info = read_uacce_sysfs(dev->d_name);
+		if (!node->info)
+			goto out;
+		ret = get_accel_id(dev->d_name, &node->info->node_id);
+		if (ret < 0)
+			goto out;
+		ret = wd_set_mask(dev_mask, node->info->node_id);
+		if (ret < 0)
+			goto out;
+		if (head) {
+			tail->next = node;
+			tail = tail->next;
+		} else {
+			head = node;
+			tail = node;
+		}
+		tail->next = NULL;
+	}
+	return head;
+out:
+	while (head) {
+		if (head->info)
+			free(head->info);
+		node = head;
+		head = head->next;
+		free(node);
+	}
+	return NULL;
+}
+
+int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
+{
+	struct uacce_dev_list	*head;
+	char	*s;
+
+	if (!alg_name || !dev_mask)
+		return -EINVAL;
+	head = wd_list_accels(dev_mask);
+	if (!head)
+		return -ENOENT;
+	while (head) {
+		s = strtok(head->info->algs, "\n");
+		while (s) {
+			if (!strncmp(s, alg_name, strlen(alg_name))) {
+				wd_set_mask(dev_mask, head->info->node_id);
+				break;
+			} else
+				wd_clear_mask(dev_mask, head->info->node_id);
+			s = strtok(NULL, "\n");
+		}
+		head = head->next;
+	}
+	return 0;
 }
 
 int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
