@@ -68,6 +68,7 @@ struct priv_options {
 
 #define PERFORMANCE		(1UL << 0)
 #define TEST_ZLIB		(1UL << 1)
+#define TEST_THP		(1UL << 2)
 	unsigned long option;
 
 #define STATS_NONE		0
@@ -191,6 +192,60 @@ static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 	return total;
 }
 
+static void enable_thp(struct priv_options *opts,
+		       struct hizip_test_context *ctx)
+{
+	int ret;
+	char *p;
+	char s[14];
+	FILE *file;
+
+	if (!(opts->option & TEST_THP))
+		return;
+
+	file = fopen("/sys/kernel/mm/transparent_hugepage/enabled", "r");
+	if (!file)
+		goto out_err;
+	p = fgets(s, 14, file);
+	fclose(file);
+	if (!p)
+		goto out_err;
+
+	if (strcmp(s, "never") == 0) {
+		printf("Cannot test THP with enable=never\n");
+		return;
+	}
+
+	file = fopen("/sys/kernel/mm/transparent_hugepage/defrag", "r");
+	if (!file)
+		goto out_err;
+	p = fgets(s, 14, file);
+	fclose(file);
+	if (!p)
+		goto out_err;
+
+	if (strcmp(s, "defer") == 0 || strcmp(s, "never") == 0) {
+		printf("Cannot test THP with defrag=%s\n", s);
+		return;
+	}
+
+	ret = madvise(ctx->in_buf, ctx->total_len, MADV_HUGEPAGE);
+	if (ret) {
+		perror("madvise(MADV_HUGEPAGE)");
+		return;
+	}
+
+	ret = madvise(ctx->out_buf, ctx->total_len * EXPANSION_RATIO,
+		      MADV_HUGEPAGE);
+	if (ret) {
+		perror("madvise(MADV_HUGEPAGE)");
+	}
+
+	return;
+out_err:
+	WD_ERR("THP unsupported?\n");
+}
+
 static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
 	int i, j;
@@ -229,6 +284,8 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
+
+	enable_thp(opts, &ctx);
 
 	hizip_prepare_random_input_data(&ctx);
 
@@ -583,6 +640,9 @@ int main(int argc, char **argv)
 			case 'p':
 				opts.option |= PERFORMANCE;
 				break;
+			case 't':
+				opts.option |= TEST_THP;
+				break;
 			case 'z':
 				opts.option |= TEST_ZLIB;
 				break;
@@ -621,6 +681,7 @@ int main(int argc, char **argv)
 		     "                  'csv'    raw, machine readable\n"
 		     "  -o <mode>     options\n"
 		     "                  'perf' prefaults the output pages\n"
+		     "                  'thp' try to enable transparent huge pages\n"
 		     "                  'zlib' use zlib instead of the device\n"
 		     "  -l <num>      number of compact runs\n"
 		     "  -w <num>      number of warmup runs\n",
