@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <sys/mman.h>
 
 #include "test_lib.h"
 #include "drv/hisi_qm_udrv.h"
@@ -48,6 +49,24 @@ static void dbg_sqe(const char *head, struct hisi_zip_sqe *m)
 #else
 #define dbg_sqe(...)
 #endif
+
+void *mmap_alloc(size_t len)
+{
+	void *p;
+	long page_size = sysconf(_SC_PAGESIZE);
+
+	if (len % page_size) {
+		WD_ERR("unaligned allocation must use malloc\n");
+		return NULL;
+	}
+
+	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
+		 -1, 0);
+	if (p == MAP_FAILED)
+		WD_ERR("Failed to allocate %zu bytes\n", len);
+
+	return p == MAP_FAILED ? NULL : p;
+}
 
 static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
 {
