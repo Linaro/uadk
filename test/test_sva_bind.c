@@ -38,13 +38,13 @@ static int run_one_child(struct priv_options *opts)
 
 	ctx.total_len = copts->total_len;
 
-	in_buf = ctx.in_buf = mmap_alloc(ctx.total_len);
+	in_buf = ctx.in_buf = mmap_alloc(copts->total_len);
 	if (!in_buf) {
 		ret = -ENOMEM;
 		goto out_with_msgs;
 	}
 
-	out_buf = ctx.out_buf = mmap_alloc(ctx.total_len * EXPANSION_RATIO);
+	out_buf = ctx.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
@@ -70,9 +70,9 @@ static int run_one_child(struct priv_options *opts)
 	ret = hizip_verify_random_output(out_buf, copts, &ctx);
 
 out_with_out_buf:
-	munmap(out_buf, ctx.total_len * EXPANSION_RATIO);
+	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
-	munmap(in_buf, ctx.total_len);
+	munmap(in_buf, copts->total_len);
 out_with_msgs:
 	free(ctx.msgs);
 	return ret < 0 ? -ret : ret;

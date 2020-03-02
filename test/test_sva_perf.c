@@ -125,6 +125,7 @@ static int perf_event_get(const char *event_name, int **perf_fds, int *nr_fds)
 		WD_ERR("Couldn't parse file %s\n", event_id_file);
 		return -EINVAL;
 	}
+	fclose(fd);
 	event.config = event_id;
 
 	*perf_fds = calloc(nr_cpus, sizeof(int));
@@ -217,13 +218,13 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 
 	ctx.total_len = copts->total_len;
 
-	in_buf = ctx.in_buf = mmap_alloc(ctx.total_len);
+	in_buf = ctx.in_buf = mmap_alloc(copts->total_len);
 	if (!in_buf) {
 		ret = -ENOMEM;
 		goto out_with_msgs;
 	}
 
-	out_buf = ctx.out_buf = mmap_alloc(ctx.total_len * EXPANSION_RATIO);
+	out_buf = ctx.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
@@ -244,7 +245,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
 		 */
-		memset(out_buf, 0, ctx.total_len * EXPANSION_RATIO);
+		memset(out_buf, 0, copts->total_len * EXPANSION_RATIO);
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
@@ -331,9 +332,9 @@ out_with_fini:
 	if (!(opts->option & TEST_ZLIB))
 		hizip_test_fini(&sched, copts);
 out_with_out_buf:
-	munmap(out_buf, ctx.total_len * EXPANSION_RATIO);
+	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
-	munmap(in_buf, ctx.total_len);
+	munmap(in_buf, copts->total_len);
 out_with_msgs:
 	free(ctx.msgs);
 	return ret;
