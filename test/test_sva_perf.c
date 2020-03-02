@@ -190,22 +190,6 @@ static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 	return total;
 }
 
-static void *mmap_alloc(size_t len)
-{
-	void *p;
-	long page_size = sysconf(_SC_PAGESIZE);
-
-	if (len % page_size) {
-		WD_ERR("unaligned allocation must use malloc\n");
-		return NULL;
-	}
-
-	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
-		 -1, 0);
-
-	return p == MAP_FAILED ? NULL : p;
-}
-
 static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
 	int i, j;

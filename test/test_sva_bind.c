@@ -23,24 +23,6 @@ struct priv_options {
 	int children;
 };
 
-static void *mmap_alloc(size_t len)
-{
-	void *p;
-	long page_size = sysconf(_SC_PAGESIZE);
-
-	if (len % page_size) {
-		WD_ERR("unaligned allocation must use malloc\n");
-		return NULL;
-	}
-
-	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
-		 -1, 0);
-
-	madvise(p, len, MADV_WILLNEED);
-
-	return p == MAP_FAILED ? NULL : p;
-}
-
 static int run_one_child(struct priv_options *opts)
 {
 	int ret = 0;
