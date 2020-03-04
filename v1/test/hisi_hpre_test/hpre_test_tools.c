@@ -22,8 +22,9 @@
 #include "hpre_usr_if.h"
 #include "test_hisi_hpre.h"
 
-static int nn;
-static int nnn;
+
+#define BLK_NUM_TIMES(x,y)  ((y) * 100 / (x))
+#define BLK_NUM_VALUE 87
 
 struct thread_info
 {
@@ -581,9 +582,6 @@ int do_dh(struct wd_queue *q)
        alg_type  - 申请队列的算法类型    
        m_size    - 队列预留内存大小
 ***/
-
-
-
 int hpre_dev_queue_req(char *dev, char *alg_type, unsigned long m_size)
 {
 	void *addr;
@@ -622,12 +620,46 @@ int hpre_dev_queue_req(char *dev, char *alg_type, unsigned long m_size)
 /***
 
 ***/
+int application_release_multiple_queue(char *dev, char *alg_type, unsigned int q_num)
+{
+	void *addr;
+	int ret = 0;
+	struct wd_queue *q;
+
+	q = malloc(q_num * sizeof(struct wd_queue));
+        if (!q)
+                return 1;
+        memset((void *)q, 0, q_num * sizeof(struct wd_queue));
+
+	for (int i = 0; i < q_num; i++) {
+		q[i].capa.alg = alg_type;
+       	snprintf(q[i].dev_path, sizeof(q[i].dev_path), "%s", dev);
+		ret = wd_request_queue(&q[i]);
+		if (ret) {
+			printf("error: fail q => %d\n", i);
+			return ret;
+		}
+		wd_get_node_id(&q[i]);
+	}
+
+	for (int i = 0; i < q_num; i++) {
+                wd_release_queue(&q[i]);
+	}
+
+	printf("application_release_multiple_queue test end!\n");
+	return 0;
+}
+
+/***
+
+***/
 int hpre_dev_queue_share(char *dev, char * share_dev, char *alg_type, unsigned long m_size)
 {
 	void *addr=NULL;
 	int ret = 0;
 	struct wd_queue q;
 	struct wd_queue target_q;
+	struct wd_queue anther_q;
 	unsigned long memory_size;
 
 	memset((void *)&q, 0, sizeof(q));
@@ -676,7 +708,7 @@ int hpre_dev_queue_share(char *dev, char * share_dev, char *alg_type, unsigned l
 		return 1;
 	}
 	printf("wd target_q queue share reserved memory success!\n");
-
+	wd_release_queue(&anther_q);
 	wd_release_queue(&target_q);
 	wd_release_queue(&q);
 
@@ -1002,8 +1034,9 @@ int hpre_mult_thread_request_queue(char *dev, char *alg_type, int p_num, time_t 
 int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num, unsigned int align_sz)
 {
         int ret = 0;
-        void *blk[65535]={0};
-        unsigned int blk_count = 0;
+	 void *tmap = NULL;
+        void *blk[65536];
+        unsigned int blk_count = 0, end_count = 0, blk_fail_count = 0;
         struct wd_queue q;
         struct wd_blkpool_setup wsetup;
         struct wd_blkpool *pool;
@@ -1034,65 +1067,59 @@ int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num,
                 return 1;
         }
         printf("create ctx pool success!\n");
-
-        blk_count=wd_get_free_blk_num(pool, &nn);
-        if(blk_count != blk_num)
-        {
-                printf("blk_count is not equal to blk_num, blk count:%d\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+	 
+        if (wd_get_free_blk_num(pool, &blk_count)  != WD_SUCCESS) {
+                printf("wd_get_free_blk_num fail, blk count:%u\n", blk_count);
+                ret = -WD_EINVAL;
+                goto release_q;
         }
-        printf("blk count:%d\n", blk_count);
-        printf("Apply for all memory blocks in the memory pool\n");
-		static int i;
-        for(i=0; i < blk_num; i++)
+	 if (BLK_NUM_TIMES(blk_num, blk_count) < BLK_NUM_VALUE) {
+	         printf("%u is 87% ;pwer than %u\n", blk_count, blk_num);
+                ret = -WD_EINVAL;
+                goto release_q;
+        }
+
+        for(unsigned int i=0; i < blk_count; i++)
         {
                 blk[i] = wd_alloc_blk(pool);
                 if(!blk[i])
                 {
-                        blk_count = wd_blk_alloc_failures(pool, &nnn);
-                        printf("create blk fail,blk_count:%u\n",blk_count);
-                        wd_blkpool_destroy(pool);
-                        wd_release_queue(&q);
-
-                        return 1;
+                        if (wd_blk_alloc_failures(pool, &blk_fail_count) != WD_SUCCESS) {
+		                  printf("wd_blk_alloc_failures fail, blk_fail_count:%u\n", blk_fail_count);
+                	   }
+                        printf("create blk fail,blk_fail_count:%u\n", blk_fail_count);
+                        ret = -WD_EINVAL;
+                        goto release_q;
                 }
-                blk_count=wd_get_free_blk_num(pool, &nn);
-                printf("---alloc blk = %p, blk count:%u\n", blk[i],blk_count);
-                printf("dma_map %p = %p\n", blk[i], wd_blk_iova_map(pool, blk[i]));
-                sleep(1);
+                
+                tmap = wd_blk_iova_map(pool, blk[i]);
+		  if (!tmap) {
+		  	  printf("wd_blk_iova_map blk fail\n");
+                       ret = -WD_EINVAL;
+                       goto release_q;
+		  }
         }
-        if(blk_count != 0)
-        {
-                printf("All application memory pool memory blocks fail:%u\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-
-                return 1;
-        }
-
-        printf("Free all memory blocks in the memory pool\n");
-        for(i=0; i < blk_num; i++)
+        for(unsigned int i=0; i < blk_count; i++)
         {
                 wd_free_blk(pool, blk[i]);
-                blk_count=wd_get_free_blk_num(pool, &nn);
-                printf("---free blk = %p, blk count:%u\n", blk[i],blk_count);
-                sleep(1);
         }
-        if(blk_count != blk_num)
+	 if (wd_get_free_blk_num(pool, &end_count) != WD_SUCCESS) {
+                printf("wd_get_free_blk_num fail, blk count:%u\n", end_count);
+                ret = -WD_EINVAL;
+                goto release_q;
+        }
+        if(blk_count != end_count)
         {
-                printf("All memory blocks fail to release the memory pool, blk count:%u!\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-
-                return 1;
+                printf("All memory blocks fail to release the memory pool, blk count:%u!\n", end_count);
+                ret = -WD_EINVAL;
         }
+	 printf("test hpre_blkpool_operating end!\n");
         
+release_q:
         wd_blkpool_destroy(pool);
         wd_release_queue(&q);
 
-        return 0;
+        return ret;
 }
 
 /***
@@ -1100,9 +1127,10 @@ int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num,
 int hpre_blkpool_alloc(char *dev)
 {
         int ret = 0;
+	 void *tmap = NULL;
         void *blk=NULL;
 	 void *again_blk=NULL;
-        unsigned int blk_count = 0;
+        unsigned int blk_count = 0, end_count = 0, blk_fail_count = 0;
         struct wd_queue q;
         struct wd_blkpool_setup wsetup;
         struct wd_blkpool *pool;
@@ -1116,7 +1144,7 @@ int hpre_blkpool_alloc(char *dev)
         if(ret)
         {
                 printf("wd request queue fail!\n");
-                return ret;
+                return -WD_EINVAL;
         }
         printf("wd request queue success!\n");
 
@@ -1130,62 +1158,63 @@ int hpre_blkpool_alloc(char *dev)
         {
                 printf("create ctx pool fail!\n");
                 wd_release_queue(&q);
-                return 1;
+                return -WD_EINVAL;
         }
         printf("create ctx pool success!\n");
 
+	 if (wd_get_free_blk_num(pool, &blk_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail, blk_count:%u\n", blk_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
+        }
         blk = wd_alloc_blk(pool);
         if(!blk)
         {
-                ret = wd_blk_alloc_failures(pool, &nnn);
-                printf("alloc blk fail, ret:%d\n", ret);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                if (wd_blk_alloc_failures(pool, &blk_fail_count) != WD_SUCCESS) {
+		          printf("wd_blk_alloc_failures fail, blk_fail_count:%u\n", blk_fail_count);
+                }
+                printf("alloc blk fail, blk_fail_count:%du\n", blk_fail_count);
+                ret = -WD_EINVAL;
+                goto release_q;
         }
-        blk_count=wd_get_free_blk_num(pool, &nn);
-	 if(blk_count == wsetup.block_num)
-	 {
-                printf("wd_get_free_blk_num fail,blk count:%u\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+        
+        tmap = wd_blk_iova_map(pool, blk);
+	 if (!tmap) {
+	 	  printf("wd_blk_iova_map blk fail\n");
+                ret = -WD_EINVAL;
+                goto release_q;
 	 }
-        printf("---alloc blk = %p, blk count:%u\n", blk, blk_count);
-        printf("dma_map %p = %p\n", blk, wd_blk_iova_map(pool, blk));
         
         again_blk = wd_alloc_blk(pool);
         if(again_blk)
         {
                 printf("again alloc blk fail\n");
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                ret = -WD_EINVAL;
+                goto release_q;
         }
-        blk_count = wd_blk_alloc_failures(pool, &nnn);
-        if(ret != 1)
-        {
-                printf("Failed to get pool allocation error,blk count:%u\n",blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+        if (wd_blk_alloc_failures(pool, &blk_fail_count) != WD_SUCCESS) {
+	         printf("Failed to get pool allocation errorblk_fail_count:%u\n",blk_fail_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
         }
         printf("wd_blk_alloc_failures: %u\n", blk_count);
 
         wd_free_blk(pool, blk);
-	 blk_count=wd_get_free_blk_num(pool, &nn);
-	 if(blk_count != wsetup.block_num)
-	 {
-                printf("wd_get_free_blk_num fail,ret:%u\n",blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+	 if (wd_get_free_blk_num(pool, &end_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail\n");
+		  ret = -WD_EINVAL;
+                goto release_q;
+        }
+	 if (end_count != blk_count) {
+	 	  printf("wd_free_blk fail\n");
+		  ret = -WD_EINVAL;
 	 }
-
+	 printf("test hpre_blkpool_alloc end!\n");
+release_q:
         wd_blkpool_destroy(pool);
         wd_release_queue(&q);
 
-        return 0;
+        return ret;
 }
 
 /***
@@ -1194,7 +1223,8 @@ int hpre_blkpool_free(char *dev)
 {
         int ret = 0;
         void *blk=NULL;
-        unsigned int blk_count = 0;
+	 void *tmap=NULL;
+        unsigned int blk_count = 0, end_count = 0, blk_fail_count = 0;
         struct wd_queue q;
         struct wd_blkpool_setup wsetup;
         struct wd_blkpool *pool;
@@ -1224,53 +1254,59 @@ int hpre_blkpool_free(char *dev)
                 wd_release_queue(&q);
                 return 1;
         }
-        printf("create ctx pool success!\n");
-
+		printf("create ctx pool success!\n");
+        if (wd_get_free_blk_num(pool, &blk_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail, blk_count:%u\n", blk_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
+        }
 
         blk = wd_alloc_blk(pool);
         if(!blk)
         {
-                ret = wd_blk_alloc_failures(pool, &nnn);
-                printf("alloc blk fail,ret:%d\n", ret);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                if (wd_blk_alloc_failures(pool, &blk_fail_count) != WD_SUCCESS) {
+		          printf("wd_blk_alloc_failures fail, blk_fail_count:%u\n", blk_fail_count);
+                }
+                printf("alloc blk fail,blk_fail_count:%d\n", blk_fail_count);
+                ret = -WD_EINVAL;
+                goto release_q;
         }
-        blk_count=wd_get_free_blk_num(pool, &nn);
-	 if(blk_count == wsetup.block_num)
-	 {
-                printf("alloc blk fail,ret:%d\n",ret);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+        tmap = wd_blk_iova_map(pool, blk);
+	 if (!tmap) {
+	 	  printf("wd_blk_iova_map blk fail\n");
+                ret = -WD_EINVAL;
+                goto release_q;
 	 }
-        printf("---alloc blk = %p, blk count:%u\n", blk,blk_count);
-        printf("dma_map %p = %p\n", blk, wd_blk_iova_map(pool, blk));
-
 	 wd_free_blk(pool, blk);
-        blk_count=wd_get_free_blk_num(pool, &nn);
-	 printf("free blk = %p, blk count:%u\n", blk, blk_count);
-        if(blk_count != wsetup.block_num)
+        if (wd_get_free_blk_num(pool, &end_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail, end_count:%u\n", end_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
+	 }
+        if(blk_count != end_count)
         {
-                printf("Failed to free memory block, blk count:%u\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                printf("Failed to free memory block, blk count:%u\n", end_count);
+                ret = -WD_EINVAL;
+                goto release_q;
         }
 	 wd_free_blk(pool, blk);
-	 blk_count=wd_get_free_blk_num(pool, &nn);
-	 if(blk_count != wsetup.block_num)
+	 if (wd_get_free_blk_num(pool, &end_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail, blk_count:%u\n", end_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
+	 }
+	 if(blk_count != end_count)
         {
-                printf("Failed to free memory block, blk count:%u\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                printf("Failed to free memory block, blk count:%u\n", end_count);
+                ret = -WD_EINVAL;
         }
-	 printf("blk count:%u\n", blk_count);
+        printf("test hpre_blkpool_free end!\n");
+release_q:
 
         wd_blkpool_destroy(pool);
         wd_release_queue(&q);
-        return 0;
+		
+        return ret;
 }
 
 /***
@@ -1279,7 +1315,8 @@ int hpre_blkpool_des(char *dev)
 {
         int ret = 0;
         void *blk=NULL;
-        unsigned int blk_count = 0;
+	 void *tmap=NULL;
+        unsigned int blk_count = 0, end_count = 0, blk_fail_count = 0;
         struct wd_queue q;
         struct wd_blkpool_setup wsetup;
         struct wd_blkpool *pool;
@@ -1309,70 +1346,81 @@ int hpre_blkpool_des(char *dev)
                 wd_release_queue(&q);
                 return 1;
         }
-        printf("create ctx pool success!\n");
+		printf("create ctx pool success!\n");
+	 if (wd_get_free_blk_num(pool, &blk_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail, blk_count:%u\n", blk_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
+	 }
         blk = wd_alloc_blk(pool);
         if(!blk)
         {
-                ret = wd_blk_alloc_failures(pool, &nnn);
-                printf("create blk fail,ret:%d\n", ret);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                if (wd_blk_alloc_failures(pool, &blk_fail_count) != WD_SUCCESS) {
+		          printf("wd_blk_alloc_failures fail, blk_fail_count:%u\n", blk_fail_count);
+                }
+                printf("create blk fail,blk_fail_count:%u\n", blk_fail_count);
+                ret = -WD_EINVAL;
+                goto release_q;
         }
-        blk_count=wd_get_free_blk_num(pool, &nn);
-	 if(blk_count == wsetup.block_num)
-	 {
-                printf("alloc blk fail,ret:%d\n", ret);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+        tmap = wd_blk_iova_map(pool, blk);
+	 if (!tmap) {
+	 	  printf("wd_blk_iova_map blk fail\n");
+                ret = -WD_EINVAL;
+                goto release_q;
 	 }
-        printf("---alloc blk = %p, blk count:%u\n", blk,blk_count);
-        printf("dma_map %p = %p\n", blk, wd_blk_iova_map(pool, blk));
-        
         wd_blkpool_destroy(pool);
         wd_free_blk(pool, blk);
-	 blk_count=wd_get_free_blk_num(pool, &nn);
-	 printf("---free blk, blk count:%d\n", blk_count);
-        if(blk_count !=  wsetup.block_num)
+	 if (wd_get_free_blk_num(pool, &end_count) != WD_SUCCESS) {
+        	  printf("wd_get_free_blk_num fail, blk_count:%u\n", end_count);
+		  ret = -WD_EINVAL;
+                goto release_q;
+	 }
+	 if(blk_count != end_count)
         {
-                printf("Memory block release failed, blk count:%d\n", blk_count);
-                wd_blkpool_destroy(pool);
-                wd_release_queue(&q);
-                return 1;
+                printf("Failed to free memory block, blk count:%u\n", end_count);
+                ret = -WD_EINVAL;
         }
+        printf("test hpre_blkpool_des end!\n");
+release_q:
 
         wd_blkpool_destroy(pool);
         wd_release_queue(&q);
-
-        return 0;
+		
+        return ret;
 }
 
 void wd_alloc_free_test(void *blkpool)
 {
         void *blk=NULL;
+	 void *tmap=NULL;
         unsigned int blk_count = 0;
         struct wd_blkpool *pool = (struct wd_blkpool *)blkpool;
         int thread_id = (int)syscall(__NR_gettid);
 
-        blk_count=wd_get_free_blk_num(pool, &nn);
-		static int i;
-        for(i=0; i<blk_count; i++)
+        if (wd_get_free_blk_num(pool, &blk_count) != WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail, blk_count:%u\n", blk_count);
+		  return -WD_EINVAL;
+	 }
+        for(unsigned int i=0; i<blk_count; i++)
         {
             blk = wd_alloc_blk(pool);
             if(!blk)
             {
-                    blk_count = wd_blk_alloc_failures(pool, &nnn);
-                    printf("create blk fail,ret:%u\n", blk_count);
-
-                    return;
+                    if (wd_blk_alloc_failures(pool, &blk_count) != WD_SUCCESS) {
+		              printf("wd_blk_alloc_failures fail, blk_count:%u\n", blk_count);
+                    }
+                    printf("create blk fail,blk_count:%u\n", blk_count);
+                    return -WD_EINVAL;
             }
-            printf("thread_id:%d, ---alloc blk = %p\n", thread_id, blk);
-            printf("thread_id:%d, dma_map %p = %p\n", thread_id, blk, wd_blk_iova_map(pool, blk));
-            blk_count=wd_get_free_blk_num(pool, &nn);
+            tmap = wd_blk_iova_map(pool, blk);
+	     if (!tmap) {
+	             printf("wd_blk_iova_map blk fail\n");
+                    return -WD_EINVAL;
+	     }
             wd_free_blk(pool, blk);
         }
-
+        printf("test wd_alloc_free_test end!\n");
+		
 	 return 0;
 }
 
@@ -1413,8 +1461,7 @@ int hpre_blkpool_thread(char *dev, unsigned int blk_sz, unsigned int blk_num, un
                 wd_release_queue(&q);
                 return 1;
         }
-		static int i;
-        for(i=0; i<blk_num; i++)
+        for(int i=0; i<blk_num; i++)
         {
                 ret = pthread_create(&pid[i], NULL, wd_alloc_free_test, (void *)pool);
 	         if (ret != 0)
@@ -1423,12 +1470,12 @@ int hpre_blkpool_thread(char *dev, unsigned int blk_sz, unsigned int blk_num, un
                 }
         }
 
-        for(i=0; i<blk_num; i++)
+        for(int i=0; i<blk_num; i++)
         {
 		pthread_join(pid[i], NULL);
         }
 
-        blk_count=wd_get_free_blk_num(pool, &nn);
+        wd_get_free_blk_num(pool, &blk_count);
 	 printf("blk count:%u.\n", blk_count);
 	 
         wd_blkpool_destroy(pool);
@@ -1474,7 +1521,7 @@ int hpre_blkpool_create_des(char *dev, unsigned int blk_sz, unsigned int blk_num
             }
             printf("%s(): create ctx pool success!\n", __func__);
 
-	     blk_count=wd_get_free_blk_num(pool, &nn);
+	     wd_get_free_blk_num(pool, &blk_count);
             if(blk_count !=  wsetup.block_num)
             {
                     printf("Memory block release failed, blk count:%u\n", blk_count);
@@ -1492,25 +1539,23 @@ int hpre_blkpool_create_des(char *dev, unsigned int blk_sz, unsigned int blk_num
 int hpre_blkpool_interface_fault(void)
 {
         unsigned int ret = 0;
+	 unsigned int blk_count = 0;
         void *blk =  NULL;
         struct wd_blkpool *pool = NULL;
 
-        ret = wd_get_free_blk_num(pool, &nn);
-        if(ret >= 0)
-        {
-                printf("wd_get_free_blk_num fail...\n");
-                return 1;
-        }
-        ret = wd_blk_alloc_failures(pool, &nnn);
-        if(ret >= 0)
-        {
+        if (wd_get_free_blk_num(pool, &blk_count) == WD_SUCCESS) {
+	         printf("wd_get_free_blk_num fail...\n");
+		  return -WD_EINVAL;
+	 }
+        
+        if (wd_blk_alloc_failures(pool , &blk_count) == WD_SUCCESS) {
                 printf("wd_blk_alloc_failures fail...\n");
                 return 1;
         }
-        blk = wd_blk_iova_map(pool, blk);
+        blk =  wd_blk_iova_map(pool, blk);
         if(NULL != blk)
         {
-                printf("wd_blk_iova_map fail...\n");
+                printf("wd_blk_dma_map fail...\n");
                 return 1;
         }
         blk = wd_alloc_blk(pool);
@@ -1603,6 +1648,7 @@ int main(int arc, char *argv[])
 {
 	int ret = 0;
 	int count = 0;
+	int queue_num = 0;
 	int pthread_num = 0;
 	time_t p_time = 0;
 	char dev[256]={0};
@@ -1637,6 +1683,23 @@ int main(int arc, char *argv[])
 		snprintf(dev, sizeof(dev), argv[3]);
 		memory_size = strtoul(argv[4], NULL, 10);
 		ret = hpre_dev_queue_req(dev, algorithm_type, memory_size);
+		if(0 != ret)
+		{
+			return 1;
+		}
+	}
+	else if(!strcmp(argv[1], "mult-queue"))
+	{
+		/***
+		argv[2] - 表示算法类型       
+		argv[3] - 表示申请队列设   
+		argv[4] - 表示队列数量     
+		***/
+		//申请多个队列
+		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
+		snprintf(dev, sizeof(dev), argv[3]);
+		queue_num = strtoul(argv[4], NULL, 10);
+		ret = application_release_multiple_queue(dev, algorithm_type, queue_num);
 		if(0 != ret)
 		{
 			return 1;
@@ -1922,3 +1985,4 @@ int main(int arc, char *argv[])
 		}
 	return 0;
 }
+
