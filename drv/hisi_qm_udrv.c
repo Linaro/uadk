@@ -198,8 +198,10 @@ void hisi_qm_free_ctx(struct wd_ctx *ctx)
 	struct hisi_qm_ctx		*ctx_priv;
 	struct hisi_qm_queue_info	*q_info;
 
-	if (ctx->ss_va)
+	if (ctx->ss_va) {
 		wd_drv_unmap_qfr(ctx, UACCE_QFRT_SS, ctx->ss_va);
+		ctx->ss_va = NULL;
+	}
 	ctx_priv = (struct hisi_qm_ctx *)ctx->priv;
 	q_info = &ctx_priv->q_info;
 	wd_drv_unmap_qfr(ctx, UACCE_QFRT_MMIO, q_info->mmio_base);

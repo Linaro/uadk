@@ -19,8 +19,6 @@
 
 #define SYS_CLASS_DIR	"/sys/class/uacce"
 
-static struct uacce_dev_info *uacce_dev_list = NULL;
-
 static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
@@ -154,7 +152,7 @@ out:
 }
 
 /* pick the name of accelerator */
-static char *get_accel_name(char *node_path, int no_apdx)
+char *get_accel_name(char *node_path, int no_apdx)
 {
 	char	*name, *dash;
 	int	i, appendix, len;
@@ -234,7 +232,7 @@ static int wd_init_mask(wd_dev_mask_t *dev_mask)
 /*
  * Set mask by idx. If mask is invalid, initialize it, too.
  */
-static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
+static int set_mask(wd_dev_mask_t *dev_mask, int idx)
 {
 	int	offs, tmp;
 	void	*p = NULL;
@@ -262,7 +260,7 @@ static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
 	return 0;
 }
 
-static int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx)
+int clear_mask(wd_dev_mask_t *dev_mask, int idx)
 {
 	int	offs, tmp;
 	void	*p = NULL;
@@ -290,7 +288,7 @@ static int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx)
 	return 0;
 }
 
-static struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
+struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask)
 {
 	struct dirent	*dev = NULL;
 	DIR		*wd_class = NULL;
@@ -322,7 +320,7 @@ static struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 		ret = get_accel_id(dev->d_name, &node->info->node_id);
 		if (ret < 0)
 			goto out;
-		ret = wd_set_mask(dev_mask, node->info->node_id);
+		ret = set_mask(dev_mask, node->info->node_id);
 		if (ret < 0)
 			goto out;
 		if (head) {
@@ -350,22 +348,28 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 {
 	struct uacce_dev_list	*head;
 	char	*s;
+	int	ret, found;
 
 	if (!alg_name || !dev_mask)
 		return -EINVAL;
-	head = wd_list_accels(dev_mask);
+	ret = wd_init_mask(dev_mask);
+	if (ret)
+		return ret;
+	head = list_accels(dev_mask);
 	if (!head)
 		return -ENOENT;
 	while (head) {
 		s = strtok(head->info->algs, "\n");
+		found = 0;
 		while (s) {
 			if (!strncmp(s, alg_name, strlen(alg_name))) {
-				wd_set_mask(dev_mask, head->info->node_id);
+				found = 1;
 				break;
-			} else
-				wd_clear_mask(dev_mask, head->info->node_id);
+			}
 			s = strtok(NULL, "\n");
 		}
+		if (!found)
+			clear_mask(dev_mask, head->info->node_id);
 		head = head->next;
 	}
 	return 0;
