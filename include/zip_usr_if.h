@@ -2,6 +2,8 @@
 #ifndef HISI_ZIP_USR_IF_H
 #define HISI_ZIP_USR_IF_H
 
+#include <asm/types.h>
+
 struct hisi_zip_sqe {
 	__u32 consumed;
 	__u32 produced;

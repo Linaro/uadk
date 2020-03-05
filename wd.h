@@ -26,7 +26,7 @@
 
 #define MAX_DEV_NAME_LEN		256
 #define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
-#define MAX_ACCELS			512
+#define MAX_ACCELS			16
 #define MAX_BYTES_FOR_ACCELS		(MAX_ACCELS >> 3)
 #define WD_DEV_MASK_MAGIC		0xa395deaf
 
@@ -141,5 +141,8 @@ extern void *wd_get_dma_from_va(struct wd_ctx *ctx, void *va);
 
 extern int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask);
 
+extern struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask);
+extern char *get_accel_name(char *node_path, int no_apdx);
+extern int clear_mask(wd_dev_mask_t *dev_mask, int idx);
 
 #endif
