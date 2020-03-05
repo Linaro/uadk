@@ -106,14 +106,13 @@ int test_compress(char *src, char *dst)
 	sfd = open(src, O_RDONLY);
 	if (sfd < 0)
 		return -EINVAL;
-	dfd = open(dst, O_CREAT | O_RDWR);
+	dfd = open(dst, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (dfd < 0) {
 		ret = -EINVAL;
 		goto out;
 	}
 	memset(&arg, 0, sizeof(struct wd_comp_arg));
 	fstat(sfd, &st);
-printf("src file size:%d\n", st.st_size);
 	arg.src_len = st.st_size;
 	arg.src = calloc(1, sizeof(char) * arg.src_len);
 	if (!arg.src) {
@@ -126,9 +125,9 @@ printf("src file size:%d\n", st.st_size);
 		ret = -ENOMEM;
 		goto out_dst;
 	}
+	ret = read(sfd, arg.src, arg.src_len);
 	handle = wd_alg_comp_alloc_sess("gzip", NULL);
 	ret = wd_alg_compress(handle, &arg);
-	printf("x3, ret:%d\n", ret);
 	if (ret) {
 		fprintf(stderr, "fail to compress (%d)\n", ret);
 	}
