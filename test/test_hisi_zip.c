@@ -160,8 +160,6 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 int hizip_init(int alg_type, int op_type)
 {
 	int ret = -ENOMEM;
-	struct hisi_qm_capa capa;
-	struct hisi_qm_priv *qm_priv;
 
 	sched.q_num = q_num;
 	sched.ss_region_size = 0; /* let system make decision */
@@ -176,10 +174,6 @@ int hizip_init(int alg_type, int op_type)
 	sched.hw_free = hisi_qm_free_ctx;
 	sched.hw_send = hisi_qm_send;
 	sched.hw_recv = hisi_qm_recv;
-	sched.data = &capa;
-	qm_priv = (struct hisi_qm_priv *)&capa.priv;
-	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
-	qm_priv->op_type = op_type;
 
 	sched.qs = calloc(q_num, sizeof(*sched.qs));
 	if (!sched.qs)
@@ -194,10 +188,8 @@ int hizip_init(int alg_type, int op_type)
 	hizip_priv.op_type = op_type;
 	if (alg_type == ZLIB) {
 		hizip_priv.dw9 = 2;
-		capa.alg = "zlib";
 	} else {
 		hizip_priv.dw9 = 3;
-		capa.alg = "gzip";
 	}
 
 	ret = wd_sched_init(&sched, "/dev/hisi_zip-0");
@@ -224,7 +216,28 @@ void hizip_deflate(FILE *source, FILE *dest)
 {
 	int fd;
 	struct stat s;
-	int ret;
+	int ret, i, j;
+	struct hisi_qm_capa capa;
+	struct hisi_qm_priv *qm_priv;
+
+	sched.data = &capa;
+	qm_priv = (struct hisi_qm_priv *)&capa.priv;
+	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
+	qm_priv->op_type = hizip_priv.op_type;
+
+	if (hizip_priv.alg_type == ZLIB)
+		capa.alg = "zlib";
+	else
+		capa.alg = "gzip";
+
+	for (i = 0; i < sched.q_num; i++) {
+		ret = sched.hw_alloc(&sched.qs[i], sched.data);
+		if (ret)
+			goto out;
+		ret = wd_start_ctx(&sched.qs[i]);
+		if (ret)
+			goto out_start;
+	}
 
 	fd = fileno(source);
 	SYS_ERR_COND(fstat(fd, &s) < 0, "fstat");
@@ -250,6 +263,14 @@ void hizip_deflate(FILE *source, FILE *dest)
 	}
 
 	fclose(dest);
+	return;
+out_start:
+	sched.hw_free(&sched.qs[i]);
+out:
+	for (j = i - 1; j >= 0; j--) {
+		wd_stop_ctx(&sched.qs[j]);
+		sched.hw_free(&sched.qs[j]);
+	}
 }
 
 void hizip_def(FILE *source, FILE *dest, int alg_type, int op_type)
