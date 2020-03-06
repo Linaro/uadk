@@ -73,25 +73,28 @@ static inline int match_alg_name(const char *dev_alg_name, char *alg_name)
 
 handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 {
-	struct uacce_dev_list	*head, *p, *prev;
-	wd_dev_mask_t		mask;
+	struct uacce_dev_list	*head = NULL, *p, *prev;
+	wd_dev_mask_t		*mask = NULL;
 	struct wd_comp_sess	*sess = NULL;
 	int	i, found, max = 0, ret;
 	char	*dev_name, *sub;
 
-	head = list_accels(&mask);
+	mask = malloc(sizeof(wd_dev_mask_t));
+	if (!mask)
+		return (handler_t)sess;
+	head = list_accels(mask);
 	if (!head) {
 		WD_ERR("Failed to get any accelerators in system!\n");
-		return -EINVAL;
+		return (handler_t)sess;
 	}
 	/* merge two masks */
 	if (dev_mask && (dev_mask->magic == WD_DEV_MASK_MAGIC) &&
-	    dev_mask->len && (dev_mask->len <= mask.len)) {
-		for (i = 0; i < mask.len; i++)
-			mask.mask[i] &= dev_mask->mask[i];
+	    dev_mask->len && (dev_mask->len <= mask->len)) {
+		for (i = 0; i < mask->len; i++)
+			mask->mask[i] &= dev_mask->mask[i];
 	}
 	for (p = head, prev = NULL; p; ) {
-		if (!is_accel_avail(&mask, p->info->node_id)) {
+		if (!is_accel_avail(mask, p->info->node_id)) {
 			RM_NODE(head, prev, p);
 			continue;
 		}
@@ -114,7 +117,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 				p = prev->next;
 			}
 		} else {
-			clear_mask(&mask, p->info->node_id);
+			clear_mask(mask, p->info->node_id);
 			RM_NODE(head, prev, p);
 		}
 	}
@@ -143,7 +146,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 	dev_name = get_accel_name(p->info->dev_root, 0);
 	snprintf(sess->node_path, MAX_DEV_NAME_LEN, "/dev/%s", dev_name);
 	free(dev_name);
-	memcpy(&sess->dev_mask, &mask, sizeof(wd_dev_mask_t));
+	sess->dev_mask = mask;
 	sess->drv = &wd_alg_comp_list[i];
 	ret = sess->drv->init(sess);
 	if (ret)
@@ -162,6 +165,8 @@ void wd_alg_comp_free_sess(handler_t handle)
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
 
 	sess->drv->exit(sess);
+	free(sess->dev_mask->mask);
+	free(sess->dev_mask);
 	free(sess);
 }
 

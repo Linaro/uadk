@@ -293,11 +293,12 @@ struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask)
 	struct dirent	*dev = NULL;
 	DIR		*wd_class = NULL;
 	struct uacce_dev_list	*node = NULL, *head = NULL, *tail = NULL;
-	int		ret;
+	int		ret, inited = 0;
 
 	if (!dev_mask)
 		return NULL;
 	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC)) {
+		inited = 1;
 		ret = wd_init_mask(dev_mask);
 		if (ret)
 			return NULL;
@@ -305,6 +306,10 @@ struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask)
 	wd_class = opendir(SYS_CLASS_DIR);
 	if (!wd_class) {
 		WD_ERR("WarpDrive framework isn't enabled in system!\n");
+		if (inited) {
+			free(dev_mask->mask);
+			free(dev_mask);
+		}
 		return NULL;
 	}
 	while ((dev = readdir(wd_class)) != NULL) {
@@ -332,6 +337,7 @@ struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask)
 		}
 		tail->next = NULL;
 	}
+	closedir(wd_class);
 	return head;
 out:
 	while (head) {
@@ -341,6 +347,9 @@ out:
 		head = head->next;
 		free(node);
 	}
+	closedir(wd_class);
+	if (inited)
+		free(dev_mask->mask);
 	return NULL;
 }
 

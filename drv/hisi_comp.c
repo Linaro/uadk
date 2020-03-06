@@ -42,13 +42,11 @@ struct hisi_sched {
 	int	alg_type;
 	int	op_type;
 	int	dw9;
-	int	total_len;
 	struct hisi_zip_sqe	*msgs;
 	struct wd_comp_arg	*arg;
 	uint64_t	si;
 	uint64_t	di;
-	FILE	*sfile;
-	FILE	*dfile;
+	size_t		total_out;
 };
 
 static void hizip_init_cache(struct wd_scheduler *sched, int i)
@@ -91,7 +89,8 @@ static int hizip_input(struct wd_msg *msg, void *priv)
 				memcpy(&ilen, msg->data_in + 6, 4);
 				real_len = GZIP_HEADER_SZ + GZIP_EXTRA_SZ +
 					   ilen;
-				arg->src_len += templen - real_len;
+				if (arg->src_len > 0)
+					arg->src_len += templen - real_len;
 			}
 		}
 	}
@@ -128,9 +127,13 @@ static int hizip_output(struct wd_msg *msg, void *priv)
 					 gzip_extra, GZIP_EXTRA_SZ);
 		}
 	}
+	if (hpriv->total_out + m->produced > hpriv->arg->dst_len) {
+		WD_ERR("output data will overflow\n");
+		return -ENOMEM;
+	}
 	STORE_MSG_TO_DST(hpriv->arg->dst, hpriv->di,
 			 msg->data_out, m->produced);
-	hpriv->arg->dst_len = hpriv->di;
+	hpriv->total_out = hpriv->di;
 	return 0;
 }
 
@@ -178,6 +181,7 @@ int hisi_comp_init(struct wd_comp_sess *sess)
 	}
 	sched_priv->si = 0;
 	sched_priv->di = 0;
+	sched_priv->total_out = 0;
 	sched->priv = sched_priv;
 	ret = wd_sched_init(sched, sess->node_path);
 	if (ret)
@@ -249,7 +253,6 @@ int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 	sched_priv = (struct hisi_sched *)sched->priv;
 	sched_priv->op_type = DEFLATE;
 	sched_priv->arg = arg;
-	arg->dst_len = 0;
 	/* ZLIB engine can do only one time with buffer less than 16M */
 	if (sched_priv->alg_type == ZLIB) {
 		if (arg->src_len > BLOCK_SIZE) {
@@ -274,6 +277,7 @@ int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 		}
 		ret = 0;
 	}
+	arg->dst_len = sched_priv->total_out;
 	return ret;
 out_size:
 	for (i = 0; i < sched->q_num; i++) {
@@ -319,7 +323,7 @@ int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 		if (ret)
 			goto out_start;
 	}
-	sched_priv = (struct hisi_sched *)sess->priv;
+	sched_priv = (struct hisi_sched *)sched->priv;
 	sched_priv->op_type = INFLATE;
 	sched_priv->arg = arg;
 	/* ZLIB engine can do only one time with buffer less than 16M */
@@ -340,11 +344,13 @@ int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 
 	while (arg->src_len || !wd_sched_empty(sched)) {
 		ret = wd_sched_work(sched, arg->src_len);
-		if (ret) {
-			WD_ERR("fail to deflate by wd_sched (%d)\n", ret);
+		if (ret < 0) {
+			WD_ERR("fail to inflate by wd_sched (%d)\n", ret);
 			goto out_size;
 		}
+		ret = 0;
 	}
+	arg->dst_len = sched_priv->total_out;
 	return ret;
 out_size:
 	for (i = 0; i < sched->q_num; i++) {
