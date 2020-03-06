@@ -13,7 +13,7 @@ struct wd_alg_comp;
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
-	wd_dev_mask_t		dev_mask;
+	wd_dev_mask_t		*dev_mask;
 	struct wd_alg_comp	*drv;
 	void			*priv;
 };
