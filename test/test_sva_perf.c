@@ -424,7 +424,7 @@ static int add_std(struct hizip_stats *std, struct hizip_stats *avg,
 
 	for (i = 0; i < NUM_STATS; i++) {
 		v = new->v[i] - avg->v[i];
-		std->v[i] = v * v;
+		std->v[i] += v * v;
 	}
 	return 0;
 }
