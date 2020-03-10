@@ -237,10 +237,6 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	if (ret < 0 || ret == 1)
 		return -ENODEV;
 
-	ret = get_int_attr(dinfo, "dev_state");
-	if (ret < 0)
-		return ret;
-
 	ret = get_str_attr(dinfo, "algorithms",
 			    dinfo->algs, MAX_ATTR_STR_SIZE);
 	if (ret < 0)
