@@ -221,6 +221,11 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 
+	if (unlikely(!recv_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
+
 	if (usr && sqe->tag != usr)
 		return 0;
 
@@ -378,6 +383,11 @@ int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 	__u64 dma_addr;
+
+	if (unlikely(!recv_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
 
 	if (usr && sqe->tag != usr)
 		return 0;

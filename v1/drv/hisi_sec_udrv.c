@@ -891,6 +891,11 @@ int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 	struct hisi_sec_sqe *sqe = msg;
 	struct wd_queue *q = info->q;
 
+	if (unlikely(!cipher_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
+
 	if (sqe->type == BD_TYPE2) {
 		if (usr && sqe->type2.tag != usr)
 			return 0;
@@ -971,6 +976,11 @@ int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 	struct wcrypto_digest_msg *digest_msg = info->req_cache[i];
 	struct hisi_sec_sqe *sqe = msg;
 	struct wd_queue *q = info->q;
+
+	if (unlikely(!digest_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
 
 	if (sqe->type == BD_TYPE2) {
 		if (usr && sqe->type2.tag != usr)
