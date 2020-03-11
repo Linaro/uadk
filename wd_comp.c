@@ -41,6 +41,8 @@ static struct wd_alg_comp wd_alg_comp_list[] = {
 		.exit		= hisi_comp_exit,
 		.deflate	= hisi_comp_deflate,
 		.inflate	= hisi_comp_inflate,
+		.strm_deflate	= hisi_comp_strm_deflate,
+		.strm_inflate	= hisi_comp_strm_inflate,
 		.async_poll	= hisi_comp_poll,
 	},
 };
@@ -182,4 +184,18 @@ int wd_alg_decompress(handler_t handler, struct wd_comp_arg *arg)
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
 
 	return sess->drv->inflate(sess, arg);
+}
+
+int wd_alg_strm_compress(handler_t handler, struct wd_comp_arg *arg)
+{
+	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
+
+	return sess->drv->strm_deflate(sess, arg);
+}
+
+int wd_alg_strm_decompress(handler_t handler, struct wd_comp_arg *arg)
+{
+	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
+
+	return sess->drv->strm_inflate(sess, arg);
 }

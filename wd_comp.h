@@ -34,6 +34,10 @@ struct wd_alg_comp {
 	void	(*exit)(struct wd_comp_sess *sess);
 	int	(*deflate)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
 	int	(*inflate)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
+	int	(*strm_deflate)(struct wd_comp_sess *sess,
+				struct wd_comp_arg *arg);
+	int	(*strm_inflate)(struct wd_comp_sess *sess,
+				struct wd_comp_arg *arg);
 	int	(*async_poll)(struct wd_comp_sess *sess,
 			      struct wd_comp_arg *arg);
 };
