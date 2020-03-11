@@ -107,7 +107,6 @@ struct wcrypto_cipher_msg {
 	__u64 usr_data;	/* user identifier: struct wcrypto_cb_tag */
 };
 
-
 /**
  * wcrypto_create_cipher_ctx() - create a cipher context on the wrapdrive queue.
  * @q: wrapdrive queue, need requested by user.

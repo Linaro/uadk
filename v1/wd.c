@@ -298,7 +298,6 @@ static bool copy_if_better(struct dev_info *old, struct dev_info *new,
 	/* Is the new dev better? */
 	if (old && (!old->name[0] || find_node ||
 		is_weight_more(new->weight, old->weight))) {
-
 		memcpy(old, new, sizeof(*old));
 		dbg("adopted\n");
 	}

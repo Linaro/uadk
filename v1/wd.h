@@ -133,11 +133,11 @@ enum wd_buff_type {
 extern wd_log log_out;
 
 #define __WD_FILENAME__ (strrchr(__FILE__, '/') ?	\
-		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)):__FILE__)
+		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)) : __FILE__)
 
 #define WD_ERR(format, args...)	\
 	(log_out ? log_out("[%s, %d, %s]:"format,	\
-	__WD_FILENAME__, __LINE__, __func__, ##args) :	\
+	__WD_FILENAME__, __LINE__, __func__, ##args) : 	\
 	fprintf(stderr, format, ##args))
 #else
 extern FILE *flog_fd;

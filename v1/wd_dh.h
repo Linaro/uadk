@@ -69,7 +69,7 @@ struct wcrypto_dh_msg {
 	__u16 pbytes; /* parameter p size */
 	__u16 gbytes; /* parameter g size */
 	__u16 out_bytes; /* output parameter size */
-	__u64 usr_data; /* user identifier：struct wcrypto_cb_tag */
+	__u64 usr_data; /* user identifier: struct wcrypto_cb_tag */
 };
 
 void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *setup);

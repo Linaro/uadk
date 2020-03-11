@@ -345,7 +345,9 @@ int qm_recv(struct wd_queue *q, void **resp)
 	int ret;
 
 	if (wd_reg_read(info->ds_rx_base) == 1) {
+		wd_spinlock(&info->rc_lock);
 		qm_rx_from_cache(info, resp, info->cq_head_index);
+		wd_unspinlock(&info->rc_lock);
 		return -WD_HW_EACCESS;
 	}
 

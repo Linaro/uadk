@@ -435,7 +435,6 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 		pkey2 = &ctx->prikey->pkey2;
 		memset(ctx->prikey, 0, len);
 		init_pkey2(pkey2, ctx->key_size);
-
 	} else {
 		len = sizeof(struct wcrypto_rsa_prikey) +
 			GEN_PARAMS_SZ(ctx->key_size);
@@ -623,7 +622,6 @@ int wcrypto_set_rsa_pubkey_params(void *ctx, struct wd_dtb *e, struct wd_dtb *n)
 		c->pubkey->n.dsize = n->dsize;
 		memset(c->pubkey->n.data, 0, c->pubkey->n.bsize);
 		memcpy(c->pubkey->n.data, n->data, n->dsize);
-
 	}
 	return WD_SUCCESS;
 }
