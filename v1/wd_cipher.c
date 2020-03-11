@@ -391,6 +391,11 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 	int ret;
 	int count = 0;
 
+	if (unlikely(!q)) {
+		WD_ERR("q is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	do {
 		resp = NULL;
 		ret = wd_recv(q, (void **)&resp);
