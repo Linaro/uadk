@@ -68,7 +68,6 @@ struct hisi_zip_sqe {
 	__u32 ctx_dw2;
 	__u32 isize;
 	__u32 checksum;
-
 };
 
 #define HZ_BUF_TYPE_SHIFT 8

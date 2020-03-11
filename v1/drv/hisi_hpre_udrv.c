@@ -34,7 +34,8 @@
 static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 				int para_size, int data_len)
 {
-	int i = data_len - 1, j = 0;
+	int i = data_len - 1;
+	int j = 0;
 
 	if (!dst || !src || para_size <= 0 || data_len <= 0) {
 		WD_ERR("crypto bin to hpre bin params err!\n");
@@ -58,7 +59,8 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 
 static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int para_size)
 {
-	int i, j = 0, cnt;
+	int i, cnt;
+	int j = 0;
 	int k = 0;
 
 	if (!dst || !src || para_size <= 0) {
@@ -416,7 +418,8 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	struct hisi_hpre_sqe *hw_msg = msg;
 	struct wd_queue *q = info->q;
 	__u64 dma_out, dma_in;
-	size_t ilen = 0, olen = 0;
+	size_t ilen = 0;
+	size_t olen = 0;
 	__u16 kbytes;
 	int ret;
 
@@ -448,7 +451,6 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 			ilen = kbytes;
 		}
 	} else {
-
 		ret = qm_rsa_out_transfer(rsa_msg, hw_msg, &ilen, &olen);
 		if (ret) {
 			WD_ERR("qm rsa out transfer fail!\n");
@@ -458,12 +460,11 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 		}
 	}
 
-	ret = 1;
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_in = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 	drv_iova_unmap(q, rsa_msg->out, (void *)(uintptr_t)dma_out, olen);
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in, ilen);
-	return ret;
+	return 1;
 }
 
 static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
@@ -562,7 +563,6 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 			hw_msg->low_in = 0;
 			hw_msg->hi_in = 0;
 		} else {
-
 			ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
 				(const char *)msg->g, msg->key_bytes,
 				msg->gbytes);
