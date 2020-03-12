@@ -14,6 +14,7 @@
 #define FLAG_ZLIB	(1 << 0)
 #define FLAG_GZIP	(1 << 1)
 #define FLAG_DECMPS	(1 << 2)
+#define FLAG_STREAM	(1 << 3)
 
 static int verify_mask(wd_dev_mask_t *mask, int id)
 {
@@ -141,12 +142,18 @@ int test_compress(char *src, char *dst, int flag)
 	}
 	handle = wd_alg_comp_alloc_sess(algs, NULL);
 	if (flag & FLAG_DECMPS) {
-		ret = wd_alg_decompress(handle, &arg);
+		if (flag & FLAG_STREAM)
+			ret = wd_alg_strm_decompress(handle, &arg);
+		else
+			ret = wd_alg_decompress(handle, &arg);
 		if (ret) {
 			fprintf(stderr, "fail to decompress (%d)\n", ret);
 		}
 	} else {
-		ret = wd_alg_compress(handle, &arg);
+		if (flag & FLAG_STREAM)
+			ret = wd_alg_strm_compress(handle, &arg);
+		else
+			ret = wd_alg_compress(handle, &arg);
 		if (ret) {
 			fprintf(stderr, "fail to compress (%d)\n", ret);
 		}
@@ -176,7 +183,7 @@ int main(int argc, char *argv[])
 	wd_dev_mask_t		*dev_mask;
 	char	src[PATHLEN+1], dst[PATHLEN+1];
 
-	while ((opt = getopt(argc, argv, "i:o:hdgz")) != -1) {
+	while ((opt = getopt(argc, argv, "i:o:hdgsz")) != -1) {
 		switch (opt) {
 		case 'i':
 			snprintf(src, PATHLEN, "%s", optarg);
@@ -189,6 +196,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'g':
 			flag |= FLAG_GZIP;
+			break;
+		case 's':
+			flag |= FLAG_STREAM;
 			break;
 		case 'z':
 			flag |= FLAG_ZLIB;
@@ -207,8 +217,8 @@ int main(int argc, char *argv[])
 		return fd;
 	}
 	flag_mask = FLAG_GZIP | FLAG_ZLIB;
-	if (!flag || (flag & flag_mask == flag_mask)) {
-		printf("wrong flag setting:%d\n", flag);
+	if (!flag || ((flag & flag_mask) == flag_mask)) {
+		printf("wrong flag setting:0x%x\n", flag);
 		return -EINVAL;
 	}
 
