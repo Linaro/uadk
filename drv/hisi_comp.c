@@ -664,6 +664,7 @@ int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 			have = STREAM_CHUNK_OUT - strm->avail_out;
 			STORE_MSG_TO_DST(arg->dst, strm->di,
 					 strm->next_out, have);
+			arg->dst_len = strm->di;
 		} while (strm->avail_out == 0);
 
 		/* done when last data in file processed */
@@ -715,7 +716,7 @@ int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
 			have = STREAM_CHUNK_OUT - strm->avail_out;
 			STORE_MSG_TO_DST(arg->dst, strm->di,
 					 strm->next_out, have);
-
+			arg->dst_len = strm->di;
 		} while (strm->avail_out == 0);
 
 		/* done when last data in file processed */
