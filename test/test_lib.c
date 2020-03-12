@@ -285,7 +285,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 {
 	int ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
-	struct hisi_qm_capa capa;
+	struct hisi_qm_capa *capa;
 
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
@@ -301,27 +301,34 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	sched->hw_free = hisi_qm_free_ctx;
 	sched->hw_send = hisi_qm_send;
 	sched->hw_recv = hisi_qm_recv;
-	sched->data = &capa;
-	qm_priv = (struct hisi_qm_priv *)&capa.priv;
-	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
-	qm_priv->op_type = opts->op_type;
 
 	sched->qs = calloc(opts->q_num, sizeof(*sched->qs));
 	if (!sched->qs)
 		return -ENOMEM;
 
+	capa = malloc(sizeof(struct hisi_qm_capa));
+	if (!capa)
+		goto out;
+
 	if (opts->alg_type == ZLIB)
-		capa.alg = "zlib";
+		capa->alg = "zlib";
 	else
-		capa.alg = "gzip";
+		capa->alg = "gzip";
+	sched->data = capa;
+
+	qm_priv = (struct hisi_qm_priv *)&capa->priv;
+	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
+	qm_priv->op_type = opts->op_type;
 
 	ret = wd_sched_init(sched, "/dev/hisi_zip-1");
 	if (ret)
-		goto err_with_qs;
+		goto out_sched;
 
 	return 0;
 
-err_with_qs:
+out_sched:
+	free(capa);
+out:
 	free(sched->qs);
 	return ret;
 }
@@ -329,8 +336,16 @@ err_with_qs:
 int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 		     struct hizip_test_context *ctx)
 {
-	int ret = 0;
+	int ret = 0, i, j;
 
+	for (i = 0; i < sched->q_num; i++) {
+		ret = sched->hw_alloc(&sched->qs[i], sched->data);
+		if (ret)
+			goto out;
+		ret = wd_start_ctx(&sched->qs[i]);
+		if (ret)
+			goto out_start;
+	}
 	while (ctx->total_len || !wd_sched_empty(sched)) {
 		dbg("request loop: total_len=%d\n", ctx->total_len);
 		ret = wd_sched_work(sched, ctx->total_len);
@@ -340,6 +355,18 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 		}
 	}
 
+	for (i = 0; i < sched->q_num; i++) {
+		wd_stop_ctx(&sched->qs[i]);
+		sched->hw_free(&sched->qs[i]);
+	}
+	return ret;
+out_start:
+	sched->hw_free(&sched->qs[i]);
+out:
+	for (j = i - 1; j >= 0; j--) {
+		wd_stop_ctx(&sched->qs[j]);
+		sched->hw_free(&sched->qs[j]);
+	}
 	return ret;
 }
 
