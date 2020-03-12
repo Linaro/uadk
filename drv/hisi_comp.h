@@ -19,10 +19,6 @@ extern int hisi_comp_deflate(struct wd_comp_sess *sess,
 			     struct wd_comp_arg *arg);
 extern int hisi_comp_inflate(struct wd_comp_sess *sess,
 			     struct wd_comp_arg *arg);
-extern int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
-				  struct wd_comp_arg *arg);
-extern int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
-				  struct wd_comp_arg *arg);
 extern int hisi_comp_poll(struct wd_comp_sess *sess,
 			  struct wd_comp_arg *arg);
 

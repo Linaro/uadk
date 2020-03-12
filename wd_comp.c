@@ -41,8 +41,6 @@ static struct wd_alg_comp wd_alg_comp_list[] = {
 		.exit		= hisi_comp_exit,
 		.deflate	= hisi_comp_deflate,
 		.inflate	= hisi_comp_inflate,
-		.strm_deflate	= hisi_comp_strm_deflate,
-		.strm_inflate	= hisi_comp_strm_inflate,
 		.async_poll	= hisi_comp_poll,
 	},
 };
@@ -56,7 +54,7 @@ static inline int is_accel_avail(wd_dev_mask_t *dev_mask, int idx)
 	return ret;
 }
 
-static inline int match_alg_name(const char *dev_alg_name, char *alg_name)
+static inline int match_alg_name(char *dev_alg_name, char *alg_name)
 {
 	char	*sub;
 	int	found;
@@ -79,7 +77,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 	wd_dev_mask_t		*mask = NULL;
 	struct wd_comp_sess	*sess = NULL;
 	int	i, found, max = 0, ret;
-	char	*dev_name, *sub;
+	char	*dev_name;
 
 	mask = malloc(sizeof(wd_dev_mask_t));
 	if (!mask)
@@ -124,7 +122,6 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 		}
 	}
 	for (p = head, i = 0; p; p = p->next) {
-		printf("p node:%d, instan:%d, name:%s, alg_path:%s, dev_root:%s\n", p->info->node_id, p->info->avail_instn, p->info->name, p->info->alg_path, p->info->dev_root);
 		/* mount driver */
 		dev_name = get_accel_name(p->info->dev_root, 1);
 		found = 0;
@@ -184,18 +181,4 @@ int wd_alg_decompress(handler_t handler, struct wd_comp_arg *arg)
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
 
 	return sess->drv->inflate(sess, arg);
-}
-
-int wd_alg_strm_compress(handler_t handler, struct wd_comp_arg *arg)
-{
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
-
-	return sess->drv->strm_deflate(sess, arg);
-}
-
-int wd_alg_strm_decompress(handler_t handler, struct wd_comp_arg *arg)
-{
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
-
-	return sess->drv->strm_inflate(sess, arg);
 }

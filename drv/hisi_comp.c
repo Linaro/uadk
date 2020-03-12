@@ -77,6 +77,7 @@ struct hisi_strm_info {
 struct hisi_comp_sess {
 	struct wd_ctx		ctx;
 	struct wd_scheduler	sched;
+	struct hisi_qm_capa	capa;
 	struct hisi_strm_info	strm;
 };
 
@@ -179,20 +180,18 @@ static int hizip_sched_output(struct wd_msg *msg, void *priv)
 	return 0;
 }
 
-int hisi_comp_init(struct wd_comp_sess *sess)
+static int hisi_comp_nostrm_init(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*sched_priv;
-	struct hisi_strm_info	*strm;
+	struct hisi_qm_capa	*capa;
 	int	ret = -EINVAL;
 
-	priv = calloc(1, sizeof(struct hisi_comp_sess));
-	if (!priv)
-		return -ENOMEM;
-	sess->priv = priv;
-	strm = &priv->strm;
+	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
+	capa = &priv->capa;
+	sched->data = capa;
 	sched->q_num = 1;
 	sched->ss_region_size = 0; /* let system make decision */
 	sched->msg_cache_num = CACHE_NUM;
@@ -208,7 +207,7 @@ int hisi_comp_init(struct wd_comp_sess *sess)
 
 	sched->qs = malloc(sizeof(*sched->qs) * sched->q_num);
 	if (!sched->qs)
-		goto out;
+		return -ENOMEM;
 
 	sched_priv = malloc(sizeof(struct hisi_sched));
 	if (!sched_priv)
@@ -219,13 +218,11 @@ int hisi_comp_init(struct wd_comp_sess *sess)
 	if (!strncmp(sess->alg_name, "zlib", strlen("zlib"))) {
 		sched_priv->alg_type = ZLIB;
 		sched_priv->dw9 = 2;
-		strm->alg_type = ZLIB;
-		strm->dw9 = 2;
+		capa->alg = "zlib";
 	} else {	// gzip
 		sched_priv->alg_type = GZIP;
 		sched_priv->dw9 = 3;
-		strm->alg_type = GZIP;
-		strm->dw9 = 3;
+		capa->alg = "gzip";
 	}
 	sched_priv->si = 0;
 	sched_priv->di = 0;
@@ -241,55 +238,41 @@ out_msg:
 	free(sched_priv);
 out_priv:
 	free(sched->qs);
-out:
-	free(sess->priv);
-	sess->priv = NULL;
 	return ret;
 }
 
-void hisi_comp_exit(struct wd_comp_sess *sess)
+static void hisi_comp_nostrm_exit(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*sched_priv;
-	int	i;
 
-/*
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	for (i = 0; i < sched->q_num; i++) {
-		wd_stop_ctx(&sched->qs[i]);
-		sched->hw_free(&sched->qs[i]);
-	}
 	wd_sched_fini(sched);
 	sched_priv = sched->priv;
 	free(sched_priv->msgs);
 	free(sched_priv);
 	free(sched->qs);
-	free(sess->priv);
-	sess->priv = NULL;
-*/
 }
 
-int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+static int hisi_comp_nostrm_deflate(struct wd_comp_sess *sess,
+				    struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*sched_priv;
-	struct hisi_qm_capa	capa;
 	struct hisi_qm_priv	*qm_priv;
 	int	i, j, ret;
 
+	hisi_comp_nostrm_init(sess);
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	sched->data = &capa;
-	sched_priv = sched->priv;
-	if (sched_priv->alg_type == ZLIB)
-		capa.alg = "zlib";
-	else
-		capa.alg = "gzip";
+	sched_priv = (struct hisi_sched *)sched->priv;
+	sched_priv->op_type = DEFLATE;
+	sched_priv->arg = arg;
 
-	qm_priv = (struct hisi_qm_priv *)&capa.priv;
+	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = DEFLATE;
 	for (i = 0; i < sched->q_num; i++) {
@@ -300,9 +283,6 @@ int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 		if (ret)
 			goto out_start;
 	}
-	sched_priv = (struct hisi_sched *)sched->priv;
-	sched_priv->op_type = DEFLATE;
-	sched_priv->arg = arg;
 	/* ZLIB engine can do only one time with buffer less than 16M */
 	if (sched_priv->alg_type == ZLIB) {
 		if (arg->src_len > BLOCK_SIZE) {
@@ -328,12 +308,13 @@ int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 		ret = 0;
 	}
 	arg->dst_len = sched_priv->total_out;
-	return ret;
+	ret = 0;
 out_size:
 	for (i = 0; i < sched->q_num; i++) {
 		wd_stop_ctx(&sched->qs[i]);
 		sched->hw_free(&sched->qs[i]);
 	}
+	hisi_comp_nostrm_exit(sess);
 	return ret;
 out_start:
 	sched->hw_free(&sched->qs[i]);
@@ -342,27 +323,24 @@ out:
 		wd_stop_ctx(&sched->qs[j]);
 		sched->hw_free(&sched->qs[j]);
 	}
+	hisi_comp_nostrm_exit(sess);
 	return ret;
 }
 
-int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+static int hisi_comp_nostrm_inflate(struct wd_comp_sess *sess,
+				    struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*sched_priv;
-	struct hisi_qm_capa	capa;
 	struct hisi_qm_priv	*qm_priv;
 	int	i, j, ret;
 
+	hisi_comp_nostrm_init(sess);
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	sched->data = &capa;
 	sched_priv = sched->priv;
-	if (sched_priv->alg_type == ZLIB)
-		capa.alg = "zlib";
-	else
-		capa.alg = "gzip";
-	qm_priv = (struct hisi_qm_priv *)&capa.priv;
+	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = INFLATE;
 	for (i = 0; i < sched->q_num; i++) {
@@ -401,12 +379,13 @@ int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 		ret = 0;
 	}
 	arg->dst_len = sched_priv->total_out;
-	return ret;
+	ret = 0;
 out_size:
 	for (i = 0; i < sched->q_num; i++) {
 		wd_stop_ctx(&sched->qs[i]);
 		sched->hw_free(&sched->qs[i]);
 	}
+	hisi_comp_nostrm_exit(sess);
 	return ret;
 out_start:
 	sched->hw_free(&sched->qs[i]);
@@ -415,30 +394,52 @@ out:
 		wd_stop_ctx(&sched->qs[j]);
 		sched->hw_free(&sched->qs[j]);
 	}
+	hisi_comp_nostrm_exit(sess);
 	return ret;
+}
+
+int hisi_comp_init(struct wd_comp_sess *sess)
+{
+	struct hisi_comp_sess	*priv;
+
+	priv = calloc(1, sizeof(struct hisi_comp_sess));
+	if (!priv)
+		return -ENOMEM;
+	sess->priv = priv;
+	return 0;
+}
+
+void hisi_comp_exit(struct wd_comp_sess *sess)
+{
+	free(sess->priv);
+	sess->priv = NULL;
 }
 
 static int hisi_strm_init(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
-	struct hisi_qm_capa	capa;
 	struct hisi_qm_priv	*qm_priv;
 	struct hisi_strm_info	*strm;
 	int	ret;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	if (strm->alg_type == ZLIB)
-		capa.alg = "zlib";
-	else
-		capa.alg = "gzip";
+	if (strm->alg_type == ZLIB) {
+		priv->capa.alg = "zlib";
+		strm->alg_type = ZLIB;
+		strm->dw9 = 2;
+	} else {
+		priv->capa.alg = "gzip";
+		strm->alg_type = GZIP;
+		strm->dw9 = 3;
+	}
 	ret = wd_request_ctx(&priv->ctx, sess->node_path);
 	if (ret)
 		return ret;
-	qm_priv = (struct hisi_qm_priv *)capa.priv;
+	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = strm->op_type;
-	ret = hisi_qm_alloc_ctx(&priv->ctx, &capa);
+	ret = hisi_qm_alloc_ctx(&priv->ctx, &priv->capa);
 	if (ret)
 		goto out;
 	ret = wd_start_ctx(&priv->ctx);
@@ -619,8 +620,8 @@ out:
 	return ret;
 }
 
-int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
-			   struct wd_comp_arg *arg)
+static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
+				  struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
@@ -675,8 +676,8 @@ out:
 	return ret;
 }
 
-int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
-			   struct wd_comp_arg *arg)
+static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
+				  struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
@@ -725,6 +726,28 @@ int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
 	hisi_strm_end(sess);
 	return 0;
 out:
+	return ret;
+}
+
+int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+{
+	int	ret;
+
+	if (arg->flag & FLAG_COMP_STREAM)
+		ret = hisi_comp_strm_deflate(sess, arg);
+	else
+		ret = hisi_comp_nostrm_deflate(sess, arg);
+	return ret;
+}
+
+int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+{
+	int	ret;
+
+	if (arg->flag & FLAG_COMP_STREAM)
+		ret = hisi_comp_strm_inflate(sess, arg);
+	else
+		ret = hisi_comp_nostrm_inflate(sess, arg);
 	return ret;
 }
 
