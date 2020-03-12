@@ -16,90 +16,7 @@
 #define FLAG_DECMPS	(1 << 2)
 #define FLAG_STREAM	(1 << 3)
 
-static int verify_mask(wd_dev_mask_t *mask, int id)
-{
-	int	offs;
-	unsigned char	*data;
-	int i;
-
-	data = mask->mask;
-	if (mask->magic != WD_DEV_MASK_MAGIC) {
-		printf("magic:0x%x\n", mask->magic);
-		return 0;
-	}
-	offs = id >> 3;
-	if (data[offs] & (1 << (id % 8)))
-		return 1;
-	return 0;
-}
-
-/*
-static int test_mask(void)
-{
-	int	ret;
-	int	id;
-	wd_dev_mask_t	mask;
-
-	ret = wd_set_mask(NULL, 0);
-	if (ret >= 0) {
-		printf("failed to detect wd_set_mask(NULL, 0) error\n");
-		return -EINVAL;
-	}
-	id = 23;
-	ret = wd_set_mask(&mask, id);
-	if ((ret < 0) || !verify_mask(&mask, id)) {
-		printf("failed to set mask for dev %d (%d)\n", id, ret);
-		return ret;
-	}
-	id = 560;
-	ret = wd_set_mask(&mask, id);
-	if ((ret < 0) || !verify_mask(&mask, id)) {
-		printf("failed to set mask for dev %d (%d)\n", id, ret);
-		return ret;
-	}
-	mask.magic = 0xdead;
-	id = 72;
-	ret = wd_set_mask(&mask, id);
-	if ((ret < 0) || !verify_mask(&mask, id)) {
-		printf("failed to set mask for dev %d (%d)\n", id, ret);
-		return ret;
-	}
-	return ret;
-}
-*/
-
-static int test_list(void)
-{
-	struct uacce_dev_list	*head, *p;
-	wd_dev_mask_t		mask;
-	int	cnt = 0;
-
-	head = list_accels(&mask);
-	p = head;
-	while (p) {
-		printf("id:%d\n", p->info->node_id);
-		p = p->next;
-		cnt++;
-	}
-	printf("cnt:%d\n", cnt);
-	return 0;
-}
-
-static int test_accel_mask(void)
-{
-	struct uacce_dev_list	*head, *p;
-	wd_dev_mask_t		mask;
-	int	cnt = 0, ret;
-
-	memset(&mask, 0, sizeof(wd_dev_mask_t));
-	ret = wd_get_accel_mask("zip", &mask);
-	printf("zip mask:0x%x, len:%d, magic:0x%x\n", (unsigned char)mask.mask[0], mask.len, mask.magic);
-	ret = wd_get_accel_mask("zlib", &mask);
-	printf("zlib mask:0x%x, len:%d, magic:0x%x\n", (unsigned char)mask.mask[0], mask.len, mask.magic);
-	return 0;
-}
-
-int test_compress(char *src, char *dst, int flag)
+static int test_compress(char *src, char *dst, int flag)
 {
 	handler_t		handle;
 	struct wd_comp_arg	arg;
@@ -141,19 +58,15 @@ int test_compress(char *src, char *dst, int flag)
 		goto out_read;
 	}
 	handle = wd_alg_comp_alloc_sess(algs, NULL);
+	if (flag & FLAG_STREAM)
+		arg.flag = FLAG_COMP_STREAM;
 	if (flag & FLAG_DECMPS) {
-		if (flag & FLAG_STREAM)
-			ret = wd_alg_strm_decompress(handle, &arg);
-		else
-			ret = wd_alg_decompress(handle, &arg);
+		ret = wd_alg_decompress(handle, &arg);
 		if (ret) {
 			fprintf(stderr, "fail to decompress (%d)\n", ret);
 		}
 	} else {
-		if (flag & FLAG_STREAM)
-			ret = wd_alg_strm_compress(handle, &arg);
-		else
-			ret = wd_alg_compress(handle, &arg);
+		ret = wd_alg_compress(handle, &arg);
 		if (ret) {
 			fprintf(stderr, "fail to compress (%d)\n", ret);
 		}
@@ -179,8 +92,7 @@ out:
 int main(int argc, char *argv[])
 {
 	int	fd, opt;
-	int	ret, flag = 0, flag_mask;
-	wd_dev_mask_t		*dev_mask;
+	int	flag = 0, flag_mask;
 	char	src[PATHLEN+1], dst[PATHLEN+1];
 
 	while ((opt = getopt(argc, argv, "i:o:hdgsz")) != -1) {
@@ -222,13 +134,6 @@ int main(int argc, char *argv[])
 		return -EINVAL;
 	}
 
-/*
-	ret = test_mask();
-	if (ret < 0)
-		printf("failed to pass mask test\n");
-	test_list();
-	test_accel_mask();
-*/
 	test_compress(src, dst, flag);
 	close(fd);
 	return 0;
