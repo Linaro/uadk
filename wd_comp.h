@@ -10,6 +10,8 @@ typedef void *wd_alg_comp_cb_t(void *cb_param);
 
 struct wd_alg_comp;
 
+#define FLAG_COMP_STREAM	(1 << 0)
+
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
@@ -25,6 +27,7 @@ struct wd_comp_arg {
 	size_t			dst_len;
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
+	uint32_t		flag;
 };
 
 struct wd_alg_comp {
@@ -34,10 +37,6 @@ struct wd_alg_comp {
 	void	(*exit)(struct wd_comp_sess *sess);
 	int	(*deflate)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
 	int	(*inflate)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
-	int	(*strm_deflate)(struct wd_comp_sess *sess,
-				struct wd_comp_arg *arg);
-	int	(*strm_inflate)(struct wd_comp_sess *sess,
-				struct wd_comp_arg *arg);
 	int	(*async_poll)(struct wd_comp_sess *sess,
 			      struct wd_comp_arg *arg);
 };
