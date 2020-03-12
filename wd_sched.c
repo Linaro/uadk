@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#define DEBUG_LOG
 #include "config.h"
 #include <sys/poll.h>
 #include "wd_sched.h"
