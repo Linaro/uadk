@@ -354,15 +354,19 @@ static int hizip_verify_output(char *out_buf, struct test_options *opts,
 
 static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
-	int i;
+	int i, j;
 	double v;
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
-	struct hizip_priv hizip_priv = {0};
+	struct hizip_priv hizip_priv = {0}, hizip_save;
 	struct timespec setup_time, start_time, end_time;
 	struct timespec setup_cputime, start_cputime, end_cputime;
 	struct rusage setup_rusage, start_rusage, end_rusage;
+	int stat_size = sizeof(*sched.stat) * opts->q_num;
+
+	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
+			    stats->v[ST_RECV_RETRY] = 0;
 
 	hizip_priv.opts = opts;
 	hizip_priv.msgs = calloc(opts->req_cache_num, sizeof(*hizip_priv.msgs));
@@ -408,6 +412,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	if (sched.qs)
 		hizip_priv.flags = sched.qs[0].dev_flags;
 
+	hizip_save = hizip_priv;
+
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(0, SIGTERM);
 
@@ -415,7 +421,23 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
 	getrusage(RUSAGE_SELF, &start_rusage);
 
-	ret = hizip_test_sched(&sched, opts, &hizip_priv);
+	for (j = 0; j < opts->compact_run_num; j++) {
+		hizip_priv = hizip_save;
+
+		ret = hizip_test_sched(&sched, opts, &hizip_priv);
+		if (ret < 0) {
+			WD_ERR("hizip test fail with %d\n", ret);
+			goto out_with_fini;
+		}
+
+		for (i = 0; i < opts->q_num && sched.stat; i++) {
+			stats->v[ST_SEND] += sched.stat[i].send;
+			stats->v[ST_RECV] += sched.stat[i].recv;
+			stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
+			stats->v[ST_RECV_RETRY] += sched.stat[i].recv_retries;
+			memset(sched.stat, 0, stat_size);
+		}
+	}
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_cputime);
@@ -443,21 +465,14 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	stats->v[ST_SIGNALS] = end_rusage.ru_nsignals - setup_rusage.ru_nsignals;
 
-	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
-			    stats->v[ST_RECV_RETRY] = 0;
-	for (i = 0; i < opts->q_num && sched.stat; i++) {
-		stats->v[ST_SEND] += sched.stat[i].send;
-		stats->v[ST_RECV] += sched.stat[i].recv;
-		stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
-		stats->v[ST_RECV_RETRY] += sched.stat[i].recv_retries;
-	}
+	/* check last loop is enough, same as below hizip_verify_output */
 	stats->v[ST_COMPRESSION_RATIO] = (double)opts->total_len /
 					 hizip_priv.total_out * 100;
 
-	stats->v[ST_SPEED] = opts->total_len / (stats->v[ST_RUN_TIME] / 1000) /
-		1024 / 1024 * 1000 * 1000;
+	stats->v[ST_SPEED] = opts->compact_run_num * opts->total_len /
+		(stats->v[ST_RUN_TIME] / 1000) / 1024 / 1024 * 1000 * 1000;
 
-	stats->v[ST_TOTAL_SPEED] = opts->total_len /
+	stats->v[ST_TOTAL_SPEED] = opts->compact_run_num * opts->total_len /
 		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
 		1024 / 1024 * 1000 * 1000;
 
@@ -465,10 +480,10 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 
-	hizip_test_fini(&sched, opts);
-
 	ret = hizip_verify_output(out_buf, opts, &hizip_priv);
 
+out_with_fini:
+	hizip_test_fini(&sched, opts);
 out_with_out_buf:
 	free(out_buf);
 out_with_in_buf:
@@ -611,18 +626,19 @@ int main(int argc, char **argv)
 	int opt;
 	int show_help = 0;
 	struct test_options opts = {
-		.alg_type	= GZIP,
-		.op_type	= DEFLATE,
-		.req_cache_num	= 4,
-		.q_num		= 1,
-		.run_num	= 1,
-		.warmup_num	= 0,
-		.block_size	= 512000,
-		.total_len	= opts.block_size * 10,
-		.verify		= false,
+		.alg_type		= GZIP,
+		.op_type		= DEFLATE,
+		.req_cache_num		= 4,
+		.q_num			= 1,
+		.run_num		= 1,
+		.warmup_num		= 0,
+		.compact_run_num	= 1,
+		.block_size		= 512000,
+		.total_len		= opts.block_size * 10,
+		.verify			= false,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:l:")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = strtol(optarg, NULL, 0);
@@ -687,6 +703,11 @@ int main(int argc, char **argv)
 			if (opts.warmup_num < 0)
 				show_help = 1;
 			break;
+		case 'l':
+			opts.compact_run_num = strtol(optarg, NULL, 0);
+			if (opts.compact_run_num <= 0)
+				show_help = 1;
+			break;
 		default:
 			show_help = 1;
 			break;
@@ -714,6 +735,7 @@ int main(int argc, char **argv)
 		     "  -s <size>     total size\n"
 		     "  -V            verify output\n"
 		     "  -w <num>      number of warmup runs\n"
+		     "  -l <num>      number of compact runs\n"
 		    );
 
 	return run_test(&opts);
