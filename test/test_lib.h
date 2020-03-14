@@ -43,6 +43,7 @@ struct test_options {
 	int q_num;
 	int run_num;
 	int warmup_num;
+	int compact_run_num;
 	unsigned long total_len;
 
 #define INJECT_SIG_BIND		(1UL << 0)
