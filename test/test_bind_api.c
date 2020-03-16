@@ -640,7 +640,7 @@ int main(int argc, char **argv)
 		.verbose		= false,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:l:v")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:l:vz")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = strtol(optarg, NULL, 0);
@@ -713,6 +713,9 @@ int main(int argc, char **argv)
 		case 'v':
 			opts.verbose = true;
 			break;
+		case 'z':
+			opts.alg_type = ZLIB;
+			break;
 		default:
 			show_help = 1;
 			break;
@@ -742,6 +745,7 @@ int main(int argc, char **argv)
 		     "  -w <num>      number of warmup runs\n"
 		     "  -l <num>      number of compact runs\n"
 		     "  -v            display detailed performance information\n"
+		     "  -z            test zlib algorithm, default gzip\n"
 		    );
 
 	return run_test(&opts);
