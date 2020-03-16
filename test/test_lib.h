@@ -55,6 +55,7 @@ struct test_options {
 	unsigned long option;
 
 	bool verify;
+	bool verbose;
 };
 
 struct test_ops {
