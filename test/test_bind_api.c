@@ -588,7 +588,8 @@ static int run_test(struct test_options *opts)
 		avg.v[ST_SPEED], variation.v[ST_SPEED], n,
 		avg.v[ST_TOTAL_SPEED], variation.v[ST_TOTAL_SPEED]);
 
-	fprintf(stderr,
+	if (opts->verbose)
+		fprintf(stderr,
 		" send          %12.0f     ±%0.1f%%\n"
 		" recv          %12.0f     ±%0.1f%%\n"
 		" send retry    %12.0f     ±%0.1f%%\n"
@@ -636,9 +637,10 @@ int main(int argc, char **argv)
 		.block_size		= 512000,
 		.total_len		= opts.block_size * 10,
 		.verify			= false,
+		.verbose		= false,
 	};
 
-	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:l:")) != -1) {
+	while ((opt = getopt(argc, argv, "hb:k:s:q:n:o:c:Vw:l:v")) != -1) {
 		switch (opt) {
 		case 'b':
 			opts.block_size = strtol(optarg, NULL, 0);
@@ -708,6 +710,9 @@ int main(int argc, char **argv)
 			if (opts.compact_run_num <= 0)
 				show_help = 1;
 			break;
+		case 'v':
+			opts.verbose = true;
+			break;
 		default:
 			show_help = 1;
 			break;
@@ -736,6 +741,7 @@ int main(int argc, char **argv)
 		     "  -V            verify output\n"
 		     "  -w <num>      number of warmup runs\n"
 		     "  -l <num>      number of compact runs\n"
+		     "  -v            display detailed performance information\n"
 		    );
 
 	return run_test(&opts);
