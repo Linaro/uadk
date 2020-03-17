@@ -95,12 +95,17 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		return NULL;
 	}
 
-	qinfo = q->qinfo;
-	if (strncmp(q->capa.alg, "dh", strlen("dh"))) {
+	if (!setup->br.alloc || !setup->br.free) {
+		WD_ERR("create dh ctx user mm br err!\n");
+		return NULL;
+	}
+
+	if (strcmp(q->capa.alg, "dh")) {
 		WD_ERR("%s(): algorithm mismatch!\n", __func__);
 		return NULL;
 	}
 
+	qinfo = q->qinfo;
 	/* lock at ctx creating */
 	wd_spinlock(&qinfo->qlock);
 
