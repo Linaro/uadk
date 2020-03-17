@@ -167,7 +167,13 @@ struct wcrypto_rsa_kg_in *wcrypto_new_kg_in(void *ctx, struct wd_dtb *e,
 		WD_ERR("q para err at create kg in!\n");
 		return NULL;
 	}
+
 	br = &c->setup.br;
+	if (!br->alloc) {
+		WD_ERR("new kg in user mm br err!\n");
+		return NULL;
+	}
+
 	kg_in_size = GEN_PARAMS_SZ(c->key_size);
 	kg_in = br->alloc(br->usr, kg_in_size + sizeof(*kg_in));
 	if (!kg_in) {
@@ -249,6 +255,11 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 		kg_out_size = GEN_PARAMS_SZ(c->key_size);
 
 	br = &c->setup.br;
+	if (!br->alloc) {
+		WD_ERR("new kg out user mm br err!\n");
+		return NULL;
+	}
+
 	kg_out = br->alloc(br->usr, kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
 		WD_ERR("ctx br->alloc kg_in memory fail!\n");
@@ -511,16 +522,16 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 		WD_ERR("create rsa ctx input param err!\n");
 		return NULL;
 	}
-	qinfo = q->qinfo;
 	if (!setup->br.alloc || !setup->br.free) {
 		WD_ERR("create rsa ctx user mm br err!\n");
 		return NULL;
 	}
-	if (strncmp(q->capa.alg, "rsa", strlen("rsa"))) {
+	if (strcmp(q->capa.alg, "rsa")) {
 		WD_ERR("create rsa ctx algorithm mismatching!\n");
 		return NULL;
 	}
 
+	qinfo = q->qinfo;
 	/*lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
@@ -665,8 +676,6 @@ void wcrypto_get_rsa_prikey_params(struct wcrypto_rsa_prikey *pvk, struct wd_dtb
 	}
 
 	pkey1 = &pvk->pkey1;
-	if (!pkey1)
-		return;
 
 	if (d)
 		*d = &pkey1->d;
@@ -790,8 +799,6 @@ void wcrypto_get_rsa_crt_prikey_params(struct wcrypto_rsa_prikey *pvk,
 	}
 
 	pkey2 = &pvk->pkey2;
-	if (!pkey2)
-		return;
 
 	if (dq)
 		*dq = &pkey2->dq;
