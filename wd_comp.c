@@ -147,9 +147,11 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 	free(dev_name);
 	sess->dev_mask = mask;
 	sess->drv = &wd_alg_comp_list[i];
-	ret = sess->drv->init(sess);
-	if (ret)
-		WD_ERR("fail to init session (%d)\n", ret);
+	if (sess->drv->init) {
+		ret = sess->drv->init(sess);
+		if (ret)
+			WD_ERR("fail to init session (%d)\n", ret);
+	}
 out:
 	while (head) {
 		p = head;
@@ -163,7 +165,8 @@ void wd_alg_comp_free_sess(handler_t handle)
 {
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
 
-	sess->drv->exit(sess);
+	if (sess->drv->exit)
+		sess->drv->exit(sess);
 	free(sess->dev_mask->mask);
 	free(sess->dev_mask);
 	free(sess);
@@ -172,13 +175,19 @@ void wd_alg_comp_free_sess(handler_t handle)
 int wd_alg_compress(handler_t handler, struct wd_comp_arg *arg)
 {
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
+	int	ret = -EINVAL;
 
-	return sess->drv->deflate(sess, arg);
+	if (sess->drv->deflate)
+		ret = sess->drv->deflate(sess, arg);
+	return ret;
 }
 
 int wd_alg_decompress(handler_t handler, struct wd_comp_arg *arg)
 {
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
+	int	ret = -EINVAL;
 
-	return sess->drv->inflate(sess, arg);
+	if (sess->drv->inflate)
+		ret = sess->drv->inflate(sess, arg);
+	return ret;
 }
