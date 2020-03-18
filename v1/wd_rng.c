@@ -99,15 +99,21 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 
 	/* lock at ctx creating */
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num++;
-	ctx_id = qinfo->ctx_num;
-	wd_unspinlock(&qinfo->qlock);
-
-	if (ctx_id > WD_RNG_MAX_CTX) {
-		qinfo->ctx_num--;
+	if (qinfo->ctx_num >= WD_RNG_MAX_CTX) {
 		WD_ERR("create too many trng ctx!\n");
+		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+
+	qinfo->ctx_num++;
+	ctx_id = wd_alloc_ctx_id(q, WD_RNG_MAX_CTX);
+	if (ctx_id < 0) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		wd_unspinlock(&qinfo->qlock);
+		return NULL;
+	}
+
+	wd_unspinlock(&qinfo->qlock);
 
 	ctx = calloc(1, sizeof(struct wcrypto_rng_ctx));
 	if (!ctx) {
@@ -142,6 +148,7 @@ void wcrypto_del_rng_ctx(void *ctx)
 
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("repeat del trng ctx!\n");
