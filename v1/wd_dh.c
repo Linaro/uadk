@@ -118,14 +118,22 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		return NULL;
 	}
 
-	qinfo->ctx_num++;
-	ctx_id = qinfo->ctx_num;
-	wd_unspinlock(&qinfo->qlock);
-
-	if (ctx_id > WD_DH_MAX_CTX) {
+	if (qinfo->ctx_num >= WD_DH_MAX_CTX) {
 		WD_ERR("err: create too many dh ctx!\n");
+		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+
+	qinfo->ctx_num++;
+	ctx_id = wd_alloc_ctx_id(q, WD_DH_MAX_CTX);
+	if (ctx_id < 0) {
+
+		WD_ERR("err: alloc ctx id fail!\n");
+		wd_unspinlock(&qinfo->qlock);
+		return NULL;
+	}
+
+	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_dh_ctx));
 	if (!ctx) {
@@ -356,7 +364,7 @@ void wcrypto_del_dh_ctx(void *ctx)
 
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-
+	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (!qinfo->ctx_num) {
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	} else if (qinfo->ctx_num < 0) {
