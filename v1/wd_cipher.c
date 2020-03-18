@@ -162,13 +162,22 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		WD_ERR("Err mm br in creating cipher ctx!\n");
 		return NULL;
 	}
-	qinfo->ctx_num++;
-	ctx_id = qinfo->ctx_num;
-	wd_unspinlock(&qinfo->qlock);
-	if (ctx_id > WCRYPTO_CIPHER_MAX_CTX) {
+
+	if (qinfo->ctx_num >= WCRYPTO_CIPHER_MAX_CTX) {
 		WD_ERR("err:create too many cipher ctx!\n");
+		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+
+	qinfo->ctx_num++;
+	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_CIPHER_MAX_CTX);
+	if (ctx_id < 0) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		wd_unspinlock(&qinfo->qlock);
+		return NULL;
+	}
+
+	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_cipher_ctx));
 	if (!ctx) {
@@ -420,6 +429,7 @@ void wcrypto_del_cipher_ctx(void *ctx)
 	qinfo = cx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (!qinfo->ctx_num)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
