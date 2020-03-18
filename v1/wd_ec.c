@@ -150,13 +150,22 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 		WD_ERR("%s(): config different br!\n", __func__);
 		return NULL;
 	}
-	qinfo->ctx_num++;
-	ctx_id = qinfo->ctx_num;
-	wd_unspinlock(&qinfo->qlock);
-	if (ctx_id > WCRYPTO_EC_MAX_CTX) {
+
+	if (qinfo->ctx_num >= WCRYPTO_EC_MAX_CTX) {
 		WD_ERR("%s() create too many ctx!\n", __func__);
+		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+
+	qinfo->ctx_num++;
+	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_EC_MAX_CTX);
+	if (ctx_id < 0) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		wd_unspinlock(&qinfo->qlock);
+		return NULL;
+	}
+
+	wd_unspinlock(&qinfo->qlock);
 
 	ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
@@ -337,6 +346,7 @@ void wcrypto_del_ec_ctx(void *ctx)
 	qinfo = cctx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	wd_free_ctx_id(cctx->q, cctx->ctx_id);
 	if (!qinfo->ctx_num)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {

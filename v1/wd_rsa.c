@@ -541,13 +541,23 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 		WD_ERR("Err mm br in creating rsa ctx!\n");
 		return NULL;
 	}
-	qinfo->ctx_num++;
-	cid = qinfo->ctx_num;
-	wd_unspinlock(&qinfo->qlock);
-	if (cid > WD_RSA_MAX_CTX) {
+
+	if (qinfo->ctx_num >= WD_RSA_MAX_CTX) {
 		WD_ERR("err:create too many rsa ctx!\n");
+		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+
+	qinfo->ctx_num++;
+	cid = wd_alloc_ctx_id(q, WD_RSA_MAX_CTX);
+	if (cid < 0) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		wd_unspinlock(&qinfo->qlock);
+		return NULL;
+	}
+
+	wd_unspinlock(&qinfo->qlock);
+
 	ctx = create_ctx(setup, cid);
 	if (!ctx) {
 		WD_ERR("create rsa ctx fail!\n");
@@ -990,6 +1000,7 @@ void wcrypto_del_rsa_ctx(void *ctx)
 	qinfo = cx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (!qinfo->ctx_num) {
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	} else if (qinfo->ctx_num < 0) {

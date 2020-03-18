@@ -45,6 +45,7 @@
 #define AES_KEYSIZE_128		16
 #define AES_KEYSIZE_192		24
 #define AES_KEYSIZE_256		32
+#define CTX_ID_MAX_NUM		64
 
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
@@ -82,6 +83,7 @@ struct q_info {
 	struct wd_mm_br br;
 	unsigned long qfrs_offset[UACCE_QFRT_MAX];
 	struct wd_lock qlock;
+	volatile __u8 ctx_id[CTX_ID_MAX_NUM];
 };
 
 struct wd_dif_gen {
@@ -205,4 +207,6 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 				     enum uacce_qfrt qfrt_next, size_t size);
 void *drv_iova_map(struct wd_queue *q, void *va, size_t sz);
 void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
+int wd_alloc_ctx_id(struct wd_queue *q, int max_num);
+void wd_free_ctx_id(struct wd_queue *q, int ctx_id);
 #endif
