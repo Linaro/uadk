@@ -283,7 +283,7 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		    struct test_ops *ops, void *priv)
 {
-	int ret = -ENOMEM;
+	int i, j, ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
 
@@ -324,8 +324,23 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	if (ret)
 		goto out_sched;
 
+	for (i = 0; i < sched->q_num; i++) {
+		ret = sched->hw_alloc(&sched->qs[i], sched->data);
+		if (ret)
+			goto out_hw;
+		ret = wd_start_ctx(&sched->qs[i]);
+		if (ret)
+			goto out_start;
+	}
 	return 0;
 
+out_start:
+	sched->hw_free(&sched->qs[i]);
+out_hw:
+	for (j = i - 1; j >= 0; j--) {
+		wd_stop_ctx(&sched->qs[j]);
+		sched->hw_free(&sched->qs[j]);
+	}
 out_sched:
 	free(capa);
 out:
@@ -336,16 +351,8 @@ out:
 int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 		     struct hizip_test_context *ctx)
 {
-	int ret = 0, i, j;
+	int ret = 0;
 
-	for (i = 0; i < sched->q_num; i++) {
-		ret = sched->hw_alloc(&sched->qs[i], sched->data);
-		if (ret)
-			goto out;
-		ret = wd_start_ctx(&sched->qs[i]);
-		if (ret)
-			goto out_start;
-	}
 	while (ctx->total_len || !wd_sched_empty(sched)) {
 		dbg("request loop: total_len=%d\n", ctx->total_len);
 		ret = wd_sched_work(sched, ctx->total_len);
@@ -355,19 +362,7 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
 		}
 	}
 
-	for (i = 0; i < sched->q_num; i++) {
-		wd_stop_ctx(&sched->qs[i]);
-		sched->hw_free(&sched->qs[i]);
-	}
-	return ret;
-out_start:
-	sched->hw_free(&sched->qs[i]);
-out:
-	for (j = i - 1; j >= 0; j--) {
-		wd_stop_ctx(&sched->qs[j]);
-		sched->hw_free(&sched->qs[j]);
-	}
-	return ret;
+	return (ret > 0) ? 0 : ret;
 }
 
 /*
@@ -375,6 +370,12 @@ out:
  */
 void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 {
+	int i;
+
+	for (i = 0; i < sched->q_num; i++) {
+		wd_stop_ctx(&sched->qs[i]);
+		sched->hw_free(&sched->qs[i]);
+	}
 	wd_sched_fini(sched);
 	free(sched->qs);
 }
