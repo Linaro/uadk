@@ -57,9 +57,7 @@ static int test_compress(char *src, char *dst, int flag)
 		fprintf(stderr, "fail to load data (%d)\n", ret);
 		goto out_read;
 	}
-	handle = wd_alg_comp_alloc_sess(algs, NULL);
-	if (flag & FLAG_STREAM)
-		arg.flag = FLAG_COMP_STREAM;
+	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
 	if (flag & FLAG_DECMPS) {
 		ret = wd_alg_decompress(handle, &arg);
 		if (ret) {
