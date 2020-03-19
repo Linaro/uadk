@@ -15,6 +15,9 @@
 
 extern int hisi_comp_init(struct wd_comp_sess *sess);
 extern void hisi_comp_exit(struct wd_comp_sess *sess);
+extern int hisi_comp_prep(struct wd_comp_sess *sess,
+			  struct wd_comp_arg *arg);
+extern void hisi_comp_fini(struct wd_comp_sess *sess);
 extern int hisi_comp_deflate(struct wd_comp_sess *sess,
 			     struct wd_comp_arg *arg);
 extern int hisi_comp_inflate(struct wd_comp_sess *sess,

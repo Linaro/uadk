@@ -39,6 +39,8 @@ static struct wd_alg_comp wd_alg_comp_list[] = {
 		.alg_name	= "zlib\ngzip",
 		.init		= hisi_comp_init,
 		.exit		= hisi_comp_exit,
+		.prep		= hisi_comp_prep,
+		.fini		= hisi_comp_fini,
 		.deflate	= hisi_comp_deflate,
 		.inflate	= hisi_comp_inflate,
 		.async_poll	= hisi_comp_poll,
@@ -71,7 +73,8 @@ static inline int match_alg_name(char *dev_alg_name, char *alg_name)
 	return found;
 }
 
-handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
+handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
+				 wd_dev_mask_t *dev_mask)
 {
 	struct uacce_dev_list	*head = NULL, *p, *prev;
 	wd_dev_mask_t		*mask = NULL;
@@ -141,6 +144,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, wd_dev_mask_t *dev_mask)
 	sess = malloc(sizeof(struct wd_comp_sess));
 	if (!sess)
 		goto out;
+	sess->mode = mode;
 	sess->alg_name = strdup(alg_name);
 	dev_name = get_accel_name(p->info->dev_root, 0);
 	snprintf(sess->node_path, MAX_DEV_NAME_LEN, "/dev/%s", dev_name);
@@ -177,6 +181,14 @@ int wd_alg_compress(handler_t handler, struct wd_comp_arg *arg)
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
 	int	ret = -EINVAL;
 
+	if (!arg)
+		return ret;
+	arg->flag |= FLAG_DEFLATE;
+	if (sess->drv->prep) {
+		ret = sess->drv->prep(sess, arg);
+		if (ret)
+			return ret;
+	}
 	if (sess->drv->deflate)
 		ret = sess->drv->deflate(sess, arg);
 	return ret;
@@ -187,6 +199,14 @@ int wd_alg_decompress(handler_t handler, struct wd_comp_arg *arg)
 	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
 	int	ret = -EINVAL;
 
+	if (!arg)
+		return ret;
+	arg->flag &= ~FLAG_DEFLATE;
+	if (sess->drv->prep) {
+		ret = sess->drv->prep(sess, arg);
+		if (ret)
+			return ret;
+	}
 	if (sess->drv->inflate)
 		ret = sess->drv->inflate(sess, arg);
 	return ret;
