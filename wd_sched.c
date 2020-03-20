@@ -18,10 +18,17 @@ static int __init_cache(struct wd_scheduler *sched)
 		goto err_with_msgs;
 
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		sched->msgs[i].data_in = smm_alloc(sched->ss_region,
-						   sched->msg_data_size);
-		sched->msgs[i].data_out = smm_alloc(sched->ss_region,
-						    sched->msg_data_size);
+		if (wd_is_nosva(&sched->qs[0])) {
+			sched->msgs[i].data_in =
+				smm_alloc(sched->ss_region,
+					  sched->msg_data_size);
+			sched->msgs[i].data_out =
+				smm_alloc(sched->ss_region,
+					  sched->msg_data_size);
+		} else {
+			sched->msgs[i].data_in = malloc(sched->msg_data_size);
+			sched->msgs[i].data_out = malloc(sched->msg_data_size);
+		}
 
 		if (!sched->msgs[i].data_in || !sched->msgs[i].data_out) {
 			dbg("not enough data ss_region memory "
@@ -36,6 +43,21 @@ static int __init_cache(struct wd_scheduler *sched)
 	return 0;
 
 err_with_stat:
+	for (i = 0; i < sched->msg_cache_num; i++) {
+		if (wd_is_nosva(&sched->qs[0])) {
+			if (sched->msgs[i].data_in)
+				smm_free(sched->ss_region,
+					 sched->msgs[i].data_in);
+			if (sched->msgs[i].data_out)
+				smm_free(sched->ss_region,
+					 sched->msgs[i].data_out);
+		} else {
+			if (sched->msgs[i].data_in)
+				free(sched->msgs[i].data_in);
+			if (sched->msgs[i].data_out)
+				free(sched->msgs[i].data_out);
+		}
+	}
 	free(sched->stat);
 err_with_msgs:
 	free(sched->msgs);
@@ -44,6 +66,17 @@ err_with_msgs:
 
 static void __fini_cache(struct wd_scheduler *sched)
 {
+	int i;
+
+	for (i = 0; i < sched->msg_cache_num; i++) {
+		if (wd_is_nosva(&sched->qs[0])) {
+			smm_free(sched->ss_region, sched->msgs[i].data_in);
+			smm_free(sched->ss_region, sched->msgs[i].data_out);
+		} else {
+			free(sched->msgs[i].data_in);
+			free(sched->msgs[i].data_out);
+		}
+	}
 	free(sched->stat);
 	free(sched->msgs);
 }
@@ -62,22 +95,19 @@ int wd_sched_init(struct wd_scheduler *sched, char *node_path)
 		sched->ss_region_size = 4096 + /* add 1 page extra */
 			sched->msg_cache_num * sched->msg_data_size * 2;
 
-	if (wd_is_nosva(&sched->qs[0]))
+	if (wd_is_nosva(&sched->qs[0])) {
 		sched->ss_region = wd_reserve_mem(&sched->qs[0],
 						  sched->ss_region_size);
-	else
-		sched->ss_region = malloc(sched->ss_region_size);
-
-	if (!sched->ss_region) {
-		ret = -ENOMEM;
-		goto out_region;
+		if (!sched->ss_region) {
+			ret = -ENOMEM;
+			goto out_region;
+		}
+		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
+		if (ret)
+			goto out_smm;
 	}
 
 	sched->cl = sched->msg_cache_num;
-
-	ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
-	if (ret)
-		goto out_smm;
 
 	ret = __init_cache(sched);
 	if (ret)
