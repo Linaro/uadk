@@ -85,7 +85,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	mask = malloc(sizeof(wd_dev_mask_t));
 	if (!mask)
 		return (handler_t)sess;
-	head = list_accels(mask);
+	head = wd_list_accels(mask);
 	if (!head) {
 		WD_ERR("Failed to get any accelerators in system!\n");
 		return (handler_t)sess;
@@ -120,13 +120,13 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 				p = prev->next;
 			}
 		} else {
-			clear_mask(mask, p->info->node_id);
+			wd_clear_mask(mask, p->info->node_id);
 			RM_NODE(head, prev, p);
 		}
 	}
 	for (p = head, i = 0; p; p = p->next) {
 		/* mount driver */
-		dev_name = get_accel_name(p->info->dev_root, 1);
+		dev_name = wd_get_accel_name(p->info->dev_root, 1);
 		found = 0;
 		for (i = 0; i < ARRAY_SIZE(wd_alg_comp_list); i++) {
 			if (!strncmp(dev_name, wd_alg_comp_list[i].drv_name,
@@ -146,7 +146,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 		goto out;
 	sess->mode = mode;
 	sess->alg_name = strdup(alg_name);
-	dev_name = get_accel_name(p->info->dev_root, 0);
+	dev_name = wd_get_accel_name(p->info->dev_root, 0);
 	snprintf(sess->node_path, MAX_DEV_NAME_LEN, "/dev/%s", dev_name);
 	free(dev_name);
 	sess->dev_mask = mask;
