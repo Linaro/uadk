@@ -1,9 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "include/zip_usr_if.h"
 #include "hisi_comp.h"
-#include "hisi_qm_udrv.h"
-#include "smm.h"
-#include "wd_sched.h"
 
 #define BLOCK_SIZE	512000
 #define CACHE_NUM	1	//4

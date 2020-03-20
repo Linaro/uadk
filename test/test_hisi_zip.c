@@ -5,7 +5,7 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <getopt.h>
-#include "drv/hisi_qm_udrv.h"
+#include "hisi_qm_udrv.h"
 #include "test_lib.h"
 #include "wd_sched.h"
 

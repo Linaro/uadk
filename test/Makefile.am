@@ -8,10 +8,10 @@ test_hisi_zlib_SOURCES=test_hisi_zlib.c
 test_sva_perf_SOURCES=test_sva_perf.c test_lib.c
 test_sva_bind_SOURCES=test_sva_bind.c test_lib.c
 
-test_hisi_zip_LDADD=../.libs/libwd.a
-test_hisi_zlib_LDADD=../.libs/libwd.a
-test_sva_perf_LDADD=../.libs/libwd.a
-test_sva_bind_LDADD=../.libs/libwd.a
+test_hisi_zip_LDADD=../.libs/libwd.a ../.libs/libhisi_qm.a
+test_hisi_zlib_LDADD=../.libs/libwd.a ../.libs/libhisi_qm.a
+test_sva_perf_LDADD=../.libs/libwd.a ../.libs/libhisi_qm.a
+test_sva_bind_LDADD=../.libs/libwd.a ../.libs/libhisi_qm.a
 
 # For statistics
 test_sva_perf_LDADD+=-lm
@@ -26,7 +26,8 @@ test_sva_bind_CPPFLAGS=-DUSE_ZLIB
 endif
 
 test_comp_SOURCES=test_comp.c
-test_comp_LDADD=../.libs/libwd.a
+test_comp_LDADD=../.libs/libwd.a ../.libs/libwd_comp.a	\
+		../.libs/libhisi_qm.a
 
 if WITH_OPENSSL_DIR
 SUBDIRS=. hisi_hpre_test

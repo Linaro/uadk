@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include "drv/hisi_comp.h"
+#include "hisi_comp.h"
 #include "wd_comp.h"
 
 #define SYS_CLASS_DIR	"/sys/class/uacce"

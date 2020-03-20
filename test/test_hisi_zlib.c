@@ -5,8 +5,8 @@
 #include <sys/time.h>
 #include <assert.h>
 #include <unistd.h>
-#include "../wd.h"
-#include "drv/hisi_qm_udrv.h"
+#include "wd.h"
+#include "hisi_qm_udrv.h"
 #include "zip_usr_if.h"
 #include "smm.h"
 
