@@ -409,20 +409,44 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 	strm->si = 0;
 	strm->di = 0;
 	strm->op_type = qm_priv->op_type;
-	strm->ss_region_size = 4096 + ASIZE * 2 + HW_CTX_SIZE;
-	strm->ss_region = malloc(sizeof(char) * strm->ss_region_size);
-	if (!strm->ss_region) {
-		WD_ERR("fail to allocate memory for SS region\n");
+	if (wd_is_nosva(&priv->ctx)) {
+		strm->ss_region_size = 4096 + ASIZE * 2 + HW_CTX_SIZE;
+		strm->ss_region = wd_reserve_mem(&priv->ctx,
+					sizeof(char) * strm->ss_region_size);
+		if (!strm->ss_region) {
+			WD_ERR("fail to allocate memory for SS region\n");
+			ret = -ENOMEM;
+			goto out_ss;
+		}
+		ret = smm_init(strm->ss_region, strm->ss_region_size, 0xF);
+		if (ret)
+			goto out_smm;
 		ret = -ENOMEM;
-		goto out_ss;
+		strm->next_in = smm_alloc(strm->ss_region, ASIZE);
+		if (!strm->next_in)
+			goto out_smm;
+		strm->next_out = smm_alloc(strm->ss_region, ASIZE);
+		if (!strm->next_out)
+			goto out_smm_out;
+		strm->ctx_buf = smm_alloc(strm->ss_region, HW_CTX_SIZE);
+		if (!strm->ctx_buf)
+			goto out_smm_ctx;
+	} else {
+		strm->next_in = malloc(ASIZE);
+		if (!strm->next_in)
+			goto out_in;
+		strm->next_out = malloc(ASIZE);
+		if (!strm->next_out)
+			goto out_out;
+		strm->ctx_buf = malloc(HW_CTX_SIZE);
+		if (!strm->ctx_buf)
+			goto out_buf;
 	}
-	ret = smm_init(strm->ss_region, strm->ss_region_size, 0xF);
-	if (ret)
-		goto out_smm;
-	strm->next_in = smm_alloc(strm->ss_region, ASIZE);
-	strm->next_out = smm_alloc(strm->ss_region, ASIZE);
-	strm->ctx_buf = smm_alloc(strm->ss_region, HW_CTX_SIZE);
 	return 0;
+out_smm_ctx:
+	smm_free(strm->ss_region, strm->next_out);
+out_smm_out:
+	smm_free(strm->ss_region, strm->next_in);
 out_smm:
 	free(strm->ss_region);
 out_ss:
@@ -431,6 +455,14 @@ out_ctx:
 	hisi_qm_free_ctx(&priv->ctx);
 out:
 	return ret;
+out_buf:
+	free(strm->next_out);
+out_out:
+	free(strm->next_in);
+out_in:
+	wd_stop_ctx(&priv->ctx);
+	hisi_qm_free_ctx(&priv->ctx);
+	return -ENOMEM;
 }
 
 static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
@@ -440,8 +472,17 @@ static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
+	if (wd_is_nosva(&priv->ctx)) {
+		smm_free(strm->ss_region, strm->next_in);
+		smm_free(strm->ss_region, strm->next_out);
+		smm_free(strm->ss_region, strm->ctx_buf);
+		free(strm->ss_region);
+	} else {
+		free(strm->next_in);
+		free(strm->next_out);
+		free(strm->ctx_buf);
+	}
 	wd_stop_ctx(&priv->ctx);
-	free(strm->ss_region);
 	hisi_qm_free_ctx(&priv->ctx);
 }
 
