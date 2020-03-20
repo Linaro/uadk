@@ -152,7 +152,7 @@ out:
 }
 
 /* pick the name of accelerator */
-char *get_accel_name(char *node_path, int no_apdx)
+char *wd_get_accel_name(char *node_path, int no_apdx)
 {
 	char	*name, *dash;
 	int	i, appendix, len;
@@ -232,7 +232,7 @@ static int wd_init_mask(wd_dev_mask_t *dev_mask)
 /*
  * Set mask by idx. If mask is invalid, initialize it, too.
  */
-static int set_mask(wd_dev_mask_t *dev_mask, int idx)
+static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
 {
 	int	offs, tmp;
 	void	*p = NULL;
@@ -260,7 +260,7 @@ static int set_mask(wd_dev_mask_t *dev_mask, int idx)
 	return 0;
 }
 
-int clear_mask(wd_dev_mask_t *dev_mask, int idx)
+int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx)
 {
 	int	offs, tmp;
 	void	*p = NULL;
@@ -288,7 +288,7 @@ int clear_mask(wd_dev_mask_t *dev_mask, int idx)
 	return 0;
 }
 
-struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask)
+struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 {
 	struct dirent	*dev = NULL;
 	DIR		*wd_class = NULL;
@@ -325,7 +325,7 @@ struct uacce_dev_list *list_accels(wd_dev_mask_t *dev_mask)
 		ret = get_accel_id(dev->d_name, &node->info->node_id);
 		if (ret < 0)
 			goto out;
-		ret = set_mask(dev_mask, node->info->node_id);
+		ret = wd_set_mask(dev_mask, node->info->node_id);
 		if (ret < 0)
 			goto out;
 		if (head) {
@@ -364,7 +364,7 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 	ret = wd_init_mask(dev_mask);
 	if (ret)
 		return ret;
-	head = list_accels(dev_mask);
+	head = wd_list_accels(dev_mask);
 	if (!head)
 		return -ENOENT;
 	while (head) {
@@ -378,7 +378,7 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 			s = strtok(NULL, "\n");
 		}
 		if (!found)
-			clear_mask(dev_mask, head->info->node_id);
+			wd_clear_mask(dev_mask, head->info->node_id);
 		head = head->next;
 	}
 	return 0;
@@ -391,10 +391,10 @@ int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
 	if (!node_path || !ctx || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
 		return ret;
 
-	ctx->dev_name = get_accel_name(node_path, 0);
+	ctx->dev_name = wd_get_accel_name(node_path, 0);
 	if (!ctx->dev_name)
 		return ret;
-	ctx->drv_name = get_accel_name(node_path, 1);
+	ctx->drv_name = wd_get_accel_name(node_path, 1);
 	if (!ctx->drv_name)
 		goto out;
 
