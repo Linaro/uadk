@@ -2,7 +2,7 @@
 #include <sys/mman.h>
 
 #include "test_lib.h"
-#include "drv/hisi_qm_udrv.h"
+#include "hisi_qm_udrv.h"
 
 struct check_rand_ctx {
 	int off;
