@@ -130,45 +130,50 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 
 	ss_region_size = 4096+ASIZE*2+HW_CTX_SIZE;
 
-	if (wd_is_nosva(zstrm->ctx))
+	if (wd_is_nosva(zstrm->ctx)) {
 		dma_buf = wd_reserve_mem(zstrm->ctx, ss_region_size);
-	else
-		dma_buf = malloc(ss_region_size);
-	if (!dma_buf) {
-		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
-		ret = -ENOMEM;
-		goto out_alloc;
+		if (!dma_buf) {
+			fprintf(stderr, "fail to reserve %ld dmabuf\n",
+				ss_region_size);
+			ret = -ENOMEM;
+			goto out_alloc;
+		}
+		ret = smm_init(dma_buf, ss_region_size, 0xF);
+		if (ret)
+			goto out_alloc;
+
+		zstrm->next_in = smm_alloc(dma_buf, ASIZE);
+		zstrm->next_out = smm_alloc(dma_buf, ASIZE);
+		zstrm->ctx_buf = smm_alloc(dma_buf, HW_CTX_SIZE);
+		zstrm->next_in_pa = wd_get_dma_from_va(zstrm->ctx,
+						       zstrm->next_in);
+		zstrm->next_out_pa = wd_get_dma_from_va(zstrm->ctx,
+							zstrm->next_out);
+		zstrm->ctx_buf = wd_get_dma_from_va(zstrm->ctx, zstrm->ctx_buf);
+		zstrm->workspace = dma_buf;
+	} else {
+		zstrm->next_in = malloc(ASIZE);
+		zstrm->next_out = malloc(ASIZE);
+		zstrm->ctx_buf = malloc(HW_CTX_SIZE);
+		zstrm->next_in_pa = zstrm->next_in;
+		zstrm->next_out_pa = zstrm->next_out;
 	}
-
-	ret = smm_init(dma_buf, ss_region_size, 0xF);
-	if (ret)
-		goto buf_free;
-
-	zstrm->next_in = NULL;
-	zstrm->next_in = NULL;
-
-	zstrm->next_in = smm_alloc(dma_buf, ASIZE);
-	zstrm->next_out = smm_alloc(dma_buf, ASIZE);
-	zstrm->ctx_buf = smm_alloc(dma_buf, HW_CTX_SIZE);
 
 	if (!zstrm->next_in || !zstrm->next_out) {
 		dbg("not enough data ss_region memory for cache 1 (bs=%d)\n",
 			ASIZE);
-			goto buf_free;
+			goto out_buf;
 	}
 
-	zstrm->next_in_pa = wd_get_dma_from_va(zstrm->ctx,
-					       zstrm->next_in);
-	zstrm->next_out_pa = wd_get_dma_from_va(zstrm->ctx,
-						zstrm->next_out);
-	zstrm->ctx_buf = wd_get_dma_from_va(zstrm->ctx, zstrm->ctx_buf);
 
-	zstrm->workspace = dma_buf;
 	zstrm->temp_in_pa = zstrm->next_in_pa;
 	return Z_OK;
-buf_free:
-	if (!wd_is_nosva(zstrm->ctx) && dma_buf)
-		free(dma_buf);
+out_buf:
+	if (!wd_is_nosva(zstrm->ctx)) {
+		free(zstrm->next_in);
+		free(zstrm->next_out);
+		free(zstrm->ctx_buf);
+	}
 out_alloc:
 	wd_stop_ctx(zstrm->ctx);
 out_start:
@@ -184,8 +189,11 @@ out:
 void hw_end(struct zip_stream *zstrm)
 {
 	wd_stop_ctx(zstrm->ctx);
-	if (!wd_is_nosva(zstrm->ctx) && zstrm->workspace)
-		free(zstrm->workspace);
+	if (!wd_is_nosva(zstrm->ctx)) {
+		free(zstrm->next_in);
+		free(zstrm->next_out);
+		free(zstrm->ctx_buf);
+	}
 	hisi_qm_free_ctx(zstrm->ctx);
 	wd_release_ctx(zstrm->ctx);
 	free(zstrm->ctx);
