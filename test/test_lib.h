@@ -65,7 +65,7 @@ struct hizip_test_context {
 };
 
 struct test_ops {
-	void (*init_cache)(struct wd_scheduler *sched, int i);
+	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
 	int (*output)(struct wd_msg *msg, void *priv);
 };

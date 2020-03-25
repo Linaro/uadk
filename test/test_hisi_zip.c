@@ -40,15 +40,16 @@ static struct wd_scheduler sched = {
 	.priv = &hizip_priv,
 };
 
-static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
+static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i,
+				      void *priv)
 {
 	struct wd_msg *wd_msg = &sched->msgs[i];
 	struct hisi_zip_sqe *msg;
-	struct hizip_priv *priv = sched->priv;
+	struct hizip_priv *ctx = priv;
 	void *data_in, *data_out;
 
-	msg = wd_msg->msg = &priv->msgs[i];
-	msg->dw9 = priv->dw9;
+	msg = wd_msg->msg = &ctx->msgs[i];
+	msg->dw9 = ctx->dw9;
 	msg->dest_avail_out = sched->msg_data_size;
 
 	if (sched->qs[0].dev_flags & UACCE_DEV_SVA) {
