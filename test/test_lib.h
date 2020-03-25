@@ -92,7 +92,7 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 			       struct hizip_test_context *ctx);
 
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
-#ifdef HAVE_ZLIB
+#ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn check_output, void *opaque);
 int zlib_deflate(void *output, unsigned int out_size,
