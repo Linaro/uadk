@@ -23,58 +23,92 @@ struct priv_options {
 	int children;
 };
 
+struct priv_context {
+	struct hizip_test_context ctx;
+};
+
+static void hizip_test_init_cache(struct wd_scheduler *sched, int i, void *priv)
+{
+	struct priv_context *priv_ctx = priv;
+
+	return hizip_test_default_init_cache(sched, i, &priv_ctx->ctx);
+}
+
+static int hizip_test_input(struct wd_msg *msg, void *priv)
+{
+	struct priv_context *priv_ctx = priv;
+
+	return hizip_test_default_input(msg, &priv_ctx->ctx);
+}
+
+static int hizip_test_output(struct wd_msg *msg, void *priv)
+{
+	struct priv_context *priv_ctx = priv;
+
+	return hizip_test_default_output(msg, &priv_ctx->ctx);
+}
+
+static struct test_ops test_ops = {
+	.init_cache = hizip_test_init_cache,
+	.input = hizip_test_input,
+	.output = hizip_test_output,
+};
+
 static int run_one_child(struct priv_options *opts)
 {
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
-	struct hizip_test_context ctx = {0};
+	struct priv_context priv_ctx = {
+		.ctx = {0},
+	};
+	struct hizip_test_context *ctx = &priv_ctx.ctx;
 	struct test_options *copts = &opts->common;
 
-	ctx.opts = copts;
-	ctx.msgs = calloc(copts->req_cache_num, sizeof(*ctx.msgs));
-	if (!ctx.msgs)
+	ctx->opts = copts;
+	ctx->msgs = calloc(copts->req_cache_num, sizeof(*ctx->msgs));
+	if (!ctx->msgs)
 		return ENOMEM;
 
-	ctx.total_len = copts->total_len;
+	ctx->total_len = copts->total_len;
 
-	in_buf = ctx.in_buf = mmap_alloc(copts->total_len);
+	in_buf = ctx->in_buf = mmap_alloc(copts->total_len);
 	if (!in_buf) {
 		ret = -ENOMEM;
 		goto out_with_msgs;
 	}
 
-	out_buf = ctx.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = ctx->out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
 
-	hizip_prepare_random_input_data(&ctx);
+	hizip_prepare_random_input_data(ctx);
 
-	ret = hizip_test_init(&sched, copts, &default_test_ops, &ctx);
+	ret = hizip_test_init(&sched, copts, &test_ops, &priv_ctx);
 	if (ret) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_with_out_buf;
 	}
 	if (sched.qs)
-		ctx.flags = sched.qs[0].dev_flags;
+		ctx->flags = sched.qs[0].dev_flags;
 
 	if (copts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
 
-	ret = hizip_test_sched(&sched, copts, &ctx);
+	ret = hizip_test_sched(&sched, copts, ctx);
 
 	hizip_test_fini(&sched, copts);
 
-	ret = hizip_verify_random_output(out_buf, copts, &ctx);
+	ret = hizip_verify_random_output(out_buf, copts, ctx);
 
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
 out_with_msgs:
-	free(ctx.msgs);
+	free(ctx->msgs);
 	return ret < 0 ? -ret : ret;
 }
 
