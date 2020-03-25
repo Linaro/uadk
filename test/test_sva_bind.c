@@ -52,7 +52,7 @@ static int run_one_child(struct priv_options *opts)
 
 	hizip_prepare_random_input_data(&ctx);
 
-	ret = hizip_test_init(&sched, copts, &test_ops, &ctx);
+	ret = hizip_test_init(&sched, copts, &default_test_ops, &ctx);
 	if (ret) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_with_out_buf;

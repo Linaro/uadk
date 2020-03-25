@@ -68,7 +68,8 @@ void *mmap_alloc(size_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
-void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i, void *priv)
+void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
+				   void *priv)
 {
 	struct wd_msg *wd_msg = &sched->msgs[i];
 	struct hizip_test_context *ctx = priv;
@@ -102,7 +103,7 @@ void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i, void *priv)
 	}
 }
 
-static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
+int hizip_test_default_input(struct wd_msg *msg, void *priv)
 {
 	size_t ilen;
 	char *in_buf, *out_buf;
@@ -139,7 +140,7 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 	return 0;
 }
 
-static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
+int hizip_test_default_output(struct wd_msg *msg, void *priv)
 {
 	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *m = msg->msg;
@@ -158,10 +159,10 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 	return 0;
 }
 
-struct test_ops test_ops = {
-	.init_cache = hizip_wd_sched_init_cache,
-	.input = hizip_wd_sched_input,
-	.output = hizip_wd_sched_output,
+struct test_ops default_test_ops = {
+	.init_cache = hizip_test_default_init_cache,
+	.input = hizip_test_default_input,
+	.output = hizip_test_default_output,
 };
 
 void hizip_prepare_random_input_data(struct hizip_test_context *ctx)
