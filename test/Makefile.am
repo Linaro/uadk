@@ -1,6 +1,7 @@
 AM_CFLAGS=-Wall -fno-strict-aliasing -I../include
 
-bin_PROGRAMS=test_hisi_zip test_hisi_zlib test_sva_perf test_sva_bind test_comp
+bin_PROGRAMS=test_hisi_zip test_hisi_zlib test_sva_perf test_sva_bind \
+	test_comp example
 
 test_hisi_zip_SOURCES=test_hisi_zip.c
 test_hisi_zlib_SOURCES=test_hisi_zlib.c
@@ -28,6 +29,10 @@ endif
 test_comp_SOURCES=test_comp.c
 test_comp_LDADD=../.libs/libwd.a ../.libs/libwd_comp.a	\
 		../.libs/libhisi_qm.a
+
+example_SOURCES = example.c
+example_LDADD = ../.libs/libwd.a ../.libs/libwd_comp.a	\
+		../.libs/libhisi_qm.a -lpthread
 
 if WITH_OPENSSL_DIR
 SUBDIRS=. hisi_hpre_test
