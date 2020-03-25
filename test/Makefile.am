@@ -19,8 +19,10 @@ test_sva_perf_LDADD+=-lm
 if HAVE_ZLIB
 test_sva_perf_SOURCES+=test_zlib.c
 test_sva_perf_LDADD+=-lz
+test_sva_perf_CPPFLAGS=-DUSE_ZLIB
 test_sva_bind_SOURCES+=test_zlib.c
 test_sva_bind_LDADD+=-lz
+test_sva_bind_CPPFLAGS=-DUSE_ZLIB
 endif
 
 test_dummy_SOURCES=test_dummy.c
