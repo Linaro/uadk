@@ -68,11 +68,11 @@ void *mmap_alloc(size_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
-static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i)
+void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i, void *priv)
 {
 	struct wd_msg *wd_msg = &sched->msgs[i];
+	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *msg;
-	struct hizip_test_context *ctx = sched->priv;
 
 	msg = wd_msg->msg = &ctx->msgs[i];
 

@@ -26,7 +26,7 @@ struct wd_scheduler {
 	int q_h, q_t;	/* queue head and tail index */
 	int cl;		/* cache left */
 
-	void (*init_cache)(struct wd_scheduler *sched, int i);
+	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
 	int (*output)(struct wd_msg *msg, void*priv);
 

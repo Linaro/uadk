@@ -34,7 +34,8 @@ int wd_dummy_memcpy(struct wd_queue *q, void *dst, void *src, size_t size)
 	return wd_recv_sync(q, (void **)&resp, 1000);
 }
 
-static void wd_dummy_sched_init_cache(struct wd_scheduler *sched, int i)
+static void wd_dummy_sched_init_cache(struct wd_scheduler *sched, int i,
+				      void *priv)
 {
 	sched->msgs[i].msg = &msgs[i];
 	msgs[i].src_addr = sched->msgs[i].data_in;

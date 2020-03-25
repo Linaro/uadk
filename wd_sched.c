@@ -29,7 +29,7 @@ static int __init_cache(struct wd_scheduler *sched)
 		}
 
 		if (sched->init_cache)
-			sched->init_cache(sched, i);
+			sched->init_cache(sched, i, sched->priv);
 	}
 
 	return 0;
