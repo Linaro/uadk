@@ -21,10 +21,15 @@
 struct priv_options {
 	struct test_options common;
 	int children;
+
+#define INJECT_SIG_BIND		(1UL << 0)
+#define INJECT_SIG_WORK		(1UL << 1)
+	unsigned long faults;
 };
 
 struct priv_context {
 	struct hizip_test_context ctx;
+	struct priv_options *opts;
 };
 
 static void hizip_test_init_cache(struct wd_scheduler *sched, int i, void *priv)
@@ -45,6 +50,9 @@ static int hizip_test_output(struct wd_msg *msg, void *priv)
 {
 	struct priv_context *priv_ctx = priv;
 
+	if (priv_ctx->opts->faults & INJECT_SIG_WORK)
+		kill(getpid(), SIGTERM);
+
 	return hizip_test_default_output(msg, &priv_ctx->ctx);
 }
 
@@ -61,6 +69,7 @@ static int run_one_child(struct priv_options *opts)
 	struct wd_scheduler sched = {0};
 	struct priv_context priv_ctx = {
 		.ctx = {0},
+		.opts = opts,
 	};
 	struct hizip_test_context *ctx = &priv_ctx.ctx;
 	struct test_options *copts = &opts->common;
@@ -94,7 +103,7 @@ static int run_one_child(struct priv_options *opts)
 	if (sched.qs)
 		ctx->flags = sched.qs[0].dev_flags;
 
-	if (copts->faults & INJECT_SIG_BIND)
+	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
 
 	ret = hizip_test_sched(&sched, copts, ctx);
@@ -200,12 +209,25 @@ int main(int argc, char **argv)
 		.children		= 0,
 	};
 
-	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:o:")) != -1) {
+	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:k:")) != -1) {
 		switch (opt) {
 		case 'f':
 			opts.children = strtol(optarg, NULL, 0);
 			if (opts.children < 0)
 				show_help = 1;
+			break;
+		case 'k':
+			switch (optarg[0]) {
+			case 'b':
+				opts.faults |= INJECT_SIG_BIND;
+				break;
+			case 'w':
+				opts.faults |= INJECT_SIG_WORK;
+				break;
+			default:
+				SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
+				break;
+			}
 			break;
 		default:
 			show_help = parse_common_option(opt, optarg,
@@ -218,7 +240,10 @@ int main(int argc, char **argv)
 
 	SYS_ERR_COND(show_help || optind > argc,
 		     COMMON_HELP
-		     "  -f <children> number of children to create\n",
+		     "  -f <children> number of children to create\n"
+		     "  -k <mode>     kill thread\n"
+		     "                  'bind' kills the process after bind\n"
+		     "                  'work' kills the process while the queue is working\n",
 		     argv[0]
 		    );
 

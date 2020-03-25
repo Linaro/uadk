@@ -46,10 +46,6 @@ struct test_options {
 #define MAX_RUNS	1024
 	int run_num;
 
-#define INJECT_SIG_BIND		(1UL << 0)
-#define INJECT_SIG_WORK		(1UL << 1)
-	unsigned long faults;
-
 	bool verify;
 	bool verbose;
 };
@@ -126,13 +122,10 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:k:n:q:c:s:Vvz"
+#define COMMON_OPTSTRING "hb:n:q:c:s:Vvz"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
-	"  -k <mode>     kill thread\n"					\
-	"                  'bind' kills the process after bind\n"	\
-	"                  'work' kills the process while the queue is working\n" \
 	"  -n <num>      number of runs\n"				\
 	"  -q <num>      number of queues\n"				\
 	"  -c <num>      number of caches\n"				\

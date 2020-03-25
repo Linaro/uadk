@@ -147,9 +147,6 @@ int hizip_test_default_output(struct wd_msg *msg, void *priv)
 	__u32 status = m->dw3 & 0xff;
 	__u32 type = m->dw9 & 0xff;
 
-	if (ctx->opts->faults & INJECT_SIG_WORK)
-		kill(getpid(), SIGTERM);
-
 	dbg_sqe("zip output", m);
 
 	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
@@ -358,19 +355,6 @@ int parse_common_option(const char opt, const char *optarg,
 		opts->block_size = strtol(optarg, NULL, 0);
 		if (opts->block_size <= 0)
 			return 1;
-		break;
-	case 'k':
-		switch (optarg[0]) {
-		case 'b':
-			opts->faults |= INJECT_SIG_BIND;
-			break;
-		case 'w':
-			opts->faults |= INJECT_SIG_WORK;
-			break;
-		default:
-			SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
-			break;
-		}
 		break;
 	case 'c':
 		opts->req_cache_num = strtol(optarg, NULL, 0);
