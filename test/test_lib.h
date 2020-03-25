@@ -64,13 +64,19 @@ struct hizip_test_context {
 	size_t total_out;
 };
 
+/* Default ops */
+void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
+				   void *priv);
+int hizip_test_default_input(struct wd_msg *msg, void *priv);
+int hizip_test_default_output(struct wd_msg *msg, void *priv);
+
 struct test_ops {
 	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
 	int (*output)(struct wd_msg *msg, void *priv);
 };
 
-extern struct test_ops test_ops;
+extern struct test_ops default_test_ops;
 
 int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		    struct test_ops *ops, void *priv);

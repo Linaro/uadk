@@ -306,7 +306,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
-		ret = hizip_test_init(&sched, copts, &test_ops, &ctx);
+		ret = hizip_test_init(&sched, copts, &default_test_ops, &ctx);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
