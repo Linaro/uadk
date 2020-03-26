@@ -84,8 +84,8 @@ struct hisi_sched {
 	int	dw9;
 	struct hisi_zip_sqe	*msgs;
 	struct wd_comp_arg	*arg;
-	uint64_t	si;
-	uint64_t	di;
+	uint64_t	si;	/* si records index in src for next sched */
+	uint64_t	di;	/* di records index in dst for next sched */
 	size_t		total_out;
 	size_t	store_len;
 	int	load_head;
@@ -109,7 +109,7 @@ static void hizip_sched_init(struct wd_scheduler *sched, int i)
 
 /*
  * Return 0 if gzip header is full loaded.
- * Return -1 if gzip header is only partial loaded.
+ * Return -EAGAIN if gzip header is only partial loaded.
  */
 static int hizip_parse_gzip_header(struct wd_msg *msg,
 				   struct hisi_sched *hpriv,
@@ -133,8 +133,10 @@ static int hizip_parse_gzip_header(struct wd_msg *msg,
 			hpriv->load_head = 1;
 			return 0;
 		}
-		if (!arg->src_len)
-			return -1;
+		if (!arg->src_len) {
+			hpriv->si = 0;
+			return -EAGAIN;
+		}
 	}
 	if (hpriv->store_len < GZIP_HEADER_SZ + GZIP_EXTRA_SZ) {
 		if (arg->src_len + hpriv->store_len <=
@@ -157,8 +159,10 @@ static int hizip_parse_gzip_header(struct wd_msg *msg,
 			hpriv->load_head = 1;
 			return 0;
 		}
-		if (!arg->src_len)
-			return -1;
+		if (!arg->src_len) {
+			hpriv->si = 0;
+			return -EAGAIN;
+		}
 	}
 	return 0;
 }
@@ -190,10 +194,12 @@ static int hizip_sched_input(struct wd_msg *msg, void *priv)
 		} else {
 			ret = hizip_parse_gzip_header(msg, hpriv, arg);
 			if (ret < 0)
-				return 0;
+				return ret;
 		}
-		if (!arg->src_len)
-			return 0;
+		if (!arg->src_len) {
+			hpriv->si = 0;
+			return -EAGAIN;
+		}
 	}
 	/* update the real size for gzip */
 	if ((hpriv->op_type == INFLATE) && (hpriv->alg_type == GZIP) &&
@@ -215,6 +221,7 @@ static int hizip_sched_input(struct wd_msg *msg, void *priv)
 		if (hpriv->alg_type == GZIP)
 			hpriv->real_len -= arg->src_len;
 		arg->src_len = 0;
+		hpriv->si = 0;
 	}
 	if (arg->flag & FLAG_INPUT_FINISH) {
 		m->input_data_length = hpriv->store_len;
@@ -222,7 +229,8 @@ static int hizip_sched_input(struct wd_msg *msg, void *priv)
 	} else if (hpriv->store_len == BLOCK_SIZE) {
 		m->input_data_length = BLOCK_SIZE;
 		hpriv->store_len = 0;
-	}
+	} else
+		return -EAGAIN;
 
 	return 0;
 }
@@ -413,6 +421,8 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 
 	while (arg->src_len || !wd_sched_empty(sched)) {
 		ret = wd_sched_work(sched, arg->src_len);
+		if (ret == -EAGAIN)
+			continue;
 		if (ret < 0) {
 			WD_ERR("fail to deflate by wd_sched (%d)\n", ret);
 			return ret;
@@ -449,6 +459,8 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 
 	while (arg->src_len || !wd_sched_empty(sched)) {
 		ret = wd_sched_work(sched, arg->src_len);
+		if (ret == -EAGAIN)
+			continue;
 		if (ret < 0) {
 			WD_ERR("fail to inflate by wd_sched (%d)\n", ret);
 			return ret;
