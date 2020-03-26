@@ -21,7 +21,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "../wd_sched.h"
+#include "wd_sched.h"
 #include "wd_dummy_usr_if.h"
 #include "dummy_hw_usr_if.h"
 
