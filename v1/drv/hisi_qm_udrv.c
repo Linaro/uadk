@@ -280,7 +280,7 @@ int qm_send(struct wd_queue *q, void *req)
 		return -WD_HW_EACCESS;
 	}
 	wd_spinlock(&info->sd_lock);
-	if (__atomic_load_n(&info->used, __ATOMIC_RELAXED) == QM_Q_DEPTH) {
+	if (__atomic_load_n(&info->used, __ATOMIC_RELAXED) == QM_Q_DEPTH - 1) {
 		wd_unspinlock(&info->sd_lock);
 		WD_ERR("queue is full!\n");
 		return -WD_EBUSY;
