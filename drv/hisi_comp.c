@@ -87,6 +87,9 @@ struct hisi_sched {
 	uint64_t	si;
 	uint64_t	di;
 	size_t		total_out;
+	size_t	store_len;
+	int	load_head;
+	int	real_len;	/* gzip without header & extra */
 };
 
 static void hizip_sched_init(struct wd_scheduler *sched, int i)
@@ -104,40 +107,122 @@ static void hizip_sched_init(struct wd_scheduler *sched, int i)
 	msg->dest_addr_h = (__u64)wd_msg->data_out >> 32;
 }
 
+/*
+ * Return 0 if gzip header is full loaded.
+ * Return -1 if gzip header is only partial loaded.
+ */
+static int hizip_parse_gzip_header(struct wd_msg *msg,
+				   struct hisi_sched *hpriv,
+				   struct wd_comp_arg *arg)
+{
+	size_t templen;
+
+	if (hpriv->store_len < GZIP_HEADER_SZ) {
+		if (arg->src_len + hpriv->store_len < GZIP_HEADER_SZ)
+			templen = arg->src_len;
+		else	/* hpriv->store_len < GZIP_HEADER_SZ */
+			templen = GZIP_HEADER_SZ - hpriv->store_len;
+		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
+				arg->src, hpriv->si, templen);
+		hpriv->store_len += templen;
+		arg->src_len -= templen;
+		if ((hpriv->store_len >= GZIP_HEADER_SZ) &&
+		    (*((char *)msg->data_in + 3) != 0x04)) {
+			/* remove gzip header from src buffer */
+			hpriv->store_len -= GZIP_HEADER_SZ;
+			hpriv->load_head = 1;
+			return 0;
+		}
+		if (!arg->src_len)
+			return -1;
+	}
+	if (hpriv->store_len < GZIP_HEADER_SZ + GZIP_EXTRA_SZ) {
+		if (arg->src_len + hpriv->store_len <=
+		    GZIP_HEADER_SZ + GZIP_EXTRA_SZ) {
+			templen = arg->src_len;
+		} else {
+			/* hpriv->store_len < GZIP_HEADER_SZ + GZIP_EXTRA_SZ */
+			templen = GZIP_HEADER_SZ + GZIP_EXTRA_SZ -
+				  hpriv->store_len;
+		}
+		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
+				arg->src, hpriv->si, templen);
+		hpriv->store_len += templen;
+		arg->src_len -= templen;
+		if (hpriv->store_len >= GZIP_HEADER_SZ + GZIP_EXTRA_SZ){
+			/* real_len should compare to src_len */
+			memcpy(&hpriv->real_len, msg->data_in + 6, 4);
+			/* remove gzip and extra header from src buffer */
+			hpriv->store_len -= GZIP_HEADER_SZ + GZIP_EXTRA_SZ;
+			hpriv->load_head = 1;
+			return 0;
+		}
+		if (!arg->src_len)
+			return -1;
+	}
+	return 0;
+}
+
 static int hizip_sched_input(struct wd_msg *msg, void *priv)
 {
-	size_t	ilen, templen, real_len;
+	size_t templen;
 	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
 	struct wd_comp_arg	*arg = hpriv->arg;
+	int ret;
 
-	ilen = arg->src_len > BLOCK_SIZE ? BLOCK_SIZE : arg->src_len;
-	templen = ilen;
-	arg->src_len -= ilen;
-	if (hpriv->op_type == INFLATE) {
+	if (!hpriv->load_head && (hpriv->op_type == INFLATE)) {
+		/* check whether compressed head is passed */
 		if (hpriv->alg_type == ZLIB) {
-			LOAD_SRC_TO_MSG(msg->data_in, arg->src,
-					hpriv->si, ZLIB_HEADER_SZ);
-			ilen -= ZLIB_HEADER_SZ;
-		} else {
-			LOAD_SRC_TO_MSG(msg->data_in, arg->src,
-					hpriv->si, GZIP_HEADER_SZ);
-			ilen -= GZIP_HEADER_SZ;
-			if (*((char *)msg->data_in + 3) == 0x04) {
-				LOAD_SRC_TO_MSG(msg->data_in, arg->src,
-						hpriv->si, GZIP_EXTRA_SZ);
-				memcpy(&ilen, msg->data_in + 6, 4);
-				real_len = GZIP_HEADER_SZ + GZIP_EXTRA_SZ +
-					   ilen;
-				if (arg->src_len > 0)
-					arg->src_len += templen - real_len;
+			if (arg->src_len + hpriv->store_len <= ZLIB_HEADER_SZ)
+				templen = arg->src_len;
+			else	/* hpriv->store_len < ZLIB_HEADER_SZ */
+				templen = ZLIB_HEADER_SZ - hpriv->store_len;
+			LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
+					arg->src, hpriv->si, templen);
+			hpriv->store_len += templen;
+			arg->src_len -= templen;
+			if (hpriv->store_len >= ZLIB_HEADER_SZ) {
+				/* remove zlib header from src buffer */
+				hpriv->store_len -= ZLIB_HEADER_SZ;
+				hpriv->load_head = 1;
 			}
+		} else {
+			ret = hizip_parse_gzip_header(msg, hpriv, arg);
+			if (ret < 0)
+				return 0;
 		}
+		if (!arg->src_len)
+			return 0;
 	}
-
-	LOAD_SRC_TO_MSG(msg->data_in, arg->src, hpriv->si, ilen);
-
-	m->input_data_length = ilen;
+	/* update the real size for gzip */
+	if ((hpriv->op_type == INFLATE) && (hpriv->alg_type == GZIP) &&
+	    (arg->src_len > hpriv->real_len))
+		arg->src_len = hpriv->real_len;
+	if (hpriv->store_len + arg->src_len > BLOCK_SIZE) {
+		/* load partial data from arg->src */
+		templen = BLOCK_SIZE - hpriv->store_len;
+		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
+				arg->src, hpriv->si, templen);
+		hpriv->store_len += templen;
+		if (hpriv->alg_type == GZIP)
+			hpriv->real_len -= templen;
+		arg->src_len -= templen;
+	} else {
+		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
+				arg->src, hpriv->si, arg->src_len);
+		hpriv->store_len += arg->src_len;
+		if (hpriv->alg_type == GZIP)
+			hpriv->real_len -= arg->src_len;
+		arg->src_len = 0;
+	}
+	if (arg->flag & FLAG_INPUT_FINISH) {
+		m->input_data_length = hpriv->store_len;
+		hpriv->store_len = 0;
+	} else if (hpriv->store_len == BLOCK_SIZE) {
+		m->input_data_length = BLOCK_SIZE;
+		hpriv->store_len = 0;
+	}
 
 	return 0;
 }
@@ -224,6 +309,9 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 	sched_priv->si = 0;
 	sched_priv->di = 0;
 	sched_priv->total_out = 0;
+	sched_priv->store_len = 0;
+	sched_priv->load_head = 0;
+	sched_priv->real_len = 0;
 	sched->priv = sched_priv;
 	ret = wd_sched_init(sched, sess->node_path);
 	if (ret < 0)

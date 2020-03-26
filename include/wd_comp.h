@@ -14,6 +14,7 @@ struct wd_alg_comp;
 #define MODE_INITED		(1 << 1)
 
 #define FLAG_DEFLATE		(1 << 0)
+#define FLAG_INPUT_FINISH	(1 << 1)
 
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
