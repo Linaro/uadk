@@ -31,6 +31,92 @@ static char word[] = "go to test.";
 
 static int thread_fail = 0;
 
+int test_small_buffer(int flag)
+{
+	handler_t	handle;
+	struct wd_comp_arg wd_arg;
+	char	algs[60];
+	char	buf[TEST_WORD_LEN];
+	int	ret = 0, i, len;
+
+	if (flag & FLAG_ZLIB)
+		sprintf(algs, "zlib");
+	else if (flag & FLAG_GZIP)
+		sprintf(algs, "gzip");
+	memset(&wd_arg, 0, sizeof(struct wd_comp_arg));
+	wd_arg.dst_len = sizeof(char) * TEST_WORD_LEN;
+	wd_arg.src = malloc(sizeof(char) * TEST_WORD_LEN);
+	wd_arg.flag = FLAG_DEFLATE;
+	if (!wd_arg.src) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	wd_arg.dst = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!wd_arg.dst) {
+		ret = -ENOMEM;
+		goto out_dst;
+	}
+	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	for (i = 0; i < strlen(word); i++) {
+		memcpy(wd_arg.src, &word[i], sizeof(char));
+		wd_arg.src_len = 1;
+		wd_arg.dst_len = sizeof(char) * TEST_WORD_LEN;
+		if (i == (strlen(word) - 1))
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+		ret = wd_alg_compress(handle, &wd_arg);
+		if (ret < 0)
+			goto out_comp;
+		if ((i != strlen(word) - 1) && wd_arg.dst_len) {
+			fprintf(stderr, "err on dst_len:%ld\n", wd_arg.dst_len);
+			ret = -EFAULT;
+			goto out_comp;
+		}
+	}
+	wd_alg_comp_free_sess(handle);
+
+	/* prepare for decompress */
+	memcpy(buf, wd_arg.dst, sizeof(char) * TEST_WORD_LEN);
+	len = wd_arg.dst_len;
+	wd_arg.flag = 0;
+
+	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	for (i = 0; i < len; i++) {
+		memcpy(wd_arg.src, &buf[i], sizeof(char));
+		wd_arg.src_len = 1;
+		wd_arg.dst_len = sizeof(char) * TEST_WORD_LEN;
+		if (i == len - 1)
+			wd_arg.flag = FLAG_INPUT_FINISH;
+		ret = wd_alg_decompress(handle, &wd_arg);
+		if (ret < 0)
+			goto out_comp;
+		if ((i != len - 1) && wd_arg.dst_len) {
+			fprintf(stderr, "err on dst_len:%ld\n", wd_arg.dst_len);
+			ret = -EFAULT;
+			goto out_comp;
+		}
+	}
+	if (strncmp(word, wd_arg.dst, strlen(word))) {
+		fprintf(stderr, "fail to match, dst:%s, word:%s\n",
+			(char *)wd_arg.dst, word);
+		ret = -EFAULT;
+		goto out_comp;
+	} else {
+		printf("Pass small buffer case for %s algorithm.\n",
+			(flag == FLAG_ZLIB) ? "zlib" : "gzip");
+	}
+	wd_alg_comp_free_sess(handle);
+	free(wd_arg.src);
+	free(wd_arg.dst);
+	return 0;
+out_comp:
+	wd_alg_comp_free_sess(handle);
+	free(wd_arg.dst);
+out_dst:
+	free(wd_arg.src);
+out:
+	return ret;
+}
+
 void *thread_func(void *arg)
 {
 	thread_data_t	*data = (thread_data_t *)arg;
@@ -68,6 +154,8 @@ void *thread_func(void *arg)
 		thread_fail = 1;
 	}
 	wd_alg_comp_free_sess(handle);
+	free(wd_arg->src);
+	free(wd_arg->dst);
 	pthread_exit(NULL);
 }
 
@@ -90,7 +178,7 @@ int test_concurrent(int flag)
 			goto out_src;
 		}
 		memcpy(arg->src, word, strlen(word));
-		arg->dst_len = TEST_WORD_LEN;	// for decompress
+		arg->dst_len = TEST_WORD_LEN;
 		arg->dst = calloc(1, sizeof(char) * arg->dst_len);
 		if (!arg->dst) {
 			ret = -ENOMEM;
@@ -106,7 +194,7 @@ int test_concurrent(int flag)
 	for (i = 0; i < NUM_THREADS; i++) {
 		pthread_join(thread[i], NULL);
 	}
-	return EXIT_SUCCESS;
+	return 0;
 out_creat:
 	free(arg->dst);
 out_dst:
@@ -122,6 +210,8 @@ out_src:
 
 int main(int argc, char **argv)
 {
+	test_small_buffer(FLAG_ZLIB);
+	test_small_buffer(FLAG_GZIP);
 	thread_fail = 0;
 	test_concurrent(FLAG_ZLIB);
 	if (thread_fail)
