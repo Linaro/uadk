@@ -19,16 +19,23 @@
 
 #define	NUM_THREADS	32
 
+#define TEST_WORD_LEN	64
+
 typedef struct _thread_data_t {
 	int	tid;
 	int	flag;
 	struct wd_comp_arg	wd_arg;
 } thread_data_t;
 
+static char word[] = "go to test.";
+
+static int thread_fail = 0;
+
 void *thread_func(void *arg)
 {
 	thread_data_t	*data = (thread_data_t *)arg;
 	handler_t	handle;
+	struct wd_comp_arg *wd_arg = &data->wd_arg;
 	char	algs[60];
 	int	ret;
 
@@ -37,105 +44,91 @@ void *thread_func(void *arg)
 	else if (data->flag & FLAG_GZIP)
 		sprintf(algs, "gzip");
 	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
-	if (data->flag & FLAG_DECMPS) {
-		ret = wd_alg_decompress(handle, &data->wd_arg);
-		if (ret) {
-			fprintf(stderr, "fail to decompress (%d)\n", ret);
-		}
-	} else {
-		ret = wd_alg_compress(handle, &data->wd_arg);
-		if (ret) {
-			fprintf(stderr, "fail to compress (%d)\n", ret);
-		}
+	wd_arg->flag = FLAG_INPUT_FINISH | FLAG_DEFLATE;
+	ret = wd_alg_compress(handle, wd_arg);
+	if (ret) {
+		fprintf(stderr, "fail to compress (%d)\n", ret);
+	}
+	wd_alg_comp_free_sess(handle);
+
+	/* prepare to uncompress */
+	memset(wd_arg->src, 0, sizeof(char) * TEST_WORD_LEN);
+	wd_arg->src_len = wd_arg->dst_len;
+	memcpy(wd_arg->src, wd_arg->dst, wd_arg->dst_len);
+	memset(wd_arg->dst, 0, sizeof(char) * TEST_WORD_LEN);
+	wd_arg->dst_len = TEST_WORD_LEN;
+	wd_arg->flag = FLAG_INPUT_FINISH & ~FLAG_DEFLATE;
+
+	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	ret = wd_alg_decompress(handle, wd_arg);
+	if (ret) {
+		fprintf(stderr, "fail to decompress (%d)\n", ret);
+	}
+	if (strncmp(word, wd_arg->dst, strlen(word))) {
+		thread_fail = 1;
 	}
 	wd_alg_comp_free_sess(handle);
 	pthread_exit(NULL);
 }
 
-int test_concurrent(char *src, int flag)
+int test_concurrent(int flag)
 {
 	pthread_t thread[NUM_THREADS];
 	thread_data_t thread_data[NUM_THREADS];
 	struct wd_comp_arg	*arg;
-	struct stat st;
-	int	sfd;
-	int i, ret;
+	int i, j, ret;
 
-	sfd = open(src, O_RDONLY);
-	fstat(sfd, &st);
 	for (i = 0; i < NUM_THREADS; i++) {
 		thread_data[i].tid = i;
 		thread_data[i].flag = flag;
 		arg = &thread_data[i].wd_arg;
 		memset(arg, 0, sizeof(struct wd_comp_arg));
-		arg->src_len = st.st_size;
-		arg->src = malloc(sizeof(char) * arg->src_len);
+		arg->src_len = strlen(word) + 1;
+		arg->src = calloc(1, sizeof(char) * TEST_WORD_LEN);
 		if (!arg->src) {
 			ret = -ENOMEM;
 			goto out_src;
 		}
-		arg->dst_len = arg->src_len << 2;	// for decompress
-		arg->dst = malloc(sizeof(char) * arg->dst_len);
+		memcpy(arg->src, word, strlen(word));
+		arg->dst_len = TEST_WORD_LEN;	// for decompress
+		arg->dst = calloc(1, sizeof(char) * arg->dst_len);
 		if (!arg->dst) {
 			ret = -ENOMEM;
 			goto out_dst;
-		}
-		lseek(sfd, 0, SEEK_SET);
-		ret = read(sfd, arg->src, arg->src_len);
-		if ((ret < 0) || (ret != arg->src_len)) {
-			fprintf(stderr, "fail to load data (%d)\n", ret);
-			goto out_read;
 		}
 		ret = pthread_create(&thread[i], NULL,
 				thread_func, &thread_data[i]);
 		if (ret) {
 			printf("fail to create pthread, ret:%d\n", ret);
-			return EXIT_FAILURE;
+			goto out_creat;
 		}
 	}
 	for (i = 0; i < NUM_THREADS; i++) {
 		pthread_join(thread[i], NULL);
 	}
 	return EXIT_SUCCESS;
-out_read:
+out_creat:
 	free(arg->dst);
 out_dst:
 	free(arg->src);
 out_src:
-	close(sfd);
+	for (j = 0; j < i; j++) {
+		free(arg->dst);
+		free(arg->src);
+		pthread_cancel(thread[i]);
+	}
 	return ret;
 }
 
 int main(int argc, char **argv)
 {
-	int	opt;
-	int	flag = 0;
-	char	src[PATHLEN+1];
-
-	while ((opt = getopt(argc, argv, "i:hdgsz")) != -1) {
-		switch (opt) {
-		case 'i':
-			snprintf(src, PATHLEN, "%s", optarg);
-			break;
-		case 'd':
-			flag |= FLAG_DECMPS;
-			break;
-		case 'g':
-			flag |= FLAG_GZIP;
-			break;
-		case 's':
-			flag |= FLAG_STREAM;
-			break;
-		case 'z':
-			flag |= FLAG_ZLIB;
-			break;
-		case 'h':
-			printf("./test_comp -i <src> [-d] [-z] [-g]\n");
-			break;
-		default:
-			fprintf(stderr, "Unrecognized option!\n");
-			break;
-		}
-	}
-	return test_concurrent(src, FLAG_ZLIB);
+	thread_fail = 0;
+	test_concurrent(FLAG_ZLIB);
+	if (thread_fail)
+		fprintf(stderr, "fail to run ZLIB cases concurrently\n");
+	thread_fail = 0;
+	test_concurrent(FLAG_GZIP);
+	if (thread_fail)
+		fprintf(stderr, "fail to run GZIP cases concurrently\n");
+	return 0;
 }
