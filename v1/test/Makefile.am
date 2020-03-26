@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../include -I../ -I lib -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../include -I../ -pthread
 
 SUBDIRS=. test_mm bmm_test
 
