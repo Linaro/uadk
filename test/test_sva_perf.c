@@ -214,6 +214,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	int ret = 0;
 	int *perf_fds;
 	void *in_buf, *out_buf;
+	unsigned long total_len;
 	struct wd_scheduler sched = {0};
 	struct hizip_test_context ctx = {0}, ctx_save;
 	struct test_options *copts = &opts->common;
@@ -326,10 +327,11 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
 					 ctx.total_out * 100;
 
-	stats->v[ST_SPEED] = copts->total_len / (stats->v[ST_RUN_TIME] / 1000) /
+	total_len = copts->total_len * opts->compact_run_num;
+	stats->v[ST_SPEED] = total_len / (stats->v[ST_RUN_TIME] / 1000) /
 		1024 / 1024 * 1000 * 1000;
 
-	stats->v[ST_TOTAL_SPEED] = opts->compact_run_num * copts->total_len /
+	stats->v[ST_TOTAL_SPEED] = total_len /
 		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
 		1024 / 1024 * 1000 * 1000;
 
@@ -409,7 +411,7 @@ static int comp_std(struct hizip_stats *std, struct hizip_stats *variation,
 	return 0;
 }
 
-static const int csv_format_version = 3;
+static const int csv_format_version = 4;
 
 static void output_csv_header(void)
 {
@@ -420,6 +422,9 @@ static void output_csv_header(void)
 
 	/* Job size, block size */
 	printf("total_size;block_size;");
+
+	/* Compact runs */
+	printf("repeat;");
 
 	/* Number of queue send/recv/wait */
 	printf("send;recv;send_retry;recv_retry;");
@@ -451,6 +456,7 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 
 	printf("%d;", csv_format_version);
 	printf("%lu;%u;", opts->common.total_len, opts->common.block_size);
+	printf("%u;", opts->compact_run_num);
 	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
 	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
 	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
@@ -510,8 +516,8 @@ static int run_test(struct priv_options *opts)
 	comp_std(&std, &variation, &avg, n);
 
 	fprintf(stderr,
-		"Compress bz=%d nb=%lu, speed=%.1f MB/s (±%0.1f%% N=%d) overall=%.1f MB/s (±%0.1f%%)\n",
-		opts->common.block_size,
+		"Compress bz=%d nb=%u×%lu, speed=%.1f MB/s (±%0.1f%% N=%d) overall=%.1f MB/s (±%0.1f%%)\n",
+		opts->common.block_size, opts->compact_run_num,
 		opts->common.total_len / opts->common.block_size,
 		avg.v[ST_SPEED], variation.v[ST_SPEED], n,
 		avg.v[ST_TOTAL_SPEED], variation.v[ST_TOTAL_SPEED]);
