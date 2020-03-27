@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "hisi_comp.h"
 
-#define BLOCK_SIZE	512000
+#define BLOCK_SIZE	(1 << 19)
 #define CACHE_NUM	1	//4
 
 #define ZLIB_HEADER	"\x78\x9c"
@@ -68,6 +68,8 @@ struct hisi_strm_info {
 	int	checksum;
 	uint64_t	si;
 	uint64_t	di;
+	int	store_len;	/* indicates data cached in next_in */
+	int	load_head;
 };
 
 struct hisi_comp_sess {
@@ -87,7 +89,7 @@ struct hisi_sched {
 	uint64_t	si;	/* si records index in src for next sched */
 	uint64_t	di;	/* di records index in dst for next sched */
 	size_t		total_out;
-	size_t	store_len;
+	size_t	store_len;	/* indiciates data cached in next_in */
 	int	load_head;
 	int	real_len;	/* gzip without header & extra */
 };
@@ -508,6 +510,8 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 		goto out_ctx;
 	strm->si = 0;
 	strm->di = 0;
+	strm->store_len = 0;
+	strm->load_head = 0;
 	strm->op_type = qm_priv->op_type;
 	if (wd_is_nosva(&priv->ctx)) {
 		strm->ss_region_size = 4096 + ASIZE * 2 + HW_CTX_SIZE;
@@ -586,47 +590,6 @@ static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
 	hisi_qm_free_ctx(&priv->ctx);
 }
 
-static unsigned int bit_reverse(register unsigned int x)
-{
-	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
-	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
-	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
-	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
-
-	return((x >> 16) | (x << 16));
-}
-
-static int append_store_block(struct hisi_strm_info *strm, int flush)
-{
-	char	store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
-	uint32_t	 checksum = strm->checksum;
-	uint32_t	 isize = strm->isize;
-
-	memcpy(strm->next_out, store_block, 5);
-	strm->total_out += 5;
-	strm->avail_out -= 5;
-	if (flush != WD_FINISH)
-		return Z_STREAM_END;
-
-	if (strm->alg_type == HW_ZLIB) { /*if zlib, ADLER32*/
-		checksum = (uint32_t) cpu_to_be32(checksum);
-		memcpy(strm->next_out + 5, &checksum, 4);
-		strm->total_out += 4;
-		strm->avail_out -= 4;
-	} else if (strm->alg_type == HW_GZIP) {  /*if gzip, CRC32 and ISIZE*/
-		checksum = ~checksum;
-		checksum = bit_reverse(checksum);
-		memcpy(strm->next_out + 5, &checksum, 4);
-		memcpy(strm->next_out + 9, &isize, 4);
-		strm->total_out += 8;
-		strm->avail_out -= 8;
-	} else
-		WD_ERR("in append store block, wrong alg type %d.\n",
-			strm->alg_type);
-
-	return Z_STREAM_END;
-}
-
 static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 {
 	struct hisi_comp_sess	*priv;
@@ -638,8 +601,6 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	if (strm->avail_in == 0)
-		return append_store_block(strm, flush);
 	msg = malloc(sizeof(*msg));
 	if (!msg) {
 		WD_ERR("alloc msg fail!\n");
@@ -695,7 +656,7 @@ recv_again:
 		goto recv_again;
 	status = recv_msg->dw3 & 0xff;
 	type = recv_msg->dw9 & 0xff;
-	if (status && (status != 0x0d) && (status != 0x13)) {
+	if ((status != 0) && (status != 0x0d) && (status != 0x13)) {
 		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
 		goto out_recv;
 	}
@@ -707,8 +668,9 @@ recv_again:
 	strm->ctx_dw2 = recv_msg->ctx_dw2;
 	strm->isize = recv_msg->isize;
 	strm->checksum = recv_msg->checksum;
-	if (strm->avail_out == 0)
+	if (strm->avail_out == 0) {
 		strm->next_in +=  recv_msg->consumed;
+	}
 	if (strm->avail_out > 0) {
 		strm->avail_in = 0;
 	}
@@ -729,7 +691,8 @@ static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
 	size_t	len, have;
-	int	ret, flush;
+	int	ret, flush = 0;
+	int	templen;
 	const char	zip_head[2] = {0x78, 0x9c};
 	const char	gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0,
 					 0x0, 0x0, 0x0, 0x0, 0x0, 0x03};
@@ -738,24 +701,40 @@ static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 	strm = &priv->strm;
 	strm->arg = arg;
 	strm->op_type = DEFLATE;
-	if (strm->alg_type == ZLIB)
-		STORE_MSG_TO_DST(arg->dst, strm->di, &zip_head, 2);
-	else
-		STORE_MSG_TO_DST(arg->dst, strm->di, &gzip_head, 10);
+	if (!strm->load_head) {
+		if (strm->alg_type == ZLIB)
+			STORE_MSG_TO_DST(arg->dst, strm->di, &zip_head, 2);
+		else
+			STORE_MSG_TO_DST(arg->dst, strm->di, &gzip_head, 10);
+		strm->load_head = 1;
+	}
 
 	strm->stream_pos = STREAM_NEW;
 	do {
-		if (STREAM_CHUNK > arg->src_len)
-			len = arg->src_len;
+		/* check whether next_in is full with STREAM_CHUNK */
+		if (arg->src_len + strm->store_len >= STREAM_CHUNK)
+			templen = STREAM_CHUNK - strm->store_len;
 		else
-			len = STREAM_CHUNK;
-		LOAD_SRC_TO_MSG(strm->next_in, arg->src, strm->si, len);
-		arg->src_len -= len;
-		strm->avail_in = len;
-		if (arg->src_len)
-			flush = WD_SYNC_FLUSH;
-		else
+			templen = arg->src_len;
+		LOAD_SRC_TO_MSG(strm->next_in + strm->store_len,
+				arg->src, strm->si, templen);
+		arg->src_len -= templen;
+		strm->store_len += templen;
+		if (arg->flag & FLAG_INPUT_FINISH) {
+			strm->avail_in = strm->store_len;
 			flush = WD_FINISH;
+		} else if (strm->store_len == STREAM_CHUNK) {
+			strm->avail_in = STREAM_CHUNK;
+			flush = WD_SYNC_FLUSH;
+		}
+		if (!arg->src_len) {
+			strm->si = 0;	// prepare for next input
+			if ((flush != WD_FINISH) && (flush != WD_SYNC_FLUSH)) {
+				/* input is cached, output is postponed */
+				arg->dst_len = 0;
+				break;
+			}
+		}
 
 		do {
 			strm->avail_out = STREAM_CHUNK_OUT;
@@ -767,6 +746,7 @@ static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 					 strm->next_out, have);
 			arg->dst_len = strm->di;
 		} while (strm->avail_out == 0);
+		strm->store_len = 0;
 
 		/* done when last data in file processed */
 	} while (flush != WD_FINISH);
@@ -783,38 +763,90 @@ static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
 	char	zip_head[2] = {0};
 	char	gzip_head[10] = {0};
 	size_t	have, len;
+	int	templen, flush = 0;
 	int	ret;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
 	strm->arg = arg;
 	strm->op_type = INFLATE;
-	if (strm->alg_type == ZLIB)
-		LOAD_SRC_TO_MSG(&zip_head, arg->src, strm->si, 2);
-	else
-		LOAD_SRC_TO_MSG(&gzip_head, arg->src, strm->si, 10);
-	strm->stream_pos = STREAM_NEW;
-	do {
-		if (STREAM_CHUNK > arg->src_len)
-			len = arg->src_len;
+	if (!strm->load_head && strm->alg_type == ZLIB) {
+		if (arg->src_len + strm->store_len >= 2)
+			templen = 2 - strm->store_len;
 		else
-			len = STREAM_CHUNK;
-		LOAD_SRC_TO_MSG(strm->next_in, arg->src, strm->si, len);
-		arg->src_len -= len;
-		strm->avail_in = len;
-		if (strm->avail_in == 0)
-			break;
+			templen = arg->src_len;
+		LOAD_SRC_TO_MSG(&zip_head, arg->src, strm->si, templen);
+		/* store_len is borrowed to record the length of header */
+		strm->store_len += templen;
+		arg->src_len -= templen;
+		if (strm->store_len >= 2) {
+			strm->load_head = 1;
+			strm->store_len = 0;
+		}
+	} else if (!strm->load_head && strm->alg_type == GZIP) {
+		if (arg->src_len + strm->store_len >= 10)
+			templen = 10 - strm->store_len;
+		else
+			templen = arg->src_len;
+		LOAD_SRC_TO_MSG(&gzip_head, arg->src, strm->si, templen);
+		/* store_len is borrowed to record the length of header */
+		strm->store_len += templen;
+		arg->src_len -= templen;
+		if (strm->store_len >= 10) {
+			strm->load_head = 1;
+			strm->store_len = 0;
+		}
+	}
+	if (!arg->src_len) {
+		strm->si = 0;
+		/* input data is cached, output data is postponed */
+		arg->dst_len = 0;
+		return 0;
+	}
+	if (strm->load_head == 1) {
+		/* STREAM_NEW is only set once */
+		strm->stream_pos = STREAM_NEW;
+		strm->load_head++;
+	}
+	do {
+		/* check whether next_in is full with STREAM_CHUNK */
+		if (arg->src_len + strm->store_len >= STREAM_CHUNK)
+			templen = STREAM_CHUNK - strm->store_len;
+		else
+			templen = arg->src_len;
+		LOAD_SRC_TO_MSG(strm->next_in + strm->store_len,
+				arg->src, strm->si, templen);
+		arg->src_len -= templen;
+		strm->store_len += templen;
+		if (arg->flag & FLAG_INPUT_FINISH) {
+			strm->avail_in = strm->store_len;
+			flush = WD_SYNC_FLUSH;
+		} else if (strm->store_len == STREAM_CHUNK) {
+			strm->avail_in = STREAM_CHUNK;
+			flush = WD_SYNC_FLUSH;
+		}
+		if (!arg->src_len) {
+			strm->si = 0;	// prepare for next input
+			if ((flush != WD_FINISH) && (flush != WD_SYNC_FLUSH)) {
+				/* input is cached, output is postponed */
+				arg->dst_len = 0;
+				break;
+			}
+		}
 		/* finish compression if all of source has been read in */
 		do {
 			strm->avail_out = STREAM_CHUNK_OUT;
-			ret = hisi_strm_comm(sess, WD_SYNC_FLUSH);
+			ret = hisi_strm_comm(sess, flush);
 			if (ret < 0)
 				goto out;
 			have = STREAM_CHUNK_OUT - strm->avail_out;
 			STORE_MSG_TO_DST(arg->dst, strm->di,
 					 strm->next_out, have);
 			arg->dst_len = strm->di;
+			if (!strm->avail_in)
+				break;
 		} while (strm->avail_out == 0);
+		strm->store_len = 0;
 
 		/* done when last data in file processed */
 	} while (ret != Z_STREAM_END);
