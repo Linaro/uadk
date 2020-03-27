@@ -324,7 +324,12 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	for (j = 0; j < opts->compact_run_num; j++) {
 		ctx = ctx_save;
 
-		ret = hizip_test_sched(&sched, copts, &ctx);
+		if (opts->option & TEST_ZLIB)
+			ret = zlib_deflate(ctx.out_buf, ctx.total_len *
+					   EXPANSION_RATIO, ctx.in_buf,
+					   ctx.total_len, &ctx.total_out);
+		else
+			ret = hizip_test_sched(&sched, copts, &ctx);
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			goto out_with_fini;
