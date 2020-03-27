@@ -20,6 +20,8 @@
 #define	NUM_THREADS	32
 
 #define TEST_WORD_LEN	64
+#define TEST_LARGE_BUF_LEN	((1 << 21) | (1 << 20))
+#define LARGE_BUF_SIZE	(1 << 20)
 
 typedef struct _thread_data_t {
 	int	tid;
@@ -31,7 +33,11 @@ static char word[] = "go to test.";
 
 static int thread_fail = 0;
 
-int test_small_buffer(int flag)
+/*
+ * Test input buffer as 1-byte long, and output buffer is large.
+ * TODO: Set output buffer as 1-byte long, too.
+ */
+int test_small_buffer(int flag, int mode)
 {
 	handler_t	handle;
 	struct wd_comp_arg wd_arg;
@@ -56,7 +62,7 @@ int test_small_buffer(int flag)
 		ret = -ENOMEM;
 		goto out_dst;
 	}
-	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	for (i = 0; i < strlen(word); i++) {
 		memcpy(wd_arg.src, &word[i], sizeof(char));
 		wd_arg.src_len = 1;
@@ -79,7 +85,7 @@ int test_small_buffer(int flag)
 	len = wd_arg.dst_len;
 	wd_arg.flag = 0;
 
-	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	for (i = 0; i < len; i++) {
 		memcpy(wd_arg.src, &buf[i], sizeof(char));
 		wd_arg.src_len = 1;
@@ -114,6 +120,112 @@ out_comp:
 out_dst:
 	free(wd_arg.src);
 out:
+	return ret;
+}
+
+int test_large_buffer(int flag)
+{
+	handler_t	handle;
+	struct wd_comp_arg wd_arg;
+	char	algs[60];
+	char	*buf, *dst;
+	int	ret = 0, i, len = 0;
+	int	dst_idx = 0;
+
+	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
+	if (!buf)
+		return -ENOMEM;
+	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
+	if (!dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	if (flag & FLAG_ZLIB)
+		sprintf(algs, "zlib");
+	else if (flag & FLAG_GZIP)
+		sprintf(algs, "gzip");
+	memset(&wd_arg, 0, sizeof(struct wd_comp_arg));
+	wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+	wd_arg.src = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
+	wd_arg.flag = FLAG_DEFLATE;
+	if (!wd_arg.src) {
+		ret = -ENOMEM;
+		goto out_src;
+	}
+	wd_arg.dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
+	if (!wd_arg.dst) {
+		ret = -ENOMEM;
+		goto out_dst;
+	}
+	dst_idx = 0;
+	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
+	for (i = 0; i < TEST_LARGE_BUF_LEN; i += LARGE_BUF_SIZE) {
+		memset(wd_arg.src, 0, LARGE_BUF_SIZE);
+		memcpy(wd_arg.src + i, word, strlen(word));
+		wd_arg.src_len = LARGE_BUF_SIZE;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+		if (i + LARGE_BUF_SIZE >= TEST_LARGE_BUF_LEN)
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+		ret = wd_alg_compress(handle, &wd_arg);
+		if (ret < 0)
+			goto out_comp;
+		memcpy(buf + dst_idx, wd_arg.dst, wd_arg.dst_len);
+		dst_idx += wd_arg.dst_len;
+	}
+	wd_alg_comp_free_sess(handle);
+
+	/* prepare for decompress */
+	memcpy(buf, wd_arg.dst, sizeof(char) * TEST_LARGE_BUF_LEN);
+	len = dst_idx;
+	wd_arg.flag = 0;
+	dst_idx = 0;
+
+	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
+	for (i = 0; i < len; i += LARGE_BUF_SIZE) {
+		memcpy(wd_arg.src + i, buf + i, LARGE_BUF_SIZE);
+		wd_arg.src_len = LARGE_BUF_SIZE;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+		if (i + LARGE_BUF_SIZE >= len) {
+			wd_arg.src_len -= i + LARGE_BUF_SIZE - len;
+			wd_arg.flag = FLAG_INPUT_FINISH;
+		}
+		ret = wd_alg_decompress(handle, &wd_arg);
+		if (ret < 0)
+			goto out_comp;
+		memcpy(dst + dst_idx, wd_arg.dst, wd_arg.dst_len);
+		dst_idx += wd_arg.dst_len;
+	}
+	if (dst_idx != TEST_LARGE_BUF_LEN) {
+		fprintf(stderr, "failed on dst size:%d, expected size:%d\n",
+			dst_idx, TEST_LARGE_BUF_LEN);
+		goto out_comp;
+	}
+	for (i = 0; i < TEST_LARGE_BUF_LEN; i += LARGE_BUF_SIZE) {
+		memset(buf + i, 0, LARGE_BUF_SIZE);
+		memcpy(buf + i, word, strlen(word));
+		ret = memcmp(buf + i, dst + i, LARGE_BUF_SIZE);
+		if (ret) {
+			fprintf(stderr, "fail to match in %s\n", __func__);
+			goto out_comp;
+		}
+	}
+	printf("Pass large buffer case for %s algorithm.\n",
+		(flag == FLAG_ZLIB) ? "zlib" : "gzip");
+	wd_alg_comp_free_sess(handle);
+	free(wd_arg.src);
+	free(wd_arg.dst);
+	free(dst);
+	free(buf);
+	return 0;
+out_comp:
+	wd_alg_comp_free_sess(handle);
+	free(wd_arg.dst);
+out_dst:
+	free(wd_arg.src);
+out_src:
+	free(dst);
+out:
+	free(buf);
 	return ret;
 }
 
@@ -210,8 +322,12 @@ out_src:
 
 int main(int argc, char **argv)
 {
-	test_small_buffer(FLAG_ZLIB);
-	test_small_buffer(FLAG_GZIP);
+	test_small_buffer(FLAG_ZLIB, 0);
+	test_small_buffer(FLAG_GZIP, 0);
+	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
+	test_small_buffer(FLAG_GZIP, MODE_STREAM);
+/*
+	test_large_buffer(FLAG_ZLIB);
 	thread_fail = 0;
 	test_concurrent(FLAG_ZLIB);
 	if (thread_fail)
@@ -220,5 +336,6 @@ int main(int argc, char **argv)
 	test_concurrent(FLAG_GZIP);
 	if (thread_fail)
 		fprintf(stderr, "fail to run GZIP cases concurrently\n");
+*/
 	return 0;
 }
