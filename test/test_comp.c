@@ -21,6 +21,7 @@ static int test_compress(char *src, char *dst, int flag)
 	handler_t		handle;
 	struct wd_comp_arg	arg;
 	struct stat		st;
+	int	mode;
 	int	sfd, dfd, ret;
 	char	algs[60];
 
@@ -30,6 +31,10 @@ static int test_compress(char *src, char *dst, int flag)
 		sprintf(algs, "zlib");
 	else if (flag & FLAG_GZIP)
 		sprintf(algs, "gzip");
+	if (flag & FLAG_STREAM)
+		mode = MODE_STREAM;
+	else
+		mode = 0;
 	sfd = open(src, O_RDONLY);
 	if (sfd < 0)
 		return -EINVAL;
@@ -58,7 +63,7 @@ static int test_compress(char *src, char *dst, int flag)
 		goto out_read;
 	}
 	arg.flag |= FLAG_INPUT_FINISH;
-	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	handle = wd_alg_comp_alloc_sess(algs, mode, NULL);
 	if (flag & FLAG_DECMPS) {
 		ret = wd_alg_decompress(handle, &arg);
 		if (ret) {
