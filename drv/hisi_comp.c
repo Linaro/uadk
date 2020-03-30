@@ -19,7 +19,9 @@
 #define GZIP_TAIL_SZ	8
 
 #define STREAM_CHUNK		1024
+#define STREAM_CHUNK_MASK	0x3FF
 #define STREAM_CHUNK_OUT	(64*1024)
+#define MAX_STREAM_CHUNK	(1 << 20)
 
 #define LOAD_SRC_TO_MSG(msg, src, idx, len)				\
 	do {								\
@@ -50,6 +52,8 @@ struct hisi_strm_info {
 	struct wd_comp_arg	*arg;
 	void	*next_in;
 	void	*next_out;
+	void	*swap_in;
+	void	*swap_out;
 	size_t	total_in;
 	size_t	total_out;
 	size_t	avail_in;
@@ -66,10 +70,9 @@ struct hisi_strm_info {
 	int	ctx_dw2;
 	int	isize;
 	int	checksum;
-	uint64_t	si;
-	uint64_t	di;
-	int	store_len;	/* indicates data cached in next_in */
 	int	load_head;
+	struct hisi_zip_sqe	*msg;
+	int	undrained;
 };
 
 struct hisi_comp_sess {
@@ -472,6 +475,59 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 	return 0;
 }
 
+static inline int is_new_src(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+{
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct hisi_strm_info	*strm = &priv->strm;
+
+	/* If all previous src data are consumed, next_in should be cleared to
+	 * NULL.
+	 */
+	if (!strm->next_in)
+		return 1;
+	return 0;
+}
+
+static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+{
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct hisi_strm_info	*strm = &priv->strm;
+
+	if (!strm->next_out)
+		return 1;
+	return 0;
+}
+
+/*
+ * Compare the range with mask.
+ * Notice: Avoid to compare them just after hardware operation.
+ * It's better to compare swap with (addr - consumed/produced bytes).
+ */
+static inline int is_in_swap(void *addr, void *swap)
+{
+	if (((uint64_t)addr & ~STREAM_CHUNK_MASK) ==
+	    ((uint64_t)swap & ~STREAM_CHUNK_MASK))
+		return 1;
+	return 0;
+}
+
+/*
+ * If arg->src buffer is too small, need to copy them into swap_in buffer.
+ */
+static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
+{
+	if (buf_size < STREAM_CHUNK)
+		return 1;
+	return 0;
+}
+
+static inline int need_split(struct wd_comp_sess *sess, int buf_size)
+{
+	if (buf_size > STREAM_CHUNK)
+		return 1;
+	return 0;
+}
+
 static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
@@ -487,7 +543,12 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 		strm->alg_type = GZIP;
 		strm->dw9 = 3;
 	}
+	strm->msg = malloc(sizeof(*strm->msg));
+	if (!strm->msg)
+		return -ENOMEM;
 	ret = wd_request_ctx(&priv->ctx, sess->node_path);
+	if (ret)
+		free(strm->msg);
 	return ret;
 }
 
@@ -508,10 +569,10 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 	ret = wd_start_ctx(&priv->ctx);
 	if (ret)
 		goto out_ctx;
-	strm->si = 0;
-	strm->di = 0;
-	strm->store_len = 0;
 	strm->load_head = 0;
+	strm->undrained = 0;
+	strm->next_in = NULL;
+	strm->next_out = NULL;
 	strm->op_type = qm_priv->op_type;
 	if (wd_is_nosva(&priv->ctx)) {
 		strm->ss_region_size = 4096 + ASIZE * 2 + HW_CTX_SIZE;
@@ -526,21 +587,21 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 		if (ret)
 			goto out_smm;
 		ret = -ENOMEM;
-		strm->next_in = smm_alloc(strm->ss_region, ASIZE);
-		if (!strm->next_in)
+		strm->swap_in = smm_alloc(strm->ss_region, STREAM_CHUNK);
+		if (!strm->swap_in)
 			goto out_smm;
-		strm->next_out = smm_alloc(strm->ss_region, ASIZE);
+		strm->swap_out = smm_alloc(strm->ss_region, STREAM_CHUNK);
 		if (!strm->next_out)
 			goto out_smm_out;
 		strm->ctx_buf = smm_alloc(strm->ss_region, HW_CTX_SIZE);
 		if (!strm->ctx_buf)
 			goto out_smm_ctx;
 	} else {
-		strm->next_in = malloc(ASIZE);
-		if (!strm->next_in)
+		strm->swap_in = malloc(STREAM_CHUNK);
+		if (!strm->swap_in)
 			goto out_in;
-		strm->next_out = malloc(ASIZE);
-		if (!strm->next_out)
+		strm->swap_out = malloc(STREAM_CHUNK);
+		if (!strm->swap_out)
 			goto out_out;
 		strm->ctx_buf = malloc(HW_CTX_SIZE);
 		if (!strm->ctx_buf)
@@ -548,9 +609,9 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 	}
 	return 0;
 out_smm_ctx:
-	smm_free(strm->ss_region, strm->next_out);
+	smm_free(strm->ss_region, strm->swap_out);
 out_smm_out:
-	smm_free(strm->ss_region, strm->next_in);
+	smm_free(strm->ss_region, strm->swap_in);
 out_smm:
 	free(strm->ss_region);
 out_ss:
@@ -577,13 +638,13 @@ static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
 	if (wd_is_nosva(&priv->ctx)) {
-		smm_free(strm->ss_region, strm->next_in);
-		smm_free(strm->ss_region, strm->next_out);
+		smm_free(strm->ss_region, strm->swap_in);
+		smm_free(strm->ss_region, strm->swap_out);
 		smm_free(strm->ss_region, strm->ctx_buf);
 		free(strm->ss_region);
 	} else {
-		free(strm->next_in);
-		free(strm->next_out);
+		free(strm->swap_in);
+		free(strm->swap_out);
 		free(strm->ctx_buf);
 	}
 	wd_stop_ctx(&priv->ctx);
@@ -596,27 +657,22 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 	struct hisi_zip_sqe	*msg, *recv_msg;
 	struct hisi_strm_info	*strm;
 	uint32_t	status, type;
-	uint64_t	stream_mode, stream_new, flush_type;
+	uint64_t	flush_type;
 	int	ret = 0;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	msg = malloc(sizeof(*msg));
-	if (!msg) {
-		WD_ERR("alloc msg fail!\n");
-		return -EINVAL;
-	}
 
-	stream_mode = STATEFUL;
-	stream_new = strm->stream_pos;
 	flush_type = (flush == WD_FINISH) ? HZ_FINISH : HZ_SYNC_FLUSH;
 
+	msg = strm->msg;
 	memset((void *)msg, 0, sizeof(*msg));
 	msg->dw9 = strm->dw9;
-	msg->dw7 |= ((stream_new << 2 | stream_mode << 1 | flush_type)) <<
+	msg->dw7 |= ((strm->stream_pos << 2 | STATEFUL << 1 | flush_type)) <<
 		    STREAM_FLUSH_SHIFT;
-	msg->source_addr_l = (uint64_t)strm->next_in & 0xffffffff;
-	msg->source_addr_h = (uint64_t)strm->next_in >> 32;
+	msg->source_addr_l = ((uint64_t)strm->next_in - strm->avail_in) &
+			     0xffffffff;
+	msg->source_addr_h = ((uint64_t)strm->next_in - strm->avail_in) >> 32;
 	msg->dest_addr_l = (uint64_t)strm->next_out & 0xffffffff;
 	msg->dest_addr_h = (uint64_t)strm->next_out >> 32;
 	msg->input_data_length = strm->avail_in;
@@ -660,6 +716,10 @@ recv_again:
 		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
 		goto out_recv;
 	}
+	strm->undrained += recv_msg->produced;
+	strm->next_in -= strm->avail_in;
+	strm->next_in += recv_msg->consumed;
+	strm->next_out += recv_msg->produced;
 	strm->avail_out -= recv_msg->produced;
 	strm->total_out += recv_msg->produced;
 	strm->avail_in -= recv_msg->consumed;
@@ -668,12 +728,6 @@ recv_again:
 	strm->ctx_dw2 = recv_msg->ctx_dw2;
 	strm->isize = recv_msg->isize;
 	strm->checksum = recv_msg->checksum;
-	if (strm->avail_out == 0) {
-		strm->next_in +=  recv_msg->consumed;
-	}
-	if (strm->avail_out > 0) {
-		strm->avail_in = 0;
-	}
 
 	if (ret == 0 && flush == WD_FINISH)
 		ret = Z_STREAM_END;
@@ -685,74 +739,154 @@ out:
 	return ret;
 }
 
+static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
+			      struct wd_comp_arg *arg,
+			      int *full)
+{
+	struct hisi_comp_sess	*priv;
+	struct hisi_strm_info	*strm;
+	const char zip_head[2] = {0x78, 0x9c};
+	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
+				    0x0, 0x0, 0x0, 0x0, 0x03};
+	int templen, skipped;
+
+	priv = (struct hisi_comp_sess *)sess->priv;
+	strm = &priv->strm;
+	/* full & skipped are used in IN, strm->undrained is used in OUT */
+	if (strm->undrained && !is_new_dst(sess, arg)) {
+		if (is_in_swap(strm->next_out, strm->swap_out)) {
+			if (strm->undrained > arg->dst_len)
+				templen = arg->dst_len;
+			else {
+				templen = strm->undrained;
+				if (arg->flag & FLAG_INPUT_FINISH)
+					arg->status |= STATUS_OUTPUT_FINISH;
+			}
+			memcpy(arg->dst, strm->next_out - strm->undrained,
+			       templen);
+			arg->dst_len = templen;
+			strm->avail_out += arg->dst_len;
+			strm->undrained -= templen;
+			arg->status |= STATUS_OUTPUT_READY;
+			if (!strm->undrained)
+				strm->next_out = NULL;	// empty again
+			return;
+		} else if (strm->avail_out < STREAM_CHUNK) {
+			/* drain next_out first */
+			arg->status |= STATUS_OUTPUT_READY;
+			arg->dst_len = strm->next_out - arg->dst;
+			strm->undrained -= arg->dst_len;
+			strm->avail_out += arg->dst_len;
+			if (arg->flag & FLAG_INPUT_FINISH)
+				arg->status |= STATUS_OUTPUT_FINISH;
+			if (!strm->undrained)
+				strm->next_out = NULL;
+			return;
+		}
+	}
+	if (is_new_dst(sess, arg)) {
+		if (need_swap(sess, arg->dst_len)) {
+			strm->next_out = strm->swap_out;
+			strm->avail_out = STREAM_CHUNK;
+		} else {
+			strm->next_out = arg->dst;
+			strm->avail_out = arg->dst_len;
+		}
+		if (!strm->load_head && strm->op_type == DEFLATE) {
+			if (strm->alg_type == ZLIB) {
+				memcpy(strm->next_out, &zip_head, 2);
+				templen = 2;
+			} else {
+				memcpy(strm->next_out, &gzip_head, 10);
+				templen = 10;
+			}
+			strm->next_out += templen;
+			strm->avail_out -= templen;
+			strm->undrained += templen;
+			strm->stream_pos = STREAM_NEW;
+			strm->load_head = 1;
+		}
+	}
+	if (is_new_src(sess, arg)) {
+		if (need_swap(sess, arg->src_len)) {
+			strm->next_in = strm->swap_in;
+			memcpy(strm->next_in, arg->src, arg->src_len);
+			strm->next_in += arg->src_len;
+			strm->avail_in += arg->src_len;
+			arg->src += arg->src_len;
+			arg->src_len = 0;	// apps check this
+		} else if (need_split(sess, arg->src_len)) {
+			strm->next_in = arg->src + STREAM_CHUNK;
+			strm->avail_in = STREAM_CHUNK;
+			arg->src += STREAM_CHUNK;
+			arg->src_len -= STREAM_CHUNK;
+			*full = 1;
+		} else {
+			strm->next_in = arg->src + arg->src_len;
+			strm->avail_in = arg->src_len;
+			arg->src += arg->src_len;
+			arg->src_len = 0;
+			*full = 1;
+		}
+	} else {
+		/* some data is cached in next_in buffer */
+		if (is_in_swap(strm->next_in, strm->swap_in)) {
+			if (strm->avail_in + arg->src_len < STREAM_CHUNK)
+				templen = arg->src_len;
+			else {
+				templen = STREAM_CHUNK - strm->avail_in;
+				*full = 1;
+			}
+			memcpy(strm->next_in, arg->src, templen);
+			strm->next_in += templen;
+			strm->avail_in += templen;
+			arg->src_len -= templen;
+		}
+	}
+	if (!strm->load_head && strm->op_type == INFLATE) {
+		if (strm->alg_type == ZLIB)
+			skipped = 2;
+		else
+			skipped = 10;
+		if (strm->avail_in >= skipped) {
+			strm->avail_in -= skipped;
+			strm->stream_pos = STREAM_NEW;
+			strm->load_head = 1;
+		}
+	}
+}
+
 static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 				  struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
-	size_t	len, have;
 	int	ret, flush = 0;
-	int	templen;
-	const char	zip_head[2] = {0x78, 0x9c};
-	const char	gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0,
-					 0x0, 0x0, 0x0, 0x0, 0x0, 0x03};
+	int	full = 0;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
 	strm->arg = arg;
 	strm->op_type = DEFLATE;
-	if (!strm->load_head) {
-		if (strm->alg_type == ZLIB)
-			STORE_MSG_TO_DST(arg->dst, strm->di, &zip_head, 2);
-		else
-			STORE_MSG_TO_DST(arg->dst, strm->di, &gzip_head, 10);
-		strm->load_head = 1;
-	}
 
-	strm->stream_pos = STREAM_NEW;
 	do {
-		/* check whether next_in is full with STREAM_CHUNK */
-		if (arg->src_len + strm->store_len >= STREAM_CHUNK)
-			templen = STREAM_CHUNK - strm->store_len;
-		else
-			templen = arg->src_len;
-		LOAD_SRC_TO_MSG(strm->next_in + strm->store_len,
-				arg->src, strm->si, templen);
-		arg->src_len -= templen;
-		strm->store_len += templen;
-		if (arg->flag & FLAG_INPUT_FINISH) {
-			strm->avail_in = strm->store_len;
+		hisi_strm_pre_buf(sess, arg, &full);
+		if (arg->status & STATUS_OUTPUT_READY) {
+			return 0;
+		}
+		if (flush == WD_FINISH)
+			break;
+		if (arg->flag & FLAG_INPUT_FINISH)
 			flush = WD_FINISH;
-		} else if (strm->store_len == STREAM_CHUNK) {
-			strm->avail_in = STREAM_CHUNK;
+		else if (full)
 			flush = WD_SYNC_FLUSH;
-		}
-		if (!arg->src_len) {
-			strm->si = 0;	// prepare for next input
-			if ((flush != WD_FINISH) && (flush != WD_SYNC_FLUSH)) {
-				/* input is cached, output is postponed */
-				arg->dst_len = 0;
-				break;
-			}
-		}
-
-		do {
-			strm->avail_out = STREAM_CHUNK_OUT;
-			ret = hisi_strm_comm(sess, flush);
-			if (ret < 0)
-				goto out;
-			have = STREAM_CHUNK_OUT - strm->avail_out;
-			STORE_MSG_TO_DST(arg->dst, strm->di,
-					 strm->next_out, have);
-			arg->dst_len = strm->di;
-		} while (strm->avail_out == 0);
-		strm->store_len = 0;
-
-		/* done when last data in file processed */
-	} while (flush != WD_FINISH);
+		else
+			return 0;
+		ret = hisi_strm_comm(sess, flush);
+		if (ret < 0)
+			return ret;
+	} while (1);
 	return 0;
-out:
-	return ret;
 }
 
 static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
@@ -760,100 +894,31 @@ static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
-	char	zip_head[2] = {0};
-	char	gzip_head[10] = {0};
-	size_t	have, len;
-	int	templen, flush = 0;
-	int	ret;
+	int	flush = 0, full = 0, ret;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
 	strm->arg = arg;
 	strm->op_type = INFLATE;
-	if (!strm->load_head && strm->alg_type == ZLIB) {
-		if (arg->src_len + strm->store_len >= 2)
-			templen = 2 - strm->store_len;
-		else
-			templen = arg->src_len;
-		LOAD_SRC_TO_MSG(&zip_head, arg->src, strm->si, templen);
-		/* store_len is borrowed to record the length of header */
-		strm->store_len += templen;
-		arg->src_len -= templen;
-		if (strm->store_len >= 2) {
-			strm->load_head = 1;
-			strm->store_len = 0;
-		}
-	} else if (!strm->load_head && strm->alg_type == GZIP) {
-		if (arg->src_len + strm->store_len >= 10)
-			templen = 10 - strm->store_len;
-		else
-			templen = arg->src_len;
-		LOAD_SRC_TO_MSG(&gzip_head, arg->src, strm->si, templen);
-		/* store_len is borrowed to record the length of header */
-		strm->store_len += templen;
-		arg->src_len -= templen;
-		if (strm->store_len >= 10) {
-			strm->load_head = 1;
-			strm->store_len = 0;
-		}
-	}
-	if (!arg->src_len) {
-		strm->si = 0;
-		/* input data is cached, output data is postponed */
-		arg->dst_len = 0;
-		return 0;
-	}
-	if (strm->load_head == 1) {
-		/* STREAM_NEW is only set once */
-		strm->stream_pos = STREAM_NEW;
-		strm->load_head++;
-	}
+
 	do {
-		/* check whether next_in is full with STREAM_CHUNK */
-		if (arg->src_len + strm->store_len >= STREAM_CHUNK)
-			templen = STREAM_CHUNK - strm->store_len;
+		hisi_strm_pre_buf(sess, arg, &full);
+		if (arg->status & STATUS_OUTPUT_READY) {
+			return 0;
+		}
+		if (flush == WD_FINISH)
+			break;
+		if (arg->flag & FLAG_INPUT_FINISH)
+			flush = WD_FINISH;
+		else if (full)
+			flush = WD_SYNC_FLUSH;
 		else
-			templen = arg->src_len;
-		LOAD_SRC_TO_MSG(strm->next_in + strm->store_len,
-				arg->src, strm->si, templen);
-		arg->src_len -= templen;
-		strm->store_len += templen;
-		if (arg->flag & FLAG_INPUT_FINISH) {
-			strm->avail_in = strm->store_len;
-			flush = WD_SYNC_FLUSH;
-		} else if (strm->store_len == STREAM_CHUNK) {
-			strm->avail_in = STREAM_CHUNK;
-			flush = WD_SYNC_FLUSH;
-		}
-		if (!arg->src_len) {
-			strm->si = 0;	// prepare for next input
-			if ((flush != WD_FINISH) && (flush != WD_SYNC_FLUSH)) {
-				/* input is cached, output is postponed */
-				arg->dst_len = 0;
-				break;
-			}
-		}
-		/* finish compression if all of source has been read in */
-		do {
-			strm->avail_out = STREAM_CHUNK_OUT;
-			ret = hisi_strm_comm(sess, flush);
-			if (ret < 0)
-				goto out;
-			have = STREAM_CHUNK_OUT - strm->avail_out;
-			STORE_MSG_TO_DST(arg->dst, strm->di,
-					 strm->next_out, have);
-			arg->dst_len = strm->di;
-			if (!strm->avail_in)
-				break;
-		} while (strm->avail_out == 0);
-		strm->store_len = 0;
-
-		/* done when last data in file processed */
-	} while (ret != Z_STREAM_END);
-
+			return 0;
+		ret = hisi_strm_comm(sess, flush);
+		if (ret < 0)
+			return ret;
+	} while (1);
 	return 0;
-out:
-	return ret;
 }
 
 int hisi_comp_init(struct wd_comp_sess *sess)
