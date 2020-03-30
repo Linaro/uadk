@@ -492,7 +492,7 @@ try_again:
 			goto try_again;
 		}
 		WD_ERR("fail to get queue!\n");
-		goto err_with_fd;
+		goto err_with_dev;
 	}
 	ret = drv_open(q);
 	if (ret) {
