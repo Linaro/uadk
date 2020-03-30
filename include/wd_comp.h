@@ -16,6 +16,9 @@ struct wd_alg_comp;
 #define FLAG_DEFLATE		(1 << 0)
 #define FLAG_INPUT_FINISH	(1 << 1)
 
+#define STATUS_OUTPUT_READY	(1 << 0)
+#define STATUS_OUTPUT_FINISH	(1 << 1)
+
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
@@ -33,6 +36,7 @@ struct wd_comp_arg {
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
 	uint32_t		flag;
+	uint32_t		status;
 };
 
 struct wd_alg_comp {
