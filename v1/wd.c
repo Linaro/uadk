@@ -430,10 +430,8 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 
 	qinfo = q->qinfo;
 	qinfo->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
-	if (qinfo->fd == -1) {
-		qinfo->fd = 0;
+	if (qinfo->fd == -1)
 		return -ENODEV;
-	}
 
 	qinfo->hw_type = dev->api;
 	qinfo->dev_flags = dev->flags;
