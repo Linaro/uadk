@@ -84,6 +84,9 @@ static int qm_set_queue_regions(struct wd_queue *q)
 	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
 					UACCE_QFRT_DUS, 0);
 	if (info->mmio_base == MAP_FAILED) {
+		wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS,
+				  UACCE_QFRT_SS, 0);
+		info->sq_base = NULL;
 		info->mmio_base = NULL;
 		WD_ERR("mmap mmio fail\n");
 		return -ENOMEM;
@@ -100,6 +103,8 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
 			UACCE_QFRT_DUS, 0);
 	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+	info->sq_base = NULL;
+	info->mmio_base = NULL;
 }
 
 static int qm_set_queue_alg_info(struct wd_queue *q)
@@ -184,7 +189,8 @@ static int qm_set_queue_info(struct wd_queue *q)
 		return -EINVAL;
 	if (!info->sqe_size) {
 		WD_ERR("sqe size =%d err!\n", info->sqe_size);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_with_regions;
 	}
 	info->cq_base = (void *)((uintptr_t)info->sq_base +
 			info->sqe_size * QM_Q_DEPTH);
@@ -201,7 +207,8 @@ static int qm_set_queue_info(struct wd_queue *q)
 		info->doorbell_base = info->mmio_base + QM_DOORBELL_OFFSET;
 	} else {
 		WD_ERR("hw version mismatch!\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_with_regions;
 	}
 	info->sq_tail_index = 0;
 	info->cq_head_index = 0;
@@ -212,10 +219,14 @@ static int qm_set_queue_info(struct wd_queue *q)
 	ret = ioctl(qinfo->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("hisi qm set qc_type fail, use default!\n");
-		return ret;
+		goto err_with_regions;
 	}
 	info->sqn = qp_ctx.id;
 
+	return 0;
+
+err_with_regions:
+	qm_unset_queue_regions(q);
 	return ret;
 }
 
@@ -234,15 +245,14 @@ int qm_init_queue(struct wd_queue *q)
 	qinfo->priv = info;
 	ret = qm_set_queue_alg_info(q);
 	if (ret < 0)
-		goto err_with_regions;
+		goto err_with_priv;
 	ret = qm_set_queue_info(q);
 	if (ret < 0)
-		goto err_with_regions;
+		goto err_with_priv;
 
 	return 0;
 
-err_with_regions:
-	qm_unset_queue_regions(q);
+err_with_priv:
 	free(qinfo->priv);
 	qinfo->priv = NULL;
 	return ret;
