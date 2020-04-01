@@ -16,8 +16,10 @@ struct wd_alg_comp;
 #define FLAG_DEFLATE		(1 << 0)
 #define FLAG_INPUT_FINISH	(1 << 1)
 
-#define STATUS_OUTPUT_READY	(1 << 0)
-#define STATUS_OUTPUT_FINISH	(1 << 1)
+#define STATUS_OUT_READY	(1 << 0)
+#define STATUS_OUT_FINISH	(1 << 1)
+#define STATUS_IN_PART_USE	(1 << 2)
+#define STATUS_IN_EMPTY		(1 << 3)
 
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
