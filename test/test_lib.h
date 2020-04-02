@@ -45,6 +45,7 @@ struct test_options {
 
 #define MAX_RUNS	1024
 	int run_num;
+	int compact_run_num;
 
 	bool verify;
 	bool verbose;
@@ -124,13 +125,14 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:c:s:Vvz"
+#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvz"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
 	"  -n <num>      number of runs\n"				\
 	"  -q <num>      number of queues\n"				\
 	"  -c <num>      number of caches\n"				\
+	"  -l <num>      number of compact runs\n"			\
 	"  -s <size>     total size\n"					\
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\
