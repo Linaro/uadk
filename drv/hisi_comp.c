@@ -653,6 +653,7 @@ static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
 	}
 	wd_stop_ctx(&priv->ctx);
 	hisi_qm_free_ctx(&priv->ctx);
+	free(strm->msg);
 }
 
 static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
@@ -710,7 +711,7 @@ recv_again:
 	ret = hisi_qm_recv(&priv->ctx, (void **)&recv_msg);
 	if (ret == -EIO) {
 		fputs(" wd_recv fail!\n", stderr);
-		goto out_recv;
+		goto out;
 	/* synchronous mode, if get none, then get again */
 	} else if (ret == -EAGAIN)
 		goto recv_again;
@@ -718,7 +719,7 @@ recv_again:
 	type = recv_msg->dw9 & 0xff;
 	if ((status != 0) && (status != 0x0d) && (status != 0x13)) {
 		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
-		goto out_recv;
+		goto out;
 	}
 	strm->undrained += recv_msg->produced;
 	strm->next_in -= strm->avail_in;
@@ -737,8 +738,6 @@ recv_again:
 		ret = Z_STREAM_END;
 	else if (ret == 0 &&  (recv_msg->dw3 & 0x1ff) == 0x113)
 		ret = Z_STREAM_END;    /* decomp_is_end  region */
-out_recv:
-	free(msg);
 out:
 	return ret;
 }
@@ -775,7 +774,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 			if (!strm->undrained)
 				strm->next_out = NULL;	// empty again
 			return;
-		} else if (strm->avail_out < STREAM_MIN) {
+		} else {
 			/* drain next_out first */
 			arg->status |= STATUS_OUT_READY;
 			arg->dst_len = strm->next_out - arg->dst;
@@ -795,6 +794,9 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 			else
 				strm->avail_out = STREAM_MIN;
 			strm->next_out = strm->swap_out;
+		} else if (need_split(sess, arg->dst_len)) {
+			strm->next_out = arg->dst;
+			strm->avail_out = STREAM_MAX;
 		} else {
 			strm->next_out = arg->dst;
 			strm->avail_out = arg->dst_len;
@@ -812,6 +814,18 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 			strm->undrained += templen;
 			strm->stream_pos = STREAM_NEW;
 			strm->load_head = 1;
+		}
+	} else {
+		if (need_swap(sess, arg->dst_len)) {
+			if (wd_is_nosva(&priv->ctx))
+				strm->avail_out = STREAM_MAX;
+			else
+				strm->avail_out = STREAM_MIN;
+			strm->next_out = strm->swap_out;
+		} else if (need_split(sess, arg->dst_len)) {
+			strm->avail_out = STREAM_MAX;
+		} else {
+			strm->avail_out = arg->dst_len;
 		}
 	}
 	if (is_new_src(sess, arg)) {
@@ -849,8 +863,6 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 			arg->src_len = 0;
 			arg->status &= ~STATUS_IN_PART_USE;
 			arg->status |= STATUS_IN_EMPTY;
-			*full = 1;
-			*full = 1;
 		}
 	} else {
 		/* some data is cached in next_in buffer */
@@ -862,15 +874,21 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 				*full = 1;
 			}
 			memcpy(strm->next_in, arg->src, templen);
-			strm->next_in += templen;
 			strm->avail_in += templen;
-			arg->src_len -= templen;
-			if (arg->src_len)
-				arg->status |= STATUS_IN_PART_USE;
-			else {
-				arg->status &= ~STATUS_IN_PART_USE;
-				arg->status |= STATUS_IN_EMPTY;
-			}
+		} else {
+			if (arg->src_len > STREAM_MAX)
+				templen = STREAM_MAX;
+			else
+				templen = arg->src_len;
+			strm->avail_in = templen;
+		}
+		strm->next_in += templen;
+		arg->src_len -= templen;
+		if (arg->src_len)
+			arg->status |= STATUS_IN_PART_USE;
+		else {
+			arg->status &= ~STATUS_IN_PART_USE;
+			arg->status |= STATUS_IN_EMPTY;
 		}
 	}
 	if (!strm->load_head && strm->op_type == INFLATE) {
