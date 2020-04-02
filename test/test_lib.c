@@ -149,8 +149,11 @@ int hizip_test_default_output(struct wd_msg *msg, void *priv)
 
 	dbg_sqe("zip output", m);
 
-	SYS_ERR_COND(status != 0 && status != 0x0d, "bad status (s=%d, t=%d)\n",
-		     status, type);
+	if (status != 0 && status != 0x0d) {
+		fprintf(stderr, "bad status (s=%d, t=%d%s)\n", status, type,
+			ctx->faulting ? ", expected" : "");
+		return -EFAULT;
+	}
 
 	ctx->total_out += m->produced;
 	return 0;
