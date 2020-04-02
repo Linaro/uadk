@@ -64,6 +64,7 @@ static struct test_ops test_ops = {
 
 static int run_one_child(struct priv_options *opts)
 {
+	int i;
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
@@ -71,6 +72,7 @@ static int run_one_child(struct priv_options *opts)
 		.ctx = {0},
 		.opts = opts,
 	};
+	struct hizip_test_context save_ctx;
 	struct hizip_test_context *ctx = &priv_ctx.ctx;
 	struct test_options *copts = &opts->common;
 
@@ -106,7 +108,16 @@ static int run_one_child(struct priv_options *opts)
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
 
-	ret = hizip_test_sched(&sched, copts, ctx);
+	save_ctx = *ctx;
+	for (i = 0; i < copts->compact_run_num; i++) {
+		*ctx = save_ctx;
+
+		ret = hizip_test_sched(&sched, copts, ctx);
+		if (ret < 0) {
+			WD_ERR("hizip test fail with %d\n", ret);
+			break;
+		}
+	}
 
 	hizip_test_fini(&sched, copts);
 
@@ -210,6 +221,7 @@ int main(int argc, char **argv)
 			.req_cache_num	= 4,
 			.q_num		= 1,
 			.run_num	= 1,
+			.compact_run_num = 1,
 			.block_size	= 512000,
 			.total_len	= opts.common.block_size * 10,
 			.verify		= true,

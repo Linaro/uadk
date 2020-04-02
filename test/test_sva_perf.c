@@ -64,7 +64,6 @@ struct priv_options {
 	struct test_options common;
 
 	int warmup_num;
-	int compact_run_num;
 
 #define PERFORMANCE		(1UL << 0)
 #define TEST_ZLIB		(1UL << 1)
@@ -321,7 +320,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
 	getrusage(RUSAGE_SELF, &start_rusage);
 
-	for (j = 0; j < opts->compact_run_num; j++) {
+	for (j = 0; j < copts->compact_run_num; j++) {
 		ctx = ctx_save;
 
 		if (opts->option & TEST_ZLIB)
@@ -374,7 +373,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
 					 ctx.total_out * 100;
 
-	total_len = copts->total_len * opts->compact_run_num;
+	total_len = copts->total_len * copts->compact_run_num;
 	stats->v[ST_SPEED] = total_len / (stats->v[ST_RUN_TIME] / 1000) /
 		1024 / 1024 * 1000 * 1000;
 
@@ -503,7 +502,7 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 
 	printf("%d;", csv_format_version);
 	printf("%lu;%u;", opts->common.total_len, opts->common.block_size);
-	printf("%u;", opts->compact_run_num);
+	printf("%u;", opts->common.compact_run_num);
 	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
 	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
 	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
@@ -564,7 +563,7 @@ static int run_test(struct priv_options *opts)
 
 	fprintf(stderr,
 		"Compress bz=%d nb=%u×%lu, speed=%.1f MB/s (±%0.1f%% N=%d) overall=%.1f MB/s (±%0.1f%%)\n",
-		opts->common.block_size, opts->compact_run_num,
+		opts->common.block_size, opts->common.compact_run_num,
 		opts->common.total_len / opts->common.block_size,
 		avg.v[ST_SPEED], variation.v[ST_SPEED], n,
 		avg.v[ST_TOTAL_SPEED], variation.v[ST_TOTAL_SPEED]);
@@ -616,17 +615,17 @@ int main(int argc, char **argv)
 			.req_cache_num	= 4,
 			.q_num		= 1,
 			.run_num	= 1,
+			.compact_run_num = 1,
 			.block_size	= 512000,
 			.total_len	= opts.common.block_size * 10,
 			.verify		= false,
 			.verbose	= false,
 		},
-		.compact_run_num	= 1,
 		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
 	};
 
-	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:l:o:w:")) != -1) {
+	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:o:w:")) != -1) {
 		switch (opt) {
 		case 'f':
 			if (strcmp(optarg, "none") == 0) {
@@ -664,11 +663,6 @@ int main(int argc, char **argv)
 			if (opts.warmup_num < 0)
 				show_help = 1;
 			break;
-		case 'l':
-			opts.compact_run_num = strtol(optarg, NULL, 0);
-			if (opts.compact_run_num <= 0)
-				show_help = 1;
-			break;
 		default:
 			show_help = parse_common_option(opt, optarg,
 							&opts.common);
@@ -688,7 +682,6 @@ int main(int argc, char **argv)
 		     "                  'perf' prefaults the output pages\n"
 		     "                  'thp' try to enable transparent huge pages\n"
 		     "                  'zlib' use zlib instead of the device\n"
-		     "  -l <num>      number of compact runs\n"
 		     "  -w <num>      number of warmup runs\n",
 		     argv[0]
 		    );

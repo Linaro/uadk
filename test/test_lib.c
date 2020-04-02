@@ -364,6 +364,11 @@ int parse_common_option(const char opt, const char *optarg,
 		if (opts->req_cache_num <= 0)
 			return 1;
 		break;
+	case 'l':
+		opts->compact_run_num = strtol(optarg, NULL, 0);
+		if (opts->compact_run_num <= 0)
+			return 1;
+		break;
 	case 'n':
 		opts->run_num = strtol(optarg, NULL, 0);
 		SYS_ERR_COND(opts->run_num > MAX_RUNS,
