@@ -24,6 +24,7 @@ struct priv_options {
 
 #define INJECT_SIG_BIND		(1UL << 0)
 #define INJECT_SIG_WORK		(1UL << 1)
+#define INJECT_TLB_FAULT	(1UL << 2)
 	unsigned long faults;
 };
 
@@ -119,12 +120,46 @@ static int run_one_child(struct priv_options *opts)
 		}
 	}
 
+	if (ret >= 0 && opts->faults & INJECT_TLB_FAULT) {
+		/*
+		 * Now unmap the buffers and retry the access. Normally we
+		 * should get an access fault, but if the TLB wasn't properly
+		 * invalidated, the access succeeds and corrupts memory!
+		 * This test requires small jobs, to make sure that we reuse
+		 * the same TLB entry between the tests. Run for example with
+		 * "-s 0x1000 -b 0x1000".
+		 */
+		ret = munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+		if (ret)
+			perror("unmap()");
+
+		/* A warning if the parameters might produce false positives */
+		if (copts->total_len > 0x54000)
+			fprintf(stderr, "NOTE: test might trash the TLB\n");
+
+		*ctx = save_ctx;
+		ctx->faulting = true;
+		ret = hizip_test_sched(&sched, copts, ctx);
+		if (ret >= 0) {
+			WD_ERR("TLB test failed, broken invalidate! "
+			       "VA=%p-%p\n", out_buf, out_buf +
+			       copts->total_len * EXPANSION_RATIO - 1);
+			ret = -EFAULT;
+		} else {
+			printf("TLB test success\n");
+			ret = 0;
+		}
+		out_buf = NULL;
+	}
+
 	hizip_test_fini(&sched, copts);
 
-	ret = hizip_verify_random_output(out_buf, copts, ctx);
+	if (out_buf)
+		ret = hizip_verify_random_output(out_buf, copts, ctx);
 
 out_with_out_buf:
-	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+	if (out_buf)
+		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
 out_with_msgs:
@@ -241,6 +276,9 @@ int main(int argc, char **argv)
 			case 'b':
 				opts.faults |= INJECT_SIG_BIND;
 				break;
+			case 't':
+				opts.faults |= INJECT_TLB_FAULT;
+				break;
 			case 'w':
 				opts.faults |= INJECT_SIG_WORK;
 				break;
@@ -263,6 +301,7 @@ int main(int argc, char **argv)
 		     "  -f <children> number of children to create\n"
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
+		     "                  'tlb' tries to access an unmapped buffer\n"
 		     "                  'work' kills the process while the queue is working\n",
 		     argv[0]
 		    );
