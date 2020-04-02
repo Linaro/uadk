@@ -58,6 +58,8 @@ struct hizip_test_context {
 	struct hisi_zip_sqe *msgs;
 	int flags;
 	size_t total_out;
+	/* Test is expected to fail */
+	bool faulting;
 };
 
 /* Default ops */

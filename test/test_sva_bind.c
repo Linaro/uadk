@@ -118,7 +118,7 @@ out_with_in_buf:
 	munmap(in_buf, copts->total_len);
 out_with_msgs:
 	free(ctx->msgs);
-	return ret < 0 ? -ret : ret;
+	return ret;
 }
 
 static int run_one_test(struct priv_options *opts)
@@ -127,6 +127,7 @@ static int run_one_test(struct priv_options *opts)
 	int i, ret;
 	pid_t *pids;
 	int nr_children = 0;
+	bool success = true;
 
 	if (!opts->children)
 		return run_one_child(opts);
@@ -139,6 +140,7 @@ static int run_one_test(struct priv_options *opts)
 		pid = fork();
 		if (pid < 0) {
 			WD_ERR("cannot fork: %d\n", errno);
+			success = false;
 			break;
 		} else if (pid > 0) {
 			/* Parent */
@@ -159,24 +161,29 @@ static int run_one_test(struct priv_options *opts)
 		ret = waitpid(pid, &status, 0);
 		if (ret < 0) {
 			WD_ERR("wait(pid=%d) error %d\n", pid, errno);
+			success = false;
 			continue;
 		}
 
 		if (WIFEXITED(status)) {
 			ret = WEXITSTATUS(status);
-			if (ret)
+			if (ret) {
 				WD_ERR("child %d returned with %d\n",
 				       pid, ret);
+				success = false;
+			}
 		} else if (WIFSIGNALED(status)) {
 			ret = WTERMSIG(status);
 			WD_ERR("child %d killed by sig %d\n", pid, ret);
+			success = false;
 		} else {
 			WD_ERR("unexpected status for child %d\n", pid);
+			success = false;
 		}
 	}
 
 	free(pids);
-	return 0;
+	return success ? 0 : -EFAULT;
 }
 
 static int run_test(struct priv_options *opts)
@@ -188,6 +195,7 @@ static int run_test(struct priv_options *opts)
 		if (ret < 0)
 			return ret;
 	}
+	printf("SUCCESS\n");
 	return 0;
 }
 
