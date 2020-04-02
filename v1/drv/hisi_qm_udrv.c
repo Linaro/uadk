@@ -182,6 +182,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 	struct hisi_qp_ctx qp_ctx;
+	size_t psize;
 	int ret;
 
 	ret = qm_set_queue_regions(q);
@@ -194,6 +195,17 @@ static int qm_set_queue_info(struct wd_queue *q)
 	}
 	info->cq_base = (void *)((uintptr_t)info->sq_base +
 			info->sqe_size * QM_Q_DEPTH);
+
+	/* Memory for CQE to avoid writing */
+	psize = qinfo->qfrs_offset[UACCE_QFRT_SS] -
+		qinfo->qfrs_offset[UACCE_QFRT_DUS] -
+		info->sqe_size * QM_Q_DEPTH;
+
+	ret = mprotect(info->cq_base, psize, PROT_READ);
+	if (ret) {
+		WD_ERR("cqe mprotect set err!\n");
+		return -EINVAL;
+	}
 
 	/* The last 32 bits of DUS show device or qp statuses */
 	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_SS] -
