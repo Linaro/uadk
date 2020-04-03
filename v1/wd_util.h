@@ -200,11 +200,9 @@ static inline uint32_t wd_reg_read(void *reg_addr)
 
 void wd_spinlock(struct wd_lock *lock);
 void wd_unspinlock(struct wd_lock *lock);
-void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt,
-				    enum uacce_qfrt qfrt_next, size_t size);
+void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size);
 void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
-				     enum uacce_qfrt qfrt,
-				     enum uacce_qfrt qfrt_next, size_t size);
+		       enum uacce_qfrt qfrt, size_t size);
 void *drv_iova_map(struct wd_queue *q, void *va, size_t sz);
 void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
 int wd_alloc_ctx_id(struct wd_queue *q, int max_num);
