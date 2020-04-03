@@ -16,8 +16,8 @@ struct wd_alg_comp;
 #define FLAG_DEFLATE		(1 << 0)
 #define FLAG_INPUT_FINISH	(1 << 1)
 
-#define STATUS_OUT_READY	(1 << 0)
-#define STATUS_OUT_FINISH	(1 << 1)
+#define STATUS_OUT_READY	(1 << 0)	// data is ready in OUT buffer
+#define STATUS_OUT_DRAINED	(1 << 1)	// all data is drained out
 #define STATUS_IN_PART_USE	(1 << 2)
 #define STATUS_IN_EMPTY		(1 << 3)
 
