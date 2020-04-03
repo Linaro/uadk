@@ -267,8 +267,13 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	if (ret < 0)
 		return ret;
 
-	ret = get_ul_vec_attr(dinfo, "qfrs_offset", dinfo->qfrs_offset,
-			      UACCE_QFRT_MAX);
+	ret = get_ul_vec_attr(dinfo, "region_mmio_size",
+		&dinfo->qfrs_offset[UACCE_QFRT_MMIO], 1);
+	if (ret < 0)
+		return ret;
+
+	ret = get_ul_vec_attr(dinfo, "region_dus_size",
+		&dinfo->qfrs_offset[UACCE_QFRT_DUS], 1);
 	if (ret < 0)
 		return ret;
 
@@ -449,7 +454,7 @@ static int wd_start_queue(struct wd_queue *q)
 	int ret;
 	struct q_info *qinfo = q->qinfo;
 
-	ret = ioctl(qinfo->fd, UACCE_CMD_START);
+	ret = ioctl(qinfo->fd, UACCE_CMD_START_Q);
 	if (ret)
 		WD_ERR("fail to start queue of %s\n", q->dev_path);
 	return ret;
@@ -482,6 +487,7 @@ try_again:
 		WD_ERR("cannot find available dev\n");
 		goto err_with_dev;
 	}
+
 	ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
 	if (ret == -WD_ENODEV) {
 		try_cnt++;
@@ -492,15 +498,18 @@ try_again:
 		WD_ERR("fail to get queue!\n");
 		goto err_with_dev;
 	}
+
 	ret = drv_open(q);
 	if (ret) {
 		WD_ERR("fail to init the queue by driver!\n");
 		goto err_with_fd;
 	}
+
 	ret = wd_start_queue(q);
 	if (ret)
 		goto err_with_drv_openned;
 	return ret;
+
 err_with_drv_openned:
 	drv_close(q);
 err_with_fd:
@@ -729,32 +738,31 @@ void *wd_dma_to_va(struct wd_queue *q, void *dma)
 	return NULL;
 }
 
-void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt,
-				    enum uacce_qfrt qfrt_next, size_t size)
+void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
 	off_t off;
-	void *ptr;
 
-	off = qinfo->qfrs_offset[qfrt];
+	off = qfrt * getpagesize();
 
-	if (qfrt_next != UACCE_QFRT_INVALID)
-		size = qinfo->qfrs_offset[qfrt_next] - qinfo->qfrs_offset[qfrt];
+	if (qfrt != UACCE_QFRT_SS)
+		size = qinfo->qfrs_offset[qfrt];
 
-	ptr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, qinfo->fd, off);
-	return ptr;
+	return mmap(0, size, PROT_READ | PROT_WRITE,
+		    MAP_SHARED, qinfo->fd, off);
 }
 
 void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
-				     enum uacce_qfrt qfrt,
-				     enum uacce_qfrt qfrt_next, size_t size)
+				     enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
 
 	if (!addr)
 		return;
-	if (qfrt_next != UACCE_QFRT_INVALID)
-		size = qinfo->qfrs_offset[qfrt_next] - qinfo->qfrs_offset[qfrt];
+
+	if (qfrt != UACCE_QFRT_SS)
+		size = qinfo->qfrs_offset[qfrt];
+
 	munmap(addr, size);
 }
 
