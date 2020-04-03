@@ -204,7 +204,8 @@ static int qm_set_queue_info(struct wd_queue *q)
 	ret = mprotect(info->cq_base, psize, PROT_READ);
 	if (ret) {
 		WD_ERR("cqe mprotect set err!\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_with_regions;
 	}
 
 	/* The last 32 bits of DUS show device or qp statuses */
