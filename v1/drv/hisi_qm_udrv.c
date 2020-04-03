@@ -74,18 +74,16 @@ static int qm_set_queue_regions(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	info->sq_base = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+	info->sq_base = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, 0);
 	if (info->sq_base == MAP_FAILED) {
 		info->sq_base = NULL;
 		WD_ERR("mmap dus fail\n");
 		return -ENOMEM;
 	}
 
-	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
-					UACCE_QFRT_DUS, 0);
+	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, 0);
 	if (info->mmio_base == MAP_FAILED) {
-		wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS,
-				  UACCE_QFRT_SS, 0);
+		wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
 		info->sq_base = NULL;
 		info->mmio_base = NULL;
 		WD_ERR("mmap mmio fail\n");
@@ -100,9 +98,8 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-			UACCE_QFRT_DUS, 0);
-	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, UACCE_QFRT_SS, 0);
+	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
+	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
 	info->sq_base = NULL;
 	info->mmio_base = NULL;
 }
@@ -196,11 +193,9 @@ static int qm_set_queue_info(struct wd_queue *q)
 	info->cq_base = (void *)((uintptr_t)info->sq_base +
 			info->sqe_size * QM_Q_DEPTH);
 
-	/* Memory for CQE to avoid writing */
-	psize = qinfo->qfrs_offset[UACCE_QFRT_SS] -
-		qinfo->qfrs_offset[UACCE_QFRT_DUS] -
+	/* Protect the virtual address of CQ to avoid being over written */
+	psize = qinfo->qfrs_offset[UACCE_QFRT_DUS] -
 		info->sqe_size * QM_Q_DEPTH;
-
 	ret = mprotect(info->cq_base, psize, PROT_READ);
 	if (ret) {
 		WD_ERR("cqe mprotect set err!\n");
@@ -209,8 +204,8 @@ static int qm_set_queue_info(struct wd_queue *q)
 	}
 
 	/* The last 32 bits of DUS show device or qp statuses */
-	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_SS] -
-		qinfo->qfrs_offset[UACCE_QFRT_DUS] - sizeof(uint32_t);
+	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_DUS] -
+		sizeof(uint32_t);
 	info->ds_rx_base = info->ds_tx_base - sizeof(uint32_t);
 	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
 		info->db = qm_db_v2;
