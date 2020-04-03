@@ -71,7 +71,7 @@ int test_comp_once(int flag, int mode)
 	wd_arg.src_len = strlen(word);
 	t = 0;
 	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
-	do {
+	while (1) {
 		wd_arg.status = 0;
 		wd_arg.dst_len = TEST_WORD_LEN;
 		wd_arg.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
@@ -82,17 +82,22 @@ int test_comp_once(int flag, int mode)
 			memcpy(buf + t, wd_arg.dst, wd_arg.dst_len);
 			t += wd_arg.dst_len;
 		}
-	} while ((wd_arg.status & STATUS_OUT_FINISH) == 0);
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
 	wd_alg_comp_free_sess(handle);
 
 
 	/* prepare to decompress */
+	wd_arg.src = src;
 	memcpy(wd_arg.src, buf, t);
 	wd_arg.src_len = t;
 	t = 0;
 
 	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
-	do {
+	while (1) {
 		wd_arg.status = 0;
 		wd_arg.dst_len = TEST_WORD_LEN;
 		wd_arg.flag = FLAG_INPUT_FINISH;
@@ -103,7 +108,11 @@ int test_comp_once(int flag, int mode)
 			memcpy(buf + t, wd_arg.dst, wd_arg.dst_len);
 			t += wd_arg.dst_len;
 		}
-	} while ((wd_arg.status & STATUS_OUT_FINISH) == 0);
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
 	wd_alg_comp_free_sess(handle);
 
 	if (memcmp(buf, word, strlen(word))) {
@@ -163,15 +172,18 @@ int test_small_buffer(int flag, int mode)
 	i = 0;
 	t = 0;
 	len = strlen(word);
-	do {
-		wd_arg.src = src;
-		memcpy(wd_arg.src, &word[i], sizeof(char));
+	while (1) {
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
+		wd_arg.src = &word[i];
 		wd_arg.src_len = 1;
 		wd_arg.dst_len = 1;
 		if (i == len - 1)
 			wd_arg.flag |= FLAG_INPUT_FINISH;
+		else if (i == len) {
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = 0;
+		}
 		ret = wd_alg_compress(handle, &wd_arg);
 		if (ret < 0)
 			goto out_comp;
@@ -179,9 +191,13 @@ int test_small_buffer(int flag, int mode)
 			memcpy(buf + t, wd_arg.dst, wd_arg.dst_len);
 			t += wd_arg.dst_len;
 		}
-		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len - 1))
+		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len))
 			i++;
-	} while ((wd_arg.status & STATUS_OUT_FINISH) == 0);
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
 	wd_alg_comp_free_sess(handle);
 
 
@@ -191,15 +207,18 @@ int test_small_buffer(int flag, int mode)
 	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	i = 0;
 	t = 0;
-	do {
-		wd_arg.src = src;
-		memcpy(wd_arg.src, &buf[i], sizeof(char));
+	while (1) {
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
+		wd_arg.src = &buf[i];
 		wd_arg.src_len = 1;
 		wd_arg.dst_len = 1;
 		if (i == len - 1)
 			wd_arg.flag |= FLAG_INPUT_FINISH;
+		else if (i == len) {
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = 0;
+		}
 		ret = wd_alg_decompress(handle, &wd_arg);
 		if (ret < 0)
 			goto out_comp;
@@ -207,13 +226,16 @@ int test_small_buffer(int flag, int mode)
 			memcpy(fin + t, wd_arg.dst, wd_arg.dst_len);
 			t += wd_arg.dst_len;
 		}
-		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len - 1))
+		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len))
 			i++;
-	} while ((wd_arg.status & STATUS_OUT_FINISH) == 0);
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
 
 	if (strncmp(word, fin, strlen(word))) {
-		fprintf(stderr, "fail to match, dst:%s, word:%s\n",
-			(char *)wd_arg.dst, word);
+		fprintf(stderr, "fail to match, fin:%s, word:%s\n", fin, word);
 		ret = -EFAULT;
 		goto out_comp;
 	} else {
@@ -245,12 +267,13 @@ int test_large_buffer(int flag)
 	char	*buf, *dst;
 	int	ret = 0, i, len = 0;
 	int	dst_idx = 0;
+	int	total_in, templen;
 	void	*src;
 
-	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
+	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
-	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
+	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out;
@@ -267,63 +290,84 @@ int test_large_buffer(int flag)
 		goto out_src;
 	}
 	src = wd_arg.src;
-	wd_arg.dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
-	if (!wd_arg.dst) {
-		ret = -ENOMEM;
-		goto out_dst;
-	}
 	i = 0;
 	dst_idx = 0;
+	total_in = 0;
+	wd_arg.src = src;
+	wd_arg.dst = buf;
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
-	do {
-		wd_arg.src = src;
-		memset(wd_arg.src, 0, LARGE_BUF_SIZE);
+	while (1) {
+		total_in += LARGE_BUF_SIZE;
+		if (total_in > TEST_LARGE_BUF_LEN)
+			templen = LARGE_BUF_SIZE -
+				  (total_in - TEST_LARGE_BUF_LEN);
+		else
+			templen = LARGE_BUF_SIZE;
+		memset(wd_arg.src, 0, templen);
 		memcpy(wd_arg.src + i, word, strlen(word));
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
-		wd_arg.src_len = LARGE_BUF_SIZE;
+		wd_arg.src_len = templen;
 		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
 		if (i + LARGE_BUF_SIZE >= TEST_LARGE_BUF_LEN)
 			wd_arg.flag |= FLAG_INPUT_FINISH;
+		else if (i >= TEST_LARGE_BUF_LEN) {
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = 0;
+		}
 		ret = wd_alg_compress(handle, &wd_arg);
 		if (ret < 0)
 			goto out_comp;
-		if (wd_arg.status & STATUS_OUT_READY) {
-			memcpy(buf + dst_idx, wd_arg.dst, wd_arg.dst_len);
+		if (wd_arg.status & STATUS_OUT_READY)
 			dst_idx += wd_arg.dst_len;
-		}
-		if (!wd_arg.src_len && i < TEST_LARGE_BUF_LEN - LARGE_BUF_SIZE)
+		if ((wd_arg.status & STATUS_IN_EMPTY) &&
+		    (i < TEST_LARGE_BUF_LEN)) {
 			i += LARGE_BUF_SIZE;
-	} while ((wd_arg.status & STATUS_OUT_FINISH) == 0);
+			// Don't touch arg->src since it points to next buffer.
+		}
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
 	wd_alg_comp_free_sess(handle);
 
 	/* prepare for decompress */
-	memcpy(buf, wd_arg.dst, sizeof(char) * TEST_LARGE_BUF_LEN);
 	len = dst_idx;
 	dst_idx = 0;
+	total_in = 0;
+	wd_arg.src = buf;
+	wd_arg.dst = dst;
 
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
-	do {
-		wd_arg.src = src;
-		memcpy(wd_arg.src + i, buf + i, LARGE_BUF_SIZE);
+	while (1) {
+		total_in += LARGE_BUF_SIZE;
+		if (total_in > len)
+			templen = LARGE_BUF_SIZE - (total_in - len);
+		else
+			templen = LARGE_BUF_SIZE;
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
-		wd_arg.src_len = LARGE_BUF_SIZE;
+		wd_arg.src_len = templen;
 		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
-		if (i + LARGE_BUF_SIZE >= len) {
-			wd_arg.src_len -= i + LARGE_BUF_SIZE - len;
-			wd_arg.flag = FLAG_INPUT_FINISH;
+		if (i + LARGE_BUF_SIZE >= TEST_LARGE_BUF_LEN)
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+		else if (i >= TEST_LARGE_BUF_LEN) {
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = 0;
 		}
 		ret = wd_alg_decompress(handle, &wd_arg);
 		if (ret < 0)
 			goto out_comp;
-		if (wd_arg.status & STATUS_OUT_READY) {
-			memcpy(dst + dst_idx, wd_arg.dst, wd_arg.dst_len);
+		if (wd_arg.status & STATUS_OUT_READY)
 			dst_idx += wd_arg.dst_len;
-		}
-		if (!wd_arg.src_len && i < TEST_LARGE_BUF_LEN - LARGE_BUF_SIZE)
+		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len))
 			i += LARGE_BUF_SIZE;
-	} while ((wd_arg.status & STATUS_OUT_FINISH) == 0);
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
 	if (dst_idx != TEST_LARGE_BUF_LEN) {
 		fprintf(stderr, "failed on dst size:%d, expected size:%d\n",
 			dst_idx, TEST_LARGE_BUF_LEN);
@@ -455,9 +499,9 @@ int main(int argc, char **argv)
 	//test_small_buffer(FLAG_ZLIB, 0);
 	//test_small_buffer(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
-	test_small_buffer(FLAG_GZIP, MODE_STREAM);
-/*
+//	test_small_buffer(FLAG_GZIP, MODE_STREAM);
 	test_large_buffer(FLAG_ZLIB);
+/*
 	thread_fail = 0;
 	test_concurrent(FLAG_ZLIB);
 	if (thread_fail)
