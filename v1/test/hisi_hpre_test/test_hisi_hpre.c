@@ -3472,6 +3472,12 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 		}
 	}
 
+	if (op_type != HPRE_ALG_INVLD_TYPE) {
+		for (j = 0; j < q_num; j++) {
+			wd_release_queue(&q[j]);
+		}
+	}
+
 	return 0;
 }
 

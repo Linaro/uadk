@@ -155,20 +155,21 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	/* Make sure mmap granulity size align */
 	size = ALIGN(size, UACCE_GRAN_SIZE);
 
-	ptr = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, UACCE_QFRT_INVALID, size);
+	ptr = wd_drv_mmap_qfr(q, UACCE_QFRT_SS, size);
 	if (ptr == MAP_FAILED) {
 		int value = errno;
 
 		WD_ERR("wd drv mmap fail!(err =%d)\n", value);
 		return NULL;
 	}
+
 	qinfo->ss_va = ptr;
 	qinfo->ss_size = size;
 	if (qinfo->dev_flags & UACCE_DEV_NOIOMMU) {
 		size = 0;
 		while (ret > 0) {
 			info = (unsigned long)i;
-			ret = ioctl(qinfo->fd, UACCE_CMD_GET_SS_PA, &info);
+			ret = ioctl(qinfo->fd, UACCE_CMD_GET_SS_DMA, &info);
 			if (ret < 0) {
 				drv_show_ss_slices(q);
 				WD_ERR("get PA fail!\n");
@@ -195,5 +196,5 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 
 void drv_unmap_reserve_mem(struct wd_queue *q, void *addr, size_t size)
 {
-	wd_drv_unmmap_qfr(q, addr, UACCE_QFRT_SS, UACCE_QFRT_INVALID, size);
+	wd_drv_unmmap_qfr(q, addr, UACCE_QFRT_SS, size);
 }
