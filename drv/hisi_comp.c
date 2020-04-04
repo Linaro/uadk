@@ -936,6 +936,13 @@ static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 		ret = hisi_strm_comm(sess, flush);
 		if (ret < 0)
 			return ret;
+		/* only partial source data is consumed */
+		if (strm->avail_in && (arg->status & STATUS_IN_EMPTY)) {
+			arg->status &= ~STATUS_IN_EMPTY;
+			arg->status |= STATUS_IN_PART_USE;
+			arg->src -= strm->avail_in;
+			arg->src_len = strm->avail_in;
+		}
 	}
 	hisi_strm_post_buf(sess, arg);
 	return 0;
@@ -966,6 +973,13 @@ static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
 		ret = hisi_strm_comm(sess, flush);
 		if (ret < 0)
 			return ret;
+		/* only partial source data is consumed */
+		if (strm->avail_in && (arg->status & STATUS_IN_EMPTY)) {
+			arg->status &= ~STATUS_IN_EMPTY;
+			arg->status |= STATUS_IN_PART_USE;
+			arg->src -= strm->avail_in;
+			arg->src_len = strm->avail_in;
+		}
 	}
 	hisi_strm_post_buf(sess, arg);
 	return 0;
