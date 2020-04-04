@@ -290,6 +290,7 @@ int test_large_buffer(int flag)
 		goto out_src;
 	}
 	src = wd_arg.src;
+	templen = LARGE_BUF_SIZE;
 	i = 0;
 	dst_idx = 0;
 	total_in = 0;
@@ -297,33 +298,34 @@ int test_large_buffer(int flag)
 	wd_arg.dst = buf;
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
 	while (1) {
-		total_in += LARGE_BUF_SIZE;
-		if (total_in > TEST_LARGE_BUF_LEN)
-			templen = LARGE_BUF_SIZE -
-				  (total_in - TEST_LARGE_BUF_LEN);
-		else
-			templen = LARGE_BUF_SIZE;
 		memset(wd_arg.src, 0, templen);
 		memcpy(wd_arg.src + i, word, strlen(word));
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
-		wd_arg.src_len = templen;
 		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
-		if (i + LARGE_BUF_SIZE >= TEST_LARGE_BUF_LEN)
+		if (i + templen >= TEST_LARGE_BUF_LEN) {
+			templen = TEST_LARGE_BUF_LEN - i;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
-		else if (i >= TEST_LARGE_BUF_LEN) {
+			wd_arg.src_len = templen;
+		} else if (i >= TEST_LARGE_BUF_LEN) {
 			wd_arg.flag |= FLAG_INPUT_FINISH;
 			wd_arg.src_len = 0;
-		}
+		} else
+			wd_arg.src_len = templen;
+		i += templen;
 		ret = wd_alg_compress(handle, &wd_arg);
 		if (ret < 0)
 			goto out_comp;
 		if (wd_arg.status & STATUS_OUT_READY)
 			dst_idx += wd_arg.dst_len;
-		if ((wd_arg.status & STATUS_IN_EMPTY) &&
-		    (i < TEST_LARGE_BUF_LEN)) {
-			i += LARGE_BUF_SIZE;
-			// Don't touch arg->src since it points to next buffer.
+		if (i <= TEST_LARGE_BUF_LEN) {
+			/* load src with LARGE_BUF_SIZE */
+			if (wd_arg.status & STATUS_IN_EMPTY)
+				templen = LARGE_BUF_SIZE;
+			else if (wd_arg.status & STATUS_IN_PART_USE) {
+				i -= wd_arg.src_len;
+				templen = LARGE_BUF_SIZE;
+			}
 		}
 		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
 		    (wd_arg.status & STATUS_IN_EMPTY) &&
@@ -336,33 +338,41 @@ int test_large_buffer(int flag)
 	len = dst_idx;
 	dst_idx = 0;
 	total_in = 0;
+	templen = LARGE_BUF_SIZE;
+	i = 0;
 	wd_arg.src = buf;
 	wd_arg.dst = dst;
 
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
 	while (1) {
-		total_in += LARGE_BUF_SIZE;
-		if (total_in > len)
-			templen = LARGE_BUF_SIZE - (total_in - len);
-		else
-			templen = LARGE_BUF_SIZE;
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
-		wd_arg.src_len = templen;
 		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
-		if (i + LARGE_BUF_SIZE >= TEST_LARGE_BUF_LEN)
+		if (i + templen >= len) {
+			templen = len - i;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
-		else if (i >= TEST_LARGE_BUF_LEN) {
+			wd_arg.src_len = templen;
+		} else if (i >= len) {
+			templen = 0;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
 			wd_arg.src_len = 0;
-		}
+		} else
+			wd_arg.src_len = templen;
+		i += templen;
 		ret = wd_alg_decompress(handle, &wd_arg);
 		if (ret < 0)
 			goto out_comp;
 		if (wd_arg.status & STATUS_OUT_READY)
 			dst_idx += wd_arg.dst_len;
-		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len))
-			i += LARGE_BUF_SIZE;
+		if (i <= len) {
+			/* load src with LARGE_BUF_SIZE */
+			if (wd_arg.status & STATUS_IN_EMPTY)
+				templen = LARGE_BUF_SIZE;
+			else if (wd_arg.status & STATUS_IN_PART_USE) {
+				i -= wd_arg.src_len;
+				templen = LARGE_BUF_SIZE;
+			}
+		}
 		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
 		    (wd_arg.status & STATUS_IN_EMPTY) &&
 		    (wd_arg.flag & FLAG_INPUT_FINISH))
