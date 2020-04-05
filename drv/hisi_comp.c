@@ -848,9 +848,10 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 			memcpy(strm->next_in, arg->src, templen);
 			strm->avail_in += templen;
 		} else {
-			if (arg->src_len > STREAM_MAX)
+			if (arg->src_len >= STREAM_MAX) {
 				templen = STREAM_MAX;
-			else
+				*full = 1;
+			} else
 				templen = arg->src_len;
 			strm->avail_in = templen;
 		}
