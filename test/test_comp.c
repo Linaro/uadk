@@ -16,14 +16,19 @@
 #define FLAG_DECMPS	(1 << 2)
 #define FLAG_STREAM	(1 << 3)
 
+#define BUF_SIZE	(1 << 20)
+
 static int test_compress(char *src, char *dst, int flag)
 {
 	handler_t		handle;
 	struct wd_comp_arg	arg;
 	struct stat		st;
+	ssize_t	size;
+	ssize_t in, out, file_len;
 	int	mode;
 	int	sfd, dfd, ret;
 	char	algs[60];
+	void	*tmp;
 
 	if (!src || !dst)
 		return -EINVAL;
@@ -45,40 +50,80 @@ static int test_compress(char *src, char *dst, int flag)
 	}
 	memset(&arg, 0, sizeof(struct wd_comp_arg));
 	fstat(sfd, &st);
-	arg.src_len = st.st_size;
-	arg.src = malloc(sizeof(char) * arg.src_len);
+	file_len = st.st_size;
+	arg.src_len = BUF_SIZE;
+	arg.src = malloc(sizeof(char) * BUF_SIZE);
 	if (!arg.src) {
 		ret = -ENOMEM;
 		goto out_src;
 	}
-	arg.dst_len = arg.src_len << 2;	// for decompress
+	arg.dst_len = BUF_SIZE << 2;	// for decompress
 	arg.dst = malloc(sizeof(char) * arg.dst_len);
 	if (!arg.dst) {
 		ret = -ENOMEM;
 		goto out_dst;
 	}
-	ret = read(sfd, arg.src, arg.src_len);
-	if ((ret < 0) || (ret != arg.src_len)) {
-		fprintf(stderr, "fail to load data (%d)\n", ret);
-		goto out_read;
-	}
-	arg.flag |= FLAG_INPUT_FINISH;
+	tmp = arg.src;
+	in = 0;
+	out = 0;
 	handle = wd_alg_comp_alloc_sess(algs, mode, NULL);
-	if (flag & FLAG_DECMPS) {
-		ret = wd_alg_decompress(handle, &arg);
-		if (ret) {
-			fprintf(stderr, "fail to decompress (%d)\n", ret);
+	while (1) {
+		arg.flag = 0;
+		arg.status = 0;
+		if (in == file_len) {
+			arg.flag |= FLAG_INPUT_FINISH;
+			arg.src_len = 0;
+		} else {
+			arg.src = tmp;
+			size = read(sfd, arg.src, BUF_SIZE);
+			if (size < 0) {
+				printf("fail to load data (%ld)\n", size);
+				goto out_read;
+			}
+			if (in + size > file_len) {
+				printf("invalid size:%ld, loaded bytes:%ld\n",
+					size, in);
+				goto out_read;
+			} else if (in + size == file_len)
+				arg.flag |= FLAG_INPUT_FINISH;
+			arg.src_len = size;
+			in += size;
 		}
-	} else {
-		ret = wd_alg_compress(handle, &arg);
-		if (ret) {
-			fprintf(stderr, "fail to compress (%d)\n", ret);
+		arg.dst_len = BUF_SIZE << 2;	// for decompress
+		if (flag & FLAG_DECMPS) {
+			ret = wd_alg_decompress(handle, &arg);
+			if (ret < 0) {
+				printf("fail to decompress (%d)\n", ret);
+			}
+		} else {
+			arg.flag |= FLAG_DEFLATE;
+			ret = wd_alg_compress(handle, &arg);
+			if (ret < 0) {
+				printf("fail to compress (%d)\n", ret);
+			}
 		}
+		if (arg.status & STATUS_OUT_READY) {
+			/* record */
+			size = write(dfd, arg.dst, arg.dst_len);
+			if (size < 0) {
+				printf("fail to write data (%ld)\n", size);
+				goto out_read;
+			}
+			out += size;
+		}
+		/* load src with LARGE_BUF_SIZE */
+		if (arg.status & STATUS_IN_PART_USE) {
+			in -= arg.src_len;
+			lseek(sfd, in, SEEK_SET);
+		}
+		if ((arg.flag & FLAG_INPUT_FINISH) &&
+		    (arg.status & STATUS_IN_EMPTY) &&
+		    (arg.status & STATUS_OUT_DRAINED))
+			break;
 	}
 	wd_alg_comp_free_sess(handle);
-	ret = write(dfd, arg.dst, arg.dst_len);
 	free(arg.dst);
-	free(arg.src);
+	free(tmp);
 	close(dfd);
 	close(sfd);
 	return 0;
