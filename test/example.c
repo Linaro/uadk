@@ -17,7 +17,7 @@
 #define FLAG_DECMPS	(1 << 2)
 #define FLAG_STREAM	(1 << 3)
 
-#define	NUM_THREADS	32
+#define	NUM_THREADS	10
 
 #define TEST_WORD_LEN	64
 #define TEST_LARGE_BUF_LEN	((1 << 21) | (1 << 20))
@@ -518,15 +518,17 @@ int main(int argc, char **argv)
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_small_buffer(FLAG_GZIP, MODE_STREAM);
 	test_large_buffer(FLAG_ZLIB);
-/*
 	thread_fail = 0;
 	test_concurrent(FLAG_ZLIB);
 	if (thread_fail)
-		fprintf(stderr, "fail to run ZLIB cases concurrently\n");
+		printf("fail to run ZLIB cases concurrently\n");
+	else
+		printf("Pass concurrent case for ZLIB.\n");
 	thread_fail = 0;
 	test_concurrent(FLAG_GZIP);
 	if (thread_fail)
 		fprintf(stderr, "fail to run GZIP cases concurrently\n");
-*/
+	else
+		printf("Pass concurrent case for GZIP.\n");
 	return 0;
 }
