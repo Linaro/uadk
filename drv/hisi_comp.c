@@ -716,8 +716,7 @@ recv_again:
 		goto recv_again;
 	status = recv_msg->dw3 & 0xff;
 	type = recv_msg->dw9 & 0xff;
-	if (!status || (status == 0x0d) || (status == 0x13) ||
-	    ((status == 0x10) && (recv_msg->consumed < strm->avail_in))) {
+	if (!status || (status == 0x0d) || (status == 0x13)) {
 		strm->undrained += recv_msg->produced;
 		strm->next_in += recv_msg->consumed;
 		strm->next_out += recv_msg->produced;
