@@ -58,7 +58,7 @@ static int test_compress(char *src, char *dst, int flag)
 		ret = -ENOMEM;
 		goto out_src;
 	}
-	arg.dst_len = BUF_SIZE << 2;	// for decompress
+	arg.dst_len = BUF_SIZE;	// for decompress
 	arg.dst = malloc(sizeof(char) * arg.dst_len);
 	if (!arg.dst) {
 		printf("Fail to allocate dst buffer with %d bytes.\n", arg.dst_len);
@@ -92,7 +92,7 @@ static int test_compress(char *src, char *dst, int flag)
 			arg.src_len = size;
 			in += size;
 		}
-		arg.dst_len = BUF_SIZE << 2;	// for decompress
+		arg.dst_len = BUF_SIZE;	// for decompress
 		if (flag & FLAG_DECMPS) {
 			ret = wd_alg_decompress(handle, &arg);
 			if (ret < 0) {
