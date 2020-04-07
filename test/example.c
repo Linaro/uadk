@@ -309,7 +309,7 @@ int test_large_buffer(int flag)
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
 	while (1) {
 		memset(wd_arg.src, 0, templen);
-		memcpy(wd_arg.src + i, word, strlen(word));
+		memcpy(wd_arg.src, word, strlen(word));
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
 		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
@@ -357,7 +357,7 @@ int test_large_buffer(int flag)
 	while (1) {
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
-		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN - dst_idx;
 		if (i + templen >= len) {
 			templen = len - i;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
