@@ -44,7 +44,7 @@ int test_comp_once(int flag, int mode)
 	char	algs[60];
 	char	buf[TEST_WORD_LEN];
 	int	ret = 0, t;
-	void	*src;
+	void	*src, *dst;
 
 	if (flag & FLAG_ZLIB)
 		sprintf(algs, "zlib");
@@ -67,6 +67,7 @@ int test_comp_once(int flag, int mode)
 		ret = -ENOMEM;
 		goto out_dst;
 	}
+	dst = wd_arg.dst;
 	memcpy(wd_arg.src, word, sizeof(char) * strlen(word));
 	wd_arg.src_len = strlen(word);
 	t = 0;
@@ -79,8 +80,10 @@ int test_comp_once(int flag, int mode)
 		if (ret < 0)
 			goto out_comp;
 		if (wd_arg.status & STATUS_OUT_READY) {
-			memcpy(buf + t, wd_arg.dst, wd_arg.dst_len);
+			memcpy(buf + t, wd_arg.dst - wd_arg.dst_len,
+				wd_arg.dst_len);
 			t += wd_arg.dst_len;
+			wd_arg.dst = dst;
 		}
 		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
 		    (wd_arg.status & STATUS_IN_EMPTY) &&
@@ -94,6 +97,7 @@ int test_comp_once(int flag, int mode)
 	wd_arg.src = src;
 	memcpy(wd_arg.src, buf, t);
 	wd_arg.src_len = t;
+	wd_arg.dst = dst;
 	t = 0;
 
 	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
@@ -105,8 +109,10 @@ int test_comp_once(int flag, int mode)
 		if (ret < 0)
 			goto out_comp;
 		if (wd_arg.status & STATUS_OUT_READY) {
-			memcpy(buf + t, wd_arg.dst, wd_arg.dst_len);
+			memcpy(buf + t, wd_arg.dst - wd_arg.dst_len,
+				wd_arg.dst_len);
 			t += wd_arg.dst_len;
+			wd_arg.dst = dst;
 		}
 		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
 		    (wd_arg.status & STATUS_IN_EMPTY) &&
@@ -126,7 +132,7 @@ int test_comp_once(int flag, int mode)
 	}
 
 	free(src);
-	free(wd_arg.dst);
+	free(dst);
 	return 0;
 out_comp:
 	wd_alg_comp_free_sess(handle);
@@ -149,7 +155,7 @@ int test_small_buffer(int flag, int mode)
 	char	buf[TEST_WORD_LEN];
 	char	fin[TEST_WORD_LEN];
 	int	ret = 0, i, len, t;
-	void	*src;
+	void	*src, *dst;
 
 	if (flag & FLAG_ZLIB)
 		sprintf(algs, "zlib");
@@ -168,14 +174,15 @@ int test_small_buffer(int flag, int mode)
 		ret = -ENOMEM;
 		goto out_dst;
 	}
-	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
+	dst = wd_arg.dst;
 	i = 0;
 	t = 0;
 	len = strlen(word);
+	wd_arg.src = &word[0];
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	while (1) {
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
-		wd_arg.src = &word[i];
 		wd_arg.src_len = 1;
 		wd_arg.dst_len = 1;
 		if (i == len - 1)
@@ -188,7 +195,8 @@ int test_small_buffer(int flag, int mode)
 		if (ret < 0)
 			goto out_comp;
 		if (wd_arg.status & STATUS_OUT_READY) {
-			memcpy(buf + t, wd_arg.dst, wd_arg.dst_len);
+			memcpy(buf + t, wd_arg.dst - wd_arg.dst_len,
+				wd_arg.dst_len);
 			t += wd_arg.dst_len;
 		}
 		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len))
@@ -203,14 +211,15 @@ int test_small_buffer(int flag, int mode)
 
 	/* prepare for decompress */
 	len = t;
-
-	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	i = 0;
 	t = 0;
+	wd_arg.src = &buf[0];
+	wd_arg.dst = dst;
+
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	while (1) {
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
-		wd_arg.src = &buf[i];
 		wd_arg.src_len = 1;
 		wd_arg.dst_len = 1;
 		if (i == len - 1)
@@ -223,7 +232,8 @@ int test_small_buffer(int flag, int mode)
 		if (ret < 0)
 			goto out_comp;
 		if (wd_arg.status & STATUS_OUT_READY) {
-			memcpy(fin + t, wd_arg.dst, wd_arg.dst_len);
+			memcpy(fin + t, wd_arg.dst - wd_arg.dst_len,
+				wd_arg.dst_len);
 			t += wd_arg.dst_len;
 		}
 		if ((wd_arg.status & STATUS_IN_EMPTY) && (i < len))
@@ -248,7 +258,7 @@ int test_small_buffer(int flag, int mode)
 	}
 	wd_alg_comp_free_sess(handle);
 	free(src);
-	free(wd_arg.dst);
+	free(dst);
 	return 0;
 out_comp:
 	wd_alg_comp_free_sess(handle);
@@ -388,23 +398,20 @@ int test_large_buffer(int flag)
 		memcpy(buf + i, word, strlen(word));
 		ret = memcmp(buf + i, dst + i, LARGE_BUF_SIZE);
 		if (ret) {
-			fprintf(stderr, "fail to match in %s\n", __func__);
+			fprintf(stderr, "fail to match in %s at %d\n", __func__, i);
 			goto out_comp;
 		}
 	}
 	printf("Pass large buffer case for %s algorithm.\n",
 		(flag == FLAG_ZLIB) ? "zlib" : "gzip");
 	wd_alg_comp_free_sess(handle);
-	free(wd_arg.src);
-	free(wd_arg.dst);
+	free(src);
 	free(dst);
 	free(buf);
 	return 0;
 out_comp:
 	wd_alg_comp_free_sess(handle);
-	free(wd_arg.dst);
-out_dst:
-	free(wd_arg.src);
+	free(src);
 out_src:
 	free(dst);
 out:
@@ -509,7 +516,7 @@ int main(int argc, char **argv)
 	//test_small_buffer(FLAG_ZLIB, 0);
 	//test_small_buffer(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
-//	test_small_buffer(FLAG_GZIP, MODE_STREAM);
+	test_small_buffer(FLAG_GZIP, MODE_STREAM);
 	test_large_buffer(FLAG_ZLIB);
 /*
 	thread_fail = 0;
