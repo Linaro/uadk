@@ -28,7 +28,7 @@ static int test_compress(char *src, char *dst, int flag)
 	int	mode;
 	int	sfd, dfd, ret;
 	char	algs[60];
-	void	*tmp;
+	void	*tmp, *tmp2;
 
 	if (!src || !dst)
 		return -EINVAL;
@@ -64,6 +64,7 @@ static int test_compress(char *src, char *dst, int flag)
 		goto out_dst;
 	}
 	tmp = arg.src;
+	tmp2 = arg.dst;
 	in = 0;
 	out = 0;
 	handle = wd_alg_comp_alloc_sess(algs, mode, NULL);
@@ -104,7 +105,7 @@ static int test_compress(char *src, char *dst, int flag)
 		}
 		if (arg.status & STATUS_OUT_READY) {
 			/* record */
-			size = write(dfd, arg.dst, arg.dst_len);
+			size = write(dfd, arg.dst - arg.dst_len, arg.dst_len);
 			if (size < 0) {
 				printf("fail to write data (%ld)\n", size);
 				goto out_read;
@@ -122,7 +123,7 @@ static int test_compress(char *src, char *dst, int flag)
 			break;
 	}
 	wd_alg_comp_free_sess(handle);
-	free(arg.dst);
+	free(tmp2);
 	free(tmp);
 	close(dfd);
 	close(sfd);
