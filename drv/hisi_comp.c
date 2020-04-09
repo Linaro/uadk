@@ -504,11 +504,17 @@ static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
  * Notice: Avoid to compare them just after hardware operation.
  * It's better to compare swap with (addr - consumed/produced bytes).
  */
-static inline int is_in_swap(void *addr, void *swap)
+static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
 {
-	if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
-	    ((uint64_t)swap & ~STREAM_MIN_MASK))
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+
+	if (wd_is_nosva(&priv->ctx)) {
 		return 1;
+	} else {
+		if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
+		    ((uint64_t)swap & ~STREAM_MIN_MASK))
+			return 1;
+	}
 	return 0;
 }
 
@@ -581,7 +587,7 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 	strm->next_out = NULL;
 	strm->op_type = qm_priv->op_type;
 	if (wd_is_nosva(&priv->ctx)) {
-		strm->ss_region_size = 4096 + ASIZE * 2 + HW_CTX_SIZE;
+		strm->ss_region_size = 4096 + STREAM_MAX * 2 + HW_CTX_SIZE;
 		strm->ss_region = wd_reserve_mem(&priv->ctx,
 					sizeof(char) * strm->ss_region_size);
 		if (!strm->ss_region) {
@@ -593,11 +599,11 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 		if (ret)
 			goto out_smm;
 		ret = -ENOMEM;
-		strm->swap_in = smm_alloc(strm->ss_region, STREAM_MIN);
+		strm->swap_in = smm_alloc(strm->ss_region, STREAM_MAX);
 		if (!strm->swap_in)
 			goto out_smm;
-		strm->swap_out = smm_alloc(strm->ss_region, STREAM_MIN);
-		if (!strm->next_out)
+		strm->swap_out = smm_alloc(strm->ss_region, STREAM_MAX);
+		if (!strm->swap_out)
 			goto out_smm_out;
 		strm->ctx_buf = smm_alloc(strm->ss_region, HW_CTX_SIZE);
 		if (!strm->ctx_buf)
@@ -665,6 +671,7 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 	struct hisi_strm_info	*strm;
 	uint32_t	status, type;
 	uint64_t	flush_type;
+	uint64_t	addr;
 	int	ret = 0;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
@@ -686,16 +693,32 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 			strm->skipped = 0;
 		}
 	}
-	msg->source_addr_l = (uint64_t)strm->next_in & 0xffffffff;
-	msg->source_addr_h = (uint64_t)strm->next_in >> 32;
-	msg->dest_addr_l = (uint64_t)strm->next_out & 0xffffffff;
-	msg->dest_addr_h = (uint64_t)strm->next_out >> 32;
+	if (wd_is_nosva(&priv->ctx)) {
+		addr = wd_get_dma_from_va(&priv->ctx, strm->next_in);
+		msg->source_addr_l = (uint64_t)addr & 0xffffffff;
+		msg->source_addr_h = (uint64_t)addr >> 32;
+		addr = wd_get_dma_from_va(&priv->ctx, strm->next_out);
+		msg->dest_addr_l = (uint64_t)addr & 0xffffffff;
+		msg->dest_addr_h = (uint64_t)addr >> 32;
+	} else {
+		msg->source_addr_l = (uint64_t)strm->next_in & 0xffffffff;
+		msg->source_addr_h = (uint64_t)strm->next_in >> 32;
+		msg->dest_addr_l = (uint64_t)strm->next_out & 0xffffffff;
+		msg->dest_addr_h = (uint64_t)strm->next_out >> 32;
+	}
 	msg->input_data_length = strm->avail_in;
 	msg->dest_avail_out = strm->avail_out;
 
 	if (strm->op_type == INFLATE) {
-		msg->stream_ctx_addr_l = (uint64_t)strm->ctx_buf & 0xffffffff;
-		msg->stream_ctx_addr_h = (uint64_t)strm->ctx_buf >> 32;
+		if (wd_is_nosva(&priv->ctx)) {
+			addr = wd_get_dma_from_va(&priv->ctx, strm->ctx_buf);
+			msg->stream_ctx_addr_l = (uint64_t)addr & 0xffffffff;
+			msg->stream_ctx_addr_h = (uint64_t)addr >> 32;
+		} else {
+			msg->stream_ctx_addr_l = (uint64_t)strm->ctx_buf &
+						0xffffffff;
+			msg->stream_ctx_addr_h = (uint64_t)strm->ctx_buf >> 32;
+		}
 	}
 	msg->ctx_dw0 = strm->ctx_dw0;
 	msg->ctx_dw1 = strm->ctx_dw1;
@@ -788,7 +811,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 		strm->stream_pos = STREAM_NEW;
 		strm->load_head = 1;
 	}
-	if (is_new_src(sess, arg)) {
+	if (is_new_src(sess, arg) && arg->src_len) {
 		if (need_swap(sess, arg->src_len)) {
 			if (wd_is_nosva(&priv->ctx)) {
 				if (arg->src_len > STREAM_MAX)
@@ -804,39 +827,29 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 			strm->avail_in += templen;
 			arg->src += templen;
 			arg->src_len -= templen;	// apps check this
-			if (arg->src_len)
-				arg->status |= STATUS_IN_PART_USE;
-			else {
-				arg->status &= ~STATUS_IN_PART_USE;
-				arg->status |= STATUS_IN_EMPTY;
-			}
 		} else if (need_split(sess, arg->src_len)) {
 			strm->next_in = arg->src;
 			strm->avail_in = STREAM_MAX;
 			arg->src += STREAM_MAX;
 			arg->src_len -= STREAM_MAX;
-			arg->status |= STATUS_IN_PART_USE;
-			*full = 1;
 		} else {
 			strm->next_in = arg->src;
 			strm->avail_in = arg->src_len;
 			arg->src += arg->src_len;
 			arg->src_len = 0;
-			arg->status &= ~STATUS_IN_PART_USE;
-			arg->status |= STATUS_IN_EMPTY;
-			if (strm->avail_in == STREAM_MAX)
-				*full = 1;
 		}
-	} else {
+	} else if (arg->src_len) {
 		/* some data is cached in next_in buffer */
-		if (is_in_swap(strm->next_in, strm->swap_in)) {
-			if (strm->avail_in + arg->src_len < STREAM_MIN)
-				templen = arg->src_len;
-			else {
-				templen = STREAM_MIN - strm->avail_in;
-				*full = 1;
+		if (is_in_swap(sess, strm->next_in, strm->swap_in)) {
+			if (wd_is_nosva(&priv->ctx)) {
+				templen = strm->swap_in + STREAM_MAX -
+					  strm->next_in - strm->avail_in;
+			} else {
+				templen = strm->swap_in + STREAM_MIN -
+					  strm->next_in - strm->avail_in;
 			}
-			strm->next_in = strm->swap_in;
+			if (templen > arg->src_len)
+				templen = arg->src_len;
 			memcpy(strm->next_in + strm->avail_in,
 			       arg->src,
 			       templen);
@@ -851,15 +864,15 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 		}
 		arg->src += templen;
 		arg->src_len -= templen;
-		if (arg->src_len)
-			arg->status |= STATUS_IN_PART_USE;
-		else {
-			arg->status &= ~STATUS_IN_PART_USE;
-			arg->status |= STATUS_IN_EMPTY;
-		}
-		if (strm->avail_in == STREAM_MAX)
-			*full = 1;
 	}
+	if (arg->src_len)
+		arg->status |= STATUS_IN_PART_USE;
+	else {
+		arg->status &= ~STATUS_IN_PART_USE;
+		arg->status |= STATUS_IN_EMPTY;
+	}
+	if (strm->avail_in == STREAM_MAX)
+		*full = 1;
 	if (!strm->load_head && strm->op_type == INFLATE) {
 		if (strm->alg_type == ZLIB)
 			skipped = 2;
@@ -883,28 +896,31 @@ static void hisi_strm_post_buf(struct wd_comp_sess *sess,
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
 
-	if (!strm->undrained)
-		return;
-
-	if (is_in_swap(strm->next_out, strm->swap_out)) {
-		if (strm->undrained > arg->dst_len)
-			templen = arg->dst_len;
-		else
-			templen = strm->undrained;
-		memcpy(arg->dst, strm->next_out - strm->undrained,
-		       templen);
-		arg->dst += templen;
-		arg->dst_len = templen;
-		strm->undrained -= templen;
-	} else {
-		/* drain next_out first */
-		arg->dst += strm->undrained;
-		arg->dst_len = strm->undrained;
-		strm->undrained = 0;
+	if (arg->status & STATUS_IN_EMPTY)
+		strm->next_in = NULL;
+	if (strm->undrained) {
+		if (is_in_swap(sess, strm->next_out, strm->swap_out)) {
+			if (strm->undrained > arg->dst_len)
+				templen = arg->dst_len;
+			else
+				templen = strm->undrained;
+			memcpy(arg->dst, strm->next_out - strm->undrained,
+			       templen);
+			arg->dst += templen;
+			arg->dst_len = templen;
+			strm->undrained -= templen;
+		} else {
+			/* drain next_out first */
+			arg->dst += strm->undrained;
+			arg->dst_len = strm->undrained;
+			strm->undrained = 0;
+		}
+		arg->status |= STATUS_OUT_READY;
 	}
-	arg->status |= STATUS_OUT_READY;
-	if (!strm->undrained)
+	if (!strm->undrained && !strm->avail_in) {
 		arg->status |= STATUS_OUT_DRAINED;
+		strm->next_out = NULL;
+	}
 }
 
 static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
