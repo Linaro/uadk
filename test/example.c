@@ -433,12 +433,15 @@ void *thread_func(void *arg)
 	struct wd_comp_arg *wd_arg = &data->wd_arg;
 	char	algs[60];
 	int	ret;
+	void	*src, *dst;
 
 	if (data->flag & FLAG_ZLIB)
 		sprintf(algs, "zlib");
 	else if (data->flag & FLAG_GZIP)
 		sprintf(algs, "gzip");
-	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	src = wd_arg->src;
+	dst = wd_arg->dst;
+	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
 	wd_arg->flag = FLAG_INPUT_FINISH | FLAG_DEFLATE;
 	ret = wd_alg_compress(handle, wd_arg);
 	if (ret) {
@@ -447,6 +450,8 @@ void *thread_func(void *arg)
 	wd_alg_comp_free_sess(handle);
 
 	/* prepare to uncompress */
+	wd_arg->src = src;
+	wd_arg->dst = dst;
 	memset(wd_arg->src, 0, sizeof(char) * TEST_WORD_LEN);
 	wd_arg->src_len = wd_arg->dst_len;
 	memcpy(wd_arg->src, wd_arg->dst, wd_arg->dst_len);
@@ -454,17 +459,17 @@ void *thread_func(void *arg)
 	wd_arg->dst_len = TEST_WORD_LEN;
 	wd_arg->flag = FLAG_INPUT_FINISH & ~FLAG_DEFLATE;
 
-	handle = wd_alg_comp_alloc_sess(algs, 0, NULL);
+	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
 	ret = wd_alg_decompress(handle, wd_arg);
 	if (ret) {
 		fprintf(stderr, "fail to decompress (%d)\n", ret);
 	}
-	if (strncmp(word, wd_arg->dst, strlen(word))) {
+	if (strncmp(word, dst, strlen(word))) {
 		thread_fail = 1;
 	}
 	wd_alg_comp_free_sess(handle);
-	free(wd_arg->src);
-	free(wd_arg->dst);
+	free(src);
+	free(dst);
 	pthread_exit(NULL);
 }
 
@@ -520,8 +525,8 @@ out_src:
 int main(int argc, char **argv)
 {
 	test_comp_once(FLAG_ZLIB, MODE_STREAM);
-	//test_small_buffer(FLAG_ZLIB, 0);
-	//test_small_buffer(FLAG_GZIP, 0);
+	test_comp_once(FLAG_ZLIB, 0);
+	test_comp_once(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_small_buffer(FLAG_GZIP, MODE_STREAM);
 	test_large_buffer(FLAG_ZLIB);

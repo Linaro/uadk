@@ -272,7 +272,9 @@ static int hizip_sched_output(struct wd_msg *msg, void *priv)
 	}
 	STORE_MSG_TO_DST(hpriv->arg->dst, hpriv->di,
 			 msg->data_out, m->produced);
-	hpriv->total_out = hpriv->di;
+	hpriv->total_out += hpriv->di;
+	hpriv->arg->dst += hpriv->di;
+	hpriv->di = 0;
 	return 0;
 }
 
@@ -435,6 +437,7 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 		}
 	}
 	arg->dst_len = sched_priv->total_out;
+	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
 	return 0;
 }
 
@@ -473,6 +476,7 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 		}
 	}
 	arg->dst_len = sched_priv->total_out;
+	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
 	return 0;
 }
 
