@@ -68,6 +68,7 @@ static void __fini_cache(struct wd_scheduler *sched)
 {
 	int i;
 
+#if 0
 	for (i = 0; i < sched->msg_cache_num; i++) {
 		if (wd_is_nosva(&sched->qs[0])) {
 			smm_free(sched->ss_region, sched->msgs[i].data_in);
@@ -77,6 +78,7 @@ static void __fini_cache(struct wd_scheduler *sched)
 			free(sched->msgs[i].data_out);
 		}
 	}
+#endif
 	free(sched->stat);
 	free(sched->msgs);
 }
