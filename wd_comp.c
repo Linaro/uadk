@@ -82,7 +82,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	int	i, found, max = 0, ret;
 	char	*dev_name;
 
-	mask = malloc(sizeof(wd_dev_mask_t));
+	mask = calloc(1, sizeof(wd_dev_mask_t));
 	if (!mask)
 		return (handler_t)sess;
 	head = wd_list_accels(mask);
@@ -141,7 +141,7 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	}
 	if (!found)
 		goto out;
-	sess = malloc(sizeof(struct wd_comp_sess));
+	sess = calloc(1, (sizeof(struct wd_comp_sess)));
 	if (!sess)
 		goto out;
 	sess->mode = mode;
@@ -167,12 +167,20 @@ out:
 
 void wd_alg_comp_free_sess(handler_t handle)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)handle;
+
+	if (!sess)
+		return;
 
 	if (sess->drv->exit)
 		sess->drv->exit(sess);
-	free(sess->dev_mask->mask);
-	free(sess->dev_mask);
+
+	if (sess->dev_mask->mask)
+		free(sess->dev_mask->mask);
+
+	if (sess->dev_mask)
+		free(sess->dev_mask);
+
 	free(sess);
 }
 
