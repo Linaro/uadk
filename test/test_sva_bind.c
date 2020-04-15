@@ -245,6 +245,12 @@ static int run_test(struct priv_options *opts)
 	return 0;
 }
 
+static void handle_sigbus(int sig)
+{
+	    printf("SIGBUS!\n");
+	        _exit(0);
+}
+
 int main(int argc, char **argv)
 {
 	int opt;
@@ -293,6 +299,8 @@ int main(int argc, char **argv)
 			break;
 		}
 	}
+
+	signal(SIGBUS, handle_sigbus);
 
 	hizip_test_adjust_len(&opts.common);
 
