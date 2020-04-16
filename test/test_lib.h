@@ -106,7 +106,7 @@ static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 		WD_ERR("no zlib available, output buffer won't be checked\n");
 		printed = true;
 	}
-	return 0;
+	return -ENOSYS;
 }
 static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
 			       unsigned int in_size, unsigned long *produced)
