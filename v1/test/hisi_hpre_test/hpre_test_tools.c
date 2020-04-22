@@ -1419,7 +1419,7 @@ void wd_alloc_free_test(void *blkpool)
 	     }
             wd_free_blk(pool, blk);
         }
-        printf("test wd_alloc_free_test end!\n");
+        //printf("test wd_alloc_free_test end!\n");
 		
 	 return 0;
 }
