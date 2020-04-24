@@ -4,6 +4,13 @@
 #include "wd_sched.h"
 #include "smm.h"
 
+/*
+ * In SVA scenario, a whole user buffer could be divided into multiple frames.
+ * In NOSVA scenario, data from a whole user buffer should be copied into
+ * swap buffer of multiple frames first.
+ * Each size of each frame should match sched->msg_data_size.
+ * sched->input() and sched->output() need to check the size of each frame.
+ */
 static int __init_cache(struct wd_scheduler *sched)
 {
 	int i;
@@ -19,22 +26,25 @@ static int __init_cache(struct wd_scheduler *sched)
 
 	for (i = 0; i < sched->msg_cache_num; i++) {
 		if (wd_is_nosva(&sched->qs[0])) {
-			sched->msgs[i].data_in =
+			sched->msgs[i].swap_in =
 				smm_alloc(sched->ss_region,
 					  sched->msg_data_size);
-			sched->msgs[i].data_out =
+			sched->msgs[i].swap_out =
 				smm_alloc(sched->ss_region,
 					  sched->msg_data_size);
+			if (!sched->msgs[i].swap_in ||
+			    !sched->msgs[i].swap_out) {
+				dbg("not enough ss_region memory for cache %d "
+				    "(bs=%d)\n", i, sched->msg_data_size);
+				goto err_with_stat;
+			}
 		} else {
-			sched->msgs[i].data_in = malloc(sched->msg_data_size);
-			sched->msgs[i].data_out = malloc(sched->msg_data_size);
+			/* user buffer is used by hardware directly */
+			sched->msgs[i].swap_in = NULL;
+			sched->msgs[i].swap_out = NULL;
 		}
-
-		if (!sched->msgs[i].data_in || !sched->msgs[i].data_out) {
-			dbg("not enough data ss_region memory "
-			    "for cache %d (bs=%d)\n", i, sched->msg_data_size);
-			goto err_with_stat;
-		}
+		sched->msgs[i].next_in = NULL;
+		sched->msgs[i].next_out = NULL;
 
 		if (sched->init_cache)
 			sched->init_cache(sched, i, sched->priv);
@@ -44,19 +54,10 @@ static int __init_cache(struct wd_scheduler *sched)
 
 err_with_stat:
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (wd_is_nosva(&sched->qs[0])) {
-			if (sched->msgs[i].data_in)
-				smm_free(sched->ss_region,
-					 sched->msgs[i].data_in);
-			if (sched->msgs[i].data_out)
-				smm_free(sched->ss_region,
-					 sched->msgs[i].data_out);
-		} else {
-			if (sched->msgs[i].data_in)
-				free(sched->msgs[i].data_in);
-			if (sched->msgs[i].data_out)
-				free(sched->msgs[i].data_out);
-		}
+		if (sched->msgs[i].swap_in)
+			smm_free(sched->ss_region, sched->msgs[i].swap_in);
+		if (sched->msgs[i].swap_out)
+			smm_free(sched->ss_region, sched->msgs[i].swap_out);
 	}
 	free(sched->stat);
 err_with_msgs:
@@ -68,17 +69,12 @@ static void __fini_cache(struct wd_scheduler *sched)
 {
 	int i;
 
-#if 0
 	for (i = 0; i < sched->msg_cache_num; i++) {
 		if (wd_is_nosva(&sched->qs[0])) {
-			smm_free(sched->ss_region, sched->msgs[i].data_in);
-			smm_free(sched->ss_region, sched->msgs[i].data_out);
-		} else {
-			free(sched->msgs[i].data_in);
-			free(sched->msgs[i].data_out);
+			smm_free(sched->ss_region, sched->msgs[i].swap_in);
+			smm_free(sched->ss_region, sched->msgs[i].swap_out);
 		}
 	}
-#endif
 	free(sched->stat);
 	free(sched->msgs);
 }
@@ -118,13 +114,12 @@ int wd_sched_init(struct wd_scheduler *sched, char *node_path)
 	return 0;
 
 out_smm:
-	if (!wd_is_nosva(&sched->qs[0]) && sched->ss_region)
-		free(sched->ss_region);
+	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region)
+		wd_drv_unmap_qfr(&sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
 out_region:
 	for (i = 0; i < sched->q_num; i++)
 		wd_release_ctx(&sched->qs[i]);
 	return ret;
-	wd_release_ctx(&sched->qs[i]);
 out_ctx:
 	for (j = i - 1; j >= 0; j--)
 		wd_release_ctx(&sched->qs[j]);
