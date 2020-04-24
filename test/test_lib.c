@@ -74,6 +74,7 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	struct wd_msg *wd_msg = &sched->msgs[i];
 	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *msg;
+	void *data_in, *data_out;
 
 	msg = wd_msg->msg = &ctx->msgs[i];
 
@@ -91,10 +92,8 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	 */
 
 	if (ctx->is_nosva) {
-		void *data_in, *data_out;
-
-		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->data_in);
-		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->data_out);
+		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->swap_in);
+		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->swap_out);
 
 		msg->source_addr_l = (__u64)data_in & 0xffffffff;
 		msg->source_addr_h = (__u64)data_in >> 32;
@@ -118,10 +117,10 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	out_buf = ctx->out_buf;
 
 	if (ctx->is_nosva) {
-		memcpy(msg->data_in, in_buf, ilen);
+		memcpy(msg->swap_in, in_buf, ilen);
 	} else {
-		msg->data_in = in_buf;
-		msg->data_out = out_buf;
+		msg->next_in = in_buf;
+		msg->next_out = out_buf;
 
 		m->source_addr_l = (__u64)in_buf & 0xffffffff;
 		m->source_addr_h = (__u64)in_buf >> 32;

@@ -55,11 +55,11 @@ static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i,
 	msg->dest_avail_out = sched->msg_data_size;
 
 	if (wd_is_nosva(&sched->qs[0])) {
-		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->data_in);
-		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->data_out);
+		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->next_in);
+		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->next_out);
 	} else {
-		data_in = wd_msg->data_in;
-		data_out = wd_msg->data_out;
+		data_in = wd_msg->next_in;
+		data_out = wd_msg->next_out;
 	}
 	msg->source_addr_l = (__u64)data_in & 0xffffffff;
 	msg->source_addr_h = (__u64)data_in >> 32;
@@ -80,19 +80,19 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 	hizip_priv.total_len -= ilen;
 	if (hizip_priv.op_type == INFLATE) {
 		if (hizip_priv.alg_type == ZLIB) {
-			sz = fread(msg->data_in, 1, ZLIB_HEADER_SZ,
+			sz = fread(msg->next_in, 1, ZLIB_HEADER_SZ,
 				   hizip_priv.sfile);
 			SYS_ERR_COND(sz != ZLIB_HEADER_SZ, "read");
 			ilen -= ZLIB_HEADER_SZ;
 		} else {
-			sz = fread(msg->data_in, 1, GZIP_HEADER_SZ,
+			sz = fread(msg->next_in, 1, GZIP_HEADER_SZ,
 				   hizip_priv.sfile);
 			SYS_ERR_COND(sz != GZIP_HEADER_SZ, "read");
 			ilen -= GZIP_HEADER_SZ;
-			if (*((char *)msg->data_in + 3) == 0x04) {
-				sz = fread(msg->data_in, 1, GZIP_EXTRA_SZ,
+			if (*((char *)msg->next_in + 3) == 0x04) {
+				sz = fread(msg->next_in, 1, GZIP_EXTRA_SZ,
 					   hizip_priv.sfile);
-				memcpy(&ilen, msg->data_in + 6, 4);
+				memcpy(&ilen, msg->next_in + 6, 4);
 				dbg("gzip iuput len %ld\n", ilen);
 				SYS_ERR_COND(ilen > block_size * 2,
 				    "gzip protocol_len(%ld) > dmabuf_size(%d)\n",
@@ -105,7 +105,7 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 		}
 	}
 
-	sz = fread(msg->data_in, 1, ilen, hizip_priv.sfile);
+	sz = fread(msg->next_in, 1, ilen, hizip_priv.sfile);
 	SYS_ERR_COND(sz != ilen, "read");
 
 	m->input_data_length = ilen;
@@ -152,7 +152,7 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 			SYS_ERR_COND(sz != GZIP_EXTRA_SZ, "write");
 		}
 	}
-	sz = fwrite(msg->data_out, 1, m->produced, hizip_priv.dfile);
+	sz = fwrite(msg->next_out, 1, m->produced, hizip_priv.dfile);
 	SYS_ERR_COND(sz != m->produced, "write");
 	return 0;
 }

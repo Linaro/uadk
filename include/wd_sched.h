@@ -7,9 +7,11 @@
 #include "wd.h"
 
 struct wd_msg {
-	void *data_in;
-	void *data_out;
-	void *msg;	/* the hw share buffer itself */
+	void *swap_in;
+	void *swap_out;
+	void *next_in;
+	void *next_out;
+	void *msg;	/* the hw message frame */
 };
 
 struct wd_scheduler {
