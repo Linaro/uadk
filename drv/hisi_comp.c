@@ -18,22 +18,14 @@
 #define GZIP_EXTRA_SZ	10
 #define GZIP_TAIL_SZ	8
 
+#define BLOCK_MIN		(1 << 10)
+#define BLOCK_MIN_MASK		0x3FF
+#define BLOCK_MAX		(1 << 20)
+#define BLOCK_MAX_MASK		0xFFFFF
 #define STREAM_MIN		(1 << 10)
 #define STREAM_MIN_MASK		0x3FF
 #define STREAM_MAX		(1 << 20)
 #define STREAM_MAX_MASK		0xFFFFF
-
-#define LOAD_SRC_TO_MSG(msg, src, idx, len)				\
-	do {								\
-		memcpy(msg, src + idx, len);				\
-		idx += len;						\
-	} while (0)
-
-#define STORE_MSG_TO_DST(dst, idx, msg, len)				\
-	do {								\
-		memcpy(dst + idx, msg, len);				\
-		idx += len;						\
-	} while (0)
 
 #define Z_OK            0
 #define Z_STREAM_END    1
@@ -90,15 +82,83 @@ struct hisi_sched {
 	int	dw9;
 	struct hisi_zip_sqe	*msgs;
 	struct wd_comp_arg	*arg;
-	uint64_t	si;	/* si records index in src for next sched */
-	uint64_t	di;	/* di records index in dst for next sched */
 	size_t		total_out;
-	size_t	store_len;	/* indiciates data cached in next_in */
 	int	load_head;
-	int	real_len;	/* gzip without header & extra */
+	size_t	avail_in;
+	size_t	avail_out;
+	int	undrained;
+	int	stream_pos;
+	int	full;
 };
 
-static void hizip_sched_init(struct wd_scheduler *sched, int i)
+static inline int blk_is_new_src(struct wd_msg *msg,
+				 struct hisi_sched *hpriv,
+				 struct wd_comp_arg *arg)
+{
+	/* If all previous src data are consumed, next_in should be cleared to
+	 * NULL.
+	 */
+	if (!msg->next_in)
+		return 1;
+	return 0;
+}
+
+static inline int blk_is_new_dst(struct wd_msg *msg,
+				 struct hisi_sched *hpriv,
+				 struct wd_comp_arg *arg)
+{
+	if (!msg->next_out)
+		return 1;
+	return 0;
+}
+
+/*
+ * Compare the range with mask.
+ * Notice: Avoid to compare them just after hardware operation.
+ * It's better to compare swap with (addr - consumed/produced bytes).
+ */
+static inline int blk_is_in_swap(struct wd_msg *msg, void *addr, void *swap)
+{
+	/* NOSVA */
+	if (msg->swap_in) {
+		return 1;
+	} else {
+		if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
+		    ((uint64_t)swap & ~STREAM_MIN_MASK))
+			return 1;
+	}
+	return 0;
+}
+
+static inline int blk_need_swap(struct wd_msg *msg,
+				struct hisi_sched *hpriv,
+				int buf_size)
+{
+	struct wd_comp_arg	*arg = hpriv->arg;
+
+	/* NOSVA */
+	if (msg->swap_in)
+		return 1;
+	if ((buf_size < BLOCK_MAX) && !(arg->flag & FLAG_INPUT_FINISH))
+		return 1;
+	return 0;
+}
+
+static inline int blk_need_split(struct wd_msg *msg,
+				 struct hisi_sched *hpriv,
+				 int buf_size)
+{
+	if (buf_size > BLOCK_MAX)
+		return 1;
+	return 0;
+}
+
+/*
+ * sched cuts a large frame from user App to multiple messages.
+ * sched doesn't need to consider minimum block size.
+ *
+ */
+static void hisi_sched_init(struct wd_scheduler *sched, int i)
 {
 	struct wd_msg	*wd_msg = &sched->msgs[i];
 	struct hisi_zip_sqe	*msg;
@@ -107,174 +167,152 @@ static void hizip_sched_init(struct wd_scheduler *sched, int i)
 	msg = wd_msg->msg = &hpriv->msgs[i];
 	msg->dw9 = hpriv->dw9;
 	msg->dest_avail_out = sched->msg_data_size;
-	msg->source_addr_l = (__u64)wd_msg->data_in & 0xffffffff;
-	msg->source_addr_h = (__u64)wd_msg->data_in >> 32;
-	msg->dest_addr_l = (__u64)wd_msg->data_out & 0xffffffff;
-	msg->dest_addr_h = (__u64)wd_msg->data_out >> 32;
+	msg->source_addr_l = (__u64)wd_msg->swap_in & 0xffffffff;
+	msg->source_addr_h = (__u64)wd_msg->swap_in >> 32;
+	msg->dest_addr_l = (__u64)wd_msg->swap_out & 0xffffffff;
+	msg->dest_addr_h = (__u64)wd_msg->swap_out >> 32;
+
+	hpriv->avail_in = 0;
+	hpriv->avail_out = 0;
+	hpriv->load_head = 0;
+	hpriv->undrained = 0;
+	hpriv->total_out = 0;
 }
 
-/*
- * Return 0 if gzip header is full loaded.
- * Return -EAGAIN if gzip header is only partial loaded.
- */
-static int hizip_parse_gzip_header(struct wd_msg *msg,
-				   struct hisi_sched *hpriv,
-				   struct wd_comp_arg *arg)
+static int hisi_sched_input(struct wd_msg *msg, void *priv)
 {
-	size_t templen;
-
-	if (hpriv->store_len < GZIP_HEADER_SZ) {
-		if (arg->src_len + hpriv->store_len < GZIP_HEADER_SZ)
-			templen = arg->src_len;
-		else	/* hpriv->store_len < GZIP_HEADER_SZ */
-			templen = GZIP_HEADER_SZ - hpriv->store_len;
-		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
-				arg->src, hpriv->si, templen);
-		hpriv->store_len += templen;
-		arg->src_len -= templen;
-		if ((hpriv->store_len >= GZIP_HEADER_SZ) &&
-		    (*((char *)msg->data_in + 3) != 0x04)) {
-			/* remove gzip header from src buffer */
-			hpriv->store_len -= GZIP_HEADER_SZ;
-			hpriv->load_head = 1;
-			return 0;
-		}
-		if (!arg->src_len) {
-			hpriv->si = 0;
-			return -EAGAIN;
-		}
-	}
-	if (hpriv->store_len < GZIP_HEADER_SZ + GZIP_EXTRA_SZ) {
-		if (arg->src_len + hpriv->store_len <=
-		    GZIP_HEADER_SZ + GZIP_EXTRA_SZ) {
-			templen = arg->src_len;
-		} else {
-			/* hpriv->store_len < GZIP_HEADER_SZ + GZIP_EXTRA_SZ */
-			templen = GZIP_HEADER_SZ + GZIP_EXTRA_SZ -
-				  hpriv->store_len;
-		}
-		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
-				arg->src, hpriv->si, templen);
-		hpriv->store_len += templen;
-		arg->src_len -= templen;
-		if (hpriv->store_len >= GZIP_HEADER_SZ + GZIP_EXTRA_SZ){
-			/* real_len should compare to src_len */
-			memcpy(&hpriv->real_len, msg->data_in + 6, 4);
-			/* remove gzip and extra header from src buffer */
-			hpriv->store_len -= GZIP_HEADER_SZ + GZIP_EXTRA_SZ;
-			hpriv->load_head = 1;
-			return 0;
-		}
-		if (!arg->src_len) {
-			hpriv->si = 0;
-			return -EAGAIN;
-		}
-	}
-	return 0;
-}
-
-static int hizip_sched_input(struct wd_msg *msg, void *priv)
-{
-	size_t templen;
 	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
 	struct wd_comp_arg	*arg = hpriv->arg;
-	int ret;
+	const char zip_head[2] = {0x78, 0x9c};
+	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
+				    0x0, 0x0, 0x0, 0x0, 0x03};
+	int templen, skipped = 0;
 
-	if (!hpriv->load_head && (hpriv->op_type == INFLATE)) {
-		/* check whether compressed head is passed */
-		if (hpriv->alg_type == ZLIB) {
-			if (arg->src_len + hpriv->store_len <= ZLIB_HEADER_SZ)
-				templen = arg->src_len;
-			else	/* hpriv->store_len < ZLIB_HEADER_SZ */
-				templen = ZLIB_HEADER_SZ - hpriv->store_len;
-			LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
-					arg->src, hpriv->si, templen);
-			hpriv->store_len += templen;
-			arg->src_len -= templen;
-			if (hpriv->store_len >= ZLIB_HEADER_SZ) {
-				/* remove zlib header from src buffer */
-				hpriv->store_len -= ZLIB_HEADER_SZ;
-				hpriv->load_head = 1;
-			}
-		} else {
-			ret = hizip_parse_gzip_header(msg, hpriv, arg);
-			if (ret < 0)
-				return ret;
-		}
-		if (!arg->src_len) {
-			hpriv->si = 0;
-			return -EAGAIN;
-		}
-	}
-	/* update the real size for gzip */
-	if ((hpriv->op_type == INFLATE) && (hpriv->alg_type == GZIP) &&
-	    (arg->src_len > hpriv->real_len))
-		arg->src_len = hpriv->real_len;
-	if (hpriv->store_len + arg->src_len > BLOCK_SIZE) {
-		/* load partial data from arg->src */
-		templen = BLOCK_SIZE - hpriv->store_len;
-		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
-				arg->src, hpriv->si, templen);
-		hpriv->store_len += templen;
-		if (hpriv->alg_type == GZIP)
-			hpriv->real_len -= templen;
-		arg->src_len -= templen;
+	if (blk_need_swap(msg, hpriv, arg->dst_len)) {
+		hpriv->avail_out = BLOCK_MAX;
+		if (blk_is_new_dst(msg, hpriv, arg) || !hpriv->undrained)
+			msg->next_out = msg->swap_out;
 	} else {
-		LOAD_SRC_TO_MSG(msg->data_in + hpriv->store_len,
-				arg->src, hpriv->si, arg->src_len);
-		hpriv->store_len += arg->src_len;
-		if (hpriv->alg_type == GZIP)
-			hpriv->real_len -= arg->src_len;
-		arg->src_len = 0;
-		hpriv->si = 0;
+		msg->next_out = arg->dst;
+		hpriv->avail_out = arg->dst_len;
 	}
-	if (arg->flag & FLAG_INPUT_FINISH) {
-		m->input_data_length = hpriv->store_len;
-		hpriv->store_len = 0;
-	} else if (hpriv->store_len == BLOCK_SIZE) {
-		m->input_data_length = BLOCK_SIZE;
-		hpriv->store_len = 0;
-	} else
-		return -EAGAIN;
-
+	if (!hpriv->load_head && hpriv->op_type == DEFLATE) {
+		if (hpriv->alg_type == ZLIB) {
+			memcpy(msg->next_out, &zip_head, 2);
+			templen = 2;
+		} else {
+			memcpy(msg->next_out, &gzip_head, 10);
+			templen = 10;
+		}
+		msg->next_out += templen;
+		hpriv->avail_out -= templen;
+		hpriv->undrained += templen;
+		hpriv->stream_pos = STREAM_NEW;
+		hpriv->load_head = 1;
+	}
+	if (blk_is_new_src(msg, hpriv, arg) && arg->src_len) {
+		if (blk_need_swap(msg, hpriv, arg->src_len)) {
+			if (arg->src_len > BLOCK_MAX)
+				templen = BLOCK_MAX;
+			else
+				templen = arg->src_len;
+			msg->next_in = msg->swap_in;
+			memcpy(msg->next_in + hpriv->avail_in,
+			       arg->src,
+			       templen);
+			hpriv->avail_in += templen;
+			m->input_data_length = templen;
+			arg->src += templen;
+			arg->src_len -= templen;
+		} else if (blk_need_split(msg, hpriv, arg->src_len)) {
+			msg->next_in = arg->src;
+			hpriv->avail_in += BLOCK_MAX;
+			m->input_data_length = BLOCK_MAX;
+			arg->src += BLOCK_MAX;
+			arg->src_len -= BLOCK_MAX;
+		} else {
+			msg->next_in = arg->src;
+			hpriv->avail_in = arg->src_len;
+			m->input_data_length = arg->src_len;
+			arg->src += arg->src_len;
+			arg->src_len = 0;
+		}
+	} else if (arg->src_len) {
+		/* some data is cached in next_in buffer */
+		if (blk_is_in_swap(msg, msg->next_in, msg->swap_in)) {
+			templen = msg->swap_in + BLOCK_MAX -
+				  msg->next_in - hpriv->avail_in;
+			if (templen > arg->src_len)
+				templen = arg->src_len;
+			memcpy(msg->next_in + hpriv->avail_in,
+			       arg->src,
+			       templen);
+			hpriv->avail_in += templen;
+		} else {
+			if (blk_need_split(msg, hpriv, arg->src_len))
+				templen = STREAM_MAX;
+			else
+				templen = arg->src_len;
+			msg->next_in = arg->src;
+			hpriv->avail_in = templen;
+		}
+		arg->src += templen;
+		arg->src_len -= templen;
+		m->input_data_length = templen;
+	}
+	if (!hpriv->load_head && hpriv->op_type == INFLATE) {
+		if (hpriv->alg_type == ZLIB)
+			skipped = 2;
+		else
+			skipped = 10;
+		msg->next_in += skipped;
+		hpriv->avail_in -= skipped;
+		m->input_data_length -= skipped;
+		hpriv->stream_pos = STREAM_NEW;
+		hpriv->load_head = 1;
+	}
+	if (hpriv->avail_in == BLOCK_MAX)
+		hpriv->full = 1;
+	if (!msg->swap_in) {
+		m->dest_avail_out = hpriv->avail_out;
+		m->source_addr_l = (__u64)msg->next_in & 0xffffffff;
+		m->source_addr_h = (__u64)msg->next_in >> 32;
+		m->dest_addr_l = (__u64)msg->next_out & 0xffffffff;
+		m->dest_addr_h = (__u64)msg->next_out >> 32;
+	}
 	return 0;
 }
 
-static int hizip_sched_output(struct wd_msg *msg, void *priv)
+static int hisi_sched_output(struct wd_msg *msg, void *priv)
 {
-	struct hisi_zip_sqe *m = msg->msg;
-	__u32 status = m->dw3 & 0xff;
-	__u32 type = m->dw9 & 0xff;
-	char gzip_extra[GZIP_EXTRA_SZ] = {0x08, 0x00, 0x48, 0x69, 0x04, 0x00,
-					  0x00, 0x00, 0x00, 0x00};
+	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
+	struct wd_comp_arg	*arg = hpriv->arg;
+	int	templen;
 
-	if (status && (status != 0x0d)) {
-		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
-		return -EFAULT;
+	if (arg->status & STATUS_IN_EMPTY)
+		msg->next_in = NULL;
+	if (blk_is_in_swap(msg, msg->next_out, msg->swap_out)) {
+		if (hpriv->undrained + m->produced > arg->dst_len)
+			templen = arg->dst_len + m->produced;
+		else
+			templen = hpriv->undrained + m->produced;
+		memcpy(arg->dst, msg->next_out - hpriv->undrained,
+		       templen);
+		hpriv->total_out += templen;
+		arg->dst += templen;
+	} else {
+		/* drain next_out first */
+		hpriv->total_out += hpriv->undrained + m->produced;
+		arg->dst += hpriv->undrained + m->produced;
 	}
-	if (hpriv->op_type == DEFLATE) {
-		if (hpriv->alg_type == ZLIB) {
-			STORE_MSG_TO_DST(hpriv->arg->dst, hpriv->di,
-					 ZLIB_HEADER, ZLIB_HEADER_SZ);
-		} else {
-			STORE_MSG_TO_DST(hpriv->arg->dst, hpriv->di,
-					 GZIP_HEADER, GZIP_HEADER_SZ);
-			memcpy(gzip_extra + 6, &m->produced, 4);
-			STORE_MSG_TO_DST(hpriv->arg->dst, hpriv->di,
-					 gzip_extra, GZIP_EXTRA_SZ);
-		}
+	hpriv->undrained = 0;
+	arg->status |= STATUS_OUT_READY;
+	if (!hpriv->undrained && !hpriv->avail_in) {
+		arg->status |= STATUS_OUT_DRAINED;
+		msg->next_out = NULL;
 	}
-	if (hpriv->total_out + m->produced > hpriv->arg->dst_len) {
-		WD_ERR("output data will overflow\n");
-		return -ENOMEM;
-	}
-	STORE_MSG_TO_DST(hpriv->arg->dst, hpriv->di,
-			 msg->data_out, m->produced);
-	hpriv->total_out += hpriv->di;
-	hpriv->arg->dst += hpriv->di;
-	hpriv->di = 0;
 	return 0;
 }
 
@@ -294,10 +332,10 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 	sched->ss_region_size = 0; /* let system make decision */
 	sched->msg_cache_num = CACHE_NUM;
 	/* use double size of the input data */
-	sched->msg_data_size = BLOCK_SIZE << 1;
-	sched->init_cache = hizip_sched_init;
-	sched->input = hizip_sched_input;
-	sched->output = hizip_sched_output;
+	sched->msg_data_size = BLOCK_MAX;
+	sched->init_cache = hisi_sched_init;
+	sched->input = hisi_sched_input;
+	sched->output = hisi_sched_output;
 	sched->hw_alloc = hisi_qm_alloc_ctx;
 	sched->hw_free = hisi_qm_free_ctx;
 	sched->hw_send = hisi_qm_send;
@@ -322,12 +360,8 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 		sched_priv->dw9 = 3;
 		capa->alg = "gzip";
 	}
-	sched_priv->si = 0;
-	sched_priv->di = 0;
 	sched_priv->total_out = 0;
-	sched_priv->store_len = 0;
 	sched_priv->load_head = 0;
-	sched_priv->real_len = 0;
 	sched->priv = sched_priv;
 	ret = wd_sched_init(sched, sess->node_path);
 	if (ret < 0)
@@ -413,6 +447,10 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
 	sched_priv = sched->priv;
+
+	if (!(arg->flag & FLAG_INPUT_FINISH) && (arg->src_len < BLOCK_MAX))
+		return -EINVAL;
+
 	/* ZLIB engine can do only one time with buffer less than 16M */
 	if (sched_priv->alg_type == ZLIB) {
 		if (arg->src_len > BLOCK_SIZE) {
@@ -438,6 +476,7 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 	}
 	arg->dst_len = sched_priv->total_out;
 	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
+	sched_priv->total_out = 0;
 	return 0;
 }
 
@@ -477,6 +516,7 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 	}
 	arg->dst_len = sched_priv->total_out;
 	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
+	sched_priv->total_out = 0;
 	return 0;
 }
 
