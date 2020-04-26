@@ -62,6 +62,10 @@
 |         |                |3) Update *struct wd_alg_comp*. |
 |         |                |4) Update *struct wd_comp_sess*. |
 |         |                |5) Update *struct wd_ctx*. |
+|  0.107  |                |1) Remove patchset information. |
+|         |                |2) Fix typo error. |
+|         |                |3) Mention libwd and algorithm libraries are built |
+|         |                |   as different libraries. |
 
 
 ## Terminology
@@ -93,7 +97,8 @@ their own user space driver, which could use above helper functions to do UACCE
 related work.
 
 So two mechanisms are provided to user application. User application could 
-either access libwd or algorithm libraries.
+either access libwd or algorithm libraries. And all of these are compiled as 
+libraries. User application could pick up necessary libraries to link.
 
 This document focuses on the design of libwd and algorithm libraries.
 
@@ -232,7 +237,7 @@ enum uacce_qfrt qfrt);***
 *wd_drv_unmap_qfr()* unmaps qfile region from user space.
 
 qfrt means queue file region type. The details could be found in UACCE kernel 
-patch set <https://lkml.org/lkml/2019/11/22/1728>.
+driver.
 
 
 ### Categorize Accelerators
@@ -537,7 +542,7 @@ Compression algorithm library requires each vendor driver providing an
 instance, *struct wd_alg_comp*. This instance represents a vendor driver, 
 compression algorithm library binds an accelerator and a vendor driver into a 
 session. And *context* should also be stored in a *session*, but it's not a 
-public fiend in the *session*. *Context* should be stored in the vendor private 
+public field in the *session*. *Context* should be stored in the vendor private 
 structure field in *session*.
 
 ```
