@@ -57,6 +57,11 @@
 |  0.104  |                |1) Merge libaccel into libwd. |
 |  0.105  |                |1) Add parameter in callback for async mode. |
 |         |                |2) Fix minor issues. |
+|  0.106  |                |1) Update *struct wd_comp_arg*. |
+|         |                |2) Update wd_alg_comp_alloc_sess(). |
+|         |                |3) Update *struct wd_alg_comp*. |
+|         |                |4) Update *struct wd_comp_sess*. |
+|         |                |5) Update *struct wd_ctx*. |
 
 
 ## Terminology
@@ -106,11 +111,8 @@ could be avoided between vendor driver and application.
 ### UACCE user space API
 
 As the kernel driver of WarpDrive, UACCE offers a set of APIs between kernel 
-and user space.
-
-Since UACCE driver is still under upstreaming process, latest APIs of UACCE 
-can be found in <https://lkml.org/lkml/2020/1/10/1115>. UACCE is introduced 
-in "uacce.rst" and "sysfs-driver-uacce" of this patchset.
+and user space. UACCE is introduced in "uacce.rst" and "sysfs-driver-uacce" 
+in kernel documents.
 
 Hardware accelerator registers in UACCE as a char dev. At the same time, 
 hardware informations of accelerators are also exported in sysfs node. For 
@@ -145,9 +147,15 @@ informations could be associated with *context*, and all of them are defined in
 
 ```
     struct wd_ctx {
-        int            fd;
-        char           node_path[];
-        void           *priv;
+        int                    fd;
+        char                   node_path[];
+        char                   *dev_name;
+        char                   *drv_name;
+        unsigned long          qfrt_offs[];
+        void                   *ss_va;
+        void                   *ss_pa;
+        struct uacce_dev_info  *dev_info;
+        void                   *priv;
     };
 ```
 
@@ -155,6 +163,17 @@ informations could be associated with *context*, and all of them are defined in
 | :-- | :-- |
 | *fd*        | Indicate the file descriptor of hardware accelerator. |
 | *node_path* | Indicate the file path of hardware accelerator. |
+| *dev_name*  | Record the accelerator name. |
+| *drv_name*  | Record the driver name. |
+| *qfrt_offs* | Record the qfrt offset that are defined in UACCE kernel |
+|             | driver. |
+| *ss_va*     | Indicate the virtual address of shared region that is only |
+|             | used in NOSVA scenario. It's a special scenario that is |
+|             | mentioned in *Extra Helper functions* section. |
+| *ss_pa*     | Indicate the physical address of shared region that is only |
+|             | used in NOSVA scenario. |
+| *dev_info*  | Indicate the information that is exposed by UACCE kernel |
+|             | driver. |
 | *priv*      | Indicate the vendor specific structure. |
 
 Libwd defines APIs to allocate contexts.
@@ -355,12 +374,15 @@ such as binding accelerator and vendor driver together.
 typedef unsigned long long int    handler_t;
 ```
 
-***handler_t wd_alg_comp_alloc_sess(char \*alg_name, wd_dev_mask_t dev_mask)***
+***handler_t wd_alg_comp_alloc_sess(char \*alg_name, uint32_t mode, 
+wd_dev_mask_t dev_mask)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
 | algorithm | *alg_name* | input  | Set the name of algorithm type, such as |
 |           |            |        | "zlib", "gzip", etc. |
+|           | *mode*     | input  | Indicate whether it's BLOCK mode (0) or |
+|           |            |        | STREAM mode (MODE_STREAM). |
 |           | *dev_mask* | input  | Set the mask value of UACCE devices. |
 
 *wd_alg_comp_alloc_sess()* is used to allocate a session. Return a valid 
@@ -394,21 +416,46 @@ structure, *struct wd_comp_arg*.
         size_t            *dst_len;
         wd_alg_comp_cb_t  *cb;
         void              *cb_param;
+        uint32_t          flag;
+        uint32_t          status;
     };
 ```
 
-| Field | Comments |
-| :-- | :-- |
-| *src*      | Indicate the virtual address of source buffer that is prepared |
-|            | by user application. |
-| *src_len*  | Indicate the length of source buffer. |
-| *dst*      | Indicate the virtual address of destination buffer that is |
-|            | prepared by user application. |
-| *dst_len*  | Indicate the length of destination buffer. |
-| *cb*       | Indicate the user application callback that is used in |
-|            | asynchronous mode. |
-| *cb_param* | Indicate the parameter that is used by callback in asynchronous |
-|            | mode. |
+| Field | Direction | Comments |
+| :-- | :-- | :-- |
+| *src*      | IN & OUT | Input the virtual address of source buffer that is |
+|            |          | prepared by user application. |
+|            |          | When the operation is done, *src* is updated. It |
+|            |          | points to the address that is not consumed by |
+|            |          | hardware yet. |
+| *src_len*  | IN & OUT | Input the length of source buffer. |
+|            |          | When the operation is done, *src_len* is updated. |
+|            |          | It could indicate the left length not consumed by |
+|            |          | hardware yet. |
+| *dst*      | IN & OUT | Input the virtual address of destination buffer that |
+|            |          | is prepared by user application. |
+|            |          | When the operation is done, *dst* is accumulated. |
+|            |          | Original *dst* points to the output data, the new |
+|            |          | *dst* points to the new slot for next output. |
+| *dst_len*  | IN & OUT | Input the length of destination buffer. |
+|            |          | When the operation is done, *dst_len* is updated. |
+|            |          | It indicates the real length of output data. |
+| *cb*       | IN       | Indicate the user application callback that is used |
+|            |          | in asynchronous mode. |
+| *cb_param* | IN       | Indicate the parameter that is used by callback in |
+|            |          | asynchronous mode. |
+| *flag*     | IN       | **FLAG_DEFLATE** or not indicate deflating or |
+|            |          | inflating. |
+|            |          | **FLAG_INPUT_FINISH** or not indicate the last frame |
+|            |          | of input or normal frame. |
+| *status*   | OUT      | **STATUS_OUT_READY** indicates output is ready in |
+|            |          | *dst* buffer. |
+|            |          | **STATUS_OUT_DRAINED** indicates that all data have |
+|            |          | been drained into *dst* buffer. |
+|            |          | **STATUS_IN_PART_USE** indicates only part data from |
+|            |          | *src* buffer is consumed by hardware. |
+|            |          | **STATUS_IN_EMPTY** indicates all data from *src* |
+|            |          | buffer is consumed by hardware. |
 
 When an application gets a session, it could request hardware accelerator to 
 work in synchronous mode or in asychronous mode. *cb* is the callback function 
@@ -441,36 +488,14 @@ informations if parameter *arg*.
 
 Return 0 if it succeeds. Return negative value if it fails.
 
-***int wd_alg_strm_compress(handler_t handler, struct wd_comp_arg \*arg)***
+In the pair of *wd_alg_comp_alloc_sess()* and *wd_alg_comp_free_sess()*, user 
+could select either compression or decompression. The mix of compression and 
+decompression in the pair operation is forbidden.
 
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| algorithm | *handler* | Input | Indicate the context. User application |
-|           |           |       | doesn't know the details in context. |
-|           | *arg*     | Input | Indicate the source and destionation buffer. |
+Whatever the compression/decompression is BLOCK mode or STREAM mode, it's 
+always set in *wd_alg_comp_alloc_sess()*. Then *wd_alg_compress()* and 
+*wd_alg_decompress()* could be shared in both modes without any modification.
 
-Return 0 if it succeeds. Return negative value if it fails.
-
-
-***int wd_alg_strm_decompress(handler_t handler, struct wd_comp_arg \*arg)***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| algorithm | *handler* | Input | Indicate the context. User application |
-|           |           |       | doesn't know the details in context. |
-|           | *arg*     | Input | Indicate the source and destionation buffer. |
-
-Return 0 if it succeeds. Return negative value if it fails.
-
-*wd_alg_strm_compress()* and *wd_alg_strm_decompress()* are different from 
-*wd_alg_compress()* and *wd_alg_decompress()*, although they're also used in 
-compression and decompression.
-
-*wd_alg_strm_compress()* and *wd_alg_strm_decompress()* are used in stream 
-mode. Stream mode means there's dependency between data blocks. When do the 
-compression, user must wait to compress the next data block if the previous 
-one isn't finished in hardware compression. Although data bandwidth is limited 
-in stream mode, it could support extreme large data file.
 
 
 #### Asynchronous Mode
@@ -519,11 +544,13 @@ structure field in *session*.
     struct wd_alg_comp {
         char *drv_name;
         char *algo_name;
-        int  (*init)(struct wd_sess *sess, ...);
-        void (*exit)(struct wd_sess *sess, ...);
-        int  (*deflate)(struct wd_sess *sess, ...);
-        int  (*inflate)(struct wd_sess *sess, ...);
-        int  (*async_poll)(struct wd_sess *sess, ...);
+        int  (*init)(struct wd_sess *sess);
+        void (*exit)(struct wd_sess *sess);
+        int  (*prep)(struct wd_sess *sess, struct wd_comp_arg *arg);
+        void (*fini)(struct wd_sess *sess);
+        int  (*deflate)(struct wd_sess *sess, struct wd_comp_arg *arg);
+        int  (*inflate)(struct wd_sess *sess, struct wd_comp_arg *arg);
+        int  (*async_poll)(struct wd_sess *sess, struct wd_comp_arg *arg);
     };
 ```
 
@@ -533,8 +560,11 @@ structure field in *session*.
 | *drv_name*   | Driver name that is matched with device name. |
 | *init*       | Hook to do hardware initialization that implemented in vendor |
 |              | driver. |
-| *exit*       | Hook to finish hardware operation that implemented in vendor |
+| *exit*       | Hook to finish all hardware operation that implemented in |
+|              | vendor driver. |
+| *prep*       | Hook to prepare before one hardware operation in vendor |
 |              | driver. |
+| *fini*       | Hook to finish after one hardware operation in vendor dirver. |
 | *deflate*    | Hook to deflate by hardware that implemented in vendor |
 |              | driver. |
 | *inflate*    | Hook to inflate by hardware that implemented in vendor |
@@ -547,8 +577,8 @@ referenced in an algorithm driver list of algorithm library.
 
 ```
     static struct wd_alg_comp wd_alg_comp_list[] = {
-        &Accel_driver_A,
-        &Accel_driver_B,
+        Accel_driver_A_hooks,
+        Accel_driver_B_hooks,
         ...
     };
 ```
@@ -579,6 +609,7 @@ wd_comp_sess*.
         char                node_path[];
         wd_dev_mask_t       dev_mask;
         struct wd_alg_comp  *drv;
+        uint32_t            mode;       /* BLOCK mode or STREAM mode */
         void                *priv;      /* vendor specific structure */
     };
 ```
