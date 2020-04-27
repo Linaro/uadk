@@ -659,7 +659,6 @@ int hpre_dev_queue_share(char *dev, char * share_dev, char *alg_type, unsigned l
 	int ret = 0;
 	struct wd_queue q;
 	struct wd_queue target_q;
-	struct wd_queue anther_q;
 	unsigned long memory_size;
 
 	memset((void *)&q, 0, sizeof(q));
@@ -708,7 +707,6 @@ int hpre_dev_queue_share(char *dev, char * share_dev, char *alg_type, unsigned l
 		return 1;
 	}
 	printf("wd target_q queue share reserved memory success!\n");
-	wd_release_queue(&anther_q);
 	wd_release_queue(&target_q);
 	wd_release_queue(&q);
 
