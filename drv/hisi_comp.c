@@ -88,7 +88,7 @@ struct hisi_sched {
 	size_t	avail_out;
 	int	undrained;
 	int	stream_pos;
-	int	full;
+	int	msg_data_size;
 };
 
 static inline int blk_is_new_src(struct wd_msg *msg,
@@ -164,13 +164,8 @@ static void hisi_sched_init(struct wd_scheduler *sched, int i)
 	struct hisi_zip_sqe	*msg;
 	struct hisi_sched	*hpriv = sched->priv;
 
-	msg = wd_msg->msg = &hpriv->msgs[i];
-	msg->dw9 = hpriv->dw9;
-	msg->dest_avail_out = sched->msg_data_size;
-	msg->source_addr_l = (__u64)wd_msg->swap_in & 0xffffffff;
-	msg->source_addr_h = (__u64)wd_msg->swap_in >> 32;
-	msg->dest_addr_l = (__u64)wd_msg->swap_out & 0xffffffff;
-	msg->dest_addr_h = (__u64)wd_msg->swap_out >> 32;
+	wd_msg->msg = &hpriv->msgs[i];
+	msg = wd_msg->msg;
 
 	hpriv->avail_in = 0;
 	hpriv->avail_out = 0;
@@ -188,6 +183,7 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
 				    0x0, 0x0, 0x0, 0x0, 0x03};
 	int templen, skipped = 0;
+	void *addr;
 
 	if (blk_need_swap(msg, hpriv, arg->dst_len)) {
 		hpriv->avail_out = BLOCK_MAX;
@@ -272,15 +268,14 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 		hpriv->stream_pos = STREAM_NEW;
 		hpriv->load_head = 1;
 	}
-	if (hpriv->avail_in == BLOCK_MAX)
-		hpriv->full = 1;
-	if (!msg->swap_in) {
-		m->dest_avail_out = hpriv->avail_out;
-		m->source_addr_l = (__u64)msg->next_in & 0xffffffff;
-		m->source_addr_h = (__u64)msg->next_in >> 32;
-		m->dest_addr_l = (__u64)msg->next_out & 0xffffffff;
-		m->dest_addr_h = (__u64)msg->next_out >> 32;
-	}
+	addr = wd_get_dma_from_va(msg->ctx, msg->next_in);
+	m->source_addr_l = (__u64)addr & 0xffffffff;
+	m->source_addr_h = (__u64)addr >> 32;
+	addr = wd_get_dma_from_va(msg->ctx, msg->next_out);
+	m->dest_addr_l = (__u64)addr & 0xffffffff;
+	m->dest_addr_h = (__u64)addr >> 32;
+	m->dest_avail_out = hpriv->avail_out;
+	m->dw9 = hpriv->dw9;
 	return 0;
 }
 
@@ -360,6 +355,7 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 		sched_priv->dw9 = 3;
 		capa->alg = "gzip";
 	}
+	sched_priv->msg_data_size = sched->msg_data_size;
 	sched_priv->total_out = 0;
 	sched_priv->load_head = 0;
 	sched->priv = sched_priv;
@@ -406,7 +402,55 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 		if (ret)
 			goto out_start;
 	}
+	if (!sched->ss_region_size)
+		sched->ss_region_size = 4096 + /* add 1 page extra */
+			sched->msg_cache_num * sched->msg_data_size * 2;
+	if (wd_is_nosva(&sched->qs[0])) {
+		sched->ss_region = wd_reserve_mem(&sched->qs[0],
+						  sched->ss_region_size);
+		if (!sched->ss_region) {
+			ret = -ENOMEM;
+			goto out_region;
+		}
+		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
+		if (ret)
+			goto out_smm;
+		for (i = 0; i < sched->msg_cache_num; i++) {
+			sched->msgs[i].ctx = &sched->qs[0];
+			sched->msgs[i].swap_in =
+				smm_alloc(sched->ss_region,
+					  sched->msg_data_size);
+			sched->msgs[i].swap_out =
+				smm_alloc(sched->ss_region,
+					  sched->msg_data_size);
+			if (!sched->msgs[i].swap_in ||
+			    !sched->msgs[i].swap_out) {
+				dbg("not enough ss_region memory for cache %d "
+				    "(bs=%d)\n", i, sched->msg_data_size);
+				goto out_swap;
+			}
+		}
+	} else {
+		for (i = 0; i < sched->msg_cache_num; i++)
+			sched->msgs[i].ctx = &sched->qs[0];
+	}
 	return ret;
+out_swap:
+	for (j = i; j >= 0; j--) {
+		if (sched->msgs[j].swap_in)
+			smm_free(sched->ss_region, sched->msgs[j].swap_in);
+		if (sched->msgs[j].swap_out)
+			smm_free(sched->ss_region, sched->msgs[j].swap_out);
+	}
+out_smm:
+	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region) {
+		wd_drv_unmap_qfr(&sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
+	}
+out_region:
+	for (j = i - 1; j >= 0; j--) {
+		wd_stop_ctx(&sched->qs[j]);
+		sched->hw_free(&sched->qs[j]);
+	}
 out_start:
 	sched->hw_free(&sched->qs[i]);
 out_hw:

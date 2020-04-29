@@ -50,6 +50,20 @@ static void dbg_sqe(const char *head, struct hisi_zip_sqe *m)
 #define dbg_sqe(...)
 #endif
 
+static uint64_t get_mask(uint64_t value)
+{
+	uint64_t mask = 0;
+	int i = 0;
+
+	while (ffsll(value)) {
+		i++;
+		value >>= 1;
+		mask <<= 1;
+		mask |= 1;
+	}
+	return mask;
+}
+
 void *mmap_alloc(size_t len)
 {
 	void *p;
@@ -74,7 +88,6 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	struct wd_msg *wd_msg = &sched->msgs[i];
 	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *msg;
-	void *data_in, *data_out;
 
 	msg = wd_msg->msg = &ctx->msgs[i];
 
@@ -83,23 +96,6 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	else
 		msg->dw9 = HW_GZIP;
 	msg->dest_avail_out = sched->msg_data_size;
-
-	/*
-	 * This test doesn't use the data_in and data_out prepared by
-	 * wd_sched_init. Instead we ask the zip device to directly work on our
-	 * buffers to avoid a memcpy.
-	 * TODO: don't alloc buffers
-	 */
-
-	if (ctx->is_nosva) {
-		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->swap_in);
-		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->swap_out);
-
-		msg->source_addr_l = (__u64)data_in & 0xffffffff;
-		msg->source_addr_h = (__u64)data_in >> 32;
-		msg->dest_addr_l = (__u64)data_out & 0xffffffff;
-		msg->dest_addr_h = (__u64)data_out >> 32;
-	}
 }
 
 int hizip_test_default_input(struct wd_msg *msg, void *priv)
@@ -109,6 +105,7 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	struct hisi_zip_sqe *m = msg->msg;
 	struct hizip_test_context *ctx = priv;
 	struct test_options *opts = ctx->opts;
+	void *data_in, *data_out;
 
 	ilen = ctx->total_len > opts->block_size ?
 		opts->block_size : ctx->total_len;
@@ -118,6 +115,14 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 
 	if (ctx->is_nosva) {
 		memcpy(msg->swap_in, in_buf, ilen);
+
+		data_in = wd_get_dma_from_va(msg->ctx, msg->swap_in);
+		data_out = wd_get_dma_from_va(msg->ctx, msg->swap_out);
+
+		m->source_addr_l = (__u64)data_in & 0xffffffff;
+		m->source_addr_h = (__u64)data_in >> 32;
+		m->dest_addr_l = (__u64)data_out & 0xffffffff;
+		m->dest_addr_h = (__u64)data_out >> 32;
 	} else {
 		msg->next_in = in_buf;
 		msg->next_out = out_buf;
@@ -285,6 +290,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	int i, j, ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
+	uint64_t mask, addr;
 
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
@@ -331,8 +337,54 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		if (ret)
 			goto out_start;
 	}
-	return 0;
 
+	if (!sched->ss_region_size)
+		sched->ss_region_size = 4096 + /* add 1 page extra */
+			sched->msg_cache_num * sched->msg_data_size * 2;
+	if (wd_is_nosva(&sched->qs[0])) {
+		sched->ss_region = wd_reserve_mem(&sched->qs[0],
+						  sched->ss_region_size);
+		if (!sched->ss_region) {
+			ret = -ENOMEM;
+			goto out_region;
+		}
+		mask = get_mask((uint64_t)sched->ss_region);
+		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
+		if (ret)
+			goto out_smm;
+		for (i = 0; i < sched->msg_cache_num; i++) {
+			sched->msgs[i].ctx = &sched->qs[0];
+			addr = (uint64_t)smm_alloc(sched->ss_region,
+						   sched->msg_data_size);
+			sched->msgs[i].swap_in = (void *)(addr & mask);
+			addr = (uint64_t)smm_alloc(sched->ss_region,
+						   sched->msg_data_size);
+			sched->msgs[i].swap_out = (void *)(addr & mask);
+			if (!sched->msgs[i].swap_in ||
+			    !sched->msgs[i].swap_out) {
+				dbg("not enough ss_region memory for cache %d "
+				    "(bs=%d)\n", i, sched->msg_data_size);
+				goto out_swap;
+			}
+		}
+	}
+	return 0;
+out_swap:
+	for (j = i; j >= 0; j--) {
+		if (sched->msgs[j].swap_in)
+			smm_free(sched->ss_region, sched->msgs[j].swap_in);
+		if (sched->msgs[j].swap_out)
+			smm_free(sched->ss_region, sched->msgs[j].swap_out);
+	}
+out_smm:
+	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region) {
+		wd_drv_unmap_qfr(&sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
+	}
+out_region:
+	for (j = i - 1; j >= 0; j--) {
+		wd_stop_ctx(&sched->qs[j]);
+		sched->hw_free(&sched->qs[j]);
+	}
 out_start:
 	sched->hw_free(&sched->qs[i]);
 out_hw:

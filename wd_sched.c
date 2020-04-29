@@ -25,20 +25,7 @@ static int __init_cache(struct wd_scheduler *sched)
 		goto err_with_msgs;
 
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (wd_is_nosva(&sched->qs[0])) {
-			sched->msgs[i].swap_in =
-				smm_alloc(sched->ss_region,
-					  sched->msg_data_size);
-			sched->msgs[i].swap_out =
-				smm_alloc(sched->ss_region,
-					  sched->msg_data_size);
-			if (!sched->msgs[i].swap_in ||
-			    !sched->msgs[i].swap_out) {
-				dbg("not enough ss_region memory for cache %d "
-				    "(bs=%d)\n", i, sched->msg_data_size);
-				goto err_with_stat;
-			}
-		} else {
+		if (!wd_is_nosva(&sched->qs[0])) {
 			/* user buffer is used by hardware directly */
 			sched->msgs[i].swap_in = NULL;
 			sched->msgs[i].swap_out = NULL;
@@ -89,37 +76,14 @@ int wd_sched_init(struct wd_scheduler *sched, char *node_path)
 			goto out_ctx;
 	}
 
-	if (!sched->ss_region_size)
-		sched->ss_region_size = 4096 + /* add 1 page extra */
-			sched->msg_cache_num * sched->msg_data_size * 2;
-
-	if (wd_is_nosva(&sched->qs[0])) {
-		sched->ss_region = wd_reserve_mem(&sched->qs[0],
-						  sched->ss_region_size);
-		if (!sched->ss_region) {
-			ret = -ENOMEM;
-			goto out_region;
-		}
-		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
-		if (ret)
-			goto out_smm;
-	}
-
 	sched->cl = sched->msg_cache_num;
 
 	ret = __init_cache(sched);
 	if (ret)
-		goto out_smm;
+		goto out_ctx;
 
 	return 0;
 
-out_smm:
-	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region)
-		wd_drv_unmap_qfr(&sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
-out_region:
-	for (i = 0; i < sched->q_num; i++)
-		wd_release_ctx(&sched->qs[i]);
-	return ret;
 out_ctx:
 	for (j = i - 1; j >= 0; j--)
 		wd_release_ctx(&sched->qs[j]);

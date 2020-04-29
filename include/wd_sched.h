@@ -12,6 +12,7 @@ struct wd_msg {
 	void *next_in;
 	void *next_out;
 	void *msg;	/* the hw message frame */
+	struct wd_ctx *ctx;
 };
 
 struct wd_scheduler {
