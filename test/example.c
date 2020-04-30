@@ -278,11 +278,12 @@ out:
 	return ret;
 }
 
-int test_large_buffer(int flag)
+int test_large_buffer(int flag, int mode)
 {
 	handle_t	handle;
 	struct wd_comp_arg wd_arg;
 	char	algs[60];
+	char	sbuf[60];
 	char	*buf, *dst;
 	int	ret = 0, i, len = 0;
 	int	dst_idx = 0;
@@ -314,7 +315,7 @@ int test_large_buffer(int flag)
 	dst_idx = 0;
 	wd_arg.src = src;
 	wd_arg.dst = buf;
-	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	while (1) {
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
@@ -360,7 +361,7 @@ int test_large_buffer(int flag)
 	wd_arg.src = buf;
 	wd_arg.dst = dst;
 
-	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
 	while (1) {
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
@@ -407,8 +408,12 @@ int test_large_buffer(int flag)
 			goto out_comp;
 		}
 	}
-	printf("Pass large buffer case for %s algorithm.\n",
-		(flag == FLAG_ZLIB) ? "zlib" : "gzip");
+	if (mode & MODE_STREAM)
+		snprintf(sbuf, TEST_WORD_LEN, "with STREAM mode.");
+	else
+		snprintf(sbuf, TEST_WORD_LEN, "with BLOCK mode.");
+	printf("Pass large buffer case for %s algorithm %s\n",
+		(flag == FLAG_ZLIB) ? "zlib" : "gzip", sbuf);
 	wd_alg_comp_free_sess(handle);
 	free(src);
 	free(dst);
@@ -527,7 +532,10 @@ int main(int argc, char **argv)
 	test_comp_once(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_small_buffer(FLAG_GZIP, MODE_STREAM);
-	test_large_buffer(FLAG_ZLIB);
+	test_large_buffer(FLAG_ZLIB, 0);
+	test_large_buffer(FLAG_GZIP, 0);
+	test_large_buffer(FLAG_ZLIB, MODE_STREAM);
+	test_large_buffer(FLAG_GZIP, MODE_STREAM);
 	thread_fail = 0;
 	test_concurrent(FLAG_ZLIB);
 	if (thread_fail)
