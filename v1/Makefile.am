@@ -1,4 +1,4 @@
-ACLOCAL_AMFLAGS = -I m4 -I./include
+ACLOCAL_AMFLAGS = -I m4 -I./internal
 AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS=-Wall -O0 -fno-strict-aliasing
 
@@ -10,6 +10,7 @@ lib_LTLIBRARIES=libwd.la
 libwd_la_SOURCES=wd.c wd_adapter.c wd.h wd_adapter.h \
 	wd_rsa.c wd_rsa.h \
 	wd_dh.c wd_dh.h \
+	wd_ecc.c wd_ecc.h wd_ecc_curve.h \
 	wd_comp.c wd_comp.h \
 	wd_cipher.c wd_cipher.h \
 	wd_digest.c wd_digest.h \
