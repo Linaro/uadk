@@ -17,8 +17,8 @@
 #ifndef __DUMMY_DRV_H__
 #define __DUMMY_DRV_H__
 
-#include "include/wd_dummy_usr_if.h"
-#include "include/dummy_hw_usr_if.h"
+#include "internal/wd_dummy_usr_if.h"
+#include "internal/dummy_hw_usr_if.h"
 #include "../wd.h"
 
 #ifndef  DUMMY_ERR

@@ -30,7 +30,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <assert.h>
-#include "include/uacce.h"
+#include "internal/uacce.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -112,7 +112,10 @@ enum wcrypto_type {
 	WCRYPTO_COMP,
 	WCRYPTO_EC,
 	WCRYPTO_RNG,
-	WCRYPTO_MAX_ALG,
+	WCRYPTO_ECXDH,
+	WCRYPTO_ECDSA,
+	WCRYPTO_SM2,
+	WCRYPTO_MAX_ALG
 };
 
 enum wd_buff_type {

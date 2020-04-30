@@ -47,6 +47,19 @@
 #define AES_KEYSIZE_256		32
 #define CTX_ID_MAX_NUM		64
 
+/* ECC */
+#define ECDH_IN_PARAM_NUM		2
+#define ECDH_OUT_PARAM_NUM		2
+#define ECC_PRIKEY_PARAM_NUM		7
+#define ECDH_HW_KEY_PARAM_NUM		5
+#define ECC_PUBKEY_PARAM_NUM		8
+#define ECDH_HW_KEY_SZ(hsz)		((hsz) * ECDH_HW_KEY_PARAM_NUM)
+#define ECC_PRIKEY_SZ(hsz)		((hsz) * ECC_PRIKEY_PARAM_NUM)
+#define ECC_PUBKEY_SZ(hsz)		((hsz) * ECC_PUBKEY_PARAM_NUM)
+#define ECDH_OUT_PARAMS_SZ(hsz)		((hsz) * ECDH_OUT_PARAM_NUM)
+#define BITS_TO_BYTES(bits)		(((bits) + 7) / 8)
+
+
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
