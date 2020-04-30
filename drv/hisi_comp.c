@@ -463,6 +463,28 @@ out_hw:
 
 static void hisi_comp_block_fini(struct wd_comp_sess *sess)
 {
+	struct hisi_comp_sess	*priv;
+	struct wd_scheduler	*sched;
+	int	i;
+
+	priv = (struct hisi_comp_sess *)sess->priv;
+	sched = &priv->sched;
+
+	for (i = 0; i < sched->msg_cache_num; i++) {
+		if (sched->msgs[i].swap_in)
+			smm_free(sched->ss_region, sched->msgs[i].swap_in);
+		if (sched->msgs[i].swap_out)
+			smm_free(sched->ss_region, sched->msgs[i].swap_out);
+	}
+	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region) {
+		wd_drv_unmap_qfr(&sched->qs[0],
+				 UACCE_QFRT_SS,
+				 sched->ss_region);
+	}
+	for (i = 0; i < sched->q_num; i++) {
+		wd_stop_ctx(&sched->qs[i]);
+		sched->hw_free(&sched->qs[i]);
+	}
 }
 
 static void hisi_comp_block_exit(struct wd_comp_sess *sess)

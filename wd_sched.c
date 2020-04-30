@@ -39,14 +39,6 @@ static int __init_cache(struct wd_scheduler *sched)
 
 	return 0;
 
-err_with_stat:
-	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (sched->msgs[i].swap_in)
-			smm_free(sched->ss_region, sched->msgs[i].swap_in);
-		if (sched->msgs[i].swap_out)
-			smm_free(sched->ss_region, sched->msgs[i].swap_out);
-	}
-	free(sched->stat);
 err_with_msgs:
 	free(sched->msgs);
 	return ret;
@@ -56,12 +48,6 @@ static void __fini_cache(struct wd_scheduler *sched)
 {
 	int i;
 
-	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (wd_is_nosva(&sched->qs[0])) {
-			smm_free(sched->ss_region, sched->msgs[i].swap_in);
-			smm_free(sched->ss_region, sched->msgs[i].swap_out);
-		}
-	}
 	free(sched->stat);
 	free(sched->msgs);
 }
