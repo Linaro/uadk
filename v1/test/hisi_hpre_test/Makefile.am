@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../include -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../internal -pthread
 
 bin_PROGRAMS=test_hisi_hpre hpre_test_tools test_hisi_hpre_times
 
