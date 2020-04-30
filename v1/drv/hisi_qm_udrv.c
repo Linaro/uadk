@@ -104,6 +104,33 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 	info->mmio_base = NULL;
 }
 
+static bool hpre_alg_info_init(struct q_info *qinfo, const char *alg)
+{
+	struct qm_queue_info *info = qinfo->priv;
+	bool is_find = true;
+
+	if (!strncmp(alg, "rsa", strlen("rsa"))) {
+		qinfo->atype = WCRYPTO_RSA;
+		info->sqe_size = QM_HPRE_BD_SIZE;
+		info->sqe_fill[WCRYPTO_RSA] = qm_fill_rsa_sqe;
+		info->sqe_parse[WCRYPTO_RSA] = qm_parse_rsa_sqe;
+	} else if (!strncmp(alg, "dh", strlen("dh"))) {
+		qinfo->atype = WCRYPTO_DH;
+		info->sqe_size = QM_HPRE_BD_SIZE;
+		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
+		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
+	} else if (!strncmp(alg, "ecdh", strlen("ecdh"))) {
+		qinfo->atype = 	WCRYPTO_ECXDH;
+		info->sqe_size = QM_HPRE_BD_SIZE;
+		info->sqe_fill[WCRYPTO_ECXDH] = qm_fill_ecc_sqe;
+		info->sqe_parse[WCRYPTO_ECXDH] = qm_parse_ecc_sqe;
+	} else {
+		is_find = false;
+	}
+
+	return is_find;
+}
+
 static int qm_set_queue_alg_info(struct wd_queue *q)
 {
 	const char *alg = q->capa.alg;
@@ -112,17 +139,7 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	struct wcrypto_paras *priv = &q->capa.priv;
 	int ret = -WD_EINVAL;
 
-	if (!strncmp(alg, "rsa", strlen("rsa"))) {
-		qinfo->atype = WCRYPTO_RSA;
-		info->sqe_size = QM_HPRE_BD_SIZE;
-		info->sqe_fill[WCRYPTO_RSA] = qm_fill_rsa_sqe;
-		info->sqe_parse[WCRYPTO_RSA] = qm_parse_rsa_sqe;
-		ret = WD_SUCCESS;
-	} else if (!strncmp(alg, "dh", strlen("dh"))) {
-		qinfo->atype = WCRYPTO_DH;
-		info->sqe_size = QM_HPRE_BD_SIZE;
-		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
-		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
+	if (hpre_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "zlib", strlen("zlib")) ||
 				!strncmp(alg, "gzip", strlen("gzip"))) {
@@ -293,6 +310,7 @@ static void qm_tx_update(struct qm_queue_info *info, __u16 idx)
 		idx = 0;
 	else
 		idx++;
+
 	info->db(info, DOORBELL_CMD_SQ, idx, 0);
 	info->sq_tail_index = idx;
 	__atomic_add_fetch(&info->used, 1, __ATOMIC_RELAXED);

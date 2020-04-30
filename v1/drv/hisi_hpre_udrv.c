@@ -31,24 +31,43 @@
 #include "wd_util.h"
 #include "hisi_hpre_udrv.h"
 
-static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
-				int para_size, int data_len)
+static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 {
-	int i = data_len - 1;
+	int lens = bsz - dsz;
+	const char *temp = data + lens;
+	int i = 0;
+
+	while (i < dsz) {
+		if (temp[i])
+			return true;
+		i++;
+	}
+
+	return false;
+}
+
+static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
+				int b_size, int d_size)
+{
+	int i = d_size - 1;
+	bool is_hpre_bin;
 	int j = 0;
 
-	if (!dst || !src || para_size <= 0 || data_len <= 0) {
+	if (!dst || !src || b_size <= 0 || d_size <= 0) {
 		WD_ERR("crypto bin to hpre bin params err!\n");
 		return -WD_EINVAL;
 	}
-	if (para_size == data_len || (dst == src && src[para_size - 1]))
-		return WD_SUCCESS;
 
-	if (para_size < data_len) {
+	if (b_size < d_size) {
 		WD_ERR("crypto bin to hpre bin param data is too long!\n");
 		return  -WD_EINVAL;
 	}
-	for (j = para_size - 1; j >= 0; j--, i--) {
+
+	is_hpre_bin = is_hpre_bin_fmt(src, d_size, b_size);
+	if (b_size == d_size || (dst == src && is_hpre_bin))
+		return WD_SUCCESS;
+
+	for (j = b_size - 1; j >= 0; j--, i--) {
 		if (i >= 0)
 			dst[j] = src[i];
 		else
@@ -57,31 +76,31 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 	return WD_SUCCESS;
 }
 
-static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int para_size)
+static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
 {
 	int i, cnt;
 	int j = 0;
 	int k = 0;
 
-	if (!dst || !src || para_size <= 0) {
+	if (!dst || !src || b_size <= 0) {
 		WD_ERR("%s params err!\n", __func__);
 		return 0;
 	}
 
-	while (!src[j])
+	while (!src[j] && k < (b_size - 1))
 		k = ++j;
 
 	if (j == 0 && src == dst)
-		return para_size;
+		return b_size;
 
-	for (i = 0, cnt = j; i < para_size; j++, i++) {
-		if (i < para_size - cnt)
+	for (i = 0, cnt = j; i < b_size; j++, i++) {
+		if (i < b_size - cnt)
 			dst[i] = src[j];
 		else
 			dst[i] = 0;
 	}
 
-	return para_size - k;
+	return b_size - k;
 }
 
 static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey, void **data)
@@ -211,12 +230,15 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 	bin0->dsize = ret;
 
-	ret = qm_hpre_bin_to_crypto_bin(bin1->data, (const char *)bin1->data,
-				bin1->bsize);
-	if (!ret)
-		return -WD_EINVAL;
+	if (bin1) {
+		ret = qm_hpre_bin_to_crypto_bin(bin1->data,
+			(const char *)bin1->data,
+					bin1->bsize);
+		if (!ret)
+			return -WD_EINVAL;
 
-	bin1->dsize = ret;
+		bin1->dsize = ret;
+	}
 
 	if (bin2) {
 		ret = qm_hpre_bin_to_crypto_bin(bin2->data,
@@ -226,6 +248,7 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 		bin2->dsize = ret;
 	}
+
 	return WD_SUCCESS;
 }
 
@@ -434,10 +457,8 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 			hw_msg->done, hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			rsa_msg->result = WD_EINVAL;
-			ret = -WD_EINVAL;
 		} else { /* Need to indentify which hw err happened */
 			rsa_msg->result = WD_IN_EPARA;
-			ret = -WD_IN_EPARA;
 		}
 
 		if (hw_msg->alg == HPRE_ALG_KG_CRT) {
@@ -621,7 +642,6 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 		}
 	}
 
-	ret = 1;
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_key = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 	dma_in = DMA_ADDR(hw_msg->hi_in, hw_msg->hi_in);
@@ -630,6 +650,435 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in,
 		GEN_PARAMS_SZ(dh_msg->key_bytes));
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_key, dh_msg->key_bytes);
+	return 1;
+}
+
+static int qm_ecc_prepare_alg(struct hisi_hpre_sqe *hw_msg,
+			      struct wcrypto_ecc_msg *msg)
+{
+	switch (msg->op_type) {
+	case WCRYPTO_ECDH_GEN_KEY:
+	case WCRYPTO_ECDH_COMPUTE_KEY:
+		hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
+		break;
+
+	default:
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
+				      struct wd_dtb *b, struct wd_dtb *n,
+				      struct wcrypto_ecc_point *g)
+{
+	int ret;
+
+	ret = qm_crypto_bin_to_hpre_bin(p->data, (const char *)p->data,
+					p->bsize, p->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: priv p format error!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(a->data, (const char *)a->data,
+					a->bsize, a->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: priv a format error!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(b->data, (const char *)b->data,
+					b->bsize, b->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: priv b format error!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(n->data, (const char *)n->data,
+					n->bsize, n->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: priv n format error!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(g->x.data, (const char *)g->x.data,
+					g->x.bsize, g->x.dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: priv gx format error!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(g->y.data, (const char *)g->y.data,
+					g->y.bsize, g->y.dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: priv gy format error!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int trans_d_to_hpre_bin(struct wd_dtb *d)
+{
+	int ret;
+
+	ret = qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
+					d->bsize, d->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: d format error!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static bool check_d_param(struct wd_dtb *d, struct wd_dtb *n)
+{
+	char *temp = NULL;
+	int ret;
+
+	if (d->dsize > n->dsize)
+		return false;
+	else if (d->dsize < n->dsize)
+		return true;
+
+	temp = n->data + n->bsize - n->dsize;
+	ret = memcmp(d->data, temp, d->dsize);
+	if (ret < 0)
+		return true;
+	else
+		return false;
+}
+
+static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data)
+{
+	struct wcrypto_ecc_point *g = NULL;
+	struct wd_dtb *p = NULL;
+	struct wd_dtb *a = NULL;
+	struct wd_dtb *b = NULL;
+	struct wd_dtb *n = NULL;
+	struct wd_dtb *d = NULL;
+	int ret;
+
+	wcrypto_get_ecc_prikey_params((void *)key, &p, &a, &b, &n, &g, &d);
+
+	ret = trans_cv_param_to_hpre_bin(p, a, b, n, g);
+	if (ret)
+		return ret;
+
+	ret = trans_d_to_hpre_bin(d);
+	if (ret)
+		return ret;
+
+	if (!check_d_param(d, n)) {
+		WD_ERR("failed to prepare ecc prikey: d > n!\n");
+		return -WD_EINVAL;
+	}
+
+	*data = p->data;
+
+	return 0;
+}
+
+static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
+			      struct hisi_hpre_sqe *hw_msg)
+{
+	uintptr_t phy;
+	void *data;
+	size_t ksz;
+	int ret;
+
+	if (msg->op_type == WCRYPTO_ECDH_GEN_KEY ||
+		msg->op_type == WCRYPTO_ECDH_COMPUTE_KEY) {
+		ksz = ECDH_HW_KEY_SZ(msg->key_bytes);
+		ret = ecc_prepare_prikey((void *)msg->key, &data);
+		if (ret)
+			return ret;
+	} else {
+		return -WD_EINVAL;
+	}
+
+	phy  = (uintptr_t)drv_iova_map(q, data, ksz);
+	if (!phy) {
+		WD_ERR("Dma map ecc key fail!\n");
+		return -WD_ENOMEM;
+	}
+
+	hw_msg->low_key = (__u32)(phy & QM_L32BITS_MASK);
+	hw_msg->hi_key = HI_U32(phy);
+
+	return 0;
+}
+
+static void qm_ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen, size_t *olen)
+{
+	if (atype == HPRE_ALG_ECDH_MULTIPLY) {
+		*olen = ECDH_OUT_PARAMS_SZ(hsz);
+		*ilen = *olen;
+	} else {
+		*olen = hsz;
+		*ilen = hsz;
+	}
+}
+
+static int ecc_prepare_dh_compute_in(struct wcrypto_ecc_in *in, void **data)
+{
+	struct wcrypto_ecc_point *pbk = NULL;
+	int ret;
+
+	wcrypto_get_ecxdh_in_params(in, &pbk);
+
+	ret = qm_crypto_bin_to_hpre_bin(pbk->x.data, (const char *)pbk->x.data,
+					pbk->x.bsize, pbk->x.dsize);
+	if (ret) {
+		WD_ERR("ecc dh compute in x format fail!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(pbk->y.data, (const char *)pbk->y.data,
+					pbk->y.bsize, pbk->y.dsize);
+	if (ret) {
+		WD_ERR("ecc dh compute in y format fail!\n");
+		return ret;
+	}
+
+	*data = pbk->x.data;
+
+	return 0;
+}
+
+static int ecc_prepare_dh_gen_in(struct wcrypto_ecc_point *in, void **data)
+{
+	int ret;
+
+	ret = qm_crypto_bin_to_hpre_bin(in->x.data, (const char *)in->x.data,
+					in->x.bsize, in->x.dsize);
+	if (ret) {
+		WD_ERR("ecc dh gen in x format fail!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(in->y.data, (const char *)in->y.data,
+					in->y.bsize, in->y.dsize);
+	if (ret) {
+		WD_ERR("ecc dh gen in y format fail!\n");
+		return ret;
+	}
+
+	*data = in->x.data;
+
+	return 0;
+}
+
+static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg, void **data)
+{
+	struct wcrypto_ecc_in *in = (struct wcrypto_ecc_in *)msg->in;
+	int ret = -WD_EINVAL;
+
+	switch (msg->op_type) {
+	case WCRYPTO_ECDH_GEN_KEY:
+		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in, data);
+		break;
+
+	case WCRYPTO_ECDH_COMPUTE_KEY:
+		ret = ecc_prepare_dh_compute_in(in, data);
+		break;
+
+	default:
+		break;
+	}
+
 	return ret;
 }
 
+static int ecc_prepare_dh_out(struct wcrypto_ecc_out *out, void **data)
+{
+	struct wcrypto_ecc_point *dh_out = NULL;
+
+	wcrypto_get_ecxdh_out_params(out, &dh_out);
+	*data = dh_out->x.data;
+
+	return 0;
+}
+
+static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
+{
+	struct wcrypto_ecc_out *out = (struct wcrypto_ecc_out *)msg->out;
+	int ret = -WD_EINVAL;
+
+	switch (msg->op_type) {
+	case WCRYPTO_ECDH_GEN_KEY:
+	case WCRYPTO_ECDH_COMPUTE_KEY:
+		ret = ecc_prepare_dh_out(out, data);
+		break;
+	}
+
+	return ret;
+}
+
+/* prepare in/out hw msg */
+static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
+				struct hisi_hpre_sqe *hw_msg)
+{
+	size_t i_sz, o_sz;
+	void *data = NULL;
+	uintptr_t phy;
+	__u16 kbytes;
+	int ret;
+
+	kbytes = msg->key_bytes;
+	qm_ecc_get_io_len(hw_msg->alg, kbytes, &i_sz, &o_sz);
+	ret = qm_ecc_prepare_in(msg, &data);
+	if (ret) {
+		WD_ERR("qm_ecc_prepare_in fail!\n");
+		return ret;
+	}
+
+	phy = (uintptr_t)drv_iova_map(q, data, i_sz);
+	if (!phy) {
+		WD_ERR("Get ecc in buf dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
+	hw_msg->hi_in = HI_U32(phy);
+
+	ret = qm_ecc_prepare_out(msg, &data);
+	if (ret) {
+		WD_ERR("qm_ecc_prepare_out fail!\n");
+		return ret;
+	}
+
+	phy = (uintptr_t)drv_iova_map(q, data, o_sz);
+	if (!phy) {
+		WD_ERR("Get ecc out key dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	hw_msg->low_out = (__u32)(phy & QM_L32BITS_MASK);
+	hw_msg->hi_out = HI_U32(phy);
+
+	return 0;
+}
+
+static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
+				struct hisi_hpre_sqe *hw_msg)
+{
+	struct wcrypto_ecc_out *out = (void *)msg->out;
+	struct wcrypto_ecc_point *key;
+	int ret;
+
+	wcrypto_get_ecxdh_out_params(out, &key);
+	ret = qm_tri_bin_transfer(&key->x, &key->y, NULL);
+	if (ret) {
+		WD_ERR("parse ecdh out format fail!\n");
+		return ret;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
+				struct hisi_hpre_sqe *hw_msg)
+{
+	int ret = -WD_EINVAL;
+
+	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
+		ret = ecdh_out_transfer(msg, hw_msg);
+	else
+		WD_ERR("ecc out trans fail alg %d error!\n", hw_msg->alg);
+
+	return ret;
+}
+
+int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
+{
+	struct wcrypto_ecc_msg *msg = message;
+	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wd_queue *q = info->q;
+	struct hisi_hpre_sqe *hw_msg;
+	uintptr_t sqe;
+	int ret;
+
+	sqe = (uintptr_t)info->sq_base + i * info->sqe_size;
+	hw_msg = (struct hisi_hpre_sqe *)sqe;
+
+	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
+	hw_msg->task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
+
+	/* prepare alg */
+	ret = qm_ecc_prepare_alg(hw_msg, msg);
+	if (ret)
+		return ret;
+
+	/* prepare key */
+	ret = qm_ecc_prepare_key(msg, q, hw_msg);
+	if (ret)
+		return ret;
+
+	/* prepare in/out put */
+	ret = qm_ecc_prepare_iot(msg, q, hw_msg);
+	if (ret)
+		return ret;
+
+	/* This need more processing logic. to do more */
+	if (tag)
+		hw_msg->tag = tag->ctx_id;
+	hw_msg->done = 0x1;
+	hw_msg->etype = 0x0;
+	ASSERT(!info->req_cache[i]);
+	info->req_cache[i] = msg;
+
+	ASSERT(!info->req_cache[i]);
+	info->req_cache[i] = msg;
+
+	return WD_SUCCESS;
+}
+
+int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
+		     __u16 i, __u16 usr)
+{
+	struct wcrypto_ecc_msg *ecc_msg = info->req_cache[i];
+	struct hisi_hpre_sqe *hw_msg = msg;
+	__u64 dma_out, dma_in, dma_key;
+	struct wd_queue *q = info->q;
+	size_t ilen = 0;
+	size_t olen = 0;
+	__u16 kbytes;
+	int ret;
+
+	ASSERT(ecc_msg);
+
+	/* if this hw msg not belong to me, then try again */
+	if (usr && hw_msg->tag != usr)
+		return 0;
+
+	kbytes = ecc_msg->key_bytes;
+	qm_ecc_get_io_len(hw_msg->alg, kbytes, &ilen, &olen);
+	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
+		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "ecc",
+			hw_msg->done, hw_msg->etype);
+
+		if (hw_msg->done == HPRE_HW_TASK_INIT)
+			ecc_msg->result = WD_EINVAL;
+		else /* Need to indentify which hw err happened */
+			ecc_msg->result = WD_IN_EPARA;
+	} else {
+		ret = qm_ecc_out_transfer(ecc_msg, hw_msg);
+		if (ret) {
+			WD_ERR("qm ecc out transfer fail!\n");
+			ecc_msg->result = WD_OUT_EPARA;
+		} else {
+			ecc_msg->result = WD_SUCCESS;
+		}
+	}
+
+	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
+	dma_key = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
+	dma_in = DMA_ADDR(hw_msg->hi_in, hw_msg->hi_in);
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in, olen);
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_out, olen);
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_key, kbytes);
+
+	return 1;
+}
