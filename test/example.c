@@ -500,8 +500,10 @@ int test_large_buffer(int flag, int mode)
 			/* load src with LARGE_BUF_SIZE */
 			if (wd_arg.status & STATUS_IN_EMPTY)
 				templen = LARGE_BUF_SIZE;
-			else if (wd_arg.status & STATUS_IN_PART_USE)
-				templen = 0;
+			else if (wd_arg.status & STATUS_IN_PART_USE) {
+				templen = LARGE_BUF_SIZE;
+				i -= wd_arg.src_len;
+			}
 		}
 		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
 		    (wd_arg.status & STATUS_IN_EMPTY) &&
@@ -543,8 +545,10 @@ int test_large_buffer(int flag, int mode)
 			/* load src with LARGE_BUF_SIZE */
 			if (wd_arg.status & STATUS_IN_EMPTY)
 				templen = LARGE_BUF_SIZE;
-			else if (wd_arg.status & STATUS_IN_PART_USE)
-				templen = 0;
+			else if (wd_arg.status & STATUS_IN_PART_USE) {
+				templen = LARGE_BUF_SIZE;
+				i -= wd_arg.src_len;
+			}
 		}
 		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
 		    (wd_arg.status & STATUS_IN_EMPTY) &&
