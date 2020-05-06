@@ -278,6 +278,163 @@ out:
 	return ret;
 }
 
+int test_rand_buffer(int flag, int mode)
+{
+	handle_t	handle;
+	struct wd_comp_arg wd_arg;
+	char	algs[60];
+	char	sbuf[60];
+	char	*buf, *dst;
+	int	ret = 0, i, len = 0;
+	int	dst_idx = 0;
+	int	templen;
+	uint64_t	val;
+	uint32_t	seed = 0;
+	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
+	void	*src;
+
+	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	if (!buf)
+		return -ENOMEM;
+	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	if (!dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	if (flag & FLAG_ZLIB)
+		sprintf(algs, "zlib");
+	else if (flag & FLAG_GZIP)
+		sprintf(algs, "gzip");
+	memset(&wd_arg, 0, sizeof(struct wd_comp_arg));
+	wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+	wd_arg.src = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	if (!wd_arg.src) {
+		ret = -ENOMEM;
+		goto out_src;
+	}
+	src = wd_arg.src;
+	// TEST_LARGE_BUF_LEN / 8
+	for (i = 0; i < TEST_LARGE_BUF_LEN >> 3; i++) {
+		val = nrand48(rand_state);
+		*((uint64_t *)src + i) = val;
+	}
+	templen = LARGE_BUF_SIZE;
+	i = 0;
+	dst_idx = 0;
+	wd_arg.src = src;
+	wd_arg.dst = buf;
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
+	while (1) {
+		wd_arg.flag = FLAG_DEFLATE;
+		wd_arg.status = 0;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+		if (i + templen >= TEST_LARGE_BUF_LEN) {
+			templen = TEST_LARGE_BUF_LEN - i;
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = templen;
+		} else if (i >= TEST_LARGE_BUF_LEN) {
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = 0;
+		} else
+			wd_arg.src_len = templen;
+		i += templen;
+		ret = wd_alg_compress(handle, &wd_arg);
+		if (ret < 0)
+			goto out_comp;
+		if (wd_arg.status & STATUS_OUT_READY)
+			dst_idx += wd_arg.dst_len;
+		if (i <= TEST_LARGE_BUF_LEN) {
+			/* load src with LARGE_BUF_SIZE */
+			if (wd_arg.status & STATUS_IN_EMPTY)
+				templen = LARGE_BUF_SIZE;
+			else if (wd_arg.status & STATUS_IN_PART_USE) {
+				templen = LARGE_BUF_SIZE;
+				i -= wd_arg.src_len;
+			}
+		}
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
+	wd_alg_comp_free_sess(handle);
+
+	/* prepare for decompress */
+	len = dst_idx;
+	dst_idx = 0;
+	templen = LARGE_BUF_SIZE;
+	i = 0;
+	wd_arg.src = buf;
+	wd_arg.dst = dst;
+
+	handle = wd_alg_comp_alloc_sess(algs, mode & MODE_STREAM, NULL);
+	while (1) {
+		wd_arg.flag = 0;
+		wd_arg.status = 0;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN - dst_idx;
+		if (i + templen >= len) {
+			templen = len - i;
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = templen;
+		} else if (i >= len) {
+			templen = 0;
+			wd_arg.flag |= FLAG_INPUT_FINISH;
+			wd_arg.src_len = 0;
+		} else
+			wd_arg.src_len = templen;
+		i += templen;
+		ret = wd_alg_decompress(handle, &wd_arg);
+		if (ret < 0)
+			goto out_comp;
+		if (wd_arg.status & STATUS_OUT_READY)
+			dst_idx += wd_arg.dst_len;
+		if (i <= len) {
+			/* load src with LARGE_BUF_SIZE */
+			if (wd_arg.status & STATUS_IN_EMPTY)
+				templen = LARGE_BUF_SIZE;
+			else if (wd_arg.status & STATUS_IN_PART_USE) {
+				templen = LARGE_BUF_SIZE;
+				i -= wd_arg.src_len;
+			}
+		}
+		if ((wd_arg.status & STATUS_OUT_DRAINED) &&
+		    (wd_arg.status & STATUS_IN_EMPTY) &&
+		    (wd_arg.flag & FLAG_INPUT_FINISH))
+			break;
+	}
+	if (dst_idx != TEST_LARGE_BUF_LEN) {
+		fprintf(stderr, "failed on dst size:%d, expected size:%d\n",
+			dst_idx, TEST_LARGE_BUF_LEN);
+		goto out_comp;
+	}
+	for (i = 0; i < TEST_LARGE_BUF_LEN; i += LARGE_BUF_SIZE) {
+		ret = memcmp(src + i, dst + i, LARGE_BUF_SIZE);
+		if (ret) {
+			fprintf(stderr, "fail to match in %s at %d\n", __func__, i);
+			goto out_comp;
+		}
+	}
+	if (mode & MODE_STREAM)
+		snprintf(sbuf, TEST_WORD_LEN, "with STREAM mode.");
+	else
+		snprintf(sbuf, TEST_WORD_LEN, "with BLOCK mode.");
+	printf("Pass rand buffer case for %s algorithm %s\n",
+		(flag == FLAG_ZLIB) ? "zlib" : "gzip", sbuf);
+	wd_alg_comp_free_sess(handle);
+	free(src);
+	free(dst);
+	free(buf);
+	return 0;
+out_comp:
+	wd_alg_comp_free_sess(handle);
+	free(src);
+out_src:
+	free(dst);
+out:
+	free(buf);
+	return ret;
+}
+
 int test_large_buffer(int flag, int mode)
 {
 	handle_t	handle;
@@ -532,6 +689,8 @@ int main(int argc, char **argv)
 	test_comp_once(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_small_buffer(FLAG_GZIP, MODE_STREAM);
+	test_rand_buffer(FLAG_ZLIB, MODE_STREAM);
+	test_rand_buffer(FLAG_GZIP, MODE_STREAM);
 	test_large_buffer(FLAG_ZLIB, 0);
 	test_large_buffer(FLAG_GZIP, 0);
 	test_large_buffer(FLAG_ZLIB, MODE_STREAM);
