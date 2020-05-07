@@ -693,6 +693,7 @@ int main(int argc, char **argv)
 	test_comp_once(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_small_buffer(FLAG_GZIP, MODE_STREAM);
+	test_rand_buffer(FLAG_GZIP, 0);
 	test_rand_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_rand_buffer(FLAG_GZIP, MODE_STREAM);
 	test_large_buffer(FLAG_ZLIB, 0);
