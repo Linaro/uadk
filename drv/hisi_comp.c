@@ -548,11 +548,6 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 	sched_priv = sched->priv;
 	/* ZLIB engine can do only one time with buffer less than 16M */
 	if (sched_priv->alg_type == ZLIB) {
-		if (arg->src_len > BLOCK_SIZE) {
-			WD_ERR("zlib total_len(%ld) > BLOCK_SIZE(%d)\n",
-				arg->src_len, BLOCK_SIZE);
-			return -EINVAL;
-		}
 		if (BLOCK_SIZE > 16 << 20) {
 			WD_ERR("BLOCK_SIZE(%ld) > HW limitation (16MB)\n",
 				arg->src_len);
