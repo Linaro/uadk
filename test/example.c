@@ -288,15 +288,16 @@ int test_rand_buffer(int flag, int mode)
 	int	ret = 0, i, len = 0;
 	int	dst_idx = 0;
 	int	templen;
+	int	ratio = 4;	// inflation needs larger buffer
 	uint64_t	val;
 	uint32_t	seed = 0;
 	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
 	void	*src;
 
-	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN * ratio + LARGE_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
-	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN * ratio + LARGE_BUF_SIZE);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out;
@@ -327,7 +328,7 @@ int test_rand_buffer(int flag, int mode)
 	while (1) {
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
-		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN * ratio;
 		if (i + templen >= TEST_LARGE_BUF_LEN) {
 			templen = TEST_LARGE_BUF_LEN - i;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
@@ -371,7 +372,7 @@ int test_rand_buffer(int flag, int mode)
 	while (1) {
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
-		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN - dst_idx;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN * ratio - dst_idx;
 		if (i + templen >= len) {
 			templen = len - i;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
@@ -445,12 +446,13 @@ int test_large_buffer(int flag, int mode)
 	int	ret = 0, i, len = 0;
 	int	dst_idx = 0;
 	int	templen;
+	int	ratio = 4;	// inflation needs large buffer
 	void	*src;
 
-	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN * ratio  + LARGE_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
-	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
+	dst = malloc(sizeof(char) * TEST_LARGE_BUF_LEN * ratio + LARGE_BUF_SIZE);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out;
@@ -460,7 +462,7 @@ int test_large_buffer(int flag, int mode)
 	else if (flag & FLAG_GZIP)
 		sprintf(algs, "gzip");
 	memset(&wd_arg, 0, sizeof(struct wd_comp_arg));
-	wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+	wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN * ratio;
 	wd_arg.src = malloc(sizeof(char) * TEST_LARGE_BUF_LEN);
 	if (!wd_arg.src) {
 		ret = -ENOMEM;
@@ -476,7 +478,7 @@ int test_large_buffer(int flag, int mode)
 	while (1) {
 		wd_arg.flag = FLAG_DEFLATE;
 		wd_arg.status = 0;
-		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN * ratio;
 		if (templen) {
 			memset(wd_arg.src, 0, templen);
 			memcpy(wd_arg.src, word, strlen(word));
@@ -524,7 +526,7 @@ int test_large_buffer(int flag, int mode)
 	while (1) {
 		wd_arg.flag = 0;
 		wd_arg.status = 0;
-		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN - dst_idx;
+		wd_arg.dst_len = sizeof(char) * TEST_LARGE_BUF_LEN * ratio - dst_idx;
 		if (i + templen >= len) {
 			templen = len - i;
 			wd_arg.flag |= FLAG_INPUT_FINISH;
@@ -693,6 +695,7 @@ int main(int argc, char **argv)
 	test_comp_once(FLAG_GZIP, 0);
 	test_small_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_small_buffer(FLAG_GZIP, MODE_STREAM);
+	test_rand_buffer(FLAG_ZLIB, 0);
 	test_rand_buffer(FLAG_GZIP, 0);
 	test_rand_buffer(FLAG_ZLIB, MODE_STREAM);
 	test_rand_buffer(FLAG_GZIP, MODE_STREAM);
