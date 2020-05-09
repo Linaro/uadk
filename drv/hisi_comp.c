@@ -294,10 +294,12 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 		memcpy(arg->dst, msg->next_out - hpriv->undrained,
 		       templen);
 		hpriv->total_out += templen;
+		hpriv->avail_in -= m->consumed;
 		arg->dst += templen;
 	} else {
 		/* drain next_out first */
 		hpriv->total_out += hpriv->undrained + m->produced;
+		hpriv->avail_in -= m->consumed;
 		arg->dst += hpriv->undrained + m->produced;
 	}
 	hpriv->undrained = 0;
