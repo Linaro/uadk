@@ -284,8 +284,6 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 	struct wd_comp_arg	*arg = hpriv->arg;
 	int	templen;
 
-	if (arg->status & STATUS_IN_EMPTY)
-		msg->next_in = NULL;
 	if (blk_is_in_swap(msg, msg->next_out, msg->swap_out)) {
 		if (hpriv->undrained + m->produced > arg->dst_len)
 			templen = arg->dst_len + m->produced;
@@ -296,18 +294,24 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 		hpriv->total_out += templen;
 		hpriv->avail_in -= m->consumed;
 		arg->dst += templen;
+		arg->dst_len = templen;
 	} else {
 		/* drain next_out first */
 		hpriv->total_out += hpriv->undrained + m->produced;
 		hpriv->avail_in -= m->consumed;
 		arg->dst += hpriv->undrained + m->produced;
+		arg->dst_len = hpriv->undrained + m->produced;
 	}
 	hpriv->undrained = 0;
 	arg->status |= STATUS_OUT_READY;
-	if (!hpriv->undrained && !hpriv->avail_in) {
-		arg->status |= STATUS_OUT_DRAINED;
+	if (hpriv->avail_in) {
+		arg->status |= STATUS_IN_PART_USE;
+	} else {
+		arg->status |= STATUS_IN_EMPTY | STATUS_OUT_DRAINED;
 		msg->next_out = NULL;
 	}
+	if (arg->status & STATUS_IN_EMPTY)
+		msg->next_in = NULL;
 	return 0;
 }
 
