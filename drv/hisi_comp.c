@@ -134,12 +134,8 @@ static inline int blk_need_swap(struct wd_msg *msg,
 				struct hisi_sched *hpriv,
 				int buf_size)
 {
-	struct wd_comp_arg	*arg = hpriv->arg;
-
 	/* NOSVA */
 	if (msg->swap_in)
-		return 1;
-	if ((buf_size < BLOCK_MAX) && !(arg->flag & FLAG_INPUT_FINISH))
 		return 1;
 	return 0;
 }
@@ -511,20 +507,6 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 
 	if (!(arg->flag & FLAG_INPUT_FINISH) && (arg->src_len < BLOCK_MAX))
 		return -EINVAL;
-
-	/* ZLIB engine can do only one time with buffer less than 16M */
-	if (sched_priv->alg_type == ZLIB) {
-		if (arg->src_len > BLOCK_SIZE) {
-			WD_ERR("zlib total_len(%ld) > BLOCK_SIZE(%d)\n",
-				arg->src_len, BLOCK_SIZE);
-			return -EINVAL;
-		}
-		if (BLOCK_SIZE > 16 << 20) {
-			WD_ERR("BLOCK_SIZE(%ld) > HW limitation (16MB)\n",
-				arg->src_len);
-			return -EINVAL;
-		}
-	}
 
 	while (arg->src_len || !wd_sched_empty(sched)) {
 		ret = wd_sched_work(sched, arg->src_len);
