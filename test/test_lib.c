@@ -319,7 +319,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = opts->op_type;
 
-	ret = wd_sched_init(sched, "/dev/hisi_zip-1");
+	ret = wd_sched_init(sched, "/dev/hisi_zip-0");
 	if (ret)
 		goto out_sched;
 
