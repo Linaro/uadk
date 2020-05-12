@@ -66,6 +66,7 @@
 |         |                |2) Fix typo error. |
 |         |                |3) Mention libwd and algorithm libraries are built |
 |         |                |   as different libraries. |
+|  0.108  |                |1) Add more descriptions. |
 
 
 ## Terminology
@@ -262,12 +263,12 @@ by sysfs. So libwd could parse IDs from sysfs and make use of them.
     typedef struct wd_dev_mask    wd_dev_mask_t;
 ```
 
-MAX_ACCELS is predefined in libwd. Now MAX_ACCELS is 512 that means 512 
+MAX_ACCELS is predefined in *wd.h*. Now MAX_ACCELS is 512 that means 512 
 accelerators are supported in the same time. Each accelerator could be denoted 
 by one bit. So 512 bits could be covered by 16 words. These 16 words are the 
-masks, *wd_dev_mask_t*. If more accelerators need to be supported, just extend 
-the value of MAX_ACCELS in WarpDrive. The lowest bit indicates the hardware 
-accelerator 0.
+masks, *wd_dev_mask_t*. If more accelerators need to be supported, libwd could 
+extend the value of max accelerators automatically. The lowest bit indicates 
+the hardware accelerator 0.
 
 ***int wd_get_accel_mask(char \*alg_name, wd_dev_mask_t \*dev_mask);***
 
@@ -712,12 +713,12 @@ context and free hardware.
 
 NOSVA is a special scenario in WarpDrive framework. It means that SVA feature 
 is disabled. Because of this, vendor driver can't access the same virtual 
-address from application. Memory copy is preferred in NOSVA scenario.
+address from application. Memory copy has to be used in NOSVA scenario.
 
 Vendor driver needs to access the hardware address of accelerator. Since vendor 
 driver is in user mode. This behavior stains Linux Kernel. So NOSVA scenario 
-isn't preferred to use. It'll be removed in the future. If user really wants to 
-use NOSVA scenario, user must have the root permission. And the additional 
+isn't preferred to use. It might be removed in the future. If user really wants 
+to use NOSVA scenario, user must have the root permission. And the additional 
 APIs are provied in NOSVA scenario.
 
 
@@ -754,7 +755,8 @@ invoked in *wd_reserve_mem()* by default.
 Since hardware accelerator needs to access memory, vendor driver needs to 
 provide address that could be accessed by hardware accelerator. Libwd helps 
 vendor driver to maintain the mapping between virtual address and the address 
-is recognized by accelerator, and returns the address.
+is recognized by accelerator, and returns the address. But it's insecure to 
+expose address that is recognized by accelerator to user space application.
 
 ***void \*wd_get_dma_from_va(struct wd_ctx \*ctx, void \*va);***
 
