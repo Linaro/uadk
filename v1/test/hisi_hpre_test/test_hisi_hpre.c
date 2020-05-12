@@ -53,6 +53,8 @@
 
 typedef unsigned int u32;
 
+pthread_mutex_t mute;
+
 struct bignum_st {
 	BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
 					 * chunks. */
@@ -4197,10 +4199,12 @@ void normal_register(const char *format)
 
 void redirect_log_2_file(const char *format)
 {
+    pthread_mutex_lock(&mute);
     FILE *fp;
     fp = fopen("file.txt", "a+");
     fprintf(fp,format,__FILE__, __LINE__, __func__);
     fclose(fp);
+    pthread_mutex_unlock(&mute);
     return ;
 }
 
