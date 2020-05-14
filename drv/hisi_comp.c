@@ -69,7 +69,7 @@ struct hisi_strm_info {
 };
 
 struct hisi_comp_sess {
-	struct wd_ctx		ctx;
+	handle_t		h_ctx;
 	struct wd_scheduler	sched;
 	struct hisi_qm_capa	capa;
 	struct hisi_strm_info	strm;
@@ -158,14 +158,12 @@ static inline int blk_need_split(struct wd_msg *msg,
  * sched doesn't need to consider minimum block size.
  *
  */
-static void hisi_sched_init(struct wd_scheduler *sched, int i)
+static void hisi_sched_init(struct wd_scheduler *sched, int i, void *priv)
 {
 	struct wd_msg	*wd_msg = &sched->msgs[i];
-	struct hisi_zip_sqe	*msg;
 	struct hisi_sched	*hpriv = sched->priv;
 
 	wd_msg->msg = &hpriv->msgs[i];
-	msg = wd_msg->msg;
 
 	hpriv->avail_in = 0;
 	hpriv->avail_out = 0;
@@ -268,10 +266,10 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 		hpriv->stream_pos = STREAM_NEW;
 		hpriv->load_head = 1;
 	}
-	addr = wd_get_dma_from_va(msg->ctx, msg->next_in);
+	addr = wd_get_dma_from_va(msg->h_ctx, msg->next_in);
 	m->source_addr_l = (__u64)addr & 0xffffffff;
 	m->source_addr_h = (__u64)addr >> 32;
-	addr = wd_get_dma_from_va(msg->ctx, msg->next_out);
+	addr = wd_get_dma_from_va(msg->h_ctx, msg->next_out);
 	m->dest_addr_l = (__u64)addr & 0xffffffff;
 	m->dest_addr_h = (__u64)addr >> 32;
 	m->dest_avail_out = hpriv->avail_out;
@@ -395,18 +393,18 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = sched_priv->op_type;
 	for (i = 0; i < sched->q_num; i++) {
-		ret = sched->hw_alloc(&sched->qs[i], sched->data);
+		ret = sched->hw_alloc(sched->qs[i], sched->data);
 		if (ret)
 			goto out_hw;
-		ret = wd_start_ctx(&sched->qs[i]);
+		ret = wd_ctx_start(sched->qs[i]);
 		if (ret)
 			goto out_start;
 	}
 	if (!sched->ss_region_size)
 		sched->ss_region_size = 4096 + /* add 1 page extra */
 			sched->msg_cache_num * sched->msg_data_size * 2;
-	if (wd_is_nosva(&sched->qs[0])) {
-		sched->ss_region = wd_reserve_mem(&sched->qs[0],
+	if (wd_is_nosva(sched->qs[0])) {
+		sched->ss_region = wd_reserve_mem(sched->qs[0],
 						  sched->ss_region_size);
 		if (!sched->ss_region) {
 			ret = -ENOMEM;
@@ -416,7 +414,7 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 		if (ret)
 			goto out_smm;
 		for (i = 0; i < sched->msg_cache_num; i++) {
-			sched->msgs[i].ctx = &sched->qs[0];
+			sched->msgs[i].h_ctx = sched->qs[0];
 			sched->msgs[i].swap_in =
 				smm_alloc(sched->ss_region,
 					  sched->msg_data_size);
@@ -432,7 +430,7 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 		}
 	} else {
 		for (i = 0; i < sched->msg_cache_num; i++)
-			sched->msgs[i].ctx = &sched->qs[0];
+			sched->msgs[i].h_ctx = sched->qs[0];
 	}
 	return ret;
 out_swap:
@@ -443,20 +441,20 @@ out_swap:
 			smm_free(sched->ss_region, sched->msgs[j].swap_out);
 	}
 out_smm:
-	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region) {
-		wd_drv_unmap_qfr(&sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
+	if (wd_is_nosva(sched->qs[0]) && sched->ss_region) {
+		wd_drv_unmap_qfr(sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
 	}
 out_region:
 	for (j = i - 1; j >= 0; j--) {
-		wd_stop_ctx(&sched->qs[j]);
-		sched->hw_free(&sched->qs[j]);
+		wd_ctx_stop(sched->qs[j]);
+		sched->hw_free(sched->qs[j]);
 	}
 out_start:
-	sched->hw_free(&sched->qs[i]);
+	sched->hw_free(sched->qs[i]);
 out_hw:
 	for (j = i - 1; j >= 0; j--) {
-		wd_stop_ctx(&sched->qs[j]);
-		sched->hw_free(&sched->qs[j]);
+		wd_ctx_stop(sched->qs[j]);
+		sched->hw_free(sched->qs[j]);
 	}
 	return ret;
 }
@@ -476,14 +474,14 @@ static void hisi_comp_block_fini(struct wd_comp_sess *sess)
 		if (sched->msgs[i].swap_out)
 			smm_free(sched->ss_region, sched->msgs[i].swap_out);
 	}
-	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region) {
-		wd_drv_unmap_qfr(&sched->qs[0],
+	if (wd_is_nosva(sched->qs[0]) && sched->ss_region) {
+		wd_drv_unmap_qfr(sched->qs[0],
 				 UACCE_QFRT_SS,
 				 sched->ss_region);
 	}
 	for (i = 0; i < sched->q_num; i++) {
-		wd_stop_ctx(&sched->qs[i]);
-		sched->hw_free(&sched->qs[i]);
+		wd_ctx_stop(sched->qs[i]);
+		sched->hw_free(sched->qs[i]);
 	}
 }
 
@@ -618,7 +616,7 @@ static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 
-	if (wd_is_nosva(&priv->ctx)) {
+	if (wd_is_nosva(priv->h_ctx)) {
 		return 1;
 	} else {
 		if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
@@ -635,7 +633,7 @@ static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 
-	if (wd_is_nosva(&priv->ctx))
+	if (wd_is_nosva(priv->h_ctx))
 		return 1;
 	if (buf_size < STREAM_MIN)
 		return 1;
@@ -653,7 +651,6 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct hisi_strm_info	*strm = &priv->strm;
-	int	ret;
 
 	if (strm->alg_type == ZLIB) {
 		priv->capa.alg = "zlib";
@@ -667,10 +664,10 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 	strm->msg = malloc(sizeof(*strm->msg));
 	if (!strm->msg)
 		return -ENOMEM;
-	ret = wd_request_ctx(&priv->ctx, sess->node_path);
-	if (ret)
+	priv->h_ctx = wd_request_ctx(sess->node_path);
+	if (!priv->h_ctx)
 		free(strm->msg);
-	return ret;
+	return 0;
 }
 
 static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
@@ -684,10 +681,10 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = (arg->flag & FLAG_DEFLATE) ? DEFLATE: INFLATE;
-	ret = hisi_qm_alloc_ctx(&priv->ctx, &priv->capa);
+	ret = hisi_qm_alloc_ctx(priv->h_ctx, &priv->capa);
 	if (ret)
 		goto out;
-	ret = wd_start_ctx(&priv->ctx);
+	ret = wd_ctx_start(priv->h_ctx);
 	if (ret)
 		goto out_ctx;
 	strm->load_head = 0;
@@ -696,9 +693,9 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 	strm->next_in = NULL;
 	strm->next_out = NULL;
 	strm->op_type = qm_priv->op_type;
-	if (wd_is_nosva(&priv->ctx)) {
+	if (wd_is_nosva(priv->h_ctx)) {
 		strm->ss_region_size = 4096 + STREAM_MAX * 2 + HW_CTX_SIZE;
-		strm->ss_region = wd_reserve_mem(&priv->ctx,
+		strm->ss_region = wd_reserve_mem(priv->h_ctx,
 					sizeof(char) * strm->ss_region_size);
 		if (!strm->ss_region) {
 			WD_ERR("fail to allocate memory for SS region\n");
@@ -737,9 +734,9 @@ out_smm_out:
 out_smm:
 	free(strm->ss_region);
 out_ss:
-	wd_stop_ctx(&priv->ctx);
+	wd_ctx_stop(priv->h_ctx);
 out_ctx:
-	hisi_qm_free_ctx(&priv->ctx);
+	hisi_qm_free_ctx(priv->h_ctx);
 out:
 	return ret;
 out_buf:
@@ -747,8 +744,8 @@ out_buf:
 out_out:
 	free(strm->next_in);
 out_in:
-	wd_stop_ctx(&priv->ctx);
-	hisi_qm_free_ctx(&priv->ctx);
+	wd_ctx_stop(priv->h_ctx);
+	hisi_qm_free_ctx(priv->h_ctx);
 	return -ENOMEM;
 }
 
@@ -759,7 +756,7 @@ static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	if (wd_is_nosva(&priv->ctx)) {
+	if (wd_is_nosva(priv->h_ctx)) {
 		smm_free(strm->ss_region, strm->swap_in);
 		smm_free(strm->ss_region, strm->swap_out);
 		smm_free(strm->ss_region, strm->ctx_buf);
@@ -769,8 +766,8 @@ static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
 		free(strm->swap_out);
 		free(strm->ctx_buf);
 	}
-	wd_stop_ctx(&priv->ctx);
-	hisi_qm_free_ctx(&priv->ctx);
+	wd_ctx_stop(priv->h_ctx);
+	hisi_qm_free_ctx(priv->h_ctx);
 	free(strm->msg);
 }
 
@@ -803,11 +800,12 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 			strm->skipped = 0;
 		}
 	}
-	if (wd_is_nosva(&priv->ctx)) {
-		addr = wd_get_dma_from_va(&priv->ctx, strm->next_in);
+	if (wd_is_nosva(priv->h_ctx)) {
+		addr = (uint64_t)wd_get_dma_from_va(priv->h_ctx, strm->next_in);
 		msg->source_addr_l = (uint64_t)addr & 0xffffffff;
 		msg->source_addr_h = (uint64_t)addr >> 32;
-		addr = wd_get_dma_from_va(&priv->ctx, strm->next_out);
+		addr = (uint64_t)wd_get_dma_from_va(priv->h_ctx,
+						    strm->next_out);
 		msg->dest_addr_l = (uint64_t)addr & 0xffffffff;
 		msg->dest_addr_h = (uint64_t)addr >> 32;
 	} else {
@@ -820,8 +818,9 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 	msg->dest_avail_out = strm->avail_out;
 
 	if (strm->op_type == INFLATE) {
-		if (wd_is_nosva(&priv->ctx)) {
-			addr = wd_get_dma_from_va(&priv->ctx, strm->ctx_buf);
+		if (wd_is_nosva(priv->h_ctx)) {
+			addr = (uint64_t)wd_get_dma_from_va(priv->h_ctx,
+							    strm->ctx_buf);
 			msg->stream_ctx_addr_l = (uint64_t)addr & 0xffffffff;
 			msg->stream_ctx_addr_h = (uint64_t)addr >> 32;
 		} else {
@@ -836,7 +835,7 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 	msg->isize = strm->isize;
 	msg->checksum = strm->checksum;
 
-	ret = hisi_qm_send(&priv->ctx, msg);
+	ret = hisi_qm_send(priv->h_ctx, msg);
 	if (ret == -EBUSY) {
 		usleep(1);
 		goto recv_again;
@@ -847,7 +846,7 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 	}
 
 recv_again:
-	ret = hisi_qm_recv(&priv->ctx, (void **)&recv_msg);
+	ret = hisi_qm_recv(priv->h_ctx, (void **)&recv_msg);
 	if (ret == -EIO) {
 		fputs(" wd_recv fail!\n", stderr);
 		goto out;
@@ -894,7 +893,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 	strm = &priv->strm;
 	/* full & skipped are used in IN, strm->undrained is used in OUT */
 	if (need_swap(sess, arg->dst_len)) {
-		if (wd_is_nosva(&priv->ctx))
+		if (wd_is_nosva(priv->h_ctx))
 			strm->avail_out = STREAM_MAX;
 		else
 			strm->avail_out = STREAM_MIN;
@@ -923,7 +922,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 	}
 	if (is_new_src(sess, arg) && arg->src_len) {
 		if (need_swap(sess, arg->src_len)) {
-			if (wd_is_nosva(&priv->ctx)) {
+			if (wd_is_nosva(priv->h_ctx)) {
 				if (arg->src_len > STREAM_MAX)
 					templen = STREAM_MAX;
 				else
@@ -951,7 +950,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 	} else if (arg->src_len) {
 		/* some data is cached in next_in buffer */
 		if (is_in_swap(sess, strm->next_in, strm->swap_in)) {
-			if (wd_is_nosva(&priv->ctx)) {
+			if (wd_is_nosva(priv->h_ctx)) {
 				templen = strm->swap_in + STREAM_MAX -
 					  strm->next_in - strm->avail_in;
 			} else {
