@@ -20,7 +20,7 @@
 
 static int test_compress(char *src, char *dst, int flag)
 {
-	handler_t		handle;
+	handle_t		handle;
 	struct wd_comp_arg	arg;
 	struct stat		st;
 	ssize_t	size;
@@ -54,14 +54,14 @@ static int test_compress(char *src, char *dst, int flag)
 	arg.src_len = BUF_SIZE;
 	arg.src = malloc(sizeof(char) * BUF_SIZE);
 	if (!arg.src) {
-		printf("Fail to allocate src buffer with %d bytes.\n", arg.src_len);
+		printf("Fail to allocate src buffer with %ld bytes.\n", arg.src_len);
 		ret = -ENOMEM;
 		goto out_src;
 	}
 	arg.dst_len = BUF_SIZE;	// for decompress
 	arg.dst = malloc(sizeof(char) * arg.dst_len);
 	if (!arg.dst) {
-		printf("Fail to allocate dst buffer with %d bytes.\n", arg.dst_len);
+		printf("Fail to allocate dst buffer with %ld bytes.\n", arg.dst_len);
 		ret = -ENOMEM;
 		goto out_dst;
 	}

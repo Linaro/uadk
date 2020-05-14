@@ -57,7 +57,7 @@ do { \
 #define cpu_to_be32(x) swab32(x)
 
 struct zip_stream {
-	struct wd_ctx	*ctx;
+	handle_t	h_ctx;
 	int		alg_type;
 	int		stream_pos;
 	void *next_in;   /* next input byte */
@@ -90,13 +90,6 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	struct hisi_qm_priv *priv;
 	struct hisi_qm_capa capa;
 
-	zstrm->ctx = malloc(sizeof(struct wd_ctx));
-	if (!zstrm->ctx) {
-		fputs("alloc zstrm fail!\n", stderr);
-		return -1;
-	}
-	memset((void *)zstrm->ctx, 0, sizeof(struct wd_ctx));
-
 	switch (alg_type) {
 	case 0:
 		zstrm->alg_type = HW_ZLIB;
@@ -113,25 +106,25 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	priv = (struct hisi_qm_priv *)capa.priv;
 	priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	priv->op_type = comp_optype;
-	ret = wd_request_ctx(zstrm->ctx, "/dev/hisi_zip-0");
-	if (ret) {
-		fprintf(stderr, "wd_request_ctx fail ret =%d\n", ret);
+	zstrm->h_ctx = wd_request_ctx("/dev/hisi_zip-0");
+	if (!zstrm->h_ctx) {
+		fprintf(stderr, "wd_request_ctx fail\n");
+		ret = -EFAULT;
 		goto out;
 	}
-	SYS_ERR_COND(ret, "wd_request_queue");
 
-	ret = hisi_qm_alloc_ctx(zstrm->ctx, &capa);
+	ret = hisi_qm_alloc_ctx(zstrm->h_ctx, &capa);
 	if (ret)
 		goto out_qm;
 
-	ret = wd_start_ctx(zstrm->ctx);
+	ret = wd_ctx_start(zstrm->h_ctx);
 	if (ret)
 		goto out_start;
 
 	ss_region_size = 4096+ASIZE*2+HW_CTX_SIZE;
 
-	if (wd_is_nosva(zstrm->ctx)) {
-		dma_buf = wd_reserve_mem(zstrm->ctx, ss_region_size);
+	if (wd_is_nosva(zstrm->h_ctx)) {
+		dma_buf = wd_reserve_mem(zstrm->h_ctx, ss_region_size);
 		if (!dma_buf) {
 			fprintf(stderr, "fail to reserve %ld dmabuf\n",
 				ss_region_size);
@@ -145,11 +138,12 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 		zstrm->next_in = smm_alloc(dma_buf, ASIZE);
 		zstrm->next_out = smm_alloc(dma_buf, ASIZE);
 		zstrm->ctx_buf = smm_alloc(dma_buf, HW_CTX_SIZE);
-		zstrm->next_in_pa = wd_get_dma_from_va(zstrm->ctx,
+		zstrm->next_in_pa = wd_get_dma_from_va(zstrm->h_ctx,
 						       zstrm->next_in);
-		zstrm->next_out_pa = wd_get_dma_from_va(zstrm->ctx,
+		zstrm->next_out_pa = wd_get_dma_from_va(zstrm->h_ctx,
 							zstrm->next_out);
-		zstrm->ctx_buf = wd_get_dma_from_va(zstrm->ctx, zstrm->ctx_buf);
+		zstrm->ctx_buf = wd_get_dma_from_va(zstrm->h_ctx,
+						    zstrm->ctx_buf);
 		zstrm->workspace = dma_buf;
 	} else {
 		zstrm->next_in = malloc(ASIZE);
@@ -169,34 +163,31 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	zstrm->temp_in_pa = zstrm->next_in_pa;
 	return Z_OK;
 out_buf:
-	if (!wd_is_nosva(zstrm->ctx)) {
+	if (!wd_is_nosva(zstrm->h_ctx)) {
 		free(zstrm->next_in);
 		free(zstrm->next_out);
 		free(zstrm->ctx_buf);
 	}
 out_alloc:
-	wd_stop_ctx(zstrm->ctx);
+	wd_ctx_stop(zstrm->h_ctx);
 out_start:
-	hisi_qm_free_ctx(zstrm->ctx);
+	hisi_qm_free_ctx(zstrm->h_ctx);
 out_qm:
-	wd_release_ctx(zstrm->ctx);
+	wd_release_ctx(zstrm->h_ctx);
 out:
-	free(zstrm->ctx);
-
 	return ret;
 }
 
 void hw_end(struct zip_stream *zstrm)
 {
-	wd_stop_ctx(zstrm->ctx);
-	if (!wd_is_nosva(zstrm->ctx)) {
+	wd_ctx_stop(zstrm->h_ctx);
+	if (!wd_is_nosva(zstrm->h_ctx)) {
 		free(zstrm->next_in);
 		free(zstrm->next_out);
 		free(zstrm->ctx_buf);
 	}
-	hisi_qm_free_ctx(zstrm->ctx);
-	wd_release_ctx(zstrm->ctx);
-	free(zstrm->ctx);
+	hisi_qm_free_ctx(zstrm->h_ctx);
+	wd_release_ctx(zstrm->h_ctx);
 }
 
 unsigned int bit_reverse(register unsigned int x)
@@ -286,7 +277,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 		zstrm->total_out = 0;
 	}
 
-	ret = hisi_qm_send(zstrm->ctx, msg);
+	ret = hisi_qm_send(zstrm->h_ctx, msg);
 	if (ret == -EBUSY) {
 		usleep(1);
 		goto recv_again;
@@ -294,7 +285,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 
 	SYS_ERR_COND(ret, "send fail!\n");
 recv_again:
-	ret = hisi_qm_recv(zstrm->ctx, (void **)&recv_msg);
+	ret = hisi_qm_recv(zstrm->h_ctx, (void **)&recv_msg);
 	if (ret == -EIO) {
 		fputs(" wd_recv fail!\n", stderr);
 		goto msg_free;
