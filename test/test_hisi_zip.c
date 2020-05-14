@@ -54,9 +54,9 @@ static void hizip_wd_sched_init_cache(struct wd_scheduler *sched, int i,
 	msg->dw9 = ctx->dw9;
 	msg->dest_avail_out = sched->msg_data_size;
 
-	if (wd_is_nosva(&sched->qs[0])) {
-		data_in = wd_get_dma_from_va(&sched->qs[0], wd_msg->next_in);
-		data_out = wd_get_dma_from_va(&sched->qs[0], wd_msg->next_out);
+	if (wd_is_nosva(sched->qs[0])) {
+		data_in = wd_get_dma_from_va(sched->qs[0], wd_msg->next_in);
+		data_out = wd_get_dma_from_va(sched->qs[0], wd_msg->next_out);
 	} else {
 		data_in = wd_msg->next_in;
 		data_out = wd_msg->next_out;
@@ -231,10 +231,10 @@ void hizip_deflate(FILE *source, FILE *dest)
 		capa.alg = "gzip";
 
 	for (i = 0; i < sched.q_num; i++) {
-		ret = sched.hw_alloc(&sched.qs[i], sched.data);
+		ret = sched.hw_alloc(sched.qs[i], sched.data);
 		if (ret)
 			goto out;
-		ret = wd_start_ctx(&sched.qs[i]);
+		ret = wd_ctx_start(sched.qs[i]);
 		if (ret)
 			goto out_start;
 	}
@@ -265,11 +265,11 @@ void hizip_deflate(FILE *source, FILE *dest)
 	fclose(dest);
 	return;
 out_start:
-	sched.hw_free(&sched.qs[i]);
+	sched.hw_free(sched.qs[i]);
 out:
 	for (j = i - 1; j >= 0; j--) {
-		wd_stop_ctx(&sched.qs[j]);
-		sched.hw_free(&sched.qs[j]);
+		wd_ctx_stop(sched.qs[j]);
+		sched.hw_free(sched.qs[j]);
 	}
 }
 
