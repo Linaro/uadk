@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "config.h"
-#include <sys/poll.h>
 #include "wd_sched.h"
 #include "smm.h"
 
@@ -25,7 +24,7 @@ static int __init_cache(struct wd_scheduler *sched)
 		goto err_with_msgs;
 
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (!wd_is_nosva(&sched->qs[0])) {
+		if (!wd_is_nosva(sched->qs[0])) {
 			/* user buffer is used by hardware directly */
 			sched->msgs[i].swap_in = NULL;
 			sched->msgs[i].swap_out = NULL;
@@ -46,19 +45,17 @@ err_with_msgs:
 
 static void __fini_cache(struct wd_scheduler *sched)
 {
-	int i;
-
 	free(sched->stat);
 	free(sched->msgs);
 }
 
 int wd_sched_init(struct wd_scheduler *sched, char *node_path)
 {
-	int ret, i, j;
+	int i, j, ret;
 
 	for (i = 0; i < sched->q_num; i++) {
-		ret = wd_request_ctx(&sched->qs[i], node_path);
-		if (ret)
+		sched->qs[i] = wd_request_ctx(node_path);
+		if (!sched->qs[i])
 			goto out_ctx;
 	}
 
@@ -72,8 +69,8 @@ int wd_sched_init(struct wd_scheduler *sched, char *node_path)
 
 out_ctx:
 	for (j = i - 1; j >= 0; j--)
-		wd_release_ctx(&sched->qs[j]);
-	return ret;
+		wd_release_ctx(sched->qs[j]);
+	return -EINVAL;
 }
 
 void wd_sched_fini(struct wd_scheduler *sched)
@@ -81,34 +78,21 @@ void wd_sched_fini(struct wd_scheduler *sched)
 	int i;
 
 	__fini_cache(sched);
-	if (!wd_is_nosva(&sched->qs[0]) && sched->ss_region)
+	if (!wd_is_nosva(sched->qs[0]) && sched->ss_region)
 		free(sched->ss_region);
 	for (i = sched->q_num - 1; i >= 0; i--)
-		wd_release_ctx(&sched->qs[i]);
+		wd_release_ctx(sched->qs[i]);
 }
 
-static int wd_wait(struct wd_ctx *ctx, __u16 ms)
-{
-	struct pollfd	fds[1];
-	int ret;
-
-	fds[0].fd = ctx->fd;
-	fds[0].events = POLLIN;
-	ret = poll(fds, 1, ms);
-	if (ret == -1)
-		return -errno;
-	return 0;
-}
-
-static int wd_recv_sync(struct wd_scheduler *sched, struct wd_ctx *ctx,
+static int wd_recv_sync(struct wd_scheduler *sched, handle_t h_ctx,
 			void **resp, __u16 ms)
 {
 	int ret;
 
 	while (1) {
-		ret = sched->hw_recv(ctx, resp);
+		ret = sched->hw_recv(h_ctx, resp);
 		if (ret == -EBUSY) {
-			ret = wd_wait(ctx, ms);
+			ret = wd_wait(h_ctx, ms);
 			if (ret)
 				return ret;
 		} else
@@ -123,7 +107,7 @@ static int __sync_send(struct wd_scheduler *sched) {
 	    sched->msgs[sched->c_h].msg);
 	do {
 		sched->stat[sched->q_h].send++;
-		ret = sched->hw_send(&sched->qs[sched->q_h],
+		ret = sched->hw_send(sched->qs[sched->q_h],
 				     sched->msgs[sched->c_h].msg);
 		if (ret == -EBUSY) {
 			usleep(1);
@@ -146,7 +130,7 @@ static int __sync_wait(struct wd_scheduler *sched) {
 	    sched->msgs[sched->c_h].msg);
 	do {
 		sched->stat[sched->q_t].recv++;
-		ret = wd_recv_sync(sched, &sched->qs[sched->q_t],
+		ret = wd_recv_sync(sched, sched->qs[sched->q_t],
 				   &recv_msg, 1000);
 		if (ret == -EAGAIN) {
 			usleep(1);

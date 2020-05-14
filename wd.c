@@ -1,23 +1,39 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/syscall.h>
-#include <errno.h>
-#include <sys/mman.h>
-#include <string.h>
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "wd.h"
 
 
 #define SYS_CLASS_DIR	"/sys/class/uacce"
+
+struct wd_ctx {
+	int		fd;
+	char		node_path[MAX_DEV_NAME_LEN];
+	char		*dev_name;
+	char		*drv_name;
+	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
+
+	void		*ss_va;
+	void		*ss_pa;
+
+	struct uacce_dev_info	*dev_info;
+
+	void		*priv;
+};
 
 static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 {
@@ -384,13 +400,17 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 	return 0;
 }
 
-int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
+handle_t wd_request_ctx(char *node_path)
 {
+	struct wd_ctx	*ctx;
 	int	ret = -EINVAL;
 
-	if (!node_path || !ctx || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
-		return ret;
+	if (!node_path || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
+		return (handle_t)NULL;
 
+	ctx = calloc(1, sizeof(struct wd_ctx));
+	if (!ctx)
+		return (handle_t)NULL;
 	ctx->dev_name = wd_get_accel_name(node_path, 0);
 	if (!ctx->dev_name)
 		return ret;
@@ -417,7 +437,7 @@ int wd_request_ctx(struct wd_ctx *ctx, char *node_path)
 	if (ret < 0)
 		goto out_ctl;
 
-	return ret;
+	return (handle_t)ctx;
 
 out_ctl:
 	close(ctx->fd);
@@ -427,65 +447,171 @@ out_info:
 	free(ctx->drv_name);
 out:
 	free(ctx->dev_name);
-	return ret;
+	return (handle_t)NULL;
 }
 
-void wd_release_ctx(struct wd_ctx *ctx)
+void wd_release_ctx(handle_t h_ctx)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
 
+	if (!ctx)
+		return;
 	close(ctx->fd);
 	free(ctx->dev_info);
 	free(ctx->drv_name);
 	free(ctx->dev_name);
+	free(ctx);
 }
 
-int wd_start_ctx(struct wd_ctx *ctx)
+int wd_ctx_start(handle_t h_ctx)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
 	int	ret;
 
+	if (!ctx)
+		return -EINVAL;
 	ret = ioctl(ctx->fd, UACCE_CMD_START);
 	if (ret)
 		WD_ERR("fail to start on %s\n", ctx->node_path);
 	return ret;
 }
 
-int wd_stop_ctx(struct wd_ctx *ctx)
+int wd_ctx_stop(handle_t h_ctx)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return -EINVAL;
 	return ioctl(ctx->fd, UACCE_CMD_PUT_Q);
 }
 
-void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt, size_t size)
+void *wd_ctx_get_shared_va(handle_t h_ctx)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return NULL;
+	return ctx->ss_va;
+}
+
+int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return -EINVAL;
+	ctx->ss_va = shared_va;
+	return 0;
+}
+
+void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, size_t size)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
 	off_t	off = qfrt * getpagesize();
 
+	if (!ctx)
+		return NULL;
 	if (ctx->qfrs_offs[qfrt] != 0)
 		size = ctx->qfrs_offs[qfrt];
 
 	return mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
 }
 
-void wd_drv_unmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt, void *addr)
+void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
 	size_t	size;
 
+	if (!ctx)
+		return;
 	if (ctx->qfrs_offs[qfrt] != 0) {
 		size = ctx->qfrs_offs[qfrt];
 		munmap(addr, size);
 	}
 }
 
-int wd_is_nosva(struct wd_ctx *ctx)
+void *wd_ctx_get_priv(handle_t h_ctx)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return NULL;
+	return ctx->priv;
+}
+
+int wd_ctx_set_priv(handle_t h_ctx, void *priv)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return -EINVAL;
+	ctx->priv = priv;
+	return 0;
+}
+
+void wd_ctx_init_qfrs_offs(handle_t h_ctx)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return;
+	memcpy(&ctx->qfrs_offs, &ctx->dev_info->qfrs_offs,
+	       sizeof(ctx->qfrs_offs));
+}
+
+int wd_ctx_get_fd(handle_t h_ctx)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return -EINVAL;
+	return ctx->fd;
+}
+
+char *wd_ctx_get_api(handle_t h_ctx)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return NULL;
+	return ctx->dev_info->api;
+}
+
+int wd_wait(handle_t h_ctx, __u16 ms)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct pollfd	fds[1];
+	int ret;
+
+	if (!ctx)
+		return -EINVAL;
+	fds[0].fd = ctx->fd;
+	fds[0].events = POLLIN;
+	ret = poll(fds, 1, ms);
+	if (ret == -1)
+		return -errno;
+	return 0;
+}
+
+int wd_is_nosva(handle_t h_ctx)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return 0;
 	if (ctx->dev_info->flags & UACCE_DEV_SVA)
 		return 0;
 	return 1;
 }
 
-void *wd_reserve_mem(struct wd_ctx *ctx, size_t size)
+void *wd_reserve_mem(handle_t h_ctx, size_t size)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
 	int ret;
 
-	ctx->ss_va = wd_drv_mmap_qfr(ctx, UACCE_QFRT_SS, size);
+	if (!ctx)
+		return NULL;
+	ctx->ss_va = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_SS, size);
 
 	if (ctx->ss_va == MAP_FAILED) {
 		WD_ERR("wd drv mmap fail!\n");
@@ -501,7 +627,11 @@ void *wd_reserve_mem(struct wd_ctx *ctx, size_t size)
 	return ctx->ss_va;
 }
 
-void *wd_get_dma_from_va(struct wd_ctx *ctx, void *va)
+void *wd_get_dma_from_va(handle_t h_ctx, void *va)
 {
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return NULL;
 	return va - ctx->ss_va + ctx->ss_pa;
 }

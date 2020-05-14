@@ -73,7 +73,7 @@ static inline int match_alg_name(char *dev_alg_name, char *alg_name)
 	return found;
 }
 
-handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
+handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 				 wd_dev_mask_t *dev_mask)
 {
 	struct uacce_dev_list	*head = NULL, *p, *prev;
@@ -84,11 +84,11 @@ handler_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 
 	mask = calloc(1, sizeof(wd_dev_mask_t));
 	if (!mask)
-		return (handler_t)sess;
+		return (handle_t)sess;
 	head = wd_list_accels(mask);
 	if (!head) {
 		WD_ERR("Failed to get any accelerators in system!\n");
-		return (handler_t)sess;
+		return (handle_t)sess;
 	}
 	/* merge two masks */
 	if (dev_mask && (dev_mask->magic == WD_DEV_MASK_MAGIC) &&
@@ -162,10 +162,10 @@ out:
 		head = head->next;
 		free(p);
 	}
-	return (handler_t)sess;
+	return (handle_t)sess;
 }
 
-void wd_alg_comp_free_sess(handler_t handle)
+void wd_alg_comp_free_sess(handle_t handle)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)handle;
 
@@ -184,9 +184,9 @@ void wd_alg_comp_free_sess(handler_t handle)
 	free(sess);
 }
 
-int wd_alg_compress(handler_t handler, struct wd_comp_arg *arg)
+int wd_alg_compress(handle_t handle, struct wd_comp_arg *arg)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
+	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
 	int	ret = -EINVAL;
 
 	if (!arg)
@@ -202,9 +202,9 @@ int wd_alg_compress(handler_t handler, struct wd_comp_arg *arg)
 	return ret;
 }
 
-int wd_alg_decompress(handler_t handler, struct wd_comp_arg *arg)
+int wd_alg_decompress(handle_t handle, struct wd_comp_arg *arg)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handler;
+	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
 	int	ret = -EINVAL;
 
 	if (!arg)
