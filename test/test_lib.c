@@ -103,8 +103,8 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	if (ctx->is_nosva) {
 		memcpy(msg->swap_in, in_buf, ilen);
 
-		data_in = wd_get_dma_from_va(msg->ctx, msg->swap_in);
-		data_out = wd_get_dma_from_va(msg->ctx, msg->swap_out);
+		data_in = wd_get_dma_from_va(msg->h_ctx, msg->swap_in);
+		data_out = wd_get_dma_from_va(msg->h_ctx, msg->swap_out);
 
 		m->source_addr_l = (__u64)data_in & 0xffffffff;
 		m->source_addr_h = (__u64)data_in >> 32;
@@ -317,10 +317,10 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		goto out_sched;
 
 	for (i = 0; i < sched->q_num; i++) {
-		ret = sched->hw_alloc(&sched->qs[i], sched->data);
+		ret = sched->hw_alloc(sched->qs[i], sched->data);
 		if (ret)
 			goto out_hw;
-		ret = wd_start_ctx(&sched->qs[i]);
+		ret = wd_ctx_start(sched->qs[i]);
 		if (ret)
 			goto out_start;
 	}
@@ -328,8 +328,8 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	if (!sched->ss_region_size)
 		sched->ss_region_size = 4096 + /* add 1 page extra */
 			sched->msg_cache_num * sched->msg_data_size * 2;
-	if (wd_is_nosva(&sched->qs[0])) {
-		sched->ss_region = wd_reserve_mem(&sched->qs[0],
+	if (wd_is_nosva(sched->qs[0])) {
+		sched->ss_region = wd_reserve_mem(sched->qs[0],
 						  sched->ss_region_size);
 		if (!sched->ss_region) {
 			ret = -ENOMEM;
@@ -339,7 +339,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		if (ret)
 			goto out_smm;
 		for (i = 0; i < sched->msg_cache_num; i++) {
-			sched->msgs[i].ctx = &sched->qs[0];
+			sched->msgs[i].h_ctx = sched->qs[0];
 			addr = (uint64_t)smm_alloc(sched->ss_region,
 						   sched->msg_data_size);
 			sched->msgs[i].swap_in = (void *)addr;
@@ -363,20 +363,20 @@ out_swap:
 			smm_free(sched->ss_region, sched->msgs[j].swap_out);
 	}
 out_smm:
-	if (wd_is_nosva(&sched->qs[0]) && sched->ss_region) {
-		wd_drv_unmap_qfr(&sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
+	if (wd_is_nosva(sched->qs[0]) && sched->ss_region) {
+		wd_drv_unmap_qfr(sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
 	}
 out_region:
 	for (j = i - 1; j >= 0; j--) {
-		wd_stop_ctx(&sched->qs[j]);
-		sched->hw_free(&sched->qs[j]);
+		wd_ctx_stop(sched->qs[j]);
+		sched->hw_free(sched->qs[j]);
 	}
 out_start:
-	sched->hw_free(&sched->qs[i]);
+	sched->hw_free(sched->qs[i]);
 out_hw:
 	for (j = i - 1; j >= 0; j--) {
-		wd_stop_ctx(&sched->qs[j]);
-		sched->hw_free(&sched->qs[j]);
+		wd_ctx_stop(sched->qs[j]);
+		sched->hw_free(sched->qs[j]);
 	}
 out_sched:
 	free(capa);
@@ -410,8 +410,8 @@ void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 	int i;
 
 	for (i = 0; i < sched->q_num; i++) {
-		wd_stop_ctx(&sched->qs[i]);
-		sched->hw_free(&sched->qs[i]);
+		wd_ctx_stop(sched->qs[i]);
+		sched->hw_free(sched->qs[i]);
 	}
 	wd_sched_fini(sched);
 	free(sched->qs);

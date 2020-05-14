@@ -39,7 +39,7 @@ static int thread_fail = 0;
  */
 int test_comp_once(int flag, int mode)
 {
-	handler_t	handle;
+	handle_t	handle;
 	struct wd_comp_arg wd_arg;
 	char	algs[60];
 	char	buf[TEST_WORD_LEN];
@@ -149,7 +149,7 @@ out:
  */
 int test_small_buffer(int flag, int mode)
 {
-	handler_t	handle;
+	handle_t	handle;
 	struct wd_comp_arg wd_arg;
 	char	algs[60];
 	char	buf[TEST_WORD_LEN];
@@ -280,13 +280,13 @@ out:
 
 int test_large_buffer(int flag)
 {
-	handler_t	handle;
+	handle_t	handle;
 	struct wd_comp_arg wd_arg;
 	char	algs[60];
 	char	*buf, *dst;
 	int	ret = 0, i, len = 0;
 	int	dst_idx = 0;
-	int	total_in, templen;
+	int	templen;
 	void	*src;
 
 	buf = malloc(sizeof(char) * TEST_LARGE_BUF_LEN + LARGE_BUF_SIZE);
@@ -312,7 +312,6 @@ int test_large_buffer(int flag)
 	templen = LARGE_BUF_SIZE;
 	i = 0;
 	dst_idx = 0;
-	total_in = 0;
 	wd_arg.src = src;
 	wd_arg.dst = buf;
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
@@ -356,7 +355,6 @@ int test_large_buffer(int flag)
 	/* prepare for decompress */
 	len = dst_idx;
 	dst_idx = 0;
-	total_in = 0;
 	templen = LARGE_BUF_SIZE;
 	i = 0;
 	wd_arg.src = buf;
@@ -429,7 +427,7 @@ out:
 void *thread_func(void *arg)
 {
 	thread_data_t	*data = (thread_data_t *)arg;
-	handler_t	handle;
+	handle_t	handle;
 	struct wd_comp_arg *wd_arg = &data->wd_arg;
 	char	algs[60];
 	int	ret;
