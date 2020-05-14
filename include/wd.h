@@ -73,27 +73,13 @@ struct uacce_dev_list {
 	struct uacce_dev_list	*next;
 };
 
-struct wd_ctx {
-	int		fd;
-	char		node_path[MAX_DEV_NAME_LEN];
-	char		*dev_name;
-	char		*drv_name;
-	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
-
-	void		*ss_va;
-	void		*ss_pa;
-
-	struct uacce_dev_info	*dev_info;
-
-	void		*priv;
-};
-
 struct wd_dev_mask {
 	unsigned char	*mask;
 	int		len;
 	unsigned int	magic;
 };
 
+typedef unsigned long long int	handle_t;
 typedef struct wd_dev_mask	wd_dev_mask_t;
 
 
@@ -127,17 +113,26 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 	*((volatile uint64_t *)addr) = value;
 }
 
-extern int wd_request_ctx(struct wd_ctx *ctx, char *node_path);
-extern void wd_release_ctx(struct wd_ctx *ctx);
-extern int wd_start_ctx(struct wd_ctx *ctx);
-extern int wd_stop_ctx(struct wd_ctx *ctx);
-extern void *wd_drv_mmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
+extern handle_t wd_request_ctx(char *node_path);
+extern void wd_release_ctx(handle_t h_ctx);
+extern int wd_ctx_start(handle_t h_ctx);
+extern int wd_ctx_stop(handle_t h_ctx);
+extern void *wd_ctx_get_priv(handle_t h_ctx);
+extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
+extern void wd_ctx_init_qfrs_offs(handle_t h_ctx);
+extern char *wd_ctx_get_api(handle_t h_ctx);
+extern void *wd_ctx_get_shared_va(handle_t h_ctx);
+extern int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va);
+extern int wd_ctx_get_fd(handle_t h_ctx);
+
+extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt,
 			     size_t size);
-extern void wd_drv_unmap_qfr(struct wd_ctx *ctx, enum uacce_qfrt qfrt,
+extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt,
 			     void *addr);
-extern int wd_is_nosva(struct wd_ctx *ctx);
-extern void *wd_reserve_mem(struct wd_ctx *ctx, size_t size);
-extern void *wd_get_dma_from_va(struct wd_ctx *ctx, void *va);
+extern int wd_wait(handle_t h_ctx, __u16 ms);
+extern int wd_is_nosva(handle_t h_ctx);
+extern void *wd_reserve_mem(handle_t h_ctx, size_t size);
+extern void *wd_get_dma_from_va(handle_t h_ctx, void *va);
 
 extern int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask);
 

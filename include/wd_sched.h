@@ -12,11 +12,11 @@ struct wd_msg {
 	void *next_in;
 	void *next_out;
 	void *msg;	/* the hw message frame */
-	struct wd_ctx *ctx;
+	handle_t h_ctx;
 };
 
 struct wd_scheduler {
-	struct wd_ctx *qs;
+	handle_t *qs;
 	int q_num;
 
 	void * ss_region;
@@ -33,10 +33,10 @@ struct wd_scheduler {
 	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
 	int (*output)(struct wd_msg *msg, void *priv);
-	int (*hw_alloc)(struct wd_ctx *ctx, void *data);
-	void (*hw_free)(struct wd_ctx *ctx);
-	int (*hw_send)(struct wd_ctx *ctx, void *req);
-	int (*hw_recv)(struct wd_ctx *ctx, void **req);
+	int (*hw_alloc)(handle_t h_ctx, void *data);
+	void (*hw_free)(handle_t h_ctx);
+	int (*hw_send)(handle_t h_ctx, void *req);
+	int (*hw_recv)(handle_t h_ctx, void **req);
 	void *data;	// used by hw_alloc
 
 	void *priv;
