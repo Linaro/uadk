@@ -31,20 +31,20 @@ void *trng_thread(void *args)
 	struct timeval start_tval, end_tval;
 	int fd = -1;
 	int fd_w = -1;
-	unsigned int *data = (unsigned int*)malloc(sizeof(unsigned int) * 4294967295);
 	int tem;
 	int i = 0;
 	int j = 0;
-	if(!data)
-		return -1;
 	int ret;
-    unsigned int input;
+        unsigned int input;
 	char c;
 	int f = 0;	
-	struct thread_info *tinfo = args;
 	int byte_num;
 	int remain_byte = input%4;
+	struct thread_info *tinfo = args;
 	input = tinfo->size;
+	unsigned int *data = (unsigned int*)malloc(sizeof(unsigned int) * input);
+	if(!data)
+		return -1;
 	
 	byte_num = input/4;
 	if (tinfo->addr == 0){
@@ -67,7 +67,7 @@ void *trng_thread(void *args)
 		printf("can not open trng_file\n");
  		return fd_w;
 	}
-	memset(data, 0, sizeof(int) * 4294967295);
+	memset(data, 0, sizeof(int) * input);
 //	for (i = 0; i < input; j++) {
 	//printf("get number for %dtimes.\n",i);
  	ret = read(fd, data, input);
@@ -141,7 +141,7 @@ int main (int argc, char* argv[]) {
 	int cpuid = 0;
 	int addr,num,thread_num;
 	int show_help = 0;
-    unsigned int si;
+	unsigned int si;
 	
 	while ((opt = getopt(argc, argv, "hri:p:s:")) != -1) {
 		switch (opt) {
