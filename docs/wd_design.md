@@ -67,6 +67,9 @@
 |         |                |3) Mention libwd and algorithm libraries are built |
 |         |                |   as different libraries. |
 |  0.108  |                |1) Add more descriptions. |
+|  0.109  |                |1) Hide *struct wd_ctx*. Only expose context |
+|         |                |   handle to user space Apps. |
+|         |                |2) Update on mask and session. |
 
 
 ## Terminology
@@ -88,8 +91,8 @@ libwd and many other algorithm libraries for different applications.
 
 ![overview](./wd_overview.png)
 
-Libwd provides a wrapper of basic UACCE user space interfaces, they will be a 
-set of helper functions.
+Libwd provides a wrapper of basic UACCE user space interfaces, they are a set 
+of helper functions.
 
 Algorithm libraries offer a set of APIs to users, who could use this set of 
 APIs to do specific task without accessing low level implementations. Algorithm 
@@ -99,7 +102,7 @@ related work.
 
 So two mechanisms are provided to user application. User application could 
 either access libwd or algorithm libraries. And all of these are compiled as 
-libraries. User application could pick up necessary libraries to link.
+libraries. User application could pick up appropriate libraries to link.
 
 This document focuses on the design of libwd and algorithm libraries.
 
@@ -111,7 +114,7 @@ by IOMMU.
 
 In WarpDrive framework, virtual address could be used by vendor driver and 
 application directly. And it's actually the same virtual address, memory copy 
-could be avoided between vendor driver and application.
+could be avoided between vendor driver and application with SVA.
 
 
 ### UACCE user space API
@@ -146,94 +149,69 @@ accelerator and CPU. When a vendor driver wants to access resources of an
 accelerator, a context is the requisite resource.
 
 UACCE creates a char dev for each registered hardware device. Once the char dev 
-is opened by WarpDrive, a *fd* (file descriptor) is created that represents the 
-descriptor of *context*. The *fd* is operated by the vendor driver. More 
-informations could be associated with *context*, and all of them are defined in 
-*struct wd_ctx*.
+is opened by WarpDrive, a handle of context is created. Vendor driver or 
+application could refer to the context by the handle.
 
 ```
-    struct wd_ctx {
-        int                    fd;
-        char                   node_path[];
-        char                   *dev_name;
-        char                   *drv_name;
-        unsigned long          qfrt_offs[];
-        void                   *ss_va;
-        void                   *ss_pa;
-        struct uacce_dev_info  *dev_info;
-        void                   *priv;
-    };
+typedef unsigned long long int    handle_t;
 ```
-
-| Field | Comments |
-| :-- | :-- |
-| *fd*        | Indicate the file descriptor of hardware accelerator. |
-| *node_path* | Indicate the file path of hardware accelerator. |
-| *dev_name*  | Record the accelerator name. |
-| *drv_name*  | Record the driver name. |
-| *qfrt_offs* | Record the qfrt offset that are defined in UACCE kernel |
-|             | driver. |
-| *ss_va*     | Indicate the virtual address of shared region that is only |
-|             | used in NOSVA scenario. It's a special scenario that is |
-|             | mentioned in *Extra Helper functions* section. |
-| *ss_pa*     | Indicate the physical address of shared region that is only |
-|             | used in NOSVA scenario. |
-| *dev_info*  | Indicate the information that is exposed by UACCE kernel |
-|             | driver. |
-| *priv*      | Indicate the vendor specific structure. |
 
 Libwd defines APIs to allocate contexts.
 
-***struct wd_ctx \*wd_request_ctx(char \*node_path);***
+***handle_t \*wd_request_ctx(char \*node_path);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
 | libwd | *node_path* | Input | Indicate the file path of hardware |
 |       |             |       | accelerator. |
 
-Return the context if it succeeds. Return 0 if it fails.
+Return the context handle if it succeeds. Return 0 if it fails.
 
-***void wd_release_ctx(struct wd_ctx \*ctx);***
+***void wd_release_ctx(handle_t h_ctx);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *ctx* | Input | Indicate the working context. |
+| libwd | *h_ctx* | Input | The handle indicates the working context. |
 
 
 ### mmap
 
 With a context, resources on hardware accelerator could be shared to CPU. 
-Libwd provides API to create the mapping between virtual address and physical 
-address.
+When vendor driver or application wants to access the resource, it needs to map 
+the context.
 
-***void *wd_drv_mmap_qfr(struct wd_ctx \*ctx, enum uacce_qfrt qfrt, 
+Libwd provides API to create the mapping between virtual address and physical 
+address. The mapping could cover three different types. They are MMIO (device 
+MMIO region), DUS (device user share region) and SS (static share memory 
+region).
+
+*wd_drv_mmap_qfr()* and *wd_drv_unmap_qfr()* are a pair of APIs to create and 
+destroy the mapping.
+
+***void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, 
 size_t size);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *ctx*  | Input | Indicate the working context. |
-|       | *qfrt* | Input | Indicate the queue file region type. It could be  |
-|       |        |       | MMIO (device MMIO region), DUS (device user share |
-|       |        |       | region) or SS (static share memory region for |
-|       |        |       | user). |
-|       | *size* | Input | Indicate the size to be mapped. |
+| libwd | *h_ctx* | Input | The handle indicate the working context. |
+|       | *qfrt*  | Input | Indicate the queue file region type. It could be  |
+|       |         |       | MMIO (device MMIO region), DUS (device user share |
+|       |         |       | region) or SS (static share memory region for |
+|       |         |       | user). |
+|       | *size*  | Input | Indicate the size to be mapped. |
 
 Return virtual address if it succeeds. Return NULL if it fails.
 
 *wd_drv_mmap_qfr()* maps qfile region to user space.
 
-***void wd_drv_unmap_qfr(struct wd_ctx \*ctx, void \*addr, 
-enum uacce_qfrt qfrt);***
+***void wd_drv_unmap_qfr(handle_t h_ctx, void \*addr, enum uacce_qfrt qfrt);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *ctx*  | Input | Indicate the working context. |
-|       | *addr* | Input | Indicate the address that is mapped by |
-|       |        |       | *wd_drv_mmap_qfr()*. |
-|       | *qfrt* | Input | Indicate the queue file region type. It could be |
-|       |        |       | MMIO (device MMIO region), DUS (device user share |
-|       |        |       | region) or SS (static share memory region for |
-|       |        |       | user). |
+| libwd | *h_ctx* | Input | The handle indicate the working context. |
+|       | *addr*  | Input | Indicate the address that is mapped by |
+|       |         |       | *wd_drv_mmap_qfr()*. |
+|       | *qfrt*  | Input | Indicate the queue file region type. |
 
 *wd_drv_unmap_qfr()* unmaps qfile region from user space.
 
@@ -268,7 +246,11 @@ accelerators are supported in the same time. Each accelerator could be denoted
 by one bit. So 512 bits could be covered by 16 words. These 16 words are the 
 masks, *wd_dev_mask_t*. If more accelerators need to be supported, libwd could 
 extend the value of max accelerators automatically. The lowest bit indicates 
-the hardware accelerator 0.
+the hardware accelerator 0. If a device matches the condition, the related bit 
+is set in the mask.
+
+The **mask** is actually a set of matched accelerators. *wd_get_accel_mask()* 
+and *wd_get_numa_accel_mask()* could help to get the **mask** from libwd.
 
 ***int wd_get_accel_mask(char \*alg_name, wd_dev_mask_t \*dev_mask);***
 
@@ -307,6 +289,10 @@ to find the set.
 application could choose an accelerator in this set. And the key is in the 
 *dev_mask* value.
 
+When **mask** is gotten in application, it limits the range of checking 
+accelerator device. *wd_get_accel_mask()* and *wd_get_numa_accel_mask()* 
+provides different sets of accelerators. So the policy of choosing an 
+appropriate accelerator is decided in application, not libwd.
 
 The model of usage case is in below.
 
@@ -353,7 +339,7 @@ recorded. If there're multiple accelerators share a same vendor driver, vendor
 driver should decide to choose which accelerator by itself.
 
 Application may want to track *context*. It's not good to share *context* to 
-application directly. It's better to transfer *context* to handler for security.
+application directly. It's better to transfer *context* to handle for security.
 
 
 ## Algorithm Libraries
@@ -376,11 +362,12 @@ such as binding accelerator and vendor driver together.
 
 #### Session in Compression Algorithm
 
-```
-typedef unsigned long long int    handler_t;
-```
+The session in compression algorithm records working algorithm, accelerator, 
+working mode, working context, and so on. It helps to gather more informations 
+and encapsulates them together. Application only needs to know the handle of 
+session.
 
-***handler_t wd_alg_comp_alloc_sess(char \*alg_name, uint32_t mode, 
+***handle_t wd_alg_comp_alloc_sess(char \*alg_name, uint32_t mode, 
 wd_dev_mask_t dev_mask)***
 
 | Layer | Parameter | Direction | Comments |
@@ -390,15 +377,19 @@ wd_dev_mask_t dev_mask)***
 |           | *mode*     | input  | Indicate whether it's BLOCK mode (0) or |
 |           |            |        | STREAM mode (MODE_STREAM). |
 |           | *dev_mask* | input  | Set the mask value of UACCE devices. |
+|           |            |        | The mask value could be empty or from |
+|           |            |        | *wd_get_accel_mask()* and |
+|           |            |        | *wd_get_numa_accel_mask()*. |
 
 *wd_alg_comp_alloc_sess()* is used to allocate a session. Return a valid 
-handler if succeeds. Return 0 if fails.
+handle if succeeds. Return 0 if fails.
 
-***void wd_alg_comp_free_sess(handle_t handle)***
+***void wd_alg_comp_free_sess(handle_t h_sess)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| algorithm | *handler* | input | A 64-bit handler value. |
+| algorithm | *h_sess* | input | A 64-bit handle value indicates working |
+|           |          |       | session. |
 
 *wd_alg_comp_free_sess()* is used to release a session that is denoted by a 
 handle.
@@ -410,7 +401,7 @@ applications.
 #### Compression & Decompression
 
 Compression & decompression always submit data buffer to hardware accelerator 
-and collet the output. These buffer informations could be encapsulated into a 
+and collect the output. These buffer informations could be encapsulated into a 
 structure, *struct wd_comp_arg*.
 
 ```
@@ -471,26 +462,26 @@ should be NULL. For asynchronous mode, parameter *cb* must be provided.
 If user application wants to do the compression or decompression, it needs to 
 functions in below.
 
-***int wd_alg_compress(handler_t handler, struct wd_comp_arg \*arg)***
+***int wd_alg_compress(handle_t h_sess, struct wd_comp_arg \*arg)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| algorithm | *handler*  | Input | Indicate the session. User application |
-|           |            |       | doesn't know the details in context. |
-|           | *arg*      | Input | Indicate the source and destination buffer. |
+| algorithm | *h_sess*  | Input | Indicate the session. User application |
+|           |           |       | doesn't know the details in context. |
+|           | *arg*     | Input | Indicate the source and destination buffer. |
 
 Return 0 if it succeeds. Return negative value if it fails. Parameter *arg* 
 contains the buffer information. If multiple contexts are supported in vendor 
 driver, vendor driver needs to judge which context should be used by the 
 informations if parameter *arg*.
 
-***int wd_alg_decompress(handler_t handler, struct wd_comp_arg \*arg)***
+***int wd_alg_decompress(handle_t h_sess, struct wd_comp_arg \*arg)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| algorithm | *handler*  | Input | Indicate the context. User application |
-|           |            |       | doesn't know the details in context. |
-|           | *arg*      | Input | Indicate the source and destination buffer. |
+| algorithm | *h_sess*  | Input | Indicate the session. User application |
+|           |           |       | doesn't know the details in context. |
+|           | *arg*     | Input | Indicate the source and destination buffer. |
 
 Return 0 if it succeeds. Return negative value if it fails.
 
@@ -499,8 +490,9 @@ could select either compression or decompression. The mix of compression and
 decompression in the pair operation is forbidden.
 
 Whatever the compression/decompression is BLOCK mode or STREAM mode, it's 
-always set in *wd_alg_comp_alloc_sess()*. Then *wd_alg_compress()* and 
-*wd_alg_decompress()* could be shared in both modes without any modification.
+always marked in the input parameters of *wd_alg_comp_alloc_sess()*. Then 
+*wd_alg_compress()* and *wd_alg_decompress()* could be shared in both modes 
+without any modification.
 
 
 
@@ -517,12 +509,12 @@ If multiple jobs are running in hardware in parallel, *wd_alg_comp_poll()*
 could save the time on polling hardware status. And user application could 
 sleep for a fixed time slot before polling status, it could save CPU resources.
 
-***int wd_alg_comp_poll(handler_t handler)***
+***int wd_alg_comp_poll(handle_t h_sess)***
 
 | Parameter | Direction | Comments |
 | :-- | :-- | :-- |
-| *handler* | Input | Indicate the session. User application doesn't know the |
-|           |       | details in session. |
+| *h_sess* | Input | Indicate the session. User application doesn't know the |
+|          |       | details in session. |
 
 Return 0 if hardware is done. Return error number if hardware is still working.
 
@@ -625,14 +617,14 @@ an example of vendor specific structure.
 
 ```
     struct priv_vendor_sess {
-        struct wd_ctx   *ctx;
+        handle_t   h_ctx;
         ...
     };
 ```
 
 | Field | Comments |
 | :-- | :-- |
-| *ctx*      | Indicate the context. |
+| *h_ctx* | Indicate the context. |
 
 Whatever it's single context or mutiple contexts used in vendor driver, just 
 record them in vendor specific structure.
@@ -722,11 +714,11 @@ to use NOSVA scenario, user must have the root permission. And the additional
 APIs are provied in NOSVA scenario.
 
 
-***int wd_is_nosva(struct wd_ctx \*ctx);***
+***int wd_is_nosva(handle_t h_ctx);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *ctx*  | Input | Indicate the working context. |
+| libwd | *h_ctx* | Input | Indicate the working context. |
 
 Return 1 if the context related to the accelerator doesn't support SVA. Return 
 0 if the context related to the accelerator supports SVA.
@@ -737,13 +729,13 @@ SVA scenario or NOSVA scenario.
 In NOSVA scenario, vendor driver needs to allocate memory that could be 
 recognized by the accelerator.
 
-***void \*wd_reserve_mem(struct wd_ctx \*ctx, size_t size);***
+***void \*wd_reserve_mem(handle_t h_ctx, size_t size);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *ctx*  | Input | Indicate the working context. |
-|       | *size* | Input | Indicate the memory size that needs to be |
-|       |        |       | allocated. |
+| libwd | *h_ctx* | Input | Indicate the working context. |
+|       | *size*  | Input | Indicate the memory size that needs to be |
+|       |         |       | allocated. |
 
 Return virtual address if it succeeds. Return NULL if it fails.
 
@@ -758,12 +750,12 @@ vendor driver to maintain the mapping between virtual address and the address
 is recognized by accelerator, and returns the address. But it's insecure to 
 expose address that is recognized by accelerator to user space application.
 
-***void \*wd_get_dma_from_va(struct wd_ctx \*ctx, void \*va);***
+***void \*wd_get_dma_from_va(handle_t h_ctx, void \*va);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *ctx* | Input | Indicate the working context. |
-|       | *va*  | Input | Indicate the virtual address. |
+| libwd | *h_ctx* | Input | Indicate the working context. |
+|       | *va*    | Input | Indicate the virtual address. |
 
 Return the address for accelerator if it succeeds. Return NULL if the input 
 virtual address is invalid.
