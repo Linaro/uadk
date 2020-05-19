@@ -173,6 +173,25 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	return ret;
 }
 
+static int qm_set_db_info(struct wd_queue *q)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
+
+	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+		info->db = qm_db_v2;
+		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
+	} else if (strstr(qinfo->hw_type, HISI_QM_API_VER_BASE)) {
+		info->db = qm_db_v1;
+		info->doorbell_base = info->mmio_base + QM_DOORBELL_OFFSET;
+	} else {
+		WD_ERR("hw version mismatch!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int qm_set_queue_info(struct wd_queue *q)
 {
 	struct wcrypto_paras *priv = &q->capa.priv;
@@ -207,17 +226,10 @@ static int qm_set_queue_info(struct wd_queue *q)
 	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_DUS] -
 		sizeof(uint32_t);
 	info->ds_rx_base = info->ds_tx_base - sizeof(uint32_t);
-	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
-		info->db = qm_db_v2;
-		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
-	} else if (strstr(qinfo->hw_type, HISI_QM_API_VER_BASE)) {
-		info->db = qm_db_v1;
-		info->doorbell_base = info->mmio_base + QM_DOORBELL_OFFSET;
-	} else {
-		WD_ERR("hw version mismatch!\n");
-		ret = -EINVAL;
+	ret = qm_set_db_info(q);
+	if (ret)
 		goto err_with_regions;
-	}
+
 	info->sq_tail_index = 0;
 	info->cq_head_index = 0;
 	info->cqc_phase = 1;
