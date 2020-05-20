@@ -51,20 +51,6 @@ static void dbg_sqe(const char *head, struct hisi_zip_sqe *m)
 #define dbg_sqe(...)
 #endif
 
-static uint64_t get_mask(uint64_t value)
-{
-	uint64_t mask = 0;
-	int i = 0;
-
-	while (ffsll(value)) {
-		i++;
-		value >>= 1;
-		mask <<= 1;
-		mask |= 1;
-	}
-	return mask;
-}
-
 void *mmap_alloc(size_t len)
 {
 	void *p;
@@ -291,7 +277,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	int i, j, ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
-	uint64_t mask, addr;
+	uint64_t addr;
 
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
@@ -349,7 +335,6 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 			ret = -ENOMEM;
 			goto out_region;
 		}
-		mask = get_mask((uint64_t)sched->ss_region);
 		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
 		if (ret)
 			goto out_smm;
@@ -357,10 +342,10 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 			sched->msgs[i].ctx = &sched->qs[0];
 			addr = (uint64_t)smm_alloc(sched->ss_region,
 						   sched->msg_data_size);
-			sched->msgs[i].swap_in = (void *)(addr & mask);
+			sched->msgs[i].swap_in = (void *)addr;
 			addr = (uint64_t)smm_alloc(sched->ss_region,
 						   sched->msg_data_size);
-			sched->msgs[i].swap_out = (void *)(addr & mask);
+			sched->msgs[i].swap_out = (void *)addr;
 			if (!sched->msgs[i].swap_in ||
 			    !sched->msgs[i].swap_out) {
 				dbg("not enough ss_region memory for cache %d "
