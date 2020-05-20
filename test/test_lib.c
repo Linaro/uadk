@@ -3,6 +3,7 @@
 
 #include "test_lib.h"
 #include "hisi_qm_udrv.h"
+#include "smm.h"
 
 struct check_rand_ctx {
 	int off;
