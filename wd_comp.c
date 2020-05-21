@@ -82,6 +82,8 @@ handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	int	i, found, max = 0, ret;
 	char	*dev_name;
 
+	if (!alg_name)
+		return 0;
 	mask = calloc(1, sizeof(wd_dev_mask_t));
 	if (!mask)
 		return (handle_t)sess;
@@ -160,6 +162,7 @@ out:
 	while (head) {
 		p = head;
 		head = head->next;
+		free(p->info);
 		free(p);
 	}
 	return (handle_t)sess;
@@ -181,6 +184,7 @@ void wd_alg_comp_free_sess(handle_t handle)
 	if (sess->dev_mask)
 		free(sess->dev_mask);
 
+	free(sess->alg_name);
 	free(sess);
 }
 
