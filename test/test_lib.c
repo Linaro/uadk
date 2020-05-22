@@ -407,6 +407,7 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
  */
 void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 {
+	struct hisi_qm_capa *capa;
 	int i;
 
 	for (i = 0; i < sched->q_num; i++) {
@@ -415,6 +416,8 @@ void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 	}
 	wd_sched_fini(sched);
 	free(sched->qs);
+	capa = (struct hisi_qm_capa *)sched->data;
+	free(capa);
 }
 
 int parse_common_option(const char opt, const char *optarg,
