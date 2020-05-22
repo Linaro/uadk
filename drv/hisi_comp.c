@@ -652,7 +652,7 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 		strm->alg_type = GZIP;
 		strm->dw9 = 3;
 	}
-	strm->msg = malloc(sizeof(*strm->msg));
+	strm->msg = calloc(1, sizeof(struct hisi_strm_info));
 	if (!strm->msg)
 		return -ENOMEM;
 	priv->h_ctx = wd_request_ctx(sess->node_path);
@@ -759,6 +759,8 @@ static void hisi_comp_strm_exit(struct wd_comp_sess *sess)
 		free(strm->ctx_buf);
 	}
 	hisi_qm_free_ctx(priv->h_ctx);
+	wd_release_ctx(priv->h_ctx);
+	free(strm->msg);
 }
 
 static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
