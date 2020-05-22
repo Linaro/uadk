@@ -70,6 +70,7 @@
 |  0.109  |                |1) Hide *struct wd_ctx*. Only expose context |
 |         |                |   handle to user space Apps. |
 |         |                |2) Update on mask and session. |
+|  0.110  |                |1) Remove fini() callback in *struct wd_alg_comp*. |
 
 
 ## Terminology
@@ -545,7 +546,6 @@ structure field in *session*.
         int  (*init)(struct wd_sess *sess);
         void (*exit)(struct wd_sess *sess);
         int  (*prep)(struct wd_sess *sess, struct wd_comp_arg *arg);
-        void (*fini)(struct wd_sess *sess);
         int  (*deflate)(struct wd_sess *sess, struct wd_comp_arg *arg);
         int  (*inflate)(struct wd_sess *sess, struct wd_comp_arg *arg);
         int  (*async_poll)(struct wd_sess *sess, struct wd_comp_arg *arg);
@@ -562,7 +562,6 @@ structure field in *session*.
 |              | vendor driver. |
 | *prep*       | Hook to prepare before one hardware operation in vendor |
 |              | driver. |
-| *fini*       | Hook to finish after one hardware operation in vendor dirver. |
 | *deflate*    | Hook to deflate by hardware that implemented in vendor |
 |              | driver. |
 | *inflate*    | Hook to inflate by hardware that implemented in vendor |
