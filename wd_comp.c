@@ -40,7 +40,6 @@ static struct wd_alg_comp wd_alg_comp_list[] = {
 		.init		= hisi_comp_init,
 		.exit		= hisi_comp_exit,
 		.prep		= hisi_comp_prep,
-		.fini		= hisi_comp_fini,
 		.deflate	= hisi_comp_deflate,
 		.inflate	= hisi_comp_inflate,
 		.async_poll	= hisi_comp_poll,
