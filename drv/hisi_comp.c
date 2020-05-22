@@ -459,10 +459,11 @@ out_hw:
 	return ret;
 }
 
-static void hisi_comp_block_fini(struct wd_comp_sess *sess)
+static void hisi_comp_block_exit(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
+	struct hisi_sched	*sched_priv;
 	int	i;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
@@ -483,16 +484,6 @@ static void hisi_comp_block_fini(struct wd_comp_sess *sess)
 		wd_ctx_stop(sched->qs[i]);
 		sched->hw_free(sched->qs[i]);
 	}
-}
-
-static void hisi_comp_block_exit(struct wd_comp_sess *sess)
-{
-	struct hisi_comp_sess	*priv;
-	struct wd_scheduler	*sched;
-	struct hisi_sched	*sched_priv;
-
-	priv = (struct hisi_comp_sess *)sess->priv;
-	sched = &priv->sched;
 	wd_sched_fini(sched);
 	sched_priv = sched->priv;
 	free(sched_priv->msgs);
@@ -749,26 +740,25 @@ out_in:
 	return -ENOMEM;
 }
 
-static void hisi_comp_strm_fini(struct wd_comp_sess *sess)
+static void hisi_comp_strm_exit(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
+
+	wd_ctx_stop(priv->h_ctx);
 	if (wd_is_nosva(priv->h_ctx)) {
 		smm_free(strm->ss_region, strm->swap_in);
 		smm_free(strm->ss_region, strm->swap_out);
 		smm_free(strm->ss_region, strm->ctx_buf);
-		free(strm->ss_region);
 	} else {
 		free(strm->swap_in);
 		free(strm->swap_out);
 		free(strm->ctx_buf);
 	}
-	wd_ctx_stop(priv->h_ctx);
 	hisi_qm_free_ctx(priv->h_ctx);
-	free(strm->msg);
 }
 
 static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
@@ -1125,8 +1115,11 @@ int hisi_comp_init(struct wd_comp_sess *sess)
 
 void hisi_comp_exit(struct wd_comp_sess *sess)
 {
-	if (sess->drv->fini)
-		sess->drv->fini(sess);
+	if (sess->mode & MODE_STREAM) {
+		hisi_comp_strm_exit(sess);
+	} else {
+		hisi_comp_block_exit(sess);
+	}
 	free(sess->priv);
 	sess->priv = NULL;
 }
@@ -1145,19 +1138,6 @@ int hisi_comp_prep(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 	if (!ret)
 		priv->inited = 1;
 	return ret;
-}
-
-void hisi_comp_fini(struct wd_comp_sess *sess)
-{
-	struct hisi_comp_sess	*priv = sess->priv;
-
-	if (priv->inited)
-		return;
-	if (sess->mode & MODE_STREAM)
-		hisi_comp_strm_fini(sess);
-	else
-		hisi_comp_block_fini(sess);
-	priv->inited = 0;
 }
 
 int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
