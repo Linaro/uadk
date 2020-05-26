@@ -254,7 +254,7 @@ int test_small_buffer(int flag, int mode)
 	}
 
 	if (strncmp(word, fin, strlen(word))) {
-		fprintf(stderr, "fail to match, fin:%s, word:%s\n", fin, word);
+		printf("fail to match, fin:%s, word:%s\n", fin, word);
 		ret = -EFAULT;
 		goto out_comp;
 	} else {
@@ -404,14 +404,14 @@ int test_rand_buffer(int flag, int mode)
 			break;
 	}
 	if (dst_idx != TEST_LARGE_BUF_LEN) {
-		fprintf(stderr, "failed on dst size:%d, expected size:%d\n",
+		printf("failed on dst size:%d, expected size:%d\n",
 			dst_idx, TEST_LARGE_BUF_LEN);
 		goto out_comp;
 	}
 	for (i = 0; i < TEST_LARGE_BUF_LEN; i += LARGE_BUF_SIZE) {
 		ret = memcmp(src + i, dst + i, LARGE_BUF_SIZE);
 		if (ret) {
-			fprintf(stderr, "fail to match in %s at %d\n", __func__, i);
+			printf("fail to match in %s at %d\n", __func__, i);
 			goto out_comp;
 		}
 	}
@@ -558,7 +558,7 @@ int test_large_buffer(int flag, int mode)
 			break;
 	}
 	if (dst_idx != TEST_LARGE_BUF_LEN) {
-		fprintf(stderr, "failed on dst size:%d, expected size:%d\n",
+		printf("failed on dst size:%d, expected size:%d\n",
 			dst_idx, TEST_LARGE_BUF_LEN);
 		goto out_comp;
 	}
@@ -567,7 +567,7 @@ int test_large_buffer(int flag, int mode)
 		memcpy(buf + i, word, strlen(word));
 		ret = memcmp(buf + i, dst + i, LARGE_BUF_SIZE);
 		if (ret) {
-			fprintf(stderr, "fail to match in %s at %d\n", __func__, i);
+			printf("fail to match in %s at %d\n", __func__, i);
 			goto out_comp;
 		}
 	}
@@ -611,7 +611,7 @@ void *thread_func(void *arg)
 	wd_arg->flag = FLAG_INPUT_FINISH | FLAG_DEFLATE;
 	ret = wd_alg_compress(handle, wd_arg);
 	if (ret) {
-		fprintf(stderr, "fail to compress (%d)\n", ret);
+		printf("fail to compress (%d)\n", ret);
 	}
 	wd_alg_comp_free_sess(handle);
 
@@ -628,7 +628,7 @@ void *thread_func(void *arg)
 	handle = wd_alg_comp_alloc_sess(algs, MODE_STREAM, NULL);
 	ret = wd_alg_decompress(handle, wd_arg);
 	if (ret) {
-		fprintf(stderr, "fail to decompress (%d)\n", ret);
+		printf("fail to decompress (%d)\n", ret);
 	}
 	if (strncmp(word, dst, strlen(word))) {
 		thread_fail = 1;
@@ -712,7 +712,7 @@ int main(int argc, char **argv)
 	thread_fail = 0;
 	test_concurrent(FLAG_GZIP);
 	if (thread_fail)
-		fprintf(stderr, "fail to run GZIP cases concurrently\n");
+		printf("fail to run GZIP cases concurrently\n");
 	else
 		printf("Pass concurrent case for GZIP.\n");
 	return 0;
