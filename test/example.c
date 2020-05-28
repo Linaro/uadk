@@ -709,11 +709,13 @@ int main(int argc, char **argv)
 		printf("fail to run ZLIB cases concurrently\n");
 	else
 		printf("Pass concurrent case for ZLIB.\n");
+	usleep(100);
 	thread_fail = 0;
 	test_concurrent(FLAG_GZIP);
 	if (thread_fail)
 		printf("fail to run GZIP cases concurrently\n");
 	else
 		printf("Pass concurrent case for GZIP.\n");
+	usleep(100);
 	return 0;
 }
