@@ -31,6 +31,9 @@ typedef unsigned char __u8;
 typedef unsigned short __u16;
 typedef unsigned long long __u64;
 
+/* The max BD cipher length is 16M-512B */
+#define MAX_CIPHER_LENGTH		16776704
+
 struct hisi_sec_sqe_type1 {
 	__u32 rsvd2:6;
 	__u32 ci_gen:2;
@@ -200,6 +203,213 @@ struct hisi_sec_sqe {
 	};
 };
 
+struct bd3_auth_ivin {
+	__u32 a_ivin_addr_l;
+	__u32 a_ivin_addr_h;
+	__u32 rsvd0;
+	__u32 rsvd1;
+};
+
+struct bd3_skip_data {
+	__u32 rsvd0;
+	__u32 gran_num:16;
+	__u32 rsvd1:16;
+	__u32 src_skip_data_len:25;
+	__u32 rsvd2:7;
+	__u32 dst_skip_data_len:25;
+	__u32 rsvd3:7;
+};
+
+struct bd3_ipsec_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 c_s:2;
+	__u32 deal_esp_ah:4;
+	__u32 protocol_type:4;
+	__u32 mode:2;
+	__u32 ip_type:2;
+	__u32 rsvd0:2;
+	__u32 next_header:8;
+	__u32 pad_len:8;
+	__u32 iv_offset:16;
+	__u32 rsvd1:16;
+	__u32 cs_ip_header_offset:16;
+	__u32 cs_udp_header_offset:16;
+};
+
+struct bd3_pbkdf2_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 pbkdf2_salt_len:24;
+	__u32 rsvd0:8;
+	__u32 c_num:24;
+	__u32 rsvd1:8;
+	__u32 pass_word_len:16;
+	__u32 dk_len:16;
+};
+
+struct bd3_stream_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 long_a_data_len_l;
+	__u32 long_a_data_len_h;
+	__u32 auth_pad:2;
+	__u32 stream_protocol:3;
+	__u32 rsvd0:3;
+	__u32 plaintext_type:8;
+	__u32 pad_len_1p3:16;
+};
+
+struct bd3_dtls_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 sn_l;
+	__u32 sn_h;
+	__u32 c_pad_type:4;
+	__u32 c_pad_len:8;
+	__u32 c_pad_data_type:4;
+	__u32 c_pad_len_field:2;
+	__u32 tls_len_update:1;
+	__u32 rsvd0:13;
+};
+
+struct bd3_tls1p3_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 a_ivin_addr_l;
+	__u32 a_ivin_addr_h;
+	__u32 deal_tls_1p3:3;
+	__u32 rsvd0:5;
+	__u32 plaintext_type:8;
+	__u32 pad_len_1p3:16;
+};
+
+struct bd3_storage_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 gen_page_pad_ctrl:4;
+	__u32 gen_grd_ctrl:4;
+	__u32 gen_ver_ctrl:4;
+	__u32 gen_app_ctrl:4;
+	__u32 gen_ver_val:8;
+	__u32 gen_app_val:8;
+	__u32 private_info;
+	__u32 gen_ref_ctrl:4;
+	__u32 page_pad_type:2;
+	__u32 rsvd0:2;
+	__u32 chk_grd_ctrl:4;
+	__u32 chk_ref_ctrl:4;
+	__u32 block_size:16;
+};
+
+struct bd3_no_scene {
+	__u32 c_ivin_addr_l;
+	__u32 c_ivin_addr_h;
+	__u32 rsvd0;
+	__u32 rsvd1;
+	__u32 rsvd2;
+};
+
+struct bd3_check_sum {
+	__u32 check_sum_i:16;
+	__u32 tls_pad_len_i:8;
+	__u32 rsvd0:8;
+};
+
+struct bd3_tls_type_back {
+	__u32 tls_1p3_type_back:8;
+	__u32 rsvd0:8;
+	__u32 pad_len_1p3_back:16;
+};
+
+/* the hi1630 sence */
+struct hisi_sec_bd3_sqe {
+	__u32 type:4;
+	__u32 inveld:1;
+	__u32 scene:4;
+	__u32 de:2;
+	__u32 src_addr_type:3;
+	__u32 dst_addr_type:3;
+	__u32 mac_addr_type:3;
+	__u32 rsvd:12;
+
+	__u32 cipher:2;
+	__u32 ci_gen:2;
+	__u32 c_icv_len:6;
+	__u32 c_width:3;
+	__u32 c_key_len:3;
+	__u32 c_mode:4;
+	__u32 c_alg:4;
+	__u32 nonce_len:4;
+	__u32 huk:1;
+	__u32 cal_iv_addr_en:1;
+	__u32 seq:1;
+	__u32 rsvd0:1;
+
+	__u32 tag_l;
+	__u32 tag_h;
+	__u32 data_src_addr_l;
+	__u32 data_src_addr_h;
+	__u32 a_key_addr_l;
+	__u32 a_key_addr_h;
+	union {
+		struct bd3_auth_ivin auth_ivin;
+		struct bd3_skip_data skip_data;
+	};
+
+	__u32 c_key_addr_l;
+	__u32 c_key_addr_h;
+	__u32 auth:2;
+	__u32 ai_gen:2;
+	__u32 mac_len:5;
+	__u32 akey_len:6;
+	__u32 a_alg:6;
+	__u32 key_sel:4;
+	__u32 update_key:1;
+	__u32 rsvd1:6;
+
+	__u32 salt3:8;
+	__u32 salt2:8;
+	__u32 salt1:8;
+	__u32 salt0:8;
+	__u32 auth_src_offset:16;
+	__u32 cipher_src_offset:16;
+	__u32 a_len:24;
+	__u32 auth_key_offset:8;
+	__u32 c_len:24;
+	__u32 auth_ivin_offset:8;
+	__u32 data_dst_addr_l;
+	__u32 data_dst_addr_h;
+	__u32 mac_addr_l;
+	__u32 mac_addr_h;
+	union {
+		struct bd3_ipsec_scene ipsec_scene;
+		struct bd3_pbkdf2_scene pbkdf2_scene;
+		struct bd3_stream_scene stream_scene;
+		struct bd3_dtls_scene dtls_scene;
+		struct bd3_tls1p3_scene tls1p3_scene;
+		struct bd3_storage_scene storage_scene;
+		struct bd3_no_scene no_scene;
+	};
+
+	__u32 done:1;
+	__u32 icv:3;
+	__u32 csc:3;
+	__u32 flag:4;
+	__u32 rsvd10:5;
+	__u32 error_type:8;
+	__u32 warning_type:8;
+	__u32 mac_i3:8;
+	__u32 mac_i2:8;
+	__u32 mac_i1:8;
+	__u32 mac_i0:8;
+	union {
+		struct bd3_check_sum check_sum;
+		struct bd3_tls_type_back tls_type_back;
+	};
+	__u32 counter;
+};
+
 enum C_ALG {
 	C_ALG_DES  = 0x0,
 	C_ALG_3DES = 0x1,
@@ -235,11 +445,13 @@ enum A_ALG {
 enum C_MODE {
 	C_MODE_ECB	  = 0x0,
 	C_MODE_CBC	  = 0x1,
+	C_MODE_OFB	  = 0x3,
 	C_MODE_CTR	  = 0x4,
 	C_MODE_CCM	  = 0x5,
 	C_MODE_GCM	  = 0x6,
 	C_MODE_XTS	  = 0x7,
 	C_MODE_CBC_CS = 0x9,
+	C_MODE_CFB	  = 0xA
 };
 
 enum CKEY_LEN {
@@ -255,6 +467,7 @@ enum CKEY_LEN {
 enum {
 	BD_TYPE1 = 0x1,
 	BD_TYPE2 = 0x2,
+	BD_TYPE3 = 0x3,
 };
 
 enum {
@@ -306,9 +519,12 @@ enum {
 
 int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i);
+int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
 int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
+			__u16 i, __u16 usr);
+int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
 
 #endif

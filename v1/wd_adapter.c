@@ -53,6 +53,12 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.send = qm_send,
 		.recv = qm_recv,
 	}, {
+		.hw_type = HISI_QM_API_VER3_BASE UACCE_API_VER_NOIOMMU_SUBFIX,
+		.open = qm_init_queue,
+		.close = qm_uninit_queue,
+		.send = qm_send,
+		.recv = qm_recv,
+	}, {
 		.hw_type = HISI_QM_API_VER_BASE,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
@@ -60,6 +66,12 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.recv = qm_recv,
 	}, {
 		.hw_type = HISI_QM_API_VER2_BASE,
+		.open = qm_init_queue,
+		.close = qm_uninit_queue,
+		.send = qm_send,
+		.recv = qm_recv,
+	}, {
+		.hw_type = HISI_QM_API_VER3_BASE,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
 		.send = qm_send,

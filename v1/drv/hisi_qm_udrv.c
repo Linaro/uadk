@@ -134,20 +134,19 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	} else if (!strncmp(alg, "cipher", strlen("cipher"))) {
 		qinfo->atype = WCRYPTO_CIPHER;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
-		info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
+		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
+			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
+		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_bd3_sqe;
+			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_bd3_sqe;
+		}
 		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "digest", strlen("digest"))) {
 		qinfo->atype = WCRYPTO_DIGEST;
 		info->sqe_size = QM_SEC_BD_SIZE;
 		info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
 		info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
-		ret = WD_SUCCESS;
-	} else if (!strncmp(alg, "ec", strlen("ec"))) {
-		qinfo->atype = WCRYPTO_EC;
-		info->sqe_size = QM_RDE_BD_SIZE;
-		info->sqe_fill[WCRYPTO_EC] = qm_fill_rde_sqe;
-		info->sqe_parse[WCRYPTO_EC] = qm_parse_rde_sqe;
 		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "xts(aes)", strlen("xts(aes)")) ||
 		!strncmp(alg, "xts(sm4)", strlen("xts(sm4)"))) {
@@ -178,7 +177,8 @@ static int qm_set_db_info(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE) ||
+	strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
 		info->db = qm_db_v2;
 		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
 	} else if (strstr(qinfo->hw_type, HISI_QM_API_VER_BASE)) {
