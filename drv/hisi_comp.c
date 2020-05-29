@@ -27,6 +27,9 @@
 #define STREAM_MAX		(1 << 20)
 #define STREAM_MAX_MASK		0xFFFFF
 
+#define HISI_SCHED_INPUT	0
+#define HISI_SCHED_OUTPUT	1
+
 #define Z_OK            0
 #define Z_STREAM_END    1
 #define Z_ERRNO		(-1)
@@ -77,6 +80,7 @@ struct hisi_comp_sess {
 };
 
 struct hisi_sched {
+	struct wd_comp_sess	*sess;
 	int	alg_type;
 	int	op_type;
 	int	dw9;
@@ -84,30 +88,59 @@ struct hisi_sched {
 	struct wd_comp_arg	*arg;
 	size_t		total_out;
 	int	load_head;
-	size_t	avail_in;
+	size_t	avail_in;	// the size that is free to use in IN buf
 	size_t	avail_out;
 	int	undrained;
 	int	stream_pos;
 	int	msg_data_size;
+	int	dir;		// input or output
 };
 
-static inline int blk_is_new_src(struct wd_msg *msg,
-				 struct hisi_sched *hpriv,
-				 struct wd_comp_arg *arg)
+static inline int is_new_src(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 {
-	/* If all previous src data are consumed, next_in should be cleared to
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct hisi_strm_info	*strm = &priv->strm;
+	struct wd_scheduler	*sched = &priv->sched;
+	struct hisi_sched	*hsched = sched->priv;
+	struct wd_msg		*msgs = sched->msgs;
+	void	*next_in = NULL;
+
+	if (sess->mode & MODE_STREAM) {
+		next_in = strm->next_in;
+	} else {
+		/* BLOCK mode */
+		if (hsched->dir == HISI_SCHED_INPUT)
+			next_in = msgs[sched->c_h].next_in;
+		else if (hsched->dir == HISI_SCHED_OUTPUT)
+			next_in = msgs[sched->c_t].next_in;
+	}
+	/*
+	 * If all previous src data are consumed, next_in should be cleared to
 	 * NULL.
 	 */
-	if (!msg->next_in)
+	if (!next_in)
 		return 1;
 	return 0;
 }
 
-static inline int blk_is_new_dst(struct wd_msg *msg,
-				 struct hisi_sched *hpriv,
-				 struct wd_comp_arg *arg)
+static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 {
-	if (!msg->next_out)
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct hisi_strm_info	*strm = &priv->strm;
+	struct wd_scheduler	*sched = &priv->sched;
+	struct hisi_sched	*hsched = sched->priv;
+	struct wd_msg		*msgs = sched->msgs;
+	void	*next_out = NULL;
+
+	if (sess->mode & MODE_STREAM) {
+		next_out = strm->next_out;
+	} else {
+		if (hsched->dir == HISI_SCHED_INPUT)
+			next_out = msgs[sched->c_h].next_out;
+		else if (hsched->dir == HISI_SCHED_OUTPUT)
+			next_out = msgs[sched->c_t].next_out;
+	}
+	if (!next_out)
 		return 1;
 	return 0;
 }
@@ -117,12 +150,24 @@ static inline int blk_is_new_dst(struct wd_msg *msg,
  * Notice: Avoid to compare them just after hardware operation.
  * It's better to compare swap with (addr - consumed/produced bytes).
  */
-static inline int blk_is_in_swap(struct wd_msg *msg, void *addr, void *swap)
+static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
 {
-	/* NOSVA */
-	if (msg->swap_in) {
-		return 1;
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct wd_scheduler	*sched = &priv->sched;
+	struct hisi_sched	*hsched = sched->priv;
+	handle_t	h_ctx = 0;
+
+	if (sess->mode & MODE_STREAM) {
+		h_ctx = priv->h_ctx;
 	} else {
+		if (hsched->dir == HISI_SCHED_INPUT)
+			h_ctx = sched->qs[sched->q_h];
+		else if (hsched->dir == HISI_SCHED_OUTPUT)
+			h_ctx = sched->qs[sched->q_t];
+	}
+	if (wd_is_nosva(h_ctx))
+		return 1;
+	else {
 		if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
 		    ((uint64_t)swap & ~STREAM_MIN_MASK))
 			return 1;
@@ -130,21 +175,34 @@ static inline int blk_is_in_swap(struct wd_msg *msg, void *addr, void *swap)
 	return 0;
 }
 
-static inline int blk_need_swap(struct wd_msg *msg,
-				struct hisi_sched *hpriv,
-				int buf_size)
+/*
+ * If arg->src buffer is too small, need to copy them into swap_in buffer.
+ */
+static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
 {
-	/* NOSVA */
-	if (msg->swap_in)
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct wd_scheduler	*sched = &priv->sched;
+	struct hisi_sched	*hsched = sched->priv;
+	handle_t	h_ctx = 0;
+
+	if (sess->mode & MODE_STREAM) {
+		h_ctx = priv->h_ctx;
+	} else {
+		if (hsched->dir == HISI_SCHED_INPUT)
+			h_ctx = sched->qs[sched->q_h];
+		else if (hsched->dir == HISI_SCHED_OUTPUT)
+			h_ctx = sched->qs[sched->q_t];
+	}
+	if (wd_is_nosva(h_ctx))
+		return 1;
+	if (buf_size < STREAM_MIN)
 		return 1;
 	return 0;
 }
 
-static inline int blk_need_split(struct wd_msg *msg,
-				 struct hisi_sched *hpriv,
-				 int buf_size)
+static inline int need_split(struct wd_comp_sess *sess, int buf_size)
 {
-	if (buf_size > BLOCK_MAX)
+	if (buf_size > STREAM_MAX)
 		return 1;
 	return 0;
 }
@@ -172,6 +230,7 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 {
 	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
+	struct wd_comp_sess	*sess = hpriv->sess;
 	struct wd_comp_arg	*arg = hpriv->arg;
 	const char zip_head[2] = {0x78, 0x9c};
 	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
@@ -179,9 +238,9 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 	int templen, skipped = 0;
 	void *addr;
 
-	if (blk_need_swap(msg, hpriv, arg->dst_len)) {
+	if (need_swap(sess, arg->dst_len)) {
 		hpriv->avail_out = BLOCK_MAX;
-		if (blk_is_new_dst(msg, hpriv, arg) || !hpriv->undrained)
+		if (is_new_dst(sess, arg) || !hpriv->undrained)
 			msg->next_out = msg->swap_out;
 	} else {
 		msg->next_out = arg->dst;
@@ -201,8 +260,8 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 		hpriv->stream_pos = STREAM_NEW;
 		hpriv->load_head = 1;
 	}
-	if (blk_is_new_src(msg, hpriv, arg) && arg->src_len) {
-		if (blk_need_swap(msg, hpriv, arg->src_len)) {
+	if (is_new_src(sess, arg) && arg->src_len) {
+		if (need_swap(sess, arg->src_len)) {
 			if (arg->src_len > BLOCK_MAX)
 				templen = BLOCK_MAX;
 			else
@@ -215,7 +274,7 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 			m->input_data_length = templen;
 			arg->src += templen;
 			arg->src_len -= templen;
-		} else if (blk_need_split(msg, hpriv, arg->src_len)) {
+		} else if (need_split(sess, arg->src_len)) {
 			msg->next_in = arg->src;
 			hpriv->avail_in += BLOCK_MAX;
 			m->input_data_length = BLOCK_MAX;
@@ -230,7 +289,7 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 		}
 	} else if (arg->src_len) {
 		/* some data is cached in next_in buffer */
-		if (blk_is_in_swap(msg, msg->next_in, msg->swap_in)) {
+		if (is_in_swap(sess, msg->next_in, msg->swap_in)) {
 			templen = msg->swap_in + BLOCK_MAX -
 				  msg->next_in - hpriv->avail_in;
 			if (templen > arg->src_len)
@@ -240,7 +299,7 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 			       templen);
 			hpriv->avail_in += templen;
 		} else {
-			if (blk_need_split(msg, hpriv, arg->src_len))
+			if (need_split(sess, arg->src_len))
 				templen = STREAM_MAX;
 			else
 				templen = arg->src_len;
@@ -277,10 +336,11 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 {
 	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
+	struct wd_comp_sess	*sess = hpriv->sess;
 	struct wd_comp_arg	*arg = hpriv->arg;
 	int	templen;
 
-	if (blk_is_in_swap(msg, msg->next_out, msg->swap_out)) {
+	if (is_in_swap(sess, msg->next_out, msg->swap_out)) {
 		if (hpriv->undrained + m->produced > arg->dst_len)
 			templen = arg->dst_len + m->produced;
 		else
@@ -343,6 +403,7 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 	sched_priv = malloc(sizeof(struct hisi_sched));
 	if (!sched_priv)
 		goto out_priv;
+	sched_priv->sess = sess;
 	sched_priv->msgs = malloc(sizeof(struct hisi_zip_sqe) * CACHE_NUM);
 	if (!sched_priv->msgs)
 		goto out_msg;
@@ -558,68 +619,6 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 	return 0;
 }
 
-static inline int is_new_src(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
-{
-	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-	struct hisi_strm_info	*strm = &priv->strm;
-
-	/* If all previous src data are consumed, next_in should be cleared to
-	 * NULL.
-	 */
-	if (!strm->next_in)
-		return 1;
-	return 0;
-}
-
-static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
-{
-	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-	struct hisi_strm_info	*strm = &priv->strm;
-
-	if (!strm->next_out)
-		return 1;
-	return 0;
-}
-
-/*
- * Compare the range with mask.
- * Notice: Avoid to compare them just after hardware operation.
- * It's better to compare swap with (addr - consumed/produced bytes).
- */
-static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
-{
-	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-
-	if (wd_is_nosva(priv->h_ctx)) {
-		return 1;
-	} else {
-		if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
-		    ((uint64_t)swap & ~STREAM_MIN_MASK))
-			return 1;
-	}
-	return 0;
-}
-
-/*
- * If arg->src buffer is too small, need to copy them into swap_in buffer.
- */
-static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
-{
-	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-
-	if (wd_is_nosva(priv->h_ctx))
-		return 1;
-	if (buf_size < STREAM_MIN)
-		return 1;
-	return 0;
-}
-
-static inline int need_split(struct wd_comp_sess *sess, int buf_size)
-{
-	if (buf_size > STREAM_MAX)
-		return 1;
-	return 0;
-}
 
 static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 {
