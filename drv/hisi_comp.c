@@ -96,6 +96,27 @@ struct hisi_sched {
 	int	dir;		// input or output
 };
 
+static inline int is_nosva(struct wd_comp_sess *sess)
+{
+	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
+	struct wd_scheduler	*sched = &priv->sched;
+	struct hisi_sched	*hsched = sched->priv;
+	handle_t	h_ctx = 0;
+
+	if (sess->mode & MODE_STREAM) {
+		h_ctx = priv->h_ctx;
+	} else {
+		if (hsched->dir == HISI_SCHED_INPUT)
+			h_ctx = sched->qs[sched->q_h];
+		else if (hsched->dir == HISI_SCHED_OUTPUT)
+			h_ctx = sched->qs[sched->q_t];
+	}
+	/* If context handle is NULL, always consider it as NOSVA. */
+	if (!h_ctx)
+		return 1;
+	return wd_is_nosva(h_ctx);
+}
+
 static inline int is_new_src(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
@@ -152,20 +173,7 @@ static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
  */
 static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
 {
-	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-	struct wd_scheduler	*sched = &priv->sched;
-	struct hisi_sched	*hsched = sched->priv;
-	handle_t	h_ctx = 0;
-
-	if (sess->mode & MODE_STREAM) {
-		h_ctx = priv->h_ctx;
-	} else {
-		if (hsched->dir == HISI_SCHED_INPUT)
-			h_ctx = sched->qs[sched->q_h];
-		else if (hsched->dir == HISI_SCHED_OUTPUT)
-			h_ctx = sched->qs[sched->q_t];
-	}
-	if (wd_is_nosva(h_ctx))
+	if (is_nosva(sess))
 		return 1;
 	else {
 		if (((uint64_t)addr & ~STREAM_MIN_MASK) ==
@@ -180,20 +188,7 @@ static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
  */
 static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
 {
-	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-	struct wd_scheduler	*sched = &priv->sched;
-	struct hisi_sched	*hsched = sched->priv;
-	handle_t	h_ctx = 0;
-
-	if (sess->mode & MODE_STREAM) {
-		h_ctx = priv->h_ctx;
-	} else {
-		if (hsched->dir == HISI_SCHED_INPUT)
-			h_ctx = sched->qs[sched->q_h];
-		else if (hsched->dir == HISI_SCHED_OUTPUT)
-			h_ctx = sched->qs[sched->q_t];
-	}
-	if (wd_is_nosva(h_ctx))
+	if (is_nosva(sess))
 		return 1;
 	if (buf_size < STREAM_MIN)
 		return 1;
