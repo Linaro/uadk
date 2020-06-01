@@ -40,7 +40,7 @@
 #define CTR_MODE_LEN_SHIFT 4
 #define WORD_BYTES 4
 #define U64_DATA_BYTES 8
-
+#define CTR_128BIT_COUNTER	16
 #define DIF_VERIFY_FAIL 2
 
 static int g_digest_a_alg[WCRYPTO_MAX_DIGEST_TYPE] = {
@@ -175,7 +175,7 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
 /* increment counter (128-bit int) by c */
 static void ctr_iv_inc(__u8 *counter, __u32 c)
 {
-	__u32 n = 16;
+	__u32 n = CTR_128BIT_COUNTER;
 
 	do {
 		--n;
@@ -982,6 +982,11 @@ static int fill_digest_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	return ret;
 }
 
+/*
+ * According to wcrypto_cipher_poll(), the return number mean:
+ * 0: parse failed
+ * 1: parse a BD successfully
+ */
 int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_sec_sqe *sqe;
@@ -1132,6 +1137,11 @@ static void parse_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	}
 }
 
+/*
+ * According to wcrypto_cipher_poll(), the return number mean:
+ * 0: parse failed
+ * 1: parse a BD successfully
+ */
 int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 		__u16 i, __u16 usr)
 {
