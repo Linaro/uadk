@@ -90,7 +90,11 @@ struct hisi_sched {
 	int	load_head;
 	size_t	avail_in;	// the size that is free to use in IN buf
 	size_t	avail_out;
+	size_t	size_in;
+	size_t	loaded_in;
 	int	undrained;
+	int	skipped;
+	int	full;
 	int	stream_pos;
 	int	msg_data_size;
 	int	dir;		// input or output
@@ -210,40 +214,66 @@ static inline int need_split(struct wd_comp_sess *sess, int buf_size)
  */
 static void hisi_sched_init(struct wd_scheduler *sched, int i, void *priv)
 {
-	struct wd_msg	*wd_msg = &sched->msgs[i];
-	struct hisi_sched	*hpriv = sched->priv;
+	struct hisi_sched	*hsched = sched->priv;
+	int j;
 
-	wd_msg->msg = &hpriv->msgs[i];
+	for (j = 0; j < sched->msg_cache_num; j++)
+		sched->msgs[j].msg = &hsched->msgs[j];
 
-	hpriv->avail_in = 0;
-	hpriv->avail_out = 0;
-	hpriv->load_head = 0;
-	hpriv->undrained = 0;
-	hpriv->total_out = 0;
+	hsched->avail_in = 0;
+	hsched->avail_out = 0;
+	hsched->load_head = 0;
+	hsched->undrained = 0;
+	hsched->total_out = 0;
+	hsched->loaded_in = 0;
+	hsched->size_in = STREAM_MAX;
+	hsched->full = 0;
 }
 
 static int hisi_sched_input(struct wd_msg *msg, void *priv)
 {
 	struct hisi_zip_sqe	*m = msg->msg;
-	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
-	struct wd_comp_sess	*sess = hpriv->sess;
-	struct wd_comp_arg	*arg = hpriv->arg;
+	struct hisi_sched	*hsched = (struct hisi_sched *)priv;
+	struct wd_comp_sess	*sess = hsched->sess;
+	struct hisi_comp_sess	*hsess = (struct hisi_comp_sess *)sess->priv;
+	struct wd_scheduler	*sched = &hsess->sched;
+	struct wd_comp_arg	*arg = hsched->arg;
 	const char zip_head[2] = {0x78, 0x9c};
 	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
 				    0x0, 0x0, 0x0, 0x0, 0x03};
 	int templen, skipped = 0;
+	handle_t h_ctx;
 	void *addr;
 
+	/* reset hsched->avail_in */
+	if (hsched->avail_in < STREAM_MIN) {
+		if (is_nosva(sess)) {
+			msg->next_in = msg->swap_in;
+			hsched->size_in = STREAM_MAX;
+			hsched->avail_in = STREAM_MAX;
+			hsched->loaded_in = 0;
+		} else {
+			msg->next_in = arg->src;
+			hsched->size_in = STREAM_MAX;
+			hsched->avail_in = STREAM_MAX;
+			hsched->loaded_in = 0;
+		}
+	}
+
 	if (need_swap(sess, arg->dst_len)) {
-		hpriv->avail_out = BLOCK_MAX;
-		if (is_new_dst(sess, arg) || !hpriv->undrained)
+		hsched->avail_out = STREAM_MAX;
+		if (is_new_dst(sess, arg) || !hsched->undrained)
 			msg->next_out = msg->swap_out;
+	} else if (need_split(sess, arg->dst_len)) {
+		msg->next_out = arg->dst;
+		hsched->avail_out = STREAM_MAX;
 	} else {
 		msg->next_out = arg->dst;
-		hpriv->avail_out = arg->dst_len;
+		hsched->avail_out = arg->dst_len;
 	}
-	if (!hpriv->load_head && hpriv->op_type == DEFLATE) {
-		if (hpriv->alg_type == ZLIB) {
+
+	if (!hsched->load_head && hsched->op_type == DEFLATE) {
+		if (hsched->alg_type == ZLIB) {
 			memcpy(msg->next_out, &zip_head, 2);
 			templen = 2;
 		} else {
@@ -251,119 +281,116 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 			templen = 10;
 		}
 		msg->next_out += templen;
-		hpriv->avail_out -= templen;
-		hpriv->undrained += templen;
-		hpriv->stream_pos = STREAM_NEW;
-		hpriv->load_head = 1;
+		hsched->avail_out -= templen;
+		hsched->undrained += templen;
+		hsched->stream_pos = STREAM_NEW;
+		hsched->load_head = 1;
 	}
-	if (is_new_src(sess, arg) && arg->src_len) {
+
+	if (arg->src_len) {
+		if (arg->src_len >= hsched->avail_in) {
+			templen = hsched->avail_in;
+			hsched->full = 1;
+		} else {
+			templen = arg->src_len;
+		}
 		if (need_swap(sess, arg->src_len)) {
-			if (arg->src_len > BLOCK_MAX)
-				templen = BLOCK_MAX;
-			else
-				templen = arg->src_len;
-			msg->next_in = msg->swap_in;
-			memcpy(msg->next_in + hpriv->avail_in,
+			memcpy(msg->next_in + hsched->loaded_in,
 			       arg->src,
 			       templen);
-			hpriv->avail_in += templen;
-			m->input_data_length = templen;
-			arg->src += templen;
-			arg->src_len -= templen;
-		} else if (need_split(sess, arg->src_len)) {
-			msg->next_in = arg->src;
-			hpriv->avail_in += BLOCK_MAX;
-			m->input_data_length = BLOCK_MAX;
-			arg->src += BLOCK_MAX;
-			arg->src_len -= BLOCK_MAX;
-		} else {
-			msg->next_in = arg->src;
-			hpriv->avail_in = arg->src_len;
-			m->input_data_length = arg->src_len;
-			arg->src += arg->src_len;
-			arg->src_len = 0;
 		}
-	} else if (arg->src_len) {
-		/* some data is cached in next_in buffer */
-		if (is_in_swap(sess, msg->next_in, msg->swap_in)) {
-			templen = msg->swap_in + BLOCK_MAX -
-				  msg->next_in - hpriv->avail_in;
-			if (templen > arg->src_len)
-				templen = arg->src_len;
-			memcpy(msg->next_in + hpriv->avail_in,
-			       arg->src,
-			       templen);
-			hpriv->avail_in += templen;
-		} else {
-			if (need_split(sess, arg->src_len))
-				templen = STREAM_MAX;
-			else
-				templen = arg->src_len;
-			msg->next_in = arg->src;
-			hpriv->avail_in = templen;
-		}
+		hsched->loaded_in += templen;
+		hsched->avail_in -= templen;
 		arg->src += templen;
 		arg->src_len -= templen;
 		m->input_data_length = templen;
 	}
-	if (!hpriv->load_head && hpriv->op_type == INFLATE) {
-		if (hpriv->alg_type == ZLIB)
+
+	if (!hsched->load_head && hsched->op_type == INFLATE) {
+		if (hsched->alg_type == ZLIB)
 			skipped = 2;
 		else
 			skipped = 10;
-		msg->next_in += skipped;
-		hpriv->avail_in -= skipped;
-		m->input_data_length -= skipped;
-		hpriv->stream_pos = STREAM_NEW;
-		hpriv->load_head = 1;
+		if (hsched->loaded_in >= skipped) {
+			hsched->skipped = skipped;
+			hsched->stream_pos = STREAM_NEW;
+			hsched->load_head = 1;
+			m->input_data_length -= skipped;
+			msg->next_in += skipped;
+		}
 	}
-	addr = wd_get_dma_from_va(msg->h_ctx, msg->next_in);
+
+	if (hsched->dir == HISI_SCHED_INPUT)
+		h_ctx = sched->qs[sched->q_h];
+	else
+		h_ctx = sched->qs[sched->q_t];
+
+	addr = wd_get_dma_from_va(h_ctx, msg->next_in);
 	m->source_addr_l = (__u64)addr & 0xffffffff;
 	m->source_addr_h = (__u64)addr >> 32;
-	addr = wd_get_dma_from_va(msg->h_ctx, msg->next_out);
+	addr = wd_get_dma_from_va(h_ctx, msg->next_out);
 	m->dest_addr_l = (__u64)addr & 0xffffffff;
 	m->dest_addr_h = (__u64)addr >> 32;
-	m->dest_avail_out = hpriv->avail_out;
-	m->dw9 = hpriv->dw9;
+	m->dest_avail_out = hsched->avail_out;
+	m->dw9 = hsched->dw9;
 	return 0;
 }
 
 static int hisi_sched_output(struct wd_msg *msg, void *priv)
 {
 	struct hisi_zip_sqe	*m = msg->msg;
-	struct hisi_sched	*hpriv = (struct hisi_sched *)priv;
-	struct wd_comp_sess	*sess = hpriv->sess;
-	struct wd_comp_arg	*arg = hpriv->arg;
+	struct hisi_sched	*hsched = (struct hisi_sched *)priv;
+	struct wd_comp_sess	*sess = hsched->sess;
+	struct wd_comp_arg	*arg = hsched->arg;
+	uint32_t	status, type;
 	int	templen;
 
-	if (is_in_swap(sess, msg->next_out, msg->swap_out)) {
-		if (hpriv->undrained + m->produced > arg->dst_len)
-			templen = arg->dst_len + m->produced;
-		else
-			templen = hpriv->undrained + m->produced;
-		memcpy(arg->dst, msg->next_out - hpriv->undrained,
-		       templen);
-		hpriv->total_out += templen;
-		hpriv->avail_in -= m->consumed;
-		arg->dst += templen;
-		arg->dst_len = templen;
+	status = m->dw3 & 0xff;
+	type = m->dw9 & 0xff;
+	if (!status || (status == 0x0d) || (status == 0x13)) {
+		hsched->undrained += m->produced;
+		msg->next_in += m->consumed;
+		msg->next_out += m->produced;
+		hsched->avail_out -= m->produced;
+
+		templen = hsched->loaded_in - m->consumed;
+		hsched->avail_in += templen;
+		if (templen && (arg->status & STATUS_IN_EMPTY)) {
+			arg->status &= ~STATUS_IN_EMPTY;
+			arg->status |= STATUS_IN_PART_USE;
+			arg->src -= templen;
+			arg->src_len = templen;
+		}
+		hsched->loaded_in = 0;
+		hsched->avail_in = 0;
 	} else {
-		/* drain next_out first */
-		hpriv->total_out += hpriv->undrained + m->produced;
-		hpriv->avail_in -= m->consumed;
-		arg->dst += hpriv->undrained + m->produced;
-		arg->dst_len = hpriv->undrained + m->produced;
+		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
+		return -EIO;
 	}
-	hpriv->undrained = 0;
-	arg->status |= STATUS_OUT_READY;
-	if (hpriv->avail_in) {
-		arg->status |= STATUS_IN_PART_USE;
-	} else {
-		arg->status |= STATUS_IN_EMPTY | STATUS_OUT_DRAINED;
+	if (hsched->undrained) {
+		if (is_in_swap(sess, msg->next_out, msg->swap_out)) {
+			if (hsched->undrained > arg->dst_len)
+				templen = arg->dst_len;
+			else
+				templen = hsched->undrained;
+			memcpy(arg->dst,
+			       msg->next_out - hsched->undrained,
+			       templen);
+			arg->dst += templen;
+			arg->dst_len = templen;
+			hsched->undrained -= templen;
+		} else {
+			/* drain next_out first */
+			arg->dst += hsched->undrained;
+			arg->dst_len = hsched->undrained;
+			hsched->undrained = 0;
+		}
+		arg->status |= STATUS_OUT_READY;
+	}
+	if (!hsched->undrained && ~hsched->loaded_in) {
+		arg->status |= STATUS_OUT_DRAINED;
 		msg->next_out = NULL;
 	}
-	if (arg->status & STATUS_IN_EMPTY)
-		msg->next_in = NULL;
 	return 0;
 }
 
@@ -371,7 +398,7 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
-	struct hisi_sched	*sched_priv;
+	struct hisi_sched	*hsched;
 	struct hisi_qm_capa	*capa;
 	int	ret;
 
@@ -396,35 +423,35 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 	if (!sched->qs)
 		return -ENOMEM;
 
-	sched_priv = malloc(sizeof(struct hisi_sched));
-	if (!sched_priv)
+	hsched = malloc(sizeof(struct hisi_sched));
+	if (!hsched)
 		goto out_priv;
-	sched_priv->sess = sess;
-	sched_priv->msgs = malloc(sizeof(struct hisi_zip_sqe) * CACHE_NUM);
-	if (!sched_priv->msgs)
+	hsched->sess = sess;
+	hsched->msgs = malloc(sizeof(struct hisi_zip_sqe) * CACHE_NUM);
+	if (!hsched->msgs)
 		goto out_msg;
 	if (!strncmp(sess->alg_name, "zlib", strlen("zlib"))) {
-		sched_priv->alg_type = ZLIB;
-		sched_priv->dw9 = 2;
+		hsched->alg_type = ZLIB;
+		hsched->dw9 = 2;
 		capa->alg = "zlib";
 	} else if (!strncmp(sess->alg_name, "gzip", strlen("gzip"))) {
-		sched_priv->alg_type = GZIP;
-		sched_priv->dw9 = 3;
+		hsched->alg_type = GZIP;
+		hsched->dw9 = 3;
 		capa->alg = "gzip";
 	} else
 		goto out_sched;
-	sched_priv->msg_data_size = sched->msg_data_size;
-	sched_priv->total_out = 0;
-	sched_priv->load_head = 0;
-	sched->priv = sched_priv;
+	hsched->msg_data_size = sched->msg_data_size;
+	hsched->total_out = 0;
+	hsched->load_head = 0;
+	sched->priv = hsched;
 	ret = wd_sched_init(sched, sess->node_path);
 	if (ret < 0)
 		goto out_sched;
 	return 0;
 out_sched:
-	free(sched_priv->msgs);
+	free(hsched->msgs);
 out_msg:
-	free(sched_priv);
+	free(hsched);
 out_priv:
 	free(sched->qs);
 	return ret;
@@ -435,23 +462,23 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
-	struct hisi_sched	*sched_priv;
+	struct hisi_sched	*hsched;
 	struct hisi_qm_capa	*capa;
 	struct hisi_qm_priv	*qm_priv;
 	int	i, j, ret = -EINVAL;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	sched_priv = sched->priv;
+	hsched = sched->priv;
 	capa = &priv->capa;
 	sched->data = capa;
 
-	sched_priv->op_type = (arg->flag & FLAG_DEFLATE) ? DEFLATE: INFLATE;
-	sched_priv->arg = arg;
+	hsched->op_type = (arg->flag & FLAG_DEFLATE) ? DEFLATE: INFLATE;
+	hsched->arg = arg;
 
 	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
-	qm_priv->op_type = sched_priv->op_type;
+	qm_priv->op_type = hsched->op_type;
 	for (i = 0; i < sched->q_num; i++) {
 		ret = sched->hw_alloc(sched->qs[i], sched->data);
 		if (ret)
@@ -474,7 +501,6 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 		if (ret)
 			goto out_smm;
 		for (i = 0; i < sched->msg_cache_num; i++) {
-			sched->msgs[i].h_ctx = sched->qs[0];
 			sched->msgs[i].swap_in =
 				smm_alloc(sched->ss_region,
 					  sched->msg_data_size);
@@ -489,8 +515,32 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 			}
 		}
 	} else {
-		for (i = 0; i < sched->msg_cache_num; i++)
-			sched->msgs[i].h_ctx = sched->qs[0];
+		for (i = 0; i < sched->msg_cache_num; i++) {
+			sched->msgs[i].swap_in = malloc(sched->msg_data_size);
+			sched->msgs[i].swap_out = malloc(sched->msg_data_size);
+			if (!sched->msgs[i].swap_in ||
+			    !sched->msgs[i].swap_out) {
+				dbg("not enough memory for cache %d\n", i);
+				goto out_swap2;
+			}
+		}
+	}
+	return ret;
+out_swap2:
+	for (j = i; j >= 0; j--) {
+		if (sched->msgs[j].swap_in)
+			free(sched->msgs[j].swap_in);
+		if (sched->msgs[j].swap_out)
+			free(sched->msgs[j].swap_out);
+	}
+	for (j = i - 1; j >= 0; j--) {
+		wd_ctx_stop(sched->qs[j]);
+		sched->hw_free(sched->qs[j]);
+	}
+	sched->hw_free(sched->qs[i]);
+	for (j = i - 1; j >= 0; j--) {
+		wd_ctx_stop(sched->qs[j]);
+		sched->hw_free(sched->qs[j]);
 	}
 	return ret;
 out_swap:
@@ -523,17 +573,24 @@ static void hisi_comp_block_exit(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
-	struct hisi_sched	*sched_priv;
+	struct hisi_sched	*hsched;
 	int	i;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
 
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (sched->msgs[i].swap_in)
-			smm_free(sched->ss_region, sched->msgs[i].swap_in);
-		if (sched->msgs[i].swap_out)
-			smm_free(sched->ss_region, sched->msgs[i].swap_out);
+		if (wd_is_nosva(sched->qs[0])) {
+			if (sched->msgs[i].swap_in)
+				smm_free(sched->ss_region,
+					 sched->msgs[i].swap_in);
+			if (sched->msgs[i].swap_out)
+				smm_free(sched->ss_region,
+					 sched->msgs[i].swap_out);
+		} else {
+			free(sched->msgs[i].swap_in);
+			free(sched->msgs[i].swap_out);
+		}
 	}
 	if (wd_is_nosva(sched->qs[0]) && sched->ss_region) {
 		wd_drv_unmap_qfr(sched->qs[0],
@@ -545,9 +602,9 @@ static void hisi_comp_block_exit(struct wd_comp_sess *sess)
 		sched->hw_free(sched->qs[i]);
 	}
 	wd_sched_fini(sched);
-	sched_priv = sched->priv;
-	free(sched_priv->msgs);
-	free(sched_priv);
+	hsched = sched->priv;
+	free(hsched->msgs);
+	free(hsched);
 	free(sched->qs);
 }
 
@@ -556,12 +613,10 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
-	struct hisi_sched	*sched_priv;
 	int	ret;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	sched_priv = sched->priv;
 
 	if (!(arg->flag & FLAG_INPUT_FINISH) && (arg->src_len < BLOCK_MAX))
 		return -EINVAL;
@@ -575,9 +630,7 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 			return ret;
 		}
 	}
-	arg->dst_len = sched_priv->total_out;
 	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
-	sched_priv->total_out = 0;
 	return 0;
 }
 
@@ -586,14 +639,14 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
-	struct hisi_sched	*sched_priv;
+	struct hisi_sched	*hsched;
 	int	ret;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	sched_priv = sched->priv;
+	hsched = sched->priv;
 	/* ZLIB engine can do only one time with buffer less than 16M */
-	if (sched_priv->alg_type == ZLIB) {
+	if (hsched->alg_type == ZLIB) {
 		if (BLOCK_SIZE > 16 << 20) {
 			WD_ERR("BLOCK_SIZE(%ld) > HW limitation (16MB)\n",
 				arg->src_len);
@@ -610,9 +663,7 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 			return ret;
 		}
 	}
-	arg->dst_len = sched_priv->total_out;
 	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
-	sched_priv->total_out = 0;
 	return 0;
 }
 
