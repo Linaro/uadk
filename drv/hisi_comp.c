@@ -407,11 +407,12 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 		sched_priv->alg_type = ZLIB;
 		sched_priv->dw9 = 2;
 		capa->alg = "zlib";
-	} else {	// gzip
+	} else if (!strncmp(sess->alg_name, "gzip", strlen("gzip"))) {
 		sched_priv->alg_type = GZIP;
 		sched_priv->dw9 = 3;
 		capa->alg = "gzip";
-	}
+	} else
+		goto out_sched;
 	sched_priv->msg_data_size = sched->msg_data_size;
 	sched_priv->total_out = 0;
 	sched_priv->load_head = 0;
@@ -621,15 +622,16 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct hisi_strm_info	*strm = &priv->strm;
 
-	if (strm->alg_type == ZLIB) {
+	if (!strncmp(sess->alg_name, "zlib", strlen("zlib"))) {
 		priv->capa.alg = "zlib";
 		strm->alg_type = ZLIB;
 		strm->dw9 = 2;
-	} else {
+	} else if (!strncmp(sess->alg_name, "gzip", strlen("gzip"))) {
 		priv->capa.alg = "gzip";
 		strm->alg_type = GZIP;
 		strm->dw9 = 3;
-	}
+	} else
+		return -EINVAL;
 	strm->msg = calloc(1, sizeof(struct hisi_strm_info));
 	if (!strm->msg)
 		return -ENOMEM;
