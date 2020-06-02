@@ -33,6 +33,9 @@
 #define WD_RSA_MAX_CTX			256
 #define RSA_BALANCE_THRHD	1280
 #define RSA_RESEND_CNT	8
+#define RSA_MAX_KEY_SIZE	512
+#define RSA_RECV_MAX_CNT	60000000 // 1 min
+
 
 static __thread int balance;
 
@@ -155,6 +158,12 @@ struct wcrypto_rsa_kg_in *wcrypto_new_kg_in(void *ctx, struct wd_dtb *e,
 		WD_ERR("ctx br->alloc kg_in memory fail!\n");
 		return NULL;
 	}
+
+	if (!c->key_size || c->key_size > RSA_MAX_KEY_SIZE) {
+		WD_ERR("key size err at create kg in!\n");
+		return NULL;
+	}
+
 	if (e->dsize > c->key_size) {
 		WD_ERR("e para err at create kg in!\n");
 		return NULL;
@@ -249,6 +258,11 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	}
 
 	kz = c->key_size;
+	if (!kz || kz > RSA_MAX_KEY_SIZE) {
+		WD_ERR("new kg out key size error!\n");
+		return NULL;
+	}
+
 	if (c->setup.is_crt)
 		kg_out_size = CRT_GEN_PARAMS_SZ(c->key_size);
 	else
@@ -554,23 +568,29 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
-
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = create_ctx(setup, cid);
 	if (!ctx) {
 		WD_ERR("create rsa ctx fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	ctx->q = q;
 	ret = create_ctx_key(setup, ctx);
 	if (ret) {
 		WD_ERR("fail creating rsa ctx keys!\n");
 		del_ctx(ctx);
-		return NULL;
+		goto free_ctx_id;
 	}
 
 	return ctx;
+
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	wd_free_ctx_id(q, cid);
+	wd_unspinlock(&qinfo->qlock);
+
+	return NULL;
 }
 
 bool wcrypto_rsa_is_crt(void *ctx)
@@ -932,8 +952,12 @@ recv_again:
 	ret = wd_recv(ctxt->q, (void **)&resp);
 	if (!ret) {
 		rx_cnt++;
-		if (balance > RSA_BALANCE_THRHD)
+		if (rx_cnt >= RSA_RECV_MAX_CNT) {
+			WD_ERR("failed to recv: timeout!\n");
+			return -WD_ETIMEDOUT;
+		} else if (balance > RSA_BALANCE_THRHD) {
 			usleep(1);
+		}
 		goto recv_again;
 	} else if (ret < 0) {
 		WD_ERR("do rsa wd_recv err!\n");

@@ -34,6 +34,7 @@
 #define WD_DH_MAX_CTX		256
 #define DH_BALANCE_THRHD		1280
 #define DH_RESEND_CNT	8
+#define DH_RECV_MAX_CNT	60000000 // 1 min
 
 static __thread int balance;
 
@@ -132,13 +133,13 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
-
 	wd_unspinlock(&qinfo->qlock);
+
 
 	ctx = malloc(sizeof(struct wcrypto_dh_ctx));
 	if (!ctx) {
 		WD_ERR("alloc ctx memory fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 
 	memset(ctx, 0, sizeof(struct wcrypto_dh_ctx));
@@ -159,6 +160,13 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
 	ctx->g.bsize = ctx->key_size;
 	return ctx;
+
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	wd_free_ctx_id(q, ctx_id);
+	wd_unspinlock(&qinfo->qlock);
+
+	return NULL;
 }
 
 bool wcrypto_dh_is_g2(void *ctx)
@@ -295,8 +303,12 @@ recv_again:
 	ret = wd_recv(ctxt->q, (void **)&resp);
 	if (!ret) {
 		rx_cnt++;
-		if (balance > DH_BALANCE_THRHD)
+		if (rx_cnt >= DH_RECV_MAX_CNT) {
+			WD_ERR("failed to recv: timeout!\n");
+			return -WD_ETIMEDOUT;
+		} else if (balance > DH_BALANCE_THRHD) {
 			usleep(1);
+		}
 		goto recv_again;
 	} else if (ret < 0) {
 		WD_ERR("do dh wd_recv err!\n");
