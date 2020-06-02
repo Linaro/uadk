@@ -33,7 +33,7 @@
 #define WD_ECC_CTX_MSG_NUM		64
 #define WD_ECC_MAX_CTX			256
 #define ECC_BALANCE_THRHD		1280
-#define ECC_RECV_MAX_CNT		20000000
+#define ECC_RECV_MAX_CNT		60000000
 #define ECC_RESEND_CNT			8
 #define BITS_TO_BYTES(bits)		(((bits) + 7) / 8)
 #define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(521)
@@ -1198,7 +1198,7 @@ static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 	struct wcrypto_ecc_msg *req;
 	int ret = -WD_EINVAL;
 
-	if (!opdata || !ctx) {
+	if (!ctx) {
 		WD_ERR("do ecc param null!\n");
 		return -WD_EINVAL;
 	}
