@@ -5,4 +5,5 @@ SUBDIRS=. test_mm bmm_test
 if WITH_OPENSSL_DIR
 SUBDIRS+=hisi_hpre_test
 SUBDIRS+=hisi_trng_test
+SUBDIRS+=hisi_sec_test
 endif

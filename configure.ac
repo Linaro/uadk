@@ -97,6 +97,7 @@ AS_IF([test -n "$with_uadk_v1"],
 			 v1/test/test_mm/Makefile
 			 v1/test/hisi_hpre_test/Makefile
 			 v1/test/hisi_trng_test/Makefile
+			 v1/test/hisi_sec_test/Makefile
 			 v1/test/hisi_zip_test/Makefile]),
 	AC_CONFIG_FILES([test/Makefile
 			 test/hisi_hpre_test/Makefile
