@@ -228,6 +228,7 @@ static void hisi_sched_init(struct wd_scheduler *sched, int i, void *priv)
 	hsched->loaded_in = 0;
 	hsched->size_in = STREAM_MAX;
 	hsched->full = 0;
+	hsched->skipped = 0;
 }
 
 static int hisi_sched_input(struct wd_msg *msg, void *priv)
@@ -302,7 +303,6 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 		hsched->loaded_in += templen;
 		hsched->avail_in -= templen;
 		arg->src += templen;
-		arg->src_len -= templen;
 		m->input_data_length = templen;
 	}
 
@@ -359,10 +359,15 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 			arg->status &= ~STATUS_IN_EMPTY;
 			arg->status |= STATUS_IN_PART_USE;
 			arg->src -= templen;
-			arg->src_len = templen;
-		}
+			arg->src_len = m->consumed + hsched->skipped;
+		} else
+			arg->src_len = m->consumed + hsched->skipped;
 		hsched->loaded_in = 0;
 		hsched->avail_in = 0;
+		if (hsched->stream_pos == STREAM_NEW) {
+			hsched->stream_pos = STREAM_OLD;
+			hsched->skipped = 0;
+		}
 	} else {
 		WD_ERR("bad status (s=%d, t=%d)\n", status, type);
 		return -EIO;
@@ -614,6 +619,7 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
 	int	ret;
+	size_t	src_len;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
@@ -621,14 +627,19 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 	if (!(arg->flag & FLAG_INPUT_FINISH) && (arg->src_len < BLOCK_MAX))
 		return -EINVAL;
 
-	while (arg->src_len || !wd_sched_empty(sched)) {
-		ret = wd_sched_work(sched, arg->src_len);
+	src_len = arg->src_len;
+	while (src_len || !wd_sched_empty(sched)) {
+		ret = wd_sched_work(sched, src_len);
 		if (ret == -EAGAIN)
 			continue;
 		if (ret < 0) {
 			WD_ERR("fail to deflate by wd_sched (%d)\n", ret);
 			return ret;
 		}
+		if (src_len == 0)
+			break;
+		src_len -= arg->src_len;
+		arg->src_len = src_len;
 	}
 	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
 	return 0;
@@ -641,6 +652,7 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*hsched;
 	int	ret;
+	size_t	src_len;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
@@ -654,14 +666,19 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 		}
 	}
 
-	while (arg->src_len || !wd_sched_empty(sched)) {
-		ret = wd_sched_work(sched, arg->src_len);
+	src_len = arg->src_len;
+	while (src_len || !wd_sched_empty(sched)) {
+		ret = wd_sched_work(sched, src_len);
 		if (ret == -EAGAIN)
 			continue;
 		if (ret < 0) {
 			WD_ERR("fail to inflate by wd_sched (%d)\n", ret);
 			return ret;
 		}
+		if (src_len == 0)
+			break;
+		src_len -= arg->src_len;
+		arg->src_len = src_len;
 	}
 	arg->status = STATUS_IN_EMPTY | STATUS_OUT_READY | STATUS_OUT_DRAINED;
 	return 0;
@@ -821,13 +838,12 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 	msg->dw7 |= ((strm->stream_pos << 2 | STATEFUL << 1 | flush_type)) <<
 		    STREAM_FLUSH_SHIFT;
 	if (strm->stream_pos == STREAM_NEW) {
-		strm->stream_pos = STREAM_OLD;
 		if (strm->skipped) {
 			strm->next_in += strm->skipped;
 			strm->loaded_in -= strm->skipped;
-			strm->skipped = 0;
 		}
-	}
+	} else
+		strm->skipped = 0;
 	if (wd_is_nosva(strm->h_ctx)) {
 		addr = (uint64_t)wd_get_dma_from_va(strm->h_ctx, strm->next_in);
 		msg->source_addr_l = (uint64_t)addr & 0xffffffff;
@@ -901,11 +917,18 @@ recv_again:
 			strm->arg->status &= ~STATUS_IN_EMPTY;
 			strm->arg->status |= STATUS_IN_PART_USE;
 			strm->arg->src -= templen;
-			strm->arg->src_len = templen;
+			strm->arg->src_len = recv_msg->consumed + strm->skipped;
+		} else {
+			/* all source data is consumed */
+			strm->arg->src_len = recv_msg->consumed + strm->skipped;
 		}
 		/* after one transaction, always load data to IN buf again */
 		strm->loaded_in = 0;
 		strm->avail_in = 0;
+		if (strm->stream_pos == STREAM_NEW) {
+			strm->stream_pos = STREAM_OLD;
+			strm->skipped = 0;
+		}
 
 		if (ret == 0 && flush == WD_FINISH)
 			ret = Z_STREAM_END;
@@ -997,7 +1020,6 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 		strm->loaded_in += templen;
 		strm->avail_in -= templen;
 		arg->src += templen;
-		arg->src_len -= templen;
 	}
 
 	if (!strm->load_head && strm->op_type == INFLATE) {
@@ -1180,5 +1202,81 @@ int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 
 int hisi_comp_poll(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 {
+	return 0;
+}
+
+int hisi_strm_deflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
+{
+	struct wd_comp_arg	*arg = &strm->arg;
+	int	ret, src_len;
+
+	src_len = strm->in_sz;
+	if (strm->in_sz > STREAM_MAX)
+		strm->in_sz = STREAM_MAX;
+
+	/*
+	 * Before deflation, in_sz means the size of IN and out_sz means the
+	 * size of OUT.
+	 * After deflation, in_sz means the size of consumed data in IN and
+	 * out_sz means the size of produced data in OUT.
+	 */
+	ret = hisi_comp_strm_deflate(sess, arg);
+	if (ret < 0)
+		return ret;
+	if (arg->src_len && (arg->src_len < src_len)) {
+		arg->status &= ~STATUS_IN_EMPTY;
+		arg->status |= STATUS_IN_PART_USE;
+	}
+	if (arg->status & STATUS_IN_PART_USE)
+		src_len = arg->src_len;
+	else if (arg->status & STATUS_IN_EMPTY)
+		src_len = arg->src_len;
+	else
+		src_len = 0;
+	strm->in += src_len;
+	strm->in_sz = src_len;
+	if (arg->status & STATUS_OUT_READY) {
+		strm->out += arg->dst_len;
+		strm->out_sz = arg->dst_len;
+		strm->total_out += arg->dst_len;
+	}
+	return 0;
+}
+
+int hisi_strm_inflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
+{
+	struct wd_comp_arg	*arg = &strm->arg;
+	int	ret, src_len;
+
+	src_len = strm->in_sz;
+	if (strm->in_sz > STREAM_MAX)
+		strm->in_sz = STREAM_MAX;
+
+	/*
+	 * Before inflation, in_sz means the size of IN and out_sz means the
+	 * size of OUT.
+	 * After inflation, in_sz means the size of consumed data in IN and
+	 * out_sz means the size of produced data in OUT.
+	 */
+	ret = hisi_comp_strm_inflate(sess, arg);
+	if (ret < 0)
+		return ret;
+	if (arg->src_len && (arg->src_len < src_len)) {
+		arg->status &= ~STATUS_IN_EMPTY;
+		arg->status |= STATUS_IN_PART_USE;
+	}
+	if (arg->status & STATUS_IN_PART_USE)
+		src_len = arg->src_len;
+	else if (arg->status & STATUS_IN_EMPTY)
+		src_len = arg->src_len;
+	else
+		src_len = 0;
+	strm->in += src_len;
+	strm->in_sz = src_len;
+	if (arg->status & STATUS_OUT_READY) {
+		strm->out += arg->dst_len;
+		strm->out_sz = arg->dst_len;
+		strm->total_out += arg->dst_len;
+	}
 	return 0;
 }
