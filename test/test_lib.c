@@ -76,7 +76,8 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *msg;
 
-	msg = wd_msg->msg = &ctx->msgs[i];
+	wd_msg->msg = &ctx->msgs[i];
+	msg = &ctx->msgs[i];
 
 	if (ctx->opts->alg_type == ZLIB)
 		msg->dw9 = HW_ZLIB;
@@ -111,9 +112,6 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 		m->dest_addr_l = (__u64)data_out & 0xffffffff;
 		m->dest_addr_h = (__u64)data_out >> 32;
 	} else {
-		msg->next_in = in_buf;
-		msg->next_out = out_buf;
-
 		m->source_addr_l = (__u64)in_buf & 0xffffffff;
 		m->source_addr_h = (__u64)in_buf >> 32;
 		m->dest_addr_l = (__u64)out_buf & 0xffffffff;
@@ -144,6 +142,11 @@ int hizip_test_default_output(struct wd_msg *msg, void *priv)
 		fprintf(stderr, "bad status (s=%d, t=%d%s)\n", status, type,
 			ctx->faulting ? ", expected" : "");
 		return -EFAULT;
+	}
+
+	if (ctx->is_nosva) {
+		memcpy(ctx->out_buf, msg->swap_out, m->produced);
+		ctx->out_buf += m->input_data_length * EXPANSION_RATIO;
 	}
 
 	ctx->total_out += m->produced;
@@ -277,6 +280,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	int i, j, ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
+	struct hizip_test_context *ctx = priv;
 	uint64_t addr;
 
 	sched->q_num = opts->q_num;
@@ -307,6 +311,10 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	else
 		capa->alg = "gzip";
 	sched->data = capa;
+
+	ctx->msgs = calloc(1, sizeof(*ctx->msgs) * sched->msg_cache_num);
+	if (!ctx->msgs)
+		goto out_msgs;
 
 	qm_priv = (struct hisi_qm_priv *)&capa->priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
@@ -379,6 +387,8 @@ out_hw:
 		sched->hw_free(sched->qs[j]);
 	}
 out_sched:
+	free(ctx->msgs);
+out_msgs:
 	free(capa);
 out:
 	free(sched->qs);
