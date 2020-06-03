@@ -43,6 +43,8 @@ static struct wd_alg_comp wd_alg_comp_list[] = {
 		.deflate	= hisi_comp_deflate,
 		.inflate	= hisi_comp_inflate,
 		.async_poll	= hisi_comp_poll,
+		.strm_deflate	= hisi_strm_deflate,
+		.strm_inflate	= hisi_strm_inflate,
 	},
 };
 
@@ -220,5 +222,60 @@ int wd_alg_decompress(handle_t handle, struct wd_comp_arg *arg)
 	}
 	if (sess->drv->inflate)
 		ret = sess->drv->inflate(sess, arg);
+	return ret;
+}
+
+int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm)
+{
+	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_arg	*arg = &strm->arg;
+	int	ret = -EINVAL;
+
+	if (!strm || !strm->in || !strm->out || !strm->out_sz)
+		return ret;
+	if ((sess->mode & MODE_STREAM) == 0)
+		return ret;
+
+	strm->arg.src = strm->in;
+	strm->arg.src_len = strm->in_sz;
+	strm->arg.dst = strm->out;
+	strm->arg.dst_len = strm->out_sz;
+	strm->arg.flag |= FLAG_DEFLATE;
+	strm->arg.status = 0;
+	if (sess->drv->prep) {
+		ret = sess->drv->prep(sess, arg);
+		if (ret)
+			return ret;
+	}
+	if (sess->drv->strm_deflate) {
+		ret = sess->drv->strm_deflate(sess, strm);
+	}
+	return ret;
+}
+
+int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm)
+{
+	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_arg	*arg = &strm->arg;
+	int	ret = -EINVAL;
+
+	if (!strm || !strm->in || !strm->out || !strm->out_sz)
+		return ret;
+	if ((sess->mode & MODE_STREAM) == 0)
+		return ret;
+
+	strm->arg.src = strm->in;
+	strm->arg.src_len = strm->in_sz;
+	strm->arg.dst = strm->out;
+	strm->arg.dst_len = strm->out_sz;
+	strm->arg.flag &= ~FLAG_DEFLATE;
+	strm->arg.status = 0;
+	if (sess->drv->prep) {
+		ret = sess->drv->prep(sess, arg);
+		if (ret)
+			return ret;
+	}
+	if (sess->drv->strm_inflate)
+		ret = sess->drv->strm_inflate(sess, strm);
 	return ret;
 }
