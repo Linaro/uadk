@@ -431,6 +431,7 @@ BIGNUM *EC_KEY_get0_private_key(EC_KEY *key);
 int ECParameters_print_fp(FILE *fp, EC_KEY *x);
 int EC_KEY_print_fp(FILE *fp, EC_KEY *x, int off);
 void EC_POINT_free(EC_POINT *point);
+void EC_GROUP_free(EC_GROUP *group);
 size_t EC_POINT_point2buf(EC_GROUP *group, EC_POINT *point,
                           __u32 form,
                           char **pbuf, void *ctx);
@@ -1520,6 +1521,8 @@ static struct ecc_test_ctx *ecc_create_sw_gen_test_ctx(struct ecc_test_ctx_setup
 		goto free_ec_key;
 	}
 
+	EC_GROUP_free(group);
+
 	test_ctx = malloc(sizeof(struct ecc_test_ctx));
 	if (!test_ctx) {
 		printf("malloc failed.\n");
@@ -1648,7 +1651,6 @@ static struct ecc_test_ctx *ecc_create_sw_compute_test_ctx(struct ecc_test_ctx_s
 			printf("EC_GROUP_new_by_curve_name err!\n");
 			goto free_ec_key_b;
 		}
-		group_b = (EC_GROUP *)((unsigned long long)group_b & 0xffffffffffff);
 
 		ret = EC_KEY_set_group(key_b, group_b);
 		if(ret != 1) {
@@ -1667,6 +1669,8 @@ static struct ecc_test_ctx *ecc_create_sw_compute_test_ctx(struct ecc_test_ctx_s
 			printf("EC_KEY_get0_public_key err.\n");
 			goto free_ec_key_b;
 		}
+
+		EC_GROUP_free(group_b);
 #ifdef DEBUG
 	printf("except_pub_key:\n");
 	ECParameters_print_fp(stdout, key_b);
@@ -1675,6 +1679,7 @@ static struct ecc_test_ctx *ecc_create_sw_compute_test_ctx(struct ecc_test_ctx_s
 		EC_KEY_free(key_b);
 	}
 
+	EC_GROUP_free(group_a);
 	test_ctx->op = ECDH_SW_COMPUTE;
 	test_ctx->priv = key_a;
 	test_ctx->key_size = setup.key_bits >> 3;
@@ -1837,6 +1842,7 @@ static struct ecc_test_ctx *ecc_create_hw_gen_test_ctx(struct ecc_test_ctx_setup
 		memcpy(test_ctx->cp_pub_key, tmp + 1, 2 * key_size);
 		test_ctx->cp_pub_key_size = len - 1;
 
+		EC_GROUP_free(group_a);
 		OPENSSL_free(tmp);
 		EC_KEY_free(key_a);
 	}
@@ -2015,6 +2021,8 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		if (len != 2 * key_size + 1) {
 			printf("EC_POINT_point2buf err.\n");
 		}
+
+		EC_GROUP_free(group_a);
 
 		tmp.x.data = buff + 1;
 		tmp.x.dsize = key_size;
@@ -2383,11 +2391,11 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx)
 			tmp = BN_bin2bn(cp_key, key_size, NULL);
 			ret = BN_bn2bin(tmp, cp_key);
 			cp_size = ret;
-			free(tmp);
+			BN_free(tmp);
 			tmp = BN_bin2bn(cp_key + key_size, key_size, NULL);
 			ret = BN_bn2bin(tmp, cp_key + ret);
 			cp_size += ret;
-			free(tmp);
+			BN_free(tmp);
 
 		} else {
 			ret = key->x.dsize;
@@ -2396,7 +2404,7 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx)
 			tmp = BN_bin2bn(cp_key, key_size, NULL);
 			ret = BN_bn2bin(tmp, cp_key);
 			cp_size = ret;
-			free(tmp);
+			BN_free(tmp);
 		}
 
 		if (out_sz != cp_size || memcmp(cp_key, o_buf, cp_size)) {
@@ -2590,8 +2598,6 @@ static void *_ecc_sys_test_thread(void *data)
 		return NULL;
 	}
 
-new_test_again:
-
 	if (!only_soft) {
 		memset(&ctx_setup, 0, sizeof(ctx_setup));
 		if (performance_test)
@@ -2673,21 +2679,12 @@ new_test_again:
 		}
 
 		ctx_setup.key_bits = key_bits;
-		ctx = wcrypto_create_ecc_ctx(q, &ctx_setup);
-		if (!ctx) {
-			HPRE_TST_PRT("wcrypto_create_ecc_ctx failed\n");
-			return NULL;
-		}
 	}
 
 	if (ecxdh_init_test_ctx_setup(&setup, opType)) {
 		wcrypto_del_ecc_ctx(ctx);
 		return NULL;
 	}
-
-	setup.pool = pool;
-	setup.q = q;
-	setup.ctx = ctx;
 
 	if (opType == ECDSA_SIGN || opType == SM2_SIGN)
 		setup.op_type = (only_soft) ? ECC_SW_SIGN: ECC_HW_SIGN;
@@ -2701,6 +2698,20 @@ new_test_again:
 		setup.op_type = (only_soft) ? ECDH_SW_GENERATE: ECDH_HW_GENERATE;
 	else
 		setup.op_type = (only_soft) ? ECDH_SW_COMPUTE: ECDH_HW_COMPUTE;
+
+new_test_again:
+
+	if (!only_soft) {
+		ctx = wcrypto_create_ecc_ctx(q, &ctx_setup);
+		if (!ctx) {
+			HPRE_TST_PRT("wcrypto_create_ecc_ctx failed\n");
+			return NULL;
+		}
+
+		setup.pool = pool;
+		setup.q = q;
+		setup.ctx = ctx;
+	}
 
 new_test_with_no_req_ctx: // async test
 
@@ -2788,7 +2799,6 @@ new_test_with_no_req_ctx: // async test
 
 				goto new_test_again;
 				//goto new_test_with_no_req_ctx;
-
 			}
 		} else {
 			if (is_exit(pdata))
@@ -2821,6 +2831,7 @@ new_test_with_no_req_ctx: // async test
 	/* wait for recv finish */
 	while (pdata->send_task_num != pdata->recv_task_num)
 		usleep(1000);
+
 
 fail_release:
 
