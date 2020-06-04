@@ -33,20 +33,17 @@
 
 static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 {
-	int lens = bsz - dsz;
 	const char *temp = data + dsz;
+	int lens = bsz - dsz;
 	int i = 0;
 
 	while (i < lens) {
-		if (temp[i])
+		if (temp[i] && !data[i])
 			return true;
 		i++;
 	}
 
-	if (lens && data[0])
-		return false;
-	else
-		return true;
+	return false;
 }
 
 static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
