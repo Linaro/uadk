@@ -27,24 +27,6 @@ struct wd_cipher_arg {
 	void			*cb_param;
 };
 
-struct wd_alg_cipher {
-	char	*drv_name;
-	char	*alg_name;
-	int	(*init)(struct wd_cipher_sess *sess);
-	void	(*exit)(struct wd_cipher_sess *sess);
-	int	(*prep)(struct wd_cipher_sess *sess,
-			struct wd_cipher_arg *arg);
-	void	(*fini)(struct wd_cipher_sess *sess);
-	int	(*set_key)(struct wd_cipher_sess *sess, const __u8 *key,
-			   __u32 key_len);
-	int	(*encrypt)(struct wd_cipher_sess *sess,
-			   struct wd_cipher_arg *arg);
-	int	(*decrypt)(struct wd_cipher_sess *sess,
-			   struct wd_cipher_arg *arg);
-	int	(*async_poll)(struct wd_cipher_sess *sess,
-			      struct wd_cipher_arg *arg);
-};
-
 extern handle_t wd_alg_cipher_alloc_sess(char *alg_name, uint32_t mode,
 					wd_dev_mask_t *dev_mask);
 extern void wd_alg_cipher_free_sess(handle_t handle);
