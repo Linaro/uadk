@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "wd.h"
+#include "wd_alg_common.h"
 
 /**
  * wd_digest_type - Algorithm type of digest
@@ -35,12 +36,12 @@ enum wd_digest_mode {
  * wd_digest_sess_setup - Parameters which is used to allocate a digest session
  * @alg: digest algorithm type, denoted by enum wd_digest_type
  * @mode:digest algorithm mode, denoted by enum wd_digest_mode
- * @data_fmt: data format, denoted by enum wcrypto_buff_type
+ * @buff_type: data buff type, denoted by enum wd_buff_type
  */
 struct wd_digest_sess_setup {
 	enum wd_digest_type alg;
 	enum wd_digest_mode mode;
-	__u16 data_fmt;
+	enum wd_buff_type buff_type;
 };
 
 typedef void *wd_alg_digest_cb_t(void *cb_param);
@@ -61,7 +62,6 @@ struct wd_digest_sess {
  * @out: output data address
  * @in_bytes: input data size
  * @out_bytes: output data size
- * @status: I/O operation return status
  * @has_next: is there next data block
  * @cb: callback function for async mode
  * @priv: private information for data extension
@@ -73,23 +73,9 @@ struct wd_digest_arg {
 	void *out;
 	__u32 in_bytes;
 	__u32 out_bytes;
-	int status;    /* ? */
-	int has_next; /* ? */
+	int has_next;
 	wd_alg_digest_cb_t *cb;
 	void *priv;
-};
-
-/* internel api: fix me */
-struct wd_alg_digest {
-	char	*drv_name;
-	char	*alg_name;
-	int	(*init)(struct wd_digest_sess *sess);
-	void	(*exit)(struct wd_digest_sess *sess);
-	int	(*prep)(struct wd_digest_sess *sess, struct wd_digest_arg *arg);
-	void	(*fini)(struct wd_digest_sess *sess);
-	int	(*set_key)(struct wd_digest_sess *sess, const __u8 *key, __u32 key_len);
-	int	(*digest)(struct wd_digest_sess *sess, struct wd_digest_arg *arg);
-	int	(*async_poll)(struct wd_digest_sess *sess, struct wd_digest_arg *arg);
 };
 
 /**
