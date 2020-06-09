@@ -90,7 +90,6 @@ static int test_compress(char *src, char *dst, int flag)
 			} else if (in + size == file_len)
 				arg.flag |= FLAG_INPUT_FINISH;
 			arg.src_len = size;
-			in += size;
 		}
 		arg.dst_len = BUF_SIZE;	// for decompress
 		if (flag & FLAG_DECMPS) {
@@ -117,7 +116,10 @@ static int test_compress(char *src, char *dst, int flag)
 		}
 		/* load src with LARGE_BUF_SIZE */
 		if (arg.status & STATUS_IN_PART_USE) {
-			in -= arg.src_len;
+			in += arg.src_len;
+			lseek(sfd, in, SEEK_SET);
+		} else if (arg.status & STATUS_IN_EMPTY) {
+			in += arg.src_len;
 			lseek(sfd, in, SEEK_SET);
 		}
 		if ((arg.flag & FLAG_INPUT_FINISH) &&
