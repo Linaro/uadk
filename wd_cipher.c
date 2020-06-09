@@ -21,7 +21,7 @@ struct wd_alg_cipher {
 } wd_alg_cipher_list[] = {
 	{
 		.drv_name	= "hisi_sec",
-		.alg_name	= "??", /* fix me */
+		.alg_name	= "cipher",
 		.init		= hisi_cipher_init,
 		.exit		= hisi_cipher_exit,
 		.prep		= hisi_cipher_prep,

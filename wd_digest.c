@@ -15,7 +15,7 @@ struct wd_alg_digest {
 } wd_alg_digest_list[] = {
 	{
 		.drv_name	= "hisi_sec",
-		.alg_name	= "??", /* fix me */
+		.alg_name	= "digest",
 		.init		= hisi_digest_init,
 		.exit		= hisi_digest_exit,
 		.prep		= hisi_digest_prep,
