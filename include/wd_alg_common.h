@@ -3,6 +3,7 @@
 #define __WD_ALG_COMMON_H
 
 enum wd_buff_type {
+	WD_BUF_NONE,
 	WD_FLAT_BUF,
 	WD_SGL_BUF,
 };

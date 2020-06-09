@@ -8,8 +8,11 @@
 
 /**
  * wd_digest_type - Algorithm type of digest
+ * @WD_DIGEST_NONE: Do not define algorithm type, algorithm should be offered
+ *		    by struct wd_digest_arg
  */
 enum wd_digest_type {
+	WD_DIGEST_TYPE_NONE,
 	WD_DIGEST_SM3,
 	WD_DIGEST_MD5,
 	WD_DIGEST_SHA1,
@@ -24,10 +27,12 @@ enum wd_digest_type {
 
 /**
  * wd_digest_mode - Mode of digest
+ * @WD_DIGEST_MODE_NONE: Mode should be offered by struct wd_digest_arg
  * @WD_DIGEST_NORMAL: Normal digest
  * @WD_DIGEST_HMAC: Keyed-Hashing, e.g. HMAC
  */
 enum wd_digest_mode {
+	WD_DIGEST_MODE_NONE,
 	WD_DIGEST_NORMAL,
 	WD_DIGEST_HMAC,
 };
@@ -35,7 +40,7 @@ enum wd_digest_mode {
 /**
  * wd_digest_sess_setup - Parameters which is used to allocate a digest session
  * @alg: digest algorithm type, denoted by enum wd_digest_type
- * @mode:digest algorithm mode, denoted by enum wd_digest_mode
+ * @mode: digest algorithm mode, denoted by enum wd_digest_mode
  * @buff_type: data buff type, denoted by enum wd_buff_type
  */
 struct wd_digest_sess_setup {
@@ -58,6 +63,8 @@ struct wd_digest_sess {
 
 /**
  * struct wd_digest_arg - Parameters for per digest operation
+ * @alg: digest algorithm type, denoted by enum wd_digest_type
+ * @mode:digest algorithm mode, denoted by enum wd_digest_mode
  * @in: input data address
  * @out: output data address
  * @in_bytes: input data size
@@ -66,9 +73,14 @@ struct wd_digest_sess {
  * @cb: callback function for async mode
  * @priv: private information for data extension
  *
+ * Note: If there is a alg selected in session, alg below will be ignore
+ *       otherwise, alg here will be used. Same as mode below.
+ *
  * fix me: for hmac, seems we need *key also?
  */
 struct wd_digest_arg {
+	enum wd_digest_type alg;
+	enum wd_digest_mode mode;
 	void *in;
 	void *out;
 	__u32 in_bytes;
