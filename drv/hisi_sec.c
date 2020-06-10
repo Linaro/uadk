@@ -43,20 +43,31 @@ int hisi_qm_recv_t(struct hisi_qp_ctx_temp *qp_ctx, void **resp)
 /* fix me end */
 
 struct hisi_sec_sess {
-	struct hisi_qp_ctx qp_ctx;
+	struct hisi_qp_ctx_temp qp_ctx;
+	char *node_path;
 };
 
 int hisi_sec_init(struct hisi_sec_sess *sec_sess)
 {
 	/* wd_request_ctx */
+	sec_sess->qp_ctx.h_ctx = wd_request_ctx(sec_sess->node_path);
 	
 	/* alloc_qp_ctx */
+	hisi_qm_alloc_qp_ctx_t(sec_sess->qp_ctx.h_ctx);
+
+	/* update qm private info: sqe_size, op_type */
+
+	/* update sec private info: something maybe */
+
+	wd_ctx_start(sec_sess->qp_ctx.h_ctx);
 
 	return 0;
 }
 
 void hisi_sec_exit(struct hisi_sec_sess *sec_sess)
 {
+	/* wd_ctx_stop */
+
 	/* free alloc_qp_ctx */
 
 	/* wd_release_ctx */
@@ -91,7 +102,9 @@ int hisi_cipher_init(struct wd_cipher_sess *sess)
 		return -ENOMEM;
 
 	sess->priv = sec_sess;
+	sec_sess->node_path = strdup(sess->node_path);
 
+	/* fix me: how to do with this? */
 	ret = hisi_sec_init(sec_sess);
 	if (ret < 0) {
 		free(sec_sess);
@@ -103,7 +116,12 @@ int hisi_cipher_init(struct wd_cipher_sess *sess)
 
 void hisi_cipher_exit(struct wd_cipher_sess *sess)
 {
-	return hisi_sec_exit(sess->priv);
+	struct hisi_sec_sess *sec_sess = sess->priv;
+
+	hisi_sec_exit(sess->priv);
+
+	free(sec_sess->node_path);
+	free(sec_sess);
 }
 
 int hisi_cipher_prep(struct wd_cipher_sess *sess, struct wd_cipher_arg *arg)
@@ -147,6 +165,7 @@ int hisi_digest_init(struct wd_digest_sess *sess)
 		return -ENOMEM;
 
 	sess->priv = sec_sess;
+	sec_sess->node_path = strdup(sess->node_path);
 
 	ret = hisi_sec_init(sec_sess);
 	if (ret < 0) {
@@ -159,7 +178,12 @@ int hisi_digest_init(struct wd_digest_sess *sess)
 
 void hisi_digest_exit(struct wd_digest_sess *sess)
 {
-	return hisi_sec_exit(sess->priv);
+	struct hisi_sec_sess *sec_sess = sess->priv;
+
+	hisi_sec_exit(sess->priv);
+
+	free(sec_sess->node_path);
+	free(sec_sess);
 }
 
 int hisi_digest_prep(struct wd_digest_sess *sess, struct wd_digest_arg *arg)
