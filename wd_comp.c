@@ -5,28 +5,7 @@
 
 #include "hisi_comp.h"
 #include "wd_comp.h"
-
-#define SYS_CLASS_DIR	"/sys/class/uacce"
-
-/* remove node p */
-#define RM_NODE(head, prev, p)	do {					\
-					if (!prev) {			\
-						head = p->next;		\
-						free(p->info);		\
-						free(p);		\
-						p = head->next;		\
-					} else if (p->next) {		\
-						prev->next = p->next;	\
-						free(p->info);		\
-						free(p);		\
-						p = p->next;		\
-					} else {			\
-						free(p->info);		\
-						free(p);		\
-						p = NULL;		\
-						prev->next = NULL;	\
-					}				\
-				} while (0)
+#include "wd_alg_common.h"
 
 /*
  * If multiple algorithms are supported in one accelerator, the names of
@@ -45,32 +24,6 @@ static struct wd_alg_comp wd_alg_comp_list[] = {
 		.async_poll	= hisi_comp_poll,
 	},
 };
-
-static inline int is_accel_avail(wd_dev_mask_t *dev_mask, int idx)
-{
-	int	offs, ret;
-
-	offs = idx >> 3;
-	ret = dev_mask->mask[offs] & (1 << (idx % 8));
-	return ret;
-}
-
-static inline int match_alg_name(char *dev_alg_name, char *alg_name)
-{
-	char	*sub;
-	int	found;
-
-	sub = strtok(dev_alg_name, "\n");
-	found = 0;
-	while (sub) {
-		if (!strncmp(sub, alg_name, strlen(alg_name))) {
-			found = 1;
-			break;
-		}
-		sub = strtok(NULL, "\n");
-	}
-	return found;
-}
 
 handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 				 wd_dev_mask_t *dev_mask)

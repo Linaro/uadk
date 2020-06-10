@@ -44,6 +44,7 @@ enum wd_digest_mode {
  * @buff_type: data buff type, denoted by enum wd_buff_type
  */
 struct wd_digest_sess_setup {
+	char *alg_name;
 	enum wd_digest_type alg;
 	enum wd_digest_mode mode;
 	enum wd_buff_type buff_type;
@@ -54,10 +55,11 @@ struct wd_alg_digest;
 
 struct wd_digest_sess {
 	char			*alg_name;
+	enum wd_digest_type	alg;
+	enum wd_digest_mode	mode;
 	char			node_path[MAX_DEV_NAME_LEN + 1];
 	wd_dev_mask_t		*dev_mask;
 	struct wd_alg_digest	*drv;
-	__u32			mode;
 	void			*priv;
 };
 
