@@ -18,7 +18,9 @@ struct wd_alg_cipher {
 			   struct wd_cipher_arg *arg);
 	int	(*async_poll)(struct wd_cipher_sess *sess,
 			      struct wd_cipher_arg *arg);
-} wd_alg_cipher_list[] = {
+}
+
+wd_alg_cipher_list[] = {
 	{
 		.drv_name	= "hisi_sec",
 		.alg_name	= "cipher",
@@ -33,7 +35,7 @@ struct wd_alg_cipher {
 	},
 };
 
-handle_t wd_alg_cipher_alloc_sess(char *alg_name, uint32_t mode,
+handle_t wd_alg_cipher_alloc_sess(struct wd_cipher_sess_setup *setup,
 				  wd_dev_mask_t *dev_mask)
 {
 	return 0;
@@ -41,6 +43,11 @@ handle_t wd_alg_cipher_alloc_sess(char *alg_name, uint32_t mode,
 
 void wd_alg_cipher_free_sess(handle_t handle)
 {
+}
+
+int wd_alg_do_cipher(handle_t handle, struct wd_cipher_arg *arg)
+{
+	return 0;
 }
 
 int wd_alg_encrypt(handle_t handle, struct wd_cipher_arg *arg)
