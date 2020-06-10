@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include <stdbool.h>
 #include "hisi_sec.h"
 
-#if 0
 /* should be removed to qm module */
-struct hisi_qp_ctx {
+struct hisi_qp_ctx_temp {
 	handle_t h_ctx;
 	void *sq_base;
 	void *cq_base;
@@ -17,30 +17,30 @@ struct hisi_qp_ctx {
 	bool cqc_phase;
 	void *req_cache[QM_Q_DEPTH];
 	int is_sq_full;
-	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd, __u16 index,
+	int (*db)(struct hisi_qp_ctx_temp *qp_ctx, __u8 cmd, __u16 index,
 		  __u8 priority);
 };
 
 /* fix me: should be removed to qm module */
-struct hisi_qp_ctx *hisi_qm_alloc_qp_ctx_t(handle_t h_ctx)
+struct hisi_qp_ctx_temp *hisi_qm_alloc_qp_ctx_t(handle_t h_ctx)
 {
 	return NULL;
 }
 
-void hisi_qm_free_ctx_t(struct hisi_qp_ctx *qp_ctx)
+void hisi_qm_free_ctx_t(struct hisi_qp_ctx_temp *qp_ctx)
 {
 }
 
-int hisi_qm_send_t(struct hisi_qp_ctx *qp_ctx, void *req)
+int hisi_qm_send_t(struct hisi_qp_ctx_temp *qp_ctx, void *req)
 {
 	return 0;
 }
 
-int hisi_qm_recv_t(struct hisi_qp_ctx *qp_ctx, void **resp)
+int hisi_qm_recv_t(struct hisi_qp_ctx_temp *qp_ctx, void **resp)
 {
+	return 0;
 }
 /* fix me end */
-#endif
 
 struct hisi_sec_sess {
 	struct hisi_qp_ctx qp_ctx;
@@ -57,11 +57,29 @@ int hisi_sec_init(struct hisi_sec_sess *sec_sess)
 
 void hisi_sec_exit(struct hisi_sec_sess *sec_sess)
 {
+	/* free alloc_qp_ctx */
+
+	/* wd_release_ctx */
 }
 
-int hisi_sec_set_key(struct hisi_sec_sess *sess, const __u8 *key, __u32 key_len);
-int hisi_sec_encrypt(struct hisi_sec_sess *sess, int a);
-int hisi_sec_decrypt(struct hisi_sec_sess *sess, int a);
+int hisi_sec_set_key(struct hisi_sec_sess *sess, const __u8 *key, __u32 key_len)
+{
+	/* store key to sess */
+
+	return 0;
+}
+
+/* should define a struct to pass aead, cipher to this function */
+int hisi_sec_encrypt(struct hisi_sec_sess *sess, int a)
+{
+	return 0;
+}
+
+/* same as above */
+int hisi_sec_decrypt(struct hisi_sec_sess *sess, int a)
+{
+	return 0;
+}
 
 int hisi_cipher_init(struct wd_cipher_sess *sess)
 {
