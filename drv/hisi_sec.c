@@ -45,6 +45,8 @@ int hisi_qm_recv_t(struct hisi_qp_ctx_temp *qp_ctx, void **resp)
 struct hisi_sec_sess {
 	struct hisi_qp_ctx_temp qp_ctx;
 	char *node_path;
+	void *key;
+	__u32 key_len;
 };
 
 int hisi_sec_init(struct hisi_sec_sess *sec_sess)
@@ -76,6 +78,7 @@ void hisi_sec_exit(struct hisi_sec_sess *sec_sess)
 int hisi_sec_set_key(struct hisi_sec_sess *sess, const __u8 *key, __u32 key_len)
 {
 	/* store key to sess */
+	memcpy(sess->key, key, key_len);
 
 	return 0;
 }
