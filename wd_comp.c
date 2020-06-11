@@ -2,7 +2,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <string.h>
+#include <time.h>
 
+#include "config.h"
 #include "hisi_comp.h"
 #include "wd_comp.h"
 
@@ -82,7 +84,13 @@ handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	struct wd_comp_sess	*sess = NULL;
 	int	i, found, max = 0, ret;
 	char	*dev_name;
+#if HAVE_PERF
+	struct timespec	ts_time1 = {0, 0}, ts_time2 = {0, 0}, ts_time3 = {0, 0};
+#endif
 
+#if HAVE_PERF
+	clock_gettime(CLOCK_REALTIME, &ts_time1);
+#endif
 	if (!alg_name)
 		return 0;
 	mask = calloc(1, sizeof(wd_dev_mask_t));
@@ -154,11 +162,22 @@ handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	free(dev_name);
 	sess->dev_mask = mask;
 	sess->drv = &wd_alg_comp_list[i];
+#if HAVE_PERF
+	clock_gettime(CLOCK_REALTIME, &ts_time2);
+#endif
 	if (sess->drv->init) {
 		ret = sess->drv->init(sess);
 		if (ret)
 			WD_ERR("fail to init session (%d)\n", ret);
 	}
+#if HAVE_PERF
+	clock_gettime(CLOCK_REALTIME, &ts_time3);
+	printf("comp: allocate session %ldus, init session %ldus\n",
+		(ts_time2.tv_sec - ts_time1.tv_sec) * 1000000 +
+		(ts_time2.tv_nsec - ts_time1.tv_nsec) / 1000,
+		(ts_time3.tv_sec - ts_time2.tv_sec) * 1000000 +
+		(ts_time3.tv_nsec - ts_time2.tv_nsec) / 1000);
+#endif
 out:
 	while (head) {
 		p = head;
