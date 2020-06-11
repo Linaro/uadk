@@ -35,6 +35,7 @@ enum wd_cipher_mode {
 };
 
 struct wd_cipher_sess_setup {
+  char *alg_name;
 	enum wd_cipher_alg alg;
 	enum wd_cipher_mode mode;
 	enum wd_buff_type buff_type;
@@ -44,10 +45,11 @@ typedef void *wd_alg_cipher_cb_t(void *cb_param);
 
 struct wd_cipher_sess {
 	char			*alg_name;
+  	enum wd_cipher_alg alg;
+	enum wd_cipher_mode mode;
 	char			node_path[MAX_DEV_NAME_LEN + 1];
 	wd_dev_mask_t		*dev_mask;
 	struct wd_alg_cipher	*drv;
-	__u32			mode;
 	void			*priv;
 };
 
