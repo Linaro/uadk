@@ -6,7 +6,8 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif
 
-lib_LTLIBRARIES=libwd.la libhisi_qm.la libwd_comp.la
+lib_LTLIBRARIES=libwd.la libhisi_qm.la libwd_comp.la libwd_ciper.la \
+		libwd_digest.la
 libwd_la_SOURCES=wd.c wd.h wd_sched.c wd_sched.h \
 		bmm.c bmm.h smm.c smm.h
 
@@ -16,5 +17,13 @@ libhisi_qm_la_LIBADD= $(libwd_la_OBJECTS)
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h	\
 		drv/hisi_comp.c hisi_comp.h
 libwd_comp_la_LIBADD= $(libwd_la_OBJECTS)
+
+libwd_ciper_la_SOURCES=wd_cipher.c wd_cipher.h	\
+		drv/hisi_sec.c hisi_sec.h
+libwd_ciper_la_LIBADD= $(libwd_la_OBJECTS)
+
+libwd_digest_la_SOURCES=wd_digest.c wd_digest.h	\
+		drv/hisi_sec.c hisi_sec.h
+libwd_digest_la_LIBADD= $(libwd_la_OBJECTS)
 
 SUBDIRS=. test
