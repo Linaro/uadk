@@ -71,6 +71,7 @@
 |         |                |   handle to user space Apps. |
 |         |                |2) Update on mask and session. |
 |  0.110  |                |1) Remove fini() callback in *struct wd_alg_comp*. |
+|  0.111  |                |1) Change the meaning of *arg->src_len*. |
 
 
 ## Terminology
@@ -428,8 +429,7 @@ structure, *struct wd_comp_arg*.
 |            |          | hardware yet. |
 | *src_len*  | IN & OUT | Input the length of source buffer. |
 |            |          | When the operation is done, *src_len* is updated. |
-|            |          | It could indicate the left length not consumed by |
-|            |          | hardware yet. |
+|            |          | It could indicate the length consumed by hardware. |
 | *dst*      | IN & OUT | Input the virtual address of destination buffer that |
 |            |          | is prepared by user application. |
 |            |          | When the operation is done, *dst* is accumulated. |
