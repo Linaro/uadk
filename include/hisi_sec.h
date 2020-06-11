@@ -7,6 +7,13 @@
 #include "wd_cipher.h"
 #include "wd_digest.h"
 
+enum C_ALG {
+	C_ALG_DES  = 0x0,
+	C_ALG_3DES = 0x1,
+	C_ALG_AES  = 0x2,
+	C_ALG_SM4  = 0x3,
+};
+
 extern int hisi_cipher_init(struct wd_cipher_sess *sess);
 extern void hisi_cipher_exit(struct wd_cipher_sess *sess);
 extern int hisi_cipher_prep(struct wd_cipher_sess *sess, struct wd_cipher_arg *arg);
