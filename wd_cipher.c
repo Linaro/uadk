@@ -2,6 +2,8 @@
 #include "hisi_sec.h"
 #include "wd_cipher.h"
 
+#define XTS_MODE_KEY_DIVISOR 2
+
 struct wd_alg_cipher {
 	char	*drv_name;
 	char	*alg_name;
@@ -156,7 +158,7 @@ void wd_alg_cipher_free_sess(handle_t handle)
 
 int wd_alg_do_cipher(handle_t handle, struct wd_cipher_arg *arg)
 {
-//	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)handle;
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)handle;
 
 	return 0;
 }
@@ -181,15 +183,33 @@ int wd_alg_decrypt(handle_t handle, struct wd_cipher_arg *arg)
 	return sess->drv->decrypt(sess, arg);
 }
 
+int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
+{
+	return 0;
+}
+
 int wd_alg_set_key(handle_t handle, __u8 *key, __u32 key_len)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)handle;
+	__u16 length = key_len;
+	int ret;
+
+	if (!key || !sess) {
+		WD_ERR("%s inpupt param err!\n", __func__);
+		return -EINVAL;
+	}
 
 	/* fix me: need check key_len */
-	if (!key)
-		return -EINVAL;
+	if (sess->mode == WD_CIPHER_XTS)
+		length = key_len / XTS_MODE_KEY_DIVISOR;
 
-	return sess->drv->set_key(sess, key, key_len);
+	ret = cipher_key_len_check(sess->alg, length);
+	if (ret) {
+		WD_ERR("%s inpupt key length err!\n", __func__);
+		return -EINVAL;
+	}
+
+	return sess->drv->set_key(sess, key, length);
 }
 
 int wd_alg_cipher_poll(handle_t handle, __u32 count)
