@@ -661,7 +661,12 @@ static int qm_ecc_prepare_alg(struct hisi_hpre_sqe *hw_msg,
 	case WCRYPTO_ECDH_COMPUTE_KEY:
 		hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
 		break;
-
+	case WCRYPTO_ECDSA_SIGN:
+		hw_msg->alg = HPRE_ALG_ECDSA_SIGN;
+		break;
+	case WCRYPTO_ECDSA_VERIFY:
+		hw_msg->alg = HPRE_ALG_ECDSA_VERF;
+		break;
 	default:
 		return -WD_EINVAL;
 	}
@@ -734,7 +739,7 @@ static int trans_d_to_hpre_bin(struct wd_dtb *d)
 	return 0;
 }
 
-static bool check_d_param(struct wd_dtb *d, struct wd_dtb *n)
+static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
 	char *temp = NULL;
 	int ret;
@@ -772,10 +777,59 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data)
 	if (ret)
 		return ret;
 
-	if (!check_d_param(d, n)) {
-		WD_ERR("failed to prepare ecc prikey: d > n!\n");
+	if (!less_than_latter(d, n)) {
+		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
 		return -WD_EINVAL;
 	}
+
+	*data = p->data;
+
+	return 0;
+}
+
+static int trans_pub_to_hpre_bin(struct wcrypto_ecc_point *pub)
+{
+	struct wd_dtb *temp = NULL;
+	int ret;
+
+	temp = &pub->x;
+	ret = qm_crypto_bin_to_hpre_bin(temp->data, (const char *)temp->data,
+					temp->bsize, temp->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: pub x format error!\n");
+		return ret;
+	}
+
+	temp = &pub->y;
+	ret = qm_crypto_bin_to_hpre_bin(temp->data, (const char *)temp->data,
+					temp->bsize, temp->dsize);
+	if (ret) {
+		WD_ERR("failed to hpre bin: pub y format error!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int ecc_prepare_pubkey(struct wcrypto_ecc_key *key, void **data)
+{
+	struct wcrypto_ecc_point *pub = NULL;
+	struct wcrypto_ecc_point *g = NULL;
+	struct wd_dtb *p = NULL;
+	struct wd_dtb *a = NULL;
+	struct wd_dtb *b = NULL;
+	struct wd_dtb *n = NULL;
+	int ret;
+
+	wcrypto_get_ecc_pubkey_params((void *)key, &p, &a, &b, &n, &g, &pub);
+
+	ret = trans_cv_param_to_hpre_bin(p, a, b, n, g);
+	if (ret)
+		return ret;
+
+	ret = trans_pub_to_hpre_bin(pub);
+	if (ret)
+		return ret;
 
 	*data = p->data;
 
@@ -791,9 +845,20 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	int ret;
 
 	if (msg->op_type == WCRYPTO_ECDH_GEN_KEY ||
-		msg->op_type == WCRYPTO_ECDH_COMPUTE_KEY) {
-		ksz = ECDH_HW_KEY_SZ(msg->key_bytes);
+		msg->op_type == WCRYPTO_ECDH_COMPUTE_KEY ||
+		msg->op_type == WCRYPTO_ECDSA_SIGN) {
+		if (msg->op_type == WCRYPTO_ECDH_GEN_KEY ||
+			msg->op_type == WCRYPTO_ECDH_COMPUTE_KEY)
+			ksz = ECDH_HW_KEY_SZ(msg->key_bytes);
+		else
+			ksz = ECC_PRIKEY_SZ(msg->key_bytes);
+
 		ret = ecc_prepare_prikey((void *)msg->key, &data);
+		if (ret)
+			return ret;
+	} else if (msg->op_type == WCRYPTO_ECDSA_VERIFY) {
+		ksz = ECC_PUBKEY_SZ(msg->key_bytes);
+		ret = ecc_prepare_pubkey((void *)msg->key, &data);
 		if (ret)
 			return ret;
 	} else {
@@ -814,9 +879,16 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 
 static void qm_ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen, size_t *olen)
 {
-	if (atype == HPRE_ALG_ECDH_MULTIPLY) {
+	if (atype == HPRE_ALG_ECDH_MULTIPLY ||
+		atype == HPRE_ALG_X_DH_MULTIPLY) {
 		*olen = ECDH_OUT_PARAMS_SZ(hsz);
 		*ilen = *olen;
+	} else if (atype == HPRE_ALG_ECDSA_SIGN) {
+		*olen = ECC_SIGN_OUT_PARAMS_SZ(hsz);
+		*ilen = ECC_SIGN_IN_PARAMS_SZ(hsz);
+	} else if (atype == HPRE_ALG_ECDSA_VERF) {
+		*olen = ECC_VERF_OUT_PARAMS_SZ;
+		*ilen = ECC_VERF_IN_PARAMS_SZ(hsz);;
 	} else {
 		*olen = hsz;
 		*ilen = hsz;
@@ -829,6 +901,10 @@ static int ecc_prepare_dh_compute_in(struct wcrypto_ecc_in *in, void **data)
 	int ret;
 
 	wcrypto_get_ecxdh_in_params(in, &pbk);
+	if (!pbk) {
+		WD_ERR("failed to get ecxdh in param!\n");
+		return -WD_EINVAL;
+	}
 
 	ret = qm_crypto_bin_to_hpre_bin(pbk->x.data, (const char *)pbk->x.data,
 					pbk->x.bsize, pbk->x.dsize);
@@ -845,6 +921,97 @@ static int ecc_prepare_dh_compute_in(struct wcrypto_ecc_in *in, void **data)
 	}
 
 	*data = pbk->x.data;
+
+	return 0;
+}
+
+static void correct_random(struct wd_dtb *k)
+{
+	int lens = k->bsize - k->dsize;
+
+	k->data[lens] = 0;
+}
+
+static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg, void **data)
+{
+	struct wcrypto_ecc_in *in = (struct wcrypto_ecc_in *)msg->in;
+	struct wd_dtb *n = NULL;
+	struct wd_dtb *e = NULL;
+	struct wd_dtb *k = NULL;
+	__u8 k_set;
+	int ret;
+
+	wcrypto_get_ecdsa_sign_in_params(in, &e, &k);
+	if (!e || !k) {
+		WD_ERR("failed to get ecdsa sign in param!\n");
+		return -WD_EINVAL;
+	}
+
+	k_set = *(__u8 *)(k + 1);
+	if (!k_set) {
+		WD_ERR("random k not set!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
+					e->bsize, e->dsize);
+	if (ret) {
+		WD_ERR("ecc sign in e format fail!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
+					k->bsize, k->dsize);
+	if (ret) {
+		WD_ERR("ecc sign in k format fail!\n");
+		return ret;
+	}
+
+	wcrypto_get_ecc_prikey_params((void *)msg->key, NULL, NULL, NULL,
+				      &n, NULL, NULL);
+	if (!less_than_latter(k, n))
+		correct_random(k);
+
+	*data = e->data;
+
+	return 0;
+}
+
+static int ecc_prepare_verf_in(struct wcrypto_ecc_in *in, void **data)
+{
+	struct wd_dtb *e = NULL;
+	struct wd_dtb *s = NULL;
+	struct wd_dtb *r = NULL;
+	int ret;
+
+	wcrypto_get_ecdsa_verf_in_params(in, &e, &s, &r);
+	if (!e || !r || !s) {
+		WD_ERR("failed to get verf in param!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
+					e->bsize, e->dsize);
+	if (ret) {
+		WD_ERR("ecc sign in e format fail!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(s->data, (const char *)s->data,
+					s->bsize, s->dsize);
+	if (ret) {
+		WD_ERR("ecc sign in s format fail!\n");
+		return ret;
+	}
+
+	ret = qm_crypto_bin_to_hpre_bin(r->data, (const char *)r->data,
+					r->bsize, r->dsize);
+	if (ret) {
+		WD_ERR("ecc sign in r format fail!\n");
+		return ret;
+	}
+
+	*data = e->data;
 
 	return 0;
 }
@@ -881,11 +1048,15 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg, void **data)
 	case WCRYPTO_ECDH_GEN_KEY:
 		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in, data);
 		break;
-
 	case WCRYPTO_ECDH_COMPUTE_KEY:
 		ret = ecc_prepare_dh_compute_in(in, data);
 		break;
-
+	case WCRYPTO_ECDSA_SIGN:
+		ret = ecc_prepare_sign_in(msg, data);
+		break;
+	case WCRYPTO_ECDSA_VERIFY:
+		ret = ecc_prepare_verf_in(in, data);
+		break;
 	default:
 		break;
 	}
@@ -898,7 +1069,28 @@ static int ecc_prepare_dh_out(struct wcrypto_ecc_out *out, void **data)
 	struct wcrypto_ecc_point *dh_out = NULL;
 
 	wcrypto_get_ecxdh_out_params(out, &dh_out);
+	if (!dh_out) {
+		WD_ERR("failed to get ecxdh out param!\n");
+		return -WD_EINVAL;
+	}
+
 	*data = dh_out->x.data;
+
+	return 0;
+}
+
+static int ecc_prepare_sign_out(struct wcrypto_ecc_out *out, void **data)
+{
+	struct wd_dtb *r = NULL;
+	struct wd_dtb *s = NULL;
+
+	wcrypto_get_ecdsa_sign_out_params(out, &r, &s);
+	if (!r || !s) {
+		WD_ERR("failed to get ecdsa sign out param!\n");
+		return -WD_EINVAL;
+	}
+
+	*data = r->data;
 
 	return 0;
 }
@@ -912,6 +1104,14 @@ static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
 	case WCRYPTO_ECDH_GEN_KEY:
 	case WCRYPTO_ECDH_COMPUTE_KEY:
 		ret = ecc_prepare_dh_out(out, data);
+		break;
+
+	case WCRYPTO_ECDSA_SIGN:
+		ret = ecc_prepare_sign_out(out, data);
+		break;
+
+	case WCRYPTO_ECDSA_VERIFY:
+		ret = 0;
 		break;
 	}
 
@@ -950,6 +1150,9 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 		return ret;
 	}
 
+	if (!data)
+		return 0;
+
 	phy = (uintptr_t)drv_iova_map(q, data, o_sz);
 	if (!phy) {
 		WD_ERR("Get ecc out key dma address fail!\n");
@@ -978,6 +1181,42 @@ static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
 	return WD_SUCCESS;
 }
 
+static int ecc_sign_out_transfer(struct wcrypto_ecc_msg *msg,
+				 struct hisi_hpre_sqe *hw_msg)
+{
+	struct wcrypto_ecc_out *out = (void *)msg->out;
+	struct wd_dtb *r = NULL;
+	struct wd_dtb *s = NULL;
+	int ret;
+
+	wcrypto_get_ecdsa_sign_out_params(out, &r, &s);
+	if (!r || !s) {
+		WD_ERR("failed to get ecdsa sign out param!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = qm_tri_bin_transfer(r, s, NULL);
+	if (ret) {
+		WD_ERR("parse ecc sign out format fail!\n");
+		return ret;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int ecc_verf_out_transfer(struct wcrypto_ecc_msg *msg,
+				 struct hisi_hpre_sqe *hw_msg)
+{
+	__u32 result = hw_msg->low_out;
+
+	result >>= 1;
+	result &= 1;
+	if (!result)
+		msg->result = WD_VERIFY_ERR;
+
+	return WD_SUCCESS;
+}
+
 static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 				struct hisi_hpre_sqe *hw_msg)
 {
@@ -985,6 +1224,10 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 
 	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_ECDSA_SIGN)
+		ret = ecc_sign_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_ECDSA_VERF)
+		ret = ecc_verf_out_transfer(msg, hw_msg);
 	else
 		WD_ERR("ecc out trans fail alg %d error!\n", hw_msg->alg);
 
@@ -1064,12 +1307,11 @@ int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
 		else /* Need to indentify which hw err happened */
 			ecc_msg->result = WD_IN_EPARA;
 	} else {
+		ecc_msg->result = WD_SUCCESS;
 		ret = qm_ecc_out_transfer(ecc_msg, hw_msg);
 		if (ret) {
 			WD_ERR("qm ecc out transfer fail!\n");
 			ecc_msg->result = WD_OUT_EPARA;
-		} else {
-			ecc_msg->result = WD_SUCCESS;
 		}
 	}
 
