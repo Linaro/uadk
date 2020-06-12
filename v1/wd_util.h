@@ -50,6 +50,9 @@
 /* ECC */
 #define ECDH_IN_PARAM_NUM		2
 #define ECDH_OUT_PARAM_NUM		2
+#define ECC_SIGN_IN_PARAM_NUM		2
+#define ECC_SIGN_OUT_PARAM_NUM		2
+#define ECC_VERF_IN_PARAM_NUM		3
 #define ECC_PRIKEY_PARAM_NUM		7
 #define ECDH_HW_KEY_PARAM_NUM		5
 #define ECC_PUBKEY_PARAM_NUM		8
@@ -58,7 +61,10 @@
 #define ECC_PUBKEY_SZ(hsz)		((hsz) * ECC_PUBKEY_PARAM_NUM)
 #define ECDH_OUT_PARAMS_SZ(hsz)		((hsz) * ECDH_OUT_PARAM_NUM)
 #define BITS_TO_BYTES(bits)		(((bits) + 7) / 8)
-
+#define ECC_SIGN_IN_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_IN_PARAM_NUM)
+#define ECC_SIGN_OUT_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_OUT_PARAM_NUM)
+#define ECC_VERF_IN_PARAMS_SZ(hsz)	((hsz) * ECC_VERF_IN_PARAM_NUM)
+#define ECC_VERF_OUT_PARAMS_SZ		1
 
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
