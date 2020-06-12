@@ -13,7 +13,9 @@ struct hisi_hpre_sqe {
 	__u32 task_len1	: 8;
 	__u32 task_len2	: 8;
 	__u32 mrttest_num : 8;
-	__u32 resv1	: 8;
+	__u32 uwkey_enb	: 1;
+	__u32 sm2_ksel	: 1;
+	__u32 resv1	: 6;
 	__u32 low_key;
 	__u32 hi_key;
 	__u32 low_in;

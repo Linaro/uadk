@@ -120,10 +120,15 @@ static bool hpre_alg_info_init(struct q_info *qinfo, const char *alg)
 		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
 		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
 	} else if (!strncmp(alg, "ecdh", strlen("ecdh"))) {
-		qinfo->atype = 	WCRYPTO_ECXDH;
+		qinfo->atype = WCRYPTO_ECXDH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_ECXDH] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_ECXDH] = qm_parse_ecc_sqe;
+	} else if (!strncmp(alg, "ecdsa", strlen("ecdsa"))) {
+		qinfo->atype = WCRYPTO_ECDSA;
+		info->sqe_size = QM_HPRE_BD_SIZE;
+		info->sqe_fill[WCRYPTO_ECDSA] = qm_fill_ecc_sqe;
+		info->sqe_parse[WCRYPTO_ECDSA] = qm_parse_ecc_sqe;
 	} else {
 		is_find = false;
 	}
