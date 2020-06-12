@@ -30,8 +30,8 @@ struct wcrypto_ecc_key; /* ecc key parameters */
 struct wcrypto_ecc_out; /* ecc output parameters */
 
 struct wcrypto_ecc_point {
-	struct wd_dtb x;
-	struct wd_dtb y;
+	struct wd_dtb x; /* x affine coordinates */
+	struct wd_dtb y; /* y affine coordinates */
 };
 
 /* ECC operational types */
@@ -51,34 +51,40 @@ enum wcrypto_ecc_op_type {
 enum wcrypto_ecc_curve_id {
 	WCRYPTO_X448 = 0x1,
 	WCRYPTO_X25519 = 0x2,
-	WCRYPTO_SECP128R1 = 0x10, // SECG 128 bit prime field
-	WCRYPTO_SECP192K1 = 0x11, // SECG 192 bit prime field
-	WCRYPTO_SECP256K1 = 0x12, // SECG 256 bit prime field
-	WCRYPTO_BRAINPOOLP320R1 = 0x13, // RFC5639 320 bit prime field
-	WCRYPTO_BRAINPOOLP384R1 = 0x14, // RFC5639 384 bit prime field
-	WCRYPTO_SECP521R1 = 0x15, // NIST/SECG 521 bit prime field
+	WCRYPTO_SECP128R1 = 0x10, /* SECG 128 bit prime field */
+	WCRYPTO_SECP192K1 = 0x11, /* SECG 192 bit prime field */
+	WCRYPTO_SECP256K1 = 0x12, /* SECG 256 bit prime field */
+	WCRYPTO_BRAINPOOLP320R1 = 0x13, /* RFC5639 320 bit prime field */
+	WCRYPTO_BRAINPOOLP384R1 = 0x14, /* RFC5639 384 bit prime field */
+	WCRYPTO_SECP521R1 = 0x15, /* NIST/SECG 521 bit prime field */
 	WCRYPTO_SM2P256V1 = 0x40,
 };
 
 struct wcrypto_ecc_curve {
-	struct wd_dtb p;
-	struct wd_dtb a;
-	struct wd_dtb b;
-	struct wcrypto_ecc_point g;
-	struct wd_dtb n;
+	struct wd_dtb p; /* Prime field p */
+	struct wd_dtb a; /* Elliptic curve equation a parameter */
+	struct wd_dtb b; /* Elliptic curve equation b parameter */
+	struct wcrypto_ecc_point g; /* Elliptic curve G point */
+	struct wd_dtb n; /* Elliptic curve order */
 };
 
 enum wcrypto_ecc_curve_cfg_type {
-	WCRYPTO_CV_CFG_ID, // set curve param by denote curve ID
-	WCRYPTO_CV_CFG_PARAM // set curve param by denote curve param
+	WCRYPTO_CV_CFG_ID, /* set curve param by denote curve ID */
+	WCRYPTO_CV_CFG_PARAM /* set curve param by denote curve param */
 };
 
 struct wcrypto_ecc_curve_cfg {
-	__u32 type; // denoted by enum wcrypto_ecc_curve_cfg_type
+	__u32 type; /* denoted by enum wcrypto_ecc_curve_cfg_type */
 	union {
-		enum wcrypto_ecc_curve_id id; // if WCRYPTO_CV_CFG_ID
-		struct wcrypto_ecc_curve *pparam; // if WCRYPTO_CV_CFG_PARAM
+		enum wcrypto_ecc_curve_id id; /* if WCRYPTO_CV_CFG_ID */
+		struct wcrypto_ecc_curve *pparam; /* if WCRYPTO_CV_CFG_PARAM */
 	} cfg;
+	__u8 resv[4]; /* reserve */
+};
+
+struct wcrypto_rand_mt {
+	wcrypto_rand cb; /* rand callback */
+	void *usr; /* user private param */
 };
 
 /* ECC context setting up input parameters from user */
@@ -88,6 +94,7 @@ struct wcrypto_ecc_ctx_setup {
 	__u16 key_bits; /* ECC key bits */
 	struct wcrypto_ecc_curve_cfg cv; /* curve config denoted by user */
 	struct wd_mm_br br; /* memory operations from user */
+	struct wcrypto_rand_mt rand; /* rand function from user */
 };
 
 struct wcrypto_ecc_op_data {
@@ -106,7 +113,7 @@ struct wcrypto_ecc_msg {
 	__u8 curve_id:7; /* Ec curve denoted by enum wcrypto_ecc_curve_type */
 	__u8 data_fmt:1; /* Data format, denoted by enum wd_buff_type */
 	__u8 mtype; /* not used, reserve */
-	__u8 result; /* Data format, denoted by enum wd_op_result */
+	__u8 result; /* alg op error code */
 	__u16 key_bytes; /* key bytes */
 	__u16 in_bytes; /* Input data bytes */
 	__u16 out_bytes; /* Output data bytes */
@@ -160,6 +167,34 @@ struct wcrypto_ecc_out *wcrypto_new_ecxdh_out(void *ctx);
  */
 int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag);
 int wcrypto_ecxdh_poll(struct wd_queue *q, unsigned int num);
+
+
+/* APIs For ECDSA sign/verf */
+struct wcrypto_ecc_in *wcrypto_new_ecdsa_sign_in(void *ctx,
+						 struct wd_dtb *dgst,
+						 struct wd_dtb *k);
+struct wcrypto_ecc_in *wcrypto_new_ecdsa_verf_in(void *ctx,
+						 struct wd_dtb *dgst,
+						 struct wd_dtb *r,
+						 struct wd_dtb *s);
+struct wcrypto_ecc_out *wcrypto_new_ecdsa_sign_out(void *ctx);
+void wcrypto_get_ecdsa_sign_in_params(struct wcrypto_ecc_in *in,
+				      struct wd_dtb **dgst,
+				      struct wd_dtb **k);
+void wcrypto_get_ecdsa_verf_in_params(struct wcrypto_ecc_in *in,
+				      struct wd_dtb **dgst,
+				      struct wd_dtb **r,
+				      struct wd_dtb **s);
+void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
+				       struct wd_dtb **r,
+				       struct wd_dtb **s);
+
+/**
+ * This is a pair of asynchronous mode ECDSA API as tag is not NULL,
+ * or it is synchronous mode
+ */
+int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag);
+int wcrypto_ecdsa_poll(struct wd_queue *q, unsigned int num);
 
 #ifdef __cplusplus
 }
