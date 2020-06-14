@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 
+#include "hisi_qm_udrv.h"
 #include "wd_sched.h"
 #include "zip_usr_if.h"
 
@@ -52,6 +53,7 @@ struct test_options {
 };
 
 struct hizip_test_context {
+	struct hisi_qm_ctx	qm_ctx;
 	struct test_options *opts;
 	char *in_buf;
 	char *out_buf;
