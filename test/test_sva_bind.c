@@ -69,13 +69,13 @@ static int run_one_child(struct priv_options *opts)
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct wd_scheduler sched = {0};
-	struct priv_context priv_ctx = {
-		.ctx = {0},
-		.opts = opts,
-	};
+	struct priv_context priv_ctx;
 	struct hizip_test_context save_ctx;
 	struct hizip_test_context *ctx = &priv_ctx.ctx;
 	struct test_options *copts = &opts->common;
+
+	memset(&priv_ctx, 0, sizeof(struct priv_context));
+	priv_ctx.opts = opts;
 
 	ctx->opts = copts;
 	ctx->msgs = calloc(copts->req_cache_num, sizeof(*ctx->msgs));

@@ -75,6 +75,7 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	struct wd_msg *wd_msg = &sched->msgs[i];
 	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *msg;
+	handle_t h_ctx;
 
 	wd_msg->msg = &ctx->msgs[i];
 	msg = &ctx->msgs[i];
@@ -84,6 +85,9 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	else
 		msg->dw9 = HW_GZIP;
 	msg->dest_avail_out = sched->msg_data_size;
+
+	h_ctx = (handle_t)sched->qs[0];
+	wd_ctx_set_sess_priv(h_ctx, priv);
 }
 
 int hizip_test_default_input(struct wd_msg *msg, void *priv)
