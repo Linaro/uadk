@@ -43,6 +43,11 @@
 
 #define cpu_to_be32(x) swab32(x)
 
+#ifndef container_of
+#define container_of(ptr, type, member) \
+	(type *)((char *)(ptr) - (char *) &((type *)0)->member)
+#endif
+
 struct hisi_strm_info {
 	struct wd_comp_arg	*arg;
 	void	*next_in;
@@ -73,6 +78,8 @@ struct hisi_strm_info {
 };
 
 struct hisi_comp_sess {
+	/* struct hisi_qm_ctx must be set in the first property */
+	struct hisi_qm_ctx	qm_ctx;
 	struct wd_scheduler	sched;
 	struct hisi_qm_capa	capa;
 	struct hisi_strm_info	strm;
@@ -215,6 +222,8 @@ static inline int need_split(struct wd_comp_sess *sess, int buf_size)
 static void hisi_sched_init(struct wd_scheduler *sched, int i, void *priv)
 {
 	struct hisi_sched	*hsched = sched->priv;
+	struct hisi_comp_sess	*sess_priv;
+	handle_t	h_ctx = (handle_t)sched->qs[i];
 	int j;
 
 	for (j = 0; j < sched->msg_cache_num; j++)
@@ -229,6 +238,9 @@ static void hisi_sched_init(struct wd_scheduler *sched, int i, void *priv)
 	hsched->size_in = STREAM_MAX;
 	hsched->full = 0;
 	hsched->skipped = 0;
+
+	sess_priv = container_of(sched, struct hisi_comp_sess, sched);
+	wd_ctx_set_sess_priv(h_ctx, sess_priv);
 }
 
 static int hisi_sched_input(struct wd_msg *msg, void *priv)
@@ -706,6 +718,7 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 	strm->h_ctx = wd_request_ctx(sess->node_path);
 	if (!strm->h_ctx)
 		free(strm->msg);
+	wd_ctx_set_sess_priv(strm->h_ctx, priv);
 	return 0;
 }
 
