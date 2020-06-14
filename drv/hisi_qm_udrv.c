@@ -2,7 +2,6 @@
 #include "config.h"
 #include <assert.h>
 #include <fcntl.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,32 +26,11 @@
 #define CQE_SQ_NUM(cq)	((*((__u32 *)(cq) + 2)) >> 16)
 #define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
 
-struct hisi_qm_queue_info {
-	void *sq_base;
-	void *cq_base;
-	int sqe_size;
-	void *mmio_base;
-	void *db_base;
-	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
-		  __u16 index, __u8 priority);
-	__u16 sq_tail_index;
-	__u16 sq_head_index;
-	__u16 cq_head_index;
-	__u16 sqn;
-	bool cqc_phase;
-	void *req_cache[QM_Q_DEPTH];
-	int is_sq_full;
-};
-
 struct hisi_qm_type {
 	char	*qm_name;
 	int	qm_db_offs;
 	int	(*hacc_db)(struct hisi_qm_queue_info *q, __u8 cmd,
 			   __u16 index, __u8 prority);
-};
-
-struct hisi_qm_ctx {
-	struct hisi_qm_queue_info	q_info;
 };
 
 static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
@@ -130,9 +108,16 @@ int hisi_qm_alloc_ctx(handle_t h_ctx, void *data)
 		WD_ERR("invalid sqe size (%d)\n", capa_priv->sqe_size);
 		return -EINVAL;
 	}
-	ctx_priv = calloc(1, sizeof(struct hisi_qm_ctx));
-	if (ctx_priv == NULL)
-		return -ENOMEM;
+
+	/*
+	 * struct hisi_qm_ctx is in the first property of
+	 * struct hisi_comp_sess
+	 */
+	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
+	if (!ctx_priv) {
+		WD_ERR("the context is empty\n");
+		return -EINVAL;
+	}
 
 	wd_ctx_init_qfrs_offs(h_ctx);
 
@@ -181,7 +166,6 @@ int hisi_qm_alloc_ctx(handle_t h_ctx, void *data)
 		goto out_qm;
 	}
 	q_info->sqn = qp_ctx.id;
-	wd_ctx_set_priv(h_ctx, ctx_priv);
 	return 0;
 
 out_qm:
@@ -204,11 +188,10 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 		wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_SS, va);
 		wd_ctx_set_shared_va(h_ctx, NULL);
 	}
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_priv(h_ctx);
+	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
 	q_info = &ctx_priv->q_info;
 	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
 	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
-	free(ctx_priv);
 }
 
 int hisi_qm_send(handle_t h_ctx, void *req)
@@ -217,7 +200,7 @@ int hisi_qm_send(handle_t h_ctx, void *req)
 	struct hisi_qm_queue_info	*q_info;
 	__u16 i;
 
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_priv(h_ctx);
+	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
 	if (!ctx_priv)
 		return -EINVAL;
 	q_info = &ctx_priv->q_info;
@@ -253,7 +236,7 @@ int hisi_qm_recv(handle_t h_ctx, void **resp)
 	int ret;
 	struct cqe *cqe;
 
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_priv(h_ctx);
+	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
 	q_info = &ctx_priv->q_info;
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
