@@ -640,10 +640,10 @@ static int create_ctx_key(struct wcrypto_ecc_ctx_setup *setup,
 	return 0;
 
 free_pubkey:
-	br_free(br, ctx->key.pubkey);
+	br_free(br, ctx->key.pubkey->data);
 
 free_prikey:
-	br_free(br, ctx->key.prikey);
+	br_free(br, ctx->key.prikey->data);
 
 	return ret;
 }
