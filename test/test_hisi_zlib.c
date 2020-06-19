@@ -84,7 +84,7 @@ struct zip_stream {
 
 int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 {
-	int ret;
+	int ret = 0;
 	void *dma_buf;
 	size_t ss_region_size;
 	struct hisi_qm_priv *priv;
@@ -106,20 +106,10 @@ int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	priv = (struct hisi_qm_priv *)capa.priv;
 	priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	priv->op_type = comp_optype;
-	zstrm->h_ctx = wd_request_ctx("/dev/hisi_zip-0");
-	if (!zstrm->h_ctx) {
-		fprintf(stderr, "wd_request_ctx fail\n");
-		ret = -EFAULT;
+
+	zstrm->h_ctx = hisi_qm_alloc_ctx("/dev/hisi_zip-0", &capa);
+	if (!zstrm->h_ctx)
 		goto out;
-	}
-
-	ret = hisi_qm_alloc_ctx(zstrm->h_ctx, &capa);
-	if (ret)
-		goto out_qm;
-
-	ret = wd_ctx_start(zstrm->h_ctx);
-	if (ret)
-		goto out_start;
 
 	ss_region_size = 4096+ASIZE*2+HW_CTX_SIZE;
 
@@ -169,25 +159,20 @@ out_buf:
 		free(zstrm->ctx_buf);
 	}
 out_alloc:
-	wd_ctx_stop(zstrm->h_ctx);
-out_start:
 	hisi_qm_free_ctx(zstrm->h_ctx);
-out_qm:
-	wd_release_ctx(zstrm->h_ctx);
 out:
 	return ret;
 }
 
 void hw_end(struct zip_stream *zstrm)
 {
-	wd_ctx_stop(zstrm->h_ctx);
 	if (!wd_is_nosva(zstrm->h_ctx)) {
+		hisi_qm_free_ctx(zstrm->h_ctx);
 		free(zstrm->next_in);
 		free(zstrm->next_out);
 		free(zstrm->ctx_buf);
-	}
-	hisi_qm_free_ctx(zstrm->h_ctx);
-	wd_release_ctx(zstrm->h_ctx);
+	} else
+		hisi_qm_free_ctx(zstrm->h_ctx);
 }
 
 unsigned int bit_reverse(register unsigned int x)
