@@ -92,53 +92,46 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
-int hisi_qm_alloc_ctx(handle_t h_ctx, void *data)
+handle_t hisi_qm_alloc_ctx(char *node_path, void *data)
 {
-	struct hisi_qm_capa		*capa;
-	struct hisi_qm_ctx		*ctx_priv;
+	struct hisi_qp			*qp = (struct hisi_qp *)data;
+	struct hisi_qp_ctx		qp_ctx;
+	struct hisi_qm_capa		*capa = &qp->capa;
 	struct hisi_qm_priv		*capa_priv;
 	struct hisi_qm_queue_info	*q_info;
-	struct hisi_qp_ctx		qp_ctx;
 	int	i, size, fd, ret;
 	char	*api_name;
 
-	capa = (struct hisi_qm_capa *)data;
 	capa_priv = (struct hisi_qm_priv *)capa->priv;
 	if (capa_priv->sqe_size <= 0) {
 		WD_ERR("invalid sqe size (%d)\n", capa_priv->sqe_size);
-		return -EINVAL;
+		goto out;
 	}
 
-	/*
-	 * struct hisi_qm_ctx is in the first property of
-	 * struct hisi_comp_sess
-	 */
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
-	if (!ctx_priv) {
-		WD_ERR("the context is empty\n");
-		return -EINVAL;
-	}
+	qp->h_ctx = wd_request_ctx(node_path);
+	if (!qp->h_ctx)
+		goto out;
 
-	wd_ctx_init_qfrs_offs(h_ctx);
+	wd_ctx_init_qfrs_offs(qp->h_ctx);
 
-	q_info = &ctx_priv->q_info;
-	q_info->sq_base = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_DUS, 0);
+	q_info = &qp->q_info;
+	q_info->sq_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, 0);
 	if (q_info->sq_base == MAP_FAILED) {
 		WD_ERR("fail to mmap DUS region\n");
 		ret = -errno;
-		goto out;
+		goto out_mmap;
 	}
 	q_info->sqe_size = capa_priv->sqe_size;
 	q_info->cq_base = q_info->sq_base + capa_priv->sqe_size * QM_Q_DEPTH;
 
-	q_info->mmio_base = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_MMIO, 0);
+	q_info->mmio_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, 0);
 	if (q_info->mmio_base == MAP_FAILED) {
 		WD_ERR("fail to mmap MMIO region\n");
 		ret = -errno;
 		goto out_mmio;
 	}
 	size = ARRAY_SIZE(qm_type);
-	api_name = wd_ctx_get_api(h_ctx);
+	api_name = wd_ctx_get_api(qp->h_ctx);
 	for (i = 0; i < size; i++) {
 		if (!strncmp(api_name, qm_type[i].qm_name, strlen(api_name))) {
 			q_info->db = qm_type[i].hacc_db;
@@ -159,51 +152,60 @@ int hisi_qm_alloc_ctx(handle_t h_ctx, void *data)
 	q_info->is_sq_full = 0;
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = capa_priv->op_type;
-	fd = wd_ctx_get_fd(h_ctx);
+	fd = wd_ctx_get_fd(qp->h_ctx);
 	ret = ioctl(fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("HISI QM fail to set qc_type, use default value\n");
 		goto out_qm;
 	}
 	q_info->sqn = qp_ctx.id;
-	return 0;
+
+	ret = wd_ctx_start(qp->h_ctx);
+	if (ret)
+		goto out_qm;
+	wd_ctx_set_sess_priv(qp->h_ctx, qp);
+	return qp->h_ctx;
 
 out_qm:
-	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
 out_mmio:
-	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+out_mmap:
+	wd_release_ctx(qp->h_ctx);
 out:
-	free(ctx_priv);
-	return ret;
+	return (handle_t)NULL;
 }
 
 void hisi_qm_free_ctx(handle_t h_ctx)
 {
-	struct hisi_qm_ctx		*ctx_priv;
+	struct hisi_qp			*qp;
 	struct hisi_qm_queue_info	*q_info;
 	void	*va;
 
-	va = wd_ctx_get_shared_va(h_ctx);
+	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
+	q_info = &qp->q_info;
+
+	wd_ctx_stop(qp->h_ctx);
+	va = wd_ctx_get_shared_va(qp->h_ctx);
 	if (va) {
-		wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_SS, va);
-		wd_ctx_set_shared_va(h_ctx, NULL);
+		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS, va);
+		wd_ctx_set_shared_va(qp->h_ctx, NULL);
 	}
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
-	q_info = &ctx_priv->q_info;
-	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
-	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+	wd_release_ctx(qp->h_ctx);
 }
 
 int hisi_qm_send(handle_t h_ctx, void *req)
 {
-	struct hisi_qm_ctx		*ctx_priv;
+	struct hisi_qp			*qp;
 	struct hisi_qm_queue_info	*q_info;
 	__u16 i;
 
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
-	if (!ctx_priv)
+	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
+	if (!qp)
 		return -EINVAL;
-	q_info = &ctx_priv->q_info;
+	q_info = &qp->q_info;
 	if (q_info->is_sq_full) {
 		WD_ERR("queue is full!\n");
 		return -EBUSY;
@@ -230,14 +232,14 @@ int hisi_qm_send(handle_t h_ctx, void *req)
 
 int hisi_qm_recv(handle_t h_ctx, void **resp)
 {
-	struct hisi_qm_ctx		*ctx_priv;
+	struct hisi_qp			*qp;
 	struct hisi_qm_queue_info	*q_info;
 	__u16 i, j;
 	int ret;
 	struct cqe *cqe;
 
-	ctx_priv = (struct hisi_qm_ctx *)wd_ctx_get_sess_priv(h_ctx);
-	q_info = &ctx_priv->q_info;
+	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
+	q_info = &qp->q_info;
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
 
