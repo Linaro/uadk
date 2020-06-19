@@ -23,6 +23,8 @@
 #define GZIP_EXTRA_SZ 10
 #define GZIP_TAIL_SZ 8
 
+#define HISI_DEV_NODE	"/dev/hisi_zip-0"
+
 /* bytes of data for a request */
 static int block_size = 512000;
 static int req_cache_num = 4;
@@ -192,7 +194,7 @@ int hizip_init(int alg_type, int op_type)
 		hizip_priv.dw9 = 3;
 	}
 
-	ret = wd_sched_init(&sched, "/dev/hisi_zip-0");
+	ret = wd_sched_init(&sched, HISI_DEV_NODE);
 	if (ret)
 		goto err_with_msgs;
 
@@ -231,8 +233,8 @@ void hizip_deflate(FILE *source, FILE *dest)
 		capa.alg = "gzip";
 
 	for (i = 0; i < sched.q_num; i++) {
-		ret = sched.hw_alloc(sched.qs[i], sched.data);
-		if (ret)
+		sched.qs[i] = sched.hw_alloc(HISI_DEV_NODE, sched.data);
+		if (!sched.qs[i])
 			goto out;
 		ret = wd_ctx_start(sched.qs[i]);
 		if (ret)
