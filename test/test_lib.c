@@ -5,6 +5,8 @@
 #include "hisi_qm_udrv.h"
 #include "smm.h"
 
+#define HISI_DEV_NODE	"/dev/hisi_zip-0"
+
 struct check_rand_ctx {
 	int off;
 	unsigned long global_off;
@@ -75,7 +77,6 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	struct wd_msg *wd_msg = &sched->msgs[i];
 	struct hizip_test_context *ctx = priv;
 	struct hisi_zip_sqe *msg;
-	handle_t h_ctx;
 
 	wd_msg->msg = &ctx->msgs[i];
 	msg = &ctx->msgs[i];
@@ -85,9 +86,6 @@ void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
 	else
 		msg->dw9 = HW_GZIP;
 	msg->dest_avail_out = sched->msg_data_size;
-
-	h_ctx = (handle_t)sched->qs[0];
-	wd_ctx_set_sess_priv(h_ctx, priv);
 }
 
 int hizip_test_default_input(struct wd_msg *msg, void *priv)
@@ -96,6 +94,7 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	char *in_buf, *out_buf;
 	struct hisi_zip_sqe *m = msg->msg;
 	struct hizip_test_context *ctx = priv;
+	struct hisi_qp *qp = &ctx->qp;
 	struct test_options *opts = ctx->opts;
 	void *data_in, *data_out;
 
@@ -108,8 +107,8 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	if (ctx->is_nosva) {
 		memcpy(msg->swap_in, in_buf, ilen);
 
-		data_in = wd_get_dma_from_va(msg->h_ctx, msg->swap_in);
-		data_out = wd_get_dma_from_va(msg->h_ctx, msg->swap_out);
+		data_in = wd_get_dma_from_va(qp->h_ctx, msg->swap_in);
+		data_out = wd_get_dma_from_va(qp->h_ctx, msg->swap_out);
 
 		m->source_addr_l = (__u64)data_in & 0xffffffff;
 		m->source_addr_h = (__u64)data_in >> 32;
@@ -284,6 +283,7 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	int i, j, ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
+	struct hisi_qp *qp;
 	struct hizip_test_context *ctx = priv;
 	uint64_t addr;
 
@@ -306,15 +306,14 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	if (!sched->qs)
 		return -ENOMEM;
 
-	capa = malloc(sizeof(struct hisi_qm_capa));
-	if (!capa)
-		goto out;
+	qp = &ctx->qp;
+	capa = &qp->capa;
 
 	if (opts->alg_type == ZLIB)
 		capa->alg = "zlib";
 	else
 		capa->alg = "gzip";
-	sched->data = capa;
+	sched->data = qp;
 
 	ctx->msgs = calloc(1, sizeof(*ctx->msgs) * sched->msg_cache_num);
 	if (!ctx->msgs)
@@ -324,17 +323,14 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = opts->op_type;
 
-	ret = wd_sched_init(sched, "/dev/hisi_zip-0");
+	ret = wd_sched_init(sched, HISI_DEV_NODE);
 	if (ret)
 		goto out_sched;
 
 	for (i = 0; i < sched->q_num; i++) {
-		ret = sched->hw_alloc(sched->qs[i], sched->data);
-		if (ret)
+		sched->qs[i] = sched->hw_alloc(HISI_DEV_NODE, sched->data);
+		if (!sched->qs[i])
 			goto out_hw;
-		ret = wd_ctx_start(sched->qs[i]);
-		if (ret)
-			goto out_start;
 	}
 
 	if (!sched->ss_region_size)
@@ -351,7 +347,6 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 		if (ret)
 			goto out_smm;
 		for (i = 0; i < sched->msg_cache_num; i++) {
-			sched->msgs[i].h_ctx = sched->qs[0];
 			addr = (uint64_t)smm_alloc(sched->ss_region,
 						   sched->msg_data_size);
 			sched->msgs[i].swap_in = (void *)addr;
@@ -380,21 +375,17 @@ out_smm:
 	}
 out_region:
 	for (j = i - 1; j >= 0; j--) {
-		wd_ctx_stop(sched->qs[j]);
 		sched->hw_free(sched->qs[j]);
 	}
-out_start:
 	sched->hw_free(sched->qs[i]);
 out_hw:
 	for (j = i - 1; j >= 0; j--) {
-		wd_ctx_stop(sched->qs[j]);
 		sched->hw_free(sched->qs[j]);
 	}
 out_sched:
 	free(ctx->msgs);
 out_msgs:
 	free(capa);
-out:
 	free(sched->qs);
 	return ret;
 }
@@ -421,17 +412,12 @@ int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
  */
 void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
 {
-	struct hisi_qm_capa *capa;
 	int i;
 
-	for (i = 0; i < sched->q_num; i++) {
-		wd_ctx_stop(sched->qs[i]);
+	for (i = 0; i < sched->q_num; i++)
 		sched->hw_free(sched->qs[i]);
-	}
 	wd_sched_fini(sched);
 	free(sched->qs);
-	capa = (struct hisi_qm_capa *)sched->data;
-	free(capa);
 }
 
 int parse_common_option(const char opt, const char *optarg,
