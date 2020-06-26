@@ -23,6 +23,7 @@
 #include "wd_util.h"
 #include "wd_cipher.h"
 #include "wd_digest.h"
+#include "wd_aead.h"
 
 #include "hisi_qm_udrv.h"
 
@@ -33,6 +34,7 @@ typedef unsigned long long __u64;
 
 /* The max BD cipher length is 16M-512B */
 #define MAX_CIPHER_LENGTH		16776704
+#define SEC_SQE_LEN_RATE	4
 
 struct hisi_sec_sqe_type1 {
 	__u32 rsvd2:6;
@@ -362,7 +364,7 @@ struct hisi_sec_bd3_sqe {
 	__u32 auth:2;
 	__u32 ai_gen:2;
 	__u32 mac_len:5;
-	__u32 akey_len:6;
+	__u32 a_key_len:6;
 	__u32 a_alg:6;
 	__u32 key_sel:4;
 	__u32 update_key:1;
@@ -520,11 +522,14 @@ enum {
 int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i);
+int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i);
+
 int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
 int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
 int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
-
+int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
+		__u16 i, __u16 usr);
 #endif
