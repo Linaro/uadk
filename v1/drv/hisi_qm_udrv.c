@@ -136,6 +136,42 @@ static bool hpre_alg_info_init(struct q_info *qinfo, const char *alg)
 	return is_find;
 }
 
+static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
+{
+	struct qm_queue_info *info = qinfo->priv;
+	bool is_find = true;
+
+	if (!strncmp(alg, "cipher", strlen("cipher"))) {
+		qinfo->atype = WCRYPTO_CIPHER;
+		info->sqe_size = QM_SEC_BD_SIZE;
+		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
+			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
+		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_bd3_sqe;
+			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_bd3_sqe;
+		}
+	} else if (!strncmp(alg, "digest", strlen("digest"))) {
+		qinfo->atype = WCRYPTO_DIGEST;
+		info->sqe_size = QM_SEC_BD_SIZE;
+		info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
+		info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
+	} else if (!strncmp(alg, "aead", strlen("aead"))) {
+		if (!strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+			WD_ERR("hardware type err!\n");
+			return false;
+		}
+		qinfo->atype = WCRYPTO_AEAD;
+		info->sqe_size = QM_SEC_BD_SIZE;
+		info->sqe_fill[WCRYPTO_AEAD] = qm_fill_aead_bd3_sqe;
+		info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_bd3_sqe;
+	} else {
+		is_find = false;
+	}
+
+	return is_find;
+}
+
 static int qm_set_queue_alg_info(struct wd_queue *q)
 {
 	const char *alg = q->capa.alg;
@@ -153,22 +189,7 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 		info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe;
 		info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe;
 		ret = WD_SUCCESS;
-	} else if (!strncmp(alg, "cipher", strlen("cipher"))) {
-		qinfo->atype = WCRYPTO_CIPHER;
-		info->sqe_size = QM_SEC_BD_SIZE;
-		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
-			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
-			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
-		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
-			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_bd3_sqe;
-			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_bd3_sqe;
-		}
-		ret = WD_SUCCESS;
-	} else if (!strncmp(alg, "digest", strlen("digest"))) {
-		qinfo->atype = WCRYPTO_DIGEST;
-		info->sqe_size = QM_SEC_BD_SIZE;
-		info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
-		info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
+	} else if (sec_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
 	} else if (!strncmp(alg, "xts(aes)", strlen("xts(aes)")) ||
 		!strncmp(alg, "xts(sm4)", strlen("xts(sm4)"))) {

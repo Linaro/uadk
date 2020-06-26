@@ -14,6 +14,7 @@ libwd_la_SOURCES=wd.c wd_adapter.c wd.h wd_adapter.h \
 	wd_comp.c wd_comp.h \
 	wd_cipher.c wd_cipher.h \
 	wd_digest.c wd_digest.h \
+	wd_aead.c wd_aead.h \
 	wd_rng.c wd_rng.h \
 	wd_util.c wd_util.h \
 	wd_bmm.c wd_bmm.h \
