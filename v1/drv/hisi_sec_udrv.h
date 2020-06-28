@@ -523,6 +523,7 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i);
+int qm_fill_digest_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i);
 
 int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
@@ -531,5 +532,7 @@ int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr);
 int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
+		__u16 i, __u16 usr);
+int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
 		__u16 i, __u16 usr);
 #endif
