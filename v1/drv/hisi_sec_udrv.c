@@ -1027,6 +1027,143 @@ int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	return WD_SUCCESS;
 }
 
+static void qm_fill_digest_long_bd3(struct wcrypto_digest_msg *msg,
+		struct hisi_sec_bd3_sqe *sqe)
+{
+	struct wcrypto_digest_tag *digest_tag = (void *)(uintptr_t)msg->usr_data;
+	__u64 total_bits = 0;
+
+	/* iv_bytes is multiplexed as a flag bit to determine whether it is LOGN BD FIRST */
+	if (msg->has_next && msg->iv_bytes == 0) {
+		/* LOGN BD FIRST */
+		sqe->ai_gen = AI_GEN_INNER;
+		sqe->stream_scene.auth_pad = AUTHPAD_NOPAD;
+		msg->iv_bytes = msg->out_bytes;
+	} else if (msg->has_next && msg->iv_bytes != 0) {
+		/* LONG BD MIDDLE */
+		sqe->ai_gen = AI_GEN_IVIN_ADDR;
+		sqe->stream_scene.auth_pad = AUTHPAD_NOPAD;
+		sqe->auth_ivin.a_ivin_addr_h = sqe->mac_addr_h;
+		sqe->auth_ivin.a_ivin_addr_l = sqe->mac_addr_l;
+		msg->iv_bytes = msg->out_bytes;
+	} else if (!msg->has_next && msg->iv_bytes != 0) {
+		/* LOGN BD END */
+		sqe->ai_gen = AI_GEN_IVIN_ADDR;
+		sqe->stream_scene.auth_pad = AUTHPAD_PAD;
+		sqe->auth_ivin.a_ivin_addr_h = sqe->mac_addr_h;
+		sqe->auth_ivin.a_ivin_addr_l = sqe->mac_addr_l;
+		total_bits = digest_tag->long_data_len * BYTE_BITS;
+		sqe->stream_scene.long_a_data_len_l = total_bits & QM_L32BITS_MASK;
+		sqe->stream_scene.long_a_data_len_h = HI_U32(total_bits);
+		msg->iv_bytes = 0;
+	} else {
+		/* SHORT BD */
+		msg->iv_bytes = 0;
+	}
+}
+
+static int fill_digest_bd3_alg(struct wcrypto_digest_msg *msg,
+		struct hisi_sec_bd3_sqe *sqe)
+{
+	if (msg->alg < WCRYPTO_SM3 || msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+		WD_ERR("Invalid digest type!\n");
+		return -WD_EINVAL;
+	}
+
+	sqe->mac_len = msg->out_bytes / WORD_BYTES;
+	if (msg->mode == WCRYPTO_DIGEST_NORMAL)
+		sqe->a_alg = g_digest_a_alg[msg->alg];
+	else if (msg->mode == WCRYPTO_DIGEST_HMAC)
+		sqe->a_alg = g_hmac_a_alg[msg->alg];
+	else {
+		WD_ERR("Invalid digest mode!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
+		struct wcrypto_digest_msg *msg, struct wcrypto_digest_tag *tag)
+{
+	uintptr_t phy;
+	int ret;
+
+	sqe->type = BD_TYPE3;
+	sqe->scene = SCENE_STREAM;
+
+	sqe->auth = AUTH_MAC_CALCULATE;
+	sqe->a_len = msg->in_bytes;
+
+	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
+	if (!phy) {
+		WD_ERR("Get msg in dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->data_src_addr_h = HI_U32(phy);
+
+	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
+	if (!phy) {
+		WD_ERR("Get msg out dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->mac_addr_h = HI_U32(phy);
+
+	if (msg->mode == WCRYPTO_DIGEST_HMAC) {
+		sqe->a_key_len = msg->key_bytes / WORD_BYTES;
+		phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
+		if (!phy) {
+			WD_ERR("Get hmac key dma address fail!\n");
+			return -WD_ENOMEM;
+		}
+		sqe->a_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->a_key_addr_h = HI_U32(phy);
+	}
+
+	ret = fill_digest_bd3_alg(msg, sqe);
+	if (ret != WD_SUCCESS) {
+		WD_ERR("fill_digest_bd3_alg fail!\n");
+		return ret;
+	}
+	qm_fill_digest_long_bd3(msg, sqe);
+
+	if (tag)
+		sqe->tag_l = tag->wcrypto_tag.ctx_id;
+
+	return ret;
+}
+
+int qm_fill_digest_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
+{
+	struct wcrypto_digest_msg *msg = message;
+	struct wcrypto_digest_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct hisi_sec_bd3_sqe *sqe;
+	struct wd_queue *q = info->q;
+	uintptr_t temp;
+	int ret;
+
+	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
+	sqe = (struct hisi_sec_bd3_sqe *)temp;
+
+	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
+
+	if (tag) {
+		ret = fill_digest_bd3(q, sqe, msg, tag);
+		if (ret != WD_SUCCESS)
+			return ret;
+	}
+
+	info->req_cache[i] = msg;
+
+#ifdef DEBUG_LOG
+	sec_dump_bd((unsigned int *)sqe, SQE_BYTES_NUMS);
+#endif
+
+	return WD_SUCCESS;
+}
+
 static void parse_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_cipher_msg *cipher_msg)
 {
@@ -1677,6 +1814,63 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 
 #ifdef DEBUG_LOG
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+#endif
+
+	return 1;
+}
+
+static void parse_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
+		struct wcrypto_digest_msg *digest_msg)
+{
+	__u64 dma_addr;
+
+	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
+		WD_ERR("SEC BD3 %s fail!done=0x%x, etype=0x%x\n", "digest",
+		sqe->done, sqe->error_type);
+		digest_msg->result = WD_IN_EPARA;
+	} else {
+		digest_msg->result = WD_SUCCESS;
+	}
+
+	dma_addr = DMA_ADDR(sqe->data_src_addr_h,
+			sqe->data_src_addr_l);
+	drv_iova_unmap(q, digest_msg->in, (void *)(uintptr_t)dma_addr,
+			digest_msg->in_bytes);
+	dma_addr = DMA_ADDR(sqe->mac_addr_h,
+			sqe->mac_addr_l);
+	drv_iova_unmap(q, digest_msg->out, (void *)(uintptr_t)dma_addr,
+			digest_msg->out_bytes);
+	if (digest_msg->mode == WCRYPTO_DIGEST_HMAC) {
+		dma_addr = DMA_ADDR(sqe->a_key_addr_h,
+			sqe->a_key_addr_h);
+		drv_iova_unmap(q, digest_msg->key,
+			(void *)(uintptr_t)dma_addr, digest_msg->key_bytes);
+	}
+}
+
+int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
+		__u16 i, __u16 usr)
+{
+	struct wcrypto_digest_msg *digest_msg = info->req_cache[i];
+	struct hisi_sec_bd3_sqe *sqe = msg;
+	struct wd_queue *q = info->q;
+
+	if (unlikely(!digest_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
+
+	if (sqe->type == BD_TYPE3) {
+		if (usr && sqe->tag_l != usr)
+			return 0;
+		parse_digest_bd3(q, sqe, digest_msg);
+	} else {
+		WD_ERR("SEC Digest BD Type error\n");
+		digest_msg->result = WD_IN_EPARA;
+	}
+
+#ifdef DEBUG_LOG
+	sec_dump_bd((unsigned int *)sqe, SQE_BYTES_NUMS);
 #endif
 
 	return 1;
