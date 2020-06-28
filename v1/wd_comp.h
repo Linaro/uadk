@@ -49,6 +49,7 @@ enum wcrypto_comp_win_type {
 	WCRYPTO_COMP_WS_4K,  /* 4k bytes window size */
 	WCRYPTO_COMP_WS_8K,  /* 8k bytes window size */
 	WCRYPTO_COMP_WS_16K, /* 16k bytes window size */
+	WCRYPTO_COMP_WS_24K, /* 24k bytes window size */
 	WCRYPTO_COMP_WS_32K, /* 32k bytes window size */
 };
 
@@ -69,6 +70,7 @@ enum wcrypto_comp_flush_type {
 enum wcrypto_comp_alg_type {
 	WCRYPTO_ZLIB,
 	WCRYPTO_GZIP,
+	WCRYPTO_RAW_DEFLATE,
 };
 
 /* Operational types for COMP */
@@ -161,7 +163,7 @@ struct wcrypto_comp_msg {
 	__u8 stream_pos; /* Denoted by enum wcrypto_stream_status */
 	__u8 comp_lv;    /* Denoted by enum wcrypto_comp_level */
 	__u8 data_fmt;   /* Data format, denoted by enum wd_buff_type */
-	__u8 win_sz;     /* Denoted by enum wcrypto_comp_win_type */
+	__u8 win_size;     /* Denoted by enum wcrypto_comp_win_type */
 	__u32 in_size;   /* Input data bytes */
 	__u32 avail_out; /* Output buffer size */
 	__u32 in_cons;   /* consumed bytes of input data */
@@ -169,7 +171,6 @@ struct wcrypto_comp_msg {
 	__u8 *src;       /* Input data VA, buf should be DMA-able. */
 	__u8 *dst;       /* Output data VA pointer */
 	__u32 tag;       /* User-defined request identifier */
-	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
 	__u32 checksum;  /* Denoted by zlib/gzip CRC */

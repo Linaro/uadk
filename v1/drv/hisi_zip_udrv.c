@@ -33,10 +33,12 @@
 #include "wd_cipher.h"
 #include "hisi_zip_udrv.h"
 
+#define BD_TYPE_SHIFT 28
 #define STREAM_FLUSH_SHIFT 25
 #define MIN_AVAILOUT_SIZE 4096
 #define STREAM_POS_SHIFT 2
 #define STREAM_MODE_SHIFT 1
+#define WINDOWS_SIZE_SHIFT 12
 
 #define HW_NEGACOMPRESS 0x0d
 #define HW_CRC_ERR 0x10
@@ -51,6 +53,13 @@
 #define ZIP_PAD_LEN 56
 #define lower_32_bits(phy) ((__u32)((__u64)(phy)))
 #define upper_32_bits(phy) ((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
+
+#define get_window_size(dw) (((dw) >> WINDOWS_SIZE_SHIFT) && 0xFF)
+
+enum {
+	BD_TYPE,
+	BD_TYPE3 = 3,
+};
 
 struct hisi_zip_sgl {
 	__u32 in_sge_data_off;
@@ -164,7 +173,7 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		return ret;
 
 	msg->flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
-			  HZ_SYNC_FLUSH;
+			   HZ_SYNC_FLUSH;
 	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
 		     (msg->flush_type)) << STREAM_FLUSH_SHIFT;
@@ -181,6 +190,68 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->tag = msg->tag;
 	if (tag)
 		qm_fill_zip_sqe_with_priv(sqe, tag->priv);
+
+	info->req_cache[i] = msg;
+
+	return WD_SUCCESS;
+}
+
+int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
+{
+	struct hisi_zip_sqe_v3 *sqe = (struct hisi_zip_sqe_v3 *)info->sq_base + i;
+	struct wcrypto_comp_msg *msg = smsg;
+	struct wd_queue *q = info->q;
+	int ret;
+
+	memset((void *)sqe, 0, sizeof(*sqe));
+
+	switch (msg->alg_type) {
+	case WCRYPTO_ZLIB:
+		sqe->dw9 = HW_ZLIB;
+		break;
+	case WCRYPTO_GZIP:
+		sqe->dw9 = HW_GZIP;
+		break;
+	case WCRYPTO_RAW_DEFLATE:
+		sqe->dw9 = HW_RAW_DEFLATE;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	switch (msg->win_size) {
+	case WCRYPTO_COMP_WS_4K:
+	case WCRYPTO_COMP_WS_8K:
+	case WCRYPTO_COMP_WS_16K:
+	case WCRYPTO_COMP_WS_24K:
+	case WCRYPTO_COMP_WS_32K:
+		sqe->dw9 |= msg->win_size << WINDOWS_SIZE_SHIFT;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	ret = qm_fill_zip_sqe_get_phy_addr(sqe, msg, q);
+	if (ret)
+		return ret;
+
+	msg->flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
+			   HZ_SYNC_FLUSH;
+	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
+		     (msg->stream_mode << STREAM_MODE_SHIFT) |
+		     (msg->flush_type)) << STREAM_FLUSH_SHIFT |
+		     BD_TYPE3 << BD_TYPE_SHIFT;
+	sqe->input_data_length = msg->in_size;
+	if (msg->avail_out > MIN_AVAILOUT_SIZE)
+		sqe->dest_avail_out = msg->avail_out;
+	else
+		sqe->dest_avail_out = MIN_AVAILOUT_SIZE;
+	sqe->ctx_dw0 = msg->ctx_priv0;
+	sqe->ctx_dw1 = msg->ctx_priv1;
+	sqe->ctx_dw2 = msg->ctx_priv2;
+	sqe->isize = msg->isize;
+	sqe->checksum = msg->checksum;
+	sqe->tag_l = msg->tag;
 
 	info->req_cache[i] = msg;
 
@@ -250,6 +321,49 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
 	recv_msg->tag = sqe->tag;
+
+	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+
+	return 1;
+}
+
+int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
+			__u16 i, __u16 usr)
+{
+	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
+	struct hisi_zip_sqe_v3 *sqe = hw_msg;
+	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
+	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
+	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
+	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
+
+	if (unlikely(!recv_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
+
+	if (usr && sqe->tag_l != usr)
+		return 0;
+
+	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END) {
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
+		       ctx_st, status, type);
+		recv_msg->status = WD_IN_EPARA;
+	} else {
+		recv_msg->status = 0;
+	}
+	recv_msg->in_cons = sqe->consumed;
+	recv_msg->in_size = sqe->input_data_length;
+	recv_msg->produced = sqe->produced;
+	recv_msg->avail_out = sqe->dest_avail_out;
+	recv_msg->comp_lv = 0;
+	recv_msg->op_type = 0;
+	recv_msg->win_size = get_window_size(sqe->dw9);
+	recv_msg->ctx_priv0 = sqe->ctx_dw0;
+	recv_msg->ctx_priv1 = sqe->ctx_dw1;
+	recv_msg->ctx_priv2 = sqe->ctx_dw2;
+	recv_msg->isize = sqe->isize;
+	recv_msg->checksum = sqe->checksum;
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 
@@ -333,8 +447,8 @@ int qm_fill_zip_cipher_sqe(void *send_msg, struct qm_queue_info *info, __u16 i)
 	struct hisi_zip_sqe *sqe = (struct hisi_zip_sqe *)info->sq_base + i;
 	struct wcrypto_cipher_msg *msg = send_msg;
 	struct wcrypto_cipher_tag *cipher_tag = (void *)(uintptr_t)msg->usr_data;
-	uintptr_t phy;
 	struct wd_queue *q = info->q;
+	uintptr_t phy;
 	__u16 key_len;
 	int ret;
 
