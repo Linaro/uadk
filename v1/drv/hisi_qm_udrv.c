@@ -172,6 +172,29 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 	return is_find;
 }
 
+static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
+{
+	struct qm_queue_info *info = qinfo->priv;
+	bool is_find = false;
+
+	if (!strncmp(alg, "zlib", strlen("zlib")) ||
+	    !strncmp(alg, "gzip", strlen("gzip")) ||
+	    !strncmp(alg, "deflate", strlen("deflate"))) {
+		qinfo->atype = WCRYPTO_COMP;
+		info->sqe_size = QM_ZIP_BD_SIZE;
+		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+			info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe;
+			info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe;
+		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+			info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe_v3;
+			info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe_v3;
+		}
+		is_find = true;
+	}
+
+	return is_find;
+}
+
 static int qm_set_queue_alg_info(struct wd_queue *q)
 {
 	const char *alg = q->capa.alg;
@@ -182,12 +205,7 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 
 	if (hpre_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
-	} else if (!strncmp(alg, "zlib", strlen("zlib")) ||
-				!strncmp(alg, "gzip", strlen("gzip"))) {
-		qinfo->atype = WCRYPTO_COMP;
-		info->sqe_size = QM_ZIP_BD_SIZE;
-		info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe;
-		info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe;
+	} else if (zip_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
 	} else if (sec_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
