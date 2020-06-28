@@ -20,8 +20,9 @@
 #include "hisi_qm_udrv.h"
 
 enum hw_comp_alg_type {
-	HW_ZLIB  = 0x02,
+	HW_ZLIB = 0x02,
 	HW_GZIP,
+	HW_RAW_DEFLATE,
 };
 
 enum hw_zip_cipher_alg_type {
@@ -70,6 +71,41 @@ struct hisi_zip_sqe {
 	__u32 checksum;
 };
 
+struct hisi_zip_sqe_v3 {
+	__u32 consumed;
+	__u32 produced;
+	__u32 comp_data_length;
+	__u32 dw3;
+	__u32 input_data_length;
+	__u32 lba_l;
+	__u32 lba_h;
+	__u32 dw7;
+	__u32 dw8;
+	__u32 dw9;
+	__u32 dw10;
+	__u32 priv_info;
+	__u32 dw12;
+	__u32 dw13;
+	__u32 dest_avail_out;
+	__u32 ctx_dw0;
+	__u32 comp_head_addr_l;
+	__u32 comp_head_addr_h;
+	__u32 source_addr_l;
+	__u32 source_addr_h;
+	__u32 dest_addr_l;
+	__u32 dest_addr_h;
+	__u32 stream_ctx_addr_l;
+	__u32 stream_ctx_addr_h;
+	__u32 cipher_key_addr_l;
+	__u32 cipher_key_addr_h;
+	__u32 tag_l;
+	__u32 tag_h;
+	__u32 ctx_dw1;
+	__u32 ctx_dw2;
+	__u32 isize;
+	__u32 checksum;
+};
+
 #define HZ_BUF_TYPE_SHIFT 8
 #define HZ_ALIGN_SIZE_SHIFT 16
 #define HZ_GRD_GTYPE_SHIFT 4
@@ -87,10 +123,13 @@ struct hisi_zip_sqe {
 #define HZ_REQ_TYPE_MASK 0xff
 
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
-int qm_parse_zip_sqe(void *msg,
-		     const struct qm_queue_info *info, __u16 i, __u16 usr);
+int qm_parse_zip_sqe(void *msg, const struct qm_queue_info *info,
+		     __u16 i, __u16 usr);
+int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i);
+int qm_parse_zip_sqe_v3(void *msg, const struct qm_queue_info *info,
+			__u16 i, __u16 usr);
 int qm_fill_zip_cipher_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
 int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
-		     __u16 i, __u16 usr);
+			    __u16 i, __u16 usr);
 
 #endif
