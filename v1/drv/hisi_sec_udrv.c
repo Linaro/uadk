@@ -61,7 +61,7 @@ static void sec_dump_bd(unsigned char *bd, unsigned int len)
 	unsigned int i;
 
 	for (i = 0; i < len; i++) {
-		WD_ERR("\\%02x\n", bd[i]);
+		WD_ERR("\\%02x", bd[i]);
 		if ((i + 1) % WORD_BYTES == 0)
 			WD_ERR("\n");
 	}
@@ -1467,6 +1467,14 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 	}
 	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->data_src_addr_h = HI_U32(phy);
+
+	/* AEAD input MAC addr use in addr */
+	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
+		phy = phy + msg->assoc_bytes + msg->in_bytes;
+		sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->mac_addr_h = HI_U32(phy);
+	}
+
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (!phy) {
 		WD_ERR("fail to get msg out dma address!\n");
@@ -1476,9 +1484,11 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 	sqe->data_dst_addr_h = HI_U32(phy);
 
 	/* AEAD output MAC addr use out addr */
-	phy = phy + msg->out_bytes - msg->auth_bytes;
-	sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
-	sqe->mac_addr_h = HI_U32(phy);
+	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
+		phy = phy + msg->out_bytes - msg->auth_bytes;
+		sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->mac_addr_h = HI_U32(phy);
+	}
 
 	phy = (uintptr_t)drv_iova_map(q, msg->ckey, msg->ckey_bytes);
 	if (!phy) {
