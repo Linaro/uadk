@@ -388,7 +388,7 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 	int ret;
 
 	/* As user denotes a device */
-	if (dev && dev[0] && dev[0] != '/' && !strstr(dev, "../")) {
+	if (dev[0] && dev[0] != '/' && !strstr(dev, "../")) {
 		if (!dinfop) {
 			WD_ERR("dinfop NULL!\n");
 			return -EINVAL;
@@ -469,13 +469,15 @@ static void wd_close_queue(struct wd_queue *q)
 int wd_request_queue(struct wd_queue *q)
 {
 	struct dev_info *dinfop;
-	int ret, try_cnt = 0;
+	int try_cnt = 0;
+	int ret;
 
 	if (!q) {
 		WD_ERR("input param q is NULL!\n");
 		return -WD_EINVAL;
 	}
-	dinfop = calloc(1, sizeof(struct q_info) + sizeof(*dinfop));
+
+	dinfop = calloc(1, sizeof(struct q_info) + sizeof(struct dev_info));
 	if (!dinfop) {
 		WD_ERR("calloc for queue info fail!\n");
 		return -WD_ENOMEM;
@@ -552,10 +554,9 @@ void wd_release_queue(struct wd_queue *q)
 	}
 
 	drv_close(q);
-	if (ioctl(qinfo->fd, UACCE_CMD_PUT_Q)) {
+	if (ioctl(qinfo->fd, UACCE_CMD_PUT_Q))
 		WD_ERR("fail to put queue!\n");
-		return;
-	}
+
 	wd_close_queue(q);
 	free((void *)qinfo->dev_info);
 }
