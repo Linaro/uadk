@@ -348,8 +348,10 @@ void qm_uninit_queue(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-static void qm_tx_update(struct qm_queue_info *info, __u16 idx)
+static void qm_tx_update(struct qm_queue_info *info)
 {
+	__u16 idx = info->sq_tail_index;
+
 	if (idx == QM_Q_DEPTH - 1)
 		idx = 0;
 	else
@@ -364,7 +366,6 @@ int qm_send(struct wd_queue *q, void *req)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	__u16 i;
 	int ret;
 
 	if (wd_reg_read(info->ds_tx_base) == 1) {
@@ -378,9 +379,9 @@ int qm_send(struct wd_queue *q, void *req)
 		return -WD_EBUSY;
 	}
 
-	i = info->sq_tail_index;
 
-	ret = info->sqe_fill[qinfo->atype](req, qinfo->priv, i);
+	ret = info->sqe_fill[qinfo->atype](req, qinfo->priv,
+			info->sq_tail_index);
 	if (ret != WD_SUCCESS) {
 		wd_unspinlock(&info->sd_lock);
 		WD_ERR("sqe fill error, ret %d!\n", ret);
@@ -389,14 +390,16 @@ int qm_send(struct wd_queue *q, void *req)
 
 	/* make sure the request is all in memory before doorbell */
 	mb();
-	qm_tx_update(info, i);
+	qm_tx_update(info);
 	wd_unspinlock(&info->sd_lock);
 
 	return WD_SUCCESS;
 }
 
-static void qm_rx_update(struct qm_queue_info *info, void **resp, __u16 idx)
+static void qm_rx_update(struct qm_queue_info *info, void **resp)
 {
+	__u16 idx = info->cq_head_index;
+
 	*resp = info->req_cache[idx];
 	info->req_cache[idx] = NULL;
 
@@ -412,8 +415,11 @@ static void qm_rx_update(struct qm_queue_info *info, void **resp, __u16 idx)
 	info->cq_head_index = idx;
 	__atomic_sub_fetch(&info->used, 1, __ATOMIC_RELAXED);
 }
-static void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u16 idx)
+
+static void qm_rx_from_cache(struct qm_queue_info *info, void **resp)
 {
+	__u16 idx = info->cq_head_index;
+
 	*resp = info->req_cache[idx];
 	info->req_cache[idx] = NULL;
 
@@ -427,6 +433,7 @@ static void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u16 idx)
 	info->cq_head_index = idx;
 	__atomic_sub_fetch(&info->used, 1, __ATOMIC_RELAXED);
 }
+
 int qm_recv(struct wd_queue *q, void **resp)
 {
 	struct q_info *qinfo = q->qinfo;
@@ -438,7 +445,7 @@ int qm_recv(struct wd_queue *q, void **resp)
 
 	if (wd_reg_read(info->ds_rx_base) == 1) {
 		wd_spinlock(&info->rc_lock);
-		qm_rx_from_cache(info, resp, info->cq_head_index);
+		qm_rx_from_cache(info, resp);
 		wd_unspinlock(&info->rc_lock);
 		return -WD_HW_EACCESS;
 	}
@@ -462,12 +469,14 @@ int qm_recv(struct wd_queue *q, void **resp)
 			wd_unspinlock(&info->rc_lock);
 			return 0;
 		} else if (ret < 0)
-			WD_ERR("recv sqe error %u\n", j);
+			WD_ERR("recv sqe error %u\n",
+			CQE_SQ_HEAD_INDEX(info->cq_base +
+			info->cq_head_index * sizeof(struct cqe)));
 	} else {
 		wd_unspinlock(&info->rc_lock);
 		return 0;
 	}
-	qm_rx_update(info, resp, i);
+	qm_rx_update(info, resp);
 	wd_unspinlock(&info->rc_lock);
 
 	if (wd_reg_read(info->ds_rx_base) == 1) {
