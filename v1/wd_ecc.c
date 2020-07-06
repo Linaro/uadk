@@ -1071,48 +1071,44 @@ void wcrypto_get_ecxdh_in_params(struct wcrypto_ecc_in *in,
 		*pbk = &dh_in->pbk;
 }
 
-int wcrypto_del_ecc_in(void *ctx, struct wcrypto_ecc_in *in)
+void wcrypto_del_ecc_in(void *ctx, struct wcrypto_ecc_in *in)
 {
 	struct wcrypto_ecc_ctx *cx = ctx;
 	__u32 bsz;
 
 	if (!ctx || !in) {
 		WD_ERR("del ecc in param error!\n");
-		return -WD_EINVAL;
+		return;
 	}
 
 	bsz = in->size;
 	if (!bsz || bsz > ECC_MAX_IN_SIZE) {
 		WD_ERR("del ecc in: size %d err!\n", bsz);
-		return -WD_EINVAL;
+		return;
 	}
 
 	wd_memset_zero(in->data, bsz);
 	br_free(&cx->setup.br, in);
-
-	return WD_SUCCESS;
 }
 
-int wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out)
+void wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out)
 {
 	struct wcrypto_ecc_ctx *cx = ctx;
 	__u32 bsz;
 
 	if (!ctx || !out) {
 		WD_ERR("del ecc out param error!\n");
-		return -WD_EINVAL;
+		return;
 	}
 
 	bsz = out->size;
 	if (!bsz || bsz > ECC_MAX_OUT_SIZE) {
 		WD_ERR("del ecc out: size %d err!\n", bsz);
-		return -WD_EINVAL;
+		return;
 	}
 
 	wd_memset_zero(out->data, bsz);
 	br_free(&cx->setup.br, out);
-
-	return 0;
 }
 
 static struct wcrypto_ecc_cookie *get_ecc_cookie(struct wcrypto_ecc_ctx *ctx)
