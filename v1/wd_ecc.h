@@ -140,8 +140,8 @@ int wcrypto_set_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_point *pubkey);
 int wcrypto_get_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_point **pubkey);
-int wcrypto_del_ecc_in(void *ctx, struct wcrypto_ecc_in *in);
-int wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out);
+void wcrypto_del_ecc_in(void *ctx, struct wcrypto_ecc_in *in);
+void wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out);
 void wcrypto_get_ecc_prikey_params(struct wcrypto_ecc_key *key,
 				   struct wd_dtb **p, struct wd_dtb **a,
 				   struct wd_dtb **b, struct wd_dtb **n,
