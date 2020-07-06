@@ -37,8 +37,8 @@ struct wcrypto_ecc_point {
 /* ECC operational types */
 enum wcrypto_ecc_op_type {
 	WCRYPTO_EC_OP_INVALID, /* invalid ecc operation */
-	WCRYPTO_ECDH_GEN_KEY, /* ECDH generate pubkey */
-	WCRYPTO_ECDH_COMPUTE_KEY, /* ECDH compute share key */
+	WCRYPTO_ECXDH_GEN_KEY, /* ECDH/X448/X25519 generate pubkey */
+	WCRYPTO_ECXDH_COMPUTE_KEY, /* ECDH/X448/X25519 compute share key */
 	WCRYPTO_ECDSA_SIGN, /* ECDSA sign */
 	WCRYPTO_ECDSA_VERIFY, /* ECDSA verify */
 	WCRYPTO_SM2_SIGN, /* SM2 sign */
@@ -49,8 +49,6 @@ enum wcrypto_ecc_op_type {
 
 /* ECC operational types */
 enum wcrypto_ecc_curve_id {
-	WCRYPTO_X448 = 0x1,
-	WCRYPTO_X25519 = 0x2,
 	WCRYPTO_SECP128R1 = 0x10, /* SECG 128 bit prime field */
 	WCRYPTO_SECP192K1 = 0x11, /* SECG 192 bit prime field */
 	WCRYPTO_SECP256K1 = 0x12, /* SECG 256 bit prime field */
@@ -108,7 +106,7 @@ struct wcrypto_ecc_op_data {
 
 /* ECC message format of Warpdrive */
 struct wcrypto_ecc_msg {
-	__u8 alg_type:4; /* Denoted by enum wd_alg_type */
+	__u8 alg_type:4; /* Denoted by enum wcrypto_type */
 	__u8 op_type:4; /* Denoted by enum wcrypto_ecc_op_type */
 	__u8 curve_id:7; /* Ec curve denoted by enum wcrypto_ecc_curve_type */
 	__u8 data_fmt:1; /* Data format, denoted by enum wd_buff_type */

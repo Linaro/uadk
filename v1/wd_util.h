@@ -60,6 +60,13 @@
 #define ECC_PRIKEY_SZ(hsz)		((hsz) * ECC_PRIKEY_PARAM_NUM)
 #define ECC_PUBKEY_SZ(hsz)		((hsz) * ECC_PUBKEY_PARAM_NUM)
 #define ECDH_OUT_PARAMS_SZ(hsz)		((hsz) * ECDH_OUT_PARAM_NUM)
+
+/* x25519/x448 */
+#define X_DH_OUT_PARAM_NUM		1
+#define X_DH_HW_KEY_PARAM_NUM		3
+
+#define X_DH_OUT_PARAMS_SZ(hsz)		((hsz) * X_DH_OUT_PARAM_NUM)
+#define X_DH_HW_KEY_SZ(hsz)		((hsz) * X_DH_HW_KEY_PARAM_NUM)
 #define BITS_TO_BYTES(bits)		(((bits) + 7) / 8)
 #define ECC_SIGN_IN_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_IN_PARAM_NUM)
 #define ECC_SIGN_OUT_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_OUT_PARAM_NUM)
@@ -102,6 +109,7 @@ struct q_info {
 	struct wd_mm_br br;
 	unsigned long qfrs_offset[UACCE_QFRT_MAX];
 	struct wd_lock qlock;
+
 	volatile __u8 ctx_id[CTX_ID_MAX_NUM];
 };
 
