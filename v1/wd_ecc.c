@@ -46,6 +46,9 @@
 #define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof(array[0]))
 #define MAX_CURVE_SIZE			(ECC_MAX_KEY_SIZE * CURVE_PARAM_NUM)
 
+#define WCRYPTO_X25519			0x1
+#define WCRYPTO_X448			0x2
+
 static __thread int balance;
 
 enum wcrypto_ecc_curve_param_type {
@@ -155,8 +158,8 @@ struct wcrypto_ecc_curve_list {
 };
 
 const static struct wcrypto_ecc_curve_list g_curve_list[] = {
-	{ WCRYPTO_X448, "x25519", 256, { 0 } },
-	{ WCRYPTO_X25519, "x448", 448, { 0 } },
+	{ WCRYPTO_X25519, "x25519", 256, X25519_256_PARAM },
+	{ WCRYPTO_X448, "x448", 448, X448_448_PARAM },
 	{ WCRYPTO_SECP128R1, "secp128r1", 128, SECG_P128_R1_PARAM },
 	{ WCRYPTO_SECP192K1, "secp192k1", 192, SECG_P192_K1_PARAM },
 	{ WCRYPTO_SECP256K1, "secp256k1", 256, SECG_P256_K1_PARAM },
@@ -606,28 +609,37 @@ static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 	return 0;
 }
 
+static bool is_x25519_x448(const char *alg)
+{
+	return !strcmp(alg, "x25519") || !strcmp(alg, "x448");
+}
+
+static void setup_xcurve_cfg(struct wcrypto_ecc_ctx_setup *setup,
+			    const char *alg)
+{
+	if (!strcmp(alg, "x25519")) {
+		setup->key_bits = 256;
+		setup->cv.cfg.id = WCRYPTO_X25519;
+	} else if (!strcmp(alg, "x448")) {
+		setup->key_bits = 448;
+		setup->cv.cfg.id = WCRYPTO_X448;
+	}
+}
+
 static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 			       struct wcrypto_ecc_ctx_setup *setup,
 			       const char *alg)
 {
+	struct wcrypto_ecc_curve *ppara = setup->cv.cfg.pparam;
+	__u32 curve_id;
 	int ret = 0;
 
-	if (setup->cv.type == WCRYPTO_CV_CFG_ID) {
-		__u32 curve_id = setup->cv.cfg.id;
-
-		if (!strcmp(alg, "ecdh") &&
-			(curve_id == WCRYPTO_X448 ||
-			 curve_id == WCRYPTO_X25519 ||
-			 curve_id == WCRYPTO_SM2P256V1)) {
-			WD_ERR("fill curve cfg:id %d error!\n", curve_id);
-			return -WD_EINVAL;
-		}
-
+	if (setup->cv.type == WCRYPTO_CV_CFG_ID || is_x25519_x448(alg)) {
+		setup_xcurve_cfg(setup, alg);
+		curve_id = setup->cv.cfg.id;
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
 		dbg("set curve id %d\n", curve_id);
 	} else if (setup->cv.type == WCRYPTO_CV_CFG_PARAM) {
-		struct wcrypto_ecc_curve *ppara = setup->cv.cfg.pparam;
-
 		if (!ppara) {
 			WD_ERR("fill curve cfg:pparam NULL!\n");
 			return -WD_EINVAL;
@@ -708,7 +720,9 @@ static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 	}
 
 	if (strcmp(q->capa.alg, "ecdh") &&
-		strcmp(q->capa.alg, "ecdsa")) {
+		strcmp(q->capa.alg, "ecdsa") &&
+		strcmp(q->capa.alg, "x25519") &&
+		strcmp(q->capa.alg, "x448")) {
 		WD_ERR("alg %s mismatching!\n", q->capa.alg);
 		return -WD_EINVAL;
 	}
@@ -718,6 +732,7 @@ static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 		setup->key_bits != 256 &&
 		setup->key_bits != 320 &&
 		setup->key_bits != 384 &&
+		setup->key_bits != 448 &&
 		setup->key_bits != 521) {
 		WD_ERR("key_bits %d error!\n", setup->key_bits);
 		return -WD_EINVAL;
@@ -1154,8 +1169,8 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 	req->result = WD_EINVAL;
 
 	switch (req->op_type) {
-	case WCRYPTO_ECDH_GEN_KEY:
-	case WCRYPTO_ECDH_COMPUTE_KEY:
+	case WCRYPTO_ECXDH_GEN_KEY:
+	case WCRYPTO_ECXDH_COMPUTE_KEY:
 	case WCRYPTO_ECDSA_SIGN:
 	case WCRYPTO_ECDSA_VERIFY:
 		key = (__u8 *)&c->key;
@@ -1166,7 +1181,7 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 	}
 	req->key = key;
 
-	if (req->op_type == WCRYPTO_ECDH_GEN_KEY) {
+	if (req->op_type == WCRYPTO_ECXDH_GEN_KEY) {
 		struct wcrypto_ecc_point *g;
 
 		wcrypto_get_ecc_prikey_params((void *)key, NULL, NULL,
@@ -1325,8 +1340,8 @@ int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 		return -WD_EINVAL;
 	}
 
-	if (opdata->op_type != WCRYPTO_ECDH_GEN_KEY &&
-		opdata->op_type != WCRYPTO_ECDH_COMPUTE_KEY) {
+	if (opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
+		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY) {
 		WD_ERR("do ecxdh: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
@@ -1567,7 +1582,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 	}
 
 	if (opdata->op_type != WCRYPTO_ECDSA_SIGN &&
-		opdata->op_type != WCRYPTO_ECDSA_VERIFY) {
+	    opdata->op_type != WCRYPTO_ECDSA_VERIFY) {
 		WD_ERR("do ecdsa: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
