@@ -103,7 +103,8 @@ static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
 	return b_size - k;
 }
 
-static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey, void **data)
+static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey,
+				   void **data)
 {
 	struct wd_dtb *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
 	int ret;
@@ -405,7 +406,8 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 
-	if (msg->key_type == WCRYPTO_RSA_PRIKEY1 || msg->key_type == WCRYPTO_RSA_PUBKEY)
+	if (msg->key_type == WCRYPTO_RSA_PRIKEY1 ||
+	    msg->key_type == WCRYPTO_RSA_PUBKEY)
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	else if (msg->key_type == WCRYPTO_RSA_PRIKEY2)
 		hw_msg->alg = HPRE_ALG_NC_CRT;
@@ -657,9 +659,13 @@ static int qm_ecc_prepare_alg(struct hisi_hpre_sqe *hw_msg,
 			      struct wcrypto_ecc_msg *msg)
 {
 	switch (msg->op_type) {
-	case WCRYPTO_ECDH_GEN_KEY:
-	case WCRYPTO_ECDH_COMPUTE_KEY:
-		hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
+	case WCRYPTO_ECXDH_GEN_KEY:
+	case WCRYPTO_ECXDH_COMPUTE_KEY:
+		if (msg->alg_type == WCRYPTO_X448 ||
+		    msg->alg_type == WCRYPTO_X25519)
+			hw_msg->alg = HPRE_ALG_X_DH_MULTIPLY;
+		else if (msg->alg_type == WCRYPTO_ECDH)
+			hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
 		break;
 	case WCRYPTO_ECDSA_SIGN:
 		hw_msg->alg = HPRE_ALG_ECDSA_SIGN;
@@ -757,7 +763,7 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 		return false;
 }
 
-static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data)
+static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 {
 	struct wcrypto_ecc_point *g = NULL;
 	struct wd_dtb *p = NULL;
@@ -765,6 +771,8 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
+	char bsize, dsize;
+	char *dat;
 	int ret;
 
 	wcrypto_get_ecc_prikey_params((void *)key, &p, &a, &b, &n, &g, &d);
@@ -776,6 +784,22 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data)
 	ret = trans_d_to_hpre_bin(d);
 	if (ret)
 		return ret;
+
+	/*
+	 * This is a pretreatment of x25519/x448, as described in RFC7748
+	 * hpre is big-endian, so the byte is opposite.
+	 */
+	dat = d->data;
+	bsize = d->bsize;
+	dsize = d->dsize;
+	if (id == WCRYPTO_X25519) {
+		dat[31] &= 248;
+		dat[0] &= 127;
+		dat[0] |= 64;
+	} else if (id == WCRYPTO_X448) {
+		dat[55 + bsize - dsize] &= 252;
+		dat[0 + bsize - dsize] |= 128;
+	}
 
 	if (!less_than_latter(d, n)) {
 		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
@@ -844,16 +868,22 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	size_t ksz;
 	int ret;
 
-	if (msg->op_type == WCRYPTO_ECDH_GEN_KEY ||
-		msg->op_type == WCRYPTO_ECDH_COMPUTE_KEY ||
-		msg->op_type == WCRYPTO_ECDSA_SIGN) {
-		if (msg->op_type == WCRYPTO_ECDH_GEN_KEY ||
-			msg->op_type == WCRYPTO_ECDH_COMPUTE_KEY)
-			ksz = ECDH_HW_KEY_SZ(msg->key_bytes);
-		else
+	if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
+	    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
+	    msg->op_type == WCRYPTO_ECDSA_SIGN) {
+		if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
+		    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY) {
+			if (msg->alg_type == WCRYPTO_X25519 ||
+			    msg->alg_type == WCRYPTO_X448)
+				ksz = X_DH_HW_KEY_SZ(msg->key_bytes);
+			else
+				ksz = ECDH_HW_KEY_SZ(msg->key_bytes);
+		} else {
 			ksz = ECC_PRIKEY_SZ(msg->key_bytes);
+		}
 
-		ret = ecc_prepare_prikey((void *)msg->key, &data);
+		ret = ecc_prepare_prikey((void *)msg->key, &data,
+					 msg->alg_type);
 		if (ret)
 			return ret;
 	} else if (msg->op_type == WCRYPTO_ECDSA_VERIFY) {
@@ -877,18 +907,21 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	return 0;
 }
 
-static void qm_ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen, size_t *olen)
+static void qm_ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
+			      size_t *olen)
 {
-	if (atype == HPRE_ALG_ECDH_MULTIPLY ||
-		atype == HPRE_ALG_X_DH_MULTIPLY) {
+	if (atype == HPRE_ALG_ECDH_MULTIPLY) {
 		*olen = ECDH_OUT_PARAMS_SZ(hsz);
+		*ilen = *olen;
+	} else if (atype == HPRE_ALG_X_DH_MULTIPLY) {
+		*olen = X_DH_OUT_PARAMS_SZ(hsz);
 		*ilen = *olen;
 	} else if (atype == HPRE_ALG_ECDSA_SIGN) {
 		*olen = ECC_SIGN_OUT_PARAMS_SZ(hsz);
 		*ilen = ECC_SIGN_IN_PARAMS_SZ(hsz);
 	} else if (atype == HPRE_ALG_ECDSA_VERF) {
 		*olen = ECC_VERF_OUT_PARAMS_SZ;
-		*ilen = ECC_VERF_IN_PARAMS_SZ(hsz);;
+		*ilen = ECC_VERF_IN_PARAMS_SZ(hsz);
 	} else {
 		*olen = hsz;
 		*ilen = hsz;
@@ -1039,17 +1072,58 @@ static int ecc_prepare_dh_gen_in(struct wcrypto_ecc_point *in, void **data)
 	return 0;
 }
 
+static int u_is_in_p(struct wcrypto_ecc_msg *msg)
+{
+	struct wcrypto_ecc_in *in =  (struct wcrypto_ecc_in *)msg->in;
+	struct wcrypto_ecc_point *pbk = NULL;
+	struct wd_dtb *p = NULL;
+
+	wcrypto_get_ecc_prikey_params((void *)msg->key, &p, NULL, NULL,
+				      NULL, NULL, NULL);
+
+	wcrypto_get_ecxdh_in_params(in, &pbk);
+	if (!pbk) {
+		WD_ERR("failed to get ecxdh in param!\n");
+		return -WD_EINVAL;
+	}
+
+	/*
+	 * In big-endian order, when receving u-array, implementations of X25519
+	 * shold mask the most significant bit in the 1st byte.
+	 * See RFC7748 for details;
+	 */
+	if (msg->alg_type == WCRYPTO_X25519)
+		pbk->x.data[0] &= 0x7f;
+
+	if (!less_than_latter(&pbk->x, p)) {
+		WD_ERR("ux is out of p!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg, void **data)
 {
 	struct wcrypto_ecc_in *in = (struct wcrypto_ecc_in *)msg->in;
 	int ret = -WD_EINVAL;
 
 	switch (msg->op_type) {
-	case WCRYPTO_ECDH_GEN_KEY:
-		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in, data);
+	case WCRYPTO_ECXDH_GEN_KEY:
+		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in,
+					    data);
 		break;
-	case WCRYPTO_ECDH_COMPUTE_KEY:
+	case WCRYPTO_ECXDH_COMPUTE_KEY:
 		ret = ecc_prepare_dh_compute_in(in, data);
+
+		/*
+		 * when compute x25519/x448, we should guarantee u < p,
+		 * or it is invalid.
+		 */
+		if (ret == 0 && (msg->alg_type == WCRYPTO_X25519 ||
+		    msg->alg_type == WCRYPTO_X448))
+			ret = u_is_in_p(msg);
+
 		break;
 	case WCRYPTO_ECDSA_SIGN:
 		ret = ecc_prepare_sign_in(msg, data);
@@ -1101,8 +1175,8 @@ static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
 	int ret = -WD_EINVAL;
 
 	switch (msg->op_type) {
-	case WCRYPTO_ECDH_GEN_KEY:
-	case WCRYPTO_ECDH_COMPUTE_KEY:
+	case WCRYPTO_ECXDH_GEN_KEY:
+	case WCRYPTO_ECXDH_COMPUTE_KEY:
 		ret = ecc_prepare_dh_out(out, data);
 		break;
 
@@ -1169,10 +1243,15 @@ static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
 {
 	struct wcrypto_ecc_out *out = (void *)msg->out;
 	struct wcrypto_ecc_point *key;
+	struct wd_dtb *y = NULL;
 	int ret;
 
 	wcrypto_get_ecxdh_out_params(out, &key);
-	ret = qm_tri_bin_transfer(&key->x, &key->y, NULL);
+
+	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
+		y = &key->y;
+
+	ret = qm_tri_bin_transfer(&key->x, y, NULL);
 	if (ret) {
 		WD_ERR("parse ecdh out format fail!\n");
 		return ret;
@@ -1222,7 +1301,8 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 {
 	int ret = -WD_EINVAL;
 
-	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
+	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY ||
+	    hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
 	else if (hw_msg->alg == HPRE_ALG_ECDSA_SIGN)
 		ret = ecc_sign_out_transfer(msg, hw_msg);
@@ -1324,3 +1404,4 @@ int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
 
 	return 1;
 }
+
