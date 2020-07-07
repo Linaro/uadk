@@ -31,6 +31,7 @@
 #include "test_hisi_sec.h"
 #include "../../wd.h"
 #include "../../wd_cipher.h"
+#include "../../wd_digest.h"
 #include "../../wd_bmm.h"
 #include "../../wd_util.h"
 
@@ -46,6 +47,8 @@ static int q_num = 1;
 static int ctx_num_per_q = 1;
 static int key_bits = 128;
 static long long g_total_perf = 0;
+enum alg_class g_algclass = CIPHER_CLASS;
+enum cipher_op_type alg_op_type;
 
 pthread_mutex_t perf_mutex;
 
@@ -61,6 +64,13 @@ struct test_sec_pthread_dt {
 };
 
 struct cipher_async_tag {
+	void *ctx;
+	int thread_id;
+	int cnt;
+	struct test_sec_pthread_dt *thread_info;
+};
+
+struct digest_async_tag {
 	void *ctx;
 	int thread_id;
 	int cnt;
@@ -112,7 +122,7 @@ static inline int _get_one_bits(__u64 val)
 
 static bool is_exit(struct test_sec_pthread_dt *pdata)
 {
-    struct timeval cur_tval;
+	struct timeval cur_tval;
 	float time_used;
 
 	gettimeofday(&cur_tval, NULL);
@@ -131,7 +141,7 @@ void hexdump(char *buf, int num)
 	for (int i = 0; i < num; i++) {
 		printf("\\%02X", buf[i]);
 		if ((i + 1) % 8 == 0)
-		printf("\n");
+			printf("\n");
 	}
 	printf("\n");
 	return;
@@ -151,13 +161,13 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_ecb_tv_template_128;
-				break;
+					break;
 				case AES_KEYSIZE_192:
 					tv = &aes_ecb_tv_template_192;
-				break;
+					break;
 				case AES_KEYSIZE_256:
 					tv = &aes_ecb_tv_template_256;
-				break;
+					break;
 				default:
 					SEC_TST_PRT("%s: input key err!\n", __func__);
 					return -EINVAL;
@@ -170,13 +180,13 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_cbc_tv_template_128;
-				break;
+					break;
 				case AES_KEYSIZE_192:
 					tv = &aes_cbc_tv_template_192;
-				break;
+					break;
 				case AES_KEYSIZE_256:
 					tv = &aes_cbc_tv_template_256;
-				break;
+					break;
 				default:
 					SEC_TST_PRT("%s: input key err!\n", __func__);
 					return -EINVAL;
@@ -189,10 +199,10 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			switch (g_keylen / 2) {
 				case AES_KEYSIZE_128:
 					tv = &aes_xts_tv_template_256;
-				break;
+					break;
 				case AES_KEYSIZE_256:
 					tv = &aes_xts_tv_template_512;
-				break;
+					break;
 				default:
 					SEC_TST_PRT("%s: input key err!\n", __func__);
 					return -EINVAL;
@@ -205,13 +215,13 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_ofb_tv_template_128;
-				break;
+					break;
 				case AES_KEYSIZE_192:
 					tv = &aes_ofb_tv_template_192;
-				break;
+					break;
 				case AES_KEYSIZE_256:
 					tv = &aes_ofb_tv_template_256;
-				break;
+					break;
 				default:
 					SEC_TST_PRT("%s: input key err!\n", __func__);
 					return -EINVAL;
@@ -224,13 +234,13 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_cfb_tv_template_128;
-				break;
+					break;
 				case AES_KEYSIZE_192:
 					tv = &aes_cfb_tv_template_192;
-				break;
+					break;
 				case AES_KEYSIZE_256:
 					tv = &aes_cfb_tv_template_256;
-				break;
+					break;
 				default:
 					SEC_TST_PRT("%s: input key err!\n", __func__);
 					return -EINVAL;
@@ -241,21 +251,27 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WCRYPTO_CIPHER_3DES;
 			mode_type = WCRYPTO_CIPHER_ECB;
 			SEC_TST_PRT("test alg: %s\n", "ecb(des3)");
-			if (g_keylen != 24) {
+			if (g_keylen == 16)
+				tv = &des3_ecb_tv_template_128;
+			else if (g_keylen == 24)
+				tv = &des3_ecb_tv_template_192;
+			else {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
 			}
-			tv = &des3_ecb_tv_template;
 			break;
 		case 6:
 			alg_type = WCRYPTO_CIPHER_3DES;
 			mode_type = WCRYPTO_CIPHER_CBC;
 			SEC_TST_PRT("test alg: %s\n", "cbc(des3)");
-			if (g_keylen != 24) {
+			if (g_keylen == 16)
+				tv = &des3_cbc_tv_template_128;
+			else if (g_keylen == 24)
+				tv = &des3_cbc_tv_template_192;
+			else {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
 			}
-			tv = &des3_cbc_tv_template;
 			break;
 		case 7:
 			alg_type = WCRYPTO_CIPHER_SM4;
@@ -313,7 +329,7 @@ int sec_test_set_iv(struct test_sec_pthread_dt *pdata,
 		struct wcrypto_cipher_op_data *opdata, struct cipher_testvec *tv)
 {
 	if (!tv->iv)
-	return -1;
+		return -1;
 	tv->ivlen = strlen(tv->iv);
 
 	memset(opdata->iv, 0, g_ivlen);
@@ -359,11 +375,11 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 
 	ctx = wcrypto_create_cipher_ctx(q, &setup);
 	if (!ctx) {
-			SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
+		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
 				pid, thread_id, q->capa.alg);
-			ret = -EINVAL;
-			return ret;
-		}
+		ret = -EINVAL;
+		return ret;
+	}
 #ifdef DEBUG
 	hexdump(tv->key, tv->klen);
 #endif
@@ -417,8 +433,8 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 		pdata->send_task_num++;
 #ifdef DEBUG
 		if (pdata->send_task_num == 1) {
-		SEC_TST_PRT("dump output!\n");
-		hexdump(opdata->out, opdata->out_bytes);
+			SEC_TST_PRT("dump output!\n");
+			hexdump(opdata->out, opdata->out_bytes);
 		}
 #endif
 	} while(!is_exit(pdata));
@@ -434,7 +450,7 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 		g_total_perf += Perf;
 		pthread_mutex_unlock(&perf_mutex);
 		SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid,
-			   thread_id, speed, Perf);
+			     thread_id, speed, Perf);
 	} else if (t_times) {
 		speed = 1 / (time_used / t_times) * 1000000;
 		Perf = speed * pktlen / 1024; //B->KB
@@ -442,7 +458,7 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 		g_total_perf += Perf;
 		pthread_mutex_unlock(&perf_mutex);
 		SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid,
-			    thread_id, speed, Perf);
+			     thread_id, speed, Perf);
 	}
 
 fail_release:
@@ -459,6 +475,340 @@ fail_release:
 	return ret;
 }
 
+int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
+{
+	struct hash_testvec *tmp_tv;
+	struct hash_testvec *tv;
+	int alg_type;
+	int mode_type;
+
+	switch (g_testalg) {
+		case 0:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sm3)");
+					tv = &sm3_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sm3)");
+					tv = &hmac_sm3_tv_template;
+					break;
+			}
+			tv->dsize = 32;
+			alg_type = WCRYPTO_SM3;
+			break;
+		case 1:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(md5)");
+					tv = &md5_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(md5)");
+					tv = &hmac_md5_tv_template;
+					break;
+			}
+			tv->dsize = 16;
+			alg_type = WCRYPTO_MD5;
+			break;
+		case 2:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha1)");
+					tv = &sha1_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha1)");
+					tv = &hmac_sha1_tv_template;
+					break;
+			}
+			tv->dsize = 20;
+			alg_type = WCRYPTO_SHA1;
+			break;
+		case 3:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha256)");
+					tv = &sha256_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha256)");
+					tv = &hmac_sha256_tv_template;
+					break;
+			}
+			tv->dsize = 32;
+			alg_type = WCRYPTO_SHA256;
+			break;
+		case 4:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha224)");
+					tv = &sha224_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha224)");
+					tv = &hmac_sha224_tv_template;
+					break;
+			}
+			tv->dsize = 28;
+			alg_type = WCRYPTO_SHA224;
+			break;
+		case 5:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha384)");
+					tv = &sha384_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha384)");
+					tv = &hmac_sha384_tv_template;
+					break;
+			}
+			tv->dsize = 48;
+			alg_type = WCRYPTO_SHA384;
+			break;
+		case 6:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha512)");
+					tv = &sha512_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha512)");
+					tv = &hmac_sha512_tv_template;
+					break;
+			}
+			tv->dsize = 64;
+			alg_type = WCRYPTO_SHA512;
+			break;
+		case 7:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha512_224)");
+					tv = &sha512_224_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha512_224");
+					tv = &hmac_sha512_224_tv_template;
+					break;
+			}
+			tv->dsize = 28;
+			alg_type = WCRYPTO_SHA512_224;
+			break;
+		case 8:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WCRYPTO_DIGEST_NORMAL;
+					SEC_TST_PRT("test alg: %s\n", "normal(sha512_256)");
+					tv = &sha512_256_tv_template;
+					break;
+				case 1:
+					mode_type = WCRYPTO_DIGEST_HMAC;
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha512_256)");
+					tv = &hmac_sha512_256_tv_template;
+					break;
+			}
+			tv->dsize = 32;
+			alg_type = WCRYPTO_SHA512_256;
+			break;
+		default:
+			SEC_TST_PRT("keylenth error, default test alg: %s\n", "normal(sm3)");
+			return -EINVAL;
+	}
+	if (g_ivlen == 1) {
+		tmp_tv = tv;
+		tv = &long_hash_tv_template;
+		tv->dsize = tmp_tv->dsize;
+	} else if (g_ivlen == 2) {
+		tmp_tv = tv;
+		tv = &hmac_abnormal1024_tv_template;
+		tv->dsize = tmp_tv->dsize;
+	} else if (g_ivlen == 3) {
+		tmp_tv = tv;
+		tv = &hmac_abnormal512_tv_template;
+		tv->dsize = tmp_tv->dsize;
+	}
+
+	*alg = alg_type;
+	*mode = mode_type;
+	*alg_tv = tv;
+
+	return 0;
+}
+
+int wd_digests_doimpl(void *ctx, struct wcrypto_digest_op_data *opdata, int *trycount)
+{
+	int ret;
+	*trycount = 0;
+
+again:
+	ret = wcrypto_do_digest(ctx, opdata, NULL);
+	if (ret != WD_SUCCESS) {
+		if (ret == -WD_EBUSY && *trycount <= 5) { // try 5 times
+			SEC_TST_PRT("do digest busy, retry again!");
+			(*trycount)++;
+			goto again;
+		} else {
+			SEC_TST_PRT("do digest failed!");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+int alloc_from_pool(struct wcrypto_digest_op_data *opdata, struct test_sec_pthread_dt *pdata)
+{
+	opdata->in = wd_alloc_blk(pdata->pool);
+	if (!opdata->in) {
+		SEC_TST_PRT("alloc in buffer fail!\n");
+		return -1;
+	}
+
+	opdata->out = wd_alloc_blk(pdata->pool);
+	if (!opdata->out) {
+		SEC_TST_PRT("alloc out buffer fail!\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
+{
+	struct wcrypto_digest_op_data *opdata = malloc(sizeof(struct wcrypto_digest_op_data));
+	enum sec_digest_state state = SEC_DIGEST_INIT;
+	int thread_id = (int)syscall(__NR_gettid);
+	struct wcrypto_digest_ctx_setup setup;
+	struct wd_queue *q = pdata->q;
+	struct timeval cur_tval;
+	struct hash_testvec *tv;
+	float time_used, speed;
+	unsigned long Perf = 0;
+	int pid = getpid();
+	void *ctx = NULL;
+	void *tag = NULL;
+	int init_ctx;
+	int ret;
+
+	memset(&setup, 0, sizeof(setup));
+	memset(opdata, 0, sizeof(struct wcrypto_digest_op_data));
+
+	setup.alg = WCRYPTO_SM3;
+	setup.mode = WCRYPTO_DIGEST_NORMAL;
+	setup.br.alloc = (void *)wd_alloc_blk;
+	setup.br.free = (void *)wd_free_blk;
+	setup.br.iova_map = (void *)wd_blk_iova_map;
+	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.usr = pdata->pool;
+
+	ret = get_digest_resource(&tv, &setup.alg, &setup.mode);
+	if (ret)
+		return -EINVAL;
+
+	ctx = wcrypto_create_digest_ctx(q, &setup);
+	if (!ctx) {
+		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
+				pid, thread_id, q->capa.alg);
+		ret = -EINVAL;
+		return ret;
+	} else {
+		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx success!\n",
+				pid, thread_id, q->capa.alg);
+	}
+	if (setup.mode == WCRYPTO_DIGEST_HMAC) {
+		hexdump(tv->key, tv->ksize);
+		ret = wcrypto_set_digest_key(ctx, (__u8*)tv->key, (__u16)tv->ksize);
+		if (ret) {
+			SEC_TST_PRT("set key fail!\n");
+			goto fail_release;
+		}
+	}
+
+	ret = alloc_from_pool(opdata, pdata);
+	if(ret)
+		goto fail_release;
+
+	memset(opdata->in, 0, tv->psize);
+	memcpy(opdata->in, tv->plaintext, tv->psize);
+	//	opdata->in_bytes = tv->psize;
+	SEC_TST_PRT("digest len:%d\n", opdata->in_bytes);
+	//	hexdump(tv->plaintext, tv->psize);
+	opdata->priv = NULL;
+	opdata->out_bytes = tv->dsize;
+	memset(opdata->out, 0, opdata->out_bytes);
+	opdata->has_next = 0;
+
+	u32 last_update_bufflen = 0;
+	u32 data_len = tv->psize;
+	while (1) {
+		if (state == SEC_DIGEST_INIT) {
+			state = SEC_DIGEST_FIRST_UPDATING;
+		} else if (state == SEC_DIGEST_FIRST_UPDATING)
+			state = SEC_DIGEST_DOING;
+
+		if (data_len > 256) {
+			//memcpy(opdata->in, tv->plaintext + last_update_bufflen, 256);
+			opdata->in_bytes = 256;
+			last_update_bufflen += 256;
+			data_len = tv->psize - last_update_bufflen;
+		} else {
+			state = SEC_DIGEST_FINAL;
+			//memcpy(opdata->in, tv->plaintext + last_update_bufflen, data_len);
+			opdata->in_bytes = data_len;
+		}
+		SEC_TST_PRT("data_len:%d  last_update_bufflen:%d\n", data_len, last_update_bufflen);
+		hexdump(opdata->in, opdata->in_bytes);
+		opdata->has_next = (state == SEC_DIGEST_FINAL) ? false : true;
+		ret = wd_digests_doimpl(ctx, opdata, &pdata->send_task_num);
+		if (ret)
+			goto fail_release;
+
+		SEC_TST_PRT("digest out data:\n");
+		hexdump(opdata->out, 64);
+
+		if (state == SEC_DIGEST_FINAL)
+			break;
+		else
+			opdata->in += 256;
+	}
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
+			cur_tval.tv_usec - pdata->start_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%d\n", time_used, pdata->send_task_num++);
+	speed = pdata->send_task_num / time_used * 1000000;
+	Perf = speed * pktlen / 1024; //B->KB
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid,
+			thread_id, speed, Perf);
+
+fail_release:
+	if (opdata->in)
+		wd_free_blk(pdata->pool, opdata->in);
+	if (opdata->out)
+		wd_free_blk(pdata->pool, opdata->out);
+	if (ctx)
+		wcrypto_del_digest_ctx(ctx);
+	free(opdata);
+
+	return ret;
+}
 
 void *_sec_sys_test_thread(void *data)
 {
@@ -469,7 +819,10 @@ void *_sec_sys_test_thread(void *data)
 	}
 	struct test_sec_pthread_dt *pdata = data;
 
-	ret = sec_sync_func_test(pdata);
+	if (!g_algclass)
+		ret = sec_sync_func_test(pdata);
+	else
+		ret = sec_sync_digest_test(pdata);
 }
 
 static sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
@@ -501,11 +854,15 @@ static sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 	}
 
 	for (j = 0; j < q_num; j++) {
-		q[j].capa.alg = "cipher";
-		if (op_type == ENCRYPTION) {
-			q[j].capa.priv.direction = 0; //0 is ENC, 1 is DEC
+		if (!g_algclass){
+			q[j].capa.alg = "cipher";
+			if (op_type == ENCRYPTION) {
+				q[j].capa.priv.direction = 0; //0 is ENC, 1 is DEC
+			} else {
+				q[j].capa.priv.direction = 1;
+			}
 		} else {
-			q[j].capa.priv.direction = 1; 
+			q[j].capa.alg = "digest";
 		}
 
 		if (dev_path) {
@@ -575,7 +932,10 @@ static void  *_cipher_async_poll_test_thread(void *data)
 	int ret;
 
 	while (1) {
-		ret = wcrypto_cipher_poll(q, 1);
+		if (!g_algclass)
+			ret = wcrypto_cipher_poll(q, 1);
+		else
+			ret = wcrypto_digest_poll(q, 1);
 		if (ret < 0) {
 			break;
 		}
@@ -678,7 +1038,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	do {
 		tag = malloc(sizeof(struct cipher_async_tag)); //set the user tag is async
 		if (!tag)
-		goto fail_release;
+			goto fail_release;
 		tag->ctx = ctx;
 		tag->thread_id = thread_id;
 		tag->cnt = i;
@@ -686,8 +1046,8 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 try_do_again:
 		ret = wcrypto_do_cipher(ctx, &opdata, tag);
 		if (ret == -WD_EBUSY) {
-		usleep(100);
-		goto try_do_again;
+			usleep(100);
+			goto try_do_again;
 		}
 		pdata->send_task_num++;
 		i++;
@@ -729,6 +1089,136 @@ fail_release:
 	return ret;
 }
 
+void _digest_cb(void *message, void *digest_tag)
+{
+	struct digest_async_tag *tag = digest_tag;
+	struct test_sec_pthread_dt *thread_info = tag->thread_info;
+	thread_info->recv_task_num++;
+}
+
+int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
+{
+	int thread_id = (int)syscall(__NR_gettid);
+	struct wcrypto_digest_ctx_setup setup;
+	struct wcrypto_digest_op_data opdata;
+	struct hash_testvec *tv;
+	struct timeval cur_tval;
+	float time_used, speed;
+	unsigned long Perf = 0;
+	int pid = getpid();
+	void *ctx = NULL;
+	struct digest_async_tag *tag = NULL; //async
+	struct wd_queue *q = pdata->q;
+	int i = 0;
+	int init_ctx, ret;
+
+	memset(&setup, 0, sizeof(setup));
+	memset(&opdata, 0, sizeof(opdata));
+	/* default AES-CBC */
+	setup.alg = WCRYPTO_SM3;
+	setup.mode = WCRYPTO_DIGEST_NORMAL;
+
+	ret = get_digest_resource(&tv, &setup.alg, &setup.mode);
+	if (ret)
+		return -EINVAL;
+
+	setup.cb = (void *)_digest_cb; //call back functions of user
+	setup.br.alloc = (void *)wd_alloc_blk;
+	setup.br.free = (void *)wd_free_blk;
+	setup.br.iova_map = (void *)wd_blk_iova_map;
+	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.usr = pdata->pool;
+
+	ctx = wcrypto_create_digest_ctx(q, &setup);
+	if (!ctx) {
+		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
+				pid, thread_id, q->capa.alg);
+		ret = -EINVAL;
+		return ret;
+	}
+
+	if (setup.mode == WCRYPTO_DIGEST_HMAC) {
+		ret = wcrypto_set_digest_key(ctx, (__u8*)tv->key,
+				(__u16)tv->ksize);
+		if (ret) {
+			SEC_TST_PRT("set key fail!\n");
+			goto fail_release;
+		}
+	}
+#ifdef DEBUG
+	hexdump(tv->key, tv->ksize);
+#endif
+	opdata.in = wd_alloc_blk(pdata->pool);
+	if (!opdata.in) {
+		SEC_TST_PRT("alloc in buffer fail!\n");
+		goto fail_release;
+	}
+	memcpy(opdata.in, tv->plaintext, tv->psize);
+	opdata.in_bytes = tv->psize;
+	SEC_TST_PRT("cipher len:%d\n", opdata.in_bytes);
+#ifdef DEBUG
+	hexdump(opdata.in, opdata.in_bytes);
+#endif
+	opdata.priv = NULL;
+	opdata.out = wd_alloc_blk(pdata->pool);
+	opdata.out_bytes = tv->dsize;
+	if (!opdata.out) {
+		SEC_TST_PRT("alloc out buffer fail!\n");
+		goto fail_release;
+	}
+
+	do {
+		tag = malloc(sizeof(struct digest_async_tag)); //set the user tag is async
+		if (!tag)
+			goto fail_release;
+		tag->ctx = ctx;
+		tag->thread_id = thread_id;
+		tag->cnt = i;
+		tag->thread_info = pdata;
+try_do_again:
+		ret = wcrypto_do_digest(ctx, &opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_do_again;
+		}
+		pdata->send_task_num++;
+		i++;
+
+	} while(!is_exit(pdata));
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
+			cur_tval.tv_usec - pdata->start_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%d\n", time_used, pdata->send_task_num++);
+	if (t_seconds) {
+		speed = pdata->send_task_num / time_used * 1000000;
+		Perf = speed * pktlen / 1024; //B->KB
+		pthread_mutex_lock(&perf_mutex);
+		g_total_perf += Perf;
+		pthread_mutex_unlock(&perf_mutex);
+		SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid, thread_id, speed, Perf);
+	} else if (t_times) {
+		speed = (t_times / time_used) * 1000000; //ops
+		Perf = speed * pktlen / 1024; //B->KB
+		pthread_mutex_lock(&perf_mutex);
+		g_total_perf += Perf;
+		pthread_mutex_unlock(&perf_mutex);
+		SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid, thread_id, speed, Perf);
+	}
+
+fail_release:
+	if (opdata.in)
+		wd_free_blk(pdata->pool, opdata.in);
+	if (opdata.out)
+		wd_free_blk(pdata->pool, opdata.out);
+	if (ctx)
+		wcrypto_del_digest_ctx(ctx);
+	if (tag)
+		free(tag);
+
+	return ret;
+}
+
 void *_sec_async_test_thread(void *data)
 {
 	if (!data) {
@@ -736,13 +1226,15 @@ void *_sec_async_test_thread(void *data)
 		return;
 	}
 	struct test_sec_pthread_dt *pdata = data;
-
-	sec_async_func_test(pdata);
+	if (!g_algclass)
+		sec_async_func_test(pdata);
+	else
+		sec_async_digest_test(pdata);
 }
 
 static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
-	__u64 hcore_mask, enum cipher_op_type op_type,
-	char *dev_path, unsigned int node_mask)
+		__u64 hcore_mask, enum cipher_op_type op_type,
+		char *dev_path, unsigned int node_mask)
 {
 	void **pool;
 	struct wd_blkpool_setup setup;
@@ -753,11 +1245,14 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 
 	memset(&q, 0, sizeof(q));
 
-	q.capa.alg = "cipher";
-	if (op_type == ENCRYPTION) {
-		q.capa.priv.direction = 0; //0 is ENC, 1 is DEC
+	if (!g_algclass){
+		q.capa.alg = "cipher";
+		if (op_type == ENCRYPTION) {
+			q.capa.priv.direction = 0; //0 is ENC, 1 is DEC
+		} else
+			q.capa.priv.direction = 1;
 	} else {
-		q.capa.priv.direction = 1;
+		q.capa.alg = "digest";
 	}
 
 	ret = wd_request_queue(&q);
@@ -837,7 +1332,6 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 
 int main(int argc, char *argv[])
 {
-	enum cipher_op_type alg_op_type;
 	char dev_path[PATH_STR_SIZE] = {0};
 	int thread_num = 1;
 	unsigned int node_msk = 0;
@@ -849,8 +1343,11 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[1], "-cipher")) {
 		printf("num %d\n", wd_get_available_dev_num("cipher"));
 		g_testalg = strtoul((char*)argv[2], NULL, 10);
+		g_algclass = CIPHER_CLASS;
 	} else if (!strcmp(argv[1], "-digist")) {
 		printf("num %d\n", wd_get_available_dev_num("digist"));
+		g_testalg = strtoul((char*)argv[2], NULL, 10);
+		g_algclass = DIGEST_CLASS;
 	}
 
 	if (!strcmp(argv[3], "-t")) {
@@ -904,11 +1401,11 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[15], "-sync")) {
 		printf("test type is sync\n");
 		sec_cipher_sync_test(thread_num, lcore_mask, hcore_mask,
-		alg_op_type, NULL, node_msk);
+				alg_op_type, NULL, node_msk);
 	} else if (!strcmp(argv[15], "-async")) {
 		printf("test type is async\n");
 		sec_cipher_async_test(thread_num, lcore_mask, hcore_mask,
-		alg_op_type, NULL, node_msk);
+				alg_op_type, NULL, node_msk);
 	} else {
 		/* eg: ./test_hisi_sec -cipher -t 3 -optype 0 -seconds 1 -pktlen 1024 -keylen 16 -ivlen 16 -sync */
 		SEC_TST_PRT("Now Please set the cipher test type! -sync or -async.\n");
