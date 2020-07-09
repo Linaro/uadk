@@ -108,7 +108,7 @@ static int create_ctx_para_check(struct wd_queue *q,
 		}
 	}
 
-	if (strncmp(q->capa.alg, "digest", strlen("digest"))) {
+	if (strcmp(q->capa.alg, "digest")) {
 		WD_ERR("%s: algorithm mismatching!\n", __func__);
 		return -WD_EINVAL;
 	}
