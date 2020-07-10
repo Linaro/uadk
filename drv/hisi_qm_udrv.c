@@ -92,25 +92,30 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
-handle_t hisi_qm_alloc_ctx(char *node_path, void *data)
+handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
 {
-	struct hisi_qp			*qp = (struct hisi_qp *)data;
 	struct hisi_qp_ctx		qp_ctx;
-	struct hisi_qm_capa		*capa = &qp->capa;
-	struct hisi_qm_priv		*capa_priv;
+	struct hisi_qm_priv		*qm_priv = (struct hisi_qm_priv *)priv;
+	struct hisi_qp			*qp;
 	struct hisi_qm_queue_info	*q_info;
 	int	i, size, fd, ret;
 	char	*api_name;
 
-	capa_priv = (struct hisi_qm_priv *)capa->priv;
-	if (capa_priv->sqe_size <= 0) {
-		WD_ERR("invalid sqe size (%d)\n", capa_priv->sqe_size);
+	if (!priv || !data)
+		goto out;
+	if (qm_priv->sqe_size <= 0) {
+		WD_ERR("invalid sqe size (%d)\n", qm_priv->sqe_size);
 		goto out;
 	}
 
+	qp = calloc(1, sizeof(struct hisi_qp));
+	if (!qp)
+		goto out;
+	*data = qp;
+
 	qp->h_ctx = wd_request_ctx(node_path);
 	if (!qp->h_ctx)
-		goto out;
+		goto out_ctx;
 
 	wd_ctx_init_qfrs_offs(qp->h_ctx);
 
@@ -121,8 +126,8 @@ handle_t hisi_qm_alloc_ctx(char *node_path, void *data)
 		ret = -errno;
 		goto out_mmap;
 	}
-	q_info->sqe_size = capa_priv->sqe_size;
-	q_info->cq_base = q_info->sq_base + capa_priv->sqe_size * QM_Q_DEPTH;
+	q_info->sqe_size = qm_priv->sqe_size;
+	q_info->cq_base = q_info->sq_base + qm_priv->sqe_size * QM_Q_DEPTH;
 
 	q_info->mmio_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, 0);
 	if (q_info->mmio_base == MAP_FAILED) {
@@ -151,7 +156,7 @@ handle_t hisi_qm_alloc_ctx(char *node_path, void *data)
 	q_info->cqc_phase = 1;
 	q_info->is_sq_full = 0;
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
-	qp_ctx.qc_type = capa_priv->op_type;
+	qp_ctx.qc_type = qm_priv->op_type;
 	fd = wd_ctx_get_fd(qp->h_ctx);
 	ret = ioctl(fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
@@ -172,6 +177,8 @@ out_mmio:
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
 out_mmap:
 	wd_release_ctx(qp->h_ctx);
+out_ctx:
+	free(qp);
 out:
 	return (handle_t)NULL;
 }
