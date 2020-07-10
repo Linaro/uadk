@@ -53,7 +53,8 @@ struct test_options {
 };
 
 struct hizip_test_context {
-	struct hisi_qp	qp;
+	struct hisi_qp	*qp;
+	struct hisi_qm_capa capa;
 	struct test_options *opts;
 	char *in_buf;
 	char *out_buf;

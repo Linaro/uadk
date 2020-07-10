@@ -94,7 +94,7 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	char *in_buf, *out_buf;
 	struct hisi_zip_sqe *m = msg->msg;
 	struct hizip_test_context *ctx = priv;
-	struct hisi_qp *qp = &ctx->qp;
+	struct hisi_qp *qp = ctx->qp;
 	struct test_options *opts = ctx->opts;
 	void *data_in, *data_out;
 
@@ -283,7 +283,6 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	int i, j, ret = -ENOMEM;
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
-	struct hisi_qp *qp;
 	struct hizip_test_context *ctx = priv;
 	uint64_t addr;
 
@@ -306,29 +305,29 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	if (!sched->qs)
 		return -ENOMEM;
 
-	qp = &ctx->qp;
-	capa = &qp->capa;
+	capa = &ctx->capa;
+	qm_priv = (struct hisi_qm_priv *)&capa->priv;
+	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
+	qm_priv->op_type = opts->op_type;
 
 	if (opts->alg_type == ZLIB)
 		capa->alg = "zlib";
 	else
 		capa->alg = "gzip";
-	sched->data = qp;
+	sched->data = ctx->qp;
 
 	ctx->msgs = calloc(1, sizeof(*ctx->msgs) * sched->msg_cache_num);
 	if (!ctx->msgs)
 		goto out_msgs;
-
-	qm_priv = (struct hisi_qm_priv *)&capa->priv;
-	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
-	qm_priv->op_type = opts->op_type;
 
 	ret = wd_sched_init(sched, HISI_DEV_NODE);
 	if (ret)
 		goto out_sched;
 
 	for (i = 0; i < sched->q_num; i++) {
-		sched->qs[i] = sched->hw_alloc(HISI_DEV_NODE, sched->data);
+		sched->qs[i] = sched->hw_alloc(HISI_DEV_NODE,
+					       qm_priv,
+					       &sched->data);
 		if (!sched->qs[i])
 			goto out_hw;
 	}
@@ -385,7 +384,6 @@ out_hw:
 out_sched:
 	free(ctx->msgs);
 out_msgs:
-	free(capa);
 	free(sched->qs);
 	return ret;
 }
