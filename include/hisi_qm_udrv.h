@@ -42,11 +42,10 @@ struct hisi_qm_queue_info {
 
 struct hisi_qp {
 	struct hisi_qm_queue_info q_info;
-	struct hisi_qm_capa capa;
 	handle_t h_ctx;
 };
 
-extern handle_t hisi_qm_alloc_ctx(char *node_path, void *data);
+extern handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data);
 extern void hisi_qm_free_ctx(handle_t h_ctx);
 extern int hisi_qm_send(handle_t h_ctx, void *req);
 extern int hisi_qm_recv(handle_t h_ctx, void **resp);
