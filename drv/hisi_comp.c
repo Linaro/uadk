@@ -78,9 +78,10 @@ struct hisi_strm_info {
 
 struct hisi_comp_sess {
 	/* struct hisi_qp must be set in the first property */
-	struct hisi_qp		qp;
+	struct hisi_qp		*qp;
 	struct wd_scheduler	sched;
 	struct hisi_strm_info	strm;
+	struct hisi_qm_capa	capa;
 	int	inited;
 };
 
@@ -110,7 +111,7 @@ static inline int is_nosva(struct wd_comp_sess *sess)
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct wd_scheduler	*sched = &priv->sched;
 	struct hisi_sched	*hsched = sched->priv;
-	struct hisi_qp		*qp = &priv->qp;
+	struct hisi_qp		*qp = priv->qp;
 	handle_t	h_ctx = 0;
 
 	if (sess->mode & MODE_STREAM) {
@@ -410,14 +411,11 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*hsched;
 	struct hisi_qm_capa	*capa;
-	struct hisi_qp		*qp;
 	int	ret;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
-	qp = &priv->qp;
-	capa = &qp->capa;
-	sched->data = capa;
+	capa = &priv->capa;
 	sched->q_num = 1;
 	sched->ss_region_size = 0; /* let system make decision */
 	sched->msg_cache_num = CACHE_NUM;
@@ -445,11 +443,11 @@ static int hisi_comp_block_init(struct wd_comp_sess *sess)
 	if (!strncmp(sess->alg_name, "zlib", strlen("zlib"))) {
 		hsched->alg_type = ZLIB;
 		hsched->dw9 = 2;
-		capa->alg = "zlib";
+		capa->alg = strdup("zlib");
 	} else if (!strncmp(sess->alg_name, "gzip", strlen("gzip"))) {
 		hsched->alg_type = GZIP;
 		hsched->dw9 = 3;
-		capa->alg = "gzip";
+		capa->alg = strdup("gzip");
 	} else
 		goto out_sched;
 	hsched->msg_data_size = sched->msg_data_size;
@@ -475,26 +473,28 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
 	struct hisi_sched	*hsched;
-	struct hisi_qp		*qp;
 	struct hisi_qm_priv	*qm_priv;
-	int	i, j, ret = -EINVAL;
+	int	i, j, ret = 0;
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	sched = &priv->sched;
 	hsched = sched->priv;
-	qp = &priv->qp;
-	sched->data = qp;
+	sched->data = priv->qp;
 
 	hsched->op_type = (arg->flag & FLAG_DEFLATE) ? DEFLATE: INFLATE;
 	hsched->arg = arg;
 
-	qm_priv = (struct hisi_qm_priv *)&qp->capa.priv;
+	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = hsched->op_type;
 	for (i = 0; i < sched->q_num; i++) {
-		sched->qs[i] = sched->hw_alloc(sess->node_path, sched->data);
-		if (!sched->qs[i])
+		sched->qs[i] = sched->hw_alloc(sess->node_path,
+					       (void *)qm_priv,
+					       &sched->data);
+		if (!sched->qs[i]) {
+			ret = -EINVAL;
 			goto out_hw;
+		}
 	}
 	if (!sched->ss_region_size)
 		sched->ss_region_size = 4096 + /* add 1 page extra */
@@ -507,8 +507,10 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 			goto out_region;
 		}
 		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
-		if (ret)
+		if (ret) {
+			ret = -EFAULT;
 			goto out_smm;
+		}
 		for (i = 0; i < sched->msg_cache_num; i++) {
 			sched->msgs[i].swap_in =
 				smm_alloc(sched->ss_region,
@@ -520,6 +522,7 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 			    !sched->msgs[i].swap_out) {
 				dbg("not enough ss_region memory for cache %d "
 				    "(bs=%d)\n", i, sched->msg_data_size);
+				ret = -ENOMEM;
 				goto out_swap;
 			}
 		}
@@ -530,6 +533,7 @@ static int hisi_comp_block_prep(struct wd_comp_sess *sess,
 			if (!sched->msgs[i].swap_in ||
 			    !sched->msgs[i].swap_out) {
 				dbg("not enough memory for cache %d\n", i);
+				ret = -ENOMEM;
 				goto out_swap2;
 			}
 		}
@@ -687,15 +691,15 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-	struct hisi_qp		*qp = &priv->qp;
 	struct hisi_strm_info	*strm = &priv->strm;
+	struct hisi_qm_capa	*capa = &priv->capa;
 
 	if (!strncmp(sess->alg_name, "zlib", strlen("zlib"))) {
-		qp->capa.alg = "zlib";
+		capa->alg = strdup("zlib");
 		strm->alg_type = ZLIB;
 		strm->dw9 = 2;
 	} else if (!strncmp(sess->alg_name, "gzip", strlen("gzip"))) {
-		qp->capa.alg = "gzip";
+		capa->alg = strdup("gzip");
 		strm->alg_type = GZIP;
 		strm->dw9 = 3;
 	} else
@@ -710,16 +714,17 @@ static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
 			       struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
-	struct hisi_qp		*qp = &priv->qp;
 	struct hisi_strm_info	*strm = &priv->strm;
 	struct hisi_qm_priv	*qm_priv;
 	handle_t h_ctx;
 	int	ret;
 
-	qm_priv = (struct hisi_qm_priv *)&qp->capa.priv;
+	qm_priv = (struct hisi_qm_priv *)&priv->capa.priv;
 	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
 	qm_priv->op_type = (arg->flag & FLAG_DEFLATE) ? DEFLATE: INFLATE;
-	h_ctx = hisi_qm_alloc_ctx(sess->node_path, qp);
+	h_ctx = hisi_qm_alloc_ctx(sess->node_path,
+				  (void *)qm_priv,
+				  (void **)&priv->qp);
 	if (!h_ctx) {
 		ret = -EINVAL;
 		goto out;
@@ -796,7 +801,7 @@ static void hisi_comp_strm_exit(struct wd_comp_sess *sess)
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	qp = &priv->qp;
+	qp = priv->qp;
 
 	if (wd_is_nosva(qp->h_ctx)) {
 		smm_free(strm->ss_region, strm->swap_in);
@@ -825,7 +830,7 @@ static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	qp = &priv->qp;
+	qp = priv->qp;
 
 	flush_type = (flush == WD_FINISH) ? HZ_FINISH : HZ_SYNC_FLUSH;
 
@@ -950,7 +955,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 
 	priv = (struct hisi_comp_sess *)sess->priv;
 	strm = &priv->strm;
-	qp = &priv->qp;
+	qp = priv->qp;
 
 	/* reset strm->avail_in */
 	if (strm->avail_in < STREAM_MIN) {
