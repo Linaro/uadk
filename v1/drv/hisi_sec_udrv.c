@@ -1754,7 +1754,7 @@ static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	__u64 dma_addr;
 
 	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("SEC BD3 %s fail!done=0x%x, etype=0x%x\n", "cipher",
+		WD_ERR("SEC BD3 %s fail!done=0x%x, etype=0x%x\n", "aead",
 		sqe->done, sqe->error_type);
 		msg->result = WD_IN_EPARA;
 	} else
