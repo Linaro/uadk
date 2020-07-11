@@ -31,6 +31,7 @@
 #include "test_hisi_sec.h"
 #include "../../wd.h"
 #include "../../wd_cipher.h"
+#include "../../wd_aead.h"
 #include "../../wd_digest.h"
 #include "../../wd_bmm.h"
 #include "../../wd_util.h"
@@ -38,6 +39,8 @@
 #define  SEC_TST_PRT printf
 #define TEST_MAX_THRD 128
 #define SQE_SIZE 128
+#define MAX_BLOCK_SZ	1024
+#define MAX_BLOCK_NM	128
 #define MAX_ALGO_PER_TYPE 12
 
 typedef unsigned char u8;
@@ -53,8 +56,8 @@ enum cipher_op_type alg_op_type;
 pthread_mutex_t perf_mutex;
 
 struct test_sec_pthread_dt {
-	int cpu_id;
-	enum cipher_op_type op_type;
+    int cpu_id;
+    enum cipher_op_type op_type;
 	int thread_num;
 	void *pool;
 	void *q;
@@ -78,10 +81,11 @@ struct digest_async_tag {
 };
 
 /* OpenSSL Skcipher APIS */
-static u32 t_times = 10;
-static u32 t_seconds = 0;
-static u32 pktlen = 1024;
-static u32 g_testalg = 0;
+static int t_times = 1000;
+static int t_seconds = 0;
+static int pktlen = 1024;
+static int g_testalg = 0;
+
 static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct  test_sec_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static volatile int asyn_thread_exit = 0;
@@ -129,7 +133,7 @@ static bool is_exit(struct test_sec_pthread_dt *pdata)
 	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
 			cur_tval.tv_usec - pdata->start_tval.tv_usec);
 	if (t_seconds)
-		return time_used >= t_seconds * 1000000;
+		return time_used >= t_seconds * t_times;
 	else if (t_times)
 		return pdata->send_task_num >= t_times;
 
@@ -325,20 +329,115 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 	return 0;
 }
 
-int sec_test_set_iv(struct test_sec_pthread_dt *pdata, 
-		struct wcrypto_cipher_op_data *opdata, struct cipher_testvec *tv)
+int get_aead_resource(struct aead_testvec **alg_tv,
+	int* alg, int* mode, int* dalg, int* dmode)
 {
+	struct aead_testvec *tv;
+	int alg_type = 0;
+	int mode_type = 0;
+	int dalg_type = 0;
+	int dmode_type = 0;
+
+	switch (g_testalg) {
+		case 0:
+			alg_type = WCRYPTO_CIPHER_AES;
+			mode_type = WCRYPTO_CIPHER_CCM;
+			SEC_TST_PRT("test alg: %s\n", "ccm(aes)");
+			switch (g_keylen) {
+			        case AES_KEYSIZE_128:
+					tv = &aes_ccm_tv_template_128;
+					break;
+			        case AES_KEYSIZE_192:
+					tv = &aes_ccm_tv_template_192;
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_ccm_tv_template_256;
+					break;
+			        default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 1:
+			alg_type = WCRYPTO_CIPHER_AES;
+			mode_type = WCRYPTO_CIPHER_GCM;
+			SEC_TST_PRT("test alg: %s\n", "gcm(aes)");
+			switch (g_keylen) {
+			        case AES_KEYSIZE_128:
+					tv = &aes_gcm_tv_template_128;
+					break;
+			        case AES_KEYSIZE_192:
+					tv = &aes_gcm_tv_template_192;
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_gcm_tv_template_256;
+					break;
+			        default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 2:
+			alg_type = WCRYPTO_CIPHER_AES;
+			mode_type = WCRYPTO_CIPHER_CBC;
+			dalg_type = WCRYPTO_SHA256;
+			dmode_type = WCRYPTO_DIGEST_HMAC;
+			SEC_TST_PRT("test alg: %s\n", "hmac(sha256),cbc(aes)");
+			tv = &hmac_sha256_aes_cbc_tv_temp;
+			break;
+		case 3:
+			alg_type = WCRYPTO_CIPHER_SM4;
+			mode_type = WCRYPTO_CIPHER_CCM;
+			SEC_TST_PRT("test alg: %s\n", "ccm(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_ccm_tv_template_128;
+			break;
+		case 4:
+			alg_type = WCRYPTO_CIPHER_SM4;
+			mode_type = WCRYPTO_CIPHER_GCM;
+			SEC_TST_PRT("test alg: %s\n", "gcm(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_gcm_tv_template_128;
+			break;
+		default:
+			SEC_TST_PRT("keylenth error, default test alg: %s\n", "ccm(aes)");
+			return -EINVAL;
+	}
+	*alg = alg_type;
+	*mode = mode_type;
+	*dalg = dalg_type;
+	*dmode = dmode_type;
+	*alg_tv = tv;
+
+	return 0;
+}
+
+int sec_sync_test_set_iv(struct test_sec_pthread_dt *pdata,
+                        struct wcrypto_cipher_op_data *opdata, struct cipher_testvec *tv)
+{
+	int ivlen;
+
 	if (!tv->iv)
 		return -1;
-	tv->ivlen = strlen(tv->iv);
 
-	memset(opdata->iv, 0, g_ivlen);
-	memcpy(opdata->iv, tv->iv, g_ivlen);
-	opdata->iv_bytes = g_ivlen;
-#ifdef DEBUG
-	SEC_TST_PRT("dump set input IV!\n");
-	hexdump(opdata->iv, g_ivlen);
-#endif
+	ivlen = strlen(tv->iv);
+	if (ivlen != AES_KEYSIZE_128 && ivlen != (AES_KEYSIZE_128 >> 1))
+		ivlen = AES_KEYSIZE_128;
+
+	tv->ivlen = ivlen;
+
+	memset(opdata->iv, 0, tv->ivlen);
+	memcpy(opdata->iv, tv->iv, tv->ivlen);
+
+	opdata->iv_bytes = tv->ivlen;
+	SEC_TST_PRT("dump set input IV! IV lenght:%d\n", ivlen);
+	hexdump(opdata->iv, opdata->iv_bytes);
 
 	return 0;
 }
@@ -355,8 +454,9 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 	unsigned long Perf = 0;
 	int pid = getpid();
 	void *ctx = NULL;
-	void *tag;
-	int init_ctx, ret;
+	void *tag = NULL;
+	int init_ctx;
+	int ret;
 
 	memset(&setup, 0, sizeof(setup));
 	memset(opdata, 0, sizeof(struct wcrypto_cipher_op_data));
@@ -376,7 +476,7 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 	ctx = wcrypto_create_cipher_ctx(q, &setup);
 	if (!ctx) {
 		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
-				pid, thread_id, q->capa.alg);
+			pid, thread_id, q->capa.alg);
 		ret = -EINVAL;
 		return ret;
 	}
@@ -400,13 +500,21 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 		goto fail_release;
 	}
 
-	memset(opdata->in, 0, pktlen);
+	memset(opdata->in, 0, tv->len);
 	if (q->capa.priv.direction == 0) {
-		memcpy(opdata->in, tv->ptext, pktlen);
-		opdata->in_bytes = pktlen;
+		memcpy(opdata->in, tv->ptext, tv->len);
+		if (strlen(tv->ptext) > pktlen) {
+			opdata->in_bytes = tv->len;
+		} else {
+			opdata->in_bytes = pktlen;
+		}
 	} else {
-		memcpy(opdata->in, tv->ctext, pktlen);
-		opdata->in_bytes = pktlen;
+		memcpy(opdata->in, tv->ctext, tv->len);
+		if (strlen(tv->ctext) > pktlen) {
+			opdata->in_bytes = tv->len;
+		} else {
+			opdata->in_bytes = pktlen;
+		}
 	}
 
 	SEC_TST_PRT("cipher len:%d\n", opdata->in_bytes);
@@ -426,8 +534,9 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 		SEC_TST_PRT("alloc iv buffer fail!\n");
 		goto fail_release;
 	}
-	sec_test_set_iv(pdata, opdata, tv);
 
+	sec_sync_test_set_iv(pdata, opdata, tv);
+	printf("tag is: %x\n", tag);
 	do {
 		ret = wcrypto_do_cipher(ctx, opdata, tag);
 		pdata->send_task_num++;
@@ -826,8 +935,8 @@ void *_sec_sys_test_thread(void *data)
 }
 
 static sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
-	__u64 hcore_mask, enum cipher_op_type op_type,
-	char *dev_path, unsigned int node_mask)
+        __u64 hcore_mask, enum cipher_op_type op_type,
+        char *dev_path, unsigned int node_mask)
 {
 	void **pool;
 	struct wd_blkpool_setup setup;
@@ -874,20 +983,21 @@ static sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 		if (ret) {
 			SEC_TST_PRT("request queue %d fail!\n", j);
 			return ret;
-		}
-		memset(&setup, 0, sizeof(setup));
-		setup.block_size = 1024; //set pool  inv + key + in + out
-		setup.block_num = block_num;
-		setup.align_size = SQE_SIZE;
+	    }
+	    memset(&setup, 0, sizeof(setup));
+	    setup.block_size = MAX_BLOCK_SZ; //set pool  inv + key + in + out
+	    setup.block_num = MAX_BLOCK_NM;
+	    setup.align_size = SQE_SIZE;
 
-		pool[j] = wd_blkpool_create(&q[j], &setup);
-		if (!pool[j]) {
+		SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
+	    pool[j] = wd_blkpool_create(&q[j], &setup);
+	    if (!pool[j]) {
 			SEC_TST_PRT("%s(): create %dth pool fail!\n", __func__, j);
 			return -ENOMEM;
 		}
 	}
 
-	//线程数 与绑核
+	//??? ???
 	if (_get_one_bits(lcore_mask) == 0 &&
 		_get_one_bits(hcore_mask) == 0)
 		cnt = thread_num;
@@ -905,7 +1015,7 @@ static sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 		gettimeofday(&test_thrds_data[i].start_tval, NULL);
 
 		ret = pthread_create(&system_test_thrds[i], NULL,
-				     _sec_sys_test_thread, &test_thrds_data[i]);
+					 _sec_sys_test_thread, &test_thrds_data[i]);
 		if (ret) {
 			SEC_TST_PRT("Create %dth thread fail!\n", i);
 			return ret;
@@ -959,20 +1069,21 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	int thread_id = (int)syscall(__NR_gettid);
 	struct wcrypto_cipher_ctx_setup setup;
 	struct wcrypto_cipher_op_data opdata;
+	struct cipher_async_tag *tag = NULL; //async
+	struct wd_queue *q = pdata->q;
 	struct cipher_testvec *tv;
 	struct timeval cur_tval;
 	float time_used, speed;
 	unsigned long Perf = 0;
 	int pid = getpid();
 	void *ctx = NULL;
-	struct cipher_async_tag *tag = NULL; //async
-	struct wd_queue *q = pdata->q;
+	int init_ctx;
 	int i = 0;
-	int init_ctx, ret;
+	int ret;
 
 	memset(&setup, 0, sizeof(setup));
 	memset(&opdata, 0, sizeof(opdata));
-	/* default AES-CBC */
+
 	setup.alg = WCRYPTO_CIPHER_AES;
 	setup.mode = WCRYPTO_CIPHER_CBC;
 
@@ -990,13 +1101,13 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	ctx = wcrypto_create_cipher_ctx(q, &setup);
 	if (!ctx) {
 		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
-			pid, thread_id, q->capa.alg);
+			     pid, thread_id, q->capa.alg);
 		ret = -EINVAL;
 		return ret;
 	}
 
-	ret = wcrypto_set_cipher_key(ctx, (__u8*)tv->key,
-				(__u16)tv->klen);
+	hexdump(tv->key, tv->klen);
+	ret = wcrypto_set_cipher_key(ctx, (__u8*)tv->key, (__u16)tv->klen);
 	if (ret) {
 		SEC_TST_PRT("set key fail!\n");
 		goto fail_release;
@@ -1012,14 +1123,24 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 		goto fail_release;
 	}
 	if (q->capa.priv.direction == 0) {
-		memcpy(opdata.in, tv->ptext, pktlen);
-		opdata.in_bytes = pktlen;
+		memcpy(opdata.in, tv->ptext, strlen(tv->ptext));
+		if (strlen(tv->ptext) > pktlen) {
+			opdata.in_bytes = strlen(tv->ptext);
+		} else {
+			opdata.in_bytes = pktlen;
+		}
 	} else {
-		memcpy(opdata.in, tv->ctext, pktlen);
-		opdata.in_bytes = pktlen;
+		memcpy(opdata.in, tv->ctext, strlen(tv->ctext));
+		if (strlen(tv->ctext) > pktlen) {
+			opdata.in_bytes = strlen(tv->ctext);
+		} else {
+			opdata.in_bytes = pktlen;
+		}
 	}
 
 	opdata.priv = NULL;
+	printf("ptext:\n");
+	hexdump(opdata.in, opdata.in_bytes);
 	opdata.out = wd_alloc_blk(pdata->pool);
 	opdata.out_bytes = opdata.in_bytes;
 	if (!opdata.out) {
@@ -1033,25 +1154,30 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 		goto fail_release;
 	}
 
-	sec_test_set_iv(pdata, &opdata, tv);
+	memcpy(opdata.iv, tv->iv, tv->ivlen);
+	opdata.iv_bytes = tv->ivlen;
 
 	do {
-		tag = malloc(sizeof(struct cipher_async_tag)); //set the user tag is async
+		tag = malloc(sizeof(struct cipher_async_tag)); // set the user tag
 		if (!tag)
-			goto fail_release;
+		    goto fail_release;
 		tag->ctx = ctx;
 		tag->thread_id = thread_id;
 		tag->cnt = i;
 		tag->thread_info = pdata;
-try_do_again:
+	try_do_again:
 		ret = wcrypto_do_cipher(ctx, &opdata, tag);
 		if (ret == -WD_EBUSY) {
 			usleep(100);
+			SEC_TST_PRT("wcrypto_do_cipher busy!\n");
 			goto try_do_again;
 		}
 		pdata->send_task_num++;
 		i++;
-
+		if (pdata->send_task_num == 1) {
+			SEC_TST_PRT("dump output!\n");
+			hexdump(opdata.out, opdata.out_bytes);
+		}
 	} while(!is_exit(pdata));
 
 	gettimeofday(&cur_tval, NULL);
@@ -1236,11 +1362,11 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		__u64 hcore_mask, enum cipher_op_type op_type,
 		char *dev_path, unsigned int node_mask)
 {
-	void **pool;
 	struct wd_blkpool_setup setup;
 	int i, ret, cnt = 0, j;
 	int block_num = 128;
 	struct wd_queue q;
+	void **pool;
 	int qidx;
 
 	memset(&q, 0, sizeof(q));
@@ -1262,12 +1388,12 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 	}
 	memset(&setup, 0, sizeof(setup));
 	/* set pool  inv + key + in + out */
-	setup.block_size = 1024;
-	setup.block_num = block_num;
+	setup.block_size = MAX_BLOCK_SZ;
+	setup.block_num = MAX_BLOCK_NM;
 	setup.align_size = SQE_SIZE;
 
 	/* create pool for every queue */
-	SEC_TST_PRT("create pool memory: %d\n", block_num * setup.block_size);
+	SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
 	pool = wd_blkpool_create(&q, &setup);
 	if (!pool) {
 		SEC_TST_PRT("%s(): create pool fail!\n", __func__);
@@ -1286,7 +1412,7 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 
-	//线程数 与绑核
+	//??? ???
 	if (_get_one_bits(lcore_mask) == 0 &&
 			_get_one_bits(hcore_mask) == 0) 
 		cnt = thread_num;
@@ -1303,7 +1429,7 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		gettimeofday(&test_thrds_data[i].start_tval, NULL);
 
 		ret = pthread_create(&system_test_thrds[i], NULL,
-					_sec_async_test_thread, &test_thrds_data[i]);
+					 _sec_async_test_thread, &test_thrds_data[i]);
 		if (ret) {
 			SEC_TST_PRT("Create %dth thread fail!\n", i);
 			return ret;
@@ -1326,28 +1452,626 @@ static sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 
 	wd_release_queue(&q);
 	wd_blkpool_destroy(pool);
+	return 0;
+}
+
+int sec_aead_sync_func_test(void *data)
+{
+	int thread_id = (int)syscall(__NR_gettid);
+	struct test_sec_pthread_dt *pdata = data;
+	struct wcrypto_aead_ctx_setup setup;
+	struct wcrypto_aead_op_data *opdata = malloc(sizeof(struct wcrypto_aead_op_data));
+	struct wd_queue *q = pdata->q;
+	struct timeval cur_tval;
+	struct aead_testvec *tv;
+	float time_used, speed;
+	unsigned long Perf = 0;
+	int pid = getpid();
+	void *ctx = NULL;
+	void *tag = NULL;
+	int auth_size;
+	int init_ctx;
+	int in_size;
+	int iv_len;
+	int ret;
+
+	memset(&setup, 0, sizeof(setup));
+	memset(opdata, 0, sizeof(struct wcrypto_aead_op_data));
+
+	setup.calg = WCRYPTO_CIPHER_AES;
+	setup.cmode = WCRYPTO_CIPHER_CCM;
+	setup.br.alloc = (void *)wd_alloc_blk;
+	setup.br.free = (void *)wd_free_blk;
+	setup.br.iova_map = (void *)wd_blk_iova_map;
+	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.usr = pdata->pool;
+
+	ret = get_aead_resource(&tv, &setup.calg,
+		&setup.cmode, &setup.dalg, &setup.dmode);
+	if (ret)
+		return -EINVAL;
+
+	ctx = wcrypto_create_aead_ctx(q, &setup);
+	if (!ctx) {
+		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
+			pid, thread_id, q->capa.alg);
+		ret = -EINVAL;
+		return ret;
+	}
+
+	hexdump(tv->key, tv->klen);
+	if (setup.cmode == WCRYPTO_CIPHER_CCM ||
+		setup.cmode == WCRYPTO_CIPHER_GCM) {
+		ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key, (__u16)tv->klen);
+		if (ret) {
+			SEC_TST_PRT("set key fail!\n");
+			goto fail_release;
+		}
+	}else {
+		// AEAD template's cipher key is the tail data
+		ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key + 0x28, 0x10);
+		if (ret) {
+			SEC_TST_PRT("set key fail!\n");
+			goto fail_release;
+		}
+		// AEAD template's auth key is the mid data
+		ret = wcrypto_set_aead_akey(ctx, (__u8*)tv->key + 0x08, 0x20);
+		if (ret) {
+			SEC_TST_PRT("set auth key fail!\n");
+			goto fail_release;
+		}
+	}
+
+	auth_size = (__u16)(tv->clen - tv->plen);
+	ret = wcrypto_aead_setauthsize(ctx, auth_size);
+	if (ret) {
+		SEC_TST_PRT("set authsize fail!\n");
+		goto fail_release;
+	}
+
+	// test the auth size
+	ret = wcrypto_aead_getauthsize(ctx);
+	if (ret != auth_size) {
+		SEC_TST_PRT("get authsize fail!\n");
+		goto fail_release;
+	}
+	ret = wcrypto_aead_get_maxauthsize(ctx);
+	if (ret < auth_size) {
+		SEC_TST_PRT("get max authsize fail!\n");
+		goto fail_release;
+	}
+	SEC_TST_PRT("max authsize : %d!\n", ret);
+
+	if (q->capa.priv.direction == 0) {
+		opdata->op_type = WCRYPTO_CIPHER_ENCRYPTION_DIGEST;
+	} else {
+		opdata->op_type = WCRYPTO_CIPHER_DECRYPTION_DIGEST;
+	}
+
+	opdata->assoc_size = tv->alen;
+	opdata->in = wd_alloc_blk(pdata->pool);
+	if (!opdata->in) {
+		SEC_TST_PRT("alloc in buffer fail!\n");
+		goto fail_release;
+	}
+
+	in_size = tv->alen + tv->plen + auth_size;
+	if (in_size > MAX_BLOCK_SZ) {
+		SEC_TST_PRT("alloc in buffer block size too small!\n");
+		goto fail_release;
+	}
+
+	// copy the assoc data in the front of in data
+	memset(opdata->in, 0, in_size);
+	if (q->capa.priv.direction == 0) {
+		memcpy(opdata->in, tv->assoc, tv->alen);
+		memcpy((opdata->in + tv->alen), tv->ptext, tv->plen);
+		opdata->in_bytes = tv->plen;
+	} else {
+		memcpy(opdata->in, tv->assoc, tv->alen);
+		memcpy((opdata->in + tv->alen), tv->ctext, tv->clen);
+		opdata->in_bytes = tv->clen - auth_size;
+	}
+
+	SEC_TST_PRT("aead input len:%d\n", tv->alen + opdata->in_bytes);
+	hexdump(opdata->in, tv->alen + opdata->in_bytes);
+	opdata->priv = NULL;
+	opdata->out = wd_alloc_blk(pdata->pool);
+	if (!opdata->out) {
+		SEC_TST_PRT("alloc out buffer fail!\n");
+		goto fail_release;
+	}
+	if (q->capa.priv.direction == 0) {
+		opdata->out_bytes = tv->alen + tv->clen;
+	} else {
+		opdata->out_bytes = tv->alen + tv->plen;
+	}
+	opdata->out_buf_bytes = MAX_BLOCK_SZ;
+	//set iv
+	opdata->iv = wd_alloc_blk(pdata->pool);
+	if (!opdata->iv) {
+		SEC_TST_PRT("alloc iv buffer fail!\n");
+		goto fail_release;
+	}
+
+	// if data is \0x00, the strlen will end and return
+	// iv_len = strlen(tv->iv);
+	if (setup.cmode == WCRYPTO_CIPHER_GCM) {
+		iv_len = 12;
+	} else {
+		iv_len = 16;
+	}
+	memset(opdata->iv, 0, iv_len);
+	memcpy(opdata->iv, tv->iv, iv_len);
+	opdata->iv_bytes = iv_len;
+	SEC_TST_PRT("dump set input IV! IV lenght:%d\n", iv_len);
+	hexdump(opdata->iv, opdata->iv_bytes);
+
+	printf("tag is: %x\n", tag);
+	do {
+		ret = wcrypto_do_aead(ctx, opdata, tag);
+		pdata->send_task_num++;
+		if (pdata->send_task_num == 1) {
+			SEC_TST_PRT("dump output!\n");
+			hexdump(opdata->out, opdata->out_bytes + auth_size);
+		}
+	} while(!is_exit(pdata));
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - pdata->start_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%d\n", time_used, pdata->send_task_num++);
+	speed = pdata->send_task_num / time_used * 1000000;
+	Perf = speed * in_size / 1024; //B->KB
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid,
+		thread_id, speed, Perf);
+
+fail_release:
+	if (opdata->in)
+		wd_free_blk(pdata->pool, opdata->in);
+	if (opdata->iv)
+		wd_free_blk(pdata->pool, opdata->iv);
+	if (opdata->out)
+		wd_free_blk(pdata->pool, opdata->out);
+	if (ctx)
+		wcrypto_del_aead_ctx(ctx);
+	free(opdata);
+
+	return ret;
+}
+
+static sec_aead_sync_test(int thread_num, __u64 lcore_mask,
+        __u64 hcore_mask, enum cipher_op_type op_type,
+        char *dev_path, unsigned int node_mask)
+{
+	void **pool;
+	struct wd_blkpool_setup setup;
+	int i, ret, cnt = 0, j;
+	struct wd_queue *q;
+	int qidx;
+
+	SEC_TST_PRT("SEC q_num is : %d!\n", q_num);
+	q = malloc(q_num * sizeof(struct wd_queue));
+	if (!q) {
+		SEC_TST_PRT("malloc q memory fail!\n");
+		return -ENOMEM;
+	}
+
+	memset(q, 0, q_num * sizeof(struct wd_queue));
+
+	/* create pool for every queue */
+	pool = malloc(q_num * sizeof(pool));
+	if (!pool) {
+		SEC_TST_PRT("malloc pool memory fail!\n");
+		return -ENOMEM;
+	}
+
+	for (j = 0; j < q_num; j++) {
+		q[j].capa.alg = "aead";
+		if (op_type == ENCRYPTION) {
+			q[j].capa.priv.direction = 0; //0 is ENC, 1 is DEC
+		} else {
+			q[j].capa.priv.direction = 1;
+	    }
+
+	    if (dev_path) {
+			strncpy(q[j].dev_path, dev_path, sizeof(q[j].dev_path));
+	    }
+	    // q[j].node_mask = node_mask;
+
+	    ret = wd_request_queue(&q[j]);
+	    if (ret) {
+			SEC_TST_PRT("request queue %d fail!\n", j);
+			return ret;
+	    }
+	    memset(&setup, 0, sizeof(setup));
+	    setup.block_size = MAX_BLOCK_SZ; //set pool  inv + key + in + out
+	    setup.block_num = MAX_BLOCK_NM;
+	    setup.align_size = SQE_SIZE;
+
+	    SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
+	    pool[j] = wd_blkpool_create(&q[j], &setup);
+	    if (!pool[j]) {
+			SEC_TST_PRT("%s(): create %dth pool fail!\n", __func__, j);
+			return -ENOMEM;
+		}
+	}
+
+	//Ïß³ÌÊý Óë°óºË
+	if (_get_one_bits(lcore_mask) == 0 &&
+		 _get_one_bits(hcore_mask) == 0)
+		cnt = thread_num;
+	else
+		cnt = 1;
+
+	for (i = 0 ; i < cnt; i++) {
+		qidx = i / ctx_num_per_q;
+		test_thrds_data[i].pool = pool[qidx];
+		test_thrds_data[i].q = &q[qidx];
+		test_thrds_data[i].thread_num = thread_num;
+		test_thrds_data[i].op_type = op_type;
+		test_thrds_data[i].cpu_id = _get_cpu_id(i, lcore_mask);
+
+		gettimeofday(&test_thrds_data[i].start_tval, NULL);
+
+		ret = pthread_create(&system_test_thrds[i], NULL,
+					 sec_aead_sync_func_test, &test_thrds_data[i]);
+		if (ret) {
+			SEC_TST_PRT("Create %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+
+	for (i = 0; i < thread_num; i++) {
+		ret = pthread_join(system_test_thrds[i], NULL);
+		if (ret) {
+			SEC_TST_PRT("Join %dth thread fail!\n", i);
+			return ret;
+		}
+	}
 
 	return 0;
 }
 
+static void  *_aead_async_poll_test_thread(void *data)
+{
+	struct test_sec_pthread_dt *pdata = data;
+	struct wd_queue *q = pdata->q;
+	int ret;
+
+	while (1) {
+		ret = wcrypto_aead_poll(q, 1);
+		if (ret < 0) {
+			break;
+		}
+
+		if (asyn_thread_exit)
+			break;
+	}
+
+	return NULL;
+}
+
+int sec_aead_async_func_test(void *data)
+{
+	int thread_id = (int)syscall(__NR_gettid);
+	struct test_sec_pthread_dt *pdata = data;
+	struct wcrypto_aead_ctx_setup setup;
+	struct wcrypto_aead_op_data *opdata = malloc(sizeof(struct wcrypto_aead_op_data));
+	struct cipher_async_tag *tag = NULL; //async
+	struct wd_queue *q = pdata->q;
+	struct timeval cur_tval;
+	struct aead_testvec *tv;
+	float time_used, speed;
+	unsigned long Perf = 0;
+	int pid = getpid();
+	void *ctx = NULL;
+	int auth_size;
+	int init_ctx;
+	int in_size;
+	int iv_len;
+	int i = 0;
+	int ret;
+
+	memset(&setup, 0, sizeof(setup));
+	memset(opdata, 0, sizeof(struct wcrypto_aead_op_data));
+
+	setup.calg = WCRYPTO_CIPHER_AES;
+	setup.cmode = WCRYPTO_CIPHER_CCM;
+	setup.cb = (void *)_cipher_cb; //call back functions of user
+	setup.br.alloc = (void *)wd_alloc_blk;
+	setup.br.free = (void *)wd_free_blk;
+	setup.br.iova_map = (void *)wd_blk_iova_map;
+	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.usr = pdata->pool;
+
+	ret = get_aead_resource(&tv, &setup.calg,
+		&setup.cmode, &setup.dalg, &setup.dmode);
+	if (ret)
+		return -EINVAL;
+
+	ctx = wcrypto_create_aead_ctx(q, &setup);
+	if (!ctx) {
+		SEC_TST_PRT("Proc-%d, %d-TD:create %s ctx fail!\n",
+			pid, thread_id, q->capa.alg);
+		ret = -EINVAL;
+		return ret;
+	}
+
+	hexdump(tv->key, tv->klen);
+	if (setup.cmode == WCRYPTO_CIPHER_CCM ||
+		setup.cmode == WCRYPTO_CIPHER_GCM) {
+		ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key, (__u16)tv->klen);
+		if (ret) {
+			SEC_TST_PRT("set key fail!\n");
+			goto fail_release;
+		}
+	}else {
+		// AEAD template's cipher key is the tail data
+		ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key + 0x28, 0x10);
+		if (ret) {
+			SEC_TST_PRT("set key fail!\n");
+			goto fail_release;
+		}
+		// AEAD template's auth key is the mid data
+		ret = wcrypto_set_aead_akey(ctx, (__u8*)tv->key + 0x08, 0x20);
+		if (ret) {
+			SEC_TST_PRT("set auth key fail!\n");
+			goto fail_release;
+		}
+	}
+
+	auth_size = (__u16)(tv->clen - tv->plen);
+	ret = wcrypto_aead_setauthsize(ctx, auth_size);
+	if (ret) {
+		SEC_TST_PRT("set authsize fail!\n");
+		goto fail_release;
+	}
+
+	// test the auth size
+	ret = wcrypto_aead_getauthsize(ctx);
+	if (ret != auth_size) {
+		SEC_TST_PRT("get authsize fail!\n");
+		goto fail_release;
+	}
+	ret = wcrypto_aead_get_maxauthsize(ctx);
+	if (ret < auth_size) {
+		SEC_TST_PRT("get max authsize fail!\n");
+		goto fail_release;
+	}
+	SEC_TST_PRT("max authsize : %d!\n", ret);
+
+	if (q->capa.priv.direction == 0) {
+		opdata->op_type = WCRYPTO_CIPHER_ENCRYPTION_DIGEST;
+	} else {
+		opdata->op_type = WCRYPTO_CIPHER_DECRYPTION_DIGEST;
+	}
+
+	opdata->assoc_size = tv->alen;
+	opdata->in = wd_alloc_blk(pdata->pool);
+	if (!opdata->in) {
+		SEC_TST_PRT("alloc in buffer fail!\n");
+		goto fail_release;
+	}
+
+	in_size = tv->alen + tv->plen + auth_size;
+	if (in_size > MAX_BLOCK_SZ) {
+		SEC_TST_PRT("alloc in buffer block size too small!\n");
+		goto fail_release;
+	}
+
+	// copy the assoc data in the front of in data
+	memset(opdata->in, 0, in_size);
+	if (q->capa.priv.direction == 0) {
+		memcpy(opdata->in, tv->assoc, tv->alen);
+		memcpy((opdata->in + tv->alen), tv->ptext, tv->plen);
+		opdata->in_bytes = tv->plen;
+	} else {
+		memcpy(opdata->in, tv->assoc, tv->alen);
+		memcpy((opdata->in + tv->alen), tv->ctext, tv->clen);
+		opdata->in_bytes = tv->clen - auth_size;
+	}
+
+	SEC_TST_PRT("aead input len:%d\n", tv->alen + opdata->in_bytes);
+	hexdump(opdata->in, tv->alen + opdata->in_bytes);
+	opdata->priv = NULL;
+	opdata->out = wd_alloc_blk(pdata->pool);
+	if (!opdata->out) {
+		SEC_TST_PRT("alloc out buffer fail!\n");
+		goto fail_release;
+	}
+	if (q->capa.priv.direction == 0) {
+		opdata->out_bytes = tv->alen + tv->clen;
+	} else {
+		opdata->out_bytes = tv->alen + tv->plen;
+	}
+	opdata->out_buf_bytes = MAX_BLOCK_SZ;
+	//set iv
+	opdata->iv = wd_alloc_blk(pdata->pool);
+	if (!opdata->iv) {
+		SEC_TST_PRT("alloc iv buffer fail!\n");
+		goto fail_release;
+	}
+
+	// if data is \0x00, the strlen will end and return
+	// iv_len = strlen(tv->iv);
+	if (setup.cmode == WCRYPTO_CIPHER_GCM) {
+		iv_len = 12;
+	} else {
+		iv_len = 16;
+	}
+	memset(opdata->iv, 0, iv_len);
+	memcpy(opdata->iv, tv->iv, iv_len);
+	opdata->iv_bytes = iv_len;
+	SEC_TST_PRT("dump set input IV! IV lenght:%d\n", iv_len);
+	hexdump(opdata->iv, opdata->iv_bytes);
+
+	do {
+		tag = malloc(sizeof(struct cipher_async_tag)); // set the user tag
+		if (!tag)
+		    goto fail_release;
+
+		tag->ctx = ctx;
+		tag->thread_id = thread_id;
+		tag->cnt = i;
+		tag->thread_info = pdata;
+	try_do_again:
+		ret = wcrypto_do_aead(ctx, opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			SEC_TST_PRT("wcrypto_do_aead busy!\n");
+			goto try_do_again;
+		}
+		pdata->send_task_num++;
+		i++;
+		if (pdata->send_task_num == 1) {
+			SEC_TST_PRT("dump output!\n");
+			hexdump(opdata->out, opdata->out_bytes + auth_size);
+		}
+	} while(!is_exit(pdata));
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - pdata->start_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%d\n", time_used, pdata->send_task_num++);
+	speed = pdata->send_task_num / time_used * 1000000;
+	Perf = speed * in_size / 1024; //B->KB
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %lld KB/s\n", pid, thread_id,
+		speed, Perf);
+
+fail_release:
+	if (opdata->in)
+		wd_free_blk(pdata->pool, opdata->in);
+	if (opdata->iv)
+		wd_free_blk(pdata->pool, opdata->iv);
+	if (opdata->out)
+		wd_free_blk(pdata->pool, opdata->out);
+	if (ctx)
+		wcrypto_del_aead_ctx(ctx);
+	if (tag)
+		free(tag);
+	free(opdata);
+
+	return ret;
+}
+
+
+static sec_aead_async_test(int thd_num, __u64 lcore_mask,
+        __u64 hcore_mask, enum cipher_op_type op_type,
+        char *dev_path, unsigned int node_mask)
+{
+	struct wd_blkpool_setup setup;
+	int i, ret,cnt = 0;
+	struct wd_queue q;
+	void **pool;
+	int qidx;
+
+	memset(&q, 0, sizeof(q));
+
+	q.capa.alg = "aead";
+	if (op_type == ENCRYPTION) {
+		q.capa.priv.direction = 0; // 0 is ENC, 1 is DEC
+	} else {
+		q.capa.priv.direction = 1;
+	}
+
+	ret = wd_request_queue(&q);
+	if (ret) {
+		SEC_TST_PRT("request queue fail!\n");
+		return ret;
+	}
+	memset(&setup, 0, sizeof(setup));
+	/* set pool  inv + key + in + out */
+	setup.block_size = MAX_BLOCK_SZ;
+	setup.block_num = MAX_BLOCK_NM;
+	setup.align_size = SQE_SIZE;
+
+	/* create pool for every queue */
+	SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
+	pool = wd_blkpool_create(&q, &setup);
+	if (!pool) {
+		SEC_TST_PRT("%s(): create pool fail!\n", __func__);
+		return -ENOMEM;
+	}
+	/* frist create the async poll thread! */
+	test_thrds_data[0].pool = pool;
+	test_thrds_data[0].q = &q;
+	test_thrds_data[0].thread_num = 1;
+	test_thrds_data[0].op_type = op_type;
+	test_thrds_data[0].cpu_id = 0;
+	ret = pthread_create(&system_test_thrds[0], NULL,
+		_aead_async_poll_test_thread, &test_thrds_data[0]);
+	if (ret) {
+		SEC_TST_PRT("Create poll thread fail!\n");
+		return ret;
+	}
+
+	//Ïß³ÌÊý Óë°óºË
+	if (_get_one_bits(lcore_mask) == 0 &&
+		 _get_one_bits(hcore_mask) == 0)
+		cnt = thd_num;
+	else
+		cnt = 1;
+	printf("cnt:%d\n", cnt);
+	for (i = 1 ; i <= cnt; i++) {
+		test_thrds_data[i].pool = pool;
+		test_thrds_data[i].q = &q;
+		test_thrds_data[i].thread_num = thd_num;
+		test_thrds_data[i].op_type = op_type;
+		test_thrds_data[i].cpu_id = _get_cpu_id(i, lcore_mask);
+
+		gettimeofday(&test_thrds_data[i].start_tval, NULL);
+
+		ret = pthread_create(&system_test_thrds[i], NULL,
+					 sec_aead_async_func_test, &test_thrds_data[i]);
+		if (ret) {
+			SEC_TST_PRT("Create %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+
+	for (i = 1; i <= thd_num; i++) {
+		ret = pthread_join(system_test_thrds[i], NULL);
+		if (ret) {
+			SEC_TST_PRT("Join %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+	asyn_thread_exit = 1;
+	ret = pthread_join(system_test_thrds[0], NULL);
+	if (ret) {
+		SEC_TST_PRT("Join %dth thread fail!\n", i);
+		return ret;
+	}
+
+	wd_release_queue(&q);
+	wd_blkpool_destroy(pool);
+	return 0;
+}
+
+
 int main(int argc, char *argv[])
 {
-	char dev_path[PATH_STR_SIZE] = {0};
+	enum cipher_op_type alg_op_type;
+	__u64 lcore_mask = 0;
+	__u64 hcore_mask = 0;
 	int thread_num = 1;
 	unsigned int node_msk = 0;
 	int direction = 0;
 	int value, pktsize, keylen, ivlen;
-	__u64 core_mask[2];
-	printf("the test is no sva vison, test vison tag:xx:xx\n");
 
 	if (!strcmp(argv[1], "-cipher")) {
-		printf("num %d\n", wd_get_available_dev_num("cipher"));
+		printf("cipher %d\n", wd_get_available_dev_num("cipher"));
 		g_testalg = strtoul((char*)argv[2], NULL, 10);
 		g_algclass = CIPHER_CLASS;
 	} else if (!strcmp(argv[1], "-digist")) {
-		printf("num %d\n", wd_get_available_dev_num("digist"));
+		printf("digist %d\n", wd_get_available_dev_num("digist"));
 		g_testalg = strtoul((char*)argv[2], NULL, 10);
 		g_algclass = DIGEST_CLASS;
+	} else if (!strcmp(argv[1], "-aead")) {
+		printf("aead %d\n", wd_get_available_dev_num("aead"));
+		g_testalg = strtoul((char*)argv[2], NULL, 10);
+		g_algclass = AEAD_CLASS;
 	}
 
 	if (!strcmp(argv[3], "-t")) {
@@ -1363,7 +2087,7 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[5], "-optype")) {
 		direction = strtoul((char*)argv[6], NULL, 10);
 	}
-	printf("dirction is:%d\n", direction);
+	printf("dirction is: %d\n", direction);
 	if (direction == 0) {
 		alg_op_type = ENCRYPTION;
 	} else {
@@ -1395,19 +2119,30 @@ int main(int argc, char *argv[])
 		g_ivlen = ivlen;
 	}
 
-	printf("test set: key len:%d, iv len:%d\n", g_keylen * 8, g_ivlen);
-	__u64 lcore_mask = 0;
-	__u64 hcore_mask = 0;
+	printf("test set: key len:%d, iv len:%d\n", g_keylen, g_ivlen);
+
+	q_num = thread_num * ctx_num_per_q;
 	if (!strcmp(argv[15], "-sync")) {
 		printf("test type is sync\n");
-		sec_cipher_sync_test(thread_num, lcore_mask, hcore_mask,
-				alg_op_type, NULL, node_msk);
+		if (g_algclass == CIPHER_CLASS || g_algclass == DIGEST_CLASS)
+			sec_cipher_sync_test(thread_num, lcore_mask, hcore_mask,
+			alg_op_type, NULL, node_msk);
+		else if (g_algclass == AEAD_CLASS)
+			sec_aead_sync_test(thread_num, lcore_mask, hcore_mask,
+			alg_op_type, NULL, node_msk);
+		else
+			printf("test alg type not supported\n");
 	} else if (!strcmp(argv[15], "-async")) {
 		printf("test type is async\n");
-		sec_cipher_async_test(thread_num, lcore_mask, hcore_mask,
-				alg_op_type, NULL, node_msk);
+		if (g_algclass == CIPHER_CLASS || g_algclass == DIGEST_CLASS)
+			sec_cipher_async_test(thread_num, lcore_mask, hcore_mask,
+			alg_op_type, NULL, node_msk);
+		else if (g_algclass == AEAD_CLASS)
+			sec_aead_async_test(thread_num, lcore_mask, hcore_mask,
+			alg_op_type, NULL, node_msk);
+		else
+			printf("test alg type not supported\n");
 	} else {
-		/* eg: ./test_hisi_sec -cipher -t 3 -optype 0 -seconds 1 -pktlen 1024 -keylen 16 -ivlen 16 -sync */
 		SEC_TST_PRT("Now Please set the cipher test type! -sync or -async.\n");
 	}
 
