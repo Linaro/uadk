@@ -39,6 +39,7 @@
 #define SQE_BYTES_NUMS 32
 #define CTR_MODE_LEN_SHIFT 4
 #define WORD_BYTES 4
+#define WORD_ALIGNMENT_MASK 0X3
 #define U64_DATA_BYTES 8
 #define CTR_128BIT_COUNTER	16
 #define DIF_VERIFY_FAIL 2
@@ -797,6 +798,11 @@ static int fill_digest_bd2_alg(struct wcrypto_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(msg->out_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid digest out_bytes!\n");
+		return -WD_EINVAL;
+	}
+
 	sqe->type2.mac_len = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WCRYPTO_DIGEST_NORMAL)
 		sqe->type2.a_alg = g_digest_a_alg[msg->alg];
@@ -852,6 +858,11 @@ static int fill_digest_bd1_alg(struct wcrypto_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(msg->out_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid digest out_bytes!\n");
+		return -WD_EINVAL;
+	}
+
 	sqe->type1.mac_len = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WCRYPTO_DIGEST_NORMAL)
 		sqe->type1.a_alg = g_digest_a_alg[msg->alg];
@@ -871,6 +882,10 @@ static int fill_digest_bd1_addr(struct wd_queue *q,
 	uintptr_t phy;
 
 	if (msg->mode == WCRYPTO_DIGEST_HMAC) {
+		if (unlikely(msg->key_bytes & WORD_ALIGNMENT_MASK)) {
+			WD_ERR("Invalid digest key_bytes!\n");
+			return -WD_EINVAL;
+		}
 		sqe->type1.a_key_len = msg->key_bytes / WORD_BYTES;
 		phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
 		if (!phy) {
@@ -968,6 +983,10 @@ static int fill_digest_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	sqe->type2.mac_addr_h = HI_U32(phy);
 
 	if (msg->mode == WCRYPTO_DIGEST_HMAC) {
+		if (unlikely(msg->key_bytes & WORD_ALIGNMENT_MASK)) {
+			WD_ERR("Invalid digest key_bytes!\n");
+			return -WD_EINVAL;
+		}
 		sqe->type2.a_key_len = msg->key_bytes / WORD_BYTES;
 		phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
 		if (!phy) {
@@ -1070,6 +1089,11 @@ static int fill_digest_bd3_alg(struct wcrypto_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(msg->out_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid digest out_bytes!\n");
+		return -WD_EINVAL;
+	}
+
 	sqe->mac_len = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WCRYPTO_DIGEST_NORMAL)
 		sqe->a_alg = g_digest_a_alg[msg->alg];
@@ -1112,6 +1136,10 @@ static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	sqe->mac_addr_h = HI_U32(phy);
 
 	if (msg->mode == WCRYPTO_DIGEST_HMAC) {
+		if (unlikely(msg->key_bytes & WORD_ALIGNMENT_MASK)) {
+			WD_ERR("Invalid digest key_bytes!\n");
+			return -WD_EINVAL;
+		}
 		sqe->a_key_len = msg->key_bytes / WORD_BYTES;
 		phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
 		if (!phy) {
