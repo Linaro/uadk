@@ -3727,7 +3727,6 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 					return -1;
 				}
 			} else {
-				printf("ecc_point2buf start.\n");
 				ret = ecc_point2buf(key, key_size, o_buf, key_size * 2);
 				if (ret < 0) {
 					HPRE_TST_PRT("ecc_point2buf fail!\n");
@@ -4068,7 +4067,7 @@ static void *_ecc_sys_test_thread(void *data)
 					 pid, thread_id, cpuid);
 	}
 
-	if (!strncmp(q->capa.alg, "ecdh", 4)) {
+	if (!(!strncmp(q->capa.alg, "x448", 4) || !strncmp(q->capa.alg, "x25519", 5))) {
 		ret = get_ecc_nid(ecc_curve_name, &setup.nid, &setup.curve_id);
 		if (ret < 0) {
 			HPRE_TST_PRT("ecc sys test not find curve!\n");
@@ -4088,7 +4087,7 @@ static void *_ecc_sys_test_thread(void *data)
 		ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
 		ctx_setup.br.usr = pool;
 
-		if (!strncmp(q->capa.alg, "ecdh", 4)) {
+		if (!(!strncmp(q->capa.alg, "x448", 4) || !strncmp(q->capa.alg, "x25519", 5))) {
 			if (!setup.curve_id) {
 				ctx_setup.cv.type = WCRYPTO_CV_CFG_PARAM;
 				fill_ecdh_param_of_curve(&param);
