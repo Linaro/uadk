@@ -78,4 +78,114 @@ extern int wd_alg_decompress(handle_t handle, struct wd_comp_arg *arg);
 extern int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm);
 extern int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm);
 
+/* new code */
+/**
+ * struct wd_comp_ctx - Define one ctx and related type.
+ * @ctx:	The ctx itself.
+ * @type:	Define this ctx is used for compression or decompression.
+ *		0: compression; 1: decompression.
+ */
+struct wd_comp_ctx {
+	handle_t ctx;
+	__u8 type;
+};
+
+/**
+ * struct wd_ctx_config - Define a ctx set and its related attributes, which
+ *			  will be used in the scope of current process.
+ * @ctx_num:	The ctx number in below ctx array.
+ * @ctxs:	Point to a ctx array, length is above ctx_num.
+ * @priv:	The attributes of ctx defined by user, which is used by user
+ *		defined scheduler.
+ */
+struct wd_ctx_config {
+	int ctx_num;
+	struct wd_comp_ctx  *ctxs;
+	void *priv;
+};
+
+/**
+ * struct wd_comp_sched - Define a scheduler.
+ * @name:		Name of this scheduler.
+ * @sched_ctx_size:	Size of the context of this scheduler. Wd_comp will
+ *			allocate this size of memory for scheduler to store
+ *			its context data internally.
+ * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
+ *			config points to the ctx config; sched_ctx points to
+ *			scheduler context; arg points to the request. Return
+ *			the proper ctx handler.
+ *			(fix me: modify arg to request?)
+ * @poll_policy:	Define the polling policy. config points to the ctx
+ *			config; sched_ctx points to scheduler context; Return
+ *			number of polled request.
+ */
+struct wd_sched {
+	const char *name;
+	__u32 sched_ctx_size;
+	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
+				  void *sched_ctx, struct wd_comp_arg *arg);
+	__u32 (*poll_policy)( struct wd_ctx_config *config, void *sched_ctx);
+};
+
+/**
+ * wd_comp_init() - Initialise ctx configuration and scheduler.
+ * @ config:	    User defined ctx configuration.
+ * @ sched:	    User defined scheduler.
+ */
+extern void wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
+
+/**
+ * wd_comp_uninit() - Un-initialise ctx configuration and scheduler.
+ */
+extern void wd_comp_uninit(void);
+
+/* fix me: stub to pass compile */
+struct wd_comp_sess_setup {};
+/**
+ * wd_comp_alloc_sess() - Allocate a wd comp session.
+ * @setup:	Parameters to setup this session.
+ */
+extern handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
+
+/**
+ * wd_comp_free_sess() - Free  a wd comp session.
+ * @ sess: The sess to be freed.
+ */
+extern void wd_comp_free_sess(handle_t sess);
+
+/**
+ * wd_comp_scompress() - Send a sync compression request.
+ * @sess:	The session which request will be sent to.
+ * @arg:	Request.
+ */
+extern int wd_comp_scompress(handle_t sess, struct wd_comp_arg *arg);
+
+/**
+ * wd_comp_acompress() - Send an async compression request.
+ * @sess:	The session which request will be sent to.
+ * @arg:	Request.
+ */
+extern int wd_comp_acompress(handle_t sess, struct wd_comp_arg *arg);
+
+/**
+ * wd_comp_poll() - Poll finished request.
+ *
+ * This function will call poll_policy function which is registered to wd comp
+ * by user.
+ */
+extern __u32 wd_comp_poll(void);
+
+/**
+ * wd_comp_poll_ctx() - Poll a ctx.
+ * @ctx:	The ctx which will be polled.
+ * @num:	Max number of requests to poll. If 0, polled all finished
+ * 		requests in this ctx.
+ * Return the number of polled requests finally.
+ *
+ * This is a help function which can be used by user's poll_policy function.
+ * User defines polling policy in poll_policiy, when it needs to poll a
+ * specific ctx, this function should be used.
+ */
+extern __u32 wd_comp_poll_ctx(handle_t ctx, __u32 num);
+
 #endif /* __WD_COMP_H */

@@ -298,3 +298,58 @@ int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm)
 		ret = sess->drv->strm_inflate(sess, strm);
 	return ret;
 }
+
+/* new code */
+struct wd_comp_driver {
+	int (*init)(struct wd_ctx_config *config, void *priv);
+	void (*exit)(void *priv);
+	int (*comp_sync)(handle_t ctx, struct wd_comp_arg *arg);
+	int (*comp_async)(handle_t ctx, struct wd_comp_arg *arg);
+	/* fix me: arg here may be changed */
+	int (*comp_recv_async)(handle_t ctx, struct wd_comp_arg *arg);
+	int (*poll)(handle_t ctx, __u32 num);
+};
+
+void wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched) {}
+
+void wd_comp_uninit(void) {}
+
+handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
+{
+	return 0;
+}
+
+void wd_comp_free_sess(handle_t sess) {}
+
+int wd_comp_scompress(handle_t sess, struct wd_comp_arg *arg)
+{
+	return 0;
+}
+
+int wd_comp_acompress(handle_t sess, struct wd_comp_arg *arg)
+{
+#if 0
+	error = global_config->sched->(*pick_next_ctx)(struct wd_ctx_config *config, void *sched_ctx);
+	global_config->driver->comp_async(priv, ctx, arg);
+	put_req_into_cache(req);
+#endif
+	return 0;
+}
+
+__u32 wd_comp_poll(void)
+{
+#if 0
+	global_config->sched->(*poll_policy)( struct wd_ctx_config *config, void *sched_ctx);
+#endif
+	return 0;
+}
+
+__u32 wd_comp_poll_ctx(handle_t ctx, __u32 num)
+{
+#if 0
+	driver->comp_recv_async(ctx, arg);
+	req = get_req_from_cache(arg);
+	req->callback(req->data);
+#endif
+	return 0;
+}
