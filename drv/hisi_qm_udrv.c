@@ -92,42 +92,23 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
-handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
+static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config) 
 {
-	struct hisi_qp_ctx		qp_ctx;
-	struct hisi_qm_priv		*qm_priv = (struct hisi_qm_priv *)priv;
-	struct hisi_qp			*qp;
-	struct hisi_qm_queue_info	*q_info;
-	int	i, size, fd, ret;
-	char	*api_name;
-
-	if (!priv || !data)
-		goto out;
-	if (qm_priv->sqe_size <= 0) {
-		WD_ERR("invalid sqe size (%d)\n", qm_priv->sqe_size);
-		goto out;
-	}
-
-	qp = calloc(1, sizeof(struct hisi_qp));
-	if (!qp)
-		goto out;
-	*data = qp;
-
-	qp->h_ctx = wd_request_ctx(node_path);
-	if (!qp->h_ctx)
-		goto out_ctx;
-
-	wd_ctx_init_qfrs_offs(qp->h_ctx);
+	char *api_name;
+	int ret = 0;
+	int	i, size, fd;	
+	struct hisi_qp_ctx qp_ctx;
+	struct hisi_qm_queue_info *q_info = NULL;
 
 	q_info = &qp->q_info;
 	q_info->sq_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, 0);
 	if (q_info->sq_base == MAP_FAILED) {
 		WD_ERR("fail to mmap DUS region\n");
 		ret = -errno;
-		goto out_mmap;
+		goto out;
 	}
-	q_info->sqe_size = qm_priv->sqe_size;
-	q_info->cq_base = q_info->sq_base + qm_priv->sqe_size * QM_Q_DEPTH;
+	q_info->sqe_size = config->sqe_size;
+	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
 
 	q_info->mmio_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, 0);
 	if (q_info->mmio_base == MAP_FAILED) {
@@ -140,8 +121,7 @@ handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
 	for (i = 0; i < size; i++) {
 		if (!strncmp(api_name, qm_type[i].qm_name, strlen(api_name))) {
 			q_info->db = qm_type[i].hacc_db;
-			q_info->db_base = q_info->mmio_base +
-					  qm_type[i].qm_db_offs;
+			q_info->db_base = q_info->mmio_base + qm_type[i].qm_db_offs;
 			break;
 		}
 	}
@@ -155,8 +135,9 @@ handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
 	q_info->cq_head_index = 0;
 	q_info->cqc_phase = 1;
 	q_info->is_sq_full = 0;
+	
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
-	qp_ctx.qc_type = qm_priv->op_type;
+	qp_ctx.qc_type = config->op_type;
 	fd = wd_ctx_get_fd(qp->h_ctx);
 	ret = ioctl(fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
@@ -164,24 +145,60 @@ handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
 		goto out_qm;
 	}
 	q_info->sqn = qp_ctx.id;
-
-	ret = wd_ctx_start(qp->h_ctx);
-	if (ret)
-		goto out_qm;
-	wd_ctx_set_sess_priv(qp->h_ctx, qp);
-	return qp->h_ctx;
+	
+	return 0;
 
 out_qm:
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
 out_mmio:
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
-out_mmap:
-	wd_release_ctx(qp->h_ctx);
-out_ctx:
+out:
+	return ret;
+}
+
+handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
+{
+	return (handle_t)NULL;
+}
+
+handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
+{
+	struct hisi_qp *qp;
+	int	ret;
+
+	if (!config)
+		goto out;
+	
+	if (config->sqe_size <= 0) {
+		WD_ERR("invalid sqe size (%d)\n", config->sqe_size);
+		goto out;
+	}
+
+	qp = calloc(1, sizeof(struct hisi_qp));
+	if (!qp)
+		goto out;
+
+	qp->h_ctx = ctx;
+	wd_ctx_init_qfrs_offs(qp->h_ctx);
+
+	ret = hisi_qm_setup_info(qp, config);
+	if (ret)
+		goto out_qp;
+
+	ret = wd_ctx_start(qp->h_ctx);
+	if (ret)
+		goto out_qp;
+
+	wd_ctx_set_sess_priv(qp->h_ctx, qp);
+
+	return (handle_t)qp;
+
+out_qp:
 	free(qp);
 out:
 	return (handle_t)NULL;
 }
+
 
 void hisi_qm_free_ctx(handle_t h_ctx)
 {
@@ -202,6 +219,26 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
 	wd_release_ctx(qp->h_ctx);
 }
+
+
+void hisi_qm_free_qp(handle_t h_qp)
+{
+	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
+	struct hisi_qm_queue_info *q_info;
+	void *va;
+
+	q_info = &qp->q_info;
+
+	wd_ctx_stop(qp->h_ctx);
+	va = wd_ctx_get_shared_va(qp->h_ctx);
+	if (va) {
+		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS, va);
+		wd_ctx_set_shared_va(qp->h_ctx, NULL);
+	}
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+}
+
 
 int hisi_qm_send(handle_t h_ctx, void *req)
 {
