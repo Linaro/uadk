@@ -20,6 +20,11 @@ struct wd_alg_comp;
 #define STATUS_IN_PART_USE	(1 << 2)
 #define STATUS_IN_EMPTY		(1 << 3)
 
+enum {
+	CTX_TYPE_COMP = 0,
+	CTX_TYPE_DECOMP,
+};
+
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
@@ -140,7 +145,9 @@ extern int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
 extern void wd_comp_uninit(void);
 
 /* fix me: stub to pass compile */
-struct wd_comp_sess_setup {};
+struct wd_comp_sess_setup {
+	int mode;	// BLOCK mode or STEAM mode
+};
 /**
  * wd_comp_alloc_sess() - Allocate a wd comp session.
  * @setup:	Parameters to setup this session.
