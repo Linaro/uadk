@@ -173,6 +173,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	}
 	for (i = 0; i < cache_num; i++) {
 		ctx->caches[i].msg.comp_lv = setup->comp_lv;
+		ctx->caches[i].msg.op_type = setup->op_type;
 		ctx->caches[i].msg.win_size = setup->win_size;
 		ctx->caches[i].msg.alg_type = setup->alg_type;
 		ctx->caches[i].msg.stream_mode = setup->stream_mode;
