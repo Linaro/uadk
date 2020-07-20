@@ -92,11 +92,11 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
-static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config) 
+static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 {
 	char *api_name;
 	int ret = 0;
-	int	i, size, fd;	
+	int i, size, fd;
 	struct hisi_qp_ctx qp_ctx;
 	struct hisi_qm_queue_info *q_info = NULL;
 
@@ -135,7 +135,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->cq_head_index = 0;
 	q_info->cqc_phase = 1;
 	q_info->is_sq_full = 0;
-	
+
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
 	fd = wd_ctx_get_fd(qp->h_ctx);
@@ -145,7 +145,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 		goto out_qm;
 	}
 	q_info->sqn = qp_ctx.id;
-	
+
 	return 0;
 
 out_qm:
@@ -168,7 +168,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 
 	if (!config)
 		goto out;
-	
+
 	if (config->sqe_size <= 0) {
 		WD_ERR("invalid sqe size (%d)\n", config->sqe_size);
 		goto out;
