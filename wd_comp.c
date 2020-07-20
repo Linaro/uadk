@@ -300,7 +300,17 @@ int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm)
 }
 
 /* new code */
+struct wd_comp_setting {
+	struct wd_ctx_config config;
+	struct wd_sched sched;
+	struct wd_comp_driver *driver;
+	void *priv;
+} wd_comp_setting;
+
 struct wd_comp_driver {
+	const char *drv_name;
+	const char *alg_name;
+	__u32 drv_ctx_size;
 	int (*init)(struct wd_ctx_config *config, void *priv);
 	void (*exit)(void *priv);
 	int (*comp_sync)(handle_t ctx, struct wd_comp_arg *arg);
@@ -310,9 +320,68 @@ struct wd_comp_driver {
 	int (*poll)(handle_t ctx, __u32 num);
 };
 
-void wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched) {}
+static struct wd_comp_driver wd_comp_driver_list[] = {
+	{
+		.drv_name		= "hisi_zip",
+		.alg_name		= "zlib\ngzip",
+		.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
+		.init			= hisi_zip_init,
+		.exit			= hisi_zip_exit,
+		.comp_sync		= NULL,
+		.comp_async		= NULL,
+		.comp_recv_async	= NULL,
+		.poll			= NULL,
+	},
+};
 
-void wd_comp_uninit(void) {}
+static void copy_config_to_global_setting(struct wd_ctx_config *config)
+{
+}
+
+static void copy_sched_to_global_setting(struct wd_sched *sched)
+{
+}
+
+static struct wd_comp_driver *find_comp_driver(const char *driver)
+{
+	return NULL;
+}
+
+int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	struct wd_comp_driver *driver;
+	const char *driver_name;
+	handle_t h_ctx;
+	void *priv;
+
+	if (!config || !sched)
+		return -EINVAL;
+
+	/* set config and sched */
+	copy_config_to_global_setting(config);
+	copy_sched_to_global_setting(sched);
+
+	/* find driver and set driver */
+	h_ctx = config->ctxs[0].ctx;
+	driver_name = wd_get_driver_name(h_ctx);
+	driver = find_comp_driver(driver_name);
+
+	wd_comp_setting.driver = driver;
+
+	/* init ctx related resources in specific driver */
+
+	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
+	wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
+
+	return 0;
+}
+
+void wd_comp_uninit(void)
+{
+	/* driver uninit */
+
+	/* unset config, sched, driver */
+}
 
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {

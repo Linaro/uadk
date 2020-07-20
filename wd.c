@@ -637,3 +637,10 @@ void *wd_get_dma_from_va(handle_t h_ctx, void *va)
 		return NULL;
 	return va - ctx->ss_va + ctx->ss_pa;
 }
+
+/* new code */
+const char *wd_get_driver_name(handle_t h_ctx)
+{
+	/* stub firstly */
+	return NULL;
+}

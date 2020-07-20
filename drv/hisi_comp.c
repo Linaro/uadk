@@ -1283,3 +1283,12 @@ int hisi_strm_inflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
 	}
 	return 0;
 }
+
+/* new code */
+int hisi_zip_init(struct wd_ctx_config *config, void *priv)
+{
+	return 0;
+}
+
+void hisi_zip_exit(void *priv)
+{}

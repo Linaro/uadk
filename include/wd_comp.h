@@ -132,7 +132,7 @@ struct wd_sched {
  * @ config:	    User defined ctx configuration.
  * @ sched:	    User defined scheduler.
  */
-extern void wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
+extern int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
 
 /**
  * wd_comp_uninit() - Un-initialise ctx configuration and scheduler.

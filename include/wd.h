@@ -140,4 +140,7 @@ extern struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask);
 extern char *wd_get_accel_name(char *node_path, int no_apdx);
 extern int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx);
 
+/* new code */
+extern const char *wd_get_driver_name(handle_t h_ctx);
+
 #endif
