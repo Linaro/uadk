@@ -347,6 +347,14 @@ static struct wd_comp_driver *find_comp_driver(const char *driver)
 	return NULL;
 }
 
+static void clear_sched_in_global_setting(struct wd_sched *sched)
+{
+}
+
+static void clear_config_in_global_setting(struct wd_ctx_config *config)
+{
+}
+
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	struct wd_comp_driver *driver;
@@ -371,6 +379,7 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* init ctx related resources in specific driver */
 
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
+	wd_comp_setting.priv = priv;
 	wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
 
 	return 0;
@@ -378,9 +387,17 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 void wd_comp_uninit(void)
 {
+	void *priv;
+
 	/* driver uninit */
+	priv = wd_comp_setting.priv;
+	wd_comp_setting.driver->exit(priv);
+	free(priv);
 
 	/* unset config, sched, driver */
+	wd_comp_setting.driver = NULL;
+	clear_sched_in_global_setting(&wd_comp_setting.sched);
+	clear_config_in_global_setting(&wd_comp_setting.config);
 }
 
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
