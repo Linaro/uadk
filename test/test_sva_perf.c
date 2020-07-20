@@ -300,8 +300,17 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		 * instead of later in the SMMU
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
+		 * Instead of memset the whole area, simply memset bytes of each page
+		 * can achieve the same result: iopf = 0
 		 */
-		memset(out_buf, 0, copts->total_len * EXPANSION_RATIO);
+		long page_size = sysconf(_SC_PAGESIZE);
+		size_t len = copts->total_len * EXPANSION_RATIO;
+		void *buf = out_buf;
+
+		for (int i = 0; i < len / page_size; i++) {
+			memset(buf, 0, 1);
+			buf = buf + page_size;
+		}
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
