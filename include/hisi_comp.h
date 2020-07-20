@@ -41,5 +41,9 @@ struct hisi_zip_ctx {
 
 extern int hisi_zip_init(struct wd_ctx_config *config, void *priv);
 extern void hisi_zip_exit(void *priv);
+extern int hisi_zip_comp_sync(handle_t ctx, struct wd_comp_req *req);
+extern int hisi_zip_comp_async(handle_t ctx, struct wd_comp_req *req);
+extern int hisi_zip_comp_recv_async(handle_t ctx, struct wd_comp_req *req);
+extern int hisi_zip_poll(handle_t ctx, __u32 num);
 
 #endif	/* __HISI_COMP_H */

@@ -84,6 +84,17 @@ extern int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm);
 extern int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm);
 
 /* new code */
+struct wd_comp_req {
+	void			*src;
+	size_t			src_len;
+	void			*dst;
+	size_t			dst_len;
+	wd_alg_comp_cb_t	*cb;
+	void			*cb_param;
+	uint32_t		flag;
+	uint32_t		status;
+};
+
 /**
  * struct wd_comp_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
@@ -117,9 +128,9 @@ struct wd_ctx_config {
  *			its context data internally.
  * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
  *			config points to the ctx config; sched_ctx points to
- *			scheduler context; arg points to the request. Return
+ *			scheduler context; req points to the request. Return
  *			the proper ctx handler.
- *			(fix me: modify arg to request?)
+ *			(fix me: modify req to request?)
  * @poll_policy:	Define the polling policy. config points to the ctx
  *			config; sched_ctx points to scheduler context; Return
  *			number of polled request.
@@ -128,7 +139,7 @@ struct wd_sched {
 	const char *name;
 	__u32 sched_ctx_size;
 	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
-				  void *sched_ctx, struct wd_comp_arg *arg);
+				  void *sched_ctx, struct wd_comp_req *req);
 	__u32 (*poll_policy)( struct wd_ctx_config *config, void *sched_ctx);
 };
 
@@ -163,16 +174,16 @@ extern void wd_comp_free_sess(handle_t sess);
 /**
  * wd_comp_scompress() - Send a sync compression request.
  * @sess:	The session which request will be sent to.
- * @arg:	Request.
+ * @req:	Request.
  */
-extern int wd_comp_scompress(handle_t sess, struct wd_comp_arg *arg);
+extern int wd_comp_scompress(handle_t sess, struct wd_comp_req *req);
 
 /**
  * wd_comp_acompress() - Send an async compression request.
  * @sess:	The session which request will be sent to.
- * @arg:	Request.
+ * @req:	Request.
  */
-extern int wd_comp_acompress(handle_t sess, struct wd_comp_arg *arg);
+extern int wd_comp_acompress(handle_t sess, struct wd_comp_req *req);
 
 /**
  * wd_comp_poll() - Poll finished request.

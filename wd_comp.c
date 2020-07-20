@@ -300,11 +300,16 @@ int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm)
 }
 
 /* new code */
+struct wd_async_req_pool {
+};
+
 struct wd_comp_setting {
 	struct wd_ctx_config config;
 	struct wd_sched sched;
+	void *sched_ctx;
 	struct wd_comp_driver *driver;
 	void *priv;
+	struct wd_async_req_pool pool;
 } wd_comp_setting;
 
 struct wd_comp_driver {
@@ -313,10 +318,10 @@ struct wd_comp_driver {
 	__u32 drv_ctx_size;
 	int (*init)(struct wd_ctx_config *config, void *priv);
 	void (*exit)(void *priv);
-	int (*comp_sync)(handle_t ctx, struct wd_comp_arg *arg);
-	int (*comp_async)(handle_t ctx, struct wd_comp_arg *arg);
-	/* fix me: arg here may be changed */
-	int (*comp_recv_async)(handle_t ctx, struct wd_comp_arg *arg);
+	int (*comp_sync)(handle_t ctx, struct wd_comp_req *req);
+	int (*comp_async)(handle_t ctx, struct wd_comp_req *req);
+	/* fix me: req here may be changed */
+	int (*comp_recv_async)(handle_t ctx, struct wd_comp_req *req);
 	int (*poll)(handle_t ctx, __u32 num);
 };
 
@@ -327,10 +332,10 @@ static struct wd_comp_driver wd_comp_driver_list[] = {
 		.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
 		.init			= hisi_zip_init,
 		.exit			= hisi_zip_exit,
-		.comp_sync		= NULL,
-		.comp_async		= NULL,
-		.comp_recv_async	= NULL,
-		.poll			= NULL,
+		.comp_sync		= hisi_zip_comp_sync,
+		.comp_async		= hisi_zip_comp_async,
+		.comp_recv_async	= hisi_zip_comp_recv_async,
+		.poll			= hisi_zip_poll,
 	},
 };
 
@@ -355,6 +360,27 @@ static void clear_config_in_global_setting(struct wd_ctx_config *config)
 {
 }
 
+int wd_init_async_request_pool(struct wd_async_req_pool *pool)
+{
+	return 0;
+}
+
+void wd_uninit_async_request_pool(struct wd_async_req_pool *pool)
+{
+}
+
+int wd_put_req_into_pool(struct wd_async_req_pool *pool,
+			 struct wd_comp_req *req)
+{
+	return 0;
+}
+
+struct wd_comp_req *wd_get_req_from_pool(struct wd_async_req_pool *pool,
+					 struct wd_comp_req req)
+{
+	return NULL;
+}
+
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	struct wd_comp_driver *driver;
@@ -376,8 +402,13 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	wd_comp_setting.driver = driver;
 
-	/* init ctx related resources in specific driver */
+	/* alloc sched context memory */
+	wd_comp_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
 
+	/* init async request pool */
+	wd_init_async_request_pool(&wd_comp_setting.pool);
+
+	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
 	wd_comp_setting.priv = priv;
 	wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
@@ -394,6 +425,11 @@ void wd_comp_uninit(void)
 	wd_comp_setting.driver->exit(priv);
 	free(priv);
 
+	/* uninit async request pool */
+	wd_uninit_async_request_pool(&wd_comp_setting.pool);
+
+	free(wd_comp_setting.sched_ctx);
+
 	/* unset config, sched, driver */
 	wd_comp_setting.driver = NULL;
 	clear_sched_in_global_setting(&wd_comp_setting.sched);
@@ -407,35 +443,53 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 
 void wd_comp_free_sess(handle_t sess) {}
 
-int wd_comp_scompress(handle_t sess, struct wd_comp_arg *arg)
+int wd_comp_scompress(handle_t sess, struct wd_comp_req *req)
 {
+	struct wd_ctx_config *config = &wd_comp_setting.config;
+	void *sched_ctx = wd_comp_setting.sched_ctx;
+	handle_t h_ctx;
+
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req);
+
+	wd_comp_setting.driver->comp_sync(h_ctx, req);
+
 	return 0;
 }
 
-int wd_comp_acompress(handle_t sess, struct wd_comp_arg *arg)
+int wd_comp_acompress(handle_t sess, struct wd_comp_req *req)
 {
-#if 0
-	error = global_config->sched->(*pick_next_ctx)(struct wd_ctx_config *config, void *sched_ctx);
-	global_config->driver->comp_async(priv, ctx, arg);
-	put_req_into_cache(req);
-#endif
+	struct wd_ctx_config *config = &wd_comp_setting.config;
+	void *sched_ctx = wd_comp_setting.sched_ctx;
+	handle_t h_ctx;
+
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req);
+
+	wd_put_req_into_pool(&wd_comp_setting.pool, req);
+
+	wd_comp_setting.driver->comp_async(h_ctx, req);
+
 	return 0;
 }
 
 __u32 wd_comp_poll(void)
 {
-#if 0
-	global_config->sched->(*poll_policy)( struct wd_ctx_config *config, void *sched_ctx);
-#endif
+	struct wd_ctx_config *config = &wd_comp_setting.config;
+	void *sched_ctx = wd_comp_setting.sched_ctx;
+
+	wd_comp_setting.sched.poll_policy(config, sched_ctx);
+
 	return 0;
 }
 
 __u32 wd_comp_poll_ctx(handle_t ctx, __u32 num)
 {
-#if 0
-	driver->comp_recv_async(ctx, arg);
-	req = get_req_from_cache(arg);
-	req->callback(req->data);
-#endif
+	struct wd_comp_req req, *req_p;
+
+	wd_comp_setting.driver->comp_recv_async(ctx, &req);
+
+	req_p = wd_get_req_from_pool(&wd_comp_setting.pool, req);
+
+	req_p->cb(0);
+
 	return 0;
 }

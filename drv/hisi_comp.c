@@ -1292,3 +1292,23 @@ int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 
 void hisi_zip_exit(void *priv)
 {}
+
+int hisi_zip_comp_sync(handle_t ctx, struct wd_comp_req *req)
+{
+	return 0;
+}
+
+int hisi_zip_comp_async(handle_t ctx, struct wd_comp_req *req)
+{
+	return 0;
+}
+
+int hisi_zip_comp_recv_async(handle_t ctx, struct wd_comp_req *req)
+{
+	return 0;
+}
+
+int hisi_zip_poll(handle_t ctx, __u32 num)
+{
+	return 0;
+}
