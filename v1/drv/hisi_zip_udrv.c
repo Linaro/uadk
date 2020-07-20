@@ -78,6 +78,61 @@ struct hisi_zip_udata {
 	void *priv;
 };
 
+static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
+				struct wcrypto_comp_msg *msg)
+{
+	switch (msg->alg_type) {
+	case WCRYPTO_ZLIB:
+		sqe->dw9 = HW_ZLIB;
+		break;
+	case WCRYPTO_GZIP:
+		sqe->dw9 = HW_GZIP;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_comp_alg_v3(struct hisi_zip_sqe_v3 *sqe,
+				struct wcrypto_comp_msg *msg)
+{
+	switch (msg->alg_type) {
+	case WCRYPTO_ZLIB:
+		sqe->dw9 = HW_ZLIB;
+		break;
+	case WCRYPTO_GZIP:
+		sqe->dw9 = HW_GZIP;
+		break;
+	case WCRYPTO_RAW_DEFLATE:
+		sqe->dw9 = HW_RAW_DEFLATE;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_window_size(struct hisi_zip_sqe_v3 *sqe,
+				struct wcrypto_comp_msg *msg)
+{
+	switch (msg->win_size) {
+	case WCRYPTO_COMP_WS_4K:
+	case WCRYPTO_COMP_WS_8K:
+	case WCRYPTO_COMP_WS_16K:
+	case WCRYPTO_COMP_WS_24K:
+	case WCRYPTO_COMP_WS_32K:
+		sqe->dw9 |= msg->win_size << WINDOWS_SIZE_SHIFT;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
 static void qm_fill_zip_sqe_with_priv(struct hisi_zip_sqe *sqe, void *priv)
 {
 	struct hisi_zip_udata *udata = priv;
@@ -157,14 +212,9 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 
 	memset((void *)sqe, 0, sizeof(*sqe));
 
-	switch (msg->alg_type) {
-	case WCRYPTO_ZLIB:
-		sqe->dw9 = HW_ZLIB;
-		break;
-	case WCRYPTO_GZIP:
-		sqe->dw9 = HW_GZIP;
-		break;
-	default:
+	ret = fill_zip_comp_alg_v1(sqe, msg);
+	if (ret) {
+		WD_ERR("The algorithm is invalid!\n");
 		return -WD_EINVAL;
 	}
 
@@ -205,30 +255,18 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 
 	memset((void *)sqe, 0, sizeof(*sqe));
 
-	switch (msg->alg_type) {
-	case WCRYPTO_ZLIB:
-		sqe->dw9 = HW_ZLIB;
-		break;
-	case WCRYPTO_GZIP:
-		sqe->dw9 = HW_GZIP;
-		break;
-	case WCRYPTO_RAW_DEFLATE:
-		sqe->dw9 = HW_RAW_DEFLATE;
-		break;
-	default:
+	ret = fill_zip_comp_alg_v3(sqe, msg);
+	if (ret) {
+		WD_ERR("The algorithm is invalid!\n");
 		return -WD_EINVAL;
 	}
 
-	switch (msg->win_size) {
-	case WCRYPTO_COMP_WS_4K:
-	case WCRYPTO_COMP_WS_8K:
-	case WCRYPTO_COMP_WS_16K:
-	case WCRYPTO_COMP_WS_24K:
-	case WCRYPTO_COMP_WS_32K:
-		sqe->dw9 |= msg->win_size << WINDOWS_SIZE_SHIFT;
-		break;
-	default:
-		return -WD_EINVAL;
+	if (msg->op_type == WCRYPTO_DEFLATE) {
+		ret = fill_zip_window_size(sqe, msg);
+		if (ret) {
+			WD_ERR("The window size is invalid!\n");
+			return -WD_EINVAL;
+		}
 	}
 
 	ret = qm_fill_zip_sqe_get_phy_addr(sqe, msg, q);
