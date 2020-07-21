@@ -349,7 +349,23 @@ static void copy_sched_to_global_setting(struct wd_sched *sched)
 
 static struct wd_comp_driver *find_comp_driver(const char *driver)
 {
-	return NULL;
+	const char *drv_name;
+	int i, found;
+
+	if (!driver)
+		return NULL;
+
+	/* There're no duplicated driver names in wd_comp_driver_list[]. */
+	for (i = 0, found = 0; i < ARRAY_SIZE(wd_comp_driver_list); i++) {
+		drv_name = wd_comp_driver_list[i].drv_name;
+		if (!strncmp(driver, drv_name, strlen(driver))) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found)
+		return NULL;
+	return &wd_comp_driver_list[i];
 }
 
 static void clear_sched_in_global_setting(struct wd_sched *sched)

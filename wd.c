@@ -641,6 +641,9 @@ void *wd_get_dma_from_va(handle_t h_ctx, void *va)
 /* new code */
 const char *wd_get_driver_name(handle_t h_ctx)
 {
-	/* stub firstly */
-	return NULL;
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return NULL;
+	return ctx->drv_name;
 }
