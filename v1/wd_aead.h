@@ -79,9 +79,9 @@ struct wcrypto_aead_ctx_setup {
  * @in: input data address
  * @out:output data address
  * @iv:initializtion verctor data address
- * @mac:output MAC VA address
  * @in_bytes: input data size
  * @out_bytes:output data size
+ * @out_buf_bytes:output buffer size
  * @iv_bytes:initializtion verctor data size
  * @assoc_size: aead associated data size
  * @priv:private information for data extension
