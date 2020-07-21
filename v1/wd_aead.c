@@ -44,6 +44,9 @@
 #define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
 
+#define AES_BLOCK_SIZE 16
+#define GCM_BLOCK_SIZE 12
+
 #define MAX_BURST_NUM	16
 
 #define DES_WEAK_KEY_NUM 4
@@ -74,6 +77,7 @@ struct wcrypto_aead_ctx {
 	__u16 ckey_bytes;
 	__u16 akey_bytes;
 	__u16 auth_size;
+	__u16 iv_blk_size;
 	struct wd_queue *q;
 	struct wcrypto_aead_ctx_setup setup;
 };
@@ -125,6 +129,30 @@ static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
 		if (ctx->akey)
 			br->free(br->usr, ctx->akey);
 	}
+}
+
+static int get_iv_block_size(int mode)
+{
+	int ret;
+
+	/* AEAD just used AES and SM4 algorithm */
+	switch (mode) {
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_CTR:
+	case WCRYPTO_CIPHER_XTS:
+	case WCRYPTO_CIPHER_OFB:
+	case WCRYPTO_CIPHER_CFB:
+	case WCRYPTO_CIPHER_CCM:
+		ret = AES_BLOCK_SIZE;
+		break;
+	case WCRYPTO_CIPHER_GCM:
+		ret = GCM_BLOCK_SIZE;
+		break;
+	default:
+		ret = 0;
+	}
+
+	return ret;
 }
 
 static int create_ctx_para_check(struct wd_queue *q,
@@ -224,6 +252,7 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 		return NULL;
 	}
 
+	ctx->iv_blk_size = get_iv_block_size(setup->cmode);
 	init_aead_cookie(ctx, setup);
 
 	return ctx;
@@ -327,7 +356,7 @@ static int cipher_key_len_check(int alg, __u16 length)
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_3DES:
-		if ((length != SEC_3DES_2KEY_SIZE) && (length != SEC_3DES_3KEY_SIZE))
+		if (length != SEC_3DES_2KEY_SIZE && length != SEC_3DES_3KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	default:
@@ -415,8 +444,13 @@ static int aead_request_init(struct wcrypto_aead_msg *req,
 	}
 	req->assoc_bytes = op->assoc_size;
 	req->auth_bytes = ctx->auth_size;
-	if (op->out_buf_bytes < (op->out_bytes + ctx->auth_size)) {
+	if (op->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST &&
+		op->out_buf_bytes < (op->out_bytes + ctx->auth_size)) {
 		WD_ERR("fail to check out buffer length!\n");
+		return -WD_EINVAL;
+	}
+	if (op->iv_bytes != ctx->iv_blk_size) {
+		WD_ERR("fail to check IV length!\n");
 		return -WD_EINVAL;
 	}
 	req->aiv = ctx->setup.br.alloc(ctx->setup.br.usr, MAX_AEAD_KEY_SIZE);
