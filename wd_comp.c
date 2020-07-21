@@ -339,12 +339,35 @@ static struct wd_comp_driver wd_comp_driver_list[] = {
 	},
 };
 
-static void copy_config_to_global_setting(struct wd_ctx_config *config)
+static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 {
+	int i;
+
+	if (cfg->ctx_num <= 0)
+		return -EINVAL;
+	for (i = 0; i < cfg->ctx_num; i++) {
+		if (cfg->ctxs[0].ctx == 0)
+			return -EINVAL;
+	}
+	/* Can't copy with the size of priv structure. */
+	wd_comp_setting.config.priv = cfg->priv;
+	wd_comp_setting.config.ctx_num = cfg->ctx_num;
+	memcpy(wd_comp_setting.config.ctxs,
+		cfg->ctxs,
+		sizeof(struct wd_comp_ctx) * cfg->ctx_num
+		);
+	return 0;
 }
 
-static void copy_sched_to_global_setting(struct wd_sched *sched)
+static int copy_sched_to_global_setting(struct wd_sched *sched)
 {
+	if (!sched->name || (sched->sched_ctx_size <= 0))
+		return -EINVAL;
+	wd_comp_setting.sched.name = strdup(sched->name);
+	wd_comp_setting.sched.sched_ctx_size = sched->sched_ctx_size;
+	wd_comp_setting.sched.pick_next_ctx = sched->pick_next_ctx;
+	wd_comp_setting.sched.poll_policy = sched->poll_policy;
+	return 0;
 }
 
 static struct wd_comp_driver *find_comp_driver(const char *driver)
@@ -368,12 +391,24 @@ static struct wd_comp_driver *find_comp_driver(const char *driver)
 	return &wd_comp_driver_list[i];
 }
 
-static void clear_sched_in_global_setting(struct wd_sched *sched)
+static void clear_sched_in_global_setting(void)
 {
+	char *name = (char *)wd_comp_setting.sched.name;
+
+	free(name);
+	wd_comp_setting.sched.sched_ctx_size = 0;
+	wd_comp_setting.sched.pick_next_ctx = NULL;
+	wd_comp_setting.sched.poll_policy = NULL;
 }
 
-static void clear_config_in_global_setting(struct wd_ctx_config *config)
+static void clear_config_in_global_setting(void)
 {
+	int i;
+
+	for (i = 0; i < wd_comp_setting.config.ctx_num; i++)
+		wd_comp_setting.config.ctxs[i].ctx = 0;
+	wd_comp_setting.config.priv = NULL;
+	wd_comp_setting.config.ctx_num = 0;
 }
 
 int wd_init_async_request_pool(struct wd_async_req_pool *pool)
@@ -403,13 +438,18 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	const char *driver_name;
 	handle_t h_ctx;
 	void *priv;
+	int ret;
 
 	if (!config || !sched)
 		return -EINVAL;
 
 	/* set config and sched */
-	copy_config_to_global_setting(config);
-	copy_sched_to_global_setting(sched);
+	ret = copy_config_to_global_setting(config);
+	if (ret < 0)
+		return ret;
+	ret = copy_sched_to_global_setting(sched);
+	if (ret < 0)
+		goto out;
 
 	/* find driver and set driver */
 	h_ctx = config->ctxs[0].ctx;
@@ -420,6 +460,10 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* alloc sched context memory */
 	wd_comp_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
+	if (!wd_comp_setting.sched_ctx) {
+		ret = -ENOMEM;
+		goto out_sched;
+	}
 
 	/* init async request pool */
 	wd_init_async_request_pool(&wd_comp_setting.pool);
@@ -430,6 +474,12 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
 
 	return 0;
+
+out_sched:
+	clear_sched_in_global_setting();
+out:
+	clear_config_in_global_setting();
+	return ret;
 }
 
 void wd_comp_uninit(void)
@@ -448,8 +498,8 @@ void wd_comp_uninit(void)
 
 	/* unset config, sched, driver */
 	wd_comp_setting.driver = NULL;
-	clear_sched_in_global_setting(&wd_comp_setting.sched);
-	clear_config_in_global_setting(&wd_comp_setting.config);
+	clear_sched_in_global_setting();
+	clear_config_in_global_setting();
 }
 
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
