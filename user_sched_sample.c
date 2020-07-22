@@ -1,7 +1,18 @@
+#include <assert.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <wd_comp.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/poll.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "wd_comp.h"
 
 #define MAX_CTX_NUM 1024
+#define MAX_NUMA_NUM 4
 
 enum sched_x_pos {
 	X_SYNC = 0,
@@ -46,10 +57,24 @@ struct sample_sched_info {
 	int sched_mode;
 };
 
+struct sched_operator {
+	void (*get_para)(struct wd_comp_arg *req, void*para);
+	int (*get_next_pos)(struct sched_ctx_region *region, void *para);
+	__u32 (*poll_policy)(struct wd_ctx_config *cfg, void *sched_ctx);
+};
+
+/**
+ * Fill para that the different mode needs
+ */
+void sample_get_para_rr(struct wd_comp_arg *req, void *para)
+{
+	return;
+}
+
 int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
 	int pos = region->last;
 
-	if (pos < region->last) {
+	if (pos < region->end) {
 		pos++;
 	} else if (pos == region->last) {
 		pos = region->begin;
@@ -64,45 +89,30 @@ int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
 	return pos;
 }
 
-/**
- * sample_get_next_pos - Find the sched function.
- */
-int sample_get_next_pos(struct sched_ctx_region *region, void *para, int mode)
+__u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, void *sched_ctx)
 {
-	int i;
-	static struct {
-		int mode;
-		int (*func)(struct sched_ctx_region *region, void *para);
-	}sched_func[] = {
-		{SCHED_RR, sample_get_next_pos_rr},
-	};
-
-	for (i = 0; i < SCHED_BUTT; i++) {
-		if (mode == sched_func[i].mode) {
-			return sched_func[i].func(region, para);
-		}
-	}
-
-	printf("ERROR: The sched_mode : %d is not support.\n", mode);
-
 	return 0;
 }
 
 /**
- * sample_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
+ * sched_ops - Define the bonding operator of the scheduler.
+ * @get_para: for the different sched modes to get their privte para.
+ * @get_next_pos: pick one ctx's pos from all the ctx.
+ * @poll_policy: the polling policy.
  */
-struct sched_ctx_region *sample_get_ctx_range(struct wd_comp_arg *arg, struct sched_ctx_region **ctx_map)
-{
-	return NULL;
-}
+struct sched_operator sched_ops[SCHED_BUTT] = {
+	{.get_para = sample_get_para_rr,
+	 .get_next_pos = sample_get_next_pos_rr,
+     .poll_policy = sample_poll_policy_rr,
+	},
+};
 
 /**
- * Fill para that the different mode needs
+ * sample_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
  */
-void sample_get_para(int sched_mode, void *para)
+struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_arg *req, struct sched_ctx_region (*ctx_map)[2])
 {
-	/* Different mode attention different attribute, we need define the attribute for the mode */
-	return;
+	return NULL;
 }
 
 /**
@@ -110,21 +120,22 @@ void sample_get_para(int sched_mode, void *para)
  *
  * This function will be registered to the wd comp
  */
-handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void* sched_ctx, struct wd_comp_arg *arg)
+handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void *sched_ctx, struct wd_comp_arg *req)
 {
 	int pos;
-	void *para;
+	void *para = NULL;
 	struct sched_ctx_region *region = NULL;
 	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
 
-	region = sample_get_ctx_range(arg, sched_info->ctx_region);
-	if (region) {
-		return NULL;
+	region = sample_get_ctx_range(req, sched_info->ctx_region);
+	if (!region) {
+		return (handle_t)NULL;
 	}
-	
-	/* Different sched policy mybe need some specific para. */
-	sample_get_para(sched_info->sched_mode, arg, para);
-	pos = sample_get_next_pos(region, para, sched_info->sched_mode);
+
+	sched_ops[sched_info->sched_mode].get_para(req, para);
+	pos = sched_ops[sched_info->sched_mode].get_next_pos(region, para);
+
+	sched_info->count[pos]++;
 
 	return cfg->ctxs[pos].ctx;
 }
@@ -134,9 +145,10 @@ handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void* sched_ctx, struct
  *
  * This function will be registered to the wd comp
  */
-__u32 sample_poll_policy(struct wd_ctx_config *cfg, void* sched_ctx)
+__u32 sample_poll_policy(struct wd_ctx_config *cfg, void *sched_ctx)
 {
-	return 0;
+	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
+	return sched_ops[sched_info->sched_mode].poll_policy(cfg, sched_ctx);
 }
 
 /**
@@ -148,7 +160,7 @@ void sample_sched_init(void *sched_ctx) {
 	memset(sched_info, 0, sizeof(struct sample_sched_info));
 
 	/* initialize the global sched info base the ctx allocation */
-	sched_info.sched_mode = SCHED_RR;
+	sched_info->sched_mode = SCHED_RR;
 
 	return;
 }
