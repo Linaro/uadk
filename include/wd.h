@@ -142,5 +142,6 @@ extern int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx);
 
 /* new code */
 extern const char *wd_get_driver_name(handle_t h_ctx);
+extern int wd_get_numa_id(handle_t h_ctx);
 
 #endif

@@ -647,3 +647,8 @@ const char *wd_get_driver_name(handle_t h_ctx)
 		return NULL;
 	return ctx->drv_name;
 }
+
+int wd_get_numa_id(handle_t h_ctx)
+{
+	return 0;
+}
