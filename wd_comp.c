@@ -300,7 +300,17 @@ int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm)
 }
 
 /* new code */
+#define WD_POOL_MAX_ENTRIES		1024
+
+struct req_pool {
+	struct wd_comp_req *reqs[WD_POOL_MAX_ENTRIES];
+	int head;
+	int tail;
+};
+
 struct wd_async_req_pool {
+	struct req_pool *pools;
+	int pool_nums;
 };
 
 struct wd_comp_setting {
@@ -411,25 +421,103 @@ static void clear_config_in_global_setting(void)
 	wd_comp_setting.config.ctx_num = 0;
 }
 
-int wd_init_async_request_pool(struct wd_async_req_pool *pool)
+/* Each context has a reqs pool. */
+static int wd_init_async_request_pool(struct wd_async_req_pool *pool)
 {
+	struct req_pool *p;
+	int i, j, num;
+
+	num = wd_comp_setting.config.ctx_num;
+
+	pool->pools = calloc(1, num * sizeof(struct req_pool));
+	if (!pool->pools)
+		return -ENOMEM;
+	pool->pool_nums = num;
+
+	for (i = 0; i < num; i++) {
+		p = &pool->pools[i];
+		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++)
+			p->reqs[j] = NULL;
+		p->head = 0;
+		p->tail = 0;
+	}
 	return 0;
 }
 
-void wd_uninit_async_request_pool(struct wd_async_req_pool *pool)
+static void wd_uninit_async_request_pool(struct wd_async_req_pool *pool)
 {
+	struct req_pool *p;
+	int i, j, num;
+
+	num = pool->pool_nums;
+	for (i = 0; i < num; i++) {
+		p = &pool->pools[i];
+		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
+			if (p->reqs[j])
+				WD_ERR("Entry #%d isn't released from reqs "
+					"pool.\n", j);
+			p->reqs[j] = NULL;
+		}
+		p->head = 0;
+		p->tail = 0;
+	}
+	free(pool->pools);
 }
 
-int wd_put_req_into_pool(struct wd_async_req_pool *pool,
-			 struct wd_comp_req *req)
+static int wd_put_req_into_pool(struct wd_async_req_pool *pool,
+				handle_t h_ctx,
+				struct wd_comp_req *req)
 {
+	struct req_pool *p;
+	int i, t, found = 0;
+
+	for (i = 0; i < wd_comp_setting.config.ctx_num; i++) {
+		if (h_ctx == wd_comp_setting.config.ctxs[i].ctx) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found)
+		return -EINVAL;
+
+	p = &pool->pools[i];
+	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
+
+	if (t == p->head)
+		return -EBUSY;
+	p->reqs[p->tail] = req;
+	p->tail = t;
 	return 0;
 }
 
-struct wd_comp_req *wd_get_req_from_pool(struct wd_async_req_pool *pool,
-					 struct wd_comp_req req)
+static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_req_pool *pool,
+						handle_t h_ctx,
+						struct wd_comp_req req)
 {
-	return NULL;
+	struct req_pool *p;
+	struct wd_comp_req *q;
+	int i, h, found = 0;
+
+	for (i = 0; i < wd_comp_setting.config.ctx_num; i++) {
+		if (h_ctx == wd_comp_setting.config.ctxs[i].ctx) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found)
+		return NULL;
+
+	p = &pool->pools[i];
+	if (p->head == p->tail)
+		return NULL;
+
+	h = (p->head + 1) % WD_POOL_MAX_ENTRIES;
+	/* remove req from reqs[] */
+	q = p->reqs[p->head];
+	p->reqs[p->head] = NULL;
+	p->head = h;
+
+	return q;
 }
 
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -466,15 +554,23 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 
 	/* init async request pool */
-	wd_init_async_request_pool(&wd_comp_setting.pool);
+	ret = wd_init_async_request_pool(&wd_comp_setting.pool);
+	if (ret < 0)
+		goto out_pool;
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
 	wd_comp_setting.priv = priv;
-	wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
+	ret = wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
+	if (ret < 0)
+		goto out_init;
 
 	return 0;
 
+out_init:
+	wd_uninit_async_request_pool(&wd_comp_setting.pool);
+out_pool:
+	free(wd_comp_setting.sched_ctx);
 out_sched:
 	clear_sched_in_global_setting();
 out:
@@ -530,7 +626,7 @@ int wd_comp_acompress(handle_t sess, struct wd_comp_req *req)
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req);
 
-	wd_put_req_into_pool(&wd_comp_setting.pool, req);
+	wd_put_req_into_pool(&wd_comp_setting.pool, h_ctx, req);
 
 	wd_comp_setting.driver->comp_async(h_ctx, req);
 
@@ -547,13 +643,13 @@ __u32 wd_comp_poll(void)
 	return 0;
 }
 
-__u32 wd_comp_poll_ctx(handle_t ctx, __u32 num)
+__u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 {
 	struct wd_comp_req req, *req_p;
 
-	wd_comp_setting.driver->comp_recv_async(ctx, &req);
+	wd_comp_setting.driver->comp_recv_async(h_ctx, &req);
 
-	req_p = wd_get_req_from_pool(&wd_comp_setting.pool, req);
+	req_p = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, req);
 
 	req_p->cb(0);
 
