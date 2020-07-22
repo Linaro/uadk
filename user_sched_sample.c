@@ -54,13 +54,13 @@ struct sched_ctx_region {
 struct sample_sched_info {
 	struct sched_ctx_region ctx_region[X_BUTT][Y_BUTT];
 	int count[MAX_CTX_NUM];
-	int sched_mode;
+	bool valid;
 };
 
 struct sched_operator {
 	void (*get_para)(struct wd_comp_arg *req, void*para);
 	int (*get_next_pos)(struct sched_ctx_region *region, void *para);
-	__u32 (*poll_policy)(struct wd_ctx_config *cfg, void *sched_ctx);
+	__u32 (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[Y_BUTT]);
 };
 
 /**
@@ -89,10 +89,24 @@ int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
 	return pos;
 }
 
-__u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, void *sched_ctx)
+__u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[Y_BUTT])
 {
+	int i, j;
+	int begin, end;
+
+	/* Traverse the async ctx */
+	for (i = 0; i < Y_BUTT; i++) {
+		begin = region[X_ASYNC][i].begin;
+		end = region[X_ASYNC][i].end;
+		for (j = begin; j <= end; j++) {
+			wd_comp_poll_ctx(cfg->ctxs[j].ctx, 1);
+		}
+	}
+
 	return 0;
 }
+
+int g_sched_mode = SCHED_RR;
 
 /**
  * sched_ops - Define the bonding operator of the scheduler.
@@ -110,7 +124,8 @@ struct sched_operator sched_ops[SCHED_BUTT] = {
 /**
  * sample_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
  */
-struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_arg *req, struct sched_ctx_region (*ctx_map)[2])
+struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_arg *req,
+	struct sched_ctx_region (*ctx_map)[Y_BUTT])
 {
 	return NULL;
 }
@@ -132,8 +147,9 @@ handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void *sched_ctx, struct
 		return (handle_t)NULL;
 	}
 
-	sched_ops[sched_info->sched_mode].get_para(req, para);
-	pos = sched_ops[sched_info->sched_mode].get_next_pos(region, para);
+	/* Notice: The "para" now is a stub, we must alloc memery for it before useing it */
+	sched_ops[g_sched_mode].get_para(req, para);
+	pos = sched_ops[g_sched_mode].get_next_pos(region, para);
 
 	sched_info->count[pos]++;
 
@@ -147,8 +163,14 @@ handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void *sched_ctx, struct
  */
 __u32 sample_poll_policy(struct wd_ctx_config *cfg, void *sched_ctx)
 {
-	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
-	return sched_ops[sched_info->sched_mode].poll_policy(cfg, sched_ctx);
+	int numa_id;
+	struct sample_sched_info *sched_info = NULL;
+
+	for (numa_id = 0; numa_id < MAX_NUMA_NUM; numa_id++) {
+		sched_ops[g_sched_mode].poll_policy(cfg, sched_info[numa_id].ctx_region);
+	}
+
+	return 0;
 }
 
 /**
@@ -156,11 +178,9 @@ __u32 sample_poll_policy(struct wd_ctx_config *cfg, void *sched_ctx)
  */
 void sample_sched_init(void *sched_ctx) {
 	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
-
-	memset(sched_info, 0, sizeof(struct sample_sched_info));
-
-	/* initialize the global sched info base the ctx allocation */
-	sched_info->sched_mode = SCHED_RR;
+	g_sched_mode = SCHED_RR;
+	memset(sched_info, 0, sizeof(struct sample_sched_info) * MAX_NUMA_NUM);
+	/* Initialize the global sched info base the ctx allocation of every numa */
 
 	return;
 }
