@@ -33,7 +33,6 @@
 #include "hisi_zip_udrv.h"
 #include "hisi_hpre_udrv.h"
 #include "hisi_sec_udrv.h"
-#include "hisi_rde_udrv.h"
 
 
 /* Only Hi1620 ES, we just need version 1 doorbell. */
