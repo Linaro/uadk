@@ -1403,6 +1403,9 @@ static void _dh_cb(const void *message, void *tag)
 	}
 
 err:
+	if (is_allow_print(thread_data->send_task_num, DH_ASYNC_GEN, 1))
+		HPRE_TST_PRT("thread %d do DH %dth time success!\n", threadId, thread_data->send_task_num);
+	hpre_dh_del_test_ctx(test_ctx);
 	if (pSwData)
 		free(pSwData);
 }
@@ -1641,6 +1644,10 @@ new_test_again:
 				hpre_dh_del_test_ctx(test_ctx);
 				goto new_test_again;
 			}
+		} else {
+			if (is_exit(pdata))
+				break;
+			goto new_test_again;
 		}
 
 	}while(!is_exit(pdata));
@@ -5854,6 +5861,9 @@ static void _rsa_cb(void *message, void *rsa_tag)
 
 	if (is_allow_print(cnt, op_type, 1))
 		HPRE_TST_PRT("thread %d do RSA %dth time success!\n", thread_id, cnt);
+	if (op_type == WCRYPTO_RSA_GENKEY && out) {
+		wcrypto_del_kg_out(ctx, out);
+	}
 	free(rsa_tag);
 }
 
@@ -6017,11 +6027,11 @@ void *_rsa_async_op_test_thread(void *data)
 				     thread_id);
 			goto fail_release;
 		}
-		opdata.out = wcrypto_new_kg_out(ctx);
-		if (!opdata.out) {
-			HPRE_TST_PRT("create rsa kgen out fail!\n");
-			goto fail_release;
-		}
+		//opdata.out = wcrypto_new_kg_out(ctx);
+		//if (!opdata.out) {
+		//	HPRE_TST_PRT("create rsa kgen out fail!\n");
+		//	goto fail_release;
+		//}
 	} else {
 		opdata.in = wd_alloc_blk(pool);
 		if (!opdata.in) {
@@ -6038,6 +6048,13 @@ void *_rsa_async_op_test_thread(void *data)
 	}
 
 	do {
+			if (opdata.op_type == WCRYPTO_RSA_GENKEY) {
+				opdata.out = wcrypto_new_kg_out(ctx);
+				if (!opdata.out) {
+					HPRE_TST_PRT("create rsa kgen out fail!\n");
+					goto fail_release;
+				}
+			}
 			/* set the user tag */
 			tag = malloc(sizeof(*tag));
 			if (!tag)
@@ -6096,8 +6113,8 @@ fail_release:
 	if (opdata.op_type == WCRYPTO_RSA_GENKEY) {
 		if (opdata.in)
 			wcrypto_del_kg_in(ctx, opdata.in);
-		if (opdata.out)
-			wcrypto_del_kg_out(ctx, opdata.out);
+		//if (opdata.out)
+		//	wcrypto_del_kg_out(ctx, opdata.out);
 	} else {
 		if (opdata.in)
 			wd_free_blk(pool, opdata.in);
@@ -6215,7 +6232,7 @@ gen_fail:
 static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			 __u64 hcore_mask, enum alg_op_type op_type)
 {
-	unsigned int block_num = 512;
+	unsigned int block_num = 2048;
 	void *pool;
 	struct wd_blkpool_setup setup;
 	struct wd_queue q;
@@ -6359,7 +6376,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 	void *bufPool;
 	struct wd_blkpool_setup setup;
 	int i, ret, cnt = 0;
-	int block_num = 1024;
+	int block_num = 1024*16;
 	struct wd_queue *q;
 	int h_cpuid;
 
