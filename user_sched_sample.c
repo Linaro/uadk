@@ -14,6 +14,7 @@
 
 #define MAX_CTX_NUM 1024
 #define MAX_NUMA_NUM 4
+#define CTX_NUM_OF_NUMA 100
 
 enum sched_x_pos {
 	X_SYNC = 0,
@@ -178,14 +179,115 @@ __u32 sample_poll_policy(struct wd_ctx_config *cfg, void *sched_ctx)
 	return 0;
 }
 
+void sample_sched_fill_region(struct sample_sched_info *sched_info,
+	int numa_id, int ctx_mode, int ctx_type, int begin, int end)
+{
+	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].begin = begin;
+	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].end = end;
+	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].last = begin;
+	return;
+}
+
 /**
  * sample_sched_init - initialize the global sched info
  */
-void sample_sched_init(void *sched_ctx) {
+void sample_sched_ctx_init(void *sched_ctx)
+{
+	int i, base;
 	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
 	g_sched_mode = SCHED_RR;
 	memset(sched_info, 0, sizeof(struct sample_sched_info) * MAX_NUMA_NUM);
+	
 	/* Initialize the global sched info base the ctx allocation of every numa */
+	for (i = 0; i < MAX_NUMA_NUM; i++) {
+		base = i * CTX_NUM_OF_NUMA;
+		sample_sched_fill_region(sched_info, 0, X_SYNC, Y_COMP, base, base + 24);
+		sample_sched_fill_region(sched_info, 0, X_SYNC, Y_UNCOMP, base + 25, base + 49);
+		sample_sched_fill_region(sched_info, 0, X_ASYNC, Y_COMP, base + 50, base + 74);
+		sample_sched_fill_region(sched_info, 0, X_ASYNC, Y_UNCOMP, base + 74, base + 99);
+	}
+
+	return;
+}
+
+void sample_ctx_alloc(char *node_path, int ctx_num, struct wd_comp_ctx *ctxs, int base)
+{
+	int i;
+
+	for (i = base; i < ctx_num + base; i++) {
+		ctxs[i]->ctx = wd_request_ctx(node_path);
+	}
+
+	return;
+}
+
+struct wd_ctx_config g_ctx_cfg;
+struct wd_sched g_sched;
+
+void sample_fill_ctx_type(int base, int end, bool sync_flag, __u8 type)
+{
+	int i;
+
+	for (i = base; i < end; i++) {
+		g_ctx_cfg->ctxs[i].sync_flag = sync_flag;
+		g_ctx_cfg->ctxs[i].type = type;
+
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].sync_flag = sync_flag;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].type = type;
+
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].sync_flag = sync_flag;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].type = type;
+
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].sync_flag = sync_flag;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].type = type;
+	}
+
+	return;
+}
+
+/**
+ * sample_global_config
+ */
+void sample_ctx_cfg_init()
+{
+	int i;
+	int numa_id;
+	int offset = 0;
+	char *node_path[MAX_NUMA_NUM] = {
+		{"dev/numa1_xxx"}, {"dev/numa2_xxx", "dev/numa3_xxx", "dev/numa4_xxx"},
+	};
+
+	g_ctx_cfg->ctxs = NULL;
+	g_ctx_cfg->priv = NULL;
+	g_ctx_cfg->ctx_num = MAX_NUMA_NUM * CTX_NUM_OF_NUMA;
+
+	g_ctx_cfg->ctxs = (struct wd_comp_ctx*)calloc(g_ctx_cfg->ctx_num, sizeof(struct wd_comp_ctx));
+	if (!g_ctx_cfg->ctxs) {
+		return;
+	}
+
+	/* Alloc the ctx of one numa */
+	for (numa_id = 0; numa_id <= MAX_NUMA_NUM; numa_id++) {
+		sample_ctx_alloc(node_path[numa_id], CTX_NUM_OF_NUMA, &g_ctx_cfg->ctxs[offset], offset);
+		offset += CTX_NUM_OF_NUMA;
+	}
+
+	/* The different ctxs' region should be define by the user */
+	sample_fill_ctx_type(0, 24, true, 0);
+	sample_fill_ctx_type(25, 49, true, 1);
+	sample_fill_ctx_type(50, 74, false, 0);
+	sample_fill_ctx_type(75, 99, false, 1);
+
+	return;
+}
+
+void sample_sched_init()
+{
+	g_sched = (struct wd_sched*)calloc(1, sizeof(struct wd_sched));
+
+	g_sched.sched_ctx_size = sizeof(struct sample_sched_info);
+	g_sched.pick_next_ctx = sample_pick_next_ctx;
+	g_sched.poll_policy = sample_poll_policy;
 
 	return;
 }

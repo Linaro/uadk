@@ -100,10 +100,13 @@ struct wd_comp_req {
  * @ctx:	The ctx itself.
  * @type:	Define this ctx is used for compression or decompression.
  *		0: compression; 1: decompression.
+ * @sync_flag:   Define this ctx is used for synchronization of asynchronization
+ *      true: synchronization; flase: asynchronization;
  */
 struct wd_comp_ctx {
 	handle_t ctx;
 	__u8 type;
+	bool sync_flag;
 };
 
 /**
