@@ -2,6 +2,8 @@
 #ifndef __WD_COMP_H
 #define __WD_COMP_H
 
+#include <stdbool.h>
+
 #include "config.h"
 #include "wd.h"
 
