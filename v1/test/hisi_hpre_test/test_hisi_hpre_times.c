@@ -1715,8 +1715,7 @@ static void _dh_perf_cb(const void *message, void *tag)
 	struct test_hpre_pthread_dt *thread_data = pTag->thread_data;
 
 	thread_data->recv_task_num++;
-
-	//hpre_dh_del_test_ctx(pTag->test_ctx);
+	hpre_dh_del_test_ctx(pTag->test_ctx);
 	free(pTag);
 }
 
@@ -1962,8 +1961,6 @@ new_test_again:
 		return NULL;
 	}
 
-	HPRE_TST_PRT("thrd-%d create test ctx finish\n", thread_id);
-
 	do {
 		if (opType == DH_ASYNC_GEN ||
 			opType == DH_ASYNC_COMPUTE) {
@@ -2050,7 +2047,10 @@ new_test_again:
 		usleep(1000);
 
 fail_release:
-
+	if (opType == DH_ASYNC_GEN ||
+		opType == DH_ASYNC_COMPUTE) {
+		return NULL;
+	}
 	if (test_ctx->op == HW_COMPUTE_KEY || test_ctx->op == HW_GENERATE_KEY)
 		wcrypto_del_dh_ctx(test_ctx->priv);
 
