@@ -351,21 +351,23 @@ static struct wd_comp_driver wd_comp_driver_list[] = {
 
 static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 {
+	struct wd_comp_ctx *ctxs;
 	int i;
 
 	if (cfg->ctx_num <= 0)
 		return -EINVAL;
+	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_comp_ctx));
+	if (!ctxs)
+		return -ENOMEM;
 	for (i = 0; i < cfg->ctx_num; i++) {
-		if (cfg->ctxs[0].ctx == 0)
+		if (!cfg->ctxs[i].ctx)
 			return -EINVAL;
 	}
+	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_comp_ctx));
+	wd_comp_setting.config.ctxs = ctxs;
 	/* Can't copy with the size of priv structure. */
 	wd_comp_setting.config.priv = cfg->priv;
 	wd_comp_setting.config.ctx_num = cfg->ctx_num;
-	memcpy(wd_comp_setting.config.ctxs,
-		cfg->ctxs,
-		sizeof(struct wd_comp_ctx) * cfg->ctx_num
-		);
 	return 0;
 }
 
@@ -413,12 +415,9 @@ static void clear_sched_in_global_setting(void)
 
 static void clear_config_in_global_setting(void)
 {
-	int i;
-
-	for (i = 0; i < wd_comp_setting.config.ctx_num; i++)
-		wd_comp_setting.config.ctxs[i].ctx = 0;
 	wd_comp_setting.config.priv = NULL;
 	wd_comp_setting.config.ctx_num = 0;
+	free(wd_comp_setting.config.ctxs);
 }
 
 /* Each context has a reqs pool. */
@@ -560,6 +559,10 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
+	if (!priv) {
+		ret = -ENOMEM;
+		goto out_priv;
+	}
 	wd_comp_setting.priv = priv;
 	ret = wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
 	if (ret < 0)
@@ -568,6 +571,8 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 
 out_init:
+	free(priv);
+out_priv:
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
 out_pool:
 	free(wd_comp_setting.sched_ctx);
