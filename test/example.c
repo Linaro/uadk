@@ -21,6 +21,9 @@
 #define FLAG_ZLIB	(1 << 0)
 #define FLAG_GZIP	(1 << 1)
 
+#define SCHED_SINGLE		"sched_single"
+#define SCHED_NULL_CTX_SIZE	4	// sched_ctx_size can't be set as 0
+
 struct getcpu_cache {
 	unsigned long blob[128/sizeof(long)];
 };
@@ -49,6 +52,22 @@ static int getcpu(unsigned *cpu, unsigned *node, struct getcpu_cache *tcache)
 }
 #endif
 
+/* only 1 context is used */
+static handle_t sched_single_pick_next(struct wd_ctx_config *cfg,
+				       void *sched_ctx,
+				       struct wd_comp_req *req
+				       )
+{
+	return ctx_conf.ctxs[0].ctx;
+}
+
+static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg,
+				      void *sched_ctx
+				      )
+{
+	return 0;
+}
+
 static int init_config(int ctx_num, struct wd_sched *sched)
 {
 	int	ret, i;
@@ -68,6 +87,11 @@ static int init_config(int ctx_num, struct wd_sched *sched)
 			goto out;
 		}
 	}
+
+	sched->name = SCHED_SINGLE;
+	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
+	sched->pick_next_ctx = sched_single_pick_next;
+	sched->poll_policy = sched_single_poll_policy;
 	wd_comp_init(&ctx_conf, sched);
 	return 0;
 out:
