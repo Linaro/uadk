@@ -76,7 +76,7 @@ static int init_config(int ctx_num, struct wd_sched *sched)
 		return -EINVAL;
 	memset(&ctx_conf, 0, sizeof(struct wd_ctx_config));
 	ctx_conf.ctx_num = ctx_num;
-	ctx_conf.ctxs = calloc(1, sizeof(struct wd_comp_ctx) * ctx_num);
+	ctx_conf.ctxs = calloc(1, sizeof(struct wd_ctx) * ctx_num);
 	if (!ctx_conf.ctxs)
 		return -ENOMEM;
 	for (i = 0; i < ctx_num; i++) {
@@ -130,7 +130,7 @@ int test_comp_sync_once(int flag, int mode)
 		sprintf(algs, "gzip");
 
 	init_config(1, &sched);
-	ctx_conf.ctxs[0].type = CTX_TYPE_COMP;
+	ctx_conf.ctxs[0].op_type = CTX_TYPE_COMP;
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -181,7 +181,7 @@ int test_comp_sync_once(int flag, int mode)
 	req.dst = dst;
 	t = 0;
 	init_config(1, &sched);
-	ctx_conf.ctxs[0].type = CTX_TYPE_DECOMP;
+	ctx_conf.ctxs[0].op_type = CTX_TYPE_DECOMP;
 
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
 	setup.mode = mode & MODE_STREAM;
@@ -247,7 +247,7 @@ int test_comp_async1_once(int flag, int mode)
 		sprintf(algs, "gzip");
 
 	init_config(1, &sched);
-	ctx_conf.ctxs[0].type = CTX_TYPE_COMP;
+	ctx_conf.ctxs[0].op_type = CTX_TYPE_COMP;
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -306,7 +306,7 @@ int test_comp_async1_once(int flag, int mode)
 	req.dst = dst;
 	t = 0;
 	init_config(1, &sched);
-	ctx_conf.ctxs[0].type = CTX_TYPE_DECOMP;
+	ctx_conf.ctxs[0].op_type = CTX_TYPE_DECOMP;
 
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
 	setup.mode = mode & MODE_STREAM;
@@ -505,7 +505,7 @@ int test_comp_async2_once(int flag, int mode)
 	t = 0;
 
 	init_config(1, &sched);
-	ctx_conf.ctxs[0].type = CTX_TYPE_COMP;
+	ctx_conf.ctxs[0].op_type = CTX_TYPE_COMP;
 
 	/* 1 thread for sending data, BLOCK mode */
 	ret = create_threads(0, 1, req);
@@ -529,7 +529,7 @@ int test_comp_async2_once(int flag, int mode)
 	req->dst_len = TEST_WORD_LEN;
 	t = 0;
 	init_config(1, &sched);
-	ctx_conf.ctxs[0].type = CTX_TYPE_DECOMP;
+	ctx_conf.ctxs[0].op_type = CTX_TYPE_DECOMP;
 
 	/* 1 thread for sending data, BLOCK mode */
 	ret = create_threads(0, 1, req);

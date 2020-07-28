@@ -20,7 +20,7 @@
 
 #define SYS_CLASS_DIR	"/sys/class/uacce"
 
-struct wd_ctx {
+struct wd_ctx_h {
 	int		fd;
 	char		node_path[MAX_DEV_NAME_LEN];
 	char		*dev_name;
@@ -402,13 +402,13 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 
 handle_t wd_request_ctx(char *node_path)
 {
-	struct wd_ctx	*ctx;
+	struct wd_ctx_h	*ctx;
 	int	ret = -EINVAL;
 
 	if (!node_path || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
 		return (handle_t)NULL;
 
-	ctx = calloc(1, sizeof(struct wd_ctx));
+	ctx = calloc(1, sizeof(struct wd_ctx_h));
 	if (!ctx)
 		return (handle_t)NULL;
 	ctx->dev_name = wd_get_accel_name(node_path, 0);
@@ -452,7 +452,7 @@ out:
 
 void wd_release_ctx(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return;
@@ -465,7 +465,7 @@ void wd_release_ctx(handle_t h_ctx)
 
 int wd_ctx_start(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	int	ret;
 
 	if (!ctx)
@@ -478,7 +478,7 @@ int wd_ctx_start(handle_t h_ctx)
 
 int wd_ctx_stop(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return -EINVAL;
@@ -487,7 +487,7 @@ int wd_ctx_stop(handle_t h_ctx)
 
 void *wd_ctx_get_shared_va(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return NULL;
@@ -496,7 +496,7 @@ void *wd_ctx_get_shared_va(handle_t h_ctx)
 
 int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return -EINVAL;
@@ -506,7 +506,7 @@ int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va)
 
 void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, size_t size)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	off_t	off = qfrt * getpagesize();
 
 	if (!ctx)
@@ -519,7 +519,7 @@ void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, size_t size)
 
 void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	size_t	size;
 
 	if (!ctx)
@@ -530,20 +530,20 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
 	}
 }
 
-/* Get session's private structure from struct wd_ctx */
+/* Get session's private structure from struct wd_ctx_h */
 void *wd_ctx_get_sess_priv(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return NULL;
 	return ctx->sess_priv;
 }
 
-/* Link session's private structure to struct wd_ctx */
+/* Link session's private structure to struct wd_ctx_h */
 int wd_ctx_set_sess_priv(handle_t h_ctx, void *priv)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return -EINVAL;
@@ -553,7 +553,7 @@ int wd_ctx_set_sess_priv(handle_t h_ctx, void *priv)
 
 void wd_ctx_init_qfrs_offs(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return;
@@ -563,7 +563,7 @@ void wd_ctx_init_qfrs_offs(handle_t h_ctx)
 
 int wd_ctx_get_fd(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return -EINVAL;
@@ -572,7 +572,7 @@ int wd_ctx_get_fd(handle_t h_ctx)
 
 char *wd_ctx_get_api(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return NULL;
@@ -581,7 +581,7 @@ char *wd_ctx_get_api(handle_t h_ctx)
 
 int wd_wait(handle_t h_ctx, __u16 ms)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	struct pollfd	fds[1];
 	int ret;
 
@@ -597,7 +597,7 @@ int wd_wait(handle_t h_ctx, __u16 ms)
 
 int wd_is_nosva(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return 0;
@@ -608,7 +608,7 @@ int wd_is_nosva(handle_t h_ctx)
 
 void *wd_reserve_mem(handle_t h_ctx, size_t size)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	int ret;
 
 	if (!ctx)
@@ -631,7 +631,7 @@ void *wd_reserve_mem(handle_t h_ctx, size_t size)
 
 void *wd_get_dma_from_va(handle_t h_ctx, void *va)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return NULL;
@@ -641,7 +641,7 @@ void *wd_get_dma_from_va(handle_t h_ctx, void *va)
 /* new code */
 const char *wd_get_driver_name(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return NULL;

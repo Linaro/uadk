@@ -210,7 +210,7 @@ void sample_sched_ctx_init(void *sched_ctx)
 	return;
 }
 
-void sample_ctx_alloc(char *node_path, int ctx_num, struct wd_comp_ctx *ctxs, int base)
+void sample_ctx_alloc(char *node_path, int ctx_num, struct wd_ctx *ctxs, int base)
 {
 	int i;
 
@@ -223,22 +223,22 @@ void sample_ctx_alloc(char *node_path, int ctx_num, struct wd_comp_ctx *ctxs, in
 
 struct wd_ctx_config *g_ctx_cfg = NULL;
 
-void sample_fill_ctx_type(int base, int end, bool sync_flag, __u8 type)
+void sample_fill_ctx_type(int base, int end, bool ctx_mode, __u8 type)
 {
 	int i;
 
 	for (i = base; i < end; i++) {
-		g_ctx_cfg->ctxs[i].sync_flag = sync_flag;
-		g_ctx_cfg->ctxs[i].type = type;
+		g_ctx_cfg->ctxs[i].ctx_mode = ctx_mode;
+		g_ctx_cfg->ctxs[i].op_type = type;
 
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].sync_flag = sync_flag;
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].type = type;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].ctx_mode = ctx_mode;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].op_type = type;
 
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].sync_flag = sync_flag;
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].type = type;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].ctx_mode = ctx_mode;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].op_type = type;
 
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].sync_flag = sync_flag;
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].type = type;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].ctx_mode = ctx_mode;
+		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].op_type = type;
 	}
 
 	return;
@@ -262,7 +262,7 @@ void sample_ctx_cfg_init()
 	g_ctx_cfg->priv = NULL;
 	g_ctx_cfg->ctx_num = MAX_NUMA_NUM * CTX_NUM_OF_NUMA;
 
-	g_ctx_cfg->ctxs = (struct wd_comp_ctx*)calloc(g_ctx_cfg->ctx_num, sizeof(struct wd_comp_ctx));
+	g_ctx_cfg->ctxs = (struct wd_ctx*)calloc(g_ctx_cfg->ctx_num, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg->ctxs) {
 		free(g_ctx_cfg);
 		return;

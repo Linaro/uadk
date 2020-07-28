@@ -351,19 +351,19 @@ static struct wd_comp_driver wd_comp_driver_list[] = {
 
 static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 {
-	struct wd_comp_ctx *ctxs;
+	struct wd_ctx *ctxs;
 	int i;
 
 	if (cfg->ctx_num <= 0)
 		return -EINVAL;
-	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_comp_ctx));
+	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx));
 	if (!ctxs)
 		return -ENOMEM;
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx)
 			return -EINVAL;
 	}
-	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_comp_ctx));
+	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_ctx));
 	wd_comp_setting.config.ctxs = ctxs;
 	/* Can't copy with the size of priv structure. */
 	wd_comp_setting.config.priv = cfg->priv;

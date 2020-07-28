@@ -98,17 +98,17 @@ struct wd_comp_req {
 };
 
 /**
- * struct wd_comp_ctx - Define one ctx and related type.
+ * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
- * @type:	Define this ctx is used for compression or decompression.
- *		0: compression; 1: decompression.
- * @sync_flag:   Define this ctx is used for synchronization of asynchronization
- *      true: synchronization; flase: asynchronization;
+ * @op_type:	Define the operation type of this specific ctx.
+ *		e.g. 0: compression; 1: decompression.
+ * @ctx_mode:   Define this ctx is used for synchronization of asynchronization
+ *		1: synchronization; 0: asynchronization;
  */
-struct wd_comp_ctx {
+struct wd_ctx {
 	handle_t ctx;
-	__u8 type;
-	bool sync_flag;
+	__u8 op_type;
+	__u8 ctx_mode;
 };
 
 /**
@@ -121,7 +121,7 @@ struct wd_comp_ctx {
  */
 struct wd_ctx_config {
 	int ctx_num;
-	struct wd_comp_ctx  *ctxs;
+	struct wd_ctx *ctxs;
 	void *priv;
 };
 
