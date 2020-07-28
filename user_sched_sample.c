@@ -60,7 +60,7 @@ struct sample_sched_info {
 };
 
 struct sched_operator {
-	void (*get_para)(struct wd_comp_arg *req, void*para);
+	void (*get_para)(struct wd_comp_req *req, void*para);
 	int (*get_next_pos)(struct sched_ctx_region *region, void *para);
 	__u32 (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[Y_BUTT]);
 };
@@ -68,7 +68,7 @@ struct sched_operator {
 /**
  * Fill para that the different mode needs
  */
-void sample_get_para_rr(struct wd_comp_arg *req, void *para)
+void sample_get_para_rr(struct wd_comp_req *req, void *para)
 {
 	return;
 }
@@ -126,7 +126,7 @@ struct sched_operator sched_ops[SCHED_BUTT] = {
 /**
  * sample_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
  */
-struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_arg *req, struct sched_ctx_region (*ctx_map)[Y_BUTT])
+struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_req *req, struct sched_ctx_region (*ctx_map)[Y_BUTT])
 {
 	int x = req->flag;
 	int y = req->status;
@@ -139,7 +139,7 @@ struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_arg *req, struct sc
  *
  * This function will be registered to the wd comp
  */
-handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void *sched_ctx, struct wd_comp_arg *req, int numa_id)
+handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void *sched_ctx, struct wd_comp_req *req, int numa_id)
 {
 	int pos;
 	void *para = NULL;
@@ -215,14 +215,13 @@ void sample_ctx_alloc(char *node_path, int ctx_num, struct wd_comp_ctx *ctxs, in
 	int i;
 
 	for (i = base; i < ctx_num + base; i++) {
-		ctxs[i]->ctx = wd_request_ctx(node_path);
+		ctxs[i].ctx = wd_request_ctx(node_path);
 	}
 
 	return;
 }
 
-struct wd_ctx_config g_ctx_cfg;
-struct wd_sched g_sched;
+struct wd_ctx_config *g_ctx_cfg = NULL;
 
 void sample_fill_ctx_type(int base, int end, bool sync_flag, __u8 type)
 {
@@ -250,12 +249,14 @@ void sample_fill_ctx_type(int base, int end, bool sync_flag, __u8 type)
  */
 void sample_ctx_cfg_init()
 {
-	int i;
 	int numa_id;
 	int offset = 0;
-	char *node_path[MAX_NUMA_NUM] = {
-		{"dev/numa1_xxx"}, {"dev/numa2_xxx", "dev/numa3_xxx", "dev/numa4_xxx"},
-	};
+	char *node_path[MAX_NUMA_NUM] = {"dev/numa1_xxx", "dev/numa2_xxx", "dev/numa3_xxx", "dev/numa4_xxx"};
+
+	g_ctx_cfg = (struct wd_ctx_config*)calloc(1, sizeof(struct wd_ctx_config));
+	if (!g_ctx_cfg) {
+		return;
+	}
 
 	g_ctx_cfg->ctxs = NULL;
 	g_ctx_cfg->priv = NULL;
@@ -263,11 +264,12 @@ void sample_ctx_cfg_init()
 
 	g_ctx_cfg->ctxs = (struct wd_comp_ctx*)calloc(g_ctx_cfg->ctx_num, sizeof(struct wd_comp_ctx));
 	if (!g_ctx_cfg->ctxs) {
+		free(g_ctx_cfg);
 		return;
 	}
 
 	/* Alloc the ctx of one numa */
-	for (numa_id = 0; numa_id <= MAX_NUMA_NUM; numa_id++) {
+	for (numa_id = 0; numa_id < MAX_NUMA_NUM; numa_id++) {
 		sample_ctx_alloc(node_path[numa_id], CTX_NUM_OF_NUMA, &g_ctx_cfg->ctxs[offset], offset);
 		offset += CTX_NUM_OF_NUMA;
 	}
@@ -281,13 +283,33 @@ void sample_ctx_cfg_init()
 	return;
 }
 
+void sample_ctx_cfg_release()
+{
+	if (g_ctx_cfg) {
+		if (g_ctx_cfg->ctxs) {
+			free(g_ctx_cfg->ctxs);
+		}
+
+		free(g_ctx_cfg);
+	}
+
+	return;
+}
+
+struct wd_sched *g_sched = NULL;
+
 void sample_sched_init()
 {
 	g_sched = (struct wd_sched*)calloc(1, sizeof(struct wd_sched));
 
-	g_sched.sched_ctx_size = sizeof(struct sample_sched_info);
-	g_sched.pick_next_ctx = sample_pick_next_ctx;
-	g_sched.poll_policy = sample_poll_policy;
+	g_sched->sched_ctx_size = sizeof(struct sample_sched_info);
+	g_sched->pick_next_ctx = sample_pick_next_ctx;
+	g_sched->poll_policy = sample_poll_policy;
 
+	return;
+}
+
+void sample_sched_release()
+{
 	return;
 }

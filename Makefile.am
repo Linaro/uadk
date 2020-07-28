@@ -13,7 +13,7 @@ libwd_la_SOURCES=wd.c wd.h wd_sched.c wd_sched.h \
 libhisi_qm_la_SOURCES=drv/hisi_qm_udrv.c hisi_qm_udrv.h
 libhisi_qm_la_LIBADD= $(libwd_la_OBJECTS)
 
-libwd_comp_la_SOURCES=wd_comp.c wd_comp.h	\
+libwd_comp_la_SOURCES=wd_comp.c user_sched_sample.c wd_comp.h	\
 		drv/hisi_comp.c hisi_comp.h
 libwd_comp_la_LIBADD= $(libwd_la_OBJECTS)
 

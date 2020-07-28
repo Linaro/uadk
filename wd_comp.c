@@ -616,7 +616,7 @@ int wd_comp_scompress(handle_t sess, struct wd_comp_req *req)
 	void *sched_ctx = wd_comp_setting.sched_ctx;
 	handle_t h_ctx;
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req);
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 
 	wd_comp_setting.driver->comp_sync(h_ctx, req);
 
@@ -629,7 +629,7 @@ int wd_comp_acompress(handle_t sess, struct wd_comp_req *req)
 	void *sched_ctx = wd_comp_setting.sched_ctx;
 	handle_t h_ctx;
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req);
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 
 	wd_put_req_into_pool(&wd_comp_setting.pool, h_ctx, req);
 
