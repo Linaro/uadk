@@ -423,7 +423,7 @@ struct evp_pkey_method_st {
 } /* EVP_PKEY_METHOD */ ;
 
 EVP_PKEY *EVP_PKEY_new(void);
-const EVP_PKEY_METHOD *EVP_PKEY_meth_find(int type);
+EVP_PKEY_METHOD *EVP_PKEY_meth_find(int type);
 
 int RAND_priv_bytes(unsigned char *buf, int num);
 /* **************** x25519/x448 *******************/
@@ -2189,7 +2189,7 @@ free_opdata:
 int x_compkey_by_openssl(struct ecc_test_ctx *test_ctx, void *ctx,
 			 struct wcrypto_ecc_in **ecc_in,
 			 struct wcrypto_ecc_key *ecc_key,
-			 int key_size, int id)
+			 size_t key_size, int id)
 {
 	/* gen prikey && pubkey */
 	EVP_PKEY_METHOD *pmeth;

@@ -170,10 +170,13 @@ const static struct wcrypto_ecc_curve_list g_curve_list[] = {
 
 static void wd_memset_zero(void *data, __u32 size)
 {
-/* close compiler optimization */
-#pragma optimize("", off)
-	memset(data, 0, size);
-#pragma optimize("", on)
+	char *s = (char *)data;
+
+	if (!s || size <= 0)
+		return;
+
+	while (size--)
+		*s++ = 0;
 }
 
 static void *br_alloc(struct wd_mm_br *br, __u32 size)
@@ -609,23 +612,6 @@ static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 	return 0;
 }
 
-static bool is_x25519_x448(const char *alg)
-{
-	return !strcmp(alg, "x25519") || !strcmp(alg, "x448");
-}
-
-static void setup_xcurve_cfg(struct wcrypto_ecc_ctx_setup *setup,
-			    const char *alg)
-{
-	if (!strcmp(alg, "x25519")) {
-		setup->key_bits = 256;
-		setup->cv.cfg.id = WCRYPTO_X25519;
-	} else if (!strcmp(alg, "x448")) {
-		setup->key_bits = 448;
-		setup->cv.cfg.id = WCRYPTO_X448;
-	}
-}
-
 static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 			       struct wcrypto_ecc_ctx_setup *setup,
 			       const char *alg)
@@ -634,8 +620,7 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 	__u32 curve_id;
 	int ret = 0;
 
-	if (setup->cv.type == WCRYPTO_CV_CFG_ID || is_x25519_x448(alg)) {
-		setup_xcurve_cfg(setup, alg);
+	if (setup->cv.type == WCRYPTO_CV_CFG_ID) {
 		curve_id = setup->cv.cfg.id;
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
 		dbg("set curve id %d\n", curve_id);
@@ -664,10 +649,11 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 static int create_ctx_key(struct wcrypto_ecc_ctx_setup *setup,
 			  struct wcrypto_ecc_ctx *ctx)
 {
-	struct wcrypto_ecc_curve c_param = {0};
+	struct wcrypto_ecc_curve c_param;
 	struct wd_queue *q = NULL;
 	int ret;
 
+	memset(&c_param, 0, sizeof(struct wcrypto_ecc_curve));
 	ctx->key.prikey = create_ecc_prikey(ctx);
 	if (!ctx->key.prikey) {
 		WD_ERR("failed to create ecc prikey!\n");
@@ -707,6 +693,20 @@ free_prikey:
 	return ret;
 }
 
+static void setup_curve_cfg(struct wcrypto_ecc_ctx_setup *setup,
+			    const char *alg)
+{
+	if (!strcmp(alg, "x25519")) {
+		setup->key_bits = 256;
+		setup->cv.type = WCRYPTO_CV_CFG_ID;
+		setup->cv.cfg.id = WCRYPTO_X25519;
+	} else if (!strcmp(alg, "x448")) {
+		setup->key_bits = 448;
+		setup->cv.type = WCRYPTO_CV_CFG_ID;
+		setup->cv.cfg.id = WCRYPTO_X448;
+	}
+}
+
 static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 {
 	if (!q || !setup) {
@@ -720,20 +720,22 @@ static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 	}
 
 	if (strcmp(q->capa.alg, "ecdh") &&
-		strcmp(q->capa.alg, "ecdsa") &&
-		strcmp(q->capa.alg, "x25519") &&
-		strcmp(q->capa.alg, "x448")) {
+	    strcmp(q->capa.alg, "ecdsa") &&
+	    strcmp(q->capa.alg, "x25519") &&
+	    strcmp(q->capa.alg, "x448")) {
 		WD_ERR("alg %s mismatching!\n", q->capa.alg);
 		return -WD_EINVAL;
 	}
 
+	setup_curve_cfg(setup, q->capa.alg);
+
 	if (setup->key_bits != 128 &&
-		setup->key_bits != 192 &&
-		setup->key_bits != 256 &&
-		setup->key_bits != 320 &&
-		setup->key_bits != 384 &&
-		setup->key_bits != 448 &&
-		setup->key_bits != 521) {
+	    setup->key_bits != 192 &&
+	    setup->key_bits != 256 &&
+	    setup->key_bits != 320 &&
+	    setup->key_bits != 384 &&
+	    setup->key_bits != 448 &&
+	    setup->key_bits != 521) {
 		WD_ERR("key_bits %d error!\n", setup->key_bits);
 		return -WD_EINVAL;
 	}
