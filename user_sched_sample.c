@@ -10,6 +10,7 @@
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "wd_comp.h"
 
 #define MAX_CTX_NUM 1024
@@ -29,8 +30,8 @@ enum sched_y_pos {
 };
 
 enum sched_mode {
-	SCHED_RR,
-	SCHED_BUTT
+	USER_SCHED_RR,
+	USER_SCHED_BUTT
 };
 
 /**
@@ -43,6 +44,7 @@ struct sched_ctx_region {
 	int begin;
 	int end;
 	int last;
+	pthread_mutex_t mutex;
 };
 
 /**
@@ -74,7 +76,11 @@ void sample_get_para_rr(struct wd_comp_req *req, void *para)
 }
 
 int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
-	int pos = region->last;
+	int pos;
+
+	pthread_mutex_lock(&region->mutex);
+
+	pos = region->last;
 
 	if (pos < region->end) {
 		pos++;
@@ -87,6 +93,8 @@ int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
 	}
 
 	region->last = pos;
+
+	pthread_mutex_unlock(&region->mutex);
 
 	return pos;
 }
@@ -108,7 +116,7 @@ __u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region (
 	return 0;
 }
 
-int g_sched_mode = SCHED_RR;
+int g_sched_mode = USER_SCHED_RR;
 
 /**
  * sched_ops - Define the bonding operator of the scheduler.
@@ -116,7 +124,7 @@ int g_sched_mode = SCHED_RR;
  * @get_next_pos: pick one ctx's pos from all the ctx.
  * @poll_policy: the polling policy.
  */
-struct sched_operator sched_ops[SCHED_BUTT] = {
+struct sched_operator sched_ops[USER_SCHED_BUTT] = {
 	{.get_para = sample_get_para_rr,
 	 .get_next_pos = sample_get_next_pos_rr,
      .poll_policy = sample_poll_policy_rr,
@@ -185,6 +193,9 @@ void sample_sched_fill_region(struct sample_sched_info *sched_info,
 	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].begin = begin;
 	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].end = end;
 	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].last = begin;
+
+	(void)pthread_mutex_init(&sched_info[numa_id].ctx_region[ctx_mode][ctx_type].mutex, NULL);
+
 	return;
 }
 
@@ -195,9 +206,9 @@ void sample_sched_ctx_init(void *sched_ctx)
 {
 	int i, base;
 	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
-	g_sched_mode = SCHED_RR;
+	g_sched_mode = USER_SCHED_RR;
 	memset(sched_info, 0, sizeof(struct sample_sched_info) * MAX_NUMA_NUM);
-	
+
 	/* Initialize the global sched info base the ctx allocation of every numa */
 	for (i = 0; i < MAX_NUMA_NUM; i++) {
 		base = i * CTX_NUM_OF_NUMA;
