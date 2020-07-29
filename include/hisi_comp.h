@@ -35,8 +35,7 @@ extern int hisi_strm_inflate(struct wd_comp_sess *sess,
 
 /* new code */
 struct hisi_zip_ctx {
-	/* stub */
-	__u32 reserv;
+	struct wd_ctx_config	config;
 };
 
 extern int hisi_zip_init(struct wd_ctx_config *config, void *priv);

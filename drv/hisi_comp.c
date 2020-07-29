@@ -1287,11 +1287,40 @@ int hisi_strm_inflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
 /* new code */
 int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 {
+	struct hisi_qm_priv qm_priv;
+	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
+	handle_t h_ctx, h_qp;
+	int i, j, ret = 0;
+
+	/* allocate qp for each context */
+	for (i = 0; i < config->ctx_num; i++) {
+		h_ctx = config->ctxs[i].ctx;
+		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
+		qm_priv.op_type = config->ctxs[i].op_type;
+		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
+		if (!h_qp) {
+			ret = -EINVAL;
+			goto out;
+		}
+		memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config));
+	}
 	return 0;
+out:
+	for (j = 0; j < i; j++) {
+		hisi_qm_free_qp(config->ctxs[j].ctx);
+	}
+	return ret;
 }
 
 void hisi_zip_exit(void *priv)
-{}
+{
+	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
+	struct wd_ctx_config *config = &zip_ctx->config;
+	int i;
+
+	for (i = 0; i < config->ctx_num; i++)
+		hisi_qm_free_qp(config->ctxs[i].ctx);
+}
 
 int hisi_zip_comp_sync(handle_t ctx, struct wd_comp_req *req)
 {
