@@ -27,6 +27,11 @@ enum {
 	CTX_TYPE_DECOMP,
 };
 
+enum {
+	CTX_MODE_SYNC = 0,
+	CTX_MODE_ASYNC,
+};
+
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
