@@ -527,6 +527,10 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
+	/* wd_comp_init() could only be invoked once for one process. */
+	if (wd_comp_setting.driver)
+		return 0;
+
 	if (!config || !sched)
 		return -EINVAL;
 
