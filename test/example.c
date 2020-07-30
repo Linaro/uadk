@@ -153,7 +153,7 @@ int test_comp_sync_once(int flag, int mode)
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
-		ret = wd_comp_scompress(sess, &req);
+		ret = wd_do_comp(sess, &req);
 		if (req.status & STATUS_OUT_READY) {
 			memcpy(buf + t, req.dst - req.dst_len,
 				req.dst_len);
@@ -187,7 +187,7 @@ int test_comp_sync_once(int flag, int mode)
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_INPUT_FINISH;
-		ret = wd_comp_scompress(sess, &req);
+		ret = wd_do_comp(sess, &req);
 		if (ret < 0)
 			goto out_comp;
 		if (req.status & STATUS_OUT_READY) {
@@ -268,7 +268,7 @@ int test_comp_async1_once(int flag, int mode)
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
-		ret = wd_comp_acompress(sess, &req);
+		ret = wd_do_comp_async(sess, &req);
 		if (ret < 0)
 			goto out_comp;
 		if (req.status & STATUS_OUT_READY) {
@@ -310,7 +310,7 @@ int test_comp_async1_once(int flag, int mode)
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_INPUT_FINISH;
-		ret = wd_comp_acompress(sess, &req);
+		ret = wd_do_comp_async(sess, &req);
 		if (ret < 0)
 			goto out_comp;
 		if (req.status & STATUS_OUT_READY) {
@@ -395,7 +395,7 @@ static void *wait_func(void *arg)
 	data->req->status = 0;
 	data->req->dst_len = TEST_WORD_LEN;
 	data->req->flag = FLAG_INPUT_FINISH;
-	ret = wd_comp_acompress(sess, data->req);
+	ret = wd_do_comp_async(sess, data->req);
 	if (ret < 0)
 		goto out_comp;
 	pthread_mutex_lock(&mutex);

@@ -182,18 +182,18 @@ extern handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
 extern void wd_comp_free_sess(handle_t sess);
 
 /**
- * wd_comp_scompress() - Send a sync compression request.
+ * wd_do_comp() - Send a sync compression request.
  * @sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_comp_scompress(handle_t sess, struct wd_comp_req *req);
+extern int wd_do_comp(handle_t sess, struct wd_comp_req *req);
 
 /**
- * wd_comp_acompress() - Send an async compression request.
+ * wd_do_comp_async() - Send an async compression request.
  * @sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_comp_acompress(handle_t sess, struct wd_comp_req *req);
+extern int wd_do_comp_async(handle_t sess, struct wd_comp_req *req);
 
 /**
  * wd_comp_poll() - Poll finished request.

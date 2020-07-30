@@ -609,7 +609,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 
 void wd_comp_free_sess(handle_t sess) {}
 
-int wd_comp_scompress(handle_t sess, struct wd_comp_req *req)
+int wd_do_comp(handle_t sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	void *sched_ctx = wd_comp_setting.sched_ctx;
@@ -627,7 +627,7 @@ int wd_comp_scompress(handle_t sess, struct wd_comp_req *req)
 	return 0;
 }
 
-int wd_comp_acompress(handle_t sess, struct wd_comp_req *req)
+int wd_do_comp_async(handle_t sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	void *sched_ctx = wd_comp_setting.sched_ctx;
