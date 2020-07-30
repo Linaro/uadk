@@ -32,7 +32,7 @@ struct wd_ctx_h {
 
 	struct uacce_dev_info	*dev_info;
 
-	void		*priv;
+	void		*sess_priv;
 };
 
 static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
@@ -530,24 +530,24 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
 	}
 }
 
-/* Get session's private structure from struct wd_ctx */
-void *wd_ctx_get_priv(handle_t h_ctx)
+/* Get session's private structure from struct wd_ctx_h */
+void *wd_ctx_get_sess_priv(handle_t h_ctx)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return NULL;
-	return ctx->priv;
+	return ctx->sess_priv;
 }
 
-/* Link session's private structure to struct wd_ctx */
-int wd_ctx_set_priv(handle_t h_ctx, void *priv)
+/* Link session's private structure to struct wd_ctx_h */
+int wd_ctx_set_sess_priv(handle_t h_ctx, void *priv)
 {
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
 		return -EINVAL;
-	ctx->priv = priv;
+	ctx->sess_priv = priv;
 	return 0;
 }
 

@@ -117,8 +117,8 @@ extern handle_t wd_request_ctx(char *node_path);
 extern void wd_release_ctx(handle_t h_ctx);
 extern int wd_ctx_start(handle_t h_ctx);
 extern int wd_ctx_stop(handle_t h_ctx);
-extern void *wd_ctx_get_priv(handle_t h_ctx);
-extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
+extern void *wd_ctx_get_sess_priv(handle_t h_ctx);
+extern int wd_ctx_set_sess_priv(handle_t h_ctx, void *sess_priv);
 extern void wd_ctx_init_qfrs_offs(handle_t h_ctx);
 extern char *wd_ctx_get_api(handle_t h_ctx);
 extern void *wd_ctx_get_shared_va(handle_t h_ctx);
@@ -141,36 +141,6 @@ extern char *wd_get_accel_name(char *node_path, int no_apdx);
 extern int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx);
 
 /* new code */
-/**
- * struct wd_ctx - Define one ctx and related type.
- * @ctx:	The ctx itself.
- * @op_type:	Define the operation type of this specific ctx.
- *		e.g. 0: compression; 1: decompression.
- * @ctx_mode:   Define this ctx is used for synchronization of asynchronization
- *		1: synchronization; 0: asynchronization;
- * @priv:	Define the pointer for vendor specific structure.
- */
-struct wd_ctx {
-	handle_t ctx;
-	__u8 op_type;
-	__u8 ctx_mode;
-	void *priv;
-};
-
-/**
- * struct wd_ctx_config - Define a ctx set and its related attributes, which
- *			  will be used in the scope of current process.
- * @ctx_num:	The ctx number in below ctx array.
- * @ctxs:	Point to a ctx array, length is above ctx_num.
- * @priv:	The attributes of ctx defined by user, which is used by user
- *		defined scheduler.
- */
-struct wd_ctx_config {
-	int ctx_num;
-	struct wd_ctx *ctxs;
-	void *priv;
-};
-
 extern const char *wd_get_driver_name(handle_t h_ctx);
 extern int wd_get_numa_id(handle_t h_ctx);
 

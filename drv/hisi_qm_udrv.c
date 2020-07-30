@@ -189,7 +189,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	if (ret)
 		goto out_qp;
 
-	wd_ctx_set_priv(qp->h_ctx, qp);
+	wd_ctx_set_sess_priv(qp->h_ctx, qp);
 
 	return (handle_t)qp;
 
@@ -206,7 +206,7 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 	struct hisi_qm_queue_info	*q_info;
 	void	*va;
 
-	qp = (struct hisi_qp *)wd_ctx_get_priv(h_ctx);
+	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
 	q_info = &qp->q_info;
 
 	wd_ctx_stop(qp->h_ctx);
@@ -246,7 +246,7 @@ int hisi_qm_send(handle_t h_ctx, void *req)
 	struct hisi_qm_queue_info	*q_info;
 	__u16 i;
 
-	qp = (struct hisi_qp *)wd_ctx_get_priv(h_ctx);
+	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
 	if (!qp)
 		return -EINVAL;
 	q_info = &qp->q_info;
@@ -282,7 +282,7 @@ int hisi_qm_recv(handle_t h_ctx, void **resp)
 	int ret;
 	struct cqe *cqe;
 
-	qp = (struct hisi_qp *)wd_ctx_get_priv(h_ctx);
+	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
 	q_info = &qp->q_info;
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
