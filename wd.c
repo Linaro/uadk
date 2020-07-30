@@ -400,7 +400,6 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 	return 0;
 }
 
-#if 0
 handle_t wd_request_ctx(char *node_path)
 {
 	struct wd_ctx_h	*ctx;
@@ -531,6 +530,27 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
 	}
 }
 
+/* Get session's private structure from struct wd_ctx */
+void *wd_ctx_get_priv(handle_t h_ctx)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return NULL;
+	return ctx->priv;
+}
+
+/* Link session's private structure to struct wd_ctx */
+int wd_ctx_set_priv(handle_t h_ctx, void *priv)
+{
+	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
+
+	if (!ctx)
+		return -EINVAL;
+	ctx->priv = priv;
+	return 0;
+}
+
 void wd_ctx_init_qfrs_offs(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -558,7 +578,6 @@ char *wd_ctx_get_api(handle_t h_ctx)
 		return NULL;
 	return ctx->dev_info->api;
 }
-#endif
 
 int wd_wait(handle_t h_ctx, __u16 ms)
 {
@@ -576,7 +595,6 @@ int wd_wait(handle_t h_ctx, __u16 ms)
 	return 0;
 }
 
-#if 0
 int wd_is_nosva(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -619,7 +637,6 @@ void *wd_get_dma_from_va(handle_t h_ctx, void *va)
 		return NULL;
 	return va - ctx->ss_va + ctx->ss_pa;
 }
-#endif
 
 /* new code */
 const char *wd_get_driver_name(handle_t h_ctx)
@@ -634,215 +651,4 @@ const char *wd_get_driver_name(handle_t h_ctx)
 int wd_get_numa_id(handle_t h_ctx)
 {
 	return 0;
-}
-
-handle_t wd_request_ctx(char *node_path)
-{
-	struct wd_ctx	*ctx;
-	char	*dev_name;
-	int	ret = 0;
-
-	if (!node_path || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
-		return (handle_t)NULL;
-
-	ctx = calloc(1, sizeof(struct wd_ctx));
-	if (!ctx)
-		return (handle_t)NULL;
-	dev_name = wd_get_accel_name(node_path, 0);
-	if (!dev_name)
-		return -EINVAL;
-	ctx->drv_name = wd_get_accel_name(node_path, 1);
-	if (!ctx->drv_name)
-		goto out;
-
-	ctx->dev_info = read_uacce_sysfs(dev_name);
-	if (!ctx->dev_info)
-		goto out_info;
-
-	ctx->fd = open(node_path, O_RDWR | O_CLOEXEC);
-	if (ctx->fd < 0) {
-		WD_ERR("Failed to open %s (%d).\n", node_path, errno);
-		goto out_fd;
-	}
-	/* make process receiving async signal from kernel */
-	fcntl(ctx->fd, F_SETOWN, getpid());
-	ret = fcntl(ctx->fd, F_GETFL);
-	if (ret < 0)
-		goto out_ctl;
-	ret = fcntl(ctx->fd, F_SETFL, ret | FASYNC);
-	if (ret < 0)
-		goto out_ctl;
-
-	return (handle_t)ctx;
-
-out_ctl:
-	close(ctx->fd);
-out_fd:
-	free(ctx->dev_info);
-out_info:
-	free(ctx->drv_name);
-out:
-	free(dev_name);
-	return (handle_t)NULL;
-}
-
-void wd_release_ctx(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return;
-	close(ctx->fd);
-	free(ctx->dev_info);
-	free(ctx->drv_name);
-	free(ctx);
-}
-
-int wd_ctx_start(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-	int	ret;
-
-	if (!ctx)
-		return -EINVAL;
-	ret = ioctl(ctx->fd, UACCE_CMD_START);
-	if (ret)
-		WD_ERR("fail to start on ctx:0x%llx\n", h_ctx);
-	return ret;
-}
-
-int wd_ctx_stop(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return -EINVAL;
-	return ioctl(ctx->fd, UACCE_CMD_PUT_Q);
-}
-
-void *wd_ctx_get_shared_va(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-	return ctx->ss_va;
-}
-
-int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return -EINVAL;
-	ctx->ss_va = shared_va;
-	return 0;
-}
-
-void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, size_t size)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-	off_t	off = qfrt * getpagesize();
-
-	if (!ctx)
-		return NULL;
-	if (ctx->dev_info->qfrs_offs[qfrt] != 0)
-		size = ctx->dev_info->qfrs_offs[qfrt];
-
-	return mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
-}
-
-void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-	size_t	size;
-
-	if (!ctx)
-		return;
-	if (ctx->dev_info->qfrs_offs[qfrt] != 0) {
-		size = ctx->dev_info->qfrs_offs[qfrt];
-		munmap(addr, size);
-	}
-}
-
-/* Get session's private structure from struct wd_ctx */
-void *wd_ctx_get_priv(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-	return ctx->priv;
-}
-
-/* Link session's private structure to struct wd_ctx */
-int wd_ctx_set_priv(handle_t h_ctx, void *priv)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return -EINVAL;
-	ctx->priv = priv;
-	return 0;
-}
-
-int wd_ctx_get_fd(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return -EINVAL;
-	return ctx->fd;
-}
-
-char *wd_ctx_get_api(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-	return ctx->dev_info->api;
-}
-
-int wd_is_nosva(handle_t h_ctx)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return 0;
-	if (ctx->dev_info->flags & UACCE_DEV_SVA)
-		return 0;
-	return 1;
-}
-
-void *wd_reserve_mem(handle_t h_ctx, size_t size)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-	int ret;
-
-	if (!ctx)
-		return NULL;
-	ctx->ss_va = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_SS, size);
-
-	if (ctx->ss_va == MAP_FAILED) {
-		WD_ERR("wd drv mmap fail!\n");
-		return NULL;
-	}
-
-	ret = (long)ioctl(ctx->fd, UACCE_CMD_GET_SS_DMA, &ctx->ss_pa);
-	if (ret) {
-		WD_ERR("fail to get PA!\n");
-		return NULL;
-	}
-
-	return ctx->ss_va;
-}
-
-void *wd_get_dma_from_va(handle_t h_ctx, void *va)
-{
-	struct wd_ctx	*ctx = (struct wd_ctx *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-	return va - ctx->ss_va + ctx->ss_pa;
 }
