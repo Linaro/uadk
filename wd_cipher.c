@@ -126,6 +126,16 @@ int wd_alg_set_key(handle_t handle, __u8 *key, __u32 key_len)
 	return 0;
 }
 
+int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	return 0;
+}
+
+void wd_cipher_uninit(void)
+{
+
+}
+
 int wd_alg_cipher_poll(handle_t handle, __u32 count)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)handle;

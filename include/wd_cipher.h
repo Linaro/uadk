@@ -87,4 +87,19 @@ struct wd_ctx_config {
 	struct wd_ctx *ctxs;
 	void *priv;
 };
+
+struct wd_sched {
+	const char *name;
+	__u32 sched_ctx_size;
+	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
+				  void *sched_ctx, struct wd_cipher_req *req, int numa_id);
+};
+
+/**
+ * wd_cipher_init() Initialise ctx configuration and schedule.
+ * @ config	    User defined ctx configuration.
+ * @ sched	    User defined schedule.
+ */
+extern int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched);
+extern void wd_cipher_uninit(void);
 #endif /* __WD_CIPHER_H */
