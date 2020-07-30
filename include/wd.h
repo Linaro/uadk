@@ -65,7 +65,6 @@ struct uacce_dev_info {
 	char		dev_root[PATH_STR_SIZE];
 
 	int		node_id;
-	int		iommu_type;
 };
 
 struct uacce_dev_list {
@@ -148,12 +147,22 @@ extern int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx);
  *		e.g. 0: compression; 1: decompression.
  * @ctx_mode:   Define this ctx is used for synchronization of asynchronization
  *		1: synchronization; 0: asynchronization;
+ * @fd:		The open file descriptor of context.
+ * @drv_name:	The driver name.
+ * @dev_info:	Sysfs node content in UACCE framework.
+ * @ss_va:	Shared virtual address.
+ * @ss_pa:	Shared physical address.
  * @priv:	Define the pointer for vendor specific structure.
  */
 struct wd_ctx {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	int fd;
+	char *drv_name;
+	struct uacce_dev_info *dev_info;
+	void *ss_va;
+	void *ss_pa;
 	void *priv;
 };
 

@@ -179,7 +179,6 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 		goto out;
 
 	qp->h_ctx = ctx;
-	wd_ctx_init_qfrs_offs(qp->h_ctx);
 
 	ret = hisi_qm_setup_info(qp, config);
 	if (ret)
