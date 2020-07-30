@@ -38,11 +38,15 @@ struct hisi_zip_ctx {
 	struct wd_ctx_config	config;
 };
 
+/*
+ * to do: put wd_comp_msg temporarily, should be move to a internal head file
+ *        together with wd_comp_driver definition.
+ */
+struct wd_comp_msg {};
+
 extern int hisi_zip_init(struct wd_ctx_config *config, void *priv);
 extern void hisi_zip_exit(void *priv);
-extern int hisi_zip_comp_sync(handle_t ctx, struct wd_comp_req *req);
-extern int hisi_zip_comp_async(handle_t ctx, struct wd_comp_req *req);
-extern int hisi_zip_comp_recv_async(handle_t ctx, struct wd_comp_req *req);
-extern int hisi_zip_poll(handle_t ctx, __u32 num);
+extern int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg);
+extern int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *msg);
 
 #endif	/* __HISI_COMP_H */

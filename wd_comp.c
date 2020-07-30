@@ -328,11 +328,8 @@ struct wd_comp_driver {
 	__u32 drv_ctx_size;
 	int (*init)(struct wd_ctx_config *config, void *priv);
 	void (*exit)(void *priv);
-	int (*comp_sync)(handle_t ctx, struct wd_comp_req *req);
-	int (*comp_async)(handle_t ctx, struct wd_comp_req *req);
-	/* fix me: req here may be changed */
-	int (*comp_recv_async)(handle_t ctx, struct wd_comp_req *req);
-	int (*poll)(handle_t ctx, __u32 num);
+	int (*comp_send)(handle_t ctx, struct wd_comp_msg *msg);
+	int (*comp_recv)(handle_t ctx, struct wd_comp_msg *msg);
 };
 
 static struct wd_comp_driver wd_comp_driver_list[] = {
@@ -342,10 +339,8 @@ static struct wd_comp_driver wd_comp_driver_list[] = {
 		.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
 		.init			= hisi_zip_init,
 		.exit			= hisi_zip_exit,
-		.comp_sync		= hisi_zip_comp_sync,
-		.comp_async		= hisi_zip_comp_async,
-		.comp_recv_async	= hisi_zip_comp_recv_async,
-		.poll			= hisi_zip_poll,
+		.comp_send		= hisi_zip_comp_send,
+		.comp_recv		= hisi_zip_comp_recv,
 	},
 };
 
@@ -618,11 +613,16 @@ int wd_comp_scompress(handle_t sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	void *sched_ctx = wd_comp_setting.sched_ctx;
+	struct wd_comp_msg *msg = NULL;
 	handle_t h_ctx;
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 
-	wd_comp_setting.driver->comp_sync(h_ctx, req);
+	/* to do: build msg */
+
+	wd_comp_setting.driver->comp_send(h_ctx, msg);
+
+	wd_comp_setting.driver->comp_recv(h_ctx, msg);
 
 	return 0;
 }
@@ -631,13 +631,14 @@ int wd_comp_acompress(handle_t sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	void *sched_ctx = wd_comp_setting.sched_ctx;
+	struct wd_comp_msg *msg = NULL;
 	handle_t h_ctx;
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 
 	wd_put_req_into_pool(&wd_comp_setting.pool, h_ctx, req);
 
-	wd_comp_setting.driver->comp_async(h_ctx, req);
+	wd_comp_setting.driver->comp_send(h_ctx, msg);
 
 	return 0;
 }
@@ -655,8 +656,9 @@ __u32 wd_comp_poll(void)
 __u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 {
 	struct wd_comp_req req, *req_p;
+	struct wd_comp_msg *msg = NULL;
 
-	wd_comp_setting.driver->comp_recv_async(h_ctx, &req);
+	wd_comp_setting.driver->comp_recv(h_ctx, msg);
 
 	req_p = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, req);
 

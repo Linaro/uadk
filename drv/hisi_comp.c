@@ -1322,22 +1322,12 @@ void hisi_zip_exit(void *priv)
 		hisi_qm_free_qp(config->ctxs[i].ctx);
 }
 
-int hisi_zip_comp_sync(handle_t ctx, struct wd_comp_req *req)
+int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
 	return 0;
 }
 
-int hisi_zip_comp_async(handle_t ctx, struct wd_comp_req *req)
-{
-	return 0;
-}
-
-int hisi_zip_comp_recv_async(handle_t ctx, struct wd_comp_req *req)
-{
-	return 0;
-}
-
-int hisi_zip_poll(handle_t ctx, __u32 num)
+int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *msg)
 {
 	return 0;
 }
