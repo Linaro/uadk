@@ -188,6 +188,8 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	if (ret)
 		goto out_qp;
 
+	wd_ctx_set_priv(qp->h_ctx, qp);
+
 	return (handle_t)qp;
 
 out_qp:

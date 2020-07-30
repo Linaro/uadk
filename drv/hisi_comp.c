@@ -1285,19 +1285,11 @@ int hisi_strm_inflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
 }
 
 /* new code */
-/* struct hisi_zip_priv binds to wd_ctx->priv */
-struct hisi_zip_priv {
-	/* h_qp must be the first entry in struct hisi_zip_priv */
-	handle_t h_qp;
-	struct hisi_strm_info	strm;
-};
-
 int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 {
 	struct hisi_qm_priv qm_priv;
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
-	struct hisi_zip_priv *zip_priv;
-	handle_t h_ctx;
+	handle_t h_ctx, h_qp;
 	int i, j, ret = 0;
 
 	/* allocate qp for each context */
@@ -1305,27 +1297,17 @@ int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;
-		zip_priv = calloc(1, sizeof(struct hisi_zip_priv));
-		if (!zip_priv) {
-			ret = -ENOMEM;
-			goto out;
-		}
-		zip_priv->h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
-		if (!zip_priv->h_qp) {
+		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
+		if (!h_qp) {
 			ret = -EINVAL;
-			free(zip_priv);
 			goto out;
 		}
-		wd_ctx_set_priv(h_ctx, zip_priv);
 		memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config));
 	}
 	return 0;
 out:
 	for (j = 0; j < i; j++) {
-		h_ctx = config->ctxs[j].ctx;
-		zip_priv = (struct hisi_zip_priv *)wd_ctx_get_priv(h_ctx);
-		hisi_qm_free_qp(zip_priv->h_qp);
-		free(zip_priv);
+		hisi_qm_free_qp(config->ctxs[j].ctx);
 	}
 	return ret;
 }
@@ -1334,16 +1316,10 @@ void hisi_zip_exit(void *priv)
 {
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct wd_ctx_config *config = &zip_ctx->config;
-	struct hisi_zip_priv *zip_priv;
-	handle_t h_ctx;
 	int i;
 
-	for (i = 0; i < config->ctx_num; i++) {
-		h_ctx = config->ctxs[i].ctx;
-		zip_priv = (struct hisi_zip_priv *)wd_ctx_get_priv(h_ctx);
-		hisi_qm_free_qp(zip_priv->h_qp);
-		free(zip_priv);
-	}
+	for (i = 0; i < config->ctx_num; i++)
+		hisi_qm_free_qp(config->ctxs[i].ctx);
 }
 
 int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
