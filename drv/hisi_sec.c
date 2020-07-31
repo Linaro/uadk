@@ -120,39 +120,53 @@ static int get_3des_c_key_len(struct wd_cipher_sess *sess, __u8 *c_key_len)
 	return 0;
 }
 
-static int fill_cipher_bd2_alg(struct wd_cipher_sess *sess, struct hisi_sec_sqe *sqe)
+static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
 
 
 	return 0;
 }
 
-static int fill_cipher_bd2_mode(struct wd_cipher_sess *sess, struct hisi_sec_sqe *sqe)
+static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
 	return 0;
 }
 
-static int hisi_cipher_create_request(struct wd_cipher_sess *sess, struct wd_cipher_arg *arg,
-				struct hisi_sec_sqe *sqe)
+static void parse_cipher_bd2(struct hisi_sec_sqe sqe, struct wd_cipher_msg *recv_msg)
 {
-	return 0;
-}
-
-/* should define a struct to pass aead, cipher to this function */
-int hisi_sec_crypto(struct wd_cipher_sess *sess, struct wd_cipher_arg *arg)
-{
-	return 0;
 
 }
 
-int hisi_sec_encrypt(struct wd_cipher_sess *sess, struct wd_cipher_arg *arg)
+int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
-  return 0;
+	struct hisi_sec_sqe sqe;
+	int ret;
+
+	/* fill cipher bd2 alg */
+	/* fill cipher bd2 mode */
+	ret = hisi_qm_send(ctx, &sqe);
+	if (!ret) {
+		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		return ret;
+	}
+
+	return ret;
 }
 
-int hisi_sec_decrypt(struct wd_cipher_sess *sess, struct wd_cipher_arg *arg)
-{
-  return 0;
+int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
+	struct hisi_sec_sqe sqe;
+	int ret;
+
+	ret = hisi_qm_recv(ctx, &sqe);
+	if (!ret) {
+		WD_ERR("hisi qm recv is err(%d)!\n", ret);
+		return ret;
+	}
+
+	/* parser cipher sqe */
+	parse_cipher_bd2(sqe, recv_msg);
+
+	return 1;
 }
 
 int hisi_cipher_init(struct wd_cipher_sess *sess)

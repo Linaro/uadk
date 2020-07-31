@@ -9,6 +9,8 @@
 #define MAX_CIPHER_KEY_SIZE  64
 
 #define WD_POOL_MAX_ENTRIES  1024
+#define DES_WEAK_KEY_NUM     4
+static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0};
 
 struct req_pool {
 	struct wd_cipher_req *reqs[WD_POOL_MAX_ENTRIES];
@@ -35,6 +37,8 @@ struct wd_cipher_driver {
 	char	*alg_name;
 	int	(*init)(struct wd_ctx_config *config, void* priv);
 	void	(*exit)(void* priv);
+	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
+	int	(*cipher_recv)(handle_t ctx, struct wd_cipher_msg *msg);
 	int	(*poll)(handle_t ctx, __u32 num);
 };
 
@@ -44,6 +48,8 @@ static struct wd_cipher_driver wd_alg_cipher_list[] = {
 		.alg_name	= "cipher",
 		.init		= hisi_sec_init,
 		.exit		= hisi_sec_exit,
+		.cipher_send	= hisi_sec_cipher_send,
+		.cipher_recv	= hisi_sec_cipher_recv,
 		.poll	= hisi_sec_poll,
 	},
 };
@@ -81,6 +87,13 @@ int wd_alg_decrypt(handle_t handle, struct wd_cipher_arg *arg)
 
 static int is_des_weak_key(const __u64 *key, __u16 keylen)
 {
+	int i;
+
+	for (i = 0; i < DES_WEAK_KEY_NUM; i++) {
+		if (*key == des_weak_key[i])
+			return 1;
+	}
+
 	return 0;
 }
 
