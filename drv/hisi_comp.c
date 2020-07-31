@@ -1307,7 +1307,8 @@ int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 	return 0;
 out:
 	for (j = 0; j < i; j++) {
-		hisi_qm_free_qp(config->ctxs[j].ctx);
+		h_qp = wd_ctx_get_sess_priv(config->ctxs[j].ctx);
+		hisi_qm_free_qp(h_qp);
 	}
 	return ret;
 }
@@ -1316,10 +1317,13 @@ void hisi_zip_exit(void *priv)
 {
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct wd_ctx_config *config = &zip_ctx->config;
+	handle_t h_qp;
 	int i;
 
-	for (i = 0; i < config->ctx_num; i++)
-		hisi_qm_free_qp(config->ctxs[i].ctx);
+	for (i = 0; i < config->ctx_num; i++) {
+		h_qp = wd_ctx_get_sess_priv(config->ctxs[i].ctx);
+		hisi_qm_free_qp(h_qp);
+	}
 }
 
 
