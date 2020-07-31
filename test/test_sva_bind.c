@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Test the IOMMU SVA infrastructure of the Linux kernel.
  * - what happens when a process bound to a device is killed
