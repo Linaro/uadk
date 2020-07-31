@@ -122,13 +122,60 @@ static int get_3des_c_key_len(struct wd_cipher_sess *sess, __u8 *c_key_len)
 
 static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
+	int ret = 0;
+	__u8 c_key_len = 0;
 
+	switch (msg->alg) {
+	case WD_CIPHER_SM4:
+		sqe->type2.c_alg = C_ALG_SM4;
+		sqe->type2.icvw_kmode = CKEY_LEN_SM4 << SEC_CKEY_OFFSET;
+		break;
+	case WD_CIPHER_AES:
+		sqe->type2.c_alg = C_ALG_AES;
+		//ret = get_aes_c_key_len(sess, &c_key_len);
+		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
+		break;
+	case WD_CIPHER_DES:
+		sqe->type2.c_alg = C_ALG_DES;
+		sqe->type2.icvw_kmode = CKEY_LEN_DES;
+		break;
+	case WD_CIPHER_3DES:
+		sqe->type2.c_alg = C_ALG_3DES;
+		//ret = get_3des_c_key_len(sess, &c_key_len);
+		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
+		break;
+	default:
+		WD_ERR("Invalid cipher type!\n");
+		return -EINVAL;
+		break;
+	}
 
-	return 0;
+	return ret;
 }
 
 static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
+	__u16 c_mode;
+
+	switch (msg->mode) {
+		case WD_CIPHER_ECB:
+			c_mode = C_MODE_ECB;
+			break;
+		case WD_CIPHER_CBC:
+			c_mode = C_MODE_CBC;
+			break;
+		case WD_CIPHER_CTR:
+			c_mode = C_MODE_CTR;
+			break;
+		case WD_CIPHER_XTS:
+			c_mode = C_MODE_XTS;
+			break;
+		default:
+			WD_ERR("Invalid cipher mode type!\n");
+			return -EINVAL;
+	}
+	sqe->type2.icvw_kmode |= (__u16)(c_mode) << SEC_CMODE_OFFSET;
+
 	return 0;
 }
 
@@ -140,10 +187,38 @@ static void parse_cipher_bd2(struct hisi_sec_sqe sqe, struct wd_cipher_msg *recv
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
 	struct hisi_sec_sqe sqe;
+	__u8 scene, cipher;
+	__u8 de;
 	int ret;
 
+	/* config BD type */
+	sqe.type_auth_cipher = BD_TYPE2;
+	/* config scence */
+	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
+	de = 0x1 << SEC_DE_OFFSET;
+	sqe.sds_sa_type = (__u8)(de | scene);
+
+	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
+	sqe.type2.data_src_addr = (__u64)msg->in;
+
+	sqe.type2.data_dst_addr = (__u64)msg->out;
+
+	sqe.type2.c_ivin_addr = (__u64)msg->iv;
+
 	/* fill cipher bd2 alg */
+	ret = fill_cipher_bd2_alg(msg, &sqe);
+	if (ret) {
+		WD_ERR("faile to fill bd alg!\n");
+		return ret;
+	}
+
 	/* fill cipher bd2 mode */
+	ret = fill_cipher_bd2_mode(msg, &sqe);
+	if (ret) {
+		WD_ERR("faile to fill bd mode!\n");
+		return ret;
+	}
+
 	ret = hisi_qm_send(ctx, &sqe);
 	if (!ret) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
