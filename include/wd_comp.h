@@ -32,6 +32,16 @@ enum {
 	CTX_MODE_ASYNC,
 };
 
+enum wd_comp_alg_type {
+	WD_ZLIB,
+	WD_GZIP,
+};
+
+enum wd_comp_op_type {
+    WD_DIR_COMPRESS,	/* session for compression */
+    WD_DIR_DECOMPRESS,  /* session for decompression */
+};
+
 struct wd_comp_sess {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
@@ -98,9 +108,12 @@ struct wd_comp_req {
 	size_t			dst_len;
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
+	__u8			op_type;     /* denoted by wd_comp_op_type */
 	uint32_t		flag;
+	uint32_t		last;
 	uint32_t		status;
 };
+
 
 /**
  * struct wd_ctx - Define one ctx and related type.
@@ -181,6 +194,16 @@ extern handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
  */
 extern void wd_comp_free_sess(handle_t sess);
 
+
+extern int wd_do_comp(handle_t sess, struct wd_comp_req *req);
+
+extern int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req);
+
+extern int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
+
+extern int wd_comp_poll(__u32 *count);
+
+
 /**
  * wd_do_comp() - Send a sync compression request.
  * @sess:	The session which request will be sent to.
@@ -200,8 +223,10 @@ extern int wd_do_comp_async(handle_t sess, struct wd_comp_req *req);
  *
  * This function will call poll_policy function which is registered to wd comp
  * by user.
- */
+
 extern __u32 wd_comp_poll(void);
+*/
+
 
 /**
  * wd_comp_poll_ctx() - Poll a ctx.

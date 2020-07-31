@@ -274,7 +274,7 @@ int hisi_qm_send(handle_t h_ctx, void *req)
 	return 0;
 }
 
-int hisi_qm_recv(handle_t h_ctx, void **resp)
+int hisi_qm_recv(handle_t h_ctx, void *resp)
 {
 	struct hisi_qp			*qp;
 	struct hisi_qm_queue_info	*q_info;
@@ -294,7 +294,7 @@ int hisi_qm_recv(handle_t h_ctx, void **resp)
 			errno = -EIO;
 			return -EIO;
 		}
-
+/*
 		ret = hisi_qm_recv_sqe(q_info->sq_base + j * q_info->sqe_size,
 				       q_info, i);
 		if (ret < 0) {
@@ -302,13 +302,15 @@ int hisi_qm_recv(handle_t h_ctx, void **resp)
 			errno = -EIO;
 			return -EIO;
 		}
-
+*/
+		memcpy(resp, q_info->sq_base + j * q_info->sqe_size, q_info->sqe_size);
+		ret = 0;
 		if (q_info->is_sq_full)
 			q_info->is_sq_full = 0;
 	} else
 		return -EAGAIN;
 
-	*resp = q_info->req_cache[i];
+	/* *resp = q_info->req_cache[i]; */
 	q_info->req_cache[i] = NULL;
 
 	if (i == (QM_Q_DEPTH - 1)) {
