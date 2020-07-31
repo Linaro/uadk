@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef HISI_QM_USR_IF_H
 #define HISI_QM_USR_IF_H
 
