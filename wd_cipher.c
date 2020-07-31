@@ -8,15 +8,37 @@
 #define DES3_3KEY_SIZE	     (3 * DES_KEY_SIZE)
 #define MAX_CIPHER_KEY_SIZE  64
 
-struct wd_alg_cipher {
+#define WD_POOL_MAX_ENTRIES  1024
+
+struct req_pool {
+	struct wd_cipher_req *reqs[WD_POOL_MAX_ENTRIES];
+	int head;
+	int tail;
+};
+
+struct wd_async_req_pool {
+	struct req_pool *pools;
+	int pool_nums;
+};
+
+struct wd_cipher_setting {
+	struct wd_ctx_config config;
+	struct wd_sched      sched;
+	void *sched_ctx;
+	struct wd_cipher_driver *driver;
+	void *priv;
+	struct wd_async_req_pool pool;
+};
+
+struct wd_cipher_driver {
 	char	*drv_name;
 	char	*alg_name;
 	int	(*init)(struct wd_ctx_config *config, void* priv);
 	void	(*exit)(void* priv);
 	int	(*poll)(handle_t ctx, __u32 num);
-}
+};
 
-wd_alg_cipher_list[] = {
+static struct wd_cipher_driver wd_alg_cipher_list[] = {
 	{
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "cipher",
@@ -25,6 +47,8 @@ wd_alg_cipher_list[] = {
 		.poll	= hisi_sec_poll,
 	},
 };
+
+static struct wd_cipher_setting g_wd_cipher_setting;
 
 handle_t wd_alg_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
@@ -36,9 +60,11 @@ void wd_alg_cipher_free_sess(handle_t handle)
 
 }
 
-int wd_alg_do_cipher(handle_t handle, struct wd_cipher_arg *arg)
+int wd_do_cipher(handle_t handle, struct wd_cipher_req *req)
 {
-	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)handle;
+	//get ctx handle
+	//build msg
+	//call wd cipher setting
 
 	return 0;
 }
@@ -126,8 +152,34 @@ int wd_alg_set_key(handle_t handle, __u8 *key, __u32 key_len)
 	return 0;
 }
 
+static int copy_config_to_global_setting(struct wd_ctx_config *config)
+{
+	return 0;
+}
+
+static int copy_sched_to_global_setting(struct wd_sched *sched)
+{
+	return 0;
+}
+
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
+	int ret;
+
+	if (g_wd_cipher_setting.driver)
+		return 0;
+
+	if (!config || !sched)
+		return -EINVAL;
+	/* set config and sched */
+	ret = copy_config_to_global_setting(config);
+	if (ret < 0)
+		return ret;
+
+	ret = copy_sched_to_globak_setting(sched);
+	if (ret < 0)
+		return ret;
+
 	return 0;
 }
 
