@@ -318,7 +318,6 @@ struct wd_comp_setting {
 	struct wd_sched sched;
 	void *sched_ctx;
 	struct wd_comp_driver *driver;
-	struct wd_comp_driver_v2 *driver_v2;
 	void *priv;
 	struct wd_async_req_pool pool;
 } wd_comp_setting;
@@ -342,31 +341,6 @@ static struct wd_comp_driver wd_comp_driver_list[] = {
 		.exit			= hisi_zip_exit,
 		.comp_send		= hisi_zip_comp_send,
 		.comp_recv		= hisi_zip_comp_recv,
-	},
-};
-
-struct wd_comp_driver_v2{
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config *config, void *priv);
-	void (*exit)(void *priv);
-	int (*comp_send)(handle_t ctx, struct wd_comp_msg *msg);
-	int (*comp_recv)(handle_t ctx, struct wd_comp_msg *msg);
-	/* fix me: req here may be changed */
-	//int (*comp_recv_wait)(handle_t ctx, struct wd_comp_msg **msg, __u16 ms);
-};
-
-static struct wd_comp_driver_v2 wd_comp_driver_list_v2[] = {
-	{
-		.drv_name		= "hisi_zip",
-		.alg_name		= "zlib\ngzip",
-		.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
-		.init			= hisi_zip_init,
-		.exit			= hisi_zip_exit,
-		.comp_send		= hisi_zip_comp_send,
-		.comp_recv		= hisi_zip_comp_recv,
-		//.comp_recv_wait	= hisi_zip_comp_recv_wait,
 	},
 };
 
@@ -628,27 +602,6 @@ void wd_comp_uninit(void)
 	clear_config_in_global_setting();
 }
 
-/*
-handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
-{
-	return 0;
-}
-
-void wd_comp_free_sess(handle_t sess) {}
-*/
-
-
-/*
-__u32 wd_comp_poll(void)
-{
-	struct wd_ctx_config *config = &wd_comp_setting.config;
-	void *sched_ctx = wd_comp_setting.sched_ctx;
-
-	wd_comp_setting.sched.poll_policy(config, sched_ctx);
-
-	return 0;
-}
-*/
 __u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 {
 	struct wd_comp_req req, *req_p;
@@ -700,13 +653,13 @@ int wd_do_comp(handle_t sess, struct wd_comp_req *req)
 
 	fill_comp_msg(&msg, req);
 
-	ret = wd_comp_setting.driver_v2->comp_send(h_ctx, &msg);
+	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("wd_send err!\n");
 	}
 
 	do {
-		ret = wd_comp_setting.driver_v2->comp_recv(h_ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
 			goto err_recv;
@@ -747,13 +700,13 @@ int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
 
 	msg.flush_type = req->last;   /* fill trueth flag */
 
-	ret = wd_comp_setting.driver_v2->comp_send(h_ctx, &msg);
+	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("wd_send err!\n");
 	}
 
 	do {
-		ret = wd_comp_setting.driver_v2->comp_recv(h_ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
 			goto err_recv;
@@ -789,7 +742,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	wd_put_req_into_pool(&wd_comp_setting.pool, h_ctx, req);
 
-	wd_comp_setting.driver_v2->comp_send(h_ctx, &msg);
+	wd_comp_setting.driver->comp_send(h_ctx, &msg);
 
 	return 0;
 
@@ -797,7 +750,10 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 int wd_comp_poll(__u32 *count)
 {
+	struct wd_ctx_config *config = &wd_comp_setting.config;
+	void *sched_ctx = wd_comp_setting.sched_ctx;
+
+	wd_comp_setting.sched.poll_policy(config, sched_ctx);
+
 	return 0;
 }
-
-
