@@ -1352,6 +1352,7 @@ int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	__u8 flush_type;
 	int ret;
 
+	memset(&sqe, 0, sizeof(struct hisi_zip_sqe));
 	switch (msg->alg_type) {
 	case WD_ZLIB:
 		sqe.dw9 = HW_ZLIB;
@@ -1434,7 +1435,7 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	recv_msg->checksum = sqe.checksum;
 	recv_msg->tag = sqe.tag;
 
-	return 1;
+	return 0;
 
 }
 
