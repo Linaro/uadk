@@ -1387,7 +1387,7 @@ int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.isize = msg->isize;
 	sqe.checksum = msg->checksum;
 	ret = hisi_qm_send(ctx, &sqe);
-	if (!ret) {
+	if (ret < 0) {
 		WD_ERR("hisi_qm_send is err(%d)!\n", ret);
 		return ret;
 	}
@@ -1402,7 +1402,7 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	int ret;
 
 	ret = hisi_qm_recv(ctx, &sqe);
-	if (!ret) {
+	if (ret < 0) {
 		WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
 		return ret;
 	}
