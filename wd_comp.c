@@ -711,7 +711,7 @@ int wd_do_comp(handle_t sess, struct wd_comp_req *req)
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
 			goto err_recv;
-		} else if (ret == -WD_EBUSY) {
+		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				WD_ERR("wd_recv timeout fail!\n");
 				ret = -ETIMEDOUT;
