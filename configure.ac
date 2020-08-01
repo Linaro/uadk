@@ -90,5 +90,6 @@ AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
 AC_CONFIG_FILES([Makefile
                  test/Makefile
-                 test/hisi_hpre_test/Makefile])
+                 test/hisi_hpre_test/Makefile
+		 test/hisi_zip_test/Makefile])
 AC_OUTPUT
