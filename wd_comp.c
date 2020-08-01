@@ -630,10 +630,10 @@ __u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 	return 0;
 }
 
-
+/* FIXME: Implement it to return a genuine handle of session. */
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
-	return 0;
+	return (handle_t)setup;
 }
 
 void wd_comp_free_sess(handle_t sess) {}
