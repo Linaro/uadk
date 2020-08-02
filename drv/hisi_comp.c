@@ -1403,7 +1403,7 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	int ret;
 
 	ret = hisi_qm_recv(ctx, &sqe);
-	if (ret < 0) {
+	if ((ret < 0) && (ret != -EAGAIN)) {
 		WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
 		return ret;
 	}
