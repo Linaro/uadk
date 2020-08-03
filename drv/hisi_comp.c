@@ -86,7 +86,7 @@ struct hisi_comp_sess {
 };
 
 struct hisi_sched {
-	struct wd_comp_sess	*sess;
+	struct wd_comp_sess_o	*sess;
 	int	alg_type;
 	int	op_type;
 	int	dw9;
@@ -106,7 +106,7 @@ struct hisi_sched {
 	int	dir;		// input or output
 };
 
-static inline int is_nosva(struct wd_comp_sess *sess)
+static inline int is_nosva(struct wd_comp_sess_o *sess)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct wd_scheduler	*sched = &priv->sched;
@@ -128,7 +128,7 @@ static inline int is_nosva(struct wd_comp_sess *sess)
 	return wd_is_nosva(h_ctx);
 }
 
-static inline int is_new_src(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+static inline int is_new_src(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct hisi_strm_info	*strm = &priv->strm;
@@ -155,7 +155,7 @@ static inline int is_new_src(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 	return 0;
 }
 
-static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+static inline int is_new_dst(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct hisi_strm_info	*strm = &priv->strm;
@@ -182,7 +182,7 @@ static inline int is_new_dst(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
  * Notice: Avoid to compare them just after hardware operation.
  * It's better to compare swap with (addr - consumed/produced bytes).
  */
-static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
+static inline int is_in_swap(struct wd_comp_sess_o *sess, void *addr, void *swap)
 {
 	if (is_nosva(sess))
 		return 1;
@@ -197,7 +197,7 @@ static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
 /*
  * If arg->src buffer is too small, need to copy them into swap_in buffer.
  */
-static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
+static inline int need_swap(struct wd_comp_sess_o *sess, int buf_size)
 {
 	if (is_nosva(sess))
 		return 1;
@@ -206,7 +206,7 @@ static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
 	return 0;
 }
 
-static inline int need_split(struct wd_comp_sess *sess, int buf_size)
+static inline int need_split(struct wd_comp_sess_o *sess, int buf_size)
 {
 	if (buf_size > STREAM_MAX)
 		return 1;
@@ -241,7 +241,7 @@ static int hisi_sched_input(struct wd_msg *msg, void *priv)
 {
 	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hsched = (struct hisi_sched *)priv;
-	struct wd_comp_sess	*sess = hsched->sess;
+	struct wd_comp_sess_o	*sess = hsched->sess;
 	struct hisi_comp_sess	*hsess = (struct hisi_comp_sess *)sess->priv;
 	struct wd_scheduler	*sched = &hsess->sched;
 	struct wd_comp_arg	*arg = hsched->arg;
@@ -346,7 +346,7 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 {
 	struct hisi_zip_sqe	*m = msg->msg;
 	struct hisi_sched	*hsched = (struct hisi_sched *)priv;
-	struct wd_comp_sess	*sess = hsched->sess;
+	struct wd_comp_sess_o	*sess = hsched->sess;
 	struct wd_comp_arg	*arg = hsched->arg;
 	uint32_t	status, type;
 	int	templen;
@@ -405,7 +405,7 @@ static int hisi_sched_output(struct wd_msg *msg, void *priv)
 	return 0;
 }
 
-static int hisi_comp_block_init(struct wd_comp_sess *sess)
+static int hisi_comp_block_init(struct wd_comp_sess_o *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
@@ -467,7 +467,7 @@ out_priv:
 	return ret;
 }
 
-static int hisi_comp_block_prep(struct wd_comp_sess *sess,
+static int hisi_comp_block_prep(struct wd_comp_sess_o *sess,
 				 struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
@@ -577,7 +577,7 @@ out_hw:
 	return ret;
 }
 
-static void hisi_comp_block_exit(struct wd_comp_sess *sess)
+static void hisi_comp_block_exit(struct wd_comp_sess_o *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct wd_scheduler	*sched;
@@ -616,7 +616,7 @@ static void hisi_comp_block_exit(struct wd_comp_sess *sess)
 	free(sched->qs);
 }
 
-static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
+static int hisi_comp_block_deflate(struct wd_comp_sess_o *sess,
 				    struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
@@ -648,7 +648,7 @@ static int hisi_comp_block_deflate(struct wd_comp_sess *sess,
 	return 0;
 }
 
-static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
+static int hisi_comp_block_inflate(struct wd_comp_sess_o *sess,
 				    struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
@@ -688,7 +688,7 @@ static int hisi_comp_block_inflate(struct wd_comp_sess *sess,
 }
 
 
-static int hisi_comp_strm_init(struct wd_comp_sess *sess)
+static int hisi_comp_strm_init(struct wd_comp_sess_o *sess)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
 	struct hisi_strm_info	*strm = &priv->strm;
@@ -710,7 +710,7 @@ static int hisi_comp_strm_init(struct wd_comp_sess *sess)
 	return 0;
 }
 
-static int hisi_comp_strm_prep(struct wd_comp_sess *sess,
+static int hisi_comp_strm_prep(struct wd_comp_sess_o *sess,
 			       struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv = (struct hisi_comp_sess *)sess->priv;
@@ -793,7 +793,7 @@ out_in:
 	return -ENOMEM;
 }
 
-static void hisi_comp_strm_exit(struct wd_comp_sess *sess)
+static void hisi_comp_strm_exit(struct wd_comp_sess_o *sess)
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_strm_info	*strm;
@@ -816,7 +816,7 @@ static void hisi_comp_strm_exit(struct wd_comp_sess *sess)
 	free(strm->msg);
 }
 
-static int hisi_strm_comm(struct wd_comp_sess *sess, int flush)
+static int hisi_strm_comm(struct wd_comp_sess_o *sess, int flush)
 {
 	struct hisi_comp_sess	*priv;
 	struct hisi_qp		*qp;
@@ -941,7 +941,7 @@ out:
 	return ret;
 }
 
-static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
+static void hisi_strm_pre_buf(struct wd_comp_sess_o *sess,
 			      struct wd_comp_arg *arg,
 			      int *full)
 {
@@ -1038,7 +1038,7 @@ static void hisi_strm_pre_buf(struct wd_comp_sess *sess,
 	}
 }
 
-static void hisi_strm_post_buf(struct wd_comp_sess *sess,
+static void hisi_strm_post_buf(struct wd_comp_sess_o *sess,
 			       struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
@@ -1073,7 +1073,7 @@ static void hisi_strm_post_buf(struct wd_comp_sess *sess,
 	}
 }
 
-static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
+static int hisi_comp_strm_deflate(struct wd_comp_sess_o *sess,
 				  struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
@@ -1106,7 +1106,7 @@ static int hisi_comp_strm_deflate(struct wd_comp_sess *sess,
 	return 0;
 }
 
-static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
+static int hisi_comp_strm_inflate(struct wd_comp_sess_o *sess,
 				  struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv;
@@ -1138,7 +1138,7 @@ static int hisi_comp_strm_inflate(struct wd_comp_sess *sess,
 	return 0;
 }
 
-int hisi_comp_init(struct wd_comp_sess *sess)
+int hisi_comp_init(struct wd_comp_sess_o *sess)
 {
 	struct hisi_comp_sess	*priv;
 
@@ -1154,7 +1154,7 @@ int hisi_comp_init(struct wd_comp_sess *sess)
 	return 0;
 }
 
-void hisi_comp_exit(struct wd_comp_sess *sess)
+void hisi_comp_exit(struct wd_comp_sess_o *sess)
 {
 	if (sess->mode & MODE_STREAM) {
 		hisi_comp_strm_exit(sess);
@@ -1165,7 +1165,7 @@ void hisi_comp_exit(struct wd_comp_sess *sess)
 	sess->priv = NULL;
 }
 
-int hisi_comp_prep(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+int hisi_comp_prep(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg)
 {
 	struct hisi_comp_sess	*priv = sess->priv;
 	int	ret;
@@ -1181,7 +1181,7 @@ int hisi_comp_prep(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 	return ret;
 }
 
-int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+int hisi_comp_deflate(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg)
 {
 	int	ret;
 
@@ -1192,7 +1192,7 @@ int hisi_comp_deflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 	return ret;
 }
 
-int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+int hisi_comp_inflate(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg)
 {
 	int	ret;
 
@@ -1203,12 +1203,12 @@ int hisi_comp_inflate(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
 	return ret;
 }
 
-int hisi_comp_poll(struct wd_comp_sess *sess, struct wd_comp_arg *arg)
+int hisi_comp_poll(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg)
 {
 	return 0;
 }
 
-int hisi_strm_deflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
+int hisi_strm_deflate(struct wd_comp_sess_o *sess, struct wd_comp_strm *strm)
 {
 	struct wd_comp_arg	*arg = &strm->arg;
 	int	ret, src_len;
@@ -1246,7 +1246,7 @@ int hisi_strm_deflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
 	return 0;
 }
 
-int hisi_strm_inflate(struct wd_comp_sess *sess, struct wd_comp_strm *strm)
+int hisi_strm_inflate(struct wd_comp_sess_o *sess, struct wd_comp_strm *strm)
 {
 	struct wd_comp_arg	*arg = &strm->arg;
 	int	ret, src_len;

@@ -33,7 +33,7 @@ enum {
 };
 
 enum wd_comp_alg_type {
-	WD_ZLIB,
+	WD_ZLIB = 1,
 	WD_GZIP,
 };
 
@@ -42,7 +42,7 @@ enum wd_comp_op_type {
     WD_DIR_DECOMPRESS,  /* session for decompression */
 };
 
-struct wd_comp_sess {
+struct wd_comp_sess_o {
 	char			*alg_name;	/* zlib or gzip */
 	char			node_path[MAX_DEV_NAME_LEN + 1];
 	wd_dev_mask_t		*dev_mask;
@@ -78,17 +78,17 @@ struct wd_comp_strm {
 struct wd_alg_comp {
 	char	*drv_name;
 	char	*alg_name;
-	int	(*init)(struct wd_comp_sess *sess);
-	void	(*exit)(struct wd_comp_sess *sess);
-	int	(*prep)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
-	void	(*fini)(struct wd_comp_sess *sess);
-	int	(*deflate)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
-	int	(*inflate)(struct wd_comp_sess *sess, struct wd_comp_arg *arg);
-	int	(*async_poll)(struct wd_comp_sess *sess,
+	int	(*init)(struct wd_comp_sess_o *sess);
+	void	(*exit)(struct wd_comp_sess_o *sess);
+	int	(*prep)(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg);
+	void	(*fini)(struct wd_comp_sess_o *sess);
+	int	(*deflate)(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg);
+	int	(*inflate)(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg);
+	int	(*async_poll)(struct wd_comp_sess_o *sess,
 			      struct wd_comp_arg *arg);
-	int	(*strm_deflate)(struct wd_comp_sess *sess,
+	int	(*strm_deflate)(struct wd_comp_sess_o *sess,
 				struct wd_comp_strm *strm);
-	int	(*strm_inflate)(struct wd_comp_sess *sess,
+	int	(*strm_inflate)(struct wd_comp_sess_o *sess,
 				struct wd_comp_strm *strm);
 };
 
@@ -101,6 +101,10 @@ extern int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm);
 extern int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm);
 
 /* new code */
+struct wd_comp_sess {
+	int	alg_type;
+};
+
 struct wd_comp_req {
 	void			*src;
 	size_t			src_len;
@@ -180,7 +184,7 @@ extern void wd_comp_uninit(void);
 
 /* fix me: stub to pass compile */
 struct wd_comp_sess_setup {
-	int mode;	// BLOCK mode or STEAM mode
+	int alg_type;	// ZLIB or GZIP
 };
 /**
  * wd_comp_alloc_sess() - Allocate a wd comp session.

@@ -81,7 +81,7 @@ handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 {
 	struct uacce_dev_list	*head = NULL, *p, *prev;
 	wd_dev_mask_t		*mask = NULL;
-	struct wd_comp_sess	*sess = NULL;
+	struct wd_comp_sess_o	*sess = NULL;
 	int	i, found, max = 0, ret;
 	char	*dev_name;
 #if HAVE_PERF
@@ -152,7 +152,7 @@ handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
 	}
 	if (!found)
 		goto out;
-	sess = calloc(1, (sizeof(struct wd_comp_sess)));
+	sess = calloc(1, (sizeof(struct wd_comp_sess_o)));
 	if (!sess)
 		goto out;
 	sess->mode = mode;
@@ -190,7 +190,7 @@ out:
 
 void wd_alg_comp_free_sess(handle_t handle)
 {
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_sess_o *sess = (struct wd_comp_sess_o *)handle;
 
 	if (!sess)
 		return;
@@ -210,7 +210,7 @@ void wd_alg_comp_free_sess(handle_t handle)
 
 int wd_alg_compress(handle_t handle, struct wd_comp_arg *arg)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_sess_o	*sess = (struct wd_comp_sess_o *)handle;
 	int	ret = -EINVAL;
 
 	if (!arg)
@@ -228,7 +228,7 @@ int wd_alg_compress(handle_t handle, struct wd_comp_arg *arg)
 
 int wd_alg_decompress(handle_t handle, struct wd_comp_arg *arg)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_sess_o	*sess = (struct wd_comp_sess_o *)handle;
 	int	ret = -EINVAL;
 
 	if (!arg)
@@ -246,7 +246,7 @@ int wd_alg_decompress(handle_t handle, struct wd_comp_arg *arg)
 
 int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_sess_o	*sess = (struct wd_comp_sess_o *)handle;
 	struct wd_comp_arg	*arg = &strm->arg;
 	int	ret = -EINVAL;
 
@@ -274,7 +274,7 @@ int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm)
 
 int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm)
 {
-	struct wd_comp_sess	*sess = (struct wd_comp_sess *)handle;
+	struct wd_comp_sess_o	*sess = (struct wd_comp_sess_o *)handle;
 	struct wd_comp_arg	*arg = &strm->arg;
 	int	ret = -EINVAL;
 
@@ -663,13 +663,23 @@ __u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 	return 0;
 }
 
-/* FIXME: Implement it to return a genuine handle of session. */
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
-	return (handle_t)setup;
+	struct wd_comp_sess *sess;
+
+	sess = calloc(1, sizeof(struct wd_comp_sess));
+	if (!sess)
+		return (handle_t)0;
+	sess->alg_type = setup->alg_type;
+	return (handle_t)sess;
 }
 
-void wd_comp_free_sess(handle_t sess) {}
+void wd_comp_free_sess(handle_t h_sess)
+{
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
+
+	free(sess);
+}
 
 
 static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
@@ -687,11 +697,12 @@ static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 	msg->status = 0;
 }
 
-int wd_do_comp(handle_t sess, struct wd_comp_req *req)
+int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	void *sched_ctx = wd_comp_setting.sched_ctx;
 	struct wd_comp_msg msg, resp_msg;
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	__u64 recv_count = 0;
 	handle_t h_ctx;
 	int ret;
@@ -700,6 +711,7 @@ int wd_do_comp(handle_t sess, struct wd_comp_req *req)
 
 	//fill_comp_msg(&msg, req);
 	memcpy(&msg.req, req, sizeof(struct wd_comp_req));
+	msg.alg_type = sess->alg_type;
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
