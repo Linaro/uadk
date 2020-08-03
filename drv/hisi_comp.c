@@ -1375,7 +1375,7 @@ int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	flush_type = (msg->flush_type == 1) ? HZ_FINISH :
 			  HZ_SYNC_FLUSH;
 	sqe.dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
-		     (msg->stream_mode << STREAM_MODE_SHIFT) |
+		     (STATEFUL << STREAM_MODE_SHIFT) |
 		     (flush_type)) << STREAM_FLUSH_SHIFT;
 	sqe.input_data_length = msg->in_size;
 	if (msg->avail_out > MIN_AVAILOUT_SIZE)
@@ -1402,10 +1402,13 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	struct hisi_zip_sqe sqe;
 	int ret;
 
+	memset(&sqe, 0, sizeof(struct hisi_zip_sqe));
 	ret = hisi_qm_recv(ctx, &sqe);
-	if ((ret < 0) && (ret != -EAGAIN)) {
-		WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
-		return ret;
+	if (ret < 0) {
+		if (ret != -EAGAIN) {
+			WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
+			return ret;
+		}
 	}
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;

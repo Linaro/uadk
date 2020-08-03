@@ -712,6 +712,10 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 	//fill_comp_msg(&msg, req);
 	memcpy(&msg.req, req, sizeof(struct wd_comp_req));
 	msg.alg_type = sess->alg_type;
+	msg.in_size = req->src_len;
+	/* FIXME: need to distinguish the first frame and the others */
+	msg.stream_pos = STREAM_NEW;
+	msg.flush_type = 1;
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
