@@ -97,6 +97,11 @@ static void hisi_sec_add_qp_to_pool(struct hisi_sec_qp_async_pool *pool,
 
 }
 
+static void update_iv(struct wd_cipher_msg *msg)
+{
+
+}
+
 int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 {
 	/* allocate qp for each context */
@@ -109,13 +114,41 @@ void hisi_sec_exit(void *priv)
 	/* free alloc_qp */
 }
 
-static int get_aes_c_key_len(struct wd_cipher_sess *sess, __u8 *c_key_len)
+static int get_3des_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 {
+	if (msg->key_bytes == SEC_3DES_2KEY_SIZE) {
+		*c_key_len = CKEY_LEN_3DES_2KEY;
+	} else if (msg->key_bytes == SEC_3DES_3KEY_SIZE) {
+		*c_key_len = CKEY_LEN_3DES_3KEY;
+	} else {
+		WD_ERR("Invalid 3des key size!\n");
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
-static int get_3des_c_key_len(struct wd_cipher_sess *sess, __u8 *c_key_len)
+static int get_aes_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 {
+	__u16 len;
+	len = msg->key_bytes;
+	if (msg->mode == WD_CIPHER_XTS)
+		len = len / XTS_MODE_KEY_DIVISOR;
+
+	switch (len) {
+		case AES_KEYSIZE_128:
+			*c_key_len = CKEY_LEN_128BIT;
+			break;
+		case AES_KEYSIZE_192:
+			*c_key_len = CKEY_LEN_192BIT;
+			break;
+		case AES_KEYSIZE_256:
+			*c_key_len = CKEY_LEN_256BIT;
+			break;
+		default:
+			WD_ERR("Invalid AES key size!\n");
+			return -EINVAL;
+	}
 
 	return 0;
 }
@@ -132,7 +165,7 @@ static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *s
 		break;
 	case WD_CIPHER_AES:
 		sqe->type2.c_alg = C_ALG_AES;
-		//ret = get_aes_c_key_len(sess, &c_key_len);
+		ret = get_aes_c_key_len(msg, &c_key_len);
 		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
 		break;
 	case WD_CIPHER_DES:
@@ -141,7 +174,7 @@ static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *s
 		break;
 	case WD_CIPHER_3DES:
 		sqe->type2.c_alg = C_ALG_3DES;
-		//ret = get_3des_c_key_len(sess, &c_key_len);
+		ret = get_3des_c_key_len(msg, &c_key_len);
 		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
 		break;
 	default:
@@ -179,9 +212,20 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 	return 0;
 }
 
-static void parse_cipher_bd2(struct hisi_sec_sqe sqe, struct wd_cipher_msg *recv_msg)
+static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *recv_msg)
 {
+	__u16 done;
 
+	done = sqe->type2.done_flag & SEC_DONE_MASK;
+	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
+		WD_ERR("SEC BD %s fail! done=0x%x, etype=0x%x\n", "cipher",
+		done, sqe->type2.error_type);
+		recv_msg->result = WD_IN_EPARA;
+	} else {
+		recv_msg->result = WD_SUCCESS;
+	}
+
+	update_iv(recv_msg);
 }
 
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
@@ -239,59 +283,15 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	}
 
 	/* parser cipher sqe */
-	parse_cipher_bd2(sqe, recv_msg);
+	parse_cipher_bd2(&sqe, recv_msg);
 
 	return 1;
-}
-
-int hisi_cipher_init(struct wd_cipher_sess *sess)
-{
-	return 0;
-}
-
-void hisi_cipher_exit(struct wd_cipher_sess *sess)
-{
-
-}
-
-int hisi_cipher_set_key(struct wd_cipher_sess *sess, const __u8 *key, __u32 key_len)
-{
-  
-}
-
-int hisi_cipher_encrypt(struct wd_cipher_sess *sess, struct wd_cipher_req *req)
-{
-	/* this function may be reused by aead, should change to proper inputs */
-	return 0;
-}
-
-int hisi_cipher_decrypt(struct wd_cipher_sess *sess, struct wd_cipher_req *req)
-{
-	/* this function may be reused by aead, should change to proper inputs */
-	return 0;
 }
 
 int hisi_cipher_poll(handle_t ctx, __u32 count)
 {
 	return 0;
 }
-
-int hisi_digest_init(struct wd_digest_sess *sess)
-{
-	return 0;
-}
-
-void hisi_digest_exit(struct wd_digest_sess *sess)
-{
-
-}
-
-static void qm_fill_digest_alg(struct wd_digest_sess *sess,
-			       struct wd_digest_arg *arg,
-			       struct hisi_sec_sqe *sqe)
-{
-}
-
 
 int hisi_digest_digest(struct wd_digest_sess *sess, struct wd_digest_arg *arg)
 {
