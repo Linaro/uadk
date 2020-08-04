@@ -73,16 +73,16 @@ static int qm_set_queue_regions(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	info->sq_base = wd_drv_mmap_qfr(q, UACCE_QFRT_DUS, 0);
+	info->sq_base = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_DUS, 0);
 	if (info->sq_base == MAP_FAILED) {
 		info->sq_base = NULL;
 		WD_ERR("mmap dus fail\n");
 		return -ENOMEM;
 	}
 
-	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO, 0);
+	info->mmio_base = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_MMIO, 0);
 	if (info->mmio_base == MAP_FAILED) {
-		wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
+		wd_drv_unmmap_qfr(q, info->sq_base, WD_UACCE_QFRT_DUS, 0);
 		info->sq_base = NULL;
 		info->mmio_base = NULL;
 		WD_ERR("mmap mmio fail\n");
@@ -97,8 +97,8 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO, 0);
-	wd_drv_unmmap_qfr(q, info->sq_base, UACCE_QFRT_DUS, 0);
+	wd_drv_unmmap_qfr(q, info->mmio_base, WD_UACCE_QFRT_MMIO, 0);
+	wd_drv_unmmap_qfr(q, info->sq_base, WD_UACCE_QFRT_DUS, 0);
 	info->sq_base = NULL;
 	info->mmio_base = NULL;
 }
@@ -294,7 +294,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 			info->sqe_size * QM_Q_DEPTH);
 
 	/* Protect the virtual address of CQ to avoid being over written */
-	psize = qinfo->qfrs_offset[UACCE_QFRT_DUS] -
+	psize = qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] -
 		info->sqe_size * QM_Q_DEPTH;
 	ret = mprotect(info->cq_base, psize, PROT_READ);
 	if (ret) {
@@ -304,7 +304,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	}
 
 	/* The last 32 bits of DUS show device or qp statuses */
-	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[UACCE_QFRT_DUS] -
+	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] -
 		sizeof(uint32_t);
 	info->ds_rx_base = info->ds_tx_base - sizeof(uint32_t);
 	ret = qm_set_db_info(q);
@@ -317,7 +317,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	info->used = 0;
 	qp_ctx.qc_type = priv->direction;
 	qp_ctx.id = 0;
-	ret = ioctl(qinfo->fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("hisi qm set qc_type fail, use default!\n");
 		goto err_with_regions;

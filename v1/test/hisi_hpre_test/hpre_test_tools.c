@@ -19,7 +19,6 @@
 #include "../../wd_bmm.h"
 #include "../../wd_rsa.h"
 #include "../../wd_dh.h"
-#include "hpre_usr_if.h"
 #include "test_hisi_hpre.h"
 
 
