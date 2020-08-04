@@ -43,7 +43,7 @@ struct wd_cipher_driver {
 	int	(*poll)(handle_t ctx, __u32 num);
 };
 
-static struct wd_cipher_driver wd_alg_cipher_list[] = {
+static struct wd_cipher_driver wd_cipher_driver_list[] = {
 	{
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "cipher",
@@ -138,10 +138,24 @@ int wd_alg_set_key(struct wd_cipher_req *req, __u8 *key, __u32 key_len)
 
 	return 0;
 }
-/* support digest/aead */
-static void *find_cipher_driver(const char *driver)
+/* support cipher only */
+static struct wd_cipher_driver *find_cipher_driver(const char *driver)
 {
-	return NULL;
+	const char *drv_name;
+	bool found = false;
+
+	if (!driver)
+		return NULL;
+
+	drv_name = wd_cipher_driver_list[0].drv_name;
+	if (!strncmp(driver, drv_name, strlen(driver))) {
+		found = true;
+	}
+
+	if (!found)
+		return NULL;
+
+	return &wd_cipher_driver_list[0];
 }
 
 static int copy_config_to_global_setting(struct wd_ctx_config *cfg)

@@ -51,24 +51,6 @@ struct hisi_qp_async {
 	struct hisi_qp *qp;
 };
 
-static int hisi_qm_send_async(struct hisi_qp_async *qp, void *req,
-			      void (*callback)(void *parm))
-{
-	/* store req callback in task pool */
-
-	/* send request */
-
-	return 0;
-}
-
-static void hisi_qm_poll_async_qp(struct hisi_qp_async *qp, __u32 num)
-{
-	/* hisi_qm_recv */
-
-	/* find related task in task pool and call its cb */
-}
-/* end qm demo */
-
 /* session like request ctx */
 struct hisi_sec_sess {
 	struct hisi_qp *qp;
@@ -85,7 +67,7 @@ struct hisi_sec_qp_async_pool {
 	pthread_mutex_t lock;
 	struct hisi_qp_async_list head;
 } hisi_sec_qp_async_pool;
-
+#if 0
 static int get_qp_num_in_pool(void)
 {
 	return 0;
@@ -96,7 +78,7 @@ static void hisi_sec_add_qp_to_pool(struct hisi_sec_qp_async_pool *pool,
 {
 
 }
-
+#endif
 static void update_iv(struct wd_cipher_msg *msg)
 {
 
@@ -248,6 +230,13 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	sqe.type2.data_dst_addr = (__u64)msg->out;
 
 	sqe.type2.c_ivin_addr = (__u64)msg->iv;
+
+	if (msg->op_type == WD_CIPHER_ENCRYPTION) {
+		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
+	} else {
+		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
+	}
+	sqe.type_auth_cipher |= cipher;
 
 	/* fill cipher bd2 alg */
 	ret = fill_cipher_bd2_alg(msg, &sqe);
