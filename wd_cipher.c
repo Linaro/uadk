@@ -14,7 +14,8 @@
 static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0};
 
 struct msg_pool {
-	struct wd_cipher_msg *msg[WD_POOL_MAX_ENTRIES];
+	struct wd_cipher_msg msg[WD_POOL_MAX_ENTRIES];
+	int used[WD_POOL_MAX_ENTRIES];
 	int head;
 	int tail;
 };
@@ -219,6 +220,42 @@ static void clear_sched_in_global_setting(void)
 	g_wd_cipher_setting.sched.sched_ctx_size = 0;
 }
 
+/* Each context has a reqs pool */
+static int init_async_request_pool(struct wd_async_msg_pool *pool)
+{
+	int ctx_num;
+
+	ctx_num = g_wd_cipher_setting.config.ctx_num;
+	pool->pools = calloc(1, ctx_num * sizeof(struct msg_pool));
+	if (!pool->pools)
+		return -ENOMEM;
+	pool->pool_nums = ctx_num;
+
+	return 0;
+}
+
+/* free every reqs pool */
+static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
+{
+	struct msg_pool *p;
+	int i, j, num;
+
+	num = pool->pool_nums;
+	for (i = 0; i < num; i++) {
+		p = &pool->pools[i];
+		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
+			if (p->used[j])
+				WD_ERR("Entry #%d isn't released from reqs "
+						"pool.\n", j);
+			memset(&p->msg[j], 0, sizeof(struct wd_cipher_msg));
+		}
+		p->head = 0;
+		p->tail = 0;
+	}
+
+	free(pool->pools);
+}
+
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	struct wd_cipher_driver *driver;
@@ -258,7 +295,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out_sched;
 	}
 	/* init sysnc request pool */
-	ret = wd_init_async_request_pool(&g_wd_cipher_setting.pool);
+	ret = init_async_request_pool(&g_wd_cipher_setting.pool);
 	if (ret)
 		goto out_pool;
 	/* init ctx related resources in specific driver */
@@ -277,7 +314,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 out_init:
 	free(priv);
 out_priv:
-	wd_uninit_async_request_pool(&g_wd_cipher_setting.pool);
+	uninit_async_request_pool(&g_wd_cipher_setting.pool);
 out_pool:
 	free(g_wd_cipher_setting.sched_ctx);
 out_sched:
