@@ -95,6 +95,7 @@ struct wd_digest_req {
 	void *priv;
 };
 
+#if 0
 /**
  * wd_alg_digest_alloc_sess() - Create a digest session.
  * @setup: Hold the parameters which are used to allocate a digest session
@@ -133,5 +134,5 @@ extern int wd_alg_set_digest_key(handle_t handle, __u8 *key, __u32 key_len);
  * @count: Count of polling, 0 means polling all finished tasks.
  */
 extern int wd_alg_digest_poll(handle_t handle, __u32 count);
-
+#endif
 #endif /* __WD_DIGEST_H */

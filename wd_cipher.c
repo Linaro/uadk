@@ -128,7 +128,7 @@ int wd_alg_set_key(struct wd_cipher_req *req, __u8 *key, __u32 key_len)
 		WD_ERR("%s inpupt key length err!\n", __func__);
 		return -EINVAL;
 	}
-	if (req->mode == WD_CIPHER_DES && is_des_weak_key(key, length)) {
+	if (req->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key, length)) {
 		WD_ERR("%s: input des key is weak key!\n", __func__);
 		return -EINVAL;
 	}
@@ -137,6 +137,11 @@ int wd_alg_set_key(struct wd_cipher_req *req, __u8 *key, __u32 key_len)
 	memcpy(req->key, key, key_len);
 
 	return 0;
+}
+/* support digest/aead */
+static void *find_cipher_driver(const char *driver)
+{
+	return NULL;
 }
 
 static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
@@ -191,7 +196,9 @@ static void clear_config_in_global_setting(void)
 
 static void clear_sched_in_global_setting(void)
 {
-	free(g_wd_cipher_setting.sched.name);
+	char *name = (char *)g_wd_cipher_setting.sched.name;
+
+	free(name);
 	g_wd_cipher_setting.sched.poll_policy = NULL;
 	g_wd_cipher_setting.sched.pick_next_ctx = NULL;
 	g_wd_cipher_setting.sched.sched_ctx_size = 0;
@@ -199,6 +206,9 @@ static void clear_sched_in_global_setting(void)
 
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
+	struct wd_cipher_driver *driver;
+	const char *driver_name;
+	handle_t h_ctx;
 	int ret;
 
 	if (g_wd_cipher_setting.driver)
@@ -209,18 +219,26 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* set config and sched */
 	ret = copy_config_to_global_setting(config);
 	if (ret < 0) {
-		WD_ERR("Faile to copy configuration to global setting!\n");
+		WD_ERR("Fail to copy configuration to global setting!\n");
 		return ret;
 	}
 
 	ret = copy_sched_to_global_setting(sched);
 	if (ret < 0) {
-		WD_ERR("Faile to copy schedule to global setting!\n");
+		WD_ERR("Fail to copy schedule to global setting!\n");
 		goto out;
 	}
 
-	return 0;
+	/* find driver and set driver */
+	h_ctx = config->ctxs[0].ctx; // like a q from wd v1
+	driver_name = wd_get_driver_name(h_ctx);
+	driver = find_cipher_driver(driver_name);
+	g_wd_cipher_setting.driver = driver;
 
+	/* alloc sched context memory */
+	/* init sysnc request pool */
+
+	return 0;
 out:
 	clear_config_in_global_setting();
 	return ret;
@@ -234,8 +252,6 @@ void wd_cipher_uninit(void)
 
 int wd_alg_cipher_poll(handle_t handle, __u32 count)
 {
-	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)handle;
-
 	return 0;
 }
 
