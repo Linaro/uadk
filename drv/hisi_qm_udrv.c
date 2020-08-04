@@ -72,9 +72,29 @@ static struct hisi_qm_type qm_type[] = {
 	},
 };
 
-static int hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 i)
+static int hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 tail, __u16 num)
 {
-	memcpy(info->sq_base + i * info->sqe_size, sqe, info->sqe_size);
+	int i, j;
+	if (tail + num < QM_Q_DEPTH) {
+		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * num);
+	} else {
+		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * (QM_Q_DEPTH - tail));
+		memcpy(info->sq_base,
+			   sqe + info->sqe_size * (QM_Q_DEPTH - tail),
+               info->sqe_size * (tail + num - QM_Q_DEPTH));
+	}
+
+
+	j = tail;
+
+	for (i = 0; i < num; i++) {
+		if (j >= QM_Q_DEPTH) {
+			j = 0;
+		}
+		assert(!info->req_cache[j]);
+		info->req_cache[j] = sqe + i * info->sqe_size;
+		j++;
+	}
 
 	return 0;
 }
@@ -141,6 +161,15 @@ out_mmio:
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
 out:
 	return ret;
+}
+
+static int hisi_qm_get_free_num(struct hisi_qm_queue_info	*q_info)
+{
+	if (q_info->is_sq_full) {
+		return 0;
+	}
+
+	return QM_Q_DEPTH - q_info->sq_tail_index + q_info->sq_head_index;
 }
 
 handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
@@ -227,38 +256,40 @@ void hisi_qm_free_qp(handle_t h_qp)
 }
 
 
-int hisi_qm_send(handle_t h_ctx, void *req)
+int hisi_qm_send(handle_t h_ctx, void *req, __u16 num)
 {
-	struct hisi_qp			*qp;
-	struct hisi_qm_queue_info	*q_info;
-	__u16 i;
+	struct hisi_qp *qp;
+	struct hisi_qm_queue_info *q_info;
+	__u16 tail;
+	__u16 free_num, send_num;
 
 	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
 	if (!qp)
 		return -EINVAL;
+
 	q_info = &qp->q_info;
-	if (q_info->is_sq_full) {
+
+	free_num = hisi_qm_get_free_num(q_info);
+	if (free_num == 0) {
 		WD_ERR("queue is full!\n");
 		return -EBUSY;
 	}
 
-	i = q_info->sq_tail_index;
+	send_num = num > free_num ? free_num : num;
 
-	hisi_qm_fill_sqe(req, q_info, i);
+	tail = q_info->sq_tail_index;
+	hisi_qm_fill_sqe(req, q_info, tail, send_num);
 
-	if (i == (QM_Q_DEPTH - 1))
-		i = 0;
-	else
-		i++;
+	tail = (tail + send_num) % QM_Q_DEPTH;
 
-	q_info->db(q_info, DOORBELL_CMD_SQ, i, 0);
+	q_info->db(q_info, DOORBELL_CMD_SQ, tail, 0);
 
-	q_info->sq_tail_index = i;
+	q_info->sq_tail_index = tail;
 
-	if (i == q_info->sq_head_index)
+	if (tail == q_info->sq_head_index)
 		q_info->is_sq_full = 1;
 
-	return 0;
+	return send_num;
 }
 
 int hisi_qm_recv(handle_t h_ctx, void *resp)
