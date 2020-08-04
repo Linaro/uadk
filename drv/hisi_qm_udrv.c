@@ -82,6 +82,7 @@ static int hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 i)
 	return 0;
 }
 
+#if 0
 static int hisi_qm_recv_sqe(void *sqe,
 			    struct hisi_qm_queue_info *info, __u16 i)
 {
@@ -91,6 +92,7 @@ static int hisi_qm_recv_sqe(void *sqe,
 	memcpy(info->req_cache[i], sqe, info->sqe_size);
 	return 0;
 }
+#endif
 
 static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 {

@@ -429,8 +429,7 @@ static void clear_config_in_global_setting(void)
 /* Each context has a reqs pool. */
 static int wd_init_async_request_pool(struct wd_async_msg_pool *pool)
 {
-	struct msg_pool *p;
-	int i, j, num;
+	int num;
 
 	num = wd_comp_setting.config.ctx_num;
 
@@ -465,6 +464,7 @@ static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 }
 
 /* fixme */
+#if 0
 static int wd_put_req_into_pool(struct wd_async_msg_pool *pool,
 				handle_t h_ctx,
 				struct wd_comp_req *req)
@@ -491,6 +491,7 @@ static int wd_put_req_into_pool(struct wd_async_msg_pool *pool,
 
 	return 0;
 }
+#endif
 
 static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 				handle_t h_ctx,
@@ -498,7 +499,7 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 {
 	struct msg_pool *p;
 	struct wd_comp_msg *c_msg;
-	int i, t, found = 0;
+	int i, found = 0;
 	int idx;
 
 	for (i = 0; i < wd_comp_setting.config.ctx_num; i++) {
@@ -508,7 +509,7 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 		}
 	}
 	if (!found)
-		return -EINVAL;
+		return NULL;
 
 	p = &pool->pools[i];
 /*
@@ -681,7 +682,7 @@ void wd_comp_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-
+#if 0
 static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 {
 	msg->avail_out = req->dst_len;
@@ -696,6 +697,7 @@ static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 	//msg->checksum = opdata->checksum;
 	msg->status = 0;
 }
+#endif
 
 int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 {

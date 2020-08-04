@@ -1307,7 +1307,7 @@ int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 	return 0;
 out:
 	for (j = 0; j < i; j++) {
-		h_qp = wd_ctx_get_sess_priv(config->ctxs[j].ctx);
+		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return ret;
@@ -1321,7 +1321,7 @@ void hisi_zip_exit(void *priv)
 	int i;
 
 	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = wd_ctx_get_sess_priv(config->ctxs[i].ctx);
+		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 }
@@ -1412,7 +1412,7 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	}
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
-	__u16 lstblk = sqe.dw3 & HZ_LSTBLK_MASK;
+	//__u16 lstblk = sqe.dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe.dw9 & HZ_REQ_TYPE_MASK;
 
