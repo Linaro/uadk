@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <dirent.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -677,9 +678,9 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 
 void wd_comp_free_sess(handle_t h_sess)
 {
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
+	//struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 
-	free(sess);
+	//free(sess);
 }
 
 static int fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
@@ -738,14 +739,16 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 		}
 	} while (ret < 0);
 
-	req->src_len = resp_msg.req.src_len;
-	req->dst_len = resp_msg.req.dst_len;
+	req->src_len = resp_msg.in_cons;
+	req->dst_len = resp_msg.produced;
+	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
+	req->flag = FLAG_INPUT_FINISH;
 	//req->flush = resp->flush_type;
 	//req->status = resp->status;
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
 
-	free(msg.ctx_buf);
+	//free(msg.ctx_buf);
 	return 0;
 err_recv:
 	free(msg.ctx_buf);
