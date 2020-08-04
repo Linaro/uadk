@@ -107,7 +107,7 @@ struct q_info {
 	enum wcrypto_type atype;
 	int ctx_num;
 	struct wd_mm_br br;
-	unsigned long qfrs_offset[UACCE_QFRT_MAX];
+	unsigned long qfrs_offset[WD_UACCE_QFRT_MAX];
 	struct wd_lock qlock;
 
 	volatile __u8 ctx_id[CTX_ID_MAX_NUM];
