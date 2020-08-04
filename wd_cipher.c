@@ -13,14 +13,14 @@
 #define MAX_RETRY_COUNTS	200000000
 static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0};
 
-struct req_pool {
-	struct wd_cipher_req *reqs[WD_POOL_MAX_ENTRIES];
+struct msg_pool {
+	struct wd_cipher_msg *msg[WD_POOL_MAX_ENTRIES];
 	int head;
 	int tail;
 };
 
-struct wd_async_req_pool {
-	struct req_pool *pools;
+struct wd_async_msg_pool {
+	struct msg_pool *pools;
 	int pool_nums;
 };
 
@@ -30,12 +30,13 @@ struct wd_cipher_setting {
 	void *sched_ctx;
 	struct wd_cipher_driver *driver;
 	void *priv;
-	struct wd_async_req_pool pool;
+	struct wd_async_msg_pool pool;
 };
 
 struct wd_cipher_driver {
-	char	*drv_name;
-	char	*alg_name;
+	const char	*drv_name;
+	const char	*alg_name;
+	__u32	drv_ctx_size;
 	int	(*init)(struct wd_ctx_config *config, void* priv);
 	void	(*exit)(void* priv);
 	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
@@ -223,6 +224,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	struct wd_cipher_driver *driver;
 	const char *driver_name;
 	handle_t h_ctx;
+	void *priv;
 	int ret;
 
 	if (g_wd_cipher_setting.driver)
@@ -250,11 +252,39 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	g_wd_cipher_setting.driver = driver;
 
 	/* alloc sched context memory */
+	g_wd_cipher_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
+	if (!g_wd_cipher_setting.sched_ctx) {
+		ret = -ENOMEM;
+		goto out_sched;
+	}
 	/* init sysnc request pool */
+	ret = wd_init_async_request_pool(&g_wd_cipher_setting.pool);
+	if (ret)
+		goto out_pool;
+	/* init ctx related resources in specific driver */
+	priv = calloc(1, g_wd_cipher_setting.driver->drv_ctx_size);
+	if (!priv) {
+		ret = -ENOMEM;
+		goto out_priv;
+	}
+	g_wd_cipher_setting.priv = priv;
+	/* sec init */
+	ret = g_wd_cipher_setting.driver->init(&g_wd_cipher_setting.config, priv);
+	if (ret < 0)
+		goto out_init;
 
 	return 0;
+out_init:
+	free(priv);
+out_priv:
+	wd_uninit_async_request_pool(&g_wd_cipher_setting.pool);
+out_pool:
+	free(g_wd_cipher_setting.sched_ctx);
+out_sched:
+	clear_sched_in_global_setting();
 out:
 	clear_config_in_global_setting();
+
 	return ret;
 }
 
@@ -277,6 +307,7 @@ static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *re
 	msg->out_bytes = req->out_bytes;
 	msg->key = req->key;
 	msg->key_bytes = req->key_bytes;
+	msg->op_type = req->op_type;
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
 }
