@@ -76,23 +76,8 @@ static int hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 i)
 {
 	memcpy(info->sq_base + i * info->sqe_size, sqe, info->sqe_size);
 
-	assert(!info->req_cache[i]);
-	info->req_cache[i] = sqe;
-
 	return 0;
 }
-
-#if 0
-static int hisi_qm_recv_sqe(void *sqe,
-			    struct hisi_qm_queue_info *info, __u16 i)
-{
-	assert(info->req_cache[i]);
-	dbg("hisi_qm_recv_sqe: %p, %p, %d\n", info->req_cache[i], sqe,
-	    info->sqe_size);
-	memcpy(info->req_cache[i], sqe, info->sqe_size);
-	return 0;
-}
-#endif
 
 static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 {
@@ -296,24 +281,14 @@ int hisi_qm_recv(handle_t h_ctx, void *resp)
 			errno = -EIO;
 			return -EIO;
 		}
-/*
-		ret = hisi_qm_recv_sqe(q_info->sq_base + j * q_info->sqe_size,
-				       q_info, i);
-		if (ret < 0) {
-			WD_ERR("recv sqe error %d\n", j);
-			errno = -EIO;
-			return -EIO;
-		}
-*/
-		memcpy(resp, q_info->sq_base + j * q_info->sqe_size, q_info->sqe_size);
+		memcpy(resp,
+			(void *)q_info->sq_base + j * q_info->sqe_size,
+			q_info->sqe_size);
 		ret = 0;
 		if (q_info->is_sq_full)
 			q_info->is_sq_full = 0;
 	} else
 		return -EAGAIN;
-
-	/* *resp = q_info->req_cache[i]; */
-	q_info->req_cache[i] = NULL;
 
 	if (i == (QM_Q_DEPTH - 1)) {
 		q_info->cqc_phase = !(q_info->cqc_phase);

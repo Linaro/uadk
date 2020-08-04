@@ -1402,7 +1402,6 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	struct hisi_zip_sqe sqe;
 	int ret;
 
-	memset(&sqe, 0, sizeof(struct hisi_zip_sqe));
 	ret = hisi_qm_recv(ctx, &sqe);
 	if (ret < 0) {
 		if (ret != -EAGAIN) {
@@ -1422,6 +1421,8 @@ int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		       ctx_st, status, type);
 		recv_msg->status = WD_IN_EPARA;
 	} else {
+		if (!sqe.consumed || !sqe.produced)
+			return -EAGAIN;
 		recv_msg->status = 0;
 	}
 	recv_msg->in_cons = sqe.consumed;

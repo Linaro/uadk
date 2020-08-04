@@ -682,9 +682,11 @@ void wd_comp_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-#if 0
-static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
+static int fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 {
+	msg->ctx_buf = calloc(1, HW_CTX_SIZE);
+	if (!msg->ctx_buf)
+		return -ENOMEM;
 	msg->avail_out = req->dst_len;
 	msg->src = req->src;
 	msg->dst = req->dst;
@@ -696,8 +698,8 @@ static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 	//msg->isize = opdata->isize;
 	//msg->checksum = opdata->checksum;
 	msg->status = 0;
+	return 0;
 }
-#endif
 
 int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 {
@@ -711,13 +713,11 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 
-	//fill_comp_msg(&msg, req);
+	ret = fill_comp_msg(&msg, req);
+	if (ret < 0)
+		return ret;
 	memcpy(&msg.req, req, sizeof(struct wd_comp_req));
 	msg.alg_type = sess->alg_type;
-	msg.in_size = req->src_len;
-	/* FIXME: need to distinguish the first frame and the others */
-	msg.stream_pos = STREAM_NEW;
-	msg.flush_type = 1;
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
@@ -736,7 +736,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 				goto err_recv;
 			}
 		}
-	} while(ret < 0);
+	} while (ret < 0);
 
 	req->src_len = resp_msg.req.src_len;
 	req->dst_len = resp_msg.req.dst_len;
@@ -745,8 +745,11 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
 
-err_recv:
+	free(msg.ctx_buf);
 	return 0;
+err_recv:
+	free(msg.ctx_buf);
+	return ret;
 
 }
 
@@ -761,7 +764,9 @@ int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 
-	//fill_comp_msg(&msg, req);
+	ret = fill_comp_msg(&msg, req);
+	if (ret < 0)
+		return ret;
 	memcpy(&msg.req, req, sizeof(struct wd_comp_req));
 
 	/* fill trueth flag */
@@ -784,7 +789,7 @@ int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
 				goto err_recv;
 			}
 		}
-	} while(ret < 0);
+	} while (ret < 0);
 
 	req->src_len = resp_msg.req.src_len;
 	req->dst_len = resp_msg.req.dst_len;
@@ -793,8 +798,11 @@ int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
 
-err_recv:
+	free(msg.ctx_buf);
 	return 0;
+err_recv:
+	free(msg.ctx_buf);
+	return ret;
 }
 
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
