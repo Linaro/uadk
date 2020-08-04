@@ -72,21 +72,20 @@ static struct hisi_qm_type qm_type[] = {
 	},
 };
 
-static int hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 tail, __u16 num)
+static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 tail, __u16 num)
 {
 	int i, j;
+	int sqe_offset;
+
 	if (tail + num < QM_Q_DEPTH) {
 		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * num);
 	} else {
-		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * (QM_Q_DEPTH - tail));
-		memcpy(info->sq_base,
-			   sqe + info->sqe_size * (QM_Q_DEPTH - tail),
-               info->sqe_size * (tail + num - QM_Q_DEPTH));
+		sqe_offset = QM_Q_DEPTH - tail;
+		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * sqe_offset);
+		memcpy(info->sq_base, sqe + info->sqe_size * sqe_offset, info->sqe_size * (num - sqe_offset));
 	}
 
-
 	j = tail;
-
 	for (i = 0; i < num; i++) {
 		if (j >= QM_Q_DEPTH) {
 			j = 0;
@@ -95,8 +94,6 @@ static int hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 ta
 		info->req_cache[j] = sqe + i * info->sqe_size;
 		j++;
 	}
-
-	return 0;
 }
 
 static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
