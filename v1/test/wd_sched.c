@@ -76,7 +76,7 @@ static void __fini_cache(struct wd_scheduler *sched)
 		free(sched->stat);
 		sched->stat = NULL;
 	}
-	if (!(flags & UACCE_DEV_PASID)) {
+	if (!(flags & WD_UACCE_DEV_PASID)) {
 		pool = qinfo->br.usr;
 		if (pool) {
 			for (i = 0; i < sched->msg_cache_num; i++) {
@@ -116,7 +116,7 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 
 	qinfo = sched->qs[0].qinfo;
 	flags = qinfo->dev_flags;
-	if (flags & UACCE_DEV_PASID) {
+	if (flags & WD_UACCE_DEV_PASID) {
 		sched->ss_region = malloc(sched->ss_region_size);
 		if (!sched->ss_region) {
 			WD_ERR("fail to alloc sched ss region mem!\n");
@@ -144,7 +144,7 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 	return 0;
 
 out_with_queues:
-	if (flags & UACCE_DEV_PASID) {
+	if (flags & WD_UACCE_DEV_PASID) {
 		if (sched->ss_region) {
 			free(sched->ss_region);
 			sched->ss_region = NULL;
@@ -168,7 +168,7 @@ int wd_sched_init(struct wd_scheduler *sched)
 
 	qinfo = sched->qs[0].qinfo;
 	flags = qinfo->dev_flags;
-	if (!(flags & UACCE_DEV_PASID)) {
+	if (!(flags & WD_UACCE_DEV_PASID)) {
 		for (k = 1; k < sched->q_num; k++) {
 			ret = wd_share_reserved_memory(&sched->qs[0],
 						       &sched->qs[k]);
@@ -190,7 +190,7 @@ int wd_sched_init(struct wd_scheduler *sched)
 	return 0;
 
 out_with_queues:
-	if (flags & UACCE_DEV_PASID) {
+	if (flags & WD_UACCE_DEV_PASID) {
 		if (sched->ss_region) {
 			free(sched->ss_region);
 			sched->ss_region = NULL;
@@ -208,7 +208,7 @@ void wd_sched_fini(struct wd_scheduler *sched)
 	unsigned int flags = qinfo->dev_flags;
 
 	__fini_cache(sched);
-	if (flags & UACCE_DEV_PASID) {
+	if (flags & WD_UACCE_DEV_PASID) {
 		if (sched->ss_region) {
 			free(sched->ss_region);
 			sched->ss_region = NULL;
