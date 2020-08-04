@@ -88,7 +88,7 @@ static int __sync_send(struct wd_scheduler *sched) {
 	do {
 		sched->stat[sched->q_h].send++;
 		ret = sched->hw_send(sched->qs[sched->q_h],
-				     sched->msgs[sched->c_h].msg);
+				     sched->msgs[sched->c_h].msg, 1);
 		if (ret == -EBUSY) {
 			usleep(1);
 			sched->stat[sched->q_h].send_retries++;

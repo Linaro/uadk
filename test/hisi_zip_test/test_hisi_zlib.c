@@ -262,7 +262,7 @@ int hw_send_and_recv(struct zip_stream *zstrm, int flush, int comp_optype)
 		zstrm->total_out = 0;
 	}
 
-	ret = hisi_qm_send(zstrm->h_ctx, msg);
+	ret = hisi_qm_send(zstrm->h_ctx, msg, 1);
 	if (ret == -EBUSY) {
 		usleep(1);
 		goto recv_again;

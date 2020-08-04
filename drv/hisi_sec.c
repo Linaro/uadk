@@ -252,7 +252,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
-	ret = hisi_qm_send(ctx, &sqe);
+	ret = hisi_qm_send(ctx, &sqe, 1);
 	if (!ret) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
 		return ret;
