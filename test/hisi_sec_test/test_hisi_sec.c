@@ -25,65 +25,55 @@ static void hexdump(char *buff, unsigned int len)
 
 static int test_sec(int flag)
 {
-	struct cipher_testvec *tv = &aes_ecb_tv_template_128;
-	struct wd_cipher_sess_setup setup;
+	struct cipher_testvec *tv = &aes_ecb_tv_template_128[0];
 	handle_t	handle;
-	struct wd_cipher_arg arg;
+	struct wd_cipher_req req;
 	char algs[64];
 	int cnt = 10;
 	int ret = 0;
 
 	/* config setup */
-	setup.alg = WD_CIPHER_AES;
-	setup.mode = WD_CIPHER_ECB;
 	sprintf(algs, "cipher");
-	setup.alg_name = algs;
 	/* config arg */
-	memset(&arg, 0, sizeof(struct wd_cipher_arg));
-	arg.alg = WD_CIPHER_AES;
-	arg.mode = WD_CIPHER_ECB;
-	arg.op_type = WD_CIPHER_ENCRYPTION;
+	memset(&req, 0, sizeof(struct wd_cipher_req));
+	req.alg = WD_CIPHER_AES;
+	req.mode = WD_CIPHER_ECB;
+	req.op_type = WD_CIPHER_ENCRYPTION;
 
-	arg.src  = malloc(BUFF_SIZE);
-	if (!arg.src) {
+	req.src  = malloc(BUFF_SIZE);
+	if (!req.src) {
 		printf("arg src mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
-	memcpy(arg.src, tv->ptext, tv->len);
-	arg.in_bytes = tv->len;
-
-	arg.dst = malloc(BUFF_SIZE);
-	if (!arg.dst) {
+	memcpy(req.src, tv->ptext, tv->len);
+	req.in_bytes = tv->len;
+	hexdump(req.src, tv->len);
+	req.dst = malloc(BUFF_SIZE);
+	if (!req.dst) {
 		printf("arg dst mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 
-	arg.iv = malloc(IV_SIZE);
-	if (!arg.iv) {
+	req.iv = malloc(IV_SIZE);
+	if (!req.iv) {
 		printf("arg iv mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	if (tv->iv)
-		memcpy(arg.iv, tv->iv, strlen(tv->iv));
+		memcpy(req.iv, tv->iv, strlen(tv->iv));
 	
-	handle = wd_alg_cipher_alloc_sess(&setup, NULL);
-	if (!handle) {
-		printf("wd alloc sess failed!\n");
-		ret = -1;
-		goto out;
-	}
 	
 	/* set key */
-	ret = wd_alg_set_key(handle, tv->key, tv->klen);
+	//ret = wd_alg_set_key(handle, tv->key, tv->klen);
 	if (ret) {
 		printf("alg set key failed!\n");
 		goto out;
 	}
 	while (cnt) {
-		ret = wd_alg_encrypt(handle, &arg);
+		//ret = wd_alg_encrypt(handle, &arg);
 		cnt--;
 		if (ret) {
 			printf("fail to encrypt:%d\n", ret);
@@ -92,17 +82,14 @@ static int test_sec(int flag)
 	}
 	
 out:
-	if (handle)
-		wd_alg_cipher_free_sess(handle);
-
-	if (arg.src)
-		free(arg.src);
-	if (arg.dst)
-		free(arg.dst);
-	if (arg.iv)
-		free(arg.iv);
-	if (arg.key)
-		free(arg.key);
+	if (req.src)
+		free(req.src);
+	if (req.dst)
+		free(req.dst);
+	if (req.iv)
+		free(req.iv);
+	if (req.key)
+		free(req.key);
 
 	return ret;
 
@@ -111,10 +98,10 @@ out:
 int main(int argc, char *argv[])
 {
 	printf("this is a hisi sec test.\n");
-	int flag = 0;
-	int ret;
+	//int flag = 0;
+	int ret = 0;
 
-	ret = test_sec(flag);
+	//ret = test_sec(flag);
 
 	if (!ret) {
 		printf("test sec is successfull!\n");
