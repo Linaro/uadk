@@ -20,14 +20,31 @@
 #include <linux/types.h>
 #include "config.h"
 #include "../wd.h"
-#include "../internal/qm_usr_if.h"
 #include "../wd_ecc.h"
 #include "../wd_rsa.h"
 #include "../wd_util.h"
 #include "../wd_dh.h"
-#include "../internal/hpre_usr_if.h"
 
-#define QM_CQE_SIZE			16
+
+/* default queue depth for sq/cq/eq */
+#define QM_Q_DEPTH		1024
+
+#define QM_CQE_SIZE		16
+
+/* page number for queue file region */
+#define QM_DOORBELL_PAGE_NR	1
+#define QM_DKO_PAGE_NR		4
+#define QM_DUS_PAGE_NR		36
+
+#define QM_DOORBELL_PG_START 0
+#define QM_DKO_PAGE_START (QM_DOORBELL_PG_START + QM_DOORBELL_PAGE_NR)
+#define QM_DUS_PAGE_START (QM_DKO_PAGE_START + QM_DKO_PAGE_NR)
+#define QM_SS_PAGE_START (QM_DUS_PAGE_START + QM_DUS_PAGE_NR)
+
+#define QM_DOORBELL_OFFSET      0x340
+#define QM_V2_DOORBELL_OFFSET   0x1000
+
+#define QM_CQE_SIZE		16
 #define QM_HPRE_BD_SIZE		64
 #define QM_ZIP_BD_SIZE		128
 #define QM_SEC_BD_SIZE		128
@@ -56,7 +73,22 @@
 /* wd sgl len */
 #define WD_SGL_PAD0_LEN			2
 #define WD_SGL_PAD1_LEN			8
-#define WD_SGL_RESERVERD_LEN	24
+#define WD_SGL_RESERVERD_LEN		24
+
+struct cqe {
+	__le32 rsvd0;
+	__le16 cmd_id;
+	__le16 rsvd1;
+	__le16 sq_head;
+	__le16 sq_num;
+	__le16 rsvd2;
+	__le16 w7;
+};
+
+struct hisi_qp_ctx {
+	__u16 id;
+	__u16 qc_type;
+};
 
 struct qm_queue_info;
 
@@ -121,5 +153,11 @@ int qm_init_queue(struct wd_queue *q);
 void qm_uninit_queue(struct wd_queue *q);
 int qm_send(struct wd_queue *q, void *msg);
 int qm_recv(struct wd_queue *q, void **resp);
+
+#define HISI_QM_API_VER_BASE "hisi_qm_v1"
+#define HISI_QM_API_VER2_BASE "hisi_qm_v2"
+#define HISI_QM_API_VER3_BASE "hisi_qm_v3"
+
+#define WD_UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)
 
 #endif

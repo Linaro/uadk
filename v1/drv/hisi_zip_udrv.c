@@ -174,7 +174,7 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 	uintptr_t phy_in, phy_out;
 	uintptr_t phy_ctxbuf = 0;
 
-	if (qinfo->dev_flags & UACCE_DEV_NOIOMMU) {
+	if (qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) {
 		phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
 		if (!phy_in) {
 			WD_ERR("Get zip in buf dma address fail!\n");

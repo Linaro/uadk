@@ -34,7 +34,7 @@
 
 #define SYS_CLASS_DIR	"/sys/class"
 #define LINUX_DEV_DIR	"/dev"
-#define UACCE_CLASS_DIR SYS_CLASS_DIR"/"UACCE_CLASS_NAME
+#define WD_UACCE_CLASS_DIR SYS_CLASS_DIR"/"WD_UACCE_CLASS_NAME
 #define _TRY_REQUEST_TIMES		64
 #define INT_MAX_SIZE			10
 #define LINUX_CRTDIR_SIZE		1
@@ -68,7 +68,7 @@ struct dev_info {
 	char name[WD_NAME_SIZE];
 	char api[WD_NAME_SIZE];
 	char algs[MAX_ATTR_STR_SIZE];
-	unsigned long qfrs_offset[UACCE_QFRT_MAX];
+	unsigned long qfrs_offset[WD_UACCE_QFRT_MAX];
 };
 
 static int get_raw_attr(const char *dev_root, const char *attr,
@@ -78,7 +78,7 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 	int fd;
 	int size;
 
-	size = snprintf(attr_file, PATH_STR_SIZE, "%s/"UACCE_DEV_ATTRS"/%s",
+	size = snprintf(attr_file, PATH_STR_SIZE, "%s/"WD_UACCE_DEV_ATTRS"/%s",
 			dev_root, attr);
 	if (size <= 0) {
 		WD_ERR("get %s/%s path fail!\n", dev_root, attr);
@@ -268,12 +268,12 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 		return ret;
 
 	ret = get_ul_vec_attr(dinfo, "region_mmio_size",
-		&dinfo->qfrs_offset[UACCE_QFRT_MMIO], 1);
+		&dinfo->qfrs_offset[WD_UACCE_QFRT_MMIO], 1);
 	if (ret < 0)
 		return ret;
 
 	ret = get_ul_vec_attr(dinfo, "region_dus_size",
-		&dinfo->qfrs_offset[UACCE_QFRT_DUS], 1);
+		&dinfo->qfrs_offset[WD_UACCE_QFRT_DUS], 1);
 	if (ret < 0)
 		return ret;
 
@@ -321,7 +321,7 @@ static void pre_init_dev(struct dev_info *dinfo, const char *name)
 	}
 
 	ret = snprintf(dinfo->dev_root, PATH_STR_SIZE,
-		       "%s/%s", UACCE_CLASS_DIR, name);
+		       "%s/%s", WD_UACCE_CLASS_DIR, name);
 	if (ret < 0) {
 		WD_ERR("get uacce file path fail!\n");
 		return;
@@ -349,7 +349,7 @@ static int find_available_dev(struct dev_info *dinfop,
 	char *name;
 	int cnt = 0;
 
-	wd_class = opendir(UACCE_CLASS_DIR);
+	wd_class = opendir(WD_UACCE_CLASS_DIR);
 	if (!wd_class) {
 		WD_ERR("WD framework is not enabled on the system!\n");
 		return -ENODEV;
@@ -454,7 +454,7 @@ static int wd_start_queue(struct wd_queue *q)
 	int ret;
 	struct q_info *qinfo = q->qinfo;
 
-	ret = ioctl(qinfo->fd, UACCE_CMD_START_Q);
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_START_Q);
 	if (ret)
 		WD_ERR("fail to start queue of %s\n", q->dev_path);
 	return ret;
@@ -554,7 +554,7 @@ void wd_release_queue(struct wd_queue *q)
 	}
 
 	drv_close(q);
-	if (ioctl(qinfo->fd, UACCE_CMD_PUT_Q))
+	if (ioctl(qinfo->fd, WD_UACCE_CMD_PUT_Q))
 		WD_ERR("fail to put queue!\n");
 
 	wd_close_queue(q);
@@ -628,24 +628,24 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	tgt_info = tqinfo->dev_info;
 	info = qinfo->dev_info;
 
-	if (((qinfo->dev_flags & UACCE_DEV_NOIOMMU) &&
-		!(tqinfo->dev_flags & UACCE_DEV_NOIOMMU)) ||
-		(!(qinfo->dev_flags & UACCE_DEV_NOIOMMU) &&
-		(tqinfo->dev_flags & UACCE_DEV_NOIOMMU))) {
+	if (((qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) &&
+		!(tqinfo->dev_flags & WD_UACCE_DEV_NOIOMMU)) ||
+		(!(qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) &&
+		(tqinfo->dev_flags & WD_UACCE_DEV_NOIOMMU))) {
 		WD_ERR("IOMMU type mismatching as share mem!\n");
 		return -WD_EINVAL;
 	}
 	if (info->node_id != tgt_info->node_id)
 		WD_ERR("Warn: the 2 queues is not at the same node!\n");
 
-	ret = ioctl(qinfo->fd, UACCE_CMD_SHARE_SVAS, tqinfo->fd);
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_SHARE_SVAS, tqinfo->fd);
 	if (ret) {
 		WD_ERR("ioctl share dma memory fail!\n");
 		return ret;
 	}
 
 	/* Just share DMA mem from 'q' in NO-IOMMU mode */
-	if (qinfo->dev_flags & UACCE_DEV_NOIOMMU)
+	if (qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU)
 		tqinfo->head = qinfo->head;
 
 	__atomic_add_fetch(&qinfo->ref, 1, __ATOMIC_RELAXED);
@@ -746,7 +746,7 @@ void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size)
 
 	off = qfrt * getpagesize();
 
-	if (qfrt != UACCE_QFRT_SS)
+	if (qfrt != WD_UACCE_QFRT_SS)
 		size = qinfo->qfrs_offset[qfrt];
 
 	return mmap(0, size, PROT_READ | PROT_WRITE,
@@ -761,7 +761,7 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 	if (!addr)
 		return;
 
-	if (qfrt != UACCE_QFRT_SS)
+	if (qfrt != WD_UACCE_QFRT_SS)
 		size = qinfo->qfrs_offset[qfrt];
 
 	munmap(addr, size);

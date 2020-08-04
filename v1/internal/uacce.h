@@ -1,32 +1,30 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later WITH Linux-syscall-note */
-/* Copyright (c) 2018-2019 HiSilicon Limited. */
-#ifndef _UAPIUUACCE_H
-#define _UAPIUUACCE_H
+/*
+ * Copyright 2019 Huawei Technologies Co.,Ltd.All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#ifndef _UAPI_WD_UACCE_H
+#define _UAPI_WD_UACCE_H
 
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
-#define UACCE_CLASS_NAME	"uacce"
-#define UACCE_DEV_ATTRS		"attrs"
-/*
- * UACCE_CMD_START_Q: Start queue
- */
-#define UACCE_CMD_START_Q		_IO('W', 0)
-
-/*
- * UACCE_CMD_PUT_Q:
- * User actively stop queue and free queue resource immediately
- * Optimization method since close fd may delay
- */
-#define UACCE_CMD_PUT_Q		_IO('W', 1)
-
-#define UACCE_CMD_SHARE_SVAS	_IO('W', 2)
-
-#define UACCE_CMD_GET_SS_DMA	_IOR('W', 3, unsigned long)
-
+#define WD_UACCE_CLASS_NAME	"uacce"
+#define WD_UACCE_DEV_ATTRS	"attrs"
 
 /**
- * UACCE Device Attributes:
+ * WD_UACCE Device Attributes:
  *
  * NOIOMMU: the device has no IOMMU support
  *	can do ssva, but no map to the dev
@@ -39,34 +37,49 @@
  * SVA: full function device
  * SHARE_DOMAIN: no PASID, can do ssva only for one process and the kernel
  */
-#define UACCE_DEV_SVA			(1<<0)
-#define UACCE_DEV_NOIOMMU		(1<<1)
-#define UACCE_DEV_PASID			(1<<2)
+#define WD_UACCE_DEV_SVA		(1<<0)
+#define WD_UACCE_DEV_NOIOMMU		(1<<1)
+#define WD_UACCE_DEV_PASID		(1<<2)
 
 /* uacce mode of the driver */
-#define UACCE_MODE_NOUACCE	0 /* don't use uacce */
-#define UACCE_MODE_NOIOMMU	2 /* use uacce noiommu mode */
+#define WD_UACCE_MODE_NOWD_UACCE	0 /* don't use uacce */
+#define WD_UACCE_MODE_NOIOMMU		2 /* use uacce noiommu mode */
 
-#define UACCE_API_VER_NOIOMMU_SUBFIX	"_noiommu"
-
-#define UACCE_QFR_NA ((unsigned long)-1)
+#define WD_UACCE_API_VER_NOIOMMU_SUBFIX	"_noiommu"
+#define WD_UACCE_QFR_NA ((unsigned long)-1)
 
 /**
  * enum uacce_qfrt: queue file region type
- * @UACCE_QFRT_MMIO: device mmio region
- * @UACCE_QFRT_DUS: device user share region
- * @UACCE_QFRT_SS: static share memory(no-sva)
+ * @WD_UACCE_QFRT_MMIO: device mmio region
+ * @WD_UACCE_QFRT_DUS: device user share region
+ * @WD_UACCE_QFRT_SS: static share memory(no-sva)
  */
 enum uacce_qfrt {
-	UACCE_QFRT_MMIO = 0,	/* device mmio region */
-	UACCE_QFRT_DUS,		/* device user share */
-	UACCE_QFRT_SS,		/* static share memory */
-	UACCE_QFRT_MAX,
+	WD_UACCE_QFRT_MMIO = 0,		/* device mmio region */
+	WD_UACCE_QFRT_DUS,		/* device user share */
+	WD_UACCE_QFRT_SS,		/* static share memory */
+	WD_UACCE_QFRT_MAX,
 };
-#define UACCE_QFRT_INVALID UACCE_QFRT_MAX
+
+#define WD_UACCE_QFRT_INVALID WD_UACCE_QFRT_MAX
 
 /* Pass DMA SS region slice size by granularity 64KB */
-#define UACCE_GRAN_SIZE			0x10000ull
-#define UACCE_GRAN_SHIFT		16
-#define UACCE_GRAN_NUM_MASK		0xfffull
+#define WD_UACCE_GRAN_SIZE		0x10000ull
+#define WD_UACCE_GRAN_SHIFT		16
+#define WD_UACCE_GRAN_NUM_MASK		0xfffull
+
+/*
+ * WD_UACCE_CMD_START_Q: Start queue
+ */
+#define WD_UACCE_CMD_START_Q	_IO('W', 0)
+
+/*
+ * WD_UACCE_CMD_PUT_Q:
+ * User actively stop queue and free queue resource immediately
+ * Optimization method since close fd may delay
+ */
+#define WD_UACCE_CMD_PUT_Q		_IO('W', 1)
+#define WD_UACCE_CMD_SHARE_SVAS		_IO('W', 2)
+#define WD_UACCE_CMD_GET_SS_DMA		_IOR('W', 3, unsigned long)
+
 #endif
