@@ -10,6 +10,7 @@
 
 ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
 	--enable-perf=yes \
+	--with-static_drv \
 	--host aarch64-linux-gnu \
 	--target aarch64-linux-gnu \
 	--program-prefix aarch64-linux-gnu-

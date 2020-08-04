@@ -12,6 +12,9 @@
 #define SYS_CLASS_DIR	"/sys/class/uacce"
 
 /* new code */
+#include <dlfcn.h>
+#include "include/drv/wd_comp_drv.h"
+
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_HW_EACCESS 			62
 #define MAX_RETRY_COUNTS		200000000
@@ -37,27 +40,33 @@ struct wd_comp_setting {
 	struct wd_async_msg_pool pool;
 } wd_comp_setting;
 
-struct wd_comp_driver {
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config *config, void *priv);
-	void (*exit)(void *priv);
-	int (*comp_send)(handle_t ctx, struct wd_comp_msg *msg);
-	int (*comp_recv)(handle_t ctx, struct wd_comp_msg *msg);
-};
+extern struct wd_comp_driver wd_comp_hisi_zip;
 
-static struct wd_comp_driver wd_comp_driver_list[] = {
-	{
-		.drv_name		= "hisi_zip",
-		.alg_name		= "zlib\ngzip",
-		.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
-		.init			= hisi_zip_init,
-		.exit			= hisi_zip_exit,
-		.comp_send		= hisi_zip_comp_send,
-		.comp_recv		= hisi_zip_comp_recv,
-	},
-};
+#ifdef WD_STATIC_DRV
+static void wd_comp_set_static_drv(void)
+{
+	/*
+	 * Fix me: a parameter can be introduced to decide to choose
+	 * specific driver. Same as dynamic case.
+	 */
+	wd_comp_setting.driver = &wd_comp_hisi_zip;
+}
+#else
+static void __attribute__((constructor)) wd_comp_open_driver(void)
+{
+	void *driver;
+
+	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
+	driver = dlopen("/usr/lib/wd/libhisi_zip.so", RTLD_NOW);
+	if (!driver)
+		WD_ERR("Fail to open libhisi_zip.so\n");
+}
+#endif
+
+void wd_comp_set_driver(struct wd_comp_driver *drv)
+{
+	wd_comp_setting.driver = drv;
+}
 
 static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 {
@@ -96,29 +105,6 @@ static int copy_sched_to_global_setting(struct wd_sched *sched)
 	wd_comp_setting.sched.poll_policy = sched->poll_policy;
 
 	return 0;
-}
-
-static struct wd_comp_driver *find_comp_driver(const char *driver)
-{
-	const char *drv_name;
-	int i, found;
-
-	if (!driver)
-		return NULL;
-
-	/* There're no duplicated driver names in wd_comp_driver_list[]. */
-	for (i = 0, found = 0; i < ARRAY_SIZE(wd_comp_driver_list); i++) {
-		drv_name = wd_comp_driver_list[i].drv_name;
-		if (!strncmp(driver, drv_name, strlen(driver))) {
-			found = 1;
-			break;
-		}
-	}
-
-	if (!found)
-		return NULL;
-
-	return &wd_comp_driver_list[i];
 }
 
 static void clear_sched_in_global_setting(void)
@@ -274,14 +260,11 @@ static struct wd_comp_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	struct wd_comp_driver *driver;
-	const char *driver_name;
-	handle_t h_ctx;
 	void *priv;
 	int ret;
 
 	/* wd_comp_init() could only be invoked once for one process. */
-	if (wd_comp_setting.driver)
+	if (wd_comp_setting.config.ctx_num)
 		return 0;
 
 	if (!config || !sched)
@@ -295,13 +278,19 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		goto out;
 
-	/* find driver and set driver */
-	h_ctx = config->ctxs[0].ctx;
-	driver_name = wd_get_driver_name(h_ctx);
-	driver = find_comp_driver(driver_name);
-
-	wd_comp_setting.driver = driver;
-
+	/*
+	 * Fix me: ctx could be passed into wd_comp_set_static_drv to help to
+	 * choose static compiled vendor driver. For dynamic vendor driver,
+	 * wd_comp_open_driver will be called in the process of opening
+	 * libwd_comp.so to load related driver dynamic library. Vendor driver
+	 * pointer will be passed to wd_comp_setting.driver in the process of
+	 * opening of vendor driver dynamic library. A configure file could be
+	 * introduced to help to define which vendor driver lib should be
+	 * loaded.
+	 */
+#ifdef WD_STATIC_DRV
+	wd_comp_set_static_drv();
+#endif
 	/* alloc sched context memory */
 	wd_comp_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
 	if (!wd_comp_setting.sched_ctx) {
@@ -355,7 +344,6 @@ void wd_comp_uninit(void)
 	free(wd_comp_setting.sched_ctx);
 
 	/* unset config, sched, driver */
-	wd_comp_setting.driver = NULL;
 	clear_sched_in_global_setting();
 	clear_config_in_global_setting();
 }
