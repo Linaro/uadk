@@ -22,7 +22,7 @@ static void hexdump(char *buff, unsigned int len)
 	}
 	printf("\n");
 }
-
+#if 0
 static int test_sec(int flag)
 {
 	struct cipher_testvec *tv = &aes_ecb_tv_template_128[0];
@@ -94,7 +94,7 @@ out:
 	return ret;
 
 }
-
+#endif
 int main(int argc, char *argv[])
 {
 	printf("this is a hisi sec test.\n");

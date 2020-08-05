@@ -282,12 +282,6 @@ int hisi_cipher_poll(handle_t ctx, __u32 count)
 	return 0;
 }
 
-int hisi_digest_digest(struct wd_digest_sess *sess, struct wd_digest_arg *arg)
-{
-
-	return 0;
-}
-
 int hisi_sec_cipher_sync(handle_t ctx, struct wd_cipher_req *req)
 {
 	return 0;
