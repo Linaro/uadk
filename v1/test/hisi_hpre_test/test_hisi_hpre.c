@@ -1953,7 +1953,7 @@ int x_genkey_by_openssl(struct ecc_test_ctx *test_ctx,
 	if (id == 1) {
 		pkey.save_type = EVP_PKEY_X25519;
 		pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
-	} else if (id == 2) {
+	} else { //if (id == 2)
 		pkey.save_type = EVP_PKEY_X448;
 		pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
 	}
@@ -2204,7 +2204,7 @@ int x_compkey_by_openssl(struct ecc_test_ctx *test_ctx, void *ctx,
 	if (id == 1) {
 		pkey.save_type = EVP_PKEY_X25519;
 		pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
-	} else if (id == 2) {
+	} else { // if (id == 2)
 		pkey.save_type = EVP_PKEY_X448;
 		pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
 	}
@@ -3321,9 +3321,9 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 		if (t_c->is_x25519_x448){
 			EVP_PKEY_METHOD *pmeth;
 			EVP_PKEY_CTX pkey_ctx;
+			size_t key_sz;
 			EVP_PKEY pkey;
 			ECX_KEY ecx;
-			int ret;
 
 			memset(&pkey_ctx, 0, sizeof(EVP_PKEY_CTX));
 			memset(&pkey, 0, sizeof(EVP_PKEY));
@@ -3334,7 +3334,7 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
 				ecx.privkey = x25519_aprikey;
 				memcpy(ecx.pubkey, x25519_x_param, 32);
-			} else if (t_c->key_size == 56) { // x448
+			} else { // if (t_c->key_size == 56) { // x448
 				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
 				ecx.privkey = x448_aprikey;
 				memcpy(ecx.pubkey, x448_x_param, 56);
@@ -3345,7 +3345,7 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 
 			uint8_t *out_pub_key = calloc(t_c->key_size, sizeof(char));
 
-			ret = pmeth->derive(&pkey_ctx, out_pub_key, &t_c->key_size);
+			ret = pmeth->derive(&pkey_ctx, out_pub_key, &key_sz);
 			if (ret == 0) {
 				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
 				return -1;
@@ -3400,6 +3400,7 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 			EVP_PKEY_CTX pkey_ctx;
 			EVP_PKEY pkey;
 			ECX_KEY ecx;
+			size_t key_sz;
 			int ret;
 
 			memset(&pkey_ctx, 0, sizeof(EVP_PKEY_CTX));
@@ -3410,7 +3411,7 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
 				ecx.privkey = x25519_aprikey;
 				memcpy(ecx.pubkey, x25519_bpubkey, 32);
-			} else if (t_c->key_size == 56) { // x448
+			} else { // if (t_c->key_size == 56) { // x448
 				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
 				ecx.privkey = x448_aprikey;
 				memcpy(ecx.pubkey, x448_bpubkey, 56);
@@ -3421,7 +3422,7 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 
 			uint8_t *out_shared_key = calloc(t_c->key_size, sizeof(char));
 
-			ret = pmeth->derive(&pkey_ctx, out_shared_key, &t_c->key_size);
+			ret = pmeth->derive(&pkey_ctx, out_shared_key, &key_sz);
 			if (ret <= 0) {
 				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
 				return -1;
@@ -4004,7 +4005,7 @@ void fill_ecdh_param_of_curve(struct wcrypto_ecc_curve *param)
 		param->g.y.data = ecdh_g_secp521k1 + key_size;
 	} else {
 		HPRE_TST_PRT("key_bits %d not find\n", key_bits);
-		return NULL;
+		return;
 	}
 
 	param->a.bsize = key_size;
@@ -4040,7 +4041,6 @@ static void *_ecc_sys_test_thread(void *data)
 	void *ctx = NULL;
 	struct wcrypto_ecc_ctx_setup ctx_setup;
 	struct wcrypto_ecc_curve param;
-	__u32 key_size;
 	__u32 opstr_idx;
 	__u32 free_num;
 
@@ -4050,7 +4050,6 @@ static void *_ecc_sys_test_thread(void *data)
 	pool = pdata->pool;
 	opType = pdata->op_type;
 	thread_num = pdata->thread_num;
-	key_size = (key_bits + 7) / 8;
 
 	HPRE_TST_PRT("ecc sys test start!\n");
 
@@ -6509,7 +6508,9 @@ static void *_ecc_async_poll_test_thread(void *data)
 			ret = wcrypto_ecxdh_poll(q, 1);
 		} else if (op == ECDSA_ASYNC_SIGN || op == ECDSA_ASYNC_VERF) {
 			ret = wcrypto_ecdsa_poll(q, 1);
-		} else {}
+		} else { // SM2, todo
+			ret = -1;
+		}
 
 		if (ret < 0) {
 			break;
@@ -6737,7 +6738,8 @@ int main(int argc, char *argv[])
             wd_get_node_id(q);
             FILE *fp = NULL;
             fp = fopen("file.txt", "r");
-            fgets(content,1024,fp);
+            if (fgets(content,1024,fp) == NULL)
+		return -EINVAL;
             if (strstr(content,error_info) == NULL){
                 return -EINVAL;
             }
