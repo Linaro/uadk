@@ -10,6 +10,13 @@
 #define HW_CTX_SIZE (24 * 1024)
 #define BUFF_SIZE 1024
 #define IV_SIZE   256
+#define HISI_DEV_NODE "/dev/hisi_sec-0"
+
+#define SCHED_SINGLE "sched_single"
+#define SCHED_NULL_CTX_SIZE	4
+
+static struct wd_ctx_config g_ctx_cfg;
+static struct wd_sched g_sched;
 
 static void hexdump(char *buff, unsigned int len)
 {
@@ -22,18 +29,62 @@ static void hexdump(char *buff, unsigned int len)
 	}
 	printf("\n");
 }
-#if 0
-static int test_sec(int flag)
+
+static handle_t sched_single_pick_next_ctx(struct wd_ctx_config *cfg,
+		void *sched_ctx, struct wd_cipher_req *req, int numa_id)
+{
+	return g_ctx_cfg.ctxs[0].ctx;
+}
+
+static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg, void *sched_ctx)
+{
+	return 0;
+}
+
+static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
+{
+	int ret;
+
+	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
+	g_ctx_cfg.ctx_num = 1;
+	g_ctx_cfg.ctxs = calloc(1, sizeof(struct wd_ctx));
+	if (g_ctx_cfg.ctxs)
+		return -ENOMEM;
+	/* request ctx */
+	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(HISI_DEV_NODE);
+	if (!g_ctx_cfg.ctxs[0].ctx) {
+		ret = -EINVAL;
+		goto out;
+	}
+	g_ctx_cfg.ctxs[0].op_type = type;
+	g_ctx_cfg.ctxs[0].ctx_mode = mode;
+
+	sched->name = SCHED_SINGLE;
+	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
+	sched->pick_next_ctx = sched_single_pick_next_ctx;
+	sched->poll_policy = sched_single_poll_policy;
+	/*cipher init*/
+	wd_cipher_init(&g_ctx_cfg, sched);
+
+	return 0;
+out:
+	free(g_ctx_cfg.ctxs);
+
+	return ret;
+}
+
+static int test_sec_cipher_sync_once(void)
 {
 	struct cipher_testvec *tv = &aes_ecb_tv_template_128[0];
-	handle_t	handle;
+	handle_t	h_sess;
 	struct wd_cipher_req req;
 	char algs[64];
 	int cnt = 10;
-	int ret = 0;
+	int ret;
 
 	/* config setup */
 	sprintf(algs, "cipher");
+	init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_cipher_req));
 	req.alg = WD_CIPHER_AES;
@@ -42,7 +93,7 @@ static int test_sec(int flag)
 
 	req.src  = malloc(BUFF_SIZE);
 	if (!req.src) {
-		printf("arg src mem malloc failed!\n");
+		printf("req src mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -51,29 +102,34 @@ static int test_sec(int flag)
 	hexdump(req.src, tv->len);
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
-		printf("arg dst mem malloc failed!\n");
+		printf("req dst mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
-		printf("arg iv mem malloc failed!\n");
+		printf("req iv mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	if (tv->iv)
 		memcpy(req.iv, tv->iv, strlen(tv->iv));
-	
+	h_sess = (void *)calloc(1, sizeof(struct wd_cipher_sess));
+	if (!h_sess) {
+		ret = -1;
+		goto out;
+	}
+	//(wd_cipher_sess)h_sess->alg_type = 	
 	
 	/* set key */
-	//ret = wd_alg_set_key(handle, tv->key, tv->klen);
+	ret = wd_cipher_set_key(&req, tv->key, tv->klen);
 	if (ret) {
-		printf("alg set key failed!\n");
+		printf("req set key failed!\n");
 		goto out;
 	}
 	while (cnt) {
-		//ret = wd_alg_encrypt(handle, &arg);
+		ret = wd_do_cipher(h_sess, &req);
 		cnt--;
 		if (ret) {
 			printf("fail to encrypt:%d\n", ret);
@@ -94,14 +150,13 @@ out:
 	return ret;
 
 }
-#endif
+
 int main(int argc, char *argv[])
 {
 	printf("this is a hisi sec test.\n");
-	//int flag = 0;
-	int ret = 0;
+	int ret;
 
-	//ret = test_sec(flag);
+	ret = test_sec_cipher_sync_once();
 
 	if (!ret) {
 		printf("test sec is successfull!\n");

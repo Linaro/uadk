@@ -107,5 +107,4 @@ extern int hisi_digest_poll(handle_t ctx, __u32 num);
 extern int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg);
 extern int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *msg);
 extern int hisi_sec_cipher_recv_async(handle_t ctx, struct wd_cipher_req *req);
-extern int hisi_sec_poll(handle_t ctx, __u32 num);
 #endif	/* __HISI_SEC_H */
