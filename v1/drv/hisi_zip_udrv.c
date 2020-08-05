@@ -67,6 +67,12 @@ struct hisi_zip_sgl {
 	void *ctrl;
 };
 
+struct hisi_zip_sqe_addr {
+	uintptr_t source_addr;
+	uintptr_t dest_addr;
+	uintptr_t ctxbuf_addr;
+};
+
 struct hisi_zip_udata {
 	struct hisi_zip_sgl sgl;
 	struct wd_dif dif;
@@ -161,7 +167,7 @@ static void qm_fill_zip_sqe_with_priv(struct hisi_zip_sqe *sqe, void *priv)
 	sqe->comp_head_addr_h = upper_32_bits((uintptr_t)udata->comp_head);
 }
 
-static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe *sqe,
+static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 		struct wcrypto_comp_msg *msg, struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
@@ -192,12 +198,10 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe *sqe,
 		if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
 			phy_ctxbuf = (uintptr_t)msg->ctx_buf;
 	}
-	sqe->source_addr_l = lower_32_bits((__u64)phy_in);
-	sqe->source_addr_h = upper_32_bits((__u64)phy_in);
-	sqe->dest_addr_l = lower_32_bits((__u64)phy_out);
-	sqe->dest_addr_h = upper_32_bits((__u64)phy_out);
-	sqe->stream_ctx_addr_l = lower_32_bits((__u64)phy_ctxbuf);
-	sqe->stream_ctx_addr_h = upper_32_bits((__u64)phy_ctxbuf);
+
+	addr->source_addr = phy_in;
+	addr->dest_addr = phy_out;
+	addr->ctxbuf_addr = phy_ctxbuf;
 
 	return WD_SUCCESS;
 }
@@ -207,7 +211,9 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	struct hisi_zip_sqe *sqe = (struct hisi_zip_sqe *)info->sq_base + i;
 	struct wcrypto_comp_msg *msg = smsg;
 	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)msg->udata;
+	struct hisi_zip_sqe_addr addr = {0};
 	struct wd_queue *q = info->q;
+	__u8 flush_type;
 	int ret;
 
 	memset((void *)sqe, 0, sizeof(*sqe));
@@ -218,15 +224,22 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	}
 
-	ret = qm_fill_zip_sqe_get_phy_addr(sqe, msg, q);
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
 	if (ret)
 		return ret;
 
-	msg->flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
-			   HZ_SYNC_FLUSH;
+	sqe->source_addr_l = lower_32_bits((__u64)addr.source_addr);
+	sqe->source_addr_h = upper_32_bits((__u64)addr.source_addr);
+	sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr);
+	sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr);
+	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
+	sqe->stream_ctx_addr_h = upper_32_bits((__u64)addr.ctxbuf_addr);
+
+	flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
+		      HZ_SYNC_FLUSH;
 	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
-		     (msg->flush_type)) << STREAM_FLUSH_SHIFT;
+		     (flush_type)) << STREAM_FLUSH_SHIFT;
 	sqe->input_data_length = msg->in_size;
 	if (msg->avail_out > MIN_AVAILOUT_SIZE)
 		sqe->dest_avail_out = msg->avail_out;
@@ -250,7 +263,9 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_zip_sqe_v3 *sqe = (struct hisi_zip_sqe_v3 *)info->sq_base + i;
 	struct wcrypto_comp_msg *msg = smsg;
+	struct hisi_zip_sqe_addr addr = {0};
 	struct wd_queue *q = info->q;
+	__u8 flush_type;
 	int ret;
 
 	memset((void *)sqe, 0, sizeof(*sqe));
@@ -269,15 +284,22 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 		}
 	}
 
-	ret = qm_fill_zip_sqe_get_phy_addr(sqe, msg, q);
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
 	if (ret)
 		return ret;
 
-	msg->flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
-			   HZ_SYNC_FLUSH;
+	sqe->source_addr_l = lower_32_bits((__u64)addr.source_addr);
+	sqe->source_addr_h = upper_32_bits((__u64)addr.source_addr);
+	sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr);
+	sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr);
+	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
+	sqe->stream_ctx_addr_h = upper_32_bits((__u64)addr.ctxbuf_addr);
+
+	flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
+		      HZ_SYNC_FLUSH;
 	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
-		     (msg->flush_type)) << STREAM_FLUSH_SHIFT |
+		     (flush_type)) << STREAM_FLUSH_SHIFT |
 		     BD_TYPE3 << BD_TYPE_SHIFT;
 	sqe->input_data_length = msg->in_size;
 	if (msg->avail_out > MIN_AVAILOUT_SIZE)
