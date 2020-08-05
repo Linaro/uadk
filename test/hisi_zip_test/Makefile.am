@@ -1,7 +1,6 @@
 AM_CFLAGS=-Wall -fno-strict-aliasing -I../../include
 
-bin_PROGRAMS=test_sva_perf test_sva_bind \
-	test_comp example
+bin_PROGRAMS=test_sva_perf test_sva_bind example
 
 test_sva_perf_SOURCES=test_sva_perf.c test_lib.c ../../drv/hisi_qm_udrv.c ../../include/hisi_qm_udrv.h
 test_sva_bind_SOURCES=test_sva_bind.c test_lib.c ../../drv/hisi_qm_udrv.c ../../include/hisi_qm_udrv.h
