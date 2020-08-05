@@ -75,31 +75,6 @@ struct wd_comp_strm {
 	size_t			total_out;
 };
 
-struct wd_alg_comp {
-	char	*drv_name;
-	char	*alg_name;
-	int	(*init)(struct wd_comp_sess_o *sess);
-	void	(*exit)(struct wd_comp_sess_o *sess);
-	int	(*prep)(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg);
-	void	(*fini)(struct wd_comp_sess_o *sess);
-	int	(*deflate)(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg);
-	int	(*inflate)(struct wd_comp_sess_o *sess, struct wd_comp_arg *arg);
-	int	(*async_poll)(struct wd_comp_sess_o *sess,
-			      struct wd_comp_arg *arg);
-	int	(*strm_deflate)(struct wd_comp_sess_o *sess,
-				struct wd_comp_strm *strm);
-	int	(*strm_inflate)(struct wd_comp_sess_o *sess,
-				struct wd_comp_strm *strm);
-};
-
-extern handle_t wd_alg_comp_alloc_sess(char *alg_name, uint32_t mode,
-					wd_dev_mask_t *dev_mask);
-extern void wd_alg_comp_free_sess(handle_t handle);
-extern int wd_alg_compress(handle_t handle, struct wd_comp_arg *arg);
-extern int wd_alg_decompress(handle_t handle, struct wd_comp_arg *arg);
-extern int wd_alg_strm_compress(handle_t handle, struct wd_comp_strm *strm);
-extern int wd_alg_strm_decompress(handle_t handle, struct wd_comp_strm *strm);
-
 /* new code */
 struct wd_comp_sess {
 	int	alg_type;
