@@ -103,8 +103,10 @@ static void qm_unset_queue_regions(struct wd_queue *q)
 	info->mmio_base = NULL;
 }
 
-static bool hpre_alg_info_init(struct q_info *qinfo, const char *alg)
+static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 {
+	struct wcrypto_paras *priv = &q->capa.priv;
+	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_find = true;
 
@@ -123,21 +125,25 @@ static bool hpre_alg_info_init(struct q_info *qinfo, const char *alg)
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_ECDH] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_ECDH] = qm_parse_ecc_sqe;
+		priv->direction = 1;
 	} else if (!strncmp(alg, "x448", strlen("x448"))) {
 		qinfo->atype = WCRYPTO_X448;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_X448] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_X448] = qm_parse_ecc_sqe;
+		priv->direction = 1;
 	} else if (!strncmp(alg, "x25519", strlen("x25519"))) {
 		qinfo->atype = WCRYPTO_X25519;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_X25519] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_X25519] = qm_parse_ecc_sqe;
+		priv->direction = 1;
 	} else if (!strncmp(alg, "ecdsa", strlen("ecdsa"))) {
 		qinfo->atype = WCRYPTO_ECDSA;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_ECDSA] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_ECDSA] = qm_parse_ecc_sqe;
+		priv->direction = 1;
 	} else {
 		is_find = false;
 	}
@@ -217,7 +223,7 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	struct wcrypto_paras *priv = &q->capa.priv;
 	int ret = -WD_EINVAL;
 
-	if (hpre_alg_info_init(qinfo, alg)) {
+	if (hpre_alg_info_init(q, alg)) {
 		ret = WD_SUCCESS;
 	} else if (zip_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
