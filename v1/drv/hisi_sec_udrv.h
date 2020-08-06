@@ -447,13 +447,13 @@ enum A_ALG {
 enum C_MODE {
 	C_MODE_ECB	  = 0x0,
 	C_MODE_CBC	  = 0x1,
+	C_MODE_CFB	  = 0x2,
 	C_MODE_OFB	  = 0x3,
 	C_MODE_CTR	  = 0x4,
 	C_MODE_CCM	  = 0x5,
 	C_MODE_GCM	  = 0x6,
 	C_MODE_XTS	  = 0x7,
-	C_MODE_CBC_CS = 0x9,
-	C_MODE_CFB	  = 0xA
+	C_MODE_CBC_CS	= 0x9
 };
 
 enum CKEY_LEN {
