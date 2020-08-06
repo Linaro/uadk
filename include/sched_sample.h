@@ -1,5 +1,5 @@
-#ifndef	__SCHED_SAMPLE_H
-#define	__SCHED_SAMPLE_H
+#ifndef SCHED_SAMPLE_h
+#define SCHED_SAMPLE_h
 #include "wd_comp.h"
 
 /* The global policy type */
@@ -26,7 +26,7 @@ struct sched_key {
  * @type_num: Service type num.
  *			  For example, ZIP include compress and uncompress, the num is two.
  */
-int sample_sched_init(__u8 sched_type, int type_num);
+int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
 
 /**
  * sample_sched_fill_region - Fill the schedule min region.
@@ -39,7 +39,7 @@ int sample_sched_init(__u8 sched_type, int type_num);
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-void sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
+int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
 
 /**
  * ssample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg.
@@ -54,10 +54,5 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
  * @cfg: The global resoure info.
  */
 __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg);
-
-/**
- * sample_sched_release - Release resource
- */
-void sample_sched_release();
 
 #endif

@@ -46,7 +46,7 @@ struct sched_ctx_region {
  * @count: record the req count of ccontex
  */
 struct sample_sched_info {
-	struct sched_ctx_region *ctx_region[X_BUTT];
+	struct sched_ctx_region *ctx_region[SCHED_MODE_BUTT];
 	int count[MAX_CTX_NUM];
 	bool valid;
 };
@@ -58,9 +58,9 @@ struct sample_sched_info {
  * @poll_policy: the polling policy.
  */
 struct sched_operator {
-	void (*get_para)(struct void *req, void*para);
+	void (*get_para)(void *req, void*para);
 	int (*get_next_pos)(struct sched_ctx_region *region, void *para);
-	__u32 (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[]);
+	__u32 (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region **region);
 	__u32 (*poll_func)(handle_t h_ctx, __u32 num);
 };
 
@@ -72,7 +72,7 @@ struct sample_sched_info g_sched_info[MAX_NUMA_NUM];
 /**
  * Fill para that the different mode needs
  */
-void sample_get_para_rr(struct void *req, void *para)
+void sample_get_para_rr(void *req, void *para)
 {
 	return;
 }
@@ -101,7 +101,17 @@ int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
 	return pos;
 }
 
-__u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[Y_BUTT])
+__u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region **region);
+
+struct sched_operator g_sched_ops[SCHED_POLICY_BUTT] = {
+	{.get_para = sample_get_para_rr,
+	 .get_next_pos = sample_get_next_pos_rr,
+     .poll_policy = sample_poll_policy_rr,
+	 .poll_func = NULL,
+	},
+};
+
+__u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region **region)
 {
 	int i, j;
 	int begin, end;
@@ -117,14 +127,6 @@ __u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region (
 
 	return 0;
 }
-
-struct sched_operator g_sched_ops[SCHED_POLICY_BUTT] = {
-	{.get_para = sample_get_para_rr,
-	 .get_next_pos = sample_get_next_pos_rr,
-     .poll_policy = sample_poll_policy_rr,
-	 .poll_func = NULL,
-	},
-};
 
 /**
  * sample_sched_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
@@ -207,9 +209,9 @@ __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg)
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-void sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end)
+int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end)
 {
-	if ((mode >= SCHED_MODE_BUTT) || (type >= g_sched_type_num) {
+	if ((mode >= SCHED_MODE_BUTT) || (type >= g_sched_type_num)) {
 		printf("ERROR: %s para err: mode=%d, type=%d\n", __FUNCTION__, mode, type);
 		return -1;
 	}
@@ -221,25 +223,7 @@ void sample_sched_fill_region(int numa_id, int mode, int type, int begin, int en
 
 	(void)pthread_mutex_init(&g_sched_info[numa_id].ctx_region[mode][type].mutex, NULL);
 
-	return;
-}
-
-/**
- * sample_sched_get_size - Get the memery size schedule needed to alg module.
- */
-int sample_sched_get_size()
-{
-	int size;
-
-	if (g_sched_type_num == 0) {
-		printf("Error: %s please init the sched through sample_sched_init!\n", __FUNCTION__);
-		return 0;
-	}
-
-	size = MAX_NUMA_NUM * (sizeof(struct sample_sched_info) +
-			sizeof(struct sched_ctx_region) * X_BUTT * g_sched_type_num);
-
-	return size;
+	return 0;
 }
 
 /**
@@ -289,20 +273,3 @@ err_out:
 	return -1;
 }
 
-/**
- * sample_sched_release - Release resource
- */
-void sample_sched_release()
-{
-	int i, j;
-
-	for (i = 0; i < MAX_NUMA_NUM; i++) {
-		for (j = 0; j < SCHED_MODE_BUTT; j++) {
-			if (g_sched_info[i].ctx_region[j]) {
-				free(g_sched_info[i].ctx_region[j]);
-			}
-		}
-	}
-
-	return;
-}

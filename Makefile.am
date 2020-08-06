@@ -14,7 +14,7 @@ lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libwd_cipher.la
 
 libwd_la_SOURCES=wd.c wd.h wd_sched.c wd_sched.h bmm.c bmm.h smm.c smm.h
 
-libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h
+libwd_comp_la_SOURCES=wd_comp.c wd_comp.h ./test/sched_sample.c wd_comp_drv.h
 libwd_comp_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
