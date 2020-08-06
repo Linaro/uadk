@@ -20,9 +20,9 @@
 #include "hisi_qm_udrv.h"
 
 enum hw_comp_alg_type {
-	HW_ZLIB = 0x02,
+	HW_RAW_DEFLATE = 0x01,
+	HW_ZLIB,
 	HW_GZIP,
-	HW_RAW_DEFLATE,
 };
 
 enum hw_zip_cipher_alg_type {
