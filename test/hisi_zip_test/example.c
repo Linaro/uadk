@@ -44,6 +44,8 @@ static char word[] = "go to test.";
 static struct wd_ctx_config ctx_conf;
 static struct wd_sched sched;
 
+static struct wd_comp_req async_req;
+
 #if 0
 /* get CPU and NUMA node information */
 static int getcpu(unsigned *cpu, unsigned *node, struct getcpu_cache *tcache)
@@ -205,8 +207,10 @@ int test_comp_sync_once(int flag, int mode)
 		printf("Pass compress test in single buffer.\n");
 	}
 
+/*
 	free(src);
 	free(dst);
+*/
 	return 0;
 out_comp:
 	wd_comp_free_sess(h_sess);
@@ -214,6 +218,14 @@ out_sess:
 	free(req.src);
 out:
 	return ret;
+}
+
+static void *async_cb(void *data)
+{
+	struct wd_comp_req *req = (struct wd_comp_req *)data;
+
+	memcpy(&async_req, req, sizeof(struct wd_comp_req));
+	return NULL;
 }
 
 int test_comp_async1_once(int flag, int mode)
@@ -225,7 +237,7 @@ int test_comp_async1_once(int flag, int mode)
 	void	*src, *dst;
 	int	ret = 0, t;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -257,23 +269,25 @@ int test_comp_async1_once(int flag, int mode)
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
+		req.cb = async_cb;
+		req.cb_param = &req;
 		ret = wd_do_comp_async(h_sess, &req);
 		if (ret < 0)
 			goto out_comp;
-		if (req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, req.dst, req.dst_len);
-			t += req.dst_len;
-			req.dst = dst;
-		}
 		/* 1 block */
 		ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1);
 		if (ret != 1) {
 			ret = -EFAULT;
 			goto out_comp;
 		}
-		if ((req.status & STATUS_OUT_DRAINED) &&
-		    (req.status & STATUS_IN_EMPTY) &&
-		    (req.flag & FLAG_INPUT_FINISH))
+		if (async_req.status & STATUS_OUT_READY) {
+			memcpy(buf + t, async_req.dst, async_req.dst_len);
+			t += async_req.dst_len;
+			req.dst = dst;
+		}
+		if ((async_req.status & STATUS_OUT_DRAINED) &&
+		    (async_req.status & STATUS_IN_EMPTY) &&
+		    (async_req.flag & FLAG_INPUT_FINISH))
 			break;
 	}
 	wd_comp_free_sess(h_sess);
@@ -285,7 +299,7 @@ int test_comp_async1_once(int flag, int mode)
 	req.src_len = t;
 	req.dst = dst;
 	t = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
 
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
 	if (flag & FLAG_ZLIB)
@@ -304,20 +318,20 @@ int test_comp_async1_once(int flag, int mode)
 		ret = wd_do_comp_async(h_sess, &req);
 		if (ret < 0)
 			goto out_comp;
-		if (req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, req.dst, req.dst_len);
-			t += req.dst_len;
-			req.dst = dst;
-		}
 		/* 1 block */
 		ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1);
 		if (ret != 1) {
 			ret = -EFAULT;
 			goto out_comp;
 		}
-		if ((req.status & STATUS_OUT_DRAINED) &&
-		    (req.status & STATUS_IN_EMPTY) &&
-		    (req.flag & FLAG_INPUT_FINISH))
+		if (async_req.status & STATUS_OUT_READY) {
+			memcpy(buf + t, async_req.dst, async_req.dst_len);
+			t += async_req.dst_len;
+			req.dst = dst;
+		}
+		if ((async_req.status & STATUS_OUT_DRAINED) &&
+		    (async_req.status & STATUS_IN_EMPTY) &&
+		    (async_req.flag & FLAG_INPUT_FINISH))
 			break;
 	}
 	wd_comp_free_sess(h_sess);
@@ -480,7 +494,7 @@ int test_comp_async2_once(int flag, int mode)
 
 	t = 0;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
 
 	/* 1 thread for sending data, BLOCK mode */
 	ret = create_threads(0, 1, req);
@@ -502,7 +516,7 @@ int test_comp_async2_once(int flag, int mode)
 	req->src_len = t;
 	req->dst_len = TEST_WORD_LEN;
 	t = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
 	ctx_conf.ctxs[0].op_type = CTX_TYPE_DECOMP;
 
 	/* 1 thread for sending data, BLOCK mode */
@@ -546,12 +560,12 @@ int main(int argc, char **argv)
 		printf("Fail to run test_comp_sync_once() with ZLIB.\n");
 		return ret;
 	}
-/*
 	ret = test_comp_async1_once(FLAG_ZLIB, 0);
 	if (ret < 0) {
 		printf("Fail to run test_comp_async1_once() with ZLIB.\n");
 		return ret;
 	}
+/*
 	ret = test_comp_async2_once(FLAG_ZLIB, 0);
 	if (ret < 0) {
 		printf("Fail to run test_comp_async2_once() with ZLIB.\n");
