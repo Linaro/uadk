@@ -25,7 +25,7 @@ test_sva_bind_LDADD+=-lz
 test_sva_bind_CPPFLAGS=-DUSE_ZLIB
 endif
 
-test_comp_SOURCES=test_comp.c
+test_comp_SOURCES=test_comp.c ../sched_sample.c
 if WD_STATIC_DRV
 test_comp_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
 		../../.libs/libhisi_zip.a

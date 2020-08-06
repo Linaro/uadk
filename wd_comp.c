@@ -34,7 +34,6 @@ struct wd_async_msg_pool {
 struct wd_comp_setting {
 	struct wd_ctx_config config;
 	struct wd_sched sched;
-	void *sched_ctx;
 	struct wd_comp_driver *driver;
 	void *priv;
 	struct wd_async_msg_pool pool;
@@ -96,11 +95,10 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 
 static int copy_sched_to_global_setting(struct wd_sched *sched)
 {
-	if (!sched->name || (sched->sched_ctx_size <= 0))
+	if (!sched->name)
 		return -EINVAL;
 
 	wd_comp_setting.sched.name = strdup(sched->name);
-	wd_comp_setting.sched.sched_ctx_size = sched->sched_ctx_size;
 	wd_comp_setting.sched.pick_next_ctx = sched->pick_next_ctx;
 	wd_comp_setting.sched.poll_policy = sched->poll_policy;
 
@@ -112,7 +110,6 @@ static void clear_sched_in_global_setting(void)
 	char *name = (char *)wd_comp_setting.sched.name;
 
 	free(name);
-	wd_comp_setting.sched.sched_ctx_size = 0;
 	wd_comp_setting.sched.pick_next_ctx = NULL;
 	wd_comp_setting.sched.poll_policy = NULL;
 }
@@ -291,17 +288,11 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 #ifdef WD_STATIC_DRV
 	wd_comp_set_static_drv();
 #endif
-	/* alloc sched context memory */
-	wd_comp_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
-	if (!wd_comp_setting.sched_ctx) {
-		ret = -ENOMEM;
-		goto out_sched;
-	}
 
 	/* init async request pool */
 	ret = wd_init_async_request_pool(&wd_comp_setting.pool);
 	if (ret < 0)
-		goto out_pool;
+		goto out_sched;
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
@@ -320,8 +311,6 @@ out_init:
 	free(priv);
 out_priv:
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
-out_pool:
-	free(wd_comp_setting.sched_ctx);
 out_sched:
 	clear_sched_in_global_setting();
 out:
@@ -340,8 +329,6 @@ void wd_comp_uninit(void)
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
-
-	free(wd_comp_setting.sched_ctx);
 
 	/* unset config, sched, driver */
 	clear_sched_in_global_setting();
@@ -404,14 +391,13 @@ static int fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
-	void *sched_ctx = wd_comp_setting.sched_ctx;
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	__u64 recv_count = 0;
 	handle_t h_ctx;
 	int ret;
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	ret = fill_comp_msg(&msg, req);
 	if (ret < 0)
@@ -458,13 +444,12 @@ err_recv:
 int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
-	void *sched_ctx = wd_comp_setting.sched_ctx;
 	struct wd_comp_msg msg, resp_msg;
 	__u64 recv_count = 0;
 	handle_t h_ctx;
 	int ret;
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	ret = fill_comp_msg(&msg, req);
 	if (ret < 0)
@@ -510,11 +495,10 @@ err_recv:
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
-	void *sched_ctx = wd_comp_setting.sched_ctx;
 	struct wd_comp_msg *msg;
 	handle_t h_ctx;
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, h_ctx, req);
 
@@ -527,9 +511,8 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 int wd_comp_poll(__u32 *count)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
-	void *sched_ctx = wd_comp_setting.sched_ctx;
 
-	wd_comp_setting.sched.poll_policy(config, sched_ctx);
+	wd_comp_setting.sched.poll_policy(config);
 
 	return 0;
 }

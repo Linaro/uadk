@@ -11,27 +11,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <pthread.h>
-#include "wd_comp.h"
+#include "sched_sample.h"
 
 #define MAX_CTX_NUM 1024
 #define MAX_NUMA_NUM 4
 #define CTX_NUM_OF_NUMA 100
 
-enum sched_x_pos {
-	X_SYNC = 0,
-	X_ASYNC = 1,
-	X_BUTT
-};
-
-enum sched_y_pos {
-	Y_COMP = 0,
-	Y_UNCOMP = 1,
-	Y_BUTT
-};
-
 enum sched_mode {
-	USER_SCHED_RR,
-	USER_SCHED_BUTT
+	SCHED_MODE_SYNC = 0,
+	SCHED_MODE_ASYNC = 1,
+	SCHED_MODE_BUTT
 };
 
 /**
@@ -44,6 +33,7 @@ struct sched_ctx_region {
 	int begin;
 	int end;
 	int last;
+	bool valid;
 	pthread_mutex_t mutex;
 };
 
@@ -56,21 +46,33 @@ struct sched_ctx_region {
  * @count: record the req count of ccontex
  */
 struct sample_sched_info {
-	struct sched_ctx_region ctx_region[X_BUTT][Y_BUTT];
+	struct sched_ctx_region *ctx_region[X_BUTT];
 	int count[MAX_CTX_NUM];
 	bool valid;
 };
 
+/**
+ * g_sched_ops - Define the bonding operator of the scheduler.
+ * @get_para: for the different sched modes to get their privte para.
+ * @get_next_pos: pick one ctx's pos from all the ctx.
+ * @poll_policy: the polling policy.
+ */
 struct sched_operator {
-	void (*get_para)(struct wd_comp_req *req, void*para);
+	void (*get_para)(struct void *req, void*para);
 	int (*get_next_pos)(struct sched_ctx_region *region, void *para);
-	__u32 (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[Y_BUTT]);
+	__u32 (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region (*region)[]);
+	__u32 (*poll_func)(handle_t h_ctx, __u32 num);
 };
+
+/* service type num */
+int g_sched_type_num = 0;
+int g_sched_policy = SCHED_POLICY_RR;
+struct sample_sched_info g_sched_info[MAX_NUMA_NUM];
 
 /**
  * Fill para that the different mode needs
  */
-void sample_get_para_rr(struct wd_comp_req *req, void *para)
+void sample_get_para_rr(struct void *req, void *para)
 {
 	return;
 }
@@ -105,222 +107,185 @@ __u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region (
 	int begin, end;
 
 	/* Traverse the async ctx */
-	for (i = 0; i < Y_BUTT; i++) {
-		begin = region[X_ASYNC][i].begin;
-		end = region[X_ASYNC][i].end;
+	for (i = 0; i < g_sched_type_num; i++) {
+		begin = region[SCHED_MODE_ASYNC][i].begin;
+		end = region[SCHED_MODE_ASYNC][i].end;
 		for (j = begin; j <= end; j++) {
-			wd_comp_poll_ctx(cfg->ctxs[j].ctx, 1);
+			g_sched_ops[g_sched_policy].poll_func(cfg->ctxs[j].ctx, 1);
 		}
 	}
 
 	return 0;
 }
 
-int g_sched_mode = USER_SCHED_RR;
-
-/**
- * sched_ops - Define the bonding operator of the scheduler.
- * @get_para: for the different sched modes to get their privte para.
- * @get_next_pos: pick one ctx's pos from all the ctx.
- * @poll_policy: the polling policy.
- */
-struct sched_operator sched_ops[USER_SCHED_BUTT] = {
+struct sched_operator g_sched_ops[SCHED_POLICY_BUTT] = {
 	{.get_para = sample_get_para_rr,
 	 .get_next_pos = sample_get_next_pos_rr,
      .poll_policy = sample_poll_policy_rr,
+	 .poll_func = NULL,
 	},
 };
 
 /**
- * sample_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
+ * sample_sched_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
  */
-struct sched_ctx_region* sample_get_ctx_range(struct wd_comp_req *req, struct sched_ctx_region (*ctx_map)[Y_BUTT])
+struct sched_ctx_region* sample_sched_get_ctx_range(struct sched_key *key)
 {
-	int x = req->flag;
-	int y = req->status;
+	if (g_sched_info[key->numa_id].ctx_region[key->mode][key->type].valid) {
+		return &g_sched_info[key->numa_id].ctx_region[key->mode][key->type];
+	}
 
-	return &ctx_map[x][y];
+	return NULL;
+}
+
+bool sample_sched_key_valid(struct sched_key *key)
+{
+	if (key->numa_id >= MAX_NUMA_NUM || key->mode >= SCHED_MODE_BUTT || key->type >= g_sched_type_num) {
+		printf("ERROR: %s key error - %d,%d,%u !\n", __FUNCTION__, key->numa_id, key->mode, key->type);
+		return false;
+	}
+
+	return true;
 }
 
 /**
- * ssample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg
- *
- * This function will be registered to the wd comp
+ * sample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg
  */
-handle_t sample_pick_next_ctx(struct wd_ctx_config *cfg, void *sched_ctx, struct wd_comp_req *req, int numa_id)
+handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct sched_key *key)
 {
 	int pos;
 	void *para = NULL;
 	struct sched_ctx_region *region = NULL;
-	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
 
-	region = sample_get_ctx_range(req, sched_info[numa_id].ctx_region);
+	if (!cfg || !key) {
+		printf("ERROR: %s the cfg or key is NULL !\n", __FUNCTION__);
+		return (handle_t)NULL;
+	}
+
+	if (!sample_sched_key_valid(key)) {
+		return (handle_t)NULL;
+	}
+
+	region = sample_sched_get_ctx_range(key);
 	if (!region) {
 		return (handle_t)NULL;
 	}
 
-	/* Notice: The "para" now is a stub, we must alloc memery for it before useing it */
-	sched_ops[g_sched_mode].get_para(req, para);
-	pos = sched_ops[g_sched_mode].get_next_pos(region, para);
+	/* Notice: The "para" now is a stub, we must alloc memery for it before useing */
+	g_sched_ops[g_sched_policy].get_para(req, para);
+	pos = g_sched_ops[g_sched_policy].get_next_pos(region, para);
 
-	sched_info->count[pos]++;
+	g_sched_info->count[pos]++;
 
 	return cfg->ctxs[pos].ctx;
 }
 
 /**
  * sample_poll_policy - The polling policy matches the pick next ctx
- *
- * This function will be registered to the wd comp
  */
-__u32 sample_poll_policy(struct wd_ctx_config *cfg, void *sched_ctx)
+__u32 sample_sched_poll_policy(struct wd_ctx_config *cfg)
 {
 	int numa_id;
-	struct sample_sched_info *sched_info = (struct sample_sched_info *)sched_ctx;
 
 	for (numa_id = 0; numa_id < MAX_NUMA_NUM; numa_id++) {
-		if (sched_info[numa_id].valid) {
-			sched_ops[g_sched_mode].poll_policy(cfg, sched_info[numa_id].ctx_region);
+		if (g_sched_info[numa_id].valid) {
+			g_sched_ops[g_sched_policy].poll_policy(cfg, g_sched_info[numa_id].ctx_region);
 		}
 	}
 
 	return 0;
 }
 
-void sample_sched_fill_region(struct sample_sched_info *sched_info,
-	int numa_id, int ctx_mode, int ctx_type, int begin, int end)
+/**
+ * sample_sched_fill_region - Fill the schedule min region.
+ * @sched_ctx: The memery alloc by user which is consult with the sample_sched_get_size.
+ * @mode: Sync or async mode.  sync: 0, async: 1
+ * @type: Service type , the value must smaller than type_num.
+ * @begin: The begig ctx resource index for the region
+ * @end:  The end ctx resource index for the region.
+ *
+ * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
+ * then select one index from begin to end.
+ */
+void sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end)
 {
-	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].begin = begin;
-	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].end = end;
-	sched_info[numa_id].ctx_region[ctx_mode][ctx_type].last = begin;
+	if ((mode >= SCHED_MODE_BUTT) || (type >= g_sched_type_num) {
+		printf("ERROR: %s para err: mode=%d, type=%d\n", __FUNCTION__, mode, type);
+		return -1;
+	}
 
-	(void)pthread_mutex_init(&sched_info[numa_id].ctx_region[ctx_mode][ctx_type].mutex, NULL);
+	g_sched_info[numa_id].ctx_region[mode][type].begin = begin;
+	g_sched_info[numa_id].ctx_region[mode][type].end = end;
+	g_sched_info[numa_id].ctx_region[mode][type].last = begin;
+	g_sched_info[numa_id].ctx_region[mode][type].valid = true;
 
+	(void)pthread_mutex_init(&g_sched_info[numa_id].ctx_region[mode][type].mutex, NULL);
+
+	return;
+}
+
+/**
+ * sample_sched_get_size - Get the memery size schedule needed to alg module.
+ */
+int sample_sched_get_size()
+{
+	int size;
+
+	if (g_sched_type_num == 0) {
+		printf("Error: %s please init the sched through sample_sched_init!\n", __FUNCTION__);
+		return 0;
+	}
+
+	size = MAX_NUMA_NUM * (sizeof(struct sample_sched_info) +
+			sizeof(struct sched_ctx_region) * X_BUTT * g_sched_type_num);
+
+	return size;
+}
+
+/**
+ * sample_sched_operator_cfg - user can define private schedule operator
+ */
+void sample_sched_operator_cfg(struct sched_operator *op)
+{
 	return;
 }
 
 /**
  * sample_sched_init - initialize the global sched info
  */
-void sample_sched_ctx_init(void *sched_ctx)
+int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num))
 {
-	int i, base;
-	struct sample_sched_info *sched_info = (struct sample_sched_info*)sched_ctx;
-	g_sched_mode = USER_SCHED_RR;
-	memset(sched_info, 0, sizeof(struct sample_sched_info) * MAX_NUMA_NUM);
+	int i, j;
 
-	/* Initialize the global sched info base the ctx allocation of every numa */
+	if (sched_type >= SCHED_POLICY_BUTT) {
+		printf("Error: sample_sched_init sched_type = %d is invalid!\n", sched_type);
+		return -1;
+	}
+
+	g_sched_policy = sched_type;
+	g_sched_type_num = type_num;
+
+	memset(g_sched_info, 0, sizeof(g_sched_info));
 	for (i = 0; i < MAX_NUMA_NUM; i++) {
-		base = i * CTX_NUM_OF_NUMA;
-		sample_sched_fill_region(sched_info, 0, X_SYNC, Y_COMP, base, base + 24);
-		sample_sched_fill_region(sched_info, 0, X_SYNC, Y_UNCOMP, base + 25, base + 49);
-		sample_sched_fill_region(sched_info, 0, X_ASYNC, Y_COMP, base + 50, base + 74);
-		sample_sched_fill_region(sched_info, 0, X_ASYNC, Y_UNCOMP, base + 74, base + 99);
-	}
-
-	return;
-}
-
-void sample_ctx_alloc(char *node_path, int ctx_num, struct wd_ctx *ctxs, int base)
-{
-	int i;
-
-	for (i = base; i < ctx_num + base; i++) {
-		ctxs[i].ctx = wd_request_ctx(node_path);
-	}
-
-	return;
-}
-
-struct wd_ctx_config *g_ctx_cfg = NULL;
-
-void sample_fill_ctx_type(int base, int end, bool ctx_mode, __u8 type)
-{
-	int i;
-
-	for (i = base; i < end; i++) {
-		g_ctx_cfg->ctxs[i].ctx_mode = ctx_mode;
-		g_ctx_cfg->ctxs[i].op_type = type;
-
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].ctx_mode = ctx_mode;
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM].op_type = type;
-
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].ctx_mode = ctx_mode;
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 2].op_type = type;
-
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].ctx_mode = ctx_mode;
-		g_ctx_cfg->ctxs[i + MAX_NUMA_NUM * 3].op_type = type;
-	}
-
-	return;
-}
-
-/**
- * sample_global_config
- */
-void sample_ctx_cfg_init()
-{
-	int numa_id;
-	int offset = 0;
-	char *node_path[MAX_NUMA_NUM] = {"dev/numa1_xxx", "dev/numa2_xxx", "dev/numa3_xxx", "dev/numa4_xxx"};
-
-	g_ctx_cfg = (struct wd_ctx_config*)calloc(1, sizeof(struct wd_ctx_config));
-	if (!g_ctx_cfg) {
-		return;
-	}
-
-	g_ctx_cfg->ctxs = NULL;
-	g_ctx_cfg->priv = NULL;
-	g_ctx_cfg->ctx_num = MAX_NUMA_NUM * CTX_NUM_OF_NUMA;
-
-	g_ctx_cfg->ctxs = (struct wd_ctx*)calloc(g_ctx_cfg->ctx_num, sizeof(struct wd_ctx));
-	if (!g_ctx_cfg->ctxs) {
-		free(g_ctx_cfg);
-		return;
-	}
-
-	/* Alloc the ctx of one numa */
-	for (numa_id = 0; numa_id < MAX_NUMA_NUM; numa_id++) {
-		sample_ctx_alloc(node_path[numa_id], CTX_NUM_OF_NUMA, &g_ctx_cfg->ctxs[offset], offset);
-		offset += CTX_NUM_OF_NUMA;
-	}
-
-	/* The different ctxs' region should be define by the user */
-	sample_fill_ctx_type(0, 24, true, 0);
-	sample_fill_ctx_type(25, 49, true, 1);
-	sample_fill_ctx_type(50, 74, false, 0);
-	sample_fill_ctx_type(75, 99, false, 1);
-
-	return;
-}
-
-void sample_ctx_cfg_release()
-{
-	if (g_ctx_cfg) {
-		if (g_ctx_cfg->ctxs) {
-			free(g_ctx_cfg->ctxs);
+		for (j = 0; j < SCHED_MODE_BUTT; j++) {
+			g_sched_info[i].ctx_region[j] = calloc(1, sizeof(struct sched_ctx_region) * type_num);
+			if (!g_sched_info[i].ctx_region[j]) {
+				goto err_out;
+			}
 		}
-
-		free(g_ctx_cfg);
 	}
 
-	return;
+	g_sched_ops[g_sched_policy].poll_func = poll_func;
+
+	return 0;
+err_out:
+	for (i = 0; i < MAX_NUMA_NUM; i++) {
+		for (j = 0; j < SCHED_MODE_BUTT; j++) {
+			if (g_sched_info[i].ctx_region[j]) {
+				free(g_sched_info[i].ctx_region[j]);
+			}
+		}
+	}
+	return -1;
 }
 
-struct wd_sched *g_sched = NULL;
-
-void sample_sched_init()
-{
-	g_sched = (struct wd_sched*)calloc(1, sizeof(struct wd_sched));
-
-	g_sched->sched_ctx_size = sizeof(struct sample_sched_info);
-	g_sched->pick_next_ctx = sample_pick_next_ctx;
-	g_sched->poll_policy = sample_poll_policy;
-
-	return;
-}
-
-void sample_sched_release()
-{
-	return;
-}

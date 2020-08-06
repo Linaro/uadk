@@ -53,15 +53,12 @@ static int getcpu(unsigned *cpu, unsigned *node, struct getcpu_cache *tcache)
 #endif
 
 /* only 1 context is used */
-static handle_t sched_single_pick_next(struct wd_ctx_config *cfg,
-				       void *sched_ctx,
-				       struct wd_comp_req *req, int numa_id)
+static handle_t sched_single_pick_next(struct wd_ctx_config *cfg, void *req, void *key)
 {
 	return ctx_conf.ctxs[0].ctx;
 }
 
-static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg,
-				      void *sched_ctx)
+static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg)
 {
 	return 0;
 }
@@ -86,7 +83,6 @@ static int init_single_ctx_config(int op_type, int ctx_mode,
 	ctx_conf.ctxs[0].ctx_mode = ctx_mode;
 
 	sched->name = SCHED_SINGLE;
-	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
 	sched->pick_next_ctx = sched_single_pick_next;
 	sched->poll_policy = sched_single_poll_policy;
 	wd_comp_init(&ctx_conf, sched);

@@ -125,9 +125,6 @@ struct wd_ctx_config {
 /**
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
- * @sched_ctx_size:	Size of the context of this scheduler. Wd_comp will
- *			allocate this size of memory for scheduler to store
- *			its context data internally.
  * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
  *			config points to the ctx config; sched_ctx points to
  *			scheduler context; req points to the request. Return
@@ -139,10 +136,8 @@ struct wd_ctx_config {
  */
 struct wd_sched {
 	const char *name;
-	__u32 sched_ctx_size;
-	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
-				  void *sched_ctx, struct wd_comp_req *req, int numa_id);
-	__u32 (*poll_policy)( struct wd_ctx_config *config, void *sched_ctx);
+	handle_t (*pick_next_ctx)(struct wd_ctx_config *config, void *req, void *key);
+	__u32 (*poll_policy)( struct wd_ctx_config *config);
 };
 
 /**
