@@ -174,10 +174,9 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 
 	ret = hisi_qm_recv(ctx, &sqe);
 	if (ret < 0) {
-		if (ret != -EAGAIN) {
+		if (ret != -EAGAIN)
 			WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
-			return ret;
-		}
+		return ret;
 	}
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
