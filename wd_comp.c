@@ -207,19 +207,18 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 		return NULL;
 
 	p = &pool->pools[i];
-/*
-	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
-
-	if (t == p->head)
-		return -EBUSY;
-	p->reqs[p->tail] = req;
-	p->tail = t;
-*/
+	/* empty */
+	if (p->head == p->tail)
+		return NULL;
 	idx = msg->tag_id;
 	c_msg = &p->msg[idx];
-	memcpy(&c_msg->req, &msg->req, sizeof(struct wd_comp_req));
-
-	return &c_msg->req;
+	msg->req.src = c_msg->req.src;
+	msg->req.dst = c_msg->req.dst;
+	msg->req.src_len = msg->in_cons;
+	msg->req.dst_len = msg->produced;
+	msg->req.cb = c_msg->req.cb;
+	msg->req.cb_param = c_msg->req.cb_param;
+	return &msg->req;
 }
 
 static struct wd_comp_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
@@ -240,12 +239,13 @@ static struct wd_comp_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 		return NULL;
 
 	p = &pool->pools[i];
-	if (p->head == p->tail)
-		return NULL;
 /*
 	TODO  use bitmap to get idx for use
 */
 	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
+	/* full */
+	if (p->head == t)
+		return NULL;
 	/* get msg from msg_pool[] */
 	msg = &p->msg[p->tail];
 	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
@@ -338,17 +338,37 @@ void wd_comp_uninit(void)
 __u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 {
 	struct wd_comp_req *req;
-	struct wd_comp_msg msg;
+	struct wd_comp_msg resp_msg;
+	__u64 recv_count = 0;
+	int ret;
 
-	wd_comp_setting.driver->comp_recv(h_ctx, &msg);
+	do {
+		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+		if (ret == -WD_HW_EACCESS) {
+			WD_ERR("wd_recv hw err!\n");
+			goto err_recv;
+		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+			if (++recv_count > MAX_RETRY_COUNTS) {
+				WD_ERR("wd_recv timeout fail!\n");
+				ret = -ETIMEDOUT;
+				goto err_recv;
+			}
+		}
+	} while (ret < 0);
 
-	req = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, &msg);
+	req = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, &resp_msg);
 
-	req->cb(0);
+	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
+	req->flag = FLAG_INPUT_FINISH;
+
+	req->cb(req);
 
 	/*TODO free idx of msg_pool  */
 
-	return 0;
+	/* Return polled number. Now hack it to 1. */
+	return 1;
+err_recv:
+	return ret;
 }
 
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
@@ -374,6 +394,7 @@ static int fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 	msg->ctx_buf = calloc(1, HW_CTX_SIZE);
 	if (!msg->ctx_buf)
 		return -ENOMEM;
+	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 	msg->avail_out = req->dst_len;
 	msg->src = req->src;
 	msg->dst = req->dst;
@@ -402,7 +423,6 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 	ret = fill_comp_msg(&msg, req);
 	if (ret < 0)
 		return ret;
-	memcpy(&msg.req, req, sizeof(struct wd_comp_req));
 	msg.alg_type = sess->alg_type;
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
@@ -441,10 +461,11 @@ err_recv:
 
 }
 
-int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
+int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg msg, resp_msg;
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	__u64 recv_count = 0;
 	handle_t h_ctx;
 	int ret;
@@ -454,8 +475,8 @@ int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req)
 	ret = fill_comp_msg(&msg, req);
 	if (ret < 0)
 		return ret;
-	memcpy(&msg.req, req, sizeof(struct wd_comp_req));
 
+	msg.alg_type = sess->alg_type;
 	/* fill trueth flag */
 	msg.flush_type = req->last;
 
@@ -496,13 +517,25 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg *msg;
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	handle_t h_ctx;
+	int ret;
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, h_ctx, req);
+	ret = fill_comp_msg(msg, req);
+	if (ret < 0) {
+		/* TODO: release msg */
+		return ret;
+	}
+	msg->alg_type = sess->alg_type;
 
-	wd_comp_setting.driver->comp_send(h_ctx, msg);
+	ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
+	if (ret < 0) {
+		WD_ERR("wd_send err!\n");
+		return ret;
+	}
 
 	return 0;
 
