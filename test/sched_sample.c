@@ -289,3 +289,20 @@ err_out:
 	return -1;
 }
 
+/**
+ * sample_sched_release - Release resource
+ */
+void sample_sched_release()
+{
+	int i, j;
+
+	for (i = 0; i < MAX_NUMA_NUM; i++) {
+		for (j = 0; j < SCHED_MODE_BUTT; j++) {
+			if (g_sched_info[i].ctx_region[j]) {
+				free(g_sched_info[i].ctx_region[j]);
+			}
+		}
+	}
+
+	return;
+}

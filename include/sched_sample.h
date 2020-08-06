@@ -1,5 +1,5 @@
-#ifndef HISI_SEC_USR_IF_H
-#define HISI_SEC_USR_IF_H
+#ifndef	__SCHED_SAMPLE_H
+#define	__SCHED_SAMPLE_H
 #include "wd_comp.h"
 
 /* The global policy type */
@@ -54,5 +54,10 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
  * @cfg: The global resoure info.
  */
 __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg);
+
+/**
+ * sample_sched_release - Release resource
+ */
+void sample_sched_release();
 
 #endif
