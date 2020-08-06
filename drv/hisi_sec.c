@@ -217,19 +217,21 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	__u8 de;
 	int ret;
 
+	if (!msg) {
+		WD_ERR("input cipher msg is NULL!\n");
+		return -EINVAL;
+	}
 	/* config BD type */
 	sqe.type_auth_cipher = BD_TYPE2;
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = 0x1 << SEC_DE_OFFSET;
 	sqe.sds_sa_type = (__u8)(de | scene);
-
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;
-
 	sqe.type2.data_dst_addr = (__u64)msg->out;
-
 	sqe.type2.c_ivin_addr = (__u64)msg->iv;
+	sqe.type2.c_key_addr = (__u64)msg->key;
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION) {
 		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
@@ -241,19 +243,19 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	/* fill cipher bd2 alg */
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
-		WD_ERR("faile to fill bd alg!\n");
+		WD_ERR("Fail to fill bd alg!\n");
 		return ret;
 	}
 
 	/* fill cipher bd2 mode */
 	ret = fill_cipher_bd2_mode(msg, &sqe);
 	if (ret) {
-		WD_ERR("faile to fill bd mode!\n");
+		WD_ERR("Fail to fill bd mode!\n");
 		return ret;
 	}
 
 	ret = hisi_qm_send(ctx, &sqe, 1);
-	if (!ret) {
+	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
 		return ret;
 	}
@@ -266,9 +268,11 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	int ret;
 
 	ret = hisi_qm_recv(ctx, &sqe);
-	if (!ret) {
-		WD_ERR("hisi qm recv is err(%d)!\n", ret);
-		return ret;
+	if (ret < 0) {
+		if (ret != -EAGAIN) {
+			WD_ERR("hisi qm recv is err(%d)!\n", ret);
+			return ret;
+		}
 	}
 
 	/* parser cipher sqe */

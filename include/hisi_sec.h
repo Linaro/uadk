@@ -100,6 +100,10 @@ struct wd_cipher_msg {
 	__u8 *out;		/* output data pointer  */
 };
 
+struct hisi_sec_ctx {
+	struct wd_ctx_config config;
+};
+
 extern int hisi_sec_init(struct wd_ctx_config *config, void *priv);
 extern void hisi_sec_exit(void *priv);
 extern int hisi_cipher_poll(handle_t ctx, __u32 num);
