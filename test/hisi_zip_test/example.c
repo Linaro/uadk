@@ -12,9 +12,9 @@
 #include "wd_comp.h"
 #include "wd_sched.h"
 
-#define TEST_WORD_LEN	64
+#define TEST_WORD_LEN	4096
 
-#define	NUM_THREADS	10
+#define	NUM_THREADS	2
 
 #define HISI_DEV_NODE	"/dev/hisi_zip-0"
 
@@ -315,6 +315,8 @@ int test_comp_async1_once(int flag, int mode)
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_INPUT_FINISH;
+		req.cb = async_cb;
+		req.cb_param = &req;
 		ret = wd_do_comp_async(h_sess, &req);
 		if (ret < 0)
 			goto out_comp;
@@ -335,6 +337,7 @@ int test_comp_async1_once(int flag, int mode)
 			break;
 	}
 	wd_comp_free_sess(h_sess);
+	uninit_config();
 
 	if (memcmp(buf, word, strlen(word))) {
 		printf("match failure! word:%s, buf:%s\n", word, buf);
@@ -357,21 +360,29 @@ static void *poll_func(void *arg)
 {
 	int i, ret = 0, received = 0, expected = 0;
 
+	usleep(200);
 	while (1) {
+		pthread_mutex_lock(&mutex);
 		if (!expected)
 			expected = 1;
+		if (count == 0) {
+			pthread_cond_broadcast(&cond);
+			pthread_mutex_unlock(&mutex);
+			usleep(10);
+			continue;
+		}
 		for (i = 0; i < ctx_conf.ctx_num; i++) {
 			ret = wd_comp_poll_ctx(ctx_conf.ctxs[i].ctx, expected);
 			if (ret > 0)
 				received += ret;
 		}
-		pthread_mutex_lock(&mutex);
 		pthread_cond_broadcast(&cond);
 		if (count == received) {
 			pthread_mutex_unlock(&mutex);
 			break;
 		} else {
-			expected = count - received;
+			if (count > received)
+				expected = count - received;
 			pthread_mutex_unlock(&mutex);
 			usleep(10);
 		}
@@ -382,28 +393,33 @@ static void *poll_func(void *arg)
 static void *wait_func(void *arg)
 {
 	thread_data_t *data = (thread_data_t *)arg;
+	struct wd_comp_req *req = data->req;
 	struct wd_comp_sess_setup	setup;
 	handle_t	h_sess;
 	int	ret = 0;
 
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (data->flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (data->flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess)
 		goto out;
 
-	data->req->status = 0;
-	data->req->dst_len = TEST_WORD_LEN;
-	data->req->flag = FLAG_INPUT_FINISH;
-	ret = wd_do_comp_async(h_sess, data->req);
-	if (ret < 0)
-		goto out_comp;
+	req->status = 0;
+	req->dst_len = TEST_WORD_LEN;
+	req->flag = FLAG_INPUT_FINISH;
 	pthread_mutex_lock(&mutex);
 	pthread_cond_wait(&cond, &mutex);
+	ret = wd_do_comp_async(h_sess, req);
+	if (ret < 0)
+		goto out_comp;
 	/* count means data block numbers */
 	count++;
+out_comp:
 	pthread_mutex_unlock(&mutex);
 
-out_comp:
 	wd_comp_free_sess(h_sess);
 out:
 	pthread_exit(NULL);
@@ -414,14 +430,14 @@ out:
  * 1 is for polling HW, and the others are sending data to HW.
  * The size of args[] equals to wait_thr_num.
  */
-static int create_threads(int mode, int wait_thr_num, struct wd_comp_req *reqs)
+static int create_threads(int flag, int wait_thr_num, struct wd_comp_req *reqs)
 {
 	pthread_t thr[NUM_THREADS];
 	pthread_attr_t attr;
 	thread_data_t thr_data[NUM_THREADS];
 	int i, ret;
 
-	if (wait_thr_num >= NUM_THREADS - 1) {
+	if (wait_thr_num > NUM_THREADS - 1) {
 		printf("Can't create %d threads.\n", wait_thr_num + 1);
 		return -EINVAL;
 	}
@@ -432,7 +448,7 @@ static int create_threads(int mode, int wait_thr_num, struct wd_comp_req *reqs)
 	for (i = 0; i < wait_thr_num; i++) {
 		thr_data[i].tid = i;
 		thr_data[i].req = &reqs[i];
-		thr_data[i].mode = mode & MODE_STREAM;
+		thr_data[i].flag = flag;
 		ret = pthread_create(&thr[i], &attr, wait_func, &thr_data[i]);
 		if (ret) {
 			printf("Failed to create thread, ret:%d\n", ret);
@@ -459,75 +475,63 @@ static int create_threads(int mode, int wait_thr_num, struct wd_comp_req *reqs)
  */
 int test_comp_async2_once(int flag, int mode)
 {
-	struct wd_comp_req	*req;
-	char	algs[60];
+	struct wd_comp_req	req;
 	char	buf[TEST_WORD_LEN];
 	void	*src, *dst;
 	int	ret = 0, t;
 
-	if (flag & FLAG_ZLIB)
-		sprintf(algs, "zlib");
-	else if (flag & FLAG_GZIP)
-		sprintf(algs, "gzip");
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
 
-	src = malloc(sizeof(char) * TEST_WORD_LEN);
-	if (!src) {
+	memset(&req, 0, sizeof(struct wd_comp_req));
+	req.dst_len = sizeof(char) * TEST_WORD_LEN;
+	req.src = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.src)
+		return -ENOMEM;
+	req.dst = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.dst) {
 		ret = -ENOMEM;
 		goto out;
 	}
-	dst = malloc(sizeof(char) * TEST_WORD_LEN);
-	if (!dst) {
-		ret = -ENOMEM;
-		goto out_dst;
-	}
-
-	req = calloc(1, sizeof(struct wd_comp_req));
-	if (!req) {
-		ret = -ENOMEM;
-		goto out_req;
-	}
-	req->src_len = strlen(word);
-	req->dst_len = sizeof(char) * TEST_WORD_LEN;
-	req->src = src;
-	req->dst = dst;
-	memcpy(req->src, word, sizeof(char) * strlen(word));
-
+	src = req.src;
+	dst = req.dst;
+	memcpy(req.src, word, sizeof(char) * strlen(word));
+	req.src_len = strlen(word);
+	req.cb = async_cb;
+	req.cb_param = &req;
 	t = 0;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
-
 	/* 1 thread for sending data, BLOCK mode */
-	ret = create_threads(0, 1, req);
+	ret = create_threads(flag, 1, &req);
 	if (ret < 0) {
 		goto out_thr;
 	}
-	if (req->status & STATUS_OUT_READY) {
-		memcpy(buf + t, req->dst, req->dst_len);
-		t += req->dst_len;
-		req->dst = dst;
+	if (async_req.status & STATUS_OUT_READY) {
+		memcpy(buf + t, async_req.dst, async_req.dst_len);
+		t += async_req.dst_len;
+		req.dst = dst;
 	}
 
 	uninit_config();
 
 	/* prepare to decompress */
-	req->src = src;
-	req->dst = dst;
-	memcpy(req->src, buf, t);
-	req->src_len = t;
-	req->dst_len = TEST_WORD_LEN;
+	req.src = src;
+	req.dst = dst;
+	memcpy(req.src, buf, t);
+	req.src_len = t;
+	req.dst_len = TEST_WORD_LEN;
+	req.cb = async_cb;
+	req.cb_param = &req;
 	t = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
-	ctx_conf.ctxs[0].op_type = CTX_TYPE_DECOMP;
-
 	/* 1 thread for sending data, BLOCK mode */
-	ret = create_threads(0, 1, req);
+	ret = create_threads(flag, 1, &req);
 	if (ret < 0) {
 		goto out_thr;
 	}
-	if (req->status & STATUS_OUT_READY) {
-		memcpy(buf + t, req->dst, req->dst_len);
-		t += req->dst_len;
-		req->dst = dst;
+	if (async_req.status & STATUS_OUT_READY) {
+		memcpy(buf + t, async_req.dst, async_req.dst_len);
+		t += async_req.dst_len;
+		req.dst = dst;
 	}
 
 	uninit_config();
@@ -543,9 +547,7 @@ int test_comp_async2_once(int flag, int mode)
 	return 0;
 out_thr:
 	uninit_config();
-out_req:
 	free(dst);
-out_dst:
 	free(src);
 out:
 	return ret;
@@ -565,12 +567,10 @@ int main(int argc, char **argv)
 		printf("Fail to run test_comp_async1_once() with ZLIB.\n");
 		return ret;
 	}
-/*
 	ret = test_comp_async2_once(FLAG_ZLIB, 0);
 	if (ret < 0) {
 		printf("Fail to run test_comp_async2_once() with ZLIB.\n");
 		return ret;
 	}
-*/
 	return 0;
 }
