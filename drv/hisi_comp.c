@@ -157,6 +157,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.ctx_dw2 = msg->ctx_priv2;
 	sqe.isize = msg->isize;
 	sqe.checksum = msg->checksum;
+	sqe.tag = msg->tag;
 	ret = hisi_qm_send(ctx, &sqe, 1);
 	if (ret < 0) {
 		WD_ERR("hisi_qm_send is err(%d)!\n", ret);
