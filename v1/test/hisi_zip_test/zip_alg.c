@@ -522,6 +522,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	ctx_setup.br.free = (void *)wd_free_blk;
 	ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
 	ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	ctx_setup.br.get_bufsize = (void *)wd_blksize;
 	ctx_setup.br.usr = pool;
 	zip_ctx = wcrypto_create_comp_ctx(q, &ctx_setup);
 	if (!zip_ctx) {

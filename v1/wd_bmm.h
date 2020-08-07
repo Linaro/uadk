@@ -38,6 +38,7 @@ extern int wd_get_free_blk_num(void *pool, __u32 *free_num);
 extern int wd_blk_alloc_failures(void *pool, __u32 *fail_num);
 extern void *wd_blk_iova_map(void *pool, void *blk);
 extern void wd_blk_iova_unmap(void *pool, void *blk_dma, void *blk);
+extern __u32 wd_blksize(void *pool);
 
 #ifdef __cplusplus
 }

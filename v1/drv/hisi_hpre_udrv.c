@@ -747,7 +747,6 @@ static int trans_d_to_hpre_bin(struct wd_dtb *d)
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
-	char *temp = NULL;
 	int ret, shift;
 
 	if (d->dsize > n->dsize)

@@ -358,6 +358,7 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 	ctx_setup.br.free = (void *)wd_free_blk;
 	ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
 	ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	ctx_setup.br.get_bufsize = (void *)wd_blksize;
 	ctx_setup.alg_type = alg_type;
 	ctx_setup.op_type = op_type;
 	ctx_setup.stream_mode = (mode == MODE_STREAM) ?

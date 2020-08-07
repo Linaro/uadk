@@ -87,6 +87,7 @@ typedef void (*wd_free)(void *usr, void *va);
  /* memory VA to DMA address map */
 typedef void *(*wd_map)(void *usr, void *va, size_t sz);
 typedef void (*wd_unmap)(void *usr, void *va, void *dma, size_t sz);
+typedef __u32 (*wd_bufsize)(void *usr);
 
 /* Memory from user, it is given at ctx creating. */
 struct wd_mm_br {
@@ -96,6 +97,7 @@ struct wd_mm_br {
 
 	/* destroy the mapping between the PA of VA and iova */
 	wd_unmap iova_unmap;
+	wd_bufsize get_bufsize; /* optional */
 	void *usr; /* data for the above operations */
 };
 
