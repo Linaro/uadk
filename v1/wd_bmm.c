@@ -198,7 +198,7 @@ static int usr_pool_init(struct wd_blkpool *p)
 	return WD_SUCCESS;
 }
 
-static void* pool_init(struct wd_queue *q, struct wd_blkpool *pool,
+static void *pool_init(struct wd_queue *q, struct wd_blkpool *pool,
 				  struct wd_blkpool_setup *setup)
 {
 	void *addr = NULL;
@@ -411,3 +411,14 @@ int wd_blk_alloc_failures(void *pool, __u32 *fail_num)
 	return WD_SUCCESS;
 }
 
+__u32 wd_blksize(void *pool)
+{
+	struct wd_blkpool *p = pool;
+
+	if (!p) {
+		WD_ERR("get blk_size pool is null!\n");
+		return 0;
+	}
+
+	return p->act_blk_sz;
+}

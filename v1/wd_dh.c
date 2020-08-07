@@ -135,7 +135,6 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 	}
 	wd_unspinlock(&qinfo->qlock);
 
-
 	ctx = malloc(sizeof(struct wcrypto_dh_ctx));
 	if (!ctx) {
 		WD_ERR("alloc ctx memory fail!\n");
@@ -157,6 +156,12 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
 	}
 
+	if (setup->br.get_bufsize &&
+	    setup->br.get_bufsize(setup->br.usr) < ctx->key_size) {
+		WD_ERR("Blk_size < need_size<0x%x>.\n", ctx->key_size);
+		free(ctx);
+		goto free_ctx_id;
+	}
 	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
 	ctx->g.bsize = ctx->key_size;
 	return ctx;
