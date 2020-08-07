@@ -465,6 +465,7 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	ret = get_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
@@ -820,6 +821,7 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	ret = get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
@@ -1091,6 +1093,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	ctx = wcrypto_create_cipher_ctx(q, &setup);
@@ -1248,6 +1251,7 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	ctx = wcrypto_create_digest_ctx(q, &setup);
@@ -1409,7 +1413,7 @@ static int sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 
 	//??? ???
 	if (_get_one_bits(lcore_mask) == 0 &&
-			_get_one_bits(hcore_mask) == 0) 
+			_get_one_bits(hcore_mask) == 0)
 		cnt = thread_num;
 	else
 		cnt = 1;
@@ -1478,6 +1482,7 @@ int sec_aead_sync_func_test(void *data)
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	ret = get_aead_resource(&tv, (int *)&setup.calg,
@@ -1782,6 +1787,7 @@ int sec_aead_async_func_test(void *data)
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	ret = get_aead_resource(&tv, (int *)&setup.calg,
