@@ -1568,6 +1568,7 @@ static void *_hpre_dh_sys_test_thread(void *data)
 		dh_setup.br.free = (void *)wd_free_blk;
 		dh_setup.br.iova_map = (void *)wd_blk_iova_map;
 		dh_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		dh_setup.br.get_bufsize = (void *)wd_blksize;
 		dh_setup.br.usr = pool;
 		if (!strcmp(g_mode, "-g2"))
 			dh_setup.is_g2 = true;
@@ -3655,7 +3656,6 @@ static int ecc_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	b_r = BN_bin2bn((void *)r->data, r->dsize, NULL);
 	b_s = BN_bin2bn((void *)s->data, s->dsize, NULL);
 	(void)ECDSA_SIG_set0(sig, b_r, b_s);
-	wcrypto_get_ecdsa_sign_in_params(opdata->in, &e, NULL);
 	ret = ECDSA_do_verify((void*)test_ctx->setup.degist,
 		test_ctx->setup.degist_size, sig, ec_key);
 	if (ret != 1) {
@@ -4102,6 +4102,7 @@ static void *_ecc_sys_test_thread(void *data)
 		ctx_setup.br.free = (void *)wd_free_blk;
 		ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
 		ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		ctx_setup.br.get_bufsize = (void *)wd_blksize;
 		ctx_setup.br.usr = pool;
 
 		if (!(!strncmp(q->capa.alg, "x448", 4) || !strncmp(q->capa.alg, "x25519", 5))) {
@@ -5402,6 +5403,7 @@ new_test_again:
 	setup.br.free = (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pdata->pool;
 
 	if (!strcmp(g_mode, "-crt"))
@@ -5928,6 +5930,7 @@ void *_rsa_async_op_test_thread(void *data)
 	setup.br.free =  (void *)wd_free_blk;
 	setup.br.iova_map = (void *)wd_blk_iova_map;
 	setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	setup.br.get_bufsize = (void *)wd_blksize;
 	setup.br.usr = pool;
 	if (!strcmp(g_mode, "-crt"))
 		setup.is_crt = true;
@@ -7310,6 +7313,7 @@ basic_function_test:
 		setup.br.free = (void *)wd_free_blk;
 		setup.br.iova_map = (void *)wd_blk_iova_map;
 		setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		setup.br.get_bufsize = (void *)wd_blksize;
 		setup.br.usr = pool;
 		ctx = wcrypto_create_rsa_ctx(&q, &setup);
 		if (!ctx) {
@@ -7324,6 +7328,7 @@ basic_function_test:
 		dh_setup.br.free = (void *)wd_free_blk;
 		dh_setup.br.iova_map = (void *)wd_blk_iova_map;
 		dh_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		dh_setup.br.get_bufsize = (void *)wd_blksize;
 		dh_setup.br.usr = pool;
 		ctx = wcrypto_create_dh_ctx(&q, &dh_setup);
 		if (!ctx) {

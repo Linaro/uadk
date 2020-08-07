@@ -172,7 +172,7 @@ static void wd_memset_zero(void *data, __u32 size)
 {
 	char *s = (char *)data;
 
-	if (!s || size <= 0)
+	if (!s)
 		return;
 
 	while (size--)
@@ -183,6 +183,11 @@ static void *br_alloc(struct wd_mm_br *br, __u32 size)
 {
 	if (!br->alloc)
 		return NULL;
+
+	if (br->get_bufsize && br->get_bufsize(br->usr) < size) {
+		WD_ERR("Blk_size < need_size<0x%x>.\n", size);
+		return NULL;
+	}
 
 	return br->alloc(br->usr, size);
 }
