@@ -38,44 +38,10 @@ enum wd_comp_alg_type {
 };
 
 enum wd_comp_op_type {
-    WD_DIR_COMPRESS,	/* session for compression */
-    WD_DIR_DECOMPRESS,  /* session for decompression */
+	WD_DIR_COMPRESS,	/* session for compression */
+	WD_DIR_DECOMPRESS,	/* session for decompression */
 };
 
-struct wd_comp_sess_o {
-	char			*alg_name;	/* zlib or gzip */
-	char			node_path[MAX_DEV_NAME_LEN + 1];
-	wd_dev_mask_t		*dev_mask;
-	struct wd_alg_comp	*drv;
-	uint32_t		mode;
-	void			*priv;
-};
-
-struct wd_comp_arg {
-	void			*src;
-	size_t			src_len;
-	void			*dst;
-	size_t			dst_len;
-	wd_alg_comp_cb_t	*cb;
-	void			*cb_param;
-	uint32_t		flag;
-	uint32_t		status;
-};
-
-struct wd_comp_strm {
-	struct wd_comp_arg	arg;
-	void			*in;
-	void			*out;
-	size_t			in_sz;		/* size of IN */
-	/*
-	 * Available size in OUT before compress or decompress.
-	 * Used size in OUT after compress or decompress.
-	 */
-	size_t			out_sz;
-	size_t			total_out;
-};
-
-/* new code */
 struct wd_comp_sess {
 	int	alg_type;
 };

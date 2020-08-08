@@ -9,9 +9,6 @@
 #include "hisi_comp.h"
 #include "wd_comp.h"
 
-#define SYS_CLASS_DIR	"/sys/class/uacce"
-
-/* new code */
 #include <dlfcn.h>
 #include "include/drv/wd_comp_drv.h"
 
