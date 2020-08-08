@@ -29,6 +29,11 @@ struct sched_key {
 int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
 
 /**
+ * sample_sched_init - Release schedule memory.
+ */
+void sample_sched_release(void);
+
+/**
  * sample_sched_fill_region - Fill the schedule min region.
  * @sched_ctx: The memery alloc by user which is consult with the sample_sched_get_size.
  * @mode: Sync or async mode.  sync: 0, async: 1.

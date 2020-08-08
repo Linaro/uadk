@@ -115,15 +115,14 @@ static int test_sec_cipher_sync_once(void)
 	}
 	if (tv->iv)
 		memcpy(req.iv, tv->iv, strlen(tv->iv));
-	h_sess = (void *)calloc(1, sizeof(struct wd_cipher_sess));
+	h_sess = (handle_t)calloc(1, sizeof(struct wd_cipher_sess));
 	if (!h_sess) {
 		ret = -1;
 		goto out;
 	}
-	//(wd_cipher_sess)h_sess->alg_type = 	
 	
 	/* set key */
-	ret = wd_cipher_set_key(&req, tv->key, tv->klen);
+	ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out;

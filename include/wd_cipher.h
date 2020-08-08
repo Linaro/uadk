@@ -116,6 +116,6 @@ struct wd_sched {
  */
 extern int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched);
 extern void wd_cipher_uninit(void);
-extern int wd_cipher_set_key(struct wd_cipher_req *req, __u8 *key, __u32 key_len);
+extern int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len);
 extern int wd_do_cipher(handle_t sess, struct wd_cipher_req *req);
 #endif /* __WD_CIPHER_H */

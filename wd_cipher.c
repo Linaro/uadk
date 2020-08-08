@@ -111,7 +111,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 	return ret;
 }
 
-int wd_cipher_set_key(struct wd_cipher_req *req, __u8 *key, __u32 key_len)
+int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
 {
 	__u16 length = key_len;
 	int ret;

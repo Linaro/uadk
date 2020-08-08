@@ -118,6 +118,10 @@ __u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region *
 
 	/* Traverse the async ctx */
 	for (i = 0; i < g_sched_type_num; i++) {
+		if (!region[SCHED_MODE_ASYNC][i].valid) {
+			continue;
+		}
+
 		begin = region[SCHED_MODE_ASYNC][i].begin;
 		end = region[SCHED_MODE_ASYNC][i].end;
 		for (j = begin; j <= end; j++) {
@@ -229,9 +233,19 @@ int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end
 /**
  * sample_sched_operator_cfg - user can define private schedule operator
  */
-void sample_sched_operator_cfg(struct sched_operator *op)
+int sample_sched_operator_cfg(struct sched_operator *op)
 {
-	return;
+	if (!op) {
+		printf("Error: %s op is null!\n", __FUNCTION__);
+		return -1;
+	}
+
+	g_sched_ops[g_sched_policy].get_next_pos = op->get_next_pos;
+	g_sched_ops[g_sched_policy].get_para = op->get_para;
+	g_sched_ops[g_sched_policy].poll_func = op->poll_func;
+	g_sched_ops[g_sched_policy].poll_policy = op->poll_policy;
+
+	return 0;
 }
 
 /**
@@ -242,7 +256,12 @@ int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t
 	int i, j;
 
 	if (sched_type >= SCHED_POLICY_BUTT) {
-		printf("Error: sample_sched_init sched_type = %d is invalid!\n", sched_type);
+		printf("Error: %s sched_type = %d is invalid!\n", __FUNCTION__, sched_type);
+		return -1;
+	}
+
+	if (!poll_func) {
+		printf("Error: %s poll_func is null!\n", __FUNCTION__);
 		return -1;
 	}
 
@@ -273,3 +292,20 @@ err_out:
 	return -1;
 }
 
+/**
+ * sample_sched_init - Release schedule memory.
+ */
+void sample_sched_release()
+{
+	int i, j;
+
+	for (i = 0; i < MAX_NUMA_NUM; i++) {
+		for (j = 0; j < SCHED_MODE_BUTT; j++) {
+			if (g_sched_info[i].ctx_region[j]) {
+				free(g_sched_info[i].ctx_region[j]);
+			}
+		}
+	}
+
+	return;
+}

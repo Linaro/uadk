@@ -525,10 +525,14 @@ static int run_test(struct priv_options *opts)
 	int ret;
 	int n = opts->common.run_num;
 	int w = opts->warmup_num;
-	struct hizip_stats avg = {0};
-	struct hizip_stats std = {0};
-	struct hizip_stats variation = {0};
+	struct hizip_stats avg;
+	struct hizip_stats std;
+	struct hizip_stats variation;
 	struct hizip_stats stats[n];
+
+	memset(&avg , 0, sizeof(avg));
+	memset(&std , 0, sizeof(std));
+	memset(&variation , 0, sizeof(variation));
 
 	if (opts->display_stats == STATS_CSV)
 		output_csv_header();
