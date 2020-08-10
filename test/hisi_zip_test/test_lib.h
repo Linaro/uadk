@@ -40,6 +40,7 @@ struct test_options {
 
 	/* bytes of data for a request */
 	int block_size;
+	/* fix me: remove this as not using sched */
 	int req_cache_num;
 	int q_num;
 	unsigned long total_len;
@@ -47,6 +48,10 @@ struct test_options {
 #define MAX_RUNS	1024
 	int run_num;
 	int compact_run_num;
+
+	int thread_num;
+	/* 0: sync mode, 1: async mode */
+	int sync_mode;
 
 	bool verify;
 	bool verbose;
@@ -128,7 +133,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvz"
+#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvzt:m:"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -140,6 +145,8 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\
 	"  -z            test zlib algorithm, default gzip\n"		\
+	"  -t <num>      number of thread per process\n"		\
+	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
 	"\n\n"
 
 int parse_common_option(const char opt, const char *optarg,

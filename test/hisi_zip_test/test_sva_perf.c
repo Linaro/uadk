@@ -620,6 +620,8 @@ int main(int argc, char **argv)
 			.q_num		= 1,
 			.run_num	= 1,
 			.compact_run_num = 1,
+			.thread_num	= 0,
+			.sync_mode	= 0,
 			.block_size	= 512000,
 			.total_len	= opts.common.block_size * 10,
 			.verify		= false,
