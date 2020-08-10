@@ -161,36 +161,6 @@ static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 	free(pool->pools);
 }
 
-/* fixme */
-#if 0
-static int wd_put_req_into_pool(struct wd_async_msg_pool *pool,
-				handle_t h_ctx,
-				struct wd_comp_req *req)
-{
-	struct msg_pool *p;
-	int i, t, found = 0;
-
-	for (i = 0; i < wd_comp_setting.config.ctx_num; i++) {
-		if (h_ctx == wd_comp_setting.config.ctxs[i].ctx) {
-			found = 1;
-			break;
-		}
-	}
-	if (!found)
-		return -EINVAL;
-
-	p = &pool->pools[i];
-	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
-
-	if (t == p->head)
-		return -EBUSY;
-	//p->msg[p->tail] = req;
-	p->tail = t;
-
-	return 0;
-}
-#endif
-
 static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 				handle_t h_ctx,
 				struct wd_comp_msg *msg)
@@ -550,8 +520,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 int wd_comp_poll(__u32 *count)
 {
 	struct wd_ctx_config *config = &wd_comp_setting.config;
+	int ret;
 
-	wd_comp_setting.sched.poll_policy(config);
-
+	ret = wd_comp_setting.sched.poll_policy(config);
+	if (ret < 0)
+		return ret;
+	*count = ret;
 	return 0;
 }
