@@ -90,7 +90,7 @@ int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para) {
 		pos = region->begin;
 	} else {
 		/* If the pos's value is out of range, we can output the error info and correct the error */
-		printf("ERROR: pos = %d, begin = %d, end = %d\n", pos, region->begin, region->end);
+		printf("ERROR:%s, pos = %d, begin = %d, end = %d\n", __FUNCTION__, pos, region->begin, region->end);
 		pos = region->begin;
 	}
 
@@ -129,7 +129,7 @@ __u32 sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region *
 		}
 	}
 
-	return 0;
+	return SCHED_SUCCESS;
 }
 
 /**
@@ -199,7 +199,7 @@ __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg)
 		}
 	}
 
-	return 0;
+	return SCHED_SUCCESS;
 }
 
 /**
@@ -213,11 +213,11 @@ __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg)
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end)
+__u32 sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end)
 {
 	if ((mode >= SCHED_MODE_BUTT) || (type >= g_sched_type_num)) {
 		printf("ERROR: %s para err: mode=%d, type=%d\n", __FUNCTION__, mode, type);
-		return -1;
+		return SCHED_PARA_INVALID;
 	}
 
 	g_sched_info[numa_id].ctx_region[mode][type].begin = begin;
@@ -227,7 +227,7 @@ int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end
 
 	(void)pthread_mutex_init(&g_sched_info[numa_id].ctx_region[mode][type].mutex, NULL);
 
-	return 0;
+	return SCHED_SUCCESS;
 }
 
 /**
@@ -237,7 +237,7 @@ int sample_sched_operator_cfg(struct sched_operator *op)
 {
 	if (!op) {
 		printf("Error: %s op is null!\n", __FUNCTION__);
-		return -1;
+		return SCHED_PARA_INVALID;
 	}
 
 	g_sched_ops[g_sched_policy].get_next_pos = op->get_next_pos;
@@ -245,24 +245,24 @@ int sample_sched_operator_cfg(struct sched_operator *op)
 	g_sched_ops[g_sched_policy].poll_func = op->poll_func;
 	g_sched_ops[g_sched_policy].poll_policy = op->poll_policy;
 
-	return 0;
+	return SCHED_SUCCESS;
 }
 
 /**
  * sample_sched_init - initialize the global sched info
  */
-int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num))
+__u32 sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num))
 {
 	int i, j;
 
 	if (sched_type >= SCHED_POLICY_BUTT) {
 		printf("Error: %s sched_type = %d is invalid!\n", __FUNCTION__, sched_type);
-		return -1;
+		return SCHED_PARA_INVALID;
 	}
 
 	if (!poll_func) {
 		printf("Error: %s poll_func is null!\n", __FUNCTION__);
-		return -1;
+		return SCHED_PARA_INVALID;
 	}
 
 	g_sched_policy = sched_type;
@@ -280,16 +280,10 @@ int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t
 
 	g_sched_ops[g_sched_policy].poll_func = poll_func;
 
-	return 0;
+	return SCHED_SUCCESS;
 err_out:
-	for (i = 0; i < MAX_NUMA_NUM; i++) {
-		for (j = 0; j < SCHED_MODE_BUTT; j++) {
-			if (g_sched_info[i].ctx_region[j]) {
-				free(g_sched_info[i].ctx_region[j]);
-			}
-		}
-	}
-	return -1;
+	sample_sched_release();
+	return SCHED_ERROR;
 }
 
 /**

@@ -2,6 +2,13 @@
 #define SCHED_SAMPLE_h
 #include "wd_comp.h"
 
+/* The sched error number */
+enum sched_err_num {
+	SCHED_SUCCESS = 0,
+	SCHED_ERROR = 1,
+	SCHED_PARA_INVALID = 2,
+};
+
 /* The global policy type */
 enum sched_policy_type {
 	SCHED_POLICY_RR,
@@ -26,7 +33,7 @@ struct sched_key {
  * @type_num: Service type num.
  *			  For example, ZIP include compress and uncompress, the num is two.
  */
-int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
+__u32 sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
 
 /**
  * sample_sched_init - Release schedule memory.
@@ -44,7 +51,7 @@ void sample_sched_release(void);
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
+__u32 sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
 
 /**
  * ssample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg.
