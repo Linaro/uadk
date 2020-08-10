@@ -268,8 +268,11 @@ int hisi_qm_recv(handle_t h_ctx, void **resp)
 
 		if (q_info->is_sq_full)
 			q_info->is_sq_full = 0;
-	} else
+	} else {
+		/* enable interrupt for poll notifying */
+		q_info->db(q_info, DOORBELL_CMD_CQ, i, 1);
 		return -EAGAIN;
+	}
 
 	*resp = q_info->req_cache[i];
 	q_info->req_cache[i] = NULL;
@@ -280,6 +283,7 @@ int hisi_qm_recv(handle_t h_ctx, void **resp)
 	} else
 		i++;
 
+	/* disable interrupt, keep reading */
 	q_info->db(q_info, DOORBELL_CMD_CQ, i, 0);
 
 	q_info->cq_head_index = i;

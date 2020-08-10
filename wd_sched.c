@@ -3,6 +3,8 @@
 #include "wd_sched.h"
 #include "smm.h"
 
+#define USE_POLL
+
 /*
  * In SVA scenario, a whole user buffer could be divided into multiple frames.
  * In NOSVA scenario, data from a whole user buffer should be copied into
@@ -102,6 +104,47 @@ static int __sync_send(struct wd_scheduler *sched) {
 	return 0;
 }
 
+static int __poll_wait(struct wd_scheduler *sched) {
+	void *recv_msg;
+	int ret;
+	int ms = 1000;
+
+	dbg("recv, ci(%d) from q(%d): %p\n", sched->c_t, sched->q_t,
+	    sched->msgs[sched->c_h].msg);
+	ret = wd_wait(sched->qs[sched->q_t], ms);
+	if (ret > 0) {
+		do {
+			handle_t h_ctx = sched->qs[sched->q_t];
+			ret = sched->hw_recv(h_ctx, &recv_msg);
+			if (ret == -EIO)
+				return ret;
+			if (ret == -EAGAIN) {
+				sched->stat[sched->q_t].recv_retries++;
+				break;
+			}
+
+			sched->stat[sched->q_t].recv++;
+			sched->q_t = (sched->q_t + 1) % sched->q_num;
+
+			if (recv_msg != sched->msgs[sched->c_t].msg) {
+				fprintf(stderr, "recv msg %p and input %p mismatch\n",
+						recv_msg, sched->msgs[sched->c_t].msg);
+				return -EINVAL;
+			}
+
+			ret = sched->output(&sched->msgs[sched->c_t], sched->priv);
+			if (ret)
+				return ret;
+
+			sched->c_t = (sched->c_t + 1) % sched->msg_cache_num;
+			sched->cl++;
+		} while(!ret);
+
+	}
+
+	return ret;
+}
+
 static int __sync_wait(struct wd_scheduler *sched) {
 	void *recv_msg;
 	int ret;
@@ -153,6 +196,12 @@ int wd_sched_work(struct wd_scheduler *sched, unsigned long remained)
 		MOV_INDEX(c_h);
 		sched->cl--;
 	} else {
+#ifdef USE_POLL
+		ret = __poll_wait(sched);
+		if (ret && ret != -EAGAIN)
+			return ret;
+#else
+
 		ret = __sync_wait(sched);
 		if (ret)
 			return ret;
@@ -163,6 +212,7 @@ int wd_sched_work(struct wd_scheduler *sched, unsigned long remained)
 
 		MOV_INDEX(c_t);
 		sched->cl++;
+#endif
 	}
 
 	return sched->cl;
