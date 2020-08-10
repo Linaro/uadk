@@ -67,18 +67,29 @@ struct hisi_sec_qp_async_pool {
 	pthread_mutex_t lock;
 	struct hisi_qp_async_list head;
 } hisi_sec_qp_async_pool;
-#if 0
-static int get_qp_num_in_pool(void)
+#ifdef DEBUG
+static void hexdump(char *buff, unsigned int len)
 {
-	return 0;
-}
- 
-static void hisi_sec_add_qp_to_pool(struct hisi_sec_qp_async_pool *pool,
-				    struct hisi_qp_async *qp)
-{
+	unsigned int i;
 
+	for (i = 0; i < len; i++) {
+		printf("\\0x%02x", buff[i]);
+		if ((i + 1) % 8 == 0)
+			printf("\n");
+	}
+	printf("\n");
+}
+
+static void sec_dump_bd(unsigned int *bd, unsigned int len)
+{
+	unsigned int i;
+
+	for (i = 0; i < len; i++)
+		WD_ERR("Word[%d] 0x%x\n", i, bd[i]);
+	WD_ERR("\n");
 }
 #endif
+
 static void update_iv(struct wd_cipher_msg *msg)
 {
 
@@ -87,13 +98,45 @@ static void update_iv(struct wd_cipher_msg *msg)
 int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 {
 	/* allocate qp for each context */
+	struct hisi_qm_priv qm_priv;
+	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
+	handle_t h_ctx, h_qp;
+	int i, j, ret = 0;
+
+	/* allocate qp for each context */
+	for (i = 0; i < config->ctx_num; i++) {
+		h_ctx = config->ctxs[i].ctx;
+		qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
+		qm_priv.op_type = config->ctxs[i].op_type;
+		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
+		if (!h_qp) {
+			ret = -EINVAL;
+			goto out;
+		}
+		memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config));
+	}
+
 	return 0;
+out:
+	for (j = 0; j < i; j++) {
+		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[j].ctx);
+		hisi_qm_free_qp(h_qp);
+	}
+	return ret;
 }
 
 void hisi_sec_exit(void *priv)
 {
 
-	/* free alloc_qp */
+	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
+	struct wd_ctx_config *config = &sec_ctx->config;
+	handle_t h_qp;
+	int i;
+
+	for (i = 0; i < config->ctx_num; i++) {
+		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[i].ctx);
+		hisi_qm_free_qp(h_qp);
+	}
 }
 
 static int get_3des_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
@@ -207,6 +250,10 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		recv_msg->result = WD_SUCCESS;
 	}
 
+#ifdef DEBUG
+	WD_ERR("Dump cipher recv sqe-->!\n");
+	hexdump(sqe->type2.data_dst_addr, 16);
+#endif
 	update_iv(recv_msg);
 }
 
@@ -222,6 +269,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 		return -EINVAL;
 	}
 	/* config BD type */
+	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
 	sqe.type_auth_cipher = BD_TYPE2;
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
@@ -243,17 +291,20 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	/* fill cipher bd2 alg */
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
-		WD_ERR("Fail to fill bd alg!\n");
+		WD_ERR("faile to fill bd alg!\n");
 		return ret;
 	}
 
 	/* fill cipher bd2 mode */
 	ret = fill_cipher_bd2_mode(msg, &sqe);
 	if (ret) {
-		WD_ERR("Fail to fill bd mode!\n");
+		WD_ERR("faile to fill bd mode!\n");
 		return ret;
 	}
-
+#ifdef DEBUG 
+	WD_ERR("#######dump send bd############!\n");
+	sec_dump_bd((unsigned int *)&sqe, 32);
+#endif
 	ret = hisi_qm_send(ctx, &sqe, 1);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
@@ -270,11 +321,14 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	ret = hisi_qm_recv(ctx, &sqe);
 	if (ret < 0) {
 		if (ret != -EAGAIN) {
-			WD_ERR("hisi qm recv is err(%d)!\n", ret);
+			WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
 			return ret;
 		}
 	}
-
+#ifdef DEBUG
+	WD_ERR("#######dump recv bd############!\n");
+	sec_dump_bd((unsigned int *)&sqe, 32);
+#endif
 	/* parser cipher sqe */
 	parse_cipher_bd2(&sqe, recv_msg);
 
