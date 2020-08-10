@@ -14,7 +14,7 @@
 
 #define TEST_WORD_LEN	4096
 
-#define	NUM_THREADS	2
+#define	NUM_THREADS	10
 
 #define HISI_DEV_NODE	"/dev/hisi_zip-0"
 
@@ -393,7 +393,7 @@ static void *poll_func(void *arg)
 static void *wait_func(void *arg)
 {
 	thread_data_t *data = (thread_data_t *)arg;
-	struct wd_comp_req *req = data->req;
+	struct wd_comp_req	*req = data->req;
 	struct wd_comp_sess_setup	setup;
 	handle_t	h_sess;
 	int	ret = 0;
@@ -407,9 +407,6 @@ static void *wait_func(void *arg)
 	if (!h_sess)
 		goto out;
 
-	req->status = 0;
-	req->dst_len = TEST_WORD_LEN;
-	req->flag = FLAG_INPUT_FINISH;
 	pthread_mutex_lock(&mutex);
 	pthread_cond_wait(&cond, &mutex);
 	ret = wd_do_comp_async(h_sess, req);
@@ -417,6 +414,7 @@ static void *wait_func(void *arg)
 		goto out_comp;
 	/* count means data block numbers */
 	count++;
+
 out_comp:
 	pthread_mutex_unlock(&mutex);
 
@@ -463,84 +461,94 @@ static int create_threads(int flag, int wait_thr_num, struct wd_comp_req *reqs)
 		return ret;
 	}
 	pthread_attr_destroy(&attr);
-	for (i = 0; i < NUM_THREADS; i++) {
+	for (i = 0; i < wait_thr_num + 1; i++) {
 		pthread_join(thr[i], NULL);
 	}
 	return 0;
 }
 
 /*
- * Create two threads. One is compressing/decompressing, and the other
+ * Create ten threads. Nine threads are compressing/decompressing, and the other
  * is polling.
  */
 int test_comp_async2_once(int flag, int mode)
 {
-	struct wd_comp_req	req;
-	char	buf[TEST_WORD_LEN];
+	struct wd_comp_req	req[NUM_THREADS];
 	void	*src, *dst;
-	int	ret = 0, t;
+	char	*buf;
+	int	ret = 0, step, i;
+	int	parallel = 9;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
+	/* parallel means the number of sending threads */
+	if (parallel >= NUM_THREADS)
+		return -EINVAL;
 
-	memset(&req, 0, sizeof(struct wd_comp_req));
-	req.dst_len = sizeof(char) * TEST_WORD_LEN;
-	req.src = malloc(sizeof(char) * TEST_WORD_LEN);
-	if (!req.src)
+	step = sizeof(char) * TEST_WORD_LEN;
+	src = malloc(step * NUM_THREADS);
+	if (!src)
 		return -ENOMEM;
-	req.dst = malloc(sizeof(char) * TEST_WORD_LEN);
-	if (!req.dst) {
+	dst = malloc(step * NUM_THREADS);
+	if (!dst) {
 		ret = -ENOMEM;
 		goto out;
 	}
-	src = req.src;
-	dst = req.dst;
-	memcpy(req.src, word, sizeof(char) * strlen(word));
-	req.src_len = strlen(word);
-	req.cb = async_cb;
-	req.cb_param = &req;
-	t = 0;
+	memset(&req, 0, sizeof(struct wd_comp_req) * NUM_THREADS);
+	for (i = 0; i < parallel; i++) {
+		req[i].src = src + (step * i);
+		req[i].dst = dst + (step * i);
+		memcpy(req[i].src, word, sizeof(char) * strlen(word));
+		req[i].src_len = strlen(word);
+		req[i].dst_len = step;
+		req[i].cb = async_cb;
+		req[i].cb_param = &req[i];
+		req[i].status = 0;
+		req[i].flag = FLAG_INPUT_FINISH;
+	}
 
-	/* 1 thread for sending data, BLOCK mode */
-	ret = create_threads(flag, 1, &req);
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
+
+	/* 9 threads for sending data, BLOCK mode */
+	ret = create_threads(flag, parallel, req);
 	if (ret < 0) {
 		goto out_thr;
 	}
-	if (async_req.status & STATUS_OUT_READY) {
-		memcpy(buf + t, async_req.dst, async_req.dst_len);
-		t += async_req.dst_len;
-		req.dst = dst;
+	for (i = 0; i < parallel; i++) {
+		if (req[i].status & STATUS_OUT_READY) {
+			/* use compressed data */
+			memcpy(req[i].src, req[i].dst, req[i].dst_len);
+			req[i].src_len = req[i].dst_len;
+			req[i].dst_len = step;
+		} else {
+			ret = -EFAULT;
+			goto out_thr;
+		}
 	}
 
 	uninit_config();
 
 	/* prepare to decompress */
-	req.src = src;
-	req.dst = dst;
-	memcpy(req.src, buf, t);
-	req.src_len = t;
-	req.dst_len = TEST_WORD_LEN;
-	req.cb = async_cb;
-	req.cb_param = &req;
-	t = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
-	/* 1 thread for sending data, BLOCK mode */
-	ret = create_threads(flag, 1, &req);
+	/* 9 thread for sending data, BLOCK mode */
+	ret = create_threads(flag, parallel, req);
 	if (ret < 0) {
 		goto out_thr;
 	}
-	if (async_req.status & STATUS_OUT_READY) {
-		memcpy(buf + t, async_req.dst, async_req.dst_len);
-		t += async_req.dst_len;
-		req.dst = dst;
+	for (i = 0; i < parallel; i++) {
+		if ((req[i].status & STATUS_OUT_READY) == 0) {
+			ret = -EFAULT;
+			goto out_thr;
+		}
+		buf = (char *)req[i].dst;
+		if (memcmp(buf, word, strlen(word))) {
+			ret = -EFAULT;
+			printf("match failure! word:%s, out:%s\n", word, buf);
+			goto out_thr;
+		}
 	}
 
 	uninit_config();
 
-	if (memcmp(buf, word, strlen(word))) {
-		printf("match failure! word:%s, buf:%s\n", word, buf);
-	} else {
-		printf("Pass compress test in single buffer.\n");
-	}
+	printf("Pass compress test in single buffer.\n");
 
 	free(src);
 	free(dst);
