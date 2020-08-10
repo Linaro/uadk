@@ -44,8 +44,6 @@ static char word[] = "go to test.";
 static struct wd_ctx_config ctx_conf;
 static struct wd_sched sched;
 
-static struct wd_comp_req async_req;
-
 #if 0
 /* get CPU and NUMA node information */
 static int getcpu(unsigned *cpu, unsigned *node, struct getcpu_cache *tcache)
@@ -62,7 +60,12 @@ static handle_t sched_single_pick_next(struct wd_ctx_config *cfg, void *req, voi
 
 static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg)
 {
-	return 0;
+	int ret;
+
+	ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1);
+	if (ret != 1)
+		return -EFAULT;
+	return ret;
 }
 
 /* init config for single context */
@@ -207,10 +210,8 @@ int test_comp_sync_once(int flag, int mode)
 		printf("Pass compress test in single buffer.\n");
 	}
 
-/*
 	free(src);
 	free(dst);
-*/
 	return 0;
 out_comp:
 	wd_comp_free_sess(h_sess);
@@ -222,9 +223,10 @@ out:
 
 static void *async_cb(void *data)
 {
-	struct wd_comp_req *req = (struct wd_comp_req *)data;
-
-	memcpy(&async_req, req, sizeof(struct wd_comp_req));
+#if 0
+	thread_data_t *thr = (thread_data_t *)data;
+	struct wd_comp_req *req = thr->req;
+#endif
 	return NULL;
 }
 
@@ -236,6 +238,12 @@ int test_comp_async1_once(int flag, int mode)
 	char	buf[TEST_WORD_LEN];
 	void	*src, *dst;
 	int	ret = 0, t;
+	__u32	expected = 1;
+	thread_data_t	data;
+
+	memset(&data, 0, sizeof(thread_data_t));
+	data.req = &req;
+	data.tid = 0;
 
 	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
 
@@ -270,24 +278,23 @@ int test_comp_async1_once(int flag, int mode)
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
 		req.cb = async_cb;
-		req.cb_param = &req;
+		req.cb_param = &data;
 		ret = wd_do_comp_async(h_sess, &req);
 		if (ret < 0)
 			goto out_comp;
 		/* 1 block */
-		ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1);
-		if (ret != 1) {
-			ret = -EFAULT;
+		expected = 1;
+		ret = wd_comp_poll(&expected);
+		if (ret < 0)
 			goto out_comp;
-		}
-		if (async_req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, async_req.dst, async_req.dst_len);
-			t += async_req.dst_len;
+		if (req.status & STATUS_OUT_READY) {
+			memcpy(buf + t, req.dst, req.dst_len);
+			t += req.dst_len;
 			req.dst = dst;
 		}
-		if ((async_req.status & STATUS_OUT_DRAINED) &&
-		    (async_req.status & STATUS_IN_EMPTY) &&
-		    (async_req.flag & FLAG_INPUT_FINISH))
+		if ((req.status & STATUS_OUT_DRAINED) &&
+		    (req.status & STATUS_IN_EMPTY) &&
+		    (req.flag & FLAG_INPUT_FINISH))
 			break;
 	}
 	wd_comp_free_sess(h_sess);
@@ -316,24 +323,23 @@ int test_comp_async1_once(int flag, int mode)
 		req.dst_len = TEST_WORD_LEN;
 		req.flag = FLAG_INPUT_FINISH;
 		req.cb = async_cb;
-		req.cb_param = &req;
+		req.cb_param = &data;
 		ret = wd_do_comp_async(h_sess, &req);
 		if (ret < 0)
 			goto out_comp;
 		/* 1 block */
-		ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1);
-		if (ret != 1) {
-			ret = -EFAULT;
+		expected = 1;
+		ret = wd_comp_poll(&expected);
+		if (ret < 0)
 			goto out_comp;
-		}
-		if (async_req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, async_req.dst, async_req.dst_len);
-			t += async_req.dst_len;
+		if (req.status & STATUS_OUT_READY) {
+			memcpy(buf + t, req.dst, req.dst_len);
+			t += req.dst_len;
 			req.dst = dst;
 		}
-		if ((async_req.status & STATUS_OUT_DRAINED) &&
-		    (async_req.status & STATUS_IN_EMPTY) &&
-		    (async_req.flag & FLAG_INPUT_FINISH))
+		if ((req.status & STATUS_OUT_DRAINED) &&
+		    (req.status & STATUS_IN_EMPTY) &&
+		    (req.flag & FLAG_INPUT_FINISH))
 			break;
 	}
 	wd_comp_free_sess(h_sess);
@@ -358,7 +364,8 @@ out:
 
 static void *poll_func(void *arg)
 {
-	int i, ret = 0, received = 0, expected = 0;
+	int i, ret = 0, received = 0;
+	__u32 expected = 0;
 
 	usleep(200);
 	while (1) {
@@ -372,9 +379,10 @@ static void *poll_func(void *arg)
 			continue;
 		}
 		for (i = 0; i < ctx_conf.ctx_num; i++) {
-			ret = wd_comp_poll_ctx(ctx_conf.ctxs[i].ctx, expected);
-			if (ret > 0)
-				received += ret;
+			expected = 1;
+			ret = wd_comp_poll(&expected);
+			if (ret == 0)
+				received += expected;
 		}
 		pthread_cond_broadcast(&cond);
 		if (count == received) {
@@ -444,6 +452,7 @@ static int create_threads(int flag, int wait_thr_num, struct wd_comp_req *reqs)
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	for (i = 0; i < wait_thr_num; i++) {
+		reqs[i].cb_param = &thr_data[i];
 		thr_data[i].tid = i;
 		thr_data[i].req = &reqs[i];
 		thr_data[i].flag = flag;
@@ -500,7 +509,7 @@ int test_comp_async2_once(int flag, int mode)
 		req[i].src_len = strlen(word);
 		req[i].dst_len = step;
 		req[i].cb = async_cb;
-		req[i].cb_param = &req[i];
+		req[i].cb_param = NULL;	// updated in create_threads()
 		req[i].status = 0;
 		req[i].flag = FLAG_INPUT_FINISH;
 	}
