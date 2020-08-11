@@ -140,6 +140,26 @@ int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
 
 	return 0;
 }
+
+handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
+{
+	struct wd_cipher_sess *sess = NULL;
+
+	if (!setup) {
+		WD_ERR("input setup is NULL!\n");
+		return (handle_t)0;
+	}
+	sess = calloc(1, sizeof(struct wd_cipher_sess));
+
+	return (handle_t)sess;
+}
+
+void wd_cipher_free_sess(handle_t h_sess)
+{
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)sess;
+
+	free(sess);
+}
 /* support cipher only */
 static struct wd_cipher_driver *find_cipher_driver(const char *driver)
 {
