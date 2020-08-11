@@ -133,6 +133,7 @@ struct wd_dif_verify {
 struct wd_dif_ctrl {
 	struct wd_dif_gen gen;
 	struct wd_dif_verify verify;
+	__u8 dif_comp_ctrl;
 };
 
 struct wd_dif {
