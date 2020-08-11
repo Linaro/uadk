@@ -96,6 +96,10 @@ typedef int (*qm_sqe_fill)(void *msg,
 			   struct qm_queue_info *info, __u16 i);
 typedef int (*qm_sqe_parse)(void *hw_msg,
 	const struct qm_queue_info *info, __u16 i, __u16 usr);
+typedef int (*hisi_qm_sqe_fill_priv)(
+	void *hw_msg, enum wcrypto_type atype, void *opdata);
+typedef int (*hisi_qm_sqe_parse_priv)(
+	void *hw_msg, enum wcrypto_type atype, void *opdata);
 
 struct qm_queue_info {
 	void *sq_base;
@@ -116,6 +120,8 @@ struct qm_queue_info {
 	void *req_cache[QM_Q_DEPTH];
 	qm_sqe_fill sqe_fill[WCRYPTO_MAX_ALG];
 	qm_sqe_parse sqe_parse[WCRYPTO_MAX_ALG];
+	hisi_qm_sqe_fill_priv sqe_fill_priv;
+	hisi_qm_sqe_parse_priv sqe_parse_priv;
 	struct wd_lock sd_lock;
 	struct wd_lock rc_lock;
 	struct wd_queue *q;
@@ -149,10 +155,17 @@ struct wd_sgl {
 	struct wd_sgl_entry entries[0];
 };
 
+struct hisi_qm_inject_op {
+	const char *hw_type;
+	hisi_qm_sqe_fill_priv sqe_fill_priv;
+	hisi_qm_sqe_parse_priv sqe_parse_priv;
+};
+
 int qm_init_queue(struct wd_queue *q);
 void qm_uninit_queue(struct wd_queue *q);
 int qm_send(struct wd_queue *q, void *msg);
 int qm_recv(struct wd_queue *q, void **resp);
+int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op);
 
 #define HISI_QM_API_VER_BASE "hisi_qm_v1"
 #define HISI_QM_API_VER2_BASE "hisi_qm_v2"
