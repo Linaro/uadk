@@ -61,27 +61,10 @@ enum {
 	BD_TYPE3 = 3,
 };
 
-struct hisi_zip_sgl {
-	__u32 in_sge_data_off;
-	__u32 out_sge_data_off;
-	void *ctrl;
-};
-
 struct hisi_zip_sqe_addr {
 	uintptr_t source_addr;
 	uintptr_t dest_addr;
 	uintptr_t ctxbuf_addr;
-};
-
-struct hisi_zip_udata {
-	struct hisi_zip_sgl sgl;
-	struct wd_dif dif;
-	void *comp_head;
-	__u8 buf_type;
-	__u16 block_size;
-	__u16 align_size;
-	__u8 req_type;
-	void *priv;
 };
 
 static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
@@ -137,34 +120,6 @@ static int fill_zip_window_size(struct hisi_zip_sqe_v3 *sqe,
 	}
 
 	return WD_SUCCESS;
-}
-
-static void qm_fill_zip_sqe_with_priv(struct hisi_zip_sqe *sqe, void *priv)
-{
-	struct hisi_zip_udata *udata = priv;
-
-	if (!udata)
-		return;
-
-	sqe->lba_l = lower_32_bits(udata->dif.lba);
-	sqe->lba_h = upper_32_bits(udata->dif.lba);
-	sqe->dw7 = udata->sgl.in_sge_data_off;
-	sqe->dw8 = udata->sgl.out_sge_data_off;
-	sqe->dw9 = (udata->req_type) | (udata->buf_type << HZ_BUF_TYPE_SHIFT) |
-		(udata->align_size << HZ_ALIGN_SIZE_SHIFT);
-	sqe->dw10 = (udata->dif.ctrl.gen.page_layout_gen_type) |
-		(udata->dif.ctrl.gen.grd_gen_type << HZ_GRD_GTYPE_SHIFT) |
-		(udata->dif.ctrl.gen.ver_gen_type << HZ_VER_GTYPE_SHIFT) |
-		(udata->dif.ctrl.gen.app_gen_type << HZ_APP_GTYPE_SHIFT) |
-		(udata->dif.app << HZ_APP_SHIFT) | (udata->dif.ver << HZ_VER_SHIFT);
-	sqe->priv_info = udata->dif.priv_info;
-	sqe->dw12 = (udata->dif.ctrl.gen.ref_gen_type) |
-		(udata->dif.ctrl.gen.page_layout_pad_type << HZ_PAD_TYPE_SHIFT) |
-		(udata->dif.ctrl.verify.grd_verify_type << HZ_GRD_VTYPE_SHIFT) |
-		(udata->dif.ctrl.verify.ref_verify_type << HZ_REF_VTYPE_SHIFT) |
-		(udata->block_size << HZ_BLK_SIZE_SHIFT);
-	sqe->comp_head_addr_l = lower_32_bits((uintptr_t)udata->comp_head);
-	sqe->comp_head_addr_h = upper_32_bits((uintptr_t)udata->comp_head);
 }
 
 static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
@@ -251,8 +206,8 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->isize = msg->isize;
 	sqe->checksum = msg->checksum;
 	sqe->tag = msg->tag;
-	if (tag)
-		qm_fill_zip_sqe_with_priv(sqe, tag->priv);
+	if (tag && info->sqe_fill_priv)
+		info->sqe_fill_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	info->req_cache[i] = msg;
 

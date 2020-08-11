@@ -350,6 +350,8 @@ int qm_init_queue(struct wd_queue *q)
 	ret = qm_set_queue_info(q);
 	if (ret < 0)
 		goto err_with_priv;
+	info->sqe_fill_priv = NULL;
+	info->sqe_parse_priv = NULL;
 
 	return 0;
 
@@ -505,4 +507,32 @@ int qm_recv(struct wd_queue *q, void **resp)
 	}
 
 	return ret;
+}
+
+static int hw_type_check(struct wd_queue *q, const char *hw_type)
+{
+	if (hw_type == NULL)
+		return 1;
+	return 0;
+}
+
+int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
+
+	if (!op || !op->sqe_fill_priv || !op->sqe_parse_priv) {
+		WD_ERR("inject option is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (hw_type_check(q, op->hw_type)) {
+		WD_ERR("inject option hw compare error!\n");
+		return -WD_EINVAL;
+	}
+
+	info->sqe_fill_priv = op->sqe_fill_priv;
+	info->sqe_parse_priv = op->sqe_parse_priv;
+
+	return 0;
 }
