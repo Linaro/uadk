@@ -116,7 +116,7 @@ int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
 	__u16 length = key_len;
 	int ret;
 
-	if (!key || !req) {
+	if (!key || !req || !req->key) {
 		WD_ERR("%s inpupt param err!\n", __func__);
 		return -EINVAL;
 	}
@@ -358,13 +358,15 @@ int wd_alg_cipher_poll(handle_t handle, __u32 count)
 
 static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *req)
 {
+	msg->alg = req->alg;
+	msg->mode = req->mode;
+	msg->op_type = req->op_type;
 	msg->in = req->src;
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->dst;
 	msg->out_bytes = req->out_bytes;
 	msg->key = req->key;
 	msg->key_bytes = req->key_bytes;
-	msg->op_type = req->op_type;
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
 }
@@ -379,12 +381,16 @@ int wd_do_cipher(handle_t sess, struct wd_cipher_req *req)
 	int ret;
 
 	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	if (!h_ctx) {
+		WD_ERR("pick next ctx is NULL!\n");
+		return -EINVAL;
+	}
 
 	/* fill cipher requset msg */
 	fill_request_msg(&msg, req);
 	/* send bd */
 	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, &msg);
-	if (ret) {
+	if (!ret) {
 		WD_ERR("wd send err!\n");
 		return ret;
 	}
@@ -408,5 +414,133 @@ int wd_do_cipher(handle_t sess, struct wd_cipher_req *req)
 
 	return 0;
 recv_err:
+	return ret;
+}
+
+static struct wd_cipher_msg* get_msg_from_pool(struct wd_async_msg_pool *pool,
+						handle_t h_ctx,
+						struct wd_cipher_req *req)
+{
+	struct msg_pool *p;
+	struct wd_cipher_msg *msg;
+	int i, t, found = 0;
+
+	for (i = 0; i < g_wd_cipher_setting.config.ctx_num; i++) {
+		if (h_ctx == g_wd_cipher_setting.config.ctxs[i].ctx) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found)
+		return NULL;
+
+	p = &pool->pools[i];
+/*
+	TODO  use bitmap to get idx for use
+*/
+	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
+	/* full */
+	if (p->head == t)
+		return NULL;
+	/* get msg from msg_pool[] */
+	msg = &p->msg[p->tail];
+	memcpy(&msg->req, req, sizeof(struct wd_cipher_req));
+	msg->tag_id = p->tail;
+	p->tail = t;
+
+	return msg;
+}
+
+static struct wd_cipher_req* get_req_from_pool(struct wd_async_msg_pool *pool,
+						handle_t h_ctx,
+						struct wd_cipher_msg *msg)
+{
+	struct msg_pool *p;
+	struct wd_cipher_msg *c_msg;
+	int i, found = 0;
+	int idx;
+
+	for (i = 0; i < g_wd_cipher_setting.config.ctx_num; i++) {
+		if (h_ctx == g_wd_cipher_setting.config.ctxs[i].ctx) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found)
+		return NULL;
+
+	p = &pool->pools[i];
+	/* empty */
+	if (p->head == p->tail)
+		return NULL;
+	idx = msg->tag_id;
+	c_msg = &p->msg[idx];
+	/* what this is?? */
+	msg->req.src = c_msg->req.src;
+	msg->req.dst = c_msg->req.dst;
+	msg->req.cb = c_msg->req.cb;
+	msg->req.cb_param = c_msg->req.cb_param;
+
+	return &msg->req;
+}
+
+int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
+{
+	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
+	void *sched_ctx = g_wd_cipher_setting.sched_ctx;
+	struct wd_cipher_msg *msg;
+	handle_t h_ctx;
+	int ret;
+
+	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	if (!h_ctx) {
+		WD_ERR("pick next ctx is NULL!\n");
+		return -EINVAL;
+	}
+
+	/* get mssage */
+	msg = get_msg_from_pool(&g_wd_cipher_setting.pool, h_ctx, req);
+	fill_request_msg(msg, req);
+
+	/* send bd */
+	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, msg);
+	if (ret < 0) {
+		WD_ERR("wd async send err!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int wd_cipher_poll_ctx(handle_t h_ctx, __u32 count)
+{
+	struct wd_cipher_req *req;
+	struct wd_cipher_msg resp_msg;
+	__u64 recv_count = 0;
+	int ret;
+
+	do {
+		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &resp_msg);
+		if (ret == -WD_HW_EACCESS) {
+			WD_ERR("wd_recv hw err!\n");
+			goto err_recv;
+		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+			if (++recv_count > MAX_RETRY_COUNTS) {
+				WD_ERR("wd_recv timeout fail!\n");
+				ret = -ETIMEDOUT;
+				goto err_recv;
+			}
+		}
+	} while (ret < 0);
+
+	req = get_req_from_pool(&g_wd_cipher_setting.pool, h_ctx, &resp_msg);
+
+	req->cb(req);
+
+	/*TODO free idx of msg_pool  */
+
+	/* Return polled number. Now hack it to 1. */
+	return 1;
+err_recv:
 	return ret;
 }
