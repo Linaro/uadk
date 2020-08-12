@@ -51,7 +51,7 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 {
 	int i = d_size - 1;
 	bool is_hpre_bin;
-	int j = 0;
+	int j;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
 		WD_ERR("crypto bin to hpre bin params err!\n");
@@ -87,10 +87,10 @@ static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
 		return 0;
 	}
 
-	while (!src[j] && k < (b_size - 1))
+	while (!src[j] && k < b_size - 1)
 		k = ++j;
 
-	if (j == 0 && src == dst)
+	if (!j && src == dst)
 		return b_size;
 
 	for (i = 0, cnt = j; i < b_size; j++, i++) {
@@ -106,7 +106,11 @@ static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
 static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey,
 				   void **data)
 {
-	struct wd_dtb *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
+	struct wd_dtb *wd_qinv = NULL;
+	struct wd_dtb *wd_dq = NULL;
+	struct wd_dtb *wd_dp = NULL;
+	struct wd_dtb *wd_q = NULL;
+	struct wd_dtb *wd_p = NULL;
 	int ret;
 
 	wcrypto_get_rsa_crt_prikey_params(prikey, &wd_dq, &wd_dp,
@@ -148,7 +152,8 @@ static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey,
 
 static int qm_fill_rsa_prikey1(struct wcrypto_rsa_prikey *prikey, void **data)
 {
-	struct wd_dtb *wd_d, *wd_n;
+	struct wd_dtb *wd_d = NULL;
+	struct wd_dtb *wd_n = NULL;
 	int ret;
 
 	wcrypto_get_rsa_prikey_params(prikey, &wd_d, &wd_n);
@@ -171,7 +176,8 @@ static int qm_fill_rsa_prikey1(struct wcrypto_rsa_prikey *prikey, void **data)
 
 static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 {
-	struct wd_dtb *wd_e, *wd_n;
+	struct wd_dtb *wd_e = NULL;
+	struct wd_dtb *wd_n = NULL;
 	int ret;
 
 	wcrypto_get_rsa_pubkey_params(pubkey, &wd_e, &wd_n);
@@ -260,8 +266,11 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 {
 	struct wcrypto_rsa_kg_out *key = (void *)msg->out;
 	__u16 kbytes = msg->key_bytes;
-	struct wd_dtb qinv, dq, dp;
-	struct wd_dtb d, n;
+	struct wd_dtb qinv = {0};
+	struct wd_dtb dq = {0};
+	struct wd_dtb dp = {0};
+	struct wd_dtb d = {0};
+	struct wd_dtb n = {0};
 	int ret;
 
 	msg->result = WD_SUCCESS;
@@ -302,9 +311,9 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 				struct hisi_hpre_sqe *hw_msg)
 {
-	int ret;
-	void *data;
+	void *data = NULL;
 	uintptr_t phy;
+	int ret;
 
 	if (msg->op_type == WCRYPTO_RSA_SIGN) {
 		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
@@ -862,8 +871,8 @@ static int ecc_prepare_pubkey(struct wcrypto_ecc_key *key, void **data)
 static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 			      struct hisi_hpre_sqe *hw_msg)
 {
+	void *data = NULL;
 	uintptr_t phy;
-	void *data;
 	size_t ksz;
 	int ret;
 
@@ -1113,12 +1122,11 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg, void **data)
 					    data);
 		break;
 	case WCRYPTO_ECXDH_COMPUTE_KEY:
-		ret = ecc_prepare_dh_compute_in(in, data);
-
 		/*
 		 * when compute x25519/x448, we should guarantee u < p,
 		 * or it is invalid.
 		 */
+		ret = ecc_prepare_dh_compute_in(in, data);
 		if (ret == 0 && (msg->alg_type == WCRYPTO_X25519 ||
 		    msg->alg_type == WCRYPTO_X448))
 			ret = u_is_in_p(msg);
@@ -1195,8 +1203,9 @@ static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
 static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 				struct hisi_hpre_sqe *hw_msg)
 {
-	size_t i_sz, o_sz;
 	void *data = NULL;
+	size_t i_sz = 0;
+	size_t o_sz = 0;
 	uintptr_t phy;
 	__u16 kbytes;
 	int ret;
@@ -1241,7 +1250,7 @@ static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
 				struct hisi_hpre_sqe *hw_msg)
 {
 	struct wcrypto_ecc_out *out = (void *)msg->out;
-	struct wcrypto_ecc_point *key;
+	struct wcrypto_ecc_point *key = NULL;
 	struct wd_dtb *y = NULL;
 	int ret;
 
@@ -1348,9 +1357,6 @@ int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		hw_msg->tag = tag->ctx_id;
 	hw_msg->done = 0x1;
 	hw_msg->etype = 0x0;
-	ASSERT(!info->req_cache[i]);
-	info->req_cache[i] = msg;
-
 	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
 

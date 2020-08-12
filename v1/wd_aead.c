@@ -71,7 +71,7 @@ struct wcrypto_aead_ctx {
 	struct wcrypto_aead_cookie cookies[WCRYPTO_AEAD_CTX_MSG_NUM];
 	__u8 cstatus[WCRYPTO_AEAD_CTX_MSG_NUM];
 	int cidx;
-	int ctx_id;
+	unsigned long ctx_id;
 	void *ckey;
 	void *akey;
 	__u16 ckey_bytes;
@@ -307,8 +307,7 @@ int wcrypto_aead_get_maxauthsize(void *ctx)
 		ctxt->setup.cmode == WCRYPTO_CIPHER_GCM)
 		return WCRYPTO_CCM_GCM_LEN;
 
-	if (ctxt->setup.dalg >= WCRYPTO_MAX_DIGEST_TYPE ||
-		ctxt->setup.dalg < 0) {
+	if (ctxt->setup.dalg >= WCRYPTO_MAX_DIGEST_TYPE) {
 		WD_ERR("fail to check authenticate alg!\n");
 		return -WD_EINVAL;
 	}

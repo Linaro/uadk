@@ -228,7 +228,7 @@ static int fill_cipher_bd1_type(struct wcrypto_cipher_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	if (msg->data_fmt < WD_FLAT_BUF || msg->data_fmt > WD_SGL_BUF) {
+	if (msg->data_fmt > WD_SGL_BUF) {
 		WD_ERR("Invalid data format for bd1!\n");
 		return -WD_EINVAL;
 	}
@@ -793,7 +793,7 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 static int fill_digest_bd2_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	if (msg->alg < WCRYPTO_SM3 || msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+	if (msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
 		WD_ERR("Invalid digest type!\n");
 		return -WD_EINVAL;
 	}
@@ -853,7 +853,7 @@ static void qm_fill_digest_long_bd(struct wcrypto_digest_msg *msg,
 static int fill_digest_bd1_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	if (msg->alg < WCRYPTO_SM3 || msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+	if (msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
 		WD_ERR("Invalid digest type!\n");
 		return -WD_EINVAL;
 	}
@@ -1084,7 +1084,7 @@ static void qm_fill_digest_long_bd3(struct wcrypto_digest_msg *msg,
 static int fill_digest_bd3_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_bd3_sqe *sqe)
 {
-	if (msg->alg < WCRYPTO_SM3 || msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+	if (msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
 		WD_ERR("Invalid digest type!\n");
 		return -WD_EINVAL;
 	}
@@ -1218,7 +1218,7 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_cipher_msg *cipher_msg)
 {
 	__u64 dma_addr;
-	__u32 index = 0;
+	__u32 idx;
 
 	if (sqe->type2.done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
 		WD_ERR("SEC BD2 %s fail!done=0x%x, etype=0x%x\n", "cipher",
@@ -1251,13 +1251,13 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		__u64 *out_data = (__u64 *)cipher_msg->out;
 		__u32 max_index = cipher_msg->out_bytes / U64_DATA_BYTES;
 
-		for (index = 0; index < max_index; index++)
-			out_data[index] = in_data[index] ^ out_data[index];
+		for (idx = 0; idx < max_index; idx++)
+			out_data[idx] = in_data[idx] ^ out_data[idx];
 
-		for (index = index * U64_DATA_BYTES;
-			index < cipher_msg->out_bytes; index++) {
-			cipher_msg->out[index] = cipher_msg->in[index]
-						^ cipher_msg->out[index];
+		for (idx = idx * U64_DATA_BYTES;
+			idx < cipher_msg->out_bytes; idx++) {
+			cipher_msg->out[idx] = cipher_msg->in[idx]
+						^ cipher_msg->out[idx];
 		}
 	}
 }
@@ -1266,7 +1266,7 @@ static void parse_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		struct wcrypto_cipher_msg *cipher_msg)
 {
 	__u64 dma_addr;
-	__u32 index = 0;
+	__u32 idx;
 
 	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
 		WD_ERR("Fail to parse SEC BD3 %s, done=0x%x, etype=0x%x\n", "cipher",
@@ -1300,13 +1300,13 @@ static void parse_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		__u64 *out_data = (__u64 *)cipher_msg->out;
 		__u32 max_index = cipher_msg->out_bytes / U64_DATA_BYTES;
 
-		for (index = 0; index < max_index; index++)
-			out_data[index] = in_data[index] ^ out_data[index];
+		for (idx = 0; idx < max_index; idx++)
+			out_data[idx] = in_data[idx] ^ out_data[idx];
 
-		for (index = index * U64_DATA_BYTES;
-			index < cipher_msg->out_bytes; index++) {
-			cipher_msg->out[index] = cipher_msg->in[index]
-						^ cipher_msg->out[index];
+		for (idx = idx * U64_DATA_BYTES;
+			idx < cipher_msg->out_bytes; idx++) {
+			cipher_msg->out[idx] = cipher_msg->in[idx]
+						^ cipher_msg->out[idx];
 		}
 	}
 }

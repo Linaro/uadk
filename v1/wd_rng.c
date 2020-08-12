@@ -42,7 +42,7 @@ struct wcrypto_rng_cookie {
 struct wcrypto_rng_ctx {
 	struct wcrypto_rng_cookie cookies[WD_RNG_CTX_MSG_NUM];
 	__u8 cstatus[WD_RNG_CTX_MSG_NUM];
-	int ctx_id;
+	unsigned long ctx_id;
 	int cidx;
 	struct wd_queue *q;
 	struct wcrypto_rng_ctx_setup setup;

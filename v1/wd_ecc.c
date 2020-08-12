@@ -46,10 +46,16 @@
 #define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof(array[0]))
 #define MAX_CURVE_SIZE			(ECC_MAX_KEY_SIZE * CURVE_PARAM_NUM)
 
-#define WCRYPTO_X25519			0x1
-#define WCRYPTO_X448			0x2
+#define CURVE_X25519			0x1
+#define CURVE_X448			0x2
 
 static __thread int balance;
+
+struct curve_param_desc {
+	__u32 type;
+	__u32 pri_offset;
+	__u32 pub_offset;
+};
 
 enum wcrypto_ecc_curve_param_type {
 	ECC_CURVE_P,
@@ -144,7 +150,7 @@ struct wcrypto_ecc_ctx {
 	__u8 cstatus[WD_ECC_CTX_MSG_NUM];
 	int cidx;
 	__u32 key_size;
-	int ctx_id;
+	unsigned long ctx_id;
 	struct wd_queue *q;
 	struct wcrypto_ecc_key key;
 	struct wcrypto_ecc_ctx_setup setup;
@@ -152,14 +158,14 @@ struct wcrypto_ecc_ctx {
 
 struct wcrypto_ecc_curve_list {
 	__u32 id;
-	const char *name;
+	char *name;
 	__u32 key_bits;
-	char data[MAX_CURVE_SIZE];
+	__u8 data[MAX_CURVE_SIZE];
 };
 
-const static struct wcrypto_ecc_curve_list g_curve_list[] = {
-	{ WCRYPTO_X25519, "x25519", 256, X25519_256_PARAM },
-	{ WCRYPTO_X448, "x448", 448, X448_448_PARAM },
+static const struct wcrypto_ecc_curve_list g_curve_list[] = {
+	{ CURVE_X25519, "x25519", 256, X25519_256_PARAM },
+	{ CURVE_X448, "x448", 448, X448_448_PARAM },
 	{ WCRYPTO_SECP128R1, "secp128r1", 128, SECG_P128_R1_PARAM },
 	{ WCRYPTO_SECP192K1, "secp192k1", 192, SECG_P192_K1_PARAM },
 	{ WCRYPTO_SECP256K1, "secp256k1", 256, SECG_P256_K1_PARAM },
@@ -168,9 +174,22 @@ const static struct wcrypto_ecc_curve_list g_curve_list[] = {
 	{ WCRYPTO_SECP521R1, "secp521r1", 521, NIST_P521_R1_PARAM },
 };
 
+static const struct curve_param_desc g_curve_param_list[] = {
+	{ ECC_CURVE_P, offsetof(struct wcrypto_ecc_prikey, p),
+		offsetof(struct wcrypto_ecc_pubkey, p) },
+	{ ECC_CURVE_A, offsetof(struct wcrypto_ecc_prikey, a),
+		offsetof(struct wcrypto_ecc_pubkey, a) },
+	{ ECC_CURVE_B, offsetof(struct wcrypto_ecc_prikey, b),
+		offsetof(struct wcrypto_ecc_pubkey, b) },
+	{ ECC_CURVE_N, offsetof(struct wcrypto_ecc_prikey, n),
+		offsetof(struct wcrypto_ecc_pubkey, n) },
+	{ ECC_CURVE_G, offsetof(struct wcrypto_ecc_prikey, g),
+		offsetof(struct wcrypto_ecc_pubkey, g) },
+};
+
 static void wd_memset_zero(void *data, __u32 size)
 {
-	char *s = (char *)data;
+	char *s = data;
 
 	if (!s)
 		return;
@@ -278,6 +297,7 @@ static struct wcrypto_ecc_prikey *create_ecc_prikey(struct wcrypto_ecc_ctx *ctx)
 		return NULL;
 	}
 
+	memset(prikey, 0, sizeof(struct wcrypto_ecc_prikey));
 	dsz = ECC_PRIKEY_SZ(hsz);
 	data = br_alloc(br, dsz);
 	if (!data) {
@@ -308,6 +328,7 @@ static struct wcrypto_ecc_pubkey *create_ecc_pubkey(struct wcrypto_ecc_ctx *ctx)
 		return NULL;
 	}
 
+	memset(pubkey, 0, sizeof(struct wcrypto_ecc_pubkey));
 	dsz = ECC_PUBKEY_SZ(hsz);
 	data = br_alloc(br, dsz);
 	if (!data) {
@@ -389,9 +410,16 @@ static struct wcrypto_ecc_out *create_ecc_out(struct wcrypto_ecc_ctx *ctx,
 
 static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src)
 {
-	if (!src || !dst ||
-		!src->data || !src->dsize || src->dsize > dst->dsize)
+	if (!src || !src->data) {
+		WD_ERR("src or data NULL!\n");
 		return -WD_EINVAL;
+	}
+
+	if (!src->dsize || src->dsize > dst->dsize) {
+		WD_ERR("src dsz = %u error, dst dsz = %u!\n",
+			src->dsize, dst->dsize);
+		return -WD_EINVAL;
+	}
 
 	dst->dsize = src->dsize;
 	memset(dst->data, 0, dst->bsize);
@@ -471,67 +499,36 @@ static int set_curve_param_single(struct wcrypto_ecc_key *key,
 {
 	struct wcrypto_ecc_prikey *pri = key->prikey;
 	struct wcrypto_ecc_pubkey *pub = key->pubkey;
-	struct wcrypto_ecc_point *g;
-	int ret = -WD_EINVAL;
+	char *tmp1, *tmp2;
+	int ret;
 
-	switch (type) {
-	case ECC_CURVE_P:
-		ret = set_param_single(&pri->p, param);
-		if (ret)
-			return ret;
+	tmp1 = (char *)pri + g_curve_param_list[type].pri_offset;
+	tmp2 = (char *)pub + g_curve_param_list[type].pub_offset;
 
-		ret = set_param_single(&pub->p, param);
-		if (ret)
+	/* set gy */
+	if (type == ECC_CURVE_G) {
+		ret = set_param_single((struct wd_dtb *)tmp1 + 1, param + 1);
+		if (ret) {
+			WD_ERR("failed to set pri Gy!\n");
 			return ret;
-		break;
-	case ECC_CURVE_A:
-		ret = set_param_single(&pri->a, param);
-		if (ret)
-			return ret;
+		}
 
-		ret = set_param_single(&pub->a, param);
-		if (ret)
+		ret = set_param_single((struct wd_dtb *)tmp2 + 1, param + 1);
+		if (ret) {
+			WD_ERR("failed to set pub Gy!\n");
 			return ret;
-		break;
-	case ECC_CURVE_B:
-		ret = set_param_single(&pri->b, param);
-		if (ret)
-			return ret;
-
-		ret = set_param_single(&pub->b, param);
-		if (ret)
-			return ret;
-		break;
-	case ECC_CURVE_N:
-		ret = set_param_single(&pri->n, param);
-		if (ret)
-			return ret;
-
-		ret = set_param_single(&pub->n, param);
-		if (ret)
-			return ret;
-		break;
-	case ECC_CURVE_G:
-		g = (struct wcrypto_ecc_point *)param;
-		ret = set_param_single(&pri->g.x, &g->x);
-		if (ret)
-			return ret;
-
-		ret = set_param_single(&pri->g.y, &g->y);
-		if (ret)
-			return ret;
-
-		ret = set_param_single(&pub->g.x, &g->x);
-		if (ret)
-			return ret;
-
-		ret = set_param_single(&pub->g.y, &g->y);
-		if (ret)
-			return ret;
-		break;
-	default:
-		break;
+		}
 	}
+
+	ret = set_param_single((struct wd_dtb *)tmp1, param);
+	if (ret) {
+		WD_ERR("failed to set pri Gx!\n");
+		return ret;
+	}
+
+	ret = set_param_single((struct wd_dtb *)tmp2, param);
+	if (ret)
+		WD_ERR("failed to set pub Gx!\n");
 
 	return ret;
 }
@@ -574,7 +571,7 @@ static int set_curve_param(struct wcrypto_ecc_key *key,
 	return 0;
 }
 
-const static struct wcrypto_ecc_curve_list *find_curve_list(__u32 id)
+static const struct wcrypto_ecc_curve_list *find_curve_list(__u32 id)
 {
 	int len = WD_ARRAY_SIZE(g_curve_list);
 	int is_find = 0;
@@ -597,10 +594,10 @@ const static struct wcrypto_ecc_curve_list *find_curve_list(__u32 id)
 static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 			    __u16 key_bits, __u32 id)
 {
-	struct wcrypto_ecc_curve_list *item = NULL;
+	const struct wcrypto_ecc_curve_list *item = NULL;
 	__u32 key_size;
 
-	item = (struct wcrypto_ecc_curve_list *)find_curve_list(id);
+	item = find_curve_list(id);
 	if (!item) {
 		WD_ERR("failed to find curve id %d!\n", id);
 		return -WD_EINVAL;
@@ -612,7 +609,8 @@ static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 	}
 
 	key_size = BITS_TO_BYTES(item->key_bits);
-	init_dtb_param(c, item->data, key_size, key_size, CURVE_PARAM_NUM);
+	init_dtb_param(c, (char *)item->data, key_size, key_size,
+		CURVE_PARAM_NUM);
 
 	return 0;
 }
@@ -628,7 +626,7 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 	if (setup->cv.type == WCRYPTO_CV_CFG_ID) {
 		curve_id = setup->cv.cfg.id;
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
-		dbg("set curve id %d\n", curve_id);
+		dbg("set curve id %u\n", curve_id);
 	} else if (setup->cv.type == WCRYPTO_CV_CFG_PARAM) {
 		if (!ppara) {
 			WD_ERR("fill curve cfg:pparam NULL!\n");
@@ -668,7 +666,7 @@ static int create_ctx_key(struct wcrypto_ecc_ctx_setup *setup,
 	ctx->key.pubkey = create_ecc_pubkey(ctx);
 	if (!ctx->key.pubkey) {
 		WD_ERR("failed to create ecc pubkey!\n");
-		ret = -WD_EINVAL;
+		ret = -WD_ENOMEM;
 		goto free_prikey;
 	}
 
@@ -702,13 +700,13 @@ static void setup_curve_cfg(struct wcrypto_ecc_ctx_setup *setup,
 			    const char *alg)
 {
 	if (!strcmp(alg, "x25519")) {
-		setup->key_bits = 256;
+		setup->key_bits = 256; /* x25519 fixed key width */
 		setup->cv.type = WCRYPTO_CV_CFG_ID;
-		setup->cv.cfg.id = WCRYPTO_X25519;
+		setup->cv.cfg.id = CURVE_X25519;
 	} else if (!strcmp(alg, "x448")) {
-		setup->key_bits = 448;
+		setup->key_bits = 448; /* x448 fixed key width */
 		setup->cv.type = WCRYPTO_CV_CFG_ID;
-		setup->cv.cfg.id = WCRYPTO_X448;
+		setup->cv.cfg.id = CURVE_X448;
 	}
 }
 
@@ -734,6 +732,7 @@ static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 
 	setup_curve_cfg(setup, q->capa.alg);
 
+	/* key bit width check */
 	if (setup->key_bits != 128 &&
 	    setup->key_bits != 192 &&
 	    setup->key_bits != 256 &&
@@ -798,27 +797,24 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 		return NULL;
 
 	qinfo = q->qinfo;
-	/*lock at ctx  creating/deleting */
+	/* lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating ecc ctx!\n");
-		return NULL;
+		goto free_spinlock;
 	}
 
 	if (qinfo->ctx_num >= WD_ECC_MAX_CTX) {
 		WD_ERR("err:create too many ecc ctx!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
+		goto free_spinlock;
 	}
 
 	cid = wd_alloc_ctx_id(q, WD_ECC_MAX_CTX);
 	if (cid < 0) {
 		WD_ERR("failed to alloc ctx id!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
+		goto free_spinlock;
 	}
 	wd_unspinlock(&qinfo->qlock);
 
@@ -850,6 +846,8 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	wd_free_ctx_id(q, cid);
+
+free_spinlock:
 	wd_unspinlock(&qinfo->qlock);
 
 	return NULL;
@@ -915,12 +913,10 @@ int wcrypto_set_ecc_prikey(struct wcrypto_ecc_key *ecc_key,
 	}
 
 	ret = set_param_single(&ecc_prikey->d, prikey);
-	if (ret) {
+	if (ret)
 		WD_ERR("failed to set prikey!\n");
-		return ret;
-	}
 
-	return WD_SUCCESS;
+	return ret;
 }
 
 int wcrypto_get_ecc_prikey(struct wcrypto_ecc_key *ecc_key,
@@ -1189,7 +1185,7 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 	req->key = key;
 
 	if (req->op_type == WCRYPTO_ECXDH_GEN_KEY) {
-		struct wcrypto_ecc_point *g;
+		struct wcrypto_ecc_point *g = NULL;
 
 		wcrypto_get_ecc_prikey_params((void *)key, NULL, NULL,
 			NULL, NULL, &g, NULL);
@@ -1271,7 +1267,7 @@ static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 	struct wcrypto_ecc_msg *req;
 	int ret = -WD_EINVAL;
 
-	if (!ctx) {
+	if (unlikely(!ctx)) {
 		WD_ERR("do ecc param null!\n");
 		return -WD_EINVAL;
 	}
@@ -1281,7 +1277,7 @@ static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 		return -WD_EBUSY;
 
 	if (tag) {
-		if (!ctxt->setup.cb) {
+		if (unlikely(!ctxt->setup.cb)) {
 			WD_ERR("ctx call back is null!\n");
 			goto fail_with_cookie;
 		}
@@ -1315,7 +1311,7 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 	int count = 0;
 	int ret;
 
-	if (!q) {
+	if (unlikely(!q)) {
 		WD_ERR("q is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -1324,7 +1320,7 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 		ret = wd_recv(q, (void **)&resp);
 		if (ret == 0)
 			break;
-		else if (ret < 0) {
+		else if (unlikely(ret < 0)) {
 			WD_ERR("failed to recv: error = %d!\n", ret);
 			return ret;
 		}
@@ -1342,13 +1338,13 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 
 int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 {
-	if (!opdata) {
+	if (unlikely(!opdata)) {
 		WD_ERR("do ecxdh: opdata null!\n");
 		return -WD_EINVAL;
 	}
 
-	if (opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
-		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY) {
+	if (unlikely(opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
+		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY)) {
 		WD_ERR("do ecxdh: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
@@ -1407,10 +1403,10 @@ static int set_sign_in_param(struct wcrypto_ecc_sign_in *sin,
 
 static int generate_random(struct wcrypto_ecc_ctx *ctx, struct wd_dtb *k)
 {
-	struct wcrypto_rand_mt rand = ctx->setup.rand;
+	struct wcrypto_rand_mt *rand_mt = &ctx->setup.rand;
 	int ret;
 
-	ret = rand.cb(k->data, k->dsize, rand.usr);
+	ret = rand_mt->cb(k->data, k->dsize, rand_mt->usr);
 	if (ret)
 		WD_ERR("failed to rand cb: ret = %d!\n", ret);
 
@@ -1583,13 +1579,13 @@ void wcrypto_get_ecdsa_sign_in_params(struct wcrypto_ecc_in *in,
 
 int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 {
-	if (!opdata) {
+	if (unlikely(!opdata)) {
 		WD_ERR("do ecdsa: opdata null!\n");
 		return -WD_EINVAL;
 	}
 
-	if (opdata->op_type != WCRYPTO_ECDSA_SIGN &&
-	    opdata->op_type != WCRYPTO_ECDSA_VERIFY) {
+	if (unlikely(opdata->op_type != WCRYPTO_ECDSA_SIGN &&
+	    opdata->op_type != WCRYPTO_ECDSA_VERIFY)) {
 		WD_ERR("do ecdsa: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
