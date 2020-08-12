@@ -43,7 +43,7 @@ struct wcrypto_digest_ctx {
 	struct wcrypto_digest_cookie cookies[WD_DIGEST_CTX_MSG_NUM];
 	__u8 cstatus[WD_DIGEST_CTX_MSG_NUM];
 	int cidx;
-	int ctx_id;
+	unsigned long ctx_id;
 	void *key;
 	__u32 key_bytes;
 	__u64 io_bytes;

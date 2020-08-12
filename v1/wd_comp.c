@@ -42,7 +42,7 @@ struct wcrypto_comp_ctx {
 	struct wcrypto_comp_cache caches[WD_COMP_CTX_MSGCACHE_NUM];
 	__u8 cstatus[WD_COMP_CTX_MSGCACHE_NUM];
 	int c_tail; /* start index for every search */
-	int ctx_id;
+	unsigned long ctx_id;
 	void *ctx_buf; /* extra memory for stream mode */
 	struct wd_queue *q;
 	wcrypto_cb cb;
