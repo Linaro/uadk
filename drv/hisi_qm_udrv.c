@@ -74,7 +74,6 @@ static struct hisi_qm_type qm_type[] = {
 
 static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 tail, __u16 num)
 {
-	int i, j;
 	int sqe_offset;
 
 	if (tail + num < QM_Q_DEPTH) {
@@ -83,16 +82,6 @@ static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 t
 		sqe_offset = QM_Q_DEPTH - tail;
 		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * sqe_offset);
 		memcpy(info->sq_base, sqe + info->sqe_size * sqe_offset, info->sqe_size * (num - sqe_offset));
-	}
-
-	j = tail;
-	for (i = 0; i < num; i++) {
-		if (j >= QM_Q_DEPTH) {
-			j = 0;
-		}
-		assert(!info->req_cache[j]);
-		info->req_cache[j] = sqe + i * info->sqe_size;
-		j++;
 	}
 }
 
