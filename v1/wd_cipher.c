@@ -52,7 +52,7 @@ struct wcrypto_cipher_ctx {
 	struct wcrypto_cipher_cookie cookies[WCRYPTO_CIPHER_CTX_MSG_NUM];
 	__u8 cstatus[WCRYPTO_CIPHER_CTX_MSG_NUM];
 	int cidx;
-	int ctx_id;
+	unsigned long ctx_id;
 	void *key;
 	__u32 key_bytes;
 	struct wd_queue *q;

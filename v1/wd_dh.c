@@ -48,7 +48,7 @@ struct wcrypto_dh_ctx {
 	__u8 cstatus[WD_DH_CTX_MSG_NUM];
 	int cidx;
 	__u32 key_size;
-	int ctx_id;
+	unsigned long ctx_id;
 	struct wd_queue *q;
 	struct wd_dtb g;
 	struct wcrypto_dh_ctx_setup setup;
