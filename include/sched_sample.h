@@ -27,6 +27,8 @@ struct sched_key {
 	__u8 type;
 };
 
+typedef __u32 (*user_poll_func)(handle_t h_ctx, __u32 num);
+
 /**
  * sample_sched_init - initialize the global sched info.
  * @sched_policy_type: the sched policy in the range of enum sched_mode.
@@ -67,4 +69,11 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
  */
 __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg);
 
+/**
+ * sample_sched_init - Schedule Init function.
+ * @sched_type: Reference sched_policy_type.
+ * @type_num: The service type num of user's service. For example, the zip include comp and un comp, type nume is two.
+ * @func: The ctx poll function of user underlying operating.
+ */
+__u32 sample_sched_init(__u8 sched_type, int type_num, user_poll_func func);
 #endif
