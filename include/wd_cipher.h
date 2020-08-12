@@ -120,7 +120,7 @@ extern void wd_cipher_uninit(void);
  * wd_alloc_cipher_sess() Allocate a wd cipher session
  * @ setup Parameters to setup this session.
  */
-extern int wd_alloc_cipher_sess(struct wd_cipher_sess_setup *setup);
+extern handle_t wd_alloc_cipher_sess(struct wd_cipher_sess_setup *setup);
 /**
  * wd_cipher_free_sess()
  * @ sess, need to be freed sess
