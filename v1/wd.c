@@ -52,7 +52,6 @@ FILE *flog_fd = NULL;
 
 wd_log log_out = NULL;
 
-#define offsetof(t, m) ((size_t) &((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
 		(type *)((char *)__mptr - offsetof(type, member)); })

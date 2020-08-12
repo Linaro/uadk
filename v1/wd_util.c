@@ -96,5 +96,5 @@ void wd_free_ctx_id(struct wd_queue *q, int ctx_id)
 	ctx_id--;
 	i = ctx_id / BYTE_TO_BIT;
 	j = ctx_id % BYTE_TO_BIT;
-	qinfo->ctx_id[i] &= ~(0x1 << j);
+	qinfo->ctx_id[i] &= ~(0x1u << j);
 }

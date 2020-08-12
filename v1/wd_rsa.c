@@ -49,7 +49,7 @@ struct wcrypto_rsa_ctx {
 	__u8 cstatus[WD_RSA_CTX_MSG_NUM];
 	int cidx;
 	__u32 key_size;
-	int ctx_id;
+	unsigned long ctx_id;
 	struct wd_queue *q;
 	struct wcrypto_rsa_pubkey *pubkey;
 	struct wcrypto_rsa_prikey *prikey;
