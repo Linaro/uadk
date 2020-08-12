@@ -1,6 +1,6 @@
 #ifndef SCHED_SAMPLE_h
 #define SCHED_SAMPLE_h
-#include "wd_comp.h"
+#include "wd_alg_common.h"
 
 /* The sched error number */
 enum sched_err_num {
