@@ -320,11 +320,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 
 	ret = hisi_qm_recv(ctx, &sqe);
 	if (ret < 0) {
-		if (ret != -EAGAIN) {
-			WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
-			return ret;
-		}
-	}
+		return ret;
 #ifdef DEBUG
 	WD_ERR("#######dump recv bd############!\n");
 	sec_dump_bd((unsigned int *)&sqe, 32);
@@ -335,27 +331,3 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	return 1;
 }
 
-int hisi_cipher_poll(handle_t ctx, __u32 count)
-{
-	return 0;
-}
-
-int hisi_sec_cipher_sync(handle_t ctx, struct wd_cipher_req *req)
-{
-	return 0;
-}
-
-int hisi_sec_cipher_async(handle_t ctx, struct wd_cipher_req *req)
-{
-	return 0;
-}
-
-int hisi_sec_cipher_recv_async(handle_t ctx, struct wd_cipher_req *req)
-{
-	return 0;
-}
-
-int hisi_hisi_sec_poll(handle_t ctx, __u32 num)
-{
-	return 0;
-}
