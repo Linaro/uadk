@@ -319,7 +319,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	int ret;
 
 	ret = hisi_qm_recv(ctx, &sqe);
-	if (ret < 0) {
+	if (ret < 0)
 		return ret;
 #ifdef DEBUG
 	WD_ERR("#######dump recv bd############!\n");
