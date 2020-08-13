@@ -117,10 +117,10 @@ struct wd_sched {
 extern int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched);
 extern void wd_cipher_uninit(void);
 /**
- * wd_alloc_cipher_sess() Allocate a wd cipher session
+ * wd_cipher_alloc_sess() Allocate a wd cipher session
  * @ setup Parameters to setup this session.
  */
-extern handle_t wd_alloc_cipher_sess(struct wd_cipher_sess_setup *setup);
+extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
 /**
  * wd_cipher_free_sess()
  * @ sess, need to be freed sess

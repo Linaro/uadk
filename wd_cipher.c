@@ -42,7 +42,6 @@ struct wd_cipher_driver {
 	void	(*exit)(void* priv);
 	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
 	int	(*cipher_recv)(handle_t ctx, struct wd_cipher_msg *msg);
-	int	(*poll)(handle_t ctx, __u32 num);
 };
 
 static struct wd_cipher_driver wd_cipher_driver_list[] = {
@@ -53,7 +52,6 @@ static struct wd_cipher_driver wd_cipher_driver_list[] = {
 		.exit		= hisi_sec_exit,
 		.cipher_send	= hisi_sec_cipher_send,
 		.cipher_recv	= hisi_sec_cipher_recv,
-		.poll	= hisi_cipher_poll,
 	},
 };
 
