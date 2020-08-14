@@ -192,6 +192,7 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 	c_msg->checksum = msg->checksum;
 	c_msg->tag = msg->tag;
 	msg->req = c_msg->req;
+	msg->sess = c_msg->sess;
 	return msg->req;
 }
 
@@ -355,21 +356,29 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	if (!sess)
 		return (handle_t)0;
 	sess->alg_type = setup->alg_type;
+	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
+	if (!sess->ctx_buf)
+		goto out_ctx;
 	return (handle_t)sess;
+out_ctx:
+	free(sess);
+	return (handle_t)0;
 }
 
 void wd_comp_free_sess(handle_t h_sess)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 
+	/* allocated in comp_prepare() */
+	free(sess->ctx_buf);
 	free(sess);
 }
 
-static int fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
+static int fill_comp_msg(struct wd_comp_sess *sess,
+			 struct wd_comp_msg *msg,
+			 struct wd_comp_req *req)
 {
-	msg->ctx_buf = calloc(1, HW_CTX_SIZE);
-	if (!msg->ctx_buf)
-		return -ENOMEM;
+	msg->ctx_buf = sess->ctx_buf;
 	msg->req = req;
 	msg->avail_out = req->dst_len;
 	msg->src = req->src;
@@ -396,7 +405,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
-	ret = fill_comp_msg(&msg, req);
+	ret = fill_comp_msg(sess, &msg, req);
 	if (ret < 0)
 		return ret;
 	msg.alg_type = sess->alg_type;
@@ -410,12 +419,11 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
-			goto err_recv;
+			return ret;
 		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				WD_ERR("wd_recv timeout fail!\n");
-				ret = -ETIMEDOUT;
-				goto err_recv;
+				return -ETIMEDOUT;
 			}
 		}
 	} while (ret < 0);
@@ -429,12 +437,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
 
-	free(msg.ctx_buf);
 	return 0;
-err_recv:
-	free(msg.ctx_buf);
-	return ret;
-
 }
 
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
@@ -448,7 +451,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
-	ret = fill_comp_msg(&msg, req);
+	ret = fill_comp_msg(sess, &msg, req);
 	if (ret < 0)
 		return ret;
 
@@ -465,12 +468,11 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
-			goto err_recv;
+			return ret;
 		} else if (ret == -WD_EBUSY) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				WD_ERR("wd_recv timeout fail!\n");
-				ret = -ETIMEDOUT;
-				goto err_recv;
+				return -ETIMEDOUT;
 			}
 		}
 	} while (ret < 0);
@@ -482,11 +484,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
 
-	free(msg.ctx_buf);
 	return 0;
-err_recv:
-	free(msg.ctx_buf);
-	return ret;
 }
 
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
@@ -500,7 +498,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, h_ctx, req);
-	ret = fill_comp_msg(msg, req);
+	ret = fill_comp_msg(sess, msg, req);
 	if (ret < 0) {
 		/* TODO: release msg */
 		return ret;

@@ -45,6 +45,7 @@ enum wd_comp_op_type {
 
 struct wd_comp_sess {
 	int	alg_type;
+	void	*ctx_buf;
 };
 
 struct wd_comp_req {

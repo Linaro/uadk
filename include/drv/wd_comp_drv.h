@@ -32,6 +32,7 @@ struct wd_comp_msg {
 	__u32 ctx_priv2; /* Denoted HW priv */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
 	__u64 udata;     /* Input user tag, indentify data of stream/user */
+	struct wd_comp_sess *sess;
 };
 
 struct wd_comp_driver {
