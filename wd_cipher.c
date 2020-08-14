@@ -349,8 +349,16 @@ void wd_cipher_uninit(void)
 	clear_config_in_global_setting();
 }
 
-int wd_alg_cipher_poll(handle_t handle, __u32 count)
+int wd_cipher_poll(__u32 *count)
 {
+	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
+	int ret;
+
+	ret = g_wd_cipher_setting.sched.poll_policy(config);
+	if (ret < 0)
+		return ret;
+	*count = ret;
+
 	return 0;
 }
 
