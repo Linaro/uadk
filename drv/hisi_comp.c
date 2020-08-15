@@ -122,6 +122,9 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	__u8 flush_type;
 	__u16 count = 0;
+	void *ctx_buf;
+	__u8 stream_pos;
+	__u8 state;
 	int ret;
 
 	memset(&sqe, 0, sizeof(struct hisi_zip_sqe));
@@ -140,23 +143,28 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.source_addr_h = upper_32_bits((__u64)msg->src);
 	sqe.dest_addr_l = lower_32_bits((__u64)msg->dst);
 	sqe.dest_addr_h = upper_32_bits((__u64)msg->dst);
-	sqe.stream_ctx_addr_l = lower_32_bits((__u64)msg->ctx_buf);
-	sqe.stream_ctx_addr_h = upper_32_bits((__u64)msg->ctx_buf);
+	ctx_buf = msg->ctx_buf + 64;  /* reserve 64 BYTE for ctx_dwx*/
+	sqe.stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
+	sqe.stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
 
+	state = (msg->stream_mode == WD_COMP_STATEFUL) ? HZ_STATEFUL :
+		HZ_STATELESS;
+	stream_pos = (msg->stream_pos == WD_COMP_STREAM_NEW) ? HZ_STREAM_NEW :
+		    HZ_STREAM_OLD;
+	flush_type = (msg->flush_type == WD_FINISH) ? HZ_FINISH :
+		     HZ_SYNC_FLUSH;
 
-	flush_type = (msg->flush_type == 1) ? HZ_FINISH :
-			  HZ_SYNC_FLUSH;
-	sqe.dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
-		     (STATEFUL << STREAM_MODE_SHIFT) |
-		     (flush_type)) << STREAM_FLUSH_SHIFT;
+	sqe.dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
+		    (state << STREAM_MODE_SHIFT) |
+		    (flush_type)) << STREAM_FLUSH_SHIFT;
 	sqe.input_data_length = msg->in_size;
 	if (msg->avail_out > MIN_AVAILOUT_SIZE)
 		sqe.dest_avail_out = msg->avail_out;
 	else
 		sqe.dest_avail_out = MIN_AVAILOUT_SIZE;
-	sqe.ctx_dw0 = msg->ctx_priv0;
-	sqe.ctx_dw1 = msg->ctx_priv1;
-	sqe.ctx_dw2 = msg->ctx_priv2;
+	sqe.ctx_dw0 = *(__u32 *)msg->ctx_buf;
+	sqe.ctx_dw1 = *(__u32 *)(msg->ctx_buf + 4);
+	sqe.ctx_dw2 = *(__u32 *)(msg->ctx_buf + 8); /* ctx_dwx use 4 BYTE*/
 	sqe.isize = msg->isize;
 	sqe.checksum = msg->checksum;
 	sqe.tag = msg->tag;
@@ -169,7 +177,6 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 
 	return ret;
 }
-
 
 static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 {
@@ -201,15 +208,15 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		recv_msg->status = 0;
 	}
 	recv_msg->in_cons = sqe.consumed;
-	recv_msg->in_size = sqe.input_data_length;
+	//recv_msg->in_size = sqe.input_data_length;
 	recv_msg->produced = sqe.produced;
 	recv_msg->avail_out = sqe.dest_avail_out;
-	recv_msg->comp_lv = 0;
-	recv_msg->op_type = 0;
-	recv_msg->win_size = 0;
-	recv_msg->ctx_priv0 = sqe.ctx_dw0;
-	recv_msg->ctx_priv1 = sqe.ctx_dw1;
-	recv_msg->ctx_priv2 = sqe.ctx_dw2;
+	//recv_msg->comp_lv = 0;
+	//recv_msg->op_type = 0;
+	//recv_msg->win_size = 0;
+	*(int *)recv_msg->ctx_buf = sqe.ctx_dw0;
+	*(int *)(recv_msg->ctx_buf + 4) = sqe.ctx_dw1;
+	*(int *)(recv_msg->ctx_buf + 8) = sqe.ctx_dw2;
 	recv_msg->isize = sqe.isize;
 	recv_msg->checksum = sqe.checksum;
 	recv_msg->tag = sqe.tag;

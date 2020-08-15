@@ -4,10 +4,27 @@
 
 #include "../wd_comp.h"
 
+enum wd_comp_strm_pos {
+	WD_COMP_STREAM_NEW,
+	WD_COMP_STREAM_OLD,
+};
+
+enum wd_comp_strm_flush_type {
+	WD_INVALID_FLUSH,
+	WD_NO_FLUSH,
+	WD_SYNC_FLUSH,
+	WD_FINISH,
+};
+
+enum wd_comp_state {
+	WD_COMP_STATEFUL,
+	WD_COMP_STATELESS,
+};
+
 /* fixme wd_comp_msg */
 struct wd_comp_msg {
 	struct wd_comp_req req;
-	__u32 tag_id;
+	__u32 tag;   	 /* request identifier */
 	__u8 alg_type;   /* Denoted by enum wcrypto_comp_alg_type */
 	__u8 op_type;    /* Denoted by enum wcrypto_comp_op_type */
 	__u8 flush_type; /* Denoted by enum wcrypto_comp_flush_type */
@@ -22,7 +39,6 @@ struct wd_comp_msg {
 	__u32 produced;  /* produced bytes of current operation */
 	__u8 *src;       /* Input data VA, buf should be DMA-able. */
 	__u8 *dst;       /* Output data VA pointer */
-	__u32 tag;       /* User-defined request identifier */
 	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
@@ -31,7 +47,6 @@ struct wd_comp_msg {
 	__u32 ctx_priv1; /* Denoted HW priv */
 	__u32 ctx_priv2; /* Denoted HW priv */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
-	__u64 udata;     /* Input user tag, indentify data of stream/user */
 	struct wd_comp_sess *sess;
 };
 

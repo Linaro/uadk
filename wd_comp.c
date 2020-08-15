@@ -356,10 +356,14 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess = calloc(1, sizeof(struct wd_comp_sess));
 	if (!sess)
 		return (handle_t)0;
-	sess->alg_type = setup->alg_type;
+
 	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
 	if (!sess->ctx_buf)
 		goto out_ctx;
+	
+	sess->alg_type = setup->alg_type;
+	sess->stream_pos = WD_COMP_STREAM_NEW;
+
 	return (handle_t)sess;
 out_ctx:
 	free(sess);
@@ -370,8 +374,12 @@ void wd_comp_free_sess(handle_t h_sess)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 
-	/* allocated in comp_prepare() */
-	free(sess->ctx_buf);
+	if (!sess)
+		return;
+
+	if (sess->ctx_buf)
+		free(sess->ctx_buf);
+
 	free(sess);
 }
 
@@ -386,9 +394,9 @@ static int fill_comp_msg(struct wd_comp_sess *sess,
 	msg->dst = req->dst;
 	msg->in_size = req->src_len;
 	/* 是否尾包 1: flush end; other: sync flush */
-	msg->flush_type = 1;
+	msg->flush_type = WD_FINISH;
 	/* 是否首包 1: new start; 0: old */
-	msg->stream_pos = 1;
+	msg->stream_pos = WD_COMP_STREAM_NEW;
 	//msg->isize = opdata->isize;
 	//msg->checksum = opdata->checksum;
 	msg->status = 0;
@@ -409,6 +417,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 	ret = fill_comp_msg(sess, &msg, req);
 	if (ret < 0)
 		return ret;
+	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
@@ -416,6 +425,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 		WD_ERR("wd_send err!\n");
 	}
 
+	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
@@ -455,22 +465,24 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	ret = fill_comp_msg(sess, &msg, req);
 	if (ret < 0)
 		return ret;
-
+	msg.stream_pos = sess->stream_pos;
+	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
 	/* fill trueth flag */
 	msg.flush_type = req->last;
-
+	msg.stream_mode = WD_COMP_STATEFUL;
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("wd_send err!\n");
 	}
 
+	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
-			return ret;
-		} else if (ret == -WD_EBUSY) {
+			goto err_recv;
+		} else if (ret == -WD_EBUSY || ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				WD_ERR("wd_recv timeout fail!\n");
 				return -ETIMEDOUT;
@@ -485,7 +497,11 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
 
+	sess->stream_pos = WD_COMP_STREAM_OLD;
+
 	return 0;
+err_recv:
+	return ret;
 }
 
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
