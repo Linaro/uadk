@@ -611,6 +611,124 @@ out:
 	return ret;
 }
 
+/*
+ * Test to compress and decompress steram.
+ * long buffer can spilt to small package.
+ */
+int test_comp_stream(int flag)
+{
+	struct wd_comp_sess_setup	setup;
+	struct wd_comp_req	req;
+	handle_t	h_sess;
+	char	buf[TEST_WORD_LEN];
+	void	*src, *dst;
+	int	ret = 0, t;
+
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+
+	memset(&req, 0, sizeof(struct wd_comp_req));
+	req.dst_len = sizeof(char) * TEST_WORD_LEN;
+	req.src = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.src)
+		return -ENOMEM;
+	req.dst = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	src = req.src;
+	dst = req.dst;
+	memcpy(req.src, word, sizeof(char) * strlen(word));
+	req.src_len = strlen(word);
+	t = 0;
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	while (1) {
+		req.status = 0;
+		req.dst_len = TEST_WORD_LEN;
+		req.op_type = CTX_TYPE_COMP;
+		req.last = 1;
+		//req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
+		ret = wd_do_comp_strm(h_sess, &req);
+		if (ret) {
+			printf("err, do_comp_strm ret =%d\n", ret);
+			break;
+		}
+		if (!req.status ) {
+			memcpy(buf + t, req.dst, req.dst_len);
+			t += req.dst_len;
+			req.dst = dst;
+			break;
+		}
+	}
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	/* prepare to decompress */
+	req.src = src;
+	memcpy(req.src, buf, t);
+	req.src_len = t;
+	req.dst = dst;
+	t = 0;
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	while (1) {
+		req.status = 0;
+		req.dst_len = TEST_WORD_LEN;
+		req.op_type = CTX_TYPE_DECOMP;
+		req.last = 1;
+		//req.flag = FLAG_INPUT_FINISH;
+		ret = wd_do_comp_strm(h_sess, &req);
+		if (ret < 0) {
+			printf("err, do_comp_strm ret =%d\n", ret);
+			goto out_comp;
+		}
+		if (!ret) {
+			memcpy(buf + t, req.dst, req.dst_len);
+			t += req.dst_len;
+			req.dst = dst;
+			break;
+		}
+	}
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	if (memcmp(buf, word, strlen(word))) {
+		printf("stream match failure! word:%s, buf:%s\n", word, buf);
+	} else {
+		printf("Pass compress stream test!\n");
+	}
+
+	free(src);
+	free(dst);
+	return 0;
+out_comp:
+	wd_comp_free_sess(h_sess);
+out_sess:
+	free(req.src);
+out:
+	return ret;
+}
+
 static void *async_cb(struct wd_comp_req *req, void *data)
 {
 	thread_data_t *thr = (thread_data_t *)data;
@@ -949,6 +1067,7 @@ int main(int argc, char **argv)
 
 	RUN_TEST(test_comp_sync_once_1, "sync_once #1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_sync_once_2, "sync_once #2", FLAG_ZLIB, ret);
+	RUN_TEST(test_comp_stream, "stream_once #1", FLAG_ZLIB, ret);
 #if 0
 	RUN_TEST(test_comp_sync_multi_1, "sync_multi 1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_sync_multi_2, "sync_multi 2", FLAG_ZLIB, ret);
@@ -956,5 +1075,6 @@ int main(int argc, char **argv)
 #endif
 	RUN_TEST(test_comp_async1_once, "async 1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_async2_once, "async 2", FLAG_ZLIB, ret);
+	
 	return 0;
 }
