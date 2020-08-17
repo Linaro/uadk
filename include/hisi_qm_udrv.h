@@ -47,7 +47,7 @@ struct hisi_qp {
 extern handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data);
 extern void hisi_qm_free_ctx(handle_t h_ctx);
 extern int hisi_qm_send(handle_t h_ctx, void *req, __u16 num);
-extern int hisi_qm_recv(handle_t h_ctx, void *resp);
+extern int hisi_qm_recv(handle_t h_qp, void *resp, __u16 num);
 extern handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx);
 extern void hisi_qm_free_qp(handle_t h_qp);
 

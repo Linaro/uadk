@@ -68,9 +68,10 @@ static int wd_recv_sync(struct wd_scheduler *sched, handle_t h_ctx,
 			void **resp, __u16 ms)
 {
 	int ret;
+	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(h_ctx);
 
 	while (1) {
-		ret = sched->hw_recv(h_ctx, resp);
+		ret = sched->hw_recv(h_qp, resp, 1);
 		if (ret == -EBUSY) {
 			ret = wd_wait(h_ctx, ms);
 			if (ret)

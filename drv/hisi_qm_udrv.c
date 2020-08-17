@@ -279,16 +279,11 @@ int hisi_qm_send(handle_t h_ctx, void *req, __u16 num)
 	return send_num;
 }
 
-int hisi_qm_recv(handle_t h_ctx, void *resp)
+int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 {
-	struct hisi_qp			*qp;
-	struct hisi_qm_queue_info	*q_info;
 	__u16 i, j;
-	int ret;
 	struct cqe *cqe;
 
-	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
-	q_info = &qp->q_info;
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
 
@@ -299,10 +294,7 @@ int hisi_qm_recv(handle_t h_ctx, void *resp)
 			errno = -EIO;
 			return -EIO;
 		}
-		memcpy(resp,
-			(void *)q_info->sq_base + j * q_info->sqe_size,
-			q_info->sqe_size);
-		ret = 0;
+		memcpy(resp, (void *)q_info->sq_base + j * q_info->sqe_size, q_info->sqe_size);
 		if (q_info->is_sq_full)
 			q_info->is_sq_full = 0;
 	} else
@@ -319,5 +311,29 @@ int hisi_qm_recv(handle_t h_ctx, void *resp)
 	q_info->cq_head_index = i;
 	q_info->sq_head_index = i;
 
-	return ret;
+	return 0;
+}
+
+int hisi_qm_recv(handle_t h_qp, void *resp, __u16 num) {
+	int i, offset;
+	int ret = 0;
+	int recv_num;
+	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
+	struct hisi_qm_queue_info *q_info = NULL;
+
+	if (!resp || !qp)
+		return -EINVAL;
+
+	q_info = &qp->q_info;
+
+	for (i = 0; i < num; i++) {
+		offset = i *q_info->sqe_size;
+		ret = hisi_qm_recv_single(q_info, resp + offset);
+		if (ret)
+			WD_ERR("hisi_qm_recv_single(%d) error\n", ret);
+			break;
+	}
+
+	recv_num = i - 1;
+	return recv_num;
 }

@@ -159,7 +159,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.checksum = msg->checksum;
 	sqe.tag = msg->tag;
 	ret = hisi_qm_send(ctx, &sqe, 1);
-	if (ret < 0) {
+	if (ret <= 0) {
 		WD_ERR("hisi_qm_send is err(%d)!\n", ret);
 		return ret;
 	}
@@ -172,9 +172,10 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 {
 	struct hisi_zip_sqe sqe;
 	int ret;
+	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
 
-	ret = hisi_qm_recv(ctx, &sqe);
-	if (ret < 0) {
+	ret = hisi_qm_recv(h_qp, &sqe, 1);
+	if (ret <= 0) {
 		if (ret != -EAGAIN)
 			WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
 		return ret;
