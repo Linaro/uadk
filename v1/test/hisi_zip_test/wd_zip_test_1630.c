@@ -25,12 +25,10 @@
 #include <unistd.h>
 
 #include "../../drv/hisi_qm_udrv.h"
-#include "../smm.h"
 #include "../../wd.h"
 #include "../../wd_bmm.h"
 #include "../../wd_comp.h"
 #include "../../wd_util.h"
-#include "zip_alg.h"
 
 typedef unsigned int u32;
 typedef unsigned char u8;
@@ -69,10 +67,21 @@ struct user_comp_tag_info {
 
 #define TEST_MAX_THRD			2048UL
 #define MAX_CORES			128
-#define DMEMSIZE			(1024 * 1024)	/* 1M */
+#define DMEMSIZE			(1024 * 4)	/* 4K */
 
 #define MAX(a, b)			((a) > (b) ? (a) : (b))
 #define MIN(a, b)			((a) < (b) ? (a) : (b))
+
+#define SYS_ERR_COND(cond, msg, ...) \
+do { \
+	if (cond) { \
+		if (errno) \
+			perror(msg); \
+		else \
+			fprintf(stderr, msg, ##__VA_ARGS__); \
+		exit(EXIT_FAILURE); \
+	} \
+} while (0)
 
 static struct zip_test_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static pthread_t system_test_thrds[TEST_MAX_THRD];
@@ -102,8 +111,8 @@ static void zip_test_callback(const void *msg, void *tag)
 	const struct user_comp_tag_info *utag = tag;
 	int i = utag->tag;
 	struct zip_test_pthread_dt *pdata = &test_thrds_data[i];
-	int head_size = TO_HEAD_SIZE(pdata->alg_type);
 	const u8 *head = TO_HEAD(pdata->alg_type);
+	int head_size = 0;
 
 
 	dbg("%s start!\n", __func__);
@@ -111,6 +120,7 @@ static void zip_test_callback(const void *msg, void *tag)
 	pdata->dst_len = respmsg->produced;
 
 	if (pdata->op_type == WCRYPTO_DEFLATE) {
+		head_size = TO_HEAD_SIZE(pdata->alg_type);
 		memcpy(pdata->dst, head, head_size);
 		pdata->dst_len += head_size;
 	}
@@ -194,9 +204,9 @@ static void *zip_test_stream_thread(void *args)
 	unsigned char *dst = pdata->dst;
 	unsigned char *ori = opdata->in;
 	int alg_type = pdata->alg_type;
-	int head_size = TO_HEAD_SIZE(alg_type);
 	const u8 *head = TO_HEAD(alg_type);
 	int srclen = pdata->src_len;
+	int head_size = 0;
 	int ret, have;
 
 	dbg("%s start!\n", __func__);
@@ -204,6 +214,7 @@ static void *zip_test_stream_thread(void *args)
 	pdata->dst_len = 0;
 
 	if (pdata->op_type == WCRYPTO_DEFLATE) {
+		head_size = TO_HEAD_SIZE(alg_type);
 		memcpy(dst, head, head_size);
 		pdata->dst_len += head_size;
 		dst += head_size;
@@ -225,8 +236,11 @@ static void *zip_test_stream_thread(void *args)
 		do {
 			opdata->avail_out = block_size;
 			ret = wcrypto_do_comp(pdata->ctx, opdata, NULL);
-			if (ret)
+			if (ret) {
+				WD_ERR("%s failed to do request! ret = %d\n",
+				       __func__, ret);
 				return NULL;
+			}
 
 			opdata->stream_pos = WCRYPTO_COMP_STREAM_OLD;
 			have = opdata->produced;
@@ -250,9 +264,9 @@ static void *zip_test_block_thread(void *args)
 {
 	struct zip_test_pthread_dt *pdata = args;
 	int alg_type = pdata->alg_type;
-	int head_size = TO_HEAD_SIZE(alg_type);
 	const u8 *head = TO_HEAD(alg_type);
 	int i = pdata->iteration;
+	int head_size = 0;
 	int ret;
 
 	dbg("%s start!\n", __func__);
@@ -263,14 +277,16 @@ static void *zip_test_block_thread(void *args)
 
 	do {
 		ret = wcrypto_do_comp(pdata->ctx, pdata->opdata, NULL);
-		if (ret)
-			i++;
-		else if (ret != 0)
+		if (ret) {
+			WD_ERR("%s failed to do request! ret = %d\n",
+			       __func__, ret);
 			return NULL;
+		}
 
 		pdata->dst_len = pdata->opdata->produced;
 
 		if (pdata->op_type == WCRYPTO_DEFLATE) {
+			head_size = TO_HEAD_SIZE(alg_type);
 			memcpy(pdata->dst, head, head_size);
 			pdata->dst_len += head_size;
 		}
@@ -393,14 +409,14 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 		}
 
 		pdata->opdata->alg_type = alg_type;
-		pdata->opdata->avail_out = DMEMSIZE;
+		pdata->opdata->avail_out = block_size;
 		pdata->opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 		pdata->opdata->in = wd_alloc_blk(pdata->pool);
 		pdata->opdata->out = wd_alloc_blk(pdata->pool);
 		if (pdata->opdata->in == NULL || pdata->opdata->out == NULL) {
 			ret = -ENOMEM;
 			WD_ERR("%s not enough data memory for cache (bs=%d)\n",
-			       __func__, DMEMSIZE);
+			       __func__, block_size);
 			goto err_buffer_free;
 		}
 	}
