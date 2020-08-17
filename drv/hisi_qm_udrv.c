@@ -243,14 +243,13 @@ void hisi_qm_free_qp(handle_t h_qp)
 }
 
 
-int hisi_qm_send(handle_t h_ctx, void *req, __u16 num)
+int hisi_qm_send(handle_t h_qp, void *req, __u16 num)
 {
-	struct hisi_qp *qp;
+	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	struct hisi_qm_queue_info *q_info;
 	__u16 tail;
 	__u16 free_num, send_num;
 
-	qp = (struct hisi_qp *)wd_ctx_get_sess_priv(h_ctx);
 	if (!qp)
 		return -EINVAL;
 

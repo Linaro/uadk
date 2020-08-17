@@ -119,6 +119,7 @@ static void hisi_zip_exit(void *priv)
 static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
 	struct hisi_zip_sqe sqe;
+	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
 	__u8 flush_type;
 	int ret;
 
@@ -158,7 +159,8 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.isize = msg->isize;
 	sqe.checksum = msg->checksum;
 	sqe.tag = msg->tag;
-	ret = hisi_qm_send(ctx, &sqe, 1);
+
+	ret = hisi_qm_send(h_qp, &sqe, 1);
 	if (ret <= 0) {
 		WD_ERR("hisi_qm_send is err(%d)!\n", ret);
 		return ret;

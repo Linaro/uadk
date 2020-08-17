@@ -83,13 +83,14 @@ static int wd_recv_sync(struct wd_scheduler *sched, handle_t h_ctx,
 
 static int __sync_send(struct wd_scheduler *sched) {
 	int ret;
+	handle_t h_qp;
 
 	dbg("send ci(%d) to q(%d): %p\n", sched->c_h, sched->q_h,
 	    sched->msgs[sched->c_h].msg);
 	do {
 		sched->stat[sched->q_h].send++;
-		ret = sched->hw_send(sched->qs[sched->q_h],
-				     sched->msgs[sched->c_h].msg, 1);
+		h_qp = (handle_t)wd_ctx_get_sess_priv(sched->qs[sched->q_h]);
+		ret = sched->hw_send(h_qp, sched->msgs[sched->c_h].msg, 1);
 		if (ret == -EBUSY) {
 			usleep(1);
 			sched->stat[sched->q_h].send_retries++;

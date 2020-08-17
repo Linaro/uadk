@@ -260,6 +260,7 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
 	struct hisi_sec_sqe sqe;
+	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
 	__u8 scene, cipher;
 	__u8 de;
 	int ret;
@@ -305,7 +306,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	WD_ERR("#######dump send bd############!\n");
 	sec_dump_bd((unsigned int *)&sqe, 32);
 #endif
-	ret = hisi_qm_send(ctx, &sqe, 1);
+	ret = hisi_qm_send(h_qp, &sqe, 1);
 	if (ret <= 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
 		return ret;
