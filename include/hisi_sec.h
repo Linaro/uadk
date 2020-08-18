@@ -81,36 +81,9 @@ static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
 };
 #endif
-struct wd_cipher_msg {
-	struct wd_cipher_req req;
-	__u32 tag_id;
-	__u8 alg_type;		/* Denoted by enum wcrypto_type */
-	__u8 alg;		/* Denoted by enum wcrypto_cipher_type */
-	__u8 op_type;		/* Denoted by enum wcrypto_cipher_op_type */
-	__u8 mode;		/* Denoted by enum wcrypto_cipher_mode_type */
-	__u8 data_fmt;		/* Data format, include pbuffer and sgl */
-	__u8 result;		/* Operation result, denoted by WD error code */
-
-	__u16 key_bytes;	/* Key bytes */
-	__u16 iv_bytes;		/* iv bytes */
-	__u32 in_bytes;		/* in bytes */
-	__u32 out_bytes;	/* out_bytes */
-
-	__u8 *key;		/* input key pointer */
-	__u8 *iv;		/* input iv pointer */
-	__u8 *in;		/* input data pointer */
-	__u8 *out;		/* output data pointer  */
-};
 
 struct hisi_sec_ctx {
 	struct wd_ctx_config config;
 };
 
-extern int hisi_sec_init(struct wd_ctx_config *config, void *priv);
-extern void hisi_sec_exit(void *priv);
-extern int hisi_cipher_poll(handle_t ctx, __u32 num);
-extern int hisi_digest_poll(handle_t ctx, __u32 num);
-extern int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg);
-extern int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *msg);
-extern int hisi_sec_cipher_recv_async(handle_t ctx, struct wd_cipher_req *req);
 #endif	/* __HISI_SEC_H */

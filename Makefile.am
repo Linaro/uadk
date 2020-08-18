@@ -21,11 +21,10 @@ libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h wd_sched.c wd_sched.h smm.c smm.h
 libhisi_zip_la_LIBADD= -ldl
 
-libwd_cipher_la_SOURCES=wd_cipher.c wd_cipher.h \
-		drv/hisi_sec.c hisi_sec.h drv/hisi_qm_udrv.c hisi_qm_udrv.h
+libwd_cipher_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h
 libwd_cipher_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 
-libhisi_sec_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
-		hisi_qm_udrv.h wd_sched.c wd_sched.h smm.c smm.h
+libhisi_sec_la_SOURCES=drv/hisi_sec.c hisi_sec.h drv/hisi_qm_udrv.c \
+		hisi_qm_udrv.h wd_cipher_drv.h wd_sched.c wd_sched.h smm.c smm.h
 libhisi_sec_la_LIBADD= -ldl
 SUBDIRS=. test

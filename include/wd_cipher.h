@@ -2,6 +2,7 @@
 #ifndef __WD_CIPHER_H
 #define __WD_CIPHER_H
 
+#include <dlfcn.h>
 #include "config.h"
 #include "wd.h"
 
@@ -130,5 +131,5 @@ extern int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 k
 extern int wd_do_cipher(handle_t sess, struct wd_cipher_req *req);
 extern int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req);
 extern int wd_cipher_poll_ctx(handle_t sess, __u32 count);
-extern int wd_cipher_poll(__u32 *count);
+extern int wd_cipher_poll(__u32 expt, __u32 *count);
 #endif /* __WD_CIPHER_H */

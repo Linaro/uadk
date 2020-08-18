@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include "hisi_sec.h"
+#include "../include/drv/wd_cipher_drv.h"
 
 #define SEC_DIGEST_ALG_OFFSET 11
 #define BD_TYPE2 	      0x2
@@ -259,18 +260,18 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
-	struct hisi_sec_sqe sqe;
 	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
-	__u8 scene, cipher;
-	__u8 de;
+	struct hisi_sec_sqe sqe;
+	__u8 scene, cipher, de;
 	int ret;
 
 	if (!msg) {
 		WD_ERR("input cipher msg is NULL!\n");
 		return -EINVAL;
 	}
-	/* config BD type */
+
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
+	/* config BD type */
 	sqe.type_auth_cipher = BD_TYPE2;
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
@@ -333,3 +334,13 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	return 1;
 }
 
+static struct wd_cipher_driver hisi_cipher_driver = {
+		.drv_name	= "hisi_sec2",
+		.alg_name	= "cipher",
+		.init		= hisi_sec_init,
+		.exit		= hisi_sec_exit,
+		.cipher_send	= hisi_sec_cipher_send,
+		.cipher_recv	= hisi_sec_cipher_recv,
+};
+
+WD_CIPHER_SET_DRIVER(hisi_cipher_driver);

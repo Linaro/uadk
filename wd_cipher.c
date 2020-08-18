@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include <stdlib.h>
 #include "hisi_sec.h"
 #include "wd_cipher.h"
+#include "include/drv/wd_cipher_drv.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
@@ -34,28 +36,34 @@ struct wd_cipher_setting {
 	struct wd_async_msg_pool pool;
 };
 
-struct wd_cipher_driver {
-	const char	*drv_name;
-	const char	*alg_name;
-	__u32	drv_ctx_size;
-	int	(*init)(struct wd_ctx_config *config, void* priv);
-	void	(*exit)(void* priv);
-	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
-	int	(*cipher_recv)(handle_t ctx, struct wd_cipher_msg *msg);
-};
-
-static struct wd_cipher_driver wd_cipher_driver_list[] = {
-	{
-		.drv_name	= "hisi_sec2",
-		.alg_name	= "cipher",
-		.init		= hisi_sec_init,
-		.exit		= hisi_sec_exit,
-		.cipher_send	= hisi_sec_cipher_send,
-		.cipher_recv	= hisi_sec_cipher_recv,
-	},
-};
-
 static struct wd_cipher_setting g_wd_cipher_setting;
+extern struct wd_cipher_driver wd_cipher_hisi_sec;
+
+#ifdef WD_STATIC_DRV
+static void wd_cipher_set_static_drv(void)
+{
+	/*
+	 * Fix me: a parameter can be introduced to decide to choose
+	 * specific driver. Same as dynamic case.
+	 */
+	g_wd_cipher_setting.driver = &wd_cipher_hisi_sec;
+}
+#else
+static void __attribute__((constructor)) wd_cipher_open_driver(void)
+{
+	void *driver;
+
+	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
+	driver = dlopen("/usr/lib/wd/libhisi_sec.so", RTLD_NOW);
+	if (!driver)
+		WD_ERR("Fail to open libhisi_sec.so\n");
+}
+#endif
+
+void wd_cipher_set_driver(struct wd_cipher_driver *drv)
+{
+	g_wd_cipher_setting.driver = drv;
+}
 
 static int is_des_weak_key(const __u64 *key, __u16 keylen)
 {
@@ -158,25 +166,6 @@ void wd_cipher_free_sess(handle_t h_sess)
 
 	free(sess);
 }
-/* support cipher only */
-static struct wd_cipher_driver *find_cipher_driver(const char *driver)
-{
-	const char *drv_name;
-	bool found = false;
-
-	if (!driver)
-		return NULL;
-
-	drv_name = wd_cipher_driver_list[0].drv_name;
-	if (!strncmp(driver, drv_name, strlen(driver))) {
-		found = true;
-	}
-
-	if (!found)
-		return NULL;
-
-	return &wd_cipher_driver_list[0];
-}
 
 static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 {
@@ -276,9 +265,6 @@ static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
 
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	struct wd_cipher_driver *driver;
-	const char *driver_name;
-	handle_t h_ctx;
 	void *priv;
 	int ret;
 
@@ -300,11 +286,11 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out;
 	}
 
+
 	/* find driver and set driver */
-	h_ctx = config->ctxs[0].ctx; // like a q from wd v1
-	driver_name = wd_get_driver_name(h_ctx);
-	driver = find_cipher_driver(driver_name);
-	g_wd_cipher_setting.driver = driver;
+#ifdef WD_STATIC_DRV
+	wd_cipher_set_static_drv();
+#endif
 
 	/* alloc sched context memory */
 	g_wd_cipher_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
@@ -349,7 +335,7 @@ void wd_cipher_uninit(void)
 	clear_config_in_global_setting();
 }
 
-int wd_cipher_poll(__u32 *count)
+int wd_cipher_poll(__u32 expt, __u32 *count)
 {
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	int ret;
