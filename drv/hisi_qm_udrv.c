@@ -333,6 +333,6 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 num) {
 			break;
 	}
 
-	recv_num = i - 1;
+	recv_num = i + 1;
 	return recv_num;
 }
