@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdlib.h>
-#include "hisi_sec.h"
 #include "wd_cipher.h"
 #include "include/drv/wd_cipher_drv.h"
 
@@ -37,7 +36,7 @@ struct wd_cipher_setting {
 };
 
 static struct wd_cipher_setting g_wd_cipher_setting;
-extern struct wd_cipher_driver wd_cipher_hisi_sec;
+extern struct wd_cipher_driver wd_cipher_hisi_cipher_driver;
 
 #ifdef WD_STATIC_DRV
 static void wd_cipher_set_static_drv(void)
@@ -46,7 +45,7 @@ static void wd_cipher_set_static_drv(void)
 	 * Fix me: a parameter can be introduced to decide to choose
 	 * specific driver. Same as dynamic case.
 	 */
-	g_wd_cipher_setting.driver = &wd_cipher_hisi_sec;
+	g_wd_cipher_setting.driver = &wd_cipher_hisi_cipher_driver;
 }
 #else
 static void __attribute__((constructor)) wd_cipher_open_driver(void)
