@@ -2072,8 +2072,8 @@ int main(int argc, char *argv[])
 		printf("cipher %d\n", wd_get_available_dev_num("cipher"));
 		g_testalg = strtoul((char*)argv[2], NULL, 10);
 		g_algclass = CIPHER_CLASS;
-	} else if (!strcmp(argv[1], "-digist")) {
-		printf("digist %d\n", wd_get_available_dev_num("digist"));
+	} else if (!strcmp(argv[1], "-digest")) {
+		printf("digest %d\n", wd_get_available_dev_num("digest"));
 		g_testalg = strtoul((char*)argv[2], NULL, 10);
 		g_algclass = DIGEST_CLASS;
 	} else if (!strcmp(argv[1], "-aead")) {
