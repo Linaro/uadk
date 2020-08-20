@@ -16,6 +16,11 @@
 #define WD_HW_EACCESS 			62
 #define MAX_RETRY_COUNTS		1000	//200000000
 
+#define WD_COMP_BUF_MIN			(1 << 12)	// 4KB
+#define WD_COMP_BUF_MIN_MASK		0xFFF
+#define WD_COMP_BUF_MAX			(1 << 23)	// 8MB
+#define WD_COMP_BUF_MAX_MASK		0x7FFFFF
+
 struct msg_pool {
 	struct wd_comp_msg msg[WD_POOL_MAX_ENTRIES];
 	int used[WD_POOL_MAX_ENTRIES];
@@ -356,11 +361,21 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	if (!sess)
 		return (handle_t)0;
 	sess->alg_type = setup->alg_type;
+	sess->swap_in = calloc(1, WD_COMP_BUF_MIN);
+	if (!sess->swap_in)
+		goto out;
+	sess->swap_out = calloc(1, WD_COMP_BUF_MIN);
+	if (!sess->swap_out)
+		goto out_swap;
 	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
 	if (!sess->ctx_buf)
 		goto out_ctx;
 	return (handle_t)sess;
 out_ctx:
+	free(sess->swap_out);
+out_swap:
+	free(sess->swap_in);
+out:
 	free(sess);
 	return (handle_t)0;
 }
@@ -371,27 +386,172 @@ void wd_comp_free_sess(handle_t h_sess)
 
 	/* allocated in comp_prepare() */
 	free(sess->ctx_buf);
+	free(sess->swap_in);
+	free(sess->swap_out);
 	free(sess);
 }
 
-static int fill_comp_msg(struct wd_comp_sess *sess,
-			 struct wd_comp_msg *msg,
-			 struct wd_comp_req *req)
+static inline int need_swap(struct wd_comp_sess *sess, int buf_size)
 {
+	if (buf_size < WD_COMP_BUF_MIN)
+		return 1;
+	return 0;
+}
+
+static inline int need_split(struct wd_comp_sess *sess, int buf_size)
+{
+	if (buf_size > WD_COMP_BUF_MAX)
+		return 1;
+	return 0;
+}
+
+static inline int is_in_swap(struct wd_comp_sess *sess, void *addr, void *swap)
+{
+	if (((uint64_t)addr & ~WD_COMP_BUF_MIN_MASK) ==
+	    ((uint64_t)swap & ~WD_COMP_BUF_MIN_MASK))
+		return 1;
+	return 0;
+}
+
+/*
+ * sess->next_in & sess->next_out are updated if split.
+ * req->src & req->dst won't be changed even if split.
+ */
+static int comp_prepare(struct wd_comp_sess *sess,
+			struct wd_comp_msg *msg,
+			struct wd_comp_req *req
+			)
+{
+	int /*  skipped = 0, */templen;
+
+	/* Check whether it's the first operation in the session. */
+	if (!sess->begin)
+		msg->stream_pos = 1;
+
+	req->status = 0;
+
+	/* Update loaded_in & avail_in */
+	if (sess->loaded_in && sess->avail_in) {
+		/* src data is cached */
+		if (sess->avail_in >= req->src_len) {
+			templen = req->src_len;
+			req->status |= STATUS_IN_EMPTY;
+		} else {
+			templen = sess->avail_in;
+			req->status |= STATUS_IN_PART_USE;
+		}
+		if (is_in_swap(sess, sess->next_in, sess->swap_in))
+			memcpy(sess->next_in + sess->loaded_in,
+			       req->src,
+			       templen
+			       );
+		else if (sess->next_in != req->src) {
+			/*
+			 * It's not using SWAP_IN, use previous req->src as
+			 * cached src address. So the new coming src data must
+			 * be continuous.
+			 */
+			req->status = 0;
+			return -EINVAL;
+		}
+		sess->avail_in -= templen;
+		sess->loaded_in += templen;
+	} else if (!sess->loaded_in) {
+		if (need_swap(sess, req->src_len)) {
+			/* Store a new request in SWAP_IN. */
+			sess->next_in = sess->swap_in;
+			sess->avail_in = WD_COMP_BUF_MIN;
+			memcpy(sess->next_in, req->src, req->src_len);
+			sess->avail_in -= req->src_len;
+			sess->loaded_in += req->src_len;
+			req->status |= STATUS_IN_EMPTY;
+		} else {
+			sess->next_in = req->src;
+			sess->avail_in = req->src_len;
+			if (sess->avail_in >= req->src_len) {
+				templen = req->src_len;
+				req->status |= STATUS_IN_EMPTY;
+			} else {
+				templen = sess->avail_in;
+				req->status |= STATUS_IN_PART_USE;
+			}
+			sess->avail_in -= templen;
+			sess->loaded_in += templen;
+		}
+	}
+
+	if (sess->undrained)
+		return 0;
+
+	/* Set avail_out */
+	if (need_swap(sess, req->dst_len)) {
+		sess->avail_out = WD_COMP_BUF_MIN;
+		sess->next_out = sess->swap_out;
+	} else if (need_split(sess, req->dst_len)) {
+		sess->next_out = req->dst;
+		sess->avail_out = WD_COMP_BUF_MAX;
+	} else {
+		sess->next_out = req->dst;
+		sess->avail_out = req->dst_len;
+	}
+
+	if (sess->loaded_in) {
+		if (!sess->avail_in)
+			sess->full = 1;
+		/* no more data */
+		if (!req->src_len && (req->flag = FLAG_INPUT_FINISH))
+			sess->full = 1;
+		msg->in_size = sess->loaded_in;
+	}
+	msg->op_type = req->op_type;
+	msg->src = sess->next_in;
+	msg->dst = sess->next_out;
+	msg->avail_out = sess->avail_out;
 	msg->ctx_buf = sess->ctx_buf;
 	msg->req = req;
-	msg->avail_out = req->dst_len;
-	msg->src = req->src;
-	msg->dst = req->dst;
-	msg->in_size = req->src_len;
-	/* 是否尾包 1: flush end; other: sync flush */
-	msg->flush_type = 1;
-	/* 是否首包 1: new start; 0: old */
-	msg->stream_pos = 1;
-	//msg->isize = opdata->isize;
-	//msg->checksum = opdata->checksum;
-	msg->status = 0;
+	msg->sess = sess;
+
+#if 0
+	if (!sess->load_head && req->op_type == WD_DIR_DECOMPRESS) {
+		if (sess->alg_type == WD_ZLIB)
+			skipped = 2;
+		else if (sess->alg_type == WD_GZIP)
+			skipped = 10;
+		if (sess->loaded_in >= skipped) {
+			sess->skipped = skipped;
+			sess->load_head = 1;
+		}
+	}
+#endif
 	return 0;
+}
+
+static void comp_post(struct wd_comp_sess *sess,
+		      struct wd_comp_msg *msg,
+		      struct wd_comp_req *req
+		      )
+{
+	int templen;
+
+	if (sess->undrained) {
+		if (sess->undrained >= req->dst_len)
+			templen = req->dst_len;
+		else
+			templen = sess->undrained;
+		if (is_in_swap(sess, sess->next_out, sess->swap_out))
+			memcpy(req->dst, sess->next_out, templen);
+		sess->next_out += templen;
+		req->dst_len = templen;
+		sess->undrained -= templen;
+		req->status |= STATUS_OUT_READY;
+	}
+	if (!sess->undrained) {
+		if (req->status & STATUS_OUT_READY)
+			req->status |= STATUS_OUT_DRAINED;
+		sess->next_out = NULL;
+	}
+	if (!sess->loaded_in)
+		sess->next_in = NULL;
 }
 
 int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
@@ -405,85 +565,60 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
-	ret = fill_comp_msg(sess, &msg, req);
+	ret = comp_prepare(sess, &msg, req);
 	if (ret < 0)
-		return ret;
+	        return ret;
 	msg.alg_type = sess->alg_type;
 
-	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
-	if (ret < 0) {
-		WD_ERR("wd_send err!\n");
-	}
-
-	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
-			return ret;
-		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd_recv timeout fail!\n");
-				return -ETIMEDOUT;
-			}
+	if (sess->loaded_in) {
+		if (req->flag & FLAG_INPUT_FINISH)
+			msg.flush_type = 1;
+		else if (sess->full) {
+			msg.flush_type = 0;
+			sess->full = 0;
+		} else {
+			comp_post(sess, &msg, req);
+			return 0;
 		}
-	} while (ret < 0);
+		ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
+		if (ret < 0) {
+			WD_ERR("wd_send err!\n");
+			return ret;
+		}
+		sess->begin = 1;
 
-	req->src_len = resp_msg.in_cons;
-	req->dst_len = resp_msg.produced;
-	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
-	req->flag = FLAG_INPUT_FINISH;
-	//req->flush = resp->flush_type;
-	//req->status = resp->status;
-	//req->isize = resp->isize;
-	//req->checksum = resp->checksum;
+		do {
+			ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+			if (ret == -WD_HW_EACCESS) {
+				WD_ERR("wd_recv hw err!\n");
+				return ret;
+			} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+				if (++recv_count > MAX_RETRY_COUNTS) {
+					WD_ERR("wd_recv timeout fail!\n");
+					return -ETIMEDOUT;
+				}
+			}
+		} while (ret < 0);
+		if (req->src_len == resp_msg.in_cons) {
+			req->status &= ~STATUS_IN_PART_USE;
+		        req->status |= STATUS_IN_EMPTY;
+		} else if (req->src_len > resp_msg.in_cons) {
+			req->status &= ~STATUS_IN_EMPTY;
+		        req->status |= STATUS_IN_PART_USE;
+		}
+		if (resp_msg.produced)
+		        sess->undrained += resp_msg.produced;
+		req->src_len = resp_msg.in_cons;
+		sess->loaded_in -= resp_msg.in_cons;
+		sess->next_in += resp_msg.in_cons;
+	}
+	comp_post(sess, &msg, req);
 
 	return 0;
 }
 
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
-	struct wd_ctx_config *config = &wd_comp_setting.config;
-	struct wd_comp_msg msg, resp_msg;
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	__u64 recv_count = 0;
-	handle_t h_ctx;
-	int ret;
-
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
-
-	ret = fill_comp_msg(sess, &msg, req);
-	if (ret < 0)
-		return ret;
-
-	msg.alg_type = sess->alg_type;
-	/* fill trueth flag */
-	msg.flush_type = req->last;
-
-	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
-	if (ret < 0) {
-		WD_ERR("wd_send err!\n");
-	}
-
-	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
-			return ret;
-		} else if (ret == -WD_EBUSY) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd_recv timeout fail!\n");
-				return -ETIMEDOUT;
-			}
-		}
-	} while (ret < 0);
-
-	req->src_len = resp_msg.req->src_len;
-	req->dst_len = resp_msg.req->dst_len;
-	req->status = resp_msg.req->status;
-	//req->flush = resp->flush_type;
-	//req->isize = resp->isize;
-	//req->checksum = resp->checksum;
-
 	return 0;
 }
 
@@ -498,21 +633,30 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, h_ctx, req);
-	ret = fill_comp_msg(sess, msg, req);
-	if (ret < 0) {
-		/* TODO: release msg */
+	ret = comp_prepare(sess, msg, req);
+	if (ret < 0)
 		return ret;
-	}
 	msg->alg_type = sess->alg_type;
 
-	ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
-	if (ret < 0) {
-		WD_ERR("wd_send err!\n");
-		return ret;
+	req->status = 0;
+	if (sess->loaded_in) {
+		if (req->flag & FLAG_INPUT_FINISH)
+			msg->flush_type = 1;
+		else if (sess->full) {
+			msg->flush_type = 0;
+			sess->full = 0;
+		} else {
+			comp_post(sess, msg, req);
+			return 0;
+		}
+		ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
+		if (ret < 0) {
+			WD_ERR("wd_send err!\n");
+			return ret;
+		}
 	}
 
 	return 0;
-
 }
 
 int wd_comp_poll(__u32 *count)
