@@ -53,13 +53,11 @@
 
 typedef unsigned int u32;
 
-struct bignum_st {
-	BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
-					 * chunks. */
-	int top;                    /* Index of last used d +1. */
-	/* The next are internal book keeping for bn_expand. */
-	int dmax;                   /* Size of the d array. */
-	int neg;                    /* one if the number is negative */
+struct big_number {
+	BN_ULONG *n;
+	int latest;
+	int size_d;
+	int flag_neg;
 	int flags;
 };
 
@@ -90,7 +88,7 @@ struct test_hpre_pthread_dt {
 /* stub definitions */
 typedef struct rsa_st RSA;
 typedef struct dh_st DH;
-typedef struct bignum_st BIGNUM;
+typedef struct big_number BIGNUM;
 typedef struct bn_gencb_st BN_GENCB;
 
 enum dh_check_index {
