@@ -128,7 +128,7 @@ static int test_sec_cipher_sync_once(void)
 		goto out;
 	}
 	while (cnt) {
-		ret = wd_do_cipher(h_sess, &req);
+		ret = wd_do_cipher_sync(h_sess, &req);
 		cnt--;
 		if (ret) {
 			printf("fail to encrypt:%d\n", ret);

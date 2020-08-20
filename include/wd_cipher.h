@@ -117,7 +117,7 @@ extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
  */
 extern void wd_cipher_free_sess(handle_t h_sess);
 extern int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len);
-extern int wd_do_cipher(handle_t sess, struct wd_cipher_req *req);
+extern int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req);
 extern int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req);
 extern int wd_cipher_poll_ctx(handle_t sess, __u32 count);
 extern int wd_cipher_poll(__u32 expt, __u32 *count);

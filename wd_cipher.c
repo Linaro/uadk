@@ -362,7 +362,7 @@ static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *re
 	msg->iv_bytes = req->iv_bytes;
 }
 
-int wd_do_cipher(handle_t sess, struct wd_cipher_req *req)
+int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 {
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	void *sched_ctx = g_wd_cipher_setting.sched_ctx;

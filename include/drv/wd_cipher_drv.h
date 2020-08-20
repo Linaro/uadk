@@ -38,11 +38,15 @@ struct wd_cipher_driver {
 
 void wd_cipher_set_driver(struct wd_cipher_driver *drv);
 
-#define WD_CIPHER_SET_DRIVER(drv)						      \
-extern const struct wd_cipher_driver wd_cipher_##drv __attribute__((alias(#drv)));\
+#ifdef WD_STATIC_DRV
+#define WD_CIPHER_SET_DRIVER(drv)					      \
+extern const struct wd_cipher_driver wd_cipher_##drv __attribute__((alias(#drv)));
+
+#else
+#define WD_CIPHER_SET_DRIVER(drv)				              \
 static void __attribute__((constructor)) set_driver(void)		      \
 {									      \
 	wd_cipher_set_driver(&drv);					      \
 }
-
+#endif
 #endif /* __WD_CIPHER_DRV_H */
