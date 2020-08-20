@@ -177,14 +177,15 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 			info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_bd3_sqe;
 		}
 	} else if (!strncmp(alg, "aead", strlen("aead"))) {
-		if (!strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
-			WD_ERR("hardware type err!\n");
-			return false;
-		}
 		qinfo->atype = WCRYPTO_AEAD;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		info->sqe_fill[WCRYPTO_AEAD] = qm_fill_aead_bd3_sqe;
-		info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_bd3_sqe;
+		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+			info->sqe_fill[WCRYPTO_AEAD] = qm_fill_aead_sqe;
+			info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_sqe;
+		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+			info->sqe_fill[WCRYPTO_AEAD] = qm_fill_aead_bd3_sqe;
+			info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_bd3_sqe;
+		}
 	} else {
 		is_find = false;
 	}
