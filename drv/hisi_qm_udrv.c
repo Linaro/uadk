@@ -181,7 +181,6 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 		goto out;
 
 	qp->h_ctx = ctx;
-	wd_ctx_init_qfrs_offs(qp->h_ctx);
 
 	ret = hisi_qm_setup_info(qp, config);
 	if (ret)
@@ -204,19 +203,10 @@ out:
 
 void hisi_qm_free_ctx(handle_t h_ctx)
 {
-	struct hisi_qp			*qp;
-	struct hisi_qm_queue_info	*q_info;
-	void	*va;
-
-	qp = (struct hisi_qp *)wd_ctx_get_priv(h_ctx);
-	q_info = &qp->q_info;
+	struct hisi_qp *qp = wd_ctx_get_priv(h_ctx);
 
 	wd_ctx_stop(qp->h_ctx);
-	va = wd_ctx_get_shared_va(qp->h_ctx);
-	if (va) {
-		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS);
-		wd_ctx_set_shared_va(qp->h_ctx, NULL);
-	}
+
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	wd_release_ctx(qp->h_ctx);
@@ -226,17 +216,9 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 void hisi_qm_free_qp(handle_t h_qp)
 {
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
-	struct hisi_qm_queue_info *q_info;
-	void *va;
-
-	q_info = &qp->q_info;
 
 	wd_ctx_stop(qp->h_ctx);
-	va = wd_ctx_get_shared_va(qp->h_ctx);
-	if (va) {
-		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS);
-		wd_ctx_set_shared_va(qp->h_ctx, NULL);
-	}
+
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	free(qp);

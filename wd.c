@@ -277,34 +277,6 @@ static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
 	return 0;
 }
 
-int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx)
-{
-	int	offs, tmp;
-	void	*p = NULL;
-
-	if ((!dev_mask) || (idx < 0))
-		return -EINVAL;
-	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC))
-		return -EINVAL;
-	if (idx >= dev_mask->len) {
-		/* Extend the accel array. */
-		tmp = dev_mask->len;
-		do {
-			dev_mask->len <<= 1;
-		} while (idx >= dev_mask->len);
-		/* If realloc() fails, original pointer is untouched. */
-		p = realloc(dev_mask->mask, sizeof(char) * dev_mask->len);
-		if (!p) {
-			dev_mask->len = tmp;
-			return -ENOMEM;
-		}
-		dev_mask->mask = p;
-	}
-	offs = idx >> 3;
-	dev_mask->mask[offs] &= ~(1 << (idx % 8));
-	return 0;
-}
-
 struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 {
 	struct dirent	*dev = NULL;
@@ -370,35 +342,10 @@ out:
 	return NULL;
 }
 
-int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
+static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 {
-	struct uacce_dev_list	*head;
-	char	*s;
-	int	ret, found;
-
-	if (!alg_name || !dev_mask)
-		return -EINVAL;
-	ret = wd_init_mask(dev_mask);
-	if (ret)
-		return ret;
-	head = wd_list_accels(dev_mask);
-	if (!head)
-		return -ENOENT;
-	while (head) {
-		s = strtok(head->info->algs, "\n");
-		found = 0;
-		while (s) {
-			if (!strncmp(s, alg_name, strlen(alg_name))) {
-				found = 1;
-				break;
-			}
-			s = strtok(NULL, "\n");
-		}
-		if (!found)
-			wd_clear_mask(dev_mask, head->info->node_id);
-		head = head->next;
-	}
-	return 0;
+	memcpy(&ctx->qfrs_offs, &ctx->dev_info->qfrs_offs,
+	       sizeof(ctx->qfrs_offs));
 }
 
 handle_t wd_request_ctx(char *dev_path)
@@ -422,6 +369,8 @@ handle_t wd_request_ctx(char *dev_path)
 	ctx->dev_info = read_uacce_sysfs(ctx->dev_name);
 	if (!ctx->dev_info)
 		goto out_info;
+
+	wd_ctx_init_qfrs_offs(ctx);
 
 	strncpy(ctx->dev_path, dev_path, MAX_DEV_NAME_LEN - 1);
 	ctx->fd = open(dev_path, O_RDWR | O_CLOEXEC);
@@ -486,25 +435,6 @@ int wd_ctx_stop(handle_t h_ctx)
 	return ioctl(ctx->fd, UACCE_CMD_PUT_Q);
 }
 
-void *wd_ctx_get_shared_va(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-	return ctx->ss_va;
-}
-
-int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return -EINVAL;
-	ctx->ss_va = shared_va;
-	return 0;
-}
-
 void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -558,16 +488,6 @@ int wd_ctx_set_priv(handle_t h_ctx, void *priv)
 	return 0;
 }
 
-void wd_ctx_init_qfrs_offs(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return;
-	memcpy(&ctx->qfrs_offs, &ctx->dev_info->qfrs_offs,
-	       sizeof(ctx->qfrs_offs));
-}
-
 int wd_ctx_get_fd(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -613,42 +533,6 @@ int wd_is_nosva(handle_t h_ctx)
 	return 1;
 }
 
-/* to do: this api should be removed as we only support sva api */
-void *wd_reserve_mem(handle_t h_ctx, size_t size)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	int ret;
-
-	if (!ctx)
-		return NULL;
-
-	/* this is broken, as the whole function will be removed, we do not care */
-	ctx->ss_va = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_SS);
-
-	if (ctx->ss_va == MAP_FAILED) {
-		WD_ERR("wd drv mmap fail!\n");
-		return NULL;
-	}
-
-	ret = (long)ioctl(ctx->fd, UACCE_CMD_GET_SS_DMA, &ctx->ss_pa);
-	if (ret) {
-		WD_ERR("fail to get PA!\n");
-		return NULL;
-	}
-
-	return ctx->ss_va;
-}
-
-void *wd_get_dma_from_va(handle_t h_ctx, void *va)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-	return va - ctx->ss_va + ctx->ss_pa;
-}
-
-/* new code */
 const char *wd_get_driver_name(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;

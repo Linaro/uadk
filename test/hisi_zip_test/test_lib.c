@@ -94,9 +94,7 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	char *in_buf, *out_buf;
 	struct hisi_zip_sqe *m = msg->msg;
 	struct hizip_test_context *ctx = priv;
-	struct hisi_qp *qp = ctx->qp;
 	struct test_options *opts = ctx->opts;
-	void *data_in, *data_out;
 
 	ilen = ctx->total_len > opts->block_size ?
 		opts->block_size : ctx->total_len;
@@ -104,24 +102,12 @@ int hizip_test_default_input(struct wd_msg *msg, void *priv)
 	in_buf = ctx->in_buf;
 	out_buf = ctx->out_buf;
 
-	if (ctx->is_nosva) {
-		memcpy(msg->swap_in, in_buf, ilen);
+	m->source_addr_l = (__u64)in_buf & 0xffffffff;
+	m->source_addr_h = (__u64)in_buf >> 32;
+	m->dest_addr_l = (__u64)out_buf & 0xffffffff;
+	m->dest_addr_h = (__u64)out_buf >> 32;
 
-		data_in = wd_get_dma_from_va(qp->h_ctx, msg->swap_in);
-		data_out = wd_get_dma_from_va(qp->h_ctx, msg->swap_out);
-
-		m->source_addr_l = (__u64)data_in & 0xffffffff;
-		m->source_addr_h = (__u64)data_in >> 32;
-		m->dest_addr_l = (__u64)data_out & 0xffffffff;
-		m->dest_addr_h = (__u64)data_out >> 32;
-	} else {
-		m->source_addr_l = (__u64)in_buf & 0xffffffff;
-		m->source_addr_h = (__u64)in_buf >> 32;
-		m->dest_addr_l = (__u64)out_buf & 0xffffffff;
-		m->dest_addr_h = (__u64)out_buf >> 32;
-
-		ctx->out_buf += ilen * EXPANSION_RATIO;
-	}
+	ctx->out_buf += ilen * EXPANSION_RATIO;
 
 	m->input_data_length = ilen;
 	ctx->in_buf += ilen;
@@ -147,12 +133,8 @@ int hizip_test_default_output(struct wd_msg *msg, void *priv)
 		return -EFAULT;
 	}
 
-	if (ctx->is_nosva) {
-		memcpy(ctx->out_buf, msg->swap_out, m->produced);
-		ctx->out_buf += m->input_data_length * EXPANSION_RATIO;
-	}
-
 	ctx->total_out += m->produced;
+
 	return 0;
 }
 
@@ -284,7 +266,6 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 	struct hisi_qm_priv *qm_priv;
 	struct hisi_qm_capa *capa;
 	struct hizip_test_context *ctx = priv;
-	uint64_t addr;
 
 	sched->q_num = opts->q_num;
 	sched->ss_region_size = 0; /* let system make decision */
@@ -332,51 +313,8 @@ int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
 			goto out_hw;
 	}
 
-	if (!sched->ss_region_size)
-		sched->ss_region_size = 4096 + /* add 1 page extra */
-			sched->msg_cache_num * sched->msg_data_size * 2;
-	if (wd_is_nosva(sched->qs[0])) {
-		sched->ss_region = wd_reserve_mem(sched->qs[0],
-						  sched->ss_region_size);
-		if (!sched->ss_region) {
-			ret = -ENOMEM;
-			goto out_region;
-		}
-		ret = smm_init(sched->ss_region, sched->ss_region_size, 0xF);
-		if (ret)
-			goto out_smm;
-		for (i = 0; i < sched->msg_cache_num; i++) {
-			addr = (uint64_t)smm_alloc(sched->ss_region,
-						   sched->msg_data_size);
-			sched->msgs[i].swap_in = (void *)addr;
-			addr = (uint64_t)smm_alloc(sched->ss_region,
-						   sched->msg_data_size);
-			sched->msgs[i].swap_out = (void *)addr;
-			if (!sched->msgs[i].swap_in ||
-			    !sched->msgs[i].swap_out) {
-				dbg("not enough ss_region memory for cache %d "
-				    "(bs=%d)\n", i, sched->msg_data_size);
-				goto out_swap;
-			}
-		}
-	}
 	return 0;
-out_swap:
-	for (j = i; j >= 0; j--) {
-		if (sched->msgs[j].swap_in)
-			smm_free(sched->ss_region, sched->msgs[j].swap_in);
-		if (sched->msgs[j].swap_out)
-			smm_free(sched->ss_region, sched->msgs[j].swap_out);
-	}
-out_smm:
-	if (wd_is_nosva(sched->qs[0]) && sched->ss_region) {
-		wd_drv_unmap_qfr(sched->qs[0], UACCE_QFRT_SS);
-	}
-out_region:
-	for (j = i - 1; j >= 0; j--) {
-		sched->hw_free(sched->qs[j]);
-	}
-	sched->hw_free(sched->qs[i]);
+
 out_hw:
 	for (j = i - 1; j >= 0; j--) {
 		sched->hw_free(sched->qs[j]);
