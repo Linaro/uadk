@@ -57,13 +57,11 @@ typedef unsigned int u32;
 
 pthread_mutex_t mute;
 
-struct bignum_st {
-	BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
-					 * chunks. */
-	int top;                    /* Index of last used d +1. */
-	/* The next are internal book keeping for bn_expand. */
-	int dmax;                   /* Size of the d array. */
-	int neg;                    /* one if the number is negative */
+struct big_number {
+	BN_ULONG *n;
+	int latest;
+	int size_d;
+	int flag_neg;
 	int flags;
 };
 
@@ -119,7 +117,7 @@ struct ec_sig_st {
 /* stub definitions */
 typedef struct rsa_st RSA;
 typedef struct dh_st DH;
-typedef struct bignum_st BIGNUM;
+typedef struct big_number BIGNUM;
 typedef struct bn_gencb_st BN_GENCB;
 
 typedef struct ec_key_st EC_KEY;
@@ -318,35 +316,22 @@ typedef struct engine_st ENGINE;
 //typedef _Atomic int CRYPTO_REF_COUNT;
 typedef int CRYPTO_REF_COUNT;
 
-struct evp_pkey_st {
-	int type;
+struct x_pkey_st {
+	int t;
 	int save_type;
-	CRYPTO_REF_COUNT references;
+	CRYPTO_REF_COUNT count;
 	const EVP_PKEY_ASN1_METHOD *ameth;
-	ENGINE *engine;
-	ENGINE *pmeth_engine; /* If not NULL public key ENGINE to use */
+	ENGINE *e;
+	ENGINE *pmeth_e;
 	union {
 		void *ptr;
-		# ifndef OPENSSL_NO_RSA
-			struct rsa_st *rsa;     /* RSA */
-		# endif
-		# ifndef OPENSSL_NO_DSA
-			struct dsa_st *dsa;     /* DSA */
-		# endif
-		# ifndef OPENSSL_NO_DH
-			struct dh_st *dh;       /* DH */
-		# endif
-		# ifndef OPENSSL_NO_EC
-			struct ec_key_st *ec;   /* ECC */
-			ECX_KEY *ecx;           /* X25519, X448, Ed25519, Ed448 */
-		# endif
+		//struct ec_key_st *ec;   /* for ECC */
+		ECX_KEY *ecx;           /* for X25519, X448 */
 	} pkey;
-	int save_parameters;
-	//   STACK_OF(X509_ATTRIBUTE) *attributes; /* [ 0 ] */
-	//   CRYPTO_RWLOCK *lock;
-} /* EVP_PKEY */ ;
+	int param;
+};
 
-typedef struct evp_pkey_st EVP_PKEY;
+typedef struct x_pkey_st EVP_PKEY;
 
 struct evp_pkey_method_st;
 typedef struct evp_pkey_method_st EVP_PKEY_METHOD;
