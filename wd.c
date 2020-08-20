@@ -17,30 +17,26 @@
 
 #include "wd.h"
 
-
 #define SYS_CLASS_DIR	"/sys/class/uacce"
 
 struct wd_ctx_h {
-	int		fd;
-	char		dev_path[MAX_DEV_NAME_LEN];
-	char		*dev_name;
-	char		*drv_name;
-	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
-	void 		*qfrs_base[UACCE_QFRT_MAX];
-
-	void		*ss_va;
-	void		*ss_pa;
-
-	struct uacce_dev_info	*dev_info;
-
-	void		*sess_priv;
+	int fd;
+	char dev_path[MAX_DEV_NAME_LEN];
+	char *dev_name;
+	char *drv_name;
+	unsigned long qfrs_offs[UACCE_QFRT_MAX];
+	void *qfrs_base[UACCE_QFRT_MAX];
+	void *ss_va;
+	void *ss_pa;
+	struct uacce_dev_info *dev_info;
+	void *priv;
 };
 
 static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
-	int fd;
 	ssize_t size;
+	int fd;
 
 	if (!dev_root || !attr || !buf || (sz == 0))
 		return -EINVAL;
@@ -54,6 +50,7 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 		WD_ERR("open %s fail (%d)!\n", attr_file, errno);
 		return -ENODEV;
 	}
+
 	size = read(fd, buf, sz);
 	if (size <= 0) {
 		WD_ERR("read nothing at %s!\n", attr_file);
@@ -61,13 +58,14 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	}
 
 	close(fd);
-	return (int)size;
+
+	return size;
 }
 
 static int get_int_attr(struct uacce_dev_info *info, char *attr, int *val)
 {
-	int ret;
 	char buf[MAX_ATTR_STR_SIZE];
+	int ret;
 
 	if (!info || !attr || !val)
 		return -EINVAL;
@@ -77,6 +75,7 @@ static int get_int_attr(struct uacce_dev_info *info, char *attr, int *val)
 		return ret;
 
 	*val = strtol(buf, NULL, 10);
+
 	return 0;
 }
 
@@ -101,12 +100,13 @@ static int get_str_attr(struct uacce_dev_info *info, char *attr, char *buf,
 	while ((ret > 1) && (buf[ret - 1] == '\n')) {
 		buf[ret-- - 1] = '\0';
 	}
+
 	return ret;
 }
 
-static int get_dev_info(struct uacce_dev_info *info)
+static void get_dev_info(struct uacce_dev_info *info)
 {
-	int	value;
+	int value;
 
 	get_int_attr(info, "available_instances", &info->avail_instn);
 	get_int_attr(info, "flags", &info->flags);
@@ -117,23 +117,21 @@ static int get_dev_info(struct uacce_dev_info *info)
 	get_int_attr(info, "region_dus_size", &value);
 	info->qfrs_offs[UACCE_QFRT_DUS] = value;
 	info->qfrs_offs[UACCE_QFRT_SS] = 0;
-
-	return 0;
 }
 
 static struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
 {
-	struct uacce_dev_info	*info = NULL;
-	DIR			*class = NULL;
-	struct dirent		*dev = NULL;
-	char			*name = NULL;
-	int			len;
+	struct uacce_dev_info *info = NULL;
+	struct dirent *dev = NULL;
+	DIR *class = NULL;
+	char *name = NULL;
+	int len;
 
 	if (!dev_name)
 		return NULL;
 
 	info = calloc(1, sizeof(struct uacce_dev_info));
-	if (info == NULL)
+	if (!info)
 		return NULL;
 
 	class = opendir(SYS_CLASS_DIR);
@@ -155,12 +153,13 @@ static struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
 			break;
 		}
 	}
-	if (dev == NULL)
+	if (!dev)
 		goto out_dir;
 
 	closedir(class);
 
 	return info;
+
 out_dir:
 	closedir(class);
 out:
@@ -171,8 +170,8 @@ out:
 /* pick the name of accelerator */
 char *wd_get_accel_name(char *dev_path, int no_apdx)
 {
-	char	*name, *dash;
-	int	i, appendix, len;
+	int i, appendix, len;
+	char *name, *dash;
 
 	/* find '/' index in the string and keep the last level */
 	name = rindex(dev_path, '/');
@@ -185,6 +184,7 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 		/* relative path */
 		name = dev_path;
 	}
+
 	if (strlen(name) == 0)
 		return NULL;
 
@@ -203,36 +203,42 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 			if (i == 1)
 				appendix = 0;
 		}
-	} else
+	} else {
 		appendix = 0;
+	}
 
 	/* remove '-' and digits */
 	len = appendix ? strlen(name) - strlen(dash) : strlen(name);
+
 	return strndup(name, len);
 }
 
 static int get_accel_id(char *dev_path, int *id)
 {
-	char	*dash;
-	int	i, appendix = 1;
+	int i, appendix = 1;
+	char *dash;
 
 	if (!id)
 		return -EINVAL;
+
 	dash = rindex(dev_path, '-');
 	if (!dash)
 		return -EINVAL;
+
 	for (i = 1; i < strlen(dash); i++) {
 		if (!isdigit(dash[i])) {
 			appendix = 0;
 			break;
 		}
 	}
+
 	/* treat dash as a part of name if there's no digit */
 	if (i == 1)
 		appendix = 0;
 	if (!appendix)
 		return -ENOENT;
 	*id = atoi(&dash[1]);
+
 	return 0;
 }
 
@@ -243,6 +249,7 @@ static int wd_init_mask(wd_dev_mask_t *dev_mask)
 	dev_mask->mask = calloc(1, sizeof(char) * dev_mask->len);
 	if (!dev_mask->mask)
 		return -ENOMEM;
+
 	return 0;
 }
 
@@ -251,13 +258,15 @@ static int wd_init_mask(wd_dev_mask_t *dev_mask)
  */
 static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
 {
-	int	offs, tmp;
-	void	*p = NULL;
+	void *p = NULL;
+	int offs, tmp;
 
 	if ((!dev_mask) || (idx < 0))
 		return -EINVAL;
+
 	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC))
 		return -EINVAL;
+
 	if (idx >= dev_mask->len) {
 		tmp = dev_mask->len;
 		/* Extend the accel array. */
@@ -274,24 +283,27 @@ static int wd_set_mask(wd_dev_mask_t *dev_mask, int idx)
 	}
 	offs = idx >> 3;
 	dev_mask->mask[offs] |= 1 << (idx % 8);
+
 	return 0;
 }
 
 struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 {
-	struct dirent	*dev = NULL;
-	DIR		*wd_class = NULL;
-	struct uacce_dev_list	*node = NULL, *head = NULL, *tail = NULL;
-	int		ret, inited = 0;
+	struct uacce_dev_list *node = NULL, *head = NULL, *tail = NULL;
+	struct dirent *dev = NULL;
+	DIR *wd_class = NULL;
+	int ret, inited = 0;
 
 	if (!dev_mask)
 		return NULL;
+
 	if ((dev_mask->len <= 0) || (dev_mask->magic != WD_DEV_MASK_MAGIC)) {
 		inited = 1;
 		ret = wd_init_mask(dev_mask);
 		if (ret)
 			return NULL;
 	}
+
 	wd_class = opendir(SYS_CLASS_DIR);
 	if (!wd_class) {
 		WD_ERR("WarpDrive framework isn't enabled in system!\n");
@@ -301,6 +313,7 @@ struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 		}
 		return NULL;
 	}
+
 	while ((dev = readdir(wd_class)) != NULL) {
 		if (!strncmp(dev->d_name, ".", 1) ||
 		    !strncmp(dev->d_name, "..", 2))
@@ -326,8 +339,11 @@ struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 		}
 		tail->next = NULL;
 	}
+
 	closedir(wd_class);
+
 	return head;
+
 out:
 	while (head) {
 		if (head->info)
@@ -351,7 +367,7 @@ static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 handle_t wd_request_ctx(char *dev_path)
 {
 	struct wd_ctx_h	*ctx;
-	int	ret = -EINVAL;
+	int ret = -EINVAL;
 
 	if (!dev_path || (strlen(dev_path) + 1 >= MAX_DEV_NAME_LEN))
 		return (handle_t)NULL;
@@ -359,9 +375,11 @@ handle_t wd_request_ctx(char *dev_path)
 	ctx = calloc(1, sizeof(struct wd_ctx_h));
 	if (!ctx)
 		return (handle_t)NULL;
+
 	ctx->dev_name = wd_get_accel_name(dev_path, 0);
 	if (!ctx->dev_name)
 		return ret;
+
 	ctx->drv_name = wd_get_accel_name(dev_path, 1);
 	if (!ctx->drv_name)
 		goto out;
@@ -406,6 +424,7 @@ void wd_release_ctx(handle_t h_ctx)
 
 	if (!ctx)
 		return;
+
 	close(ctx->fd);
 	free(ctx->dev_info);
 	free(ctx->drv_name);
@@ -416,13 +435,15 @@ void wd_release_ctx(handle_t h_ctx)
 int wd_ctx_start(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	int	ret;
+	int ret;
 
 	if (!ctx)
 		return -EINVAL;
+
 	ret = ioctl(ctx->fd, UACCE_CMD_START);
 	if (ret)
 		WD_ERR("fail to start on %s\n", ctx->dev_path);
+
 	return ret;
 }
 
@@ -432,13 +453,14 @@ int wd_ctx_stop(handle_t h_ctx)
 
 	if (!ctx)
 		return -EINVAL;
+
 	return ioctl(ctx->fd, UACCE_CMD_PUT_Q);
 }
 
 void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	off_t	off = qfrt * getpagesize();
+	off_t off = qfrt * getpagesize();
 	size_t size;
 	void *addr;
 
@@ -474,7 +496,8 @@ void *wd_ctx_get_priv(handle_t h_ctx)
 
 	if (!ctx)
 		return NULL;
-	return ctx->sess_priv;
+
+	return ctx->priv;
 }
 
 /* Link session's private structure to struct wd_ctx_h */
@@ -484,7 +507,9 @@ int wd_ctx_set_priv(handle_t h_ctx, void *priv)
 
 	if (!ctx)
 		return -EINVAL;
-	ctx->sess_priv = priv;
+
+	ctx->priv = priv;
+
 	return 0;
 }
 
@@ -494,6 +519,7 @@ int wd_ctx_get_fd(handle_t h_ctx)
 
 	if (!ctx)
 		return -EINVAL;
+
 	return ctx->fd;
 }
 
@@ -503,22 +529,25 @@ char *wd_ctx_get_api(handle_t h_ctx)
 
 	if (!ctx)
 		return NULL;
+
 	return ctx->dev_info->api;
 }
 
 int wd_wait(handle_t h_ctx, __u16 ms)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	struct pollfd	fds[1];
+	struct pollfd fds[1];
 	int ret;
 
 	if (!ctx)
 		return -EINVAL;
+
 	fds[0].fd = ctx->fd;
 	fds[0].events = POLLIN;
 	ret = poll(fds, 1, ms);
 	if (ret == -1)
 		return -errno;
+
 	return 0;
 }
 
@@ -528,8 +557,10 @@ int wd_is_nosva(handle_t h_ctx)
 
 	if (!ctx)
 		return 0;
+
 	if (ctx->dev_info->flags & UACCE_DEV_SVA)
 		return 0;
+
 	return 1;
 }
 
@@ -539,6 +570,7 @@ const char *wd_get_driver_name(handle_t h_ctx)
 
 	if (!ctx)
 		return NULL;
+
 	return ctx->drv_name;
 }
 

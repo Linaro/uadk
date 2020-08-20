@@ -1,34 +1,53 @@
 // SPDX-License-Identifier: Apache-2.0
 #ifndef __WD_H
 #define __WD_H
-#include <stdlib.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <stdint.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include <limits.h>
 #include "include/uacce.h"
 #include "config.h"
 
-#define SYS_VAL_SIZE		16
-#define PATH_STR_SIZE		256
-#define MAX_ATTR_STR_SIZE	256
-#define WD_NAME_SIZE		64
+#define PATH_STR_SIZE			256
+#define MAX_ATTR_STR_SIZE		256
+#define WD_NAME_SIZE			64
 
-#define UACCE_QFRT_MAX		4
-#define UACCE_QFR_NA ((unsigned long)-1)
+#define UACCE_QFRT_MAX			4
+#define UACCE_QFR_NA			((unsigned long)-1)
 
-#define WD_CAPA_PRIV_DATA_SIZE	64
+#define WD_CAPA_PRIV_DATA_SIZE		64
 
 #define MAX_DEV_NAME_LEN		256
 #define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
 #define MAX_ACCELS			16
 #define MAX_BYTES_FOR_ACCELS		(MAX_ACCELS >> 3)
 #define WD_DEV_MASK_MAGIC		0xa395deaf
+
+/* WD error code */
+#define	WD_SUCCESS			0
+#define	WD_STREAM_END			1
+#define	WD_STREAM_START			2
+#define	WD_EIO				EIO
+#define	WD_EAGAIN			EAGAIN
+#define	WD_ENOMEM			ENOMEM
+#define	WD_EACCESS			EACCESS
+#define	WD_EBUSY			EBUSY
+#define	WD_ENODEV			ENODEV
+#define	WD_EINVAL			EINVAL
+#define	WD_ETIMEDOUT			ETIMEDOUT
+#define	WD_ADDR_ERR			61
+#define	WD_HW_EACCESS			62
+#define	WD_SGL_ERR			63
+#define	WD_VERIFY_ERR			64
+#define	WD_OUT_EPARA			66
+#define	WD_IN_EPARA			67
+#define	WD_ENOPROC			68
 
 #ifndef WD_ERR
 #ifndef WITH_LOG_FILE
@@ -52,25 +71,6 @@ extern FILE *flog_fd;
 #define dbg(msg, ...)
 #endif
 
-/* WD error code */
-#define	WD_SUCCESS		0
-#define	WD_STREAM_END		1
-#define	WD_STREAM_START		2
-#define	WD_EIO			EIO
-#define	WD_EAGAIN		EAGAIN
-#define	WD_ENOMEM		ENOMEM
-#define	WD_EACCESS		EACCESS
-#define	WD_EBUSY		EBUSY
-#define	WD_ENODEV		ENODEV
-#define	WD_EINVAL		EINVAL
-#define	WD_ETIMEDOUT	ETIMEDOUT
-#define	WD_ADDR_ERR		61
-#define	WD_HW_EACCESS		62
-#define	WD_SGL_ERR		63
-#define	WD_VERIFY_ERR		64
-#define	WD_OUT_EPARA		66
-#define	WD_IN_EPARA		67
-#define	WD_ENOPROC		68
 
 struct uacce_dev_info {
 	/* sysfs node content */
@@ -101,7 +101,6 @@ struct wd_dev_mask {
 
 typedef unsigned long long int	handle_t;
 typedef struct wd_dev_mask	wd_dev_mask_t;
-
 
 static inline uint32_t wd_ioread32(void *addr)
 {
@@ -138,7 +137,7 @@ extern void wd_release_ctx(handle_t h_ctx);
 extern int wd_ctx_start(handle_t h_ctx);
 extern int wd_ctx_stop(handle_t h_ctx);
 extern void *wd_ctx_get_priv(handle_t h_ctx);
-extern int wd_ctx_set_priv(handle_t h_ctx, void *sess_priv);
+extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
 extern char *wd_ctx_get_api(handle_t h_ctx);
 extern int wd_ctx_get_fd(handle_t h_ctx);
 extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
