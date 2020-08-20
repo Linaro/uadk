@@ -316,7 +316,7 @@ int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 int hisi_qm_recv(handle_t h_qp, void *resp, __u16 num) {
 	int i, offset;
 	int ret = 0;
-	int recv_num;
+	int recv_num = 0;
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	struct hisi_qm_queue_info *q_info = NULL;
 
@@ -329,10 +329,9 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 num) {
 		offset = i *q_info->sqe_size;
 		ret = hisi_qm_recv_single(q_info, resp + offset);
 		if (ret)
-			WD_ERR("hisi_qm_recv_single(%d) error\n", ret);
 			break;
+		recv_num++;
 	}
 
-	recv_num = i + 1;
 	return recv_num;
 }
