@@ -35,12 +35,12 @@
 #define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
 
-#define SEC_HW_TASK_DONE  1
-#define SQE_BYTES_NUMS 32
-#define CTR_MODE_LEN_SHIFT 4
-#define WORD_BYTES 4
-#define WORD_ALIGNMENT_MASK 0X3
-#define U64_DATA_BYTES 8
+#define SEC_HW_TASK_DONE	1
+#define SQE_BYTES_NUMS		128
+#define CTR_MODE_LEN_SHIFT	4
+#define WORD_BYTES		4
+#define WORD_ALIGNMENT_MASK	0x3
+#define U64_DATA_BYTES		8
 #define CTR_128BIT_COUNTER	16
 #define DIF_VERIFY_FAIL 2
 #define WCRYPTO_CIPHER_THEN_DIGEST	0
@@ -1564,8 +1564,7 @@ static int fill_aead_bd3_mode(struct wcrypto_aead_msg *msg,
 	return ret;
 }
 
-static int set_aead_auth_iv(struct wd_queue *q,
-		struct wcrypto_aead_msg *msg, struct hisi_sec_bd3_sqe *sqe)
+static void set_aead_auth_iv(struct wcrypto_aead_msg *msg)
 {
 #define IV_LAST_BYTE1		1
 #define IV_LAST_BYTE2		2
@@ -1578,7 +1577,6 @@ static int set_aead_auth_iv(struct wd_queue *q,
 #define IV_LAST_BYTE1_MASK	0xFF
 
 	__u8 flags = 0x00;
-	uintptr_t phy;
 	__u8 cl, cm;
 
 	/* CCM need to cal a_iv, GCM same as c_iv */
@@ -1608,16 +1606,6 @@ static int set_aead_auth_iv(struct wd_queue *q,
 		msg->aiv[msg->iv_bytes - IV_LAST_BYTE1] =
 			msg->in_bytes & IV_LAST_BYTE1_MASK;
 	}
-
-	phy = (uintptr_t)drv_iova_map(q, msg->aiv, msg->iv_bytes);
-	if (!phy) {
-		WD_ERR("fail to get auth iv dma address!\n");
-		return -WD_ENOMEM;
-	}
-	sqe->auth_ivin.a_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
-	sqe->auth_ivin.a_ivin_addr_h = HI_U32(phy);
-
-	return WD_SUCCESS;
 }
 
 static int fill_aead_bd3_addr(struct wd_queue *q,
@@ -1678,7 +1666,17 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 	sqe->ipsec_scene.c_ivin_addr_h = HI_U32(phy);
 
 	/* CCM/GCM should init a_iv */
-	return set_aead_auth_iv(q, msg, sqe);
+	set_aead_auth_iv(msg);
+
+	phy = (uintptr_t)drv_iova_map(q, msg->aiv, msg->iv_bytes);
+	if (!phy) {
+		WD_ERR("fail to get auth iv dma address!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->auth_ivin.a_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->auth_ivin.a_ivin_addr_h = HI_U32(phy);
+
+	return WD_SUCCESS;
 }
 
 static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
@@ -1761,11 +1759,11 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
 
-	if (tag)
+	if (tag) {
 		ret = fill_aead_bd3(q, sqe, msg, tag);
-
-	if (ret != WD_SUCCESS)
-		return ret;
+		if (ret != WD_SUCCESS)
+			return ret;
+	}
 
 	info->req_cache[i] = msg;
 
@@ -1782,7 +1780,7 @@ static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	__u64 dma_addr;
 
 	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("SEC BD3 %s fail!done=0x%x, etype=0x%x\n", "aead",
+		WD_ERR("SEC BD3 %s fail! done=0x%x, etype=0x%x\n", "aead",
 		sqe->done, sqe->error_type);
 		msg->result = WD_IN_EPARA;
 	} else
@@ -1899,6 +1897,323 @@ int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
 
 #ifdef DEBUG_LOG
 	sec_dump_bd((unsigned int *)sqe, SQE_BYTES_NUMS);
+#endif
+
+	return 1;
+}
+
+static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
+		struct hisi_sec_sqe *sqe)
+{
+	int ret = WD_SUCCESS;
+	__u8 c_key_len = 0;
+
+	switch (msg->calg) {
+	case WCRYPTO_CIPHER_SM4:
+		sqe->type2.c_alg = C_ALG_SM4;
+		sqe->type2.c_key_len = CKEY_LEN_SM4;
+		break;
+	case WCRYPTO_CIPHER_AES:
+		sqe->type2.c_alg = C_ALG_AES;
+		if (msg->ckey_bytes == AES_KEYSIZE_128)
+			c_key_len = CKEY_LEN_128_BIT;
+		else if (msg->ckey_bytes == AES_KEYSIZE_192)
+			c_key_len = CKEY_LEN_192_BIT;
+		else if (msg->ckey_bytes == AES_KEYSIZE_256) {
+			c_key_len = CKEY_LEN_256_BIT;
+		} else {
+			WD_ERR("Invalid AES key size!\n");
+			return -WD_EINVAL;
+		}
+		sqe->type2.c_key_len = c_key_len;
+		break;
+	default:
+		WD_ERR("Invalid cipher type!\n");
+		ret = -WD_EINVAL;
+	}
+
+	/* CCM/GCM this region is set to 0 */
+	if (msg->cmode == WCRYPTO_CIPHER_CCM ||
+		msg->cmode == WCRYPTO_CIPHER_GCM)
+		return ret;
+
+	sqe->type2.mac_len = msg->auth_bytes / SEC_SQE_LEN_RATE;
+	sqe->type2.a_key_len = msg->akey_bytes / SEC_SQE_LEN_RATE;
+
+	switch (msg->dalg) {
+	case WCRYPTO_SHA1:
+		sqe->type2.a_alg = A_ALG_HMAC_SHA1;
+		break;
+	case WCRYPTO_SHA256:
+		sqe->type2.a_alg = A_ALG_HMAC_SHA256;
+		break;
+	case WCRYPTO_SHA512:
+		sqe->type2.a_alg = A_ALG_HMAC_SHA512;
+		break;
+	default:
+		WD_ERR("Invalid digest type!\n");
+		ret = -WD_EINVAL;
+	}
+
+	return ret;
+}
+
+static int fill_aead_bd2_mode(struct wcrypto_aead_msg *msg,
+		struct hisi_sec_sqe *sqe)
+{
+	int ret = WD_SUCCESS;
+
+	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
+		sqe->cipher = CIPHER_ENCRYPT;
+		sqe->seq = WCRYPTO_CIPHER_THEN_DIGEST;
+	} else if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
+		sqe->cipher = CIPHER_DECRYPT;
+		sqe->seq = WCRYPTO_DIGEST_THEN_CIPHER;
+	} else {
+		WD_ERR("Invalid cipher op type!\n");
+		return -WD_EINVAL;
+	}
+
+	switch (msg->cmode) {
+	case WCRYPTO_CIPHER_ECB:
+		sqe->type2.c_mode = C_MODE_ECB;
+		break;
+	case WCRYPTO_CIPHER_CBC:
+		sqe->type2.c_mode = C_MODE_CBC;
+		break;
+	case WCRYPTO_CIPHER_CTR:
+		sqe->type2.c_mode = C_MODE_CTR;
+		break;
+	case WCRYPTO_CIPHER_CCM:
+		sqe->type2.c_mode = C_MODE_CCM;
+		sqe->auth = NO_AUTH;
+		sqe->type2.a_len = msg->assoc_bytes;
+		sqe->type2.c_icv_len = msg->auth_bytes;
+		break;
+	case WCRYPTO_CIPHER_GCM:
+		sqe->type2.c_mode = C_MODE_GCM;
+		sqe->auth = NO_AUTH;
+		sqe->type2.a_len = msg->assoc_bytes;
+		sqe->type2.c_icv_len = msg->auth_bytes;
+		break;
+	default:
+		WD_ERR("Invalid cipher cmode type!\n");
+		ret = -WD_EINVAL;
+	}
+
+	return ret;
+}
+
+static int fill_aead_bd2_addr(struct wd_queue *q,
+		struct wcrypto_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	uintptr_t phy;
+
+	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
+	if (!phy) {
+		WD_ERR("fail to get msg in dma address!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->type2.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.data_src_addr_h = HI_U32(phy);
+
+	/* AEAD input MAC addr use in addr */
+	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
+		phy = phy + msg->assoc_bytes + msg->in_bytes;
+		sqe->type2.mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->type2.mac_addr_h = HI_U32(phy);
+	}
+	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
+	if (!phy) {
+		WD_ERR("fail to get msg out dma address!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->type2.data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.data_dst_addr_h = HI_U32(phy);
+
+	/* AEAD output MAC addr use out addr */
+	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
+		phy = phy + msg->out_bytes - msg->auth_bytes;
+		sqe->type2.mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->type2.mac_addr_h = HI_U32(phy);
+	}
+
+	phy = (uintptr_t)drv_iova_map(q, msg->ckey, msg->ckey_bytes);
+	if (!phy) {
+		WD_ERR("Get key dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->type2.c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.c_key_addr_h = HI_U32(phy);
+	phy = (uintptr_t)drv_iova_map(q, msg->akey, msg->akey_bytes);
+	if (!phy) {
+		WD_ERR("Get auth key dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->type2.a_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.a_key_addr_h = HI_U32(phy);
+	phy = (uintptr_t)drv_iova_map(q, msg->iv, msg->iv_bytes);
+	if (!phy) {
+		WD_ERR("Get iv dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->type2.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.c_ivin_addr_h = HI_U32(phy);
+
+	/* CCM/GCM should init a_iv */
+	set_aead_auth_iv(msg);
+
+	phy = (uintptr_t)drv_iova_map(q, msg->aiv, msg->iv_bytes);
+	if (!phy) {
+		WD_ERR("fail to get auth iv dma address!\n");
+		return -WD_ENOMEM;
+	}
+	sqe->type2.a_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.a_ivin_addr_h = HI_U32(phy);
+
+	return WD_SUCCESS;
+}
+
+static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+		struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
+{
+	int ret;
+
+	sqe->type = BD_TYPE2;
+	sqe->scene = SCENE_IPSEC;
+	sqe->auth = AUTH_MAC_CALCULATE;
+	sqe->de = DATA_DST_ADDR_ENABLE;
+	if (msg->in_bytes > MAX_CIPHER_LENGTH) {
+		WD_ERR("fail to check input data length\n");
+		return -WD_EINVAL;
+	}
+	sqe->type2.c_len = msg->in_bytes;
+	sqe->type2.cipher_src_offset = msg->assoc_bytes;
+	sqe->type2.a_len = msg->in_bytes + msg->assoc_bytes;
+
+	ret = fill_aead_bd2_alg(msg, sqe);
+	if (ret != WD_SUCCESS) {
+		WD_ERR("fill_cipher_bd2_alg fail!\n");
+		return ret;
+	}
+
+	ret = fill_aead_bd2_mode(msg, sqe);
+	if (ret != WD_SUCCESS) {
+		WD_ERR("fill_cipher_bd2_mode fail!\n");
+		return ret;
+	}
+
+	ret = fill_aead_bd2_addr(q, msg, sqe);
+	if (ret != WD_SUCCESS)
+		return ret;
+
+	if (tag)
+		sqe->type2.tag = tag->wcrypto_tag.ctx_id;
+
+	return ret;
+}
+
+int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
+{
+	struct wcrypto_aead_msg *msg = message;
+	struct wcrypto_aead_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wd_queue *q = info->q;
+	struct hisi_sec_sqe *sqe;
+	uintptr_t temp;
+	int ret;
+
+	ret = aead_para_check(msg);
+	if (ret) {
+		WD_ERR("Invalid aead cipher alg = %d and mode = %d combination\n",
+			msg->calg, msg->cmode);
+		return ret;
+	}
+
+	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
+	sqe = (struct hisi_sec_sqe *)temp;
+
+	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
+
+	if (tag) {
+		ret = fill_aead_bd2(q, sqe, msg, tag);
+		if (ret != WD_SUCCESS)
+			return ret;
+	}
+	info->req_cache[i] = msg;
+
+#ifdef DEBUG_LOG
+	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+#endif
+
+	return ret;
+}
+
+static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+		struct wcrypto_aead_msg *msg)
+{
+	__u64 dma_addr;
+
+	if (sqe->type2.done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
+		WD_ERR("SEC BD2 %s fail! done=0x%x, etype=0x%x\n", "aead",
+		sqe->type2.done, sqe->type2.error_type);
+		msg->result = WD_IN_EPARA;
+	} else
+		msg->result = WD_SUCCESS;
+
+	dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
+			sqe->type2.data_src_addr_l);
+	drv_iova_unmap(q, msg->in, (void *)(uintptr_t)dma_addr,
+			msg->in_bytes);
+	dma_addr = DMA_ADDR(sqe->type2.data_dst_addr_h,
+			sqe->type2.data_dst_addr_l);
+	drv_iova_unmap(q, msg->out, (void *)(uintptr_t)dma_addr,
+			msg->out_bytes);
+	dma_addr = DMA_ADDR(sqe->type2.c_key_addr_h,
+			sqe->type2.c_key_addr_l);
+	drv_iova_unmap(q, msg->ckey, (void *)(uintptr_t)dma_addr,
+			msg->ckey_bytes);
+	dma_addr = DMA_ADDR(sqe->type2.a_key_addr_h,
+			sqe->type2.a_key_addr_l);
+	drv_iova_unmap(q, msg->akey, (void *)(uintptr_t)dma_addr,
+			msg->akey_bytes);
+	dma_addr = DMA_ADDR(sqe->type2.c_ivin_addr_h,
+			sqe->type2.c_ivin_addr_l);
+	drv_iova_unmap(q, msg->iv, (void *)(uintptr_t)dma_addr,
+			msg->iv_bytes);
+	dma_addr = DMA_ADDR(sqe->type2.a_ivin_addr_h,
+			sqe->type2.a_ivin_addr_l);
+	drv_iova_unmap(q, msg->aiv, (void *)(uintptr_t)dma_addr,
+			msg->iv_bytes);
+}
+
+/*
+ * According to wcrypto_aead_poll(), the return number mean:
+ * 0: parse failed
+ * 1: parse a BD successfully
+ */
+int qm_parse_aead_sqe(void *msg, const struct qm_queue_info *info,
+		__u16 i, __u16 usr)
+{
+	struct wcrypto_aead_msg *aead_msg = info->req_cache[i];
+	struct hisi_sec_sqe *sqe = msg;
+	struct wd_queue *q = info->q;
+
+	if (unlikely(!aead_msg)) {
+		WD_ERR("info->req_cache is null at index:%d\n", i);
+		return 0;
+	}
+
+	if (sqe->type == BD_TYPE2) {
+		if (usr && sqe->type2.tag != usr)
+			return 0;
+		parse_aead_bd2(q, sqe, aead_msg);
+	} else {
+		WD_ERR("SEC BD Type error\n");
+		aead_msg->result = WD_IN_EPARA;
+	}
+
+#ifdef DEBUG_LOG
+	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
 #endif
 
 	return 1;
