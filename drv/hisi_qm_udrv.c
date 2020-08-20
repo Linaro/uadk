@@ -94,7 +94,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	struct hisi_qm_queue_info *q_info = NULL;
 
 	q_info = &qp->q_info;
-	q_info->sq_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, 0);
+	q_info->sq_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	if (q_info->sq_base == MAP_FAILED) {
 		WD_ERR("fail to mmap DUS region\n");
 		ret = -errno;
@@ -103,7 +103,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->sqe_size = config->sqe_size;
 	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
 
-	q_info->mmio_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, 0);
+	q_info->mmio_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	if (q_info->mmio_base == MAP_FAILED) {
 		WD_ERR("fail to mmap MMIO region\n");
 		ret = -errno;
@@ -142,9 +142,9 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	return 0;
 
 out_qm:
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 out_mmio:
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 out:
 	return ret;
 }
@@ -158,7 +158,7 @@ static int hisi_qm_get_free_num(struct hisi_qm_queue_info	*q_info)
 	return QM_Q_DEPTH - q_info->sq_tail_index + q_info->sq_head_index;
 }
 
-handle_t hisi_qm_alloc_ctx(char *node_path, void *priv, void **data)
+handle_t hisi_qm_alloc_ctx(char *dev_path, void *priv, void **data)
 {
 	return (handle_t)NULL;
 }
@@ -214,11 +214,11 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 	wd_ctx_stop(qp->h_ctx);
 	va = wd_ctx_get_shared_va(qp->h_ctx);
 	if (va) {
-		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS, va);
+		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS);
 		wd_ctx_set_shared_va(qp->h_ctx, NULL);
 	}
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	wd_release_ctx(qp->h_ctx);
 }
 
@@ -234,11 +234,11 @@ void hisi_qm_free_qp(handle_t h_qp)
 	wd_ctx_stop(qp->h_ctx);
 	va = wd_ctx_get_shared_va(qp->h_ctx);
 	if (va) {
-		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS, va);
+		wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_SS);
 		wd_ctx_set_shared_va(qp->h_ctx, NULL);
 	}
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO, q_info->mmio_base);
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS, q_info->sq_base);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
+	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	free(qp);
 }
 

@@ -133,7 +133,7 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 	*((volatile uint64_t *)addr) = value;
 }
 
-extern handle_t wd_request_ctx(char *node_path);
+extern handle_t wd_request_ctx(char *dev_path);
 extern void wd_release_ctx(handle_t h_ctx);
 extern int wd_ctx_start(handle_t h_ctx);
 extern int wd_ctx_stop(handle_t h_ctx);
@@ -145,10 +145,8 @@ extern void *wd_ctx_get_shared_va(handle_t h_ctx);
 extern int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va);
 extern int wd_ctx_get_fd(handle_t h_ctx);
 
-extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt,
-			     size_t size);
-extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt,
-			     void *addr);
+extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 extern int wd_wait(handle_t h_ctx, __u16 ms);
 extern int wd_is_nosva(handle_t h_ctx);
 extern void *wd_reserve_mem(handle_t h_ctx, size_t size);
@@ -157,7 +155,7 @@ extern void *wd_get_dma_from_va(handle_t h_ctx, void *va);
 extern int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask);
 
 extern struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask);
-extern char *wd_get_accel_name(char *node_path, int no_apdx);
+extern char *wd_get_accel_name(char *dev_path, int no_apdx);
 extern int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx);
 
 /* new code */

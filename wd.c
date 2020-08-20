@@ -22,10 +22,11 @@
 
 struct wd_ctx_h {
 	int		fd;
-	char		node_path[MAX_DEV_NAME_LEN];
+	char		dev_path[MAX_DEV_NAME_LEN];
 	char		*dev_name;
 	char		*drv_name;
 	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
+	void 		*qfrs_base[UACCE_QFRT_MAX];
 
 	void		*ss_va;
 	void		*ss_pa;
@@ -168,13 +169,13 @@ out:
 }
 
 /* pick the name of accelerator */
-char *wd_get_accel_name(char *node_path, int no_apdx)
+char *wd_get_accel_name(char *dev_path, int no_apdx)
 {
 	char	*name, *dash;
 	int	i, appendix, len;
 
 	/* find '/' index in the string and keep the last level */
-	name = rindex(node_path, '/');
+	name = rindex(dev_path, '/');
 	if (name) {
 		/* absolute path */
 		if (strlen(name) == 1)
@@ -182,7 +183,7 @@ char *wd_get_accel_name(char *node_path, int no_apdx)
 		name++;
 	} else {
 		/* relative path */
-		name = node_path;
+		name = dev_path;
 	}
 	if (strlen(name) == 0)
 		return NULL;
@@ -210,14 +211,14 @@ char *wd_get_accel_name(char *node_path, int no_apdx)
 	return strndup(name, len);
 }
 
-static int get_accel_id(char *node_path, int *id)
+static int get_accel_id(char *dev_path, int *id)
 {
 	char	*dash;
 	int	i, appendix = 1;
 
 	if (!id)
 		return -EINVAL;
-	dash = rindex(node_path, '-');
+	dash = rindex(dev_path, '-');
 	if (!dash)
 		return -EINVAL;
 	for (i = 1; i < strlen(dash); i++) {
@@ -400,21 +401,21 @@ int wd_get_accel_mask(char *alg_name, wd_dev_mask_t *dev_mask)
 	return 0;
 }
 
-handle_t wd_request_ctx(char *node_path)
+handle_t wd_request_ctx(char *dev_path)
 {
 	struct wd_ctx_h	*ctx;
 	int	ret = -EINVAL;
 
-	if (!node_path || (strlen(node_path) + 1 >= MAX_DEV_NAME_LEN))
+	if (!dev_path || (strlen(dev_path) + 1 >= MAX_DEV_NAME_LEN))
 		return (handle_t)NULL;
 
 	ctx = calloc(1, sizeof(struct wd_ctx_h));
 	if (!ctx)
 		return (handle_t)NULL;
-	ctx->dev_name = wd_get_accel_name(node_path, 0);
+	ctx->dev_name = wd_get_accel_name(dev_path, 0);
 	if (!ctx->dev_name)
 		return ret;
-	ctx->drv_name = wd_get_accel_name(node_path, 1);
+	ctx->drv_name = wd_get_accel_name(dev_path, 1);
 	if (!ctx->drv_name)
 		goto out;
 
@@ -422,10 +423,10 @@ handle_t wd_request_ctx(char *node_path)
 	if (!ctx->dev_info)
 		goto out_info;
 
-	strncpy(ctx->node_path, node_path, MAX_DEV_NAME_LEN - 1);
-	ctx->fd = open(node_path, O_RDWR | O_CLOEXEC);
+	strncpy(ctx->dev_path, dev_path, MAX_DEV_NAME_LEN - 1);
+	ctx->fd = open(dev_path, O_RDWR | O_CLOEXEC);
 	if (ctx->fd < 0) {
-		WD_ERR("Failed to open %s (%d).\n", node_path, errno);
+		WD_ERR("Failed to open %s (%d).\n", dev_path, errno);
 		goto out_fd;
 	}
 	/* make process receiving async signal from kernel */
@@ -472,7 +473,7 @@ int wd_ctx_start(handle_t h_ctx)
 		return -EINVAL;
 	ret = ioctl(ctx->fd, UACCE_CMD_START);
 	if (ret)
-		WD_ERR("fail to start on %s\n", ctx->node_path);
+		WD_ERR("fail to start on %s\n", ctx->dev_path);
 	return ret;
 }
 
@@ -504,30 +505,36 @@ int wd_ctx_set_shared_va(handle_t h_ctx, void *shared_va)
 	return 0;
 }
 
-void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, size_t size)
+void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	off_t	off = qfrt * getpagesize();
+	size_t size;
+	void *addr;
 
-	if (!ctx)
+	if (!ctx || !ctx->qfrs_offs[qfrt])
 		return NULL;
-	if (ctx->qfrs_offs[qfrt] != 0)
-		size = ctx->qfrs_offs[qfrt];
 
-	return mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
+	size = ctx->qfrs_offs[qfrt];
+
+	addr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
+	if (!addr)
+		return NULL;
+
+	ctx->qfrs_base[qfrt] = addr;
+
+	return addr;
 }
 
-void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
+void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	size_t	size;
 
 	if (!ctx)
 		return;
-	if (ctx->qfrs_offs[qfrt] != 0) {
-		size = ctx->qfrs_offs[qfrt];
-		munmap(addr, size);
-	}
+
+	if (ctx->qfrs_offs[qfrt] != 0)
+		munmap(ctx->qfrs_base[qfrt], ctx->qfrs_offs[qfrt]);
 }
 
 /* Get session's private structure from struct wd_ctx_h */
@@ -606,6 +613,7 @@ int wd_is_nosva(handle_t h_ctx)
 	return 1;
 }
 
+/* to do: this api should be removed as we only support sva api */
 void *wd_reserve_mem(handle_t h_ctx, size_t size)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -613,7 +621,9 @@ void *wd_reserve_mem(handle_t h_ctx, size_t size)
 
 	if (!ctx)
 		return NULL;
-	ctx->ss_va = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_SS, size);
+
+	/* this is broken, as the whole function will be removed, we do not care */
+	ctx->ss_va = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_SS);
 
 	if (ctx->ss_va == MAP_FAILED) {
 		WD_ERR("wd drv mmap fail!\n");

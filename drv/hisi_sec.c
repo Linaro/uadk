@@ -56,7 +56,7 @@ struct hisi_qp_async {
 struct hisi_sec_sess {
 	struct hisi_qp *qp;
 	struct hisi_qp_async *qp_async;
-	char *node_path;
+	char *dev_path;
 };
 
 struct hisi_qp_async_list {

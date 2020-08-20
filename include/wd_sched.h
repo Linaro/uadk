@@ -32,7 +32,7 @@ struct wd_scheduler {
 	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
 	int (*input)(struct wd_msg *msg, void *priv);
 	int (*output)(struct wd_msg *msg, void *priv);
-	handle_t (*hw_alloc)(char *node_path, void *priv, void **data);
+	handle_t (*hw_alloc)(char *dev_path, void *priv, void **data);
 	void (*hw_free)(handle_t h_ctx);
 	int (*hw_send)(handle_t h_ctx, void *req, __u16 expect, __u16 *count);
 	int (*hw_recv)(handle_t h_qp, void *req, __u16 expect, __u16 *count);
@@ -49,7 +49,7 @@ struct wd_scheduler {
 	} *stat;
 };
 
-extern int wd_sched_init(struct wd_scheduler *sched, char *node_path);
+extern int wd_sched_init(struct wd_scheduler *sched, char *dev_path);
 extern void wd_sched_fini(struct wd_scheduler *sched);
 extern int wd_sched_work(struct wd_scheduler *sched, unsigned long have_input);
 

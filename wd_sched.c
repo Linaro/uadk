@@ -44,7 +44,7 @@ static void __fini_cache(struct wd_scheduler *sched)
 	free(sched->msgs);
 }
 
-int wd_sched_init(struct wd_scheduler *sched, char *node_path)
+int wd_sched_init(struct wd_scheduler *sched, char *dev_path)
 {
 	int ret;
 

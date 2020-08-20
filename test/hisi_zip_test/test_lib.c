@@ -370,7 +370,7 @@ out_swap:
 	}
 out_smm:
 	if (wd_is_nosva(sched->qs[0]) && sched->ss_region) {
-		wd_drv_unmap_qfr(sched->qs[0], UACCE_QFRT_SS, sched->ss_region);
+		wd_drv_unmap_qfr(sched->qs[0], UACCE_QFRT_SS);
 	}
 out_region:
 	for (j = i - 1; j >= 0; j--) {
