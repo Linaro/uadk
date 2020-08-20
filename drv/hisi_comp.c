@@ -77,7 +77,7 @@ static int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 	return 0;
 out:
 	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[j].ctx);
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return ret;
@@ -91,7 +91,7 @@ static void hisi_zip_exit(void *priv)
 	int i;
 
 	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[i].ctx);
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 }
@@ -119,7 +119,7 @@ static void hisi_zip_exit(void *priv)
 static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
 	struct hisi_zip_sqe sqe;
-	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	__u8 flush_type;
 	__u16 count = 0;
 	int ret;
@@ -176,7 +176,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	struct hisi_zip_sqe sqe;
 	int ret;
 	__u16 count = 0;
-	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0) {

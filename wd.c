@@ -531,7 +531,7 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, void *addr)
 }
 
 /* Get session's private structure from struct wd_ctx_h */
-void *wd_ctx_get_sess_priv(handle_t h_ctx)
+void *wd_ctx_get_priv(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
@@ -541,7 +541,7 @@ void *wd_ctx_get_sess_priv(handle_t h_ctx)
 }
 
 /* Link session's private structure to struct wd_ctx_h */
-int wd_ctx_set_sess_priv(handle_t h_ctx, void *priv)
+int wd_ctx_set_priv(handle_t h_ctx, void *priv)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 

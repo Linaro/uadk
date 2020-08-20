@@ -120,7 +120,7 @@ int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 	return 0;
 out:
 	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[j].ctx);
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return ret;
@@ -135,7 +135,7 @@ void hisi_sec_exit(void *priv)
 	int i;
 
 	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = (handle_t)wd_ctx_get_sess_priv(config->ctxs[i].ctx);
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 }
@@ -260,7 +260,7 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe sqe;
 	__u8 scene, cipher, de;
 	__u16 count = 0;
@@ -319,7 +319,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	struct hisi_sec_sqe sqe;
-	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	__u16 count = 0;
 	int ret;
 
