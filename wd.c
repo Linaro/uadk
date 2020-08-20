@@ -652,3 +652,22 @@ int wd_get_numa_id(handle_t h_ctx)
 {
 	return 0;
 }
+
+int wd_ctx_get_avail_ctx(char *dev_path)
+{
+	return 0;
+}
+
+struct uacce_dev_list *wd_get_accel_list(char *alg_name)
+{
+	return NULL;
+}
+
+void wd_free_list_accels(struct uacce_dev_list *list)
+{
+}
+
+int wd_ctx_set_io_cmd(handle_t h_ctx, int cmd, void *arg)
+{
+	return 0;
+}

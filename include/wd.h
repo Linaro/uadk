@@ -163,5 +163,9 @@ extern int wd_clear_mask(wd_dev_mask_t *dev_mask, int idx);
 /* new code */
 extern const char *wd_get_driver_name(handle_t h_ctx);
 extern int wd_get_numa_id(handle_t h_ctx);
+extern int wd_ctx_get_avail_ctx(char *dev_path);
+extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
+extern void wd_free_list_accels(struct uacce_dev_list *list);
+extern int wd_ctx_set_io_cmd(handle_t h_ctx, int cmd, void *arg);
 
 #endif
