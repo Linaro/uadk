@@ -243,14 +243,14 @@ void hisi_qm_free_qp(handle_t h_qp)
 }
 
 
-int hisi_qm_send(handle_t h_qp, void *req, __u16 num)
+int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 {
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	struct hisi_qm_queue_info *q_info;
 	__u16 tail;
 	__u16 free_num, send_num;
 
-	if (!qp)
+	if (!qp || !req || !count)
 		return -EINVAL;
 
 	q_info = &qp->q_info;
@@ -261,7 +261,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 num)
 		return -EBUSY;
 	}
 
-	send_num = num > free_num ? free_num : num;
+	send_num = expect > free_num ? free_num : expect;
 
 	tail = q_info->sq_tail_index;
 	hisi_qm_fill_sqe(req, q_info, tail, send_num);
@@ -275,10 +275,12 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 num)
 	if (tail == q_info->sq_head_index)
 		q_info->is_sq_full = 1;
 
-	return send_num;
+	*count = send_num;
+
+	return 0;
 }
 
-int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
+static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 {
 	__u16 i, j;
 	struct cqe *cqe;
@@ -313,25 +315,28 @@ int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	return 0;
 }
 
-int hisi_qm_recv(handle_t h_qp, void *resp, __u16 num) {
+int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
+{
 	int i, offset;
 	int ret = 0;
 	int recv_num = 0;
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	struct hisi_qm_queue_info *q_info = NULL;
 
-	if (!resp || !qp)
+	if (!resp || !qp || !count)
 		return -EINVAL;
 
 	q_info = &qp->q_info;
 
-	for (i = 0; i < num; i++) {
-		offset = i *q_info->sqe_size;
+	for (i = 0; i < expect; i++) {
+		offset = i * q_info->sqe_size;
 		ret = hisi_qm_recv_single(q_info, resp + offset);
 		if (ret)
 			break;
 		recv_num++;
 	}
 
-	return recv_num;
+	*count = recv_num++;
+
+	return ret;
 }

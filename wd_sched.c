@@ -67,11 +67,12 @@ void wd_sched_fini(struct wd_scheduler *sched)
 static int wd_recv_sync(struct wd_scheduler *sched, handle_t h_ctx,
 			void **resp, __u16 ms)
 {
+	__u16 count;
 	int ret;
 	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(h_ctx);
 
 	while (1) {
-		ret = sched->hw_recv(h_qp, resp, 1);
+		ret = sched->hw_recv(h_qp, resp, 1, &count);
 		if (ret == -EBUSY) {
 			ret = wd_wait(h_ctx, ms);
 			if (ret)
@@ -82,6 +83,7 @@ static int wd_recv_sync(struct wd_scheduler *sched, handle_t h_ctx,
 }
 
 static int __sync_send(struct wd_scheduler *sched) {
+	__u16 count = 0;
 	int ret;
 	handle_t h_qp;
 
@@ -90,7 +92,7 @@ static int __sync_send(struct wd_scheduler *sched) {
 	do {
 		sched->stat[sched->q_h].send++;
 		h_qp = (handle_t)wd_ctx_get_sess_priv(sched->qs[sched->q_h]);
-		ret = sched->hw_send(h_qp, sched->msgs[sched->c_h].msg, 1);
+		ret = sched->hw_send(h_qp, sched->msgs[sched->c_h].msg, 1, &count);
 		if (ret == -EBUSY) {
 			usleep(1);
 			sched->stat[sched->q_h].send_retries++;

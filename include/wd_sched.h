@@ -34,8 +34,8 @@ struct wd_scheduler {
 	int (*output)(struct wd_msg *msg, void *priv);
 	handle_t (*hw_alloc)(char *node_path, void *priv, void **data);
 	void (*hw_free)(handle_t h_ctx);
-	int (*hw_send)(handle_t h_ctx, void *req, __u16 num);
-	int (*hw_recv)(handle_t h_qp, void *req, __u16 num);
+	int (*hw_send)(handle_t h_ctx, void *req, __u16 expect, __u16 *count);
+	int (*hw_recv)(handle_t h_qp, void *req, __u16 expect, __u16 *count);
 	void *data;	// used by hw_alloc
 
 	void *priv;

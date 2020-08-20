@@ -263,6 +263,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
 	struct hisi_sec_sqe sqe;
 	__u8 scene, cipher, de;
+	__u16 count = 0;
 	int ret;
 
 	if (!msg) {
@@ -307,8 +308,8 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	WD_ERR("#######dump send bd############!\n");
 	sec_dump_bd((unsigned int *)&sqe, 32);
 #endif
-	ret = hisi_qm_send(h_qp, &sqe, 1);
-	if (ret <= 0) {
+	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
+	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
 		return ret;
 	}
@@ -319,10 +320,11 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	struct hisi_sec_sqe sqe;
 	handle_t h_qp = (handle_t)wd_ctx_get_sess_priv(ctx);
+	__u16 count = 0;
 	int ret;
 
-	ret = hisi_qm_recv(h_qp, &sqe, 1);
-	if (ret <= 0)
+	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
+	if (ret < 0)
 		return ret;
 #ifdef DEBUG
 	WD_ERR("#######dump recv bd############!\n");
