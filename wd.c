@@ -447,7 +447,7 @@ int wd_ctx_start(handle_t h_ctx)
 	if (!ctx)
 		return -EINVAL;
 
-	ret = ioctl(ctx->fd, UACCE_CMD_START);
+	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
 	if (ret)
 		WD_ERR("fail to start on %s\n", ctx->dev_path);
 
@@ -461,7 +461,7 @@ int wd_ctx_stop(handle_t h_ctx)
 	if (!ctx)
 		return -EINVAL;
 
-	return ioctl(ctx->fd, UACCE_CMD_PUT_Q);
+	return wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
 }
 
 void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
@@ -518,16 +518,6 @@ int wd_ctx_set_priv(handle_t h_ctx, void *priv)
 	ctx->priv = priv;
 
 	return 0;
-}
-
-int wd_ctx_get_fd(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return -EINVAL;
-
-	return ctx->fd;
 }
 
 char *wd_ctx_get_api(handle_t h_ctx)
@@ -600,7 +590,15 @@ void wd_free_list_accels(struct uacce_dev_list *list)
 {
 }
 
-int wd_ctx_set_io_cmd(handle_t h_ctx, int cmd, void *arg)
+int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 {
-	return 0;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+
+	if (!ctx)
+		return -EINVAL;
+
+	if (!arg)
+		return ioctl(ctx->fd, cmd);
+	else
+		return ioctl(ctx->fd, cmd, arg);
 }

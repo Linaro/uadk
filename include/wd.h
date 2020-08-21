@@ -105,7 +105,6 @@ extern int wd_ctx_stop(handle_t h_ctx);
 extern void *wd_ctx_get_priv(handle_t h_ctx);
 extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
 extern char *wd_ctx_get_api(handle_t h_ctx);
-extern int wd_ctx_get_fd(handle_t h_ctx);
 extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 extern int wd_wait(handle_t h_ctx, __u16 ms);
@@ -117,6 +116,6 @@ extern int wd_get_numa_id(handle_t h_ctx);
 extern int wd_ctx_get_avail_ctx(char *dev_path);
 extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
 extern void wd_free_list_accels(struct uacce_dev_list *list);
-extern int wd_ctx_set_io_cmd(handle_t h_ctx, int cmd, void *arg);
+extern int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
 
 #endif

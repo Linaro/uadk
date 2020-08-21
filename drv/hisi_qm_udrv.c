@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
@@ -92,7 +91,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 {
 	char *api_name;
 	int ret = 0;
-	int i, size, fd;
+	int i, size;
 	struct hisi_qp_ctx qp_ctx;
 	struct hisi_qm_queue_info *q_info = NULL;
 
@@ -134,8 +133,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
-	fd = wd_ctx_get_fd(qp->h_ctx);
-	ret = ioctl(fd, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
+	ret = wd_ctx_set_io_cmd(qp->h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("HISI QM fail to set qc_type, use default value\n");
 		goto out_qm;
