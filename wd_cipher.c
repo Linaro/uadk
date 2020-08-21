@@ -161,7 +161,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 
 void wd_cipher_free_sess(handle_t h_sess)
 {
-	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)sess;
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
 	free(sess);
 }
