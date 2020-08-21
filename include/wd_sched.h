@@ -47,6 +47,8 @@ struct wd_scheduler {
 		int recv;
 		int recv_retries;
 	} *stat;
+
+	bool poll;
 };
 
 extern int wd_sched_init(struct wd_scheduler *sched, char *node_path);
