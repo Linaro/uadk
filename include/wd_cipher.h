@@ -67,7 +67,6 @@ struct wd_cipher_sess {
 	char			*alg_name;
   	enum wd_cipher_alg alg;
 	enum wd_cipher_mode mode;
-	char			dev_path[MAX_DEV_NAME_LEN + 1];
 	wd_dev_mask_t		*dev_mask;
 	struct wd_alg_cipher	*drv;
 	void			*priv;

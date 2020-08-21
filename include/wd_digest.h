@@ -56,7 +56,6 @@ struct wd_digest_sess {
 	char			*alg_name;
 	enum wd_digest_type	alg;
 	enum wd_digest_mode	mode;
-	char			dev_path[MAX_DEV_NAME_LEN + 1];
 	wd_dev_mask_t		*dev_mask;
 	struct wd_alg_digest	*drv;
 	void			*priv;

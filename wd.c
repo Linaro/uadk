@@ -16,8 +16,15 @@
 #include <unistd.h>
 
 #include "wd.h"
+#include "wd_alg_common.h"
 
-#define SYS_CLASS_DIR	"/sys/class/uacce"
+#define SYS_CLASS_DIR			"/sys/class/uacce"
+#define MAX_DEV_NAME_LEN		256
+
+/* to do: should be removed as we do not use dev mask */
+#define MAX_ACCELS			16
+#define MAX_BYTES_FOR_ACCELS		(MAX_ACCELS >> 3)
+#define WD_DEV_MASK_MAGIC		0xa395deaf
 
 struct wd_ctx_h {
 	int fd;

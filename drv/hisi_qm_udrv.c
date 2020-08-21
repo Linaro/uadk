@@ -14,6 +14,7 @@
 
 #include "hisi_qm_udrv.h"
 #include "wd.h"
+#include "wd_alg_common.h"
 
 #define QM_SQE_SIZE		128 /* TODO: get it from sysfs */
 #define QM_CQE_SIZE		16
@@ -25,6 +26,8 @@
 #define CQE_PHASE(cq)	(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
 #define CQE_SQ_NUM(cq)	((*((__u32 *)(cq) + 2)) >> 16)
 #define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
+
+#define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
 
 struct hisi_qm_type {
 	char	*qm_name;

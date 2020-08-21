@@ -28,5 +28,6 @@ enum uacce_qfrt {
 	UACCE_QFRT_MMIO = 0,	/* device mmio region */
 	UACCE_QFRT_DUS = 1,	/* device user share */
 	UACCE_QFRT_SS = 2,      /* static share memory */
+	UACCE_QFRT_MAX,
 };
 #endif

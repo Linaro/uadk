@@ -2,6 +2,7 @@
 #include "config.h"
 #include "wd_sched.h"
 #include "smm.h"
+#include "wd_alg_common.h"
 
 /*
  * In SVA scenario, a whole user buffer could be divided into multiple frames.

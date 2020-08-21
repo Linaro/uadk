@@ -3,6 +3,29 @@
 
 #include <asm/types.h>
 #include "wd.h"
+
+#ifndef WD_ERR
+#ifndef WITH_LOG_FILE
+#define WD_ERR(format, args...) fprintf(stderr, format, ##args)
+#else
+extern FILE *flog_fd;
+#define WD_ERR(format, args...)				\
+	if (!flog_fd)					\
+		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
+	if (flog_fd)					\
+		fprintf(flog_fd, format, ##args);	\
+	else						\
+		fprintf(stderr, "log %s not exists!",	\
+			WITH_LOG_FILE);
+#endif
+#endif
+
+#ifdef DEBUG_LOG
+#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
+#else
+#define dbg(msg, ...)
+#endif
+
 /**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.

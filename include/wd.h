@@ -18,17 +18,6 @@
 #define MAX_ATTR_STR_SIZE		256
 #define WD_NAME_SIZE			64
 
-#define UACCE_QFRT_MAX			4
-#define UACCE_QFR_NA			((unsigned long)-1)
-
-#define WD_CAPA_PRIV_DATA_SIZE		64
-
-#define MAX_DEV_NAME_LEN		256
-#define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
-#define MAX_ACCELS			16
-#define MAX_BYTES_FOR_ACCELS		(MAX_ACCELS >> 3)
-#define WD_DEV_MASK_MAGIC		0xa395deaf
-
 /* WD error code */
 #define	WD_SUCCESS			0
 #define	WD_STREAM_END			1
@@ -49,58 +38,35 @@
 #define	WD_IN_EPARA			67
 #define	WD_ENOPROC			68
 
-#ifndef WD_ERR
-#ifndef WITH_LOG_FILE
-#define WD_ERR(format, args...) fprintf(stderr, format, ##args)
-#else
-extern FILE *flog_fd;
-#define WD_ERR(format, args...)				\
-	if (!flog_fd)					\
-		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
-	if (flog_fd)					\
-		fprintf(flog_fd, format, ##args);	\
-	else						\
-		fprintf(stderr, "log %s not exists!",	\
-			WITH_LOG_FILE);
-#endif
-#endif
-
-#ifdef DEBUG_LOG
-#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
-#else
-#define dbg(msg, ...)
-#endif
-
-
 struct uacce_dev_info {
 	/* sysfs node content */
-	int		flags;
-	int		avail_instn;
-	char		api[WD_NAME_SIZE];
-	char		algs[MAX_ATTR_STR_SIZE];
-	unsigned long	qfrs_offs[UACCE_QFRT_MAX];
+	int flags;
+	/* to do: should be removed as it is dynamic, should use api to get its value */
+	int avail_instn;
+	char api[WD_NAME_SIZE];
+	char algs[MAX_ATTR_STR_SIZE];
+	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 
-	char		name[WD_NAME_SIZE];
-	char		alg_path[PATH_STR_SIZE];
-	char		dev_root[PATH_STR_SIZE];
+	char name[WD_NAME_SIZE];
+	char alg_path[PATH_STR_SIZE];
+	char dev_root[PATH_STR_SIZE];
 
-	int		node_id;
-	int		iommu_type;
+	int node_id;
 };
 
 struct uacce_dev_list {
-	struct uacce_dev_info	*info;
-	struct uacce_dev_list	*next;
+	struct uacce_dev_info *info;
+	struct uacce_dev_list *next;
 };
 
 struct wd_dev_mask {
-	unsigned char	*mask;
-	int		len;
-	unsigned int	magic;
+	unsigned char *mask;
+	int len;
+	unsigned int magic;
 };
 
-typedef unsigned long long int	handle_t;
-typedef struct wd_dev_mask	wd_dev_mask_t;
+typedef unsigned long long int handle_t;
+typedef struct wd_dev_mask wd_dev_mask_t;
 
 static inline uint32_t wd_ioread32(void *addr)
 {
@@ -113,7 +79,7 @@ static inline uint32_t wd_ioread32(void *addr)
 
 static inline uint64_t wd_ioread64(void *addr)
 {
-	uint64_t	ret;
+	uint64_t ret;
 
 	ret = *((volatile uint64_t *)addr);
 	__sync_synchronize();

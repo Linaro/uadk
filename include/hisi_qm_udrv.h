@@ -9,6 +9,8 @@
 #include "wd.h"
 #include "include/qm_usr_if.h"
 
+#define WD_CAPA_PRIV_DATA_SIZE		64
+
 struct hisi_qm_priv {
 	__u16 sqe_size;
 	__u16 op_type;
