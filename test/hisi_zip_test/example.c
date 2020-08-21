@@ -12,7 +12,7 @@
 #include "wd_comp.h"
 #include "wd_sched.h"
 
-#define TEST_WORD_LEN	4096
+#define TEST_WORD_LEN	64
 
 #define	NUM_THREADS	10
 
@@ -704,6 +704,8 @@ static void *wait_func(void *arg)
 
 out_comp:
 	pthread_mutex_unlock(&mutex);
+	/* wait to avoid data broken */
+	usleep(10);
 
 	wd_comp_free_sess(h_sess);
 out:
@@ -765,17 +767,17 @@ int test_comp_async2_once(int flag)
 	void	*src, *dst;
 	char	*buf;
 	int	ret = 0, step, i;
-	int	parallel = 9;
-
 	/* parallel means the number of sending threads */
-	if (parallel >= NUM_THREADS)
+	int	parallel = NUM_THREADS - 1;
+
+	if (NUM_THREADS < 2)
 		return -EINVAL;
 
 	step = sizeof(char) * TEST_WORD_LEN;
-	src = malloc(step * NUM_THREADS);
+	src = calloc(1, step * NUM_THREADS);
 	if (!src)
 		return -ENOMEM;
-	dst = malloc(step * NUM_THREADS);
+	dst = calloc(1, step * NUM_THREADS);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out;
@@ -784,7 +786,7 @@ int test_comp_async2_once(int flag)
 	for (i = 0; i < parallel; i++) {
 		req[i].src = src + (step * i);
 		req[i].dst = dst + (step * i);
-		memcpy(req[i].src, word, sizeof(char) * strlen(word));
+		memcpy(req[i].src, word, strlen(word));
 		req[i].src_len = strlen(word);
 		req[i].dst_len = step;
 		req[i].cb = async_cb;
