@@ -107,6 +107,18 @@ static void uninit_config(void)
 	free(ctx_conf.ctxs);
 }
 
+static handle_t alloc_sess(int flag)
+{
+	struct wd_comp_sess_setup	setup;
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	return wd_comp_alloc_sess(&setup);
+}
+
 static int comp_sync(handle_t h_sess,
 		     struct wd_comp_req *req,
 		     int src_step,
@@ -164,9 +176,8 @@ out:
  * Test to compress and decompress on IN & OUT buffer.
  * Data are filled in IN and OUT buffer only once.
  */
-int test_comp_sync_once(int flag, int mode)
+int test_comp_sync_once(int flag)
 {
-	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req	req;
 	handle_t	h_sess;
 	void	*src, *dst;
@@ -190,12 +201,7 @@ int test_comp_sync_once(int flag, int mode)
 	req.src_len = strlen(word);
 	t = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -220,12 +226,7 @@ int test_comp_sync_once(int flag, int mode)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -261,7 +262,6 @@ out:
 
 int test_comp_sync_multi_1(int flag)
 {
-	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req	req;
 	handle_t	h_sess;
 	void	*src, *dst;
@@ -285,12 +285,7 @@ int test_comp_sync_multi_1(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -315,12 +310,7 @@ int test_comp_sync_multi_1(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -356,7 +346,6 @@ out:
 
 int test_comp_sync_multi_2(int flag)
 {
-	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req	req;
 	handle_t	h_sess;
 	void	*src, *dst;
@@ -380,12 +369,7 @@ int test_comp_sync_multi_2(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -410,12 +394,7 @@ int test_comp_sync_multi_2(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -451,7 +430,6 @@ out:
 
 int test_comp_sync_multi_3(int flag)
 {
-	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req	req;
 	handle_t	h_sess;
 	void	*src, *dst;
@@ -475,12 +453,7 @@ int test_comp_sync_multi_3(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -505,12 +478,7 @@ int test_comp_sync_multi_3(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -553,9 +521,8 @@ static void *async_cb(void *data)
 	return NULL;
 }
 
-int test_comp_async1_once(int flag, int mode)
+int test_comp_async1_once(int flag)
 {
-	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req req;
 	handle_t	h_sess;
 	char	buf[TEST_WORD_LEN];
@@ -586,12 +553,7 @@ int test_comp_async1_once(int flag, int mode)
 	req.src_len = strlen(word);
 	t = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -631,12 +593,7 @@ int test_comp_async1_once(int flag, int mode)
 	t = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -725,16 +682,10 @@ static void *wait_func(void *arg)
 {
 	thread_data_t *data = (thread_data_t *)arg;
 	struct wd_comp_req	*req = data->req;
-	struct wd_comp_sess_setup	setup;
 	handle_t	h_sess;
 	int	ret = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (data->flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (data->flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(data->flag);
 	if (!h_sess)
 		goto out;
 
@@ -803,7 +754,7 @@ static int create_threads(int flag, int wait_thr_num, struct wd_comp_req *reqs)
  * Create ten threads. Nine threads are compressing/decompressing, and the other
  * is polling.
  */
-int test_comp_async2_once(int flag, int mode)
+int test_comp_async2_once(int flag)
 {
 	struct wd_comp_req	req[NUM_THREADS];
 	void	*src, *dst;
@@ -897,7 +848,7 @@ int main(int argc, char **argv)
 {
 	int ret;
 
-	ret = test_comp_sync_once(FLAG_ZLIB, 0);
+	ret = test_comp_sync_once(FLAG_ZLIB);
 	if (ret < 0) {
 		printf("Fail to run test_comp_sync_once() with ZLIB.\n");
 		return ret;
@@ -917,12 +868,12 @@ int main(int argc, char **argv)
 		printf("Fail to run test_comp_sync_multi_2() with ZLIB.\n");
 		return ret;
 	}
-	ret = test_comp_async1_once(FLAG_ZLIB, 0);
+	ret = test_comp_async1_once(FLAG_ZLIB);
 	if (ret < 0) {
 		printf("Fail to run test_comp_async1_once() with ZLIB.\n");
 		return ret;
 	}
-	ret = test_comp_async2_once(FLAG_ZLIB, 0);
+	ret = test_comp_async2_once(FLAG_ZLIB);
 	if (ret < 0) {
 		printf("Fail to run test_comp_async2_once() with ZLIB.\n");
 		return ret;
