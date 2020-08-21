@@ -107,6 +107,59 @@ static void uninit_config(void)
 	free(ctx_conf.ctxs);
 }
 
+static int comp_sync(handle_t h_sess,
+		     struct wd_comp_req *req,
+		     int src_step,
+		     int dst_step,
+		     int src_len,
+		     int *dst_len
+		     )
+{
+	int templen = src_step;
+	int i = 0, ret;
+
+	if (!dst_len || !src_step || !dst_step || !src_len)
+		return -EINVAL;
+	*dst_len = 0;
+	while (1) {
+		req->flag = 0;
+		req->status = 0;
+		req->dst_len = dst_step;
+		if (i + templen >= src_len) {
+			templen = src_len - i;
+			req->src_len = templen;
+		} else if (i >= src_len)
+			req->src_len = 0;
+		else
+			req->src_len = templen;
+		if (!req->src_len)
+			req->flag |= FLAG_INPUT_FINISH;
+
+		ret = wd_do_comp(h_sess, req);
+		if (ret < 0)
+			goto out;
+		if (req->status & (STATUS_IN_EMPTY | STATUS_IN_PART_USE)) {
+			if (i < src_len) {
+				i += req->src_len;
+				req->src += req->src_len;
+				templen = src_step;
+			} else {
+				templen = 0;
+			}
+		}
+		if (req->status & STATUS_OUT_READY) {
+			req->dst += req->dst_len;
+			*dst_len += req->dst_len;
+		}
+		if ((req->status & STATUS_OUT_DRAINED) &&
+		    (req->status & STATUS_IN_EMPTY) &&
+		    (req->flag & FLAG_INPUT_FINISH))
+			return 0;
+	}
+out:
+	return ret;
+}
+
 /*
  * Test to compress and decompress on IN & OUT buffer.
  * Data are filled in IN and OUT buffer only once.
@@ -116,9 +169,8 @@ int test_comp_sync_once(int flag, int mode)
 	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req	req;
 	handle_t	h_sess;
-	char	buf[TEST_WORD_LEN];
 	void	*src, *dst;
-	int	ret = 0, t;
+	int	ret = 0, t, len;
 
 	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
 
@@ -148,30 +200,24 @@ int test_comp_sync_once(int flag, int mode)
 		ret = -EINVAL;
 		goto out_sess;
 	}
-	while (1) {
-		req.status = 0;
-		req.dst_len = TEST_WORD_LEN;
-		req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
-		ret = wd_do_comp(h_sess, &req);
-		if (req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, req.dst, req.dst_len);
-			t += req.dst_len;
-			req.dst = dst;
-		}
-		if ((req.status & STATUS_OUT_DRAINED) &&
-		    (req.status & STATUS_IN_EMPTY) &&
-		    (req.flag & FLAG_INPUT_FINISH))
-			break;
-	}
+	ret = comp_sync(h_sess,
+			&req,
+			TEST_WORD_LEN,
+			TEST_WORD_LEN,
+			strlen(word),
+			&t
+			);
+	if (ret < 0)
+		goto out_comp;
 	wd_comp_free_sess(h_sess);
 	uninit_config();
 
 	/* prepare to decompress */
 	req.src = src;
-	memcpy(req.src, buf, t);
+	memcpy(req.src, dst, t);
 	req.src_len = t;
 	req.dst = dst;
-	t = 0;
+	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
@@ -184,28 +230,305 @@ int test_comp_sync_once(int flag, int mode)
 		ret = -EINVAL;
 		goto out_sess;
 	}
-	while (1) {
-		req.status = 0;
-		req.dst_len = TEST_WORD_LEN;
-		req.flag = FLAG_INPUT_FINISH;
-		ret = wd_do_comp(h_sess, &req);
-		if (ret < 0)
-			goto out_comp;
-		if (req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, req.dst, req.dst_len);
-			t += req.dst_len;
-			req.dst = dst;
-		}
-		if ((req.status & STATUS_OUT_DRAINED) &&
-		    (req.status & STATUS_IN_EMPTY) &&
-		    (req.flag & FLAG_INPUT_FINISH))
-			break;
-	}
+	ret = comp_sync(h_sess,
+			&req,
+			TEST_WORD_LEN,
+			TEST_WORD_LEN,
+			t,
+			&len
+			);
+	if (ret < 0)
+		goto out_comp;
 	wd_comp_free_sess(h_sess);
 	uninit_config();
 
-	if (memcmp(buf, word, strlen(word))) {
-		printf("match failure! word:%s, buf:%s\n", word, buf);
+	if (memcmp(dst, word, strlen(word))) {
+		printf("match failure! word:%s, dst:%s\n", word, dst);
+	} else {
+		printf("Pass compress test in single buffer.\n");
+	}
+
+	free(src);
+	free(dst);
+	return 0;
+out_comp:
+	wd_comp_free_sess(h_sess);
+out_sess:
+	free(req.src);
+out:
+	return ret;
+}
+
+int test_comp_sync_multi_1(int flag)
+{
+	struct wd_comp_sess_setup	setup;
+	struct wd_comp_req	req;
+	handle_t	h_sess;
+	void	*src, *dst;
+	int	ret = 0, t, len;
+
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+
+	memset(&req, 0, sizeof(struct wd_comp_req));
+	req.dst_len = sizeof(char) * TEST_WORD_LEN;
+	req.src = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.src)
+		return -ENOMEM;
+	req.dst = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	src = req.src;
+	dst = req.dst;
+	memcpy(req.src, word, sizeof(char) * strlen(word));
+	req.src_len = strlen(word);
+	t = 0;
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			1,
+			TEST_WORD_LEN,
+			strlen(word),
+			&t
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	/* prepare to decompress */
+	req.src = src;
+	memcpy(req.src, dst, t);
+	req.src_len = t;
+	req.dst = dst;
+	len = 0;
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			1,
+			TEST_WORD_LEN,
+			t,
+			&len
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	if (memcmp(dst, word, strlen(word))) {
+		printf("match failure! word:%s, dst:%s\n", word, dst);
+	} else {
+		printf("Pass compress test in single buffer.\n");
+	}
+
+	free(src);
+	free(dst);
+	return 0;
+out_comp:
+	wd_comp_free_sess(h_sess);
+out_sess:
+	free(req.src);
+out:
+	return ret;
+}
+
+int test_comp_sync_multi_2(int flag)
+{
+	struct wd_comp_sess_setup	setup;
+	struct wd_comp_req	req;
+	handle_t	h_sess;
+	void	*src, *dst;
+	int	ret = 0, t, len;
+
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+
+	memset(&req, 0, sizeof(struct wd_comp_req));
+	req.dst_len = sizeof(char) * TEST_WORD_LEN;
+	req.src = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.src)
+		return -ENOMEM;
+	req.dst = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	src = req.src;
+	dst = req.dst;
+	memcpy(req.src, word, sizeof(char) * strlen(word));
+	req.src_len = strlen(word);
+	t = 0;
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			TEST_WORD_LEN,
+			1,
+			strlen(word),
+			&t
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	/* prepare to decompress */
+	req.src = src;
+	memcpy(req.src, dst, t);
+	req.src_len = t;
+	req.dst = dst;
+	len = 0;
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			TEST_WORD_LEN,
+			1,
+			t,
+			&len
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	if (memcmp(dst, word, strlen(word))) {
+		printf("match failure! word:%s, dst:%s\n", word, dst);
+	} else {
+		printf("Pass compress test in single buffer.\n");
+	}
+
+	free(src);
+	free(dst);
+	return 0;
+out_comp:
+	wd_comp_free_sess(h_sess);
+out_sess:
+	free(req.src);
+out:
+	return ret;
+}
+
+int test_comp_sync_multi_3(int flag)
+{
+	struct wd_comp_sess_setup	setup;
+	struct wd_comp_req	req;
+	handle_t	h_sess;
+	void	*src, *dst;
+	int	ret = 0, t, len;
+
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+
+	memset(&req, 0, sizeof(struct wd_comp_req));
+	req.dst_len = sizeof(char) * TEST_WORD_LEN;
+	req.src = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.src)
+		return -ENOMEM;
+	req.dst = malloc(sizeof(char) * TEST_WORD_LEN);
+	if (!req.dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	src = req.src;
+	dst = req.dst;
+	memcpy(req.src, word, sizeof(char) * strlen(word));
+	req.src_len = strlen(word);
+	t = 0;
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			1,
+			1,
+			strlen(word),
+			&t
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	/* prepare to decompress */
+	req.src = src;
+	memcpy(req.src, dst, t);
+	req.src_len = t;
+	req.dst = dst;
+	len = 0;
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (flag & FLAG_ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (flag & FLAG_GZIP)
+		setup.alg_type = WD_GZIP;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			1,
+			1,
+			t,
+			&len
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	if (memcmp(dst, word, strlen(word))) {
+		printf("match failure! word:%s, dst:%s\n", word, dst);
 	} else {
 		printf("Pass compress test in single buffer.\n");
 	}
@@ -577,6 +900,21 @@ int main(int argc, char **argv)
 	ret = test_comp_sync_once(FLAG_ZLIB, 0);
 	if (ret < 0) {
 		printf("Fail to run test_comp_sync_once() with ZLIB.\n");
+		return ret;
+	}
+	ret = test_comp_sync_multi_1(FLAG_ZLIB);
+	if (ret < 0) {
+		printf("Fail to run test_comp_sync_multi_1() with ZLIB.\n");
+		return ret;
+	}
+	ret = test_comp_sync_multi_2(FLAG_ZLIB);
+	if (ret < 0) {
+		printf("Fail to run test_comp_sync_multi_2() with ZLIB.\n");
+		return ret;
+	}
+	ret = test_comp_sync_multi_3(FLAG_ZLIB);
+	if (ret < 0) {
+		printf("Fail to run test_comp_sync_multi_2() with ZLIB.\n");
 		return ret;
 	}
 	ret = test_comp_async1_once(FLAG_ZLIB, 0);
