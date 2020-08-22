@@ -381,7 +381,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 	fill_request_msg(&msg, req);
 	/* send bd */
 	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, &msg);
-	if (!ret) {
+	if (!ret || ret == -EINVAL) {
 		WD_ERR("wd send err!\n");
 		return ret;
 	}

@@ -30,44 +30,15 @@
 #define AES_KEYSIZE_128		  16
 #define AES_KEYSIZE_192		  24
 #define AES_KEYSIZE_256		  32
+#define DES3_BLOCK_SIZE		  8
+#define	AES_BLOCK_SIZE		  16
+/* The max BD cipher length is 16M-512B */
+#define	MAX_CIPHER_LEN		  16776704
 
 /* fix me */
 #define SEC_QP_NUM_PER_PROCESS	  1
 #define MAX_CIPHER_RETRY_CNT	  20000000
-/* should be remove to qm module */
-struct hisi_qp_req {
-	void (*callback)(void *parm);
-};
 
-struct hisi_qp_task_pool {
-	pthread_mutex_t task_pool_lock;
-	struct hisi_qp_req *queue;
-	__u32 tail;
-	__u32 head;
-	__u32 depth;
-};
-
-struct hisi_qp_async {
-	struct hisi_qp_task_pool task_pool;
-	struct hisi_qp *qp;
-};
-
-/* session like request ctx */
-struct hisi_sec_sess {
-	struct hisi_qp *qp;
-	struct hisi_qp_async *qp_async;
-	char *dev_path;
-};
-
-struct hisi_qp_async_list {
-	struct hisi_qp_async *qp;
-	struct hisi_qp_async_list *next;
-};
-
-struct hisi_sec_qp_async_pool {
-	pthread_mutex_t lock;
-	struct hisi_qp_async_list head;
-} hisi_sec_qp_async_pool;
 #ifdef DEBUG
 static void hexdump(char *buff, unsigned int len)
 {
@@ -251,11 +222,31 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		recv_msg->result = WD_SUCCESS;
 	}
 
-#ifdef DEBUG
-	WD_ERR("Dump cipher recv sqe-->!\n");
-	hexdump(sqe->type2.data_dst_addr, 16);
-#endif
 	update_iv(recv_msg);
+}
+
+static int cipher_param_check(struct wd_cipher_msg *msg)
+{
+	if (msg->in_bytes > MAX_CIPHER_LEN) {
+		WD_ERR("input cipher len is too large!\n");
+		return -EINVAL;
+	}
+
+	if (msg->alg == WD_CIPHER_3DES || msg->alg == WD_CIPHER_DES) {
+		if (msg->in_bytes & (DES3_BLOCK_SIZE - 1) || msg->iv_bytes < DES3_BLOCK_SIZE) {
+			WD_ERR("input 3DES or DES cipher parameter is error!\n");
+			return -EINVAL;
+		}
+		return 0;
+	} else if (msg->alg == WD_CIPHER_AES || msg->alg == WD_CIPHER_SM4) {
+		if (msg->in_bytes & (AES_BLOCK_SIZE - 1) || msg->iv_bytes < AES_BLOCK_SIZE) {
+			WD_ERR("input AES or SM4 cipher parameter is error!\n");
+			return -EINVAL;
+		}
+		return 0;
+	}
+
+	return 0;
 }
 
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
@@ -278,11 +269,6 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = 0x1 << SEC_DE_OFFSET;
 	sqe.sds_sa_type = (__u8)(de | scene);
-	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
-	sqe.type2.data_src_addr = (__u64)msg->in;
-	sqe.type2.data_dst_addr = (__u64)msg->out;
-	sqe.type2.c_ivin_addr = (__u64)msg->iv;
-	sqe.type2.c_key_addr = (__u64)msg->key;
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION) {
 		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
@@ -291,23 +277,28 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	}
 	sqe.type_auth_cipher |= cipher;
 
-	/* fill cipher bd2 alg */
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
 		WD_ERR("faile to fill bd alg!\n");
 		return ret;
 	}
 
-	/* fill cipher bd2 mode */
 	ret = fill_cipher_bd2_mode(msg, &sqe);
 	if (ret) {
 		WD_ERR("faile to fill bd mode!\n");
 		return ret;
 	}
-#ifdef DEBUG 
-	WD_ERR("#######dump send bd############!\n");
-	sec_dump_bd((unsigned int *)&sqe, 32);
-#endif
+
+	ret = cipher_param_check(msg);
+	if (ret)
+		return ret;
+
+	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
+	sqe.type2.data_src_addr = (__u64)msg->in;
+	sqe.type2.data_dst_addr = (__u64)msg->out;
+	sqe.type2.c_ivin_addr = (__u64)msg->iv;
+	sqe.type2.c_key_addr = (__u64)msg->key;
+
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
@@ -326,11 +317,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
 		return ret;
-#ifdef DEBUG
-	WD_ERR("#######dump recv bd############!\n");
-	sec_dump_bd((unsigned int *)&sqe, 32);
-#endif
-	/* parser cipher sqe */
+
 	parse_cipher_bd2(&sqe, recv_msg);
 
 	return 1;
