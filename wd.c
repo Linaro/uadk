@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -588,13 +589,120 @@ int wd_get_avail_ctx(struct uacce_dev_info *dev)
 	return avail_ctx;
 }
 
+static int get_dev_alg_name(char *dev_path, char *buf, size_t sz)
+{
+	int ret;
+
+	ret = get_raw_attr(dev_path, "algorithms", buf, sz);
+	if (ret < 0) {
+		buf[0] = '\0';
+		return ret;
+	}
+
+	if ((size_t)ret == sz)
+		buf[sz - 1] = '\0';
+
+	return 0;
+}
+
+static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
+{
+	char *pos;
+
+	pos = strstr(dev_alg_name, alg_name);
+	if (!pos)
+		return false;
+	else
+		return true;
+}
+
+static void add_uacce_dev_to_list(struct uacce_dev_list *head,
+				  struct uacce_dev_list *node)
+{
+	struct uacce_dev_list *tmp = head;
+
+	while (tmp->next)
+		tmp = tmp->next;
+
+	tmp->next = node;
+}
+
 struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 {
+	struct uacce_dev_list *node = NULL, *head = NULL;
+	char dev_alg_name[MAX_ATTR_STR_SIZE];
+	char dev_path[MAX_DEV_NAME_LEN];
+	struct dirent *dev = NULL;
+	DIR *wd_class = NULL;
+	int ret;
+
+	wd_class = opendir(SYS_CLASS_DIR);
+	if (!wd_class) {
+		WD_ERR("WarpDrive framework isn't enabled in system!\n");
+		return NULL;
+	}
+
+	while ((dev = readdir(wd_class)) != NULL) {
+		if (!strncmp(dev->d_name, ".", 1) ||
+		    !strncmp(dev->d_name, "..", 2))
+			continue;
+
+		ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
+			       SYS_CLASS_DIR, dev->d_name);
+		if (ret > MAX_DEV_NAME_LEN || ret < 0)
+			goto free_list;
+
+		ret = get_dev_alg_name(dev_path, dev_alg_name,
+				       sizeof(dev_alg_name));
+		if (ret < 0) {
+			WD_ERR("Failed to get alg for %s, ret = %d\n",
+			       dev_path, ret);
+			return NULL;
+		}
+
+		if (dev_has_alg(dev_alg_name, alg_name)) {
+			node = calloc(1, sizeof(*node));
+			if (!node)
+				goto free_list;
+
+			node->info = read_uacce_sysfs(dev->d_name);
+			if (!node->info)
+				goto free_list;
+
+			if (!head)
+				head = node;
+			else
+				add_uacce_dev_to_list(head, node);
+		} else {
+			continue;
+		}
+
+	}
+
+	closedir(wd_class);
+
+	return head;
+
+free_list:
+	wd_free_list_accels(head);
 	return NULL;
 }
 
 void wd_free_list_accels(struct uacce_dev_list *list)
 {
+	struct uacce_dev_list *curr, *next;
+
+	if (!list)
+		return;
+
+	curr = list;
+	while (curr) {
+		next = curr->next;
+		if (curr->info)
+			free(curr->info);
+		free(curr);
+		curr = next;
+	}
 }
 
 int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)

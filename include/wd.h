@@ -60,6 +60,7 @@ struct uacce_dev_list {
 
 struct wd_dev_mask {
 	unsigned char *mask;
+
 	int len;
 	unsigned int magic;
 };
