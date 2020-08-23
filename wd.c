@@ -115,7 +115,6 @@ static void get_dev_info(struct uacce_dev_info *info)
 {
 	int value;
 
-	get_int_attr(info, "available_instances", &info->avail_instn);
 	get_int_attr(info, "flags", &info->flags);
 	get_str_attr(info, "api", info->api, WD_NAME_SIZE);
 	get_str_attr(info, "algorithms", info->algs, MAX_ATTR_STR_SIZE);
@@ -579,9 +578,14 @@ int wd_get_numa_id(handle_t h_ctx)
 	return ctx->dev_info->numa_id;
 }
 
-int wd_ctx_get_avail_ctx(char *dev_path)
+/* to do: update interface doc */
+int wd_get_avail_ctx(struct uacce_dev_info *dev)
 {
-	return 0;
+	int avail_ctx;
+
+	get_int_attr(dev, "available_instances", &avail_ctx);
+
+	return avail_ctx;
 }
 
 struct uacce_dev_list *wd_get_accel_list(char *alg_name)

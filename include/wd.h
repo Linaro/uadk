@@ -41,8 +41,6 @@
 struct uacce_dev_info {
 	/* sysfs node content */
 	int flags;
-	/* to do: should be removed as it is dynamic, should use api to get its value */
-	int avail_instn;
 	char api[WD_NAME_SIZE];
 	char algs[MAX_ATTR_STR_SIZE];
 	unsigned long qfrs_offs[UACCE_QFRT_MAX];
