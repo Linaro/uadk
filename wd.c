@@ -124,6 +124,7 @@ static void get_dev_info(struct uacce_dev_info *info)
 	get_int_attr(info, "region_dus_size", &value);
 	info->qfrs_offs[UACCE_QFRT_DUS] = value;
 	info->qfrs_offs[UACCE_QFRT_SS] = 0;
+	get_int_attr(info, "device/numa_node", &info->numa_id);
 }
 
 static struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
@@ -331,10 +332,10 @@ struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask)
 		node->info = read_uacce_sysfs(dev->d_name);
 		if (!node->info)
 			goto out;
-		ret = get_accel_id(dev->d_name, &node->info->node_id);
+		ret = get_accel_id(dev->d_name, &node->info->dev_id);
 		if (ret < 0)
 			goto out;
-		ret = wd_set_mask(dev_mask, node->info->node_id);
+		ret = wd_set_mask(dev_mask, node->info->dev_id);
 		if (ret < 0)
 			goto out;
 		if (head) {
@@ -573,7 +574,9 @@ const char *wd_get_driver_name(handle_t h_ctx)
 
 int wd_get_numa_id(handle_t h_ctx)
 {
-	return 0;
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+
+	return ctx->dev_info->numa_id;
 }
 
 int wd_ctx_get_avail_ctx(char *dev_path)

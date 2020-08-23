@@ -51,7 +51,8 @@ struct uacce_dev_info {
 	char alg_path[PATH_STR_SIZE];
 	char dev_root[PATH_STR_SIZE];
 
-	int node_id;
+	int dev_id;
+	int numa_id;
 };
 
 struct uacce_dev_list {
