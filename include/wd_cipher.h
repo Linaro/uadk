@@ -34,7 +34,6 @@ enum wd_cipher_op_type {
  * wd_cipher_type - Algorithm type of cipher
  */
 enum wd_cipher_alg {
-	WD_CIPHER_ALG_TYPE_NONE,
 	WD_CIPHER_SM4,
 	WD_CIPHER_AES,
 	WD_CIPHER_DES,
@@ -45,7 +44,6 @@ enum wd_cipher_alg {
  * wd_cipher_mode - Algorithm mode of cipher
  */
 enum wd_cipher_mode {
-	WD_CIPHER_MODE_TYPE_NONE,
 	WD_CIPHER_ECB,
 	WD_CIPHER_CBC,
 	WD_CIPHER_CTR,
@@ -56,7 +54,6 @@ enum wd_cipher_mode {
 };
 
 struct wd_cipher_sess_setup {
-	char *alg_name;
 	enum wd_cipher_alg alg;
 	enum wd_cipher_mode mode;
 };
@@ -115,9 +112,31 @@ extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
  * @ sess, need to be freed sess
  */
 extern void wd_cipher_free_sess(handle_t h_sess);
+/**
+ * wd_cipher_set_key() Set cipher key to cipher msg.
+ * @req: request parameter.
+ * @key: cipher key addr.
+ * @key_len: cipher key length.
+ */
 extern int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len);
+/**
+ * wd_do_cipher_sync()/ async() Syn/asynchronous cipher operation
+ * @sess: wd cipher session
+ * @req: operational data.
+ */
 extern int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req);
 extern int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req);
-extern int wd_cipher_poll_ctx(handle_t sess, __u32 count);
+/**
+ * wd_cipher_poll_ctx() poll operation for asynchronous operation
+ * @ctx: wd cipher context, the ctx which whill be polled.
+ * @expt: user expected num respondings
+ * @count: how many respondings this poll has to get.
+ */
+extern int wd_cipher_poll_ctx(handle_t ctx, __u32 count);
+/**
+ * wd_cipher_poll() Poll finished request.
+ * this function will call poll_policy function which is registered to wd cipher
+ * by user.
+ */
 extern int wd_cipher_poll(__u32 expt, __u32 *count);
 #endif /* __WD_CIPHER_H */
