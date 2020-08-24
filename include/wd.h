@@ -85,7 +85,6 @@ struct uacce_dev_info {
 	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 
 	char name[WD_NAME_SIZE];
-	char alg_path[PATH_STR_SIZE];
 	char dev_root[PATH_STR_SIZE];
 
 	int dev_id;
@@ -148,9 +147,7 @@ extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 extern int wd_wait(handle_t h_ctx, __u16 ms);
 extern int wd_is_nosva(handle_t h_ctx);
-extern struct uacce_dev_list *wd_list_accels(wd_dev_mask_t *dev_mask);
 extern char *wd_get_accel_name(char *dev_path, int no_apdx);
-extern const char *wd_get_driver_name(handle_t h_ctx);
 extern int wd_get_numa_id(handle_t h_ctx);
 extern int wd_ctx_get_avail_ctx(char *dev_path);
 extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
