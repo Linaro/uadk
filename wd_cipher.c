@@ -173,11 +173,10 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 
 	if (cfg->ctx_num == 0)
 		return -EINVAL;
-	/*use malloc maybe better */
+
 	ctxs = malloc(sizeof(struct wd_ctx) * cfg->ctx_num);
 	if (!ctxs)
 		return -ENOMEM;
-
 	memset(ctxs, 0, sizeof(struct wd_ctx) * cfg->ctx_num);
 
 	/* check every context */
@@ -285,8 +284,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out;
 	}
 
-
-	/* find driver and set driver */
+	/* set driver */
 #ifdef WD_STATIC_DRV
 	wd_cipher_set_static_drv();
 #endif
