@@ -18,6 +18,38 @@
 #define MAX_ATTR_STR_SIZE		256
 #define WD_NAME_SIZE			64
 
+typedef void (*wd_log)(const char *format, ...);
+
+#ifndef WD_ERR
+#ifndef WITH_LOG_FILE
+extern wd_log log_out;
+
+#define __WD_FILENAME__ (strrchr(__FILE__, '/') ?	\
+		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)) : __FILE__)
+
+#define WD_ERR(format, args...)	\
+	(log_out ? log_out("[%s, %d, %s]:"format,	\
+	__WD_FILENAME__, __LINE__, __func__, ##args) : 	\
+	fprintf(stderr, format, ##args))
+#else
+extern FILE *flog_fd;
+#define WD_ERR(format, args...)				\
+	if (!flog_fd)					\
+		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
+	if (flog_fd)					\
+		fprintf(flog_fd, format, ##args);	\
+	else						\
+		fprintf(stderr, "log %s not exists!",	\
+			WITH_LOG_FILE);
+#endif
+#endif
+
+#ifdef DEBUG_LOG
+#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
+#else
+#define dbg(msg, ...)
+#endif
+
 /* WD error code */
 #define	WD_SUCCESS			0
 #define	WD_STREAM_END			1
@@ -37,6 +69,13 @@
 #define	WD_OUT_EPARA			66
 #define	WD_IN_EPARA			67
 #define	WD_ENOPROC			68
+
+/* Warpdrive data buffer */
+struct wd_dtb {
+	char *data; /* data/buffer start address */
+	__u32 dsize; /* data size */
+	__u32 bsize; /* buffer size */
+};
 
 struct uacce_dev_info {
 	/* sysfs node content */

@@ -10,8 +10,8 @@ if WD_STATIC_DRV
 AM_CFLAGS+=-DWD_STATIC_DRV
 endif
 
-lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libwd_crypto.la \
-		libhisi_sec.la
+lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libhisi_hpre.la \
+		libwd_crypto.la libhisi_sec.la
 
 libwd_la_SOURCES=wd.c wd.h wd_sched.c wd_sched.h bmm.c bmm.h smm.c smm.h
 
@@ -22,10 +22,15 @@ libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h
 libhisi_zip_la_LIBADD= -ldl
 
-libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h
+libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
+			wd_rsa.c wd_rsa.h wd_hpre_drv.h
 libwd_crypto_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c hisi_sec.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_cipher_drv.h
 libhisi_sec_la_LIBADD= -ldl
+
+libhisi_hpre_la_SOURCES=drv/hisi_hpre.c hisi_hpre.h drv/hisi_qm_udrv.c \
+		hisi_qm_udrv.h wd_hpre_drv.h
+libhisi_hpre_la_LIBADD= -ldl
 SUBDIRS=. test

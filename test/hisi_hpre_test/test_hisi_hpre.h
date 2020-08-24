@@ -1,196 +1,98 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright 2019 Huawei Technologies Co.,Ltd.All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #ifndef __HISI_TEST_HPRE_H
 #define __HISI_TEST_HPRE_H
 
-/* BD size of HPRE engine */
-#define HPRE_SQE_SIZE		64
 
-enum hpre_alg_type {
-	HPRE_ALG_NC_NCRT = 0x0,
-	HPRE_ALG_NC_CRT = 0x1,
-	HPRE_ALG_KG_STD = 0x2,
-	HPRE_ALG_KG_CRT = 0x3,
-	HPRE_ALG_DH_G2 = 0x4,
-	HPRE_ALG_DH = 0x5,
-	HPRE_ALG_PRIME = 0x6,
-	HPRE_ALG_MOD = 0x7,
-	HPRE_ALG_MOD_INV = 0x8,
-	HPRE_ALG_MUL = 0x9,
-	HPRE_ALG_COPRIME = 0xA
+
+enum alg_op_type {
+	HPRE_ALG_INVLD_TYPE,
+	RSA_KEY_GEN,
+	RSA_PUB_EN,
+	RSA_PRV_DE,
+	MAX_RSA_SYNC_TYPE,
+	RSA_ASYNC_EN,
+	RSA_ASYNC_DE,
+	RSA_ASYNC_GEN,
+	MAX_RSA_ASYNC_TYPE,
+	DH_GEN,
+	DH_ASYNC_GEN,
+	DH_COMPUTE,
+	DH_ASYNC_COMPUTE,
+	MAX_DH_TYPE,
+	ECDH_GEN,
+	ECDH_COMPUTE,
+	ECDH_ASYNC_GEN,
+	ECDH_ASYNC_COMPUTE,
+	MAX_ECDH_TYPE,
+	ECDSA_SIGN,
+	ECDSA_VERF,
+	ECDSA_ASYNC_SIGN,
+	ECDSA_ASYNC_VERF,
+	MAX_ECDSA_TYPE,
+	X25519_GEN,
+	X25519_COMPUTE,
+	X25519_ASYNC_GEN,
+	X25519_ASYNC_COMPUTE,
+	X448_GEN,
+	X448_COMPUTE,
+	X448_ASYNC_GEN,
+	X448_ASYNC_COMPUTE,
+	SM2_SIGN,
+	SM2_VERF,
+	SM2_ENC,
+	SM2_DEC,
+	SM2_ASYNC_SIGN,
+	SM2_ASYNC_VERF,
+	SM2_ASYNC_ENC,
+	SM2_ASYNC_DEC,
+	MAX_ECC_TYPE,
+	HPRE_MAX_OP_TYPE
 };
 
-enum wd_rsa_op {
-	WD_RSA_INVALID,
-	WD_RSA_SIGN,
-	WD_RSA_VERIFY,
-	WD_RSA_GENKEY,
+enum alg_op_mode {
+	HPRE_ALG_INVLD_MODE,
+	RSA_COM_MD,
+	RSA_CRT_MD,
+	DH_COM_MD,
+	DH_G2,
+	HPRE_MAX_OP_MODE,
 };
 
-enum wd_rsa_prikey_type {
-	WD_RSA_PRIKEY1 = 1,
-	WD_RSA_PRIKEY2 = 2,
+
+
+struct hpre_queue_mempool {
+	struct wd_queue *q;
+	void *base;
+	unsigned int *bitmap;
+	unsigned int block_size;
+	unsigned int block_num;
+	unsigned int mem_size;
+	unsigned int block_align_size;
+	unsigned int free_num;
+	unsigned int fail_times;
+	unsigned long long index;
+	sem_t	sem;
+	int dev;
 };
 
-typedef void (*wd_rsa_cb)(void *tag, int status, void *opdata);
-
-struct wd_rsa_ctx_setup {
-	char  *alg;
-	wd_rsa_cb cb;
-	__u16 aflags;
-	__u16 key_bits;
-	__u32 is_crt;
-};
-
-struct wd_rsa_pubkey {
-	__u8 *n;
-	__u8 *e;
-	__u32 bytes;
-};
-
-struct wd_rsa_prikey1 {
-	__u8 *n;
-	__u8 *d;
-	__u32 bytes;
-};
-
-struct wd_rsa_prikey2 {
-	__u8 *p;
-	__u8 *q;
-	__u8 *dp;
-	__u8 *dq;
-	__u8 *qinv;
-	__u32 bytes;
-};
-
-struct wd_rsa_prikey {
-	struct wd_rsa_prikey1 pkey1;
-	struct wd_rsa_prikey2 pkey2;
-};
-
-struct wd_rsa_op_data {
-	enum wd_rsa_op op_type;
-	int status;
-	void *in;
-	void *out;
-	__u32 in_bytes;
-	__u32 out_bytes;
-};
-
-struct wd_rsa_msg {
-
-	/* First 8 bytes of the message must indicate algorithm */
-	union {
-		char  *alg;
-		__u64 pading;
-	};
-
-	/* address type */
-	__u16 aflags;
-	__u8 op_type;
-	__u8 prikey_type;
-	__u32 status;
-
-	__u64 in;
-	__u64 out;
-	__u64 pubkey;
-
-	/* private key */
-	__u64 prikey;
-
-	__u16 nbytes;
-	__u16 inbytes;
-	__u16 outbytes;
-	__u16 pad;
-
-	__u64 udata;
-};
-
-enum wd_dh_op {
-	WD_DH_INVALID,
-	WD_DH_PHASE1,
-	WD_DH_PHASE2,
-};
-
-typedef void (*wd_dh_cb)(void *tag, int status,  void *opdata);
-
-struct wd_dh_ctx_setup {
-	char  *alg;
-	wd_dh_cb cb;
-	__u16 aflags;
-	__u16 key_bits;
-	__u32 is_g2;
-};
-
-struct wd_dh_op_data {
-	void *p;
-	void *x;
-
-	/* it is PV also at phase 2 */
-	void *g;
-
-	/* phase 1&&2 output */
-	void *key;
-	__u16 key_bytes;
-
-	__u16 pbytes;
-	__u16 xbytes;
-	__u16 gbytes;
-
-	enum wd_dh_op op_type;
-};
-
-struct wd_dh_msg {
-
-	/* First 8 bytes of the message must indicate algorithm */
-	union {
-		char  *alg;
-		__u64 pading;
-	};
-
-	/* address type */
-	__u16 aflags;
-	__u8 op_type;
-	__u8 resv;
-	__u32 status;
-
-	__u64 p;
-	__u64 x;
-
-	/* is PV also at phase 2 */
-	__u64 g;
-
-	/* result address */
-	__u64 key;
-
-	__u16 pbytes;
-	__u16 xbytes;
-	__u16 gbytes;
-	__u16 key_bytes;
-	__u64 udata;
-};
-
-int wd_rsa_is_crt(void *ctx);
-int wd_rsa_key_bits(void *ctx);
-void *wd_create_rsa_ctx(struct wd_queue *q, struct wd_rsa_ctx_setup *setup);
-int wd_set_rsa_pubkey(void *ctx, struct wd_rsa_pubkey *pubkey);
-void wd_get_rsa_pubkey(void *ctx, struct wd_rsa_pubkey **pubkey);
-int wd_set_rsa_prikey(void *ctx, struct wd_rsa_prikey *prikey);
-void wd_get_rsa_prikey(void *ctx, struct wd_rsa_prikey **prikey);
-
-/* this is a synchronous mode RSA API */
-int wd_do_rsa(void *ctx, struct wd_rsa_op_data *opdata);
-
-/* this is a pair of asynchronous mode RSA APIs */
-int wd_rsa_op(void *ctx, struct wd_rsa_op_data *opdata, void *tag);
-int wd_rsa_poll(void *ctx, int num);
-void wd_del_rsa_ctx(void *ctx);
-void *wd_create_dh_ctx(struct wd_queue *q, struct wd_dh_ctx_setup *setup);
-
-/* Synchronous mode API of DH*/
-int wd_do_dh(void *ctx, struct wd_dh_op_data *opdata);
-
-/* Asynchronous mode APIs of DH */
-int wd_dh_op(void *ctx, struct wd_dh_op_data *opdata, void *tag);
-int wd_dh_poll(void *dh_ctx, int num);
-void wd_del_dh_ctx(void *ctx);
+struct hpre_queue_mempool *hpre_test_mempool_create(struct wd_queue *q,
+			unsigned int block_size, unsigned int block_num);
+void hpre_test_mempool_destroy(struct hpre_queue_mempool *pool);
+void *hpre_test_alloc_buf(struct hpre_queue_mempool *pool, size_t sz);
+void hpre_test_free_buf(struct hpre_queue_mempool *pool, void *buf);
 #endif

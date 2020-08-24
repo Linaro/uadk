@@ -26,6 +26,10 @@ extern FILE *flog_fd;
 #define dbg(msg, ...)
 #endif
 
+/* Required compiler attributes */
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+
 /**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
