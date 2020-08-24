@@ -13,6 +13,9 @@
 #include "wd_sched.h"
 
 #define TEST_WORD_LEN	4096
+#define BUF_8MB		(1 << 23)
+#define BUF_16MB	(1 << 24)
+#define BUF_32MB	(1 << 25)
 
 #define	NUM_THREADS	10
 
@@ -196,7 +199,7 @@ out:
  * Test to compress and decompress on IN & OUT buffer.
  * Data are filled in IN and OUT buffer only once.
  */
-int test_comp_sync_once(int flag)
+int test_comp_sync_once_1(int flag)
 {
 	struct wd_comp_req	req;
 	handle_t	h_sess;
@@ -274,6 +277,94 @@ out_comp:
 out_sess:
 	free(req.src);
 out:
+	return ret;
+}
+
+/* Temporarily set the buffer as 8MB. It should be updated to 32MB later. */
+int test_comp_sync_once_2(int flag)
+{
+	struct wd_comp_req	req;
+	handle_t	h_sess;
+	void	*src, *dst, *buf;
+	int	ret = 0, t, len;
+
+	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+
+	memset(&req, 0, sizeof(struct wd_comp_req));
+	src = calloc(1, sizeof(char) * BUF_32MB);
+	if (!src)
+		return -ENOMEM;
+	dst = calloc(1, sizeof(char) * BUF_32MB);
+	if (!dst) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	buf = calloc(1, sizeof(char) * BUF_32MB);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out_buf;
+	}
+	req.src = src;
+	req.dst = buf;
+	memcpy(req.src, word, sizeof(char) * strlen(word));
+	t = 0;
+
+	h_sess = alloc_sess(flag);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			BUF_8MB,
+			BUF_8MB,
+			BUF_8MB,
+			&t
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	/* prepare to decompress */
+	req.src = buf;
+	req.src_len = t;
+	req.dst = dst;
+	len = 0;
+	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+
+	h_sess = alloc_sess(flag);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	ret = comp_sync(h_sess,
+			&req,
+			BUF_8MB,
+			BUF_8MB,
+			t,
+			&len
+			);
+	if (ret < 0)
+		goto out_comp;
+	wd_comp_free_sess(h_sess);
+	uninit_config();
+
+	if (memcmp(dst, src, BUF_8MB))
+		printf("match failure!\n");
+	free(buf);
+	free(src);
+	free(dst);
+
+	return 0;
+out_comp:
+	wd_comp_free_sess(h_sess);
+out_sess:
+	free(buf);
+out_buf:
+	free(dst);
+out:
+	free(src);
 	return ret;
 }
 
@@ -853,7 +944,8 @@ int main(int argc, char **argv)
 {
 	int ret;
 
-	RUN_TEST(test_comp_sync_once, "sync_once", FLAG_ZLIB, ret);
+	RUN_TEST(test_comp_sync_once_1, "sync_once #1", FLAG_ZLIB, ret);
+	RUN_TEST(test_comp_sync_once_2, "sync_once #2", FLAG_ZLIB, ret);
 #if 0
 	RUN_TEST(test_comp_sync_multi_1, "sync_multi 1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_sync_multi_2, "sync_multi 2", FLAG_ZLIB, ret);
