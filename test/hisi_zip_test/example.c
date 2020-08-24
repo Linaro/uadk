@@ -12,7 +12,7 @@
 #include "wd_comp.h"
 #include "wd_sched.h"
 
-#define TEST_WORD_LEN	64
+#define TEST_WORD_LEN	4096
 
 #define	NUM_THREADS	10
 
@@ -854,9 +854,11 @@ int main(int argc, char **argv)
 	int ret;
 
 	RUN_TEST(test_comp_sync_once, "sync_once", FLAG_ZLIB, ret);
+#if 0
 	RUN_TEST(test_comp_sync_multi_1, "sync_multi 1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_sync_multi_2, "sync_multi 2", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_sync_multi_3, "sync_multi 3", FLAG_ZLIB, ret);
+#endif
 	RUN_TEST(test_comp_async1_once, "async 1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_async2_once, "async 2", FLAG_ZLIB, ret);
 	return 0;
