@@ -30,8 +30,8 @@ struct wd_cipher_driver {
 	const char	*drv_name;
 	const char	*alg_name;
 	__u32	drv_ctx_size;
-	int	(*init)(struct wd_ctx_config *config, void* priv);
-	void	(*exit)(void* priv);
+	int	(*init)(struct wd_ctx_config *config, void *priv);
+	void	(*exit)(void *priv);
 	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
 	int	(*cipher_recv)(handle_t ctx, struct wd_cipher_msg *msg);
 };

@@ -66,24 +66,25 @@ enum {
 	AUTH_MAC_VERIFY,
 };
 
+enum {
+	AI_GEN_INNER,
+	AI_GEN_IVIN_ADDR,
+	AI_GEN_CAL_IV_ADDR,
+	AI_GEN_TRNG,
+};
+
+enum {
+	AUTHPAD_PAD,
+	AUTHPAD_NOPAD,
+};
+
 enum sec_cipher_dir {
 	SEC_CIPHER_ENC = 0x1,
 	SEC_CIPHER_DEC = 0x2,
 };
-#if 0
-static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
-	0, A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
-	A_ALG_SHA384, A_ALG_SHA512, A_ALG_SHA512_224, A_ALG_SHA512_256
-};
-static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
-	0, A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
-	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
-	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
-};
-#endif
 
 struct hisi_sec_ctx {
 	struct wd_ctx_config config;
 };
 
-#endif	/* __HISI_SEC_H */
+#endif /* __HISI_SEC_H */
