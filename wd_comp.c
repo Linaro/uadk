@@ -14,7 +14,7 @@
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_HW_EACCESS 			62
-#define MAX_RETRY_COUNTS		1000	//200000000
+#define MAX_RETRY_COUNTS		200000000
 
 struct msg_pool {
 	struct wd_comp_msg msg[WD_POOL_MAX_ENTRIES];
