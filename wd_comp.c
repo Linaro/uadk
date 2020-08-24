@@ -315,6 +315,42 @@ void wd_comp_uninit(void)
 	clear_config_in_global_setting();
 }
 
+__u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
+{
+	struct wd_comp_req *req;
+	struct wd_comp_msg resp_msg;
+	__u64 recv_count = 0;
+	int ret;
+
+	do {
+		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+		if (ret == -WD_HW_EACCESS) {
+			WD_ERR("wd_recv hw err!\n");
+			goto err_recv;
+		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+			if (++recv_count > MAX_RETRY_COUNTS) {
+				WD_ERR("wd_recv timeout fail!\n");
+				ret = -ETIMEDOUT;
+				goto err_recv;
+			}
+		}
+	} while (ret < 0);
+
+	req = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, &resp_msg);
+
+	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
+	req->flag = FLAG_INPUT_FINISH;
+
+	req->cb(req->cb_param);
+
+	/*TODO free idx of msg_pool  */
+
+	/* Return polled number. Now hack it to 1. */
+	return 1;
+err_recv:
+	return ret;
+}
+
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
 	struct wd_comp_sess *sess;
@@ -491,6 +527,7 @@ static int comp_prepare(struct wd_comp_sess *sess,
 }
 
 static void comp_post(struct wd_comp_sess *sess,
+		      struct wd_comp_msg *msg,
 		      struct wd_comp_req *req
 		      )
 {
@@ -540,7 +577,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 			msg.flush_type = 0;
 			sess->full = 0;
 		} else {
-			comp_post(sess, req);
+			comp_post(sess, &msg, req);
 			return 0;
 		}
 		ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
@@ -575,7 +612,7 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 		sess->loaded_in -= resp_msg.in_cons;
 		sess->next_in += resp_msg.in_cons;
 	}
-	comp_post(sess, req);
+	comp_post(sess, &msg, req);
 
 	return 0;
 }
@@ -609,7 +646,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 			msg->flush_type = 0;
 			sess->full = 0;
 		} else {
-			comp_post(sess, req);
+			comp_post(sess, msg, req);
 			return 0;
 		}
 		ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
@@ -617,62 +654,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 			WD_ERR("wd_send err!\n");
 			return ret;
 		}
-		sess->begin = 1;
 	}
 
 	return 0;
-}
-
-__u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
-{
-	struct wd_comp_sess *sess;
-	struct wd_comp_req *req;
-	struct wd_comp_msg resp_msg;
-	__u64 recv_count = 0;
-	int ret;
-
-	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
-			goto err_recv;
-		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd_recv timeout fail!\n");
-				ret = -ETIMEDOUT;
-				goto err_recv;
-			}
-		}
-	} while (ret < 0);
-
-	req = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, &resp_msg);
-	sess = resp_msg.sess;
-	if (!sess->loaded_in)
-		return -EINVAL;
-
-	if (req->src_len == resp_msg.in_cons) {
-		req->status &= ~STATUS_IN_PART_USE;
-	        req->status |= STATUS_IN_EMPTY;
-	} else if (req->src_len > resp_msg.in_cons) {
-		req->status &= ~STATUS_IN_EMPTY;
-	        req->status |= STATUS_IN_PART_USE;
-	}
-	if (resp_msg.produced)
-	        sess->undrained += resp_msg.produced;
-	req->src_len = resp_msg.in_cons;
-	sess->loaded_in -= resp_msg.in_cons;
-	sess->next_in += resp_msg.in_cons;
-
-	comp_post(sess, req);
-
-	req->cb(req->cb_param);
-
-	/*TODO free idx of msg_pool  */
-
-	/* Return polled number. Now hack it to 1. */
-	return 1;
-err_recv:
-	return ret;
 }
 
 int wd_comp_poll(__u32 *count)
