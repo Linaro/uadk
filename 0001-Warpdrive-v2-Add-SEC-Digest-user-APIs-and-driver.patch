@@ -1,0 +1,2363 @@
+From 4ff86ad2b0b9ff83afe466d860bf3c03fb2f22ca Mon Sep 17 00:00:00 2001
+From: Longfang Liu <liulongfang@huawei.com>
+Date: Mon, 24 Aug 2020 11:22:52 +0800
+Subject: [PATCH] Warpdrive v2 - Add SEC Digest user APIs and driver
+
+This patch add Degist user APIs and driver for Warpdrive v2
+with User mode.
+
+Signed-off-by: Longfang Liu <liulongfang@huawei.com>
+---
+ Makefile.am                        |   3 +-
+ drv/hisi_sec.c                     | 310 ++++++++++---
+ include/drv/wd_cipher_drv.h        |   4 +-
+ include/drv/wd_digest_drv.h        |  53 +++
+ include/hisi_sec.h                 |  25 +-
+ include/wd_digest.h                | 112 +++--
+ test/hisi_sec_test/test_hisi_sec.c | 899 ++++++++++++++++++++++++++++++++++++-
+ test/hisi_sec_test/test_hisi_sec.h |  51 ++-
+ wd_digest.c                        | 474 +++++++++++++++++++
+ 9 files changed, 1798 insertions(+), 133 deletions(-)
+ create mode 100644 include/drv/wd_digest_drv.h
+ create mode 100644 wd_digest.c
+
+diff --git a/Makefile.am b/Makefile.am
+index 6e69770..dbe02f3 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -22,7 +22,8 @@ libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
+ 		hisi_qm_udrv.h wd_comp_drv.h
+ libhisi_zip_la_LIBADD= -ldl
+ 
+-libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h
++libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
++		wd_digest.c wd_digest.h wd_digest_drv.h
+ libwd_crypto_la_LIBADD= $(libwd_la_OBJECTS) -ldl
+ 
+ libhisi_sec_la_SOURCES=drv/hisi_sec.c hisi_sec.h drv/hisi_qm_udrv.c \
+diff --git a/drv/hisi_sec.c b/drv/hisi_sec.c
+index 11a483b..d248f62 100644
+--- a/drv/hisi_sec.c
++++ b/drv/hisi_sec.c
+@@ -3,24 +3,28 @@
+ #include <pthread.h>
+ #include "hisi_sec.h"
+ #include "../include/drv/wd_cipher_drv.h"
+-
+-#define SEC_DIGEST_ALG_OFFSET 11
+-#define BD_TYPE2 	      0x2
+-#define WORD_BYTES	      4
+-#define SEC_FLAG_OFFSET	      7
+-#define SEC_AUTH_OFFSET	      6
+-#define SEC_AUTH_KEY_OFFSET   5
+-#define SEC_HW_TASK_DONE      0x1
+-#define SEC_DONE_MASK	      0x0001
+-#define SEC_FLAG_MASK	      0x780
+-#define SEC_TYPE_MASK	      0x0f
++#include "../include/drv/wd_digest_drv.h"
++
++#define SEC_DIGEST_ALG_OFFSET	11
++#define WORD_ALIGNMENT_MASK	0x3
++#define BD_TYPE2		0x2
++#define WORD_BYTES		4
++#define BYTE_BITS		8
++#define SQE_BYTES_NUMS		128
++#define SEC_FLAG_OFFSET	7
++#define SEC_AUTH_OFFSET	6
++#define SEC_AUTH_KEY_OFFSET	5
++#define SEC_HW_TASK_DONE	0x1
++#define SEC_DONE_MASK		0x0001
++#define SEC_FLAG_MASK		0x780
++#define SEC_TYPE_MASK		0x0f
+ 
+ #define SEC_COMM_SCENE		  0
+-#define SEC_IPSEC_SCENE		  1
++#define SEC_IPSEC_SCENE	  1
+ #define SEC_SCENE_OFFSET	  3
+ #define SEC_DE_OFFSET		  1
+ #define SEC_CMODE_OFFSET	  12
+-#define SEC_CKEY_OFFSET		  9
++#define SEC_CKEY_OFFSET	  9
+ #define SEC_CIPHER_OFFSET	  4
+ #define XTS_MODE_KEY_DIVISOR	  2
+ 
+@@ -30,10 +34,25 @@
+ #define AES_KEYSIZE_128		  16
+ #define AES_KEYSIZE_192		  24
+ #define AES_KEYSIZE_256		  32
+-#define DES3_BLOCK_SIZE		  8
+-#define	AES_BLOCK_SIZE		  16
+-/* The max BD cipher length is 16M-512B */
+-#define	MAX_CIPHER_LEN		  16776704
++
++#define DES3_BLOCK_SIZE	8
++#define	AES_BLOCK_SIZE		16
++#define	MAX_CIPHER_LEN		16776704
++
++#define AUTHPAD_OFFSET		2
++#define AUTHTYPE_OFFSET	6
++#define MAC_LEN_OFFSET		4
++#define AUTH_ALG_OFFSET	11
++
++static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
++	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
++	A_ALG_SHA384, A_ALG_SHA512, A_ALG_SHA512_224, A_ALG_SHA512_256
++};
++static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
++	A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
++	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
++	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
++};
+ 
+ /* fix me */
+ #define SEC_QP_NUM_PER_PROCESS	  1
+@@ -46,18 +65,21 @@ static void hexdump(char *buff, unsigned int len)
+ 
+ 	for (i = 0; i < len; i++) {
+ 		printf("\\0x%02x", buff[i]);
+-		if ((i + 1) % 8 == 0)
++		if ((i + 1) % (WORD_BYTES << 1) == 0)
+ 			printf("\n");
+ 	}
+ 	printf("\n");
+ }
+ 
+-static void sec_dump_bd(unsigned int *bd, unsigned int len)
++static void sec_dump_bd(unsigned char *bd, unsigned int len)
+ {
+ 	unsigned int i;
+ 
+-	for (i = 0; i < len; i++)
+-		WD_ERR("Word[%d] 0x%x\n", i, bd[i]);
++	for (i = 0; i < len; i++) {
++		WD_ERR("\\%02x", bd[i]);
++		if ((i + 1) % (WORD_BYTES << 1) == 0)
++			WD_ERR("\n");
++	}
+ 	WD_ERR("\n");
+ }
+ #endif
+@@ -73,7 +95,8 @@ int hisi_sec_init(struct wd_ctx_config *config, void *priv)
+ 	struct hisi_qm_priv qm_priv;
+ 	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
+ 	handle_t h_ctx, h_qp;
+-	int i, j, ret = 0;
++	int ret = 0;
++	int i, j;
+ 
+ 	/* allocate qp for each context */
+ 	for (i = 0; i < config->ctx_num; i++) {
+@@ -99,7 +122,6 @@ out:
+ 
+ void hisi_sec_exit(void *priv)
+ {
+-
+ 	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
+ 	struct wd_ctx_config *config = &sec_ctx->config;
+ 	handle_t h_qp;
+@@ -128,23 +150,24 @@ static int get_3des_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
+ static int get_aes_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
+ {
+ 	__u16 len;
++
+ 	len = msg->key_bytes;
+ 	if (msg->mode == WD_CIPHER_XTS)
+ 		len = len / XTS_MODE_KEY_DIVISOR;
+ 
+ 	switch (len) {
+-		case AES_KEYSIZE_128:
+-			*c_key_len = CKEY_LEN_128BIT;
+-			break;
+-		case AES_KEYSIZE_192:
+-			*c_key_len = CKEY_LEN_192BIT;
+-			break;
+-		case AES_KEYSIZE_256:
+-			*c_key_len = CKEY_LEN_256BIT;
+-			break;
+-		default:
+-			WD_ERR("Invalid AES key size!\n");
+-			return -EINVAL;
++	case AES_KEYSIZE_128:
++		*c_key_len = CKEY_LEN_128BIT;
++		break;
++	case AES_KEYSIZE_192:
++		*c_key_len = CKEY_LEN_192BIT;
++		break;
++	case AES_KEYSIZE_256:
++		*c_key_len = CKEY_LEN_256BIT;
++		break;
++	default:
++		WD_ERR("Invalid AES key size!\n");
++		return -EINVAL;
+ 	}
+ 
+ 	return 0;
+@@ -152,8 +175,8 @@ static int get_aes_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
+ 
+ static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
+ {
+-	int ret = 0;
+ 	__u8 c_key_len = 0;
++	int ret = 0;
+ 
+ 	switch (msg->alg) {
+ 	case WD_CIPHER_SM4:
+@@ -177,7 +200,6 @@ static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *s
+ 	default:
+ 		WD_ERR("Invalid cipher type!\n");
+ 		return -EINVAL;
+-		break;
+ 	}
+ 
+ 	return ret;
+@@ -188,21 +210,21 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
+ 	__u16 c_mode;
+ 
+ 	switch (msg->mode) {
+-		case WD_CIPHER_ECB:
+-			c_mode = C_MODE_ECB;
+-			break;
+-		case WD_CIPHER_CBC:
+-			c_mode = C_MODE_CBC;
+-			break;
+-		case WD_CIPHER_CTR:
+-			c_mode = C_MODE_CTR;
+-			break;
+-		case WD_CIPHER_XTS:
+-			c_mode = C_MODE_XTS;
+-			break;
+-		default:
+-			WD_ERR("Invalid cipher mode type!\n");
+-			return -EINVAL;
++	case WD_CIPHER_ECB:
++		c_mode = C_MODE_ECB;
++		break;
++	case WD_CIPHER_CBC:
++		c_mode = C_MODE_CBC;
++		break;
++	case WD_CIPHER_CTR:
++		c_mode = C_MODE_CTR;
++		break;
++	case WD_CIPHER_XTS:
++		c_mode = C_MODE_XTS;
++		break;
++	default:
++		WD_ERR("Invalid cipher mode type!\n");
++		return -EINVAL;
+ 	}
+ 	sqe->type2.icvw_kmode |= (__u16)(c_mode) << SEC_CMODE_OFFSET;
+ 
+@@ -270,19 +292,21 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
+ 	de = 0x1 << SEC_DE_OFFSET;
+ 	sqe.sds_sa_type = (__u8)(de | scene);
+ 
+-	if (msg->op_type == WD_CIPHER_ENCRYPTION) {
++	if (msg->op_type == WD_CIPHER_ENCRYPTION)
+ 		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
+-	} else {
++	else
+ 		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
+-	}
++
+ 	sqe.type_auth_cipher |= cipher;
+ 
++	/* fill cipher bd2 alg */
+ 	ret = fill_cipher_bd2_alg(msg, &sqe);
+ 	if (ret) {
+ 		WD_ERR("faile to fill bd alg!\n");
+ 		return ret;
+ 	}
+ 
++	/* fill cipher bd2 mode */
+ 	ret = fill_cipher_bd2_mode(msg, &sqe);
+ 	if (ret) {
+ 		WD_ERR("faile to fill bd mode!\n");
+@@ -308,7 +332,8 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
+ 	return ret;
+ }
+ 
+-int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
++int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
++{
+ 	struct hisi_sec_sqe sqe;
+ 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+ 	__u16 count = 0;
+@@ -318,6 +343,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg) {
+ 	if (ret < 0)
+ 		return ret;
+ 
++	/* parser cipher sqe */
+ 	parse_cipher_bd2(&sqe, recv_msg);
+ 
+ 	return 1;
+@@ -333,3 +359,175 @@ static struct wd_cipher_driver hisi_cipher_driver = {
+ };
+ 
+ WD_CIPHER_SET_DRIVER(hisi_cipher_driver);
++
++static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
++		struct hisi_sec_sqe *sqe)
++{
++	if (msg->alg < WD_DIGEST_SM3 || msg->alg >= WD_DIGEST_TYPE_MAX) {
++		WD_ERR("Invalid digest type!\n");
++		return -WD_EINVAL;
++	}
++
++	if (msg->out_bytes & WORD_ALIGNMENT_MASK) {
++		WD_ERR("Invalid digest out_bytes!\n");
++		return -WD_EINVAL;
++	}
++
++	sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
++	if (msg->mode == WD_DIGEST_NORMAL)
++		sqe->type2.mac_key_alg |=
++		g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
++	else if (msg->mode == WD_DIGEST_HMAC)
++		sqe->type2.mac_key_alg |=
++		g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET;
++	else {
++		WD_ERR("Invalid digest mode!\n");
++		return -WD_EINVAL;
++	}
++
++	return WD_SUCCESS;
++}
++
++static void qm_fill_digest_long_bd(struct wd_digest_msg *msg,
++		struct hisi_sec_sqe *sqe)
++{
++	__u64 total_bits;
++	struct wd_digest_tag *digest_tag = (void *)(uintptr_t)msg->usr_data;
++
++	if (msg->has_next && (msg->iv_bytes == 0)) {
++		/* LOGN BD FIRST */
++		sqe->ai_apd_cs = AI_GEN_INNER;
++		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
++		msg->iv_bytes = msg->out_bytes;
++	} else if (msg->has_next && (msg->iv_bytes != 0)) {
++		/* LONG BD MIDDLE */
++		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
++		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
++		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
++		msg->iv_bytes = msg->out_bytes;
++	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
++		/* LOGN BD END */
++		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
++		sqe->ai_apd_cs |= AUTHPAD_PAD << AUTHPAD_OFFSET;
++		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
++		total_bits = digest_tag->long_data_len * BYTE_BITS;
++		sqe->type2.long_a_data_len = total_bits;
++		msg->iv_bytes = 0;
++	} else {
++		/* SHORT BD */
++		msg->iv_bytes = 0;
++	}
++}
++
++static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *recv_msg)
++{
++	__u16 done;
++
++	done = sqe->type2.done_flag & SEC_DONE_MASK;
++	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
++		WD_ERR("SEC BD %s fail! done=0x%x, etype=0x%x\n", "digest",
++		done, sqe->type2.error_type);
++		recv_msg->result = WD_IN_EPARA;
++	} else {
++		recv_msg->result = WD_SUCCESS;
++	}
++
++#ifdef DEBUG
++	WD_ERR("Dump digest recv sqe-->!\n");
++	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
++#endif
++}
++
++int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
++{
++	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
++	struct wd_digest_tag *tag = (void *)(uintptr_t)msg->usr_data;
++	struct hisi_sec_sqe sqe;
++	__u16 count = 0;
++	__u8 scene;
++	__u8 de;
++	int ret;
++
++	if (!msg) {
++		WD_ERR("input cipher msg is NULL!\n");
++		return -EINVAL;
++	}
++	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
++	/* config BD type */
++	sqe.type_auth_cipher = BD_TYPE2;
++	sqe.type_auth_cipher |= AUTH_HMAC_CALCULATE << AUTHTYPE_OFFSET;
++
++	/* config scence */
++	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
++	de = 0x0 << SEC_DE_OFFSET;
++
++	sqe.sds_sa_type = (__u8)(de | scene);
++	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
++	sqe.type2.data_src_addr = (__u64)msg->in;
++	sqe.type2.mac_addr = (__u64)msg->out;
++
++	if (msg->mode == WD_DIGEST_HMAC) {
++		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
++			WD_ERR("Invalid digest key_bytes!\n");
++			return -WD_EINVAL;
++		}
++		sqe.type2.mac_key_alg = (msg->key_bytes /
++			WORD_BYTES) << MAC_LEN_OFFSET;
++		sqe.type2.c_key_addr = (__u64)msg->key;
++	}
++
++	/* fill digest bd2 alg */
++	ret = fill_digest_bd2_alg(msg, &sqe);
++	if (ret) {
++		WD_ERR("Fail to fill digest bd alg!\n");
++		return ret;
++	}
++
++	/* fill digest bd2 mode */
++	qm_fill_digest_long_bd(msg, &sqe);
++
++#ifdef DEBUG
++	WD_ERR("Dump digest send sqe-->!\n");
++	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
++#endif
++
++	if (tag)
++		sqe.type2.tag = tag->wd_tag.ctx_id;
++
++	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
++	if (ret < 0) {
++		WD_ERR("hisi qm send is err(%d)!\n", ret);
++		return ret;
++	}
++
++	return ret;
++}
++
++int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
++{
++	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
++	struct hisi_sec_sqe sqe;
++	__u16 count = 0;
++	int ret;
++
++	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
++	if (ret < 0)
++		return ret;
++
++	/* parser digest sqe */
++	parse_digest_bd2(&sqe, recv_msg);
++
++	return 0;
++}
++
++static struct wd_digest_driver hisi_digest_driver = {
++		.drv_name	= "hisi_sec2",
++		.alg_name	= "digest",
++		.init		= hisi_sec_init,
++		.exit		= hisi_sec_exit,
++		.digest_send	= hisi_sec_digest_send,
++		.digest_recv	= hisi_sec_digest_recv,
++};
++
++WD_DIGEST_SET_DRIVER(hisi_digest_driver);
++
+diff --git a/include/drv/wd_cipher_drv.h b/include/drv/wd_cipher_drv.h
+index baeb53d..a7a3ca4 100644
+--- a/include/drv/wd_cipher_drv.h
++++ b/include/drv/wd_cipher_drv.h
+@@ -30,8 +30,8 @@ struct wd_cipher_driver {
+ 	const char	*drv_name;
+ 	const char	*alg_name;
+ 	__u32	drv_ctx_size;
+-	int	(*init)(struct wd_ctx_config *config, void* priv);
+-	void	(*exit)(void* priv);
++	int	(*init)(struct wd_ctx_config *config, void *priv);
++	void	(*exit)(void *priv);
+ 	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
+ 	int	(*cipher_recv)(handle_t ctx, struct wd_cipher_msg *msg);
+ };
+diff --git a/include/drv/wd_digest_drv.h b/include/drv/wd_digest_drv.h
+new file mode 100644
+index 0000000..6fc64dc
+--- /dev/null
++++ b/include/drv/wd_digest_drv.h
+@@ -0,0 +1,53 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++#ifndef __WD_DIGEST_DRV_H
++#define __WD_DIGEST_DRV_H
++
++#include "include/wd_alg_common.h"
++
++/* fixme wd_digest_msg */
++struct wd_digest_msg {
++	struct wd_digest_req req;
++	__u32 tag_id;
++	__u8 alg_type;		/* Denoted by enum wcrypto_type */
++	__u8 alg;			/* Denoted by enum wcrypto_digest_type */
++	__u8 has_next;		/* is there next block data */
++	__u8 mode;			/* Denoted by enum wcrypto_digest_mode_type */
++	__u8 data_fmt;		/* Data format, include pbuffer and sgl */
++	__u8 result;		/* Operation result, denoted by WD error code */
++	__u64 usr_data;		/* user identifier: struct wcrypto_cb_tag */
++
++	__u16 key_bytes;	/* Key bytes */
++	__u16 iv_bytes;		/* iv bytes */
++	__u32 in_bytes;		/* in bytes */
++	__u32 out_bytes;	/* out_bytes */
++
++	__u8 *key;		/* input key pointer */
++	__u8 *iv;		/* input iv pointer */
++	__u8 *in;		/* input data pointer */
++	__u8 *out;		/* output data pointer  */
++};
++
++struct wd_digest_driver {
++	const char	*drv_name;
++	const char	*alg_name;
++	__u32	drv_ctx_size;
++	int	(*init)(struct wd_ctx_config *config, void *priv);
++	void	(*exit)(void *priv);
++	int	(*digest_send)(handle_t ctx, struct wd_digest_msg *msg);
++	int	(*digest_recv)(handle_t ctx, struct wd_digest_msg *msg);
++};
++
++void wd_digest_set_driver(struct wd_digest_driver *drv);
++
++#ifdef WD_STATIC_DRV
++#define WD_DIGEST_SET_DRIVER(drv)					      \
++extern const struct wd_digest_driver wd_digest_##drv __attribute__((alias(#drv)));
++
++#else
++#define WD_DIGEST_SET_DRIVER(drv)					      \
++static void __attribute__((constructor)) set_drivers(void)		      \
++{									      \
++	wd_digest_set_driver(&drv);					      \
++}
++#endif
++#endif /* __WD_DIGEST_DRV_H */
+diff --git a/include/hisi_sec.h b/include/hisi_sec.h
+index 16c2b92..448faea 100644
+--- a/include/hisi_sec.h
++++ b/include/hisi_sec.h
+@@ -66,24 +66,25 @@ enum {
+ 	AUTH_MAC_VERIFY,
+ };
+ 
++enum {
++	AI_GEN_INNER,
++	AI_GEN_IVIN_ADDR,
++	AI_GEN_CAL_IV_ADDR,
++	AI_GEN_TRNG,
++};
++
++enum {
++	AUTHPAD_PAD,
++	AUTHPAD_NOPAD,
++};
++
+ enum sec_cipher_dir {
+ 	SEC_CIPHER_ENC = 0x1,
+ 	SEC_CIPHER_DEC = 0x2,
+ };
+-#if 0
+-static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
+-	0, A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
+-	A_ALG_SHA384, A_ALG_SHA512, A_ALG_SHA512_224, A_ALG_SHA512_256
+-};
+-static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
+-	0, A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
+-	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
+-	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
+-};
+-#endif
+ 
+ struct hisi_sec_ctx {
+ 	struct wd_ctx_config config;
+ };
+ 
+-#endif	/* __HISI_SEC_H */
++#endif /* __HISI_SEC_H */
+diff --git a/include/wd_digest.h b/include/wd_digest.h
+index 2730d3f..13637b1 100644
+--- a/include/wd_digest.h
++++ b/include/wd_digest.h
+@@ -1,17 +1,17 @@
+ /* SPDX-License-Identifier: Apache-2.0 */
+ #ifndef __WD_DIGEST_H
+ #define __WD_DIGEST_H
++#include <dlfcn.h>
+ 
++#include "include/wd_alg_common.h"
+ #include "config.h"
+ #include "wd.h"
+ 
+ /**
+  * wd_digest_type - Algorithm type of digest
+- * @WD_DIGEST_NONE: Do not define algorithm type, algorithm should be offered
+- *		    by struct wd_digest_arg
++ * algorithm should be offered by struct wd_digest_arg
+  */
+ enum wd_digest_type {
+-	WD_DIGEST_TYPE_NONE,
+ 	WD_DIGEST_SM3,
+ 	WD_DIGEST_MD5,
+ 	WD_DIGEST_SHA1,
+@@ -26,12 +26,11 @@ enum wd_digest_type {
+ 
+ /**
+  * wd_digest_mode - Mode of digest
+- * @WD_DIGEST_MODE_NONE: Mode should be offered by struct wd_digest_arg
++ * Mode should be offered by struct wd_digest_arg
+  * @WD_DIGEST_NORMAL: Normal digest
+  * @WD_DIGEST_HMAC: Keyed-Hashing, e.g. HMAC
+  */
+ enum wd_digest_mode {
+-	WD_DIGEST_MODE_NONE,
+ 	WD_DIGEST_NORMAL,
+ 	WD_DIGEST_HMAC,
+ 	WD_DIGEST_MODE_MAX,
+@@ -41,25 +40,22 @@ enum wd_digest_mode {
+  * wd_digest_sess_setup - Parameters which is used to allocate a digest session
+  * @alg: digest algorithm type, denoted by enum wd_digest_type
+  * @mode: digest algorithm mode, denoted by enum wd_digest_mode
+- * @buff_type: data buff type, denoted by enum wd_buff_type
+  */
+ struct wd_digest_sess_setup {
+-	char *alg_name;
+ 	enum wd_digest_type alg;
+ 	enum wd_digest_mode mode;
+ };
+ 
+-typedef void *wd_alg_digest_cb_t(void *cb_param);
+-struct wd_alg_digest;
++typedef void *wd_digest_cb_t(void *cb_param);
+ 
+ struct wd_digest_sess {
+ 	char			*alg_name;
+ 	enum wd_digest_type	alg;
+ 	enum wd_digest_mode	mode;
+ 	wd_dev_mask_t		*dev_mask;
+-	struct wd_alg_digest	*drv;
++	struct wd_digest_driver *drv;
+ 	void			*priv;
+-	void 			*key;
++	void			*key;
+ 	__u32			key_bytes;
+ };
+ 
+@@ -69,11 +65,13 @@ struct wd_digest_sess {
+  * @mode:digest algorithm mode, denoted by enum wd_digest_mode
+  * @in: input data address
+  * @out: output data address
++ * @key: input key address
+  * @in_bytes: input data size
+  * @out_bytes: output data size
++ * @key_bytes: input key data size
+  * @has_next: is there next data block
+  * @cb: callback function for async mode
+- * @priv: private information for data extension
++ * @cb_param: private information for data extension
+  *
+  * Note: If there is a alg selected in session, alg below will be ignore
+  *       otherwise, alg here will be used. Same as mode below.
+@@ -83,55 +81,91 @@ struct wd_digest_sess {
+ struct wd_digest_req {
+ 	enum wd_digest_type alg;
+ 	enum wd_digest_mode mode;
+-	void *in;
+-	void *out;
+-	void *key;
+-	__u32 in_bytes;
+-	__u32 out_bytes;
+-	__u32 key_bytes;
+-	int has_next;
+-	wd_alg_digest_cb_t *cb;
++
++	void		*in;
++	void		*out;
++	void		*key;
++	__u16		in_bytes;
++	__u16		out_bytes;
++	__u16		key_bytes;
++	__u16		has_next;
++	wd_digest_cb_t	*cb;
++	void		*cb_param;
++};
++
++struct wd_digest_sched {
++	const char *name;
++	__u32 sched_ctx_size;
++	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
++		void *sched_ctx, struct wd_digest_req *req, int numa_id);
++	__u32 (*poll_policy)(struct wd_ctx_config *config);
++};
++
++struct wd_cb_tag {
++	void *ctx;	/* user: context or other user relatives */
++	void *tag;	/* to store user tag */
++	int ctx_id;	/* user id: context ID or other user identifier */
++};
++
++/* Digest tag format of Warpdrive */
++struct wd_digest_tag {
++	struct wd_cb_tag wd_tag;
++	__u64 long_data_len;
+ 	void *priv;
+ };
+ 
+-#if 0
++int wd_digest_init(struct wd_ctx_config *config, struct wd_digest_sched *sched);
++void wd_digest_uninit(void);
++
+ /**
+- * wd_alg_digest_alloc_sess() - Create a digest session.
++ * wd_digest_alloc_sess() - Create a digest session.
+  * @setup: Hold the parameters which are used to allocate a digest session
+- * @dev_mask: Specify the hardware device in which to allocate digest session
+  *
+  * Return handler of allocated session. Return 0 if failing.
+  */
+-extern handle_t wd_alg_digest_alloc_sess(struct wd_digest_sess_setup *setup,
+-					 wd_dev_mask_t *dev_mask);
++handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup);
+ 
+ /**
+  * wd_alg_digest_free_sess() - Free digest session.
+  * @handle_t: session handler which will be free
+  */
+-extern void wd_alg_digest_free_sess(handle_t handle);
++void wd_digest_free_sess(handle_t sess);
+ 
+ /**
+- * wd_alg_do_digest() - Do sync/asynchronous digest task.
+- * @handle_t: Session handler
+- * @arg: Operation parameters. If arg->cb is NULL, it is sync digest, otherwise,
+- *       it is async digest.
++ * wd_do_digest_sync() - Do sync digest task.
++ * @sess: Session handler
++ * @req: Operation parameters.
+  */
+-extern int wd_alg_do_digest(handle_t handle, struct wd_digest_arg *arg);
++int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req);
+ 
+ /**
+- * wd_alg_set_digest_key() - Set auth key to digest session.
+- * @handle_t: Session handler
++ * wd_do_digest_async() - Do asynchronous digest task.
++ * @sess: Session handler
++ * @req: Operation parameters.
++ */
++int wd_do_digest_async(handle_t sess, struct wd_digest_req *req);
++
++/**
++ * wd_set_digest_key() - Set auth key to digest session.
++ * @req: Operation parameters.
+  * @key: Auth key addr
+  * @key_len: Auth key length
+  */
+-extern int wd_alg_set_digest_key(handle_t handle, __u8 *key, __u32 key_len);
++int wd_set_digest_key(struct wd_digest_req *req, __u8 *key, __u32 key_len);
+ 
+ /**
+- * wd_alg_digest_poll() - Poll operation for asynchronous operation.
+- * @handle_t: session handler
+- * @count: Count of polling, 0 means polling all finished tasks.
++ * wd_digest_poll() - Poll operation for asynchronous operation.
++ * @h_ctx: context
++ * @expt: Count of polling
++ * @count: recv poll nums.
+  */
+-extern int wd_alg_digest_poll(handle_t handle, __u32 count);
+-#endif
++int wd_digest_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count);
++
++/**
++ * wd_digest_poll() - Poll operation for asynchronous operation.
++ * @expt: Count of polling.
++ * @count: recv poll nums.
++ */
++int wd_digest_poll(__u32 expt, __u32 *count);
++
+ #endif /* __WD_DIGEST_H */
+diff --git a/test/hisi_sec_test/test_hisi_sec.c b/test/hisi_sec_test/test_hisi_sec.c
+index 48d8553..b1156fb 100644
+--- a/test/hisi_sec_test/test_hisi_sec.c
++++ b/test/hisi_sec_test/test_hisi_sec.c
+@@ -2,25 +2,57 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <pthread.h>
++#include <sys/syscall.h>
+ #include <sys/mman.h>
++#include <sys/time.h>
+ 
+ #include "test_hisi_sec.h"
+ #include "wd_cipher.h"
++#include "wd_digest.h"
+ 
+ #define HW_CTX_SIZE (24 * 1024)
+ #define BUFF_SIZE 1024
+ #define IV_SIZE   256
+-#define HISI_DEV_NODE "/dev/hisi_sec-0"
++#define	NUM_THREADS	128
++#define HISI_DEV_NODE "/dev/hisi_sec2-2"
+ 
+ #define SCHED_SINGLE "sched_single"
+ #define SCHED_NULL_CTX_SIZE	4
++#define TEST_WORD_LEN	4096
+ 
+ static struct wd_ctx_config g_ctx_cfg;
+ static struct wd_sched g_sched;
++static struct wd_digest_sched dg_sched;
++
++//static struct wd_cipher_req g_async_req;
++static long long int g_times;
++static unsigned int g_thread_num;
++static unsigned int alg_num;
++
++typedef struct _thread_data_t {
++	int     tid;
++	int     flag;
++	int	mode;
++	struct wd_cipher_req	*req;
++	int cpu_id;
++	struct timeval start_tval;
++	unsigned long long send_task_num;
++	unsigned long long recv_task_num;
++} thread_data_t;
++
++//static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
++static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
++static pthread_t system_test_thrds[NUM_THREADS];
++static thread_data_t thr_data[NUM_THREADS];
+ 
+ static void hexdump(char *buff, unsigned int len)
+ {
+ 	unsigned int i;
++	if (!buff) {
++		printf("input buff is NULL!");
++		return;
++	}
+ 
+ 	for (i = 0; i < len; i++) {
+ 		printf("\\0x%02x", buff[i]);
+@@ -48,12 +80,13 @@ static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
+ 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
+ 	g_ctx_cfg.ctx_num = 1;
+ 	g_ctx_cfg.ctxs = calloc(1, sizeof(struct wd_ctx));
+-	if (g_ctx_cfg.ctxs)
++	if (!g_ctx_cfg.ctxs)
+ 		return -ENOMEM;
+ 	/* request ctx */
+ 	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(HISI_DEV_NODE);
+ 	if (!g_ctx_cfg.ctxs[0].ctx) {
+ 		ret = -EINVAL;
++		printf("Fail to request ctx!\n");
+ 		goto out;
+ 	}
+ 	g_ctx_cfg.ctxs[0].op_type = type;
+@@ -62,9 +95,14 @@ static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
+ 	sched->name = SCHED_SINGLE;
+ 	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
+ 	sched->pick_next_ctx = sched_single_pick_next_ctx;
++
+ 	sched->poll_policy = sched_single_poll_policy;
+ 	/*cipher init*/
+-	wd_cipher_init(&g_ctx_cfg, sched);
++	ret = wd_cipher_init(&g_ctx_cfg, sched);
++	if (ret) {
++		printf("Fail to cipher ctx!\n");
++		goto out;
++	}
+ 
+ 	return 0;
+ out:
+@@ -73,22 +111,35 @@ out:
+ 	return ret;
+ }
+ 
++static void uninit_config(void)
++{
++	int i;
++
++	wd_cipher_uninit();
++	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
++		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
++	free(g_ctx_cfg.ctxs);
++}
++
+ static int test_sec_cipher_sync_once(void)
+ {
+-	struct cipher_testvec *tv = &aes_ecb_tv_template_128[0];
+-	handle_t	h_sess;
++	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
++	handle_t	h_sess = NULL;
++	struct wd_cipher_sess_setup	setup;
+ 	struct wd_cipher_req req;
+-	char algs[64];
+-	int cnt = 10;
++	int cnt = g_times;
+ 	int ret;
+ 
+ 	/* config setup */
+-	sprintf(algs, "cipher");
+-	init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
++	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
++	if (ret) {
++		printf("Fail to init sigle ctx config!\n");
++		return ret;
++	}
+ 	/* config arg */
+ 	memset(&req, 0, sizeof(struct wd_cipher_req));
+ 	req.alg = WD_CIPHER_AES;
+-	req.mode = WD_CIPHER_ECB;
++	req.mode = WD_CIPHER_CBC;
+ 	req.op_type = WD_CIPHER_ENCRYPTION;
+ 
+ 	req.src  = malloc(BUFF_SIZE);
+@@ -99,6 +150,8 @@ static int test_sec_cipher_sync_once(void)
+ 	}
+ 	memcpy(req.src, tv->ptext, tv->len);
+ 	req.in_bytes = tv->len;
++
++	printf("req src--------->:\n");
+ 	hexdump(req.src, tv->len);
+ 	req.dst = malloc(BUFF_SIZE);
+ 	if (!req.dst) {
+@@ -107,6 +160,13 @@ static int test_sec_cipher_sync_once(void)
+ 		goto out;
+ 	}
+ 
++	req.key = malloc(BUFF_SIZE);
++	if (!req.key) {
++		printf("req key mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++
+ 	req.iv = malloc(IV_SIZE);
+ 	if (!req.iv) {
+ 		printf("req iv mem malloc failed!\n");
+@@ -115,27 +175,145 @@ static int test_sec_cipher_sync_once(void)
+ 	}
+ 	if (tv->iv)
+ 		memcpy(req.iv, tv->iv, strlen(tv->iv));
+-	h_sess = (handle_t)calloc(1, sizeof(struct wd_cipher_sess));
++	req.iv_bytes = strlen(tv->iv);
++
++	printf("cipher req iv--------->:\n");
++	hexdump(req.iv, req.iv_bytes);
++
++	h_sess = wd_cipher_alloc_sess(&setup);
+ 	if (!h_sess) {
+ 		ret = -1;
+ 		goto out;
+ 	}
+-	
++
+ 	/* set key */
+ 	ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
+ 	if (ret) {
+ 		printf("req set key failed!\n");
+ 		goto out;
+ 	}
++	printf("cipher req key--------->:\n");
++	hexdump(req.key, tv->klen);
++
+ 	while (cnt) {
+ 		ret = wd_do_cipher_sync(h_sess, &req);
+ 		cnt--;
+-		if (ret) {
+-			printf("fail to encrypt:%d\n", ret);
++	}
++
++	printf("Test cipher sync function: output dst-->\n");
++	hexdump(req.dst, req.in_bytes);
++
++out:
++	if (req.src)
++		free(req.src);
++	if (req.dst)
++		free(req.dst);
++	if (req.iv)
++		free(req.iv);
++	if (req.key)
++		free(req.key);
++	if (h_sess)
++		wd_cipher_free_sess(h_sess);
++	uninit_config();
++
++	return ret;
++}
++
++static void *async_cb(void *data)
++{
++	// struct wd_cipher_req *req = (struct wd_cipher_req *)data;
++	// memcpy(&g_async_req, req, sizeof(struct wd_cipher_req));
++
++	return NULL;
++}
++
++static int test_sec_cipher_async_once(void)
++{
++	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
++	struct wd_cipher_sess_setup	setup;
++	handle_t	h_sess = NULL;
++	struct wd_cipher_req req;
++	int cnt = g_times;
++	unsigned int recv = 0;
++	int ret;
++
++	/* config setup */
++	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC, &g_sched);
++	if (ret) {
++		printf("Fail to init sigle ctx config!\n");
++		return ret;
++	}
++	/* config arg */
++	memset(&req, 0, sizeof(struct wd_cipher_req));
++	req.alg = WD_CIPHER_AES;
++	req.mode = WD_CIPHER_CBC;
++	req.op_type = WD_CIPHER_ENCRYPTION;
++
++	req.src  = malloc(BUFF_SIZE);
++	if (!req.src) {
++		printf("req src mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	memcpy(req.src, tv->ptext, tv->len);
++	req.in_bytes = tv->len;
++
++	printf("req src--------->:\n");
++	hexdump(req.src, tv->len);
++	req.dst = malloc(BUFF_SIZE);
++	if (!req.dst) {
++		printf("req dst mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++
++	req.key = malloc(BUFF_SIZE);
++	if (!req.key) {
++		printf("req key mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++
++	req.iv = malloc(IV_SIZE);
++	if (!req.iv) {
++		printf("req iv mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	if (tv->iv) {
++		memcpy(req.iv, tv->iv, strlen(tv->iv));
++		req.iv_bytes = strlen(tv->iv);
++	}
++	h_sess = wd_cipher_alloc_sess(&setup);
++	if (!h_sess) {
++		ret = -1;
++		goto out;
++	}
++
++	/* set key */
++	ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
++	if (ret) {
++		printf("req set key failed!\n");
++		goto out;
++	}
++	printf("cipher req key--------->:\n");
++	hexdump(req.key, tv->klen);
++
++	while (cnt) {
++		req.cb = async_cb;
++		ret = wd_do_cipher_async(h_sess, &req);
++		if (ret < 0)
+ 			goto out;
+-		}
++
++		cnt--;
+ 	}
+-	
++
++	/* poll thread */
++	ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times, &recv);
++
++	printf("Test cipher async : %u pkg ; output dst-->\n", recv);
++	hexdump(req.dst, req.in_bytes);
++
+ out:
+ 	if (req.src)
+ 		free(req.src);
+@@ -145,22 +323,701 @@ out:
+ 		free(req.iv);
+ 	if (req.key)
+ 		free(req.key);
++	if (h_sess)
++		wd_cipher_free_sess(h_sess);
++	uninit_config();
+ 
+ 	return ret;
++}
++
++static int test_sec_cipher_sync(void *arg)
++{
++	int thread_id = (int)syscall(__NR_gettid);
++	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
++	thread_data_t *pdata = (thread_data_t *)arg;
++	struct wd_cipher_req *req = pdata->req;
++	struct wd_cipher_sess_setup setup;
++	struct timeval cur_tval;
++	unsigned long Perf = 0, pktlen;
++	handle_t	h_sess;
++	float speed, time_used;
++	int pid = getpid();
++	int cnt = g_times;
++	int ret;
+ 
++	h_sess = wd_cipher_alloc_sess(&setup);
++	if (!h_sess) {
++		ret = -1;
++		return ret;
++	}
++
++	pktlen = req->in_bytes;
++	printf("cipher req src--------->:\n");
++	hexdump(req->src, tv->len);
++
++	printf("ivlen = %d, cipher req iv--------->:\n", req->iv_bytes);
++	hexdump(req->iv, req->iv_bytes);
++	/* set key */
++	ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
++	if (ret) {
++		printf("req set key failed!\n");
++		goto out_cipher;
++	}
++	printf("cipher req key--------->:\n");
++	hexdump(req->key, tv->klen);
++
++	pthread_mutex_lock(&mutex);
++	// pthread_cond_wait(&cond, &mutex);
++	/* run task */
++	while (cnt) {
++		ret = wd_do_cipher_sync(h_sess, req);
++		cnt--;
++		pdata->send_task_num++;
++	}
++
++	gettimeofday(&cur_tval, NULL);
++	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
++				cur_tval.tv_usec - pdata->start_tval.tv_usec);
++	printf("time_used:%0.0f us, send task num:%lld\n", time_used, pdata->send_task_num++);
++	speed = pdata->send_task_num / time_used * 1000000;
++	Perf = speed * pktlen / 1024; //B->KB
++	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
++			thread_id, speed, Perf);
++
++#if 0
++	printf("Test cipher sync function: output dst-->\n");
++	hexdump(req->dst, req->in_bytes);
++	printf("Test cipher sync function thread_id is:%d\n", thread_id);
++#endif
++	pthread_mutex_unlock(&mutex);
++
++	ret = 0;
++
++out_cipher:
++	if (h_sess)
++		wd_cipher_free_sess(h_sess);
++
++	return ret;
++}
++
++static void *_test_sec_cipher_sync(void *data)
++{
++	test_sec_cipher_sync(data);
++
++	return NULL;
++}
++/*
++ * Create 2 threads. one threads are enc/dec, and the other
++ * is polling.
++ */
++static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs)
++{
++	pthread_attr_t attr;
++	int i, ret;
++
++	if (thread_num > NUM_THREADS - 1) {
++		printf("can't creat %d threads", thread_num - 1);
++		return -EINVAL;
++	}
++
++	pthread_attr_init(&attr);
++	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
++	for (i = 0; i < thread_num; i++) {
++		thr_data[i].tid = i;
++		thr_data[i].req = &reqs[i];
++		gettimeofday(&thr_data[i].start_tval, NULL);
++		ret = pthread_create(&system_test_thrds[i], &attr, _test_sec_cipher_sync, &thr_data[i]);
++		if (ret) {
++			printf("Failed to create thread, ret:%d\n", ret);
++			return ret;
++		}
++	}
++
++	thr_data[i].tid = i;
++	pthread_attr_destroy(&attr);
++	for (i = 0; i < thread_num; i++) {
++		ret = pthread_join(system_test_thrds[i], NULL);
++	}
++
++	return 0;
++}
++
++static int sec_cipher_sync_test(void)
++{
++	struct wd_cipher_req	req[NUM_THREADS];
++	void *src = NULL, *dst = NULL, *iv = NULL, *key = NULL;
++	int	parallel = g_thread_num;
++	int i;
++	memset(&req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
++	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
++	int ret;
++
++	int step = sizeof(char) * TEST_WORD_LEN;
++	src = malloc(step * NUM_THREADS);
++	if (!src) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++	dst = malloc(step * NUM_THREADS);
++	if (!dst) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++	iv = malloc(step * NUM_THREADS);
++	if (!iv) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++
++	key = malloc(step * NUM_THREADS);
++	if (!key) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++
++	for (i = 0; i < parallel; i++) {
++		req[i].src = src + i * step;
++		memset(req[i].src, 0, step);
++		memcpy(req[i].src, tv->ptext, tv->len);
++		req[i].in_bytes = tv->len;
++
++		req[i].dst = dst + i * step;
++		req[i].out_bytes = tv->len;
++
++		req[i].iv = iv + i * step;
++		memset(req[i].iv, 0, step);
++		memcpy(req[i].iv, tv->iv, strlen(tv->iv));
++		req[i].iv_bytes = strlen(tv->iv);
++
++		req[i].key = key + i * step;
++		memset(req[i].key, 0, step);
++
++		/* config arg */
++		req[i].alg = WD_CIPHER_AES;
++		req[i].mode = WD_CIPHER_CBC;
++		req[i].op_type = WD_CIPHER_ENCRYPTION;
++	}
++
++	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
++	if (ret) {
++		printf("fail to init sigle ctx config!\n");
++		goto out_thr;
++	}
++
++	ret = test_sync_create_threads(parallel, req);
++	if (ret < 0)
++		goto out_config;
++
++out_config:
++	uninit_config();
++out_thr:
++	if (src)
++		free(src);
++	if (dst)
++		free(dst);
++	if (iv)
++		free(iv);
++	if (key)
++		free(key);
++
++	return ret;
++}
++
++static int test_sec_cipher_async(void *arg)
++{
++	int thread_id = (int)syscall(__NR_gettid);
++	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
++	thread_data_t *pdata = (thread_data_t *)arg;
++	struct wd_cipher_req *req = pdata->req;
++	struct wd_cipher_sess_setup setup;
++	int cnt = g_times;
++	handle_t h_sess;
++	int ret;
++
++	h_sess = wd_cipher_alloc_sess(&setup);
++	if (!h_sess) {
++		ret = -1;
++		return ret;
++	}
++
++	printf("cipher req src--------->:\n");
++	hexdump(req->src, tv->len);
++
++	printf("cipher req iv--------->:\n");
++	hexdump(req->iv, req->iv_bytes);
++	/* set key */
++	ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
++	if (ret) {
++		printf("req set key failed!\n");
++		goto out_cipher;
++	}
++	printf("cipher req key--------->:\n");
++	hexdump(req->key, tv->klen);
++
++	pthread_mutex_lock(&mutex);
++	// pthread_cond_wait(&cond, &mutex);
++	/* run task */
++	while (cnt) {
++		ret = wd_do_cipher_async(h_sess, req);
++		cnt--;
++	}
++
++	printf("Test cipher async function: output dst-->\n");
++	hexdump(req->dst, req->in_bytes);
++	printf("Test cipher async function thread_id is:%d\n", thread_id);
++
++	pthread_mutex_unlock(&mutex);
++
++	ret = 0;
++
++out_cipher:
++	if (h_sess)
++		wd_cipher_free_sess(h_sess);
++
++	return ret;
++}
++
++static void *_test_sec_cipher_async(void *data)
++{
++	test_sec_cipher_async(data);
++
++	return NULL;
++}
++
++/* create poll threads */
++static void *poll_func(void *arg)
++{
++	unsigned int recv;
++	int ret;
++
++	while (1) {
++		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, &recv);
++		if (ret < 0) {
++			break;
++		}
++	}
++
++	return NULL;
++}
++/*
++ * Create 2 threads. one threads are enc/dec, and the other
++ * is polling.
++ */
++static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs)
++{
++	pthread_attr_t attr;
++	int i, ret;
++
++	if (thread_num > NUM_THREADS - 1) {
++		printf("can't creat %d threads", thread_num - 1);
++		return -EINVAL;
++	}
++
++	pthread_attr_init(&attr);
++	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
++	for (i = 0; i < thread_num; i++) {
++		thr_data[i].tid = i;
++		thr_data[i].req = &reqs[i];
++		gettimeofday(&thr_data[i].start_tval, NULL);
++		ret = pthread_create(&system_test_thrds[i], &attr, _test_sec_cipher_async, &thr_data[i]);
++		if (ret) {
++			printf("Failed to create thread, ret:%d\n", ret);
++			return ret;
++		}
++	}
++
++	ret = pthread_create(&system_test_thrds[i], &attr, poll_func, &thr_data[i]);
++
++	pthread_attr_destroy(&attr);
++	for (i = 0; i < thread_num + 1; i++) {
++		ret = pthread_join(system_test_thrds[i], NULL);
++	}
++
++	return 0;
++}
++
++static int sec_cipher_async_test(void)
++{
++	struct wd_cipher_req	req[NUM_THREADS];
++	void *src = NULL, *dst = NULL, *iv = NULL, *key = NULL;
++	int	parallel = g_thread_num;
++	int i;
++	memset(&req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
++	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
++	int ret;
++
++	int step = sizeof(char) * TEST_WORD_LEN;
++	src = malloc(step * NUM_THREADS);
++	if (!src) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++	dst = malloc(step * NUM_THREADS);
++	if (!dst) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++	iv = malloc(step * NUM_THREADS);
++	if (!iv) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++
++	key = malloc(step * NUM_THREADS);
++	if (!key) {
++		ret = -ENOMEM;
++		goto out_thr;
++	}
++
++	for (i = 0; i < parallel; i++) {
++		req[i].src = src + i * step;
++		memset(req[i].src, 0, step);
++		memcpy(req[i].src, tv->ptext, tv->len);
++		req[i].in_bytes = tv->len;
++
++		req[i].dst = dst + i * step;
++		req[i].out_bytes = tv->len;
++
++		req[i].iv = iv + i * step;
++		memset(req[i].iv, 0, step);
++		memcpy(req[i].iv, tv->iv, strlen(tv->iv));
++		req[i].iv_bytes = strlen(tv->iv);
++
++		req[i].key = key + i * step;
++		memset(req[i].key, 0, step);
++
++		/* config arg */
++		req[i].alg = WD_CIPHER_AES;
++		req[i].mode = WD_CIPHER_CBC;
++		req[i].op_type = WD_CIPHER_ENCRYPTION;
++		req[i].cb = async_cb;
++	}
++
++	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC, &g_sched);
++	if (ret) {
++		printf("fail to init sigle ctx config!\n");
++		goto out_thr;
++	}
++
++	ret = test_async_create_threads(parallel, req);
++	if (ret < 0)
++		goto out_config;
++
++out_config:
++	uninit_config();
++out_thr:
++	if (src)
++		free(src);
++	if (dst)
++		free(dst);
++	if (iv)
++		free(iv);
++	if (key)
++		free(key);
++
++	return ret;
++}
++
++static handle_t sched_digest_pick_next_ctx(struct wd_ctx_config *cfg,
++		void *sched_ctx, struct wd_digest_req *req, int numa_id)
++{
++	return g_ctx_cfg.ctxs[0].ctx;
++}
++
++static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sched)
++{
++	int ret;
++
++	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
++	g_ctx_cfg.ctx_num = 1;
++	g_ctx_cfg.ctxs = calloc(1, sizeof(struct wd_ctx));
++	if (!g_ctx_cfg.ctxs)
++		return -ENOMEM;
++	/* request ctx */
++	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(HISI_DEV_NODE);
++	if (!g_ctx_cfg.ctxs[0].ctx) {
++		ret = -EINVAL;
++		printf("Fail to request ctx!\n");
++		goto out;
++	}
++	g_ctx_cfg.ctxs[0].op_type = type;
++	g_ctx_cfg.ctxs[0].ctx_mode = mode;
++
++	sched->name = SCHED_SINGLE;
++	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
++	sched->pick_next_ctx = sched_digest_pick_next_ctx;
++
++	sched->poll_policy = sched_single_poll_policy;
++	/*cipher init*/
++	ret = wd_digest_init(&g_ctx_cfg, sched);
++	if (ret) {
++		printf("Fail to cipher ctx!\n");
++		goto out;
++	}
++
++	return 0;
++out:
++	free(g_ctx_cfg.ctxs);
++
++	return ret;
++}
++
++
++static int test_sec_digest_sync_once(void)
++{
++	struct hash_testvec *tv = &sha256_tv_template[0];
++	handle_t	h_sess = NULL;
++	struct wd_digest_sess_setup	setup;
++	struct wd_digest_req req;
++	int cnt = g_times;
++	int ret;
++
++	/* config setup */
++	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &dg_sched);
++	if (ret) {
++		printf("Fail to init sigle ctx config!\n");
++		return ret;
++	}
++
++	/* config arg */
++	memset(&req, 0, sizeof(struct wd_digest_req));
++	req.alg = WD_DIGEST_SHA256;
++	req.mode = WD_DIGEST_NORMAL;
++	printf("test alg: %s\n", "normal(sha256)");
++
++	req.in  = malloc(BUFF_SIZE);
++	if (!req.in) {
++		printf("req src in mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	memcpy(req.in, tv->plaintext, tv->psize);
++	req.in_bytes = tv->psize;
++
++	printf("req src in--------->:\n");
++	hexdump(req.in, tv->psize);
++	req.out = malloc(BUFF_SIZE);
++	if (!req.out) {
++		printf("req dst out mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	req.out_bytes = tv->dsize;
++
++	req.key = malloc(BUFF_SIZE);
++	if (!req.key) {
++		printf("req key mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	req.has_next = 0;
++
++	h_sess = wd_digest_alloc_sess(&setup);
++	if (!h_sess) {
++		ret = -1;
++		goto out;
++	}
++
++	/* if mode is HMAC, should set key */
++	//ret = wd_digest_set_key(&req, (const __u8*)tv->key, tv->ksize);
++	//if (ret) {
++	//	printf("req set key failed!\n");
++	//	goto out;
++	//}
++	//printf("digest req key--------->:\n");
++	//hexdump(req.key, tv->klen);
++
++	while (cnt) {
++		ret = wd_do_digest_sync(h_sess, &req);
++		cnt--;
++	}
++
++	printf("Test digest sync function: output dst-->\n");
++	hexdump(req.out, 64);
++
++out:
++	if (req.in)
++		free(req.in);
++	if (req.out)
++		free(req.out);
++	if (req.key)
++		free(req.key);
++	if (h_sess)
++		wd_digest_free_sess(h_sess);
++	uninit_config();
++
++	return ret;
++}
++
++
++static void *digest_async_cb(void *data)
++{
++	// struct wd_digest_req *req = (struct wd_digest_req *)data;
++	// memcpy(&g_async_req, req, sizeof(struct wd_digest_req));
++
++	return NULL;
++}
++
++static int test_sec_digest_async_once(void)
++{
++	struct hash_testvec *tv = &sha256_tv_template[0];
++	struct wd_digest_sess_setup	setup;
++	handle_t	h_sess = NULL;
++	struct wd_digest_req req;
++	int cnt = g_times;
++	unsigned int recv = 0;
++	int ret;
++
++	/* config setup */
++	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &dg_sched);
++	if (ret) {
++		printf("Fail to init sigle ctx config!\n");
++		return ret;
++	}
++
++	/* config arg */
++	memset(&req, 0, sizeof(struct wd_digest_req));
++	req.alg = WD_DIGEST_SHA256;
++	req.mode = WD_DIGEST_NORMAL;
++	printf("test alg: %s\n", "normal(sha256)");
++
++	req.in  = malloc(BUFF_SIZE);
++	if (!req.in) {
++		printf("req src in mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	memcpy(req.in, tv->plaintext, tv->psize);
++	req.in_bytes = tv->psize;
++
++	printf("req src in--------->:\n");
++	hexdump(req.in, tv->psize);
++	req.out = malloc(BUFF_SIZE);
++	if (!req.out) {
++		printf("req dst out mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	req.out_bytes = tv->dsize;
++
++	req.key = malloc(BUFF_SIZE);
++	if (!req.key) {
++		printf("req key mem malloc failed!\n");
++		ret = -1;
++		goto out;
++	}
++	req.has_next = 0;
++
++	h_sess = wd_digest_alloc_sess(&setup);
++	if (!h_sess) {
++		ret = -1;
++		goto out;
++	}
++
++	/* if mode is HMAC, should set key */
++	//ret = wd_digest_set_key(&req, (const __u8*)tv->key, tv->ksize);
++	//if (ret) {
++	//	printf("req set key failed!\n");
++	//	goto out;
++	//}
++	//printf("digest req key--------->:\n");
++	//hexdump(req.key, tv->klen);
++
++	while (cnt) {
++		req.cb = digest_async_cb;
++		ret = wd_do_digest_async(h_sess, &req);
++		if (ret < 0)
++			goto out;
++		cnt--;
++	}
++
++	/* poll thread */
++	ret = wd_digest_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times, &recv);
++
++	printf("Test digest async : %u pkg ; output dst-->\n", recv);
++	hexdump(req.out, 64);
++
++out:
++	if (req.in)
++		free(req.in);
++	if (req.out)
++		free(req.out);
++	if (req.key)
++		free(req.key);
++	if (h_sess)
++		wd_digest_free_sess(h_sess);
++	uninit_config();
++
++	return ret;
+ }
+ 
+ int main(int argc, char *argv[])
+ {
+ 	printf("this is a hisi sec test.\n");
+-	int ret;
++	unsigned int algtype_class;
++	g_thread_num = 1;
+ 
+-	ret = test_sec_cipher_sync_once();
++	if (!strcmp(argv[1], "-cipher")) {
++		algtype_class = CIPHER_CLASS;
++		alg_num = strtoul((char*)argv[2], NULL, 10);
++	} else if (!strcmp(argv[1], "-digest")) {
++		algtype_class = DIGEST_CLASS;
++		alg_num = strtoul((char*)argv[2], NULL, 10);
++	} else {
++		printf("alg_class type error.\n");
++		return 0;
++	}
+ 
+-	if (!ret) {
+-		printf("test sec is successfull!\n");
++	if (!strcmp(argv[3], "-times")) {
++		g_times = strtoul((char*)argv[4], NULL, 10);
++	} else {
++		g_times = 1;
++	}
++	printf("set global times is %lld\n", g_times);
++
++	if (!strcmp(argv[5], "-sync")) {
++		if (algtype_class == CIPHER_CLASS) {
++			if (!strcmp(argv[6], "-multi")) {
++				g_thread_num = strtoul((char*)argv[7], NULL, 10);
++				printf("currently cipher test is synchronize multi -%d threads!\n", g_thread_num);
++				sec_cipher_sync_test();
++			} else {
++				test_sec_cipher_sync_once();
++				printf("currently cipher test is synchronize once, one thread!\n");
++			}
++		} else if (algtype_class == DIGEST_CLASS) {
++			if (!strcmp(argv[6], "-multi")) {
++				g_thread_num = strtoul((char*)argv[7], NULL, 10);
++				printf("currently digest test is synchronize multi -%d threads!\n", g_thread_num);
++				//sec_digest_sync_test();
++			} else {
++				test_sec_digest_sync_once();
++				printf("currently digest test is synchronize once, one thread!\n");
++			}
++		}
++	} else if (!strcmp(argv[5], "-async")) {
++		if (algtype_class == CIPHER_CLASS) {
++			if (!strcmp(argv[6], "-multi")) {
++				g_thread_num = strtoul((char*)argv[7], NULL, 10);
++				printf("currently cipher test is asynchronous multi -%d threads!\n", g_thread_num);
++				sec_cipher_async_test();
++			} else {
++				test_sec_cipher_async_once();
++				printf("currently cipher test is asynchronous one, one thread!\n");
++			}
++		} else if (algtype_class == DIGEST_CLASS) {
++			if (!strcmp(argv[6], "-multi")) {
++				g_thread_num = strtoul((char*)argv[7], NULL, 10);
++				printf("currently digest test is asynchronous multi -%d threads!\n", g_thread_num);
++				//sec_digest_async_test();
++			} else {
++				test_sec_digest_async_once();
++				printf("currently digest test is asynchronous one, one thread!\n");
++			}
++		}
+ 	} else {
+-		printf("test sec is successfull!\n");
++		printf("Please input a right session mode, -sync or -aync!\n");
++		// ./test_hisi_sec -time 2 -sync -multi
+ 	}
+ 
+ 	return 0;
+diff --git a/test/hisi_sec_test/test_hisi_sec.h b/test/hisi_sec_test/test_hisi_sec.h
+index 7cef75d..3310f8e 100644
+--- a/test/hisi_sec_test/test_hisi_sec.h
++++ b/test/hisi_sec_test/test_hisi_sec.h
+@@ -1,6 +1,12 @@
+ // SPDX-License-Identifier: GPL-2.0+
+ #ifndef TEST_HISI_SEC_H_
+-#define TEST_HISI_SEC_H_
++#define TEST_HISI_SEC_H
++
++enum alg_class {
++	CIPHER_CLASS,
++	AEAD_CLASS,
++	DIGEST_CLASS,
++};
+ 
+ enum cipher_op_type {
+ 	ENCRYPTION,
+@@ -31,14 +37,55 @@ struct cipher_testvec {
+ 	int len;
+ };
+ 
++struct hash_testvec {
++	const char *key;
++	const char *plaintext;
++	const char *digest;
++	unsigned int psize;
++	unsigned short ksize;
++	unsigned int dsize;
++};
++
++struct hash_testvec sha256_tv_template[] = {
++	{
++		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-",
++		.psize	= 64,
++		.digest = "\xb5\xfe\xad\x56\x7d\xff\xcb\xa4"
++			"\x2c\x32\x29\x32\x19\xbb\xfb\xfa"
++			"\xd6\xff\x94\xa3\x72\x91\x85\x66"
++			"\x3b\xa7\x87\x77\x58\xa3\x40\x3a",
++		.dsize	= 32,
++	}
++};
++
+ struct cipher_testvec aes_ecb_tv_template_128[] = {
+ 	{
+ 		.key = "\x00\x01\x02\x03\x04\x05\x06\x07"
+ 			"\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+ 		.klen = 16,
+ 		.ptext = "\x00\x11\x22\x33\x44\x55\x66\x77"
+-			"x88\x99\xaa\xbb\xcc\xdd\xee\xff",
++			"\x88\x99\xaa\xbb\xcc\xdd\xee\xff",
++		.ctext	= "\x69\xc4\xe0\xd8\x6a\x7b\x04\x30"
++		  	"\xd8\xcd\xb7\x80\x70\xb4\xc5\x5a",
+ 		.len = 16,
+ 	}	
+ };
++
++/* 128bit */
++struct cipher_testvec aes_cbc_tv_template_128[] = {
++	{
++		.key    = "\x06\xa9\x21\x40\x36\xb8\xa1\x5b"
++			  "\x51\x2e\x03\xd5\x34\x12\x00\x06",
++		.klen   = 16,
++		.iv	= "\x3d\xaf\xba\x42\x9d\x9e\xb4\x30"
++			  "\xb4\x22\xda\x80\x2c\x9f\xac\x41",
++		.iv_out	= "\xe3\x53\x77\x9c\x10\x79\xae\xb8"
++			  "\x27\x08\x94\x2d\xbe\x77\x18\x1a",
++		.ptext	= "Single block msg",
++		.ctext	= "\xe3\x53\x77\x9c\x10\x79\xae\xb8"
++			  "\x27\x08\x94\x2d\xbe\x77\x18\x1a",
++		.len	= 16,
++	}
++};
++
+ #endif /* TEST_HISI_SEC_H_ */
+diff --git a/wd_digest.c b/wd_digest.c
+new file mode 100644
+index 0000000..157add1
+--- /dev/null
++++ b/wd_digest.c
+@@ -0,0 +1,474 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++#include <stdlib.h>
++#include "wd_digest.h"
++#include "include/drv/wd_digest_drv.h"
++
++#define XTS_MODE_KEY_DIVISOR	2
++#define SM4_KEY_SIZE		16
++#define DES_KEY_SIZE		8
++#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
++#define MAX_CIPHER_KEY_SIZE	64
++
++#define MAX_HMAC_KEY_SIZE		128
++#define WD_POOL_MAX_ENTRIES	1024
++#define DES_WEAK_KEY_NUM	4
++#define MAX_RETRY_COUNTS	200000000
++
++struct msg_pool {
++	struct wd_digest_msg msg[WD_POOL_MAX_ENTRIES];
++	int used[WD_POOL_MAX_ENTRIES];
++	int head;
++	int tail;
++};
++
++struct wd_async_msg_pool {
++	struct msg_pool *pools;
++	int pool_nums;
++};
++
++struct wd_digest_setting {
++	struct wd_ctx_config	config;
++	struct wd_digest_sched	sched;
++	struct wd_digest_driver	*driver;
++	struct wd_async_msg_pool pool;
++	void *sched_ctx;
++	void *priv;
++};
++
++static struct wd_digest_setting g_wd_digest_setting;
++extern struct wd_digest_driver wd_digest_hisi_digest_driver;
++
++
++#ifdef WD_STATIC_DRV
++static void wd_digest_set_static_drv(void)
++{
++	/*
++	 * Fix me: a parameter can be introduced to decide to choose
++	 * specific driver. Same as dynamic case.
++	 */
++	g_wd_digest_setting.driver = &wd_digest_hisi_digest_driver;
++}
++#else
++static void __attribute__((constructor)) wd_digest_open_driver(void)
++{
++	void *driver;
++
++	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
++	driver = dlopen("/usr/lib/wd/libhisi_sec.so", RTLD_NOW);
++	if (!driver)
++		WD_ERR("Fail to open libhisi_sec.so\n");
++}
++#endif
++
++void wd_digest_set_driver(struct wd_digest_driver *drv)
++{
++	g_wd_digest_setting.driver = drv;
++}
++
++int wd_digest_set_key(struct wd_digest_req *req, const __u8 *key, __u32 key_len)
++{
++	if (!key || !req || !req->key) {
++		WD_ERR("%s inpupt param err!\n", __func__);
++		return -EINVAL;
++	}
++
++	if (key_len > MAX_HMAC_KEY_SIZE) {
++		WD_ERR("%s: input key length err!\n", __func__);
++		return -WD_EINVAL;
++	}
++
++	req->key_bytes = key_len;
++	memcpy(req->key, key, key_len);
++
++	return 0;
++}
++
++handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
++{
++	struct wd_digest_sess *sess = NULL;
++
++	if (!setup) {
++		WD_ERR("input setup is NULL!\n");
++		return (handle_t)0;
++	}
++	sess = calloc(1, sizeof(struct wd_digest_sess));
++	return (handle_t)sess;
++}
++
++void wd_digest_free_sess(handle_t h_sess)
++{
++	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
++
++	free(sess);
++}
++
++static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
++{
++	struct wd_ctx *ctxs;
++	int i;
++
++	if (cfg->ctx_num == 0)
++		return -EINVAL;
++
++	ctxs = malloc(sizeof(struct wd_ctx) * cfg->ctx_num);
++	if (!ctxs)
++		return -ENOMEM;
++
++	memset(ctxs, 0, sizeof(struct wd_ctx) * cfg->ctx_num);
++
++	/* check every context */
++	for (i = 0; i < cfg->ctx_num; i++) {
++		if (!cfg->ctxs[i].ctx)
++			return -EINVAL;
++	}
++
++	/* get ctxs from user set */
++	memcpy(ctxs, cfg->ctxs, sizeof(struct wd_ctx) * cfg->ctx_num);
++	g_wd_digest_setting.config.ctxs = ctxs;
++
++	/* fix me */
++	g_wd_digest_setting.config.priv = cfg->priv;
++	g_wd_digest_setting.config.ctx_num = cfg->ctx_num;
++
++	return 0;
++}
++
++static int copy_sched_to_global_setting(struct wd_digest_sched *sched)
++{
++	if (!sched->name || sched->sched_ctx_size <= 0)
++		return -EINVAL;
++
++	g_wd_digest_setting.sched.name = strdup(sched->name);
++	g_wd_digest_setting.sched.sched_ctx_size = sched->sched_ctx_size;
++	g_wd_digest_setting.sched.pick_next_ctx = sched->pick_next_ctx;
++	g_wd_digest_setting.sched.poll_policy = sched->poll_policy;
++
++	return 0;
++}
++
++static void clear_config_in_global_setting(void)
++{
++	g_wd_digest_setting.config.ctx_num = 0;
++	g_wd_digest_setting.config.priv = NULL;
++	free(g_wd_digest_setting.config.ctxs);
++}
++
++static void clear_sched_in_global_setting(void)
++{
++	char *name = (char *)g_wd_digest_setting.sched.name;
++
++	free(name);
++	g_wd_digest_setting.sched.poll_policy = NULL;
++	g_wd_digest_setting.sched.pick_next_ctx = NULL;
++	g_wd_digest_setting.sched.sched_ctx_size = 0;
++}
++
++/* Each context has a reqs pool */
++static int init_async_request_pool(struct wd_async_msg_pool *pool)
++{
++	int ctx_num;
++
++	ctx_num = g_wd_digest_setting.config.ctx_num;
++	pool->pools = calloc(1, ctx_num * sizeof(struct msg_pool));
++	if (!pool->pools)
++		return -ENOMEM;
++	pool->pool_nums = ctx_num;
++
++	return 0;
++}
++
++/* free every reqs pool */
++static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
++{
++	struct msg_pool *p;
++	int i, j, num;
++
++	num = pool->pool_nums;
++	for (i = 0; i < num; i++) {
++		p = &pool->pools[i];
++		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
++			if (p->used[j])
++				WD_ERR("Entry #%d isn't released from reqs pool.\n", j);
++				memset(&p->msg[j], 0, sizeof(struct wd_digest_msg));
++		}
++		p->head = 0;
++		p->tail = 0;
++	}
++
++	free(pool->pools);
++}
++
++static struct wd_digest_msg *get_msg_from_pool(struct wd_async_msg_pool *pool,
++	handle_t h_ctx, struct wd_digest_req *req)
++{
++	struct msg_pool *p;
++	struct wd_digest_msg *msg;
++	int found = 0;
++	int i, t;
++
++	for (i = 0; i < g_wd_digest_setting.config.ctx_num; i++) {
++		if (h_ctx == g_wd_digest_setting.config.ctxs[i].ctx) {
++			found = 1;
++			break;
++		}
++	}
++	if (!found)
++		return NULL;
++
++	p = &pool->pools[i];
++	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
++
++	/* full */
++	if (p->head == t)
++		return NULL;
++	/* get msg from msg_pool[] */
++	msg = &p->msg[p->tail];
++	memcpy(&msg->req, req, sizeof(struct wd_digest_req));
++	msg->tag_id = p->tail;
++	p->tail = t;
++
++	return msg;
++}
++
++static struct wd_digest_req *get_req_from_pool(struct wd_async_msg_pool *pool,
++	handle_t h_ctx, struct wd_digest_msg *msg)
++{
++	struct msg_pool *p;
++	struct wd_digest_msg *c_msg;
++	int found = 0;
++	int i, idx;
++
++	for (i = 0; i < g_wd_digest_setting.config.ctx_num; i++) {
++		if (h_ctx == g_wd_digest_setting.config.ctxs[i].ctx) {
++			found = 1;
++			break;
++		}
++	}
++	if (!found)
++		return NULL;
++
++	p = &pool->pools[i];
++	/* empty */
++	if (p->head == p->tail)
++		return NULL;
++	idx = msg->tag_id;
++	c_msg = &p->msg[idx];
++
++	/* what this is?? */
++	msg->req.in = c_msg->req.in;
++	msg->req.out = c_msg->req.out;
++	msg->req.cb = c_msg->req.cb;
++	msg->req.cb_param = c_msg->req.cb_param;
++
++	return &msg->req;
++}
++
++int wd_digest_init(struct wd_ctx_config *config, struct wd_digest_sched *sched)
++{
++	void *priv;
++	int ret;
++
++	if (g_wd_digest_setting.driver) {
++		WD_ERR("digest driver is exists, name: %s\n",
++		g_wd_digest_setting.driver->drv_name);
++		return 0;
++	}
++
++	if (!config || !sched)
++		return -EINVAL;
++
++	/* set config and sched */
++	ret = copy_config_to_global_setting(config);
++	if (ret < 0) {
++		WD_ERR("Fail to copy configuration to global setting!\n");
++		return ret;
++	}
++
++	ret = copy_sched_to_global_setting(sched);
++	if (ret < 0) {
++		WD_ERR("Fail to copy schedule to global setting!\n");
++		goto out;
++	}
++
++	/* set driver */
++#ifdef WD_STATIC_DRV
++	wd_digest_set_static_drv();
++#endif
++
++	/* alloc sched context memory */
++	g_wd_digest_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
++	if (!g_wd_digest_setting.sched_ctx) {
++		ret = -ENOMEM;
++		goto out_sched;
++	}
++	/* init sysnc request pool */
++	ret = init_async_request_pool(&g_wd_digest_setting.pool);
++	if (ret)
++		goto out_pool;
++
++	/* init ctx related resources in specific driver */
++	priv = calloc(1, g_wd_digest_setting.driver->drv_ctx_size);
++	if (!priv) {
++		ret = -ENOMEM;
++		goto out_priv;
++	}
++	g_wd_digest_setting.priv = priv;
++	/* sec init */
++	ret = g_wd_digest_setting.driver->init(&g_wd_digest_setting.config, priv);
++	if (ret < 0) {
++		WD_ERR("Fail to init digest dirver!\n");
++		goto out_init;
++	}
++
++	return 0;
++out_init:
++	free(priv);
++out_priv:
++	uninit_async_request_pool(&g_wd_digest_setting.pool);
++out_pool:
++	free(g_wd_digest_setting.sched_ctx);
++out_sched:
++	clear_sched_in_global_setting();
++out:
++	clear_config_in_global_setting();
++
++	return ret;
++}
++
++void wd_digest_uninit(void)
++{
++	clear_sched_in_global_setting();
++	clear_config_in_global_setting();
++}
++
++static void fill_request_msg(struct wd_digest_msg *msg, struct wd_digest_req *req)
++{
++	msg->alg = req->alg;
++	msg->mode = req->mode;
++	msg->in = req->in;
++	msg->in_bytes = req->in_bytes;
++	msg->out = req->out;
++	msg->out_bytes = req->out_bytes;
++	msg->key = req->key;
++	msg->key_bytes = req->key_bytes;
++	msg->has_next = req->has_next;
++	msg->usr_data = NULL;
++}
++
++int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
++{
++	struct wd_ctx_config *config = &g_wd_digest_setting.config;
++	void *sched_ctx = g_wd_digest_setting.sched_ctx;
++	struct wd_digest_msg msg, recv_msg;
++	__u64 recv_cnt = 0;
++	handle_t h_ctx;
++	int ret;
++
++	h_ctx = g_wd_digest_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
++	if (!h_ctx) {
++		WD_ERR("pick next ctx is NULL!\n");
++		return -EINVAL;
++	}
++
++	/* fill digest requset msg */
++	fill_request_msg(&msg, req);
++
++	/* send bd */
++	ret = g_wd_digest_setting.driver->digest_send(h_ctx, &msg);
++	if (ret < 0) {
++		WD_ERR("wd send err!\n");
++		return ret;
++	}
++
++	do {
++		ret = g_wd_digest_setting.driver->digest_recv(h_ctx, &recv_msg);
++		if (ret == -WD_HW_EACCESS) {
++			WD_ERR("wd recv err!\n");
++			goto recv_err;
++		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
++			if (++recv_cnt > MAX_RETRY_COUNTS) {
++				WD_ERR("wd recv timeout fail!\n");
++				ret = -ETIMEDOUT;
++				goto recv_err;
++			}
++		}
++	} while (ret < 0);
++
++	return 0;
++recv_err:
++	return ret;
++}
++
++int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
++{
++	struct wd_ctx_config *config = &g_wd_digest_setting.config;
++	void *sched_ctx = g_wd_digest_setting.sched_ctx;
++	struct wd_digest_msg *msg;
++	handle_t h_ctx;
++	int ret;
++
++	h_ctx = g_wd_digest_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
++	if (!h_ctx) {
++		WD_ERR("pick next ctx is NULL!\n");
++		return -EINVAL;
++	}
++
++	/* fill digest requset msg */
++	msg = get_msg_from_pool(&g_wd_digest_setting.pool, h_ctx, req);
++	fill_request_msg(msg, req);
++
++	/* send bd */
++	ret = g_wd_digest_setting.driver->digest_send(h_ctx, msg);
++	if (ret < 0) {
++		WD_ERR("wd send err!\n");
++		return ret;
++	}
++
++	return 0;
++}
++
++int wd_digest_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
++{
++	struct wd_digest_msg recv_msg;
++	struct wd_digest_req *req;
++	__u64 try_cnt = 0;
++	__u32 recv_cnt = 0;
++	int ret;
++
++	do {
++		ret = g_wd_digest_setting.driver->digest_recv(h_ctx, &recv_msg);
++		if (ret == -WD_HW_EACCESS) {
++			WD_ERR("wd recv err!\n");
++			goto recv_err;
++		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
++			if (++try_cnt > MAX_RETRY_COUNTS) {
++				WD_ERR("wd recv timeout fail!\n");
++				ret = -ETIMEDOUT;
++				goto recv_err;
++			}
++			continue;
++		}
++
++		expt--;
++		recv_cnt++;
++		req = get_req_from_pool(&g_wd_digest_setting.pool, h_ctx, &recv_msg);
++		req->cb(req);
++	} while (expt > 0);
++
++recv_err:
++	*count = recv_cnt;
++	return ret;
++}
++
++int wd_digest_poll(__u32 expt, __u32 *count)
++{
++	struct wd_ctx_config *config = &g_wd_digest_setting.config;
++	int ret;
++
++	ret = g_wd_digest_setting.sched.poll_policy(config);
++	if (ret < 0)
++		return ret;
++	*count = ret;
++
++	return 0;
++}
+-- 
+2.8.1
+
