@@ -46,18 +46,6 @@ enum wd_comp_op_type {
 struct wd_comp_sess {
 	int	alg_type;
 	void	*ctx_buf;
-	void	*swap_in;
-	void	*swap_out;
-	void	*next_in;
-	void	*next_out;
-	size_t	avail_in;
-	size_t	avail_out;
-	size_t	loaded_in;
-	size_t	undrained;
-	int	full;
-	int	skipped;
-	int	load_head;
-	int	begin;
 };
 
 struct wd_comp_req {
