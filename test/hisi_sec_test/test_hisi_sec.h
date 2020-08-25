@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
-#ifndef TEST_HISI_SEC_H_
-#define TEST_HISI_SEC_H
+#ifndef __TEST_HISI_SEC_H
+#define __TEST_HISI_SEC_H
 
 enum alg_class {
 	CIPHER_CLASS,
@@ -88,4 +88,4 @@ struct cipher_testvec aes_cbc_tv_template_128[] = {
 	}
 };
 
-#endif /* TEST_HISI_SEC_H_ */
+#endif /* __TEST_HISI_SEC_H */

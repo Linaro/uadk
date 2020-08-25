@@ -124,7 +124,7 @@ static void uninit_config(void)
 static int test_sec_cipher_sync_once(void)
 {
 	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
-	handle_t	h_sess = NULL;
+	handle_t	h_sess = 0;
 	struct wd_cipher_sess_setup	setup;
 	struct wd_cipher_req req;
 	int cnt = g_times;
@@ -231,7 +231,7 @@ static int test_sec_cipher_async_once(void)
 {
 	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
 	struct wd_cipher_sess_setup	setup;
-	handle_t	h_sess = NULL;
+	handle_t	h_sess = 0;
 	struct wd_cipher_req req;
 	int cnt = g_times;
 	unsigned int recv = 0;
@@ -587,7 +587,6 @@ static void *_test_sec_cipher_async(void *data)
 /* create poll threads */
 static void *poll_func(void *arg)
 {
-	unsigned int recv;
 	int ret;
 
 	while (1) {
@@ -766,7 +765,7 @@ out:
 static int test_sec_digest_sync_once(void)
 {
 	struct hash_testvec *tv = &sha256_tv_template[0];
-	handle_t	h_sess = NULL;
+	handle_t	h_sess = 0;
 	struct wd_digest_sess_setup	setup;
 	struct wd_digest_req req;
 	int cnt = g_times;
@@ -862,7 +861,7 @@ static int test_sec_digest_async_once(void)
 {
 	struct hash_testvec *tv = &sha256_tv_template[0];
 	struct wd_digest_sess_setup	setup;
-	handle_t	h_sess = NULL;
+	handle_t	h_sess = 0;
 	struct wd_digest_req req;
 	int cnt = g_times;
 	unsigned int recv = 0;

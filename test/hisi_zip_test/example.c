@@ -629,7 +629,6 @@ out:
  */
 int test_comp_stream(int flag)
 {
-	struct wd_comp_sess_setup	setup;
 	struct wd_comp_req	req;
 	handle_t	h_sess;
 	char	buf[TEST_WORD_LEN];
