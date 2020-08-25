@@ -396,7 +396,7 @@ int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 	if (ret == -1)
 		return -errno;
 
-	return 0;
+	return ret;
 }
 
 int wd_is_sva(handle_t h_ctx)

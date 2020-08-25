@@ -234,7 +234,7 @@ extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
  * @h_ctx: The handle of context.
  * @ms: Timeout parameter.
  *
- * Return (to do: ...)
+ * Return more than 0 if successful, 0 for timeout, less than 0 otherwise.
  *
  * This function is a wrapper of Linux poll interface.
  */
