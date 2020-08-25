@@ -1,19 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <poll.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include "wd.h"
 #include "wd_alg_common.h"
