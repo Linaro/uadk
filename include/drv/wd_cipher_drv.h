@@ -2,6 +2,7 @@
 #ifndef __WD_CIPHER_DRV_H
 #define __WD_CIPHER_DRV_H
 
+#include "../wd_cipher.h"
 #include "../wd_alg_common.h"
 
 /* fixme wd_cipher_msg */

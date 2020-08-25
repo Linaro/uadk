@@ -27,7 +27,7 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_digest.c wd_digest.h wd_digest_drv.h
 libwd_crypto_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 
-libhisi_sec_la_SOURCES=drv/hisi_sec.c hisi_sec.h drv/hisi_qm_udrv.c \
+libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_cipher_drv.h
 libhisi_sec_la_LIBADD= -ldl
 

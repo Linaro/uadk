@@ -2,6 +2,7 @@
 #ifndef __WD_DIGEST_DRV_H
 #define __WD_DIGEST_DRV_H
 
+#include "include/wd_digest.h"
 #include "include/wd_alg_common.h"
 
 /* fixme wd_digest_msg */
