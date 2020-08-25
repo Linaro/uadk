@@ -378,13 +378,15 @@ static int hisi_hpre_init(struct wd_ctx_config *config, void *priv)
 	int i, j;
 
 	/* allocate qp for each context */
+	qm_priv.sqe_size = sizeof(struct hisi_hpre_sqe);
+	qm_priv.op_type = 0;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
-		qm_priv.sqe_size = sizeof(struct hisi_hpre_sqe);
-		qm_priv.op_type = 0;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
-		if (!h_qp)
+		if (!h_qp) {
+			WD_ERR("failed to alloc qp!\n");
 			goto out;
+		}
 
 		memcpy(&hpre_ctx->config, config, sizeof(struct wd_ctx_config));
 	}

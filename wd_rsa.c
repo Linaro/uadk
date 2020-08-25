@@ -8,8 +8,8 @@
 
 #include "config.h"
 #include "hisi_hpre.h"
-#include "wd_rsa.h"
 #include "include/drv/wd_rsa_drv.h"
+#include "wd_rsa.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_RSA_MAX_CTX_NUM		1024
@@ -104,10 +104,10 @@ struct msg_pool {
 
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
-	int pool_nums;
+	__u32 pool_nums;
 };
 
-struct wd_rsa_setting {
+static struct wd_rsa_setting {
 	struct wd_ctx_config config;
 	struct wd_sched sched;
 	void *sched_ctx;
@@ -148,26 +148,27 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	struct wd_ctx *ctxs;
 	int i;
 
-	if (cfg->ctx_num <= 0 || cfg->ctx_num > WD_RSA_MAX_CTX_NUM) {
-		WD_ERR("ctx_num = %d error\n", cfg->ctx_num);
+	if (!cfg->ctx_num) {
+		WD_ERR("ctx_num error\n");
 		return -EINVAL;
 	}
 
-	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx));
+	ctxs = malloc(cfg->ctx_num * sizeof(struct wd_ctx));
 	if (!ctxs) {
-		WD_ERR("failed to calloc\n");
+		WD_ERR("failed to malloc\n");
 		return -ENOMEM;
 	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
-			WD_ERR("config ctx NULL\n");
+			WD_ERR("config ctx[%d] NULL\n", i);
 			return -EINVAL;
 		}
 	}
 
 	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_ctx));
 	wd_rsa_setting.config.ctxs = ctxs;
+
 	/* Can't copy with the size of priv structure. */
 	wd_rsa_setting.config.priv = cfg->priv;
 	wd_rsa_setting.config.ctx_num = cfg->ctx_num;
@@ -178,7 +179,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 static int copy_sched_to_global_setting(struct wd_sched *sched)
 {
 	if (!sched->name) {
-		WD_ERR("sched param error\n");
+		WD_ERR("sched name NULL\n");
 		return -EINVAL;
 	}
 
@@ -191,9 +192,8 @@ static int copy_sched_to_global_setting(struct wd_sched *sched)
 
 static void clear_sched_in_global_setting(void)
 {
-	char *name = (char *)wd_rsa_setting.sched.name;
-
-	free(name);
+	free((void *)wd_rsa_setting.sched.name);
+	wd_rsa_setting.sched.name = NULL;	
 	wd_rsa_setting.sched.pick_next_ctx = NULL;
 	wd_rsa_setting.sched.poll_policy = NULL;
 	wd_rsa_setting.sched.name = NULL;
@@ -214,9 +214,9 @@ static int wd_init_async_request_pool(struct wd_async_msg_pool *pool)
 	struct msg_pool *p;
 	int i;
 
-	pool->pools = calloc(1, num * sizeof(struct msg_pool));
+	pool->pools = malloc(num * sizeof(struct msg_pool));
 	if (!pool->pools) {
-		WD_ERR("failed to calloc\n");
+		WD_ERR("failed to malloc\n");
 		return -ENOMEM;
 	}
 
@@ -233,19 +233,15 @@ static int wd_init_async_request_pool(struct wd_async_msg_pool *pool)
 static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 {
 	struct msg_pool *p;
-	int i, j, num;
+	int i, j;
 
-	num = pool->pool_nums;
-	for (i = 0; i < num; i++) {
+	for (i = 0; i < pool->pool_nums; i++) {
 		p = &pool->pools[i];
 		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
-			if (p->used[j]) //todo
-				WD_ERR("Entry #%d isn't released from reqs "
-					"pool.\n", j);
-			memset(&p->msg[j], 0, sizeof(struct wd_rsa_msg));
+			if (p->used[j])
+				WD_ERR("pool %d isn't released from reqs pool.\n",
+						j);
 		}
-		p->head = 0;
-		p->tail = 0;
 	}
 
 	free(pool->pools);
@@ -255,10 +251,10 @@ static struct wd_rsa_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 				handle_t h_ctx,
 				struct wd_rsa_msg *msg)
 {
-	struct msg_pool *p;
 	struct wd_rsa_msg *c_msg;
-	int i, found = 0;
-	int idx;
+	struct msg_pool *p;
+	int found = 0;
+	int i;
 
 	for (i = 0; i < wd_rsa_setting.config.ctx_num; i++) {
 		if (h_ctx == wd_rsa_setting.config.ctxs[i].ctx) {
@@ -272,14 +268,14 @@ static struct wd_rsa_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 	}
 
 	p = &pool->pools[i];
+
 	/* empty */
 	if (p->head == p->tail) {
 		WD_ERR("pool %d NULL\n", i);
 		return NULL;
 	}
 
-	idx = msg->tag;
-	c_msg = &p->msg[idx];
+	c_msg = &p->msg[msg->tag];
 	c_msg->req.status = msg->result;
 
 	return &c_msg->req;
@@ -341,12 +337,16 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* set config and sched */
 	ret = copy_config_to_global_setting(config);
-	if (ret < 0)
+	if (ret) {
+		WD_ERR("failed to copy config to global setting\n");
 		return ret;
+	}
 
 	ret = copy_sched_to_global_setting(sched);
-	if (ret < 0)
+	if (ret) {
+		WD_ERR("failed to copy sched to global setting\n");
 		goto out;
+	}
 
 	/*
 	 * Fix me: ctx could be passed into wd_rsa_set_static_drv to help to
@@ -364,20 +364,26 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* init async request pool */
 	ret = wd_init_async_request_pool(&wd_rsa_setting.pool);
-	if (ret < 0)
+	if (ret) {
+		WD_ERR("failed to init async req pool!\n");
 		goto out_sched;
+	}
 
 	/* init ctx related resources in specific driver */
-	priv = calloc(1, wd_rsa_setting.driver->drv_ctx_size);
+	priv = malloc(wd_rsa_setting.driver->drv_ctx_size);
 	if (!priv) {
 		WD_ERR("failed to calloc drv ctx\n");
 		ret = -ENOMEM;
 		goto out_priv;
 	}
+
+	memset(priv, 0, wd_rsa_setting.driver->drv_ctx_size);
 	wd_rsa_setting.priv = priv;
 	ret = wd_rsa_setting.driver->init(&wd_rsa_setting.config, priv);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to drv init, ret=%d\n", ret);
 		goto out_init;
+	}
 
 	return 0;
 
@@ -395,12 +401,9 @@ out:
 
 void wd_rsa_uninit(void)
 {
-	void *priv;
-
 	/* driver uninit */
-	priv = wd_rsa_setting.priv;
-	wd_rsa_setting.driver->exit(priv);
-	free(priv);
+	wd_rsa_setting.driver->exit(wd_rsa_setting.priv);
+	free(wd_rsa_setting.priv);
 	wd_rsa_setting.priv = NULL;
 
 	/* uninit async request pool */
@@ -477,18 +480,18 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 
 	ret = wd_rsa_setting.driver->send(h_ctx, &msg);
 	if (unlikely(ret < 0)) {
-		WD_ERR("send err!\n");
+		WD_ERR("failed to send, ret=%d!\n", ret);
 		return ret;
 	}
 
 	do {
 		ret = wd_rsa_setting.driver->recv(h_ctx, &msg);
 		if (unlikely(ret == -WD_HW_EACCESS)) {
-			WD_ERR("wd_recv hw err!\n");
+			WD_ERR("failed to recv, hw error!\n");
 			return ret;
 		} else if (ret == -EAGAIN) {
 			if (++rx_cnt > RSA_RECV_MAX_CNT) {
-				WD_ERR("recv timeout fail!\n");
+				WD_ERR("failed to recv, timeout!\n");
 				return -ETIMEDOUT;
 			} else if (balance > RSA_BALANCE_THRHD) {
 				usleep(1);

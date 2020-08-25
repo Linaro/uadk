@@ -4,18 +4,6 @@
 
 #include "../wd_rsa.h"
 
-struct wd_rsa_msg;
-
-struct wd_rsa_driver {
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config *config, void *priv);
-	void (*exit)(void *priv);
-	int (*send)(handle_t sess, struct wd_rsa_msg *msg);
-	int (*recv)(handle_t sess, struct wd_rsa_msg *msg);
-};
-
 /*
 * to do: put wd_comp_msg temporarily, should be move to a internal head file
 *        together with wd_comp_driver definition.
@@ -28,6 +16,16 @@ struct wd_rsa_msg {
 	__u8 key_type; /* Denoted by enum wd_rsa_key_type */
 	__u8 result; /* Data format, denoted by WD error code */
 	__u8 *key; /* Input key VA pointer, should be DMA buffer */
+};
+
+struct wd_rsa_driver {
+	const char *drv_name;
+	const char *alg_name;
+	__u32 drv_ctx_size;
+	int (*init)(struct wd_ctx_config *config, void *priv);
+	void (*exit)(void *priv);
+	int (*send)(handle_t sess, struct wd_rsa_msg *msg);
+	int (*recv)(handle_t sess, struct wd_rsa_msg *msg);
 };
 
 void wd_rsa_set_driver(struct wd_rsa_driver *drv);
