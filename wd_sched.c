@@ -75,7 +75,7 @@ static int wd_recv_sync(struct wd_scheduler *sched, handle_t h_ctx,
 	while (1) {
 		ret = sched->hw_recv(h_qp, resp, 1, &count);
 		if (ret == -EBUSY) {
-			ret = wd_wait(h_ctx, ms);
+			ret = wd_ctx_wait(h_ctx, ms);
 			if (ret)
 				return ret;
 		} else

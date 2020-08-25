@@ -349,7 +349,6 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 		munmap(ctx->qfrs_base[qfrt], ctx->qfrs_offs[qfrt]);
 }
 
-/* Get session's private structure from struct wd_ctx_h */
 void *wd_ctx_get_priv(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -360,7 +359,6 @@ void *wd_ctx_get_priv(handle_t h_ctx)
 	return ctx->priv;
 }
 
-/* Link session's private structure to struct wd_ctx_h */
 int wd_ctx_set_priv(handle_t h_ctx, void *priv)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -383,7 +381,7 @@ char *wd_ctx_get_api(handle_t h_ctx)
 	return ctx->dev_info->api;
 }
 
-int wd_wait(handle_t h_ctx, __u16 ms)
+int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	struct pollfd fds[1];

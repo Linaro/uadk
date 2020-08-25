@@ -136,22 +136,169 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 	*((volatile uint64_t *)addr) = value;
 }
 
+/**
+ * wd_request_ctx() - Request a communication context from a device.
+ * @dev_path: The path of device. e.g. /dev/hisi_zip-0.
+ *
+ * Return the handle of related context or NULL otherwise.
+ *
+ * The context is communication context between user and hardware. One context
+ * must be got before doing any task. This function can be used among multiple
+ * threads.
+ */
 extern handle_t wd_request_ctx(char *dev_path);
+
+/**
+ * wd_release_ctx() - Release a context.
+ * @h_ctx: The handle of context which will be released.
+ *
+ * The function is the wrapper of close fd. So the release of context maybe
+ * delay.
+ */
 extern void wd_release_ctx(handle_t h_ctx);
+
+/**
+ * wd_ctx_start() - Start a context.
+ * @h_ctx: The handle of context which will be started.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ *
+ * Context will be started after calling this function. If necessary resource
+ * (e.g. MMIO and DUS) already got, tasks can be received by context.
+ */
 extern int wd_ctx_start(handle_t h_ctx);
+
+/**
+ * wd_ctx_stop() - Stop a context.
+ * @h_ctx: The handle of context which will be stopped.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ *
+ * Context will be stopped and related hardware will be release, which avoids
+ * release delay in wd_release_ctx().
+ */
 extern int wd_ctx_stop(handle_t h_ctx);
-extern void *wd_ctx_get_priv(handle_t h_ctx);
+
+/**
+ * wd_ctx_set_priv() - Store private information in context.
+ * @h_ctx: The handle of context.
+ * @priv: The pointer of memory which stores private information.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ */
 extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
+
+/**
+ * wd_ctx_get_priv() - Get private information in context.
+ * @h_ctx: The handle of context.
+ *
+ * Return pointer of memory of private information if successful or NULL
+ * otherwise.
+ */
+extern void *wd_ctx_get_priv(handle_t h_ctx);
+
+/**
+ * wd_ctx_get_api() - Get api string of context.
+ * @h_ctx: The handle of context.
+ *
+ * Return api string or NULL otherwise.
+ *
+ * This function is a wrapper of reading /sys/class/uacce/<dev>/api, which is
+ * used to define api version between user space and kernel driver.
+ */
 extern char *wd_ctx_get_api(handle_t h_ctx);
+
+/**
+ * wd_drv_mmap_qfr() - Map and get the base address of one context region.
+ * @h_ctx: The handle of context.
+ * @qfrt: Name of context region, which could be got in kernel head file
+ *        include/uapi/misc/uacce/uacce.h
+ *
+ * Return pointer of context region if successful or NULL otherwise.
+ *
+ * Normally, UACCE_QFRT_MMIO is for MMIO registers of one context,
+ * UACCE_QFRT_DUS is for task communication memory of one context.
+ */
 extern void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+
+/**
+ * wd_drv_unmap_qfr() - Unmap one context region.
+ * @h_ctx: The handle of context.
+ * @qfrt: Name of context region, which could be got in kernel head file
+ *        include/uapi/misc/uacce/uacce.h.
+ */
 extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
-extern int wd_wait(handle_t h_ctx, __u16 ms);
+
+/**
+ * wd_ctx_wait() - Wait task in context finished.
+ * @h_ctx: The handle of context.
+ * @ms: Timeout parameter.
+ *
+ * Return (to do: ...)
+ *
+ * This function is a wrapper of Linux poll interface.
+ */
+extern int wd_ctx_wait(handle_t h_ctx, __u16 ms);
+
+/**
+ * wd_is_nosva() - Check if the system supports SVA or not.
+ * @h_ctx: The handle of context.
+ *
+ * Return 1 if no SVA, otherwise 0. (to do: this should be fixed)
+ */
 extern int wd_is_nosva(handle_t h_ctx);
+
+/**
+ * wd_get_accel_name() - Get device name or driver name.
+ * @dev_path: The path of device. e.g. /dev/hisi_zip-0.
+ * @no_apdx: Flag to indicate getting device name(0) or driver name(1).
+ *
+ * Return device name, e.g. hisi_zip-0; driver name, e.g. hisi_zip.
+ */
 extern char *wd_get_accel_name(char *dev_path, int no_apdx);
+
+/**
+ * wd_get_numa_id() - Get the NUMA id of one context.
+ * @h_ctx: The handle of context.
+ *
+ * Return NUMA id of related context.
+ */
 extern int wd_get_numa_id(handle_t h_ctx);
-extern int wd_ctx_get_avail_ctx(char *dev_path);
+
+/**
+ * wd_get_avail_ctx() - Get available context in one device.
+ * @dev: The uacce_dev_info for one device.
+ *
+ * Return number of available context in dev.
+ */
+extern int wd_get_avail_ctx(struct uacce_dev_info *dev);
+
+/**
+ * wd_get_accel_list() - Get device list for one algorithm.
+ * @alg_name: Algorithm name, which could be got from
+ *            /sys/class/uacce/<device>/algorithm.
+ *
+ * Return device list in which devices support given algorithm or NULL
+ * otherwise.
+ */
 extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
+
+/**
+ * wd_free_list_accels() - Free device list.
+ * @list: Device list which will be free.
+ */
 extern void wd_free_list_accels(struct uacce_dev_list *list);
+
+/**
+ * wd_ctx_set_io_cmd() - Send ioctl command to context.
+ * @h_ctx: The handle of context.
+ * @cmd: ioctl command which could be found in Linux kernel head file,
+ *       include/uapi/misc/uacce/uacce.h, hisi_qm.h...
+ * @arg: Command output buffer if some information will be got from kernel or
+ *       NULL otherwise.
+ *
+ * This function is a wrapper of ioctl.
+ */
 extern int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
 
 #endif
