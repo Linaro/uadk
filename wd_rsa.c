@@ -7,7 +7,6 @@
 #include <dlfcn.h>
 
 #include "config.h"
-#include "hisi_hpre.h"
 #include "include/drv/wd_rsa_drv.h"
 #include "wd_rsa.h"
 
