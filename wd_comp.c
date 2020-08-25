@@ -342,10 +342,11 @@ int wd_comp_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 		req->flag = FLAG_INPUT_FINISH;
 
 		req->cb(req, req->cb_param);
+		expt--;
 
 		/*TODO free msg of msg_pool  */
 
-	} while (--expt);
+	} while (expt);
 
 	*count = recv_count;
 
