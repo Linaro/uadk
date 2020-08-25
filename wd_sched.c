@@ -61,7 +61,7 @@ int wd_sched_init(struct wd_scheduler *sched, char *dev_path)
 void wd_sched_fini(struct wd_scheduler *sched)
 {
 	__fini_cache(sched);
-	if (!wd_is_nosva(sched->qs[0]) && sched->ss_region)
+	if (wd_is_sva(sched->qs[0]) && sched->ss_region)
 		free(sched->ss_region);
 }
 

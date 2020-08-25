@@ -241,12 +241,12 @@ extern void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 extern int wd_ctx_wait(handle_t h_ctx, __u16 ms);
 
 /**
- * wd_is_nosva() - Check if the system supports SVA or not.
+ * wd_is_sva() - Check if the system supports SVA.
  * @h_ctx: The handle of context.
  *
- * Return 1 if no SVA, otherwise 0. (to do: this should be fixed)
+ * Return 1 if SVA, 0 for no SVA, less than 0 otherwise.
  */
-extern int wd_is_nosva(handle_t h_ctx);
+extern int wd_is_sva(handle_t h_ctx);
 
 /**
  * wd_get_accel_name() - Get device name or driver name.

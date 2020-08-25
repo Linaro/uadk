@@ -399,17 +399,17 @@ int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 	return 0;
 }
 
-int wd_is_nosva(handle_t h_ctx)
+int wd_is_sva(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
-		return 0;
+		return -EINVAL;
 
 	if (ctx->dev_info->flags & UACCE_DEV_SVA)
-		return 0;
+		return 1;
 
-	return 1;
+	return 0;
 }
 
 int wd_get_numa_id(handle_t h_ctx)

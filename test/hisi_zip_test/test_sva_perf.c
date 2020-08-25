@@ -312,7 +312,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		}
 	}
 	if (sched.qs)
-		ctx.is_nosva = wd_is_nosva(sched.qs[0]);
+		ctx.is_nosva = wd_is_sva(sched.qs[0]) ? 0 : 1;
 
 	ctx_save = ctx;
 
