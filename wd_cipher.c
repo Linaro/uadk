@@ -215,9 +215,8 @@ static int copy_sched_to_global_setting(struct wd_sched *sched)
 	g_wd_cipher_setting.sched.poll_policy = sched->poll_policy;
 	/* alloc sched context memory */
 	g_wd_cipher_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
-	if (!g_wd_cipher_setting.sched_ctx) {
+	if (!g_wd_cipher_setting.sched_ctx)
 		return -ENOMEM;
-	}
 
 	return 0;
 }
@@ -396,7 +395,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	/* fill cipher requset msg */
+	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req);
 	/* send bd */
 	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, &msg);

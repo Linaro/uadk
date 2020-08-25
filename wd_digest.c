@@ -38,7 +38,6 @@ struct wd_digest_setting {
 static struct wd_digest_setting g_wd_digest_setting;
 extern struct wd_digest_driver wd_digest_hisi_digest_driver;
 
-
 #ifdef WD_STATIC_DRV
 static void wd_digest_set_static_drv(void)
 {
@@ -68,12 +67,12 @@ void wd_digest_set_driver(struct wd_digest_driver *drv)
 int wd_digest_set_key(struct wd_digest_req *req, const __u8 *key, __u32 key_len)
 {
 	if (!key || !req || !req->key) {
-		WD_ERR("%s inpupt param err!\n", __func__);
+		WD_ERR("wd digest inpupt param err!\n");
 		return -EINVAL;
 	}
 
 	if (key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("%s: input key length err!\n", __func__);
+		WD_ERR("wd digest input key length err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -88,7 +87,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	struct wd_digest_sess *sess = NULL;
 
 	if (!setup) {
-		WD_ERR("input setup is NULL!\n");
+		WD_ERR("wd digest input setup is NULL!\n");
 		return (handle_t)0;
 	}
 	sess = calloc(1, sizeof(struct wd_digest_sess));
@@ -417,7 +416,6 @@ int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
 	msg = get_msg_from_pool(&g_wd_digest_setting.pool, h_ctx, req);
 	fill_request_msg(msg, req);
 
-	/* send bd */
 	ret = g_wd_digest_setting.driver->digest_send(h_ctx, msg);
 	if (ret < 0) {
 		WD_ERR("wd send err!\n");
