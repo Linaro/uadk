@@ -6,7 +6,7 @@
 
 /* fixme wd_comp_msg */
 struct wd_comp_msg {
-	struct wd_comp_req *req;
+	struct wd_comp_req req;
 	__u32 tag_id;
 	__u8 alg_type;   /* Denoted by enum wcrypto_comp_alg_type */
 	__u8 op_type;    /* Denoted by enum wcrypto_comp_op_type */

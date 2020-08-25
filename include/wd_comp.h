@@ -8,10 +8,6 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
-typedef void *wd_alg_comp_cb_t(void *cb_param);
-
-struct wd_alg_comp;
-
 #define MODE_STREAM		(1 << 0)
 #define MODE_INITED		(1 << 1)
 
@@ -48,6 +44,10 @@ struct wd_comp_sess {
 	void	*ctx_buf;
 };
 
+struct wd_comp_req;
+
+typedef void *wd_alg_comp_cb_t(struct wd_comp_req *req, void *cb_param);
+
 struct wd_comp_req {
 	void			*src;
 	size_t			src_len;
@@ -60,6 +60,7 @@ struct wd_comp_req {
 	uint32_t		last;
 	uint32_t		status;
 };
+
 
 /**
  * struct wd_comp_sched - Define a scheduler.

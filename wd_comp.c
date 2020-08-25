@@ -16,6 +16,7 @@
 #define WD_HW_EACCESS 			62
 #define MAX_RETRY_COUNTS		200000000
 
+
 struct msg_pool {
 	struct wd_comp_msg msg[WD_POOL_MAX_ENTRIES];
 	int used[WD_POOL_MAX_ENTRIES];
@@ -185,15 +186,15 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 		return NULL;
 	idx = msg->tag;
 	c_msg = &p->msg[idx];
-	c_msg->req->src_len = msg->in_cons;
-	c_msg->req->dst_len = msg->produced;
+	c_msg->req.src_len = msg->in_cons;
+	c_msg->req.dst_len = msg->produced;
 	c_msg->status = msg->status;
 	c_msg->isize = msg->isize;
 	c_msg->checksum = msg->checksum;
 	c_msg->tag = msg->tag;
-	msg->req = c_msg->req;
+	memcpy(&msg->req, &c_msg->req, sizeof(struct wd_comp_req));
 	msg->sess = c_msg->sess;
-	return msg->req;
+	return &msg->req;
 }
 
 static struct wd_comp_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
@@ -223,7 +224,7 @@ static struct wd_comp_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 		return NULL;
 	/* get msg from msg_pool[] */
 	msg = &p->msg[p->tail];
-	msg->req = req;
+	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 	msg->tag = p->tail;
 	p->tail = t;
 
@@ -336,7 +337,7 @@ __u32 wd_comp_poll_ctx(handle_t h_ctx, __u32 num)
 	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
 	req->flag = FLAG_INPUT_FINISH;
 
-	req->cb(req->cb_param);
+	req->cb(req, req->cb_param);
 
 	/*TODO free idx of msg_pool  */
 
@@ -379,7 +380,7 @@ static int fill_comp_msg(struct wd_comp_sess *sess,
 			 struct wd_comp_req *req)
 {
 	msg->ctx_buf = sess->ctx_buf;
-	msg->req = req;
+	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 	msg->avail_out = req->dst_len;
 	msg->src = req->src;
 	msg->dst = req->dst;
@@ -477,9 +478,9 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		}
 	} while (ret < 0);
 
-	req->src_len = resp_msg.req->src_len;
-	req->dst_len = resp_msg.req->dst_len;
-	req->status = resp_msg.req->status;
+	req->src_len = resp_msg.req.src_len;
+	req->dst_len = resp_msg.req.dst_len;
+	req->status = resp_msg.req.status;
 	//req->flush = resp->flush_type;
 	//req->isize = resp->isize;
 	//req->checksum = resp->checksum;
