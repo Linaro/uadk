@@ -4,6 +4,8 @@
 
 #include "../wd_rsa.h"
 
+struct wd_rsa_msg;
+
 struct wd_rsa_driver {
 	const char *drv_name;
 	const char *alg_name;

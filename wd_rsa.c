@@ -325,9 +325,6 @@ static struct wd_rsa_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 
 int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	const struct wd_rsa_driver *driver;
-	const char *driver_name;
-	handle_t h_ctx;
 	void *priv;
 	int ret;
 
@@ -457,7 +454,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 {
 	struct wd_rsa_sess *sess = (struct wd_rsa_sess *)(uintptr_t)h_sess;
 	struct wd_ctx_config *config = &wd_rsa_setting.config;
-	struct wd_rsa_msg msg = {0};
+	struct wd_rsa_msg msg;
 	__u64 rx_cnt = 0;
 	handle_t h_ctx;
 	int ret;
@@ -473,6 +470,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
+	memset(&msg, 0, sizeof(struct wd_rsa_msg));
 	ret = fill_rsa_msg(&msg, req, sess);
 	if (unlikely(ret))
 		return ret;
@@ -508,7 +506,6 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 {
 	struct wd_ctx_config *config = &wd_rsa_setting.config;
-	void *sched_ctx = wd_rsa_setting.sched_ctx;
 	struct wd_rsa_msg *msg;
 	handle_t h_ctx;
 	int ret;
