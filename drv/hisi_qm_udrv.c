@@ -247,7 +247,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 	tail = (tail + send_num) % QM_Q_DEPTH;
 	q_info->db(q_info, DOORBELL_CMD_SQ, tail, 0);
 	q_info->sq_tail_index = tail;
-	q_info->used_num++;
+	q_info->used_num += send_num;
 	*count = send_num;
 
 	return 0;
