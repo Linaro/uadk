@@ -16,6 +16,7 @@
 #define BUF_8MB		(1 << 23)
 #define BUF_16MB	(1 << 24)
 #define BUF_32MB	(1 << 25)
+#define BUF_64MB	(1 << 26)
 
 #define	NUM_THREADS	10
 
@@ -280,7 +281,6 @@ out:
 	return ret;
 }
 
-/* Temporarily set the buffer as 8MB. It should be updated to 32MB later. */
 int test_comp_sync_once_2(int flag)
 {
 	struct wd_comp_req	req;
@@ -291,15 +291,15 @@ int test_comp_sync_once_2(int flag)
 	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
-	src = calloc(1, sizeof(char) * BUF_32MB);
+	src = calloc(1, sizeof(char) * BUF_64MB);
 	if (!src)
 		return -ENOMEM;
-	dst = calloc(1, sizeof(char) * BUF_32MB);
+	dst = calloc(1, sizeof(char) * BUF_64MB);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out;
 	}
-	buf = calloc(1, sizeof(char) * BUF_32MB);
+	buf = calloc(1, sizeof(char) * BUF_64MB);
 	if (!buf) {
 		ret = -ENOMEM;
 		goto out_buf;
@@ -316,9 +316,9 @@ int test_comp_sync_once_2(int flag)
 	}
 	ret = comp_sync(h_sess,
 			&req,
-			BUF_8MB,
-			BUF_8MB,
-			BUF_8MB,
+			BUF_64MB,
+			BUF_64MB,
+			BUF_64MB,
 			&t
 			);
 	if (ret < 0)
@@ -340,8 +340,8 @@ int test_comp_sync_once_2(int flag)
 	}
 	ret = comp_sync(h_sess,
 			&req,
-			BUF_8MB,
-			BUF_8MB,
+			BUF_64MB,
+			BUF_64MB,
 			t,
 			&len
 			);
@@ -350,7 +350,7 @@ int test_comp_sync_once_2(int flag)
 	wd_comp_free_sess(h_sess);
 	uninit_config();
 
-	if (memcmp(dst, src, BUF_8MB))
+	if (memcmp(dst, src, BUF_64MB))
 		printf("match failure!\n");
 	free(buf);
 	free(src);
