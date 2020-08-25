@@ -496,8 +496,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		}
 	} while (ret < 0);
 
-	req->src_len = resp_msg.req.src_len;
-	req->dst_len = resp_msg.req.dst_len;
+	req->src_len = resp_msg.in_cons;
+	req->dst_len = resp_msg.produced;
 	req->status = resp_msg.req.status;
 	//req->flush = resp->flush_type;
 	//req->isize = resp->isize;
