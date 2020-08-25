@@ -269,7 +269,7 @@ extern int wd_get_numa_id(handle_t h_ctx);
  * wd_get_avail_ctx() - Get available context in one device.
  * @dev: The uacce_dev_info for one device.
  *
- * Return number of available context in dev.
+ * Return number of available context in dev or less than 0 otherwise.
  */
 extern int wd_get_avail_ctx(struct uacce_dev_info *dev);
 

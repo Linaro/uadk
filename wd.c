@@ -30,8 +30,6 @@ struct wd_ctx_h {
 	char *drv_name;
 	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 	void *qfrs_base[UACCE_QFRT_MAX];
-	void *ss_va;
-	void *ss_pa;
 	struct uacce_dev_info *dev_info;
 	void *priv;
 };
@@ -51,7 +49,7 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 
 	fd = open(attr_file, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("open %s fail (%d)!\n", attr_file, errno);
+		WD_ERR("open %s fail (%d)!\n", attr_file, -errno);
 		return -ENODEV;
 	}
 
@@ -119,7 +117,6 @@ static void get_dev_info(struct uacce_dev_info *info)
 	info->qfrs_offs[UACCE_QFRT_MMIO] = value;
 	get_int_attr(info, "region_dus_size", &value);
 	info->qfrs_offs[UACCE_QFRT_DUS] = value;
-	info->qfrs_offs[UACCE_QFRT_SS] = 0;
 	get_int_attr(info, "device/numa_node", &info->numa_id);
 }
 
@@ -171,7 +168,6 @@ out:
 	return NULL;
 }
 
-/* pick the name of accelerator */
 char *wd_get_accel_name(char *dev_path, int no_apdx)
 {
 	int i, appendix, len;
@@ -189,7 +185,7 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 		name = dev_path;
 	}
 
-	if (strlen(name) == 0)
+	if (!strlen(name))
 		return NULL;
 
 	if (no_apdx) {
@@ -226,9 +222,8 @@ static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 handle_t wd_request_ctx(char *dev_path)
 {
 	struct wd_ctx_h	*ctx;
-	int ret = -EINVAL;
 
-	if (!dev_path || (strlen(dev_path) + 1 >= MAX_DEV_NAME_LEN))
+	if (!dev_path || (strlen(dev_path) + 1 > MAX_DEV_NAME_LEN))
 		return (handle_t)NULL;
 
 	ctx = calloc(1, sizeof(struct wd_ctx_h));
@@ -237,33 +232,35 @@ handle_t wd_request_ctx(char *dev_path)
 
 	ctx->dev_name = wd_get_accel_name(dev_path, 0);
 	if (!ctx->dev_name)
-		return ret;
+		goto free_ctx;
 
 	ctx->drv_name = wd_get_accel_name(dev_path, 1);
 	if (!ctx->drv_name)
-		goto out;
+		goto free_dev_name;
 
 	ctx->dev_info = read_uacce_sysfs(ctx->dev_name);
 	if (!ctx->dev_info)
-		goto out_info;
+		goto free_drv_name;
 
 	wd_ctx_init_qfrs_offs(ctx);
 
 	strncpy(ctx->dev_path, dev_path, MAX_DEV_NAME_LEN - 1);
 	ctx->fd = open(dev_path, O_RDWR | O_CLOEXEC);
 	if (ctx->fd < 0) {
-		WD_ERR("Failed to open %s (%d).\n", dev_path, errno);
-		goto out_fd;
+		WD_ERR("Failed to open %s (%d).\n", dev_path, -errno);
+		goto free_dev;
 	}
 
 	return (handle_t)ctx;
 
-out_fd:
+free_dev:
 	free(ctx->dev_info);
-out_info:
+free_drv_name:
 	free(ctx->drv_name);
-out:
+free_dev_name:
 	free(ctx->dev_name);
+free_ctx:
+	free(ctx);
 	return (handle_t)NULL;
 }
 
@@ -291,7 +288,7 @@ int wd_ctx_start(handle_t h_ctx)
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
 	if (ret)
-		WD_ERR("fail to start on %s\n", ctx->dev_path);
+		WD_ERR("Fail to start on %s (%d).\n", ctx->dev_path, -errno);
 
 	return ret;
 }
@@ -299,11 +296,16 @@ int wd_ctx_start(handle_t h_ctx)
 int wd_ctx_stop(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+	int ret;
 
 	if (!ctx)
 		return -EINVAL;
 
-	return wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
+	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
+	if (ret)
+		WD_ERR("Fail to stop on %s (%d).\n", ctx->dev_path, -errno);
+
+	return ret;
 }
 
 void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
@@ -411,9 +413,11 @@ int wd_get_numa_id(handle_t h_ctx)
 /* to do: update interface doc */
 int wd_get_avail_ctx(struct uacce_dev_info *dev)
 {
-	int avail_ctx;
+	int avail_ctx, ret;
 
-	get_int_attr(dev, "available_instances", &avail_ctx);
+	ret = get_int_attr(dev, "available_instances", &avail_ctx);
+	if (ret < 0)
+		return ret;
 
 	return avail_ctx;
 }
@@ -458,12 +462,15 @@ static void add_uacce_dev_to_list(struct uacce_dev_list *head,
 
 struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 {
-	struct uacce_dev_list *node = NULL, *head = NULL;
+	struct uacce_dev_list *node, *head = NULL;
 	char dev_alg_name[MAX_ATTR_STR_SIZE];
 	char dev_path[MAX_DEV_NAME_LEN];
-	struct dirent *dev = NULL;
-	DIR *wd_class = NULL;
+	struct dirent *dev;
+	DIR *wd_class;
 	int ret;
+
+	if (!alg_name)
+		return NULL;
 
 	wd_class = opendir(SYS_CLASS_DIR);
 	if (!wd_class) {
