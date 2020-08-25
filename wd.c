@@ -3,7 +3,6 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -256,19 +255,9 @@ handle_t wd_request_ctx(char *dev_path)
 		WD_ERR("Failed to open %s (%d).\n", dev_path, errno);
 		goto out_fd;
 	}
-	/* make process receiving async signal from kernel */
-	fcntl(ctx->fd, F_SETOWN, getpid());
-	ret = fcntl(ctx->fd, F_GETFL);
-	if (ret < 0)
-		goto out_ctl;
-	ret = fcntl(ctx->fd, F_SETFL, ret | FASYNC);
-	if (ret < 0)
-		goto out_ctl;
 
 	return (handle_t)ctx;
 
-out_ctl:
-	close(ctx->fd);
 out_fd:
 	free(ctx->dev_info);
 out_info:
