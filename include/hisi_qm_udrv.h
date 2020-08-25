@@ -37,6 +37,7 @@ struct hisi_qm_queue_info {
 	__u16 sq_head_index;
 	__u16 cq_head_index;
 	__u16 sqn;
+	__u16 used_num;
 	bool cqc_phase;
 	int is_sq_full;
 };

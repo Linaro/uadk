@@ -152,11 +152,7 @@ out:
 
 static int hisi_qm_get_free_num(struct hisi_qm_queue_info	*q_info)
 {
-	if (q_info->is_sq_full) {
-		return 0;
-	}
-
-	return QM_Q_DEPTH - q_info->sq_tail_index + q_info->sq_head_index;
+	return (QM_Q_DEPTH - 1) - q_info->used_num;
 }
 
 handle_t hisi_qm_alloc_ctx(char *dev_path, void *priv, void **data)
@@ -248,16 +244,10 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 
 	tail = q_info->sq_tail_index;
 	hisi_qm_fill_sqe(req, q_info, tail, send_num);
-
 	tail = (tail + send_num) % QM_Q_DEPTH;
-
 	q_info->db(q_info, DOORBELL_CMD_SQ, tail, 0);
-
 	q_info->sq_tail_index = tail;
-
-	if (tail == q_info->sq_head_index)
-		q_info->is_sq_full = 1;
-
+	q_info->used_num++;
 	*count = send_num;
 
 	return 0;
@@ -294,6 +284,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 
 	q_info->cq_head_index = i;
 	q_info->sq_head_index = i;
+	q_info->used_num--;
 
 	return 0;
 }
