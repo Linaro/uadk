@@ -47,11 +47,31 @@ struct hisi_qp {
 	handle_t h_ctx;
 };
 
-extern handle_t hisi_qm_alloc_ctx(char *dev_path, void *priv, void **data);
-extern void hisi_qm_free_ctx(handle_t h_ctx);
-extern int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count);
-extern int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count);
-extern handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx);
-extern void hisi_qm_free_qp(handle_t h_qp);
+handle_t hisi_qm_alloc_ctx(char *dev_path, void *priv, void **data);
+void hisi_qm_free_ctx(handle_t h_ctx);
+
+/**
+ * hisi_qm_send - Send req to the queue of the device.
+ * @h_qp: Handle of the qp.
+ * @req: User req from the alg drvie.
+ * @expect: User send req num.
+ * @count: The count of actual sending message.
+ *
+ * There is not one locked in the qm internal, Alg should
+ * ensure resource non-reentrant.
+ */
+int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count);
+
+/**
+ * hisi_qm_recv - Recieve msg from qm of the device.
+ * @h_qp: Handle of the qp.
+ * @resp: Msg out buffer of the user.
+ * @expect: User recieve req num.
+ * @count: The count of actual recieving message.
+ */
+int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count);
+
+handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx);
+void hisi_qm_free_qp(handle_t h_qp);
 
 #endif

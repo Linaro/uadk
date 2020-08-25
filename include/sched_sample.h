@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #ifndef SCHED_SAMPLE_h
 #define SCHED_SAMPLE_h
 #include "wd_alg_common.h"
