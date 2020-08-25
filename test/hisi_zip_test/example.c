@@ -84,11 +84,11 @@ static handle_t sched_single_pick_next(struct wd_ctx_config *cfg, void *req, voi
 static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg)
 {
 	int ret;
-
-	ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1);
+	int count = 0;
+	ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1, &count);
 	if (ret != 1)
 		return -EFAULT;
-	return ret;
+	return count;
 }
 
 /* init config for single context */

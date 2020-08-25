@@ -146,14 +146,14 @@ extern __u32 wd_comp_poll(void);
 /**
  * wd_comp_poll_ctx() - Poll a ctx.
  * @ctx:	The ctx which will be polled.
- * @num:	Max number of requests to poll. If 0, polled all finished
+ * @expt:	Max number of requests to poll. If 0, polled all finished
  * 		requests in this ctx.
- * Return the number of polled requests finally.
+ * @count:	Return the number of polled requests finally.
  *
  * This is a help function which can be used by user's poll_policy function.
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern __u32 wd_comp_poll_ctx(handle_t ctx, __u32 num);
+extern int wd_comp_poll_ctx(handle_t ctx, __u32 expt, __u32 *count);
 
 #endif /* __WD_COMP_H */
