@@ -88,8 +88,8 @@ static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg)
 	__u32 count = 0;
 
 	ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1, &count);
-	if (ret != 1)
-		return -EFAULT;
+	if (ret < 0)
+		return ret;
 	return count;
 }
 
