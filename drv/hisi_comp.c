@@ -143,9 +143,14 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.source_addr_h = upper_32_bits((__u64)msg->src);
 	sqe.dest_addr_l = lower_32_bits((__u64)msg->dst);
 	sqe.dest_addr_h = upper_32_bits((__u64)msg->dst);
-	ctx_buf = msg->ctx_buf + 64;  /* reserve 64 BYTE for ctx_dwx*/
-	sqe.stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
-	sqe.stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
+	if (msg->ctx_buf) {
+		ctx_buf = msg->ctx_buf + 64;  /* reserve 64 BYTE for ctx_dwx*/
+		sqe.stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
+		sqe.stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
+	} else {
+		sqe.stream_ctx_addr_l = 0;
+		sqe.stream_ctx_addr_h = 0;
+	}
 
 	state = (msg->stream_mode == WD_COMP_STATEFUL) ? HZ_STATEFUL :
 		HZ_STATELESS;
@@ -162,9 +167,12 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		sqe.dest_avail_out = msg->avail_out;
 	else
 		sqe.dest_avail_out = MIN_AVAILOUT_SIZE;
-	sqe.ctx_dw0 = *(__u32 *)msg->ctx_buf;
-	sqe.ctx_dw1 = *(__u32 *)(msg->ctx_buf + 4);
-	sqe.ctx_dw2 = *(__u32 *)(msg->ctx_buf + 8); /* ctx_dwx use 4 BYTE*/
+	if (msg->ctx_buf) {
+		/* ctx_dwx uses 4 BYTES */
+		sqe.ctx_dw0 = *(__u32 *)msg->ctx_buf;
+		sqe.ctx_dw1 = *(__u32 *)(msg->ctx_buf + 4);
+		sqe.ctx_dw2 = *(__u32 *)(msg->ctx_buf + 8);
+	}
 	sqe.isize = msg->isize;
 	sqe.checksum = msg->checksum;
 	sqe.tag = msg->tag;
@@ -214,9 +222,15 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	//recv_msg->comp_lv = 0;
 	//recv_msg->op_type = 0;
 	//recv_msg->win_size = 0;
-	*(int *)recv_msg->ctx_buf = sqe.ctx_dw0;
-	*(int *)(recv_msg->ctx_buf + 4) = sqe.ctx_dw1;
-	*(int *)(recv_msg->ctx_buf + 8) = sqe.ctx_dw2;
+	if (sqe.stream_ctx_addr_l && sqe.stream_ctx_addr_h) {
+		/*
+		 * In ASYNC mode, recv_msg->ctx_buf is NULL.
+		 * recv_msg->ctx_buf is only valid in SYNC mode.
+		 */
+		*(int *)recv_msg->ctx_buf = sqe.ctx_dw0;
+		*(int *)(recv_msg->ctx_buf + 4) = sqe.ctx_dw1;
+		*(int *)(recv_msg->ctx_buf + 8) = sqe.ctx_dw2;
+	}
 	recv_msg->isize = sqe.isize;
 	recv_msg->checksum = sqe.checksum;
 	recv_msg->tag = sqe.tag;

@@ -24,7 +24,7 @@ enum {
 	CTX_TYPE_DECOMP,
 };
 
-enum {
+enum wd_comp_mode {
 	CTX_MODE_SYNC = 0,
 	CTX_MODE_ASYNC,
 };
@@ -96,6 +96,7 @@ extern void wd_comp_uninit(void);
 /* fix me: stub to pass compile */
 struct wd_comp_sess_setup {
 	int alg_type;	// ZLIB or GZIP
+	enum wd_comp_mode mode;
 };
 /**
  * wd_comp_alloc_sess() - Allocate a wd comp session.
