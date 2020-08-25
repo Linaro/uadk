@@ -6,7 +6,6 @@
 #include <time.h>
 
 #include "config.h"
-#include "hisi_comp.h"
 #include "wd_comp.h"
 
 #include <dlfcn.h>
@@ -16,6 +15,7 @@
 #define WD_HW_EACCESS 			62
 #define MAX_RETRY_COUNTS		200000000
 
+#define HW_CTX_SIZE			(64 * 1024)
 
 struct msg_pool {
 	struct wd_comp_msg msg[WD_POOL_MAX_ENTRIES];

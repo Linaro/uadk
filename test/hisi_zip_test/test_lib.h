@@ -11,7 +11,6 @@
 #include "hisi_qm_udrv.h"
 #include "wd_sched.h"
 #include "wd_alg_common.h"
-#include "hisi_comp.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
