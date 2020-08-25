@@ -6,6 +6,7 @@
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
 #define DES_KEY_SIZE		8
+#define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
 #define MAX_CIPHER_KEY_SIZE	64
 
@@ -80,7 +81,7 @@ static int aes_key_len_check(__u16 length)
 {
 	switch (length) {
 		case AES_KEYSIZE_128:
-
+		case AES_KEYSIZE_192:
 		case AES_KEYSIZE_256:
 			return 0;
 		default:
@@ -105,7 +106,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 			ret = -EINVAL;
 		break;
 	case WD_CIPHER_3DES:
-		if (length != DES3_3KEY_SIZE)
+		if (length != DES3_2KEY_SIZE || length != DES3_3KEY_SIZE)
 			ret = -EINVAL;
 		break;
 	default:
@@ -122,7 +123,7 @@ int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
 	int ret;
 
 	if (!key || !req || !req->key) {
-		WD_ERR("%s inpupt param err!\n", __func__);
+		WD_ERR("cipher set key inpupt param err!\n");
 		return -EINVAL;
 	}
 
@@ -132,11 +133,11 @@ int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
 
 	ret = cipher_key_len_check(req->alg, length);
 	if (ret) {
-		WD_ERR("%s inpupt key length err!\n", __func__);
+		WD_ERR("cipher set key inpupt key length err!\n");
 		return -EINVAL;
 	}
 	if (req->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key, length)) {
-		WD_ERR("%s: input des key is weak key!\n", __func__);
+		WD_ERR("input des key is weak key!\n");
 		return -EINVAL;
 	}
 
@@ -154,7 +155,14 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		WD_ERR("input setup is NULL!\n");
 		return (handle_t)0;
 	}
-	sess = calloc(1, sizeof(struct wd_cipher_sess));
+	sess = malloc(sizeof(struct wd_cipher_sess));
+	if (!sess) {
+		WD_ERR("fail to alloc session memory!\n");
+		return (handle_t)0;
+	}
+	memset(sess, 0, sizeof(struct wd_cipher_sess));
+	sess->alg = setup->alg;
+	sess->mode = setup->mode;
 
 	return (handle_t)sess;
 }
@@ -162,7 +170,11 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 void wd_cipher_free_sess(handle_t h_sess)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-
+	
+	if (!sess) {
+		WD_ERR("cipher input h_sess is NULL!\n");
+		return;
+	}
 	free(sess);
 }
 
@@ -174,21 +186,18 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	if (cfg->ctx_num == 0)
 		return -EINVAL;
 
-	ctxs = malloc(sizeof(struct wd_ctx) * cfg->ctx_num);
-	if (!ctxs)
-		return -ENOMEM;
-	memset(ctxs, 0, sizeof(struct wd_ctx) * cfg->ctx_num);
-
-	/* check every context */
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx)
 			return -EINVAL;
 	}
 
+	ctxs = malloc(sizeof(struct wd_ctx) * cfg->ctx_num);
+	if (!ctxs)
+		return -ENOMEM;
+
 	/* get ctxs from user set */
 	memcpy(ctxs, cfg->ctxs, sizeof(struct wd_ctx) * cfg->ctx_num);
 	g_wd_cipher_setting.config.ctxs = ctxs;
-	/* fix me */
 	g_wd_cipher_setting.config.priv = cfg->priv;
 	g_wd_cipher_setting.config.ctx_num = cfg->ctx_num;
 
@@ -197,13 +206,18 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 
 static int copy_sched_to_global_setting(struct wd_sched *sched)
 {
-	if (!sched->name || sched->sched_ctx_size <= 0)
+	if (!sched->name || sched->sched_ctx_size == 0)
 		return -EINVAL;
 
 	g_wd_cipher_setting.sched.name = strdup(sched->name);
 	g_wd_cipher_setting.sched.sched_ctx_size = sched->sched_ctx_size;
 	g_wd_cipher_setting.sched.pick_next_ctx = sched->pick_next_ctx;
 	g_wd_cipher_setting.sched.poll_policy = sched->poll_policy;
+	/* alloc sched context memory */
+	g_wd_cipher_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
+	if (!g_wd_cipher_setting.sched_ctx) {
+		return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -213,16 +227,19 @@ static void clear_config_in_global_setting(void)
 	g_wd_cipher_setting.config.ctx_num = 0;
 	g_wd_cipher_setting.config.priv = NULL;
 	free(g_wd_cipher_setting.config.ctxs);
+	g_wd_cipher_setting.config.ctxs = NULL;
 }
 
 static void clear_sched_in_global_setting(void)
 {
-	char *name = (char *)g_wd_cipher_setting.sched.name;
+	free((void *)g_wd_cipher_setting.sched.name);
+	g_wd_cipher_setting.sched.name = NULL;
 
-	free(name);
 	g_wd_cipher_setting.sched.poll_policy = NULL;
 	g_wd_cipher_setting.sched.pick_next_ctx = NULL;
 	g_wd_cipher_setting.sched.sched_ctx_size = 0;
+	free(g_wd_cipher_setting.sched_ctx);
+	g_wd_cipher_setting.sched_ctx = NULL;
 }
 
 /* Each context has a reqs pool */
@@ -243,15 +260,13 @@ static int init_async_request_pool(struct wd_async_msg_pool *pool)
 static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
 {
 	struct msg_pool *p;
-	int i, j, num;
+	int i, j;
 
-	num = pool->pool_nums;
-	for (i = 0; i < num; i++) {
+	for (i = 0; i < pool->pool_nums; i++) {
 		p = &pool->pools[i];
 		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
 			if (p->used[j])
-				WD_ERR("Entry #%d isn't released from reqs "
-						"pool.\n", j);
+				WD_ERR("Entry #%d isn't released from reqs pool.\n", j);
 			memset(&p->msg[j], 0, sizeof(struct wd_cipher_msg));
 		}
 		p->head = 0;
@@ -266,12 +281,16 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (g_wd_cipher_setting.driver)
+	if (g_wd_cipher_setting.config.ctx_num) {
+		WD_ERR("Cipher have initialized.\n");
 		return 0;
+	}
 
-	if (!config || !sched)
+	if (!config || !sched) {
+		WD_ERR("wd cipher config or sched is NULL!\n");
 		return -EINVAL;
-	/* set config and sched */
+	}
+
 	ret = copy_config_to_global_setting(config);
 	if (ret < 0) {
 		WD_ERR("Fail to copy configuration to global setting!\n");
@@ -289,16 +308,11 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_cipher_set_static_drv();
 #endif
 
-	/* alloc sched context memory */
-	g_wd_cipher_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
-	if (!g_wd_cipher_setting.sched_ctx) {
-		ret = -ENOMEM;
-		goto out_sched;
-	}
+
 	/* init sysnc request pool */
 	ret = init_async_request_pool(&g_wd_cipher_setting.pool);
 	if (ret)
-		goto out_pool;
+		goto out_sched;
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, g_wd_cipher_setting.driver->drv_ctx_size);
 	if (!priv) {
@@ -308,16 +322,16 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	g_wd_cipher_setting.priv = priv;
 	/* sec init */
 	ret = g_wd_cipher_setting.driver->init(&g_wd_cipher_setting.config, priv);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("hisi sec init failed.\n");
 		goto out_init;
+	}
 
 	return 0;
 out_init:
 	free(priv);
 out_priv:
 	uninit_async_request_pool(&g_wd_cipher_setting.pool);
-out_pool:
-	free(g_wd_cipher_setting.sched_ctx);
 out_sched:
 	clear_sched_in_global_setting();
 out:
@@ -330,6 +344,8 @@ void wd_cipher_uninit(void)
 {
 	clear_sched_in_global_setting();
 	clear_config_in_global_setting();
+	free(g_wd_cipher_setting.priv);
+	g_wd_cipher_setting.priv = NULL;
 }
 
 int wd_cipher_poll(__u32 expt, __u32 *count)
@@ -364,10 +380,15 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 {
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	void *sched_ctx = g_wd_cipher_setting.sched_ctx;
-	struct wd_cipher_msg msg, recv_msg;
+	struct wd_cipher_msg msg;
 	__u64 recv_cnt = 0;
 	handle_t h_ctx;
 	int ret;
+
+	if (!sess || !req) {
+		WD_ERR("cipher input sess or req is NULL.\n");
+		return -EINVAL;
+	}
 
 	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 	if (!h_ctx) {
@@ -385,21 +406,18 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 	}
 
 	do {
-		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &recv_msg);
+		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd recv err!\n");
+			WD_ERR("wd cipher recv err!\n");
 			goto recv_err;
 		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("wd recv timeout fail!\n");
+				WD_ERR("wd cipher recv timeout fail!\n");
 				ret = -ETIMEDOUT;
 				goto recv_err;
 			}
 		}
 	} while(ret < 0);
-
-	/* get out */
-	//req.dst = recv_msg.out;
 
 	return 0;
 recv_err:
@@ -431,7 +449,7 @@ static struct wd_cipher_msg* get_msg_from_pool(struct wd_async_msg_pool *pool,
 	/* full */
 	if (p->head == t)
 		return NULL;
-	/* get msg from msg_pool[] */
+	/* get msg from msg_pool */
 	msg = &p->msg[p->tail];
 	memcpy(&msg->req, req, sizeof(struct wd_cipher_req));
 	msg->tag_id = p->tail;
@@ -465,8 +483,6 @@ static struct wd_cipher_req* get_req_from_pool(struct wd_async_msg_pool *pool,
 	idx = msg->tag_id;
 	c_msg = &p->msg[idx];
 	/* what this is?? */
-	msg->req.src = c_msg->req.src;
-	msg->req.dst = c_msg->req.dst;
 	msg->req.cb = c_msg->req.cb;
 	msg->req.cb_param = c_msg->req.cb_param;
 
