@@ -611,12 +611,15 @@ out:
 	return ret;
 }
 
-static void *async_cb(void *data)
+static void *async_cb(struct wd_comp_req *req, void *data)
 {
-#if 0
 	thread_data_t *thr = (thread_data_t *)data;
-	struct wd_comp_req *req = thr->req;
-#endif
+	struct wd_comp_req *thr_req = thr->req;
+
+	thr_req->status = req->status;
+	thr_req->src_len = req->src_len;
+	thr_req->dst_len = req->dst_len;
+
 	return NULL;
 }
 
