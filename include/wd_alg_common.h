@@ -53,7 +53,7 @@ struct wd_ctx {
  *		defined scheduler.
  */
 struct wd_ctx_config {
-	int ctx_num;
+	__u32 ctx_num;
 	struct wd_ctx *ctxs;
 	void *priv;
 };
