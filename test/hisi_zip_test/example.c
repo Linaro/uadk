@@ -654,12 +654,7 @@ int test_comp_stream(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -693,12 +688,7 @@ int test_comp_stream(int flag)
 	t = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (flag & FLAG_ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (flag & FLAG_GZIP)
-		setup.alg_type = WD_GZIP;
-	h_sess = wd_comp_alloc_sess(&setup);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -1081,7 +1071,6 @@ int main(int argc, char **argv)
 	int ret;
 
 	RUN_TEST(test_comp_sync_once_1, "sync_once #1", FLAG_ZLIB, ret);
-	RUN_TEST(test_comp_sync_once_2, "sync_once #2", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_stream, "stream_once #1", FLAG_ZLIB, ret);
 #if 0
 	RUN_TEST(test_comp_sync_multi_1, "sync_multi 1", FLAG_ZLIB, ret);
@@ -1090,6 +1079,7 @@ int main(int argc, char **argv)
 #endif
 	RUN_TEST(test_comp_async1_once, "async 1", FLAG_ZLIB, ret);
 	RUN_TEST(test_comp_async2_once, "async 2", FLAG_ZLIB, ret);
+	RUN_TEST(test_comp_sync_once_2, "sync_once #2", FLAG_ZLIB, ret);
 	
 	return 0;
 }
