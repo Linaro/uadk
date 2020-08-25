@@ -132,7 +132,7 @@ static void uninit_config(void)
 	free(ctx_conf.ctxs);
 }
 
-static handle_t alloc_sess(int flag)
+static handle_t alloc_sess(int flag, enum wd_comp_mode mode)
 {
 	struct wd_comp_sess_setup	setup;
 
@@ -141,6 +141,7 @@ static handle_t alloc_sess(int flag)
 		setup.alg_type = WD_ZLIB;
 	else if (flag & FLAG_GZIP)
 		setup.alg_type = WD_GZIP;
+	setup.mode = mode;
 	return wd_comp_alloc_sess(&setup);
 }
 
@@ -226,7 +227,7 @@ int test_comp_sync_once_1(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -251,7 +252,7 @@ int test_comp_sync_once_1(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -310,7 +311,7 @@ int test_comp_sync_once_2(int flag)
 	memcpy(req.src, word, sizeof(char) * strlen(word));
 	t = 0;
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -334,7 +335,7 @@ int test_comp_sync_once_2(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -394,7 +395,7 @@ int test_comp_sync_multi_1(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -419,7 +420,7 @@ int test_comp_sync_multi_1(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -475,7 +476,7 @@ int test_comp_sync_multi_2(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -500,7 +501,7 @@ int test_comp_sync_multi_2(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -556,7 +557,7 @@ int test_comp_sync_multi_3(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -581,7 +582,7 @@ int test_comp_sync_multi_3(int flag)
 	len = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -774,7 +775,7 @@ int test_comp_async1_once(int flag)
 	req.src_len = strlen(word);
 	t = 0;
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_ASYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -814,7 +815,7 @@ int test_comp_async1_once(int flag)
 	t = 0;
 	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
 
-	h_sess = alloc_sess(flag);
+	h_sess = alloc_sess(flag, CTX_MODE_ASYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
@@ -903,7 +904,7 @@ static void *wait_func(void *arg)
 	handle_t	h_sess;
 	int	ret = 0;
 
-	h_sess = alloc_sess(data->flag);
+	h_sess = alloc_sess(data->flag, CTX_MODE_ASYNC);
 	if (!h_sess)
 		goto out;
 
