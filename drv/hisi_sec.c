@@ -95,7 +95,6 @@ int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 	struct hisi_qm_priv qm_priv;
 	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
 	handle_t h_ctx, h_qp;
-	int ret = 0;
 	int i, j;
 
 	/* allocate qp for each context */
@@ -105,7 +104,6 @@ int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 		qm_priv.op_type = config->ctxs[i].op_type;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp) {
-			ret = -EINVAL;
 			goto out;
 		}
 		memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config));
@@ -117,11 +115,16 @@ out:
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-	return ret;
+	return -EINVAL;
 }
 
 void hisi_sec_exit(void *priv)
 {
+	if (!priv) {
+		WD_ERR("%s input parameter is err!\n", __func__);
+		return;
+	}
+
 	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
 	struct wd_ctx_config *config = &sec_ctx->config;
 	handle_t h_qp;
@@ -247,7 +250,7 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 	update_iv(recv_msg);
 }
 
-static int cipher_param_check(struct wd_cipher_msg *msg)
+static int cipher_len_check(struct wd_cipher_msg *msg)
 {
 	if (msg->in_bytes > MAX_CIPHER_LEN) {
 		WD_ERR("input cipher len is too large!\n");
@@ -255,17 +258,34 @@ static int cipher_param_check(struct wd_cipher_msg *msg)
 	}
 
 	if (msg->alg == WD_CIPHER_3DES || msg->alg == WD_CIPHER_DES) {
-		if (msg->in_bytes & (DES3_BLOCK_SIZE - 1) || msg->iv_bytes < DES3_BLOCK_SIZE) {
+		if (msg->in_bytes & (DES3_BLOCK_SIZE - 1)) {
 			WD_ERR("input 3DES or DES cipher parameter is error!\n");
 			return -EINVAL;
 		}
 		return 0;
 	} else if (msg->alg == WD_CIPHER_AES || msg->alg == WD_CIPHER_SM4) {
-		if (msg->in_bytes & (AES_BLOCK_SIZE - 1) || msg->iv_bytes < AES_BLOCK_SIZE) {
+		if (msg->in_bytes & (AES_BLOCK_SIZE - 1)) {
 			WD_ERR("input AES or SM4 cipher parameter is error!\n");
 			return -EINVAL;
 		}
 		return 0;
+	}
+
+	return 0;
+}
+
+static int cipher_iv_check(struct wd_cipher_msg *msg)
+{
+	if (msg->alg == WD_CIPHER_AES || msg->alg == WD_CIPHER_SM4) {
+		if (msg->iv_bytes < AES_BLOCK_SIZE) {
+			WD_ERR("AES or SM4 input iv bytes is err!\n");
+			return -EINVAL;
+		}
+	} else if (msg->alg == WD_CIPHER_3DES || msg->alg == WD_CIPHER_DES) {
+		if (msg->iv_bytes < DES3_BLOCK_SIZE) {
+			WD_ERR("3DES or DES input iv bytes is err!\n");
+			return -EINVAL;
+		}
 	}
 
 	return 0;
@@ -299,23 +319,26 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 	sqe.type_auth_cipher |= cipher;
 
-	/* fill cipher bd2 alg */
+	ret = cipher_len_check(msg);
+	if (ret)
+		return ret;
+	if (msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_XTS) {
+			ret = cipher_iv_check(msg);
+			if (ret)
+				return ret;
+	}
+
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
 		WD_ERR("faile to fill bd alg!\n");
 		return ret;
 	}
 
-	/* fill cipher bd2 mode */
 	ret = fill_cipher_bd2_mode(msg, &sqe);
 	if (ret) {
 		WD_ERR("faile to fill bd mode!\n");
 		return ret;
 	}
-
-	ret = cipher_param_check(msg);
-	if (ret)
-		return ret;
 
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;
@@ -449,7 +472,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	int ret;
 
 	if (!msg) {
-		WD_ERR("input cipher msg is NULL!\n");
+		WD_ERR("input digest msg is NULL!\n");
 		return -EINVAL;
 	}
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
@@ -476,14 +499,12 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		sqe.type2.c_key_addr = (__u64)msg->key;
 	}
 
-	/* fill digest bd2 alg */
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret) {
 		WD_ERR("Fail to fill digest bd alg!\n");
 		return ret;
 	}
 
-	/* fill digest bd2 mode */
 	qm_fill_digest_long_bd(msg, &sqe);
 
 #ifdef DEBUG
@@ -514,7 +535,6 @@ int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
 	if (ret < 0)
 		return ret;
 
-	/* parser digest sqe */
 	parse_digest_bd2(&sqe, recv_msg);
 
 	return 0;
