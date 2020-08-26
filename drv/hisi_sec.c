@@ -628,8 +628,8 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 static void qm_fill_digest_long_bd(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	__u64 total_bits;
 	struct wd_digest_tag *digest_tag = (void *)(uintptr_t)msg->usr_data;
+	__u64 total_bits;
 
 	if (msg->has_next && (msg->iv_bytes == 0)) {
 		/* LOGN BD FIRST */
@@ -677,8 +677,8 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 
 int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_digest_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	__u8 scene;

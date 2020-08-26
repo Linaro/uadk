@@ -351,7 +351,6 @@ static void fill_request_msg(struct wd_digest_msg *msg, struct wd_digest_req *re
 	msg->key = req->key;
 	msg->key_bytes = req->key_bytes;
 	msg->has_next = req->has_next;
-	msg->usr_data = NULL;
 }
 
 int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
