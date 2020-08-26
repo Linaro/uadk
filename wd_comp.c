@@ -82,6 +82,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
 			WD_ERR("invalid params, ctx is NULL!\n");
+			free(ctxs);
 			return -EINVAL;
 		}
 	}
@@ -112,8 +113,9 @@ static void clear_sched_in_global_setting(void)
 {
 	char *name = (char *)wd_comp_setting.sched.name;
 
-	free(name);
-	name = NULL;
+	if (name)
+		free(name);
+	wd_comp_setting.sched.name = NULL;
 	wd_comp_setting.sched.pick_next_ctx = NULL;
 	wd_comp_setting.sched.poll_policy = NULL;
 }
@@ -171,8 +173,8 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 {
 	struct wd_comp_msg *c_msg;
 	struct msg_pool *p;
-	int i, found = 0;
-	int idx;
+	int found = 0;
+	int i, idx;
 
 	if (msg->tag < 0 || msg->tag >= WD_POOL_MAX_ENTRIES) {
 		WD_ERR("invalid msg cache idx(%d)\n", msg->tag);
@@ -200,6 +202,7 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 	c_msg->tag = msg->tag;
 	memcpy(&msg->req, &c_msg->req, sizeof(struct wd_comp_req));
 	msg->sess = c_msg->sess;
+
 	return &msg->req;
 }
 
@@ -275,7 +278,7 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* wd_comp_init() could only be invoked once for one process. */
 	if (wd_comp_setting.config.ctx_num) {
-		WD_ERR("invalid, init() should only be invokoed once!\n");
+		WD_ERR("invalid, comp init() should only be invokoed once!\n");
 		return 0;
 	}
 
@@ -371,7 +374,7 @@ int wd_comp_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd comp recv hw err!\n");
 			break;
-		} else if (ret == -WD_EBUSY || ret == -EAGAIN) {
+		} else if (ret == -EAGAIN) {
 			continue;
 		}
 
@@ -397,7 +400,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
 	struct wd_comp_sess *sess;
 
-	if (setup == NULL)
+	if (!setup)
 		return (handle_t)0;
 
 	sess = calloc(1, sizeof(struct wd_comp_sess));
@@ -436,8 +439,8 @@ static void fill_comp_msg(struct wd_comp_msg *msg,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 	msg->avail_out = req->dst_len;
-	msg->src = req->src;
-	msg->dst = req->dst;
+	msg->req.src = req->src;
+	msg->req.dst = req->dst;
 	msg->in_size = req->src_len;
 	/* if is last 1: flush end; other: sync flush */
 	msg->flush_type = WD_FINISH;
@@ -455,6 +458,11 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	handle_t h_ctx;
 	int ret;
 
+	if (!sess || !req) {
+		WD_ERR("sess or req is NULL!\n");
+		return -EINVAL;
+	}
+
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	fill_comp_msg(&msg, req);
@@ -463,18 +471,18 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
-		WD_ERR("wd_send err!\n");
+		WD_ERR("wd comp send err(%d)!\n", ret);
 	}
 
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
+			WD_ERR("wd comp recv hw err!\n");
 			return ret;
-		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+		} else if (ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd_recv timeout fail!\n");
+				WD_ERR("wd comp recv timeout fail!\n");
 				return -ETIMEDOUT;
 			}
 		}
@@ -497,6 +505,11 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	handle_t h_ctx;
 	int ret;
 
+	if (!sess || !req) {
+		WD_ERR("sess or req is NULL!\n");
+		return -EINVAL;
+	}
+
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	fill_comp_msg(&msg, req);
@@ -508,18 +521,18 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	msg.stream_mode = WD_COMP_STATEFUL;
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
-		WD_ERR("wd_send err!\n");
+		WD_ERR("wd comp send err(%d)!\n", ret);
 	}
 
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
+			WD_ERR("wd comp recv hw err!\n");
 			return ret;
-		} else if (ret == -WD_EBUSY || ret == -EAGAIN) {
+		} else if (ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd_recv timeout fail!\n");
+				WD_ERR("wd comp recv timeout fail!\n");
 				return -ETIMEDOUT;
 			}
 		}
@@ -540,7 +553,12 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg *msg;
 	handle_t h_ctx;
-	int ret;
+	int ret = 0;
+
+	if (!sess || !req) {
+		WD_ERR("sess or req is NULL!\n");
+		return -EINVAL;
+	}
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
@@ -552,11 +570,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	if (ret < 0) {
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		wd_put_msg_to_pool(&wd_comp_setting.pool, h_ctx, msg);
-		return ret;
 	}
 
-	return 0;
-
+	return ret;
 }
 
 int wd_comp_poll(__u32 *count)

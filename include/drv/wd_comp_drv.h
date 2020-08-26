@@ -37,15 +37,10 @@ struct wd_comp_msg {
 	__u32 avail_out; /* Output buffer size */
 	__u32 in_cons;   /* consumed bytes of input data */
 	__u32 produced;  /* produced bytes of current operation */
-	__u8 *src;       /* Input data VA, buf should be DMA-able. */
-	__u8 *dst;       /* Output data VA pointer */
 	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
 	__u32 checksum;  /* Denoted by zlib/gzip CRC */
-	__u32 ctx_priv0; /* Denoted HW priv */
-	__u32 ctx_priv1; /* Denoted HW priv */
-	__u32 ctx_priv2; /* Denoted HW priv */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
 	struct wd_comp_sess *sess;
 };
