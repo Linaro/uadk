@@ -481,10 +481,6 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 	req->dst_len = resp_msg.produced;
 	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
 	req->flag = FLAG_INPUT_FINISH;
-	//req->flush = resp->flush_type;
-	//req->status = resp->status;
-	//req->isize = resp->isize;
-	//req->checksum = resp->checksum;
 
 	return 0;
 }
@@ -529,9 +525,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
 	req->status = resp_msg.req.status;
-	//req->flush = resp->flush_type;
-	//req->isize = resp->isize;
-	//req->checksum = resp->checksum;
 
 	sess->stream_pos = WD_COMP_STREAM_OLD;
 

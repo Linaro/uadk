@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <asm/types.h>
+#include "drv/wd_comp_drv.h"
 #include "hisi_qm_udrv.h"
 #include "smm.h"
 #include "wd.h"
@@ -113,13 +114,24 @@ struct hisi_zip_sqe {
 
 #define cpu_to_be32(x) swab32(x)
 
-#ifndef container_of
-#define container_of(ptr, type, member) \
-	(type *)((char *)(ptr) - (char *) &((type *)0)->member)
-#endif
+#define STREAM_FLUSH_SHIFT 25
+#define MIN_AVAILOUT_SIZE 4096
+#define STREAM_POS_SHIFT 2
+#define STREAM_MODE_SHIFT 1
 
-/* new code */
-#include "../include/drv/wd_comp_drv.h"
+#define HZ_NEGACOMPRESS 0x0d
+#define HZ_CRC_ERR 0x10
+#define HZ_DECOMP_END 0x13
+
+#define HZ_CTX_ST_MASK 0x000f
+#define HZ_LSTBLK_MASK 0x0100
+#define HZ_STATUS_MASK 0xff
+#define HZ_REQ_TYPE_MASK 0xff
+
+#define HZ_HADDR_SHIFT		32
+
+#define lower_32_bits(addr) ((__u32)((__u64)(addr)))
+#define upper_32_bits(addr) ((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
 
 struct hisi_zip_ctx {
 	struct wd_ctx_config	config;
@@ -166,25 +178,6 @@ static void hisi_zip_exit(void *priv)
 	}
 }
 
-
-#define STREAM_FLUSH_SHIFT 25
-#define MIN_AVAILOUT_SIZE 4096
-#define STREAM_POS_SHIFT 2
-#define STREAM_MODE_SHIFT 1
-
-#define HZ_NEGACOMPRESS 0x0d
-#define HZ_CRC_ERR 0x10
-#define HZ_DECOMP_END 0x13
-
-#define HZ_CTX_ST_MASK 0x000f
-#define HZ_LSTBLK_MASK 0x0100
-#define HZ_STATUS_MASK 0xff
-#define HZ_REQ_TYPE_MASK 0xff
-
-#define HZ_HADDR_SHIFT		32
-
-#define lower_32_bits(addr) ((__u32)((__u64)(addr)))
-#define upper_32_bits(addr) ((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
 
 static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
@@ -271,7 +264,6 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	}
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
-	//__u16 lstblk = sqe.dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe.dw9 & HZ_REQ_TYPE_MASK;
 
@@ -286,12 +278,8 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		recv_msg->status = 0;
 	}
 	recv_msg->in_cons = sqe.consumed;
-	//recv_msg->in_size = sqe.input_data_length;
 	recv_msg->produced = sqe.produced;
 	recv_msg->avail_out = sqe.dest_avail_out;
-	//recv_msg->comp_lv = 0;
-	//recv_msg->op_type = 0;
-	//recv_msg->win_size = 0;
 	if (sqe.stream_ctx_addr_l && sqe.stream_ctx_addr_h) {
 		/*
 		 * In ASYNC mode, recv_msg->ctx_buf is NULL.
