@@ -117,6 +117,7 @@ struct qm_queue_info {
 	__u16 cq_head_index;
 	__u16 sqn;
 	__u16 resv;
+	bool is_poll;
 	int cqc_phase;
 	int used;
 	int sqe_size;

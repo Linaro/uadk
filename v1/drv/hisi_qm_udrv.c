@@ -320,6 +320,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	info->cq_head_index = 0;
 	info->cqc_phase = 1;
 	info->used = 0;
+	info->is_poll = priv->is_poll;
 	qp_ctx.qc_type = priv->direction;
 	qp_ctx.id = 0;
 	ret = ioctl(qinfo->fd, WD_UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
@@ -429,7 +430,8 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 static void qm_rx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
 {
 	info->cq_head_index = idx;
-	info->db(info, DOORBELL_CMD_CQ, idx, 0);
+	/* set c_flag to enable interrupt when use poll */
+	info->db(info, DOORBELL_CMD_CQ, idx, info->is_poll);
 	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
