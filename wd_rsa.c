@@ -119,10 +119,6 @@ static struct wd_rsa_setting {
 extern struct wd_rsa_driver wd_rsa_hisi_hpre;
 static void wd_rsa_set_static_drv(void)
 {
-	/*
-	 * Fix me: a parameter can be introduced to decide to choose
-	 * specific driver. Same as dynamic case.
-	 */
 	wd_rsa_setting.driver = &wd_rsa_hisi_hpre;
 }
 #else
@@ -130,7 +126,6 @@ static void __attribute__((constructor)) wd_rsa_open_driver(void)
 {
 	void *driver;
 
-	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
 	driver = dlopen("/usr/lib/wd/libhisi_hpre.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("Fail to open libhisi_hpre.so\n");
@@ -445,7 +440,7 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 
 int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 {
-	struct wd_rsa_sess *sess = (struct wd_rsa_sess *)(uintptr_t)h_sess;
+	struct wd_rsa_sess *sess = (struct wd_rsa_sess *)h_sess;
 	struct wd_ctx_config *config = &wd_rsa_setting.config;
 	struct wd_rsa_msg msg;
 	__u64 rx_cnt = 0;
@@ -527,7 +522,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	if (!msg)
 		return -WD_EBUSY;
 
-	ret = fill_rsa_msg(msg, req, (struct wd_rsa_sess *)(uintptr_t)sess);
+	ret = fill_rsa_msg(msg, req, (struct wd_rsa_sess *)sess);
 	if (ret < 0)
 		return ret;
 
@@ -609,7 +604,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 				struct wd_dtb *p, struct wd_dtb *q)
 {
 	struct wd_rsa_kg_in *kg_in;
-	struct wd_rsa_sess *c = (struct wd_rsa_sess *)(uintptr_t)sess;
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 	int kg_in_size;
 
 	if (!sess || !c || !e || !p || !q) {
@@ -693,7 +688,7 @@ void wd_rsa_del_kg_in(handle_t sess, struct wd_rsa_kg_in *ki)
 
 struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 {
-	struct wd_rsa_sess *c = (struct wd_rsa_sess *)(uintptr_t)sess;
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 	struct wd_rsa_kg_out *kg_out;
 	int kg_out_size;
 	int kz;
@@ -926,7 +921,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 
 	sess = calloc(1, sizeof(struct wd_rsa_sess));
 	if (!sess)
-		return (handle_t)(uintptr_t)sess;
+		return (handle_t)sess;
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
@@ -938,12 +933,12 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 		return 0;
 	}
 
-	return (handle_t)(uintptr_t)sess;
+	return (handle_t)sess;
 }
 
 void wd_rsa_free_sess(handle_t sess)
 {
-	struct wd_rsa_sess *sess_t = (struct wd_rsa_sess *)(uintptr_t)sess;
+	struct wd_rsa_sess *sess_t = (struct wd_rsa_sess *)sess;
 
 	if (!sess_t) {
 		WD_ERR("free rsa sess param err!\n");
@@ -977,7 +972,7 @@ int wd_rsa_key_bits(handle_t sess)
 
 int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 {
-	struct wd_rsa_sess *c = (struct wd_rsa_sess *)(uintptr_t)sess;
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 
 	if (!sess) {
 		WD_ERR("sess NULL in set rsa public key!\n");
@@ -1025,7 +1020,7 @@ void wd_rsa_get_pubkey_params(struct wd_rsa_pubkey *pbk, struct wd_dtb **e,
 int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 {
 	struct wd_rsa_prikey1 *pkey1;
-	struct wd_rsa_sess *c = (struct wd_rsa_sess *)(uintptr_t)sess;
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 
 	if (!sess || wd_rsa_is_crt(sess)) {
 		WD_ERR("sess err in set rsa private key1!\n");
@@ -1128,7 +1123,7 @@ int wd_rsa_set_crt_prikey_params(handle_t sess, struct wd_dtb *dq,
 			struct wd_dtb *dp, struct wd_dtb *qinv,
 			struct wd_dtb *q, struct wd_dtb *p)
 {
-	struct wd_rsa_sess *c = (struct wd_rsa_sess *)(uintptr_t)sess;
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 	struct wd_rsa_prikey2 *pkey2;
 	int ret = -WD_EINVAL;
 

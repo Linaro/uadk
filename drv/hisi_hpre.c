@@ -134,6 +134,7 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 		else
 			dst[j] = 0;
 	}
+
 	return WD_SUCCESS;
 }
 
@@ -203,6 +204,7 @@ static int qm_fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 		return ret;
 	}
 	*data = wd_dq->data;
+
 	return (int)(wd_dq->bsize + wd_qinv->bsize + wd_p->bsize +
 			wd_q->bsize + wd_dp->bsize);
 }
@@ -227,6 +229,7 @@ static int qm_fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 		return ret;
 	}
 	*data = wd_d->data;
+
 	return (int)(wd_n->bsize + wd_d->bsize);
 }
 
@@ -277,6 +280,7 @@ static int qm_fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
 		WD_ERR("rsa genkey p format fail!\n");
 		return ret;
 	}
+
 	return WD_SUCCESS;
 }
 
