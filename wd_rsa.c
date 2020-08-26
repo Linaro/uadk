@@ -20,6 +20,8 @@
 
 static __thread int balance;
 
+static struct wd_lock sd_rc_lock;
+
 struct wd_rsa_kg_in {
 	__u8 *e;
 	__u8 *p;
@@ -472,6 +474,8 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	ret = fill_rsa_msg(&msg, req, sess);
 	if (unlikely(ret))
 		return ret;
+
+	wd_spinlock(&sd_rc_lock);
 send_again:
 	ret = wd_rsa_setting.driver->send(h_ctx, &msg);
 	if (ret == -EBUSY) {
@@ -501,7 +505,7 @@ send_again:
 			}
 		}
 	} while (ret < 0);
-
+	wd_unspinlock(&sd_rc_lock);
 	balance = rx_cnt;
 	req->status = msg.result;
 	ret = GET_NEGATIVE(req->status);

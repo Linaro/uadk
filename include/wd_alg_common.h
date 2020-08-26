@@ -30,6 +30,10 @@ extern FILE *flog_fd;
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 
+struct wd_lock {
+	__u32 lock;
+};
+
 /**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
@@ -57,4 +61,18 @@ struct wd_ctx_config {
 	struct wd_ctx *ctxs;
 	void *priv;
 };
+
+static inline void wd_spinlock(struct wd_lock *lock)
+{
+	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
+		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED))
+			;
+}
+
+static inline void wd_unspinlock(struct wd_lock *lock)
+{
+	__atomic_clear(&lock->lock, __ATOMIC_RELEASE);
+}
+
+
 #endif

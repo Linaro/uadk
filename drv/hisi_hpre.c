@@ -494,7 +494,6 @@ static int hisi_hpre_send(handle_t ctx, struct wd_rsa_msg *msg)
 
 	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
-	/* prepare rsa key */
 	ret = rsa_prepare_key(msg, &hw_msg);
 	if (ret < 0)
 		return ret;
@@ -520,7 +519,6 @@ static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg = {0};
 	__u16 recv_cnt = 0;
-	__u16 kbytes;
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
@@ -531,7 +529,6 @@ static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
 		return ret;
 	}
 
-	kbytes = msg->key_bytes;
 	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
 			hw_msg.done, hw_msg.etype);
