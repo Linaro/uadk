@@ -116,7 +116,7 @@ extern handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
 extern void wd_comp_free_sess(handle_t sess);
 
 
-extern int wd_do_comp(handle_t sess, struct wd_comp_req *req);
+extern int wd_do_comp_sync(handle_t sess, struct wd_comp_req *req);
 
 extern int wd_do_comp_strm(handle_t sess, struct wd_comp_req *req);
 

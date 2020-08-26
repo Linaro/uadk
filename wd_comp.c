@@ -150,10 +150,9 @@ static int wd_init_async_request_pool(struct wd_async_msg_pool *pool)
 static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 {
 	struct msg_pool *p;
-	int i, j, num;
+	int i, j;
 
-	num = pool->pool_nums;
-	for (i = 0; i < num; i++) {
+	for (i = 0; i < pool->pool_nums; i++) {
 		p = &pool->pools[i];
 		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
 			if (p->used[j])
@@ -161,8 +160,6 @@ static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 					"pool.\n", j);
 			memset(&p->msg[j], 0, sizeof(struct wd_comp_msg));
 		}
-		p->head = 0;
-		p->tail = 0;
 	}
 
 	free(pool->pools);
@@ -172,8 +169,8 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 						handle_t h_ctx,
 						struct wd_comp_msg *msg)
 {
-	struct msg_pool *p;
 	struct wd_comp_msg *c_msg;
+	struct msg_pool *p;
 	int i, found = 0;
 	int idx;
 
@@ -188,7 +185,7 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 		}
 	}
 	if (!found) {
-		WD_ERR("ctx handler not fonud!\n");
+		WD_ERR("ctx handle not fonud!\n");
 		return NULL;
 	}
 	p = &pool->pools[i];
@@ -223,7 +220,7 @@ static struct wd_comp_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 		}
 	}
 	if (!found) {
-		WD_ERR("ctx handler not fonud!\n");
+		WD_ERR("ctx handle not fonud!\n");
 		return NULL;
 	}
 	p = &pool->pools[i];
@@ -262,7 +259,7 @@ static void wd_put_msg_to_pool(struct wd_async_msg_pool *pool,
 		}
 	}
 	if (!found) {
-		WD_ERR("ctx handler not fonud!\n");
+		WD_ERR("ctx handle not fonud!\n");
 		return;
 	}
 
@@ -277,20 +274,26 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	int ret;
 
 	/* wd_comp_init() could only be invoked once for one process. */
-	if (wd_comp_setting.config.ctx_num)
+	if (wd_comp_setting.config.ctx_num) {
+		WD_ERR("invalid, init() should only be invokoed once!\n");
 		return 0;
+	}
 
-	if (!config || !sched)
+	if (!config || !sched) {
+		WD_ERR("invalid params, config or sched is NULL!\n");
 		return -EINVAL;
+	}
 
-	/* set config and sched */
 	ret = copy_config_to_global_setting(config);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to set config, ret = %d!\n",ret);
 		return ret;
+	}
 	ret = copy_sched_to_global_setting(sched);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to set sched, ret = %d!\n",ret);
 		goto out;
-
+	}
 	/*
 	 * Fix me: ctx could be passed into wd_comp_set_static_drv to help to
 	 * choose static compiled vendor driver. For dynamic vendor driver,
@@ -307,9 +310,10 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* init async request pool */
 	ret = wd_init_async_request_pool(&wd_comp_setting.pool);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to init req pool, ret = %d!\n",ret);
 		goto out_sched;
-
+	}
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
 	if (!priv) {
@@ -318,9 +322,10 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 	wd_comp_setting.priv = priv;
 	ret = wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to do driver init, ret = %d!\n",ret);
 		goto out_init;
-
+	}
 	return 0;
 
 out_init:
@@ -356,8 +361,8 @@ void wd_comp_uninit(void)
 
 int wd_comp_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 {
-	struct wd_comp_req *req;
 	struct wd_comp_msg resp_msg;
+	struct wd_comp_req *req;
 	__u32 recv_count = 0;
 	int ret;
 
@@ -426,11 +431,9 @@ void wd_comp_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-static void fill_comp_msg(struct wd_comp_sess *sess,
-			 struct wd_comp_msg *msg,
-			 struct wd_comp_req *req)
+static void fill_comp_msg(struct wd_comp_msg *msg,
+			  struct wd_comp_req *req)
 {
-	msg->ctx_buf = sess->ctx_buf;
 	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 	msg->avail_out = req->dst_len;
 	msg->src = req->src;
@@ -443,18 +446,18 @@ static void fill_comp_msg(struct wd_comp_sess *sess,
 	msg->status = 0;
 }
 
-int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
+int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 {
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg msg, resp_msg;
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	__u64 recv_count = 0;
 	handle_t h_ctx;
 	int ret;
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
-	fill_comp_msg(sess, &msg, req);
+	fill_comp_msg(&msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
 
@@ -487,16 +490,16 @@ int wd_do_comp(handle_t h_sess, struct wd_comp_req *req)
 
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg msg, resp_msg;
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	__u64 recv_count = 0;
 	handle_t h_ctx;
 	int ret;
 
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
-	fill_comp_msg(sess, &msg, req);
+	fill_comp_msg(&msg, req);
 	msg.stream_pos = sess->stream_pos;
 	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
@@ -513,7 +516,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd_recv hw err!\n");
-			goto err_recv;
+			return ret;
 		} else if (ret == -WD_EBUSY || ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				WD_ERR("wd_recv timeout fail!\n");
@@ -529,14 +532,12 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	sess->stream_pos = WD_COMP_STREAM_OLD;
 
 	return 0;
-err_recv:
-	return ret;
 }
 
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 {
-	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
+	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg *msg;
 	handle_t h_ctx;
 	int ret;
@@ -544,12 +545,12 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
 
 	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, h_ctx, req);
-	fill_comp_msg(sess, msg, req);
+	fill_comp_msg(msg, req);
 	msg->alg_type = sess->alg_type;
 
 	ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
 	if (ret < 0) {
-		WD_ERR("wd_send err!\n");
+		WD_ERR("wd comp send err(%d)!\n", ret);
 		wd_put_msg_to_pool(&wd_comp_setting.pool, h_ctx, msg);
 		return ret;
 	}

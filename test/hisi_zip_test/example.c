@@ -173,7 +173,7 @@ static int comp_sync(handle_t h_sess,
 		if (!req->src_len)
 			req->flag |= FLAG_INPUT_FINISH;
 
-		ret = wd_do_comp(h_sess, req);
+		ret = wd_do_comp_sync(h_sess, req);
 		if (ret < 0)
 			goto out;
 		if (req->status & (STATUS_IN_EMPTY | STATUS_IN_PART_USE)) {
