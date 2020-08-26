@@ -14,15 +14,10 @@
 #define FLAG_DEFLATE		(1 << 0)
 #define FLAG_INPUT_FINISH	(1 << 1)
 
-/*
- * Status in request.
- * HW occupies the lower 16-bit, and SW occupies the higher 16-bit.
- */
-#define STATUS_HW_MASK		0xFFFF
-#define STATUS_OUT_READY	(1 << 16)	// data is ready in OUT buffer
-#define STATUS_OUT_DRAINED	(1 << 17)	// all data is drained out
-#define STATUS_IN_PART_USE	(1 << 18)
-#define STATUS_IN_EMPTY		(1 << 19)
+#define STATUS_OUT_READY	(1 << 0)	// data is ready in OUT buffer
+#define STATUS_OUT_DRAINED	(1 << 1)	// all data is drained out
+#define STATUS_IN_PART_USE	(1 << 2)
+#define STATUS_IN_EMPTY		(1 << 3)
 
 enum {
 	CTX_TYPE_COMP = 0,

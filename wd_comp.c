@@ -377,7 +377,7 @@ int wd_comp_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 
 		recv_count++;
 		req = wd_get_req_from_pool(&wd_comp_setting.pool, h_ctx, &resp_msg);
-		req->status |= STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
+		req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
 		req->flag = FLAG_INPUT_FINISH;
 
 		req->cb(req, req->cb_param);
@@ -482,7 +482,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
-	req->status |= STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
+	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
 	req->flag = FLAG_INPUT_FINISH;
 
 	return 0;
@@ -527,7 +527,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
-	req->status |= resp_msg.req.status;
+	req->status = resp_msg.req.status;
 
 	sess->stream_pos = WD_COMP_STREAM_OLD;
 

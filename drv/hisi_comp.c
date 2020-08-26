@@ -271,7 +271,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	    status != HZ_CRC_ERR && status != HZ_DECOMP_END) {
 		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 		       ctx_st, status, type);
-		recv_msg->status = status & STATUS_HW_MASK;
+		recv_msg->status = WD_IN_EPARA;
 	} else {
 		if (!sqe.consumed || !sqe.produced)
 			return -EAGAIN;
