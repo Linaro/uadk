@@ -570,34 +570,44 @@ int wd_recv(struct wd_queue *q, void **resp)
 	return wd_burst_recv(q, resp, 1);
 }
 
-static int wd_wait(struct wd_queue *q, __u16 ms)
+int wd_wait(struct wd_queue *q, __u16 ms)
 {
-	struct q_info *qinfo = q->qinfo;
+	struct q_info *qinfo;
+	struct wcrypto_paras *priv;
 	struct pollfd fds[1];
 	int ret;
 
+	if (!q || !ms)
+		return -EINVAL;
+
+	priv = &q->capa.priv;
+	if (priv->is_poll != 1)
+		return -EINVAL;
+
+	qinfo = q->qinfo;
 	fds[0].fd = qinfo->fd;
 	fds[0].events = POLLIN;
+
 	ret = poll(fds, 1, ms);
-	if (ret == -1)
+	if (unlikely(ret < 0))
 		return -ENODEV;
 
-	return 0;
+	/* return 0 for no data, 1 for new message */
+	return ret;
 }
 
 int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms)
 {
 	int ret;
 
-	while (1) {
-		ret = wd_recv(q, resp);
-		if (ret == 0) {
-			ret = wd_wait(q, ms);
-			if (ret)
-				return ret;
-		} else
-			return ret;
-	}
+	if (!q || !ms)
+		return -EINVAL;
+
+	ret = wd_wait(q, ms);
+	if (likely(ret > 0))
+		return wd_recv(q, resp);
+
+	return ret;
 }
 
 void *wd_reserve_memory(struct wd_queue *q, size_t size)
