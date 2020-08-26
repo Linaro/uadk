@@ -74,6 +74,7 @@ struct wcrypto_cb_tag {
 struct wcrypto_paras {
 	 /* 0--encipher/compress .etc, 1 ---decipher/decomp .etc */
 	__u8 direction;
+	bool is_poll;
 
 	 /* to be extended */
 };
@@ -183,6 +184,7 @@ extern int wd_request_queue(struct wd_queue *q);
 extern void wd_release_queue(struct wd_queue *q);
 extern int wd_send(struct wd_queue *q, void *req);
 extern int wd_recv(struct wd_queue *q, void **resp);
+extern int wd_wait(struct wd_queue *q, __u16 ms);
 extern int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
 extern void *wd_reserve_memory(struct wd_queue *q, size_t size);
 extern int wd_share_reserved_memory(struct wd_queue *q,
