@@ -203,7 +203,8 @@ static struct wd_digest_msg *get_msg_from_pool(struct wd_async_msg_pool *pool,
 	struct msg_pool *p;
 	struct wd_digest_msg *msg;
 	int found = 0;
-	int i, t;
+	int cnt = 0;
+	int i;
 
 	for (i = 0; i < g_wd_digest_setting.config.ctx_num; i++) {
 		if (h_ctx == g_wd_digest_setting.config.ctxs[i].ctx) {
@@ -211,22 +212,53 @@ static struct wd_digest_msg *get_msg_from_pool(struct wd_async_msg_pool *pool,
 			break;
 		}
 	}
-	if (!found)
+	if (!found) {
+		WD_ERR("ctx handler not fonud!\n");
 		return NULL;
-
+	}
 	p = &pool->pools[i];
-	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
 
-	/* full */
-	if (p->head == t)
-		return NULL;
+	while (__atomic_test_and_set(&p->used[p->tail], __ATOMIC_ACQUIRE)){
+		p->tail = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
+		cnt++;
+		/* full */
+		if (cnt == WD_POOL_MAX_ENTRIES)
+			return NULL;
+	}
 	/* get msg from msg_pool[] */
 	msg = &p->msg[p->tail];
 	memcpy(&msg->req, req, sizeof(struct wd_digest_req));
-	msg->tag_id = p->tail;
-	p->tail = t;
+	msg->tag = p->tail;
 
 	return msg;
+}
+
+static void put_msg_to_pool(struct wd_async_msg_pool *pool,
+			       handle_t h_ctx,
+			       struct wd_digest_msg *msg)
+{
+	struct msg_pool *p;
+	int found = 0;
+	int i;
+
+	if (msg->tag < 0 || msg->tag >= WD_POOL_MAX_ENTRIES) {
+		WD_ERR("invalid msg cache idx(%d)\n", msg->tag);
+		return;
+	}
+	for (i = 0; i < g_wd_digest_setting.config.ctx_num; i++) {
+		if (h_ctx == g_wd_digest_setting.config.ctxs[i].ctx) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		WD_ERR("ctx handler not fonud!\n");
+		return;
+	}
+
+	p = &pool->pools[i];
+
+	__atomic_clear(&p->used[msg->tag], __ATOMIC_RELEASE);
 }
 
 static struct wd_digest_req *get_req_from_pool(struct wd_async_msg_pool *pool,
@@ -250,7 +282,7 @@ static struct wd_digest_req *get_req_from_pool(struct wd_async_msg_pool *pool,
 	/* empty */
 	if (p->head == p->tail)
 		return NULL;
-	idx = msg->tag_id;
+	idx = msg->tag;
 	c_msg = &p->msg[idx];
 
 	/* what this is?? */
@@ -338,6 +370,13 @@ void wd_digest_uninit(void)
 {
 	clear_sched_in_global_setting();
 	clear_config_in_global_setting();
+	void *priv = g_wd_digest_setting.priv;
+	if (!priv)
+		return;
+
+	g_wd_digest_setting.driver->exit(priv);
+	free(priv);
+	priv = NULL;
 }
 
 static void fill_request_msg(struct wd_digest_msg *msg, struct wd_digest_req *req)
@@ -409,7 +448,6 @@ int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
 		return -EINVAL;
 	}
 
-	/* fill digest requset msg */
 	msg = get_msg_from_pool(&g_wd_digest_setting.pool, h_ctx, req);
 	if (!msg) {
 		WD_ERR("Fail to get pool msg!\n");
@@ -420,7 +458,8 @@ int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
 
 	ret = g_wd_digest_setting.driver->digest_send(h_ctx, msg);
 	if (ret < 0) {
-		WD_ERR("wd send err!\n");
+		WD_ERR("Fail to  send BD, hw is err!\n");
+		put_msg_to_pool(&g_wd_digest_setting.pool, h_ctx, msg);
 		return ret;
 	}
 

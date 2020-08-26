@@ -8,7 +8,7 @@
 /* fixme wd_cipher_msg */
 struct wd_cipher_msg {
 	struct wd_cipher_req req;
-	__u32 tag_id;
+	__u32 tag;		/* request identifier */
 	__u8 alg_type;		/* Denoted by enum wcrypto_type */
 	__u8 alg;		/* Denoted by enum wcrypto_cipher_type */
 	__u8 op_type;		/* Denoted by enum wcrypto_cipher_op_type */

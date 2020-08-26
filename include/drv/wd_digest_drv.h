@@ -8,7 +8,7 @@
 /* fixme wd_digest_msg */
 struct wd_digest_msg {
 	struct wd_digest_req req;
-	__u32 tag_id;
+	__u32 tag;		/* request indentifier */
 	__u8 alg_type;		/* Denoted by enum wcrypto_type */
 	__u8 alg;			/* Denoted by enum wcrypto_digest_type */
 	__u8 has_next;		/* is there next block data */
