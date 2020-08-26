@@ -36,10 +36,10 @@ typedef __u32 (*user_poll_func)(handle_t h_ctx, __u32 num);
  * @type_num: Service type num.
  *			  For example, ZIP include compress and uncompress, the num is two.
  */
-__u32 sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
+int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
 
 /**
- * sample_sched_init - Release schedule memory.
+ * sample_sched_release - Release schedule memory.
  */
 void sample_sched_release(void);
 
@@ -54,7 +54,7 @@ void sample_sched_release(void);
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-__u32 sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
+int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
 
 /**
  * ssample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg.
@@ -68,7 +68,7 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
  * sample_poll_policy - The polling policy matches the pick next ctx
  * @cfg: The global resoure info.
  */
-__u32 sample_sched_poll_policy(struct wd_ctx_config *cfg);
+int sample_sched_poll_policy(struct wd_ctx_config *cfg);
 
 /**
  * sample_sched_init - Schedule Init function.
@@ -76,5 +76,5 @@ __u32 sample_sched_poll_policy(struct wd_ctx_config *cfg);
  * @type_num: The service type num of user's service. For example, the zip include comp and un comp, type nume is two.
  * @func: The ctx poll function of user underlying operating.
  */
-__u32 sample_sched_init(__u8 sched_type, int type_num, user_poll_func func);
+int sample_sched_init(__u8 sched_type, int type_num, user_poll_func func);
 #endif

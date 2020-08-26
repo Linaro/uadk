@@ -92,7 +92,7 @@ struct wd_sched {
 	__u32 sched_ctx_size;
 	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
 				  void *sched_ctx, struct wd_cipher_req *req, int numa_id);
-	__u32 (*poll_policy)(struct wd_ctx_config *config);
+	int (*poll_policy)(struct wd_ctx_config *config);
 };
 
 /**

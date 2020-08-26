@@ -82,7 +82,7 @@ static handle_t sched_single_pick_next(struct wd_ctx_config *cfg, void *req, voi
 	return ctx_conf.ctxs[0].ctx;
 }
 
-static __u32 sched_single_poll_policy(struct wd_ctx_config *cfg)
+static int sched_single_poll_policy(struct wd_ctx_config *cfg)
 {
 	int ret;
 	__u32 count = 0;
