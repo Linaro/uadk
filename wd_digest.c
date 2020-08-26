@@ -364,14 +364,12 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 
 	h_ctx = g_wd_digest_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
 	if (!h_ctx) {
-		WD_ERR("pick next ctx is NULL!\n");
+		WD_ERR("wd digest pick next ctx is NULL!\n");
 		return -EINVAL;
 	}
 
-	/* fill digest requset msg */
 	fill_request_msg(&msg, req);
 
-	/* send bd */
 	ret = g_wd_digest_setting.driver->digest_send(h_ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("wd send err!\n");
@@ -381,11 +379,11 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 	do {
 		ret = g_wd_digest_setting.driver->digest_recv(h_ctx, &recv_msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd recv err!\n");
+			WD_ERR("Fail to recv bd!\n");
 			goto recv_err;
-		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+		} else if (ret == -WD_EBUSY || ret == -EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("wd recv timeout fail!\n");
+				WD_ERR("Fail to recv bd and timeout!\n");
 				ret = -ETIMEDOUT;
 				goto recv_err;
 			}
@@ -413,6 +411,11 @@ int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
 
 	/* fill digest requset msg */
 	msg = get_msg_from_pool(&g_wd_digest_setting.pool, h_ctx, req);
+	if (!msg) {
+		WD_ERR("Fail to get pool msg!\n");
+		return -EBUSY;
+	}
+
 	fill_request_msg(msg, req);
 
 	ret = g_wd_digest_setting.driver->digest_send(h_ctx, msg);
