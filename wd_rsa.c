@@ -134,6 +134,11 @@ static void __attribute__((constructor)) wd_rsa_open_driver(void)
 
 void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 {
+	if (!drv) {
+		WD_ERR("drv NULL\n");
+		return;
+	}
+
 	wd_rsa_setting.driver = drv;
 }
 
@@ -148,14 +153,13 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	}
 
 	ctxs = malloc(cfg->ctx_num * sizeof(struct wd_ctx));
-	if (!ctxs) {
-		WD_ERR("failed to malloc\n");
+	if (!ctxs)
 		return -ENOMEM;
-	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
 			WD_ERR("config ctx[%d] NULL\n", i);
+			free(ctxs);
 			return -EINVAL;
 		}
 	}
@@ -321,13 +325,18 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* wd_rsa_init() could only be invoked once for one process. */
 	if (wd_rsa_setting.config.ctx_num) {
-		WD_ERR("have initialized\n");
+		WD_ERR("rsa have initialized\n");
 		return 0;
 	}
 
-	if (!config || !sched) {
+	if (!config || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("config or sched NULL\n");
 		return -WD_EINVAL;
+	}
+
+	if (!wd_is_sva(config->ctxs[0].ctx)) {
+		WD_ERR("no sva, do not rsa init\n");
+		return 0;
 	}
 
 	/* set config and sched */

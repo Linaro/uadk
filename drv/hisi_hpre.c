@@ -107,7 +107,7 @@ static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 	return false;
 }
 
-static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
+static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 				int b_size, int d_size)
 {
 	int i = d_size - 1;
@@ -138,7 +138,7 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 	return WD_SUCCESS;
 }
 
-static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
+static int hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
 {
 	int i, cnt;
 	int j = 0;
@@ -165,7 +165,7 @@ static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
 	return b_size - k;
 }
 
-static int qm_fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
+static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 				   void **data)
 {
 	struct wd_dtb *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
@@ -173,31 +173,31 @@ static int qm_fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 
 	wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp,
 				&wd_qinv, &wd_q, &wd_p);
-	ret = qm_crypto_bin_to_hpre_bin(wd_dq->data, (const char *)wd_dq->data,
+	ret = crypto_bin_to_hpre_bin(wd_dq->data, (const char *)wd_dq->data,
 				wd_dq->bsize, wd_dq->dsize);
 	if (ret) {
 		WD_ERR("rsa crt dq format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(wd_dp->data, (const char *)wd_dp->data,
+	ret = crypto_bin_to_hpre_bin(wd_dp->data, (const char *)wd_dp->data,
 				wd_dp->bsize, wd_dp->dsize);
 	if (ret) {
 		WD_ERR("rsa crt dp format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
+	ret = crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
 				wd_q->bsize, wd_q->dsize);
 	if (ret) {
 		WD_ERR("rsa crt q format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(wd_p->data,
+	ret = crypto_bin_to_hpre_bin(wd_p->data,
 		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize);
 	if (ret) {
 		WD_ERR("rsa crt p format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(wd_qinv->data,
+	ret = crypto_bin_to_hpre_bin(wd_qinv->data,
 		(const char *)wd_qinv->data, wd_qinv->bsize, wd_qinv->dsize);
 	if (ret) {
 		WD_ERR("rsa crt qinv format fail!\n");
@@ -209,20 +209,20 @@ static int qm_fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 			wd_q->bsize + wd_dp->bsize);
 }
 
-static int qm_fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
+static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 {
 	struct wd_dtb *wd_d, *wd_n;
 	int ret;
 
 	wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
-	ret = qm_crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
+	ret = crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
 				wd_d->bsize, wd_d->dsize);
 	if (ret) {
 		WD_ERR("rsa prikey1 d format fail!\n");
 		return ret;
 	}
 
-	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
+	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize);
 	if (ret) {
 		WD_ERR("rsa prikey1 n format fail!\n");
@@ -233,19 +233,19 @@ static int qm_fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 	return (int)(wd_n->bsize + wd_d->bsize);
 }
 
-static int qm_fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
+static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 {
 	struct wd_dtb *wd_e, *wd_n;
 	int ret;
 
 	wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
-	ret = qm_crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
+	ret = crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
 				wd_e->bsize, wd_e->dsize);
 	if (ret) {
 		WD_ERR("rsa pubkey e format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
+	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize);
 	if (ret) {
 		WD_ERR("rsa pubkey n format fail!\n");
@@ -255,26 +255,26 @@ static int qm_fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 	return (int)(wd_n->bsize + wd_e->bsize);
 }
 
-static int qm_fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
+static int fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
 {
 	struct wd_dtb e, q, p;
 	int ret;
 
 	wd_rsa_get_kg_in_params(genkey, &e, &q, &p);
 
-	ret = qm_crypto_bin_to_hpre_bin(e.data, (const char *)e.data,
+	ret = crypto_bin_to_hpre_bin(e.data, (const char *)e.data,
 				e.bsize, e.dsize);
 	if (ret) {
 		WD_ERR("rsa genkey e format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
+	ret = crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
 				q.bsize, q.dsize);
 	if (ret) {
 		WD_ERR("rsa genkey q format fail!\n");
 		return ret;
 	}
-	ret = qm_crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
+	ret = crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
 				p.bsize, p.dsize);
 	if (ret) {
 		WD_ERR("rsa genkey p format fail!\n");
@@ -284,12 +284,12 @@ static int qm_fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
 	return WD_SUCCESS;
 }
 
-static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
+static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 				struct wd_dtb *bin2)
 {
 	int ret;
 
-	ret = qm_hpre_bin_to_crypto_bin(bin0->data, (const char *)bin0->data,
+	ret = hpre_bin_to_crypto_bin(bin0->data, (const char *)bin0->data,
 				bin0->bsize);
 	if (!ret)
 		return -WD_EINVAL;
@@ -297,7 +297,7 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 	bin0->dsize = ret;
 
 	if (bin1) {
-		ret = qm_hpre_bin_to_crypto_bin(bin1->data,
+		ret = hpre_bin_to_crypto_bin(bin1->data,
 			(const char *)bin1->data,
 					bin1->bsize);
 		if (!ret)
@@ -307,7 +307,7 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 	}
 
 	if (bin2) {
-		ret = qm_hpre_bin_to_crypto_bin(bin2->data,
+		ret = hpre_bin_to_crypto_bin(bin2->data,
 			(const char *)bin2->data, bin2->bsize);
 		if (!ret)
 			return -WD_EINVAL;
@@ -318,10 +318,8 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 	return WD_SUCCESS;
 }
 
-static int qm_rsa_out_transfer(struct wd_rsa_msg *msg,
-				struct hisi_hpre_sqe *hw_msg,
-				size_t *in_len,
-				size_t *out_len)
+static int rsa_out_transfer(struct wd_rsa_msg *msg,
+				struct hisi_hpre_sqe *hw_msg)
 {
 	struct wd_rsa_req *req = &msg->req;
 	struct wd_rsa_kg_out *key = req->dst;
@@ -333,10 +331,8 @@ static int qm_rsa_out_transfer(struct wd_rsa_msg *msg,
 	msg->result = WD_SUCCESS;
 	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
 		req->dst_bytes = CRT_GEN_PARAMS_SZ(kbytes);
-		*in_len = GEN_PARAMS_SZ(kbytes);
-		*out_len = req->dst_bytes;
 		wd_rsa_get_kg_out_crt_params(key, &qinv, &dq, &dp);
-		ret = qm_tri_bin_transfer(&qinv, &dq, &dp);
+		ret = hpre_tri_bin_transfer(&qinv, &dq, &dp);
 		if (ret) {
 			WD_ERR("parse rsa genkey qinv&&dq&&dp format fail!\n");
 			return ret;
@@ -346,11 +342,9 @@ static int qm_rsa_out_transfer(struct wd_rsa_msg *msg,
 					       dq.dsize, dp.dsize);
 	} else if (hw_msg->alg == HPRE_ALG_KG_STD) {
 		req->dst_bytes = GEN_PARAMS_SZ(kbytes);
-		*out_len = req->dst_bytes;
-		*in_len = GEN_PARAMS_SZ(kbytes);
 
 		wd_rsa_get_kg_out_params(key, &d, &n);
-		ret = qm_tri_bin_transfer(&d, &n, NULL);
+		ret = hpre_tri_bin_transfer(&d, &n, NULL);
 		if (ret) {
 			WD_ERR("parse rsa genkey1 d&&n format fail!\n");
 			return ret;
@@ -358,15 +352,13 @@ static int qm_rsa_out_transfer(struct wd_rsa_msg *msg,
 
 		wd_rsa_set_kg_out_psz(key, d.dsize, n.dsize);
 	} else {
-		*in_len = kbytes;
 		req->dst_bytes = kbytes;
-		*out_len = req->dst_bytes;
 	}
 
 	return WD_SUCCESS;
 }
 
-static int qm_rsa_prepare_key(struct wd_rsa_msg *msg,
+static int rsa_prepare_key(struct wd_rsa_msg *msg,
 			      struct hisi_hpre_sqe *hw_msg)
 {
 	struct wd_rsa_req *req = &msg->req;
@@ -375,22 +367,22 @@ static int qm_rsa_prepare_key(struct wd_rsa_msg *msg,
 
 	if (req->op_type == WD_RSA_SIGN) {
 		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
-			ret = qm_fill_rsa_crt_prikey2((void *)msg->key, &data);
+			ret = fill_rsa_crt_prikey2((void *)msg->key, &data);
 			if (ret <= 0)
 				return ret;
 		} else {
-			ret = qm_fill_rsa_prikey1((void *)msg->key, &data);
+			ret = fill_rsa_prikey1((void *)msg->key, &data);
 			if (ret < 0)
 				return ret;
 			hw_msg->alg = HPRE_ALG_NC_NCRT;
 		}
 	} else if (req->op_type == WD_RSA_VERIFY) {
-		ret = qm_fill_rsa_pubkey((void *)msg->key, &data);
+		ret = fill_rsa_pubkey((void *)msg->key, &data);
 		if (ret < 0)
 			return ret;
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	} else if (req->op_type == WD_RSA_GENKEY) {
-		ret = qm_fill_rsa_genkey_in((void *)msg->key);
+		ret = fill_rsa_genkey_in((void *)msg->key);
 		if (ret)
 			return ret;
 		ret = wd_rsa_kg_in_data((void *)msg->key, (char **)&data);
@@ -413,7 +405,7 @@ static int qm_rsa_prepare_key(struct wd_rsa_msg *msg,
 	return WD_SUCCESS;
 }
 
-static int qm_rsa_prepare_iot(struct wd_rsa_msg *msg,
+static int rsa_prepare_iot(struct wd_rsa_msg *msg,
 			      struct hisi_hpre_sqe *hw_msg)
 {
 	struct wd_rsa_req *req = &msg->req;
@@ -503,12 +495,12 @@ static int hisi_hpre_send(handle_t ctx, struct wd_rsa_msg *msg)
 	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
 	/* prepare rsa key */
-	ret = qm_rsa_prepare_key(msg, &hw_msg);
+	ret = rsa_prepare_key(msg, &hw_msg);
 	if (ret < 0)
 		return ret;
 
 	/* prepare in/out put */
-	ret = qm_rsa_prepare_iot(msg, &hw_msg);
+	ret = rsa_prepare_iot(msg, &hw_msg);
 	if (ret < 0)
 		return ret;
 
@@ -528,8 +520,6 @@ static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg = {0};
 	__u16 recv_cnt = 0;
-	size_t ilen = 0;
-	size_t olen = 0;
 	__u16 kbytes;
 	int ret;
 
@@ -545,25 +535,13 @@ static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
 	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
 			hw_msg.done, hw_msg.etype);
-		if (hw_msg.done == HPRE_HW_TASK_INIT) {
+		if (hw_msg.done == HPRE_HW_TASK_INIT)
 			msg->result = WD_EINVAL;
-		} else { /* Need to indentify which hw err happened */
+		else
 			msg->result = WD_IN_EPARA;
-		}
-
-		if (hw_msg.alg == HPRE_ALG_KG_CRT) {
-			olen = CRT_GEN_PARAMS_SZ(kbytes);
-			ilen = GEN_PARAMS_SZ(kbytes);
-		} else if (hw_msg.alg == HPRE_ALG_KG_STD) {
-			olen = GEN_PARAMS_SZ(kbytes);
-			ilen = GEN_PARAMS_SZ(kbytes);
-		} else {
-			olen = kbytes;
-			ilen = kbytes;
-		}
 	} else {
 		msg->tag = hw_msg.tag;
-		ret = qm_rsa_out_transfer(msg, &hw_msg, &ilen, &olen);
+		ret = rsa_out_transfer(msg, &hw_msg);
 		if (ret) {
 			WD_ERR("qm rsa out transfer fail!\n");
 			msg->result = WD_OUT_EPARA;
