@@ -312,18 +312,17 @@ int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 	handle_t h_ctx, h_qp;
 	int i, j;
 
+	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
-		qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
-		if (!h_qp) {
+		if (!h_qp)
 			goto out;
-		}
 		memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config));
 	}
-
+	memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config));
 	return 0;
 out:
 	for (j = 0; j < i; j++) {
@@ -336,7 +335,7 @@ out:
 void hisi_sec_exit(void *priv)
 {
 	if (!priv) {
-		WD_ERR("%s input parameter is err!\n", __func__);
+		WD_ERR("hisi sec exit input parameter is err!\n");
 		return;
 	}
 
