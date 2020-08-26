@@ -306,11 +306,10 @@ static void update_iv(struct wd_cipher_msg *msg)
 
 int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 {
-	/* allocate qp for each context */
+	struct hisi_sec_ctx *sec_ctx = priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
 	handle_t h_ctx, h_qp;
-	int i, j;
+	int i;
 
 	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 	/* allocate qp for each context */
@@ -320,13 +319,12 @@ int hisi_sec_init(struct wd_ctx_config *config, void *priv)
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp)
 			goto out;
-		memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config));
 	}
 	memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config));
 	return 0;
 out:
-	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
+	for (; i >= 0 ; i--) {
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return -EINVAL;
@@ -339,7 +337,7 @@ void hisi_sec_exit(void *priv)
 		return;
 	}
 
-	struct hisi_sec_ctx *sec_ctx = (struct hisi_sec_ctx *)priv;
+	struct hisi_sec_ctx *sec_ctx = priv;
 	struct wd_ctx_config *config = &sec_ctx->config;
 	handle_t h_qp;
 	int i;
