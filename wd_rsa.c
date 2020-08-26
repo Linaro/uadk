@@ -11,7 +11,6 @@
 #include "wd_rsa.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
-#define WD_RSA_MAX_CTX_NUM		1024
 #define WD_HW_EACCESS 			62
 
 #define RSA_BALANCE_THRHD		1280
@@ -44,6 +43,7 @@ struct wd_rsa_kg_out {
 	__u32 dpbytes;
 	__u32 dqbytes;
 	__u32 qinvbytes;
+	__u32 size;
 	void *data[];
 };
 
@@ -270,7 +270,7 @@ static struct wd_rsa_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 
 	/* empty */
 	if (p->head == p->tail) {
-		WD_ERR("pool %d NULL\n", i);
+		WD_ERR("pool %d empty\n", i);
 		return NULL;
 	}
 
@@ -303,6 +303,7 @@ static struct wd_rsa_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 	p = &pool->pools[i];
 
 	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
+
 	/* full */
 	if (p->head == t) {
 		WD_ERR("pool %d full\n", i);
@@ -347,16 +348,6 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out;
 	}
 
-	/*
-	 * Fix me: ctx could be passed into wd_rsa_set_static_drv to help to
-	 * choose static rsailed vendor driver. For dynamic vendor driver,
-	 * wd_rsa_open_driver will be called in the process of opening
-	 * libwd_rsa.so to load related driver dynamic library. Vendor driver
-	 * pointer will be passed to wd_rsa_setting.driver in the process of
-	 * opening of vendor driver dynamic library. A configure file could be
-	 * introduced to help to define which vendor driver lib should be
-	 * loaded.
-	 */
 #ifdef WD_STATIC_DRV
 	wd_rsa_set_static_drv();
 #endif
@@ -458,6 +449,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	struct wd_ctx_config *config = &wd_rsa_setting.config;
 	struct wd_rsa_msg msg;
 	__u64 rx_cnt = 0;
+	__u64 tx_cnt = 0;
 	handle_t h_ctx;
 	int ret;
 
@@ -476,9 +468,17 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	ret = fill_rsa_msg(&msg, req, sess);
 	if (unlikely(ret))
 		return ret;
-
+send_again:
 	ret = wd_rsa_setting.driver->send(h_ctx, &msg);
-	if (unlikely(ret < 0)) {
+	if (ret == -EBUSY) {
+		usleep(1);
+		if (++tx_cnt < RSA_RESEND_CNT) {
+			goto send_again;
+		} else {
+			WD_ERR("send cnt %llu, exit!\n", tx_cnt);
+			return ret;
+		}
+	} else if (unlikely(ret < 0)) {
 		WD_ERR("failed to send, ret=%d!\n", ret);
 		return ret;
 	}
@@ -553,8 +553,6 @@ __u32 wd_rsa_poll_ctx(handle_t ctx, __u32 num)
 		req->cb(req->cb_param);
 	} while (--num);
 
-	/*TODO free idx of msg_pool */ //todo
-
 	return count;
 }
 
@@ -569,6 +567,17 @@ int wd_rsa_poll(__u32 *count)
 	*count = ret;
 
 	return 0;
+}
+
+static void wd_memset_zero(void *data, __u32 size)
+{
+	char *s = data;
+
+	if (!s)
+		return;
+
+	while (size--)
+		*s++ = 0;
 }
 
 int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)
@@ -667,11 +676,9 @@ void wd_rsa_get_kg_in_params(struct wd_rsa_kg_in *kin, struct wd_dtb *e,
 	p->data = (void *)kin->p;
 }
 
-static void del_kg(void *sess, void *k)
+static void del_kg(void *k)
 {
-	struct wd_rsa_sess *c = sess;
-
-	if (!c || !k) {
+	if (!k) {
 		WD_ERR("del key generate params err!\n");
 		return;
 	}
@@ -681,7 +688,7 @@ static void del_kg(void *sess, void *k)
 
 void wd_rsa_del_kg_in(handle_t sess, struct wd_rsa_kg_in *ki)
 {
-	del_kg((void *)(uintptr_t)sess, ki);
+	del_kg(ki);
 }
 
 struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
@@ -718,6 +725,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	kg_out->key_size = kz;
 	kg_out->d = (void *)kg_out->data;
 	kg_out->n = kg_out->d + kz;
+	kg_out->size = kg_out_size;
 	if (c->setup.is_crt) {
 		kg_out->qinv = (void *)kg_out->n + kz;
 		kg_out->dq = kg_out->qinv + CRT_PARAM_SZ(kz);
@@ -727,9 +735,10 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	return kg_out;
 }
 
-void wd_rsa_del_kg_out(handle_t sess,  struct wd_rsa_kg_out *kout)
+void wd_rsa_del_kg_out(handle_t sess, struct wd_rsa_kg_out *kout)
 {
-	del_kg((void *)(uintptr_t)sess, kout);
+	wd_memset_zero(kout->data, kout->size);
+	del_kg(kout);
 }
 
 void wd_rsa_get_kg_out_params(struct wd_rsa_kg_out *kout, struct wd_dtb *d,
