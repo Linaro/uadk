@@ -84,7 +84,7 @@ int wd_digest_set_key(struct wd_digest_req *req, const __u8 *key, __u32 key_len)
 
 handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 {
-	struct wd_digest_sess *sess = NULL;
+	struct wd_digest_sess *sess;
 
 	if (!setup) {
 		WD_ERR("wd digest input setup is NULL!\n");
@@ -157,6 +157,7 @@ static void clear_sched_in_global_setting(void)
 	char *name = (char *)g_wd_digest_setting.sched.name;
 
 	free(name);
+	g_wd_digest_setting.sched.name = NULL;
 	g_wd_digest_setting.sched.poll_policy = NULL;
 	g_wd_digest_setting.sched.pick_next_ctx = NULL;
 	g_wd_digest_setting.sched.sched_ctx_size = 0;
@@ -190,8 +191,6 @@ static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
 				WD_ERR("Entry #%d isn't released from reqs pool.\n", j);
 				memset(&p->msg[j], 0, sizeof(struct wd_digest_msg));
 		}
-		p->head = 0;
-		p->tail = 0;
 	}
 
 	free(pool->pools);
@@ -200,8 +199,8 @@ static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
 static struct wd_digest_msg *get_msg_from_pool(struct wd_async_msg_pool *pool,
 	handle_t h_ctx, struct wd_digest_req *req)
 {
-	struct msg_pool *p;
 	struct wd_digest_msg *msg;
+	struct msg_pool *p;
 	int found = 0;
 	int cnt = 0;
 	int i;
@@ -408,7 +407,7 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 	}
 
 	fill_request_msg(&msg, req);
-
+	req->state = 0;
 	ret = g_wd_digest_setting.driver->digest_send(h_ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("wd send err!\n");
@@ -420,7 +419,7 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("Fail to recv bd!\n");
 			goto recv_err;
-		} else if (ret == -WD_EBUSY || ret == -EAGAIN) {
+		} else if (ret == -EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("Fail to recv bd and timeout!\n");
 				ret = -ETIMEDOUT;
@@ -431,6 +430,7 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 
 	return 0;
 recv_err:
+	req->state = msg.result;
 	return ret;
 }
 

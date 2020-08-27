@@ -83,6 +83,7 @@ struct wd_cipher_req {
 	__u32			iv_bytes;
 	__u32			out_bytes;
 	__u32			key_bytes;
+	__u16			state;
 	wd_alg_cipher_cb_t	*cb;
 	void			*cb_param;
 };

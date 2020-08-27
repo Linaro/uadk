@@ -149,7 +149,7 @@ int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
 
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
-	struct wd_cipher_sess *sess = NULL;
+	struct wd_cipher_sess *sess;
 
 	if (!setup) {
 		WD_ERR("input setup is NULL!\n");
@@ -348,7 +348,7 @@ void wd_cipher_uninit(void)
 
 	g_wd_cipher_setting.driver->exit(priv);
 	free(priv);
-	priv = NULL;
+	g_wd_cipher_setting.priv = NULL;
 }
 
 int wd_cipher_poll(__u32 expt, __u32 *count)
@@ -401,7 +401,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req);
-	/* send bd */
+	req->state = 0;
 	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("wd send err!\n");
@@ -413,7 +413,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd cipher recv err!\n");
 			goto recv_err;
-		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
+		} else if (ret == -EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("wd cipher recv timeout fail!\n");
 				ret = -ETIMEDOUT;
@@ -424,6 +424,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 
 	return 0;
 recv_err:
+	req->state = msg.result;
 	return ret;
 }
 

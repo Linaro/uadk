@@ -88,6 +88,7 @@ struct wd_digest_req {
 	__u16		in_bytes;
 	__u16		out_bytes;
 	__u16		key_bytes;
+	__u16		state;
 	__u16		has_next;
 	wd_digest_cb_t	*cb;
 	void		*cb_param;
