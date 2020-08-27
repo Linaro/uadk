@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+// SPDX-License-Identifier: Apache-2.0
 
 #include <asm/types.h>
 #include "drv/wd_comp_drv.h"
@@ -138,30 +138,28 @@ struct hisi_zip_ctx {
 
 static int hisi_zip_init(struct wd_ctx_config *config, void *priv)
 {
-	struct hisi_qm_priv qm_priv;
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
+	struct hisi_qm_priv qm_priv;
 	handle_t h_ctx, h_qp;
-	int i, j, ret;
+	int i;
 
+	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
-		if (!h_qp) {
-			ret = -EINVAL;
+		if (!h_qp)
 			goto out;
-		}
-		memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config));
 	}
 	return 0;
 out:
-	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
+	for (; i >= 0; i--) {
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-	return ret;
+	return -EINVAL;
 }
 
 static void hisi_zip_exit(void *priv)
@@ -238,10 +236,8 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.tag = msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
-	if (ret < 0) {
+	if (ret < 0)
 		WD_ERR("qm send is err(%d)!\n", ret);
-		return ret;
-	}
 
 	return ret;
 }
@@ -254,10 +250,8 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
-	if (ret < 0) {
-		WD_ERR("qm recv is err(%d)!\n", ret);
+	if (ret < 0)
 		return ret;
-	}
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
 	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
