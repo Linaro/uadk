@@ -342,8 +342,6 @@ out:
 
 void wd_cipher_uninit(void)
 {
-	clear_sched_in_global_setting();
-	clear_config_in_global_setting();
 	void *priv = g_wd_cipher_setting.priv;
 	if (!priv)
 		return;
@@ -351,6 +349,11 @@ void wd_cipher_uninit(void)
 	g_wd_cipher_setting.driver->exit(priv);
 	free(priv);
 	g_wd_cipher_setting.priv = NULL;
+		
+	uninit_async_request_pool(&g_wd_cipher_setting.pool);
+
+	clear_config_in_global_setting();
+	clear_sched_in_global_setting();
 }
 
 int wd_cipher_poll(__u32 expt, __u32 *count)

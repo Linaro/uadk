@@ -367,15 +367,18 @@ out:
 
 void wd_digest_uninit(void)
 {
-	clear_sched_in_global_setting();
-	clear_config_in_global_setting();
 	void *priv = g_wd_digest_setting.priv;
 	if (!priv)
 		return;
 
 	g_wd_digest_setting.driver->exit(priv);
 	free(priv);
-	priv = NULL;
+	g_wd_digest_setting.priv = NULL;
+	
+	uninit_async_request_pool(&g_wd_digest_setting.pool);
+
+	clear_sched_in_global_setting();
+	clear_config_in_global_setting();
 }
 
 static void fill_request_msg(struct wd_digest_msg *msg, struct wd_digest_req *req)
