@@ -608,8 +608,7 @@ int wd_rsa_kg_out_data(struct wd_rsa_kg_out *ko, char **data)
 
 	*data = (char *)ko->data;
 
-	/* CRT need this size, but no CRT size is smaller */
-	return (int)CRT_GEN_PARAMS_SZ(ko->key_size);
+	return ko->size;
 }
 
 /* Create a RSA key generate operation input with parameter e, p and q */
