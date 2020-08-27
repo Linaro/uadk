@@ -648,7 +648,6 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 				int b_size, int d_size)
 {
 	int i = d_size - 1;
-	bool is_hpre_bin;
 	int j = 0;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
@@ -661,8 +660,7 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 		return  -WD_EINVAL;
 	}
 
-	is_hpre_bin = is_hpre_bin_fmt(src, d_size, b_size);
-	if (b_size == d_size || (dst == src && is_hpre_bin))
+	if (b_size == d_size || (dst == src))
 		return WD_SUCCESS;
 
 	for (j = b_size - 1; j >= 0; j--, i--) {
