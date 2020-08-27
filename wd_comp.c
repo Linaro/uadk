@@ -580,9 +580,10 @@ int wd_comp_poll(__u32 *count)
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	int ret;
 
-	ret = wd_comp_setting.sched.poll_policy(config);
+	*count = 0;
+	ret = wd_comp_setting.sched.poll_policy(config, 1, count);
 	if (ret < 0)
 		return ret;
-	*count = ret;
+
 	return 0;
 }

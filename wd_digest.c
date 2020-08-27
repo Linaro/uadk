@@ -507,10 +507,10 @@ int wd_digest_poll(__u32 expt, __u32 *count)
 	struct wd_ctx_config *config = &g_wd_digest_setting.config;
 	int ret;
 
-	ret = g_wd_digest_setting.sched.poll_policy(config);
+	*count = 0;
+	ret = g_wd_digest_setting.sched.poll_policy(config, 1, count);
 	if (ret < 0)
 		return ret;
-	*count = ret;
 
 	return 0;
 }

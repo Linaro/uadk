@@ -569,10 +569,10 @@ int wd_rsa_poll(__u32 *count)
 	struct wd_ctx_config *config = &wd_rsa_setting.config;
 	int ret;
 
-	ret = wd_rsa_setting.sched.poll_policy(config);
+	*count = 0;
+	ret = wd_rsa_setting.sched.poll_policy(config, 1, count);
 	if (ret < 0)
 		return ret;
-	*count = ret;
 
 	return 0;
 }

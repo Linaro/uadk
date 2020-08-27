@@ -78,7 +78,7 @@ struct wd_comp_req {
 struct wd_sched {
 	const char *name;
 	handle_t (*pick_next_ctx)(struct wd_ctx_config *config, void *req, void *key);
-	int (*poll_policy)( struct wd_ctx_config *config);
+	int (*poll_policy)( struct wd_ctx_config *config, __u32 expect, __u32 *count);
 };
 
 /**

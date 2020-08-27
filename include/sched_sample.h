@@ -28,7 +28,7 @@ struct sched_key {
 	__u8 type;
 };
 
-typedef int (*user_poll_func)(handle_t h_ctx, __u32 num);
+typedef int (*user_poll_func)(handle_t h_ctx, __u32 expect, __u32 *count);
 
 /**
  * sample_sched_release - Release schedule memory.
@@ -59,8 +59,10 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
 /**
  * sample_poll_policy - The polling policy matches the pick next ctx
  * @cfg: The global resoure info.
+ * @expect: User expect poll msg num.
+ * @count: The actually poll num.
  */
-int sample_sched_poll_policy(struct wd_ctx_config *cfg);
+int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *count);
 
 /**
  * sample_sched_init - Schedule Init function.

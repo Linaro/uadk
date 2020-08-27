@@ -679,7 +679,7 @@ handle_t rsa_pick_next_ctx(struct wd_ctx_config *config,
 	return config->ctxs[0].ctx;
 }
 
-__u32 poll_policy( struct wd_ctx_config *config, void *sched_ctx)
+__u32 poll_policy( struct wd_ctx_config *config, __u32 expect, __u32 *count)
 {
 	return 0;
 }
