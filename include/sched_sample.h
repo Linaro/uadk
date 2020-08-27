@@ -28,15 +28,7 @@ struct sched_key {
 	__u8 type;
 };
 
-typedef __u32 (*user_poll_func)(handle_t h_ctx, __u32 num);
-
-/**
- * sample_sched_init - initialize the global sched info.
- * @sched_policy_type: the sched policy in the range of enum sched_mode.
- * @type_num: Service type num.
- *			  For example, ZIP include compress and uncompress, the num is two.
- */
-int sample_sched_init(__u8 sched_type, int type_num, __u32 (*poll_func)(handle_t h_ctx, __u32 num));
+typedef int (*user_poll_func)(handle_t h_ctx, __u32 num);
 
 /**
  * sample_sched_release - Release schedule memory.
