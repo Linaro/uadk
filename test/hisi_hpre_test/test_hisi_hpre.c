@@ -4647,9 +4647,9 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
   }
 
   memcpy(tmp, wd_e.data, wd_e.dsize);
-  crypto_bin_to_hpre_bin(wd_e.data, tmp, wd_e.dsize);
+  crypto_bin_to_hpre_bin(wd_e.data, tmp, wd_e.bsize, wd_e.dsize);
   memcpy(tmp, wd_n.data, wd_n.dsize);
-  crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.dsize);
+  crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.bsize, wd_n.dsize);
   wd_e.dsize = key_size;
   wd_n.dsize = key_size;
 
@@ -4725,15 +4725,15 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 		}
 
     memcpy(tmp, wd_dq.data, wd_dq.dsize);
-    crypto_bin_to_hpre_bin(wd_dq.data, tmp, wd_dq.dsize);
+    crypto_bin_to_hpre_bin(wd_dq.data, tmp, wd_dq.bsize, wd_dq.dsize);
     memcpy(tmp, wd_dp.data, wd_dp.dsize);
-    crypto_bin_to_hpre_bin(wd_dp.data, tmp, wd_dp.dsize);
+    crypto_bin_to_hpre_bin(wd_dp.data, tmp, wd_dp.bsize, wd_dp.dsize);
     memcpy(tmp, wd_q.data, wd_q.dsize);
-    crypto_bin_to_hpre_bin(wd_q.data, tmp, wd_q.dsize);
+    crypto_bin_to_hpre_bin(wd_q.data, tmp, wd_q.bsize, wd_q.dsize);
     memcpy(tmp, wd_p.data, wd_p.dsize);
-    crypto_bin_to_hpre_bin(wd_p.data, tmp, wd_p.dsize);
+    crypto_bin_to_hpre_bin(wd_p.data, tmp, wd_p.bsize, wd_p.dsize);
     memcpy(tmp, wd_qinv.data, wd_qinv.dsize);
-    crypto_bin_to_hpre_bin(wd_qinv.data, tmp, wd_qinv.dsize);
+    crypto_bin_to_hpre_bin(wd_qinv.data, tmp, wd_qinv.bsize, wd_qinv.dsize);
     wd_dq.dsize = key_size / 2;
     wd_dp.dsize = key_size / 2;
     wd_q.dsize = key_size / 2;
@@ -4770,9 +4770,9 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			wd_n.dsize = BN_bn2bin(n, (unsigned char *)wd_n.data);
 
       memcpy(tmp, wd_d.data, wd_d.dsize);
-      crypto_bin_to_hpre_bin(wd_d.data, tmp, wd_d.dsize);
+      crypto_bin_to_hpre_bin(wd_d.data, tmp, wd_d.bsize, wd_d.dsize);
       memcpy(tmp, wd_n.data, wd_n.dsize);
-      crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.dsize);
+      crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.bsize, wd_n.dsize);
       wd_d.dsize = key_size;
       wd_n.dsize = key_size;      
 
