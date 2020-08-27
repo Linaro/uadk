@@ -36,6 +36,7 @@ void hisi_qm_free_ctx(handle_t h_ctx);
  *
  * There is not one locked in the qm internal, Alg should
  * ensure resource non-reentrant.
+ * If the free queue num is zero, the return value is -EBUSY
  */
 int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count);
 

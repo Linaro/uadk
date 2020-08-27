@@ -137,13 +137,15 @@ static struct hisi_qm_type qm_type[] = {
 static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 tail, __u16 num)
 {
 	int sqe_offset;
+	int sqe_size = info->sqe_size;
+	void *sq_base = info->sq_base;
 
 	if (tail + num < QM_Q_DEPTH) {
-		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * num);
+		memcpy(sq_base + tail * sqe_size, sqe, sqe_size * num);
 	} else {
 		sqe_offset = QM_Q_DEPTH - tail;
-		memcpy(info->sq_base + tail * info->sqe_size, sqe, info->sqe_size * sqe_offset);
-		memcpy(info->sq_base, sqe + info->sqe_size * sqe_offset, info->sqe_size * (num - sqe_offset));
+		memcpy(sq_base + tail * sqe_size, sqe, sqe_size * sqe_offset);
+		memcpy(sq_base, sqe + sqe_size * sqe_offset, sqe_size * (num - sqe_offset));
 	}
 }
 
@@ -212,6 +214,7 @@ out:
 
 static int hisi_qm_get_free_num(struct hisi_qm_queue_info	*q_info)
 {
+	/* The device should reserve one buffer. */
 	return (QM_Q_DEPTH - 1) - q_info->used_num;
 }
 
@@ -273,11 +276,15 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 void hisi_qm_free_qp(handle_t h_qp)
 {
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
-
-	wd_ctx_stop(qp->h_ctx);
+	if (!qp) {
+		WD_ERR("h_qp is NULL.\n");
+		return;
+	}
 
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
+	wd_ctx_stop(qp->h_ctx);
+
 	free(qp);
 }
 
@@ -286,8 +293,8 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 {
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	struct hisi_qm_queue_info *q_info;
-	__u16 tail;
 	__u16 free_num, send_num;
+	__u16 tail;
 
 	if (!qp || !req || !count)
 		return -EINVAL;
@@ -295,8 +302,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 	q_info = &qp->q_info;
 
 	free_num = hisi_qm_get_free_num(q_info);
-	if (free_num == 0) {
-		WD_ERR("queue is full!\n");
+	if (!free_num) {
 		return -EBUSY;
 	}
 
@@ -334,7 +340,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	} else
 		return -EAGAIN;
 
-	if (i == (QM_Q_DEPTH - 1)) {
+	if (i == QM_Q_DEPTH - 1) {
 		q_info->cqc_phase = !(q_info->cqc_phase);
 		i = 0;
 	} else
@@ -351,11 +357,11 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 
 int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 {
-	int i, offset;
-	int ret = 0;
-	int recv_num = 0;
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
-	struct hisi_qm_queue_info *q_info = NULL;
+	struct hisi_qm_queue_info *q_info;
+	int i, offset;
+	int recv_num = 0;
+	int ret = 0;
 
 	if (!resp || !qp || !count)
 		return -EINVAL;
