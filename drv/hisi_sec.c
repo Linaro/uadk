@@ -542,13 +542,13 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
-		WD_ERR("faile to fill bd alg!\n");
+		WD_ERR("fail to fill bd alg!\n");
 		return ret;
 	}
 
 	ret = fill_cipher_bd2_mode(msg, &sqe);
 	if (ret) {
-		WD_ERR("faile to fill bd mode!\n");
+		WD_ERR("fail to fill bd mode!\n");
 		return ret;
 	}
 
@@ -578,10 +578,10 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 	if (ret < 0)
 		return ret;
 
-	/* parser cipher sqe */
+
 	parse_cipher_bd2(&sqe, recv_msg);
 
-	return 1;
+	return 0;
 }
 
 static struct wd_cipher_driver hisi_cipher_driver = {

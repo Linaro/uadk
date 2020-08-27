@@ -309,8 +309,10 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* init sysnc request pool */
 	ret = init_async_request_pool(&g_wd_cipher_setting.pool);
-	if (ret)
+	if (ret) {
+		WD_ERR("Fail to init cipher aysnc request pool.\n");
 		goto out_sched;
+	}
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, g_wd_cipher_setting.driver->drv_ctx_size);
 	if (!priv) {
@@ -557,8 +559,8 @@ int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
 
 int wd_cipher_poll_ctx(handle_t h_ctx, __u32 count)
 {
-	struct wd_cipher_req *req;
 	struct wd_cipher_msg resp_msg;
+	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
