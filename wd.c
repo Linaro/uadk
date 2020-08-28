@@ -244,11 +244,11 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 	char *char_dev_path;
 
 	if (!dev || !strlen(dev->dev_root))
-		return (handle_t)NULL;
+		return 0;
 
 	ctx = calloc(1, sizeof(struct wd_ctx_h));
 	if (!ctx)
-		return (handle_t)NULL;
+		return 0;
 
 	char_dev_path = dev->char_dev_path;
 	ctx->dev_name = wd_get_accel_name(char_dev_path, 0);
@@ -282,7 +282,7 @@ free_dev_name:
 	free(ctx->dev_name);
 free_ctx:
 	free(ctx);
-	return (handle_t)NULL;
+	return 0;
 }
 
 void wd_release_ctx(handle_t h_ctx)
@@ -336,7 +336,8 @@ void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 	size_t size;
 	void *addr;
 
-	if (!ctx || !ctx->qfrs_offs[qfrt])
+	if (!ctx || !ctx->qfrs_offs[qfrt] || qfrt < 0 ||
+	    qfrt >= UACCE_QFRT_MAX)
 		return NULL;
 
 	size = ctx->qfrs_offs[qfrt];
@@ -354,7 +355,7 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	if (!ctx)
+	if (!ctx || qfrt < 0 || qfrt >= UACCE_QFRT_MAX)
 		return;
 
 	if (ctx->qfrs_offs[qfrt] != 0)
@@ -428,6 +429,9 @@ int wd_get_numa_id(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
+	if (!ctx)
+		return -EINVAL;
+
 	return ctx->dev->numa_id;
 }
 
@@ -461,13 +465,7 @@ static int get_dev_alg_name(char *dev_path, char *buf, size_t sz)
 
 static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
 {
-	char *pos;
-
-	pos = strstr(dev_alg_name, alg_name);
-	if (!pos)
-		return false;
-	else
-		return true;
+	return strstr(dev_alg_name, alg_name) ? true : false;
 }
 
 static void add_uacce_dev_to_list(struct uacce_dev_list *head,
@@ -571,8 +569,8 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 
 	if (!arg)
 		return ioctl(ctx->fd, cmd);
-	else
-		return ioctl(ctx->fd, cmd, arg);
+
+	return ioctl(ctx->fd, cmd, arg);
 }
 
 int wd_register_log(wd_log log)
