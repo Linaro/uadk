@@ -73,7 +73,7 @@ struct wd_dtb {
 	__u32 bsize; /* buffer size */
 };
 
-struct uacce_dev_info {
+struct uacce_dev {
 	/* sysfs node content */
 	int flags;
 	char api[WD_NAME_SIZE];
@@ -88,7 +88,7 @@ struct uacce_dev_info {
 };
 
 struct uacce_dev_list {
-	struct uacce_dev_info *info;
+	struct uacce_dev *dev;
 	struct uacce_dev_list *next;
 };
 
@@ -266,11 +266,11 @@ extern int wd_get_numa_id(handle_t h_ctx);
 
 /**
  * wd_get_avail_ctx() - Get available context in one device.
- * @dev: The uacce_dev_info for one device.
+ * @dev: The uacce_dev for one device.
  *
  * Return number of available context in dev or less than 0 otherwise.
  */
-extern int wd_get_avail_ctx(struct uacce_dev_info *dev);
+extern int wd_get_avail_ctx(struct uacce_dev *dev);
 
 /**
  * wd_get_accel_list() - Get device list for one algorithm.

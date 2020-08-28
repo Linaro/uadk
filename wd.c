@@ -24,7 +24,7 @@ struct wd_ctx_h {
 	char *drv_name;
 	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 	void *qfrs_base[UACCE_QFRT_MAX];
-	struct uacce_dev_info *dev_info;
+	struct uacce_dev *dev;
 	void *priv;
 };
 
@@ -58,15 +58,15 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	return size;
 }
 
-static int get_int_attr(struct uacce_dev_info *info, char *attr, int *val)
+static int get_int_attr(struct uacce_dev *dev, char *attr, int *val)
 {
 	char buf[MAX_ATTR_STR_SIZE];
 	int ret;
 
-	if (!info || !attr || !val)
+	if (!dev || !attr || !val)
 		return -EINVAL;
 
-	ret = get_raw_attr(info->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
+	ret = get_raw_attr(dev->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
 	if (ret < 0)
 		return ret;
 
@@ -75,15 +75,15 @@ static int get_int_attr(struct uacce_dev_info *info, char *attr, int *val)
 	return 0;
 }
 
-static int get_str_attr(struct uacce_dev_info *info, char *attr, char *buf,
+static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 			size_t buf_sz)
 {
 	int ret;
 
-	if (!info || !attr || !buf || (buf_sz == 0))
+	if (!dev || !attr || !buf || (buf_sz == 0))
 		return -EINVAL;
 
-	ret = get_raw_attr(info->dev_root, attr, buf, buf_sz);
+	ret = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
 	if (ret < 0) {
 		buf[0] = '\0';
 		return ret;
@@ -100,24 +100,24 @@ static int get_str_attr(struct uacce_dev_info *info, char *attr, char *buf,
 	return ret;
 }
 
-static void get_dev_info(struct uacce_dev_info *info)
+static void get_dev_info(struct uacce_dev *dev)
 {
 	int value;
 
-	get_int_attr(info, "flags", &info->flags);
-	get_str_attr(info, "api", info->api, WD_NAME_SIZE);
-	get_str_attr(info, "algorithms", info->algs, MAX_ATTR_STR_SIZE);
-	get_int_attr(info, "region_mmio_size", &value);
-	info->qfrs_offs[UACCE_QFRT_MMIO] = value;
-	get_int_attr(info, "region_dus_size", &value);
-	info->qfrs_offs[UACCE_QFRT_DUS] = value;
-	get_int_attr(info, "device/numa_node", &info->numa_id);
+	get_int_attr(dev, "flags", &dev->flags);
+	get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
+	get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
+	get_int_attr(dev, "region_mmio_size", &value);
+	dev->qfrs_offs[UACCE_QFRT_MMIO] = value;
+	get_int_attr(dev, "region_dus_size", &value);
+	dev->qfrs_offs[UACCE_QFRT_DUS] = value;
+	get_int_attr(dev, "device/numa_node", &dev->numa_id);
 }
 
-static struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
+static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 {
-	struct uacce_dev_info *info = NULL;
-	struct dirent *dev = NULL;
+	struct uacce_dev *dev = NULL;
+	struct dirent *dev_dir = NULL;
 	DIR *class = NULL;
 	char *name = NULL;
 	int len;
@@ -125,8 +125,8 @@ static struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
 	if (!dev_name)
 		return NULL;
 
-	info = calloc(1, sizeof(struct uacce_dev_info));
-	if (!info)
+	dev = calloc(1, sizeof(struct uacce_dev));
+	if (!dev)
 		return NULL;
 
 	class = opendir(SYS_CLASS_DIR);
@@ -135,30 +135,30 @@ static struct uacce_dev_info *read_uacce_sysfs(char *dev_name)
 		goto out;
 	}
 
-	while ((dev = readdir(class)) != NULL) {
-		name = dev->d_name;
+	while ((dev_dir = readdir(class)) != NULL) {
+		name = dev_dir->d_name;
 		if (!strncmp(dev_name, name, strlen(dev_name))) {
-			snprintf(info->dev_root, MAX_DEV_NAME_LEN - 1, "%s/%s",
+			snprintf(dev->dev_root, MAX_DEV_NAME_LEN - 1, "%s/%s",
 				 SYS_CLASS_DIR, dev_name);
 			len = WD_NAME_SIZE - 1;
 			if (len > strlen(name) + 1)
 				len = strlen(name) + 1;
-			strncpy(info->name, name, len);
-			get_dev_info(info);
+			strncpy(dev->name, name, len);
+			get_dev_info(dev);
 			break;
 		}
 	}
-	if (!dev)
+	if (!dev_dir)
 		goto out_dir;
 
 	closedir(class);
 
-	return info;
+	return dev;
 
 out_dir:
 	closedir(class);
 out:
-	free(info);
+	free(dev);
 	return NULL;
 }
 
@@ -209,7 +209,7 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 
 static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 {
-	memcpy(&ctx->qfrs_offs, &ctx->dev_info->qfrs_offs,
+	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
 	       sizeof(ctx->qfrs_offs));
 }
 
@@ -232,8 +232,8 @@ handle_t wd_request_ctx(char *dev_path)
 	if (!ctx->drv_name)
 		goto free_dev_name;
 
-	ctx->dev_info = read_uacce_sysfs(ctx->dev_name);
-	if (!ctx->dev_info)
+	ctx->dev = read_uacce_sysfs(ctx->dev_name);
+	if (!ctx->dev)
 		goto free_drv_name;
 
 	wd_ctx_init_qfrs_offs(ctx);
@@ -248,7 +248,7 @@ handle_t wd_request_ctx(char *dev_path)
 	return (handle_t)ctx;
 
 free_dev:
-	free(ctx->dev_info);
+	free(ctx->dev);
 free_drv_name:
 	free(ctx->drv_name);
 free_dev_name:
@@ -266,7 +266,7 @@ void wd_release_ctx(handle_t h_ctx)
 		return;
 
 	close(ctx->fd);
-	free(ctx->dev_info);
+	free(ctx->dev);
 	free(ctx->drv_name);
 	free(ctx->dev_name);
 	free(ctx);
@@ -363,7 +363,7 @@ char *wd_ctx_get_api(handle_t h_ctx)
 	if (!ctx)
 		return NULL;
 
-	return ctx->dev_info->api;
+	return ctx->dev->api;
 }
 
 int wd_ctx_wait(handle_t h_ctx, __u16 ms)
@@ -391,7 +391,7 @@ int wd_is_sva(handle_t h_ctx)
 	if (!ctx)
 		return -EINVAL;
 
-	if (ctx->dev_info->flags & UACCE_DEV_SVA)
+	if (ctx->dev->flags & UACCE_DEV_SVA)
 		return 1;
 
 	return 0;
@@ -401,11 +401,11 @@ int wd_get_numa_id(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	return ctx->dev_info->numa_id;
+	return ctx->dev->numa_id;
 }
 
 /* to do: update interface doc */
-int wd_get_avail_ctx(struct uacce_dev_info *dev)
+int wd_get_avail_ctx(struct uacce_dev *dev)
 {
 	int avail_ctx, ret;
 
@@ -459,7 +459,7 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 	struct uacce_dev_list *node, *head = NULL;
 	char dev_alg_name[MAX_ATTR_STR_SIZE];
 	char dev_path[MAX_DEV_NAME_LEN];
-	struct dirent *dev;
+	struct dirent *dev_dir;
 	DIR *wd_class;
 	int ret;
 
@@ -472,13 +472,13 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 		return NULL;
 	}
 
-	while ((dev = readdir(wd_class)) != NULL) {
-		if (!strncmp(dev->d_name, ".", 1) ||
-		    !strncmp(dev->d_name, "..", 2))
+	while ((dev_dir = readdir(wd_class)) != NULL) {
+		if (!strncmp(dev_dir->d_name, ".", 1) ||
+		    !strncmp(dev_dir->d_name, "..", 2))
 			continue;
 
 		ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
-			       SYS_CLASS_DIR, dev->d_name);
+			       SYS_CLASS_DIR, dev_dir->d_name);
 		if (ret > MAX_DEV_NAME_LEN || ret < 0)
 			goto free_list;
 
@@ -495,8 +495,8 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 			if (!node)
 				goto free_list;
 
-			node->info = read_uacce_sysfs(dev->d_name);
-			if (!node->info)
+			node->dev = read_uacce_sysfs(dev_dir->d_name);
+			if (!node->dev)
 				goto free_list;
 
 			if (!head)
@@ -528,8 +528,8 @@ void wd_free_list_accels(struct uacce_dev_list *list)
 	curr = list;
 	while (curr) {
 		next = curr->next;
-		if (curr->info)
-			free(curr->info);
+		if (curr->dev)
+			free(curr->dev);
 		free(curr);
 		curr = next;
 	}
