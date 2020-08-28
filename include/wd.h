@@ -165,15 +165,18 @@ extern void wd_release_ctx(handle_t h_ctx);
 extern int wd_ctx_start(handle_t h_ctx);
 
 /**
- * wd_ctx_stop() - Stop a context.
- * @h_ctx: The handle of context which will be stopped.
+ * wd_release_ctx_force() - Release a context forcely. (fix me: modify doc)
+ * @h_ctx: The handle of context which will be released.
  *
  * Return 0 if successful or less than 0 otherwise.
  *
- * Context will be stopped and related hardware will be release, which avoids
- * release delay in wd_release_ctx().
+ * Context will be stopped and related hardware will be released, which avoids
+ * release delay in wd_release_ctx(). After calling this function, context
+ * related hardware resource will be released, however, fd is still there.
+ * wd_release_ctx mush be used to release context finally, other APIs about
+ * context can not work with this context after calling wd_release_ctx_force.
  */
-extern int wd_ctx_stop(handle_t h_ctx);
+extern int wd_release_ctx_force(handle_t h_ctx);
 
 /**
  * wd_ctx_set_priv() - Store private information in context.

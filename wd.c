@@ -287,7 +287,7 @@ int wd_ctx_start(handle_t h_ctx)
 	return ret;
 }
 
-int wd_ctx_stop(handle_t h_ctx)
+int wd_release_ctx_force(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	int ret;

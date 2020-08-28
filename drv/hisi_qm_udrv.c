@@ -265,7 +265,7 @@ void hisi_qm_free_ctx(handle_t h_ctx)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(h_ctx);
 
-	wd_ctx_stop(qp->h_ctx);
+	wd_release_ctx_force(qp->h_ctx);
 
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
@@ -283,7 +283,7 @@ void hisi_qm_free_qp(handle_t h_qp)
 
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-	wd_ctx_stop(qp->h_ctx);
+	wd_release_ctx_force(qp->h_ctx);
 
 	free(qp);
 }
