@@ -1,6 +1,6 @@
 AM_CFLAGS=-Wall -fno-strict-aliasing -I../../include
 
-bin_PROGRAMS=test_sva_perf test_sva_bind example
+bin_PROGRAMS=test_sva_perf test_sva_bind example zip_sva_test
 
 test_sva_perf_SOURCES=test_sva_perf.c test_lib.c ../sched_sample.c
 test_sva_bind_SOURCES=test_sva_bind.c test_lib.c
@@ -39,4 +39,12 @@ example_LDADD = ../../.libs/libwd.a ../../.libs/libwd_comp.a \
 		../../.libs/libhisi_zip.a -lpthread
 else
 example_LDADD =-L../../.libs -lwd -lwd_comp -lhisi_zip -lpthread
+endif
+
+zip_sva_test_SOURCES = zip_sva_test.c zip_wrap.c
+if WD_STATIC_DRV
+zip_sva_test_LDADD = ../../.libs/libwd.a ../../.libs/libwd_comp.a \
+		../../.libs/libhisi_zip.a -lpthread
+else
+zip_sva_test_LDADD =-L../../.libs -lwd -lwd_comp -lhisi_zip -lpthread
 endif
