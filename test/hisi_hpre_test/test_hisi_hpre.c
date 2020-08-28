@@ -15,6 +15,7 @@
  */
 
 //#define DEBUG
+//#define WITH_OPENSSL_DIR
 
 #include <stdio.h>
 #include <string.h>
@@ -628,6 +629,355 @@ const BIGNUM *ECDSA_SIG_get0_s(const ECDSA_SIG *sig);
 int ECDSA_do_verify(const unsigned char *dgst, int dgst_len,
                     const ECDSA_SIG *sig, EC_KEY *eckey);
 int ECDSA_size(const EC_KEY *eckey);
+
+
+#ifndef WITH_OPENSSL_DIR
+BIGNUM *BN_new(void)
+{
+	return NULL;
+}
+
+int BN_bn2bin(const BIGNUM *a, unsigned char *to)
+{
+	return 0;
+}
+BIGNUM *BN_bin2bn(const unsigned char *s, int len, BIGNUM *ret)
+{
+	return NULL;
+}
+void BN_free(BIGNUM *a)
+{
+	return;
+}
+
+BIGNUM *BN_dup(const BIGNUM *a)
+{
+	return NULL;
+}
+
+RSA *RSA_new(void)
+{
+	return NULL;
+}
+
+void RSA_free(RSA *rsa)
+{
+	return;
+}
+
+int BN_set_word(BIGNUM *a, BN_ULONG w)
+{
+	return 0;
+}
+
+int RSA_generate_key_ex(RSA *rsa, int bits, BIGNUM *e_value, BN_GENCB *cb)
+{
+	return 0;
+}
+
+void RSA_get0_key(const RSA *r,
+				  const BIGNUM **n, const BIGNUM **e, const BIGNUM **d)
+{
+	return;
+}
+
+void RSA_get0_factors(const RSA *r, const BIGNUM **p, const BIGNUM **q)
+{
+	return;
+}
+
+void RSA_get0_crt_params(const RSA *r,
+						 const BIGNUM **dmp1, const BIGNUM **dmq1,
+						 const BIGNUM **iqmp)
+{
+	return;
+}
+
+int RSA_set0_crt_params(RSA *r, BIGNUM *dmp1, BIGNUM *dmq1,
+						BIGNUM *iqmp)
+{
+	return 0;
+}
+
+int RSA_set0_key(RSA *r, BIGNUM *n, BIGNUM *e, BIGNUM *d)
+{
+	return 0;
+}
+
+int RSA_set0_factors(RSA *r, BIGNUM *p, BIGNUM *q)
+{
+	return 0;
+}
+
+int RSA_public_encrypt(int flen, const unsigned char *from,
+					   unsigned char *to, RSA *rsa, int padding)
+{
+	return 0;
+}
+
+int RSA_private_decrypt(int flen, const unsigned char *from,
+						unsigned char *to, RSA *rsa, int padding)
+{
+	return 0;
+}
+
+DH *DH_new(void)
+{
+	return NULL;
+}
+
+void DH_free(DH *r)
+{
+	return;
+}
+
+int DH_generate_parameters_ex(DH *dh, int prime_len, int generator,
+							  BN_GENCB *cb)
+{
+	return 0;
+}
+
+void DH_get0_pqg(const DH *dh, const BIGNUM **p, const BIGNUM **q,
+				 const BIGNUM **g)
+{
+	return;
+}
+
+int DH_generate_key(DH *dh)
+{
+	return 0;
+}
+
+void DH_get0_key(const DH *dh, const BIGNUM **pub_key,
+				 const BIGNUM **priv_key)
+{
+	return;
+}
+
+int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
+{
+	return 0;
+}
+
+int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
+{
+	return 0;
+}
+
+int DH_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh)
+{
+	return 0;
+}
+
+void *_hpre_sys_test_thread(void *data)
+{
+	return;
+}
+
+EC_KEY *EC_KEY_new(void)
+{
+	return NULL;
+}
+
+int EC_KEY_set_group(EC_KEY *key, EC_GROUP *group)
+{
+	return 0;
+}
+
+void EC_KEY_free(EC_KEY *key)
+{
+	return;
+}
+
+EC_KEY *EC_KEY_new_by_curve_name(int nid)
+{
+	return NULL;
+}
+
+int EC_KEY_generate_key(EC_KEY *key)
+{
+	return 0;
+}
+
+int ERR_load_CRYPTO_strings(void)
+{
+	return 0;
+}
+
+int ERR_load_SSL_strings(void)
+{
+	return 0;
+}
+
+EC_GROUP *EC_GROUP_new_by_curve_name(int nid)
+{
+	return NULL;
+}
+
+int ecdh_compute_key(void *test_ctx, void *tag)
+{
+	return 0;
+}
+
+int ECDH_compute_key(void *out, size_t outlen, EC_POINT *pub_key,
+                     EC_KEY *ecdh,
+                     void *(*KDF) (void *in, size_t inlen,
+                                   void *out, size_t *outlen))
+{
+	return 0;
+}
+
+EC_POINT *EC_GROUP_get0_generator(EC_GROUP *group)
+{
+	return NULL;
+}
+
+int DHparams_print_fp(FILE *fp, DH *x)
+{
+	return 0;
+}
+
+int EC_KEY_set_private_key(EC_KEY *key, BIGNUM *priv_key)
+{
+	return 0;
+}
+
+EC_POINT *EC_POINT_bn2point(EC_GROUP *, BIGNUM *,
+                            EC_POINT *, void *)
+{
+	return NULL;
+}
+
+EC_POINT *EC_POINT_dup(EC_POINT *a, EC_GROUP *group)
+{
+	return NULL;
+}
+
+EC_POINT *EC_KEY_get0_public_key(EC_KEY *key)
+{
+	return NULL;
+}
+
+BIGNUM *EC_KEY_get0_private_key(EC_KEY *key)
+{
+	return NULL;
+}
+
+int ECParameters_print_fp(FILE *fp, EC_KEY *x)
+{
+	return 0;
+}
+
+int EC_KEY_print_fp(FILE *fp, EC_KEY *x, int off)
+{
+	return 0;
+}
+
+void EC_POINT_free(EC_POINT *point)
+{
+	return;
+}
+
+void EC_GROUP_free(EC_GROUP *group)
+{
+	return;
+}
+
+size_t EC_POINT_point2buf(EC_GROUP *group, EC_POINT *point,
+                          __u32 form,
+                          char **pbuf, void *ctx)
+{
+	return 0;
+}
+
+int EC_POINT_get_affine_coordinates_GF2m(const EC_GROUP *group,
+                                                            const EC_POINT *p,
+                                                            BIGNUM *x,
+                                                            BIGNUM *y,
+                                                            void *ctx)
+{
+	return 0;
+}
+
+int ECDSA_sign(int type, const unsigned char *dgst, int dgstlen,
+               unsigned char *sig, unsigned int *siglen, EC_KEY *eckey)
+{
+	return 0;
+}
+
+int ECDSA_verify(int type, const unsigned char *dgst, int dgstlen,
+                 const unsigned char *sig, int siglen, EC_KEY *eckey)
+{
+	return 0;
+}
+
+int RAND_priv_bytes(unsigned char *buf, int num)
+{
+	return 0;
+}
+
+int ECDSA_sign_ex(int type, const unsigned char *dgst, int dgstlen,
+                  unsigned char *sig, unsigned int *siglen,
+                  const BIGNUM *kinv, const BIGNUM *rp, EC_KEY *eckey)
+{
+	return 0;
+}
+
+int EC_KEY_set_public_key(EC_KEY *key, const EC_POINT *pub)
+{
+	return 0;
+}
+
+int ECDSA_sign_setup(EC_KEY *eckey, void *ctx_in, BIGNUM **kinvp,
+                     BIGNUM **rp)
+{
+	return 0;
+}
+
+int ECDSA_SIG_set0(ECDSA_SIG *sig, BIGNUM *r, BIGNUM *s)
+{
+	return 0;
+}
+
+void ECDSA_SIG_free(ECDSA_SIG *sig)
+{
+	return;
+}
+
+ECDSA_SIG *ECDSA_SIG_new(void)
+{
+	return NULL;
+}
+
+ECDSA_SIG *ECDSA_do_sign(const unsigned char *dgst, int dgst_len,
+                         EC_KEY *eckey)
+{
+	return NULL;
+}
+
+const BIGNUM *ECDSA_SIG_get0_r(const ECDSA_SIG *sig)
+{
+	return NULL;
+}
+
+const BIGNUM *ECDSA_SIG_get0_s(const ECDSA_SIG *sig)
+{
+	return NULL;
+}
+
+int ECDSA_do_verify(const unsigned char *dgst, int dgst_len,
+                    const ECDSA_SIG *sig, EC_KEY *eckey)
+{
+	return 0;
+}
+
+int ECDSA_size(const EC_KEY *eckey)
+{
+	return 0;
+}
+
+#endif
+
 
 
 static void print_data(void *ptr, int size, const char *name)
