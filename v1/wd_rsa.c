@@ -79,6 +79,7 @@ struct wcrypto_rsa_kg_out {
 	__u32 dpbytes;
 	__u32 dqbytes;
 	__u32 qinvbytes;
+	__u32 size;
 	void *data[];
 };
 
@@ -141,8 +142,7 @@ int wcrypto_rsa_kg_out_data(struct wcrypto_rsa_kg_out *ko, char **data)
 
 	*data = (char *)ko->data;
 
-	/* CRT need this size, but no CRT size is smaller */
-	return (int)CRT_GEN_PARAMS_SZ(ko->key_size);
+	return (int)ko->size;
 }
 
 /* Create a RSA key generate operation input with parameter e, p and q */
@@ -293,6 +293,7 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	kg_out->key_size = kz;
 	kg_out->d = (void *)kg_out->data;
 	kg_out->n = kg_out->d + kz;
+	kg_out->size = (__u32)kg_out_size;
 	if (c->setup.is_crt) {
 		kg_out->qinv = (void *)kg_out->n + kz;
 		kg_out->dq = kg_out->qinv + CRT_PARAM_SZ(kz);
