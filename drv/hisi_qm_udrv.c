@@ -283,7 +283,6 @@ void hisi_qm_free_qp(handle_t h_qp)
 
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-	wd_release_ctx_force(qp->h_ctx);
 
 	free(qp);
 }
