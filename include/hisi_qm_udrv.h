@@ -15,6 +15,29 @@ struct hisi_qm_priv {
 	__u16 op_type;
 };
 
+struct hisi_qm_queue_info {
+	void *sq_base;
+	void *cq_base;
+	int sqe_size;
+	void *mmio_base;
+	void *db_base;
+	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
+		  __u16 index, __u8 priority);
+	__u16 sq_tail_index;
+	__u16 sq_head_index;
+	__u16 cq_head_index;
+	__u16 sqn;
+	__u16 qc_type;
+	__u16 used_num;
+	bool cqc_phase;
+	int is_sq_full;
+};
+
+struct hisi_qp {
+	struct hisi_qm_queue_info q_info;
+	handle_t h_ctx;
+};
+
 /* Capabilities */
 struct hisi_qm_capa {
 	char *alg;

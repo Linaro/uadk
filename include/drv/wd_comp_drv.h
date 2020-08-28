@@ -57,11 +57,16 @@ struct wd_comp_driver {
 
 void wd_comp_set_driver(struct wd_comp_driver *drv);
 
+#ifdef WD_STATIC_DRV
 #define WD_COMP_SET_DRIVER(drv)						      \
 extern const struct wd_comp_driver wd_comp_##drv __attribute__((alias(#drv)));\
+
+#else
+#define WD_COMP_SET_DRIVER(drv)						      \
 static void __attribute__((constructor)) set_driver(void)		      \
 {									      \
 	wd_comp_set_driver(&drv);					      \
 }
+#endif
 
 #endif /* __WD_COMP_DRV_H */

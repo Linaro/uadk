@@ -126,6 +126,7 @@ struct hisi_zip_sqe {
 #define HZ_LSTBLK_MASK 0x0100
 #define HZ_STATUS_MASK 0xff
 #define HZ_REQ_TYPE_MASK 0xff
+#define HZ_STREAM_POS_MASK 0x03
 
 #define HZ_HADDR_SHIFT		32
 
@@ -177,30 +178,54 @@ static void hisi_zip_exit(void *priv)
 
 static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
+	handle_t h_qp = (handle_t)qp;
 	struct hisi_zip_sqe sqe = {0};
 	__u8 flush_type;
+	void *src, *dst;
+	__u32  in_size;
 	__u16 count = 0;
 	void *ctx_buf;
 	__u8 stream_pos;
 	__u8 state;
 	int ret;
 
+	in_size = msg->in_size;
+	src = msg->req.src;
+	dst = msg->req.dst;
 	switch (msg->alg_type) {
 	case WD_ZLIB:
 		sqe.dw9 = HW_ZLIB;
+		if (msg->stream_pos == WD_COMP_STREAM_NEW) {
+			if (qp->q_info.qc_type == WD_DIR_COMPRESS) {
+				memcpy(dst, ZLIB_HEADER, ZLIB_HEADER_SZ);
+				dst += ZLIB_HEADER_SZ;
+			} else {
+				src += ZLIB_HEADER_SZ;
+				in_size += ZLIB_HEADER_SZ;
+			}
+		}
 		break;
 	case WD_GZIP:
 		sqe.dw9 = HW_GZIP;
+		if (msg->stream_pos == WD_COMP_STREAM_NEW) {
+			if (qp->q_info.qc_type == WD_DIR_COMPRESS) {
+				memcpy(dst, GZIP_HEADER, GZIP_HEADER_SZ);
+				dst += GZIP_HEADER_SZ;
+			} else {
+				src += GZIP_HEADER_SZ;
+				in_size -= GZIP_HEADER_SZ;
+			}
+		}
 		break;
 	default:
 		return -WD_EINVAL;
 	}
 
-	sqe.source_addr_l = lower_32_bits((__u64)msg->req.src);
-	sqe.source_addr_h = upper_32_bits((__u64)msg->req.src);
-	sqe.dest_addr_l = lower_32_bits((__u64)msg->req.dst);
-	sqe.dest_addr_h = upper_32_bits((__u64)msg->req.dst);
+	sqe.source_addr_l = lower_32_bits((__u64)src);
+	sqe.source_addr_h = upper_32_bits((__u64)src);
+	sqe.dest_addr_l = lower_32_bits((__u64)dst);
+	sqe.dest_addr_h = upper_32_bits((__u64)dst);
 	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + 64;  /* reserve 64 BYTE for ctx_dwx*/
 		sqe.stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
@@ -220,7 +245,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	sqe.dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
-	sqe.input_data_length = msg->in_size;
+	sqe.input_data_length = in_size;
 	if (msg->avail_out > MIN_AVAILOUT_SIZE)
 		sqe.dest_avail_out = msg->avail_out;
 	else
@@ -244,7 +269,8 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 
 static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
+	handle_t h_qp = (handle_t)qp;
 	struct hisi_zip_sqe sqe = {0};
 	__u16 count = 0;
 	int ret;
@@ -254,6 +280,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		return ret;
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
+	__u16 stream_pos = sqe.dw7 & HZ_STREAM_POS_MASK;
 	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe.dw9 & HZ_REQ_TYPE_MASK;
 
@@ -261,14 +288,28 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	    status != HZ_CRC_ERR && status != HZ_DECOMP_END) {
 		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 		       ctx_st, status, type);
-		recv_msg->status = WD_IN_EPARA;
+		recv_msg->req.status = WD_IN_EPARA;
 	} else {
 		if (!sqe.consumed || !sqe.produced)
 			return -EAGAIN;
-		recv_msg->status = 0;
+		recv_msg->req.status = 0;
 	}
 	recv_msg->in_cons = sqe.consumed;
 	recv_msg->produced = sqe.produced;
+	if (stream_pos == HZ_STREAM_NEW) {
+		if (sqe.dw9 == HW_ZLIB) {
+			if (qp->q_info.qc_type == WD_DIR_COMPRESS)
+				recv_msg->produced += ZLIB_HEADER_SZ;
+			else
+				recv_msg->in_cons += ZLIB_HEADER_SZ;
+		}
+		if (sqe.dw9 == HW_GZIP) {
+			if (qp->q_info.qc_type == WD_DIR_COMPRESS)
+				recv_msg->produced += GZIP_HEADER_SZ;
+			else
+				recv_msg->in_cons += GZIP_HEADER_SZ;
+		}
+	}
 	recv_msg->avail_out = sqe.dest_avail_out;
 	if (sqe.stream_ctx_addr_l && sqe.stream_ctx_addr_h) {
 		/*

@@ -8,8 +8,6 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
-#define MODE_STREAM		(1 << 0)
-#define MODE_INITED		(1 << 1)
 
 #define FLAG_DEFLATE		(1 << 0)
 #define FLAG_INPUT_FINISH	(1 << 1)

@@ -28,33 +28,11 @@
 
 #define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
 
-struct hisi_qm_queue_info {
-	void *sq_base;
-	void *cq_base;
-	int sqe_size;
-	void *mmio_base;
-	void *db_base;
-	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
-		  __u16 index, __u8 priority);
-	__u16 sq_tail_index;
-	__u16 sq_head_index;
-	__u16 cq_head_index;
-	__u16 sqn;
-	__u16 used_num;
-	bool cqc_phase;
-	int is_sq_full;
-};
-
 struct hisi_qm_type {
 	char	*qm_name;
 	int	qm_db_offs;
 	int	(*hacc_db)(struct hisi_qm_queue_info *q, __u8 cmd,
 			   __u16 index, __u8 prority);
-};
-
-struct hisi_qp {
-	struct hisi_qm_queue_info q_info;
-	handle_t h_ctx;
 };
 
 #define QM_CQE_SIZE			16
@@ -195,6 +173,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
+	q_info->qc_type = qp_ctx.qc_type;
 	ret = wd_ctx_set_io_cmd(qp->h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("HISI QM fail to set qc_type, use default value\n");

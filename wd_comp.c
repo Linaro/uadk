@@ -456,7 +456,12 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	int ret;
 
 	if (!sess || !req) {
-		WD_ERR("sess or req is NULL!\n");
+		WD_ERR("invalid: sess or req is NULL!\n");
+		return -EINVAL;
+	}
+
+	if (!req->src_len) {
+		WD_ERR("invalid: req src_len is 0!\n");
 		return -EINVAL;
 	}
 
@@ -473,6 +478,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	wd_spinlock(&lock);
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
+		wd_unspinlock(&lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		return ret;
 	}
@@ -480,10 +486,12 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
+			wd_unspinlock(&lock);
 			WD_ERR("wd comp recv hw err!\n");
 			return ret;
 		} else if (ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
+				wd_unspinlock(&lock);
 				WD_ERR("wd comp recv timeout fail!\n");
 				return -ETIMEDOUT;
 			}
@@ -493,8 +501,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
-	req->status = STATUS_OUT_DRAINED | STATUS_OUT_READY | STATUS_IN_EMPTY;
-	req->flag = FLAG_INPUT_FINISH;
+	req->status = resp_msg.req.status;
 
 	return 0;
 }
@@ -530,6 +537,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	wd_spinlock(&lock);
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
 	if (ret < 0) {
+		wd_unspinlock(&lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		return ret;
 	}
@@ -537,10 +545,12 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
+			wd_unspinlock(&lock);
 			WD_ERR("wd comp recv hw err!\n");
 			return ret;
 		} else if (ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
+				wd_unspinlock(&lock);
 				WD_ERR("wd comp recv timeout fail!\n");
 				return -ETIMEDOUT;
 			}
@@ -580,11 +590,13 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	fill_comp_msg(msg, req);
 	msg->alg_type = sess->alg_type;
 
+	wd_spinlock(&lock);
 	ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
 	if (ret < 0) {
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		wd_put_msg_to_pool(&wd_comp_setting.pool, h_ctx, msg);
 	}
+	wd_unspinlock(&lock);
 
 	return ret;
 }
