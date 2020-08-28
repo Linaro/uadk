@@ -484,31 +484,35 @@ send_again:
 			goto send_again;
 		} else {
 			WD_ERR("send cnt %llu, exit!\n", tx_cnt);
-			return ret;
+			goto fail;
 		}
 	} else if (unlikely(ret < 0)) {
 		WD_ERR("failed to send, ret=%d!\n", ret);
-		return ret;
+		goto fail;
 	}
 
 	do {
 		ret = wd_rsa_setting.driver->recv(h_ctx, &msg);
 		if (unlikely(ret == -WD_HW_EACCESS)) {
 			WD_ERR("failed to recv, hw error!\n");
-			return ret;
+			goto fail;
 		} else if (ret == -EAGAIN) {
 			if (++rx_cnt > RSA_RECV_MAX_CNT) {
 				WD_ERR("failed to recv, timeout!\n");
-				return -ETIMEDOUT;
+				ret = -ETIMEDOUT;
+			        goto fail;              
 			} else if (balance > RSA_BALANCE_THRHD) {
 				usleep(1);
 			}
 		}
 	} while (ret < 0);
-	wd_unspinlock(&sd_rc_lock);
+
 	balance = rx_cnt;
 	req->status = msg.result;
 	ret = GET_NEGATIVE(req->status);
+
+fail:
+	wd_unspinlock(&sd_rc_lock);
 
 	return ret;
 }
