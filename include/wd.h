@@ -13,6 +13,7 @@
 #define PATH_STR_SIZE			256
 #define MAX_ATTR_STR_SIZE		256
 #define WD_NAME_SIZE			64
+#define MAX_DEV_NAME_LEN		256
 
 typedef void (*wd_log)(const char *format, ...);
 
@@ -79,9 +80,10 @@ struct uacce_dev {
 	char api[WD_NAME_SIZE];
 	char algs[MAX_ATTR_STR_SIZE];
 	unsigned long qfrs_offs[UACCE_QFRT_MAX];
+	char dev_root[PATH_STR_SIZE];
 
 	char name[WD_NAME_SIZE];
-	char dev_root[PATH_STR_SIZE];
+	char char_dev_path[MAX_DEV_NAME_LEN];
 
 	int dev_id;
 	int numa_id;
@@ -134,15 +136,15 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 
 /**
  * wd_request_ctx() - Request a communication context from a device.
- * @dev_path: The path of device. e.g. /dev/hisi_zip-0.
+ * @dev: Indicate one device.
  *
  * Return the handle of related context or NULL otherwise.
  *
  * The context is communication context between user and hardware. One context
  * must be got before doing any task. This function can be used among multiple
- * threads.
+ * threads. dev should be got from wd_get_accel_list() firstly.
  */
-extern handle_t wd_request_ctx(char *dev_path);
+extern handle_t wd_request_ctx(struct uacce_dev *dev);
 
 /**
  * wd_release_ctx() - Release a context.

@@ -1091,9 +1091,23 @@ static __u32 get_alg_op_type(enum alg_op_type op_type)
 	return value;
 }
 
+static struct uacce_dev_list *get_uacce_dev_by_alg(struct uacce_dev_list *list,
+						   char *alg)
+{
+	while (list) {
+		if (!strncmp(alg, list->dev->char_dev_path, strlen(alg)))
+			break;
+		else
+			list = list->next;
+	}
+
+	return list;
+
+}
 
 static int init_hpre_global_config(void)
 {
+	struct uacce_dev_list *list, *uacce_node;
 	struct wd_ctx *ctx_attr;
 	struct wd_ctx_config ctx_cfg;
 	struct wd_sched sched;
@@ -1106,6 +1120,14 @@ static int init_hpre_global_config(void)
 		HPRE_TST_PRT("%s req %d ctx!\n", g_dev_path, ctx_num);
 #endif
 
+	list = wd_get_accel_list("rsa");
+	if (!list)
+		return -ENODEV;
+
+	uacce_node = get_uacce_dev_by_alg(list, g_dev_path);
+	if (!uacce_node)
+		return -ENODEV;
+
 	ctx_attr = malloc(ctx_num * sizeof(struct wd_ctx));
 	if (!ctx_attr) {
 		HPRE_TST_PRT("malloc ctx_attr memory fail!\n");
@@ -1114,7 +1136,7 @@ static int init_hpre_global_config(void)
 	memset(ctx_attr, 0, ctx_num * sizeof(struct wd_ctx));
 
 	for (j = 0; j < ctx_num; j++) {
-		ctx_attr[j].ctx = wd_request_ctx(g_dev_path);
+		ctx_attr[j].ctx = wd_request_ctx(uacce_node->dev);
 		if (!ctx_attr[j].ctx) {
 			HPRE_TST_PRT("failed to request ctx!\n");
 			return -1;
@@ -1134,6 +1156,8 @@ static int init_hpre_global_config(void)
 		HPRE_TST_PRT("failed to init rsa, ret %d!\n", ret);
 		return -1;
 	}
+
+	wd_free_list_accels(list);
 
 	return ret;
 
@@ -5857,11 +5881,19 @@ int hpre_sys_qmng_test(int thread_num)
 {
 	int pid = getpid(), i = 0, ret;
 	int thread_id = (int)syscall(__NR_gettid);
-	char *node_path = "hisi_hpre-0";
+	struct uacce_dev_list *list, *uacce_node;
 	handle_t h_ctx;
 
+	list = wd_get_accel_list("rsa");
+	if (!list)
+		return -ENODEV;
+
+	uacce_node = get_uacce_dev_by_alg(list, g_dev_path);
+	if (!uacce_node)
+		return -ENODEV;
+
 	while (1) {
-		h_ctx = wd_request_ctx(node_path);
+		h_ctx = wd_request_ctx(uacce_node->dev);
 		if (!h_ctx) {
 			HPRE_TST_PRT("Proc-%d, thrd-%d:request queue t-%d fail!\n",
 					 pid, thread_id, i);
@@ -5874,6 +5906,9 @@ int hpre_sys_qmng_test(int thread_num)
 		usleep(1);
 		wd_release_ctx(h_ctx);
 	}
+
+	wd_free_list_accels(list);
+
 	return 0;
 }
 

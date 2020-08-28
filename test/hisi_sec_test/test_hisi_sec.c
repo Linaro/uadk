@@ -15,7 +15,6 @@
 #define BUFF_SIZE 1024
 #define IV_SIZE   256
 #define	NUM_THREADS	128
-#define HISI_DEV_NODE "/dev/hisi_sec2-2"
 
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
@@ -75,15 +74,21 @@ static int sched_single_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u
 
 static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
 {
+	struct uacce_dev_list *list;
 	int ret;
+
+	list = wd_get_accel_list("cipher");
+	if (!list)
+		return -ENODEV;
 
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = 1;
 	g_ctx_cfg.ctxs = calloc(1, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
-	/* request ctx */
-	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(HISI_DEV_NODE);
+
+	/* Just use first found dev to test here */
+	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(list->dev);
 	if (!g_ctx_cfg.ctxs[0].ctx) {
 		ret = -EINVAL;
 		printf("Fail to request ctx!\n");
@@ -103,6 +108,8 @@ static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
 		printf("Fail to cipher ctx!\n");
 		goto out;
 	}
+
+	wd_free_list_accels(list);
 
 	return 0;
 out:
@@ -725,15 +732,22 @@ static handle_t sched_digest_pick_next_ctx(struct wd_ctx_config *cfg,
 
 static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sched)
 {
+	struct uacce_dev_list *list;
 	int ret;
+
+	list = wd_get_accel_list("digest");
+	if (!list)
+		return -ENODEV;
+
 
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = 1;
 	g_ctx_cfg.ctxs = calloc(1, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
-	/* request ctx */
-	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(HISI_DEV_NODE);
+
+	/* Just use first found dev to test here */
+	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(list->dev);
 	if (!g_ctx_cfg.ctxs[0].ctx) {
 		ret = -EINVAL;
 		printf("Fail to request ctx!\n");
@@ -753,6 +767,8 @@ static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sc
 		printf("Fail to cipher ctx!\n");
 		goto out;
 	}
+
+	wd_free_list_accels(list);
 
 	return 0;
 out:

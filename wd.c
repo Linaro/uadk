@@ -13,7 +13,6 @@
 #include "wd_alg_common.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
-#define MAX_DEV_NAME_LEN		256
 
 wd_log log_out = NULL;
 
@@ -120,7 +119,7 @@ static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 	struct dirent *dev_dir = NULL;
 	DIR *class = NULL;
 	char *name = NULL;
-	int len;
+	int len, ret;
 
 	if (!dev_name)
 		return NULL;
@@ -138,12 +137,20 @@ static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 	while ((dev_dir = readdir(class)) != NULL) {
 		name = dev_dir->d_name;
 		if (!strncmp(dev_name, name, strlen(dev_name))) {
-			snprintf(dev->dev_root, MAX_DEV_NAME_LEN - 1, "%s/%s",
-				 SYS_CLASS_DIR, dev_name);
+			ret = snprintf(dev->dev_root, MAX_DEV_NAME_LEN, "%s/%s",
+				       SYS_CLASS_DIR, dev_name);
+			if (ret < 0)
+				goto out_dir;
+
 			len = WD_NAME_SIZE - 1;
 			if (len > strlen(name) + 1)
 				len = strlen(name) + 1;
 			strncpy(dev->name, name, len);
+			ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
+				       "/dev/%s", dev_name);
+			if (ret < 0)
+				goto out_dir;
+
 			get_dev_info(dev);
 			break;
 		}
@@ -207,48 +214,68 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 	return strndup(name, len);
 }
 
+static struct uacce_dev *clone_uacce_dev(struct uacce_dev *dev)
+{
+	struct uacce_dev *new;
+
+	new = calloc(1, sizeof(*dev));
+	if (!new)
+		return NULL;
+
+	memcpy(new, dev, sizeof(*dev));
+
+	return new;
+}
+
+static void free_uacce_dev(struct uacce_dev *dev)
+{
+	free(dev);
+}
+
 static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 {
 	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
 	       sizeof(ctx->qfrs_offs));
 }
 
-handle_t wd_request_ctx(char *dev_path)
+handle_t wd_request_ctx(struct uacce_dev *dev)
 {
 	struct wd_ctx_h	*ctx;
+	char *char_dev_path;
 
-	if (!dev_path || (strlen(dev_path) + 1 > MAX_DEV_NAME_LEN))
+	if (!dev || !strlen(dev->dev_root))
 		return (handle_t)NULL;
 
 	ctx = calloc(1, sizeof(struct wd_ctx_h));
 	if (!ctx)
 		return (handle_t)NULL;
 
-	ctx->dev_name = wd_get_accel_name(dev_path, 0);
+	char_dev_path = dev->char_dev_path;
+	ctx->dev_name = wd_get_accel_name(char_dev_path, 0);
 	if (!ctx->dev_name)
 		goto free_ctx;
 
-	ctx->drv_name = wd_get_accel_name(dev_path, 1);
+	ctx->drv_name = wd_get_accel_name(char_dev_path, 1);
 	if (!ctx->drv_name)
 		goto free_dev_name;
 
-	ctx->dev = read_uacce_sysfs(ctx->dev_name);
+	ctx->dev = clone_uacce_dev(dev);
 	if (!ctx->dev)
 		goto free_drv_name;
 
 	wd_ctx_init_qfrs_offs(ctx);
 
-	strncpy(ctx->dev_path, dev_path, MAX_DEV_NAME_LEN - 1);
-	ctx->fd = open(dev_path, O_RDWR | O_CLOEXEC);
+	strncpy(ctx->dev_path, char_dev_path, MAX_DEV_NAME_LEN - 1);
+	ctx->fd = open(char_dev_path, O_RDWR | O_CLOEXEC);
 	if (ctx->fd < 0) {
-		WD_ERR("Failed to open %s (%d).\n", dev_path, -errno);
+		WD_ERR("Failed to open %s (%d).\n", char_dev_path, -errno);
 		goto free_dev;
 	}
 
 	return (handle_t)ctx;
 
 free_dev:
-	free(ctx->dev);
+	free_uacce_dev(ctx->dev);
 free_drv_name:
 	free(ctx->drv_name);
 free_dev_name:

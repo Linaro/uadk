@@ -20,8 +20,6 @@
 
 #define	NUM_THREADS	10
 
-#define HISI_DEV_NODE	"/dev/hisi_zip-0"
-
 #define FLAG_ZLIB	(1 << 0)
 #define FLAG_GZIP	(1 << 1)
 
@@ -98,14 +96,21 @@ static int sched_single_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u
 static int init_single_ctx_config(int op_type, int ctx_mode,
 				  struct wd_sched *sched)
 {
+	struct uacce_dev_list *list;
 	int ret;
+
+	list = wd_get_accel_list("zlib");
+	if (!list)
+		return -ENODEV;
 
 	memset(&ctx_conf, 0, sizeof(struct wd_ctx_config));
 	ctx_conf.ctx_num = 1;
 	ctx_conf.ctxs = calloc(1, sizeof(struct wd_ctx));
 	if (!ctx_conf.ctxs)
 		return -ENOMEM;
-	ctx_conf.ctxs[0].ctx = wd_request_ctx(HISI_DEV_NODE);
+
+	/* Just use first found dev to test here */
+	ctx_conf.ctxs[0].ctx = wd_request_ctx(list->dev);
 	if (!ctx_conf.ctxs[0].ctx) {
 		ret = -EINVAL;
 		goto out;
@@ -117,6 +122,9 @@ static int init_single_ctx_config(int op_type, int ctx_mode,
 	sched->pick_next_ctx = sched_single_pick_next;
 	sched->poll_policy = sched_single_poll_policy;
 	wd_comp_init(&ctx_conf, sched);
+
+	wd_free_list_accels(list);
+
 	return 0;
 out:
 	free(ctx_conf.ctxs);
