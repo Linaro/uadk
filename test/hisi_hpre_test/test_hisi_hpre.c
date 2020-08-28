@@ -4767,18 +4767,19 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			wd_d.dsize = BN_bn2bin(d, (unsigned char *)wd_d.data);
 			wd_n.dsize = BN_bn2bin(n, (unsigned char *)wd_n.data);
 
-                        memcpy(tmp, wd_d.data, wd_d.dsize);
-                        crypto_bin_to_hpre_bin(wd_d.data, tmp, wd_d.bsize, wd_d.dsize);
-                        memcpy(tmp, wd_n.data, wd_n.dsize);
-                        crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.bsize, wd_n.dsize);
-                        wd_d.dsize = key_size;
-                        wd_n.dsize = key_size;      
-
 			if (wd_rsa_set_prikey_params(ctx, &wd_d, &wd_n))
 			{
 				HPRE_TST_PRT("set rsa prikey failed %d!\n", ret);
 				goto gen_fail;
 			}
+
+                        memcpy(tmp, wd_d.data, wd_d.dsize);
+                        crypto_bin_to_hpre_bin(wd_d.data, tmp, wd_d.bsize, wd_d.dsize);
+                        memcpy(tmp, wd_n.data, wd_n.dsize);
+                        crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.bsize, wd_n.dsize);
+                        wd_d.dsize = key_size;
+                        wd_n.dsize = key_size;
+
 
 			if (privkey_file && is_file) {
 				ret = hpre_test_write_to_file((unsigned char *)wd_d.data,
