@@ -184,7 +184,6 @@ static char *g_mode = "-crt";
 static volatile int asyn_thread_exit = 0;
 static char *ecc_curve_name = "secp256k1";
 
-static __thread RSA *hpre_test_rsa;
 static __thread u32 g_is_set_prikey; // ecdh used
 static __thread u32 g_is_set_pubkey; // ecc used
 static pthread_t system_test_thrds[TEST_MAX_THRD];
@@ -580,6 +579,7 @@ EC_POINT *EC_KEY_get0_public_key(EC_KEY *key);
 BIGNUM *EC_KEY_get0_private_key(EC_KEY *key);
 int ECParameters_print_fp(FILE *fp, EC_KEY *x);
 int EC_KEY_print_fp(FILE *fp, EC_KEY *x, int off);
+int RSA_print_fp(FILE *fp, RSA *x, int off);
 void EC_POINT_free(EC_POINT *point);
 void EC_GROUP_free(EC_GROUP *group);
 size_t EC_POINT_point2buf(EC_GROUP *group, EC_POINT *point,
@@ -625,6 +625,35 @@ static void print_data(void *ptr, int size, const char *name)
 			printf("\n");
 	}
 	printf("\n");
+}
+
+static int crypto_bin_to_hpre_bin(char *dst, const char *src,
+				int b_size, int d_size)
+{
+	int i = d_size - 1;
+	int j = 0;
+
+	if (!dst || !src || b_size <= 0 || d_size <= 0) {
+		WD_ERR("crypto bin to hpre bin params err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (b_size < d_size) {
+		WD_ERR("crypto bin to hpre bin param data is too long!\n");
+		return  -WD_EINVAL;
+	}
+
+	if (b_size == d_size || (dst == src))
+		return WD_SUCCESS;
+
+	for (j = b_size - 1; j >= 0; j--, i--) {
+		if (i >= 0)
+			dst[j] = src[i];
+		else
+			dst[j] = 0;
+	}
+
+	return WD_SUCCESS;
 }
 
 static __u32 get_ecc_min_blocksize(__u32 key_bits)
@@ -4435,6 +4464,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 	//struct wcrypto_rsa_pubkey *pubkey;
 	//struct wcrypto_rsa_prikey *prikey;
 	u32 key_size = key_bits >> 3;
+	char *tmp;
 
 	memset(&wd_e, 0, sizeof(wd_e));
 	memset(&wd_d, 0, sizeof(wd_d));
@@ -4501,6 +4531,20 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 		HPRE_TST_PRT("set rsa pubkey failed %d!\n", ret);
 		goto gen_fail;
 	}
+
+	tmp = malloc(key_size);
+	if (!tmp) {
+		HPRE_TST_PRT("failed to malloc!\n");
+		goto gen_fail;
+	}
+
+	memcpy(tmp, wd_e.data, wd_e.dsize);
+	crypto_bin_to_hpre_bin(wd_e.data, tmp, wd_e.bsize, wd_e.dsize);
+	memcpy(tmp, wd_n.data, wd_n.dsize);
+	crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.bsize, wd_n.dsize);
+	wd_e.dsize = key_size;
+	wd_n.dsize = key_size;
+
 
 	if (pubkey_file && is_file) {
 		ret = hpre_test_write_to_file((unsigned char *)wd_e.data, key_bits >> 2,
@@ -4573,6 +4617,22 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			goto gen_fail;
 		}
 
+		memcpy(tmp, wd_dq.data, wd_dq.dsize);
+		crypto_bin_to_hpre_bin(wd_dq.data, tmp, wd_dq.bsize, wd_dq.dsize);
+		memcpy(tmp, wd_dp.data, wd_dp.dsize);
+		crypto_bin_to_hpre_bin(wd_dp.data, tmp, wd_dp.bsize, wd_dp.dsize);
+		memcpy(tmp, wd_q.data, wd_q.dsize);
+		crypto_bin_to_hpre_bin(wd_q.data, tmp, wd_q.bsize, wd_q.dsize);
+		memcpy(tmp, wd_p.data, wd_p.dsize);
+		crypto_bin_to_hpre_bin(wd_p.data, tmp, wd_p.bsize, wd_p.dsize);
+		memcpy(tmp, wd_qinv.data, wd_qinv.dsize);
+		crypto_bin_to_hpre_bin(wd_qinv.data, tmp, wd_qinv.bsize, wd_qinv.dsize);
+		wd_dq.dsize = key_size / 2;
+		wd_dp.dsize = key_size / 2;
+		wd_q.dsize = key_size / 2;
+		wd_p.dsize = key_size / 2;
+		wd_qinv.dsize = key_size / 2;
+
 		if (crt_privkey_file && is_file) {
 			ret = hpre_test_write_to_file((unsigned char *)wd_dq.data,
 						  (key_bits >> 4) * 5, crt_privkey_file, -1, 0);
@@ -4607,6 +4667,13 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 				goto gen_fail;
 			}
 
+			memcpy(tmp, wd_d.data, wd_d.dsize);
+			crypto_bin_to_hpre_bin(wd_d.data, tmp, wd_d.bsize, wd_d.dsize);
+			memcpy(tmp, wd_n.data, wd_n.dsize);
+			crypto_bin_to_hpre_bin(wd_n.data, tmp, wd_n.bsize, wd_n.dsize);
+			wd_d.dsize = key_size;
+			wd_n.dsize = key_size;
+
 			if (privkey_file && is_file) {
 				ret = hpre_test_write_to_file((unsigned char *)wd_d.data,
 							  (key_size),
@@ -4629,6 +4696,7 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 				memcpy(privkey_file, wd_d.data, key_size);
 				memcpy(privkey_file + key_size, wd_n.data, key_size);
 				memcpy(privkey_file + 2 * key_size, wd_e.data, key_size);
+				memcpy(privkey_file + 3 * key_size, wd_n.data, key_size);
 			}
 	}
 
@@ -4645,6 +4713,8 @@ static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 		if (wd_d.data)
 			free(wd_d.data);
 	}
+
+	free(tmp);
 
 	return 0;
 gen_fail:
@@ -4703,27 +4773,12 @@ int hpre_test_fill_keygen_opdata(void *ctx, struct wcrypto_rsa_op_data *opdata)
 	return 0;
 }
 
-static int hpre_test_get_bin_size(__u8 *bin, int csize)
-{
-	int i = csize - 1;
-	int cut = 0;
-
-	while (!(*(__u8 *)(bin + i)) && i >= 0) {
-		i--;
-		cut++;
-	}
-
-	return csize - cut;
-}
-
 static BIGNUM *hpre_bin_to_bn(void *bin, int raw_size)
 {
-	int bin_size;
-
 	if (!bin || !raw_size)
 		return NULL;
-	bin_size = hpre_test_get_bin_size((__u8 *)bin, raw_size);
-	return BN_bin2bn((const unsigned char *)bin, bin_size, NULL);
+
+	return BN_bin2bn((const unsigned char *)bin, raw_size, NULL);
 }
 
 int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void *key)
@@ -4734,14 +4789,15 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 	void *ssl_out;
 	BIGNUM *nn;
 	BIGNUM *e;
+	RSA *rsa;
 
-	if (!hpre_test_rsa) {
-		hpre_test_rsa = RSA_new();
-		if (!hpre_test_rsa) {
-			HPRE_TST_PRT("%s:RSA new fail!\n", __func__);
-			return -ENOMEM;
-		}
+
+	rsa = RSA_new();
+	if (!rsa) {
+		HPRE_TST_PRT("%s:RSA new fail!\n", __func__);
+		return -ENOMEM;
 	}
+
 	wcrypto_get_rsa_prikey(ctx, &prikey);
 	keybits = wcrypto_rsa_key_bits(ctx);
 	key_size = keybits >> 3;
@@ -4802,20 +4858,23 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 				HPRE_TST_PRT("e bin2bn err!\n");
 				return -EINVAL;
 			}
-			ret = RSA_set0_key(hpre_test_rsa, nn, e, NULL);
+			ret = RSA_set0_key(rsa, nn, e, NULL);
 			if (ret <= 0) {
 				HPRE_TST_PRT("e set0_key err!\n");
 				return -EINVAL;
 			}
 		}
 		ret = RSA_public_encrypt(opdata->in_bytes, opdata->in, ssl_out,
-					 hpre_test_rsa, RSA_NO_PADDING);
+					 rsa, RSA_NO_PADDING);
 		if (ret != (int)opdata->in_bytes) {
 			HPRE_TST_PRT("openssl pub encrypto fail!ret=%d\n", ret);
 			return -ENOMEM;
 		}
 		if (!only_soft && memcmp(ssl_out, opdata->out, key_size)) {
 			HPRE_TST_PRT("pub encrypto result  mismatch!\n");
+			print_data(ssl_out, opdata->in_bytes, "openssl out");
+			print_data(opdata->out, opdata->out_bytes, "hpre out");
+			RSA_print_fp(stdout, rsa, 4);
 			return -EINVAL;
 		}
 		free(ssl_out);
@@ -4856,12 +4915,12 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 				HPRE_TST_PRT("iqmp bin2bn err!\n");
 				return -EINVAL;
 			}
-			ret = RSA_set0_crt_params(hpre_test_rsa, dp, dq, iqmp);
+			ret = RSA_set0_crt_params(rsa, dp, dq, iqmp);
 			if (ret <= 0) {
 				HPRE_TST_PRT("set0_crt_params err!\n");
 				return -EINVAL;
 			}
-			ret = RSA_set0_factors(hpre_test_rsa, p, q);
+			ret = RSA_set0_factors(rsa, p, q);
 			if (ret <= 0) {
 				HPRE_TST_PRT("set0_factors err!\n");
 				return -EINVAL;
@@ -4876,7 +4935,7 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 				HPRE_TST_PRT("e bin2bn err!\n");
 				return -EINVAL;
 			}
-			ret = RSA_set0_key(hpre_test_rsa, nn, e, NULL);
+			ret = RSA_set0_key(rsa, nn, e, NULL);
 			if (ret <= 0) {
 				HPRE_TST_PRT("rsa set0_key crt err!\n");
 				return -EINVAL;
@@ -4900,7 +4959,7 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 				HPRE_TST_PRT("e bin2bn err!\n");
 				return -EINVAL;
 			}
-			ret = RSA_set0_key(hpre_test_rsa, nn, e, d);
+			ret = RSA_set0_key(rsa, nn, e, d);
 			if (ret <= 0) {
 				HPRE_TST_PRT("d set0_key err!\n");
 				return -EINVAL;
@@ -4908,9 +4967,12 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 		}
 
 		ret = RSA_private_decrypt(opdata->in_bytes, opdata->in, ssl_out,
-					hpre_test_rsa, RSA_NO_PADDING);
+					rsa, RSA_NO_PADDING);
 		if (ret != (int)opdata->in_bytes) {
 			HPRE_TST_PRT("openssl priv decrypto fail!ret=%d\n", ret);
+			print_data(ssl_out, opdata->in_bytes, "openssl out");
+			print_data(opdata->out, opdata->out_bytes, "hpre out");
+			RSA_print_fp(stdout, rsa, 4);
 			return -ENOMEM;
 		}
 #ifdef DEBUG
@@ -4921,6 +4983,9 @@ int hpre_test_result_check(void *ctx,  struct wcrypto_rsa_op_data *opdata, void 
 
 		if (!only_soft && memcmp(ssl_out, opdata->out, ret)) {
 			HPRE_TST_PRT("prv decrypto result  mismatch!\n");
+			print_data(ssl_out, opdata->in_bytes, "openssl out");
+			print_data(opdata->out, opdata->out_bytes, "hpre out");
+			RSA_print_fp(stdout, rsa, 4);
 			return -EINVAL;
 		}
 		free(ssl_out);
@@ -5373,6 +5438,7 @@ int hpre_sys_func_test(struct test_hpre_pthread_dt * pdata)
 	struct timeval cur_tval;
 	float time, speed;
 	int key_size = key_bits >> 3;
+	char m[] = {0x54, 0x85, 0x9b, 0x34, 0x2c, 0x49, 0xea, 0x2a};
 
 	if (performance_test && (!t_times && !t_seconds)) {
 		HPRE_TST_PRT("t_times or  t_seconds err\n");
@@ -5455,6 +5521,7 @@ new_test_again:
 			goto fail_release;
 		}
 		memset(opdata.in, 0, opdata.in_bytes);
+		memcpy(opdata.in + key_size - sizeof(m), m, sizeof(m));
 		opdata.out = wd_alloc_blk(pdata->pool);
 		if (!opdata.out) {
 			HPRE_TST_PRT("alloc out buffer fail!\n");
@@ -5484,7 +5551,7 @@ new_test_again:
 				if (wcrypto_rsa_is_crt(ctx))
 					check_key = key_info + 5 * (key_bits >> 4);
 				else
-					check_key = key_info;
+					check_key = key_info + 2 * key_size;
 			else
 				check_key = key_info;
 			ret = hpre_test_result_check(ctx, &opdata, check_key);
@@ -7468,8 +7535,7 @@ release_q:
 		free(key);
 	if (temp_in)
 		free(temp_in);
-	if (hpre_test_rsa)
-		RSA_free(hpre_test_rsa);
+
 	wcrypto_del_rsa_ctx(ctx);
 	wd_blkpool_destroy(pool);
 	wd_release_queue(&q);
