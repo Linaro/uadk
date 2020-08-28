@@ -769,11 +769,6 @@ int DH_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh)
 	return 0;
 }
 
-void *_hpre_sys_test_thread(void *data)
-{
-	return;
-}
-
 EC_KEY *EC_KEY_new(void)
 {
 	return NULL;
@@ -842,8 +837,8 @@ int EC_KEY_set_private_key(EC_KEY *key, BIGNUM *priv_key)
 	return 0;
 }
 
-EC_POINT *EC_POINT_bn2point(EC_GROUP *, BIGNUM *,
-                            EC_POINT *, void *)
+EC_POINT *EC_POINT_bn2point(EC_GROUP *group, BIGNUM *bn,
+                            EC_POINT *point, void *ff)
 {
 	return NULL;
 }
