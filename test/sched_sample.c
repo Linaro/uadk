@@ -31,9 +31,9 @@ enum sched_region_mode {
  * @last: the last one which be distributed.
  */
 struct sched_ctx_region {
-	int begin;
-	int end;
-	int last;
+	__u32 begin;
+	__u32 end;
+	__u32 last;
 	bool valid;
 	pthread_mutex_t mutex;
 };
@@ -58,7 +58,7 @@ struct sample_sched_info {
  */
 struct sched_operator {
 	void (*get_para)(void *req, void *para);
-	int (*get_next_pos)(struct sched_ctx_region *region, void *para);
+	__u32 (*get_next_pos)(struct sched_ctx_region *region, void *para);
 	int (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region **region, __u32 expect, __u32 *count);
 };
 
@@ -85,9 +85,9 @@ static void sample_get_para_rr(void *req, void *para)
 /**
  * sample_get_next_pos_rr - Get next resource pos by RR schedule. The second para is reserved for future.
  */
-static int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para)
+static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region, void *para)
 {
-	int pos;
+	__u32 pos;
 
 	pthread_mutex_lock(&region->mutex);
 
@@ -99,7 +99,7 @@ static int sample_get_next_pos_rr(struct sched_ctx_region *region, void *para)
 		pos = region->begin;
 	} else {
 		/* If the pos's value is out of range, we can output the error info and correct the error */
-		printf("ERROR:%s, pos = %d, begin = %d, end = %d\n", __FUNCTION__, pos, region->begin, region->end);
+		printf("ERROR:%s, pos = %u, begin = %u, end = %u\n", __FUNCTION__, pos, region->begin, region->end);
 		pos = region->begin;
 	}
 	region->last = pos;
@@ -113,9 +113,9 @@ static int sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_reg
 	__u32 expect, __u32 *count)
 {
 	__u32 poll_num = 0;
-	int loop_time = 0;
-	int begin, end;
-	int i, j;
+	__u32 loop_time = 0;
+	__u32 begin, end;
+	__u32 i, j;
 	int ret;
 
 	*count = 0;
@@ -173,7 +173,7 @@ static struct sched_ctx_region *sample_sched_get_ctx_range(struct sched_key *key
 static bool sample_sched_key_valid(struct sched_key *key)
 {
 	if (key->numa_id >= MAX_NUMA_NUM || key->mode >= SCHED_MODE_BUTT || key->type >= g_sched_type_num) {
-		printf("ERROR: %s key error - %d,%d,%u !\n", __FUNCTION__, key->numa_id, key->mode, key->type);
+		printf("ERROR: %s key error - %u,%u,%u !\n", __FUNCTION__, key->numa_id, key->mode, key->type);
 		return false;
 	}
 
@@ -185,7 +185,7 @@ static bool sample_sched_key_valid(struct sched_key *key)
  */
 handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct sched_key *key)
 {
-	int pos;
+	__u32 pos;
 	struct sched_ctx_region *region = NULL;
 
 	if (!cfg || !key || !req) {
@@ -214,7 +214,7 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
  */
 int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
 {
-	int numa_id;
+	__u8 numa_id;
 
 	if (!count) {
 		printf("ERROR: %s the count is NULL !\n", __FUNCTION__);
@@ -241,10 +241,10 @@ int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *cou
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end)
+int sample_sched_fill_region(__u8 numa_id, __u8 mode, __u8 type, __u32 begin, __u32 end)
 {
-	if ((mode >= SCHED_MODE_BUTT) || (type >= g_sched_type_num)) {
-		printf("ERROR: %s para err: mode=%d, type=%d\n", __FUNCTION__, mode, type);
+	if ((numa_id >= MAX_NUMA_NUM) || (mode >= SCHED_MODE_BUTT) || (type >= g_sched_type_num)) {
+		printf("ERROR: %s para err: numa_id=%u, mode=%u, type=%u\n", __FUNCTION__, numa_id, mode, type);
 		return SCHED_PARA_INVALID;
 	}
 
@@ -278,12 +278,12 @@ int sample_sched_operator_cfg(struct sched_operator *op)
 /**
  * sample_sched_init - initialize the global sched info
  */
-int sample_sched_init(__u8 sched_type, int type_num, user_poll_func func)
+int sample_sched_init(__u8 sched_type, __u8 type_num, user_poll_func func)
 {
 	int i, j;
 
 	if (sched_type >= SCHED_POLICY_BUTT) {
-		printf("Error: %s sched_type = %d is invalid!\n", __FUNCTION__, sched_type);
+		printf("Error: %s sched_type = %u is invalid!\n", __FUNCTION__, sched_type);
 		return SCHED_PARA_INVALID;
 	}
 

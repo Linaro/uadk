@@ -23,8 +23,8 @@ enum sched_policy_type {
  * @type: Service type , the value must smaller than type_num.
  */
 struct sched_key {
-	int numa_id;
-	int mode;
+	__u8 numa_id;
+	__u8 mode;
 	__u8 type;
 };
 
@@ -46,7 +46,7 @@ void sample_sched_release(void);
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-int sample_sched_fill_region(int numa_id, int mode, int type, int begin, int end);
+int sample_sched_fill_region(__u8 numa_id, __u8 mode, __u8 type, __u32 begin, __u32 end);
 
 /**
  * ssample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg.
@@ -70,5 +70,5 @@ int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *cou
  * @type_num: The service type num of user's service. For example, the zip include comp and un comp, type nume is two.
  * @func: The ctx poll function of user underlying operating.
  */
-int sample_sched_init(__u8 sched_type, int type_num, user_poll_func func);
+int sample_sched_init(__u8 sched_type, __u8 type_num, user_poll_func func);
 #endif
