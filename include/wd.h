@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "include/uacce.h"
+#include "uacce.h"
 #include "config.h"
 
 #define PATH_STR_SIZE			256

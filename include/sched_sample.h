@@ -3,6 +3,8 @@
 #define SCHED_SAMPLE_h
 #include "wd_alg_common.h"
 
+#define MAX_NUMA_NUM 4
+
 /* The sched error number */
 enum sched_err_num {
 	SCHED_SUCCESS = 0,

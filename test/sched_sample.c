@@ -14,7 +14,6 @@
 #include <pthread.h>
 #include "sched_sample.h"
 
-#define MAX_NUMA_NUM 4
 #define CTX_NUM_OF_NUMA 100
 #define MAX_POLL_TIMES 10000
 
@@ -94,15 +93,14 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region, void *para)
 	pos = region->last;
 
 	if (pos < region->end) {
-		pos++;
+		region->last++;
 	} else if (pos == region->last) {
-		pos = region->begin;
+		region->last = region->begin;
 	} else {
 		/* If the pos's value is out of range, we can output the error info and correct the error */
 		printf("ERROR:%s, pos = %u, begin = %u, end = %u\n", __FUNCTION__, pos, region->begin, region->end);
-		pos = region->begin;
+		region->last = region->begin;
 	}
-	region->last = pos;
 
 	pthread_mutex_unlock(&region->mutex);
 
@@ -116,34 +114,43 @@ static int sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_reg
 	__u32 loop_time = 0;
 	__u32 begin, end;
 	__u32 i, j;
+	__u8 invalid_num = 0;
 	int ret;
 
-	*count = 0;
-
 	/* Traverse the async ctx */
-	for (i = 0; i < g_sched_type_num; i++) {
-		if (!region[SCHED_MODE_ASYNC][i].valid) {
-			continue;
+	while (1) {
+		for (i = 0; i < g_sched_type_num; i++) {
+			if (!region[SCHED_MODE_ASYNC][i].valid) {
+				invalid_num++;
+				continue;
+			}
+
+			begin = region[SCHED_MODE_ASYNC][i].begin;
+			end = region[SCHED_MODE_ASYNC][i].end;
+			/* j is the pos of ctxs, the max is end */
+			for (j = begin; j <= end; j++) {
+				/* RR schedule, one time poll one */
+				ret = g_sched_user_poll(cfg->ctxs[j].ctx, 1, &poll_num);
+				if (ret) {
+					return SCHED_ERROR;
+				}
+
+				loop_time++;
+				*count += poll_num;
+
+				/* But if poll_num always be zero by unknow reason. This will be endless loop,
+				we must add the escape way by recording the loop count, if it is bigger
+				than MAX_POLL_TIMES, must stop and return the pool num */
+				if (*count >= expect || loop_time >= MAX_POLL_TIMES) {
+					return SCHED_SUCCESS;
+				}
+			}
 		}
 
-		begin = region[SCHED_MODE_ASYNC][i].begin;
-		end = region[SCHED_MODE_ASYNC][i].end;
-		for (j = begin; j <= end; j++) {
-			/* RR schedule, one time poll one */
-			ret = g_sched_user_poll(cfg->ctxs[j].ctx, 1, &poll_num);
-			if (ret) {
-				return SCHED_ERROR;
-			}
-
-			*count += poll_num;
-			loop_time++;
-
-			/* If poll_num always be zero by unknow reason. This will be endless loop,
-			   we must add the escape way by recording the loop count, if it is bigger
-			   than MAX_POLL_TIMES, must stop and return the pool num */
-			if (*count >= expect || loop_time >= MAX_POLL_TIMES) {
-				return SCHED_SUCCESS;
-			}
+		/* There is not async region, should return */
+		if (invalid_num >= g_sched_type_num) {
+			printf("ERROR: no async region is filled.\n");
+			return SCHED_ERROR;
 		}
 	}
 
@@ -220,11 +227,9 @@ int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *cou
 		printf("ERROR: %s the count is NULL !\n", __FUNCTION__);
 		return SCHED_PARA_INVALID;
 	}
-
 	for (numa_id = 0; numa_id < MAX_NUMA_NUM; numa_id++) {
-		if (g_sched_info[numa_id].valid) {
+		if (g_sched_info[numa_id].valid)
 			g_sched_ops[g_sched_policy].poll_policy(cfg, g_sched_info[numa_id].ctx_region, expect, count);
-		}
 	}
 
 	return SCHED_SUCCESS;
@@ -252,6 +257,7 @@ int sample_sched_fill_region(__u8 numa_id, __u8 mode, __u8 type, __u32 begin, __
 	g_sched_info[numa_id].ctx_region[mode][type].end = end;
 	g_sched_info[numa_id].ctx_region[mode][type].last = begin;
 	g_sched_info[numa_id].ctx_region[mode][type].valid = true;
+	g_sched_info[numa_id].valid = true;
 
 	(void)pthread_mutex_init(&g_sched_info[numa_id].ctx_region[mode][type].mutex, NULL);
 
