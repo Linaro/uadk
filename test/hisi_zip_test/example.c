@@ -198,14 +198,11 @@ static int comp_sync(handle_t h_sess,
 				templen = 0;
 			}
 		}
-		if (req->status & STATUS_OUT_READY) {
+		if (req->status == 0) {
 			req->dst += req->dst_len;
 			*dst_len += req->dst_len;
-		}
-		if ((req->status & STATUS_OUT_DRAINED) &&
-		    (req->status & STATUS_IN_EMPTY) &&
-		    (req->flag & FLAG_INPUT_FINISH))
 			return 0;
+		}
 	}
 out:
 	return ret;

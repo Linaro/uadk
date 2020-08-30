@@ -202,7 +202,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 				dst += ZLIB_HEADER_SZ;
 			} else {
 				src += ZLIB_HEADER_SZ;
-				in_size += ZLIB_HEADER_SZ;
+				in_size -= ZLIB_HEADER_SZ;
 			}
 		}
 		break;
@@ -326,7 +326,6 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	recv_msg->tag = sqe.tag;
 
 	return 0;
-
 }
 
 static struct wd_comp_driver hisi_zip = {

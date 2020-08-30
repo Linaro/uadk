@@ -272,6 +272,10 @@ int hw_blk_compress(int alg_type, int blksize,
 	req.src_len = srclen;
 	req.dst = dst;
 	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_COMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
 	ret = wd_do_comp_sync(h_sess, &req);
 	if (ret < 0) {
@@ -285,6 +289,9 @@ int hw_blk_compress(int alg_type, int blksize,
 		return ret;
 	}
 	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
 	wd_comp_free_sess(h_sess);
 
@@ -312,6 +319,11 @@ int hw_blk_decompress(int alg_type, int blksize,
 	req.src_len = srclen;
 	req.dst = dst;
 	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_DECOMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
 
 	ret = wd_do_comp_sync(h_sess, &req);
 	if (ret < 0) {
@@ -325,6 +337,9 @@ int hw_blk_decompress(int alg_type, int blksize,
 		return ret;
 	}
 	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
 	wd_comp_free_sess(h_sess);
 

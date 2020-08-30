@@ -402,35 +402,40 @@ therad_no_affinity:
 	return NULL;
 }
 
-#define SCHED_SINGLE		"sched_single"
+#define SCHED_TWO		"sched_two"
 static struct wd_ctx_config ctx_conf;
 static struct wd_sched sched;
 
-/* only 1 context is used */
-static handle_t sched_single_pick_next(const struct wd_ctx_config *cfg,
-				       const void *req,
-				       const struct sched_key *key)
+static handle_t sched_two_pick_next(const struct wd_ctx_config *cfg,
+				    const void *req,
+				    const struct sched_key *key)
 {
-	return ctx_conf.ctxs[0].ctx;
+	struct wd_comp_req *c_req = (struct wd_comp_req *)req;
+
+	if (c_req->op_type == WD_DIR_COMPRESS)
+		return ctx_conf.ctxs[0].ctx;
+	else
+		return ctx_conf.ctxs[1].ctx;
 }
 
-static int sched_single_poll_policy(const struct wd_ctx_config *cfg,
-				    __u32 expect,
-				    __u32 *count)
+static int sched_two_poll_policy(const struct wd_ctx_config *cfg,
+				 __u32 expect,
+				 __u32 *count)
 {
-	int ret;
+	int i, ret;
 
 	*count = 0;
-	ret = wd_comp_poll_ctx(ctx_conf.ctxs[0].ctx, 1, count);
-	if (ret < 0)
-		return ret;
 
+	for (i = 0; i < ctx_conf.ctx_num; i++) {
+		ret = wd_comp_poll_ctx(ctx_conf.ctxs[i].ctx, 1, count);
+		if (ret < 0)
+			return ret;
+	}
 	return 0;
 }
 
-/* init config for single context */
-static int init_single_ctx_config(int op_type, int ctx_mode,
-				  struct wd_sched *sched)
+/* init config for two contexts */
+static int init_two_ctx_config(int ctx_mode, struct wd_sched *sched)
 {
 	struct uacce_dev_list *list;
 	int ret;
@@ -440,8 +445,8 @@ static int init_single_ctx_config(int op_type, int ctx_mode,
 		return -ENODEV;
 
 	memset(&ctx_conf, 0, sizeof(struct wd_ctx_config));
-	ctx_conf.ctx_num = 1;
-	ctx_conf.ctxs = calloc(1, sizeof(struct wd_ctx));
+	ctx_conf.ctx_num = 2;
+	ctx_conf.ctxs = calloc(2, sizeof(struct wd_ctx));
 	if (!ctx_conf.ctxs)
 		return -ENOMEM;
 
@@ -451,12 +456,22 @@ static int init_single_ctx_config(int op_type, int ctx_mode,
 		ret = -EINVAL;
 		goto out;
 	}
-	ctx_conf.ctxs[0].op_type = op_type;
+	ctx_conf.ctxs[0].op_type = WD_DIR_COMPRESS;
 	ctx_conf.ctxs[0].ctx_mode = ctx_mode;
 
-	sched->name = SCHED_SINGLE;
-	sched->pick_next_ctx = sched_single_pick_next;
-	sched->poll_policy = sched_single_poll_policy;
+	/* Just use first found dev to test here */
+	ctx_conf.ctxs[1].ctx = wd_request_ctx(list->dev);
+	if (!ctx_conf.ctxs[1].ctx) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ctx_conf.ctxs[1].op_type = WD_DIR_DECOMPRESS;
+	ctx_conf.ctxs[1].ctx_mode = ctx_mode;
+
+
+	sched->name = SCHED_TWO;
+	sched->pick_next_ctx = sched_two_pick_next;
+	sched->poll_policy = sched_two_poll_policy;
 	wd_comp_init(&ctx_conf, sched);
 
 	wd_free_list_accels(list);
@@ -512,7 +527,7 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	    __func__, block_size, count, thread_num, in_len);
 
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_two_ctx_config(CTX_MODE_SYNC, &sched);
 	cnt = thread_num;
 	for (i = 0; i < cnt; i++) {
 		test_thrds_data[i].thread_num = thread_num;
@@ -577,7 +592,9 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 		    test_thrds_data[thread_num-1].dst_len, dest);
 
 	for (i = 0; i < thread_num; i++) {
+		dbg("%s:free src[%d]:%p\n", __func__, i, test_thrds_data[i].src);
 		free(test_thrds_data[i].src);
+		dbg("%s:free dst[%d]:%p\n", __func__, i, test_thrds_data[i].dst);
 		free(test_thrds_data[i].dst);
 	}
 	if (op_type == WD_DIR_COMPRESS) {
