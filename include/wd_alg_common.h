@@ -62,6 +62,18 @@ struct wd_ctx_config {
 	void *priv;
 };
 
+/**
+ * sched_key - The key if schedule region.
+ * @numa_id: The numa_id map the hardware.
+ * @mode: Sync mode:0, async_mode:1
+ * @type: Service type , the value must smaller than type_num.
+ */
+struct sched_key {
+	__u8 numa_id;
+	__u8 mode;
+	__u8 type;
+};
+
 static inline void wd_spinlock(struct wd_lock *lock)
 {
 	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))

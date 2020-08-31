@@ -18,18 +18,6 @@ enum sched_policy_type {
 	SCHED_POLICY_BUTT
 };
 
-/**
- * sched_key - The key if schedule region.
- * @numa_id: The numa_id map the hardware.
- * @mode: Sync mode:0, async_mode:1
- * @type: Service type , the value must smaller than type_num.
- */
-struct sched_key {
-	__u8 numa_id;
-	__u8 mode;
-	__u8 type;
-};
-
 typedef int (*user_poll_func)(handle_t h_ctx, __u32 expect, __u32 *count);
 
 /**
