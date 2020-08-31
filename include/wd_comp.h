@@ -75,10 +75,10 @@ struct wd_comp_req {
  */
 struct wd_sched {
 	const char *name;
-	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
-				  void *req,
-				  struct sched_key *key);
-	int (*poll_policy)(struct wd_ctx_config *config,
+	handle_t (*pick_next_ctx)(const struct wd_ctx_config *config,
+				  const void *req,
+				  const struct sched_key *key);
+	int (*poll_policy)(const struct wd_ctx_config *config,
 			   __u32 expect,
 			   __u32 *count);
 };
