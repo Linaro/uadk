@@ -167,7 +167,7 @@ extern void wd_release_ctx(handle_t h_ctx);
 extern int wd_ctx_start(handle_t h_ctx);
 
 /**
- * wd_release_ctx_force() - Release a context forcely. (fix me: modify doc)
+ * wd_release_ctx_force() - Release a context forcely.
  * @h_ctx: The handle of context which will be released.
  *
  * Return 0 if successful or less than 0 otherwise.

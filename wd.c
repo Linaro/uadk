@@ -435,7 +435,6 @@ int wd_get_numa_id(handle_t h_ctx)
 	return ctx->dev->numa_id;
 }
 
-/* to do: update interface doc */
 int wd_get_avail_ctx(struct uacce_dev *dev)
 {
 	int avail_ctx, ret;
