@@ -721,6 +721,11 @@ int RSA_private_decrypt(int flen, const unsigned char *from,
 	return 0;
 }
 
+int RSA_print_fp(FILE *fp, RSA *x, int off)
+{
+	return 0;
+}
+
 DH *DH_new(void)
 {
 	return NULL;
