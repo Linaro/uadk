@@ -194,7 +194,7 @@ static struct wd_comp_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 	c_msg = &p->msg[msg->tag - 1];
 	c_msg->req.src_len = msg->in_cons;
 	c_msg->req.dst_len = msg->produced;
-	c_msg->status = msg->status;
+	c_msg->req.status = msg->req.status;
 	c_msg->isize = msg->isize;
 	c_msg->checksum = msg->checksum;
 	c_msg->tag = msg->tag;
@@ -281,6 +281,11 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	if (!config || !sched) {
 		WD_ERR("invalid params, config or sched is NULL!\n");
+		return -EINVAL;
+	}
+
+	if (!wd_is_sva(config->ctxs[0].ctx)) {
+		WD_ERR("err, non sva, please check system!\n");
 		return -EINVAL;
 	}
 
@@ -377,10 +382,10 @@ int wd_comp_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 		recv_count++;
 		req = wd_get_req_from_pool(&wd_comp_setting.pool,
 					   h_ctx, &resp_msg);
-		req->status = STATUS_OUT_DRAINED |
-			      STATUS_OUT_READY | STATUS_IN_EMPTY;
-		req->flag = FLAG_INPUT_FINISH;
-
+		if (!req) {
+			WD_ERR("get req from pool is NULL!\n");
+			break;
+		}
 		req->cb(req, req->cb_param);
 
 		/* free msg cache to msg_pool */
@@ -474,6 +479,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	fill_comp_msg(&msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
+	msg.stream_mode = WD_COMP_STATELESS;
 
 	wd_spinlock(&lock);
 	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);

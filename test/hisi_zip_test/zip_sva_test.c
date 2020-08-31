@@ -453,6 +453,7 @@ static int init_two_ctx_config(int ctx_mode, struct wd_sched *sched)
 	/* Just use first found dev to test here */
 	ctx_conf.ctxs[0].ctx = wd_request_ctx(list->dev);
 	if (!ctx_conf.ctxs[0].ctx) {
+		WD_ERR("%s, failed to request ctx idx(0)\n", __func__);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -462,6 +463,7 @@ static int init_two_ctx_config(int ctx_mode, struct wd_sched *sched)
 	/* Just use first found dev to test here */
 	ctx_conf.ctxs[1].ctx = wd_request_ctx(list->dev);
 	if (!ctx_conf.ctxs[1].ctx) {
+		WD_ERR("%s, failed to request ctx idx(1)\n", __func__);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -472,7 +474,11 @@ static int init_two_ctx_config(int ctx_mode, struct wd_sched *sched)
 	sched->name = SCHED_TWO;
 	sched->pick_next_ctx = sched_two_pick_next;
 	sched->poll_policy = sched_two_poll_policy;
-	wd_comp_init(&ctx_conf, sched);
+	ret = wd_comp_init(&ctx_conf, sched);
+	if (ret) {
+		WD_ERR("%s, failed to do comp init\n", __func__);
+		goto out;
+	}
 
 	wd_free_list_accels(list);
 
@@ -527,7 +533,10 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	    __func__, block_size, count, thread_num, in_len);
 
-	init_two_ctx_config(CTX_MODE_SYNC, &sched);
+	ret = init_two_ctx_config(CTX_MODE_SYNC, &sched);
+	if (ret)
+		return ret;
+
 	cnt = thread_num;
 	for (i = 0; i < cnt; i++) {
 		test_thrds_data[i].thread_num = thread_num;

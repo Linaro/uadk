@@ -83,8 +83,10 @@ struct hisi_zip_sqe {
  * using an hardware decompresser (It is known by hardware). This help our
  * decompresser to work and helpfully, compatible with gzip.
  */
-#define GZIP_HEADER	"\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\x03"
+#define GZIP_HEADER	"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03"
 #define GZIP_HEADER_SZ	10
+
+#define GZIP_HEADER_EX	"\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\x03"
 #define GZIP_EXTRA_SZ	10
 #define GZIP_TAIL_SZ	8
 
@@ -126,7 +128,7 @@ struct hisi_zip_sqe {
 #define HZ_LSTBLK_MASK 0x0100
 #define HZ_STATUS_MASK 0xff
 #define HZ_REQ_TYPE_MASK 0xff
-#define HZ_STREAM_POS_MASK 0x03
+#define HZ_STREAM_POS_MASK 0x08000000
 
 #define HZ_HADDR_SHIFT		32
 
@@ -241,7 +243,6 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		    HZ_STREAM_OLD;
 	flush_type = (msg->flush_type == WD_FINISH) ? HZ_FINISH :
 		     HZ_SYNC_FLUSH;
-
 	sqe.dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
@@ -280,7 +281,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		return ret;
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
-	__u16 stream_pos = sqe.dw7 & HZ_STREAM_POS_MASK;
+	__u32 stream_pos = sqe.dw7 & HZ_STREAM_POS_MASK;
 	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe.dw9 & HZ_REQ_TYPE_MASK;
 
@@ -296,14 +297,15 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	}
 	recv_msg->in_cons = sqe.consumed;
 	recv_msg->produced = sqe.produced;
-	if (stream_pos == HZ_STREAM_NEW) {
-		if (sqe.dw9 == HW_ZLIB) {
+
+	if (stream_pos) { /* bit:1 : stream_new */
+		if (type == HW_ZLIB) {
 			if (qp->q_info.qc_type == WD_DIR_COMPRESS)
 				recv_msg->produced += ZLIB_HEADER_SZ;
 			else
 				recv_msg->in_cons += ZLIB_HEADER_SZ;
 		}
-		if (sqe.dw9 == HW_GZIP) {
+		if (type == HW_GZIP) {
 			if (qp->q_info.qc_type == WD_DIR_COMPRESS)
 				recv_msg->produced += GZIP_HEADER_SZ;
 			else

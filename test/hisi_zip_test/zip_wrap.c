@@ -283,10 +283,11 @@ int hw_blk_compress(int alg_type, int blksize,
 		return ret;
 	}
 
-	if (req.status < 0) {
+	if (req.status) {
 		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
 		req.status);
-		return ret;
+		wd_comp_free_sess(h_sess);
+		return req.status;
 	}
 	*dstlen = req.dst_len;
 
@@ -331,10 +332,11 @@ int hw_blk_decompress(int alg_type, int blksize,
 		return ret;
 	}
 
-	if (req.status < 0) {
+	if (req.status) {
 		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
 		req.status);
-		return ret;
+		wd_comp_free_sess(h_sess);
+		return req.status;
 	}
 	*dstlen = req.dst_len;
 
