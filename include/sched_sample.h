@@ -21,11 +21,6 @@ enum sched_policy_type {
 typedef int (*user_poll_func)(handle_t h_ctx, __u32 expect, __u32 *count);
 
 /**
- * sample_sched_release - Release schedule memory.
- */
-void sample_sched_release(void);
-
-/**
  * sample_sched_fill_region - Fill the schedule min region.
  * @sched_ctx: The memery alloc by user which is consult with the sample_sched_get_size.
  * @mode: Sync or async mode.  sync: 0, async: 1.
@@ -44,7 +39,7 @@ int sample_sched_fill_region(__u8 numa_id, __u8 mode, __u8 type, __u32 begin, __
  * @reg: The service request msg, different algorithm shoule support analysis function.
  * @key: The key of schedule region.
  */
-handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct sched_key *key);
+handle_t sample_sched_pick_next_ctx(const struct wd_ctx_config *cfg, const void *req, const struct sched_key *key);
 
 /**
  * sample_poll_policy - The polling policy matches the pick next ctx
@@ -52,7 +47,7 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
  * @expect: User expect poll msg num.
  * @count: The actually poll num.
  */
-int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *count);
+int sample_sched_poll_policy(const struct wd_ctx_config *cfg, __u32 expect, __u32 *count);
 
 /**
  * sample_sched_init - Schedule Init function.
@@ -61,4 +56,10 @@ int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *cou
  * @func: The ctx poll function of user underlying operating.
  */
 int sample_sched_init(__u8 sched_type, __u8 type_num, user_poll_func func);
+
+/**
+ * sample_sched_release - Release schedule memory.
+ */
+void sample_sched_release(void);
+
 #endif

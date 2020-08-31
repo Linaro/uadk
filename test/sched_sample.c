@@ -15,7 +15,7 @@
 #include "sched_sample.h"
 
 #define CTX_NUM_OF_NUMA 100
-#define MAX_POLL_TIMES 10000
+#define MAX_POLL_TIMES 1000
 
 enum sched_region_mode {
 	SCHED_MODE_SYNC = 0,
@@ -56,9 +56,9 @@ struct sample_sched_info {
  * @poll_policy: the polling policy.
  */
 struct sched_operator {
-	void (*get_para)(void *req, void *para);
+	void (*get_para)(const void *req, void *para);
 	__u32 (*get_next_pos)(struct sched_ctx_region *region, void *para);
-	int (*poll_policy)(struct wd_ctx_config *cfg, struct sched_ctx_region **region, __u32 expect, __u32 *count);
+	int (*poll_policy)(const struct wd_ctx_config *cfg, struct sched_ctx_region **region, __u32 expect, __u32 *count);
 };
 
 /* Service type num, config by user through init. */
@@ -76,7 +76,7 @@ user_poll_func g_sched_user_poll = NULL;
 /**
  * Fill privte para that the different mode needs, reserved for future.
  */
-static void sample_get_para_rr(void *req, void *para)
+static void sample_get_para_rr(const void *req, void *para)
 {
 	return;
 }
@@ -92,11 +92,11 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region, void *para)
 
 	pos = region->last;
 
-	if (pos < region->end) {
+	if (pos < region->end)
 		region->last++;
-	} else if (pos == region->last) {
+	else if (pos == region->last)
 		region->last = region->begin;
-	} else {
+	else {
 		/* If the pos's value is out of range, we can output the error info and correct the error */
 		printf("ERROR:%s, pos = %u, begin = %u, end = %u\n", __FUNCTION__, pos, region->begin, region->end);
 		region->last = region->begin;
@@ -107,50 +107,53 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region, void *para)
 	return pos;
 }
 
-static int sample_poll_policy_rr(struct wd_ctx_config *cfg, struct sched_ctx_region **region,
-	__u32 expect, __u32 *count)
+static int sample_poll_region(const struct wd_ctx_config *cfg, __u32 begin, __u32 end, __u32 expect, __u32 *count)
 {
 	__u32 poll_num = 0;
+	__u32 i;
+	int ret;
+
+	/* i is the pos of ctxs, the max is end */
+	for (i = begin; i <= end; i++) {
+		/* RR schedule, one time poll one */
+		ret = g_sched_user_poll(cfg->ctxs[i].ctx, 1, &poll_num);
+		if (ret)
+			return SCHED_ERROR;
+
+		*count += poll_num;
+		if (*count >= expect)
+			break;
+	}
+
+	return SCHED_SUCCESS;
+}
+
+static int sample_poll_policy_rr(struct wd_ctx_config const *cfg, struct sched_ctx_region **region,
+										__u32 expect, __u32 *count)
+{
 	__u32 loop_time = 0;
 	__u32 begin, end;
-	__u32 i, j;
-	__u8 invalid_num = 0;
+	__u32 i;
 	int ret;
 
 	/* Traverse the async ctx */
-	while (1) {
+	/* But if poll_num always be zero by unknow reason. This will be endless loop,
+	 * we must add the escape way by recording the loop count, if it is bigger
+	 * than MAX_POLL_TIMES, must stop and return the pool num */
+	while (loop_time < MAX_POLL_TIMES) {
+		loop_time++;
 		for (i = 0; i < g_sched_type_num; i++) {
-			if (!region[SCHED_MODE_ASYNC][i].valid) {
-				invalid_num++;
+			if (!region[SCHED_MODE_ASYNC][i].valid)
 				continue;
-			}
 
 			begin = region[SCHED_MODE_ASYNC][i].begin;
 			end = region[SCHED_MODE_ASYNC][i].end;
-			/* j is the pos of ctxs, the max is end */
-			for (j = begin; j <= end; j++) {
-				/* RR schedule, one time poll one */
-				ret = g_sched_user_poll(cfg->ctxs[j].ctx, 1, &poll_num);
-				if (ret) {
-					return SCHED_ERROR;
-				}
+			ret = sample_poll_region(cfg, begin, end, expect, count);
+			if (ret)
+				return ret;
 
-				loop_time++;
-				*count += poll_num;
-
-				/* But if poll_num always be zero by unknow reason. This will be endless loop,
-				we must add the escape way by recording the loop count, if it is bigger
-				than MAX_POLL_TIMES, must stop and return the pool num */
-				if (*count >= expect || loop_time >= MAX_POLL_TIMES) {
-					return SCHED_SUCCESS;
-				}
-			}
-		}
-
-		/* There is not async region, should return */
-		if (invalid_num >= g_sched_type_num) {
-			printf("ERROR: no async region is filled.\n");
-			return SCHED_ERROR;
+			if (*count >= expect)
+				return SCHED_SUCCESS;
 		}
 	}
 
@@ -168,16 +171,15 @@ struct sched_operator g_sched_ops[SCHED_POLICY_BUTT] = {
 /**
  * sample_sched_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
  */
-static struct sched_ctx_region *sample_sched_get_ctx_range(struct sched_key *key)
+static struct sched_ctx_region *sample_sched_get_ctx_range(const struct sched_key *key)
 {
-	if (g_sched_info[key->numa_id].ctx_region[key->mode][key->type].valid) {
+	if (g_sched_info[key->numa_id].ctx_region[key->mode][key->type].valid)
 		return &g_sched_info[key->numa_id].ctx_region[key->mode][key->type];
-	}
 
 	return NULL;
 }
 
-static bool sample_sched_key_valid(struct sched_key *key)
+static bool sample_sched_key_valid(const struct sched_key *key)
 {
 	if (key->numa_id >= MAX_NUMA_NUM || key->mode >= SCHED_MODE_BUTT || key->type >= g_sched_type_num) {
 		printf("ERROR: %s key error - %u,%u,%u !\n", __FUNCTION__, key->numa_id, key->mode, key->type);
@@ -190,7 +192,7 @@ static bool sample_sched_key_valid(struct sched_key *key)
 /**
  * sample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg
  */
-handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct sched_key *key)
+handle_t sample_sched_pick_next_ctx(const struct wd_ctx_config *cfg, const void *req, const struct sched_key *key)
 {
 	__u32 pos;
 	struct sched_ctx_region *region = NULL;
@@ -201,13 +203,13 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
 	}
 
 	if (!sample_sched_key_valid(key)) {
+		printf("ERROR: %s the key is invalid !\n", __FUNCTION__);
 		return (handle_t)NULL;
 	}
 
 	region = sample_sched_get_ctx_range(key);
-	if (!region) {
+	if (!region)
 		return (handle_t)NULL;
-	}
 
 	/* Notice: The second para now is a stub, we must alloc memery for it before using */
 	g_sched_ops[g_sched_policy].get_para(req, NULL);
@@ -219,17 +221,22 @@ handle_t sample_sched_pick_next_ctx(struct wd_ctx_config *cfg, void *req, struct
 /**
  * sample_poll_policy - The polling policy matches the pick next ctx
  */
-int sample_sched_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
+int sample_sched_poll_policy(const struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
 {
 	__u8 numa_id;
+	int ret;
 
-	if (!count) {
+	if (!count || !cfg) {
 		printf("ERROR: %s the count is NULL !\n", __FUNCTION__);
 		return SCHED_PARA_INVALID;
 	}
+
 	for (numa_id = 0; numa_id < MAX_NUMA_NUM; numa_id++) {
-		if (g_sched_info[numa_id].valid)
-			g_sched_ops[g_sched_policy].poll_policy(cfg, g_sched_info[numa_id].ctx_region, expect, count);
+		if (g_sched_info[numa_id].valid) {
+			ret = g_sched_ops[g_sched_policy].poll_policy(cfg, g_sched_info[numa_id].ctx_region, expect, count);
+			if (ret)
+				return ret;
+		}
 	}
 
 	return SCHED_SUCCESS;
@@ -267,7 +274,7 @@ int sample_sched_fill_region(__u8 numa_id, __u8 mode, __u8 type, __u32 begin, __
 /**
  * sample_sched_operator_cfg - user can define private schedule operator
  */
-int sample_sched_operator_cfg(struct sched_operator *op)
+int sample_sched_operator_cfg(const struct sched_operator *op)
 {
 	if (!op) {
 		printf("Error: %s op is null!\n", __FUNCTION__);
@@ -288,8 +295,8 @@ int sample_sched_init(__u8 sched_type, __u8 type_num, user_poll_func func)
 {
 	int i, j;
 
-	if (sched_type >= SCHED_POLICY_BUTT) {
-		printf("Error: %s sched_type = %u is invalid!\n", __FUNCTION__, sched_type);
+	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
+		printf("Error: %s sched_type = %u or type_num = %u is invalid!\n", __FUNCTION__, sched_type, type_num);
 		return SCHED_PARA_INVALID;
 	}
 
@@ -305,9 +312,8 @@ int sample_sched_init(__u8 sched_type, __u8 type_num, user_poll_func func)
 	for (i = 0; i < MAX_NUMA_NUM; i++) {
 		for (j = 0; j < SCHED_MODE_BUTT; j++) {
 			g_sched_info[i].ctx_region[j] = calloc(1, sizeof(struct sched_ctx_region) * type_num);
-			if (!g_sched_info[i].ctx_region[j]) {
+			if (!g_sched_info[i].ctx_region[j])
 				goto err_out;
-			}
 		}
 	}
 
@@ -328,9 +334,8 @@ void sample_sched_release()
 
 	for (i = 0; i < MAX_NUMA_NUM; i++) {
 		for (j = 0; j < SCHED_MODE_BUTT; j++) {
-			if (g_sched_info[i].ctx_region[j]) {
+			if (g_sched_info[i].ctx_region[j])
 				free(g_sched_info[i].ctx_region[j]);
-			}
 		}
 	}
 

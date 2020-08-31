@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched_sample.h>
@@ -43,7 +44,8 @@ static int user_poll_func_stub_fail(handle_t h_ctx, __u32 expect, __u32 *count)
 	return SCHED_SUCCESS;
 }
 
-static int sched_test_case1(const char *name) {
+static int sched_test_case1(const char *name)
+{
 	int ret;
 
 	ret = sample_sched_init(SCHED_POLICY_BUTT, SCHED_TEST_TYPE_NUM, user_poll_func_stub_succee);
@@ -62,7 +64,8 @@ static int sched_test_case1(const char *name) {
 	return SCHED_SUCCESS;
 }
 
-static int sched_test_case2(const char *name) {
+static int sched_test_case2(const char *name)
+{
 	int ret;
 
 	ret = sample_sched_init(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, user_poll_func_stub_succee);
@@ -119,7 +122,7 @@ static int sched_test_case3(const char *name)
 	key.mode = 0;
 	key.type = 0;
 	for (i = 0; i < SCHED_TEST_CTX_NUM; i++) {
-		ctx = sample_sched_pick_next_ctx(&g_sched_test_cfg, req, &key);
+		ctx = sample_sched_pick_next_ctx((const struct wd_ctx_config*)&g_sched_test_cfg, req, &key);
 		if (!ctx) {
 			printf("CASE 3: %s failure, sample_sched_pick_next_ctx\n", name);
 			return SCHED_ERROR;
@@ -132,8 +135,8 @@ static int sched_test_case3(const char *name)
 		}
 	}
 
-	/* Test times bigger than SCHED_TEST_CTX_NUM, the ctx must start from 1*/
-	ctx = sample_sched_pick_next_ctx(&g_sched_test_cfg, req, &key);
+	/* Test times bigger than SCHED_TEST_CTX_NUM, the ctx must start from 1 */
+	ctx = sample_sched_pick_next_ctx((const struct wd_ctx_config*)&g_sched_test_cfg, req, &key);
 	if (ctx != 1) {
 		printf("CASE 3: %s failure, ctx cycle check failed\n", name);
 		return SCHED_ERROR;
@@ -162,7 +165,7 @@ int sched_test_case4(const char *name)
 	}
 
 	/* 100 is expect poll times */
-	ret = sample_sched_poll_policy(&g_sched_test_cfg, 100, &count);
+	ret = sample_sched_poll_policy((const struct wd_ctx_config*)&g_sched_test_cfg, 100, &count);
 	if (ret || count != 100) {
 		printf("CASE 4: %s failure, sample_sched_poll_policy, count = %u\n", name, count);
 		return SCHED_ERROR;
@@ -191,7 +194,7 @@ int sched_test_case5(const char *name)
 	}
 
 	/* 100 is expect poll times */
-	ret = sample_sched_poll_policy(&g_sched_test_cfg, 1, &count);
+	ret = sample_sched_poll_policy((const struct wd_ctx_config*)&g_sched_test_cfg, 1, &count);
 	if (ret || count != 0) {
 		printf("CASE 5: %s failure, sample_sched_poll_policy, count = %u\n", name, count);
 		return SCHED_ERROR;
@@ -211,18 +214,17 @@ void main()
 	struct test_case {
 		const char *name;
 		int (*func)(const char *name);
-	}test_case[] =
-		{
+	}test_case[] = {
 			{"Init boundary test",  sched_test_case1},
 			{"Fill boundary test",  sched_test_case2},
 			{"Picknext RR test ",   sched_test_case3},
 			{"Poll RR test",        sched_test_case4},
 			{"Poll RR safety test", sched_test_case5},
-		};
+	};
 
 	sched_test_init();
 
-	for ( i = 0; i < sizeof(test_case) / sizeof(struct test_case); i++) {
+	for (i = 0; i < sizeof(test_case) / sizeof(struct test_case); i++) {
 		total++;
 		ret = test_case[i].func(test_case[i].name);
 		if (ret)
