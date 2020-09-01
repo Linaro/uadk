@@ -19,14 +19,6 @@ test_sva_perf_LDADD+=-lz
 test_sva_perf_CPPFLAGS=-DUSE_ZLIB
 endif
 
-test_comp_SOURCES=test_comp.c
-if WD_STATIC_DRV
-test_comp_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
-		../../.libs/libhisi_zip.a
-else
-test_comp_LDADD=-L../../.libs -lwd -lwd_comp -lhisi_zip
-endif
-
 example_SOURCES = example.c
 if WD_STATIC_DRV
 example_LDADD = ../../.libs/libwd.a ../../.libs/libwd_comp.a \
