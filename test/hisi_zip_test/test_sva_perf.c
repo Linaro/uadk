@@ -357,14 +357,12 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
-		ret = hizip_test_init(&sched, copts, &default_test_ops, &ctx);
+		/* to do: wd_comp_init  */
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
 		}
 	}
-	if (sched.qs)
-		ctx.is_nosva = wd_is_sva(sched.qs[0]) ? 0 : 1;
 
 	ctx_save = ctx;
 
@@ -380,7 +378,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 					   EXPANSION_RATIO, ctx.in_buf,
 					   ctx.total_len, &ctx.total_out);
 		else
-			ret = hizip_test_sched(&sched, copts, &ctx);
+			/* to do: wd_do_comp_sync */
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			goto out_with_fini;
@@ -443,7 +441,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 
 out_with_fini:
 	if (!(opts->option & TEST_ZLIB))
-		hizip_test_fini(&sched, copts);
+		/* to do: wd_comp_uninit */
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
@@ -571,42 +569,11 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 	printf("\n");
 }
 
-static void hizip_test_init_cache(struct wd_scheduler *sched, int i, void *priv)
-{
-	struct priv_context *priv_ctx = priv;
-
-	return hizip_test_default_init_cache(sched, i, &priv_ctx->ctx);
-}
-
-static int hizip_test_input(struct wd_msg *msg, void *priv)
-{
-	struct priv_context *priv_ctx = priv;
-
-	return hizip_test_default_input(msg, &priv_ctx->ctx);
-}
-
-static int hizip_test_output(struct wd_msg *msg, void *priv)
-{
-	struct priv_context *priv_ctx = priv;
-
-	if (priv_ctx->opts->faults & INJECT_SIG_WORK)
-		kill(getpid(), SIGTERM);
-
-	return hizip_test_default_output(msg, &priv_ctx->ctx);
-}
-
-static struct test_ops test_ops = {
-	.init_cache = hizip_test_init_cache,
-	.input = hizip_test_input,
-	.output = hizip_test_output,
-};
-
 static int run_one_child(struct priv_options *opts)
 {
 	int i;
 	int ret = 0;
 	void *in_buf, *out_buf;
-	struct wd_scheduler sched = {0};
 	struct priv_context priv_ctx;
 	struct hizip_test_context save_ctx;
 	struct hizip_test_context *ctx = &priv_ctx.ctx;
@@ -616,9 +583,7 @@ static int run_one_child(struct priv_options *opts)
 	priv_ctx.opts = opts;
 
 	ctx->opts = copts;
-	ctx->msgs = calloc(copts->req_cache_num, sizeof(*ctx->msgs));
-	if (!ctx->msgs)
-		return ENOMEM;
+	ctx->msgs = NULL;
 
 	ctx->total_len = copts->total_len;
 
@@ -636,13 +601,14 @@ static int run_one_child(struct priv_options *opts)
 
 	hizip_prepare_random_input_data(ctx);
 
-	ret = hizip_test_init(&sched, copts, &test_ops, &priv_ctx);
+	/*
+	 * to do: wd_comp_init should be done here, ctx type, num should be set
+	 *        according to input parameter.
+	 */
 	if (ret) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_with_out_buf;
 	}
-	if (sched.qs)
-		ctx->is_nosva = wd_is_sva(sched.qs[0]) ? 0 : 1;
 
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
@@ -651,7 +617,9 @@ static int run_one_child(struct priv_options *opts)
 	for (i = 0; i < copts->compact_run_num; i++) {
 		*ctx = save_ctx;
 
-		ret = hizip_test_sched(&sched, copts, ctx);
+		/*
+		 * to do: wd_do_comp_sync here.
+		 */
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			break;
@@ -677,7 +645,8 @@ static int run_one_child(struct priv_options *opts)
 
 		*ctx = save_ctx;
 		ctx->faulting = true;
-		ret = hizip_test_sched(&sched, copts, ctx);
+
+		/* to do: wd_do_comp_sync here */
 		if (ret >= 0) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", out_buf, out_buf +
@@ -690,7 +659,7 @@ static int run_one_child(struct priv_options *opts)
 		out_buf = NULL;
 	}
 
-	hizip_test_fini(&sched, copts);
+	/* to do: wd_comp_uninit */
 
 	if (out_buf)
 		ret = hizip_verify_random_output(out_buf, copts, ctx);
