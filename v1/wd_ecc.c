@@ -200,8 +200,10 @@ static void wd_memset_zero(void *data, __u32 size)
 
 static void *br_alloc(struct wd_mm_br *br, __u32 size)
 {
-	if (!br->alloc)
+	if (!br->alloc) {
+		WD_ERR("br alloc NULL!\n");
 		return NULL;
+	}
 
 	if (br->get_bufsize && br->get_bufsize(br->usr) < size) {
 		WD_ERR("Blk_size < need_size<0x%x>.\n", size);
@@ -213,8 +215,10 @@ static void *br_alloc(struct wd_mm_br *br, __u32 size)
 
 static void br_free(struct wd_mm_br *br, void *va)
 {
-	if (!br->free)
+	if (!br->free) {
+		WD_ERR("br free NULL!\n");
 		return;
+	}
 
 	return br->free(br->usr, va);
 }
@@ -230,7 +234,7 @@ static __u32 get_hw_keysize(__u32 ksz)
 	else if (ksz <= BITS_TO_BYTES(576))
 		size = BITS_TO_BYTES(576);
 	else
-		WD_ERR("failed to get hw keysize : ksz = %d.\n", ksz);
+		WD_ERR("failed to get hw keysize : ksz = %u.\n", ksz);
 
 	return size;
 }
@@ -362,7 +366,7 @@ static struct wcrypto_ecc_in *create_ecc_in(struct wcrypto_ecc_ctx *ctx,
 	__u32 hsz, len;
 
 	if (!ctx->key_size || ctx->key_size > ECC_MAX_KEY_SIZE) {
-		WD_ERR("ctx key size %d error!\n", ctx->key_size);
+		WD_ERR("ctx key size %u error!\n", ctx->key_size);
 		return NULL;
 	}
 
@@ -389,7 +393,7 @@ static struct wcrypto_ecc_out *create_ecc_out(struct wcrypto_ecc_ctx *ctx,
 	__u32 hsz, len;
 
 	if (!ctx->key_size || ctx->key_size > ECC_MAX_KEY_SIZE) {
-		WD_ERR("ctx key size %d error!\n", ctx->key_size);
+		WD_ERR("ctx key size %u error!\n", ctx->key_size);
 		return NULL;
 	}
 
@@ -475,10 +479,8 @@ struct wcrypto_ecc_out *wcrypto_new_ecxdh_out(void *ctx)
 	}
 
 	ecc_out = create_ecc_out(ctx, ECDH_OUT_PARAM_NUM);
-	if (!ecc_out) {
+	if (!ecc_out)
 		WD_ERR("failed to create ecc out!\n");
-		return NULL;
-	}
 
 	return ecc_out;
 }
@@ -599,12 +601,12 @@ static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 
 	item = find_curve_list(id);
 	if (!item) {
-		WD_ERR("failed to find curve id %d!\n", id);
+		WD_ERR("failed to find curve id %u!\n", id);
 		return -WD_EINVAL;
 	}
 
 	if (item->key_bits != key_bits) {
-		WD_ERR("curve %u and key bits %u not match!\n", id, key_bits);
+		WD_ERR("curve %u and key bits %hu not match!\n", id, key_bits);
 		return -WD_EINVAL;
 	}
 
@@ -636,13 +638,13 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 		memcpy(param, ppara, sizeof(struct wcrypto_ecc_curve));
 		dbg("set curve by user param\n");
 	} else {
-		WD_ERR("fill curve cfg:type %d error!\n", setup->cv.type);
+		WD_ERR("fill curve cfg:type %u error!\n", setup->cv.type);
 		return -WD_EINVAL;
 	}
 
 	if (!param->p.dsize ||
 	     param->p.dsize > BITS_TO_BYTES(setup->key_bits)) {
-		WD_ERR("fill curve cfg:dsize %d error!\n", param->p.dsize);
+		WD_ERR("fill curve cfg:dsize %u error!\n", param->p.dsize);
 		return -WD_EINVAL;
 	}
 
@@ -740,7 +742,7 @@ static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 	    setup->key_bits != 384 &&
 	    setup->key_bits != 448 &&
 	    setup->key_bits != 521) {
-		WD_ERR("key_bits %d error!\n", setup->key_bits);
+		WD_ERR("key_bits %u error!\n", setup->key_bits);
 		return -WD_EINVAL;
 	}
 
@@ -770,7 +772,7 @@ static void del_ctx_key(struct wd_mm_br *br,
 static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 			     struct wcrypto_ecc_ctx_setup *setup)
 {
-	uint32_t hsz = get_hw_keysize(ctx->key_size);
+	__u32 hsz = get_hw_keysize(ctx->key_size);
 	struct q_info *qinfo = ctx->q->qinfo;
 	int i;
 
@@ -816,6 +818,7 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 		WD_ERR("failed to alloc ctx id!\n");
 		goto free_spinlock;
 	}
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_ecc_ctx));
@@ -837,14 +840,12 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	}
 
 	init_ctx_cookies(ctx, setup);
-	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num++;
-	wd_unspinlock(&qinfo->qlock);
 
 	return ctx;
 
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
 	wd_free_ctx_id(q, cid);
 
 free_spinlock:
@@ -868,15 +869,15 @@ void wcrypto_del_ecc_ctx(void *ctx)
 	br = &cx->setup.br;
 	qinfo = cx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
-	if (!qinfo->ctx_num) {
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	} else if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
+		WD_ERR("error:repeat del ecc ctx ctx!\n");
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("error:repeat del ecc ctx!\n");
 		return;
 	}
+
+	wd_free_ctx_id(cx->q, cx->ctx_id);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	wd_unspinlock(&qinfo->qlock);
 
 	del_ctx_key(br, cx);
@@ -1101,7 +1102,7 @@ void wcrypto_del_ecc_in(void *ctx, struct wcrypto_ecc_in *in)
 
 	bsz = in->size;
 	if (!bsz || bsz > ECC_MAX_IN_SIZE) {
-		WD_ERR("del ecc in: size %d err!\n", bsz);
+		WD_ERR("del ecc in: size %u err!\n", bsz);
 		return;
 	}
 
@@ -1121,7 +1122,7 @@ void wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out)
 
 	bsz = out->size;
 	if (!bsz || bsz > ECC_MAX_OUT_SIZE) {
-		WD_ERR("del ecc out: size %d err!\n", bsz);
+		WD_ERR("del ecc out: size %u err!\n", bsz);
 		return;
 	}
 
@@ -1179,7 +1180,7 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 		key = (__u8 *)&c->key;
 		break;
 	default:
-		WD_ERR("ecc request op type = %d error!\n", req->op_type);
+		WD_ERR("ecc request op type = %hhu error!\n", req->op_type);
 		return -WD_EINVAL;
 	}
 	req->key = key;
@@ -1204,18 +1205,17 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 
 static int ecc_send(struct wcrypto_ecc_ctx *ctx, struct wcrypto_ecc_msg *req)
 {
-	uint32_t tx_cnt = 0;
+	__u32 tx_cnt = 0;
 	int ret;
 
 	do {
 		ret = wd_send(ctx->q, req);
 		if (ret == -WD_EBUSY) {
-			tx_cnt++;
-			usleep(1);
-			if (tx_cnt >= ECC_RESEND_CNT) {
+			if (tx_cnt++ >= ECC_RESEND_CNT) {
 				WD_ERR("failed to send: retry exit!\n");
 				break;
 			}
+			usleep(1);
 		} else if (ret) {
 			WD_ERR("failed to send: send error = %d!\n", ret);
 			break;
@@ -1229,7 +1229,7 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 			 struct wcrypto_ecc_op_data *opdata)
 {
 	struct wcrypto_ecc_msg *resp = NULL;
-	uint32_t rx_cnt = 0;
+	__u32 rx_cnt = 0;
 	int ret;
 
 	resp = (void *)(uintptr_t)ctx->ctx_id;
@@ -1345,7 +1345,7 @@ int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
 		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY)) {
-		WD_ERR("do ecxdh: op_type = %d error!\n", opdata->op_type);
+		WD_ERR("do ecxdh: op_type = %hhu error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -1529,10 +1529,8 @@ struct wcrypto_ecc_out *wcrypto_new_ecdsa_sign_out(void *ctx)
 	}
 
 	ecc_out = create_ecc_out(ctx, ECC_SIGN_OUT_PARAM_NUM);
-	if (!ecc_out) {
+	if (!ecc_out)
 		WD_ERR("create ecc out err!\n");
-		return NULL;
-	}
 
 	return ecc_out;
 }
@@ -1586,7 +1584,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECDSA_SIGN &&
 	    opdata->op_type != WCRYPTO_ECDSA_VERIFY)) {
-		WD_ERR("do ecdsa: op_type = %d error!\n", opdata->op_type);
+		WD_ERR("do ecdsa: op_type = %hhu error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 

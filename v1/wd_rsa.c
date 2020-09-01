@@ -585,13 +585,13 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 		return NULL;
 	}
 
-	qinfo->ctx_num++;
 	cid = wd_alloc_ctx_id(q, WD_RSA_MAX_CTX);
 	if (cid < 0) {
 		WD_ERR("err: alloc ctx id fail!\n");
 		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = create_ctx(setup, cid);
@@ -611,6 +611,7 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
 	wd_free_ctx_id(q, cid);
 	wd_unspinlock(&qinfo->qlock);
 
@@ -1045,15 +1046,15 @@ void wcrypto_del_rsa_ctx(void *ctx)
 	st = &cx->setup;
 	qinfo = cx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
-	if (!qinfo->ctx_num) {
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	} else if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error:repeat del rsa ctx!\n");
 		return;
 	}
+
+	wd_free_ctx_id(cx->q, cx->ctx_id);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 
 	wd_unspinlock(&qinfo->qlock);
 	del_ctx_key(st, cx);
