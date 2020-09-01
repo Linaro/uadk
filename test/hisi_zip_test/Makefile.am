@@ -14,7 +14,6 @@ endif
 test_sva_perf_LDADD+=-lm
 
 if HAVE_ZLIB
-test_sva_perf_SOURCES+=test_lib.c
 test_sva_perf_LDADD+=-lz
 test_sva_perf_CPPFLAGS=-DUSE_ZLIB
 endif
