@@ -4,11 +4,7 @@
 
 #include "../wd_rsa.h"
 
-/*
-* to do: put wd_comp_msg temporarily, should be move to a internal head file
-*        together with wd_comp_driver definition.
-*/
-/* RSA message format of Warpdrive */
+/* RSA message format */
 struct wd_rsa_msg {
 	struct wd_rsa_req req;
 	__u64 tag; /* User-defined request identifier */

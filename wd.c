@@ -492,7 +492,7 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 
 	wd_class = opendir(SYS_CLASS_DIR);
 	if (!wd_class) {
-		WD_ERR("WarpDrive framework isn't enabled in system!\n");
+		WD_ERR("UADK framework isn't enabled in system!\n");
 		return NULL;
 	}
 

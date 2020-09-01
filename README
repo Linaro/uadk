@@ -14,8 +14,8 @@ supposed to be used in business scenario.
 The directory contains the following elements:
 
 wd.[ch]
-	A demonstration WrapDrive fundamental library which wraps the basic
-	operations to the WrapDrive-ed device.
+	A demonstration UADK fundamental library which wraps the basic
+	operations to the UACCE device.
 
 wd_adapter.[ch]
 	User driver adaptor for wd.[ch]

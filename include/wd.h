@@ -67,7 +67,6 @@ extern FILE *flog_fd;
 #define	WD_IN_EPARA			67
 #define	WD_ENOPROC			68
 
-/* Warpdrive data buffer */
 struct wd_dtb {
 	char *data; /* data/buffer start address */
 	__u32 dsize; /* data size */
