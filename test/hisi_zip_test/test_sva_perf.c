@@ -21,7 +21,7 @@
 #include "test_lib.h"
 
 struct priv_context {
-	struct hizip_test_context ctx;
+	struct hizip_test_info info;
 	struct priv_options *opts;
 };
 
@@ -207,7 +207,7 @@ static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 }
 
 static void enable_thp(struct priv_options *opts,
-		       struct hizip_test_context *ctx)
+		       struct hizip_test_info *info)
 {
 	int ret;
 	char *p;
@@ -243,13 +243,13 @@ static void enable_thp(struct priv_options *opts,
 		return;
 	}
 
-	ret = madvise(ctx->in_buf, ctx->total_len, MADV_HUGEPAGE);
+	ret = madvise(info->in_buf, info->total_len, MADV_HUGEPAGE);
 	if (ret) {
 		perror("madvise(MADV_HUGEPAGE)");
 		return;
 	}
 
-	ret = madvise(ctx->out_buf, ctx->total_len * EXPANSION_RATIO,
+	ret = madvise(info->out_buf, info->total_len * EXPANSION_RATIO,
 		      MADV_HUGEPAGE);
 	if (ret) {
 		perror("madvise(MADV_HUGEPAGE)");
@@ -262,38 +262,45 @@ out_err:
 
 static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
-	int j;
+	int i, j;
 	double v;
 	int nr_fds;
 	int ret = 0;
 	int *perf_fds;
 	void *in_buf, *out_buf;
 	unsigned long total_len;
-	struct hizip_test_context ctx = {0}, ctx_save;
+	struct hizip_test_info info = {0}, info_save;
 	struct test_options *copts = &opts->common;
 	struct timespec setup_time, start_time, end_time;
 	struct timespec setup_cputime, start_cputime, end_cputime;
 	struct rusage setup_rusage, start_rusage, end_rusage;
+	struct wd_sched sched;
+	int stat_size = sizeof(info.stat) * copts->q_num;
+	//int stat_size = sizeof(*sched.stat) * copts->q_num;
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
 
-	ctx.opts = copts;
-	ctx.total_len = copts->total_len;
+	info.opts = copts;
+	info.total_len = copts->total_len;
 
-	in_buf = ctx.in_buf = mmap_alloc(copts->total_len);
+	in_buf = info.in_buf = mmap_alloc(copts->total_len);
 	if (!in_buf)
 		return -ENOMEM;
 
-	out_buf = ctx.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
+	info.req.src = in_buf;
+	info.req.dst = out_buf;
+	info.req.src_len = copts->total_len;
+	info.req.dst_len = copts->total_len * EXPANSION_RATIO;
 
-	enable_thp(opts, &ctx);
+	enable_thp(opts, &info);
 
-	hizip_prepare_random_input_data(&ctx);
+	hizip_prepare_random_input_data(&info);
 
 	perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds);
 
@@ -312,31 +319,39 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
-		/* to do: wd_comp_init  */
+		ret = init_ctx_config(copts, &sched, &info);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
 		}
 	}
 
-	ctx_save = ctx;
+	info_save = info;
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
 	getrusage(RUSAGE_SELF, &start_rusage);
 
 	for (j = 0; j < copts->compact_run_num; j++) {
-		ctx = ctx_save;
+		info = info_save;
 
 		if (opts->option & TEST_ZLIB)
-			ret = zlib_deflate(ctx.out_buf, ctx.total_len *
-					   EXPANSION_RATIO, ctx.in_buf,
-					   ctx.total_len, &ctx.total_out);
+			ret = zlib_deflate(info.out_buf, info.total_len *
+					   EXPANSION_RATIO, info.in_buf,
+					   info.total_len, &info.total_out);
 		else
-			/* to do: wd_do_comp_sync */
+			ret = hizip_test_sched(&sched, copts, &info);
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			goto out_with_fini;
+		}
+
+		for (i = 0; i < copts->q_num && info.stat; i++) {
+			stats->v[ST_SEND] += info.stat[i].send;
+			stats->v[ST_RECV] += info.stat[i].recv;
+			stats->v[ST_SEND_RETRY] += info.stat[i].send_retries;
+			stats->v[ST_RECV_RETRY] += info.stat[i].recv_retries;
+			memset(info.stat, 0, stat_size);
 		}
 	}
 
@@ -368,7 +383,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 
 	/* check last loop is enough, same as below hizip_verify_output */
 	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
-					 ctx.total_out * 100;
+					 info.total_out * 100;
 
 	total_len = copts->total_len * copts->compact_run_num;
 	stats->v[ST_SPEED] = total_len / (stats->v[ST_RUN_TIME] / 1000) /
@@ -384,11 +399,11 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 
-	ret = hizip_verify_random_output(out_buf, copts, &ctx);
+	ret = hizip_verify_random_output(out_buf, copts, &info);
 
 out_with_fini:
 	if (!(opts->option & TEST_ZLIB))
-		/* to do: wd_comp_uninit */
+		uninit_config(&info);
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
@@ -520,47 +535,48 @@ static int run_one_child(struct priv_options *opts)
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct priv_context priv_ctx;
-	struct hizip_test_context save_ctx;
-	struct hizip_test_context *ctx = &priv_ctx.ctx;
+	struct hizip_test_info save_info;
+	struct hizip_test_info *info = &priv_ctx.info;
 	struct test_options *copts = &opts->common;
+	struct wd_sched sched;
 
 	memset(&priv_ctx, 0, sizeof(struct priv_context));
 	priv_ctx.opts = opts;
 
-	ctx->opts = copts;
-	ctx->total_len = copts->total_len;
+	info->opts = copts;
 
-	in_buf = ctx->in_buf = mmap_alloc(copts->total_len);
+	info->total_len = copts->total_len;
+
+	in_buf = info->in_buf = mmap_alloc(copts->total_len);
 	if (!in_buf)
 		return -ENOMEM;
 
-	out_buf = ctx->out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = info->out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
 
-	hizip_prepare_random_input_data(ctx);
+	info->req.src = in_buf;
+	info->req.dst = out_buf;
+	info->req.src_len = copts->total_len;
+	info->req.dst_len = copts->total_len * EXPANSION_RATIO;
+	hizip_prepare_random_input_data(info);
 
-	/*
-	 * to do: wd_comp_init should be done here, ctx type, num should be set
-	 *        according to input parameter.
-	 */
-	if (ret) {
+	ret = init_ctx_config(copts, &sched, info);
+	if (ret < 0) {
 		WD_ERR("hizip init fail with %d\n", ret);
-		goto out_with_out_buf;
+		goto out_ctx;
 	}
 
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
 
-	save_ctx = *ctx;
+	save_info = *info;
 	for (i = 0; i < copts->compact_run_num; i++) {
-		*ctx = save_ctx;
+		*info = save_info;
 
-		/*
-		 * to do: wd_do_comp_sync here.
-		 */
+		ret = hizip_test_sched(&sched, copts, info);
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			break;
@@ -584,10 +600,10 @@ static int run_one_child(struct priv_options *opts)
 		if (copts->total_len > 0x54000)
 			fprintf(stderr, "NOTE: test might trash the TLB\n");
 
-		*ctx = save_ctx;
-		ctx->faulting = true;
+		*info = save_info;
+		info->faulting = true;
 
-		/* to do: wd_do_comp_sync here */
+		ret = hizip_test_sched(&sched, copts, info);
 		if (ret >= 0) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", out_buf, out_buf +
@@ -603,9 +619,11 @@ static int run_one_child(struct priv_options *opts)
 	/* to do: wd_comp_uninit */
 
 	if (out_buf)
-		ret = hizip_verify_random_output(out_buf, copts, ctx);
+		ret = hizip_verify_random_output(out_buf, copts, info);
 
-out_with_out_buf:
+	uninit_config(info);
+
+out_ctx:
 	if (out_buf)
 		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:

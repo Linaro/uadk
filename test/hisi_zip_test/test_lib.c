@@ -1,11 +1,13 @@
 #include <signal.h>
 #include <sys/mman.h>
 
-#include "test_lib.h"
 #include "hisi_qm_udrv.h"
-#include "smm.h"
+#include "sched_sample.h"
+#include "test_lib.h"
 
 #define HISI_DEV_NODE	"/dev/hisi_zip-0"
+
+#define SCHED_RR_NAME	"sched_rr"
 
 enum alg_type {
 	HW_ZLIB  = 0x02,
@@ -35,50 +37,6 @@ void *mmap_alloc(size_t len)
 		WD_ERR("Failed to allocate %zu bytes\n", len);
 
 	return p == MAP_FAILED ? NULL : p;
-}
-
-void hizip_prepare_random_input_data(struct hizip_test_context *ctx)
-{
-	__u32 seed = 0;
-	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
-
-	unsigned long remain_size;
-	__u32 block_size, size;
-	char *in_buf;
-	size_t i, j;
-
-	/*
-	 * TODO: change state for each buffer, to make sure there is no TLB
-	 * aliasing. Can we store the seed into priv_info?
-	 */
-	//__u32 seed = ctx->state++;
-	block_size = ctx->opts->block_size;
-	remain_size = ctx->total_len;
-	in_buf = ctx->in_buf;
-
-	while (remain_size > 0) {
-		if (remain_size > block_size)
-			size = block_size;
-		else
-			size = remain_size;
-		/*
-		 * Prepare the input buffer with a reproducible sequence of
-		 * numbers. nrand48() returns a pseudo-random number in the
-		 * interval [0; 2^31). It's not really possible to compress a
-		 * pseudo-random stream using deflate, since it can't find any
-		 * string repetition. As a result the output size is bigger,
-		 * with a ratio of 1.041.
-		 */
-		for (i = 0; i < size; i += 4) {
-			__u64 n = nrand48(rand_state);
-
-			for (j = 0; j < 4 && i + j < size; j++)
-				in_buf[i + j] = (n >> (8 * j)) & 0xff;
-		}
-
-		in_buf += size;
-		remain_size -= size;
-	}
 }
 
 static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
@@ -115,8 +73,52 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 	return 0;
 }
 
+void hizip_prepare_random_input_data(struct hizip_test_info *info)
+{
+	__u32 seed = 0;
+	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
+
+	unsigned long remain_size;
+	__u32 block_size, size;
+	char *in_buf;
+	size_t i, j;
+
+	/*
+	 * TODO: change state for each buffer, to make sure there is no TLB
+	 * aliasing. Can we store the seed into priv_info?
+	 */
+	//__u32 seed = info->state++;
+	block_size = info->opts->block_size;
+	remain_size = info->total_len;
+	in_buf = info->in_buf;
+
+	while (remain_size > 0) {
+		if (remain_size > block_size)
+			size = block_size;
+		else
+			size = remain_size;
+		/*
+		 * Prepare the input buffer with a reproducible sequence of
+		 * numbers. nrand48() returns a pseudo-random number in the
+		 * interval [0; 2^31). It's not really possible to compress a
+		 * pseudo-random stream using deflate, since it can't find any
+		 * string repetition. As a result the output size is bigger,
+		 * with a ratio of 1.041.
+		 */
+		for (i = 0; i < size; i += 4) {
+			__u64 n = nrand48(rand_state);
+
+			for (j = 0; j < 4 && i + j < size; j++)
+				in_buf[i + j] = (n >> (8 * j)) & 0xff;
+		}
+
+		in_buf += size;
+		remain_size -= size;
+	}
+}
+
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
-			       struct hizip_test_context *ctx)
+			       struct hizip_test_info *info)
 {
 	int ret;
 	int seed = 0;
@@ -131,7 +133,7 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 		return 0;
 
 	do {
-		ret = hizip_check_output(out_buf + off, ctx->total_out,
+		ret = hizip_check_output(out_buf + off, info->total_out,
 					 &checked, hizip_check_rand, &rand_ctx);
 		if (ret) {
 			WD_ERR("Check output failed with %d\n", ret);
@@ -149,6 +151,148 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
+int lib_poll_func(handle_t h_ctx, __u32 expect, __u32 *count)
+{
+	return SCHED_SUCCESS;
+}
+
+int init_ctx_config(struct test_options *opts,
+		    struct wd_sched *sched,
+		    void *priv
+		    )
+{
+	struct wd_comp_sess_setup setup;
+	struct uacce_dev_list *list;
+	struct hizip_test_info *info = priv;
+	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
+	int i, j, ret = -EINVAL;
+
+	list = wd_get_accel_list("zlib");
+	if (!list)
+		return -ENODEV;
+	info->list = list;
+
+	memset(ctx_conf, 0, sizeof(struct wd_ctx_config));
+	ctx_conf->ctx_num = opts->q_num;
+	ctx_conf->ctxs = calloc(1, opts->q_num * sizeof(struct wd_ctx));
+	if (!ctx_conf->ctxs) {
+		WD_ERR("Not enough memory to allocate contexts.\n");
+		ret = -ENOMEM;
+		goto out;
+	}
+	for (i = 0; i < ctx_conf->ctx_num; i++) {
+		ctx_conf->ctxs[i].ctx = wd_request_ctx(list->dev);
+		if (!ctx_conf->ctxs[i].ctx) {
+			WD_ERR("Fail to allocate context #%d\n", i);
+			ret = -EINVAL;
+			goto out_ctx;
+		}
+		ctx_conf->ctxs[i].op_type = opts->op_type;
+		ctx_conf->ctxs[i].ctx_mode = opts->sync_mode;
+	}
+	sched->name = SCHED_RR_NAME;
+	sched->pick_next_ctx = sample_sched_pick_next_ctx;
+	sched->poll_policy = sample_sched_poll_policy;
+	ret = sample_sched_init(SCHED_POLICY_RR, 2, lib_poll_func);
+	if (ret < 0) {
+		WD_ERR("Fail to init scheduler.\n");
+		ret = -EINVAL;
+		goto out_sched;
+	}
+	/* 40 contexts for 4 types */
+	ret = sample_sched_fill_region(0, 0, 0, 0, 19);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	ret = sample_sched_fill_region(0, 0, 1, 20, 39);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	ret = sample_sched_fill_region(0, 1, 0, 40, 59);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	ret = sample_sched_fill_region(0, 1, 1, 60, 79);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	wd_comp_init(ctx_conf, sched);
+
+	/* allocate a wd_comp session */
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	if (opts->alg_type == ZLIB)
+		setup.alg_type = WD_ZLIB;
+	else if (opts->alg_type == GZIP)
+		setup.alg_type = WD_GZIP;
+	setup.mode = opts->sync_mode;
+	setup.op_type = opts->op_type;
+	info->h_sess = wd_comp_alloc_sess(&setup);
+	if (!info->h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+	return ret;
+out_sess:
+	wd_comp_uninit();
+out_fill:
+	sample_sched_release();
+out_sched:
+	i = ctx_conf->ctx_num;
+out_ctx:
+	for (j = 0; j < i; j++)
+		wd_release_ctx(ctx_conf->ctxs[j].ctx);
+	free(ctx_conf->ctxs);
+out:
+	wd_free_list_accels(list);
+	return ret;
+}
+
+void uninit_config(void *priv)
+{
+	struct hizip_test_info *info = priv;
+	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
+	int i;
+
+	wd_comp_free_sess(info->h_sess);
+	wd_comp_uninit();
+	sample_sched_release();
+	for (i = 0; i < ctx_conf->ctx_num; i++)
+		wd_release_ctx(ctx_conf->ctxs[i].ctx);
+	free(ctx_conf->ctxs);
+	wd_free_list_accels(info->list);
+}
+
+int hizip_test_sched(struct wd_sched *sched,
+		     struct test_options *opts,
+		     struct hizip_test_info *info
+		     )
+{
+	handle_t h_sess = info->h_sess;
+	struct sched_key key;
+	int ret;
+
+	key.numa_id = 0;
+	key.mode = opts->sync_mode;
+	key.type = 0;
+	if (opts->sync_mode) {
+		/* async */
+	} else {
+		ret = wd_do_comp_sync(h_sess, &info->req);
+		if (ret < 0)
+			return ret;
+	}
+	info->total_out = info->req.dst_len;
+	return 0;
+}
+
 int parse_common_option(const char opt, const char *optarg,
 			struct test_options *opts)
 {
@@ -156,11 +300,6 @@ int parse_common_option(const char opt, const char *optarg,
 	case 'b':
 		opts->block_size = strtol(optarg, NULL, 0);
 		if (opts->block_size <= 0)
-			return 1;
-		break;
-	case 'c':
-		opts->req_cache_num = strtol(optarg, NULL, 0);
-		if (opts->req_cache_num <= 0)
 			return 1;
 		break;
 	case 'l':
@@ -203,9 +342,6 @@ int parse_common_option(const char opt, const char *optarg,
 		break;
 	case 'z':
 		opts->alg_type = ZLIB;
-		break;
-	case 'd':
-		opts->is_decomp = true;
 		break;
 	default:
 		return 1;

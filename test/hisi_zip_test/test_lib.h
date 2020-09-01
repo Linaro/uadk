@@ -8,8 +8,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-#include "hisi_qm_udrv.h"
-#include "wd_alg_common.h"
+#include "wd_comp.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
@@ -57,22 +56,42 @@ struct test_options {
 	bool is_decomp;
 };
 
-struct hizip_test_context {
-	struct hisi_qp	*qp;
-	struct hisi_qm_capa capa;
+struct hizip_test_info {
 	struct test_options *opts;
 	char *in_buf;
 	char *out_buf;
 	unsigned long total_len;
 	int is_nosva;
 	size_t total_out;
+	struct uacce_dev_list *list;
+	handle_t h_sess;
+	struct wd_ctx_config ctx_conf;
+	struct wd_comp_req req;
+	/* statistic */
+	struct {
+		int send;
+		int send_retries;
+		int recv;
+		int recv_retries;
+	} *stat;
 	/* Test is expected to fail */
 	bool faulting;
 };
 
-void hizip_prepare_random_input_data(struct hizip_test_context *ctx);
+int hizip_test_sched(struct wd_sched *sched,
+		     struct test_options *opts,
+		     struct hizip_test_info *info
+		     );
+int init_ctx_config(struct test_options *opts,
+		    struct wd_sched *sched,
+		    void *priv
+		    );
+void uninit_config(void *priv);
+
+void hizip_prepare_random_input_data(struct hizip_test_info *info);
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
-			       struct hizip_test_context *ctx);
+			       struct hizip_test_info *info);
+
 void *mmap_alloc(size_t len);
 
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
