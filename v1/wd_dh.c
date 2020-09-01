@@ -125,7 +125,6 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		return NULL;
 	}
 
-	qinfo->ctx_num++;
 	ctx_id = wd_alloc_ctx_id(q, WD_DH_MAX_CTX);
 	if (ctx_id < 0) {
 
@@ -133,6 +132,7 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		wd_unspinlock(&qinfo->qlock);
 		return NULL;
 	}
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_dh_ctx));
@@ -168,6 +168,7 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
 	wd_free_ctx_id(q, ctx_id);
 	wd_unspinlock(&qinfo->qlock);
 
@@ -380,16 +381,14 @@ void wcrypto_del_dh_ctx(void *ctx)
 	st = &cx->setup;
 
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
-	if (!qinfo->ctx_num) {
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	} else if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error:repeat del dh ctx!\n");
 		return;
 	}
-
+	wd_free_ctx_id(cx->q, cx->ctx_id);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	wd_unspinlock(&qinfo->qlock);
 
 	if (st->br.free && cx->g.data)
