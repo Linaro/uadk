@@ -25,43 +25,6 @@ struct priv_context {
 	struct priv_options *opts;
 };
 
-/* fix me: just move it here to pass compile. rely on hardware directly is very bad!! */
-struct hisi_zip_sqe {
-	__u32 consumed;
-	__u32 produced;
-	__u32 comp_data_length;
-	__u32 dw3;
-	__u32 input_data_length;
-	__u32 lba_l;
-	__u32 lba_h;
-	__u32 dw7;
-	__u32 dw8;
-	__u32 dw9;
-	__u32 dw10;
-	__u32 priv_info;
-	__u32 dw12;
-	__u32 tag;
-	__u32 dest_avail_out;
-	__u32 ctx_dw0;
-	__u32 comp_head_addr_l;
-	__u32 comp_head_addr_h;
-	__u32 source_addr_l;
-	__u32 source_addr_h;
-	__u32 dest_addr_l;
-	__u32 dest_addr_h;
-	__u32 stream_ctx_addr_l;
-	__u32 stream_ctx_addr_h;
-	__u32 cipher_key1_addr_l;
-	__u32 cipher_key1_addr_h;
-	__u32 cipher_key2_addr_l;
-	__u32 cipher_key2_addr_h;
-	__u32 ctx_dw1;
-	__u32 ctx_dw2;
-	__u32 isize;
-	__u32 checksum;
-
-};
-
 enum hizip_stats_variable {
 	ST_SEND,
 	ST_RECV,
@@ -299,36 +262,28 @@ out_err:
 
 static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
-	int i, j;
+	int j;
 	double v;
 	int nr_fds;
 	int ret = 0;
 	int *perf_fds;
 	void *in_buf, *out_buf;
 	unsigned long total_len;
-	struct wd_scheduler sched = {0};
 	struct hizip_test_context ctx = {0}, ctx_save;
 	struct test_options *copts = &opts->common;
 	struct timespec setup_time, start_time, end_time;
 	struct timespec setup_cputime, start_cputime, end_cputime;
 	struct rusage setup_rusage, start_rusage, end_rusage;
-	int stat_size = sizeof(*sched.stat) * copts->q_num;
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
 
 	ctx.opts = copts;
-	ctx.msgs = calloc(copts->req_cache_num, sizeof(*ctx.msgs));
-	if (!ctx.msgs)
-		return -ENOMEM;
-
 	ctx.total_len = copts->total_len;
 
 	in_buf = ctx.in_buf = mmap_alloc(copts->total_len);
-	if (!in_buf) {
-		ret = -ENOMEM;
-		goto out_with_msgs;
-	}
+	if (!in_buf)
+		return -ENOMEM;
 
 	out_buf = ctx.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
@@ -382,14 +337,6 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			goto out_with_fini;
-		}
-
-		for (i = 0; i < copts->q_num && sched.stat; i++) {
-			stats->v[ST_SEND] += sched.stat[i].send;
-			stats->v[ST_RECV] += sched.stat[i].recv;
-			stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
-			stats->v[ST_RECV_RETRY] += sched.stat[i].recv_retries;
-			memset(sched.stat, 0, stat_size);
 		}
 	}
 
@@ -446,8 +393,6 @@ out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
-out_with_msgs:
-	free(ctx.msgs);
 	return ret;
 }
 
@@ -583,15 +528,11 @@ static int run_one_child(struct priv_options *opts)
 	priv_ctx.opts = opts;
 
 	ctx->opts = copts;
-	ctx->msgs = NULL;
-
 	ctx->total_len = copts->total_len;
 
 	in_buf = ctx->in_buf = mmap_alloc(copts->total_len);
-	if (!in_buf) {
-		ret = -ENOMEM;
-		goto out_with_msgs;
-	}
+	if (!in_buf)
+		return -ENOMEM;
 
 	out_buf = ctx->out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
@@ -669,8 +610,6 @@ out_with_out_buf:
 		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
-out_with_msgs:
-	free(ctx->msgs);
 	return ret;
 }
 

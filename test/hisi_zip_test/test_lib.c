@@ -12,88 +12,12 @@ enum alg_type {
 	HW_GZIP,
 };
 
-/* fix me: just move it here to pass compile. rely on hardware directly is very bad!! */
-struct hisi_zip_sqe {
-	__u32 consumed;
-	__u32 produced;
-	__u32 comp_data_length;
-	__u32 dw3;
-	__u32 input_data_length;
-	__u32 lba_l;
-	__u32 lba_h;
-	__u32 dw7;
-	__u32 dw8;
-	__u32 dw9;
-	__u32 dw10;
-	__u32 priv_info;
-	__u32 dw12;
-	__u32 tag;
-	__u32 dest_avail_out;
-	__u32 ctx_dw0;
-	__u32 comp_head_addr_l;
-	__u32 comp_head_addr_h;
-	__u32 source_addr_l;
-	__u32 source_addr_h;
-	__u32 dest_addr_l;
-	__u32 dest_addr_h;
-	__u32 stream_ctx_addr_l;
-	__u32 stream_ctx_addr_h;
-	__u32 cipher_key1_addr_l;
-	__u32 cipher_key1_addr_h;
-	__u32 cipher_key2_addr_l;
-	__u32 cipher_key2_addr_h;
-	__u32 ctx_dw1;
-	__u32 ctx_dw2;
-	__u32 isize;
-	__u32 checksum;
-
-};
-
 struct check_rand_ctx {
 	int off;
 	unsigned long global_off;
 	__u32 last;
 	unsigned short state[3];
 };
-
-#ifdef DEBUG_LOG
-static void dbg_sqe(const char *head, struct hisi_zip_sqe *m)
-{
-	fprintf(stderr,
-		"=== %s ===\n"
-		"cons=0x%x prod=0x%x in=0x%x out=0x%x comp=0x%x\n"
-		"lba=0x%08x 0x%08x\n"
-		"dw3=0x%x dw7=0x%x dw8=0x%x dw9=0x%x dw10=0x%x dw12=0x%x\n"
-		"priv=0x%x tag=0x%x\n"
-		"ctx dw0=0x%x dw1=0x%x dw2=0x%x\n"
-		"comp head addr=0x%08x 0x%08x\n"
-		"source addr=0x%08x 0x%08x\n"
-		"dest addr=0x%08x 0x%08x\n"
-		"stream ctx addr=0x%08x 0x%08x\n"
-		"cipher key1 addr=0x%08x 0x%08x\n"
-		"cipher key2 addr=0x%08x 0x%08x\n"
-		"isize=0x%x checksum=0x%x\n"
-		"=== === === ===\n",
-
-		head,
-		m->consumed, m->produced, m->input_data_length,
-		m->dest_avail_out, m->comp_data_length,
-		m->lba_h, m->lba_l,
-		m->dw3, m->dw7, m->dw8, m->dw9, m->dw10, m->dw12,
-		m->priv_info, m->tag,
-		m->ctx_dw0, m->ctx_dw1, m->ctx_dw2,
-		m->comp_head_addr_h, m->comp_head_addr_l,
-		m->source_addr_h, m->source_addr_l,
-		m->dest_addr_h, m->dest_addr_l,
-		m->stream_ctx_addr_h, m->stream_ctx_addr_l,
-		m->cipher_key1_addr_h, m->cipher_key1_addr_l,
-		m->cipher_key2_addr_h, m->cipher_key2_addr_l,
-		m->isize, m->checksum
-	       );
-}
-#else
-#define dbg_sqe(...)
-#endif
 
 void *mmap_alloc(size_t len)
 {
@@ -223,106 +147,6 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 		return -EINVAL;
 	}
 	return 0;
-}
-
-/*
- * Initialize the scheduler with the given options and operations.
- */
-int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
-		    struct test_ops *ops, void *priv)
-{
-	int i, j, ret = -ENOMEM;
-	struct hisi_qm_priv *qm_priv;
-	struct hisi_qm_capa *capa;
-	struct hizip_test_context *ctx = priv;
-
-	sched->q_num = opts->q_num;
-	sched->ss_region_size = 0; /* let system make decision */
-	sched->msg_cache_num = opts->req_cache_num;
-	/* use twice the size of the input data, hope it is enough for output */
-	sched->msg_data_size = opts->block_size * EXPANSION_RATIO;
-
-	sched->priv = priv;
-	sched->init_cache = ops->init_cache;
-	sched->input = ops->input;
-	sched->output = ops->output;
-	sched->hw_alloc = hisi_qm_alloc_ctx;
-	sched->hw_free = hisi_qm_free_ctx;
-	sched->hw_send = hisi_qm_send;
-	sched->hw_recv = hisi_qm_recv;
-
-	sched->qs = calloc(opts->q_num, sizeof(*sched->qs));
-	if (!sched->qs)
-		return -ENOMEM;
-
-	capa = &ctx->capa;
-	qm_priv = (struct hisi_qm_priv *)&capa->priv;
-	qm_priv->sqe_size = sizeof(struct hisi_zip_sqe);
-	qm_priv->op_type = opts->op_type;
-
-	if (opts->alg_type == ZLIB)
-		capa->alg = "zlib";
-	else
-		capa->alg = "gzip";
-	sched->data = ctx->qp;
-
-	ctx->msgs = calloc(1, sizeof(*ctx->msgs) * sched->msg_cache_num);
-	if (!ctx->msgs)
-		goto out_msgs;
-
-	ret = wd_sched_init(sched, HISI_DEV_NODE);
-	if (ret)
-		goto out_sched;
-
-	for (i = 0; i < sched->q_num; i++) {
-		sched->qs[i] = sched->hw_alloc(HISI_DEV_NODE,
-					       qm_priv,
-					       &sched->data);
-		if (!sched->qs[i])
-			goto out_hw;
-	}
-
-	return 0;
-
-out_hw:
-	for (j = i - 1; j >= 0; j--) {
-		sched->hw_free(sched->qs[j]);
-	}
-out_sched:
-	free(ctx->msgs);
-out_msgs:
-	free(sched->qs);
-	return ret;
-}
-
-int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
-		     struct hizip_test_context *ctx)
-{
-	int ret = 0;
-
-	while (ctx->total_len || !wd_sched_empty(sched)) {
-		dbg("request loop: total_len=%d\n", ctx->total_len);
-		ret = wd_sched_work(sched, ctx->total_len);
-		if (ret < 0) {
-			WD_ERR("wd_sched_work: %d\n", ret);
-			break;
-		}
-	}
-
-	return (ret > 0) ? 0 : ret;
-}
-
-/*
- * Release the scheduler
- */
-void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts)
-{
-	int i;
-
-	for (i = 0; i < sched->q_num; i++)
-		sched->hw_free(sched->qs[i]);
-	wd_sched_fini(sched);
-	free(sched->qs);
 }
 
 int parse_common_option(const char opt, const char *optarg,
