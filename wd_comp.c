@@ -420,6 +420,10 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->alg_type = setup->alg_type;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
 
+	sess->key.mode = setup->mode;
+	sess->key.type = setup->op_type;
+	sess->key.numa_id = 0;
+
 	return (handle_t)sess;
 }
 
@@ -470,7 +474,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
+	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, &sess->key);
 	if (!h_ctx) {
 		WD_ERR("pick ctx is NULL, please check config!\n");
 		return -EINVAL;

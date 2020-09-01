@@ -38,9 +38,10 @@ enum wd_comp_op_type {
 };
 
 struct wd_comp_sess {
-	int	alg_type;
-	__u8	*ctx_buf;
-	__u8	stream_pos;
+	int			alg_type;
+	struct sched_key	key;
+	__u8			*ctx_buf;
+	__u8			stream_pos;
 };
 
 struct wd_comp_req;
@@ -76,6 +77,7 @@ extern void wd_comp_uninit(void);
 struct wd_comp_sess_setup {
 	int alg_type;	// ZLIB or GZIP
 	enum wd_comp_mode mode;
+	enum wd_comp_op_type op_type;
 };
 /**
  * wd_comp_alloc_sess() - Allocate a wd comp session.
