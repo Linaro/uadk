@@ -55,6 +55,7 @@ struct test_options {
 
 	bool verify;
 	bool verbose;
+	bool is_decomp;
 };
 
 struct hizip_test_context {
@@ -133,7 +134,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvzt:m:"
+#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvzt:m:d"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -147,6 +148,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -z            test zlib algorithm, default gzip\n"		\
 	"  -t <num>      number of thread per process\n"		\
 	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
+	"  -d		 test decompression, default compression\n"	\
 	"\n\n"
 
 int parse_common_option(const char opt, const char *optarg,

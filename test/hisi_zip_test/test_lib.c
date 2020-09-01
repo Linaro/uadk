@@ -453,6 +453,9 @@ int parse_common_option(const char opt, const char *optarg,
 	case 'z':
 		opts->alg_type = ZLIB;
 		break;
+	case 'd':
+		opts->is_decomp = true;
+		break;
 	default:
 		return 1;
 	}

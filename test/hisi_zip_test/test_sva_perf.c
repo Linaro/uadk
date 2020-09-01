@@ -894,6 +894,7 @@ int main(int argc, char **argv)
 			.total_len	= opts.common.block_size * 10,
 			.verify		= false,
 			.verbose	= false,
+			.is_decomp	= false,
 		},
 		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
@@ -984,7 +985,7 @@ int main(int argc, char **argv)
 		     "                  'thp' try to enable transparent huge pages\n"
 		     "                  'zlib' use zlib instead of the device\n"
 		     "  -w <num>      number of warmup runs\n"
-		     "  -f <children> number of children to create\n"
+		     "  -r <children> number of children to create\n"
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
 		     "                  'tlb' tries to access an unmapped buffer\n"
