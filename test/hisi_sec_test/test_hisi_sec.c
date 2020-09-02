@@ -61,13 +61,14 @@ static void hexdump(char *buff, unsigned int len)
 	printf("\n");
 }
 
-static handle_t sched_single_pick_next_ctx(struct wd_ctx_config *cfg,
-		void *sched_ctx, struct wd_cipher_req *req, int numa_id)
+static handle_t sched_single_pick_next_ctx(const struct wd_ctx_config *cfg,
+													  const void *req,
+													  const struct sched_key *key)
 {
 	return g_ctx_cfg.ctxs[0].ctx;
 }
 
-static int sched_single_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
+static int sched_single_poll_policy(const struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
 {
 	return 0;
 }
@@ -98,7 +99,6 @@ static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
 	g_ctx_cfg.ctxs[0].ctx_mode = mode;
 
 	sched->name = SCHED_SINGLE;
-	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
 	sched->pick_next_ctx = sched_single_pick_next_ctx;
 
 	sched->poll_policy = sched_single_poll_policy;

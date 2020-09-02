@@ -1053,7 +1053,7 @@ static __u8 is_async_test(__u32 opType)
 }
 
 handle_t rsa_pick_next_ctx(struct wd_ctx_config *config,
-				struct wd_rsa_req *req, void *key)
+				struct wd_rsa_req *req, struct sched_key *key)
 {
   __u32 idx;
   
@@ -1067,7 +1067,7 @@ handle_t rsa_pick_next_ctx(struct wd_ctx_config *config,
   return config->ctxs[idx].ctx;
 }
 
-int poll_policy( struct wd_ctx_config *config, __u32 expect, __u32 *count)
+int poll_policy(struct wd_ctx_config *config, __u32 expect, __u32 *count)
 {
 	return 0;
 }
@@ -1155,7 +1155,6 @@ static int init_hpre_global_config(void)
 	sched.name = "rsa-sched-0";
 	sched.pick_next_ctx = rsa_pick_next_ctx;
 	sched.poll_policy = poll_policy;
-	sched.sched_ctx_size = 1; //todo
 	ret = wd_rsa_init(&ctx_cfg, &sched);
 	if (ret) {
 		HPRE_TST_PRT("failed to init rsa, ret %d!\n", ret);

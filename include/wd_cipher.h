@@ -5,7 +5,7 @@
 #include <dlfcn.h>
 #include "config.h"
 #include "wd.h"
-#include "include/wd_alg_common.h"
+#include "wd_alg_common.h"
 
 #define AES_KEYSIZE_128 16
 #define AES_KEYSIZE_192 24
@@ -86,14 +86,6 @@ struct wd_cipher_req {
 	__u16			state;
 	wd_alg_cipher_cb_t	*cb;
 	void			*cb_param;
-};
-
-struct wd_sched {
-	const char *name;
-	__u32 sched_ctx_size;
-	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
-				  void *sched_ctx, struct wd_cipher_req *req, int numa_id);
-	int (*poll_policy)(struct wd_ctx_config *config, __u32 expect, __u32 *count);
 };
 
 /**

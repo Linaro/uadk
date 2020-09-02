@@ -99,7 +99,7 @@ struct wd_digest_sched {
 	__u32 sched_ctx_size;
 	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
 		void *sched_ctx, struct wd_digest_req *req, int numa_id);
-	int (*poll_policy)(struct wd_ctx_config *config, __u32 expect, __u32 *count);
+	int (*poll_policy)(const struct wd_ctx_config *config, __u32 expect, __u32 *count);
 };
 
 struct wd_cb_tag {

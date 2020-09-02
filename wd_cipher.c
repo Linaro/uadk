@@ -30,7 +30,6 @@ struct wd_async_msg_pool {
 struct wd_cipher_setting {
 	struct wd_ctx_config config;
 	struct wd_sched      sched;
-	void *sched_ctx;
 	struct wd_cipher_driver *driver;
 	void *priv;
 	struct wd_async_msg_pool pool;
@@ -206,17 +205,12 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 
 static int copy_sched_to_global_setting(struct wd_sched *sched)
 {
-	if (!sched->name || sched->sched_ctx_size == 0)
+	if (!sched->name)
 		return -EINVAL;
 
 	g_wd_cipher_setting.sched.name = strdup(sched->name);
-	g_wd_cipher_setting.sched.sched_ctx_size = sched->sched_ctx_size;
 	g_wd_cipher_setting.sched.pick_next_ctx = sched->pick_next_ctx;
 	g_wd_cipher_setting.sched.poll_policy = sched->poll_policy;
-	/* alloc sched context memory */
-	g_wd_cipher_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
-	if (!g_wd_cipher_setting.sched_ctx)
-		return -ENOMEM;
 
 	return 0;
 }
@@ -236,9 +230,6 @@ static void clear_sched_in_global_setting(void)
 
 	g_wd_cipher_setting.sched.poll_policy = NULL;
 	g_wd_cipher_setting.sched.pick_next_ctx = NULL;
-	g_wd_cipher_setting.sched.sched_ctx_size = 0;
-	free(g_wd_cipher_setting.sched_ctx);
-	g_wd_cipher_setting.sched_ctx = NULL;
 }
 
 /* Each context has a reqs pool */
@@ -387,7 +378,6 @@ static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *re
 int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 {
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
-	void *sched_ctx = g_wd_cipher_setting.sched_ctx;
 	struct wd_cipher_msg msg;
 	__u64 recv_cnt = 0;
 	handle_t h_ctx;
@@ -398,7 +388,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, req, NULL);
 	if (!h_ctx) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;
@@ -532,12 +522,11 @@ static void put_msg_to_pool(struct wd_async_msg_pool *pool,
 int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
 {
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
-	void *sched_ctx = g_wd_cipher_setting.sched_ctx;
 	struct wd_cipher_msg *msg;
 	handle_t h_ctx;
 	int ret;
 
-	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, req, NULL);
 	if (!h_ctx) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;

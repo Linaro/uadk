@@ -35,29 +35,6 @@ struct wd_rsa_req {
 	__u8 op_type; /* rsa operation type */
 };
 
-/**
- * struct wd_rsa_sched - Define a scheduler.
- * @name:		Name of this scheduler.
- * @sched_ctx_size:	Size of the context of this scheduler. Wd_rsa will
- *			allocate this size of memory for scheduler to store
- *			its context data internally.
- * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
- *			config points to the ctx config; sched_ctx points to
- *			scheduler context; req points to the request. Return
- *			the proper ctx handler.
- *			(fix me: modify req to request?)
- * @poll_policy:	Define the polling policy. config points to the ctx
- *			config; sched_ctx points to scheduler context; Return
- *			number of polled request.
- */
-struct wd_sched {
-	const char *name;
-	__u32 sched_ctx_size;
-	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
-		struct wd_rsa_req *req, void* key);
-	int (*poll_policy)( struct wd_ctx_config *config, __u32 expect, __u32 *count);
-};
-
 struct wd_rsa_kg_in; /* rsa key generation input parameters */
 struct wd_rsa_kg_out; /* rsa key generation output parameters */
 struct wd_rsa_pubkey; /* rsa public key */
