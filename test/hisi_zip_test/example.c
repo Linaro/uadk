@@ -172,7 +172,6 @@ static int comp_sync(handle_t h_sess,
 		return -EINVAL;
 	*dst_len = 0;
 	while (1) {
-		req->flag = 0;
 		req->status = 0;
 		req->dst_len = dst_step;
 		if (i + templen >= src_len) {
@@ -182,13 +181,11 @@ static int comp_sync(handle_t h_sess,
 			req->src_len = 0;
 		else
 			req->src_len = templen;
-		if (!req->src_len)
-			req->flag |= FLAG_INPUT_FINISH;
 
 		ret = wd_do_comp_sync(h_sess, req);
 		if (ret < 0)
 			goto out;
-		if (req->status & (STATUS_IN_EMPTY | STATUS_IN_PART_USE)) {
+		if (req->status > 0) {
 			if (i < src_len) {
 				i += req->src_len;
 				req->src += req->src_len;
@@ -218,7 +215,7 @@ int test_comp_sync_once_1(int flag)
 	void	*src, *dst;
 	int	ret = 0, t, len;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -259,7 +256,7 @@ int test_comp_sync_once_1(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	len = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_SYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
@@ -301,7 +298,7 @@ int test_comp_sync_once_2(int flag)
 	void	*src, *dst, *buf;
 	int	ret = 0, t, len;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	src = calloc(1, sizeof(char) * BUF_64MB);
@@ -344,7 +341,7 @@ int test_comp_sync_once_2(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	len = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_SYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
@@ -390,7 +387,7 @@ int test_comp_sync_multi_1(int flag)
 	void	*src, *dst;
 	int	ret = 0, t, len;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -431,7 +428,7 @@ int test_comp_sync_multi_1(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	len = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_SYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
@@ -473,7 +470,7 @@ int test_comp_sync_multi_2(int flag)
 	void	*src, *dst;
 	int	ret = 0, t, len;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -514,7 +511,7 @@ int test_comp_sync_multi_2(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	len = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_SYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
@@ -556,7 +553,7 @@ int test_comp_sync_multi_3(int flag)
 	void	*src, *dst;
 	int	ret = 0, t, len;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -597,7 +594,7 @@ int test_comp_sync_multi_3(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	len = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_SYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
@@ -644,7 +641,7 @@ int test_comp_stream(int flag)
 	void	*src, *dst;
 	int	ret = 0, t;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_SYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -670,7 +667,7 @@ int test_comp_stream(int flag)
 	while (1) {
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
-		req.op_type = CTX_TYPE_COMP;
+		req.op_type = WD_DIR_COMPRESS;
 		req.last = 1;
 		//req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
 		ret = wd_do_comp_strm(h_sess, &req);
@@ -694,7 +691,7 @@ int test_comp_stream(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	t = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_SYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_SYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_SYNC);
 	if (!h_sess) {
@@ -704,7 +701,7 @@ int test_comp_stream(int flag)
 	while (1) {
 		req.status = 0;
 		req.dst_len = TEST_WORD_LEN;
-		req.op_type = CTX_TYPE_DECOMP;
+		req.op_type = WD_DIR_DECOMPRESS;
 		req.last = 1;
 		//req.flag = FLAG_INPUT_FINISH;
 		ret = wd_do_comp_strm(h_sess, &req);
@@ -756,17 +753,18 @@ int test_comp_async1_once(int flag)
 {
 	struct wd_comp_req req;
 	handle_t	h_sess;
-	char	buf[TEST_WORD_LEN];
-	void	*src, *dst;
-	int	ret = 0, t;
-	__u32	expected = 1;
-	thread_data_t	data;
+	char buf[TEST_WORD_LEN];
+	void *src, *dst;
+	int ret = 0, t;
+	__u32 expected = 1;
+	__u32 count = 0;
+	thread_data_t data;
 
 	memset(&data, 0, sizeof(thread_data_t));
 	data.req = &req;
 	data.tid = 0;
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_ASYNC, &sched);
 
 	memset(&req, 0, sizeof(struct wd_comp_req));
 	req.dst_len = sizeof(char) * TEST_WORD_LEN;
@@ -789,30 +787,26 @@ int test_comp_async1_once(int flag)
 		ret = -EINVAL;
 		goto out_sess;
 	}
-	while (1) {
-		req.status = 0;
-		req.dst_len = TEST_WORD_LEN;
-		req.flag = FLAG_DEFLATE | FLAG_INPUT_FINISH;
-		req.cb = async_cb;
-		req.cb_param = &data;
-		ret = wd_do_comp_async(h_sess, &req);
-		if (ret < 0)
-			goto out_comp;
-		/* 1 block */
-		expected = 1;
-		ret = wd_comp_poll(&expected);
-		if (ret < 0)
-			goto out_comp;
-		if (req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, req.dst, req.dst_len);
-			t += req.dst_len;
-			req.dst = dst;
-		}
-		if ((req.status & STATUS_OUT_DRAINED) &&
-		    (req.status & STATUS_IN_EMPTY) &&
-		    (req.flag & FLAG_INPUT_FINISH))
-			break;
+
+	req.status = 0;
+	req.dst_len = TEST_WORD_LEN;
+	req.cb = async_cb;
+	req.cb_param = &data;
+	ret = wd_do_comp_async(h_sess, &req);
+	if (ret < 0)
+		goto out_comp;
+	/* 1 block */
+	expected = 1;
+comp_again:
+	ret = wd_comp_poll(expected, &count);
+	if (ret == -EAGAIN)
+		goto comp_again;
+	if (req.status == 0) {
+		memcpy(buf + t, req.dst, req.dst_len);
+		t += req.dst_len;
+		req.dst = dst;
 	}
+
 	wd_comp_free_sess(h_sess);
 	uninit_config();
 
@@ -822,37 +816,33 @@ int test_comp_async1_once(int flag)
 	req.src_len = t;
 	req.dst = dst;
 	t = 0;
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_ASYNC, &sched);
 
 	h_sess = alloc_sess(flag, CTX_MODE_ASYNC);
 	if (!h_sess) {
 		ret = -EINVAL;
 		goto out_sess;
 	}
-	while (1) {
-		req.status = 0;
-		req.dst_len = TEST_WORD_LEN;
-		req.flag = FLAG_INPUT_FINISH;
-		req.cb = async_cb;
-		req.cb_param = &data;
-		ret = wd_do_comp_async(h_sess, &req);
-		if (ret < 0)
-			goto out_comp;
-		/* 1 block */
-		expected = 1;
-		ret = wd_comp_poll(&expected);
-		if (ret < 0)
-			goto out_comp;
-		if (req.status & STATUS_OUT_READY) {
-			memcpy(buf + t, req.dst, req.dst_len);
-			t += req.dst_len;
-			req.dst = dst;
-		}
-		if ((req.status & STATUS_OUT_DRAINED) &&
-		    (req.status & STATUS_IN_EMPTY) &&
-		    (req.flag & FLAG_INPUT_FINISH))
-			break;
+
+	req.status = 0;
+	req.dst_len = TEST_WORD_LEN;
+	req.cb = async_cb;
+	req.cb_param = &data;
+	ret = wd_do_comp_async(h_sess, &req);
+	if (ret < 0)
+		goto out_comp;
+	/* 1 block */
+	expected = 1;
+decomp_again:
+	ret = wd_comp_poll(expected, &count);
+	if (ret == -EAGAIN)
+		goto decomp_again;
+	if (req.status == 0) {
+		memcpy(buf + t, req.dst, req.dst_len);
+		t += req.dst_len;
+		req.dst = dst;
 	}
+
 	wd_comp_free_sess(h_sess);
 	uninit_config();
 
@@ -876,6 +866,7 @@ static void *poll_func(void *arg)
 {
 	int i, ret = 0, received = 0;
 	__u32 expected = 0;
+	__u32 count = 0;
 
 	usleep(200);
 	while (1) {
@@ -890,7 +881,7 @@ static void *poll_func(void *arg)
 		}
 		for (i = 0; i < ctx_conf.ctx_num; i++) {
 			expected = 1;
-			ret = wd_comp_poll(&expected);
+			ret = wd_comp_poll(expected, &count);
 			if (ret == 0)
 				received += expected;
 		}
@@ -1017,10 +1008,9 @@ int test_comp_async2_once(int flag)
 		req[i].cb = async_cb;
 		req[i].cb_param = NULL;	// updated in create_threads()
 		req[i].status = 0;
-		req[i].flag = FLAG_INPUT_FINISH;
 	}
 
-	init_single_ctx_config(CTX_TYPE_COMP, CTX_MODE_ASYNC, &sched);
+	init_single_ctx_config(WD_DIR_COMPRESS, CTX_MODE_ASYNC, &sched);
 
 	/* 9 threads for sending data, BLOCK mode */
 	ret = create_threads(flag, parallel, req);
@@ -1028,7 +1018,7 @@ int test_comp_async2_once(int flag)
 		goto out_thr;
 	}
 	for (i = 0; i < parallel; i++) {
-		if (req[i].status & STATUS_OUT_READY) {
+		if (req[i].status > 0) {
 			/* use compressed data */
 			memcpy(req[i].src, req[i].dst, req[i].dst_len);
 			req[i].src_len = req[i].dst_len;
@@ -1042,14 +1032,14 @@ int test_comp_async2_once(int flag)
 	uninit_config();
 
 	/* prepare to decompress */
-	init_single_ctx_config(CTX_TYPE_DECOMP, CTX_MODE_ASYNC, &sched);
+	init_single_ctx_config(WD_DIR_DECOMPRESS, CTX_MODE_ASYNC, &sched);
 	/* 9 thread for sending data, BLOCK mode */
 	ret = create_threads(flag, parallel, req);
 	if (ret < 0) {
 		goto out_thr;
 	}
 	for (i = 0; i < parallel; i++) {
-		if ((req[i].status & STATUS_OUT_READY) == 0) {
+		if (req[i].status  > 0) {
 			ret = -EFAULT;
 			goto out_thr;
 		}

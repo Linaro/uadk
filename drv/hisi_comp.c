@@ -122,6 +122,9 @@ struct hisi_zip_sqe {
 #define HZ_CRC_ERR 0x10
 #define HZ_DECOMP_END 0x13
 
+#define HZ_DECOMP_NO_SPACE 0x01
+#define HZ_DECOMP_BLK_NOSTART 0x03
+
 #define HZ_CTX_ST_MASK 0x000f
 #define HZ_LSTBLK_MASK 0x0100
 #define HZ_STATUS_MASK 0xff
@@ -190,7 +193,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	__u8 state;
 	int ret;
 
-	in_size = msg->in_size;
+	in_size = msg->req.src_len;
 	src = msg->req.src;
 	dst = msg->req.dst;
 	switch (msg->alg_type) {
@@ -239,7 +242,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		HZ_STATELESS;
 	stream_pos = (msg->stream_pos == WD_COMP_STREAM_NEW) ? HZ_STREAM_NEW :
 		    HZ_STREAM_OLD;
-	flush_type = (msg->flush_type == WD_FINISH) ? HZ_FINISH :
+	flush_type = (msg->req.last == 1) ? HZ_FINISH :
 		     HZ_SYNC_FLUSH;
 	sqe.dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
@@ -279,6 +282,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		return ret;
 
 	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
+	__u16 lstblk = sqe.dw3 & HZ_LSTBLK_MASK;
 	__u32 stream_pos = sqe.dw7 & HZ_STREAM_POS_MASK;
 	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe.dw9 & HZ_REQ_TYPE_MASK;
@@ -317,10 +321,21 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		 * recv_msg->ctx_buf is only valid in SYNC mode.
 		 * ctx_dwx uses 4 BYTES
 		 */
-		*(int *)recv_msg->ctx_buf = sqe.ctx_dw0;
-		*(int *)(recv_msg->ctx_buf + 4) = sqe.ctx_dw1;
-		*(int *)(recv_msg->ctx_buf + 8) = sqe.ctx_dw2;
+		*(__u32 *)recv_msg->ctx_buf = sqe.ctx_dw0;
+		*(__u32 *)(recv_msg->ctx_buf + 4) = sqe.ctx_dw1;
+		*(__u32 *)(recv_msg->ctx_buf + 8) = sqe.ctx_dw2;
 	}
+
+	/* last block no space, need resend null size req */
+	if (ctx_st == HZ_DECOMP_NO_SPACE)
+		recv_msg->req.status = WD_DECOMP_NEED_AGAIN;
+	if (ctx_st == HZ_DECOMP_BLK_NOSTART)
+		recv_msg->req.status = WD_IN_EPARA;
+
+	dbg("lst =%d, ctx_st=0x%x, status=0x%x, alg=%u\n", lstblk, ctx_st, status, type);
+	if (lstblk && (status == HZ_DECOMP_END))
+		recv_msg->req.status = WD_DECOMP_END;
+
 	recv_msg->isize = sqe.isize;
 	recv_msg->checksum = sqe.checksum;
 	recv_msg->tag = sqe.tag;

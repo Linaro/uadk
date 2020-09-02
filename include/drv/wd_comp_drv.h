@@ -10,13 +10,6 @@ enum wd_comp_strm_pos {
 	WD_COMP_STREAM_OLD,
 };
 
-enum wd_comp_strm_flush_type {
-	WD_INVALID_FLUSH,
-	WD_NO_FLUSH,
-	WD_SYNC_FLUSH,
-	WD_FINISH,
-};
-
 enum wd_comp_state {
 	WD_COMP_STATEFUL,
 	WD_COMP_STATELESS,
@@ -40,23 +33,17 @@ struct wd_comp_msg {
 	struct wd_comp_req req;
 	__u32 tag;   	 /* request identifier */
 	__u8 alg_type;   /* Denoted by enum wcrypto_comp_alg_type */
-	__u8 op_type;    /* Denoted by enum wcrypto_comp_op_type */
-	__u8 flush_type; /* Denoted by enum wcrypto_comp_flush_type */
+	__u8 comp_lv;    /* Denoted by enum wcrypto_comp_level */
 	__u8 stream_mode;/* Denoted by enum wcrypto_comp_state */
 	__u8 stream_pos; /* Denoted by enum wcrypto_stream_status */
-	__u8 comp_lv;    /* Denoted by enum wcrypto_comp_level */
-	__u8 data_fmt;   /* Data format, denoted by enum wd_buff_type */
-	__u8 win_sz;     /* Denoted by enum wcrypto_comp_win_type */
-	__u32 in_size;   /* Input data bytes */
+	__u16 data_fmt;   /* Data format, denoted by enum wd_buff_type */
+	__u16 win_sz;     /* Denoted by enum wcrypto_comp_win_type */
 	__u32 avail_out; /* Output buffer size */
 	__u32 in_cons;   /* consumed bytes of input data */
 	__u32 produced;  /* produced bytes of current operation */
-	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
-	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
 	__u32 checksum;  /* Denoted by zlib/gzip CRC */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
-	struct wd_comp_sess *sess;
 };
 
 struct wd_comp_driver {
