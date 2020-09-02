@@ -5,8 +5,6 @@
 #include "sched_sample.h"
 #include "test_lib.h"
 
-#define HISI_DEV_NODE	"/dev/hisi_zip-0"
-
 #define SCHED_RR_NAME	"sched_rr"
 
 enum alg_type {
@@ -228,10 +226,7 @@ int init_ctx_config(struct test_options *opts,
 
 	/* allocate a wd_comp session */
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	if (opts->alg_type == ZLIB)
-		setup.alg_type = WD_ZLIB;
-	else if (opts->alg_type == GZIP)
-		setup.alg_type = WD_GZIP;
+	setup.alg_type = opts->alg_type;
 	setup.mode = opts->sync_mode;
 	setup.op_type = opts->op_type;
 	info->h_sess = wd_comp_alloc_sess(&setup);
@@ -341,7 +336,7 @@ int parse_common_option(const char opt, const char *optarg,
 		opts->verbose = true;
 		break;
 	case 'z':
-		opts->alg_type = ZLIB;
+		opts->alg_type = WD_ZLIB;
 		break;
 	default:
 		return 1;

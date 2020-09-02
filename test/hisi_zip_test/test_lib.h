@@ -28,12 +28,7 @@ do { \
 #define EXPANSION_RATIO	2
 
 struct test_options {
-#define ZLIB 0
-#define GZIP 1
 	int alg_type;
-
-#define DEFLATE 0
-#define INFLATE 1
 	int op_type;
 
 	/* bytes of data for a request */

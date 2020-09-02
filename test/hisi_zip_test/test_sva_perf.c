@@ -808,8 +808,8 @@ int main(int argc, char **argv)
 {
 	struct priv_options opts = {
 		.common = {
-			.alg_type	= GZIP,
-			.op_type	= DEFLATE,
+			.alg_type	= WD_GZIP,
+			.op_type	= WD_DIR_COMPRESS,
 			.req_cache_num	= 4,
 			.q_num		= 1,
 			.run_num	= 1,
