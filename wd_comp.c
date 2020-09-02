@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <dirent.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -17,8 +18,6 @@
 
 #define HW_CTX_SIZE			(64 * 1024)
 
-static struct wd_lock lock;
-
 struct msg_pool {
 	struct wd_comp_msg msg[WD_POOL_MAX_ENTRIES];
 	int used[WD_POOL_MAX_ENTRIES];
@@ -32,7 +31,7 @@ struct wd_async_msg_pool {
 };
 
 struct wd_comp_setting {
-	struct wd_ctx_config config;
+	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_comp_driver *driver;
 	void *priv;
@@ -66,9 +65,17 @@ void wd_comp_set_driver(struct wd_comp_driver *drv)
 	wd_comp_setting.driver = drv;
 }
 
-static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
+static void clone_ctx_to_internal(struct wd_ctx *ctx,
+				  struct wd_ctx_internal *ctx_in)
 {
-	struct wd_ctx *ctxs;
+	ctx_in->ctx = ctx->ctx;
+	ctx_in->op_type = ctx->op_type;
+	ctx_in->ctx_mode = ctx->ctx_mode;
+}
+
+static int init_global_ctx_setting(struct wd_ctx_config *cfg)
+{
+	struct wd_ctx_internal *ctxs;
 	int i;
 
 	if (!cfg->ctx_num) {
@@ -76,7 +83,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 		return -EINVAL;
 	}
 
-	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx));
+	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx_internal));
 	if (!ctxs)
 		return -ENOMEM;
 
@@ -86,9 +93,11 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 			free(ctxs);
 			return -EINVAL;
 		}
+
+		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
+		pthread_mutex_init(&ctxs[i].lock, NULL);
 	}
 
-	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_ctx));
 	wd_comp_setting.config.ctxs = ctxs;
 
 	/* Can't copy with the size of priv structure. */
@@ -123,6 +132,10 @@ static void clear_sched_in_global_setting(void)
 
 static void clear_config_in_global_setting(void)
 {
+	int i;
+
+	for (i = 0; i < wd_comp_setting.config.ctx_num; i++)
+		pthread_mutex_destroy(&wd_comp_setting.config.ctxs[i].lock);
 	wd_comp_setting.config.priv = NULL;
 	wd_comp_setting.config.ctx_num = 0;
 	free(wd_comp_setting.config.ctxs);
@@ -289,7 +302,7 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		return -EINVAL;
 	}
 
-	ret = copy_config_to_global_setting(config);
+	ret = init_global_ctx_setting(config);
 	if (ret < 0) {
 		WD_ERR("failed to set config, ret = %d!\n", ret);
 		return ret;
@@ -457,13 +470,13 @@ static void fill_comp_msg(struct wd_comp_msg *msg,
 
 int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 {
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	struct wd_ctx_config *config = &wd_comp_setting.config;
+	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	struct wd_comp_msg msg, resp_msg;
+	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
-	__u32 pos;
-	handle_t h_ctx;
-	int ret;
+	int index, ret;
 
 	if (!sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
@@ -475,41 +488,43 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	pos = wd_comp_setting.sched.pick_next_ctx(0, req, 0);
-	h_ctx = config->ctxs[pos].ctx;
-	if (!h_ctx) {
-		WD_ERR("pick ctx is NULL, please check config!\n");
+	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	if (index > config->ctx_num) {
+		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
 	}
+	ctx = config->ctxs + index;
 
 	fill_comp_msg(&msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
 	msg.stream_mode = WD_COMP_STATELESS;
 
-	wd_spinlock(&lock);
-	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
+	pthread_mutex_lock(&ctx->lock);
+
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		wd_unspinlock(&lock);
+		pthread_mutex_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		return ret;
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
-			wd_unspinlock(&lock);
+			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
 			return ret;
 		} else if (ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
-				wd_unspinlock(&lock);
+				pthread_mutex_unlock(&ctx->lock);
 				WD_ERR("wd comp recv timeout fail!\n");
 				return -ETIMEDOUT;
 			}
 		}
 	} while (ret == -EAGAIN);
-	wd_unspinlock(&lock);
+
+	pthread_mutex_unlock(&ctx->lock);
 
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
@@ -520,25 +535,25 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	struct wd_ctx_config *config = &wd_comp_setting.config;
+	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	struct wd_comp_msg msg, resp_msg;
+	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
-	__u32 pos;
-	handle_t h_ctx;
-	int ret;
+	int index, ret;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
 		return -EINVAL;
 	}
 
-	pos = wd_comp_setting.sched.pick_next_ctx(0, req, 0);
-	h_ctx = config->ctxs[pos].ctx;
-	if (!h_ctx) {
-		WD_ERR("pick ctx is NULL, please check config!\n");
+	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	if (index > config->ctx_num) {
+		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
 	}
+	ctx = config->ctxs + index;
 
 	fill_comp_msg(&msg, req);
 	msg.stream_pos = sess->stream_pos;
@@ -548,29 +563,31 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	msg.flush_type = req->last;
 	msg.stream_mode = WD_COMP_STATEFUL;
 
-	wd_spinlock(&lock);
-	ret = wd_comp_setting.driver->comp_send(h_ctx, &msg);
+	pthread_mutex_lock(&ctx->lock);
+
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		wd_unspinlock(&lock);
+		pthread_mutex_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		return ret;
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_HW_EACCESS) {
-			wd_unspinlock(&lock);
+			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
 			return ret;
 		} else if (ret == -EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
-				wd_unspinlock(&lock);
+				pthread_mutex_unlock(&ctx->lock);
 				WD_ERR("wd comp recv timeout fail!\n");
 				return -ETIMEDOUT;
 			}
 		}
 	} while (ret == -EAGAIN);
-	wd_unspinlock(&lock);
+
+	pthread_mutex_unlock(&ctx->lock);
 
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
@@ -583,47 +600,49 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 {
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	struct wd_ctx_config *config = &wd_comp_setting.config;
+	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
+	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
-	handle_t h_ctx;
-	int ret = 0;
-	__u32 pos;
+	int index, ret = 0;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
 		return -EINVAL;
 	}
 
-	pos = wd_comp_setting.sched.pick_next_ctx(0, req, 0);
-	h_ctx = config->ctxs[pos].ctx;
-	if (!h_ctx) {
-		WD_ERR("pick ctx is NULL, please check config!\n");
+	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	if (index > config->ctx_num) {
+		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
 	}
+	ctx = config->ctxs + index;
 
-	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, h_ctx, req);
+	msg = wd_get_msg_from_pool(&wd_comp_setting.pool, ctx->ctx, req);
 	fill_comp_msg(msg, req);
 	msg->alg_type = sess->alg_type;
 
-	wd_spinlock(&lock);
-	ret = wd_comp_setting.driver->comp_send(h_ctx, msg);
+	pthread_mutex_lock(&ctx->lock);
+
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg);
 	if (ret < 0) {
 		WD_ERR("wd comp send err(%d)!\n", ret);
-		wd_put_msg_to_pool(&wd_comp_setting.pool, h_ctx, msg);
+		wd_put_msg_to_pool(&wd_comp_setting.pool, ctx->ctx, msg);
 	}
-	wd_unspinlock(&lock);
+
+	pthread_mutex_unlock(&ctx->lock);
 
 	return ret;
 }
 
 int wd_comp_poll(__u32 *count)
 {
-	struct wd_ctx_config *config = &wd_comp_setting.config;
 	int ret;
 
 	*count = 0;
-	ret = wd_comp_setting.sched.poll_policy(0, config, 1, count);
+	/* fix me: just stub input config here. this input should be removed */
+	ret = wd_comp_setting.sched.poll_policy(0, 0, 1, count);
 	if (ret < 0)
 		return ret;
 

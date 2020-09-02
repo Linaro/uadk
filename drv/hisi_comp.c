@@ -135,10 +135,10 @@ struct hisi_zip_sqe {
 #define upper_32_bits(addr) ((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
 
 struct hisi_zip_ctx {
-	struct wd_ctx_config	config;
+	struct wd_ctx_config_internal	config;
 };
 
-static int hisi_zip_init(struct wd_ctx_config *config, void *priv)
+static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 {
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
@@ -167,7 +167,7 @@ out:
 static void hisi_zip_exit(void *priv)
 {
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
-	struct wd_ctx_config *config = &zip_ctx->config;
+	struct wd_ctx_config_internal *config = &zip_ctx->config;
 	handle_t h_qp;
 	int i;
 

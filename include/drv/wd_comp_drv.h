@@ -2,6 +2,7 @@
 #ifndef __WD_COMP_DRV_H
 #define __WD_COMP_DRV_H
 
+#include <pthread.h>
 #include "../wd_comp.h"
 
 enum wd_comp_strm_pos {
@@ -19,6 +20,19 @@ enum wd_comp_strm_flush_type {
 enum wd_comp_state {
 	WD_COMP_STATEFUL,
 	WD_COMP_STATELESS,
+};
+
+struct wd_ctx_internal {
+	handle_t ctx;
+	__u8 op_type;
+	__u8 ctx_mode;
+	pthread_mutex_t lock;
+};
+
+struct wd_ctx_config_internal {
+	__u32 ctx_num;
+	struct wd_ctx_internal *ctxs;
+	void *priv;
 };
 
 /* fixme wd_comp_msg */
@@ -49,7 +63,7 @@ struct wd_comp_driver {
 	const char *drv_name;
 	const char *alg_name;
 	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config *config, void *priv);
+	int (*init)(struct wd_ctx_config_internal *config, void *priv);
 	void (*exit)(void *priv);
 	int (*comp_send)(handle_t ctx, struct wd_comp_msg *msg);
 	int (*comp_recv)(handle_t ctx, struct wd_comp_msg *msg);
