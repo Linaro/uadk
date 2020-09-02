@@ -584,7 +584,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 	return 0;
 }
 
-static struct wd_cipher_driver hisi_cipher_driver = {
+struct wd_cipher_driver hisi_cipher_driver = {
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "cipher",
 		.init		= hisi_sec_init,
@@ -752,7 +752,7 @@ int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
 	return 0;
 }
 
-static struct wd_digest_driver hisi_digest_driver = {
+struct wd_digest_driver hisi_digest_driver = {
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "digest",
 		.init		= hisi_sec_init,

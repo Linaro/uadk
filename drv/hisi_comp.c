@@ -330,7 +330,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	return 0;
 }
 
-static struct wd_comp_driver hisi_zip = {
+struct wd_comp_driver hisi_zip = {
 	.drv_name		= "hisi_zip",
 	.alg_name		= "zlib\ngzip",
 	.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
