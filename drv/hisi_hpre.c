@@ -25,7 +25,6 @@
 #include "hisi_qm_udrv.h"
 #include "smm.h"
 #include "wd.h"
-#include "wd_sched.h"
 
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3

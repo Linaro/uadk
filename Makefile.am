@@ -13,7 +13,7 @@ endif
 lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libhisi_hpre.la \
 		libwd_crypto.la libhisi_sec.la
 
-libwd_la_SOURCES=wd.c wd.h wd_sched.c wd_sched.h bmm.c bmm.h smm.c smm.h
+libwd_la_SOURCES=wd.c wd.h bmm.c bmm.h smm.c smm.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h
 libwd_comp_la_LIBADD= $(libwd_la_OBJECTS) -ldl

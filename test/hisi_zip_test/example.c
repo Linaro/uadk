@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #include "wd_comp.h"
-#include "wd_sched.h"
 
 #define TEST_WORD_LEN	4096
 #define BUF_8MB		(1 << 23)
