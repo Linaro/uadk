@@ -353,7 +353,7 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 	int ret;
 
 	*count = 0;
-	ret = g_wd_cipher_setting.sched.poll_policy(config, 1, count);
+	ret = g_wd_cipher_setting.sched.poll_policy(0, config, 1, count);
 	if (ret < 0)
 		return ret;
 
@@ -380,6 +380,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	struct wd_cipher_msg msg;
 	__u64 recv_cnt = 0;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
@@ -388,7 +389,8 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, req, NULL);
+	pos = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;
@@ -524,9 +526,11 @@ int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	struct wd_cipher_msg *msg;
 	handle_t h_ctx;
+	__u32 pos;
 	int ret;
 
-	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(config, req, NULL);
+	pos = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;

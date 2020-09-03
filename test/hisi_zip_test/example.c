@@ -74,14 +74,14 @@ static int getcpu(unsigned *cpu, unsigned *node, struct getcpu_cache *tcache)
 #endif
 
 /* only 1 context is used */
-static handle_t sched_single_pick_next(const struct wd_ctx_config *cfg,
+static __u32 sched_single_pick_next(handle_t sched_ctx,
 				       const void *req,
 				       const struct sched_key *key)
 {
-	return ctx_conf.ctxs[0].ctx;
+	return 0;
 }
 
-static int sched_single_poll_policy(const struct wd_ctx_config *cfg,
+static int sched_single_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *cfg,
 				    __u32 expect,
 				    __u32 *count)
 {

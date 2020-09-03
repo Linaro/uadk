@@ -406,19 +406,19 @@ therad_no_affinity:
 static struct wd_ctx_config ctx_conf;
 static struct wd_sched sched;
 
-static handle_t sched_two_pick_next(const struct wd_ctx_config *cfg,
+static __u32 sched_two_pick_next(handle_t h_sched_ctx,
 				    const void *req,
 				    const struct sched_key *key)
 {
 	struct wd_comp_req *c_req = (struct wd_comp_req *)req;
 
 	if (c_req->op_type == WD_DIR_COMPRESS)
-		return ctx_conf.ctxs[0].ctx;
+		return 0;
 	else
-		return ctx_conf.ctxs[1].ctx;
+		return 1;
 }
 
-static int sched_two_poll_policy(const struct wd_ctx_config *cfg,
+static int sched_two_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *cfg,
 				 __u32 expect,
 				 __u32 *count)
 {

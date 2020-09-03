@@ -461,6 +461,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg msg, resp_msg;
 	__u64 recv_count = 0;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
@@ -474,7 +475,8 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, &sess->key);
+	pos = wd_comp_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("pick ctx is NULL, please check config!\n");
 		return -EINVAL;
@@ -522,6 +524,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_config *config = &wd_comp_setting.config;
 	struct wd_comp_msg msg, resp_msg;
 	__u64 recv_count = 0;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
@@ -530,7 +533,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
+	pos = wd_comp_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("pick ctx is NULL, please check config!\n");
 		return -EINVAL;
@@ -584,13 +588,15 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_comp_msg *msg;
 	handle_t h_ctx;
 	int ret = 0;
+	__u32 pos;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
 		return -EINVAL;
 	}
 
-	h_ctx = wd_comp_setting.sched.pick_next_ctx(config, req, 0);
+	pos = wd_comp_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("pick ctx is NULL, please check config!\n");
 		return -EINVAL;
@@ -617,7 +623,7 @@ int wd_comp_poll(__u32 *count)
 	int ret;
 
 	*count = 0;
-	ret = wd_comp_setting.sched.poll_policy(config, 1, count);
+	ret = wd_comp_setting.sched.poll_policy(0, config, 1, count);
 	if (ret < 0)
 		return ret;
 

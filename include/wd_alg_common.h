@@ -80,7 +80,7 @@ struct sched_key {
  * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
  *			config points to the ctx config; sched_ctx points to
  *			scheduler context; req points to the request. Return
- *			the proper ctx handler.
+ *			the proper ctx pos in wd_ctx_config.
  *			(fix me: modify req to request?)
  * @poll_policy:	Define the polling policy. config points to the ctx
  *			config; sched_ctx points to scheduler context; Return
@@ -88,12 +88,13 @@ struct sched_key {
  */
 struct wd_sched {
 	const char *name;
-	handle_t (*pick_next_ctx)(const struct wd_ctx_config *config,
+	__u32 (*pick_next_ctx)(handle_t h_sched_ctx,
 				  const void *req,
 				  const struct sched_key *key);
-	int (*poll_policy)(const struct wd_ctx_config *config,
+	int (*poll_policy)(handle_t h_sched_ctx, const struct wd_ctx_config *config,
 			   __u32 expect,
 			   __u32 *count);
+	handle_t h_sched_ctx;
 };
 
 static inline void wd_spinlock(struct wd_lock *lock)

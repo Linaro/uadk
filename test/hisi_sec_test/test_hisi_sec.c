@@ -10,6 +10,7 @@
 #include "test_hisi_sec.h"
 #include "wd_cipher.h"
 #include "wd_digest.h"
+#include "wd_alg_common.h"
 
 #define HW_CTX_SIZE (24 * 1024)
 #define BUFF_SIZE 1024
@@ -22,7 +23,7 @@
 
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched g_sched;
-static struct wd_digest_sched dg_sched;
+static struct wd_sched dg_sched;
 
 //static struct wd_cipher_req g_async_req;
 static long long int g_times;
@@ -61,14 +62,14 @@ static void hexdump(char *buff, unsigned int len)
 	printf("\n");
 }
 
-static handle_t sched_single_pick_next_ctx(const struct wd_ctx_config *cfg,
+static __u32 sched_single_pick_next_ctx(handle_t sched_ctx,
 													  const void *req,
 													  const struct sched_key *key)
 {
-	return g_ctx_cfg.ctxs[0].ctx;
+	return 0;
 }
 
-static int sched_single_poll_policy(const struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
+static int sched_single_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
 {
 	return 0;
 }
@@ -724,13 +725,12 @@ out_thr:
 	return ret;
 }
 
-static handle_t sched_digest_pick_next_ctx(struct wd_ctx_config *cfg,
-		void *sched_ctx, struct wd_digest_req *req, int numa_id)
+static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx, const void *req, const struct sched_key *key)
 {
-	return g_ctx_cfg.ctxs[0].ctx;
+	return 0;
 }
 
-static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sched)
+static int init_digest_ctx_config(int type, int mode, struct wd_sched *sched)
 {
 	struct uacce_dev_list *list;
 	int ret;
@@ -757,7 +757,6 @@ static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sc
 	g_ctx_cfg.ctxs[0].ctx_mode = mode;
 
 	sched->name = SCHED_SINGLE;
-	sched->sched_ctx_size = SCHED_NULL_CTX_SIZE;
 	sched->pick_next_ctx = sched_digest_pick_next_ctx;
 
 	sched->poll_policy = sched_single_poll_policy;

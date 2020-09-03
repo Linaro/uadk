@@ -19,6 +19,7 @@
 #include <linux/perf_event.h>
 
 #include "test_lib.h"
+#include "sched_sample.h"
 
 struct priv_context {
 	struct hizip_test_info info;
@@ -538,7 +539,7 @@ static int run_one_child(struct priv_options *opts)
 	struct hizip_test_info save_info;
 	struct hizip_test_info *info = &priv_ctx.info;
 	struct test_options *copts = &opts->common;
-	struct wd_sched sched;
+	struct wd_sched *sched;
 
 	memset(&priv_ctx, 0, sizeof(struct priv_context));
 	priv_ctx.opts = opts;
@@ -563,7 +564,13 @@ static int run_one_child(struct priv_options *opts)
 	info->req.dst_len = copts->total_len * EXPANSION_RATIO;
 	hizip_prepare_random_input_data(info);
 
-	ret = init_ctx_config(copts, &sched, info);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, lib_poll_func);
+	if (!sched) {
+		WD_ERR("sample_sched_alloc fail\n");
+		goto out_ctx;
+	}
+
+	ret = init_ctx_config(copts, sched, info);
 	if (ret < 0) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_ctx;
@@ -576,7 +583,7 @@ static int run_one_child(struct priv_options *opts)
 	for (i = 0; i < copts->compact_run_num; i++) {
 		*info = save_info;
 
-		ret = hizip_test_sched(&sched, copts, info);
+		ret = hizip_test_sched(sched, copts, info);
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			break;
@@ -603,7 +610,7 @@ static int run_one_child(struct priv_options *opts)
 		*info = save_info;
 		info->faulting = true;
 
-		ret = hizip_test_sched(&sched, copts, info);
+		ret = hizip_test_sched(sched, copts, info);
 		if (ret >= 0) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", out_buf, out_buf +
@@ -624,6 +631,7 @@ static int run_one_child(struct priv_options *opts)
 	uninit_config(info);
 
 out_ctx:
+	sample_sched_release(sched);
 	if (out_buf)
 		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:

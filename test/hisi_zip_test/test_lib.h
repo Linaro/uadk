@@ -87,7 +87,7 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 			       struct hizip_test_info *info);
 
 void *mmap_alloc(size_t len);
-
+int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 #ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,

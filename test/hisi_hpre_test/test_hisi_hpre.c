@@ -1052,7 +1052,7 @@ static __u8 is_async_test(__u32 opType)
 	return true;
 }
 
-handle_t rsa_pick_next_ctx(struct wd_ctx_config *config,
+__u32 rsa_pick_next_ctx(handle_t sched_ctx,
 				struct wd_rsa_req *req, struct sched_key *key)
 {
   __u32 idx;
@@ -1064,10 +1064,10 @@ handle_t rsa_pick_next_ctx(struct wd_ctx_config *config,
   else
     idx = 2 % q_num;
 	
-  return config->ctxs[idx].ctx;
+  return idx;
 }
 
-int poll_policy(struct wd_ctx_config *config, __u32 expect, __u32 *count)
+int poll_policy(handle_t h_sched_ctx, struct wd_ctx_config *config, __u32 expect, __u32 *count)
 {
 	return 0;
 }

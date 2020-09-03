@@ -28,7 +28,7 @@ struct wd_async_msg_pool {
 
 struct wd_digest_setting {
 	struct wd_ctx_config	config;
-	struct wd_digest_sched	sched;
+	struct wd_sched	sched;
 	struct wd_digest_driver	*driver;
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
@@ -132,13 +132,12 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	return 0;
 }
 
-static int copy_sched_to_global_setting(struct wd_digest_sched *sched)
+static int copy_sched_to_global_setting(struct wd_sched *sched)
 {
-	if (!sched->name || sched->sched_ctx_size <= 0)
+	if (!sched->name)
 		return -EINVAL;
 
 	g_wd_digest_setting.sched.name = strdup(sched->name);
-	g_wd_digest_setting.sched.sched_ctx_size = sched->sched_ctx_size;
 	g_wd_digest_setting.sched.pick_next_ctx = sched->pick_next_ctx;
 	g_wd_digest_setting.sched.poll_policy = sched->poll_policy;
 
@@ -160,7 +159,6 @@ static void clear_sched_in_global_setting(void)
 	g_wd_digest_setting.sched.name = NULL;
 	g_wd_digest_setting.sched.poll_policy = NULL;
 	g_wd_digest_setting.sched.pick_next_ctx = NULL;
-	g_wd_digest_setting.sched.sched_ctx_size = 0;
 }
 
 /* Each context has a reqs pool */
@@ -293,7 +291,7 @@ static struct wd_digest_req *get_req_from_pool(struct wd_async_msg_pool *pool,
 	return &msg->req;
 }
 
-int wd_digest_init(struct wd_ctx_config *config, struct wd_digest_sched *sched)
+int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	int ret;
@@ -325,12 +323,6 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_digest_sched *sched)
 	wd_digest_set_static_drv();
 #endif
 
-	/* alloc sched context memory */
-	g_wd_digest_setting.sched_ctx = calloc(1, sched->sched_ctx_size);
-	if (!g_wd_digest_setting.sched_ctx) {
-		ret = -ENOMEM;
-		goto out_sched;
-	}
 	/* init sysnc request pool */
 	ret = init_async_request_pool(&g_wd_digest_setting.pool);
 	if (ret)
@@ -357,9 +349,8 @@ out_priv:
 	uninit_async_request_pool(&g_wd_digest_setting.pool);
 out_pool:
 	free(g_wd_digest_setting.sched_ctx);
-out_sched:
-	clear_sched_in_global_setting();
 out:
+	clear_sched_in_global_setting();
 	clear_config_in_global_setting();
 
 	return ret;
@@ -397,13 +388,14 @@ static void fill_request_msg(struct wd_digest_msg *msg, struct wd_digest_req *re
 int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 {
 	struct wd_ctx_config *config = &g_wd_digest_setting.config;
-	void *sched_ctx = g_wd_digest_setting.sched_ctx;
 	struct wd_digest_msg msg, recv_msg;
 	__u64 recv_cnt = 0;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
-	h_ctx = g_wd_digest_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	pos = g_wd_digest_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("wd digest pick next ctx is NULL!\n");
 		return -EINVAL;
@@ -440,12 +432,13 @@ recv_err:
 int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
 {
 	struct wd_ctx_config *config = &g_wd_digest_setting.config;
-	void *sched_ctx = g_wd_digest_setting.sched_ctx;
 	struct wd_digest_msg *msg;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
-	h_ctx = g_wd_digest_setting.sched.pick_next_ctx(config, sched_ctx, req, 0);
+	pos = g_wd_digest_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (!h_ctx) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;
@@ -508,7 +501,7 @@ int wd_digest_poll(__u32 expt, __u32 *count)
 	int ret;
 
 	*count = 0;
-	ret = g_wd_digest_setting.sched.poll_policy(config, 1, count);
+	ret = g_wd_digest_setting.sched.poll_policy(0, config, 1, count);
 	if (ret < 0)
 		return ret;
 

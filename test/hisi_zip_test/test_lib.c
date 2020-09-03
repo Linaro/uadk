@@ -149,15 +149,13 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
-int lib_poll_func(handle_t h_ctx, __u32 expect, __u32 *count)
+int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 {
 	return SCHED_SUCCESS;
 }
 
-int init_ctx_config(struct test_options *opts,
-		    struct wd_sched *sched,
-		    void *priv
-		    )
+int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
+		    void *priv)
 {
 	struct wd_comp_sess_setup setup;
 	struct uacce_dev_list *list;
@@ -173,41 +171,34 @@ int init_ctx_config(struct test_options *opts,
 	q_num = opts->q_num;
 
 	sched->name = SCHED_RR_NAME;
-	sched->pick_next_ctx = sample_sched_pick_next_ctx;
-	sched->poll_policy = sample_sched_poll_policy;
-	ret = sample_sched_init(SCHED_POLICY_RR, 2, lib_poll_func);
-	if (ret < 0) {
-		WD_ERR("Fail to init scheduler.\n");
-		ret = -EINVAL;
-		goto out_sched;
-	}
+
 	/*
 	 * All contexts for 2 modes & 2 types.
 	 * The test only uses one kind of contexts at the same time.
 	 */
-	ret = sample_sched_fill_region(0, 0, 0, 0, q_num - 1);
+	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 0, 0,
+				     0, q_num - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
+		goto free_list;
 	}
-	ret = sample_sched_fill_region(0, 0, 1, q_num, q_num * 2 - 1);
+	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 0, 1,
+				     q_num, q_num * 2 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
+		goto free_list;
 	}
-	ret = sample_sched_fill_region(0, 1, 0, q_num * 2, q_num * 3 - 1);
+	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 1, 0,
+				     q_num * 2, q_num * 3 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
+		goto free_list;
 	}
-	ret = sample_sched_fill_region(0, 1, 1, q_num * 3, q_num * 4 - 1);
+	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 1, 1,
+				     q_num * 3, q_num * 4 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
+		goto free_list;
 	}
 
 	memset(ctx_conf, 0, sizeof(struct wd_ctx_config));
@@ -216,7 +207,7 @@ int init_ctx_config(struct test_options *opts,
 	if (!ctx_conf->ctxs) {
 		WD_ERR("Not enough memory to allocate contexts.\n");
 		ret = -ENOMEM;
-		goto out_fill;
+		goto free_list;
 	}
 	for (i = 0; i < ctx_conf->ctx_num; i++) {
 		ctx_conf->ctxs[i].ctx = wd_request_ctx(list->dev);
@@ -240,7 +231,9 @@ int init_ctx_config(struct test_options *opts,
 		ret = -EINVAL;
 		goto out_sess;
 	}
+
 	return ret;
+
 out_sess:
 	wd_comp_uninit();
 	i = ctx_conf->ctx_num;
@@ -248,9 +241,7 @@ out_ctx:
 	for (j = 0; j < i; j++)
 		wd_release_ctx(ctx_conf->ctxs[j].ctx);
 	free(ctx_conf->ctxs);
-out_fill:
-	sample_sched_release();
-out_sched:
+free_list:
 	wd_free_list_accels(list);
 	return ret;
 }
@@ -263,7 +254,6 @@ void uninit_config(void *priv)
 
 	wd_comp_free_sess(info->h_sess);
 	wd_comp_uninit();
-	sample_sched_release();
 	for (i = 0; i < ctx_conf->ctx_num; i++)
 		wd_release_ctx(ctx_conf->ctxs[i].ctx);
 	free(ctx_conf->ctxs);
@@ -276,12 +266,12 @@ int hizip_test_sched(struct wd_sched *sched,
 		     )
 {
 	handle_t h_sess = info->h_sess;
-	struct sched_key key;
+	//struct sched_key key;
 	int ret;
 
-	key.numa_id = 0;
-	key.mode = opts->sync_mode;
-	key.type = 0;
+	//key.numa_id = 0;
+	//key.mode = opts->sync_mode;
+	//key.type = 0;
 	if (opts->sync_mode) {
 		/* async */
 	} else {

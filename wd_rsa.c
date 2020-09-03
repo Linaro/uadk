@@ -456,6 +456,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	struct wd_rsa_msg msg;
 	__u64 rx_cnt = 0;
 	__u64 tx_cnt = 0;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
@@ -464,7 +465,8 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	h_ctx = wd_rsa_setting.sched.pick_next_ctx(config, req, 0);
+	pos = wd_rsa_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (unlikely(!h_ctx)) {
 		WD_ERR("failed to pick ctx!\n");
 		return -WD_EINVAL;
@@ -521,6 +523,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 {
 	struct wd_ctx_config *config = &wd_rsa_setting.config;
 	struct wd_rsa_msg *msg;
+	__u32 pos;
 	handle_t h_ctx;
 	int ret;
 
@@ -529,7 +532,8 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	h_ctx = wd_rsa_setting.sched.pick_next_ctx(config, req, 0);
+	pos = wd_rsa_setting.sched.pick_next_ctx(0, req, 0);
+	h_ctx = config->ctxs[pos].ctx;
 	if (unlikely(!h_ctx)) {
 		WD_ERR("failed to pick ctx!\n");
 		return -ENOMEM;
@@ -574,7 +578,7 @@ int wd_rsa_poll(__u32 *count)
 	int ret;
 
 	*count = 0;
-	ret = wd_rsa_setting.sched.poll_policy(config, 1, count);
+	ret = wd_rsa_setting.sched.poll_policy(0, config, 1, count);
 	if (ret < 0)
 		return ret;
 

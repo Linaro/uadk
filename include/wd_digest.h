@@ -115,7 +115,7 @@ struct wd_digest_tag {
 	void *priv;
 };
 
-int wd_digest_init(struct wd_ctx_config *config, struct wd_digest_sched *sched);
+int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched);
 void wd_digest_uninit(void);
 
 /**
