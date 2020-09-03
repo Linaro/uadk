@@ -1497,7 +1497,16 @@ static int fill_aead_bd3_alg(struct wcrypto_aead_msg *msg,
 		msg->cmode == WCRYPTO_CIPHER_GCM)
 		return ret;
 
+	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid aead auth_bytes!\n");
+		return -WD_EINVAL;
+	}
 	sqe->mac_len = msg->auth_bytes / SEC_SQE_LEN_RATE;
+
+	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid aead auth key bytes!\n");
+		return -WD_EINVAL;
+	}
 	sqe->a_key_len = msg->akey_bytes / SEC_SQE_LEN_RATE;
 
 	switch (msg->dalg) {
@@ -1937,7 +1946,16 @@ static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
 		msg->cmode == WCRYPTO_CIPHER_GCM)
 		return ret;
 
+	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid aead auth_bytes!\n");
+		return -WD_EINVAL;
+	}
 	sqe->type2.mac_len = msg->auth_bytes / SEC_SQE_LEN_RATE;
+
+	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid aead auth key bytes!\n");
+		return -WD_EINVAL;
+	}
 	sqe->type2.a_key_len = msg->akey_bytes / SEC_SQE_LEN_RATE;
 
 	switch (msg->dalg) {
