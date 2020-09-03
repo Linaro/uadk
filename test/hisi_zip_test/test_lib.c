@@ -164,19 +164,59 @@ int init_ctx_config(struct test_options *opts,
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i, j, ret = -EINVAL;
+	int q_num;
 
 	list = wd_get_accel_list("zlib");
 	if (!list)
 		return -ENODEV;
 	info->list = list;
+	q_num = opts->q_num;
+
+	sched->name = SCHED_RR_NAME;
+	sched->pick_next_ctx = sample_sched_pick_next_ctx;
+	sched->poll_policy = sample_sched_poll_policy;
+	ret = sample_sched_init(SCHED_POLICY_RR, 2, lib_poll_func);
+	if (ret < 0) {
+		WD_ERR("Fail to init scheduler.\n");
+		ret = -EINVAL;
+		goto out_sched;
+	}
+	/*
+	 * All contexts for 2 modes & 2 types.
+	 * The test only uses one kind of contexts at the same time.
+	 */
+	ret = sample_sched_fill_region(0, 0, 0, 0, q_num - 1);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	ret = sample_sched_fill_region(0, 0, 1, q_num, q_num * 2 - 1);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	ret = sample_sched_fill_region(0, 1, 0, q_num * 2, q_num * 3 - 1);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
+	ret = sample_sched_fill_region(0, 1, 1, q_num * 3, q_num * 4 - 1);
+	if (ret < 0) {
+		WD_ERR("Fail to fill sched region.\n");
+		ret = -EINVAL;
+		goto out_fill;
+	}
 
 	memset(ctx_conf, 0, sizeof(struct wd_ctx_config));
-	ctx_conf->ctx_num = opts->q_num;
-	ctx_conf->ctxs = calloc(1, opts->q_num * sizeof(struct wd_ctx));
+	ctx_conf->ctx_num = q_num * 4;
+	ctx_conf->ctxs = calloc(1, q_num * 4 * sizeof(struct wd_ctx));
 	if (!ctx_conf->ctxs) {
 		WD_ERR("Not enough memory to allocate contexts.\n");
 		ret = -ENOMEM;
-		goto out;
+		goto out_fill;
 	}
 	for (i = 0; i < ctx_conf->ctx_num; i++) {
 		ctx_conf->ctxs[i].ctx = wd_request_ctx(list->dev);
@@ -187,40 +227,6 @@ int init_ctx_config(struct test_options *opts,
 		}
 		ctx_conf->ctxs[i].op_type = opts->op_type;
 		ctx_conf->ctxs[i].ctx_mode = opts->sync_mode;
-	}
-	sched->name = SCHED_RR_NAME;
-	sched->pick_next_ctx = sample_sched_pick_next_ctx;
-	sched->poll_policy = sample_sched_poll_policy;
-	ret = sample_sched_init(SCHED_POLICY_RR, 2, lib_poll_func);
-	if (ret < 0) {
-		WD_ERR("Fail to init scheduler.\n");
-		ret = -EINVAL;
-		goto out_sched;
-	}
-	/* 40 contexts for 4 types */
-	ret = sample_sched_fill_region(0, 0, 0, 0, 19);
-	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
-	}
-	ret = sample_sched_fill_region(0, 0, 1, 20, 39);
-	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
-	}
-	ret = sample_sched_fill_region(0, 1, 0, 40, 59);
-	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
-	}
-	ret = sample_sched_fill_region(0, 1, 1, 60, 79);
-	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
-		ret = -EINVAL;
-		goto out_fill;
 	}
 	wd_comp_init(ctx_conf, sched);
 
@@ -237,15 +243,14 @@ int init_ctx_config(struct test_options *opts,
 	return ret;
 out_sess:
 	wd_comp_uninit();
-out_fill:
-	sample_sched_release();
-out_sched:
 	i = ctx_conf->ctx_num;
 out_ctx:
 	for (j = 0; j < i; j++)
 		wd_release_ctx(ctx_conf->ctxs[j].ctx);
 	free(ctx_conf->ctxs);
-out:
+out_fill:
+	sample_sched_release();
+out_sched:
 	wd_free_list_accels(list);
 	return ret;
 }

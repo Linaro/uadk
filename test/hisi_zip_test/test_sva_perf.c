@@ -810,7 +810,6 @@ int main(int argc, char **argv)
 		.common = {
 			.alg_type	= WD_GZIP,
 			.op_type	= WD_DIR_COMPRESS,
-			.req_cache_num	= 4,
 			.q_num		= 1,
 			.run_num	= 1,
 			.compact_run_num = 1,

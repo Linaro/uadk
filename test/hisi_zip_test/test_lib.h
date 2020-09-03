@@ -33,13 +33,12 @@ struct test_options {
 
 	/* bytes of data for a request */
 	int block_size;
-	/* fix me: remove this as not using sched */
-	int req_cache_num;
 	int q_num;
 	unsigned long total_len;
 
 #define MAX_RUNS	1024
 	int run_num;
+	/* tasks running in parallel */
 	int compact_run_num;
 
 	int thread_num;
