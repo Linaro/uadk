@@ -13,7 +13,11 @@
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
-static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0};
+
+static struct wd_lock lock;
+
+static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
+	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
 
 struct msg_pool {
 	struct wd_cipher_msg msg[WD_POOL_MAX_ENTRIES];
@@ -55,7 +59,7 @@ static void __attribute__((constructor)) wd_cipher_open_driver(void)
 	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
 	driver = dlopen("/usr/lib/wd/libhisi_sec.so", RTLD_NOW);
 	if (!driver)
-		WD_ERR("Fail to open libhisi_sec.so\n");
+		WD_ERR("fail to open libhisi_sec.so\n");
 }
 #endif
 
@@ -105,7 +109,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 			ret = -EINVAL;
 		break;
 	case WD_CIPHER_3DES:
-		if (length != DES3_2KEY_SIZE || length != DES3_3KEY_SIZE)
+		if (length != DES3_2KEY_SIZE && length != DES3_3KEY_SIZE)
 			ret = -EINVAL;
 		break;
 	default:
@@ -151,7 +155,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	struct wd_cipher_sess *sess;
 
 	if (!setup) {
-		WD_ERR("input setup is NULL!\n");
+		WD_ERR("cipher input setup is NULL!\n");
 		return (handle_t)0;
 	}
 	sess = malloc(sizeof(struct wd_cipher_sess));
@@ -168,12 +172,12 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 
 void wd_cipher_free_sess(handle_t h_sess)
 {
-	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-	
-	if (!sess) {
+	if (!h_sess) {
 		WD_ERR("cipher input h_sess is NULL!\n");
 		return;
 	}
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+
 	free(sess);
 }
 
@@ -184,7 +188,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 
 	if (cfg->ctx_num == 0)
 		return -EINVAL;
-
+	/* check every context  */
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx)
 			return -EINVAL;
@@ -197,6 +201,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	/* get ctxs from user set */
 	memcpy(ctxs, cfg->ctxs, sizeof(struct wd_ctx) * cfg->ctx_num);
 	g_wd_cipher_setting.config.ctxs = ctxs;
+
 	g_wd_cipher_setting.config.priv = cfg->priv;
 	g_wd_cipher_setting.config.ctx_num = cfg->ctx_num;
 
@@ -257,10 +262,7 @@ static void uninit_async_request_pool(struct wd_async_msg_pool *pool)
 		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
 			if (p->used[j])
 				WD_ERR("Entry #%d isn't released from reqs pool.\n", j);
-			memset(&p->msg[j], 0, sizeof(struct wd_cipher_msg));
 		}
-		p->head = 0;
-		p->tail = 0;
 	}
 
 	free(pool->pools);
@@ -283,13 +285,13 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	ret = copy_config_to_global_setting(config);
 	if (ret < 0) {
-		WD_ERR("Fail to copy configuration to global setting!\n");
+		WD_ERR("fail to copy configuration to global setting!\n");
 		return ret;
 	}
 
 	ret = copy_sched_to_global_setting(sched);
 	if (ret < 0) {
-		WD_ERR("Fail to copy schedule to global setting!\n");
+		WD_ERR("fail to copy schedule to global setting!\n");
 		goto out;
 	}
 
@@ -301,7 +303,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* init sysnc request pool */
 	ret = init_async_request_pool(&g_wd_cipher_setting.pool);
 	if (ret) {
-		WD_ERR("Fail to init cipher aysnc request pool.\n");
+		WD_ERR("fail to init cipher aysnc request pool.\n");
 		goto out_sched;
 	}
 	/* init ctx related resources in specific driver */
@@ -384,7 +386,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 	handle_t h_ctx;
 	int ret;
 
-	if (!sess || !req) {
+	if (unlikely(!sess || !req)) {
 		WD_ERR("cipher input sess or req is NULL.\n");
 		return -EINVAL;
 	}
@@ -399,9 +401,12 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req);
 	req->state = 0;
+
+	wd_spinlock(&lock);
 	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, &msg);
 	if (ret < 0) {
-		WD_ERR("wd send err!\n");
+		WD_ERR("wd cipher send err!\n");
+		wd_unspinlock(&lock);
 		return ret;
 	}
 
@@ -418,10 +423,12 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 			}
 		}
 	} while(ret < 0);
+	wd_unspinlock(&lock);
 
 	return 0;
 recv_err:
 	req->state = msg.result;
+	wd_unspinlock(&lock);
 	return ret;
 }
 
@@ -529,9 +536,14 @@ int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
 	__u32 pos;
 	int ret;
 
+	if (unlikely(!sess || !req)) {
+		WD_ERR("cipher input sess or req is NULL.\n");
+		return -EINVAL;
+	}
+
 	pos = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
 	h_ctx = config->ctxs[pos].ctx;
-	if (!h_ctx) {
+	if (unlikely(!h_ctx)) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;
 	}

@@ -23,7 +23,7 @@
 #define SEC_SCENE_OFFSET	  3
 #define SEC_DE_OFFSET		  1
 #define SEC_CMODE_OFFSET	  12
-#define SEC_CKEY_OFFSET	  9
+#define SEC_CKEY_OFFSET		  9
 #define SEC_CIPHER_OFFSET	  4
 #define XTS_MODE_KEY_DIVISOR	  2
 
@@ -34,14 +34,14 @@
 #define AES_KEYSIZE_192		  24
 #define AES_KEYSIZE_256		  32
 
-#define DES3_BLOCK_SIZE	8
+#define DES3_BLOCK_SIZE		8
 #define	AES_BLOCK_SIZE		16
 #define	MAX_CIPHER_LEN		16776704
 
 #define AUTHPAD_OFFSET		2
-#define AUTHTYPE_OFFSET	6
-#define MAC_LEN_OFFSET		4
-#define AUTH_ALG_OFFSET	11
+#define AUTHTYPE_OFFSET		6
+#define MAC_LEN_OFFSET		5
+#define AUTH_ALG_OFFSET		11
 
 #include "hisi_qm_udrv.h"
 #include "wd.h"
@@ -269,23 +269,7 @@ static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
 };
 
-/* fix me */
-#define SEC_QP_NUM_PER_PROCESS	  1
-#define MAX_CIPHER_RETRY_CNT	  20000000
-
 #ifdef DEBUG
-static void hexdump(char *buff, unsigned int len)
-{
-	unsigned int i;
-
-	for (i = 0; i < len; i++) {
-		printf("\\0x%02x", buff[i]);
-		if ((i + 1) % (WORD_BYTES << 1) == 0)
-			printf("\n");
-	}
-	printf("\n");
-}
-
 static void sec_dump_bd(unsigned char *bd, unsigned int len)
 {
 	unsigned int i;
@@ -557,10 +541,10 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	sqe.type2.data_dst_addr = (__u64)msg->out;
 	sqe.type2.c_ivin_addr = (__u64)msg->iv;
 	sqe.type2.c_key_addr = (__u64)msg->key;
+	sqe.type2.tag = (__u16)msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
 		return ret;
 	}
 
@@ -580,6 +564,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 
 	parse_cipher_bd2(&sqe, recv_msg);
+	recv_msg->tag = sqe.type2.tag;
 
 	return 0;
 }
@@ -667,6 +652,7 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 		recv_msg->result = WD_SUCCESS;
 	}
 
+	recv_msg->tag = sqe->type2.tag;
 #ifdef DEBUG
 	WD_ERR("Dump digest recv sqe-->!\n");
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
@@ -675,7 +661,6 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 
 int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 {
-	struct wd_digest_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
@@ -713,7 +698,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret) {
-		WD_ERR("Fail to fill digest bd alg!\n");
+		WD_ERR("fail to fill digest bd alg!\n");
 		return ret;
 	}
 
@@ -724,8 +709,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
 #endif
 
-	if (tag)
-		sqe.type2.tag = tag->wd_tag.ctx_id;
+	sqe.type2.tag = msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
