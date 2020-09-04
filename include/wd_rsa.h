@@ -18,11 +18,6 @@
 
 typedef void *wd_rsa_cb_t(void *cb_param);
 
-enum {
-	CTX_MODE_SYNC = 0,
-	CTX_MODE_ASYNC,
-};
-
 struct wd_rsa_req {
 	void *src; /* rsa operation input address */
 	void *dst; /* rsa operation output address */
