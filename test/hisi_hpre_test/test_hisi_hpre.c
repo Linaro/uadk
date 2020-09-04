@@ -34,11 +34,7 @@
 #include "hpre_test_sample.h"
 #include "test_hisi_hpre.h"
 #include "../../include/wd.h"
-//#include "../../wd_ecc.h"
 #include "../../include/wd_rsa.h"
-//#include "../../wd_dh.h"
-//#include "../../wd_bmm.h"
-//#include "../../wd_util.h"
 
 #define HPRE_TST_PRT		printf
 #define BN_ULONG		unsigned long
