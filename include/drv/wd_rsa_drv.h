@@ -4,6 +4,46 @@
 
 #include "../wd_rsa.h"
 
+struct wd_rsa_kg_in {
+	__u8 *e;
+	__u8 *p;
+	__u8 *q;
+	__u32 ebytes;
+	__u32 pbytes;
+	__u32 qbytes;
+	__u32 key_size;
+	void *data[];
+};
+
+struct wd_rsa_kg_out {
+	__u8 *d;
+	__u8 *n;
+	__u8 *qinv;
+	__u8 *dq;
+	__u8 *dp;
+	__u32 key_size;
+	__u32 dbytes;
+	__u32 nbytes;
+	__u32 dpbytes;
+	__u32 dqbytes;
+	__u32 qinvbytes;
+	__u32 size;
+	void *data[];
+};
+
+struct wd_ctx_internal {
+	handle_t ctx;
+	__u8 op_type;
+	__u8 ctx_mode;
+	pthread_mutex_t lock;
+};
+
+struct wd_ctx_config_internal {
+	__u32 ctx_num;
+	struct wd_ctx_internal *ctxs;
+	void *priv;
+};
+
 /* RSA message format */
 struct wd_rsa_msg {
 	struct wd_rsa_req req;
@@ -18,7 +58,7 @@ struct wd_rsa_driver {
 	const char *drv_name;
 	const char *alg_name;
 	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config *config, void *priv);
+	int (*init)(struct wd_ctx_config_internal *config, void *priv);
 	void (*exit)(void *priv);
 	int (*send)(handle_t sess, struct wd_rsa_msg *msg);
 	int (*recv)(handle_t sess, struct wd_rsa_msg *msg);
