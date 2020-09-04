@@ -174,7 +174,10 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 	int i, appendix, len;
 	char *name, *dash;
 
-	if (!dev_path)
+	if (!dev_path || (no_apdx != 0 && no_apdx != 1))
+		return NULL;
+
+	if (!index(dev_path, '-'))
 		return NULL;
 
 	/* find '/' index in the string and keep the last level */
