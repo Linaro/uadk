@@ -23,7 +23,6 @@
 #define HI_U32(pa)	((__u32)(((pa) >> QM_HADDR_SHIFT) & QM_L32BITS_MASK))
 
 #include "hisi_qm_udrv.h"
-#include "smm.h"
 #include "wd.h"
 
 #define BYTE_BITS			8
