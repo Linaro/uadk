@@ -349,19 +349,6 @@ void wd_cipher_uninit(void)
 	clear_sched_in_global_setting();
 }
 
-int wd_cipher_poll(__u32 expt, __u32 *count)
-{
-	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
-	int ret;
-
-	*count = 0;
-	ret = g_wd_cipher_setting.sched.poll_policy(0, config, 1, count);
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-
 static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *req)
 {
 	msg->alg = req->alg;
@@ -574,26 +561,30 @@ int wd_cipher_poll_ctx(handle_t h_ctx, __u32 count)
 
 	do {
 		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &resp_msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd_recv hw err!\n");
-			goto err_recv;
-		} else if ((ret == -WD_EBUSY) || (ret == -EAGAIN)) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd_recv timeout fail!\n");
-				ret = -ETIMEDOUT;
-				goto err_recv;
-			}
+		if (ret == -EAGAIN) {
+			break;
+		} else if (ret < 0) {
+			WD_ERR("wd cipher recv hw err!\n");
+			break;
 		}
+		recv_count++;
+		req = get_req_from_pool(&g_wd_cipher_setting.pool, h_ctx, &resp_msg);
+
+		req->cb(req);
 	} while (ret < 0);
-
-	req = get_req_from_pool(&g_wd_cipher_setting.pool, h_ctx, &resp_msg);
-
-	req->cb(req);
-
 	/*TODO free idx of msg_pool  */
 
-	/* Return polled number. Now hack it to 1. */
-	return 1;
-err_recv:
 	return ret;
+}
+
+int wd_cipher_poll(__u32 expt, __u32 *count)
+{
+	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
+	int ret;
+
+	ret = g_wd_cipher_setting.sched.poll_policy(0, config, expt, count);
+	if (ret < 0)
+		return ret;
+
+	return 0;
 }
