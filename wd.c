@@ -579,16 +579,16 @@ int wd_register_log(wd_log log)
 {
 	if (!log) {
 		WD_ERR("param null!\n");
-		return -WD_EINVAL;
+		return -EINVAL;
 	}
 
 	if (log_out) {
 		WD_ERR("can not duplicate register!\n");
-		return -WD_EINVAL;
+		return -EINVAL;
 	}
 
 	log_out = log;
 	dbg("log register\n");
 
-	return WD_SUCCESS;
+	return 0;
 }
