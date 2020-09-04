@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <dirent.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -19,35 +20,6 @@
 #define RSA_RECV_MAX_CNT		60000000 // 1 min
 
 static __thread int balance;
-
-static struct wd_lock sd_rc_lock;
-
-struct wd_rsa_kg_in {
-	__u8 *e;
-	__u8 *p;
-	__u8 *q;
-	__u32 ebytes;
-	__u32 pbytes;
-	__u32 qbytes;
-	__u32 key_size;
-	void *data[];
-};
-
-struct wd_rsa_kg_out {
-	__u8 *d;
-	__u8 *n;
-	__u8 *qinv;
-	__u8 *dq;
-	__u8 *dp;
-	__u32 key_size;
-	__u32 dbytes;
-	__u32 nbytes;
-	__u32 dpbytes;
-	__u32 dqbytes;
-	__u32 qinvbytes;
-	__u32 size;
-	void *data[];
-};
 
 struct wd_rsa_pubkey {
 	struct wd_dtb n;
@@ -109,7 +81,7 @@ struct wd_async_msg_pool {
 };
 
 static struct wd_rsa_setting {
-	struct wd_ctx_config config;
+	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	void *sched_ctx;
 	const struct wd_rsa_driver *driver;
@@ -144,9 +116,17 @@ void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 	wd_rsa_setting.driver = drv;
 }
 
-static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
+static void clone_ctx_to_internal(struct wd_ctx *ctx,
+				  struct wd_ctx_internal *ctx_in)
 {
-	struct wd_ctx *ctxs;
+	ctx_in->ctx = ctx->ctx;
+	ctx_in->op_type = ctx->op_type;
+	ctx_in->ctx_mode = ctx->ctx_mode;
+}
+
+static int init_global_ctx_setting(struct wd_ctx_config *cfg)
+{
+	struct wd_ctx_internal *ctxs;
 	int i;
 
 	if (!cfg->ctx_num) {
@@ -154,7 +134,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 		return -EINVAL;
 	}
 
-	ctxs = malloc(cfg->ctx_num * sizeof(struct wd_ctx));
+	ctxs = malloc(cfg->ctx_num * sizeof(struct wd_ctx_internal));
 	if (!ctxs)
 		return -ENOMEM;
 
@@ -164,6 +144,9 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 			free(ctxs);
 			return -EINVAL;
 		}
+
+		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
+		pthread_mutex_init(&ctxs[i].lock, NULL);
 	}
 
 	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_ctx));
@@ -193,7 +176,7 @@ static int copy_sched_to_global_setting(struct wd_sched *sched)
 static void clear_sched_in_global_setting(void)
 {
 	free((void *)wd_rsa_setting.sched.name);
-	wd_rsa_setting.sched.name = NULL;	
+	wd_rsa_setting.sched.name = NULL;
 	wd_rsa_setting.sched.pick_next_ctx = NULL;
 	wd_rsa_setting.sched.poll_policy = NULL;
 	wd_rsa_setting.sched.name = NULL;
@@ -207,25 +190,16 @@ static void clear_config_in_global_setting(void)
 	wd_rsa_setting.config.ctxs = NULL;
 }
 
-/* Each ctx has a reqs pool. */
 static int wd_init_async_request_pool(struct wd_async_msg_pool *pool)
 {
 	int num = wd_rsa_setting.config.ctx_num;
-	struct msg_pool *p;
-	int i;
 
 	pool->pools = malloc(num * sizeof(struct msg_pool));
-	if (!pool->pools) {
-		WD_ERR("failed to malloc\n");
+	if (!pool->pools)
 		return -ENOMEM;
-	}
 
+	memset(pool->pools, 0, num * sizeof(struct msg_pool));
 	pool->pool_nums = num;
-	for (i = 0; i < num; i++) {
-		p = &pool->pools[i];
-		p->head = 0;
-		p->tail = 0;
-	}
 
 	return 0;
 }
@@ -245,6 +219,8 @@ static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 	}
 
 	free(pool->pools);
+	pool->pools = NULL;
+	pool->pool_nums = 0;
 }
 
 static struct wd_rsa_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
@@ -254,6 +230,41 @@ static struct wd_rsa_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 	struct wd_rsa_msg *c_msg;
 	struct msg_pool *p;
 	int found = 0;
+	int i;
+
+	if (!msg->tag || msg->tag > WD_POOL_MAX_ENTRIES) {
+		WD_ERR("invalid msg cache tag(%llu)\n", msg->tag);
+		return NULL;
+	}
+
+	for (i = 0; i < wd_rsa_setting.config.ctx_num; i++) {
+		if (h_ctx == wd_rsa_setting.config.ctxs[i].ctx) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		WD_ERR("failed to find ctx\n");
+		return NULL;
+	}
+
+	p = &pool->pools[i];
+	c_msg = &p->msg[msg->tag - 1];
+	c_msg->req.dst_bytes = msg->req.dst_bytes;
+	c_msg->req.status = msg->result;
+
+	return &c_msg->req;
+}
+
+static struct wd_rsa_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
+						handle_t h_ctx,
+						struct wd_rsa_req *req)
+{
+	struct wd_rsa_msg *msg;
+	struct msg_pool *p;
+	int found = 0;
+	__u32 idx = 0;
+	int cnt = 0;
 	int i;
 
 	for (i = 0; i < wd_rsa_setting.config.ctx_num; i++) {
@@ -268,28 +279,32 @@ static struct wd_rsa_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
 	}
 
 	p = &pool->pools[i];
-
-	/* empty */
-	if (p->head == p->tail) {
-		WD_ERR("pool %d empty\n", i);
-		return NULL;
+	while (__atomic_test_and_set(&p->used[idx], __ATOMIC_ACQUIRE)) {
+		idx = (idx + 1) % (WD_POOL_MAX_ENTRIES - 1);
+		if (++cnt == WD_POOL_MAX_ENTRIES)
+			return NULL;
 	}
 
-	c_msg = &p->msg[msg->tag];
-	c_msg->req.status = msg->result;
+	/* get msg from msg_pool[] */
+	msg = &p->msg[idx];
+	memcpy(&msg->req, req, sizeof(*req));
+	msg->tag = idx + 1;
 
-	return &c_msg->req;
+	return msg;
 }
 
-static struct wd_rsa_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
-						handle_t h_ctx,
-						struct wd_rsa_req *req)
+static void wd_put_msg_to_pool(struct wd_async_msg_pool *pool,
+			       handle_t h_ctx,
+			       struct wd_rsa_msg *msg)
 {
-	struct wd_rsa_msg *msg;
 	struct msg_pool *p;
 	int found = 0;
-	int i, t;
+	int i;
 
+	if (!msg->tag || msg->tag > WD_POOL_MAX_ENTRIES) {
+		WD_ERR("invalid msg cache idx(%llu)\n", msg->tag);
+		return;
+	}
 	for (i = 0; i < wd_rsa_setting.config.ctx_num; i++) {
 		if (h_ctx == wd_rsa_setting.config.ctxs[i].ctx) {
 			found = 1;
@@ -297,27 +312,13 @@ static struct wd_rsa_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 		}
 	}
 	if (!found) {
-		WD_ERR("failed to find ctx\n");
-		return NULL;
+		WD_ERR("ctx handle not fonud!\n");
+		return;
 	}
 
 	p = &pool->pools[i];
 
-	t = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
-
-	/* full */
-	if (p->head == t) {
-		WD_ERR("pool %d full\n", i);
-		return NULL;
-	}
-
-	/* get msg from msg_pool[] */
-	msg = &p->msg[p->tail];
-	memcpy(&msg->req, req, sizeof(*req));
-	msg->tag = p->tail;
-	p->tail = t;
-
-	return msg;
+	__atomic_clear(&p->used[msg->tag - 1], __ATOMIC_RELEASE);
 }
 
 int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -327,7 +328,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* wd_rsa_init() could only be invoked once for one process. */
 	if (wd_rsa_setting.config.ctx_num) {
-		WD_ERR("rsa have initialized\n");
+		WD_ERR("init rsa error: repeat init rsa\n");
 		return 0;
 	}
 
@@ -341,10 +342,9 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		return 0;
 	}
 
-	/* set config and sched */
-	ret = copy_config_to_global_setting(config);
+	ret = init_global_ctx_setting(config);
 	if (ret) {
-		WD_ERR("failed to copy config to global setting\n");
+		WD_ERR("failed to init global ctx setting\n");
 		return ret;
 	}
 
@@ -397,6 +397,11 @@ out:
 
 void wd_rsa_uninit(void)
 {
+	if (!wd_rsa_setting.pool.pool_nums) {
+		WD_ERR("uninit rsa error: repeat uninit rsa\n");
+		return;
+	}
+
 	/* driver uninit */
 	wd_rsa_setting.driver->exit(wd_rsa_setting.priv);
 	free(wd_rsa_setting.priv);
@@ -449,15 +454,64 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 	return 0;
 }
 
+static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
+{
+	__u32 tx_cnt = 0;
+	int ret;
+
+	do {
+		ret = wd_rsa_setting.driver->send(ctx, msg);
+		if (ret == -EBUSY) {
+			if (tx_cnt++ >= RSA_RESEND_CNT) {
+				WD_ERR("failed to send: retry exit!\n");
+				break;
+			}
+			usleep(1);
+		} else if (ret < 0) {
+			WD_ERR("failed to send: send error = %d!\n", ret);
+			break;
+		}
+	} while (ret);
+
+	return ret;
+}
+
+static int rsa_recv_sync(handle_t ctx, struct wd_rsa_msg *msg)
+{
+	struct wd_rsa_req *req = &msg->req;
+	__u32 rx_cnt = 0;
+	int ret;
+
+	do {
+		ret = wd_rsa_setting.driver->recv(ctx, msg);
+		if (ret == -EAGAIN) {
+			if (rx_cnt++ >= RSA_RECV_MAX_CNT) {
+				WD_ERR("failed to recv: timeout!\n");
+				return -ETIMEDOUT;
+			}
+
+			if (balance > RSA_BALANCE_THRHD)
+				usleep(1);
+		} else if (ret < 0) {
+			WD_ERR("failed to recv: error = %d!\n", ret);
+			return ret;
+		}
+	} while (ret < 0);
+
+	balance = rx_cnt;
+	req->status = msg->result;
+
+	return GET_NEGATIVE(req->status);
+}
+
 int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 {
+	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
+	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
 	struct wd_rsa_sess *sess = (struct wd_rsa_sess *)h_sess;
-	struct wd_ctx_config *config = &wd_rsa_setting.config;
+	struct wd_ctx_internal *ctx;
 	struct wd_rsa_msg msg;
-	__u64 rx_cnt = 0;
-	__u64 tx_cnt = 0;
-	__u32 pos;
-	handle_t h_ctx;
+	__u32 idx;
 	int ret;
 
 	if (unlikely(!h_sess || !req)) {
@@ -465,66 +519,37 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	pos = wd_rsa_setting.sched.pick_next_ctx(0, req, 0);
-	h_ctx = config->ctxs[pos].ctx;
-	if (unlikely(!h_ctx)) {
-		WD_ERR("failed to pick ctx!\n");
-		return -WD_EINVAL;
+	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	if (unlikely(idx >= config->ctx_num)) {
+		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
+		return -EINVAL;
 	}
+	ctx = config->ctxs + idx;
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
 	ret = fill_rsa_msg(&msg, req, sess);
 	if (unlikely(ret))
 		return ret;
 
-	wd_spinlock(&sd_rc_lock);
-send_again:
-	ret = wd_rsa_setting.driver->send(h_ctx, &msg);
-	if (ret == -EBUSY) {
-		usleep(1);
-		if (++tx_cnt < RSA_RESEND_CNT) {
-			goto send_again;
-		} else {
-			WD_ERR("send cnt %llu, exit!\n", tx_cnt);
-			goto fail;
-		}
-	} else if (unlikely(ret < 0)) {
-		WD_ERR("failed to send, ret=%d!\n", ret);
+	pthread_mutex_lock(&ctx->lock);
+	ret = rsa_send(ctx->ctx, &msg);
+	if (unlikely(ret))
 		goto fail;
-	}
 
-	do {
-		ret = wd_rsa_setting.driver->recv(h_ctx, &msg);
-		if (unlikely(ret == -WD_HW_EACCESS)) {
-			WD_ERR("failed to recv, hw error!\n");
-			goto fail;
-		} else if (ret == -EAGAIN) {
-			if (++rx_cnt > RSA_RECV_MAX_CNT) {
-				WD_ERR("failed to recv, timeout!\n");
-				ret = -ETIMEDOUT;
-			        goto fail;              
-			} else if (balance > RSA_BALANCE_THRHD) {
-				usleep(1);
-			}
-		}
-	} while (ret < 0);
-
-	balance = rx_cnt;
-	req->status = msg.result;
-	ret = GET_NEGATIVE(req->status);
-
+	ret = rsa_recv_sync(ctx->ctx, &msg);
 fail:
-	wd_unspinlock(&sd_rc_lock);
+	pthread_mutex_unlock(&ctx->lock);
 
 	return ret;
 }
 
 int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 {
-	struct wd_ctx_config *config = &wd_rsa_setting.config;
+	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
+	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
+	struct wd_ctx_internal *ctx;
 	struct wd_rsa_msg *msg;
-	__u32 pos;
-	handle_t h_ctx;
+	__u32 idx;
 	int ret;
 
 	if (unlikely(!req || !sess)) {
@@ -532,29 +557,42 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	pos = wd_rsa_setting.sched.pick_next_ctx(0, req, 0);
-	h_ctx = config->ctxs[pos].ctx;
-	if (unlikely(!h_ctx)) {
-		WD_ERR("failed to pick ctx!\n");
-		return -ENOMEM;
+	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	if (unlikely(idx >= config->ctx_num)) {
+		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
+		return -EINVAL;
 	}
+	ctx = config->ctxs + idx;
 
-	msg = wd_get_msg_from_pool(&wd_rsa_setting.pool, h_ctx, req);
+	msg = wd_get_msg_from_pool(&wd_rsa_setting.pool, ctx->ctx, req);
 	if (!msg)
 		return -WD_EBUSY;
 
 	ret = fill_rsa_msg(msg, req, (struct wd_rsa_sess *)sess);
-	if (ret < 0)
-		return ret;
+	if (ret)
+		goto fail_with_msg;
 
-	return wd_rsa_setting.driver->send(h_ctx, msg);
+	pthread_mutex_lock(&ctx->lock);
+	ret = rsa_send(ctx->ctx, msg);
+	if (ret) {
+		pthread_mutex_unlock(&ctx->lock);
+		goto fail_with_msg;
+	}
+	pthread_mutex_unlock(&ctx->lock);
+
+	return ret;
+
+fail_with_msg:
+	wd_put_msg_to_pool(&wd_rsa_setting.pool, ctx->ctx, msg);
+
+	return ret;
 }
 
-__u32 wd_rsa_poll_ctx(handle_t ctx, __u32 num)
+int wd_rsa_poll_ctx(handle_t ctx, __u32 expt, __u32 *count)
 {
 	struct wd_rsa_req *req;
 	struct wd_rsa_msg msg;
-	int count = 0;
+	__u32 rcv_cnt = 0;
 	int ret;
 
 	do {
@@ -562,35 +600,31 @@ __u32 wd_rsa_poll_ctx(handle_t ctx, __u32 num)
 		if (ret == -EAGAIN) {
 			break;
 		} else if (ret < 0) {
-			WD_ERR("recv err at rsa poll!\n");
+			WD_ERR("failed to async recv, ret = %d!\n", ret);
+			*count = rcv_cnt;
+			wd_put_msg_to_pool(&wd_rsa_setting.pool, ctx, &msg);
+			return ret;
 		}
-		count++;
+		rcv_cnt++;
 		req = wd_get_req_from_pool(&wd_rsa_setting.pool, ctx, &msg);
-		req->cb(req->cb_param);
-	} while (--num);
+		if (likely(req))
+			req->cb(req);
+		wd_put_msg_to_pool(&wd_rsa_setting.pool, ctx, &msg);
+	} while (--expt);
 
-	return count;
+	*count = rcv_cnt;
+
+	return ret;
 }
 
 int wd_rsa_poll(__u32 *count)
 {
-	struct wd_ctx_config *config = &wd_rsa_setting.config;
-	int ret;
-
-	*count = 0;
-	ret = wd_rsa_setting.sched.poll_policy(0, config, 1, count);
-	if (ret < 0)
-		return ret;
-
-	return 0;
+	return wd_rsa_setting.sched.poll_policy(0, 0, 1, count);
 }
 
 static void wd_memset_zero(void *data, __u32 size)
 {
 	char *s = data;
-
-	if (!s)
-		return;
 
 	while (size--)
 		*s++ = 0;
@@ -752,6 +786,11 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 
 void wd_rsa_del_kg_out(handle_t sess, struct wd_rsa_kg_out *kout)
 {
+	if (!kout || !kout->data) {
+		WD_ERR("param null at del kg out!\n");
+		return;
+	}
+
 	wd_memset_zero(kout->data, kout->size);
 	del_kg(kout);
 }
@@ -906,12 +945,20 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 
 static void del_sess_key(struct wd_rsa_sess *sess)
 {
-	// todo
-	if (sess->prikey)
-		free(sess->prikey);
-	if (sess->pubkey)
-		free(sess->pubkey);
+	struct wd_rsa_prikey *prk = sess->prikey;
+	struct wd_rsa_pubkey *pub = sess->pubkey;
 
+	if (!prk || !pub) {
+		WD_ERR("del sess key error: prk or pub NULL\n");
+		return;
+	}
+
+	if (sess->setup.is_crt)
+		wd_memset_zero(prk->pkey2.data, CRT_PARAMS_SZ(sess->key_size));
+	else
+		wd_memset_zero(prk->pkey1.data, GEN_PARAMS_SZ(sess->key_size));
+	free(sess->prikey);
+	free(sess->pubkey);
 }
 
 static void del_sess(struct wd_rsa_sess *c)
@@ -1020,6 +1067,7 @@ int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 		memset(c->pubkey->n.data, 0, c->pubkey->n.bsize);
 		memcpy(c->pubkey->n.data, n->data, n->dsize);
 	}
+
 	return WD_SUCCESS;
 }
 
@@ -1067,6 +1115,7 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 		memset(pkey1->n.data, 0, pkey1->n.bsize);
 		memcpy(pkey1->n.data, n->data, n->dsize);
 	}
+
 	return WD_SUCCESS;
 }
 
