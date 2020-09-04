@@ -144,7 +144,7 @@ static void uninit_config(void)
 	free(ctx_conf.ctxs);
 }
 
-static handle_t alloc_sess(int flag, enum wd_comp_mode mode)
+static handle_t alloc_sess(int flag, enum wd_ctx_mode mode)
 {
 	struct wd_comp_sess_setup	setup;
 

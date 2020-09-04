@@ -19,10 +19,6 @@ enum {
 	CTX_TYPE_DECRYPT,
 };
 
-enum {
-	CTX_MODE_SYNC = 0,
-	CTX_MODE_ASYNC,
-};
 /**
  * wd_cipher_op_type - Algorithm type of option
  */

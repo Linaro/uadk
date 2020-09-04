@@ -34,6 +34,11 @@ struct wd_lock {
 	__u32 lock;
 };
 
+enum wd_ctx_mode {
+	CTX_MODE_SYNC = 0,
+	CTX_MODE_ASYNC,
+};
+
 /**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
