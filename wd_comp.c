@@ -670,7 +670,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			do {
 				dbg("do, decompstrm start, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
 				if (req->dst_len + strm_req.src_len > total_avail_out) {
-				WD_ERR("err, outsize =%u, avail_out =%u, total_avail_out =%u\n", req->dst_len, avail_out, total_avail_out);
+					dbg("err, outsize =%u, avail_out =%u, total_avail_out =%u\n", req->dst_len, avail_out, total_avail_out);
 					return -ENOMEM;
 				}
 				strm_req.dst_len = avail_out;
@@ -818,11 +818,6 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 	int ret;
 
 	*count = 0;
-	ret = wd_comp_setting.sched.poll_policy(0, 0, expt, count);
-	if (ret < 0)
-		return ret;
 
-	*count = ret;
-
-	return 0;
+	return wd_comp_setting.sched.poll_policy(0, 0, expt, count);
 }

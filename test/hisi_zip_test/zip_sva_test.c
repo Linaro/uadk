@@ -30,7 +30,7 @@
 #include "hisi_qm_udrv.h"
 
 enum mode {
-	MODE_BLOCK,
+	MODE_BLOCK = 10,
 	MODE_STREAM,
 };
 
@@ -50,10 +50,11 @@ struct test_zip_pthread_dt {
 	float decom_time;
 };
 
-struct user_comp_tag_info {
+struct user_comp_param {
 	int cpu_id;
 	pid_t tid;
 	int alg_type;
+	__u32 out_len;
 };
 
 #define TEST_MAX_THRD		2048
@@ -150,38 +151,34 @@ therad_no_affinity:
 
 }
 
-#if 0
-static int out_len;
-
-void zip_callback(const void *msg, void *tag)
+void zip_callback(void *req, void *param)
 {
-	const struct wcrypto_comp_msg *respmsg = msg;
 
-	out_len = respmsg->produced;
+	struct wd_comp_req *preq = req;
+	struct user_comp_param *u_param = param;
+
+	u_param->out_len = preq->dst_len;
 
 	dbg("[%s], cpu_id =%d consume=%d, produce=%d\n",
-	    __func__, ((struct user_comp_tag_info *)tag)->cpu_id,
-	    respmsg->in_cons, respmsg->produced);
+	    __func__, u_param->cpu_id, preq->src_len, preq->dst_len);
 
 }
 
 void *zip_sys_async_test_thread(void *args)
 {
-	int cpu_id, ret;
+	int cpu_id;
 	cpu_set_t mask;
 	pid_t tid;
 	struct test_zip_pthread_dt *pdata = args;
-	struct user_comp_tag_info u_tag;
+	struct user_comp_param u_param;
 	int i = pdata->iteration;
-	size_t ss_region_size;
-	struct wcrypto_paras *priv;
-	struct wd_queue *q;
-	void *zip_ctx;
-	struct wcrypto_comp_ctx_setup ctx_setup;
-	struct wcrypto_comp_op_data *opdata;
-	void *in, *out, *ss_buf;
-	void *src, *dst;
 	int loop;
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	__u32 count = 0;
+	int ret = 0;
+
 
 	cpu_id = pdata->cpu_id;
 	tid = gettid();
@@ -202,145 +199,64 @@ void *zip_sys_async_test_thread(void *args)
 
 therad_no_affinity:
 
-	q = calloc(1, sizeof(struct wd_queue));
-	if (q == NULL) {
-		ret = -ENOMEM;
-		fprintf(stderr, "alloc q fail, ret =%d\n", ret);
-		goto hw_q_free;
-	}
-	memset(&ctx_setup, 0, sizeof(ctx_setup));
-
-	switch (pdata->alg_type) {
-	case 0:
-		ctx_setup.alg_type = WCRYPTO_ZLIB;
-		q->capa.alg = "zlib";
-		break;
-	case 1:
-		ctx_setup.alg_type = WCRYPTO_GZIP;
-		q->capa.alg = "gzip";
-		break;
-	default:
-		ctx_setup.alg_type = WCRYPTO_ZLIB;
-		q->capa.alg = "zlib";
-	}
-	ctx_setup.stream_mode = WCRYPTO_COMP_STATELESS;
-	q->capa.latency = 0;
-	q->capa.throughput = 0;
-	priv = &q->capa.priv;
-	priv->direction = pdata->op_type;
-	ret = wd_request_queue(q);
-	if (ret) {
-		fprintf(stderr, "wd_request_queue fail, ret =%d\n", ret);
-		goto hw_q_free;
-	}
-	SYS_ERR_COND(ret, "wd_request_queue");
-
-	ss_region_size = 4096 + DMEMSIZE * 2 + HW_CTX_SIZE;
-
-#ifdef CONFIG_IOMMU_SVA
-	ss_buf = calloc(1, ss_region_size);
-#else
-	ss_buf = wd_reserve_memory(q, ss_region_size);
-#endif
-	if (!ss_buf) {
-		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
-		ret = -ENOMEM;
-		goto release_q;
+	setup.alg_type = pdata->alg_type;
+	setup.mode = CTX_MODE_ASYNC;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return NULL;
 	}
 
-	ret = smm_init(ss_buf, ss_region_size, 0xF);
-	if (ret)
-		goto buf_free;
+	u_param.alg_type = pdata->alg_type;
+	u_param.cpu_id = cpu_id;
+	u_param.tid = tid;
 
-	src = in = smm_alloc(ss_buf, DMEMSIZE);
-	dst = out = smm_alloc(ss_buf, DMEMSIZE);
+	req.src = pdata->src;
+	req.src_len = pdata->src_len;
+	req.dst = pdata->dst;
+	req.dst_len = pdata->dst_len;
+	req.op_type = pdata->op_type;
+	req.cb = zip_callback;
+	req.cb_param = &u_param;
 
-	if (in == NULL || out == NULL) {
-		WD_ERR("not enough data ss_region memory for cache (bs=%d)\n",
-			DMEMSIZE);
-		goto buf_free;
-	}
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
-	ctx_setup.cb = zip_callback;
-	zip_ctx = wcrypto_create_comp_ctx(q, &ctx_setup);
-	if (zip_ctx == NULL) {
-		fprintf(stderr, "zip_alloc_comp_ctx fail, ret =%d\n", ret);
-		goto buf_free;
-	}
-
-	opdata = calloc(1, sizeof(struct wcrypto_comp_op_data));
-	if (opdata == NULL) {
-		ret = -ENOMEM;
-		fprintf(stderr, "alloc opdata fail, ret =%d\n", ret);
-		goto comp_ctx_free;
-	}
-	opdata->in = in;
-	opdata->out = out;
-	opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
-
-	memcpy(src, pdata->src, pdata->src_len);
-
-	opdata->in_len = pdata->src_len;
-
-	u_tag.alg_type = ctx_setup.alg_type;
-	u_tag.cpu_id = cpu_id;
-	u_tag.tid = tid;
-	loop = 10;
+	loop = 1;
 	dbg("%s entry thread_id=%d\n", __func__, (int)tid);
 	do {
 		i = pdata->iteration;
 		do {
-			ret = wcrypto_do_comp(zip_ctx, opdata, &u_tag);
-			if (ret == -WD_EBUSY) {
+			ret = wd_do_comp_async(h_sess, &req);
+			if (ret == -EBUSY) {
 				WD_ERR("%s(): asynctest no cache!\n", __func__);
 				break;
 			}
 
 		} while (--i);
 
-		ret = wcrypto_comp_poll(q, pdata->iteration);
+		ret = wd_comp_poll(pdata->iteration, &count);
 		if (ret < 0)
 			WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n",
 				cpu_id, (int)tid, ret);
 
-		WD_ERR("test poll end, count=%d\n", ret);
+		WD_ERR("test poll end, count=%d\n", count);
 
 	} while (--loop);
 
-	opdata->produced = out_len;
-	dbg("%s(): test !,produce=%d\n", __func__, opdata->produced);
+	dbg("%s(): test ! produce=%d\n", __func__, u_param.out_len);
 
-	memcpy(pdata->dst, dst, opdata->produced);
-	pdata->dst_len = opdata->produced;
+	pdata->dst_len = u_param.out_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, pdata->dst_len);
+
+	wd_comp_free_sess(h_sess);
 
 	dbg("%s end thread_id=%d\n", __func__, pdata->cpu_id);
 
-	if (opdata)
-		free(opdata);
-
-	wcrypto_del_comp_ctx(zip_ctx);
-
-	wd_release_queue(q);
-	free(q);
-
-	return NULL;
-
-comp_ctx_free:
-		wcrypto_del_comp_ctx(zip_ctx);
-buf_free:
-#ifdef CONFIG_IOMMU_SVA
-			if (ss_buf)
-				free(ss_buf);
-#endif
-
-release_q:
-	wd_release_queue(q);
-hw_q_free:
-		free(q);
-
 	return NULL;
 }
-#endif
 
 void  *zip_sys_block_test_thread(void *args)
 {
@@ -418,19 +334,35 @@ static __u32 sched_two_pick_next(handle_t h_sched_ctx,
 		return 1;
 }
 
+#define MAX_RETRY_COUNTS 20000
 static int sched_two_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *cfg,
 				 __u32 expect,
 				 __u32 *count)
 {
 	int i, ret;
+	int recv_count = 0;
+	__u32 cnt[1024] = {0};
 
 	*count = 0;
 
 	for (i = 0; i < ctx_conf.ctx_num; i++) {
-		ret = wd_comp_poll_ctx(ctx_conf.ctxs[i].ctx, 1, count);
-		if (ret < 0)
-			return ret;
-	}
+		do {
+			ret = wd_comp_poll_ctx(ctx_conf.ctxs[i].ctx, expect, &cnt[i]);
+			if (ret < -WD_HW_EACCESS) {
+				WD_ERR("wd comp recv hw err!\n");
+				return ret;
+			} else if (ret == -EAGAIN) {
+				usleep(1);
+				if (++recv_count > MAX_RETRY_COUNTS) {
+					WD_ERR("wd comp poll recv timeout fail!\n");
+					return -ETIMEDOUT;
+				}
+			}
+		} while (ret == -EAGAIN);
+
+		*count += cnt[i];
+ 	}
+
 	return 0;
 }
 
@@ -533,7 +465,7 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	    __func__, block_size, count, thread_num, in_len);
 
-	ret = init_two_ctx_config(CTX_MODE_SYNC, &sched);
+	ret = init_two_ctx_config(mode, &sched);
 	if (ret)
 		return ret;
 
@@ -560,17 +492,14 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 
 	gettimeofday(&start_tval, NULL);
 	for (i = 0; i < cnt; i++) {
-		if (mode == MODE_STREAM || hw_flag == 0)
+		if (mode == MODE_STREAM)
 			ret = pthread_create(&system_test_thrds[i], NULL,
 					     zlib_sys_stream_test_thread,
 					     &test_thrds_data[i]);
 		else if (mode == CTX_MODE_ASYNC)
-			ret = 0;
-#if 0
 			ret = pthread_create(&system_test_thrds[i], NULL,
 					     zip_sys_async_test_thread,
 					     &test_thrds_data[i]);
-#endif
 		else
 			ret = pthread_create(&system_test_thrds[i], NULL,
 					     zip_sys_block_test_thread,
@@ -650,7 +579,7 @@ int main(int argc, char *argv[])
 	int opt;
 	int show_help = 0;
 	int thread_num = 1;
-	int mode = 0;
+	int mode = CTX_MODE_SYNC;
 	int hw_flag = 1;
 	int iteration = 1;
 
