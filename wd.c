@@ -470,7 +470,17 @@ static int get_dev_alg_name(char *dev_path, char *buf, size_t sz)
 
 static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
 {
-	return strstr(dev_alg_name, alg_name) ? true : false;
+	char *str;
+
+	str = strstr(dev_alg_name, alg_name);
+	if (!str)
+		return false;
+
+	if (*(str + strlen(alg_name)) == '\n' &&
+	    (*(str - 1) == '\n' || str == dev_alg_name))
+		return true;
+
+	return false;
 }
 
 static void add_uacce_dev_to_list(struct uacce_dev_list *head,
