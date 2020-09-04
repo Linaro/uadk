@@ -26,6 +26,7 @@ enum wd_cipher_op_type {
 	WD_CIPHER_ENCRYPTION,
 	WD_CIPHER_DECRYPTION,
 };
+
 /**
  * wd_cipher_type - Algorithm type of cipher
  */
@@ -36,6 +37,7 @@ enum wd_cipher_alg {
 	WD_CIPHER_3DES,
 	WD_CIPHER_ALG_TYPE_MAX,
 };
+
 /**
  * wd_cipher_mode - Algorithm mode of cipher
  */
