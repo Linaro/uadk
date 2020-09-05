@@ -785,6 +785,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
+	if (!req->src_len) {
+		WD_ERR("invalid: req src_len is 0!\n");
+		return -EINVAL;
+	}
+
 	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
 	if (index > config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
@@ -799,6 +804,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	}
 	fill_comp_msg(msg, req);
 	msg->alg_type = sess->alg_type;
+	msg->stream_mode = WD_COMP_STATELESS;
 
 	pthread_mutex_lock(&ctx->lock);
 

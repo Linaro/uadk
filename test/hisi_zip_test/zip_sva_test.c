@@ -61,6 +61,7 @@ struct user_comp_param {
 #define MAX_CORES		128
 
 static pthread_t system_test_thrds[TEST_MAX_THRD];
+static pthread_t system_test_poll_thrds;
 static struct test_zip_pthread_dt test_thrds_data[TEST_MAX_THRD];
 
 /* bytes of data for a request */
@@ -151,6 +152,8 @@ therad_no_affinity:
 
 }
 
+static int out_len;
+
 void zip_callback(void *req, void *param)
 {
 
@@ -158,10 +161,57 @@ void zip_callback(void *req, void *param)
 	struct user_comp_param *u_param = param;
 
 	u_param->out_len = preq->dst_len;
+	out_len = preq->dst_len;
 
 	dbg("[%s], cpu_id =%d consume=%d, produce=%d\n",
 	    __func__, u_param->cpu_id, preq->src_len, preq->dst_len);
 
+}
+
+#define MAX_POLL_COUNTS 10
+void *zip_sys_async_test_poll_thread(void *args)
+{
+	int cpu_id;
+	cpu_set_t mask;
+	pid_t tid;
+	struct test_zip_pthread_dt *pdata = args;
+	struct user_comp_param u_param;
+	int i = pdata->iteration;
+	int loop;
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	__u32 count = 0;
+	__u32 totalcount = 0;
+	int recnt = 0;
+	int ret = 0;
+
+	cpu_id = pdata->cpu_id;
+	tid = gettid();
+
+	count = 0;
+
+	do {
+		ret = wd_comp_poll(pdata->iteration, &count);
+		if (ret < 0)
+			WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n", cpu_id, (int)tid, ret);
+		totalcount += count;
+		if (totalcount < pdata->iteration) {
+			usleep(100000);
+			dbg("poll thread now no task, expt =%d , have =%d!\n", pdata->iteration, totalcount);
+			if (++recnt > MAX_POLL_COUNTS) {
+				WD_ERR("poll thread now no task, timeout 1s, expt =%d , have =%d!\n", pdata->iteration, totalcount);
+				break;
+			}
+		}
+
+	} while (totalcount < pdata->iteration);
+
+	WD_ERR("thread_id = %d, test poll end, count=%d\n", pdata->cpu_id, totalcount);
+
+	WD_ERR("%s(): test ! produce=%d\n", __func__, u_param.out_len);
+
+	pdata->dst_len = u_param.out_len;
 }
 
 void *zip_sys_async_test_thread(void *args)
@@ -226,25 +276,22 @@ therad_no_affinity:
 	dbg("%s entry thread_id=%d\n", __func__, (int)tid);
 	do {
 		i = pdata->iteration;
+		count = 0;
 		do {
 			ret = wd_do_comp_async(h_sess, &req);
 			if (ret == -EBUSY) {
-				WD_ERR("%s(): asynctest no cache!\n", __func__);
-				break;
+				WD_ERR("%s(): async test no cache,wait 10ms!\n", __func__);
+				usleep(10000);
+				continue;
 			}
+			count++;
 
 		} while (--i);
 
-		ret = wd_comp_poll(pdata->iteration, &count);
-		if (ret < 0)
-			WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n",
-				cpu_id, (int)tid, ret);
-
-		WD_ERR("test poll end, count=%d\n", count);
+		WD_ERR("thread_id = %d, test send end, count=%d\n", pdata->cpu_id, count);
 
 	} while (--loop);
 
-	dbg("%s(): test ! produce=%d\n", __func__, u_param.out_len);
 
 	pdata->dst_len = u_param.out_len;
 
@@ -318,7 +365,7 @@ therad_no_affinity:
 	return NULL;
 }
 
-#define SCHED_TWO		"sched_two"
+#define SCHED_TWO "sched_two"
 static struct wd_ctx_config ctx_conf;
 static struct wd_sched sched;
 
@@ -334,7 +381,7 @@ static __u32 sched_two_pick_next(handle_t h_sched_ctx,
 		return 1;
 }
 
-#define MAX_RETRY_COUNTS 20000
+#define MAX_RETRY_COUNTS 2000
 static int sched_two_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *cfg,
 				 __u32 expect,
 				 __u32 *count)
@@ -348,7 +395,7 @@ static int sched_two_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_confi
 	for (i = 0; i < ctx_conf.ctx_num; i++) {
 		do {
 			ret = wd_comp_poll_ctx(ctx_conf.ctxs[i].ctx, expect, &cnt[i]);
-			if (ret < -WD_HW_EACCESS) {
+			if (ret == -WD_HW_EACCESS) {
 				WD_ERR("wd comp recv hw err!\n");
 				return ret;
 			} else if (ret == -EAGAIN) {
@@ -356,11 +403,16 @@ static int sched_two_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_confi
 				if (++recv_count > MAX_RETRY_COUNTS) {
 					WD_ERR("wd comp poll recv timeout fail!\n");
 					return -ETIMEDOUT;
+
+					*count += cnt[i];
+					break;
 				}
 			}
+
+			*count += cnt[i];
 		} while (ret == -EAGAIN);
 
-		*count += cnt[i];
+		recv_count = 0;
  	}
 
 	return 0;
@@ -450,7 +502,6 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	fd = fileno(source);
 	SYS_ERR_COND(fstat(fd, &s) < 0, "fstat");
 	in_len = s.st_size;
-	SYS_ERR_COND(!in_len, "input file length zero");
 
 	file_buf = calloc(1, in_len);
 
@@ -510,6 +561,11 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 		}
 	}
 
+	if (mode == CTX_MODE_ASYNC)
+			ret = pthread_create(&system_test_poll_thrds, NULL,
+					     zip_sys_async_test_poll_thread,
+					     &test_thrds_data[0]);
+
 	for (i = 0; i < thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
@@ -517,6 +573,15 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 			return ret;
 		}
 	}
+
+	if (mode == CTX_MODE_ASYNC) {
+		ret = pthread_join(system_test_poll_thrds, NULL);
+		if (ret) {
+			WD_ERR("Join poll thread fail!\n");
+			return ret;
+		}
+	}
+
 	gettimeofday(&end_tval, NULL);
 	for (i = 0; i < thread_num; i++) {
 		total_in += test_thrds_data[i].src_len;
@@ -526,9 +591,16 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 		     end_tval.tv_usec - start_tval.tv_usec);
 	dbg("%s end threadnum= %d, out_len=%ld\n",
 	    __func__, thread_num, test_thrds_data[thread_num-1].dst_len);
-	sz = fwrite(test_thrds_data[thread_num-1].dst, 1,
-		    test_thrds_data[thread_num-1].dst_len, dest);
 
+
+	if (mode == CTX_MODE_ASYNC) {
+		sz = fwrite(test_thrds_data[thread_num - 1].dst, 1,
+			    out_len, dest);
+
+	} else {
+		sz = fwrite(test_thrds_data[thread_num - 1].dst, 1,
+			    test_thrds_data[thread_num - 1].dst_len, dest);
+	}
 	for (i = 0; i < thread_num; i++) {
 		dbg("%s:free src[%d]:%p\n", __func__, i, test_thrds_data[i].src);
 		free(test_thrds_data[i].src);
