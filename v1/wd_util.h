@@ -243,4 +243,5 @@ void *drv_iova_map(struct wd_queue *q, void *va, size_t sz);
 void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
 int wd_alloc_ctx_id(struct wd_queue *q, int max_num);
 void wd_free_ctx_id(struct wd_queue *q, int ctx_id);
+const char *wd_get_drv(struct wd_queue *q);
 #endif
