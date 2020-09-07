@@ -510,9 +510,12 @@ int qm_recv(struct wd_queue *q, void **resp)
 
 static int hw_type_check(struct wd_queue *q, const char *hw_type)
 {
-	if (hw_type == NULL)
+	const char *drv = wd_get_drv(q);
+
+	if (!hw_type || !drv)
 		return 1;
-	return 0;
+
+	return strcmp(drv, hw_type);
 }
 
 int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op)
