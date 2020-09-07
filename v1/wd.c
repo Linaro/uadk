@@ -784,3 +784,16 @@ int wd_register_log(wd_log log)
 	return WD_SUCCESS;
 }
 
+const char *wd_get_drv(struct wd_queue *q)
+{
+	struct q_info *qinfo;
+	const struct dev_info *dev;
+
+	if (!q || !q->qinfo)
+		return NULL;
+
+	qinfo= q->qinfo;
+	dev = qinfo->dev_info;
+
+	return (const char *)dev->api;
+}
