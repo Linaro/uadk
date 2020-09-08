@@ -195,7 +195,7 @@ static int test_sec_cipher_sync_once(void)
 	}
 
 	/* set key */
-	ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
+	//ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out;
@@ -299,7 +299,7 @@ static int test_sec_cipher_async_once(void)
 	}
 
 	/* set key */
-	ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
+	//ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out;
@@ -366,7 +366,7 @@ static int test_sec_cipher_sync(void *arg)
 	printf("ivlen = %d, cipher req iv--------->:\n", req->iv_bytes);
 	hexdump(req->iv, req->iv_bytes);
 	/* set key */
-	ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
+	//ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out_cipher;
@@ -554,7 +554,7 @@ static int test_sec_cipher_async(void *arg)
 	printf("cipher req iv--------->:\n");
 	hexdump(req->iv, req->iv_bytes);
 	/* set key */
-	ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
+	//ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out_cipher;
