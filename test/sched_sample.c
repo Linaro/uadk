@@ -112,7 +112,7 @@ static int sample_poll_region(struct sample_sched_ctx *ctx, __u32 begin,
 static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, __u32 numa_id,
 				 __u32 expect, __u32 *count)
 {
-	const struct sched_ctx_region **region =
+	struct sched_ctx_region **region =
 					ctx->sched_info[numa_id].ctx_region;
 	__u32 loop_time = 0;
 	__u32 begin, end;
