@@ -123,7 +123,7 @@ extern int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req);
  * @expt: user expected num respondings
  * @count: how many respondings this poll has to get.
  */
-extern int wd_cipher_poll_ctx(handle_t ctx, __u32 count);
+extern int wd_cipher_poll_ctx(handle_t ctx, __u32 expt, __u32* count);
 /**
  * wd_cipher_poll() Poll finished request.
  * this function will call poll_policy function which is registered to wd cipher

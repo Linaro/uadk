@@ -359,23 +359,25 @@ void wd_cipher_uninit(void)
 	clear_config_in_global_setting();
 }
 
-static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *req)
+static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *req,
+		struct wd_cipher_sess *sess)
 {
-	msg->alg = req->alg;
-	msg->mode = req->mode;
+	msg->alg = sess->alg;
+	msg->mode = sess->mode;
 	msg->op_type = req->op_type;
 	msg->in = req->src;
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->dst;
 	msg->out_bytes = req->out_bytes;
-	msg->key = req->key;
-	msg->key_bytes = req->key_bytes;
+	msg->key = sess->key;
+	msg->key_bytes = sess->key_bytes;
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
 }
 
-int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
+int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 {
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	struct wd_cipher_msg msg;
 	__u64 recv_cnt = 0;
@@ -396,7 +398,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 	}
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
-	fill_request_msg(&msg, req);
+	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
 	wd_spinlock(&lock);
@@ -419,7 +421,7 @@ int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req)
 				goto recv_err;
 			}
 		}
-	} while(ret < 0);
+	} while (ret < 0);
 	wd_unspinlock(&lock);
 
 	return 0;
@@ -433,11 +435,11 @@ static struct wd_cipher_msg* get_msg_from_pool(struct wd_async_msg_pool *pool,
 						handle_t h_ctx,
 						struct wd_cipher_req *req)
 {
-	struct msg_pool *p;
 	struct wd_cipher_msg *msg;
+	struct msg_pool *p;
 	int found = 0;
 	int cnt = 0;
-	int i;
+	int i, idx;
 
 	for (i = 0; i < g_wd_cipher_setting.config.ctx_num; i++) {
 		if (h_ctx == g_wd_cipher_setting.config.ctxs[i].ctx) {
@@ -451,17 +453,20 @@ static struct wd_cipher_msg* get_msg_from_pool(struct wd_async_msg_pool *pool,
 	}
 	p = &pool->pools[i];
 
+	wd_spinlock(&p->lock);
 	while (__atomic_test_and_set(&p->used[p->tail], __ATOMIC_ACQUIRE)){
 		p->tail = (p->tail + 1) % WD_POOL_MAX_ENTRIES;
-		cnt++;
-		/* full */
-		if (cnt == WD_POOL_MAX_ENTRIES)
+		if (++cnt == WD_POOL_MAX_ENTRIES) {
+			wd_unspinlock(&p->lock);
 			return NULL;
+		}
 	}
-	/* get msg from msg_pool[] */
-	msg = &p->msg[p->tail];
+	idx = p->tail;
+	wd_unspinlock(&p->lock);
+	/* get msg from msg_pool */
+	msg = &p->msg[idx];
 	memcpy(&msg->req, req, sizeof(struct wd_cipher_req));
-	msg->tag = p->tail;
+	msg->tag = idx + 1;
 
 	return msg;
 }
@@ -470,8 +475,8 @@ static struct wd_cipher_req* get_req_from_pool(struct wd_async_msg_pool *pool,
 						handle_t h_ctx,
 						struct wd_cipher_msg *msg)
 {
-	struct msg_pool *p;
 	struct wd_cipher_msg *c_msg;
+	struct msg_pool *p;
 	int i, found = 0;
 	int idx;
 
@@ -505,7 +510,7 @@ static void put_msg_to_pool(struct wd_async_msg_pool *pool,
 	int found = 0;
 	int i;
 
-	if (msg->tag < 0 || msg->tag >= WD_POOL_MAX_ENTRIES) {
+	if (msg->tag == 0 || msg->tag > WD_POOL_MAX_ENTRIES) {
 		WD_ERR("invalid msg cache idx(%d)\n", msg->tag);
 		return;
 	}
@@ -525,12 +530,12 @@ static void put_msg_to_pool(struct wd_async_msg_pool *pool,
 	__atomic_clear(&p->used[msg->tag], __ATOMIC_RELEASE);
 }
 
-int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
+int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 {
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_config *config = &g_wd_cipher_setting.config;
 	struct wd_cipher_msg *msg;
 	handle_t h_ctx;
-	__u32 pos;
 	int ret;
 
 	if (unlikely(!sess || !req)) {
@@ -538,31 +543,31 @@ int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	pos = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
-	h_ctx = config->ctxs[pos].ctx;
+	h_ctx = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(!h_ctx)) {
 		WD_ERR("pick next ctx is NULL!\n");
 		return -EINVAL;
 	}
 
 	msg = get_msg_from_pool(&g_wd_cipher_setting.pool, h_ctx, req);
-	if (!msg) {
-		WD_ERR("Fail to get pool msg!\n");
+	if (!msg)
 		return -EBUSY;
-	}
-	fill_request_msg(msg, req);
 
+	fill_request_msg(msg, req, sess);
+
+	wd_spinlock(&lock);
 	ret = g_wd_cipher_setting.driver->cipher_send(h_ctx, msg);
 	if (ret < 0) {
-		WD_ERR("wd cipher async send err!\n");
+		if (ret != -EBUSY)
+			WD_ERR("wd cipher async send err!\n");
 		put_msg_to_pool(&g_wd_cipher_setting.pool, h_ctx, msg);
-		return ret;
 	}
+	wd_unspinlock(&lock);
 
-	return 0;
+	return ret;
 }
 
-int wd_cipher_poll_ctx(handle_t h_ctx, __u32 count)
+int wd_cipher_poll_ctx(handle_t h_ctx,__u32 expt, __u32* count)
 {
 	struct wd_cipher_msg resp_msg;
 	struct wd_cipher_req *req;
@@ -581,7 +586,7 @@ int wd_cipher_poll_ctx(handle_t h_ctx, __u32 count)
 		req = get_req_from_pool(&g_wd_cipher_setting.pool, h_ctx, &resp_msg);
 
 		req->cb(req);
-	} while (ret < 0);
+	} while (--expt);
 	/*TODO free idx of msg_pool  */
 
 	return ret;

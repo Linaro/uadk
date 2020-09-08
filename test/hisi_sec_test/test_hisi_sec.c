@@ -317,7 +317,7 @@ static int test_sec_cipher_async_once(void)
 	}
 
 	/* poll thread */
-	ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times);
+	ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times, NULL);
 
 	printf("Test cipher async : %u pkg ; output dst-->\n", recv);
 	hexdump(req.dst, req.in_bytes);
@@ -598,7 +598,7 @@ static void *poll_func(void *arg)
 	int ret;
 
 	while (1) {
-		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1);
+		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, NULL);
 		if (ret < 0) {
 			break;
 		}
