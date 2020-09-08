@@ -35,19 +35,21 @@
 #define ECC_BALANCE_THRHD		1280
 #define ECC_RECV_MAX_CNT		60000000
 #define ECC_RESEND_CNT			8
-#define BITS_TO_BYTES(bits)		(((bits) + 7) / 8)
-#define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(521)
-#define ECC_MAX_HW_BITS			576
+#define BYTES_TO_BITS(bytes)		((bytes) << 3)
+#define ECC_MAX_KEY_BITS		521
+#define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(ECC_MAX_KEY_BITS)
 #define ECC_MAX_IN_NUM			4
 #define ECC_MAX_OUT_NUM			4
 #define CURVE_PARAM_NUM			6
-#define ECC_MAX_IN_SIZE			(ECC_MAX_HW_BITS * ECC_MAX_IN_NUM)
-#define ECC_MAX_OUT_SIZE		(ECC_MAX_HW_BITS * ECC_MAX_OUT_NUM)
+#define ECC_POINT_NUM			2
 #define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof(array[0]))
 #define MAX_CURVE_SIZE			(ECC_MAX_KEY_SIZE * CURVE_PARAM_NUM)
+#define MAX_HASH_LENS			ECC_MAX_KEY_SIZE
+#define SM2_KEY_SIZE			32
 
 #define CURVE_X25519			0x1
 #define CURVE_X448			0x2
+#define CURVE_SM2P256			0x3
 
 static __thread int balance;
 
@@ -63,81 +65,6 @@ enum wcrypto_ecc_curve_param_type {
 	ECC_CURVE_B,
 	ECC_CURVE_N,
 	ECC_CURVE_G
-};
-
-struct wcrypto_ecc_dh_in {
-	struct wcrypto_ecc_point pbk;
-};
-
-struct wcrypto_ecc_sign_in {
-	struct wd_dtb e;
-	struct wd_dtb k;
-	__u8 k_set; /* 0 - not set 1 - set */
-};
-
-struct wcrypto_ecc_verf_in {
-	struct wd_dtb e;
-	struct wd_dtb s;
-	struct wd_dtb r;
-};
-
-struct wcrypto_ecc_dh_out {
-	struct wcrypto_ecc_point out;
-};
-
-struct wcrypto_ecc_sign_out {
-	struct wd_dtb r;
-	struct wd_dtb s;
-};
-
-typedef union {
-	struct wcrypto_ecc_dh_in dh_in;
-	struct wcrypto_ecc_sign_in sin;
-	struct wcrypto_ecc_verf_in vin;
-} wcrypto_ecc_in_param;
-
-typedef union {
-	struct wcrypto_ecc_dh_out dh_out;
-	struct wcrypto_ecc_sign_out sout;
-} wcrypto_ecc_out_param;
-
-struct wcrypto_ecc_in {
-	wcrypto_ecc_in_param param;
-	__u32 size;
-	char data[];
-};
-
-struct wcrypto_ecc_out {
-	wcrypto_ecc_out_param param;
-	__u32 size;
-	char data[];
-};
-
-struct wcrypto_ecc_pubkey {
-	struct wd_dtb p;
-	struct wd_dtb a;
-	struct wd_dtb b;
-	struct wd_dtb n;
-	struct wcrypto_ecc_point g;
-	struct wcrypto_ecc_point pub;
-	__u32 size;
-	void *data;
-};
-
-struct wcrypto_ecc_prikey {
-	struct wd_dtb p;
-	struct wd_dtb a;
-	struct wd_dtb d;
-	struct wd_dtb b;
-	struct wd_dtb n;
-	struct wcrypto_ecc_point g;
-	__u32 size;
-	void *data;
-};
-
-struct wcrypto_ecc_key {
-	struct wcrypto_ecc_pubkey *pubkey;
-	struct wcrypto_ecc_prikey *prikey;
 };
 
 struct wcrypto_ecc_cookie {
@@ -172,6 +99,7 @@ static const struct wcrypto_ecc_curve_list g_curve_list[] = {
 	{ WCRYPTO_BRAINPOOLP320R1, "bpP320r1", 320, BRAINPOOL_P320_R1_PARAM },
 	{ WCRYPTO_BRAINPOOLP384R1, "bpP384r1", 384, BRAINPOOL_P384_R1_PARAM },
 	{ WCRYPTO_SECP521R1, "secp521r1", 521, NIST_P521_R1_PARAM },
+	{ CURVE_SM2P256, "sm2", 256, SM2_P256_V1_PARAM },
 };
 
 static const struct curve_param_desc g_curve_param_list[] = {
@@ -187,11 +115,35 @@ static const struct curve_param_desc g_curve_param_list[] = {
 		offsetof(struct wcrypto_ecc_pubkey, g) },
 };
 
+static int trans_to_binpad(char *dst, const char *src,
+			   __u32 b_size, __u32 d_size)
+{
+	int i = d_size - 1;
+	int j;
+
+	if (!dst || !src || !b_size || !d_size || b_size < d_size) {
+		WD_ERR("trans to binpad params err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (dst == src)
+		return WD_SUCCESS;
+
+	for (j = b_size - 1; j >= 0; j--, i--) {
+		if (i >= 0)
+			dst[j] = src[i];
+		else
+			dst[j] = 0;
+	}
+
+	return WD_SUCCESS;
+}
+
 static void wd_memset_zero(void *data, __u32 size)
 {
 	char *s = data;
 
-	if (!s)
+	if (unlikely(!s))
 		return;
 
 	while (size--)
@@ -200,7 +152,7 @@ static void wd_memset_zero(void *data, __u32 size)
 
 static void *br_alloc(struct wd_mm_br *br, __u32 size)
 {
-	if (!br->alloc) {
+	if (unlikely(!br->alloc)) {
 		WD_ERR("br alloc NULL!\n");
 		return NULL;
 	}
@@ -237,6 +189,32 @@ static __u32 get_hw_keysize(__u32 ksz)
 		WD_ERR("failed to get hw keysize : ksz = %u.\n", ksz);
 
 	return size;
+}
+
+static __u32 get_hash_bytes(__u8 type)
+{
+	__u32 val = 0;
+
+	switch (type) {
+	case WCRYPTO_HASH_MD4:
+	case WCRYPTO_HASH_MD5:
+		val = BITS_TO_BYTES(128);
+		break;
+	case WCRYPTO_HASH_SHA1:
+		val = BITS_TO_BYTES(160);
+		break;
+	case WCRYPTO_HASH_SHA224:
+		val = BITS_TO_BYTES(224);
+		break;
+	case WCRYPTO_HASH_SHA256:
+	case WCRYPTO_HASH_SM3:
+		val = BITS_TO_BYTES(256);
+		break;
+	default:
+		break;
+	}
+
+	return val;
 }
 
 static void init_dtb_param(void *dtb, char *start,
@@ -296,7 +274,7 @@ static struct wcrypto_ecc_prikey *create_ecc_prikey(struct wcrypto_ecc_ctx *ctx)
 
 	hsz = get_hw_keysize(ctx->key_size);
 	prikey = malloc(sizeof(struct wcrypto_ecc_prikey));
-	if (!prikey) {
+	if (unlikely(!prikey)) {
 		WD_ERR("failed to malloc!\n");
 		return NULL;
 	}
@@ -304,7 +282,7 @@ static struct wcrypto_ecc_prikey *create_ecc_prikey(struct wcrypto_ecc_ctx *ctx)
 	memset(prikey, 0, sizeof(struct wcrypto_ecc_prikey));
 	dsz = ECC_PRIKEY_SZ(hsz);
 	data = br_alloc(br, dsz);
-	if (!data) {
+	if (unlikely(!data)) {
 		WD_ERR("failed to br alloc!\n");
 		free(prikey);
 		return NULL;
@@ -327,7 +305,7 @@ static struct wcrypto_ecc_pubkey *create_ecc_pubkey(struct wcrypto_ecc_ctx *ctx)
 
 	hsz = get_hw_keysize(ctx->key_size);
 	pubkey = malloc(sizeof(struct wcrypto_ecc_pubkey));
-	if (!pubkey) {
+	if (unlikely(!pubkey)) {
 		WD_ERR("failed to malloc!\n");
 		return NULL;
 	}
@@ -335,7 +313,7 @@ static struct wcrypto_ecc_pubkey *create_ecc_pubkey(struct wcrypto_ecc_ctx *ctx)
 	memset(pubkey, 0, sizeof(struct wcrypto_ecc_pubkey));
 	dsz = ECC_PUBKEY_SZ(hsz);
 	data = br_alloc(br, dsz);
-	if (!data) {
+	if (unlikely(!data)) {
 		WD_ERR("failed to create br alloc!\n");
 		free(pubkey);
 		return NULL;
@@ -365,7 +343,7 @@ static struct wcrypto_ecc_in *create_ecc_in(struct wcrypto_ecc_ctx *ctx,
 	struct wcrypto_ecc_in *in;
 	__u32 hsz, len;
 
-	if (!ctx->key_size || ctx->key_size > ECC_MAX_KEY_SIZE) {
+	if (unlikely(!ctx->key_size || ctx->key_size > ECC_MAX_KEY_SIZE)) {
 		WD_ERR("ctx key size %u error!\n", ctx->key_size);
 		return NULL;
 	}
@@ -373,7 +351,7 @@ static struct wcrypto_ecc_in *create_ecc_in(struct wcrypto_ecc_ctx *ctx,
 	hsz = get_hw_keysize(ctx->key_size);
 	len = sizeof(struct wcrypto_ecc_in) + hsz * num;
 	in = br_alloc(br, len);
-	if (!in) {
+	if (unlikely(!in)) {
 		WD_ERR("failed to br alloc!\n");
 		return NULL;
 	}
@@ -383,6 +361,57 @@ static struct wcrypto_ecc_in *create_ecc_in(struct wcrypto_ecc_ctx *ctx,
 	init_dtb_param(in, in->data, ctx->key_size, hsz, num);
 
 	return in;
+}
+
+static struct wcrypto_ecc_in *create_sm2_sign_in(struct wcrypto_ecc_ctx *ctx,
+						 __u32 m_len)
+{
+	struct wd_mm_br *br = &ctx->setup.br;
+	struct wd_dtb *dgst, *k, *plaintext;
+	struct wcrypto_ecc_in *in;
+	__u32 hsz;
+	__u64 len;
+
+	if (unlikely(!ctx->key_size || ctx->key_size > ECC_MAX_KEY_SIZE)) {
+		WD_ERR("ctx key size %u error!\n", ctx->key_size);
+		return NULL;
+	}
+
+	hsz = get_hw_keysize(ctx->key_size);
+	len = sizeof(struct wcrypto_ecc_in)
+		+ ECC_SIGN_IN_PARAM_NUM * hsz + (__u64)m_len;
+	in = br_alloc(br, len);
+	if (unlikely(!in)) {
+		WD_ERR("failed to br alloc!\n");
+		return NULL;
+	}
+
+	in->size = len - sizeof(struct wcrypto_ecc_in);
+	dgst = (struct wd_dtb *)in;
+	dgst->data = in->data;
+	dgst->dsize = ctx->key_size;
+	dgst->bsize = hsz;
+
+	k = dgst + 1;
+	k->data = dgst->data + hsz;
+	k->dsize = ctx->key_size;
+	k->bsize = hsz;
+
+	plaintext = k + 1;
+	plaintext->data = k->data + hsz;
+	plaintext->dsize = m_len;
+	plaintext->bsize = m_len;
+
+	return in;
+}
+
+static struct wcrypto_ecc_in *create_ecc_sign_in(struct wcrypto_ecc_ctx *ctx,
+						 __u32 m_len, __u8 is_dgst)
+{
+	if (is_dgst)
+		return create_ecc_in(ctx, ECC_SIGN_IN_PARAM_NUM);
+	else
+		return create_sm2_sign_in(ctx, m_len);
 }
 
 static struct wcrypto_ecc_out *create_ecc_out(struct wcrypto_ecc_ctx *ctx,
@@ -400,7 +429,7 @@ static struct wcrypto_ecc_out *create_ecc_out(struct wcrypto_ecc_ctx *ctx,
 	hsz = get_hw_keysize(ctx->key_size);
 	len = sizeof(struct wcrypto_ecc_out) + hsz * num;
 	out = br_alloc(br, len);
-	if (!out) {
+	if (unlikely(!out)) {
 		WD_ERR("failed to br alloc!\n");
 		return NULL;
 	}
@@ -412,14 +441,88 @@ static struct wcrypto_ecc_out *create_ecc_out(struct wcrypto_ecc_ctx *ctx,
 	return out;
 }
 
+static struct wcrypto_ecc_curve *create_ecc_curve(struct wcrypto_ecc_ctx *ctx)
+{
+	struct wcrypto_ecc_curve *cv;
+	__u32 ksize, len;
+
+	ksize = ctx->key_size;
+	len = sizeof(*cv) + ksize * CURVE_PARAM_NUM;
+	cv = malloc(len);
+	if (unlikely(!cv)) {
+		WD_ERR("failed to malloc!\n");
+		return NULL;
+	}
+
+	init_dtb_param(cv, (void *)(cv + 1), ksize, ksize, CURVE_PARAM_NUM);
+
+	return cv;
+}
+
+static struct wcrypto_ecc_point *create_ecc_pub(struct wcrypto_ecc_ctx *ctx)
+{
+	struct wcrypto_ecc_point *pub;
+	__u32 ksize, len;
+
+	ksize = ctx->key_size;
+	len = sizeof(*pub) + ksize * ECC_POINT_NUM;
+	pub = malloc(len);
+	if (unlikely(!pub)) {
+		WD_ERR("failed to malloc!\n");
+		return NULL;
+	}
+
+	init_dtb_param(pub, (void *)(pub + 1), ksize, ksize, ECC_POINT_NUM);
+
+	return pub;
+}
+
+static struct wd_dtb *create_ecc_d(struct wcrypto_ecc_ctx *ctx)
+{
+	struct wd_dtb *d;
+	__u32 ksize, len;
+
+	ksize = ctx->key_size;
+	len = sizeof(*d) + ksize;
+	d = malloc(len);
+	if (unlikely(!d)) {
+		WD_ERR("failed to malloc!\n");
+		return NULL;
+	}
+
+	memset(d, 0, len);
+	init_dtb_param(d, (void *)(d + 1), ksize, ksize, 1);
+
+	return d;
+}
+
+static void release_ecc_curve(struct wcrypto_ecc_ctx *ctx)
+{
+	free(ctx->key.cv);
+	ctx->key.cv = NULL;
+}
+
+static void release_ecc_pub(struct wcrypto_ecc_ctx *ctx)
+{
+	free(ctx->key.pub);
+	ctx->key.pub = NULL;
+}
+
+static void release_ecc_d(struct wcrypto_ecc_ctx *ctx)
+{
+	wd_memset_zero(ctx->key.d + 1, ctx->key_size);
+	free(ctx->key.d);
+	ctx->key.d = NULL;
+}
+
 static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src)
 {
-	if (!src || !src->data) {
+	if (unlikely(!src || !src->data)) {
 		WD_ERR("src or data NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	if (!src->dsize || src->dsize > dst->dsize) {
+	if (unlikely(!src->dsize || src->dsize > dst->dsize)) {
 		WD_ERR("src dsz = %u error, dst dsz = %u!\n",
 			src->dsize, dst->dsize);
 		return -WD_EINVAL;
@@ -440,27 +543,27 @@ struct wcrypto_ecc_in *wcrypto_new_ecxdh_in(void *ctx,
 	struct wcrypto_ecc_in *ecc_in;
 	int ret;
 
-	if (!cx || !in) {
+	if (unlikely(!cx || !in)) {
 		WD_ERR("new ecc dh in param error!\n");
 		return NULL;
 	}
 
 	ecc_in = create_ecc_in(cx, ECDH_IN_PARAM_NUM);
-	if (!ecc_in) {
+	if (unlikely(!ecc_in)) {
 		WD_ERR("failed to create ecc in!\n");
 		return NULL;
 	}
 
 	dh_in = &ecc_in->param.dh_in;
 	ret = set_param_single(&dh_in->pbk.x, &in->x);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set ecdh in: x error!\n");
 		release_ecc_in(ctx, ecc_in);
 		return NULL;
 	}
 
 	ret = set_param_single(&dh_in->pbk.y, &in->y);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set ecdh in: y error!\n");
 		release_ecc_in(ctx, ecc_in);
 		return NULL;
@@ -473,13 +576,13 @@ struct wcrypto_ecc_out *wcrypto_new_ecxdh_out(void *ctx)
 {
 	struct wcrypto_ecc_out *ecc_out;
 
-	if (!ctx) {
+	if (unlikely(!ctx)) {
 		WD_ERR("new ecc dh out ctx NULL!\n");
 		return NULL;
 	}
 
 	ecc_out = create_ecc_out(ctx, ECDH_OUT_PARAM_NUM);
-	if (!ecc_out)
+	if (unlikely(!ecc_out))
 		WD_ERR("failed to create ecc out!\n");
 
 	return ecc_out;
@@ -487,7 +590,7 @@ struct wcrypto_ecc_out *wcrypto_new_ecxdh_out(void *ctx)
 
 int wcrypto_get_ecc_key_bits(void *ctx)
 {
-	if (!ctx) {
+	if (unlikely(!ctx)) {
 		WD_ERR("get ecc key bits, ctx NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -510,26 +613,26 @@ static int set_curve_param_single(struct wcrypto_ecc_key *key,
 	/* set gy */
 	if (type == ECC_CURVE_G) {
 		ret = set_param_single((struct wd_dtb *)tmp1 + 1, param + 1);
-		if (ret) {
+		if (unlikely(ret)) {
 			WD_ERR("failed to set pri Gy!\n");
 			return ret;
 		}
 
 		ret = set_param_single((struct wd_dtb *)tmp2 + 1, param + 1);
-		if (ret) {
+		if (unlikely(ret)) {
 			WD_ERR("failed to set pub Gy!\n");
 			return ret;
 		}
 	}
 
 	ret = set_param_single((struct wd_dtb *)tmp1, param);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set pri Gx!\n");
 		return ret;
 	}
 
 	ret = set_param_single((struct wd_dtb *)tmp2, param);
-	if (ret)
+	if (unlikely(ret))
 		WD_ERR("failed to set pub Gx!\n");
 
 	return ret;
@@ -541,31 +644,31 @@ static int set_curve_param(struct wcrypto_ecc_key *key,
 	int ret;
 
 	ret = set_curve_param_single(key, &param->p, ECC_CURVE_P);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set curve param: p error!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = set_curve_param_single(key, &param->a, ECC_CURVE_A);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set curve param: a error!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = set_curve_param_single(key, &param->b, ECC_CURVE_B);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set curve param: b error!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = set_curve_param_single(key, &param->n, ECC_CURVE_N);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set curve param: n error!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = set_curve_param_single(key, (void *)&param->g, ECC_CURVE_G);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set curve param: g error!\n");
 		return -WD_EINVAL;
 	}
@@ -596,11 +699,11 @@ static const struct wcrypto_ecc_curve_list *find_curve_list(__u32 id)
 static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 			    __u16 key_bits, __u32 id)
 {
-	const struct wcrypto_ecc_curve_list *item = NULL;
+	const struct wcrypto_ecc_curve_list *item;
 	__u32 key_size;
 
 	item = find_curve_list(id);
-	if (!item) {
+	if (unlikely(!item)) {
 		WD_ERR("failed to find curve id %u!\n", id);
 		return -WD_EINVAL;
 	}
@@ -611,17 +714,63 @@ static int fill_param_by_id(struct wcrypto_ecc_curve *c,
 	}
 
 	key_size = BITS_TO_BYTES(item->key_bits);
-	init_dtb_param(c, (char *)item->data, key_size, key_size,
-		CURVE_PARAM_NUM);
+	memcpy(c->p.data, item->data, CURVE_PARAM_NUM * key_size);
 
 	return 0;
+}
+
+static int set_key_cv(struct wcrypto_ecc_curve *dst,
+		      struct wcrypto_ecc_curve *src)
+{
+	int ret;
+
+	if (unlikely(!src)) {
+		WD_ERR("set key cv: input param NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = set_param_single(&dst->p, &src->p);
+	if (unlikely(ret)) {
+		WD_ERR("failed to set curve p param\n");
+		return ret;
+	}
+
+	ret = set_param_single(&dst->a, &src->a);
+	if (unlikely(ret)) {
+		WD_ERR("failed to set curve a param\n");
+		return ret;
+	}
+
+	ret = set_param_single(&dst->b, &src->b);
+	if (unlikely(ret)) {
+		WD_ERR("failed to set curve b param\n");
+		return ret;
+	}
+
+	ret = set_param_single(&dst->g.x, &src->g.x);
+	if (unlikely(ret)) {
+		WD_ERR("failed to set curve gx param\n");
+		return ret;
+	}
+
+	ret = set_param_single(&dst->g.y, &src->g.y);
+	if (unlikely(ret)) {
+		WD_ERR("failed to set curve gy param\n");
+		return ret;
+	}
+
+	ret = set_param_single(&dst->n, &src->n);
+	if (unlikely(ret))
+		WD_ERR("failed to set curve n param\n");
+
+	return ret;
 }
 
 static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 			       struct wcrypto_ecc_ctx_setup *setup,
 			       const char *alg)
 {
-	struct wcrypto_ecc_curve *ppara = setup->cv.cfg.pparam;
+	struct wcrypto_ecc_curve *src_param = setup->cv.cfg.pparam;
 	__u32 curve_id;
 	int ret = 0;
 
@@ -630,12 +779,11 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
 		dbg("set curve id %u\n", curve_id);
 	} else if (setup->cv.type == WCRYPTO_CV_CFG_PARAM) {
-		if (!ppara) {
-			WD_ERR("fill curve cfg:pparam NULL!\n");
-			return -WD_EINVAL;
+		ret = set_key_cv(param, src_param);
+		if (ret) {
+			WD_ERR("failed to set key cv!\n");
+			return ret;
 		}
-
-		memcpy(param, ppara, sizeof(struct wcrypto_ecc_curve));
 		dbg("set curve by user param\n");
 	} else {
 		WD_ERR("fill curve cfg:type %u error!\n", setup->cv.type);
@@ -654,40 +802,50 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 static int create_ctx_key(struct wcrypto_ecc_ctx_setup *setup,
 			  struct wcrypto_ecc_ctx *ctx)
 {
-	struct wcrypto_ecc_curve c_param;
-	struct wd_queue *q = NULL;
-	int ret;
+	int ret = -WD_ENOMEM;
 
-	memset(&c_param, 0, sizeof(struct wcrypto_ecc_curve));
 	ctx->key.prikey = create_ecc_prikey(ctx);
-	if (!ctx->key.prikey) {
-		WD_ERR("failed to create ecc prikey!\n");
+	if (unlikely(!ctx->key.prikey))
 		return -WD_ENOMEM;
-	}
 
 	ctx->key.pubkey = create_ecc_pubkey(ctx);
-	if (!ctx->key.pubkey) {
-		WD_ERR("failed to create ecc pubkey!\n");
-		ret = -WD_ENOMEM;
+	if (unlikely(!ctx->key.pubkey))
 		goto free_prikey;
-	}
 
-	q = ctx->q;
-	ret = fill_user_curve_cfg(&c_param, setup, q->capa.alg);
-	if (ret) {
+	ctx->key.cv = create_ecc_curve(ctx);
+	if (unlikely(!ctx->key.cv))
+		goto free_pubkey;
+
+	ctx->key.pub = create_ecc_pub(ctx);
+	if (unlikely(!ctx->key.pub))
+		goto free_curve;
+
+	ctx->key.d = create_ecc_d(ctx);
+	if (unlikely(!ctx->key.d))
+		goto free_pub;
+
+	ret = fill_user_curve_cfg(ctx->key.cv, setup, ctx->q->capa.alg);
+	if (unlikely(ret)) {
 		WD_ERR("failed to fill user curve cfg!\n");
-		ret = -WD_EINVAL;
-		goto free_pubkey;
+		goto free_d;
 	}
 
-	ret = set_curve_param(&ctx->key, &c_param);
-	if (ret) {
+	ret = set_curve_param(&ctx->key, ctx->key.cv);
+	if (unlikely(ret)) {
 		WD_ERR("failed to set curve param!\n");
-		ret = -WD_EINVAL;
-		goto free_pubkey;
+		goto free_d;
 	}
 
 	return 0;
+
+free_d:
+	release_ecc_d(ctx);
+
+free_pub:
+	release_ecc_pub(ctx);
+
+free_curve:
+	release_ecc_curve(ctx);
 
 free_pubkey:
 	release_ecc_pubkey(ctx);
@@ -709,40 +867,70 @@ static void setup_curve_cfg(struct wcrypto_ecc_ctx_setup *setup,
 		setup->key_bits = 448; /* x448 fixed key width */
 		setup->cv.type = WCRYPTO_CV_CFG_ID;
 		setup->cv.cfg.id = CURVE_X448;
+	} else if ((!strcmp(alg, "sm2"))) {
+		setup->key_bits = 256;
+		setup->cv.type = WCRYPTO_CV_CFG_ID;
+		setup->cv.cfg.id = CURVE_SM2P256;
 	}
+}
+
+static bool is_alg_support(const char *alg)
+{
+	if (strcmp(alg, "ecdh") &&
+		strcmp(alg, "ecdsa") &&
+		strcmp(alg, "x25519") &&
+		strcmp(alg, "x448") &&
+		strcmp(alg, "sm2"))
+		return false;
+
+	return true;
+}
+
+static bool is_key_width_support(__u32 key_bits)
+{
+	/* key bit width check */
+	if (key_bits != 128 &&
+		key_bits != 192 &&
+		key_bits != 256 &&
+		key_bits != 320 &&
+		key_bits != 384 &&
+		key_bits != 448 &&
+		key_bits != 521)
+		return false;
+
+	return true;
 }
 
 static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 {
-	if (!q || !setup) {
+	struct wcrypto_hash_mt *hash;
+
+	if (unlikely(!q || !setup)) {
 		WD_ERR("input param error!\n");
 		return -WD_EINVAL;
 	}
 
-	if (!setup->br.alloc || !setup->br.free) {
+	if (unlikely(!setup->br.alloc || !setup->br.free)) {
 		WD_ERR("user mm br error!\n");
 		return -WD_EINVAL;
 	}
 
-	if (strcmp(q->capa.alg, "ecdh") &&
-	    strcmp(q->capa.alg, "ecdsa") &&
-	    strcmp(q->capa.alg, "x25519") &&
-	    strcmp(q->capa.alg, "x448")) {
+	if (!is_alg_support(q->capa.alg)) {
 		WD_ERR("alg %s mismatching!\n", q->capa.alg);
 		return -WD_EINVAL;
 	}
 
 	setup_curve_cfg(setup, q->capa.alg);
 
-	/* key bit width check */
-	if (setup->key_bits != 128 &&
-	    setup->key_bits != 192 &&
-	    setup->key_bits != 256 &&
-	    setup->key_bits != 320 &&
-	    setup->key_bits != 384 &&
-	    setup->key_bits != 448 &&
-	    setup->key_bits != 521) {
+	if (!is_key_width_support(setup->key_bits)) {
 		WD_ERR("key_bits %u error!\n", setup->key_bits);
+		return -WD_EINVAL;
+	}
+
+	hash = &setup->hash;
+	if (!strcmp(q->capa.alg, "sm2") && (!hash->cb ||
+		hash->type > WCRYPTO_HASH_MD5)) {
+		WD_ERR("sm2 hash param error: type = %u!\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -780,6 +968,7 @@ static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 		ctx->cookies[i].msg.curve_id = setup->cv.cfg.id;
 		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
 		ctx->cookies[i].msg.key_bytes = hsz;
+		ctx->cookies[i].msg.hash_type = setup->hash.type;
 		ctx->cookies[i].msg.alg_type = qinfo->atype;
 		ctx->cookies[i].tag.ctx = ctx;
 		ctx->cookies[i].tag.ctx_id = ctx->ctx_id;
@@ -808,13 +997,13 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 		goto free_spinlock;
 	}
 
-	if (qinfo->ctx_num >= WD_ECC_MAX_CTX) {
+	if (unlikely(qinfo->ctx_num >= WD_ECC_MAX_CTX)) {
 		WD_ERR("err:create too many ecc ctx!\n");
 		goto free_spinlock;
 	}
 
 	cid = wd_alloc_ctx_id(q, WD_ECC_MAX_CTX);
-	if (cid < 0) {
+	if (unlikely(cid < 0)) {
 		WD_ERR("failed to alloc ctx id!\n");
 		goto free_spinlock;
 	}
@@ -822,7 +1011,7 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_ecc_ctx));
-	if (!ctx) {
+	if (unlikely(!ctx)) {
 		WD_ERR("failed to malloc!\n");
 		goto free_ctx_id;
 	}
@@ -833,7 +1022,7 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	ctx->q = q;
 	ctx->ctx_id = cid;
 	ret = create_ctx_key(setup, ctx);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to create ecc ctx keys!\n");
 		free(ctx);
 		goto free_ctx_id;
@@ -860,7 +1049,7 @@ void wcrypto_del_ecc_ctx(void *ctx)
 	struct wd_mm_br *br;
 	struct q_info *qinfo;
 
-	if (!ctx) {
+	if (unlikely(!ctx)) {
 		WD_ERR("Delete ecc param err!\n");
 		return;
 	}
@@ -869,7 +1058,7 @@ void wcrypto_del_ecc_ctx(void *ctx)
 	br = &cx->setup.br;
 	qinfo = cx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
-	if (qinfo->ctx_num <= 0) {
+	if (unlikely(qinfo->ctx_num <= 0)) {
 		WD_ERR("error:repeat del ecc ctx ctx!\n");
 		wd_unspinlock(&qinfo->qlock);
 		return;
@@ -888,7 +1077,7 @@ struct wcrypto_ecc_key *wcrypto_get_ecc_key(void *ctx)
 {
 	struct wcrypto_ecc_ctx *cx = ctx;
 
-	if (!cx) {
+	if (unlikely(!cx)) {
 		WD_ERR("get ecc key ctx NULL!\n");
 		return NULL;
 	}
@@ -900,22 +1089,30 @@ int wcrypto_set_ecc_prikey(struct wcrypto_ecc_key *ecc_key,
 			   struct wd_dtb *prikey)
 {
 	struct wcrypto_ecc_prikey *ecc_prikey;
+	struct wd_dtb *d;
 	int ret;
 
-	if (!ecc_key || !prikey) {
+	if (unlikely(!ecc_key || !prikey)) {
 		WD_ERR("set ecc prikey param NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	ecc_prikey = ecc_key->prikey;
-	if (!ecc_prikey) {
-		WD_ERR("ecc_prikey NULL!\n");
+	d = ecc_key->d;
+	if (unlikely(!ecc_prikey || !d)) {
+		WD_ERR("ecc_prikey or d NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = set_param_single(&ecc_prikey->d, prikey);
-	if (ret)
+	if (unlikely(ret)) {
 		WD_ERR("failed to set prikey!\n");
+		return ret;
+	}
+
+	ret = set_param_single(d, prikey);
+	if (unlikely(ret))
+		WD_ERR("failed to set d!\n");
 
 	return ret;
 }
@@ -923,20 +1120,12 @@ int wcrypto_set_ecc_prikey(struct wcrypto_ecc_key *ecc_key,
 int wcrypto_get_ecc_prikey(struct wcrypto_ecc_key *ecc_key,
 			   struct wd_dtb **prikey)
 {
-	struct wcrypto_ecc_prikey *ecc_prikey;
-
-	if (!ecc_key || !prikey) {
+	if (unlikely(!ecc_key || !prikey)) {
 		WD_ERR("get ecc prikey param err!\n");
 		return -WD_EINVAL;
 	}
 
-	ecc_prikey = ecc_key->prikey;
-	if (!ecc_prikey) {
-		WD_ERR("ecc_prikey NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	*prikey = &ecc_prikey->d;
+	*prikey = ecc_key->d;
 
 	return WD_SUCCESS;
 }
@@ -945,51 +1134,70 @@ int wcrypto_set_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_point *pubkey)
 {
 	struct wcrypto_ecc_pubkey *ecc_pubkey;
+	struct wcrypto_ecc_point *pub;
 	int ret;
 
-	if (!ecc_key || !pubkey) {
+	if (unlikely(!ecc_key || !pubkey)) {
 		WD_ERR("set ecc pubkey param err!\n");
 		return -WD_EINVAL;
 	}
 
+	pub = ecc_key->pub;
 	ecc_pubkey = ecc_key->pubkey;
-	if (!ecc_pubkey) {
-		WD_ERR("ecc_pubkey NULL!\n");
+	if (!ecc_pubkey || !pub) {
+		WD_ERR("ecc_pubkey or pub NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = set_param_single(&ecc_pubkey->pub.x, &pubkey->x);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set pubkey x!\n");
 		return ret;
 	}
 
 	ret = set_param_single(&ecc_pubkey->pub.y, &pubkey->y);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to set pubkey y!\n");
 		return ret;
 	}
 
-	return WD_SUCCESS;
+	ret = trans_to_binpad(pub->x.data, pubkey->x.data,
+			      pub->x.bsize, pubkey->x.dsize);
+	if (unlikely(ret)) {
+		WD_ERR("failed to set pub x!\n");
+		return ret;
+	}
+
+	ret = trans_to_binpad(pub->y.data, pubkey->y.data,
+			      pub->y.bsize, pubkey->y.dsize);
+	if (unlikely(ret))
+		WD_ERR("failed to set pub y!\n");
+
+	return ret;
 }
 
 int wcrypto_get_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_point **pubkey)
 {
-	struct wcrypto_ecc_pubkey *ecc_pubkey;
-
-	if (!ecc_key || !pubkey) {
+	if (unlikely(!ecc_key || !pubkey)) {
 		WD_ERR("get ecc pubkey param err!\n");
 		return -WD_EINVAL;
 	}
 
-	ecc_pubkey = ecc_key->pubkey;
-	if (!ecc_pubkey) {
-		WD_ERR("ecc_pubkey NULL!\n");
+	*pubkey = ecc_key->pub;
+
+	return WD_SUCCESS;
+}
+
+int wcrypto_get_ecc_curve(struct wcrypto_ecc_key *ecc_key,
+			   struct wcrypto_ecc_curve **cv)
+{
+	if (unlikely(!ecc_key || !cv)) {
+		WD_ERR("get ecc pubkey param err!\n");
 		return -WD_EINVAL;
 	}
 
-	*pubkey = &ecc_pubkey->pub;
+	*cv = ecc_key->cv;
 
 	return WD_SUCCESS;
 }
@@ -1002,7 +1210,7 @@ void wcrypto_get_ecc_prikey_params(struct wcrypto_ecc_key *key,
 {
 	struct wcrypto_ecc_prikey *prk;
 
-	if (!key || !key->prikey) {
+	if (unlikely(!key || !key->prikey)) {
 		WD_ERR("input NULL in get ecc prikey param!\n");
 		return;
 	}
@@ -1036,7 +1244,7 @@ void wcrypto_get_ecc_pubkey_params(struct wcrypto_ecc_key *key,
 {
 	struct wcrypto_ecc_pubkey *pbk;
 
-	if (!key || !key->pubkey) {
+	if (unlikely(!key || !key->pubkey)) {
 		WD_ERR("input NULL in get ecc pubkey param!\n");
 		return;
 	}
@@ -1067,7 +1275,7 @@ void wcrypto_get_ecxdh_out_params(struct wcrypto_ecc_out *out,
 {
 	struct wcrypto_ecc_dh_out *dh_out = (void *)out;
 
-	if (!dh_out) {
+	if (unlikely(!dh_out)) {
 		WD_ERR("input NULL in get ecdh out!\n");
 		return;
 	}
@@ -1095,14 +1303,14 @@ void wcrypto_del_ecc_in(void *ctx, struct wcrypto_ecc_in *in)
 	struct wcrypto_ecc_ctx *cx = ctx;
 	__u32 bsz;
 
-	if (!ctx || !in) {
+	if (unlikely(!ctx || !in)) {
 		WD_ERR("del ecc in param error!\n");
 		return;
 	}
 
 	bsz = in->size;
-	if (!bsz || bsz > ECC_MAX_IN_SIZE) {
-		WD_ERR("del ecc in: size %u err!\n", bsz);
+	if (unlikely(!bsz)) {
+		WD_ERR("del ecc in: bsz 0!\n");
 		return;
 	}
 
@@ -1115,14 +1323,14 @@ void wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out)
 	struct wcrypto_ecc_ctx *cx = ctx;
 	__u32 bsz;
 
-	if (!ctx || !out) {
+	if (unlikely(!ctx || !out)) {
 		WD_ERR("del ecc out param error!\n");
 		return;
 	}
 
 	bsz = out->size;
-	if (!bsz || bsz > ECC_MAX_OUT_SIZE) {
-		WD_ERR("del ecc out: size %u err!\n", bsz);
+	if (unlikely(!bsz)) {
+		WD_ERR("del ecc out: bsz 0!\n");
 		return;
 	}
 
@@ -1154,7 +1362,7 @@ static void put_ecc_cookie(struct wcrypto_ecc_ctx *ctx,
 	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
 		sizeof(struct wcrypto_ecc_cookie);
 
-	if (idx < 0 || idx >= WD_ECC_CTX_MSG_NUM) {
+	if (unlikely(idx < 0 || idx >= WD_ECC_CTX_MSG_NUM)) {
 		WD_ERR("ecc cookie not exist!\n");
 		return;
 	}
@@ -1165,11 +1373,12 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 			    struct wcrypto_ecc_op_data *op,
 			    struct wcrypto_ecc_ctx *c, __u8 need_hash)
 {
-	__u8 *key = NULL;
+	__u8 *key;
 
 	req->in_bytes = (__u16)op->in_bytes;
 	req->out = op->out;
 	req->op_type = op->op_type;
+	req->hash_type = c->setup.hash.type;
 	req->result = WD_EINVAL;
 
 	switch (req->op_type) {
@@ -1177,6 +1386,9 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 	case WCRYPTO_ECXDH_COMPUTE_KEY:
 	case WCRYPTO_ECDSA_SIGN:
 	case WCRYPTO_ECDSA_VERIFY:
+	case WCRYPTO_SM2_SIGN:
+	case WCRYPTO_SM2_VERIFY:
+	case WCRYPTO_SM2_KG:
 		key = (__u8 *)&c->key;
 		break;
 	default:
@@ -1185,7 +1397,8 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 	}
 	req->key = key;
 
-	if (req->op_type == WCRYPTO_ECXDH_GEN_KEY) {
+	if (req->op_type == WCRYPTO_ECXDH_GEN_KEY ||
+		req->op_type == WCRYPTO_SM2_KG) {
 		struct wcrypto_ecc_point *g = NULL;
 
 		wcrypto_get_ecc_prikey_params((void *)key, NULL, NULL,
@@ -1195,12 +1408,25 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 		req->in = op->in;
 	}
 
-	if (!req->in || (!req->out && req->op_type != WCRYPTO_ECDSA_VERIFY)) {
+	if (!req->in || (!req->out && (req->op_type != WCRYPTO_ECDSA_VERIFY &&
+		req->op_type != WCRYPTO_SM2_VERIFY))) {
 		WD_ERR("req in/out NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
+}
+
+static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
+		     void *src, __u32 src_len)
+{
+	if (unlikely(!src || !src_len || *out_len + src_len > dst_len)) {
+		WD_ERR("src or src_len param error!\n");
+		return;
+	}
+
+	memcpy(dst + *out_len, src, src_len);
+	*out_len += src_len;
 }
 
 static int ecc_send(struct wcrypto_ecc_ctx *ctx, struct wcrypto_ecc_msg *req)
@@ -1216,7 +1442,7 @@ static int ecc_send(struct wcrypto_ecc_ctx *ctx, struct wcrypto_ecc_msg *req)
 				break;
 			}
 			usleep(1);
-		} else if (ret) {
+		} else if (unlikely(ret)) {
 			WD_ERR("failed to send: send error = %d!\n", ret);
 			break;
 		}
@@ -1228,7 +1454,7 @@ static int ecc_send(struct wcrypto_ecc_ctx *ctx, struct wcrypto_ecc_msg *req)
 static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 			 struct wcrypto_ecc_op_data *opdata)
 {
-	struct wcrypto_ecc_msg *resp = NULL;
+	struct wcrypto_ecc_msg *resp;
 	__u32 rx_cnt = 0;
 	int ret;
 
@@ -1244,7 +1470,7 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 
 			if (balance > ECC_BALANCE_THRHD)
 				usleep(1);
-		} else if (ret < 0) {
+		} else if (unlikely(ret < 0)) {
 			WD_ERR("failed to recv: error = %d!\n", ret);
 			return ret;
 		}
@@ -1254,9 +1480,8 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 	opdata->out = resp->out;
 	opdata->out_bytes = resp->out_bytes;
 	opdata->status = resp->result;
-	ret = GET_NEGATIVE(opdata->status);
 
-	return ret;
+	return GET_NEGATIVE(opdata->status);
 }
 
 static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
@@ -1290,7 +1515,7 @@ static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 		goto fail_with_cookie;
 
 	ret = ecc_send(ctxt, req);
-	if (ret)
+	if (unlikely(ret))
 		goto fail_with_cookie;
 
 	if (tag)
@@ -1310,11 +1535,6 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_cb_tag *tag;
 	int count = 0;
 	int ret;
-
-	if (unlikely(!q)) {
-		WD_ERR("q is NULL!\n");
-		return -WD_EINVAL;
-	}
 
 	do {
 		ret = wd_recv(q, (void **)&resp);
@@ -1354,6 +1574,13 @@ int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 int wcrypto_ecxdh_poll(struct wd_queue *q, unsigned int num)
 {
+	if (unlikely(!q || (strcmp(q->capa.alg, "x25519") &&
+		strcmp(q->capa.alg, "x448") &&
+		strcmp(q->capa.alg, "ecdh")))) {
+		WD_ERR("ecxdh poll: alg = %s error!\n", q->capa.alg);
+		return -WD_EINVAL;
+	}
+
 	return ecc_poll(q, num);
 }
 
@@ -1362,7 +1589,7 @@ static void get_sign_out_params(struct wcrypto_ecc_out *out,
 {
 	struct wcrypto_ecc_sign_out *sout = (void *)out;
 
-	if (!sout) {
+	if (unlikely(!sout)) {
 		WD_ERR("input NULL in get ecc sign out!\n");
 		return;
 	}
@@ -1381,8 +1608,9 @@ void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
 }
 
 static int set_sign_in_param(struct wcrypto_ecc_sign_in *sin,
-			     struct wd_dtb *e,
-			     struct wd_dtb *k)
+			     struct wd_dtb *dgst,
+			     struct wd_dtb *k,
+			     struct wd_dtb *plaintext)
 {
 	int ret;
 
@@ -1394,11 +1622,23 @@ static int set_sign_in_param(struct wcrypto_ecc_sign_in *sin,
 		}
 	}
 
-	ret = set_param_single(&sin->e, e);
-	if (ret)
-		WD_ERR("set ecc sign e err!\n");
+	if (dgst) {
+		ret = set_param_single(&sin->dgst, dgst);
+		if (ret) {
+			WD_ERR("set ecc sign in dgst err!\n");
+			return ret;
+		}
+	}
 
-	return ret;
+	if (plaintext) {
+		ret = set_param_single(&sin->plaintext, plaintext);
+		if (ret) {
+			WD_ERR("set ecc sign in plaintext err!\n");
+			return ret;
+		}
+	}
+
+	return 0;
 }
 
 static int generate_random(struct wcrypto_ecc_ctx *ctx, struct wd_dtb *k)
@@ -1407,68 +1647,200 @@ static int generate_random(struct wcrypto_ecc_ctx *ctx, struct wd_dtb *k)
 	int ret;
 
 	ret = rand_mt->cb(k->data, k->dsize, rand_mt->usr);
-	if (ret)
+	if (unlikely(ret))
 		WD_ERR("failed to rand cb: ret = %d!\n", ret);
+
+	return ret;
+}
+
+static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
+			       struct wcrypto_ecc_ctx *ctx)
+{
+	__u32 key_size = BITS_TO_BYTES(ctx->setup.key_bits);
+	struct wcrypto_hash_mt *hash = &ctx->setup.hash;
+	struct wcrypto_ecc_point *pub = ctx->key.pub;
+	struct wcrypto_ecc_curve *cv = ctx->key.cv;
+	__u16 id_bytes = 0;
+	__u16 id_bits = 0;
+	__u64 in_len = 0;
+	__u32 hash_bytes;
+	char *p_in;
+	__u64 lens;
+	__u8 temp;
+	int ret;
+
+	if (id && BYTES_TO_BITS(id->dsize) > UINT16_MAX) {
+		WD_ERR("id lens = %u error!\n", id->dsize);
+		return -WD_EINVAL;
+	}
+
+	if (id) {
+		id_bits = BYTES_TO_BITS(id->dsize);
+		id_bytes = id->dsize;
+	}
+
+#define REGULAR_LENS	(6 * key_size) /* a b xG yG xA yA */
+	/* ZA = h(ENTL || ID || a || b || xG || yG || xA || yA) */
+	lens = sizeof(__u16) + id_bytes + REGULAR_LENS;
+	p_in = malloc(lens);
+	if (unlikely(!p_in))
+		return -WD_ENOMEM;
+
+	memset(p_in, 0, lens);
+	temp = id_bits >> 8;
+	msg_pack(p_in, lens, &in_len, &temp, sizeof(__u8));
+	temp = id_bits & 0xFF;
+	msg_pack(p_in, lens, &in_len, &temp, sizeof(__u8));
+	if (id)
+		msg_pack(p_in, lens, &in_len, id->data, id_bytes);
+	msg_pack(p_in, lens, &in_len, cv->a.data, key_size);
+	msg_pack(p_in, lens, &in_len, cv->b.data, key_size);
+	msg_pack(p_in, lens, &in_len, cv->g.x.data, key_size);
+	msg_pack(p_in, lens, &in_len, cv->g.y.data, key_size);
+	msg_pack(p_in, lens, &in_len, pub->x.data, key_size);
+	msg_pack(p_in, lens, &in_len, pub->y.data, key_size);
+
+	hash_bytes = get_hash_bytes(hash->type);
+	*len = hash_bytes;
+	ret = hash->cb((const char *)p_in, in_len,
+			(void *)za, hash_bytes, hash->usr);
+
+	free(p_in);
+
+	return ret;
+}
+
+static int sm2_compute_digest(void *ctx, struct wd_dtb *hash_msg,
+			      struct wd_dtb *plaintext, struct wd_dtb *id)
+{
+	struct wcrypto_ecc_ctx *cx = ctx;
+	struct wcrypto_hash_mt *hash = &cx->setup.hash;
+	__u8 za[SM2_KEY_SIZE] = {0};
+	__u32 za_len = SM2_KEY_SIZE;
+	__u32 hash_bytes;
+	__u64 in_len = 0;
+	char *p_in;
+	__u64 lens;
+	int ret;
+
+	if (unlikely(hash->type > WCRYPTO_HASH_MD5)) {
+		WD_ERR("hash type = %u error!\n", hash->type);
+		return -WD_EINVAL;
+	}
+
+	ret = sm2_compute_za_hash(za, &za_len, id, ctx);
+	if (unlikely(ret)) {
+		WD_ERR("failed to compute za, ret = %d!\n", ret);
+		return ret;
+	}
+
+	hash_bytes = get_hash_bytes(hash->type);
+	lens = plaintext->dsize + hash_bytes;
+	p_in = malloc(lens);
+	if (unlikely(!p_in))
+		return -WD_ENOMEM;
+
+	/* e = h(ZA || M) */
+	memset(p_in, 0, lens);
+	msg_pack(p_in, lens, &in_len, za, za_len);
+	msg_pack(p_in, lens, &in_len, plaintext->data, plaintext->dsize);
+	hash_msg->dsize = hash_bytes;
+	ret = hash->cb((const char *)p_in, in_len, hash_msg->data,
+			hash_bytes, hash->usr);
+	if (unlikely(ret))
+		WD_ERR("failed to compute e, ret = %d!\n", ret);
+
+	free(p_in);
 
 	return ret;
 }
 
 static struct wcrypto_ecc_in *new_sign_in(struct wcrypto_ecc_ctx *ctx,
 					  struct wd_dtb *e, struct wd_dtb *k,
-					  __u8 is_dgst)
+					  struct wd_dtb *id, __u8 is_dgst)
 {
+	struct wcrypto_ecc_ctx *cx = ctx;
 	struct wcrypto_ecc_sign_in *sin;
+	struct wd_dtb *plaintext = NULL;
+	struct wd_dtb *hash_msg = NULL;
 	struct wcrypto_ecc_in *ecc_in;
 	int ret;
 
-	if (!ctx || !e) {
+	if (unlikely(!ctx || !e)) {
 		WD_ERR("failed to new ecc sign in: ctx or e NULL!\n");
 		return NULL;
 	}
 
-	ecc_in = create_ecc_in(ctx, ECC_SIGN_IN_PARAM_NUM);
-	if (!ecc_in)
+	ecc_in = create_ecc_sign_in(cx, e->dsize, is_dgst);
+	if (unlikely(!ecc_in))
 		return NULL;
 
 	sin = &ecc_in->param.sin;
-	if (!k && ctx->setup.rand.cb) {
-		ret = generate_random(ctx, &sin->k);
-		if (ret) {
-			release_ecc_in(ctx, ecc_in);
-			return NULL;
-		}
+	if (!k && cx->setup.rand.cb) {
+		ret = generate_random(cx, &sin->k);
+		if (unlikely(ret))
+			goto release_in;
 	}
 
-	if (k || ctx->setup.rand.cb)
+	sin->k_set = 0;
+	sin->dgst_set = 0;
+	if (k || cx->setup.rand.cb)
 		sin->k_set = 1;
 
-	ret = set_sign_in_param(sin, e, k);
-	if (ret) {
-		release_ecc_in(ctx, ecc_in);
-		return NULL;
+	if (!is_dgst) {
+		plaintext = e;
+		if (cx->setup.hash.cb) {
+			ret = sm2_compute_digest(cx, &sin->dgst, e, id);
+			if (unlikely(ret))
+				goto release_in;
+			sin->dgst_set = 1;
+		}
+	} else {
+		hash_msg = e;
+		sin->dgst_set = 1;
 	}
 
+	ret = set_sign_in_param(sin, hash_msg, k, plaintext);
+	if (unlikely(ret))
+		goto release_in;
+
 	return ecc_in;
+
+release_in:
+	release_ecc_in(ctx, ecc_in);
+
+	return NULL;
 }
 
 struct wcrypto_ecc_in *wcrypto_new_ecdsa_sign_in(void *ctx,
 						 struct wd_dtb *dgst,
 						 struct wd_dtb *k)
 {
-	return new_sign_in(ctx, dgst, k, 1);
+	return new_sign_in(ctx, dgst, k, NULL, 1);
 }
 
 static int set_verf_in_param(struct wcrypto_ecc_verf_in *vin,
-			     struct wd_dtb *e,
+			     struct wd_dtb *dgst,
 			     struct wd_dtb *r,
-			     struct wd_dtb *s)
+			     struct wd_dtb *s,
+			     struct wd_dtb *plaintext)
 {
 	int ret;
 
-	ret = set_param_single(&vin->e, e);
-	if (ret) {
-		WD_ERR("set ecc vin e err!\n");
-		return ret;
+	if (dgst) {
+		ret = set_param_single(&vin->dgst, dgst);
+		if (ret) {
+			WD_ERR("set ecc vin dgst err!\n");
+			return ret;
+		}
+	}
+
+	if (plaintext) {
+		ret = set_param_single(&vin->plaintext, plaintext);
+		if (ret) {
+			WD_ERR("set ecc vin plaintext err!\n");
+			return ret;
+		}
 	}
 
 	ret = set_param_single(&vin->s, s);
@@ -1478,37 +1850,117 @@ static int set_verf_in_param(struct wcrypto_ecc_verf_in *vin,
 	}
 
 	ret = set_param_single(&vin->r, r);
-	if (ret)
+	if (unlikely(ret))
 		WD_ERR("set ecc vin r err!\n");
 
 	return ret;
 }
 
-static struct wcrypto_ecc_in *new_verf_in(struct wcrypto_ecc_ctx *ctx,
-					  struct wd_dtb *e, struct wd_dtb *r,
-					  struct wd_dtb *s, __u8 is_dgst)
+static struct wcrypto_ecc_in *create_sm2_verf_in(struct wcrypto_ecc_ctx *ctx,
+						 __u32 m_len)
 {
+	struct wd_dtb *dgst, *s, *r, *plaintext;
+	struct wd_mm_br *br = &ctx->setup.br;
+	struct wcrypto_ecc_in *in;
+	__u64 len;
+	__u32 hsz;
+
+	if (unlikely(!ctx->key_size || ctx->key_size > ECC_MAX_KEY_SIZE)) {
+		WD_ERR("ctx key size %u error!\n", ctx->key_size);
+		return NULL;
+	}
+
+	hsz = get_hw_keysize(ctx->key_size);
+	len = sizeof(struct wcrypto_ecc_in) + ECC_VERF_IN_PARAM_NUM * hsz +
+		(__u64)m_len;
+	in = br_alloc(br, len);
+	if (unlikely(!in)) {
+		WD_ERR("failed to br alloc!\n");
+		return NULL;
+	}
+
+	memset(in, 0, len);
+	in->size = len - sizeof(struct wcrypto_ecc_in);
+	dgst = (struct wd_dtb *)in;
+	dgst->data = in->data;
+	dgst->dsize = ctx->key_size;
+	dgst->bsize = hsz;
+
+	s = dgst + 1;
+	s->data = dgst->data + hsz;
+	s->dsize = ctx->key_size;
+	s->bsize = hsz;
+
+	r = s + 1;
+	r->data = s->data + hsz;
+	r->dsize = ctx->key_size;
+	r->bsize = hsz;
+
+	plaintext = r + 1;
+	plaintext->data = r->data + hsz;
+	plaintext->dsize = m_len;
+	plaintext->bsize = m_len;
+
+	return in;
+}
+
+static struct wcrypto_ecc_in *create_ecc_verf_in(struct wcrypto_ecc_ctx *ctx,
+						 __u32 m_len, __u8 is_dgst)
+{
+	if (is_dgst)
+		return create_ecc_in(ctx, ECC_VERF_IN_PARAM_NUM);
+	else
+		return create_sm2_verf_in(ctx, m_len);
+}
+
+static struct wcrypto_ecc_in *new_verf_in(void *ctx,
+						      struct wd_dtb *e,
+						      struct wd_dtb *r,
+						      struct wd_dtb *s,
+						      struct wd_dtb *id,
+						      __u8 is_dgst)
+{
+	struct wcrypto_ecc_ctx *cx = ctx;
 	struct wcrypto_ecc_verf_in *vin;
+	struct wd_dtb *plaintext = NULL;
+	struct wd_dtb *hash_msg = NULL;
 	struct wcrypto_ecc_in *ecc_in;
 	int ret;
 
-	if (!ctx || !r || !e || !s) {
+	if (!cx || !r || !e || !s) {
 		WD_ERR("new ecc verf in param error!\n");
 		return NULL;
 	}
 
-	ecc_in = create_ecc_in(ctx, ECC_VERF_IN_PARAM_NUM);
-	if (!ecc_in)
+	ecc_in = create_ecc_verf_in(cx, e->dsize, is_dgst);
+	if (unlikely(!ecc_in))
 		return NULL;
 
 	vin = &ecc_in->param.vin;
-	ret = set_verf_in_param(vin, e, r, s);
-	if (ret) {
-		release_ecc_in(ctx, ecc_in);
-		return NULL;
+	vin->dgst_set = 0;
+	if (!is_dgst) {
+		plaintext = e;
+		if (cx->setup.hash.cb) {
+			ret = sm2_compute_digest(cx, &vin->dgst, e, id);
+			if (ret)
+				goto release_in;
+			vin->dgst_set = 1;
+		}
+	} else {
+		hash_msg = e;
+		vin->dgst_set = 1;
 	}
 
+	ret = set_verf_in_param(vin, hash_msg, r, s, plaintext);
+	if (unlikely(ret))
+		goto release_in;
+
 	return ecc_in;
+
+release_in:
+	release_ecc_in(ctx, ecc_in);
+
+	return NULL;
 }
 
 struct wcrypto_ecc_in *wcrypto_new_ecdsa_verf_in(void *ctx,
@@ -1516,20 +1968,20 @@ struct wcrypto_ecc_in *wcrypto_new_ecdsa_verf_in(void *ctx,
 						 struct wd_dtb *r,
 						 struct wd_dtb *s)
 {
-	return new_verf_in(ctx, dgst, r, s, 1);
+	return new_verf_in(ctx, dgst, r, s, NULL, 1);
 }
 
 struct wcrypto_ecc_out *wcrypto_new_ecdsa_sign_out(void *ctx)
 {
 	struct wcrypto_ecc_out *ecc_out;
 
-	if (!ctx) {
+	if (unlikely(!ctx)) {
 		WD_ERR("new ecc sout ctx NULL!\n");
 		return NULL;
 	}
 
 	ecc_out = create_ecc_out(ctx, ECC_SIGN_OUT_PARAM_NUM);
-	if (!ecc_out)
+	if (unlikely(!ecc_out))
 		WD_ERR("create ecc out err!\n");
 
 	return ecc_out;
@@ -1542,13 +1994,13 @@ void wcrypto_get_ecdsa_verf_in_params(struct wcrypto_ecc_in *in,
 {
 	struct wcrypto_ecc_verf_in *vin = (void *)in;
 
-	if (!in) {
+	if (unlikely(!in)) {
 		WD_ERR("input NULL in get verf in!\n");
 		return;
 	}
 
 	if (dgst)
-		*dgst = &vin->e;
+		*dgst = &vin->dgst;
 
 	if (r)
 		*r = &vin->r;
@@ -1563,13 +2015,13 @@ void wcrypto_get_ecdsa_sign_in_params(struct wcrypto_ecc_in *in,
 {
 	struct wcrypto_ecc_sign_in *sin = (void *)in;
 
-	if (!in) {
+	if (unlikely(!in)) {
 		WD_ERR("input NULL in get sign in!\n");
 		return;
 	}
 
 	if (dgst)
-		*dgst = &sin->e;
+		*dgst = &sin->dgst;
 
 	if (k)
 		*k = &sin->k;
@@ -1593,5 +2045,102 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 int wcrypto_ecdsa_poll(struct wd_queue *q, unsigned int num)
 {
+	if (unlikely(!q || strcmp(q->capa.alg, "ecdsa"))) {
+		WD_ERR("sm2 poll: alg = %s error!\n", q->capa.alg);
+		return -WD_EINVAL;
+	}
+
+	return ecc_poll(q, num);
+}
+
+struct wcrypto_ecc_in *wcrypto_new_sm2_sign_in(void *ctx,
+					       struct wd_dtb *e,
+					       struct wd_dtb *k,
+					       struct wd_dtb *id,
+					       __u8 is_dgst)
+{
+	return new_sign_in(ctx, e, k, id, is_dgst);
+}
+
+struct wcrypto_ecc_in *wcrypto_new_sm2_verf_in(void *ctx,
+					       struct wd_dtb *e,
+					       struct wd_dtb *r,
+					       struct wd_dtb *s,
+					       struct wd_dtb *id,
+					       __u8 is_dgst)
+{
+	return new_verf_in(ctx, e, r, s, id, is_dgst);
+}
+
+struct wcrypto_ecc_out *wcrypto_new_sm2_sign_out(void *ctx)
+{
+	return wcrypto_new_ecdsa_sign_out(ctx);
+}
+
+void wcrypto_get_sm2_sign_out_params(struct wcrypto_ecc_out *out,
+				       struct wd_dtb **r,
+				       struct wd_dtb **s)
+{
+	return get_sign_out_params(out, r, s);
+}
+
+struct wcrypto_ecc_out *wcrypto_new_sm2_kg_out(void *ctx)
+{
+	struct wcrypto_ecc_out *ecc_out;
+
+	if (!ctx) {
+		WD_ERR("new sm2 kg out ctx NULL!\n");
+		return NULL;
+	}
+
+	ecc_out = create_ecc_out(ctx, SM2_KG_OUT_PARAM_NUM);
+	if (unlikely(!ecc_out))
+		WD_ERR("failed to create ecc out!\n");
+
+	return ecc_out;
+}
+
+void wcrypto_get_sm2_kg_out_params(struct wcrypto_ecc_out *out,
+				   struct wd_dtb **privkey,
+				   struct wcrypto_ecc_point **pubkey)
+{
+	struct wcrypto_sm2_kg_out *kout = (void *)out;
+
+	if (unlikely(!kout)) {
+		WD_ERR("input NULL in get sm2 kg out!\n");
+		return;
+	}
+
+	if (privkey)
+		*privkey = &kout->priv;
+
+	if (pubkey)
+		*pubkey = &kout->pub;
+}
+
+int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
+{
+	if (unlikely(!opdata)) {
+		WD_ERR("do sm2: opdata null!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(opdata->op_type != WCRYPTO_SM2_SIGN &&
+		opdata->op_type != WCRYPTO_SM2_VERIFY &&
+		opdata->op_type != WCRYPTO_SM2_KG)) {
+		WD_ERR("do sm2: op_type = %hhu error!\n", opdata->op_type);
+		return -WD_EINVAL;
+	}
+
+	return do_ecc(ctx, opdata, tag, 0);
+}
+
+int wcrypto_sm2_poll(struct wd_queue *q, unsigned int num)
+{
+	if (unlikely(!q || strcmp(q->capa.alg, "sm2"))) {
+		WD_ERR("sm2 poll: alg = %s error!\n", q->capa.alg);
+		return -WD_EINVAL;
+	}
+
 	return ecc_poll(q, num);
 }

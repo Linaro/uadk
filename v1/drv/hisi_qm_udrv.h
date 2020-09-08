@@ -61,9 +61,12 @@
 #define QM_DBELL_SQN_MASK	0x3ff
 #define QM_DBELL_CMD_MASK	0xf
 #define QM_L32BITS_MASK		0xffffffff
+#define QM_L16BITS_MASK		0xffff
 #define QM_HADDR_SHIFT		32
 #define HI_U32(pa)	((__u32)(((pa) >> QM_HADDR_SHIFT) & QM_L32BITS_MASK))
 #define DMA_ADDR(hi, lo)	((__u64)(((__u64)(hi) << 32) | (__u64)(lo)))
+#define LOW_U16(val)	(__u16)((val) & QM_L16BITS_MASK)
+
 
 /* cqe shift */
 #define CQE_PHASE(cq)	(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
