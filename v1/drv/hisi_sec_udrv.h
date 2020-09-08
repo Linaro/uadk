@@ -45,8 +45,8 @@ struct hisi_sec_sqe_type1 {
 	__u32 a_key_type:2;
 	__u32 rsvd0:10;
 	__u32 inveld:1;
-	__u32 mac_len:6;
-	__u32 a_key_len:5;
+	__u32 mac_len:5;
+	__u32 a_key_len:6;
 	__u32 a_alg:6;
 	__u32 rsvd3:15;
 	__u32 c_icv_len:6;
