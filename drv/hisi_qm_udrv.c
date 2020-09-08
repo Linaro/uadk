@@ -169,7 +169,6 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->sq_head_index = 0;
 	q_info->cq_head_index = 0;
 	q_info->cqc_phase = 1;
-	q_info->is_sq_full = 0;
 
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
@@ -313,8 +312,6 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 			return -EIO;
 		}
 		memcpy(resp, (void *)q_info->sq_base + j * q_info->sqe_size, q_info->sqe_size);
-		if (q_info->is_sq_full)
-			q_info->is_sq_full = 0;
 	} else
 		return -EAGAIN;
 
