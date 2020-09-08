@@ -52,8 +52,6 @@ struct wd_digest_sess {
 	char			*alg_name;
 	enum wd_digest_type	alg;
 	enum wd_digest_mode	mode;
-	wd_dev_mask_t		*dev_mask;
-	struct wd_digest_driver *drv;
 	void			*priv;
 	void			*key;
 	__u32			key_bytes;
@@ -61,14 +59,10 @@ struct wd_digest_sess {
 
 /**
  * struct wd_digest_arg - Parameters for per digest operation
- * @alg: digest algorithm type, denoted by enum wd_digest_type
- * @mode:digest algorithm mode, denoted by enum wd_digest_mode
  * @in: input data address
  * @out: output data address
- * @key: input key address
  * @in_bytes: input data size
  * @out_bytes: output data size
- * @key_bytes: input key data size
  * @has_next: is there next data block
  * @cb: callback function for async mode
  * @cb_param: private information for data extension
@@ -79,15 +73,10 @@ struct wd_digest_sess {
  * fix me: for hmac, seems we need *key also?
  */
 struct wd_digest_req {
-	enum wd_digest_type alg;
-	enum wd_digest_mode mode;
-
 	void		*in;
 	void		*out;
-	void		*key;
-	__u16		in_bytes;
-	__u16		out_bytes;
-	__u16		key_bytes;
+	__u32		in_bytes;
+	__u32		out_bytes;
 	__u16		state;
 	__u16		has_next;
 	wd_digest_cb_t	*cb;
@@ -99,7 +88,7 @@ struct wd_digest_sched {
 	__u32 sched_ctx_size;
 	handle_t (*pick_next_ctx)(struct wd_ctx_config *config,
 		void *sched_ctx, struct wd_digest_req *req, int numa_id);
-	int (*poll_policy)(const struct wd_ctx_config *config, __u32 expect, __u32 *count);
+	int (*poll_policy)(struct wd_ctx_config *config, __u32 expect, __u32 *count);
 };
 
 struct wd_cb_tag {
@@ -108,14 +97,14 @@ struct wd_cb_tag {
 	int ctx_id;	/* user id: context ID or other user identifier */
 };
 
-/* Digest tag format */
+/* Digest tag format of warpdrive */
 struct wd_digest_tag {
 	struct wd_cb_tag wd_tag;
 	__u64 long_data_len;
 	void *priv;
 };
 
-int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched);
+int wd_digest_init(struct wd_ctx_config *config, struct wd_digest_sched *sched);
 void wd_digest_uninit(void);
 
 /**
@@ -148,11 +137,11 @@ int wd_do_digest_async(handle_t sess, struct wd_digest_req *req);
 
 /**
  * wd_set_digest_key() - Set auth key to digest session.
- * @req: Operation parameters.
+ * @h_sess: session handler
  * @key: Auth key addr
  * @key_len: Auth key length
  */
-int wd_set_digest_key(struct wd_digest_req *req, __u8 *key, __u32 key_len);
+int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
 
 /**
  * wd_digest_poll() - Poll operation for asynchronous operation.

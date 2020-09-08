@@ -317,7 +317,7 @@ static int test_sec_cipher_async_once(void)
 	}
 
 	/* poll thread */
-	ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times);
+	ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times, NULL);
 
 	printf("Test cipher async : %u pkg ; output dst-->\n", recv);
 	hexdump(req.dst, req.in_bytes);
@@ -598,7 +598,7 @@ static void *poll_func(void *arg)
 	int ret;
 
 	while (1) {
-		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1);
+		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, NULL);
 		if (ret < 0) {
 			break;
 		}
@@ -795,8 +795,8 @@ static int test_sec_digest_sync_once(void)
 
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_digest_req));
-	req.alg = WD_DIGEST_SHA256;
-	req.mode = WD_DIGEST_NORMAL;
+	setup.alg = WD_DIGEST_SHA256;
+	setup.mode = WD_DIGEST_NORMAL;
 	printf("test alg: %s\n", "normal(sha256)");
 
 	req.in  = malloc(BUFF_SIZE);
@@ -818,12 +818,6 @@ static int test_sec_digest_sync_once(void)
 	}
 	req.out_bytes = tv->dsize;
 
-	req.key = malloc(BUFF_SIZE);
-	if (!req.key) {
-		printf("req key mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
 	req.has_next = 0;
 
 	h_sess = wd_digest_alloc_sess(&setup);
@@ -854,8 +848,6 @@ out:
 		free(req.in);
 	if (req.out)
 		free(req.out);
-	if (req.key)
-		free(req.key);
 	if (h_sess)
 		wd_digest_free_sess(h_sess);
 	uninit_config();
@@ -891,8 +883,8 @@ static int test_sec_digest_async_once(void)
 
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_digest_req));
-	req.alg = WD_DIGEST_SHA256;
-	req.mode = WD_DIGEST_NORMAL;
+	setup.alg = WD_DIGEST_SHA256;
+	setup.mode = WD_DIGEST_NORMAL;
 	printf("test alg: %s\n", "normal(sha256)");
 
 	req.in  = malloc(BUFF_SIZE);
@@ -914,12 +906,6 @@ static int test_sec_digest_async_once(void)
 	}
 	req.out_bytes = tv->dsize;
 
-	req.key = malloc(BUFF_SIZE);
-	if (!req.key) {
-		printf("req key mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
 	req.has_next = 0;
 
 	h_sess = wd_digest_alloc_sess(&setup);
@@ -956,8 +942,6 @@ out:
 		free(req.in);
 	if (req.out)
 		free(req.out);
-	if (req.key)
-		free(req.key);
 	if (h_sess)
 		wd_digest_free_sess(h_sess);
 	uninit_config();

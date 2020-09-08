@@ -569,7 +569,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 	return 0;
 }
 
-struct wd_cipher_driver hisi_cipher_driver = {
+static struct wd_cipher_driver hisi_cipher_driver = {
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "cipher",
 		.init		= hisi_sec_init,
@@ -597,10 +597,19 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	if (msg->mode == WD_DIGEST_NORMAL)
 		sqe->type2.mac_key_alg |=
 		g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
-	else if (msg->mode == WD_DIGEST_HMAC)
+	else if (msg->mode == WD_DIGEST_HMAC) {
+		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
+			WD_ERR("Invalid digest key_bytes!\n");
+			return -WD_EINVAL;
+		}
+		sqe->type2.mac_key_alg |= (__u32)(msg->key_bytes /
+			WORD_BYTES) << MAC_LEN_OFFSET;
+		sqe->type2.a_key_addr = (__u64)msg->key;
+
 		sqe->type2.mac_key_alg |=
-		g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET;
-	else {
+		(__u32)(g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET);
+	
+	} else {
 		WD_ERR("Invalid digest mode!\n");
 		return -WD_EINVAL;
 	}
@@ -686,16 +695,6 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.type2.data_src_addr = (__u64)msg->in;
 	sqe.type2.mac_addr = (__u64)msg->out;
 
-	if (msg->mode == WD_DIGEST_HMAC) {
-		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
-			WD_ERR("Invalid digest key_bytes!\n");
-			return -WD_EINVAL;
-		}
-		sqe.type2.mac_key_alg = (msg->key_bytes /
-			WORD_BYTES) << MAC_LEN_OFFSET;
-		sqe.type2.c_key_addr = (__u64)msg->key;
-	}
-
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret) {
 		WD_ERR("fail to fill digest bd alg!\n");
@@ -736,7 +735,7 @@ int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
 	return 0;
 }
 
-struct wd_digest_driver hisi_digest_driver = {
+static struct wd_digest_driver hisi_digest_driver = {
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "digest",
 		.init		= hisi_sec_init,
