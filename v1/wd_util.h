@@ -33,6 +33,7 @@
 #include <sys/queue.h>
 
 #include "wd.h"
+#include "wd_ecc.h"
 
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
@@ -56,6 +57,7 @@
 #define ECC_PRIKEY_PARAM_NUM		7
 #define ECDH_HW_KEY_PARAM_NUM		5
 #define ECC_PUBKEY_PARAM_NUM		8
+#define SM2_KG_OUT_PARAM_NUM		3
 #define ECDH_HW_KEY_SZ(hsz)		((hsz) * ECDH_HW_KEY_PARAM_NUM)
 #define ECC_PRIKEY_SZ(hsz)		((hsz) * ECC_PRIKEY_PARAM_NUM)
 #define ECC_PUBKEY_SZ(hsz)		((hsz) * ECC_PUBKEY_PARAM_NUM)
@@ -67,7 +69,8 @@
 
 #define X_DH_OUT_PARAMS_SZ(hsz)		((hsz) * X_DH_OUT_PARAM_NUM)
 #define X_DH_HW_KEY_SZ(hsz)		((hsz) * X_DH_HW_KEY_PARAM_NUM)
-#define BITS_TO_BYTES(bits)		(((bits) + 7) / 8)
+#define SM2_KG_OUT_PARAMS_SZ(hsz)	((hsz) * SM2_KG_OUT_PARAM_NUM)
+#define BITS_TO_BYTES(bits)		(((bits) + 7) >> 3)
 #define ECC_SIGN_IN_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_IN_PARAM_NUM)
 #define ECC_SIGN_OUT_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_OUT_PARAM_NUM)
 #define ECC_VERF_IN_PARAMS_SZ(hsz)	((hsz) * ECC_VERF_IN_PARAM_NUM)
@@ -186,6 +189,100 @@ struct wcrypto_ec_tag {
 struct wcrypto_comp_tag {
 	struct wcrypto_cb_tag wcrypto_tag;
 	void *priv;
+};
+
+/* ecc */
+struct wcrypto_ecc_pubkey {
+	struct wd_dtb p;
+	struct wd_dtb a;
+	struct wd_dtb b;
+	struct wd_dtb n;
+	struct wcrypto_ecc_point g;
+	struct wcrypto_ecc_point pub;
+	__u32 size;
+	void *data;
+};
+
+struct wcrypto_ecc_prikey {
+	struct wd_dtb p;
+	struct wd_dtb a;
+	struct wd_dtb d;
+	struct wd_dtb b;
+	struct wd_dtb n;
+	struct wcrypto_ecc_point g;
+	__u32 size;
+	void *data;
+};
+
+struct wcrypto_ecc_key {
+	struct wcrypto_ecc_pubkey *pubkey;
+	struct wcrypto_ecc_prikey *prikey;
+	struct wcrypto_ecc_curve *cv;
+	struct wcrypto_ecc_point *pub;
+	struct wd_dtb *d;
+};
+
+struct wcrypto_ecc_dh_in {
+	struct wcrypto_ecc_point pbk;
+};
+
+struct wcrypto_ecc_sign_in {
+	struct wd_dtb dgst; /* hash msg */
+	struct wd_dtb k; /* random */
+	struct wd_dtb plaintext; /* original text before hash */
+	__u8 k_set; /* 1 - k param set  0 - not set */
+	__u8 dgst_set; /* 1 - dgst param set  0 - not set */
+};
+
+struct wcrypto_ecc_verf_in {
+	struct wd_dtb dgst; /* hash msg */
+	struct wd_dtb s; /* signature s param */
+	struct wd_dtb r; /* signature r param */
+	struct wd_dtb plaintext; /* original text before hash */
+	__u8 dgst_set; /* 1 - dgst param set  0 - not set */
+};
+
+struct wcrypto_ecc_dh_out {
+	struct wcrypto_ecc_point out;
+};
+
+struct wcrypto_ecc_sign_out {
+	struct wd_dtb r; /* signature r param */
+	struct wd_dtb s; /* signature s param */
+};
+
+struct wcrypto_sm2_kg_in {
+	struct wcrypto_ecc_point g;
+};
+
+struct wcrypto_sm2_kg_out {
+	struct wcrypto_ecc_point pub;
+	struct wd_dtb priv;
+};
+
+typedef union {
+	struct wcrypto_ecc_dh_in dh_in;
+	struct wcrypto_ecc_sign_in sin;
+	struct wcrypto_ecc_verf_in vin;
+	struct wcrypto_sm2_kg_in kin;
+} wcrypto_ecc_in_param;
+
+typedef union {
+	struct wcrypto_ecc_dh_out dh_out;
+	struct wcrypto_ecc_sign_out sout;
+	struct wcrypto_sm2_kg_out kout;
+} wcrypto_ecc_out_param;
+
+struct wcrypto_ecc_in {
+	wcrypto_ecc_in_param param;
+	__u32 size;
+	char data[];
+};
+
+struct wcrypto_ecc_out {
+	wcrypto_ecc_out_param param;
+	__u32 size;
+	char data[];
 };
 
 #ifdef DEBUG_LOG

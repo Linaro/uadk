@@ -65,8 +65,6 @@ typedef void (*wcrypto_cb)(const void *msg, void *tag);
 
 typedef void (*wd_log)(const char *format, ...);
 
-typedef int (*wcrypto_rand)(char *out, size_t out_len, void *usr);
-
 struct wcrypto_cb_tag {
 	void *ctx; /* user: context or other user relatives */
 	void *tag; /* to store user tag */
