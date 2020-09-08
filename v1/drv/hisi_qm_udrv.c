@@ -142,6 +142,12 @@ static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 		info->sqe_fill[WCRYPTO_ECDSA] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_ECDSA] = qm_parse_ecc_sqe;
 		priv->direction = 1;
+	} else if (!strncmp(alg, "sm2", strlen("sm2"))) {
+		qinfo->atype = WCRYPTO_SM2;
+		info->sqe_size = QM_HPRE_BD_SIZE;
+		info->sqe_fill[WCRYPTO_SM2] = qm_fill_ecc_sqe;
+		info->sqe_parse[WCRYPTO_SM2] = qm_parse_ecc_sqe;
+		priv->direction = 1;
 	} else {
 		is_find = false;
 	}
