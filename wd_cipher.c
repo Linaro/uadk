@@ -24,6 +24,7 @@ struct msg_pool {
 	int used[WD_POOL_MAX_ENTRIES];
 	int head;
 	int tail;
+	struct wd_lock lock;
 };
 
 struct wd_async_msg_pool {
@@ -34,6 +35,7 @@ struct wd_async_msg_pool {
 struct wd_cipher_setting {
 	struct wd_ctx_config config;
 	struct wd_sched      sched;
+	void *sched_ctx;
 	struct wd_cipher_driver *driver;
 	void *priv;
 	struct wd_async_msg_pool pool;
@@ -120,44 +122,46 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 	return ret;
 }
 
-int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len)
+int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	__u16 length = key_len;
 	int ret;
 
-	if (!key || !req || !req->key) {
+	if (!key || !sess || !sess->key) {
 		WD_ERR("cipher set key inpupt param err!\n");
 		return -EINVAL;
 	}
 
 	/* fix me: need check key_len */
-	if (req->mode == WD_CIPHER_XTS)
+	if (sess->mode == WD_CIPHER_XTS)
 		length = key_len / XTS_MODE_KEY_DIVISOR;
 
-	ret = cipher_key_len_check(req->alg, length);
+	ret = cipher_key_len_check(sess->alg, length);
 	if (ret) {
 		WD_ERR("cipher set key inpupt key length err!\n");
 		return -EINVAL;
 	}
-	if (req->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key, length)) {
+	if (sess->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key, length)) {
 		WD_ERR("input des key is weak key!\n");
 		return -EINVAL;
 	}
 
-	req->key_bytes = key_len;
-	memcpy(req->key, key, key_len);
+	sess->key_bytes = key_len;
+	memcpy(sess->key, key, key_len);
 
 	return 0;
 }
 
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
-	struct wd_cipher_sess *sess;
+	struct wd_cipher_sess *sess = NULL;
 
 	if (!setup) {
 		WD_ERR("cipher input setup is NULL!\n");
 		return (handle_t)0;
 	}
+
 	sess = malloc(sizeof(struct wd_cipher_sess));
 	if (!sess) {
 		WD_ERR("fail to alloc session memory!\n");
@@ -166,6 +170,14 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	memset(sess, 0, sizeof(struct wd_cipher_sess));
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
+
+	sess->key = malloc(MAX_CIPHER_KEY_SIZE);
+	if (!sess->key) {
+		WD_ERR("fail to alloc key memory!\n");
+		free(sess);
+		return (handle_t)0;
+	}
+	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
 
 	return (handle_t)sess;
 }
@@ -178,6 +190,7 @@ void wd_cipher_free_sess(handle_t h_sess)
 	}
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
+	free(sess->key);
 	free(sess);
 }
 
@@ -188,6 +201,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 
 	if (cfg->ctx_num == 0)
 		return -EINVAL;
+
 	/* check every context  */
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx)
@@ -277,7 +291,6 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("Cipher have initialized.\n");
 		return 0;
 	}
-
 	if (!config || !sched) {
 		WD_ERR("wd cipher config or sched is NULL!\n");
 		return -EINVAL;
@@ -294,12 +307,10 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("fail to copy schedule to global setting!\n");
 		goto out;
 	}
-
 	/* set driver */
 #ifdef WD_STATIC_DRV
 	wd_cipher_set_static_drv();
 #endif
-
 	/* init sysnc request pool */
 	ret = init_async_request_pool(&g_wd_cipher_setting.pool);
 	if (ret) {
@@ -329,7 +340,6 @@ out_sched:
 	clear_sched_in_global_setting();
 out:
 	clear_config_in_global_setting();
-
 	return ret;
 }
 
@@ -345,8 +355,8 @@ void wd_cipher_uninit(void)
 		
 	uninit_async_request_pool(&g_wd_cipher_setting.pool);
 
-	clear_config_in_global_setting();
 	clear_sched_in_global_setting();
+	clear_config_in_global_setting();
 }
 
 static void fill_request_msg(struct wd_cipher_msg *msg, struct wd_cipher_req *req)

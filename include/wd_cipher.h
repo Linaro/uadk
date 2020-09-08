@@ -105,11 +105,11 @@ extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
 extern void wd_cipher_free_sess(handle_t h_sess);
 /**
  * wd_cipher_set_key() Set cipher key to cipher msg.
- * @req: request parameter.
+ * @sess: wd cipher sess.
  * @key: cipher key addr.
  * @key_len: cipher key length.
  */
-extern int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len);
+extern int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
 /**
  * wd_do_cipher_sync()/ async() Syn/asynchronous cipher operation
  * @sess: wd cipher session
