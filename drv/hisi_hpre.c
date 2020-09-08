@@ -21,9 +21,9 @@
 #define QM_HADDR_SHIFT		32
 #define LW_U32(pa)	((__u32)((pa) & QM_L32BITS_MASK))
 #define HI_U32(pa)	((__u32)(((pa) >> QM_HADDR_SHIFT) & QM_L32BITS_MASK))
+#define VA_ADDR(hi, lo)	((void *)(((__u64)(hi) << 32) | (__u64)(lo)))
 
 #include "hisi_qm_udrv.h"
-#include "smm.h"
 #include "wd.h"
 
 #define BYTE_BITS			8
@@ -38,6 +38,12 @@
 #define AES_KEYSIZE_192		24
 #define AES_KEYSIZE_256		32
 #define CTX_ID_MAX_NUM		64
+
+#define offsetof(t, m) ((size_t) &((t *)0)->m)
+#define container_of(ptr, type, member) ({ \
+		typeof(((type *)0)->member)(*__mptr) = (ptr); \
+		(type *)((char *)__mptr - offsetof(type, member)); })
+
 
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,
@@ -88,7 +94,7 @@ struct hisi_hpre_sqe {
 };
 
 struct hisi_hpre_ctx {
-	struct wd_ctx_config	config;
+	struct wd_ctx_config_internal	config;
 };
 
 static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
@@ -325,7 +331,18 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 	__u16 kbytes = msg->key_bytes;
 	struct wd_dtb qinv, dq, dp;
 	struct wd_dtb d, n;
+	void *data;
 	int ret;
+
+	if (hw_msg->alg == HPRE_ALG_KG_CRT || hw_msg->alg == HPRE_ALG_KG_STD) {
+		/* async */
+		if (hw_msg->tag) {
+			data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
+			key = container_of(data, struct wd_rsa_kg_out, data);
+		} else {
+			key = req->dst;
+		}
+	}
 
 	msg->result = WD_SUCCESS;
 	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
@@ -430,12 +447,14 @@ static int rsa_prepare_iot(struct wd_rsa_msg *msg,
 	return ret;
 }
 
-static int hisi_hpre_init(struct wd_ctx_config *config, void *priv)
+static int hisi_hpre_init(struct wd_ctx_config_internal *config, void *priv)
 {
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
 	handle_t h_ctx, h_qp;
 	int i, j;
+
+	memcpy(&hpre_ctx->config, config, sizeof(*config));
 
 	/* allocate qp for each context */
 	qm_priv.sqe_size = sizeof(struct hisi_hpre_sqe);
@@ -447,8 +466,6 @@ static int hisi_hpre_init(struct wd_ctx_config *config, void *priv)
 			WD_ERR("failed to alloc qp!\n");
 			goto out;
 		}
-
-		memcpy(&hpre_ctx->config, config, sizeof(struct wd_ctx_config));
 	}
 
 	return 0;
@@ -464,7 +481,7 @@ out:
 static void hisi_hpre_exit(void *priv)
 {
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
-	struct wd_ctx_config *config = &hpre_ctx->config;
+	struct wd_ctx_config_internal *config = &hpre_ctx->config;
 	handle_t h_qp;
 	int i;
 
@@ -506,11 +523,7 @@ static int hisi_hpre_send(handle_t ctx, struct wd_rsa_msg *msg)
 	hw_msg.etype = 0x0;
 	hw_msg.tag = msg->tag;
 
-	ret = hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
-	if (ret < 0)
-		WD_ERR("hisi_qm_send is err(%d)!\n", ret);
-
-	return ret;
+	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
 static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
@@ -521,12 +534,8 @@ static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
-	if (ret < 0) {
-		if (ret != -EAGAIN)
-			WD_ERR("hisi_qm_recv is err(%d)!\n", ret);
-
+	if (ret < 0)
 		return ret;
-	}
 
 	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",

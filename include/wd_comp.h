@@ -22,11 +22,6 @@ enum {
 	CTX_TYPE_DECOMP,
 };
 
-enum wd_comp_mode {
-	CTX_MODE_SYNC = 0,
-	CTX_MODE_ASYNC,
-};
-
 enum wd_comp_alg_type {
 	WD_ZLIB = 1,
 	WD_GZIP,
@@ -76,7 +71,7 @@ extern void wd_comp_uninit(void);
 /* fix me: stub to pass compile */
 struct wd_comp_sess_setup {
 	int alg_type;	// ZLIB or GZIP
-	enum wd_comp_mode mode;
+	enum wd_ctx_mode mode;
 	enum wd_comp_op_type op_type;
 };
 /**

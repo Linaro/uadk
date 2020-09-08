@@ -18,11 +18,6 @@
 
 typedef void *wd_rsa_cb_t(void *cb_param);
 
-enum {
-	CTX_MODE_SYNC = 0,
-	CTX_MODE_ASYNC,
-};
-
 struct wd_rsa_req {
 	void *src; /* rsa operation input address */
 	void *dst; /* rsa operation output address */
@@ -172,6 +167,6 @@ extern __u32 wd_rsa_poll(void);
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern __u32 wd_rsa_poll_ctx(handle_t ctx, __u32 num);
+extern int wd_rsa_poll_ctx(handle_t ctx, __u32 expt, __u32 *count);
 
 #endif /* __WD_RSA_H */

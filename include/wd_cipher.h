@@ -19,10 +19,6 @@ enum {
 	CTX_TYPE_DECRYPT,
 };
 
-enum {
-	CTX_MODE_SYNC = 0,
-	CTX_MODE_ASYNC,
-};
 /**
  * wd_cipher_op_type - Algorithm type of option
  */
@@ -30,6 +26,7 @@ enum wd_cipher_op_type {
 	WD_CIPHER_ENCRYPTION,
 	WD_CIPHER_DECRYPTION,
 };
+
 /**
  * wd_cipher_type - Algorithm type of cipher
  */
@@ -40,6 +37,7 @@ enum wd_cipher_alg {
 	WD_CIPHER_3DES,
 	WD_CIPHER_ALG_TYPE_MAX,
 };
+
 /**
  * wd_cipher_mode - Algorithm mode of cipher
  */
@@ -107,11 +105,11 @@ extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
 extern void wd_cipher_free_sess(handle_t h_sess);
 /**
  * wd_cipher_set_key() Set cipher key to cipher msg.
- * @req: request parameter.
+ * @sess: wd cipher sess.
  * @key: cipher key addr.
  * @key_len: cipher key length.
  */
-extern int wd_cipher_set_key(struct wd_cipher_req *req, const __u8 *key, __u32 key_len);
+extern int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
 /**
  * wd_do_cipher_sync()/ async() Syn/asynchronous cipher operation
  * @sess: wd cipher session
