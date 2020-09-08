@@ -63,9 +63,15 @@ struct hisi_hpre_sqe {
 	__u32 hi_in;
 	__u32 low_out;
 	__u32 hi_out;
-	__u32 tag	:16;
-	__u32 resv2	:16;
-	__u32 rsvd1[7];
+	__u32 low_tag;
+	__u32 hi_tag;
+	__u32 sm2_mlen	:9;
+	__u32 rsvd1	:7;
+	__u32 uwkey_sel	:4;
+	__u32 wrap_num	:3;
+	__u32 rsvd2	:9;
+	__u32 kek_key;
+	__u32 rsvd3[4];
 };
 
 int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i);

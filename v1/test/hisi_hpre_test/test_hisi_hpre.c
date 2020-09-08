@@ -114,6 +114,26 @@ struct ec_sig_st {
 	int xxx;
 };
 
+struct evp_md_st {
+	int xxx;
+};
+
+struct evp_md_ctx_st {
+	int xxx;
+};
+
+struct bn_ctx_st {
+	int xxx;
+};
+
+typedef struct rand_meth_st {
+	int (*seed)(const void *buf, int num);
+	int (*bytes)(unsigned char *buf, int num);
+	void (*cleanup)(void);
+	int (*add)(const void *buf, int num, double entropy);
+	int (*pseudorand)(unsigned char *buf, int num);
+	int (*status)(void);
+} RAND_METHOD;
 /* stub definitions */
 typedef struct rsa_st RSA;
 typedef struct dh_st DH;
@@ -125,6 +145,10 @@ typedef struct ec_point_st EC_POINT;
 typedef struct ec_group_st EC_GROUP;
 typedef struct ec_method_st EC_METHOD;
 typedef struct ec_sig_st ECDSA_SIG;
+typedef struct evp_md_st EVP_MD;
+typedef struct evp_md_ctx_st EVP_MD_CTX;
+typedef struct rand_meth_st RAND_METHOD;
+typedef struct bn_ctx_st BN_CTX;
 
 enum dh_check_index {
 	DH_INVALID,
@@ -170,6 +194,28 @@ struct ecc_curve_tbl {
 	unsigned int curve_id;
 };
 
+enum ecc_rand_item {
+	RAND_NON,
+	RAND_CB,
+	RAND_PARAM
+};
+
+enum ecc_hash_item {
+	HASH_NON,
+	HASH_SM3,
+	HASH_SHA1,
+	HASH_SHA224,
+	HASH_SHA256,
+	HASH_MD4,
+	HASH_MD5
+};
+
+enum ecc_msg_item {
+	MSG_DIGEST,
+	MSG_SHORT_PTEXT,
+	MSG_LONG_PTEXT
+};
+
 static int key_bits = 2048;
 static int openssl_check;
 static int only_soft;
@@ -183,7 +229,9 @@ static int q_num = 1;
 static char *g_mode = "-crt";
 static volatile int asyn_thread_exit = 0;
 static char *ecc_curve_name = "secp256k1";
-
+static int set_msg = MSG_SHORT_PTEXT;
+static int set_rand = RAND_CB;
+static int set_hash = HASH_SM3;
 static __thread u32 g_is_set_prikey; // ecdh used
 static __thread u32 g_is_set_pubkey; // ecc used
 static pthread_t system_test_thrds[TEST_MAX_THRD];
@@ -292,6 +340,9 @@ struct hpre_rsa_test_key_in {
 #define NID_X448                1035
 # define EVP_PKEY_X25519 NID_X25519
 # define EVP_PKEY_X448 NID_X448
+
+# define EVP_PKEY_SM2    1172
+
 
 typedef struct {
 	unsigned char pubkey[MAX_KEYLEN];
@@ -423,10 +474,16 @@ enum ecc_test_item {
 	ECC_SW_VERF,
 	ECC_HW_SIGN,
 	ECC_HW_VERF,
+	SM2_SW_SIGN,
+	SM2_SW_VERF,
+	SM2_HW_SIGN,
+	SM2_HW_VERF,
 	SM2_HW_ENC,
 	SM2_HW_DEC,
 	SM2_SW_ENC,
 	SM2_SW_DEC,
+	SM2_SW_KG,
+	SM2_HW_KG,
 	ECC_TEST_ITEM_MAX
 };
 
@@ -435,24 +492,30 @@ struct ecc_test_ctx_setup {
 	void *except_pub_key; // use in ecdh phase 2
 	void *cp_pub_key; // use in ecdh phase 1
 	void *cp_share_key; // use in ecdh phase 2
-	void *degist; //ecdsa sign in
+	void *digest; //ecdsa sign in
 	void *kinv; //ecdsa sign in
 	void *rp; //ecdsa sign in
 	void *sign; // ecdsa sign out or verf in
 	void *cp_sign; // use in ecdsa sign compare
 	void *priv_key; // use in ecdsa sign
 	void *pub_key; // use in ecdsa verf
+	void *plaintext; //sm2
+	void *userid; //sm2
+	void *cp_c; //sm2 ciphertext
 	u32 d_size;
 	u32 cp_pub_key_size;
 	u32 cp_share_key_size;
 	u32 except_pub_key_size;
-	u32 degist_size;
+	u32 digest_size;
 	u32 kinv_size;
 	u32 rp_size;
 	u32 sign_size;
 	u32 cp_sign_size;
 	u32 priv_key_size;
 	u32 pub_key_size;
+	u32 plaintext_size;
+	u32 userid_size;
+	u32 cp_c_size;
 	u32 op_type;
 	u32 key_bits;
 	u32 key_from; //0 - Openssl  1 - Designed
@@ -475,8 +538,12 @@ struct ecc_test_ctx {
 	u32 key_size;
 	void *pool;
 	/* ecdsa sign*/
-	unsigned char *cp_sign;
-	u32 cp_sign_size;
+#define MAX_SIGN_LENS	200
+	unsigned char cp_sign[MAX_SIGN_LENS];
+	size_t cp_sign_size;
+#define MAX_ENC_LENS	8192
+	unsigned char cp_enc[MAX_ENC_LENS];
+	size_t cp_enc_size;
 	/* ecdsa verf*/
 	u32 cp_verf_result;
 	__u8 is_x25519_x448;
@@ -510,6 +577,16 @@ static char *ecc_op_str[ECC_TEST_ITEM_MAX] = {
 	"ecc sw verf",
 	"ecc hw sign",
 	"ecc hw verf",
+	"sm2 sw sign",
+	"sm2 sw verf",
+	"sm2 hw sign",
+	"sm2 hw verf",
+	"sm2 hw enc",
+	"sm2 hw dec",
+	"sm2 sw enc",
+	"sm2 sw dec",
+	"sm2 sw kg",
+	"sm2 hw kg",
 };
 
 static __thread struct hpre_rsa_test_key_in *rsa_key_in = NULL;
@@ -611,7 +688,265 @@ const BIGNUM *ECDSA_SIG_get0_s(const ECDSA_SIG *sig);
 int ECDSA_do_verify(const unsigned char *dgst, int dgst_len,
                     const ECDSA_SIG *sig, EC_KEY *eckey);
 int ECDSA_size(const EC_KEY *eckey);
+const EVP_MD *EVP_sm3(void);
+int EVP_MD_size(const EVP_MD *md);
+int EVP_DigestInit(EVP_MD_CTX *ctx, const EVP_MD *type);
+int EVP_DigestFinal(EVP_MD_CTX *ctx, unsigned char *md, unsigned int *s);
+int EVP_DigestUpdate(EVP_MD_CTX *ctx, const void *d, size_t cnt);
+EVP_MD_CTX *EVP_MD_CTX_new(void);
+EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p, const BIGNUM *a,
+	const BIGNUM *b, BN_CTX *ctx);
+EC_POINT *EC_POINT_new(const EC_GROUP *group);
+int EC_GROUP_set_generator(EC_GROUP *group, const EC_POINT *generator,
+                           const BIGNUM *order, const BIGNUM *cofactor);
+char *BN_bn2hex(const BIGNUM *a);
+int EC_POINT_set_affine_coordinates(const EC_GROUP *group, EC_POINT *p,
+                                     const BIGNUM *x, const BIGNUM *y,
+                                     BN_CTX *ctx);
+const RAND_METHOD *RAND_get_rand_method(void);
+unsigned char *OPENSSL_hexstr2buf(const char *str, long *len);
+char *OPENSSL_buf2hexstr(const unsigned char *buffer, long len);
+void RAND_set_rand_method(const RAND_METHOD *meth);
+ECDSA_SIG *sm2_do_sign(const EC_KEY *key,
+                       const EVP_MD *digest,
+                       const uint8_t *id,
+                       const size_t id_len,
+                       const uint8_t *msg, size_t msg_len);
+EVP_PKEY *EVP_PKEY_new(void);
+int EVP_PKEY_set1_EC_KEY(EVP_PKEY *pkey, struct ec_key_st *key);
+int EVP_PKEY_set_alias_type(EVP_PKEY *pkey, int type);
+EVP_MD_CTX *EVP_MD_CTX_new(void);
+EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *pkey, ENGINE *e);
+void EVP_MD_CTX_set_pkey_ctx(EVP_MD_CTX *ctx, EVP_PKEY_CTX *pctx);
+int EVP_PKEY_CTX_ctrl(EVP_PKEY_CTX *ctx, int keytype, int optype,
+	int cmd, int p1, void *p2);
+int EVP_DigestSignInit(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx, const EVP_MD *type,
+	ENGINE *e, EVP_PKEY *pkey);
+int EVP_DigestSignFinal(EVP_MD_CTX *ctx, unsigned char *sigret, size_t *siglen);
+int EVP_DigestUpdate(EVP_MD_CTX *ctx, const void *d, size_t cnt);
+int EVP_PKEY_sign_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_sign(EVP_PKEY_CTX *ctx,
+		unsigned char *sig, size_t *siglen,
+		const unsigned char *tbs, size_t tbslen);
+int EVP_DigestSign(EVP_MD_CTX *ctx, unsigned char *sigret,
+                   size_t *siglen, const unsigned char *tbs,
+                   size_t tbslen);		
+void EVP_PKEY_free(EVP_PKEY *pkey);
+void EVP_MD_CTX_free(EVP_MD_CTX *ctx);
+void EVP_PKEY_CTX_free(EVP_PKEY_CTX *ctx);
+int BN_hex2bn(BIGNUM **a, const char *str);
+EVP_PKEY_CTX *EVP_MD_CTX_pkey_ctx(const EVP_MD_CTX *ctx);
+struct ec_key_st *EVP_PKEY_get0_EC_KEY(EVP_PKEY *pkey);
+struct ec_key_st *EVP_PKEY_get1_EC_KEY(EVP_PKEY *pkey);
+void *EVP_PKEY_get0(EVP_PKEY *pkey);
+EVP_PKEY *EVP_PKEY_CTX_get0_pkey(EVP_PKEY_CTX *ctx);
+int EVP_DigestVerify(EVP_MD_CTX *ctx, const unsigned char *sigret,
+		size_t siglen, const unsigned char *tbs,
+		size_t tbslen);
+int EVP_DigestVerifyInit(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
+			const EVP_MD *type, ENGINE *e,
+			EVP_PKEY *pkey);
+int EVP_DigestVerifyFinal(EVP_MD_CTX *ctx, const unsigned char *sig,
+			size_t siglen);
+const EVP_MD *EVP_sm3(void);
+const EC_GROUP *EC_KEY_get0_group(const EC_KEY *key);
+int EVP_PKEY_decrypt_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_decrypt(EVP_PKEY_CTX *ctx,
+		unsigned char *out, size_t *outlen,
+		const unsigned char *in, size_t inlen);
+int EVP_PKEY_encrypt_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_encrypt(EVP_PKEY_CTX *ctx,
+		unsigned char *out, size_t *outlen,
+		const unsigned char *in, size_t inlen);
+int EVP_PKEY_verify_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_verify(EVP_PKEY_CTX *ctx,
+                    const unsigned char *sig, size_t siglen,
+                    const unsigned char *tbs, size_t tbslen);
 
+
+const EVP_MD *EVP_sha1(void);
+const EVP_MD *EVP_sha224(void);
+const EVP_MD *EVP_sha256(void);
+const EVP_MD *EVP_sha384(void);
+const EVP_MD *EVP_sha512(void);
+const EVP_MD *EVP_sha512_224(void);
+const EVP_MD *EVP_sha512_256(void);
+const EVP_MD *EVP_sha3_224(void);
+const EVP_MD *EVP_sha3_256(void);
+const EVP_MD *EVP_sha3_384(void);
+const EVP_MD *EVP_sha3_512(void);
+const EVP_MD *EVP_shake128(void);
+const EVP_MD *EVP_shake256(void);
+const EVP_MD *EVP_md2(void);
+const EVP_MD *EVP_md4(void);
+const EVP_MD *EVP_md5(void);
+
+# define EVP_DigestSignUpdate(a,b,c)     EVP_DigestUpdate(a,b,c)
+# define EVP_DigestVerifyUpdate(a,b,c)   EVP_DigestUpdate(a,b,c)
+
+#define EVP_PKEY_ALG_CTRL               0x1000
+# define EVP_PKEY_CTRL_EC_PARAMGEN_CURVE_NID             (EVP_PKEY_ALG_CTRL + 1)
+# define EVP_PKEY_CTRL_EC_PARAM_ENC                      (EVP_PKEY_ALG_CTRL + 2)
+# define EVP_PKEY_CTRL_EC_ECDH_COFACTOR                  (EVP_PKEY_ALG_CTRL + 3)
+# define EVP_PKEY_CTRL_EC_KDF_TYPE                       (EVP_PKEY_ALG_CTRL + 4)
+# define EVP_PKEY_CTRL_EC_KDF_MD                         (EVP_PKEY_ALG_CTRL + 5)
+# define EVP_PKEY_CTRL_GET_EC_KDF_MD                     (EVP_PKEY_ALG_CTRL + 6)
+# define EVP_PKEY_CTRL_EC_KDF_OUTLEN                     (EVP_PKEY_ALG_CTRL + 7)
+# define EVP_PKEY_CTRL_GET_EC_KDF_OUTLEN                 (EVP_PKEY_ALG_CTRL + 8)
+# define EVP_PKEY_CTRL_EC_KDF_UKM                        (EVP_PKEY_ALG_CTRL + 9)
+# define EVP_PKEY_CTRL_GET_EC_KDF_UKM                    (EVP_PKEY_ALG_CTRL + 10)
+# define EVP_PKEY_CTRL_SET1_ID                           (EVP_PKEY_ALG_CTRL + 11)
+# define EVP_PKEY_CTRL_GET1_ID                           (EVP_PKEY_ALG_CTRL + 12)
+# define EVP_PKEY_CTRL_GET1_ID_LEN                       (EVP_PKEY_ALG_CTRL + 13)
+# define EVP_PKEY_CTX_set1_id(ctx, id, id_len) \
+	EVP_PKEY_CTX_ctrl(ctx, -1, -1, \
+		EVP_PKEY_CTRL_SET1_ID, (int)id_len, (void*)(id))
+
+static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async);
+
+#if 0
+static EC_GROUP *create_EC_group(const char *p_hex, const char *a_hex,
+				const char *b_hex, const char *x_hex,
+				const char *y_hex, const char *order_hex,
+				const char *cof_hex)
+{
+	BIGNUM *p = NULL;
+	BIGNUM *a = NULL;
+	BIGNUM *b = NULL;
+	BIGNUM *g_x = NULL;
+	BIGNUM *g_y = NULL;
+	BIGNUM *order = NULL;
+	BIGNUM *cof = NULL;
+	EC_POINT *generator = NULL;
+	EC_GROUP *group = NULL;
+	int ok = 0;
+
+	if (!BN_hex2bn(&p, p_hex)
+		|| !BN_hex2bn(&a, a_hex)
+		|| !BN_hex2bn(&b, b_hex))
+		goto done;
+
+	group = EC_GROUP_new_curve_GFp(p, a, b, NULL);
+	if (!group)
+		goto done;
+
+	generator = EC_POINT_new(group);
+	if (!generator)
+		goto done;
+
+	if (!BN_hex2bn(&g_x, x_hex)
+		|| !BN_hex2bn(&g_y, y_hex)
+		|| !EC_POINT_set_affine_coordinates(group, generator, g_x,
+								g_y, NULL))
+		goto done;
+
+	if (!BN_hex2bn(&order, order_hex)
+		|| !BN_hex2bn(&cof, cof_hex)
+		|| !EC_GROUP_set_generator(group, generator, order, cof))
+		goto done;
+
+	ok = 1;
+done:
+	BN_free(p);
+	BN_free(a);
+	BN_free(b);
+	BN_free(g_x);
+	BN_free(g_y);
+	EC_POINT_free(generator);
+	BN_free(order);
+	BN_free(cof);
+	if (!ok) {
+		EC_GROUP_free(group);
+		group = NULL;
+	}
+
+	return group;
+}
+#endif
+
+
+/* sm2 enc/dec stub */
+
+static struct wcrypto_ecc_in *wcrypto_new_sm2_enc_in(void *ctx,
+					      struct wd_dtb *k,
+					      struct wd_dtb *m)
+{
+	return NULL;
+}
+static struct wcrypto_ecc_in *wcrypto_new_sm2_dec_in(void *ctx,
+					      struct wcrypto_ecc_point *c1,
+					      struct wd_dtb *c2,
+					      struct wd_dtb *c3)
+{
+	return NULL;
+}
+
+static struct wcrypto_ecc_out *wcrypto_new_sm2_enc_out(void *ctx, unsigned long long mlen)
+{
+	return NULL;
+}
+
+static struct wcrypto_ecc_out *wcrypto_new_sm2_dec_out(void *ctx, unsigned long long mlen)
+{
+	return NULL;
+}
+
+static void wcrypto_get_sm2_enc_out_params(struct wcrypto_ecc_out *out,
+				    struct wcrypto_ecc_point **c1,
+				    struct wd_dtb **c2,
+				    struct wd_dtb **c3)
+{
+	return;
+}
+static void wcrypto_get_sm2_dec_out_params(struct wcrypto_ecc_out *out,
+				    struct wd_dtb **m)
+{
+	return;
+}
+
+
+
+static RAND_METHOD fake_rand;
+static const RAND_METHOD *saved_rand;
+static uint8_t *fake_rand_bytes = NULL;
+static size_t fake_rand_bytes_offset = 0;
+static size_t fake_rand_size = 0;
+
+static int get_faked_bytes(unsigned char *buf, int num)
+{
+	int i;
+
+	if (fake_rand_bytes == NULL)
+	return saved_rand->bytes(buf, num);
+
+	//if (!TEST_size_t_le(fake_rand_bytes_offset + num, fake_rand_size))
+	//return 0;
+
+	for (i = 0; i != num; ++i)
+	buf[i] = fake_rand_bytes[fake_rand_bytes_offset + i];
+	fake_rand_bytes_offset += num;
+	return 1;
+}
+
+static int start_fake_rand(const char *hex_bytes)
+{
+	/* save old rand method */
+	if (!(saved_rand = RAND_get_rand_method()))
+	return 0;
+
+	fake_rand = *saved_rand;
+	/* use own random function */
+	fake_rand.bytes = get_faked_bytes;
+
+	fake_rand_bytes = OPENSSL_hexstr2buf(hex_bytes, NULL);
+	fake_rand_bytes_offset = 0;
+	fake_rand_size = strlen(hex_bytes) / 2;
+
+	/* set new RAND_METHOD */
+	RAND_set_rand_method(&fake_rand);
+
+	return 1;
+}
 
 static void print_data(void *ptr, int size, const char *name)
 {
@@ -631,6 +966,8 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 				int b_size, int d_size)
 {
 	int i = d_size - 1;
+	char *buff = NULL;
+	char *src_tmp;
 	int j = 0;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
@@ -643,15 +980,28 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 		return  -WD_EINVAL;
 	}
 
-	if (b_size == d_size || (dst == src))
+	if (b_size == d_size)
 		return WD_SUCCESS;
+
+	if (dst == src) {
+		buff = malloc(d_size);
+		if (!buff)
+			return  -WD_ENOMEM;
+		memcpy(buff, src, d_size);
+		src_tmp = buff;
+	} else {
+		src_tmp = (void *)src;
+	}
 
 	for (j = b_size - 1; j >= 0; j--, i--) {
 		if (i >= 0)
-			dst[j] = src[i];
+			dst[j] = src_tmp[i];
 		else
 			dst[j] = 0;
 	}
+
+	if (buff)
+		free(buff);
 
 	return WD_SUCCESS;
 }
@@ -672,11 +1022,51 @@ static __u32 get_ecc_min_blocksize(__u32 key_bits)
 	return size;
 }
 
+const EVP_MD *get_digest_handle(void)
+{
+	const EVP_MD *digest;
+
+	if (set_hash == HASH_SHA1)
+		digest = EVP_sha1();
+	else if (set_hash == HASH_SHA224)
+		digest = EVP_sha224();
+	else if (set_hash == HASH_SHA256)
+		digest = EVP_sha256();
+	else if (set_hash == HASH_MD4)
+		digest = EVP_md4();
+	else if (set_hash == HASH_MD5)
+		digest = EVP_md5();
+	else
+		digest = EVP_sm3();
+
+	return digest;
+}
+
+static int hpre_compute_hash(const char *in, size_t in_len,
+			    char *out, size_t out_len, void *usr)
+{
+	const EVP_MD *digest;
+	EVP_MD_CTX *hash = EVP_MD_CTX_new();
+	int ret = 0;
+
+	digest = get_digest_handle();
+	if (EVP_DigestInit(hash, digest) == 0
+		|| EVP_DigestUpdate(hash, in, in_len) == 0
+		|| EVP_DigestFinal(hash, (void *)out, NULL) == 0) {
+		HPRE_TST_PRT("compute hash failed!\n");
+		ret = -1;
+	}
+
+	EVP_MD_CTX_free(hash);
+
+	return ret;
+}
+
 static __u8 is_async_test(__u32 opType)
 {
 	if (opType == ECDSA_SIGN || opType == ECDSA_VERF ||
 		opType == SM2_SIGN || opType == SM2_VERF ||
-		opType == SM2_ENC || opType == SM2_DEC ||
+		opType == SM2_ENC || opType == SM2_DEC || opType == SM2_KG ||
 		opType == ECDH_GEN || opType == ECDH_COMPUTE ||
 		opType == X25519_GEN || opType == X25519_COMPUTE ||
 		opType == X448_GEN || opType == X448_COMPUTE)
@@ -685,6 +1075,288 @@ static __u8 is_async_test(__u32 opType)
 	return true;
 }
 
+static void evp_sign_to_hpre_bin(char *evp, size_t *evp_size, __u32 ksz)
+{
+	__u32 r_sz = evp[3];
+	__u32 s_sz = evp[4 + r_sz + 1];
+	char *r_data = evp + 4;
+	char *s_data = evp + 4 + r_sz + 2;
+	char tmp[MAX_SIGN_LENS] = {0};
+
+	if (r_sz >= ksz) {
+		memcpy(tmp, r_data + r_sz - ksz, ksz);
+	} else if (r_sz < ksz) {
+		memcpy(tmp + ksz - r_sz, r_data, r_sz);
+	}
+
+	if (s_sz >= ksz) {
+		memcpy(tmp + ksz, s_data + s_sz - ksz, ksz);
+	} else if (s_sz < ksz) {
+		memcpy(tmp + ksz + ksz - s_sz, s_data, s_sz);
+	}
+
+	memset(evp, 0, *evp_size);
+	memcpy(evp, tmp, 2 * ksz);
+	*evp_size = 2 * ksz;
+}
+
+static int hpre_bin_sign_to_evp(char *evp, char *bin, __u32 ksz)
+{
+	char tmp[MAX_SIGN_LENS] = {0};
+	char head[2] = {0x30, 0x44};
+	char r_head[3] = {0x02, 0x20};
+	char s_head[3] = {0x02, 0x20};
+	__u8 head_bytes = 2;
+	__u8 r_head_bytes = 2;
+	__u8 s_head_bytes = 2;
+	__u32 total_len = 0x46;
+	__u8 r_size = ksz;
+	__u8 s_size = ksz;
+	__u8 val;
+	int i;
+
+
+	i = 0;
+	val = bin[i];
+	while (!val && i++ < ksz - 1) {
+		val = bin[i];
+	}
+	r_size -= i;
+	total_len -= i;
+	head[1] -= i;
+	r_head[1] -= i;
+	if (bin[i] & 0x80) {
+		r_head_bytes = 3;
+		total_len += 1;
+		head[1]++;
+		r_head[1]++;
+	}
+
+	i = 0;
+	val = bin[ksz + i];
+	while (!val && i++ < ksz - 1) {
+		val = bin[ksz + i];
+	}
+	s_size -= i;
+	total_len -= i;
+	head[1] -= i;
+	s_head[1] -= i;
+	if (bin[ksz + i] & 0x80) {
+		s_head_bytes = 3;
+		total_len += 1;
+		head[1]++;
+		s_head[1]++;
+	}
+
+	memcpy(tmp, head, head_bytes);
+	memcpy(tmp + head_bytes, r_head, r_head_bytes);
+	memcpy(tmp + head_bytes + r_head_bytes, bin + ksz - r_size, r_size);
+	memcpy(tmp + head_bytes + r_head_bytes + r_size, s_head, s_head_bytes);
+	memcpy(tmp + head_bytes + r_head_bytes + r_size + s_head_bytes, bin + 2 * ksz - s_size, s_size);
+	memcpy(evp, tmp, total_len);
+
+	return total_len;
+}
+
+static int sm2_enc_in_bin_to_evp(char *evp, char *bin, __u32 m_len, __u32 ksz)
+{
+	char *tmp;
+	char *c1 = bin;
+	char *c2 = bin + ksz * 2;
+	char *c3 = c2 + m_len;
+	__u32 total_len;
+	char head[4] = {0x30, 0x00};
+	char c1x_head[3] = {0x02, 0x20};
+	char c1y_head[3] = {0x02, 0x20, 0x00};
+	char c3_head[3] = {0x04, 0x20};
+	char c2_head[4] = {0x04, 0x00};
+	__u8 head_bytes = 2;
+	__u8 c1x_head_bytes = 2;
+	__u8 c1y_head_bytes = 2;
+	__u8 c3_head_bytes = 2;
+	__u8 c2_head_bytes = 2;
+	__u8 c1x_size = ksz;
+	__u8 c1y_size = ksz;
+	__u8 c3_size = ksz;
+	__u8 val;
+	int i;
+
+	tmp = malloc(MAX_ENC_LENS);
+	if (!tmp) {
+		HPRE_TST_PRT("%s: malloc fail\n", __func__);
+		return 0;
+	}
+
+	if (m_len > 127) {
+		c2_head_bytes = 4;
+		c2_head[1] = 0x82;
+		c2_head[2] = m_len >> 8;
+		c2_head[3] = m_len & 0xff;
+	} else {
+		c2_head[1] = m_len;
+	}
+
+	total_len = 96 + head_bytes + c1x_head_bytes + c1y_head_bytes +
+		c3_head_bytes + c2_head_bytes + m_len;
+
+	i = 0;
+	val = bin[i];
+	while (!val && i++ < ksz - 1) {
+		val = bin[i];
+	}
+	c1x_size -= i;
+	total_len -= i;
+	c1x_head[1] -= i;
+	if (bin[i] & 0x80) {
+		c1x_head_bytes = 3;
+		total_len += 1;
+		c1x_head[1]++;
+	}
+
+	i = 0;
+	val = bin[i + ksz];
+	while (!val && i++ < ksz - 1) {
+		val = bin[i + ksz];
+	}
+	c1y_size -= i;
+	total_len -= i;
+	c1y_head[1] -= i;
+	if (bin[i + ksz] & 0x80) {
+		c1y_head_bytes = 3;
+		total_len += 1;
+		c1y_head[1]++;
+	}
+
+	if (total_len >= 130) {
+		head_bytes = 4;
+		total_len += 2;
+		head[1] = 0x82;
+		head[2] = (total_len - 4) >> 8;
+		head[3] = (total_len - 4) & 0xff;
+		c2_head[1] = 0x82;
+		c2_head[2] = m_len >> 8;
+		c2_head[3] = m_len & 0xff;
+	} else {
+		head[1] = (total_len - 2) & 0xff;
+		c2_head[1] = m_len;
+	}
+
+	memcpy(tmp, head, head_bytes); // head
+	memcpy(tmp + head_bytes, c1x_head, c1x_head_bytes); // c1 x head
+	memcpy(tmp + head_bytes + c1x_head_bytes, bin + ksz - c1x_size, c1x_size); // c1 x
+	memcpy(tmp + head_bytes + c1x_head_bytes + c1x_size, c1y_head, c1y_head_bytes); //c1 y head
+	memcpy(tmp + head_bytes + c1x_head_bytes + c1x_size + c1y_head_bytes, c1 + 2 * ksz - c1y_size, c1y_size); // c1 y
+	memcpy(tmp + head_bytes + c1x_head_bytes + c1x_size + c1y_head_bytes + c1y_size, c3_head, c3_head_bytes); //c3 head
+	memcpy(tmp + head_bytes + c1x_head_bytes + c1x_size + c1y_head_bytes + c1y_size + c3_head_bytes, c3, c3_size); //c3 head
+	memcpy(tmp + head_bytes + c1x_head_bytes + c1x_size + c1y_head_bytes + c1y_size + c3_head_bytes + c3_size, c2_head, c2_head_bytes); //c2 head
+	memcpy(tmp + head_bytes + c1x_head_bytes + c1x_size + c1y_head_bytes + c1y_size + c3_head_bytes + c3_size + c2_head_bytes, c2, m_len); //c2
+
+	memcpy(evp, tmp, total_len);
+	//print_data(evp, total_len, "evp");
+
+	free(tmp);
+	return total_len;
+}
+
+__u32 get_big_endian_value(char *buf, __u32 size)
+{
+	__u32 ret = 0;
+	char tmp[4] = {0};
+
+	if (size == 1) {
+		ret = buf[0];
+	} else if (size == 2) {
+		tmp[0] = buf[1];
+		tmp[1] = buf[0];
+		ret = *(unsigned short *)tmp;
+	}
+
+	return ret;
+}
+
+static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type)
+{
+	__u32 total_len;
+	__u32 l_sz = 0;
+	__u8 *data;
+	__u32 d_sz = 0;
+	__u32 cur_len = 0;
+	__u32 out_len = 0;
+	__u32 i = 0;
+	char *buf;
+	char *buf_backup;
+
+	buf = malloc(*evp_size);
+	if (!buf) {
+		HPRE_TST_PRT("%s: malloc fail\n", __func__);
+		return -1;
+	}
+	memset(buf, 0, *evp_size);
+	buf_backup = buf;
+
+	/**/
+	cur_len += 1;
+	if (evp[cur_len] & 0x80) {
+		l_sz = evp[cur_len] & 0x7f;
+		cur_len += 1;
+	} else {
+		l_sz = 1;
+	}
+
+	if (l_sz == 1)
+		total_len = evp[cur_len];
+	else if (l_sz == 2)
+		total_len = get_big_endian_value(&evp[cur_len], 2);
+	cur_len += l_sz;
+
+	while (cur_len < *evp_size) {
+		if (evp[cur_len] == 0x2) {
+			cur_len += 1;
+			l_sz = 1;
+		} else if (evp[cur_len] == 0x4) {
+			cur_len += 1;
+			if (evp[cur_len] & 0x80) {
+				l_sz = evp[cur_len] & 0x7f;
+				cur_len += 1;
+			} else {
+				l_sz = 1;
+			}
+		}
+
+		if (l_sz == 1)
+			d_sz = evp[cur_len];
+		else if (l_sz == 2)
+			d_sz = get_big_endian_value(&evp[cur_len], 2);
+		cur_len += l_sz;
+
+		data = (void *)&evp[cur_len];
+		if (!data[0] && i < 3) { // c2 no need
+			cur_len += 1;
+			d_sz -= 1;
+		}
+
+		if (op_type == SM2_HW_ENC && cur_len + d_sz >= *evp_size) {
+			memcpy(buf, &evp[cur_len], d_sz);
+			buf += d_sz;
+			cur_len += d_sz;
+			out_len += d_sz;
+		} else {
+			memcpy(buf + ksz - d_sz, &evp[cur_len], d_sz);
+			buf += ksz;
+			cur_len += ksz;
+			out_len += ksz;
+		}
+		//memcpy(buf, &evp[cur_len], d_sz);
+
+		i++;
+	}
+
+	memcpy(evp, buf_backup, out_len);
+	*evp_size = out_len;
+	free(buf_backup);
+
+	return total_len;
+}
 
 static int init_opdata_param(void *pool,
 			     struct wcrypto_dh_op_data *opdata,
@@ -1986,7 +2658,6 @@ int x_genkey_by_openssl(struct ecc_test_ctx *test_ctx,
 	int i;
 
 	memset(data_pub, 0, key_size);
-	// 转大端，给HPRE用
 	for (i = 0; i < key_size; i++) {
 		data[i] = ecx->privkey[key_size - i -1];
 		data_pub[i] = ecx->pubkey[key_size - i -1];
@@ -2238,7 +2909,6 @@ int x_compkey_by_openssl(struct ecc_test_ctx *test_ctx, void *ctx,
 
 	char *data = calloc(key_size, sizeof(char));
 
-	// 转大端 - prikey
 	for (i = 0; i < key_size; i++) {
 		data[i] = ecx->privkey[key_size - i -1];
 	}
@@ -2256,7 +2926,6 @@ int x_compkey_by_openssl(struct ecc_test_ctx *test_ctx, void *ctx,
 	/* set the pubkey(point_in) */
 	struct wcrypto_ecc_point tmp;
 
-	// 转大端 - x
 	memset(data, 0, key_size);
 	for (i = 0; i <key_size; i++) {
 		data[i] = ecx->pubkey[key_size - i -1];
@@ -2289,7 +2958,6 @@ int x_compkey_by_openssl(struct ecc_test_ctx *test_ctx, void *ctx,
 		return 0;
 	}
 
-	// 转大端 - shared-key
 	char share_big[key_size];
 	memset(share_big, 0, key_size);
 	for (i = 0; i <key_size; i++) {
@@ -2550,7 +3218,6 @@ int x_dh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 
 	if (op_type == X25519_GEN || op_type == X25519_COMPUTE ||
 	    op_type == X25519_ASYNC_GEN || op_type == X25519_ASYNC_COMPUTE) {
-		// 用大端
 		setup->d = x25519_aprikey_big;
 		setup->except_pub_key = x25519_bpubkey_big;
 		setup->cp_pub_key = x25519_apubke_big;
@@ -2561,7 +3228,6 @@ int x_dh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->cp_share_key_size = 32;
 	} else if (op_type == X448_GEN || op_type == X448_COMPUTE ||
 		   op_type == X448_ASYNC_GEN || op_type == X448_ASYNC_COMPUTE) {
-		// 用大端
 		setup->d = x448_aprikey_big;
 		setup->except_pub_key = x448_bpubkey_big;
 		setup->cp_pub_key = x448_apubkey_big;
@@ -2635,8 +3301,8 @@ static struct ecc_test_ctx *ecc_create_sw_sign_test_ctx(struct ecc_test_ctx_setu
 	}
 
 	if (setup.key_from) {
-		opdata->except_e = setup.degist;
-		opdata->except_e_size = setup.degist_size;
+		opdata->except_e = setup.digest;
+		opdata->except_e_size = setup.digest_size;
 		kinv = BN_bin2bn(setup.kinv, setup.kinv_size, NULL); // kinv invalid, actual should 1/kinv
 		opdata->except_kinv = kinv;
 		rp = BN_bin2bn(setup.rp, setup.rp_size, NULL);
@@ -2721,8 +3387,8 @@ static struct ecc_test_ctx *ecc_create_sw_verf_test_ctx(struct ecc_test_ctx_setu
 	test_ctx->opdata = opdata;
 
 	if (setup.key_from) {
-		opdata->except_e = setup.degist;
-		opdata->except_e_size = setup.degist_size;
+		opdata->except_e = setup.digest;
+		opdata->except_e_size = setup.digest_size;
 		opdata->sign = setup.sign;
 		opdata->sign_size = setup.sign_size;
 
@@ -2833,8 +3499,8 @@ static struct ecc_test_ctx *ecc_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 		g_is_set_pubkey = true;
 	}
 
-	e.data = setup.degist;
-	e.dsize = setup.degist_size;
+	e.data = setup.digest;
+	e.dsize = setup.digest_size;
 	e.bsize = key_size;
 
 	if (setup.key_from) {
@@ -2980,9 +3646,8 @@ static struct ecc_test_ctx *ecc_create_hw_verf_test_ctx(struct ecc_test_ctx_setu
 		}
 		g_is_set_pubkey = true;
 	}
-
-	e.data = setup.degist;
-	e.dsize = setup.degist_size;
+	e.data = setup.digest;
+	e.dsize = setup.digest_size;
 	e.bsize = key_size;
 
 	if (setup.key_from) {
@@ -3040,7 +3705,7 @@ static struct ecc_test_ctx *ecc_create_hw_verf_test_ctx(struct ecc_test_ctx_setu
 		}
 
 		/* openssl sign */
-		sig = ECDSA_do_sign(setup.degist, setup.degist_size, key_a);
+		sig = ECDSA_do_sign(setup.digest, setup.digest_size, key_a);
 		if (!sig) {
 			printf("ECDSA_do_sign failed\n");
 			EC_KEY_free(key_a);
@@ -3095,7 +3760,1032 @@ free_opdata:
 	return NULL;
 }
 
-int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
+static int hpre_get_rand(char *out, size_t out_len, void *usr)
+{
+	int ret;
+
+	if (!out) {
+		return -1;
+	}
+
+	ret = RAND_priv_bytes((void *)out, out_len);
+	if (ret != 1) {
+		HPRE_TST_PRT("RAND_priv_bytes fail = %d\n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+
+	struct wcrypto_ecc_op_data *opdata;
+	struct ecc_test_ctx *test_ctx;
+	struct wcrypto_ecc_key *ecc_key;
+	struct wcrypto_ecc_out *ecc_out;
+	struct wcrypto_ecc_in *ecc_in = NULL;
+	struct wcrypto_ecc_point pub;
+	EC_POINT *point_tmp, *ptr;
+	EC_KEY *key_a = NULL;
+	EC_GROUP *group_a;
+	BIGNUM *pubKey, *priv;
+	void *ctx = setup.ctx;
+	struct wd_dtb d, e, k, id;
+	struct wd_dtb *kptr = NULL, *idptr = NULL;
+	char buff[32] = {0};
+	char *hex_str;
+	int ret;
+	u32 key_size;
+	EVP_MD_CTX *md_ctx = NULL;
+	EVP_PKEY *p_key = NULL;
+	EVP_PKEY_CTX *pctx;
+	__u8 is_dgst = 0;
+
+	if (!setup.q || !setup.pool) {
+		HPRE_TST_PRT("%s: parm err!\n", __func__);
+		return NULL;
+	}
+
+	opdata = malloc(sizeof(struct wcrypto_ecc_op_data));
+	if (!opdata)
+		return NULL;
+	memset(opdata, 0, sizeof(struct wcrypto_ecc_op_data));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_opdata;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wcrypto_get_ecc_key_bits(ctx) + 7) / 8;
+	ecc_out = wcrypto_new_sm2_sign_out(ctx);
+	if (!ecc_out) {
+		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
+		goto free_ctx;
+	}
+	ecc_key = wcrypto_get_ecc_key(ctx);
+	if (!g_is_set_prikey || !is_async_test(op_type)) {
+		d.data = setup.priv_key;
+		d.dsize = setup.priv_key_size;
+		d.bsize = key_size;
+		ret = wcrypto_set_ecc_prikey(ecc_key, &d);
+		if (ret) {
+			HPRE_TST_PRT("%s: set prikey err\n", __func__);
+			goto del_ecc_out;
+		}
+		g_is_set_prikey = true;
+	}
+
+	if (!g_is_set_pubkey || !is_async_test(op_type)) {
+		pub.x.data = setup.pub_key + 1;
+		pub.x.dsize = key_size;
+		pub.x.bsize = key_size;
+		pub.y.data = pub.x.data + key_size;
+		pub.y.dsize = key_size;
+		pub.y.bsize = key_size;
+		ret = wcrypto_set_ecc_pubkey(ecc_key, &pub);
+		if (ret) {
+			HPRE_TST_PRT("%s: set pubkey err\n", __func__);
+			goto del_ecc_out;
+		}
+		g_is_set_pubkey = true;
+	}
+
+	if (set_msg == MSG_DIGEST) {
+		e.data = setup.digest;
+		e.dsize = setup.digest_size;
+		e.bsize = key_size;
+	} else {
+		e.data = setup.plaintext;
+		e.dsize = setup.plaintext_size;
+		e.bsize = setup.plaintext_size;
+	}
+
+	if (setup.key_from) { // set k, id param and support plaintext or dgst
+		k.data = setup.kinv;
+		k.dsize = setup.kinv_size;
+		k.bsize = key_size;
+		is_dgst = (set_msg != MSG_DIGEST) ? 0 : 1;
+		ecc_in = wcrypto_new_sm2_sign_in(ctx, &e, &k, &id, is_dgst);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new sm2 sign in fail!\n", __func__);
+			goto del_ecc_out;
+		}
+	} else {
+		key_a = EC_KEY_new();
+		if (!key_a) {
+			printf("EC_KEY_new err!\n");
+			goto del_ecc_out;
+		}
+
+		group_a = EC_GROUP_new_by_curve_name(EVP_PKEY_SM2);
+		if(!group_a) {
+			printf("EC_GROUP_new_by_curve_name err!\n");
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_group(key_a, group_a);
+		if(ret != 1) {
+			printf("EC_KEY_set_group err.\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+
+		/* set pubkey */
+		point_tmp = EC_GROUP_get0_generator(group_a);
+		pubKey = BN_bin2bn(setup.pub_key, setup.pub_key_size, NULL);
+		ptr = EC_POINT_bn2point(group_a, pubKey, point_tmp, NULL);
+		if (!ptr) {
+			printf("EC_POINT_bn2point failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_public_key(key_a, point_tmp);
+		if (ret != 1) {
+			printf("EC_KEY_set_public_key failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+		BN_free(pubKey);
+
+		/* set prikey */
+		priv = BN_bin2bn(setup.priv_key, setup.priv_key_size, NULL);
+		ret = EC_KEY_set_private_key(key_a, priv);
+		if (ret != 1) {
+			printf("EC_KEY_set_private_key failed\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+		BN_free(priv);
+
+		EC_GROUP_free(group_a);
+
+		p_key = EVP_PKEY_new();
+		if (!p_key) {
+			printf("EVP_PKEY_new failed\n");
+			goto del_ecc_out;
+		}
+		EVP_PKEY_set1_EC_KEY(p_key, key_a);
+		EVP_PKEY_set_alias_type(p_key, EVP_PKEY_SM2);
+
+		md_ctx = EVP_MD_CTX_new();
+		if (!md_ctx) {
+			printf("EVP_MD_CTX_new failed\n");
+			goto free_pkey;
+		}
+
+		pctx = EVP_PKEY_CTX_new(p_key, NULL);
+		if (!pctx) {
+			printf("EVP_PKEY_CTX_new failed\n");
+			goto free_md_ctx;
+		}
+		EVP_MD_CTX_set_pkey_ctx(md_ctx, pctx);
+
+		if (set_rand == RAND_PARAM) {
+			ret = hpre_get_rand(buff, 32, NULL);
+			if (ret) {
+				printf("hpre_get_rand failed\n");
+				goto free_pkey_ctx;
+			}
+			k.data = buff;
+			k.dsize = 32;
+			kptr = &k;
+
+			/* openssl set rand*/
+			hex_str = OPENSSL_buf2hexstr((void *)buff, 32);
+			start_fake_rand(hex_str);
+			OPENSSL_free(hex_str);
+		}
+
+		test_ctx->cp_sign_size = MAX_SIGN_LENS;
+		if (set_msg == MSG_DIGEST) {
+			ret = EVP_PKEY_sign_init(pctx);
+			if (ret != 1) {
+				printf("EVP_PKEY_sign_init fail, ret %d\n", ret);
+				goto free_pkey_ctx;
+			}
+
+			ret = EVP_PKEY_sign(pctx, test_ctx->cp_sign, &test_ctx->cp_sign_size,
+				setup.digest, setup.digest_size);
+			if (ret != 1) {
+				printf("EVP_PKEY_sign fail, ret %d\n", ret);
+				goto free_pkey_ctx;
+			}
+			//print_data(test_ctx->cp_sign, test_ctx->cp_sign_size, "cp_sign");
+
+		} else {
+			id.data = setup.userid;
+			id.dsize = setup.userid_size;
+			idptr = &id;
+
+			EVP_PKEY_CTX_set1_id(pctx, setup.userid, setup.userid_size);
+			EVP_DigestSignInit(md_ctx, NULL, get_digest_handle(), NULL, p_key);
+			EVP_DigestSignUpdate(md_ctx, setup.plaintext, setup.plaintext_size);
+			ret = EVP_DigestSignFinal(md_ctx, test_ctx->cp_sign, &test_ctx->cp_sign_size);
+			if (ret != 1) {
+				printf("EVP_DigestSignFinal failed ret = %d\n", ret);
+				goto free_pkey_ctx;
+			}
+		}
+
+
+		is_dgst = (set_msg != MSG_DIGEST) ? 0 : 1;
+		ecc_in = wcrypto_new_sm2_sign_in(ctx, &e, kptr, idptr, is_dgst);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new sm2 sign in fail!\n", __func__);
+			goto free_pkey_ctx;
+		}
+	}
+
+#ifdef DEBUG
+	struct wd_dtb *p;
+
+	wcrypto_get_ecc_prikey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+	print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "prikey");
+	print_data(test_ctx->cp_sign, test_ctx->cp_sign_size, "cp_sign");
+#endif
+
+	evp_to_wd_crypto((void *)test_ctx->cp_sign, &test_ctx->cp_sign_size, 32, setup.op_type);
+
+	opdata->op_type = WCRYPTO_SM2_SIGN;
+	opdata->out = ecc_out;
+	opdata->in = ecc_in;
+	test_ctx->opdata = opdata;
+	test_ctx->pool = setup.pool;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = ctx; //init ctx
+	test_ctx->key_size = key_size;
+	test_ctx->priv1 = md_ctx;
+
+	return test_ctx;
+
+free_pkey_ctx:
+	EVP_PKEY_CTX_free(pctx);
+free_md_ctx:
+	EVP_MD_CTX_free(md_ctx);
+free_pkey:
+	EVP_PKEY_free(p_key);
+del_ecc_out:
+	(void)wcrypto_del_ecc_out(ctx, ecc_out);
+free_ctx:
+	free(test_ctx);
+free_opdata:
+	free(opdata);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_sw_sign_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_hw_verf_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+	struct wcrypto_ecc_op_data *opdata;
+	struct ecc_test_ctx *test_ctx;
+	struct wcrypto_ecc_key *ecc_key;
+	struct wcrypto_ecc_in *ecc_in;
+	EC_KEY *key_a = NULL;
+	EC_GROUP *group_a;
+	BIGNUM *privKey, *pubKey;
+	void *ctx = setup.ctx;
+	struct wd_dtb e, r, s, id;
+	struct wcrypto_ecc_point pub;
+	int ret;
+	u32 key_size;
+	EVP_MD_CTX *md_ctx = NULL;
+	EVP_PKEY *p_key = NULL;
+	EVP_PKEY_CTX *pctx;
+	EC_POINT *point_tmp, *ptr;
+
+	if (!setup.q || !setup.pool) {
+		HPRE_TST_PRT("%s: parm err!\n", __func__);
+		return NULL;
+	}
+
+	opdata = malloc(sizeof(struct wcrypto_ecc_op_data));
+	if (!opdata)
+		return NULL;
+	memset(opdata, 0, sizeof(struct wcrypto_ecc_op_data));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_opdata;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wcrypto_get_ecc_key_bits(ctx) + 7) / 8;
+	ecc_key = wcrypto_get_ecc_key(ctx);
+	if (!g_is_set_pubkey  || !is_async_test(op_type)) {
+		pub.x.data = setup.pub_key + 1;
+		pub.x.dsize = key_size;
+		pub.x.bsize = key_size;
+		pub.y.data = pub.x.data + key_size;
+		pub.y.dsize = key_size;
+		pub.y.bsize = key_size;
+		ret = wcrypto_set_ecc_pubkey(ecc_key, &pub);
+		if (ret) {
+			HPRE_TST_PRT("%s: set pubkey err\n", __func__);
+			goto free_ctx;
+		}
+		g_is_set_pubkey = true;
+	}
+
+	if (setup.key_from) {
+		e.data = setup.digest;
+		e.dsize = setup.digest_size;
+		e.bsize = key_size;
+		r.data = setup.sign ;
+		r.dsize = key_size;
+		r.bsize = key_size;
+		s.data = r.data + key_size;
+		s.dsize = key_size;
+		s.bsize = key_size;
+		ecc_in = wcrypto_new_sm2_verf_in(ctx, &e, &r, &s, NULL, 1);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
+			goto free_ctx;
+		}
+	} else {
+		key_a = EC_KEY_new();
+		if (!key_a) {
+			printf("EC_KEY_new err!\n");
+			goto free_ctx;
+		}
+
+		group_a = EC_GROUP_new_by_curve_name(EVP_PKEY_SM2);
+		if(!group_a) {
+			printf("EC_GROUP_new_by_curve_name err!\n");
+			EC_KEY_free(key_a);
+			goto free_ctx;
+		}
+
+		ret = EC_KEY_set_group(key_a, group_a);
+		if(ret != 1) {
+			printf("EC_KEY_set_group err.\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto free_ctx;
+		}
+
+		/* set pubkey */
+		point_tmp = EC_GROUP_get0_generator(group_a);
+		pubKey = BN_bin2bn(setup.pub_key, setup.pub_key_size, NULL);
+		ptr = EC_POINT_bn2point(group_a, pubKey, point_tmp, NULL);
+		if (!ptr) {
+			printf("EC_POINT_bn2point failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto free_ctx;
+		}
+
+		ret = EC_KEY_set_public_key(key_a, point_tmp);
+		if (ret != 1) {
+			printf("EC_KEY_set_public_key failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto free_ctx;
+		}
+		BN_free(pubKey);
+
+		/* set prikey */
+		privKey = BN_bin2bn(setup.priv_key, setup.priv_key_size, NULL);
+		ret = EC_KEY_set_private_key(key_a, privKey);
+		if (ret != 1) {
+			printf("EC_KEY_set_private_key failed\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto free_ctx;
+		}
+		BN_free(privKey);
+		EC_GROUP_free(group_a);
+
+		/* openssl sign */
+		p_key = EVP_PKEY_new();
+		if (!p_key) {
+			printf("EVP_PKEY_new failed\n");
+			EC_KEY_free(key_a);
+			goto free_ctx;
+		}
+		EVP_PKEY_set1_EC_KEY(p_key, key_a);
+		EVP_PKEY_set_alias_type(p_key, EVP_PKEY_SM2);
+
+		md_ctx = EVP_MD_CTX_new();
+		if (!md_ctx) {
+			printf("EVP_MD_CTX_new failed\n");
+			EC_KEY_free(key_a);
+			goto free_pkey;
+		}
+
+		pctx = EVP_PKEY_CTX_new(p_key, NULL);
+		if (!pctx) {
+			printf("EVP_PKEY_CTX_new failed\n");
+			EC_KEY_free(key_a);
+			goto free_md_ctx;
+		}
+
+		test_ctx->cp_sign_size = MAX_SIGN_LENS;
+		id.data = setup.userid;
+		id.dsize = setup.userid_size;
+
+		EVP_MD_CTX_set_pkey_ctx(md_ctx, pctx);
+		EVP_PKEY_CTX_set1_id(pctx, setup.userid, setup.userid_size);
+		EVP_DigestSignInit(md_ctx, NULL, get_digest_handle(), NULL, p_key);
+		//EVP_DigestSignUpdate(md_ctx, setup.plaintext, setup.plaintext_size);
+		ret = EVP_DigestSign(md_ctx, test_ctx->cp_sign, &test_ctx->cp_sign_size,
+			setup.plaintext, setup.plaintext_size);
+		if (ret != 1) {
+			printf("EVP_DigestSign failed ret = %d\n", ret);
+			EC_KEY_free(key_a);
+			goto free_pkey_ctx;
+		}
+
+		evp_sign_to_hpre_bin((void *)test_ctx->cp_sign, &test_ctx->cp_sign_size, key_size);
+
+		e.data = setup.plaintext;
+		e.dsize = setup.plaintext_size;
+		e.bsize = setup.plaintext_size;
+		r.data = (void *)test_ctx->cp_sign;
+		r.dsize = key_size;
+		r.bsize = key_size;
+		s.data = (void *)(test_ctx->cp_sign + key_size);
+		s.dsize = key_size;
+		s.bsize = key_size;
+		ecc_in = wcrypto_new_sm2_verf_in(ctx, &e, &r, &s, &id, 0);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new sm2 verf in fail!\n", __func__);
+			EC_KEY_free(key_a);
+			goto free_pkey_ctx;
+		}
+		EC_KEY_free(key_a);
+		EVP_PKEY_free(p_key);
+		EVP_MD_CTX_free(md_ctx);
+		EVP_PKEY_CTX_free(pctx);
+	}
+
+#ifdef DEBUG
+	struct wd_dtb *p;
+
+	wcrypto_get_ecc_pubkey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+	print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "pubkey");
+	print_data(setup.userid, setup.userid_size, "userid");
+
+	print_data(test_ctx->cp_sign, test_ctx->cp_sign_size, "openssl sign");
+
+#endif
+
+	opdata->op_type = WCRYPTO_SM2_VERIFY;
+	opdata->in = ecc_in;
+	test_ctx->opdata = opdata;
+	test_ctx->pool = setup.pool;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = ctx; //init ctx
+	test_ctx->key_size = key_size;
+
+	return test_ctx;
+
+free_pkey_ctx:
+	EVP_PKEY_CTX_free(pctx);
+free_md_ctx:
+	EVP_MD_CTX_free(md_ctx);
+free_pkey:
+	EVP_PKEY_free(p_key);
+free_ctx:
+	free(test_ctx);
+free_opdata:
+	free(opdata);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_sw_verf_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_sw_enc_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+
+	struct wcrypto_ecc_op_data *opdata;
+	struct ecc_test_ctx *test_ctx;
+	struct wcrypto_ecc_key *ecc_key;
+	struct wcrypto_ecc_out *ecc_out;
+	struct wcrypto_ecc_in *ecc_in = NULL;
+	struct wcrypto_ecc_point pub;
+	EC_POINT *point_tmp, *ptr;
+	EC_KEY *key_a = NULL;
+	EC_GROUP *group_a;
+	BIGNUM *pubKey, *priv;
+	void *ctx = setup.ctx;
+	struct wd_dtb d, e, k;
+	struct wd_dtb *kptr = NULL;
+	char buff[32] = {0};
+	char *hex_str;
+	int ret;
+	u32 key_size;
+	EVP_PKEY *p_key = NULL;
+	EVP_PKEY_CTX *pctx;
+
+	if (!setup.q || !setup.pool) {
+		HPRE_TST_PRT("%s: parm err!\n", __func__);
+		return NULL;
+	}
+
+	opdata = malloc(sizeof(struct wcrypto_ecc_op_data));
+	if (!opdata)
+		return NULL;
+	memset(opdata, 0, sizeof(struct wcrypto_ecc_op_data));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_opdata;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wcrypto_get_ecc_key_bits(ctx) + 7) / 8;
+	ecc_out = wcrypto_new_sm2_enc_out(ctx, setup.plaintext_size);
+	if (!ecc_out) {
+		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
+		goto free_ctx;
+	}
+	ecc_key = wcrypto_get_ecc_key(ctx);
+	if (!g_is_set_prikey || !is_async_test(op_type)) {
+		d.data = setup.priv_key;
+		d.dsize = setup.priv_key_size;
+		d.bsize = key_size;
+		ret = wcrypto_set_ecc_prikey(ecc_key, &d);
+		if (ret) {
+			HPRE_TST_PRT("%s: set prikey err\n", __func__);
+			goto del_ecc_out;
+		}
+		g_is_set_prikey = true;
+	}
+
+	if (!g_is_set_pubkey || !is_async_test(op_type)) {
+		pub.x.data = setup.pub_key + 1;
+		pub.x.dsize = key_size;
+		pub.x.bsize = key_size;
+		pub.y.data = pub.x.data + key_size;
+		pub.y.dsize = key_size;
+		pub.y.bsize = key_size;
+		ret = wcrypto_set_ecc_pubkey(ecc_key, &pub);
+		if (ret) {
+			HPRE_TST_PRT("%s: set pubkey err\n", __func__);
+			goto del_ecc_out;
+		}
+		g_is_set_pubkey = true;
+	}
+
+	e.data = setup.plaintext;
+	e.dsize = setup.plaintext_size;
+	e.bsize = setup.plaintext_size;
+	if (setup.key_from) { // set k, id param and support plaintext or dgst
+		k.data = setup.kinv;
+		k.dsize = setup.kinv_size;
+		k.bsize = key_size;
+		ecc_in = wcrypto_new_sm2_enc_in(ctx, &k, &e);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new sm2 sign in fail!\n", __func__);
+			goto del_ecc_out;
+		}
+	} else {
+		key_a = EC_KEY_new();
+		if (!key_a) {
+			printf("EC_KEY_new err!\n");
+			goto del_ecc_out;
+		}
+
+		group_a = EC_GROUP_new_by_curve_name(EVP_PKEY_SM2);
+		if(!group_a) {
+			printf("EC_GROUP_new_by_curve_name err!\n");
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_group(key_a, group_a);
+		if(ret != 1) {
+			printf("EC_KEY_set_group err.\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+
+		/* set pubkey */
+		point_tmp = EC_GROUP_get0_generator(group_a);
+		pubKey = BN_bin2bn(setup.pub_key, setup.pub_key_size, NULL);
+		ptr = EC_POINT_bn2point(group_a, pubKey, point_tmp, NULL);
+		if (!ptr) {
+			printf("EC_POINT_bn2point failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_public_key(key_a, point_tmp);
+		if (ret != 1) {
+			printf("EC_KEY_set_public_key failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+		BN_free(pubKey);
+
+		/* set prikey */
+		priv = BN_bin2bn(setup.priv_key, setup.priv_key_size, NULL);
+		ret = EC_KEY_set_private_key(key_a, priv);
+		if (ret != 1) {
+			printf("EC_KEY_set_private_key failed\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+		BN_free(priv);
+
+		EC_GROUP_free(group_a);
+
+		p_key = EVP_PKEY_new();
+		if (!p_key) {
+			printf("EVP_PKEY_new failed\n");
+			goto del_ecc_out;
+		}
+		EVP_PKEY_set1_EC_KEY(p_key, key_a);
+		EVP_PKEY_set_alias_type(p_key, EVP_PKEY_SM2);
+
+		pctx = EVP_PKEY_CTX_new(p_key, NULL);
+		if (!pctx) {
+			printf("EVP_PKEY_CTX_new failed\n");
+			goto free_pkey;
+		}
+
+#ifdef DEBUG
+		ECParameters_print_fp(stdout, key_a);
+		EC_KEY_print_fp(stdout, key_a, 0);
+#endif
+
+		if (set_rand == RAND_PARAM) {
+			ret = hpre_get_rand(buff, 32, NULL);
+			if (ret) {
+				printf("hpre_get_rand failed\n");
+				goto free_pkey_ctx;
+			}
+			k.data = buff;
+			k.dsize = 32;
+			kptr = &k;
+
+			/* openssl set rand*/
+			hex_str = OPENSSL_buf2hexstr((void *)buff, 32);
+			start_fake_rand(hex_str);
+			OPENSSL_free(hex_str);
+
+			EVP_PKEY_encrypt_init(pctx);
+			test_ctx->cp_enc_size = MAX_ENC_LENS;
+			ret = EVP_PKEY_encrypt(pctx, test_ctx->cp_enc, &test_ctx->cp_enc_size,
+				setup.plaintext, setup.plaintext_size);
+			if (ret != 1) {
+				printf("EVP_PKEY_encrypt failed ret = %d\n", ret);
+				goto free_pkey_ctx;
+			}
+
+		#ifdef DEBUG
+			struct wd_dtb *p;
+
+			wcrypto_get_ecc_pubkey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+			print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "pubkey");
+			print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "cp_enc");
+		#endif
+			evp_to_wd_crypto((void *)test_ctx->cp_enc, &test_ctx->cp_enc_size, 32, setup.op_type);
+			//print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "cp_enc");
+
+		} else {
+			EVP_PKEY_decrypt_init(pctx);
+		}
+
+		ecc_in = wcrypto_new_sm2_enc_in(ctx, kptr, &e);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
+			goto free_pkey_ctx;
+		}
+	}
+
+	opdata->op_type = WCRYPTO_SM2_ENCRYPT;
+	opdata->out = ecc_out;
+	opdata->in = ecc_in;
+	test_ctx->opdata = opdata;
+	test_ctx->pool = setup.pool;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = ctx; //init ctx
+	test_ctx->key_size = key_size;
+	test_ctx->priv1 = pctx;
+
+	return test_ctx;
+
+free_pkey_ctx:
+	EVP_PKEY_CTX_free(pctx);
+free_pkey:
+	EVP_PKEY_free(p_key);
+del_ecc_out:
+	(void)wcrypto_del_ecc_out(ctx, ecc_out);
+free_ctx:
+	free(test_ctx);
+free_opdata:
+	free(opdata);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+
+	struct wcrypto_ecc_op_data *opdata;
+	struct ecc_test_ctx *test_ctx;
+	struct wcrypto_ecc_key *ecc_key;
+	struct wcrypto_ecc_out *ecc_out;
+	struct wcrypto_ecc_in *ecc_in = NULL;
+	EC_POINT *point_tmp, *ptr;
+	EC_KEY *key_a = NULL;
+	EC_GROUP *group_a;
+	BIGNUM *pubKey;
+	void *ctx = setup.ctx;
+	struct wcrypto_ecc_point c1;
+	struct wd_dtb d, c2, c3;
+	int ret;
+	u32 key_size;
+	EVP_PKEY *p_key = NULL;
+	EVP_PKEY_CTX *pctx;
+
+	if (!setup.q || !setup.pool) {
+		HPRE_TST_PRT("%s: parm err!\n", __func__);
+		return NULL;
+	}
+
+	opdata = malloc(sizeof(struct wcrypto_ecc_op_data));
+	if (!opdata)
+		return NULL;
+	memset(opdata, 0, sizeof(struct wcrypto_ecc_op_data));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_opdata;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wcrypto_get_ecc_key_bits(ctx) + 7) / 8;
+	ecc_out = wcrypto_new_sm2_dec_out(ctx, setup.plaintext_size);
+	if (!ecc_out) {
+		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
+		goto free_ctx;
+	}
+	ecc_key = wcrypto_get_ecc_key(ctx);
+	if (!g_is_set_prikey || !is_async_test(op_type)) {
+		d.data = setup.priv_key;
+		d.dsize = setup.priv_key_size;
+		d.bsize = key_size;
+		ret = wcrypto_set_ecc_prikey(ecc_key, &d);
+		if (ret) {
+			HPRE_TST_PRT("%s: set prikey err\n", __func__);
+			goto del_ecc_out;
+		}
+		g_is_set_prikey = true;
+	}
+
+	if (setup.key_from) { // set k, id param and support plaintext or dgst
+		c1.x.data = test_ctx->setup.cp_c;
+		c1.x.dsize = 32;
+		c1.y.data = c1.x.data + 32;
+		c1.y.dsize = 32;
+		c3.data = c1.y.data + 32;
+		c3.dsize = 32;
+		c2.data = c3.data + 32;
+		c2.dsize = test_ctx->setup.cp_c_size - 32 * 3;
+		ecc_in = wcrypto_new_sm2_dec_in(ctx, &c1, &c2, &c3);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new sm2 sign in fail!\n", __func__);
+			goto del_ecc_out;
+		}
+	} else {
+		key_a = EC_KEY_new();
+		if (!key_a) {
+			printf("EC_KEY_new err!\n");
+			goto del_ecc_out;
+		}
+
+		group_a = EC_GROUP_new_by_curve_name(EVP_PKEY_SM2);
+		if(!group_a) {
+			printf("EC_GROUP_new_by_curve_name err!\n");
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_group(key_a, group_a);
+		if(ret != 1) {
+			printf("EC_KEY_set_group err.\n");
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+
+		/* set pubkey */
+		point_tmp = EC_GROUP_get0_generator(group_a);
+		pubKey = BN_bin2bn(setup.pub_key, setup.pub_key_size, NULL);
+		ptr = EC_POINT_bn2point(group_a, pubKey, point_tmp, NULL);
+		if (!ptr) {
+			printf("EC_POINT_bn2point failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_public_key(key_a, point_tmp);
+		if (ret != 1) {
+			printf("EC_KEY_set_public_key failed\n");
+			BN_free(pubKey);
+			EC_KEY_free(key_a);
+			EC_GROUP_free(group_a);
+			goto del_ecc_out;
+		}
+		BN_free(pubKey);
+
+		EC_GROUP_free(group_a);
+
+		p_key = EVP_PKEY_new();
+		if (!p_key) {
+			printf("EVP_PKEY_new failed\n");
+			goto del_ecc_out;
+		}
+		EVP_PKEY_set1_EC_KEY(p_key, key_a);
+		EVP_PKEY_set_alias_type(p_key, EVP_PKEY_SM2);
+
+		pctx = EVP_PKEY_CTX_new(p_key, NULL);
+		if (!pctx) {
+			printf("EVP_PKEY_CTX_new failed\n");
+			goto free_pkey;
+		}
+
+		EVP_PKEY_encrypt_init(pctx);
+		test_ctx->cp_enc_size = MAX_ENC_LENS;
+		ret = EVP_PKEY_encrypt(pctx, (void *)test_ctx->cp_enc, &test_ctx->cp_enc_size,
+			setup.plaintext, setup.plaintext_size);
+		if (ret != 1) {
+			printf("EVP_PKEY_encrypt failed ret = %d\n", ret);
+			goto free_pkey_ctx;
+		}
+
+		//print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "cp_enc");
+
+		evp_to_wd_crypto((void *)test_ctx->cp_enc, &test_ctx->cp_enc_size, 32, SM2_HW_ENC);
+
+		c1.x.data = (void *)test_ctx->cp_enc;
+		c1.x.dsize = 32;
+		c1.y.data = c1.x.data + 32;
+		c1.y.dsize = 32;
+		c3.data = c1.y.data + 32;
+		c3.dsize = 32;
+		c2.data = c3.data + 32;
+		c2.dsize = setup.plaintext_size;
+		ecc_in = wcrypto_new_sm2_dec_in(ctx, &c1, &c2, &c3);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
+			goto del_ecc_out;
+		}
+	}
+
+#ifdef DEBUG
+	struct wd_dtb *p;
+
+	wcrypto_get_ecc_prikey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+	print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "prikey");
+	print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "cp_enc");
+#endif
+
+	opdata->op_type = WCRYPTO_SM2_DECRYPT;
+	opdata->out = ecc_out;
+	opdata->in = ecc_in;
+	test_ctx->opdata = opdata;
+	test_ctx->pool = setup.pool;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = ctx; //init ctx
+	test_ctx->key_size = key_size;
+
+	EC_KEY_free(key_a);
+	EVP_PKEY_free(p_key);
+	EVP_PKEY_CTX_free(pctx);
+
+	return test_ctx;
+
+free_pkey:
+	EVP_PKEY_free(p_key);
+free_pkey_ctx:
+	EVP_PKEY_CTX_free(pctx);
+del_ecc_out:
+	(void)wcrypto_del_ecc_out(ctx, ecc_out);
+free_ctx:
+	free(test_ctx);
+free_opdata:
+	free(opdata);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_sw_dec_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_hw_kg_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+
+	struct wcrypto_ecc_op_data *opdata;
+	struct ecc_test_ctx *test_ctx;
+	struct wcrypto_ecc_out *ecc_out;
+	void *ctx = setup.ctx;
+	u32 key_size;
+
+	if (!setup.q || !setup.pool) {
+		HPRE_TST_PRT("%s: parm err!\n", __func__);
+		return NULL;
+	}
+
+	opdata = malloc(sizeof(struct wcrypto_ecc_op_data));
+	if (!opdata)
+		return NULL;
+	memset(opdata, 0, sizeof(struct wcrypto_ecc_op_data));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_opdata;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wcrypto_get_ecc_key_bits(ctx) + 7) / 8;
+	ecc_out = wcrypto_new_sm2_kg_out(ctx);
+	if (!ecc_out) {
+		HPRE_TST_PRT("%s: new sm2 kg out fail!\n", __func__);
+		goto free_ctx;
+	}
+
+	if (setup.key_from) { // set k, id param and support plaintext or dgst
+	} else {}
+
+#ifdef DEBUG
+	//struct wd_dtb *p;
+
+	//wcrypto_get_ecc_pubkey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+	//print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "pubkey");
+	//print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "cp_enc");
+#endif
+
+	opdata->op_type = WCRYPTO_SM2_KG;
+	opdata->out = ecc_out;
+	test_ctx->opdata = opdata;
+	test_ctx->pool = setup.pool;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = ctx; //init ctx
+	test_ctx->key_size = key_size;
+
+	return test_ctx;
+
+	(void)wcrypto_del_ecc_out(ctx, ecc_out);
+free_ctx:
+	free(test_ctx);
+free_opdata:
+	free(opdata);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *sm2_create_sw_kg_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+
+	return NULL;
+}
+
+int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 {
 	int key_size = (key_bits + 7) / 8;
 
@@ -3110,28 +4800,67 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 	setup->key_bits = key_bits;
 
 	if (setup->nid == 714 || key_bits == 256) { //NID_secp256k1
-		setup->d = ecdh_da_secp256k1;
-		setup->except_pub_key = ecdh_except_b_pubkey_secp256k1;
-		setup->cp_pub_key = ecdh_cp_pubkey_secp256k1;
-		setup->cp_share_key = ecdh_cp_sharekey_secp256k1;
-		setup->d_size = sizeof(ecdh_da_secp256k1);
-		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp256k1);
-		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp256k1);
-		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp256k1);
+		/* sm2 */
+		if (op_type == SM2_SIGN || op_type == SM2_VERF ||
+			op_type == SM2_ENC || op_type == SM2_DEC || op_type == SM2_KG ||
+			op_type == SM2_ASYNC_SIGN || op_type == SM2_ASYNC_VERF ||
+			op_type == SM2_ASYNC_ENC || op_type == SM2_ASYNC_DEC || op_type == SM2_ASYNC_KG) {
 
-		/* ecc sign */
-		setup->degist = ecc_except_e_secp256k1;
-		setup->degist_size = sizeof(ecc_except_e_secp256k1);
-		setup->kinv = ecc_except_kinv_secp256k1;
-		setup->kinv_size = sizeof(ecc_except_kinv_secp256k1);
-		setup->rp = ecdh_cp_pubkey_secp256k1 + 1;
-		setup->rp_size = key_size;
-		setup->cp_sign = ecdh_cp_pubkey_secp256k1 + 1; //todo
-		setup->cp_sign_size = 32; //todo
+			setup->priv_key = sm2_priv;
+			setup->priv_key_size = sizeof(sm2_priv);
+			setup->pub_key = sm2_pubkey;
+			setup->pub_key_size = sizeof(sm2_pubkey);
 
-		/* ecc verf */
-		setup->sign = ecc_cp_sign_secp256k1;
-		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+			if (set_msg == MSG_SHORT_PTEXT) {
+				setup->plaintext = sm2_plaintext;
+				setup->plaintext_size = sizeof(sm2_plaintext);
+			} else if (set_msg == MSG_DIGEST){
+				setup->digest = sm2_digest;
+				setup->digest_size = sizeof(sm2_digest);
+			} else if (set_msg == MSG_LONG_PTEXT) {
+				setup->plaintext = malloc(4097);
+				if (!setup->plaintext) {
+					HPRE_TST_PRT("malloc plaintext fail\n");
+					return -1;
+				}
+				setup->plaintext_size = 4097;
+				memset(setup->plaintext, 0x55, setup->plaintext_size);
+			}
+
+			setup->kinv = sm2_k;
+			setup->kinv_size = sizeof(sm2_k);
+			setup->cp_sign = sm2_cp_sign;
+			setup->cp_sign_size = sizeof(sm2_cp_sign);
+			setup->sign = sm2_cp_sign;
+			setup->sign_size = sizeof(sm2_cp_sign);
+			setup->userid = sm2_id;
+			setup->userid_size = sizeof(sm2_id);
+			setup->cp_c = sm2_cp_c;
+			setup->cp_c_size = sizeof(sm2_cp_c);
+		} else {
+			setup->d = ecdh_da_secp256k1;
+			setup->except_pub_key = ecdh_except_b_pubkey_secp256k1;
+			setup->cp_pub_key = ecdh_cp_pubkey_secp256k1;
+			setup->cp_share_key = ecdh_cp_sharekey_secp256k1;
+			setup->d_size = sizeof(ecdh_da_secp256k1);
+			setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp256k1);
+			setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp256k1);
+			setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp256k1);
+
+			/* ecc sign */
+			setup->digest = ecc_except_e_secp256k1;
+			setup->digest_size = sizeof(ecc_except_e_secp256k1);
+			setup->kinv = ecc_except_kinv_secp256k1;
+			setup->kinv_size = sizeof(ecc_except_kinv_secp256k1);
+			setup->rp = ecdh_cp_pubkey_secp256k1 + 1;
+			setup->rp_size = key_size;
+			setup->cp_sign = ecdh_cp_pubkey_secp256k1 + 1; //todo
+			setup->cp_sign_size = 32; //todo
+
+			/* ecc verf */
+			setup->sign = ecc_cp_sign_secp256k1;
+			setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+		}
 	} else if (setup->nid == 706 || key_bits == 128) {
 		setup->d = ecdh_da_secp128k1;
 		setup->except_pub_key = ecdh_except_b_pubkey_secp128k1;
@@ -3143,8 +4872,8 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp128k1);
 
 		/* ecc sign */
-		setup->degist = ecc_except_e_secp128k1;
-		setup->degist_size = sizeof(ecc_except_e_secp128k1);
+		setup->digest = ecc_except_e_secp128k1;
+		setup->digest_size = sizeof(ecc_except_e_secp128k1);
 		setup->kinv = ecc_except_kinv_secp128k1;
 		setup->kinv_size = sizeof(ecc_except_kinv_secp128k1);
 		setup->rp = ecdh_cp_pubkey_secp128k1 + 1;
@@ -3165,8 +4894,8 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp192k1);
 
 		/* ecc sign */
-		setup->degist = ecc_except_e_secp192k1;
-		setup->degist_size = sizeof(ecc_except_e_secp192k1);
+		setup->digest = ecc_except_e_secp192k1;
+		setup->digest_size = sizeof(ecc_except_e_secp192k1);
 		setup->kinv = ecc_except_kinv_secp192k1;
 		setup->kinv_size = sizeof(ecc_except_kinv_secp192k1);
 		setup->rp = ecdh_cp_pubkey_secp192k1 + 1;
@@ -3186,8 +4915,8 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp320k1);
 
 		/* ecc sign */
-		setup->degist = ecc_except_e_secp320k1;
-		setup->degist_size = sizeof(ecc_except_e_secp320k1);
+		setup->digest = ecc_except_e_secp320k1;
+		setup->digest_size = sizeof(ecc_except_e_secp320k1);
 		setup->kinv = ecc_except_kinv_secp320k1;
 		setup->kinv_size = sizeof(ecc_except_kinv_secp320k1);
 		setup->rp = ecdh_cp_pubkey_secp192k1 + 1;
@@ -3208,8 +4937,8 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp384k1);
 
 		/* ecc sign */
-		setup->degist = ecc_except_e_secp384k1;
-		setup->degist_size = sizeof(ecc_except_e_secp384k1);
+		setup->digest = ecc_except_e_secp384k1;
+		setup->digest_size = sizeof(ecc_except_e_secp384k1);
 		setup->kinv = ecc_except_kinv_secp384k1;
 		setup->kinv_size = sizeof(ecc_except_kinv_secp384k1);
 		setup->rp = ecdh_cp_pubkey_secp384k1 + 1;
@@ -3230,8 +4959,8 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp521k1);
 
 		/* ecc sign */
-		setup->degist = ecc_except_e_secp521k1;
-		setup->degist_size = sizeof(ecc_except_e_secp521k1);
+		setup->digest = ecc_except_e_secp521k1;
+		setup->digest_size = sizeof(ecc_except_e_secp521k1);
 		setup->kinv = ecc_except_kinv_secp521k1;
 		setup->kinv_size = sizeof(ecc_except_kinv_secp521k1);
 		setup->rp = ecdh_cp_pubkey_secp521k1 + 1;
@@ -3321,10 +5050,60 @@ struct ecc_test_ctx *ecc_create_test_ctx(struct ecc_test_ctx_setup setup, u32 op
 			test_ctx = ecc_create_sw_verf_test_ctx(setup, optype);
 		}
 		break;
+		case SM2_HW_SIGN:
+		{
+			test_ctx = sm2_create_hw_sign_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_HW_VERF:
+		{
+			test_ctx = sm2_create_hw_verf_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_SW_SIGN:
+		{
+			test_ctx = sm2_create_sw_sign_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_SW_VERF:
+		{
+			test_ctx = sm2_create_sw_verf_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_HW_ENC:
+		{
+			test_ctx = sm2_create_hw_enc_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_HW_DEC:
+		{
+			test_ctx = sm2_create_hw_dec_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_SW_ENC:
+		{
+			test_ctx = sm2_create_sw_enc_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_SW_DEC:
+		{
+			test_ctx = sm2_create_sw_dec_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_HW_KG:
+		{
+			test_ctx = sm2_create_hw_kg_test_ctx(setup, optype);
+		}
+		break;
+		case SM2_SW_KG:
+		{
+			test_ctx = sm2_create_sw_kg_test_ctx(setup, optype);
+		}
+		break;
 		default:
+			printf("optype = %d error\n", optype);
 		break;
 	}
-
 
 	if (test_ctx)
 		test_ctx->setup = setup;
@@ -3349,7 +5128,6 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 			memset(&pkey, 0, sizeof(EVP_PKEY));
 			memset(&ecx, 0, sizeof(ECX_KEY));
 
-			/* openssl 用小端*/
 			if (t_c->key_size == 32) { // x25519
 				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
 				ecx.privkey = x25519_aprikey;
@@ -3543,6 +5321,33 @@ try_again:
 
 int sm2_sign(void *test_ctx, void *tag)
 {
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == SM2_SW_SIGN) {
+	} else {
+		struct wcrypto_ecc_op_data *opdata = t_c->opdata;
+		void* ctx = t_c->priv;
+try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_sm2 fail!\n");
+			return -1;
+		}
+
+		if (tag)
+			return 0;
+#ifdef DEBUG
+	//struct wd_dtb *r, *s;
+	//wcrypto_get_sm2_sign_out_params(opdata->out, &r, &s);
+	//print_data(r->data, r->dsize, "hpre r");
+	//print_data(s->data, s->dsize, "hpre s");
+#endif
+	}
+
 	return 0;
 }
 
@@ -3592,17 +5397,162 @@ try_again:
 
 int sm2_verf(void *test_ctx, void *tag)
 {
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == SM2_SW_VERF) {
+	} else {
+		struct wcrypto_ecc_op_data *opdata = t_c->opdata;
+		void* ctx = t_c->priv;
+try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_sm2 fail!\n");
+			return -1;
+		}
+
+		if (tag)
+			return 0;
+#ifdef DEBUG
+	printf("hpre verf = %d\n", opdata->status);
+#endif
+	}
+
 	return 0;
 }
 
 int sm2_enc(void *test_ctx, void *tag)
 {
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == SM2_SW_ENC) {
+	} else {
+		struct wcrypto_ecc_op_data *opdata = t_c->opdata;
+		void* ctx = t_c->priv;
+try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_sm2 fail!\n");
+			return -1;
+		}
+
+		if (tag)
+			return 0;
+#ifdef DEBUG
+	printf("hpre enc = %d\n", opdata->status);
+#endif
+	}
+
 	return 0;
 }
 
 int sm2_dec(void *test_ctx, void *tag)
 {
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == SM2_SW_DEC) {
+	} else {
+		struct wcrypto_ecc_op_data *opdata = t_c->opdata;
+		void* ctx = t_c->priv;
+try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_sm2 fail!\n");
+			return -1;
+		}
+
+		if (tag)
+			return 0;
+#ifdef DEBUG
+	printf("hpre dec = %d\n", opdata->status);
+#endif
+	}
+
 	return 0;
+}
+
+int sm2_kg(void *test_ctx, void *tag)
+{
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == SM2_SW_KG) {
+	} else {
+		struct wcrypto_ecc_op_data *opdata = t_c->opdata;
+		void* ctx = t_c->priv;
+try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, tag);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_sm2 fail!\n");
+			return -1;
+		}
+
+		if (tag)
+			return 0;
+#ifdef DEBUG
+	printf("hpre kg = %d\n", opdata->status);
+#endif
+	}
+
+	return 0;
+}
+
+static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
+				int b_size, int d_size)
+{
+	int i = d_size - 1;
+	char *buff = NULL;
+	char *src_tmp;
+	int j = 0;
+
+	if (!dst || !src || b_size <= 0 || d_size <= 0) {
+		WD_ERR("crypto bin to hpre bin params err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (b_size < d_size) {
+		WD_ERR("crypto bin to hpre bin param data is too long!\n");
+		return  -WD_EINVAL;
+	}
+
+	if (b_size == d_size)
+		return WD_SUCCESS;
+
+	if (dst == src) {
+		buff = malloc(d_size);
+		if (!buff)
+			return  -WD_ENOMEM;
+		memcpy(buff, src, d_size);
+		src_tmp = buff;
+	} else {
+		src_tmp = (void *)src;
+	}
+
+	for (j = b_size - 1; j >= 0; j--, i--) {
+		if (i >= 0)
+			dst[j] = src_tmp[i];
+		else
+			dst[j] = 0;
+	}
+
+	if (buff)
+		free(buff);
+
+	return WD_SUCCESS;
 }
 
 int ecc_point1buf(struct wcrypto_ecc_point *in, int ksz, void *buf, int bsz)
@@ -3670,8 +5620,8 @@ static int ecc_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	b_r = BN_bin2bn((void *)r->data, r->dsize, NULL);
 	b_s = BN_bin2bn((void *)s->data, s->dsize, NULL);
 	(void)ECDSA_SIG_set0(sig, b_r, b_s);
-	ret = ECDSA_do_verify((void*)test_ctx->setup.degist,
-		test_ctx->setup.degist_size, sig, ec_key);
+	ret = ECDSA_do_verify((void*)test_ctx->setup.digest,
+		test_ctx->setup.digest_size, sig, ec_key);
 	if (ret != 1) {
 		HPRE_TST_PRT("openssl verf fail = %d!\n", ret);
 		print_data(r->data, r->dsize, "r");
@@ -3688,8 +5638,8 @@ static int ecc_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 		return 0;
 
 	/* hpre verf check*/
-	e.data = test_ctx->setup.degist;
-	e.dsize = test_ctx->setup.degist_size;
+	e.data = test_ctx->setup.digest;
+	e.dsize = test_ctx->setup.digest_size;
 
 	ecc_in = wcrypto_new_ecdsa_verf_in(ctx, &e, r, s);
 	if (!ecc_in) {
@@ -3711,6 +5661,390 @@ try_again:
 	}
 
 	return 0;
+}
+
+static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
+{
+	struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+	struct wcrypto_ecc_in *ecc_in;
+	void *ctx = test_ctx->priv;
+	EVP_MD_CTX *md_ctx = test_ctx->priv1;
+	EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
+	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(pctx);
+	EC_KEY *ec_key = EVP_PKEY_get0(p_key);
+	struct wd_dtb *r, *s, e, id;
+	char buff[MAX_SIGN_LENS] = {0};
+	__u8 is_dgst = 0;
+	size_t len;
+	int ret;
+
+	wcrypto_get_sm2_sign_out_params(opdata->out, &r, &s);
+	memcpy(buff, r->data, r->dsize);
+	qm_crypto_bin_to_hpre_bin(buff, r->data, r->bsize, r->dsize);
+	memcpy(buff + 32, s->data, s->dsize);
+	qm_crypto_bin_to_hpre_bin(buff + 32, s->data, s->bsize, s->dsize);
+
+	if (set_rand != RAND_PARAM) {
+				/* openssl and hpre rand inconsistent, verify step:
+				* 1. hpre do verify using hpre sign output
+				* 2. openssl do verify using hpre sign output
+				*/
+
+		/* hpre verf check*/
+		if (set_msg == MSG_DIGEST) {
+			e.data = test_ctx->setup.digest;
+			e.dsize = test_ctx->setup.digest_size;
+		} else {
+			e.data = test_ctx->setup.plaintext;
+			e.dsize = test_ctx->setup.plaintext_size;
+			id.data = test_ctx->setup.userid;
+			id.dsize = test_ctx->setup.userid_size;
+		}
+
+		is_dgst = (set_msg != MSG_DIGEST) ? 0 : 1;
+		ecc_in = wcrypto_new_sm2_verf_in(ctx, &e, r, s, &id, is_dgst);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
+			return -1;
+		}
+		(void)wcrypto_del_ecc_in(ctx, opdata->in);
+
+		opdata->in = ecc_in;
+		opdata->op_type = WCRYPTO_SM2_VERIFY;
+	try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, NULL);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_ecdsa fail!\n");
+			return -1;
+		}
+
+		/* openssl verf check*/
+		len = hpre_bin_sign_to_evp(buff, buff, 32);
+		if (set_msg == MSG_DIGEST) { /* msg digest format */
+			ret = EVP_PKEY_verify_init(pctx);
+			if (ret != 1) {
+				HPRE_TST_PRT("EVP_PKEY_verify_init fail = %d!\n", ret);
+				return -1;
+			}
+
+			ret = EVP_PKEY_verify(pctx, (void *)buff, len, test_ctx->setup.digest,
+				test_ctx->setup.digest_size);
+		} else { /* msg plaintext format  */
+			EVP_PKEY_CTX_set1_id(pctx, test_ctx->setup.userid,
+					test_ctx->setup.userid_size);
+			EVP_DigestVerifyInit(md_ctx, NULL, get_digest_handle(), NULL, p_key);
+			EVP_DigestVerifyUpdate(md_ctx, test_ctx->setup.plaintext,
+						test_ctx->setup.plaintext_size);
+			ret = EVP_DigestVerifyFinal(md_ctx, (void *)buff, len);
+		}
+		if (ret != 1) {
+			HPRE_TST_PRT("openssl verf fail = %d!\n", ret);
+			print_data(buff, len, "sign");
+			if (set_msg == MSG_DIGEST)
+				print_data(test_ctx->setup.digest,
+				test_ctx->setup.digest_size,"digest");
+			else
+				print_data(test_ctx->setup.plaintext,
+					test_ctx->setup.plaintext_size,"plaintext");
+			ECParameters_print_fp(stdout, ec_key);
+			EC_KEY_print_fp(stdout, ec_key, 0);
+			return -1;
+		}
+
+#ifdef DEBUG
+		HPRE_TST_PRT("openssl verf pass!\n");
+#endif
+		if (is_async)
+			return 0;
+
+	} else {
+		if (memcmp(test_ctx->cp_sign, buff, test_ctx->cp_sign_size)) {
+			HPRE_TST_PRT("sm2 op %d mismatch!\n", test_ctx->op);
+			print_data(buff, 64, "hpre out");
+			print_data(test_ctx->cp_sign, test_ctx->cp_sign_size, "openssl out");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
+{
+	struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+	struct wcrypto_ecc_in *ecc_in;
+	struct wcrypto_ecc_out *ecc_out;
+	void *ctx = test_ctx->priv;
+	EVP_PKEY_CTX *pctx = test_ctx->priv1;
+	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(pctx);
+	EC_KEY *ec_key = EVP_PKEY_get0(p_key);
+	struct wcrypto_ecc_point *c1 = NULL;
+	struct wd_dtb *c2 = NULL, *c3 = NULL, *m = NULL;
+	char *buf, *ptext;
+	size_t lens = 0;
+	__u32 evp_len;
+	int ret;
+
+	buf = malloc(MAX_ENC_LENS);
+	if (!buf) {
+		HPRE_TST_PRT("malloc out buff fail!\n");
+		return -1;
+	}
+
+	ptext = malloc(MAX_ENC_LENS);
+	if (!ptext) {
+		HPRE_TST_PRT("malloc ptext fail!\n");
+		return -1;
+	}
+
+	memset(buf, 0, MAX_ENC_LENS);
+	memset(ptext, 0, MAX_ENC_LENS);
+	lens = MAX_ENC_LENS;
+	wcrypto_get_sm2_enc_out_params(opdata->out, &c1, &c2, &c3);
+	if (set_rand != RAND_PARAM) {
+				/* openssl and hpre rand inconsistent, verify step:
+				* 1. openssl do verify using hpre sign output
+				* 2. hpre do verify using hpre sign output
+				*/
+
+		/* openssl dec check*/
+		qm_crypto_bin_to_hpre_bin(c1->x.data, c1->x.data, c1->x.bsize, c1->x.dsize);
+		qm_crypto_bin_to_hpre_bin(c1->y.data, c1->y.data, c1->y.bsize, c1->y.dsize);
+		qm_crypto_bin_to_hpre_bin(c3->data, c3->data, c3->bsize, c3->dsize);
+		evp_len = sm2_enc_in_bin_to_evp(buf, c1->x.data, c2->dsize, 32);
+		ret = EVP_PKEY_decrypt(pctx, (void *)ptext, &lens, (void *)buf, evp_len);
+		if (ret != 1) {
+			HPRE_TST_PRT("openssl dec fail = %d!\n", ret);
+			print_data(buf, evp_len, "dec");
+			ECParameters_print_fp(stdout, ec_key);
+			EC_KEY_print_fp(stdout, ec_key, 0);
+			return -1;
+		}
+
+		if (lens != test_ctx->setup.plaintext_size ||
+			memcmp(test_ctx->setup.plaintext, ptext, lens)) {
+			HPRE_TST_PRT("openssl decrypt mismatch!\n");
+			print_data(buf, lens, "openssl dec out");
+			return -1;
+		}
+
+		if (is_async)
+			return 0;
+
+		/* hpre dec check*/
+		c1->x.dsize = 32;
+		c1->y.dsize = 32;
+		c3->dsize = 32;
+		ecc_in = wcrypto_new_sm2_dec_in(ctx, c1, c2, c3);
+		if (!ecc_in) {
+			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
+			return -1;
+		}
+
+		ecc_out = wcrypto_new_sm2_dec_out(ctx, c2->dsize);
+		if (!ecc_out) {
+			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
+			return -1;
+		}
+
+		(void)wcrypto_del_ecc_in(ctx, opdata->in);
+		(void)wcrypto_del_ecc_out(ctx, opdata->out);
+		opdata->in = ecc_in;
+		opdata->out = ecc_out;
+		opdata->op_type = WCRYPTO_SM2_DECRYPT;
+
+	try_again:
+		ret = wcrypto_do_sm2(ctx, opdata, NULL);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wcrypto_do_ecdsa fail!\n");
+			return -1;
+		}
+
+		wcrypto_get_sm2_dec_out_params(opdata->out, &m);
+		if (m->dsize != test_ctx->setup.plaintext_size || memcmp(m->data, test_ctx->setup.plaintext, m->dsize)) {
+			HPRE_TST_PRT("hpre decrypt mismatch!\n");
+			print_data(m->data, m->dsize, "hpre dec out");
+			return -1;
+		}
+	} else {
+		memcpy(buf, c1->x.data, c1->x.dsize);
+		qm_crypto_bin_to_hpre_bin(buf, c1->x.data, c1->x.bsize, c1->x.dsize);
+		memcpy(buf + 32, c1->y.data, c1->y.dsize);
+		qm_crypto_bin_to_hpre_bin(buf + 32, c1->y.data, c1->y.bsize, c1->y.dsize);
+		memcpy(buf + 32 * 2, c3->data, c3->dsize);
+		qm_crypto_bin_to_hpre_bin(buf + 32 * 2, c3->data, c3->bsize, c3->dsize);
+		memcpy(buf + 32 * 3, c2->data, c2->dsize);
+		lens = 32 * 3 + c2->dsize;
+		if (lens != test_ctx->cp_enc_size ||
+			memcmp(test_ctx->cp_enc, buf, test_ctx->cp_enc_size)) {
+			HPRE_TST_PRT("sm2 op %d mismatch!\n", test_ctx->op);
+			print_data(c1->x.data, c1->x.dsize, "c1 x");
+			print_data(c1->y.data, c1->y.dsize, "c1 y");
+			print_data(c3->data, c3->dsize, "c3");
+			print_data(c2->data, c2->dsize, "c2");
+			print_data(buf, lens, "hpre out");
+			print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "openssl out");
+			return -1;
+		}
+	}
+
+	free(buf);
+	free(ptext);
+	return 0;
+}
+
+static int sm2_dec_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
+{
+	struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+	struct wd_dtb *m = NULL;
+
+	wcrypto_get_sm2_dec_out_params(opdata->out, &m);
+
+	if (m->dsize != test_ctx->setup.plaintext_size ||
+		memcmp(test_ctx->setup.plaintext, m->data, m->dsize)) {
+		HPRE_TST_PRT("sm2 op %d mismatch!\n", test_ctx->op);
+		print_data(m->data, m->dsize, "hpre out");
+		print_data(test_ctx->setup.plaintext,
+			test_ctx->setup.plaintext_size,"openssl out");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int sm2_kg_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
+{
+	struct ecc_test_ctx_setup *setup = &test_ctx->setup;
+	struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+	struct wd_dtb *privkey = NULL;
+	struct wcrypto_ecc_point *pubkey = NULL;
+	EC_POINT *point_tmp, *ptr;
+	EVP_PKEY_CTX *pctx;
+	EVP_PKEY *p_key;
+	EC_KEY *key_a = NULL;
+	EC_GROUP *group_a;
+	BIGNUM *pub, *priv;
+	char buff[100] = {0x4};
+	size_t sig_len = 100;
+	int ret = -1;
+
+	wcrypto_get_sm2_kg_out_params(opdata->out, &privkey, &pubkey);
+
+	key_a = EC_KEY_new();
+	if (!key_a) {
+		printf("EC_KEY_new err!\n");
+		return -1;
+	}
+
+	group_a = EC_GROUP_new_by_curve_name(EVP_PKEY_SM2);
+	if(!group_a) {
+		printf("EC_GROUP_new_by_curve_name err!\n");
+		goto free_key;
+	}
+
+	ret = EC_KEY_set_group(key_a, group_a);
+	if(ret != 1) {
+		printf("EC_KEY_set_group err.\n");
+		goto free_froup;
+	}
+
+	/* set prikey */
+	priv = BN_bin2bn((void *)privkey->data, privkey->dsize, NULL);
+	ret = EC_KEY_set_private_key(key_a, priv);
+	if (ret != 1) {
+		printf("EC_KEY_set_private_key failed\n");
+		goto free_froup;
+	}
+	BN_free(priv);
+
+	/* set pub */
+	qm_crypto_bin_to_hpre_bin(pubkey->x.data, pubkey->x.data, pubkey->x.bsize, pubkey->x.dsize);
+	qm_crypto_bin_to_hpre_bin(pubkey->y.data, pubkey->y.data, pubkey->y.bsize, pubkey->y.dsize);
+	memcpy(&buff[1], pubkey->x.data, 64);
+
+	point_tmp = EC_GROUP_get0_generator(group_a);
+
+	pub = BN_bin2bn((void *)buff, 65, NULL);
+	ptr = EC_POINT_bn2point(group_a, pub, point_tmp, NULL);
+	if (!ptr) {
+		printf("EC_POINT_bn2point failed\n");
+		print_data(buff, 65, "hpre key");
+		goto free_froup;
+	}
+
+	ret = EC_KEY_set_public_key(key_a, point_tmp);
+	if (ret != 1) {
+		printf("EC_KEY_set_public_key failed\n");
+		goto free_froup;
+
+	}
+	BN_free(pub);
+	EC_GROUP_free(group_a);
+
+
+	p_key = EVP_PKEY_new();
+	if (!p_key) {
+		printf("EVP_PKEY_new failed\n");
+		goto free_froup;
+	}
+	EVP_PKEY_set1_EC_KEY(p_key, key_a);
+	EVP_PKEY_set_alias_type(p_key, EVP_PKEY_SM2);
+
+	pctx = EVP_PKEY_CTX_new(p_key, NULL);
+	if (!pctx) {
+		printf("EVP_PKEY_CTX_new failed\n");
+		goto free_pkey;
+	}
+
+	ret = EVP_PKEY_sign_init(pctx);
+	if (ret != 1) {
+		printf("EVP_PKEY_sign_init fail, ret %d\n", ret);
+		goto free_pkey_ctx;
+	}
+
+	ret = EVP_PKEY_sign(pctx, (void *)buff, (void *)&sig_len, setup->digest,
+				(size_t)setup->digest_size);
+	if (ret != 1) {
+		printf("EVP_PKEY_sign fail, ret %d\n", ret);
+		goto free_pkey_ctx;
+	}
+
+	ret = EVP_PKEY_verify_init(pctx);
+	if (ret != 1) {
+		HPRE_TST_PRT("EVP_PKEY_verify_init fail = %d!\n", ret);
+		goto free_pkey_ctx;
+	}
+
+	ret = EVP_PKEY_verify(pctx, (void *)buff, sig_len, setup->digest, setup->digest_size);
+	if (ret != 1) {
+		HPRE_TST_PRT("EVP_PKEY_verify fail = %d!\n", ret);
+		ECParameters_print_fp(stdout, key_a);
+		EC_KEY_print_fp(stdout, key_a, 0);
+		goto free_pkey_ctx;
+	}
+
+	EVP_PKEY_CTX_free(pctx);
+	EVP_PKEY_free(p_key);
+	EC_KEY_free(key_a);
+
+	return 0;
+
+free_pkey_ctx:
+	EVP_PKEY_CTX_free(pctx);
+free_pkey:
+	EVP_PKEY_free(p_key);
+free_froup:
+	EC_GROUP_free(group_a);
+free_key:
+	EC_KEY_free(key_a);
+
+	return -1;
 }
 
 int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
@@ -3815,15 +6149,30 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 		ret = ecc_sign_result_check(test_ctx, is_async);
 		if (ret)
 			return ret;
-	} else if (test_ctx->op == ECC_HW_VERF) {
+	} else if (test_ctx->op == ECC_HW_VERF || test_ctx->op == SM2_HW_VERF) {
 		if (opdata->status != 0) {
 			HPRE_TST_PRT("hpre verf faild = %d!\n", opdata->status);
 			return -1;
 		}
+	} else if (test_ctx->op == SM2_HW_SIGN) {
+		ret = sm2_sign_result_check(test_ctx, is_async);
+		if (ret)
+			return ret;
+	} else if (test_ctx->op == SM2_HW_ENC) {
+		ret = sm2_enc_result_check(test_ctx, is_async);
+		if (ret)
+			return ret;
+	} else if (test_ctx->op == SM2_HW_DEC) {
+		ret = sm2_dec_result_check(test_ctx, is_async);
+		if (ret)
+			return ret;
+	} else if (test_ctx->op == SM2_HW_KG) {
+		ret = sm2_kg_result_check(test_ctx, is_async);
+		if (ret)
+			return ret;
 	} else {}
 
 	return 0;
-
 }
 
 void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
@@ -3881,10 +6230,66 @@ void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
 
 		free(opdata);
 		EC_KEY_free(test_ctx->priv);
-	} else if (ECC_HW_VERF == test_ctx->op) {
+	} else if (ECC_HW_VERF == test_ctx->op || SM2_HW_VERF == test_ctx->op) {
 		struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
 
 		wcrypto_del_ecc_in(test_ctx->priv, opdata->in);
+		free(opdata);
+	} else if (SM2_HW_SIGN == test_ctx->op) {
+		struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+
+		if (test_ctx->priv1) {
+			EVP_MD_CTX *md_ctx = test_ctx->priv1;
+			EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
+			EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(pctx);
+			EC_KEY *ec_key = EVP_PKEY_get0(p_key);
+
+			EC_KEY_free(ec_key);
+			EVP_PKEY_free(p_key);
+			EVP_PKEY_CTX_free(pctx);
+			EVP_MD_CTX_free(md_ctx);
+		}
+
+		wcrypto_del_ecc_out(test_ctx->priv, opdata->out);
+		wcrypto_del_ecc_in(test_ctx->priv, opdata->in);
+		free(opdata);
+	} else if (SM2_SW_SIGN == test_ctx->op) {
+	} else if (SM2_HW_ENC == test_ctx->op) {
+		struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+
+		if (test_ctx->priv1) {
+			EVP_PKEY_CTX *pctx = test_ctx->priv1;
+			EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(pctx);
+			EC_KEY *ec_key = EVP_PKEY_get0(p_key);
+
+			EC_KEY_free(ec_key);
+			EVP_PKEY_free(p_key);
+			EVP_PKEY_CTX_free(pctx);
+		}
+
+		wcrypto_del_ecc_out(test_ctx->priv, opdata->out);
+		wcrypto_del_ecc_in(test_ctx->priv, opdata->in);
+		free(opdata);
+	} else if (SM2_HW_DEC == test_ctx->op) {
+		struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+
+		wcrypto_del_ecc_out(test_ctx->priv, opdata->out);
+		wcrypto_del_ecc_in(test_ctx->priv, opdata->in);
+		free(opdata);
+	} else if (SM2_HW_KG == test_ctx->op) {
+		struct wcrypto_ecc_op_data *opdata = test_ctx->opdata;
+
+		if (test_ctx->priv1) {
+			EVP_PKEY_CTX *pctx = test_ctx->priv1;
+			EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(pctx);
+			EC_KEY *ec_key = EVP_PKEY_get0(p_key);
+
+			EC_KEY_free(ec_key);
+			EVP_PKEY_free(p_key);
+			EVP_PKEY_CTX_free(pctx);
+		}
+
+		wcrypto_del_ecc_out(test_ctx->priv, opdata->out);
 		free(opdata);
 	} else {
 		HPRE_TST_PRT("%s: no op %d\n", __func__, test_ctx->op);
@@ -3963,23 +6368,6 @@ err:
 		free(pSwData);
 }
 
-static int hpre_get_rand(char *out, size_t out_len, void *usr)
-{
-	int ret;
-
-	if (!out) {
-		return -1;
-	}
-
-	ret = RAND_priv_bytes((void *)out, out_len);
-	if (ret != 1) {
-		HPRE_TST_PRT("RAND_priv_bytes fail = %d\n", ret);
-		return -1;
-	}
-
-	return 0;
-}
-
 void fill_ecdh_param_of_curve(struct wcrypto_ecc_curve *param)
 {
 	__u32 key_size = (key_bits + 7) / 8;
@@ -4050,7 +6438,7 @@ static void *_ecc_sys_test_thread(void *data)
 	struct test_hpre_pthread_dt *pdata = data;
 	struct dh_user_tag_info *pTag = NULL;
 	struct ecc_test_ctx *test_ctx;
-	struct ecc_test_ctx_setup setup;
+	struct ecc_test_ctx_setup setup = {0};
 	struct timeval cur_tval;
 	enum alg_op_type opType;
 	float time_used, speed = 0.0;
@@ -4098,7 +6486,8 @@ static void *_ecc_sys_test_thread(void *data)
 					 pid, thread_id, cpuid);
 	}
 
-	if (!(!strncmp(q->capa.alg, "x448", 4) || !strncmp(q->capa.alg, "x25519", 5))) {
+	if (!(!strncmp(q->capa.alg, "x448", 4) || !strncmp(q->capa.alg, "x25519", 5) ||
+		!strncmp(q->capa.alg, "sm2", 3))) {
 		ret = get_ecc_nid(ecc_curve_name, &setup.nid, &setup.curve_id);
 		if (ret < 0) {
 			HPRE_TST_PRT("ecc sys test not find curve!\n");
@@ -4119,7 +6508,9 @@ static void *_ecc_sys_test_thread(void *data)
 		ctx_setup.br.get_bufsize = (void *)wd_blksize;
 		ctx_setup.br.usr = pool;
 
-		if (!(!strncmp(q->capa.alg, "x448", 4) || !strncmp(q->capa.alg, "x25519", 5))) {
+		if (!(!strncmp(q->capa.alg, "x448", 4) ||
+			!strncmp(q->capa.alg, "x25519", 5) ||
+			!strncmp(q->capa.alg, "sm2", 3))) {
 			if (!setup.curve_id) {
 				ctx_setup.cv.type = WCRYPTO_CV_CFG_PARAM;
 				fill_ecdh_param_of_curve(&param);
@@ -4131,7 +6522,27 @@ static void *_ecc_sys_test_thread(void *data)
 		}
 
 		ctx_setup.key_bits = key_bits;
-		ctx_setup.rand.cb = hpre_get_rand;
+
+		if (set_rand == RAND_CB) {
+			ctx_setup.rand.cb = hpre_get_rand;
+		}
+
+		if (set_hash != HASH_NON) {
+			ctx_setup.hash.cb = hpre_compute_hash;
+			if (set_hash == HASH_SHA1) {
+				ctx_setup.hash.type = WCRYPTO_HASH_SHA1;
+			} else if (set_hash == HASH_SHA224) {
+				ctx_setup.hash.type = WCRYPTO_HASH_SHA224;
+			} else if (set_hash == HASH_SHA256) {
+				ctx_setup.hash.type = WCRYPTO_HASH_SHA256;
+			} else if (set_hash == HASH_MD4) {
+				ctx_setup.hash.type = WCRYPTO_HASH_MD4;
+			} else if (set_hash == HASH_MD5) {
+				ctx_setup.hash.type = WCRYPTO_HASH_MD5;
+			} else {
+				ctx_setup.hash.type = WCRYPTO_HASH_SM3;
+			}
+		}
 	}
 
 	if ((!strncmp(q->capa.alg, "x25519", 6)) || (!strncmp(q->capa.alg, "x448", 4))) {
@@ -4139,19 +6550,25 @@ static void *_ecc_sys_test_thread(void *data)
 			wcrypto_del_ecc_ctx(ctx);
 			return NULL;
 		}
-	} else if (ecxdh_init_test_ctx_setup(&setup, opType)) {
+	} else if (ecc_init_test_ctx_setup(&setup, opType)) {
 		wcrypto_del_ecc_ctx(ctx);
 		return NULL;
 	}
 
-	if (opType == ECDSA_SIGN || opType == SM2_SIGN || opType == ECDSA_ASYNC_SIGN)
+	if (opType == ECDSA_SIGN || opType == ECDSA_ASYNC_SIGN)
 		setup.op_type = (only_soft) ? ECC_SW_SIGN: ECC_HW_SIGN;
-	else if (opType == ECDSA_VERF || opType == SM2_VERF || opType == ECDSA_ASYNC_VERF)
+	else if (opType == ECDSA_VERF || opType == ECDSA_ASYNC_VERF)
 		setup.op_type = (only_soft) ? ECC_SW_VERF: ECC_HW_VERF;
-	else if (opType == SM2_ENC)
+	else if (opType == SM2_SIGN || opType == SM2_ASYNC_SIGN)
+		setup.op_type = (only_soft) ? SM2_SW_SIGN: SM2_HW_SIGN;
+	else if (opType == SM2_VERF || opType == SM2_ASYNC_VERF)
+		setup.op_type = (only_soft) ? SM2_SW_VERF: SM2_HW_VERF;
+	else if (opType == SM2_ENC || opType == SM2_ASYNC_ENC)
 		setup.op_type = (only_soft) ? SM2_SW_ENC: SM2_HW_ENC;
-	else if (opType == SM2_DEC)
+	else if (opType == SM2_DEC || opType == SM2_ASYNC_DEC)
 		setup.op_type = (only_soft) ? SM2_SW_DEC: SM2_HW_DEC;
+	else if (opType == SM2_KG || opType == SM2_ASYNC_KG)
+		setup.op_type = (only_soft) ? SM2_SW_KG: SM2_HW_KG;
 	else if (opType == ECDH_ASYNC_GEN || opType == ECDH_GEN ||
 		 opType == X25519_ASYNC_GEN || opType == X25519_GEN ||
 		 opType == X448_ASYNC_GEN || opType == X448_GEN)
@@ -4229,6 +6646,11 @@ new_test_with_no_req_ctx: // async test
 			}
 		} else if (opType == SM2_DEC || opType == SM2_ASYNC_DEC) {
 			if (sm2_dec(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}
+		} else if (opType == SM2_KG || opType == SM2_ASYNC_KG) {
+			if (sm2_kg(test_ctx, pTag)) { // todo
 				ret = -1;
 				goto fail_release;
 			}
@@ -5744,6 +8166,8 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 				q[j].capa.alg = "x25519";
 			else if (op_type >= X448_GEN && op_type <= X448_ASYNC_COMPUTE)
 				q[j].capa.alg = "x448";
+			else
+				q[j].capa.alg = "sm2";
 
 			if (dev_path)
 				strncpy(q[j].dev_path, dev_path, sizeof(q[j].dev_path));
@@ -5761,8 +8185,12 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 			else if (!strncmp(q[j].capa.alg, "ecdh", 4) ||
 				!strncmp(q[j].capa.alg, "x25519", 6) ||
 				!strncmp(q[j].capa.alg, "x448", 4) ||
+				!strncmp(q[j].capa.alg, "sm2", 3) ||
 				!strncmp(q[j].capa.alg, "ecdsa", 5))
 				setup.block_size = get_ecc_min_blocksize(key_bits) * 8;
+
+			if (!strncmp(q[j].capa.alg, "sm2", 3))
+				setup.block_size = 5000;
 
 			setup.block_num = block_num;
 			setup.align_size = 64;
@@ -6572,7 +9000,10 @@ static void *_ecc_async_poll_test_thread(void *data)
 			ret = wcrypto_ecxdh_poll(q, 1);
 		} else if (op == ECDSA_ASYNC_SIGN || op == ECDSA_ASYNC_VERF) {
 			ret = wcrypto_ecdsa_poll(q, 1);
-		} else { // SM2, todo
+		} else if (op == SM2_ASYNC_SIGN || op == SM2_ASYNC_VERF ||
+			op == SM2_ASYNC_DEC || op == SM2_ASYNC_ENC || op == SM2_ASYNC_KG) {
+			ret = wcrypto_sm2_poll(q, 1);
+		} else {
 			ret = -1;
 		}
 
@@ -6624,7 +9055,11 @@ static int ecc_async_test(int thread_num, __u64 lcore_mask,
 	}
 
 	memset(&setup, 0, sizeof(setup));
-	setup.block_size = get_ecc_min_blocksize(key_bits) * 8;
+	if (!strncmp(q->capa.alg, "sm2", 3))
+		setup.block_size = 5000;
+	else
+		setup.block_size = get_ecc_min_blocksize(key_bits) * 8;
+
 	setup.block_num = block_num;
 	setup.align_size = 64;
 
@@ -6891,19 +9326,19 @@ int main(int argc, char *argv[])
 		alg_op_type = ECDH_ASYNC_COMPUTE;
 		is_system_test = 1;
 	} else if (!strcmp(argv[1], "-system-sign-ecc")) {
-		HPRE_TST_PRT("ECDH sign sync\n");
+		HPRE_TST_PRT("ecdsa sign sync\n");
 		alg_op_type = ECDSA_SIGN;
 		is_system_test = 1;
 	} else if (!strcmp(argv[1], "-system-verf-ecc")) {
-		HPRE_TST_PRT("ECDH verf sync\n");
+		HPRE_TST_PRT("ecdsa verf sync\n");
 		alg_op_type = ECDSA_VERF;
 		is_system_test = 1;
 	} else if (!strcmp(argv[1], "-system-asign-ecc")) {
-		HPRE_TST_PRT("ECDH sign sync\n");
+		HPRE_TST_PRT("ecdsa sign async\n");
 		alg_op_type = ECDSA_ASYNC_SIGN;
 		is_system_test = 1;
 	} else if (!strcmp(argv[1], "-system-averf-ecc")) {
-		HPRE_TST_PRT("ECDH verf sync\n");
+		HPRE_TST_PRT("ecdsa verf async\n");
 		alg_op_type = ECDSA_ASYNC_VERF;
 		is_system_test = 1;
 	} else if (!strcmp(argv[1], "-system-gen1-x25519")) {
@@ -6937,6 +9372,46 @@ int main(int argc, char *argv[])
 	} else if (!strcmp(argv[1], "-system-agen2-x448")) {
 		HPRE_TST_PRT("x448 agen2 sync\n");
 		alg_op_type = X448_ASYNC_COMPUTE;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-sign-sm2")) {
+		HPRE_TST_PRT("sm2 sign sync\n");
+		alg_op_type = SM2_SIGN;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-verf-sm2")) {
+		HPRE_TST_PRT("sm2 verf sync\n");
+		alg_op_type = SM2_VERF;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-asign-sm2")) {
+		HPRE_TST_PRT("sm2 sign async\n");
+		alg_op_type = SM2_ASYNC_SIGN;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-averf-sm2")) {
+		HPRE_TST_PRT("sm2 verf async\n");
+		alg_op_type = SM2_ASYNC_VERF;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-enc-sm2")) {
+		HPRE_TST_PRT("sm2 enc sync\n");
+		alg_op_type = SM2_ENC;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-dec-sm2")) {
+		HPRE_TST_PRT("sm2 dec sync\n");
+		alg_op_type = SM2_DEC;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-aenc-sm2")) {
+		HPRE_TST_PRT("sm2 enc async\n");
+		alg_op_type = SM2_ASYNC_ENC;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-adec-sm2")) {
+		HPRE_TST_PRT("sm2 dec async\n");
+		alg_op_type = SM2_ASYNC_DEC;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-kg-sm2")) {
+		HPRE_TST_PRT("sm2 kg sync\n");
+		alg_op_type = SM2_KG;
+		is_system_test = 1;
+	} else if (!strcmp(argv[1], "-system-akg-sm2")) {
+		HPRE_TST_PRT("sm2 kg async\n");
+		alg_op_type = SM2_ASYNC_KG;
 		is_system_test = 1;
 	} else {
 		goto basic_function_test;
@@ -7041,8 +9516,8 @@ int main(int argc, char *argv[])
 
 		q_num = (thread_num - 1) / ctx_num_per_q + 1;
 
-		if (argc == 13) {
-			if (alg_op_type > MAX_DH_TYPE && alg_op_type < MAX_ECC_TYPE) {
+		if (argc == 13 || argc == 14) {
+			if (alg_op_type > MAX_DH_TYPE && alg_op_type < MAX_ECDSA_TYPE) {
 				ecc_curve_name = argv[10];
 			/* curve x25519/x448 has th only param which is denoted in drv */
 			} else if (alg_op_type >= X25519_GEN && alg_op_type <= X25519_ASYNC_COMPUTE) {
@@ -7051,6 +9526,22 @@ int main(int argc, char *argv[])
 			} else if (alg_op_type >= X448_GEN && alg_op_type <= X448_ASYNC_COMPUTE) {
 				ecc_curve_name = "";
 				key_bits = 448;
+			} else if (alg_op_type >= SM2_SIGN && alg_op_type <= SM2_ASYNC_KG) {
+				ecc_curve_name = "";
+				if (!strcmp(argv[10], "set-rand-non"))
+					set_rand = RAND_NON;
+				else if (!strcmp(argv[10], "set-rand-param"))
+					set_rand = RAND_PARAM;
+				else if (!strcmp(argv[10], "set-rand-cb"))
+					set_rand = RAND_CB;
+
+				if (!strcmp(argv[8], "set-dgst"))
+					set_msg = MSG_DIGEST;
+				else if (!strcmp(argv[8], "set-ptext-short"))
+					set_msg = MSG_SHORT_PTEXT;
+				else if (!strcmp(argv[8], "set-ptext-long"))
+					set_msg = MSG_LONG_PTEXT;
+				key_bits = 256;
 			} else {
 				if (!strcmp(argv[10], "-g2")) {
 					g_mode = "-g2";
@@ -7083,6 +9574,23 @@ int main(int argc, char *argv[])
 				HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
 				return -EINVAL;
 			}
+
+			if (argc == 14) {
+				if (!strcmp(argv[13], "set-sha1"))
+					set_hash = HASH_SHA1;
+				else if (!strcmp(argv[13], "set-sha224"))
+					set_hash = HASH_SHA224;
+				else if (!strcmp(argv[13], "set-sha256"))
+					set_hash = HASH_SHA256;
+				else if (!strcmp(argv[13], "set-sm3"))
+					set_hash = HASH_SM3;
+				else if (!strcmp(argv[13], "set-md4"))
+					set_hash = HASH_MD4;
+				else if (!strcmp(argv[13], "set-md5"))
+					set_hash = HASH_MD5;
+				else if (!strcmp(argv[13], "set-hash-non"))
+					set_hash = HASH_NON;
+			}
 		}
 
 		if (argc == 12) {
@@ -7108,7 +9616,7 @@ int main(int argc, char *argv[])
 		}
 
 		if (argc == 11) {
-			if (alg_op_type > MAX_DH_TYPE && alg_op_type < MAX_ECC_TYPE) {
+			if (alg_op_type > MAX_DH_TYPE && alg_op_type < MAX_ECDSA_TYPE) {
 				ecc_curve_name = argv[10];
 			} else if (alg_op_type >= X25519_GEN && alg_op_type <= X25519_ASYNC_COMPUTE) {
 				ecc_curve_name = "";
@@ -7116,6 +9624,22 @@ int main(int argc, char *argv[])
 			} else if (alg_op_type >= X448_GEN && alg_op_type <= X448_ASYNC_COMPUTE) {
 				ecc_curve_name = "";
 				key_bits = 448;
+			} else if (alg_op_type >= SM2_SIGN && alg_op_type <= SM2_ASYNC_KG) {
+				ecc_curve_name = "";
+				if (!strcmp(argv[10], "set-rand-non"))
+					set_rand = RAND_NON;
+				else if (!strcmp(argv[10], "set-rand-param"))
+					set_rand = RAND_PARAM;
+				else if (!strcmp(argv[10], "set-rand-cb"))
+					set_rand = RAND_CB;
+
+				if (!strcmp(argv[8], "set-dgst"))
+					set_msg = MSG_DIGEST;
+				else if (!strcmp(argv[8], "set-ptext-short"))
+					set_msg = MSG_SHORT_PTEXT;
+				else if (!strcmp(argv[8], "set-ptext-long"))
+					set_msg = MSG_LONG_PTEXT;
+				key_bits = 256;
 			} else {
 				if (!strcmp(argv[10], "-g2")) {
 					g_mode = "-g2";
@@ -7139,7 +9663,10 @@ int main(int argc, char *argv[])
 			alg_op_type == ECDH_GEN || alg_op_type == ECDH_COMPUTE ||
 			alg_op_type == ECDSA_SIGN || alg_op_type == ECDSA_VERF ||
 			alg_op_type == X25519_GEN || alg_op_type == X25519_COMPUTE ||
-			alg_op_type == X448_GEN || alg_op_type == X448_COMPUTE)
+			alg_op_type == X448_GEN || alg_op_type == X448_COMPUTE ||
+			alg_op_type == SM2_SIGN || alg_op_type == SM2_VERF ||
+			alg_op_type == SM2_ENC || alg_op_type == SM2_DEC ||
+			alg_op_type == SM2_KG)
 			return hpre_sys_test(thread_num, core_mask[0],
 					     core_mask[1], alg_op_type, dev_path, node_msk);
 		else if (alg_op_type > MAX_RSA_SYNC_TYPE && alg_op_type < MAX_RSA_ASYNC_TYPE)
@@ -7151,7 +9678,10 @@ int main(int argc, char *argv[])
 		else if (alg_op_type == ECDH_ASYNC_GEN || alg_op_type == ECDH_ASYNC_COMPUTE ||
 			alg_op_type == ECDSA_ASYNC_SIGN || alg_op_type == ECDSA_ASYNC_VERF ||
 			alg_op_type == X25519_ASYNC_GEN || alg_op_type == X25519_ASYNC_COMPUTE ||
-			alg_op_type == X448_ASYNC_GEN || alg_op_type == X448_ASYNC_COMPUTE)
+			alg_op_type == X448_ASYNC_GEN || alg_op_type == X448_ASYNC_COMPUTE ||
+			alg_op_type == SM2_ASYNC_SIGN || alg_op_type == SM2_ASYNC_VERF ||
+			alg_op_type == SM2_ASYNC_ENC || alg_op_type == SM2_ASYNC_DEC ||
+			alg_op_type == SM2_ASYNC_KG)
 			return ecc_async_test(thread_num, core_mask[0],
 					      core_mask[1], alg_op_type);
 		else
