@@ -572,12 +572,17 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	return ret;
 }
 
-int wd_cipher_poll_ctx(handle_t h_ctx,__u32 expt, __u32* count)
+int wd_cipher_poll_ctx(handle_t h_ctx, __u32 expt, __u32* count)
 {
 	struct wd_cipher_msg resp_msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
 	int ret;
+
+	if (unlikely(!h_ctx || !count)) {
+		WD_ERR("wd cipher poll ctx input param is NULL!\n");
+		return -EINVAL;
+	}
 
 	do {
 		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &resp_msg);
