@@ -595,6 +595,11 @@ int wd_rsa_poll_ctx(handle_t ctx, __u32 expt, __u32 *count)
 	__u32 rcv_cnt = 0;
 	int ret;
 
+	if (unlikely(!count || !ctx)) {
+		WD_ERR("param NULL!\n");
+		return -EINVAL;
+	}
+
 	do {
 		ret = wd_rsa_setting.driver->recv(ctx, &msg);
 		if (ret == -EAGAIN) {
