@@ -545,7 +545,9 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
+						    req,
+						    &sess->key);
 	if (index > config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
@@ -714,7 +716,9 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
+						    req,
+						    &sess->key);
 	if (index > config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
@@ -792,7 +796,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
+						    req,
+						    &sess->key);
 	if (index > config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
