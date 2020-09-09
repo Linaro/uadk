@@ -403,6 +403,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	ret = hizip_verify_random_output(out_buf, copts, &info);
 
 out_with_fini:
+	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
 		uninit_config(&info, sched);
 out_with_out_buf:
