@@ -129,6 +129,7 @@ static int copy_sched_to_global_setting(struct wd_sched *sched)
 	if (!sched->name)
 		return -EINVAL;
 
+	wd_comp_setting.sched.h_sched_ctx = sched->h_sched_ctx;
 	wd_comp_setting.sched.name = strdup(sched->name);
 	wd_comp_setting.sched.pick_next_ctx = sched->pick_next_ctx;
 	wd_comp_setting.sched.poll_policy = sched->poll_policy;
@@ -142,6 +143,7 @@ static void clear_sched_in_global_setting(void)
 
 	if (name)
 		free(name);
+	wd_comp_setting.sched.h_sched_ctx = 0;
 	wd_comp_setting.sched.name = NULL;
 	wd_comp_setting.sched.pick_next_ctx = NULL;
 	wd_comp_setting.sched.poll_policy = NULL;
