@@ -167,6 +167,11 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 	list = wd_get_accel_list("zlib");
 	if (!list)
 		return -ENODEV;
+	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, lib_poll_func);
+	if (!sched) {
+		WD_ERR("sample_sched_alloc fail\n");
+		goto out_sched;
+	}
 	info->list = list;
 	q_num = opts->q_num;
 
@@ -180,25 +185,25 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 				     0, q_num - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		goto free_list;
+		goto out_fill;
 	}
 	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 0, 1,
 				     q_num, q_num * 2 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		goto free_list;
+		goto out_fill;
 	}
 	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 1, 0,
 				     q_num * 2, q_num * 3 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		goto free_list;
+		goto out_fill;
 	}
 	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 1, 1,
 				     q_num * 3, q_num * 4 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
-		goto free_list;
+		goto out_fill;
 	}
 
 	memset(ctx_conf, 0, sizeof(struct wd_ctx_config));
@@ -207,7 +212,7 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 	if (!ctx_conf->ctxs) {
 		WD_ERR("Not enough memory to allocate contexts.\n");
 		ret = -ENOMEM;
-		goto free_list;
+		goto out_fill;
 	}
 	for (i = 0; i < ctx_conf->ctx_num; i++) {
 		ctx_conf->ctxs[i].ctx = wd_request_ctx(list->dev);
@@ -241,12 +246,14 @@ out_ctx:
 	for (j = 0; j < i; j++)
 		wd_release_ctx(ctx_conf->ctxs[j].ctx);
 	free(ctx_conf->ctxs);
-free_list:
+out_fill:
+	sample_sched_release(sched);
+out_sched:
 	wd_free_list_accels(list);
 	return ret;
 }
 
-void uninit_config(void *priv)
+void uninit_config(void *priv, struct wd_sched *sched)
 {
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
@@ -257,6 +264,7 @@ void uninit_config(void *priv)
 	for (i = 0; i < ctx_conf->ctx_num; i++)
 		wd_release_ctx(ctx_conf->ctxs[i].ctx);
 	free(ctx_conf->ctxs);
+	sample_sched_release(sched);
 	wd_free_list_accels(info->list);
 }
 

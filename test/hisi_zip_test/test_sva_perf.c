@@ -275,7 +275,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	struct timespec setup_time, start_time, end_time;
 	struct timespec setup_cputime, start_cputime, end_cputime;
 	struct rusage setup_rusage, start_rusage, end_rusage;
-	struct wd_sched sched;
+	struct wd_sched *sched;
 	int stat_size = sizeof(info.stat) * copts->q_num;
 	//int stat_size = sizeof(*sched.stat) * copts->q_num;
 
@@ -320,7 +320,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
-		ret = init_ctx_config(copts, &sched, &info);
+		ret = init_ctx_config(copts, sched, &info);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
@@ -341,7 +341,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 					   EXPANSION_RATIO, info.in_buf,
 					   info.total_len, &info.total_out);
 		else
-			ret = hizip_test_sched(&sched, copts, &info);
+			ret = hizip_test_sched(sched, copts, &info);
 		if (ret < 0) {
 			WD_ERR("hizip test fail with %d\n", ret);
 			goto out_with_fini;
@@ -404,7 +404,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 
 out_with_fini:
 	if (!(opts->option & TEST_ZLIB))
-		uninit_config(&info);
+		uninit_config(&info, sched);
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
@@ -628,10 +628,9 @@ static int run_one_child(struct priv_options *opts)
 	if (out_buf)
 		ret = hizip_verify_random_output(out_buf, copts, info);
 
-	uninit_config(info);
+	uninit_config(info, sched);
 
 out_ctx:
-	sample_sched_release(sched);
 	if (out_buf)
 		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:

@@ -80,7 +80,7 @@ int init_ctx_config(struct test_options *opts,
 		    struct wd_sched *sched,
 		    void *priv
 		    );
-void uninit_config(void *priv);
+void uninit_config(void *priv, struct wd_sched *sched);
 
 void hizip_prepare_random_input_data(struct hizip_test_info *info);
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
