@@ -227,7 +227,7 @@ out:
 	return ret;
 }
 
-static void *async_cb(void *data)
+static void *async_cb(struct wd_cipher_req *req, void *data)
 {
 	// struct wd_cipher_req *req = (struct wd_cipher_req *)data;
 	// memcpy(&g_async_req, req, sizeof(struct wd_cipher_req));
@@ -854,7 +854,6 @@ out:
 
 	return ret;
 }
-
 
 static void *digest_async_cb(void *data)
 {
