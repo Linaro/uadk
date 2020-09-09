@@ -133,7 +133,6 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		return -EINVAL;
 	}
 
-	/* fix me: need check key_len */
 	if (sess->mode == WD_CIPHER_XTS)
 		length = key_len / XTS_MODE_KEY_DIVISOR;
 
@@ -170,7 +169,6 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	memset(sess, 0, sizeof(struct wd_cipher_sess));
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
-
 	sess->key = malloc(MAX_CIPHER_KEY_SIZE);
 	if (!sess->key) {
 		WD_ERR("fail to alloc key memory!\n");
@@ -202,7 +200,7 @@ static int copy_config_to_global_setting(struct wd_ctx_config *cfg)
 	if (cfg->ctx_num == 0)
 		return -EINVAL;
 
-	/* check every context  */
+	/* check every context */
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx)
 			return -EINVAL;
@@ -483,8 +481,14 @@ static struct wd_cipher_req* get_req_from_pool(struct wd_async_msg_pool *pool,
 {
 	struct wd_cipher_msg *c_msg;
 	struct msg_pool *p;
-	int i, found = 0;
+	int found = 0;
+	int i;
 
+	/* tag value start from 1 */
+	if (msg->tag == 0 || msg->tag > WD_POOL_MAX_ENTRIES) {
+		WD_ERR("invalid msg cache tag(%d)\n", msg->tag);
+		return NULL;
+	}
 	for (i = 0; i < g_wd_cipher_setting.config.ctx_num; i++) {
 		if (h_ctx == g_wd_cipher_setting.config.ctxs[i].ctx) {
 			found = 1;
@@ -529,7 +533,7 @@ static void put_msg_to_pool(struct wd_async_msg_pool *pool,
 
 	p = &pool->pools[i];
 
-	__atomic_clear(&p->used[msg->tag], __ATOMIC_RELEASE);
+	__atomic_clear(&p->used[msg->tag - 1], __ATOMIC_RELEASE);
 }
 
 int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
