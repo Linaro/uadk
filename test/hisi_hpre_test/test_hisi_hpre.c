@@ -1051,20 +1051,39 @@ static __u8 is_async_test(__u32 opType)
 __u32 rsa_pick_next_ctx(handle_t sched_ctx,
 				struct wd_rsa_req *req, struct sched_key *key)
 {
-  __u32 idx;
-  
-  if (req->op_type == WD_RSA_GENKEY)
-    idx = 0;
-  else if (req->op_type == WD_RSA_SIGN)
-    idx = 1 % q_num;
-  else
-    idx = 2 % q_num;
-	
-  return idx;
+	__u32 idx;
+
+	if (req->op_type == WD_RSA_GENKEY)
+		idx = 0;
+	else if (req->op_type == WD_RSA_SIGN)
+		idx = 1 % q_num;
+	else
+		idx = 2 % q_num;
+
+	return idx;
 }
 
 int poll_policy(handle_t h_sched_ctx, struct wd_ctx_config *config, __u32 expect, __u32 *count)
 {
+	int ret;
+	struct wd_ctx *ctxs;
+	int i;
+
+	while (1) {
+		for (i = 0; i < config->ctx_num; i++) {
+			ctxs = &config->ctxs[i];
+			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
+				ret = wd_rsa_poll_ctx(ctxs->ctx, 1, count);
+				if (ret != -EAGAIN && ret < 0) {
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
+					return ret;
+				}
+			}
+		}
+
+		break;
+	}
+
 	return 0;
 }
 
@@ -1150,6 +1169,7 @@ static int init_hpre_global_config(void)
 	ctx_cfg.ctxs = ctx_attr;
 	sched.name = "rsa-sched-0";
 	sched.pick_next_ctx = rsa_pick_next_ctx;
+	//sched.sched_ctx_size = 1;
 	sched.poll_policy = poll_policy;
 	ret = wd_rsa_init(&ctx_cfg, &sched);
 	if (ret) {
@@ -6255,16 +6275,15 @@ static void  *_rsa_async_poll_test_thread(void *data)
 
 	return NULL;
 }
-static void _rsa_cb(void *message, void *rsa_tag)
+static void _rsa_cb(struct wd_rsa_req *req)
 {
 	int keybits, key_size;
-	struct rsa_async_tag *tag = rsa_tag;
+	struct rsa_async_tag *tag = req->cb_param;
 	void *ctx = tag->ctx;
 	int thread_id = tag->thread_id;
 	int cnt = tag->cnt;
-	struct wd_rsa_msg *msg = message;
-	void *out = NULL; // msg->req.dst; //todo
-	enum wd_rsa_op_type  op_type = 0; //msg->req.op_type; //todo
+	void *out = req->dst;
+	enum wd_rsa_op_type  op_type = req->op_type;
 	struct wd_rsa_prikey *prikey;
 	struct test_hpre_pthread_dt *thread_info = tag->thread_info;
 
@@ -6334,7 +6353,7 @@ static void _rsa_cb(void *message, void *rsa_tag)
 	if (op_type == WD_RSA_GENKEY && out) {
 		wd_rsa_del_kg_out(ctx, out);
 	}
-	free(rsa_tag);
+	free(tag);
 }
 
 void *_rsa_async_op_test_thread(void *data)
@@ -6469,6 +6488,7 @@ void *_rsa_async_op_test_thread(void *data)
 
 	/* always key size bytes input */
 	req.src_bytes = key_size;
+	req.cb = _rsa_cb;
 	if (op_type == RSA_KEY_GEN || op_type == RSA_ASYNC_GEN) {
 		req.op_type = WD_RSA_GENKEY;
 	} else if (op_type == RSA_PUB_EN || op_type == RSA_ASYNC_EN) {
@@ -6524,8 +6544,9 @@ void *_rsa_async_op_test_thread(void *data)
 			tag->thread_id = thread_id;
 			tag->cnt = i;
 			tag->thread_info = pdata;
+			req.cb_param = tag;
 try_do_again:
-			ret = wd_do_rsa_sync(ctx, &req);
+			ret = wd_do_rsa_async(ctx, &req);
 			if (ret == -WD_EBUSY) {
 				usleep(100);
 				goto try_do_again;
@@ -6545,8 +6566,8 @@ try_do_again:
 		float speed = 0.0, time_used = 0.0;
 		gettimeofday(&cur_tval, NULL);
 
-		printf("start: s %lu, us %lu\n", pdata->start_tval.tv_sec, pdata->start_tval.tv_usec);
-		printf("now: s %lu, us %lu\n", cur_tval.tv_sec, cur_tval.tv_usec);
+		//printf("start: s %lu, us %lu\n", pdata->start_tval.tv_sec, pdata->start_tval.tv_usec);
+		//printf("now: s %lu, us %lu\n", cur_tval.tv_sec, cur_tval.tv_usec);
 
 		time_used = (float)((cur_tval.tv_sec -pdata->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - pdata->start_tval.tv_usec);
@@ -7409,7 +7430,7 @@ int main(int argc, char *argv[])
 
 		q_num = (thread_num - 1) / ctx_num_per_q + 1;
 
-		if (argc == 13) {
+		if (argc == 13 || argc == 15) {
 			if (alg_op_type > MAX_DH_TYPE && alg_op_type < MAX_ECC_TYPE) {
 				ecc_curve_name = argv[10];
 			/* curve x25519/x448 has th only param which is denoted in drv */
@@ -7442,6 +7463,16 @@ int main(int argc, char *argv[])
 				} else {
 					HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
 					return -EINVAL;
+				}
+				if (argc == 15) {
+					if (!strcmp(argv[13], "-dev")) {
+						strncpy(g_dev_path, argv[14], sizeof(g_dev_path));
+					} else if (!strcmp(argv[13], "-node")) {
+						node_msk = strtoul(argv[14], NULL, 16);
+					} else {
+						HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
+						return -EINVAL;
+					}
 				}
 			} else if (!strcmp(argv[11], "-dev")) {
 				strncpy(g_dev_path, argv[12], sizeof(g_dev_path));
