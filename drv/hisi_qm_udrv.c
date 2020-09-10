@@ -201,7 +201,6 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config, struct
 static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 {
 	struct hisi_qm_queue_info *q_info = NULL;
-	int size;
 	int ret;
 
 	q_info = &qp->q_info;
@@ -226,12 +225,15 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->sqe_size = config->sqe_size;
 	q_info->cqc_phase = 1;
 	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
+
+#if 0
 	size = sizeof(struct cqe) * QM_Q_DEPTH;
 	ret = mprotect(q_info->cq_base, size, PROT_READ);
 	if (ret) {
 		WD_ERR("cqe mprotect set err!\n");
 		goto err_out;
 	}
+#endif
 
 	return 0;
 
