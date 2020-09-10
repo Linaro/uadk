@@ -126,32 +126,43 @@ static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info, __u16 t
 	}
 }
 
-static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
+static int hisi_qm_setup_region(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 {
-	char *api_name;
-	int ret = 0;
-	int i, size;
-	struct hisi_qp_ctx qp_ctx;
-	struct hisi_qm_queue_info *q_info = NULL;
-
-	q_info = &qp->q_info;
-	q_info->sq_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
+	q_info->sq_base = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
 	if (q_info->sq_base == MAP_FAILED) {
-		WD_ERR("fail to mmap DUS region\n");
-		ret = -errno;
-		goto out;
+		WD_ERR("mmap dus fail\n");
+		goto err_out;
 	}
-	q_info->sqe_size = config->sqe_size;
-	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
 
-	q_info->mmio_base = wd_drv_mmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
+	q_info->mmio_base = wd_drv_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
 	if (q_info->mmio_base == MAP_FAILED) {
-		WD_ERR("fail to mmap MMIO region\n");
-		ret = -errno;
-		goto out_mmio;
+		wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
+		WD_ERR("mmap mmio fail\n");
+		goto err_out;
 	}
+
+	return 0;
+err_out:
+	q_info->sq_base = NULL;
+	q_info->mmio_base = NULL;
+	return -ENOMEM;
+}
+
+static void hisi_qm_unset_region(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
+{
+	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
+	wd_drv_unmap_qfr(h_ctx, UACCE_QFRT_MMIO);
+	q_info->sq_base = NULL;
+	q_info->mmio_base = NULL;
+}
+
+static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
+{
+	int i, size;
+	char *api_name;
+
 	size = ARRAY_SIZE(qm_type);
-	api_name = wd_ctx_get_api(qp->h_ctx);
+	api_name = wd_ctx_get_api(h_ctx);
 	for (i = 0; i < size; i++) {
 		if (!strncmp(api_name, qm_type[i].qm_name, strlen(api_name))) {
 			q_info->db = qm_type[i].hacc_db;
@@ -159,33 +170,73 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 			break;
 		}
 	}
+
 	if (i == size) {
 		WD_ERR("fail to find matched type of QM\n");
-		ret = -ENODEV;
-		goto out_qm;
+		return -ENODEV;
 	}
-	q_info->sq_tail_index = 0;
-	q_info->sq_head_index = 0;
-	q_info->cq_head_index = 0;
-	q_info->cqc_phase = 1;
+
+	return 0;
+}
+
+static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config, struct hisi_qm_queue_info *q_info)
+{
+	struct hisi_qp_ctx qp_ctx;
+	int ret;
 
 	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
 	q_info->qc_type = qp_ctx.qc_type;
-	ret = wd_ctx_set_io_cmd(qp->h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
+	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
 		WD_ERR("HISI QM fail to set qc_type, use default value\n");
-		goto out_qm;
+		return ret;
 	}
+
 	q_info->sqn = qp_ctx.id;
 
 	return 0;
+}
 
-out_qm:
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
-out_mmio:
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-out:
+static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
+{
+	struct hisi_qm_queue_info *q_info = NULL;
+	int size;
+	int ret;
+
+	q_info = &qp->q_info;
+	ret = hisi_qm_setup_region(qp->h_ctx, q_info);
+	if (ret) {
+		WD_ERR("setup region fail\n");
+		return ret;
+	}
+
+	ret = hisi_qm_setup_db(qp->h_ctx, q_info);
+	if (ret) {
+		WD_ERR("setup region fail\n");
+		goto err_out;
+	}
+
+	ret = his_qm_set_qp_ctx(qp->h_ctx, config, q_info);
+	if (ret) {
+		WD_ERR("setup io cmd fail\n");
+		goto err_out;
+	}
+
+	q_info->sqe_size = config->sqe_size;
+	q_info->cqc_phase = 1;
+	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
+	size = sizeof(struct cqe) * QM_Q_DEPTH;
+	ret = mprotect(q_info->cq_base, size, PROT_READ);
+	if (ret) {
+		WD_ERR("cqe mprotect set err!\n");
+		goto err_out;
+	}
+
+	return 0;
+
+err_out:
+	hisi_qm_unset_region(qp->h_ctx, q_info);
 	return ret;
 }
 
