@@ -1716,6 +1716,17 @@ int main(int argc, char *argv[])
 	g_thread_num = 1;
 	int pktsize, keylen;
 
+	if (!argv[1]) {
+		g_testalg = 0;
+		g_times = 10;
+		g_pktlen = 16;
+		g_keylen = 16;
+		printf("Test sec Cipher parameter default, alg:ecb(aes), set_times:10,"
+			"set_pktlen:16 bytes, set_keylen:128 bit.\n");
+		test_sec_cipher_sync_once();
+		return 0;
+	}
+
 	if (!strcmp(argv[1], "-cipher")) {
 		algtype_class = CIPHER_CLASS;
 		g_testalg = strtoul((char*)argv[2], NULL, 10);
