@@ -12,6 +12,7 @@
 #include "wd_digest.h"
 #include "wd_alg_common.h"
 
+#define  SEC_TST_PRT printf
 #define HW_CTX_SIZE (24 * 1024)
 #define BUFF_SIZE 1024
 #define IV_SIZE   256
@@ -20,6 +21,7 @@
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
 #define TEST_WORD_LEN	4096
+#define MAX_ALGO_PER_TYPE 12
 
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched g_sched;
@@ -28,13 +30,26 @@ static struct wd_sched dg_sched;
 //static struct wd_cipher_req g_async_req;
 static long long int g_times;
 static unsigned int g_thread_num;
-static unsigned int alg_num;
+static int g_count; // total packets
+static unsigned int g_testalg;
+static unsigned int g_keylen;
+static unsigned int g_pktlen;
+static unsigned int g_direction;
+static unsigned int alg_op_type;
+static unsigned int g_ivlen;
+
+char *skcipher_names[MAX_ALGO_PER_TYPE] =
+	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
+	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", NULL,};
 
 typedef struct _thread_data_t {
 	int     tid;
 	int     flag;
 	int	mode;
 	struct wd_cipher_req	*req;
+	struct wd_cipher_sess_setup *setup;
+	struct wd_digest_req	*hreq;
+	struct wd_digest_sess_setup *hsetup;
 	int cpu_id;
 	struct timeval start_tval;
 	unsigned long long send_task_num;
@@ -50,7 +65,7 @@ static void hexdump(char *buff, unsigned int len)
 {
 	unsigned int i;
 	if (!buff) {
-		printf("input buff is NULL!");
+		printf("hexdump input buff is NULL!");
 		return;
 	}
 
@@ -62,14 +77,191 @@ static void hexdump(char *buff, unsigned int len)
 	printf("\n");
 }
 
-static __u32 sched_single_pick_next_ctx(handle_t sched_ctx,
-													  const void *req,
-													  const struct sched_key *key)
+int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 {
+	struct cipher_testvec *tv;
+	int alg_type;
+	int mode_type;
+
+	switch (g_testalg) {
+		case 0:
+			alg_type = WD_CIPHER_AES;
+			mode_type = WD_CIPHER_ECB;
+			SEC_TST_PRT("test alg: %s\n", "ecb(aes)");
+			switch (g_keylen) {
+				case AES_KEYSIZE_128:
+					tv = &aes_ecb_tv_template_128[0];
+					break;
+				case AES_KEYSIZE_192:
+					tv = &aes_ecb_tv_template_192[0];
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_ecb_tv_template_256[0];
+					break;
+				default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 1:
+			alg_type = WD_CIPHER_AES;
+			mode_type = WD_CIPHER_CBC;
+			SEC_TST_PRT("test alg: %s\n", "cbc(aes)");
+			switch (g_keylen) {
+				case AES_KEYSIZE_128:
+					tv = &aes_cbc_tv_template_128[0];
+					break;
+				case AES_KEYSIZE_192:
+					tv = &aes_cbc_tv_template_192[0];
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_cbc_tv_template_256[0];
+					break;
+				default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 2:
+			alg_type = WD_CIPHER_AES;
+			mode_type = WD_CIPHER_XTS;
+			SEC_TST_PRT("test alg: %s\n", "xts(aes)");
+			switch (g_keylen / 2) {
+				case AES_KEYSIZE_128:
+					tv = &aes_xts_tv_template_256[0];
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_xts_tv_template_512[0];
+					break;
+				default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 3:
+			alg_type = WD_CIPHER_AES;
+			mode_type = WD_CIPHER_OFB;
+			SEC_TST_PRT("test alg: %s\n", "ofb(aes)");
+			switch (g_keylen) {
+				case AES_KEYSIZE_128:
+					tv = &aes_ofb_tv_template_128[0];
+					break;
+				case AES_KEYSIZE_192:
+					tv = &aes_ofb_tv_template_192[0];
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_ofb_tv_template_256[0];
+					break;
+				default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 4:
+			alg_type = WD_CIPHER_AES;
+			mode_type = WD_CIPHER_CFB;
+			SEC_TST_PRT("test alg: %s\n", "cfb(aes)");
+			switch (g_keylen) {
+				case AES_KEYSIZE_128:
+					tv = &aes_cfb_tv_template_128[0];
+					break;
+				case AES_KEYSIZE_192:
+					tv = &aes_cfb_tv_template_192[0];
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_cfb_tv_template_256[0];
+					break;
+				default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+
+		case 5:
+			alg_type = WD_CIPHER_3DES;
+			mode_type = WD_CIPHER_ECB;
+			SEC_TST_PRT("test alg: %s\n", "ecb(des3)");
+			if (g_keylen == 16)
+				tv = &des3_ecb_tv_template_128[0];
+			else if (g_keylen == 24)
+				tv = &des3_ecb_tv_template_192[0];
+			else {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			break;
+		case 6:
+			alg_type = WD_CIPHER_3DES;
+			mode_type = WD_CIPHER_CBC;
+			SEC_TST_PRT("test alg: %s\n", "cbc(des3)");
+			if (g_keylen == 16)
+				tv = &des3_cbc_tv_template_128[0];
+			else if (g_keylen == 24)
+				tv = &des3_cbc_tv_template_192[0];
+			else {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			break;
+		case 7:
+			alg_type = WD_CIPHER_SM4;
+			mode_type = WD_CIPHER_CBC;
+			SEC_TST_PRT("test alg: %s\n", "cbc(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_cbc_tv_template[0];
+			break;
+		case 8:
+			alg_type = WD_CIPHER_SM4;
+			mode_type = WD_CIPHER_XTS;
+			SEC_TST_PRT("test alg: %s\n", "xts(sm4)");
+			if (g_keylen != 32) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_xts_tv_template[0];
+			break;
+		case 9:
+			alg_type = WD_CIPHER_SM4;
+			mode_type = WD_CIPHER_OFB;
+			SEC_TST_PRT("test alg: %s\n", "ofb(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_ofb_tv_template_128[0];
+			break;
+		case 10:
+			alg_type = WD_CIPHER_SM4;
+			mode_type = WD_CIPHER_CFB;
+			SEC_TST_PRT("test alg: %s\n", "cfb(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_cfb_tv_template_128[0];
+			break;
+
+		default:
+			SEC_TST_PRT("keylenth error, default test alg: %s\n", "ecb(aes)");
+			return -EINVAL;
+	}
+	*alg = alg_type;
+	*mode = mode_type;
+	*alg_tv = tv;
+
 	return 0;
 }
 
-static int sched_single_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
+static handle_t sched_single_pick_next_ctx(struct wd_ctx_config *cfg,
+		void *sched_ctx, struct wd_cipher_req *req, int numa_id)
+{
+	return g_ctx_cfg.ctxs[0].ctx;
+}
+
+static int sched_single_poll_policy(struct wd_ctx_config *cfg, __u32 expect, __u32 *count)
 {
 	return 0;
 }
@@ -131,7 +323,7 @@ static void uninit_config(void)
 
 static int test_sec_cipher_sync_once(void)
 {
-	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
+	struct cipher_testvec *tv = NULL;
 	handle_t	h_sess = 0;
 	struct wd_cipher_sess_setup	setup;
 	struct wd_cipher_req req;
@@ -146,9 +338,16 @@ static int test_sec_cipher_sync_once(void)
 	}
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_cipher_req));
-	req.alg = WD_CIPHER_AES;
-	req.mode = WD_CIPHER_CBC;
-	req.op_type = WD_CIPHER_ENCRYPTION;
+	setup.alg = WD_CIPHER_AES;
+	setup.mode = WD_CIPHER_CBC;
+	if (g_direction == 0)
+		req.op_type = WD_CIPHER_ENCRYPTION;
+	else {
+		req.op_type = WD_CIPHER_DECRYPTION;
+	}
+
+	/* get resource */
+	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
 	req.src  = malloc(BUFF_SIZE);
 	if (!req.src) {
@@ -156,21 +355,14 @@ static int test_sec_cipher_sync_once(void)
 		ret = -1;
 		goto out;
 	}
-	memcpy(req.src, tv->ptext, tv->len);
-	req.in_bytes = tv->len;
+	memcpy(req.src, tv->ptext, g_pktlen);
+	req.in_bytes = g_pktlen;
 
 	printf("req src--------->:\n");
-	hexdump(req.src, tv->len);
+	hexdump(req.src, g_pktlen);
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
 		printf("req dst mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
-
-	req.key = malloc(BUFF_SIZE);
-	if (!req.key) {
-		printf("req key mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -181,27 +373,26 @@ static int test_sec_cipher_sync_once(void)
 		ret = -1;
 		goto out;
 	}
-	if (tv->iv)
-		memcpy(req.iv, tv->iv, strlen(tv->iv));
-	req.iv_bytes = strlen(tv->iv);
-
-	printf("cipher req iv--------->:\n");
-	hexdump(req.iv, req.iv_bytes);
-
+	if (setup.mode == WD_CIPHER_CBC || setup.mode == WD_CIPHER_XTS) {
+		if (tv->iv)
+			memcpy(req.iv, tv->iv, strlen(tv->iv));
+		req.iv_bytes = strlen(tv->iv);
+		printf("cipher req iv--------->:\n");
+		hexdump(req.iv, req.iv_bytes);
+	}
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
 		ret = -1;
 		goto out;
 	}
 
-	/* set key */
-	//ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out;
 	}
 	printf("cipher req key--------->:\n");
-	hexdump(req.key, tv->klen);
+	// hexdump(h_sess->key, tv->klen);
 
 	while (cnt) {
 		ret = wd_do_cipher_sync(h_sess, &req);
@@ -218,8 +409,6 @@ out:
 		free(req.dst);
 	if (req.iv)
 		free(req.iv);
-	if (req.key)
-		free(req.key);
 	if (h_sess)
 		wd_cipher_free_sess(h_sess);
 	uninit_config();
@@ -953,29 +1142,49 @@ int main(int argc, char *argv[])
 	printf("this is a hisi sec test.\n");
 	unsigned int algtype_class;
 	g_thread_num = 1;
+	int pktsize, keylen;
 
 	if (!strcmp(argv[1], "-cipher")) {
 		algtype_class = CIPHER_CLASS;
-		alg_num = strtoul((char*)argv[2], NULL, 10);
+		g_testalg = strtoul((char*)argv[2], NULL, 10);
 	} else if (!strcmp(argv[1], "-digest")) {
 		algtype_class = DIGEST_CLASS;
-		alg_num = strtoul((char*)argv[2], NULL, 10);
+		g_testalg = strtoul((char*)argv[2], NULL, 10);
 	} else {
-		printf("alg_class type error.\n");
+		printf("alg_class type error, please set a algorithm, cipher,"
+		"digest, aead");
 		return 0;
 	}
 
-	if (!strcmp(argv[3], "-times")) {
-		g_times = strtoul((char*)argv[4], NULL, 10);
+	if (!strcmp(argv[3], "-optype")) {
+		g_direction = strtoul((char*)argv[4], NULL, 10);
+		if (algtype_class == DIGEST_CLASS) {
+			//0 is normal mode, 1 is HMAC mode.
+			alg_op_type = g_direction;
+		}
+	}
+
+	if (!strcmp(argv[5], "-pktlen")) {
+		pktsize = strtoul((char*)argv[6], NULL, 10);
+		g_pktlen = pktsize;
+	}
+	if (!strcmp(argv[7], "-keylen")) {
+		keylen = strtoul((char*)argv[8], NULL, 10);
+		g_keylen = keylen;
+	}
+
+	if (!strcmp(argv[9], "-times")) {
+		g_times = strtoul((char*)argv[10], NULL, 10);
 	} else {
 		g_times = 1;
 	}
 	printf("set global times is %lld\n", g_times);
 
-	if (!strcmp(argv[5], "-sync")) {
+	pthread_mutex_init(&mutex, NULL);
+	if (!strcmp(argv[11], "-sync")) {
 		if (algtype_class == CIPHER_CLASS) {
-			if (!strcmp(argv[6], "-multi")) {
-				g_thread_num = strtoul((char*)argv[7], NULL, 10);
+			if (!strcmp(argv[12], "-multi")) {
+				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently cipher test is synchronize multi -%d threads!\n", g_thread_num);
 				sec_cipher_sync_test();
 			} else {
@@ -983,8 +1192,8 @@ int main(int argc, char *argv[])
 				printf("currently cipher test is synchronize once, one thread!\n");
 			}
 		} else if (algtype_class == DIGEST_CLASS) {
-			if (!strcmp(argv[6], "-multi")) {
-				g_thread_num = strtoul((char*)argv[7], NULL, 10);
+			if (!strcmp(argv[12], "-multi")) {
+				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently digest test is synchronize multi -%d threads!\n", g_thread_num);
 				//sec_digest_sync_test();
 			} else {
@@ -992,10 +1201,10 @@ int main(int argc, char *argv[])
 				printf("currently digest test is synchronize once, one thread!\n");
 			}
 		}
-	} else if (!strcmp(argv[5], "-async")) {
+	} else if (!strcmp(argv[11], "-async")) {
 		if (algtype_class == CIPHER_CLASS) {
-			if (!strcmp(argv[6], "-multi")) {
-				g_thread_num = strtoul((char*)argv[7], NULL, 10);
+			if (!strcmp(argv[12], "-multi")) {
+				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently cipher test is asynchronous multi -%d threads!\n", g_thread_num);
 				sec_cipher_async_test();
 			} else {
@@ -1003,8 +1212,8 @@ int main(int argc, char *argv[])
 				printf("currently cipher test is asynchronous one, one thread!\n");
 			}
 		} else if (algtype_class == DIGEST_CLASS) {
-			if (!strcmp(argv[6], "-multi")) {
-				g_thread_num = strtoul((char*)argv[7], NULL, 10);
+			if (!strcmp(argv[12], "-multi")) {
+				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently digest test is asynchronous multi -%d threads!\n", g_thread_num);
 				//sec_digest_async_test();
 			} else {
@@ -1014,7 +1223,9 @@ int main(int argc, char *argv[])
 		}
 	} else {
 		printf("Please input a right session mode, -sync or -aync!\n");
-		// ./test_hisi_sec -time 2 -sync -multi
+		// ./test_hisi_sec -cipher 1 -optype 0 -pktlen 16 -keylen 16 -times 2 -sync -multi 1
+		// ./test_hisi_sec -digest 0 -optype 0 -pktlen 16 -keylen 16 -times 2 -sync -multi 1
+		return 0;
 	}
 
 	return 0;
