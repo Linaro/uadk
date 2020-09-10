@@ -70,8 +70,7 @@ static void __attribute__((constructor)) wd_comp_open_driver(void)
 {
 	void *driver;
 
-	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
-	driver = dlopen("/usr/lib/wd/libhisi_zip.so", RTLD_NOW);
+	driver = dlopen("libhisi_zip.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("Fail to open libhisi_zip.so\n");
 }
