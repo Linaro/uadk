@@ -35,8 +35,10 @@
 #define AES_KEYSIZE_256		  32
 
 #define DES3_BLOCK_SIZE		8
-#define	AES_BLOCK_SIZE		16
-#define	MAX_CIPHER_LEN		16776704
+#define AES_BLOCK_SIZE		16
+
+/* The max BD data length is 16M-512B */
+#define MAX_INPUT_DATA_LEN	0xFFFE00
 
 #define AUTHPAD_OFFSET		2
 #define AUTHTYPE_OFFSET		6
@@ -448,7 +450,7 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
 {
-	if (msg->in_bytes > MAX_CIPHER_LEN) {
+	if (msg->in_bytes > MAX_INPUT_DATA_LEN) {
 		WD_ERR("input cipher len is too large!\n");
 		return -EINVAL;
 	}
@@ -690,6 +692,11 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = 0x0 << SEC_DE_OFFSET;
 
+	if (msg->in_bytes == 0 || msg->out_bytes == 0 ||
+		msg->in_bytes > MAX_INPUT_DATA_LEN) {
+		WD_ERR("fail to check input data or mac length!\n");
+		return -EINVAL;
+	}
 	sqe.sds_sa_type = (__u8)(de | scene);
 	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;

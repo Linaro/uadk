@@ -10,7 +10,6 @@
 #include "test_hisi_sec.h"
 #include "wd_cipher.h"
 #include "wd_digest.h"
-#include "wd_alg_common.h"
 
 #define  SEC_TST_PRT printf
 #define HW_CTX_SIZE (24 * 1024)
@@ -25,9 +24,8 @@
 
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched g_sched;
-static struct wd_sched dg_sched;
+static struct wd_digest_sched dg_sched;
 
-//static struct wd_cipher_req g_async_req;
 static long long int g_times;
 static unsigned int g_thread_num;
 static int g_count; // total packets
@@ -56,10 +54,21 @@ typedef struct _thread_data_t {
 	unsigned long long recv_task_num;
 } thread_data_t;
 
+
+typedef struct wd_thread_res {
+	handle_t	h_sess;
+	struct wd_digest_req	*req;
+	unsigned long long send_num;
+	unsigned long long recv_num;
+	struct timeval start_tval;
+} thread_data_d;
+
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t system_test_thrds[NUM_THREADS];
 static thread_data_t thr_data[NUM_THREADS];
+static unsigned int async_flag = 0;
+static volatile int asyn_thread_exit = 0;
 
 static void hexdump(char *buff, unsigned int len)
 {
@@ -316,6 +325,16 @@ static void uninit_config(void)
 	int i;
 
 	wd_cipher_uninit();
+	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+	free(g_ctx_cfg.ctxs);
+}
+
+static void digest_uninit_config(void)
+{
+	int i;
+
+	wd_digest_uninit();
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
@@ -961,12 +980,14 @@ out_thr:
 	return ret;
 }
 
-static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx, const void *req, const struct sched_key *key)
+/* ------------------------------digest alg, nomal mode and hmac mode------------------ */
+static handle_t sched_digest_pick_next_ctx(struct wd_ctx_config *cfg,
+		void *sched_ctx, struct wd_digest_req *req, int numa_id)
 {
-	return 0;
+	return g_ctx_cfg.ctxs[0].ctx;
 }
 
-static int init_digest_ctx_config(int type, int mode, struct wd_sched *sched)
+static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sched)
 {
 	struct uacce_dev_list *list;
 	int ret;
@@ -1012,12 +1033,188 @@ out:
 	return ret;
 }
 
-
-static int test_sec_digest_sync_once(void)
+int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 {
-	struct hash_testvec *tv = &sha256_tv_template[0];
-	handle_t	h_sess = 0;
-	struct wd_digest_sess_setup	setup;
+	struct hash_testvec *tmp_tv;
+	struct hash_testvec *tv = NULL;
+	int alg_type;
+	int mode_type = 0;
+
+	switch (g_testalg) {
+		case 0:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sm3)");
+					tv = &sm3_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sm3)");
+					tv = &hmac_sm3_tv_template[0];
+					break;
+			}
+			tv->dsize = 32;
+			alg_type = WD_DIGEST_SM3;
+			break;
+		case 1:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(md5)");
+					tv = &md5_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(md5)");
+					tv = &hmac_md5_tv_template[0];
+					break;
+			}
+			tv->dsize = 16;
+			alg_type = WD_DIGEST_MD5;
+			break;
+		case 2:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha1)");
+					tv = &sha1_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha1)");
+					tv = &hmac_sha1_tv_template[0];
+					break;
+			}
+			tv->dsize = 20;
+			alg_type = WD_DIGEST_SHA1;
+			break;
+		case 3:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha256)");
+					tv = &sha256_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha256)");
+					tv = &hmac_sha256_tv_template[0];
+					break;
+			}
+			tv->dsize = 32;
+			alg_type = WD_DIGEST_SHA256;
+			break;
+		case 4:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha224)");
+					tv = &sha224_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha224)");
+					tv = &hmac_sha224_tv_template[0];
+					break;
+			}
+			tv->dsize = 28;
+			alg_type = WD_DIGEST_SHA224;
+			break;
+		case 5:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha384)");
+					tv = &sha384_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha384)");
+					tv = &hmac_sha384_tv_template[0];
+					break;
+			}
+			tv->dsize = 48;
+			alg_type = WD_DIGEST_SHA384;
+			break;
+		case 6:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha512)");
+					tv = &sha512_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha512)");
+					tv = &hmac_sha512_tv_template[0];
+					break;
+			}
+			tv->dsize = 64;
+			alg_type = WD_DIGEST_SHA512;
+			break;
+		case 7:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha512_224)");
+					tv = &sha512_224_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha512_224");
+					tv = &hmac_sha512_224_tv_template[0];
+					break;
+			}
+			tv->dsize = 28;
+			alg_type = WD_DIGEST_SHA512_224;
+			break;
+		case 8:
+			switch (alg_op_type) {
+				case 0:
+					mode_type = WD_DIGEST_NORMAL;
+					printf("test alg: %s\n", "normal(sha512_256)");
+					tv = &sha512_256_tv_template[0];
+					break;
+				case 1:
+					mode_type = WD_DIGEST_HMAC;
+					printf("test alg: %s\n", "hmac(sha512_256)");
+					tv = &hmac_sha512_256_tv_template[0];
+					break;
+			}
+			tv->dsize = 32;
+			alg_type = WD_DIGEST_SHA512_256;
+			break;
+		default:
+			printf("keylenth error, default test alg: %s\n", "normal(sm3)");
+			return -EINVAL;
+	}
+	if (g_ivlen == 1) {
+		tmp_tv = tv;
+		tv = &long_hash_tv_template[0];
+		tv->dsize = tmp_tv->dsize;
+	} else if (g_ivlen == 2) {
+		tmp_tv = tv;
+		tv = &hmac_abnormal1024_tv_template[0];
+		tv->dsize = tmp_tv->dsize;
+	} else if (g_ivlen == 3) {
+		tmp_tv = tv;
+		tv = &hmac_abnormal512_tv_template[0];
+		tv->dsize = tmp_tv->dsize;
+	}
+
+	*alg = alg_type;
+	*mode = mode_type;
+	*alg_tv = tv;
+
+	return 0;
+}
+
+static int sec_digest_sync_once(void)
+{
+	struct wd_digest_sess_setup setup;
+	struct hash_testvec *tv = NULL;
+	handle_t h_sess = 0;
 	struct wd_digest_req req;
 	int cnt = g_times;
 	int ret;
@@ -1031,9 +1228,7 @@ static int test_sec_digest_sync_once(void)
 
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_digest_req));
-	setup.alg = WD_DIGEST_SHA256;
-	setup.mode = WD_DIGEST_NORMAL;
-	printf("test alg: %s\n", "normal(sha256)");
+	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
 	req.in  = malloc(BUFF_SIZE);
 	if (!req.in) {
@@ -1063,13 +1258,17 @@ static int test_sec_digest_sync_once(void)
 	}
 
 	/* if mode is HMAC, should set key */
-	//ret = wd_digest_set_key(&req, (const __u8*)tv->key, tv->ksize);
-	//if (ret) {
-	//	printf("req set key failed!\n");
-	//	goto out;
-	//}
-	//printf("digest req key--------->:\n");
-	//hexdump(req.key, tv->klen);
+	if (setup.mode == WD_DIGEST_HMAC) {
+		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		if (ret) {
+			printf("sess set key failed!\n");
+			goto out;
+		}
+		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+		printf("------->tv key:%s\n", tv->key);
+		printf("digest sess key--------->:\n");
+		hexdump(sess->key, sess->key_bytes);
+	}
 
 	while (cnt) {
 		ret = wd_do_digest_sync(h_sess, &req);
@@ -1086,7 +1285,7 @@ out:
 		free(req.out);
 	if (h_sess)
 		wd_digest_free_sess(h_sess);
-	uninit_config();
+	digest_uninit_config();
 
 	return ret;
 }
@@ -1099,14 +1298,120 @@ static void *digest_async_cb(void *data)
 	return NULL;
 }
 
-static int test_sec_digest_async_once(void)
+void *digest_send_thread(void *data)
 {
-	struct hash_testvec *tv = &sha256_tv_template[0];
-	struct wd_digest_sess_setup	setup;
-	handle_t	h_sess = 0;
-	struct wd_digest_req req;
-	int cnt = g_times;
+	thread_data_d *td_data = data;
+	struct wd_digest_req *req = td_data->req;
+	int try_cnt = 0;
+	int ret;
+	int cnt = 0;
+
+	while (cnt < td_data->send_num) {
+		req->cb = digest_async_cb;
+		ret = wd_do_digest_async(td_data->h_sess, req);
+		if (ret < 0) {
+			usleep(100);
+			try_cnt++;
+			if (try_cnt > 100) {
+				printf("Test digest current send fail 100 times !\n");
+				break;
+			}
+			continue;
+		}
+		cnt++;
+	}
+
+	printf("Test digest multi send : %u pkg !\n", cnt);
+	return NULL;
+}
+
+void *digest_poll_thread(void *data)
+{
+	thread_data_d *td_data = data;
+	struct wd_digest_req *req = td_data->req;
 	unsigned int recv = 0;
+	int expt = td_data->recv_num;
+	struct timeval cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	int cnt = 0;
+	int ret;
+
+	while (cnt < td_data->recv_num) {
+		ret = wd_digest_poll_ctx(g_ctx_cfg.ctxs[0].ctx, expt, &recv);
+		if (ret < 0)
+			usleep(100);
+
+		if (recv == 0) {
+			printf("current digest async poll --0-- pkg!\n");
+			break;
+		}
+		expt -= recv;
+		cnt += recv;
+		recv = 0;
+	}
+	gettimeofday(&cur_tval, NULL);
+	async_flag = 1;
+
+	pthread_mutex_lock(&mutex);
+	time_used = (float)((cur_tval.tv_sec - td_data->start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - td_data->start_tval.tv_usec);
+	printf("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
+	speed = td_data->send_num / time_used * 1000000;
+	Perf = speed * req->in_bytes / 1024; //B->KB
+	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+			(int)syscall(__NR_gettid), speed, Perf);
+	pthread_mutex_unlock(&mutex);
+
+	return NULL;
+}
+
+void *digest_sync_send_thread(void *data)
+{
+	thread_data_d *td_data = data;
+	struct wd_digest_req *req = td_data->req;
+	struct timeval cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	int ret;
+	int cnt = 0;
+
+	while (cnt < td_data->send_num) {
+		ret = wd_do_digest_sync(td_data->h_sess, req);
+		if (ret < 0) {
+			usleep(100);
+			printf("Test digest current send fail: have send %u pkg !\n", cnt);
+			continue;
+		}
+		cnt++;
+	}
+	gettimeofday(&cur_tval, NULL);
+	__atomic_add_fetch(&async_flag, 1, __ATOMIC_RELAXED);
+
+	pthread_mutex_lock(&mutex);
+	time_used = (float)((cur_tval.tv_sec - td_data->start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - td_data->start_tval.tv_usec);
+	printf("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
+	speed = td_data->send_num / time_used * 1000000;
+	Perf = speed * req->in_bytes / 1024; //B->KB
+	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+			(int)syscall(__NR_gettid), speed, Perf);
+	pthread_mutex_unlock(&mutex);
+
+	return NULL;
+}
+
+static int sec_digest_async_once(void)
+{
+	struct hash_testvec *tv = 0;
+	struct wd_digest_sess_setup setup;
+	static pthread_t send_td;
+	static pthread_t poll_td;
+	struct wd_digest_req req;
+	thread_data_d td_data;
+	handle_t h_sess = 0;
+	int test_alg = 0;
+	int test_mode = 0;
 	int ret;
 
 	/* config setup */
@@ -1117,10 +1422,10 @@ static int test_sec_digest_async_once(void)
 	}
 
 	/* config arg */
+	get_digest_resource(&tv, &test_alg, &test_mode);
 	memset(&req, 0, sizeof(struct wd_digest_req));
-	setup.alg = WD_DIGEST_SHA256;
-	setup.mode = WD_DIGEST_NORMAL;
-	printf("test alg: %s\n", "normal(sha256)");
+	setup.alg = test_alg;
+	setup.mode = test_mode;
 
 	req.in  = malloc(BUFF_SIZE);
 	if (!req.in) {
@@ -1140,7 +1445,101 @@ static int test_sec_digest_async_once(void)
 		goto out;
 	}
 	req.out_bytes = tv->dsize;
+	req.has_next = 0;
 
+	h_sess = wd_digest_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -1;
+		goto out;
+	}
+
+	/* send thread */
+	td_data.req = &req;
+	td_data.h_sess = h_sess;
+	td_data.send_num = g_times;
+	td_data.recv_num = g_times * g_thread_num;
+	ret = pthread_create(&send_td, NULL, digest_send_thread, &td_data);
+	if (ret) {
+		printf("kthread create fail at %s", __func__);
+		goto out;
+	}
+
+	/* poll thread */
+	ret = pthread_create(&poll_td, NULL, digest_poll_thread, &td_data);
+	if (ret) {
+		printf("kthread create fail at %s", __func__);
+		goto out;
+	}
+
+	async_flag = 0;
+	gettimeofday(&td_data.start_tval, NULL);
+	ret = pthread_join(send_td, NULL);
+	if (ret) {
+		printf("pthread_join fail at %s", __func__);
+		goto out;
+	}
+
+	ret = pthread_join(poll_td, NULL);
+	if (ret) {
+		printf("pthread_join fail at %s", __func__);
+		goto out;
+	}
+
+	while (async_flag == 0) {
+		usleep(10000);
+	}
+
+out:
+	if (req.in)
+		free(req.in);
+	if (req.out)
+		free(req.out);
+	if (h_sess)
+		wd_digest_free_sess(h_sess);
+	digest_uninit_config();
+
+	return ret;
+}
+
+static int sec_digest_sync_multi(void)
+{
+	struct wd_digest_sess_setup setup;
+	struct hash_testvec *tv = NULL;
+	handle_t h_sess = 0;
+	struct wd_digest_req req;
+	static pthread_t sendtd[64];
+	thread_data_d td_data;
+	int i, ret;
+
+	/* config setup */
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &dg_sched);
+	if (ret) {
+		printf("Fail to init sigle ctx config!\n");
+		return ret;
+	}
+
+	/* config arg */
+	memset(&req, 0, sizeof(struct wd_digest_req));
+	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
+
+	req.in	= malloc(BUFF_SIZE);
+	if (!req.in) {
+		printf("req src in mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+	memcpy(req.in, tv->plaintext, tv->psize);
+	req.in_bytes = tv->psize;
+
+	printf("req src in--------->:\n");
+	hexdump(req.in, tv->psize);
+	req.out = malloc(BUFF_SIZE);
+	if (!req.out) {
+		printf("req dst out mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+	req.out_bytes = tv->dsize;
 	req.has_next = 0;
 
 	h_sess = wd_digest_alloc_sess(&setup);
@@ -1150,28 +1549,49 @@ static int test_sec_digest_async_once(void)
 	}
 
 	/* if mode is HMAC, should set key */
-	//ret = wd_digest_set_key(&req, (const __u8*)tv->key, tv->ksize);
-	//if (ret) {
-	//	printf("req set key failed!\n");
-	//	goto out;
-	//}
-	//printf("digest req key--------->:\n");
-	//hexdump(req.key, tv->klen);
-
-	while (cnt) {
-		req.cb = digest_async_cb;
-		ret = wd_do_digest_async(h_sess, &req);
-		if (ret < 0)
+	if (setup.mode == WD_DIGEST_HMAC) {
+		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		if (ret) {
+			printf("sess set key failed!\n");
 			goto out;
-		cnt--;
+		}
+		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+		printf("------->tv key:%s\n", tv->key);
+		printf("digest sess key--------->:\n");
+		hexdump(sess->key, sess->key_bytes);
 	}
 
-	/* poll thread */
-	ret = wd_digest_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times, &recv);
+	td_data.h_sess = h_sess;
+	td_data.req = &req;
 
-	printf("Test digest async : %u pkg ; output dst-->\n", recv);
+	/* send thread */
+	td_data.send_num = g_times;
+	td_data.recv_num = g_times;
+
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_create(&sendtd[i], NULL, digest_sync_send_thread, &td_data);
+		if (ret) {
+			printf("Create send thread fail!\n");
+			return ret;
+		}
+	}
+
+	/* join thread */
+	async_flag = 0;
+	gettimeofday(&td_data.start_tval, NULL);
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_join(sendtd[i], NULL);
+		if (ret) {
+			printf("Join sendtd thread fail!\n");
+			return ret;
+		}
+	}
+
+	while (async_flag < g_thread_num) {
+		usleep(1000);
+	}
+
 	hexdump(req.out, 64);
-
 out:
 	if (req.in)
 		free(req.in);
@@ -1179,7 +1599,112 @@ out:
 		free(req.out);
 	if (h_sess)
 		wd_digest_free_sess(h_sess);
-	uninit_config();
+	digest_uninit_config();
+
+	return ret;
+}
+
+
+static int sec_digest_async_multi(void)
+{
+	struct hash_testvec *tv = 0;
+	struct wd_digest_sess_setup	setup;
+	handle_t h_sess = 0;
+	struct wd_digest_req req;
+	static pthread_t sendtd[64];
+	static pthread_t polltd;
+	thread_data_d td_data;
+	int test_alg = 0;
+	int test_mode = 0;
+	int i, ret;
+
+	/* config setup */
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &dg_sched);
+	if (ret) {
+		printf("Fail to init sigle ctx config!\n");
+		return ret;
+	}
+
+	/* config arg */
+	get_digest_resource(&tv, &test_alg, &test_mode);
+	memset(&req, 0, sizeof(struct wd_digest_req));
+	setup.alg = test_alg;
+	setup.mode = test_mode;
+
+	req.in  = malloc(BUFF_SIZE);
+	if (!req.in) {
+		printf("req src in mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+	memcpy(req.in, tv->plaintext, tv->psize);
+	req.in_bytes = tv->psize;
+	printf("req src in--------->:\n");
+	hexdump(req.in, tv->psize);
+	req.out = malloc(BUFF_SIZE);
+	if (!req.out) {
+		printf("req dst out mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+
+	req.out_bytes = tv->dsize;
+	req.has_next = 0;
+	h_sess = wd_digest_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -1;
+		goto out;
+	}
+
+	td_data.h_sess = h_sess;
+	td_data.req = &req;
+
+	/* send thread */
+	td_data.send_num = g_times;
+	td_data.recv_num = g_times * g_thread_num;
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_create(&sendtd[i], NULL, digest_send_thread, &td_data);
+		if (ret) {
+			printf("Create send thread fail!\n");
+			return ret;
+		}
+	}
+
+	/* poll thread */
+	ret = pthread_create(&polltd, NULL, digest_poll_thread, &td_data);
+	if (ret) {
+		printf("Create poll thread fail!\n");
+		return ret;
+	}
+
+	/* join thread */
+	async_flag = 0;
+	gettimeofday(&td_data.start_tval, NULL);
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_join(sendtd[i], NULL);
+		if (ret) {
+			printf("Join sendtd thread fail!\n");
+			return ret;
+		}
+	}
+	ret = pthread_join(polltd, NULL);
+	if (ret) {
+		printf("Join polltd thread fail!\n");
+		return ret;
+	}
+
+	while (async_flag == 0) {
+		usleep(1000);
+	}
+	hexdump(req.out, 64);
+out:
+	if (req.in)
+		free(req.in);
+	if (req.out)
+		free(req.out);
+	if (h_sess)
+		wd_digest_free_sess(h_sess);
+	digest_uninit_config();
 
 	return ret;
 }
@@ -1242,9 +1767,9 @@ int main(int argc, char *argv[])
 			if (!strcmp(argv[12], "-multi")) {
 				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently digest test is synchronize multi -%d threads!\n", g_thread_num);
-				//sec_digest_sync_test();
+				sec_digest_sync_multi();
 			} else {
-				test_sec_digest_sync_once();
+				sec_digest_sync_once();
 				printf("currently digest test is synchronize once, one thread!\n");
 			}
 		}
@@ -1262,9 +1787,9 @@ int main(int argc, char *argv[])
 			if (!strcmp(argv[12], "-multi")) {
 				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently digest test is asynchronous multi -%d threads!\n", g_thread_num);
-				//sec_digest_async_test();
+				sec_digest_async_multi();
 			} else {
-				test_sec_digest_async_once();
+				sec_digest_async_once();
 				printf("currently digest test is asynchronous one, one thread!\n");
 			}
 		}

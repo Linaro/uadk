@@ -428,7 +428,7 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)sess;
 	struct wd_ctx_config *config = &g_wd_digest_setting.config;
 	void *sched_ctx = g_wd_digest_setting.sched_ctx;
-	struct wd_digest_msg msg, recv_msg;
+	struct wd_digest_msg msg;
 	__u64 recv_cnt = 0;
 	handle_t h_ctx;
 	int ret;
@@ -457,7 +457,7 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 	}
 
 	do {
-		ret = g_wd_digest_setting.driver->digest_recv(h_ctx, &recv_msg);
+		ret = g_wd_digest_setting.driver->digest_recv(h_ctx, &msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("fail to recv bd!\n");
 			goto recv_err;
@@ -524,6 +524,11 @@ int wd_digest_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
 	int ret;
+
+	if (unlikely(!h_ctx || !count)) {
+		WD_ERR("digest input poll ctx or count is NULL.\n");
+		return -EINVAL;
+	}
 
 	do {
 		wd_spinlock(&lock);

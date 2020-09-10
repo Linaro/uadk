@@ -136,8 +136,8 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req);
 int wd_do_digest_async(handle_t sess, struct wd_digest_req *req);
 
 /**
- * wd_set_digest_key() - Set auth key to digest session.
- * @h_sess: session handler
+ * wd_digest_set_key() - Set auth key to digest session.
+ * @h_sess: Session handler
  * @key: Auth key addr
  * @key_len: Auth key length
  */
