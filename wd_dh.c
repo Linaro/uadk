@@ -59,7 +59,7 @@ static void __attribute__((constructor)) wd_dh_open_driver(void)
 {
 	void *driver;
 
-	driver = dlopen("/usr/lib/wd/libhisi_hpre.so", RTLD_NOW);
+	driver = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("Fail to open libhisi_hpre.so\n");
 }
