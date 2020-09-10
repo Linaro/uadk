@@ -13,6 +13,7 @@
 #include <sys/eventfd.h>
 #include <sys/types.h>
 #include "../include/drv/wd_rsa_drv.h"
+#include "../include/drv/wd_dh_drv.h"
 
 #define HPRE_HW_TASK_DONE	3
 #define HPRE_HW_TASK_INIT	1
@@ -43,7 +44,6 @@
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
 		(type *)((char *)__mptr - offsetof(type, member)); })
-
 
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,
@@ -447,7 +447,7 @@ static int rsa_prepare_iot(struct wd_rsa_msg *msg,
 	return ret;
 }
 
-static int hisi_hpre_init(struct wd_ctx_config_internal *config, void *priv)
+static int hpre_init(struct wd_ctx_config_internal *config, void *priv)
 {
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
@@ -478,7 +478,7 @@ out:
 	return -EINVAL;
 }
 
-static void hisi_hpre_exit(void *priv)
+static void hpre_exit(void *priv)
 {
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct wd_ctx_config_internal *config = &hpre_ctx->config;
@@ -491,7 +491,7 @@ static void hisi_hpre_exit(void *priv)
 	}
 }
 
-static int hisi_hpre_send(handle_t ctx, struct wd_rsa_msg *msg)
+static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg;
@@ -526,7 +526,7 @@ static int hisi_hpre_send(handle_t ctx, struct wd_rsa_msg *msg)
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
-static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
+static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg = {0};
@@ -558,14 +558,152 @@ static int hisi_hpre_recv(handle_t ctx, struct wd_rsa_msg *msg)
 	return 0;
 }
 
-static struct wd_rsa_driver hisi_hpre = {
+static struct wd_rsa_driver rsa_hisi_hpre = {
 	.drv_name		= "hisi_hpre",
 	.alg_name		= "rsa",
 	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
-	.init			= hisi_hpre_init,
-	.exit			= hisi_hpre_exit,
-	.send			= hisi_hpre_send,
-	.recv			= hisi_hpre_recv,
+	.init			= hpre_init,
+	.exit			= hpre_exit,
+	.send			= rsa_send,
+	.recv			= rsa_recv,
 };
 
-WD_RSA_SET_DRIVER(hisi_hpre);
+static int fill_dh_xp_params(struct wd_dh_msg *msg,
+			     struct hisi_hpre_sqe *hw_msg)
+{
+	struct wd_dh_req *req = &msg->req;
+	void *x, *p;
+	int ret;
+
+	x = req->x_p;
+	p = req->x_p + msg->key_bytes;
+	ret = crypto_bin_to_hpre_bin(x, (const char *)x,
+				msg->key_bytes, req->xbytes);
+	if (ret) {
+		WD_ERR("dh x para format fail!\n");
+		return ret;
+	}
+
+	ret = crypto_bin_to_hpre_bin(p, (const char *)p,
+				msg->key_bytes, req->pbytes);
+	if (ret) {
+		WD_ERR("dh p para format fail!\n");
+		return ret;
+	}
+
+	hw_msg->low_key = LW_U32((uintptr_t)x);
+	hw_msg->hi_key = HI_U32((uintptr_t)x);
+
+	return WD_SUCCESS;
+}
+
+static int dh_out_transfer(struct wd_dh_msg *msg,
+			   struct hisi_hpre_sqe *hw_msg)
+{
+	struct wd_dh_req *req = &msg->req;
+	int ret;
+
+	ret = hpre_bin_to_crypto_bin((char *)req->pri,
+		(const char *)req->pri, msg->key_bytes);
+	if (!ret)
+		return -WD_EINVAL;
+
+	req->pri_bytes = ret;
+
+	return WD_SUCCESS;
+}
+
+static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_dh_req *req = &msg->req;
+	struct hisi_hpre_sqe hw_msg;
+	__u16 send_cnt = 0;
+	int ret;
+
+	memset(&hw_msg, 0, sizeof(struct hisi_hpre_sqe));
+
+	if (msg->is_g2 && req->op_type != WD_DH_PHASE2)
+		hw_msg.alg = HPRE_ALG_DH_G2;
+	else
+		hw_msg.alg = HPRE_ALG_DH;
+
+	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
+
+	if (req->op_type == WD_DH_PHASE1 ||
+		req->op_type == WD_DH_PHASE2) {
+		if (msg->is_g2 && req->op_type == WD_DH_PHASE1) {
+			hw_msg.low_in = 0;
+			hw_msg.hi_in = 0;
+		} else {
+			ret = crypto_bin_to_hpre_bin((char *)msg->g,
+				(const char *)msg->g, msg->key_bytes,
+				msg->gbytes);
+			if (ret) {
+				WD_ERR("dh g para format fail!\n");
+				return ret;
+			}
+
+			hw_msg.low_in = LW_U32((uintptr_t)msg->g);
+			hw_msg.hi_in = HI_U32((uintptr_t)msg->g);
+		}
+
+		ret = fill_dh_xp_params(msg, &hw_msg);
+		if (ret)
+			return ret;
+	}
+
+	hw_msg.low_out = LW_U32((uintptr_t)req->pri);
+	hw_msg.hi_out = HI_U32((uintptr_t)req->pri);
+	hw_msg.done = 0x1;
+	hw_msg.etype = 0x0;
+	hw_msg.tag = msg->tag;
+
+	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+}
+
+static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_hpre_sqe hw_msg = {0};
+	__u16 recv_cnt = 0;
+	int ret;
+
+	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
+	if (ret < 0)
+		return ret;
+
+	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
+		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
+			hw_msg.done, hw_msg.etype);
+		if (hw_msg.done == HPRE_HW_TASK_INIT)
+			msg->result = WD_EINVAL;
+		else
+			msg->result = WD_IN_EPARA;
+	} else {
+		msg->tag = hw_msg.tag;
+		ret = dh_out_transfer(msg, &hw_msg);
+		if (ret) {
+			WD_ERR("qm rsa out transfer fail!\n");
+			msg->result = WD_OUT_EPARA;
+		} else {
+			msg->result = WD_SUCCESS;
+		}
+	}
+
+	return 0;
+}
+
+static struct wd_dh_driver dh_hisi_hpre = {
+	.drv_name		= "hisi_hpre",
+	.alg_name		= "dh",
+	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
+	.init			= hpre_init,
+	.exit			= hpre_exit,
+	.send			= dh_send,
+	.recv			= dh_recv,
+};
+
+WD_RSA_SET_DRIVER(rsa_hisi_hpre);
+WD_DH_SET_DRIVER(dh_hisi_hpre);
+

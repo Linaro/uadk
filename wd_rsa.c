@@ -622,9 +622,9 @@ int wd_rsa_poll_ctx(handle_t ctx, __u32 expt, __u32 *count)
 	return ret;
 }
 
-int wd_rsa_poll(__u32 *count)
+int wd_rsa_poll(__u32 expt, __u32 *count)
 {
-	return wd_rsa_setting.sched.poll_policy(0, 0, 1, count);
+	return wd_rsa_setting.sched.poll_policy(0, 0, expt, count);
 }
 
 static void wd_memset_zero(void *data, __u32 size)

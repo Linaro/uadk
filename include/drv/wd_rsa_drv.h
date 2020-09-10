@@ -31,19 +31,6 @@ struct wd_rsa_kg_out {
 	void *data[];
 };
 
-struct wd_ctx_internal {
-	handle_t ctx;
-	__u8 op_type;
-	__u8 ctx_mode;
-	pthread_mutex_t lock;
-};
-
-struct wd_ctx_config_internal {
-	__u32 ctx_num;
-	struct wd_ctx_internal *ctxs;
-	void *priv;
-};
-
 /* RSA message format */
 struct wd_rsa_msg {
 	struct wd_rsa_req req;
@@ -67,8 +54,8 @@ struct wd_rsa_driver {
 void wd_rsa_set_driver(struct wd_rsa_driver *drv);
 
 #define WD_RSA_SET_DRIVER(drv)						      \
-extern const struct wd_rsa_driver wd_rsa_##drv __attribute__((alias(#drv)));\
-static void __attribute__((constructor)) set_driver(void)		      \
+extern const struct wd_rsa_driver wd_##drv __attribute__((alias(#drv)));\
+static void __attribute__((constructor)) set_driver_rsa(void)		      \
 {									      \
 	wd_rsa_set_driver(&drv);					      \
 }

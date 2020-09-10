@@ -16,14 +16,14 @@
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 #define GET_NEGATIVE(val)		(0 - (val))
 
-typedef void *wd_rsa_cb_t(void *cb_param);
+typedef void (*wd_rsa_cb_t)(void *cb_param);
 
 struct wd_rsa_req {
 	void *src; /* rsa operation input address */
 	void *dst; /* rsa operation output address */
 	__u32 src_bytes; /* rsa operation input bytes */
 	__u32 dst_bytes; /* rsa operation output bytes */
-	wd_rsa_cb_t *cb;
+	wd_rsa_cb_t cb;
 	void *cb_param;
 	int status; /* rsa operation status */
 	__u8 data_fmt; /* data format denoted by enum wd_buff_type */
@@ -130,7 +130,7 @@ extern void wd_rsa_free_sess(handle_t sess);
 
 extern int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
 
-extern int wd_rsa_poll(__u32 *count);
+extern int wd_rsa_poll(__u32 expt, __u32 *count);
 
 /**
  * wd_do_rsa() - Send a sync rsaression request.

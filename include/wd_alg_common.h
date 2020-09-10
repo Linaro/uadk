@@ -79,6 +79,19 @@ struct sched_key {
 	__u8 type;
 };
 
+struct wd_ctx_internal {
+	handle_t ctx;
+	__u8 op_type;
+	__u8 ctx_mode;
+	pthread_mutex_t lock;
+};
+
+struct wd_ctx_config_internal {
+	__u32 ctx_num;
+	struct wd_ctx_internal *ctxs;
+	void *priv;
+};
+
 /**
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
