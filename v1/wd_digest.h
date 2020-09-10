@@ -66,7 +66,7 @@ struct wcrypto_digest_ctx_setup {
  * @out:output data address
  * @in_bytes: input data size
  * @out_bytes:output data size
- * @priv:private information for data extension
+ * @priv:reserved data field segment
  * @status:I/O operation return status
  * @has_next: is there next data block
  */

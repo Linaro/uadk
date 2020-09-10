@@ -35,7 +35,6 @@
 #include "hisi_sec_udrv.h"
 
 
-/* Only Hi1620 ES, we just need version 1 doorbell. */
 int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
 	       __u16 idx, __u8 priority)
 {
@@ -51,7 +50,6 @@ int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
 	return 0;
 }
 
-/* Only Hi1620 CS, we just need version 2 doorbell. */
 static int qm_db_v2(struct qm_queue_info *q, __u8 cmd,
 		      __u16 idx, __u8 priority)
 {
