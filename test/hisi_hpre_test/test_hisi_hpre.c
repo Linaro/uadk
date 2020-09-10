@@ -6260,11 +6260,12 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 static void  *_rsa_async_poll_test_thread(void *data)
 {
 	struct test_hpre_pthread_dt *pdata = data;
-	//struct wd_queue *q = pdata->q;
+	__u32 count = 0;
+	__u32 expt = 0;
 	int ret = 0;
 
 	while (1) {
-		//ret = wd_rsa_poll(q, 1);
+		ret = wd_rsa_poll(expt, &count);
 		if (ret < 0) {
 			break;
 		}
