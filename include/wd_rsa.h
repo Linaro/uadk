@@ -158,15 +158,16 @@ extern __u32 wd_rsa_poll(void);
 
 /**
  * wd_rsa_poll_ctx() - Poll a ctx.
- * @ctx:	The ctx which will be polled.
- * @num:	Max number of requests to poll. If 0, polled all finished
+ * @pos:	The ctx index which will be polled.
+ * @expt:	Max number of requests to poll. If 0, polled all finished
  * 		requests in this ctx.
- * Return the number of polled requests finally.
+ * @count:	The number of polled requests.
+ * Return 	0-succ others-fail.
  *
  * This is a help function which can be used by user's poll_policy function.
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern int wd_rsa_poll_ctx(handle_t ctx, __u32 expt, __u32 *count);
+extern int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count);
 
 #endif /* __WD_RSA_H */

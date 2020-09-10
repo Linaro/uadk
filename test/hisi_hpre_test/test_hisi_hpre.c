@@ -1073,7 +1073,7 @@ int poll_policy(handle_t h_sched_ctx, struct wd_ctx_config *config, __u32 expect
 		for (i = 0; i < config->ctx_num; i++) {
 			ctxs = &config->ctxs[i];
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
-				ret = wd_rsa_poll_ctx(ctxs->ctx, 1, count);
+				ret = wd_rsa_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
 					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
 					return ret;
