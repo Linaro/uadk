@@ -75,7 +75,7 @@ struct wcrypto_cipher_ctx_setup {
  * @in_bytes: input data size
  * @out_bytes:output data size
  * @iv_bytes:initializtion verctor data size
- * @priv:private information for data extension
+ * @priv:reserved data field segment
  */
 struct wcrypto_cipher_op_data {
 	enum wcrypto_cipher_op_type op_type;

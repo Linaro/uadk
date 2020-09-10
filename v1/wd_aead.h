@@ -84,7 +84,7 @@ struct wcrypto_aead_ctx_setup {
  * @out_buf_bytes:output buffer size
  * @iv_bytes:initializtion verctor data size
  * @assoc_size: aead associated data size
- * @priv:private information for data extension
+ * @priv:reserved data field segment
  */
 struct wcrypto_aead_op_data {
 	enum wcrypto_aead_op_type op_type;
