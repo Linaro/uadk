@@ -180,19 +180,19 @@ extern int wd_ctx_start(handle_t h_ctx);
 extern int wd_release_ctx_force(handle_t h_ctx);
 
 /**
- * wd_ctx_set_priv() - Store private information in context.
+ * wd_ctx_set_priv() - Store some information in context.
  * @h_ctx: The handle of context.
- * @priv: The pointer of memory which stores private information.
+ * @priv: The pointer of memory which stores above information.
  *
  * Return 0 if successful or less than 0 otherwise.
  */
 extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
 
 /**
- * wd_ctx_get_priv() - Get private information in context.
+ * wd_ctx_get_priv() - Get stored information in context.
  * @h_ctx: The handle of context.
  *
- * Return pointer of memory of private information if successful or NULL
+ * Return pointer of memory of stored information if successful or NULL
  * otherwise.
  */
 extern void *wd_ctx_get_priv(handle_t h_ctx);

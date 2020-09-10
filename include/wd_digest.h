@@ -65,7 +65,7 @@ struct wd_digest_sess {
  * @out_bytes: output data size
  * @has_next: is there next data block
  * @cb: callback function for async mode
- * @cb_param: private information for data extension
+ * @cb_param: pointer of callback parameter
  *
  * Note: If there is a alg selected in session, alg below will be ignore
  *       otherwise, alg here will be used. Same as mode below.

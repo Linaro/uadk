@@ -86,7 +86,6 @@ static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
 	return 0;
 }
 
-/* Only Hi1620 CS, we just need version 2 doorbell. */
 static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
 		      __u16 index, __u8 priority)
 {
