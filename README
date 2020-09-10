@@ -1,44 +1,34 @@
-WD User Land Demonstration
-==========================
+User Space Accelerator Development Kit
+======================================
 
-This directory contains some applications and libraries to demonstrate how a
+UADK is a framework for user application to access hardware accelerator in a
+unified, secure, and efficient way. UADK is comprised of UACCE, libwd and many
+other algorithm libraries for different applications.
 
-WrapDrive application can be constructed.
+UADK contains the following elements:
 
+wd.c
+	UADK fundamental library which wraps the basic operations to the UACCE
+	device. libwd is this library.
 
-As a demo, we try to make it simple and clear for understanding. It is not
-
-supposed to be used in business scenario.
-
-
-The directory contains the following elements:
-
-wd.[ch]
-	A demonstration UADK fundamental library which wraps the basic
-	operations to the UACCE device.
-
-wd_adapter.[ch]
-	User driver adaptor for wd.[ch]
+wd_[alg].c
+	UADK algorithm libraries. libwd_comp is for compression/decompression,
+	libwd_crypto is for all encryption/decryption and hash algorithm.
 
 wd_utils.[ch]
-	Some utitlities function used by WD and its drivers
+	Some utility functions used by UADK and its drivers.
 
 drv/*
-	User drivers. It helps to fulfill the semantic of wd.[ch] for
-	particular hardware
+	Hardware drivers. It helps to fulfill the semantic of algorithm
+	libraries for particular hardware.
 
 test/*
-	Test applications to use the wrapdrive library
+	Test applications to use UADK.
 
+include/*
+	Head files for user APP and hardware drivers.
 
-Build in samples/warpdrive (for the case of PC host): ::
-        ./autogen.sh
-        ./conf.sh       # or simply ./configure if you build on target system
-        make
+docs/*
+	Documentations.
 
-Then you can get test_hisi_zip in the test subdirectory. Copy it to the target
-system and make sure the hisi_zip driver is enabled (the major and minor of
-the uacce chrdev can be gotten from the dmesg or sysfs), and run: ::
-        mknod /dev/ua1 c <major> <minior>
-        test/test_hisi_zip -z < data > data.zip
-        test/test_hisi_zip -g < data > data.gzip
+Details about how to build and test can be found in docs.
