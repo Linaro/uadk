@@ -426,14 +426,17 @@ static void *async_cb(struct wd_cipher_req *req, void *data)
 
 static int test_sec_cipher_async_once(void)
 {
-	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
-	struct wd_cipher_sess_setup	setup;
-	handle_t	h_sess = 0;
+	struct cipher_testvec *tv = NULL;
+	struct wd_cipher_sess_setup setup;
+	thread_data_t data;
+	handle_t h_sess = 0;
 	struct wd_cipher_req req;
 	int cnt = g_times;
-	unsigned int recv = 0;
+	__u32 num = 0;
 	int ret;
 
+	memset(&data, 0, sizeof(thread_data_t));
+	data.req = &req;
 	/* config setup */
 	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC, &g_sched);
 	if (ret) {
@@ -442,9 +445,17 @@ static int test_sec_cipher_async_once(void)
 	}
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_cipher_req));
-	req.alg = WD_CIPHER_AES;
-	req.mode = WD_CIPHER_CBC;
-	req.op_type = WD_CIPHER_ENCRYPTION;
+	setup.alg = WD_CIPHER_AES;
+	setup.mode = WD_CIPHER_CBC;
+
+	if (g_direction == 0)
+		req.op_type = WD_CIPHER_ENCRYPTION;
+	else {
+		req.op_type = WD_CIPHER_DECRYPTION;
+	}
+
+	/* get resource */
+	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
 	req.src  = malloc(BUFF_SIZE);
 	if (!req.src) {
@@ -452,21 +463,14 @@ static int test_sec_cipher_async_once(void)
 		ret = -1;
 		goto out;
 	}
-	memcpy(req.src, tv->ptext, tv->len);
-	req.in_bytes = tv->len;
+	memcpy(req.src, tv->ptext, g_pktlen);
+	req.in_bytes = g_pktlen;
 
 	printf("req src--------->:\n");
-	hexdump(req.src, tv->len);
+	hexdump(req.src, g_pktlen);
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
 		printf("req dst mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
-
-	req.key = malloc(BUFF_SIZE);
-	if (!req.key) {
-		printf("req key mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -477,9 +481,12 @@ static int test_sec_cipher_async_once(void)
 		ret = -1;
 		goto out;
 	}
-	if (tv->iv) {
-		memcpy(req.iv, tv->iv, strlen(tv->iv));
+	if (setup.mode == WD_CIPHER_CBC || setup.mode == WD_CIPHER_XTS) {
+		if (tv->iv)
+			memcpy(req.iv, tv->iv, strlen(tv->iv));
 		req.iv_bytes = strlen(tv->iv);
+		printf("cipher req iv--------->:\n");
+		hexdump(req.iv, req.iv_bytes);
 	}
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
@@ -487,30 +494,35 @@ static int test_sec_cipher_async_once(void)
 		goto out;
 	}
 
-	/* set key */
-	//ret = wd_cipher_set_key(&req, (const __u8*)tv->key, tv->klen);
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		printf("req set key failed!\n");
 		goto out;
 	}
 	printf("cipher req key--------->:\n");
-	hexdump(req.key, tv->klen);
-
+	// hexdump(h_sess->key, tv->klen);
 	while (cnt) {
 		req.cb = async_cb;
+		req.cb_param = &data;
 		ret = wd_do_cipher_async(h_sess, &req);
-		if (ret < 0)
-			goto out;
-
+		if (ret < 0) {
+			usleep(100);
+			continue;
+		}
+		/* poll thread */
+try_again:
+		num = 0;
+		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, &num);
+		if (ret == -EAGAIN) {
+			goto try_again; // loop poll
+		}
 		cnt--;
 	}
 
-	/* poll thread */
-	ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, g_times, NULL);
+	// printf("Test cipher async once function: output dst-->\n");
+	// hexdump(req.dst, req.out_bytes);
 
-	printf("Test cipher async : %u pkg ; output dst-->\n", recv);
-	hexdump(req.dst, req.in_bytes);
-
+	usleep(100000);
 out:
 	if (req.src)
 		free(req.src);
@@ -518,8 +530,6 @@ out:
 		free(req.dst);
 	if (req.iv)
 		free(req.iv);
-	if (req.key)
-		free(req.key);
 	if (h_sess)
 		wd_cipher_free_sess(h_sess);
 	uninit_config();
@@ -530,10 +540,12 @@ out:
 static int test_sec_cipher_sync(void *arg)
 {
 	int thread_id = (int)syscall(__NR_gettid);
-	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
 	thread_data_t *pdata = (thread_data_t *)arg;
+	struct wd_cipher_sess_setup *setup = pdata->setup;
+
 	struct wd_cipher_req *req = pdata->req;
-	struct wd_cipher_sess_setup setup;
+	struct cipher_testvec *tv = NULL;
+
 	struct timeval cur_tval;
 	unsigned long Perf = 0, pktlen;
 	handle_t	h_sess;
@@ -542,7 +554,10 @@ static int test_sec_cipher_sync(void *arg)
 	int cnt = g_times;
 	int ret;
 
-	h_sess = wd_cipher_alloc_sess(&setup);
+	/* get resource */
+	ret = get_cipher_resource(&tv, (int *)&setup->alg, (int *)&setup->mode);
+
+	h_sess = wd_cipher_alloc_sess(setup);
 	if (!h_sess) {
 		ret = -1;
 		return ret;
@@ -550,18 +565,19 @@ static int test_sec_cipher_sync(void *arg)
 
 	pktlen = req->in_bytes;
 	printf("cipher req src--------->:\n");
-	hexdump(req->src, tv->len);
+	hexdump(req->src, req->in_bytes);
 
 	printf("ivlen = %d, cipher req iv--------->:\n", req->iv_bytes);
 	hexdump(req->iv, req->iv_bytes);
-	/* set key */
-	//ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
+
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
-		printf("req set key failed!\n");
-		goto out_cipher;
+		printf("test sec cipher set key is failed!\n");
+		goto out;;
 	}
+
 	printf("cipher req key--------->:\n");
-	hexdump(req->key, tv->klen);
+	// hexdump(h_sess->key, h_sess->key_bytes);
 
 	pthread_mutex_lock(&mutex);
 	// pthread_cond_wait(&cond, &mutex);
@@ -589,8 +605,7 @@ static int test_sec_cipher_sync(void *arg)
 	pthread_mutex_unlock(&mutex);
 
 	ret = 0;
-
-out_cipher:
+out:
 	if (h_sess)
 		wd_cipher_free_sess(h_sess);
 
@@ -607,7 +622,7 @@ static void *_test_sec_cipher_sync(void *data)
  * Create 2 threads. one threads are enc/dec, and the other
  * is polling.
  */
-static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs)
+static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, struct wd_cipher_sess_setup *setups)
 {
 	pthread_attr_t attr;
 	int i, ret;
@@ -622,6 +637,7 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs)
 	for (i = 0; i < thread_num; i++) {
 		thr_data[i].tid = i;
 		thr_data[i].req = &reqs[i];
+		thr_data[i].setup = &setups[i];
 		gettimeofday(&thr_data[i].start_tval, NULL);
 		ret = pthread_create(&system_test_thrds[i], &attr, _test_sec_cipher_sync, &thr_data[i]);
 		if (ret) {
@@ -642,12 +658,18 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs)
 static int sec_cipher_sync_test(void)
 {
 	struct wd_cipher_req	req[NUM_THREADS];
-	void *src = NULL, *dst = NULL, *iv = NULL, *key = NULL;
-	int	parallel = g_thread_num;
-	int i;
-	memset(&req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
-	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
-	int ret;
+	struct wd_cipher_sess_setup setup[NUM_THREADS];
+	void *src = NULL, *dst = NULL, *iv = NULL;
+	int parallel = g_thread_num;
+	struct cipher_testvec *tv = NULL;
+	int test_alg, test_mode;
+	int ret, i;
+
+	memset(req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
+	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * NUM_THREADS);
+
+	/* get resource */
+	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 
 	int step = sizeof(char) * TEST_WORD_LEN;
 	src = malloc(step * NUM_THREADS);
@@ -666,33 +688,31 @@ static int sec_cipher_sync_test(void)
 		goto out_thr;
 	}
 
-	key = malloc(step * NUM_THREADS);
-	if (!key) {
-		ret = -ENOMEM;
-		goto out_thr;
-	}
-
 	for (i = 0; i < parallel; i++) {
 		req[i].src = src + i * step;
 		memset(req[i].src, 0, step);
-		memcpy(req[i].src, tv->ptext, tv->len);
-		req[i].in_bytes = tv->len;
+		memcpy(req[i].src, tv->ptext, g_pktlen);
+		req[i].in_bytes = g_pktlen;
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
-		memcpy(req[i].iv, tv->iv, strlen(tv->iv));
-		req[i].iv_bytes = strlen(tv->iv);
-
-		req[i].key = key + i * step;
-		memset(req[i].key, 0, step);
+		if (test_mode == WD_CIPHER_CBC || test_mode == WD_CIPHER_XTS) {
+			memcpy(req[i].iv, tv->iv, strlen(tv->iv));
+			req[i].iv_bytes = strlen(tv->iv);
+		}
 
 		/* config arg */
-		req[i].alg = WD_CIPHER_AES;
-		req[i].mode = WD_CIPHER_CBC;
-		req[i].op_type = WD_CIPHER_ENCRYPTION;
+		setup[i].alg = test_alg;
+		setup[i].mode = test_mode;
+
+		if (g_direction == 0)
+			req[i].op_type = WD_CIPHER_ENCRYPTION;
+		else {
+			req[i].op_type = WD_CIPHER_DECRYPTION;
+		}
 	}
 
 	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
@@ -701,7 +721,7 @@ static int sec_cipher_sync_test(void)
 		goto out_thr;
 	}
 
-	ret = test_sync_create_threads(parallel, req);
+	ret = test_sync_create_threads(parallel, req, setup);
 	if (ret < 0)
 		goto out_config;
 
@@ -714,8 +734,6 @@ out_thr:
 		free(dst);
 	if (iv)
 		free(iv);
-	if (key)
-		free(key);
 
 	return ret;
 }
@@ -723,51 +741,52 @@ out_thr:
 static int test_sec_cipher_async(void *arg)
 {
 	int thread_id = (int)syscall(__NR_gettid);
-	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
 	thread_data_t *pdata = (thread_data_t *)arg;
+	struct wd_cipher_sess_setup *setup = pdata->setup;
 	struct wd_cipher_req *req = pdata->req;
-	struct wd_cipher_sess_setup setup;
+	struct cipher_testvec *tv = NULL;
 	int cnt = g_times;
 	handle_t h_sess;
 	int ret;
 
-	h_sess = wd_cipher_alloc_sess(&setup);
+	/* get resource */
+	ret = get_cipher_resource(&tv, (int *)&setup->alg, (int *)&setup->mode);
+
+	h_sess = wd_cipher_alloc_sess(setup);
 	if (!h_sess) {
 		ret = -1;
 		return ret;
 	}
 
-	printf("cipher req src--------->:\n");
-	hexdump(req->src, tv->len);
-
-	printf("cipher req iv--------->:\n");
-	hexdump(req->iv, req->iv_bytes);
-	/* set key */
-	//ret = wd_cipher_set_key(req, (const __u8*)tv->key, tv->klen);
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
-		printf("req set key failed!\n");
-		goto out_cipher;
+		printf("test sec cipher set key is failed!\n");
+		goto out;;
 	}
-	printf("cipher req key--------->:\n");
-	hexdump(req->key, tv->klen);
 
 	pthread_mutex_lock(&mutex);
 	// pthread_cond_wait(&cond, &mutex);
 	/* run task */
-	while (cnt) {
+	do {
+try_do_again:
 		ret = wd_do_cipher_async(h_sess, req);
+		if (ret == -EBUSY) { // busy
+			usleep(100);
+			goto try_do_again;
+		} else if (ret) {
+			printf("test sec cipher send req is error!\n");
+			goto out;
+		}
 		cnt--;
-	}
+		g_count++; // g_count means data block numbers
+	} while (cnt);
 
-	printf("Test cipher async function: output dst-->\n");
-	hexdump(req->dst, req->in_bytes);
 	printf("Test cipher async function thread_id is:%d\n", thread_id);
 
 	pthread_mutex_unlock(&mutex);
 
 	ret = 0;
-
-out_cipher:
+out:
 	if (h_sess)
 		wd_cipher_free_sess(h_sess);
 
@@ -785,21 +804,35 @@ static void *_test_sec_cipher_async(void *data)
 static void *poll_func(void *arg)
 {
 	int ret;
+	__u32 count = 0, index = 0;
+	int i = 0;
+
+	int expt = g_times * g_thread_num;
 
 	while (1) {
-		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, NULL);
-		if (ret < 0) {
+		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, &count);
+		i++;
+		// printf("cipher poll ctx: i=%d----------->\n", i);
+		if (ret != -EAGAIN && ret < 0) {
+			printf("poll ctx is error----------->\n");
+			break;
+		}
+
+		index += count;
+		count = 0;
+		if (expt == index) {
 			break;
 		}
 	}
 
-	return NULL;
+	pthread_exit(NULL);
 }
+
 /*
  * Create 2 threads. one threads are enc/dec, and the other
  * is polling.
  */
-static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs)
+static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs, struct wd_cipher_sess_setup *setups)
 {
 	pthread_attr_t attr;
 	int i, ret;
@@ -814,6 +847,7 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs)
 	for (i = 0; i < thread_num; i++) {
 		thr_data[i].tid = i;
 		thr_data[i].req = &reqs[i];
+		thr_data[i].setup = &setups[i];
 		gettimeofday(&thr_data[i].start_tval, NULL);
 		ret = pthread_create(&system_test_thrds[i], &attr, _test_sec_cipher_async, &thr_data[i]);
 		if (ret) {
@@ -825,8 +859,19 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs)
 	ret = pthread_create(&system_test_thrds[i], &attr, poll_func, &thr_data[i]);
 
 	pthread_attr_destroy(&attr);
-	for (i = 0; i < thread_num + 1; i++) {
+
+	for (i = 0; i < thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
+		if (ret) {
+			printf("Join %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+	// asyn_thread_exit = 1;
+	ret = pthread_join(system_test_thrds[i], NULL);
+	if (ret) {
+			printf("Join %dth thread fail!\n", i);
+			return ret;
 	}
 
 	return 0;
@@ -835,13 +880,18 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs)
 static int sec_cipher_async_test(void)
 {
 	struct wd_cipher_req	req[NUM_THREADS];
-	void *src = NULL, *dst = NULL, *iv = NULL, *key = NULL;
-	int	parallel = g_thread_num;
-	int i;
-	memset(&req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
-	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
-	int ret;
+	struct wd_cipher_sess_setup setup[NUM_THREADS];
+	void *src = NULL, *dst = NULL, *iv = NULL;
+	struct cipher_testvec *tv = NULL;
+	thread_data_t datas[NUM_THREADS];
+	int parallel = g_thread_num;
+	int test_alg, test_mode;
+	int i, ret;
 
+	memset(datas, 0, sizeof(thread_data_t) * NUM_THREADS);
+	memset(req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
+	/* get resource */
+	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 	int step = sizeof(char) * TEST_WORD_LEN;
 	src = malloc(step * NUM_THREADS);
 	if (!src) {
@@ -859,34 +909,33 @@ static int sec_cipher_async_test(void)
 		goto out_thr;
 	}
 
-	key = malloc(step * NUM_THREADS);
-	if (!key) {
-		ret = -ENOMEM;
-		goto out_thr;
-	}
-
 	for (i = 0; i < parallel; i++) {
 		req[i].src = src + i * step;
 		memset(req[i].src, 0, step);
-		memcpy(req[i].src, tv->ptext, tv->len);
-		req[i].in_bytes = tv->len;
+		memcpy(req[i].src, tv->ptext, g_pktlen);
+		req[i].in_bytes = g_pktlen;
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
-		memcpy(req[i].iv, tv->iv, strlen(tv->iv));
-		req[i].iv_bytes = strlen(tv->iv);
-
-		req[i].key = key + i * step;
-		memset(req[i].key, 0, step);
+		if (test_mode == WD_CIPHER_CBC || test_mode == WD_CIPHER_XTS) {
+			memcpy(req[i].iv, tv->iv, strlen(tv->iv));
+			req[i].iv_bytes = strlen(tv->iv);
+		}
 
 		/* config arg */
-		req[i].alg = WD_CIPHER_AES;
-		req[i].mode = WD_CIPHER_CBC;
-		req[i].op_type = WD_CIPHER_ENCRYPTION;
+		setup[i].alg = test_alg;
+		setup[i].mode = test_mode;
+
+		if (g_direction == 0)
+			req[i].op_type = WD_CIPHER_ENCRYPTION;
+		else {
+			req[i].op_type = WD_CIPHER_DECRYPTION;
+		}
 		req[i].cb = async_cb;
+		req[i].cb_param = &datas[i];
 	}
 
 	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC, &g_sched);
@@ -895,7 +944,7 @@ static int sec_cipher_async_test(void)
 		goto out_thr;
 	}
 
-	ret = test_async_create_threads(parallel, req);
+	ret = test_async_create_threads(parallel, req, setup);
 	if (ret < 0)
 		goto out_config;
 
@@ -908,8 +957,6 @@ out_thr:
 		free(dst);
 	if (iv)
 		free(iv);
-	if (key)
-		free(key);
 
 	return ret;
 }
