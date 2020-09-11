@@ -30,7 +30,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <semaphore.h>
-
+#include <getopt.h>
 #include "hpre_test_sample.h"
 #include "test_hisi_hpre.h"
 #include "../../include/wd.h"
@@ -168,6 +168,41 @@ struct ecc_curve_tbl {
 	const char *name;
 	unsigned int nid;
 	unsigned int curve_id;
+};
+
+struct hpre_test_config {
+	__u32 key_bits;
+	__u32 times;
+	__u32 seconds;
+	__u8 check;
+	__u8 perf_test;
+	__u8 soft_test;
+	__u8 with_log;
+	__u8 trd_num;
+	__u8 regist_log0;
+	__u8 regist_log1;
+	__u64 core_mask[2];
+	char alg_mode[10];
+	char trd_mode[10];
+	char alg[10];
+	char ecc_curve_name[20];
+	char dev_path[PATH_STR_SIZE];
+};
+
+static struct hpre_test_config g_config = {
+	.key_bits = 2048,
+	.times = 1,
+	.seconds = 0,
+	.check = 0,
+	.perf_test = 0,
+	.with_log = 0,
+	.soft_test = 0,
+	.core_mask = 0,
+	.trd_mode = "sync",
+	.alg_mode = "crt",
+	.alg = "sgn",
+	.ecc_curve_name = "secp256k1",
+	.dev_path = "/dev/hisi_hpre-0",
 };
 
 static int key_bits = 2048;
@@ -7583,6 +7618,137 @@ void segmant_fault_register(const char *format, ...)
     *ptr = 0;
     return ;
 }
+
+static int parse_cmd_line(int argc, char *argv[])
+{
+        int option_index = 0;
+        int digit_optind = 0;
+        int optind_t;
+        int c;
+
+        static struct option long_options[] = {
+            {"alg",     required_argument, 0,  0 },
+            {"mode",  	required_argument, 0,  0 },
+            {"dev_path",  required_argument, 0,  0 },
+            {"key_bits", required_argument,       0,  0 },
+            {"times",  required_argument, 0, 0},
+            {"seconds",    required_argument, 0,  0 },
+            {"log",    no_argument, 0,  0 },
+            {"check",    no_argument, 0,  0 },
+            {"soft",    no_argument, 0,  0 },
+            {"perf",    no_argument, 0,  0 },
+            {"registerlog-0",    no_argument, 0,  0 },
+            {"registerlog-1",    no_argument, 0,  0 },
+
+ 
+            {0,         0,                 0,  0 }
+        };
+
+        while (1) {
+        	optind_t = optind ? optind: 1;
+
+        	c = getopt_long(argc, argv, "t:c:", long_options, &option_index);
+        	if (c == -1) 
+        		break;
+
+		switch (c) {
+		case 0:
+			if (!strncmp(long_options[option_index].name, "alg", 3)) {
+				snprintf(g_config.alg, sizeof(g_config.alg), "%s", optarg);
+			} else if (!strncmp(long_options[option_index].name, "mode", 4)) {
+				snprintf(g_config.alg_mode, sizeof(g_config.alg_mode), "%s", optarg);				
+			} else if (!strncmp(long_options[option_index].name, "dev_path", 8)) {
+				snprintf(g_config.dev_path, sizeof(g_config.dev_path), "%s", optarg);	
+			} else if (!strncmp(long_options[option_index].name, "key_bits", 8)) {
+				g_config.key_bits = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "cycles", 5)) {
+				g_config.times = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "seconds", 7)) {
+				g_config.seconds = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "log", 3)) {
+				g_config.with_log = 1;
+			} else if (!strncmp(long_options[option_index].name, "check", 5)) {
+				#ifdef WITH_OPENSSL_DIR	
+				g_config.check = 1;
+				#endif
+			} else if (!strncmp(long_options[option_index].name, "soft", 4)) {
+				g_config.soft_test = 1;
+			} else if (!strncmp(long_options[option_index].name, "perf", 4)) {
+				g_config.perf_test = 1;
+			}
+			break;
+
+		case 't':
+			g_config.trd_num = strtoul((char *)optarg, NULL, 10);
+			if (g_config.trd_num <= 0 || g_config.trd_num > TEST_MAX_THRD) {
+				HPRE_TST_PRT("Invalid threads num:%d!\n",
+								thread_num);
+				HPRE_TST_PRT("Now set threads num as 2\n");
+				thread_num = 2;
+			}
+			break;
+		case 'c':
+			int bits;
+
+			if (optarg[0] != '0' || optarg[1] != 'x') {
+				HPRE_TST_PRT("Err:coremask should be hex!\n");
+				return -EINVAL;
+			}
+
+			if (strlen(optarg) > 34) {
+				HPRE_TST_PRT("warn:coremask is cut!\n");
+				optarg[34] = 0;
+			}
+
+			if (strlen(optarg) <= 18) {
+				g_config.core_mask[0] = strtoull(optarg, NULL, 16);
+				if (g_config.core_mask[0] & 0x1) {
+					HPRE_TST_PRT("Warn:cannot bind to core 0,\n");
+					HPRE_TST_PRT("now run without binding\n");
+					g_config.core_mask[0] = 0x0; /* no binding */
+				}
+				g_config.core_mask[1] = 0;
+			} else {
+				int offset = 0;
+				char *temp;
+
+				offset = strlen(optarg) - 16;
+				g_config.core_mask[0] = strtoull(&optarg[offset], NULL, 16);
+				if (g_config.core_mask[0] & 0x1) {
+					HPRE_TST_PRT("Warn:cannot bind to core 0,\n");
+					HPRE_TST_PRT("now run without binding\n");
+					g_config.core_mask[0] = 0x0; /* no binding */
+				}
+				temp = malloc(64);
+				strcpy(temp, optarg);
+				temp[offset] = 0;
+				g_config.core_mask[1] = strtoull(temp, NULL, 16);
+				free(temp);
+			}
+			bits = _get_one_bits(core_mask[0]);
+			bits += _get_one_bits(core_mask[1]);
+			if (g_config.trd_num > bits) {
+				HPRE_TST_PRT("Coremask not covers all thrds,\n");
+				HPRE_TST_PRT("Bind first %d thrds!\n", bits);
+			} else if (g_config.trd_num < bits) {
+				HPRE_TST_PRT("Coremask overflow,\n");
+				HPRE_TST_PRT("Just try to bind all thrds!\n");
+			};
+			break;
+
+		case '?':
+		    break;
+
+		default:
+		    printf("?? getopt returned character code 0%o ??\n", c);
+		    break;
+		}
+        }
+
+	return 0;
+}
+
+
 int main(int argc, char *argv[])
 	{
 	enum alg_op_type alg_op_type = HPRE_ALG_INVLD_TYPE;
@@ -7606,107 +7772,50 @@ int main(int argc, char *argv[])
 	unsigned int node_msk = 0;
 	char *alg_name;
 
-	if (!argv[1] || !argv[6]) {
-		HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
-		return -EINVAL;
-	}
+	ret = parse_cmd_line(argc, argv);
+	if (ret)
+		return -1;
 
-	if (argv[7] && !strcmp(argv[7], "-check"))
-	#ifdef WITH_OPENSSL_DIR	
-		openssl_check = 1;
-	#endif
-	if (argv[7] && !strcmp(argv[7], "-soft"))
-		only_soft = 1;
 
-	if (!strcmp(argv[argc-1], "-registerlog-0")){
-	ret = wd_register_log(NULL);
-	if (!ret){
-		printf("illegel to register null log interface");
-		return -EINVAL;
-	}
-	return 0;
-	}
-	if (!strcmp(argv[argc-1], "-registerlog-1")){
-	ret = wd_register_log(redirect_log_2_file);
-	if (ret){
-		printf("fail to register log interface");
-		return -EINVAL;
-	}
-	if (argc == 2){
-		char *error_info = "q, info or dev_info NULL!";
-		struct wd_queue *q = NULL;
-		char content[1024];
-		//wd_get_node_id(q);
-		FILE *fp = NULL;
-		fp = fopen("file.txt", "r");
-		if (fgets(content,1024,fp) == NULL)
-		return -EINVAL;
-		if (strstr(content,error_info) == NULL){
-		return -EINVAL;
+	if (!strncmp(g_config.alg, "rsa-gen", 3)) {
+		if (!strncmp(g_config.trd_mode, "async", 3)) {		
+			alg_op_type = RSA_ASYNC_GEN;
+		} else {
+			alg_op_type = RSA_KEY_GEN;			
 		}
-		return 0;
-	}
-	}
-	if (!strcmp(argv[argc-1], "-registerlog-2")){
-	ret = wd_register_log(normal_register);
-	if (ret){
-		printf("fail to register log interface");
-		return -EINVAL;
-	}
-	if (!wd_register_log(normal_register)){
-		printf("illegel to register dumplicate log interface");
-		return -EINVAL;
-	}
-	return 0;
-	}
-	if (!strcmp(argv[argc-1], "-registerlog-3")){
-	ret = wd_register_log(segmant_fault_register);
-	if (ret){
-		printf("fail to register log interface");
-		return -EINVAL;
-	}
-	WD_ERR("segment fault");
-	return 0;
-	}
-
-	if (!strcmp(argv[1], "-system-qt")) {
-		is_system_test = 1;
-		HPRE_TST_PRT("Now doing system queue mng test!\n");
-	} else if (!strcmp(argv[1], "-system-gen")) {
-		alg_op_type = RSA_KEY_GEN;
 		is_system_test = 1;
 		HPRE_TST_PRT("Now doing system key gen test!\n");
-	} else if (!strcmp(argv[1], "-system-vrf")) {
-		alg_op_type = RSA_PUB_EN;
+	} else if (!strcmp(g_config.alg, "rsa-vrf")) {
+		if (!strncmp(g_config.trd_mode, "async", 3)) {		
+			alg_op_type = RSA_ASYNC_EN;
+		} else {
+			alg_op_type = RSA_PUB_EN;			
+		}
 		is_system_test = 1;
 		HPRE_TST_PRT("Now doing system verify test!\n");
-	} else if (!strcmp(argv[1], "-system-sgn")) {
-		alg_op_type = RSA_PRV_DE;
+	} else if (!strcmp(g_config.alg, "rsa-sgn")) {
+		if (!strncmp(g_config.trd_mode, "async", 3)) {		
+			alg_op_type = RSA_ASYNC_DE;
+		} else {
+			alg_op_type = RSA_PRV_DE;		
+		}
 		is_system_test = 1;
 		HPRE_TST_PRT("Now doing system sign test!\n");
-	} else if (!strcmp(argv[1], "-system-asgn")) {
-		alg_op_type = RSA_ASYNC_DE;
-		is_system_test = 1;
-		HPRE_TST_PRT("Now doing system rsa async sign test!\n");
-	} else if (!strcmp(argv[1], "-system-avrf")) {
-		alg_op_type = RSA_ASYNC_EN;
-		is_system_test = 1;
-		HPRE_TST_PRT("Now doing system rsa async verify test!\n");
-	} else if (!strcmp(argv[1], "-system-agen")) {
-		alg_op_type = RSA_ASYNC_GEN;
-		is_system_test = 1;
-		HPRE_TST_PRT("Now doing system rsa async kgerate test!\n");
-	} else if (!strcmp(argv[1], "-system-gen1")) {
+	} else if (!strcmp(g_config.alg, "dh-gen1")) {
 		HPRE_TST_PRT("DH key generation\n");
-		alg_op_type = DH_GEN;
+		if (!strncmp(g_config.trd_mode, "async", 3)) {		
+			alg_op_type = DH_ASYNC_GEN;
+		} else {
+			alg_op_type = DH_GEN;		
+		}
 		is_system_test = 1;
-	} else if (!strcmp(argv[1], "-system-agen1")) {
-		HPRE_TST_PRT("DH gen async\n");
-		alg_op_type = DH_ASYNC_GEN;
-		is_system_test = 1;
-	} else if (!strcmp(argv[1], "-system-gen2")) {
+	} else if (!strcmp(g_config.alg, "-system-gen2")) {
 		HPRE_TST_PRT("DH key generation\n");
-		alg_op_type = DH_COMPUTE;
+		if (!strncmp(g_config.trd_mode, "async", 3)) {		
+			alg_op_type = DH_ASYNC_COMPUTE;
+		} else {
+			alg_op_type = DH_COMPUTE;		
+		}
 		is_system_test = 1;
 	} else if (!strcmp(argv[1], "-system-agen2")) {
 		HPRE_TST_PRT("DH gen async\n");
