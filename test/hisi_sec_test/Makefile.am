@@ -10,3 +10,4 @@ test_hisi_sec_LDADD=../../.libs/libwd.a ../../.libs/libwd_crypto.a \
 else
 test_hisi_sec_LDADD=-L../../.libs -lwd -lwd_crypto -lhisi_sec
 endif
+test_hisi_sec_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
