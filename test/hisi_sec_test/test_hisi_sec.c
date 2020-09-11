@@ -1015,12 +1015,12 @@ static int init_digest_ctx_config(int type, int mode, struct wd_digest_sched *sc
 
 	sched->name = SCHED_SINGLE;
 	sched->pick_next_ctx = sched_digest_pick_next_ctx;
-
+	sched->sched_ctx_size = 1;
 	sched->poll_policy = sched_single_poll_policy;
-	/*cipher init*/
+	/* digest init */
 	ret = wd_digest_init(&g_ctx_cfg, sched);
 	if (ret) {
-		printf("Fail to cipher ctx!\n");
+		printf("Fail to digest ctx!\n");
 		goto out;
 	}
 
