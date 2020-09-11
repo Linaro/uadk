@@ -6937,6 +6937,7 @@ static int rsa_openssl_key_gen_for_async_test(void)
 	}
 
 	return 0;
+
 gen_fail:
 	RSA_free(ssl_params.rsa);
 	BN_free(ssl_params.e);
@@ -6949,7 +6950,157 @@ gen_fail:
 	return ret;
 }
 
+static int rsa_sample_key_gen_for_async_test(void)
+{
+	const __u8 *p, *q, *n, *e, *d, *dp, *dq, *qinv;
+	int ret;
 
+	if (key_bits == 1024) {
+		e = rsa_e_1024;
+		p = rsa_p_1024;
+		q = rsa_q_1024;
+		dp = rsa_dp_1024;
+		dq = rsa_dq_1024;
+		qinv = rsa_qinv_1024;
+		d = rsa_d_1024;
+		n = rsa_n_1024;
+	} else if (key_bits == 2048) {
+		e = rsa_e_2048;
+		p = rsa_p_2048;
+		q = rsa_q_2048;
+		dp = rsa_dp_2048;
+		dq = rsa_dq_2048;
+		qinv = rsa_qinv_2048;
+		d = rsa_d_2048;
+		n = rsa_n_2048;
+	} else if (key_bits == 3072) {
+		e = rsa_e_3072;
+		p = rsa_p_3072;
+		q = rsa_q_3072;
+		dp = rsa_dp_3072;
+		dq = rsa_dq_3072;
+		qinv = rsa_qinv_3072;
+		d = rsa_d_3072;
+		n = rsa_n_3072;
+	} else if (key_bits == 4096) {
+		e = rsa_e_4096;
+		p = rsa_p_4096;
+		q = rsa_q_4096;
+		dp = rsa_dp_4096;
+		dq = rsa_dq_4096;
+		qinv = rsa_qinv_4096;
+		d = rsa_d_4096;
+		n = rsa_n_4096;
+	} else {
+		HPRE_TST_PRT("invalid key bits = %d!\n", key_bits);
+		return -1;
+	}
+
+	ssl_params.e = BN_bin2bn(e, key_bits >> 3, NULL);
+	if (!ssl_params.e) {
+		HPRE_TST_PRT("Bin2bin e fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.d = BN_bin2bn(d, key_bits >> 3, NULL);
+	if (!ssl_params.d) {
+		HPRE_TST_PRT("Bin2bin d fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.n = BN_bin2bn(n, key_bits >> 3, NULL);
+	if (!ssl_params.n) {
+		HPRE_TST_PRT("Bin2bin n fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.p = BN_bin2bn(p, key_bits >> 4, NULL);
+	if (!ssl_params.p) {
+		HPRE_TST_PRT("Bin2bin p fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.q = BN_bin2bn(q, key_bits >> 4, NULL);
+	if (!ssl_params.q) {
+		HPRE_TST_PRT("Bin2bin q fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.dp = BN_bin2bn(dp, key_bits >> 4, NULL);
+	if (!ssl_params.dp) {
+		HPRE_TST_PRT("Bin2bin dp fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.dq = BN_bin2bn(dq, key_bits >> 4, NULL);
+	if (!ssl_params.dq) {
+		HPRE_TST_PRT("Bin2bin dq fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	ssl_params.qinv = BN_bin2bn(qinv, key_bits >> 4, NULL);
+	if (!ssl_params.qinv) {
+		HPRE_TST_PRT("Bin2bin qinv fail!\n");
+		ret = -ENOMEM;
+		goto gen_fail;
+	}
+
+	/* Generate OpenSSL SW rsa verify and sign standard result
+	 * for check in the next tests
+	 */
+	ret = set_ssl_plantext();
+	if (ret) {
+		HPRE_TST_PRT("set ssl plantext fail!!\n");
+		ret = -1;
+		goto gen_fail;
+	}
+
+	ssl_params.ssl_verify_result = malloc(ssl_params.size);
+	if (!ssl_params.ssl_verify_result) {
+		HPRE_TST_PRT("malloc verify result buffer fail!!\n");
+		ret = -1;
+		goto gen_fail;
+	}
+	ssl_params.ssl_sign_result = malloc(ssl_params.size);
+	if (!ssl_params.ssl_sign_result) {
+		HPRE_TST_PRT("malloc sign result buffer fail!!\n");
+		ret = -1;
+		goto gen_fail;
+	}
+
+	return 0;
+gen_fail:
+	if (ssl_params.e)
+		BN_free(ssl_params.e);
+	if (ssl_params.d)
+		BN_free(ssl_params.d);
+	if (ssl_params.n)
+		BN_free(ssl_params.n);
+	if (ssl_params.p)
+		BN_free(ssl_params.p);
+	if (ssl_params.q)
+		BN_free(ssl_params.q);
+	if (ssl_params.dp)
+		BN_free(ssl_params.dp);
+	if (ssl_params.dq)
+		BN_free(ssl_params.dq);
+	if (ssl_params.qinv)
+		BN_free(ssl_params.qinv);
+	if (ssl_params.plantext)
+		free(ssl_params.plantext);
+	if (ssl_params.ssl_verify_result)
+		free(ssl_params.ssl_verify_result);
+	if (ssl_params.ssl_sign_result)
+		free(ssl_params.ssl_sign_result);
+	return ret;
+}
 static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			 __u64 hcore_mask, enum alg_op_type op_type)
 {
@@ -6967,11 +7118,19 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 
+	#ifdef WITH_OPENSSL_DIR
 	ret = rsa_openssl_key_gen_for_async_test();
 	if(ret) {
 		HPRE_TST_PRT("openssl genkey for async thread test fail!");
 		return 0;
 	}
+	#else
+	ret = rsa_sample_key_gen_for_async_test();
+	if(ret) {
+		HPRE_TST_PRT("sample genkey for async thread test fail!");
+		return 0;
+	}
+	#endif
 
 	if (_get_one_bits(lcore_mask) > 0)
 		cnt =  _get_one_bits(lcore_mask);
