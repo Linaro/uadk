@@ -10,6 +10,7 @@ test_sva_perf_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
 else
 test_sva_perf_LDADD=-L../../.libs -lwd -lhisi_zip -lwd_comp -lpthread
 endif
+test_sva_perf_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
 
 # For statistics
 test_sva_perf_LDADD+=-lm

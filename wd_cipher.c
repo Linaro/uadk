@@ -59,7 +59,7 @@ static void __attribute__((constructor)) wd_cipher_open_driver(void)
 	void *driver;
 
 	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
-	driver = dlopen("/usr/lib/wd/libhisi_sec.so", RTLD_NOW);
+	driver = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("fail to open libhisi_sec.so\n");
 }
