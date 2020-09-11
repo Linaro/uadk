@@ -190,6 +190,7 @@ static __thread u32 g_is_set_pubkey; // ecc used
 static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct test_hpre_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static struct async_test_openssl_param ssl_params;
+struct wd_ctx_config g_ctx_cfg;
 
 static bool is_exit(struct test_hpre_pthread_dt *pdata);
 
@@ -1078,8 +1079,8 @@ int poll_policy(handle_t h_sched_ctx, struct wd_ctx_config *config, __u32 expect
 	int i;
 
 	while (1) {
-		for (i = 0; i < config->ctx_num; i++) {
-			ctxs = &config->ctxs[i];
+		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
+			ctxs = &g_ctx_cfg.ctxs[i];
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_rsa_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
@@ -1137,7 +1138,6 @@ static int init_hpre_global_config(void)
 {
 	struct uacce_dev_list *list, *uacce_node;
 	struct wd_ctx *ctx_attr;
-	struct wd_ctx_config ctx_cfg;
 	struct wd_sched sched;
 	int ctx_num = q_num;
 	__u32 op_type = 0;
@@ -1173,13 +1173,13 @@ static int init_hpre_global_config(void)
 		ctx_attr[j].op_type = get_alg_op_type(op_type);
 	}
 
-	ctx_cfg.ctx_num = ctx_num;
-	ctx_cfg.ctxs = ctx_attr;
+	g_ctx_cfg.ctx_num = ctx_num;
+	g_ctx_cfg.ctxs = ctx_attr;
 	sched.name = "rsa-sched-0";
 	sched.pick_next_ctx = rsa_pick_next_ctx;
 	//sched.sched_ctx_size = 1;
 	sched.poll_policy = poll_policy;
-	ret = wd_rsa_init(&ctx_cfg, &sched);
+	ret = wd_rsa_init(&g_ctx_cfg, &sched);
 	if (ret) {
 		HPRE_TST_PRT("failed to init rsa, ret %d!\n", ret);
 		return -1;
