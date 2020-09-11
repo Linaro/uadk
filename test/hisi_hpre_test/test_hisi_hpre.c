@@ -6363,6 +6363,9 @@ new_test_again:
 			if (key_info)
 				free(key_info);
 
+			if (is_exit(pdata))
+				return 0;
+
 			goto new_test_again;
 		}
 	}while(!is_exit(pdata));
@@ -6539,59 +6542,61 @@ static void _rsa_cb(struct wd_rsa_req *req)
 
 	thread_info->recv_task_num++;
 
-	if (op_type == WD_RSA_GENKEY) {
-		struct wd_rsa_kg_out *kout = out;
+	if (openssl_check) {
+		if (op_type == WD_RSA_GENKEY) {
+			struct wd_rsa_kg_out *kout = out;
 
-		if (wd_rsa_is_crt(ctx)) {
-			struct wd_dtb qinv, dq, dp;
-			struct wd_dtb *s_qinv, *s_dq, *s_dp;
+			if (wd_rsa_is_crt(ctx)) {
+				struct wd_dtb qinv, dq, dp;
+				struct wd_dtb *s_qinv, *s_dq, *s_dp;
 
-			wd_rsa_get_crt_prikey_params(prikey, &s_dq, &s_dp,
-							&s_qinv, NULL, NULL);
-			wd_rsa_get_kg_out_crt_params(kout, &qinv, &dq, &dp);
-			if (memcmp(s_qinv->data, qinv.data, s_qinv->bsize)) {
-				HPRE_TST_PRT("keygen  qinv  mismatch!\n");
+				wd_rsa_get_crt_prikey_params(prikey, &s_dq, &s_dp,
+								&s_qinv, NULL, NULL);
+				wd_rsa_get_kg_out_crt_params(kout, &qinv, &dq, &dp);
+				if (memcmp(s_qinv->data, qinv.data, s_qinv->bsize)) {
+					HPRE_TST_PRT("keygen  qinv  mismatch!\n");
+					return;
+				}
+				if (memcmp(s_dq->data, dq.data, s_dq->bsize)) {
+					HPRE_TST_PRT("keygen  dq mismatch!\n");
+					return;
+				}
+				if (memcmp(s_dp->data, dp.data, s_dp->bsize)) {
+					HPRE_TST_PRT("keygen  dp  mismatch!\n");
+					return;
+				}
+
+			} else {
+				struct wd_dtb d, n;
+				struct wd_dtb *s_d, *s_n;
+
+				wd_rsa_get_prikey_params(prikey, &s_d, &s_n);
+				wd_rsa_get_kg_out_params(kout, &d, &n);
+
+				/* check D */
+				if (memcmp(s_d->data, d.data, s_d->bsize)) {
+					HPRE_TST_PRT("key generate D result mismatching!\n");
+					return;
+				}
+				if (memcmp(s_n->data, n.data, s_n->bsize)) {
+					HPRE_TST_PRT("key generate N result mismatching!\n");
+					return;
+				}
+			}
+			if (is_allow_print(cnt, DH_ASYNC_GEN, 1))
+				HPRE_TST_PRT("HPRE hardware key generate successfully!\n");
+		} else if (op_type == WD_RSA_VERIFY) {
+			if (!only_soft && memcmp(ssl_params.ssl_verify_result, out, key_size)) {
+				HPRE_TST_PRT("pub encrypto result  mismatch!\n");
 				return;
 			}
-			if (memcmp(s_dq->data, dq.data, s_dq->bsize)) {
-				HPRE_TST_PRT("keygen  dq mismatch!\n");
-				return;
-			}
-			if (memcmp(s_dp->data, dp.data, s_dp->bsize)) {
-				HPRE_TST_PRT("keygen  dp  mismatch!\n");
-				return;
-			}
-
 		} else {
-			struct wd_dtb d, n;
-			struct wd_dtb *s_d, *s_n;
-
-			wd_rsa_get_prikey_params(prikey, &s_d, &s_n);
-			wd_rsa_get_kg_out_params(kout, &d, &n);
-
-			/* check D */
-			if (memcmp(s_d->data, d.data, s_d->bsize)) {
-				HPRE_TST_PRT("key generate D result mismatching!\n");
-				return;
-			}
-			if (memcmp(s_n->data, n.data, s_n->bsize)) {
-				HPRE_TST_PRT("key generate N result mismatching!\n");
-				return;
-			}
-		}
-		if (is_allow_print(cnt, DH_ASYNC_GEN, 1))
-			HPRE_TST_PRT("HPRE hardware key generate successfully!\n");
-	} else if (op_type == WD_RSA_VERIFY) {
-		if (!only_soft && memcmp(ssl_params.ssl_verify_result, out, key_size)) {
-			HPRE_TST_PRT("pub encrypto result  mismatch!\n");
-			return;
-		}
-	} else {
-		if (wd_rsa_is_crt(ctx))
-			if (!only_soft && memcmp(ssl_params.ssl_sign_result, out, key_size)) {
-				HPRE_TST_PRT("prv decrypto result  mismatch!\n");
-				return;
-			}
+			if (wd_rsa_is_crt(ctx))
+				if (!only_soft && memcmp(ssl_params.ssl_sign_result, out, key_size)) {
+					HPRE_TST_PRT("prv decrypto result  mismatch!\n");
+					return;
+				}
+		}		
 	}
 
 	if (is_allow_print(cnt, op_type, 1))
@@ -6682,9 +6687,9 @@ void *_rsa_async_op_test_thread(void *data)
 		goto fail_release;
 	}
 #else
-	wd_e->data = ssl_params.e;
+	memcpy(wd_e->data, ssl_params.e, key_size);
 	wd_e->dsize = key_size;
-	wd_d->data = ssl_params.d;
+	memcpy(wd_d->data, ssl_params.d, key_size);
 	wd_d->dsize = key_size;
 #endif
 	wd_rsa_get_prikey(ctx, &prikey);
@@ -6719,15 +6724,15 @@ void *_rsa_async_op_test_thread(void *data)
 			goto fail_release;
 		}
 #else
-		wd_dq->data = ssl_params.dq;
+		memcpy(wd_dq->data, ssl_params.dq, key_size / 2);
 		wd_dq->dsize = key_size / 2;
-		wd_dp->data = ssl_params.dp;
+		memcpy(wd_dp->data, ssl_params.dp, key_size / 2);
 		wd_dp->dsize = key_size / 2;
-		wd_qinv->data = ssl_params.qinv;
+		memcpy(wd_qinv->data, ssl_params.qinv, key_size / 2);
 		wd_qinv->dsize = key_size / 2;
-		wd_q->data = ssl_params.q;
+		memcpy(wd_q->data, ssl_params.q, key_size / 2);
 		wd_q->dsize = key_size / 2;
-		wd_p->data = ssl_params.p;
+		memcpy(wd_p->data, ssl_params.p, key_size / 2);
 		wd_p->dsize = key_size / 2;
 #endif
 
@@ -6738,9 +6743,9 @@ void *_rsa_async_op_test_thread(void *data)
 		wd_d->dsize = BN_bn2bin(ssl_params.d, (unsigned char *)wd_d->data);
 		wd_n->dsize = BN_bn2bin(ssl_params.n, (unsigned char *)wd_n->data);
 #else
-		wd_d->data = ssl_params.d;
+		memcpy(wd_d->data, ssl_params.d, key_size);
 		wd_d->dsize = key_size;
-		wd_n->data = ssl_params.n;
+		memcpy(wd_n->data, ssl_params.n, key_size);
 		wd_n->dsize = key_size;
 #endif
 		wd_e = &t_e;
@@ -6754,11 +6759,11 @@ void *_rsa_async_op_test_thread(void *data)
 		rsa_key_in->p_size = BN_bn2bin(ssl_params.p, (unsigned char *)rsa_key_in->p);
 		rsa_key_in->q_size = BN_bn2bin(ssl_params.q, (unsigned char *)rsa_key_in->q);
 #else
-		rsa_key_in->e = ssl_params.e;
+		memcpy(rsa_key_in->e, ssl_params.e, key_size);
 		rsa_key_in->e_size = key_size;
-		rsa_key_in->p = ssl_params.p;
+		memcpy(rsa_key_in->p, ssl_params.p, key_size / 2);
 		rsa_key_in->p_size = key_size / 2;
-		rsa_key_in->q = ssl_params.q;
+		memcpy(rsa_key_in->q, ssl_params.q, key_size / 2);
 		rsa_key_in->q_size = key_size / 2;
 #endif
 		wd_e->data = rsa_key_in->e;
