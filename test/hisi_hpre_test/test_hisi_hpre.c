@@ -5040,11 +5040,10 @@ static int get_rsa_key_from_test_sample(void *ctx, char *pubkey_file,
 		memset(rsa_key_in->q, 0, key_size >> 1);
 		memcpy(rsa_key_in->e, e, key_size);
 		rsa_key_in->e_size = key_size;
-		memcpy(rsa_key_in->p, p, key_size);
-		rsa_key_in->p_size = key_size;
-		memcpy(rsa_key_in->q, q, key_size);
-		rsa_key_in->q_size = key_size;
-	
+		rsa_key_in->p_size = key_size / 2;
+		rsa_key_in->q_size = key_size / 2;
+		memcpy(rsa_key_in->p, p, key_size / 2);
+		memcpy(rsa_key_in->q, q, key_size / 2);
 	}
 
 	//wd_rsa_get_prikey(ctx, &prikey);
@@ -5065,7 +5064,7 @@ static int get_rsa_key_from_test_sample(void *ctx, char *pubkey_file,
 		wd_dq.dsize = key_size / 2;
 		memcpy(wd_dq.data, dmq1, key_size / 2);
 
-		wd_dq.dsize = key_size / 2;
+		wd_dp.dsize = key_size / 2;
 		memcpy(wd_dp.data, dmp1, key_size / 2);
 
 		wd_q.dsize = key_size / 2;
@@ -5076,10 +5075,6 @@ static int get_rsa_key_from_test_sample(void *ctx, char *pubkey_file,
 
 		wd_qinv.dsize = key_size / 2;
 		memcpy(wd_qinv.data, iqmp, key_size / 2);
-
-		wd_qinv.dsize = key_size / 2;
-		memcpy(wd_qinv.data, iqmp, key_size / 2);
-
 
 		if (wd_rsa_set_crt_prikey_params(ctx, &wd_dq,
 					&wd_dp, &wd_qinv,
@@ -5111,7 +5106,7 @@ static int get_rsa_key_from_test_sample(void *ctx, char *pubkey_file,
 			//wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
 			wd_d.bsize = key_size;
 			wd_d.data = malloc(GEN_PARAMS_SZ(key_size));
-			wd_n.bsize =key_size;
+			wd_n.bsize = key_size;
 			wd_n.data = wd_d.data + wd_d.bsize;
 
 			/* common mode private key */
@@ -7408,7 +7403,9 @@ int main(int argc, char *argv[])
 	}
 
 	if (argv[7] && !strcmp(argv[7], "-check"))
+	#ifdef WITH_OPENSSL_DIR	
 		openssl_check = 1;
+	#endif
 	if (argv[7] && !strcmp(argv[7], "-soft"))
 		only_soft = 1;
 
