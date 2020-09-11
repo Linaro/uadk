@@ -639,7 +639,15 @@ int BN_bn2bin(const BIGNUM *a, unsigned char *to)
 }
 BIGNUM *BN_bin2bn(const unsigned char *s, int len, BIGNUM *ret)
 {
-	return NULL;
+	void *buf;
+
+	buf = malloc(len);
+	if (!buf)
+		return NULL;
+
+	memcpy(buf, s, len);
+
+	return buf;
 }
 void BN_free(BIGNUM *a)
 {
@@ -6661,6 +6669,8 @@ void *_rsa_async_op_test_thread(void *data)
 
 	wd_rsa_get_pubkey(ctx, &pubkey);
 	wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
+
+#ifdef WITH_OPENSSL_DIR
 	wd_e->dsize = BN_bn2bin(ssl_params.e, (unsigned char *)wd_e->data);
 	if (wd_e->dsize > wd_e->bsize) {
 		HPRE_TST_PRT("e bn to bin overflow!\n");
@@ -6671,10 +6681,17 @@ void *_rsa_async_op_test_thread(void *data)
 		HPRE_TST_PRT("n bn to bin overflow!\n");
 		goto fail_release;
 	}
-
+#else
+	wd_e->data = ssl_params.e;
+	wd_e->dsize = key_size;
+	wd_d->data = ssl_params.d;
+	wd_d->dsize = key_size;
+#endif
 	wd_rsa_get_prikey(ctx, &prikey);
 	if (wd_rsa_is_crt(ctx)) {
 		wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp, &wd_qinv, &wd_q, &wd_p);
+
+#ifdef WITH_OPENSSL_DIR
 		/* CRT mode private key */
 		wd_dq->dsize = BN_bn2bin(ssl_params.dq, (unsigned char *)wd_dq->data);
 		if (wd_dq->dsize > wd_dq->bsize) {
@@ -6701,21 +6718,49 @@ void *_rsa_async_op_test_thread(void *data)
 			HPRE_TST_PRT("p bn to bin overflow!\n");
 			goto fail_release;
 		}
+#else
+		wd_dq->data = ssl_params.dq;
+		wd_dq->dsize = key_size / 2;
+		wd_dp->data = ssl_params.dp;
+		wd_dp->dsize = key_size / 2;
+		wd_qinv->data = ssl_params.qinv;
+		wd_qinv->dsize = key_size / 2;
+		wd_q->data = ssl_params.q;
+		wd_q->dsize = key_size / 2;
+		wd_p->data = ssl_params.p;
+		wd_p->dsize = key_size / 2;
+#endif
 
 	} else {
 		wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
 
+#ifdef WITH_OPENSSL_DIR
 		wd_d->dsize = BN_bn2bin(ssl_params.d, (unsigned char *)wd_d->data);
 		wd_n->dsize = BN_bn2bin(ssl_params.n, (unsigned char *)wd_n->data);
+#else
+		wd_d->data = ssl_params.d;
+		wd_d->dsize = key_size;
+		wd_n->data = ssl_params.n;
+		wd_n->dsize = key_size;
+#endif
 		wd_e = &t_e;
 		wd_p = &t_p;
 		wd_q = &t_q;
 		memset(rsa_key_in->e, 0, key_size);
 		memset(rsa_key_in->p, 0, key_size >> 1);
 		memset(rsa_key_in->q, 0, key_size >> 1);
+#ifdef WITH_OPENSSL_DIR
 		rsa_key_in->e_size = BN_bn2bin(ssl_params.e, (unsigned char *)rsa_key_in->e);
 		rsa_key_in->p_size = BN_bn2bin(ssl_params.p, (unsigned char *)rsa_key_in->p);
 		rsa_key_in->q_size = BN_bn2bin(ssl_params.q, (unsigned char *)rsa_key_in->q);
+#else
+		rsa_key_in->e = ssl_params.e;
+		rsa_key_in->e_size = key_size;
+		rsa_key_in->p = ssl_params.p;
+		rsa_key_in->p_size = key_size / 2;
+		rsa_key_in->q = ssl_params.q;
+		rsa_key_in->q_size = key_size / 2;
+#endif
 		wd_e->data = rsa_key_in->e;
 		wd_e->dsize = rsa_key_in->e_size;
 		wd_p->data = rsa_key_in->p;
