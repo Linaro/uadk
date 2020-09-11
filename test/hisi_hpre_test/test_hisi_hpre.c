@@ -190,7 +190,7 @@ static __thread u32 g_is_set_pubkey; // ecc used
 static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct test_hpre_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static struct async_test_openssl_param ssl_params;
-struct wd_ctx_config g_ctx_cfg;
+
 static bool is_exit(struct test_hpre_pthread_dt *pdata);
 
 static char *rsa_op_str[WD_RSA_GENKEY + 1] = {
@@ -1070,8 +1070,8 @@ int poll_policy(handle_t h_sched_ctx, struct wd_ctx_config *config, __u32 expect
 	int i;
 
 	while (1) {
-		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
-			ctxs = &g_ctx_cfg.ctxs[i];
+		for (i = 0; i < config->ctx_num; i++) {
+			ctxs = &config->ctxs[i];
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_rsa_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
@@ -1165,13 +1165,13 @@ static int init_hpre_global_config(void)
 		ctx_attr[j].op_type = get_alg_op_type(op_type);
 	}
 
-	g_ctx_cfg.ctx_num = ctx_num;
-	g_ctx_cfg.ctxs = ctx_attr;
+	ctx_cfg.ctx_num = ctx_num;
+	ctx_cfg.ctxs = ctx_attr;
 	sched.name = "rsa-sched-0";
 	sched.pick_next_ctx = rsa_pick_next_ctx;
 	//sched.sched_ctx_size = 1;
 	sched.poll_policy = poll_policy;
-	ret = wd_rsa_init(&g_ctx_cfg, &sched);
+	ret = wd_rsa_init(&ctx_cfg, &sched);
 	if (ret) {
 		HPRE_TST_PRT("failed to init rsa, ret %d!\n", ret);
 		return -1;
@@ -4949,6 +4949,239 @@ int hpre_test_write_to_file(__u8 *out, int size, char *out_file,
 	return fd;
 }
 
+
+static int get_rsa_key_from_test_sample(void *ctx, char *pubkey_file,
+			char *privkey_file,
+			char *crt_privkey_file, int is_file)
+{
+	int ret, bits;
+	const __u8 *p, *q, *n, *e, *d, *dmp1, *dmq1, *iqmp;
+	struct wd_dtb wd_e, wd_d, wd_n, wd_dq, wd_dp, wd_qinv, wd_q, wd_p;
+	u32 key_size = key_bits >> 3;
+
+	memset(&wd_e, 0, sizeof(wd_e));
+	memset(&wd_d, 0, sizeof(wd_d));
+	memset(&wd_n, 0, sizeof(wd_n));
+	memset(&wd_dq, 0, sizeof(wd_dq));
+	memset(&wd_dp, 0, sizeof(wd_dp));
+	memset(&wd_qinv, 0, sizeof(wd_qinv));
+	memset(&wd_q, 0, sizeof(wd_q));
+	memset(&wd_p, 0, sizeof(wd_p));
+
+	bits = wd_rsa_key_bits(ctx);
+	if (bits == 1024) {
+		e = rsa_e_1024;
+		p = rsa_p_1024;
+		q = rsa_q_1024;
+		dmp1 = rsa_dp_1024;
+		dmq1 = rsa_dq_1024;
+		iqmp = rsa_qinv_1024;
+		d = rsa_d_1024;
+		n = rsa_n_1024;
+	} else if (bits == 2048) {
+		e = rsa_e_2048;
+		p = rsa_p_2048;
+		q = rsa_q_2048;
+		dmp1 = rsa_dp_2048;
+		dmq1 = rsa_dq_2048;
+		iqmp = rsa_qinv_2048;
+		d = rsa_d_2048;
+		n = rsa_n_2048;
+	} else if (bits == 3072) {
+		e = rsa_e_3072;
+		p = rsa_p_3072;
+		q = rsa_q_3072;
+		dmp1 = rsa_dp_3072;
+		dmq1 = rsa_dq_3072;
+		iqmp = rsa_qinv_3072;
+		d = rsa_d_3072;
+		n = rsa_n_3072;
+	} else if (bits == 4096) {
+		e = rsa_e_4096;
+		p = rsa_p_4096;
+		q = rsa_q_4096;
+		dmp1 = rsa_dp_4096;
+		dmq1 = rsa_dq_4096;
+		iqmp = rsa_qinv_4096;
+		d = rsa_d_4096;
+		n = rsa_n_4096;
+	} else {
+		HPRE_TST_PRT("invalid key bits = %d!\n", bits);
+		return -1;
+	}
+
+	wd_e.bsize = key_size;
+	wd_e.data = malloc(GEN_PARAMS_SZ(key_size));
+	wd_n.bsize = wd_e.bsize;
+	wd_n.data = wd_e.data + wd_e.bsize;
+
+	memcpy(wd_e.data, e, key_size);
+	wd_e.dsize = key_size;
+	memcpy(wd_n.data, n, key_size);
+	wd_n.dsize = key_size;
+	if (wd_rsa_set_pubkey_params(ctx, &wd_e, &wd_n))
+	{
+		HPRE_TST_PRT("set rsa pubkey failed %d!\n", ret);
+		goto gen_fail;
+	}
+  
+	if (pubkey_file && is_file) {
+		ret = hpre_test_write_to_file((unsigned char *)wd_e.data, key_bits >> 2,
+					  pubkey_file, -1, 1);
+		if (ret < 0)
+			goto gen_fail;
+		HPRE_TST_PRT("RSA public key was written to %s!\n",
+					 privkey_file);
+	}
+
+	if (rsa_key_in) {
+		memset(rsa_key_in->e, 0, key_size);
+		memset(rsa_key_in->p, 0, key_size >> 1);
+		memset(rsa_key_in->q, 0, key_size >> 1);
+		memcpy(rsa_key_in->e, e, key_size);
+		rsa_key_in->e_size = key_size;
+		memcpy(rsa_key_in->p, p, key_size);
+		rsa_key_in->p_size = key_size;
+		memcpy(rsa_key_in->q, q, key_size);
+		rsa_key_in->q_size = key_size;
+	
+	}
+
+	//wd_rsa_get_prikey(ctx, &prikey);
+	if (wd_rsa_is_crt(ctx)) {
+		//wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp, &wd_qinv, &wd_q, &wd_p);
+		wd_dq.bsize = CRT_PARAM_SZ(key_size);
+		wd_dq.data = malloc(CRT_PARAMS_SZ(key_size));
+		wd_dp.bsize = CRT_PARAM_SZ(key_size);
+		wd_dp.data = wd_dq.data + wd_dq.bsize;
+		wd_q.bsize = CRT_PARAM_SZ(key_size);
+		wd_q.data = wd_dp.data + wd_dp.bsize;
+		wd_p.bsize = CRT_PARAM_SZ(key_size);
+		wd_p.data = wd_q.data + wd_q.bsize;
+		wd_qinv.bsize = CRT_PARAM_SZ(key_size);
+		wd_qinv.data = wd_p.data + wd_p.bsize;
+
+		/* CRT mode private key */
+		wd_dq.dsize = key_size / 2;
+		memcpy(wd_dq.data, dmq1, key_size / 2);
+
+		wd_dq.dsize = key_size / 2;
+		memcpy(wd_dp.data, dmp1, key_size / 2);
+
+		wd_q.dsize = key_size / 2;
+		memcpy(wd_q.data, q, key_size / 2);
+
+		wd_p.dsize = key_size / 2;
+		memcpy(wd_p.data, p, key_size / 2);
+
+		wd_qinv.dsize = key_size / 2;
+		memcpy(wd_qinv.data, iqmp, key_size / 2);
+
+		wd_qinv.dsize = key_size / 2;
+		memcpy(wd_qinv.data, iqmp, key_size / 2);
+
+
+		if (wd_rsa_set_crt_prikey_params(ctx, &wd_dq,
+					&wd_dp, &wd_qinv,
+					&wd_q, &wd_p))
+		{
+			HPRE_TST_PRT("set rsa crt prikey failed %d!\n", ret);
+			goto gen_fail;
+		}
+
+
+		if (crt_privkey_file && is_file) {
+			ret = hpre_test_write_to_file((unsigned char *)wd_dq.data,
+						  (key_bits >> 4) * 5, crt_privkey_file, -1, 0);
+			if (ret < 0)
+				goto gen_fail;
+			ret = hpre_test_write_to_file((unsigned char *)wd_e.data,
+						  (key_bits >> 2), crt_privkey_file, ret, 1);
+			if (ret < 0)
+				goto gen_fail;
+			HPRE_TST_PRT("RSA CRT private key was written to %s!\n",
+						 crt_privkey_file);
+		} else if (crt_privkey_file && !is_file) {
+			memcpy(crt_privkey_file, wd_dq.data, (key_bits >> 4) * 5);
+			memcpy(crt_privkey_file + (key_bits >> 4) * 5,
+				   wd_e.data, (key_bits >> 2));
+		}
+
+	} else {
+			//wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
+			wd_d.bsize = key_size;
+			wd_d.data = malloc(GEN_PARAMS_SZ(key_size));
+			wd_n.bsize =key_size;
+			wd_n.data = wd_d.data + wd_d.bsize;
+
+			/* common mode private key */
+			wd_d.dsize = key_size;
+			memcpy(wd_d.data, d, key_size);
+			wd_n.dsize = key_size;
+			memcpy(wd_n.data, n, key_size);
+
+			if (wd_rsa_set_prikey_params(ctx, &wd_d, &wd_n))
+			{
+				HPRE_TST_PRT("set rsa prikey failed %d!\n", ret);
+				goto gen_fail;
+			}
+
+
+			if (privkey_file && is_file) {
+				ret = hpre_test_write_to_file((unsigned char *)wd_d.data,
+							  (key_size),
+							  privkey_file, -1, 0);
+				if (ret < 0)
+					goto gen_fail;
+				ret = hpre_test_write_to_file((unsigned char *)wd_n.data,
+							  (key_size),
+							  privkey_file, ret, 1);
+				if (ret < 0)
+					goto gen_fail;
+
+				ret = hpre_test_write_to_file((unsigned char *)wd_e.data,
+							  (key_size), privkey_file, ret, 1);
+				if (ret < 0)
+					goto gen_fail;
+				HPRE_TST_PRT("RSA common private key was written to %s!\n",
+							 privkey_file);
+			} else if (privkey_file && !is_file) {
+				memcpy(privkey_file, wd_d.data, key_size);
+				memcpy(privkey_file + key_size, wd_n.data, key_size);
+				memcpy(privkey_file + 2 * key_size, wd_e.data, key_size);
+                                memcpy(privkey_file + 3 * key_size, wd_n.data, key_size);
+			}
+	}
+
+	if (wd_e.data)
+		free(wd_e.data);
+
+	if (wd_rsa_is_crt(ctx)) {
+		if (wd_dq.data)
+			free(wd_dq.data);
+	} else {
+		if (wd_d.data)
+			free(wd_d.data);
+	}
+
+	return 0;
+gen_fail:
+
+	if (wd_e.data)
+		free(wd_e.data);
+
+	if (wd_rsa_is_crt(ctx)) {
+		if (wd_dq.data)
+			free(wd_dq.data);
+	} else {
+		if (wd_d.data)
+			free(wd_d.data);
+	}
+
+	return ret;
+}
+
+
 static int test_rsa_key_gen(void *ctx, char *pubkey_file,
 			char *privkey_file,
 			char *crt_privkey_file, int is_file)
@@ -5989,11 +6222,20 @@ new_test_again:
 	rsa_key_in->q = rsa_key_in->p + (key_size >> 1);
 
 	memset(key_info, 0, key_size * 16);
-	ret = test_rsa_key_gen(ctx, NULL, key_info, key_info, 0);
-	if (ret) {
-		HPRE_TST_PRT("thrd-%d:Openssl key gen fail!\n", thread_id);
-		goto fail_release;
-	}
+
+	#ifdef WITH_OPENSSL_DIR
+		ret = test_rsa_key_gen(ctx, NULL, key_info, key_info, 0);
+		if (ret) {
+			HPRE_TST_PRT("thrd-%d:Openssl key gen fail!\n", thread_id);
+			goto fail_release;
+		}
+	#else
+		ret = get_rsa_key_from_test_sample(ctx, NULL, key_info, key_info, 0);
+		if (ret) {
+			HPRE_TST_PRT("thrd-%d:get sample key fail!\n", thread_id);
+			goto fail_release;
+		}
+	#endif
 
 	/* always key size bytes input */
 	req.src_bytes = key_size;
