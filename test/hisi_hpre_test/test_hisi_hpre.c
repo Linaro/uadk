@@ -6689,8 +6689,8 @@ void *_rsa_async_op_test_thread(void *data)
 #else
 	memcpy(wd_e->data, ssl_params.e, key_size);
 	wd_e->dsize = key_size;
-	memcpy(wd_d->data, ssl_params.d, key_size);
-	wd_d->dsize = key_size;
+	memcpy(wd_n->data, ssl_params.n, key_size);
+	wd_n->dsize = key_size;
 #endif
 	wd_rsa_get_prikey(ctx, &prikey);
 	if (wd_rsa_is_crt(ctx)) {
