@@ -422,7 +422,8 @@ int wd_comp_poll_ctx(handle_t h_ctx, __u32 expt, __u32 *count)
 			WD_ERR("get req from pool is NULL!\n");
 			break;
 		}
-		req->cb(req, req->cb_param);
+		if (req->cb)
+			req->cb(req, req->cb_param);
 
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_comp_setting.pool, h_ctx, &resp_msg);
@@ -829,9 +830,13 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 int wd_comp_poll(__u32 expt, __u32 *count)
 {
-	int ret;
+	handle_t h_sched_ctx;
+	struct wd_ctx_config *config;
+	struct wd_sched *sched;
 
-	*count = 0;
+	h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
+	config = (struct wd_ctx_config *)&wd_comp_setting.config;
+	sched = &wd_comp_setting.sched;
 
-	return wd_comp_setting.sched.poll_policy(0, 0, expt, count);
+	return sched->poll_policy(h_sched_ctx, config, expt, count);
 }
