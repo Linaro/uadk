@@ -6,11 +6,9 @@ test_sva_perf_SOURCES=test_sva_perf.c test_lib.c ../sched_sample.c
 
 if WD_STATIC_DRV
 test_sva_perf_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
-		    ../../.libs/libhisi_zip.a
-test_sva_bind_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
-		    ../../.libs/libhisi_zip.a
+		    ../../.libs/libhisi_zip.a -lpthread
 else
-test_sva_perf_LDADD=-L../../.libs -lwd -lhisi_zip -lwd_comp
+test_sva_perf_LDADD=-L../../.libs -lwd -lhisi_zip -lwd_comp -lpthread
 endif
 
 # For statistics

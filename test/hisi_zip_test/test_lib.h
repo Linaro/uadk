@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "wd_comp.h"
@@ -50,6 +52,31 @@ struct test_options {
 	bool is_decomp;
 };
 
+struct priv_options {
+	struct test_options common;
+
+	int warmup_num;
+
+#define PERFORMANCE		(1UL << 0)
+#define TEST_ZLIB		(1UL << 1)
+#define TEST_THP		(1UL << 2)
+	unsigned long option;
+
+#define STATS_NONE		0
+#define STATS_PRETTY		1
+#define STATS_CSV		2
+	unsigned long display_stats;
+
+	/* bind test case related below */
+	int children;
+
+#define INJECT_SIG_BIND		(1UL << 0)
+#define INJECT_SIG_WORK		(1UL << 1)
+#define INJECT_TLB_FAULT	(1UL << 2)
+	unsigned long faults;
+
+};
+
 struct hizip_test_info {
 	struct test_options *opts;
 	char *in_buf;
@@ -61,6 +88,11 @@ struct hizip_test_info {
 	handle_t h_sess;
 	struct wd_ctx_config ctx_conf;
 	struct wd_comp_req req;
+	int thread_nums;
+	int thread_attached;
+	pthread_t *threads;
+	struct hizip_stats *stats;
+	struct priv_options *popts;
 	/* statistic */
 	struct {
 		int send;
@@ -68,10 +100,26 @@ struct hizip_test_info {
 		int recv;
 		int recv_retries;
 	} *stat;
+	struct {
+		struct timespec setup_time;
+		struct timespec start_time;
+		struct timespec end_time;
+		struct timespec setup_cputime;
+		struct timespec start_cputime;
+		struct timespec end_cputime;
+		struct rusage setup_rusage;
+		struct rusage start_rusage;
+		struct rusage end_rusage;
+	} tv;
 	/* Test is expected to fail */
 	bool faulting;
 };
 
+void stat_start(struct hizip_test_info *info);
+void stat_end(struct hizip_test_info *info);
+void *send_thread_func(void *arg);
+int create_threads(struct hizip_test_info *info);
+int attach_threads(struct hizip_test_info *info);
 int hizip_test_sched(struct wd_sched *sched,
 		     struct test_options *opts,
 		     struct hizip_test_info *info

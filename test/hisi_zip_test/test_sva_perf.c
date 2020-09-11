@@ -10,8 +10,6 @@
 #include <time.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/resource.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -65,31 +63,6 @@ enum hizip_stats_variable {
 
 struct hizip_stats {
 	double v[NUM_STATS];
-};
-
-struct priv_options {
-	struct test_options common;
-
-	int warmup_num;
-
-#define PERFORMANCE		(1UL << 0)
-#define TEST_ZLIB		(1UL << 1)
-#define TEST_THP		(1UL << 2)
-	unsigned long option;
-
-#define STATS_NONE		0
-#define STATS_PRETTY		1
-#define STATS_CSV		2
-	unsigned long display_stats;
-
-	/* bind test case related below */
-	int children;
-
-#define INJECT_SIG_BIND		(1UL << 0)
-#define INJECT_SIG_WORK		(1UL << 1)
-#define INJECT_TLB_FAULT	(1UL << 2)
-	unsigned long faults;
-
 };
 
 static int perf_event_open(struct perf_event_attr *attr,
@@ -261,28 +234,105 @@ out_err:
 	WD_ERR("THP unsupported?\n");
 }
 
+void stat_start(struct hizip_test_info *info)
+{
+	struct hizip_stats *stats = info->stats;
+
+	stats->v[ST_SEND] = 0;
+	stats->v[ST_RECV] = 0;
+	stats->v[ST_SEND_RETRY] = 0;
+	stats->v[ST_RECV_RETRY] = 0;
+
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.start_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.start_cputime);
+	getrusage(RUSAGE_SELF, &info->tv.start_rusage);
+}
+
+void stat_end(struct hizip_test_info *info)
+{
+	struct test_options *copts = info->opts;
+	struct hizip_stats *stats = info->stats;
+	int nr_fds = 0;
+	int *perf_fds = NULL;
+	double v;
+	unsigned long total_len;
+
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.end_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.end_cputime);
+	getrusage(RUSAGE_SELF, &info->tv.end_rusage);
+
+	stats->v[ST_SETUP_TIME] = (info->tv.start_time.tv_sec -
+				   info->tv.setup_time.tv_sec) * 1000000000 +
+				  info->tv.start_time.tv_nsec -
+				  info->tv.setup_time.tv_nsec;
+	stats->v[ST_RUN_TIME] = (info->tv.end_time.tv_sec -
+				 info->tv.start_time.tv_sec) * 1000000000 +
+				info->tv.end_time.tv_nsec -
+				info->tv.start_time.tv_nsec;
+
+	stats->v[ST_CPU_TIME] = (info->tv.end_cputime.tv_sec -
+				 info->tv.setup_cputime.tv_sec) * 1000000000 +
+				info->tv.end_cputime.tv_nsec -
+				info->tv.setup_cputime.tv_nsec;
+	stats->v[ST_USER_TIME] = (info->tv.end_rusage.ru_utime.tv_sec -
+				  info->tv.setup_rusage.ru_utime.tv_sec) *
+				 1000000 +
+				 info->tv.end_rusage.ru_utime.tv_usec -
+				 info->tv.setup_rusage.ru_utime.tv_usec;
+	stats->v[ST_SYSTEM_TIME] = (info->tv.end_rusage.ru_stime.tv_sec -
+				    info->tv.setup_rusage.ru_stime.tv_sec) *
+				   1000000 +
+				   info->tv.end_rusage.ru_stime.tv_usec -
+				   info->tv.setup_rusage.ru_stime.tv_usec;
+
+	stats->v[ST_MINFLT] = info->tv.end_rusage.ru_minflt -
+			      info->tv.setup_rusage.ru_minflt;
+	stats->v[ST_MAJFLT] = info->tv.end_rusage.ru_majflt -
+			      info->tv.setup_rusage.ru_majflt;
+
+	stats->v[ST_VCTX] = info->tv.end_rusage.ru_nvcsw -
+			    info->tv.setup_rusage.ru_nvcsw;
+	stats->v[ST_INVCTX] = info->tv.end_rusage.ru_nivcsw -
+			      info->tv.setup_rusage.ru_nivcsw;
+
+	stats->v[ST_SIGNALS] = info->tv.end_rusage.ru_nsignals -
+			       info->tv.setup_rusage.ru_nsignals;
+
+	/* check last loop is enough, same as below hizip_verify_output */
+	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
+					 info->total_out * 100;
+
+	total_len = copts->total_len * copts->compact_run_num;
+	stats->v[ST_SPEED] = (total_len * 1000) /
+				(1.024 * 1.024 * stats->v[ST_RUN_TIME]);
+
+	stats->v[ST_TOTAL_SPEED] = (total_len * 1000) /
+				   ((stats->v[ST_RUN_TIME] +
+				    stats->v[ST_SETUP_TIME]) * 1.024 * 1.024);
+
+	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
+
+	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
+	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
+	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
+}
+
 static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
-	int i, j;
-	double v;
 	int nr_fds;
 	int ret = 0;
 	int *perf_fds;
 	void *in_buf, *out_buf;
-	unsigned long total_len;
-	struct hizip_test_info info = {0}, info_save;
+	struct hizip_test_info info = {0};
 	struct test_options *copts = &opts->common;
-	struct timespec setup_time, start_time, end_time;
-	struct timespec setup_cputime, start_cputime, end_cputime;
-	struct rusage setup_rusage, start_rusage, end_rusage;
-	struct wd_sched *sched;
-	int stat_size = sizeof(info.stat) * copts->q_num;
-	//int stat_size = sizeof(*sched.stat) * copts->q_num;
+	struct wd_sched *sched = NULL;
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
 
+	info.stats = stats;
 	info.opts = copts;
+	info.popts = opts;
 	info.total_len = copts->total_len;
 
 	in_buf = info.in_buf = mmap_alloc(copts->total_len);
@@ -305,9 +355,9 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 
 	perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds);
 
-	clock_gettime(CLOCK_MONOTONIC_RAW, &setup_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &setup_cputime);
-	getrusage(RUSAGE_SELF, &setup_rusage);
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info.tv.setup_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info.tv.setup_cputime);
+	getrusage(RUSAGE_SELF, &info.tv.setup_rusage);
 
 	if (opts->option & PERFORMANCE) {
 		/* hack:
@@ -327,82 +377,12 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		}
 	}
 
-	info_save = info;
-
-	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
-	getrusage(RUSAGE_SELF, &start_rusage);
-
-	for (j = 0; j < copts->compact_run_num; j++) {
-		info = info_save;
-
-		if (opts->option & TEST_ZLIB)
-			ret = zlib_deflate(info.out_buf, info.total_len *
-					   EXPANSION_RATIO, info.in_buf,
-					   info.total_len, &info.total_out);
-		else
-			ret = hizip_test_sched(sched, copts, &info);
-		if (ret < 0) {
-			WD_ERR("hizip test fail with %d\n", ret);
-			goto out_with_fini;
-		}
-
-		for (i = 0; i < copts->q_num && info.stat; i++) {
-			stats->v[ST_SEND] += info.stat[i].send;
-			stats->v[ST_RECV] += info.stat[i].recv;
-			stats->v[ST_SEND_RETRY] += info.stat[i].send_retries;
-			stats->v[ST_RECV_RETRY] += info.stat[i].recv_retries;
-			memset(info.stat, 0, stat_size);
-		}
-	}
-
-	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_cputime);
-	getrusage(RUSAGE_SELF, &end_rusage);
-
-	stats->v[ST_SETUP_TIME] = (start_time.tv_sec - setup_time.tv_sec) *
-		1000000000 + start_time.tv_nsec - setup_time.tv_nsec;
-	stats->v[ST_RUN_TIME] = (end_time.tv_sec - start_time.tv_sec) *
-		1000000000 + end_time.tv_nsec - start_time.tv_nsec;
-
-	stats->v[ST_CPU_TIME] = (end_cputime.tv_sec - setup_cputime.tv_sec) *
-		1000000000 + end_cputime.tv_nsec - setup_cputime.tv_nsec;
-	stats->v[ST_USER_TIME] = (end_rusage.ru_utime.tv_sec -
-				  setup_rusage.ru_utime.tv_sec) * 1000000 +
-		end_rusage.ru_utime.tv_usec - setup_rusage.ru_utime.tv_usec;
-	stats->v[ST_SYSTEM_TIME] = (end_rusage.ru_stime.tv_sec -
-				    setup_rusage.ru_stime.tv_sec) * 1000000 +
-		end_rusage.ru_stime.tv_usec - setup_rusage.ru_stime.tv_usec;
-
-	stats->v[ST_MINFLT] = end_rusage.ru_minflt - setup_rusage.ru_minflt;
-	stats->v[ST_MAJFLT] = end_rusage.ru_majflt - setup_rusage.ru_majflt;
-
-	stats->v[ST_VCTX] = end_rusage.ru_nvcsw - setup_rusage.ru_nvcsw;
-	stats->v[ST_INVCTX] = end_rusage.ru_nivcsw - setup_rusage.ru_nivcsw;
-
-	stats->v[ST_SIGNALS] = end_rusage.ru_nsignals - setup_rusage.ru_nsignals;
-
-	/* check last loop is enough, same as below hizip_verify_output */
-	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
-					 info.total_out * 100;
-
-	total_len = copts->total_len * copts->compact_run_num;
-	stats->v[ST_SPEED] = total_len / (stats->v[ST_RUN_TIME] / 1000) /
-		1024 / 1024 * 1000 * 1000;
-
-	stats->v[ST_TOTAL_SPEED] = total_len /
-		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
-		1024 / 1024 * 1000 * 1000;
-
-	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
-
-	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
-	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
-	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
+	info.stats = stats;
+	create_threads(&info);
+	attach_threads(&info);
 
 	ret = hizip_verify_random_output(out_buf, copts, &info);
 
-out_with_fini:
 	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
 		uninit_config(&info, sched);

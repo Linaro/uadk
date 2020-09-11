@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+#include <pthread.h>
 #include <signal.h>
 #include <sys/mman.h>
 
@@ -18,6 +20,11 @@ struct check_rand_ctx {
 	__u32 last;
 	unsigned short state[3];
 };
+
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static int count = 0;
+
+static struct wd_ctx_config *g_conf;
 
 void *mmap_alloc(size_t len)
 {
@@ -149,9 +156,134 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
+void *send_thread_func(void *arg)
+{
+	struct hizip_test_info *info = (struct hizip_test_info *)arg;
+	struct test_options *copts = info->opts;
+	struct priv_options *opts = info->popts;
+	handle_t h_sess = info->h_sess;
+	int j, ret;
+
+	stat_start(info);
+
+	for (j = 0; j < copts->compact_run_num; j++) {
+		if (opts->option & TEST_ZLIB)
+			ret = zlib_deflate(info->out_buf, info->total_len *
+					   EXPANSION_RATIO, info->in_buf,
+					   info->total_len, &info->total_out);
+		else {
+			info->req.src = info->in_buf;
+			info->req.dst = info->out_buf;
+			info->req.src_len = copts->total_len;
+			info->req.dst_len = copts->total_len * EXPANSION_RATIO;
+			info->req.cb = NULL;
+			info->req.cb_param = NULL;
+			if (copts->sync_mode) {
+				count++;
+				ret = wd_do_comp_async(h_sess, &info->req);
+			} else {
+				ret = wd_do_comp_sync(h_sess, &info->req);
+			}
+			if (ret < 0) {
+				WD_ERR("hizip test fail with %d\n", ret);
+				return NULL;
+			}
+		}
+	}
+
+	stat_end(info);
+	return NULL;
+}
+
 int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 {
+	int ret;
+
+	ret = wd_comp_poll_ctx(g_conf->ctxs[pos].ctx, expect, count);
+	if (ret < 0)
+		return SCHED_ERROR;
 	return SCHED_SUCCESS;
+}
+
+static void *poll_thread_func(void *arg)
+{
+	struct hizip_test_info *info = (struct hizip_test_info *)arg;
+	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
+	int i, ret = 0, total = 0;
+	__u32 expected = 0, received = 0;
+
+	if (!info->opts->sync_mode)
+		return NULL;
+	while (1) {
+		pthread_mutex_lock(&mutex);
+		if (!expected)
+			expected = 1;
+		if (count == 0) {
+			pthread_mutex_unlock(&mutex);
+			usleep(10);
+			continue;
+		}
+		for (i = 0; i < ctx_conf->ctx_num; i++) {
+			expected = 1;
+			ret = wd_comp_poll(expected, &received);
+			if (ret == 0)
+				total += received;
+		}
+		if (count == total) {
+			pthread_mutex_unlock(&mutex);
+			break;
+		} else {
+			if (count > total)
+				expected = count - total;
+			pthread_mutex_unlock(&mutex);
+			usleep(10);
+		}
+	}
+	stat_end(info);
+	pthread_exit(NULL);
+}
+
+int create_threads(struct hizip_test_info *info)
+{
+	pthread_attr_t attr;
+	int ret;
+
+	count = 0;
+	info->thread_attached = 0;
+	info->thread_nums = 2;
+	info->threads = calloc(1, info->thread_nums * sizeof(pthread_t));
+	if (!info->threads)
+		return -ENOMEM;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	/* polling thread is the first one */
+	ret = pthread_create(&info->threads[0], &attr, poll_thread_func, info);
+	if (ret < 0) {
+		WD_ERR("fail to create poll thread (%d)\n", ret);
+		return ret;
+	}
+	ret = pthread_create(&info->threads[1], &attr, send_thread_func, info);
+	if (ret < 0)
+		return ret;
+	pthread_attr_destroy(&attr);
+	g_conf = &info->ctx_conf;
+	return 0;
+}
+
+int attach_threads(struct hizip_test_info *info)
+{
+	int ret;
+
+	if (info->thread_attached)
+		return 0;
+	ret = pthread_join(info->threads[1], NULL);
+	if (ret < 0)
+		WD_ERR("Fail on send thread with %d\n", ret);
+	ret = pthread_join(info->threads[0], NULL);
+	if (ret < 0)
+		WD_ERR("Fail on poll thread with %d\n", ret);
+	info->thread_attached = 1;
+	return 0;
 }
 
 int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
@@ -282,6 +414,7 @@ int hizip_test_sched(struct wd_sched *sched,
 	//key.type = 0;
 	if (opts->sync_mode) {
 		/* async */
+		create_threads(info);
 	} else {
 		ret = wd_do_comp_sync(h_sess, &info->req);
 		if (ret < 0)
