@@ -99,14 +99,14 @@ static int sample_poll_region(struct sample_sched_ctx *ctx, __u32 begin,
 		/* RR schedule, one time poll one */
 		ret = ctx->poll_func(i, 1, &poll_num);
 		if (ret)
-			return SCHED_ERROR;
+			return ret;
 
 		*count += poll_num;
 		if (*count >= expect)
 			break;
 	}
 
-	return SCHED_SUCCESS;
+	return 0;
 }
 
 static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, __u32 numa_id,
@@ -137,11 +137,11 @@ static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, __u32 numa_id,
 				return ret;
 
 			if (*count >= expect)
-				return SCHED_SUCCESS;
+				return 0;
 		}
 	}
 
-	return SCHED_SUCCESS;
+	return 0;
 }
 
 /**
@@ -233,7 +233,7 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 
 	if (!count || !cfg || !ctx) {
 		printf("ERROR: %s the para is NULL !\n", __FUNCTION__);
-		return SCHED_PARA_INVALID;
+		return -EINVAL;
 	}
 
 	sched_info = ctx->sched_info;
@@ -247,12 +247,12 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 		}
 	}
 
-	return SCHED_SUCCESS;
+	return 0;
 }
 
 struct sample_sched_table {
 	const char *name;
-	enum sched_err_num type;
+	enum sched_policy_type type;
 	__u32 (*pick_next_ctx)(handle_t h_sched_ctx, const void *req,
 			       const struct sched_key *key);
 	int (*poll_policy)(handle_t h_sched_ctx,
@@ -277,7 +277,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
 	if (!sched || !sched->h_sched_ctx) {
 		printf("ERROR: %s para err: sched of h_sched_ctx is null\n",
 		       __FUNCTION__);
-		return SCHED_PARA_INVALID;
+		return -EINVAL;
 	}
 
 	sched_ctx = (struct sample_sched_ctx*)sched->h_sched_ctx;
@@ -286,7 +286,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
 	    (type >= sched_ctx->type_num)) {
 		printf("ERROR: %s para err: numa_id=%u, mode=%u, type=%u\n",
 		       __FUNCTION__, numa_id, mode, type);
-		return SCHED_PARA_INVALID;
+		return -EINVAL;
 	}
 
 	sched_info = sched_ctx->sched_info;
@@ -294,7 +294,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
 	if (!sched_info[numa_id].ctx_region[mode]) {
 		printf("ERROR: %s para err: ctx_region:numa_id=%u, mode=%u is null\n",
 		       __FUNCTION__, numa_id, mode);
-		return SCHED_PARA_INVALID;
+		return -EINVAL;
 	}
 
 	sched_info[numa_id].ctx_region[mode][type].begin = begin;
@@ -306,7 +306,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
 	pthread_mutex_init(&sched_info[numa_id].ctx_region[mode][type].lock,
 			   NULL);
 
-	return SCHED_SUCCESS;
+	return 0;
 }
 
 void sample_sched_release(struct wd_sched *sched)

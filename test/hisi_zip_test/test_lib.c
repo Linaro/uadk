@@ -201,8 +201,8 @@ int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 
 	ret = wd_comp_poll_ctx(g_conf->ctxs[pos].ctx, expect, count);
 	if (ret < 0)
-		return SCHED_ERROR;
-	return SCHED_SUCCESS;
+		return ret;
+	return 0;
 }
 
 static void *poll_thread_func(void *arg)

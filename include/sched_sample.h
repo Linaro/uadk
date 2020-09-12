@@ -6,12 +6,6 @@
 #define MAX_NUMA_NUM 4
 #define INVALID_POS 0xFFFFFFFF
 
-/* The sched error number */
-enum sched_err_num {
-	SCHED_SUCCESS = 0,
-	SCHED_ERROR = 1,
-	SCHED_PARA_INVALID = 2,
-};
 
 /* The global policy type */
 enum sched_policy_type {
