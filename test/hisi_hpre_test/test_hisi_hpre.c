@@ -87,8 +87,7 @@ struct test_hpre_pthread_dt {
 	enum alg_op_type op_type;
 	const char *alg_name;
 	int thread_num;
-	void *pool;
-	void *q;
+	float perf;
 	struct timeval start_tval;
 	u32 send_task_num;
 	u32 recv_task_num;
@@ -191,7 +190,7 @@ static struct hpre_test_config g_config = {
 	.key_bits = 2048,
 	.times = 100,
 	.seconds = 0,
-	.check = 0,
+	.check = 1,
 	.perf_test = 0,
 	.with_log = 0,
 	.soft_test = 0,
@@ -1814,7 +1813,7 @@ static bool is_allow_print(int cnt, enum alg_op_type opType, int thread_num)
 	unsigned int log_intval_adjust = 0;
 	int log_intval[LOG_INTVL_NUM] = {0x1, 0xff, 0x3ff, 0x7ff, 0xfff, 0x1fff};
 
-	if (!g_config.with_log)
+	if (!g_config.with_log || g_config.perf_test)
 		return false;
 
 	if (g_config.soft_test)
@@ -2179,8 +2178,7 @@ new_test_again:
 		}
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
 			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
-		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
-		HPRE_TST_PRT("<< run %u s\n", time_used / 1000000);
+		pdata->perf = speed;
 	}
 
 	/* wait for recv finish */
@@ -4791,8 +4789,7 @@ new_test_with_no_req_ctx: // async test
 
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %u key_bits at %0.3f ops!\n",
 			pid, thread_id, g_config.op, g_config.key_bits, speed);
-		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
-		HPRE_TST_PRT("<< run %u s\n", time_used / 1000000);
+		pdata->perf = speed;
 	}
 
 	/* wait for recv finish */
@@ -6001,7 +5998,6 @@ int hpre_sys_func_test(struct test_hpre_pthread_dt * pdata)
 	struct wd_rsa_req req;
 	void *ctx = NULL;
 	void *tag = NULL;
-	struct wd_queue *q = pdata->q;
 	void *key_info = NULL;
 	struct timeval cur_tval;
 	float time, speed;
@@ -6281,6 +6277,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 {
 	int i, ret, cnt = 0, j;
 	int h_cpuid, qidx;
+	float speed = 0.0;
 
 	if (_get_one_bits(lcore_mask) > 0)
 		cnt =  _get_one_bits(lcore_mask);
@@ -6323,8 +6320,15 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
 			return ret;
 		}
+		speed += test_thrds_data[i].perf;
 	}
 
+	if (g_config.perf_test)
+		HPRE_TST_PRT("<< %s %u thread %s %s mode %u key_bits at %0.3f ops!\n",
+			g_config.trd_mode, g_config.trd_num, g_config.op,
+			g_config.alg_mode, g_config.key_bits, speed);
+	HPRE_TST_PRT("<< test finish!\n");
+	
 	return 0;
 }
 
@@ -6690,8 +6694,7 @@ try_do_again:
 		}
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
 			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
-		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
-		HPRE_TST_PRT("<< run %u s\n", time_used / 1000000);
+		pdata->perf = speed;
 	}
 
 	/* wait for recv finish */
@@ -6977,6 +6980,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 {
 	int ret = 0, cnt = 0, i;
 	struct wd_sched sched;	int h_cpuid;
+	float speed = 0.0;
 
 	/* Create poll thread at first */
 	test_thrds_data[0].thread_num = 1;
@@ -7041,6 +7045,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
 			return ret;
 		}
+		speed += test_thrds_data[i].perf;
 	}
 
 	asyn_thread_exit = 1;
@@ -7051,6 +7056,11 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 
+	if (g_config.perf_test)
+		HPRE_TST_PRT("<< %s %u thread %s %s mode %u key_bits at %0.3f ops!\n",
+			g_config.trd_mode, g_config.trd_num, g_config.op,
+			g_config.alg_mode, g_config.key_bits, speed);
+	HPRE_TST_PRT("<< test finish!\n");
 	return 0;
 }
 
@@ -7097,10 +7107,12 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 {
 	void *bufPool;
 	struct wd_blkpool_setup setup;
+	struct timeval end;
 	int i, ret, cnt = 0;
 	int block_num = 1024*16;
 	struct wd_queue *q;
 	int h_cpuid;
+	float speed = 0.0;
 
 	q = malloc(sizeof(struct wd_queue));
 	if (!q) {
@@ -7185,6 +7197,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
 			return ret;
 		}
+		speed += test_thrds_data[i];
 	}
 
 	asyn_thread_exit = 1;
@@ -7195,6 +7208,12 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 
+	if (!g_config.perf_test)
+		HPRE_TST_PRT("<< %s %u thread %s %s mode %u key_bits at %0.3f ops!\n",
+			g_config.trd_mode, g_config.trd_num, g_config.op,
+			g_config.alg_mode, g_config.key_bits, speed);
+	HPRE_TST_PRT("<< test finish!\n");
+	
 	return 0;
 }
 
@@ -7254,6 +7273,7 @@ static int ecc_async_test(int thread_num, __u64 lcore_mask,
 	int block_num = 1024*16;
 	struct wd_queue *q;
 	int h_cpuid;
+	float speed = 0.0;
 
 	q = malloc(sizeof(struct wd_queue));
 	if (!q) {
@@ -7350,6 +7370,7 @@ static int ecc_async_test(int thread_num, __u64 lcore_mask,
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
 			return ret;
 		}
+		speed += test_thrds_data[i];
 	}
 
 	asyn_thread_exit = 1;
@@ -7362,6 +7383,12 @@ static int ecc_async_test(int thread_num, __u64 lcore_mask,
 
 	wd_release_queue(q);
 
+	if (g_config.perf_test)
+		HPRE_TST_PRT("<< %s %u thread %s %s mode %u key_bits at %0.3f ops!\n",
+			g_config.trd_mode, g_config.trd_num, g_config.op,
+			g_config.alg_mode, g_config.key_bits, speed);
+	HPRE_TST_PRT("<< test finish!\n");
+	
 	return 0;
 }
 #endif
@@ -7611,7 +7638,7 @@ int main(int argc, char *argv[])
 		g_config.key_bits = 448;
 
 
-	HPRE_TST_PRT(">> Now start run %s :\n", g_config.op);
+	HPRE_TST_PRT(">> test start run %s :\n", g_config.op);
 	HPRE_TST_PRT(">> key_bits = %u\n", g_config.key_bits);
 	HPRE_TST_PRT(">> trd_mode = %s\n", g_config.trd_mode);
 	HPRE_TST_PRT(">> trd_num = %u\n", g_config.trd_num);
