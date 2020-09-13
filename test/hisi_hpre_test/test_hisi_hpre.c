@@ -179,8 +179,6 @@ struct hpre_test_config {
 	__u8 soft_test;
 	__u8 with_log;
 	__u8 trd_num;
-	__u8 regist_log0;
-	__u8 regist_log1;
 	__u64 core_mask[2];
 	char alg_mode[10];
 	char trd_mode[10];
@@ -200,7 +198,7 @@ static struct hpre_test_config g_config = {
 	.core_mask = 0,
 	.trd_mode = "sync",
 	.op = "rsa-gen",
-	.alg_mode = "crt",
+	.alg_mode = "com",
 	.curve = "secp256k1",
 	.dev_path = "/dev/hisi_hpre-0",
 };
@@ -214,25 +212,6 @@ static struct async_test_openssl_param ssl_params;
 struct wd_ctx_config g_ctx_cfg;
 
 static bool is_exit(struct test_hpre_pthread_dt *pdata);
-
-static char *rsa_op_str[WD_RSA_GENKEY + 1] = {
-	"invalid_op",
-	"rsa_sign",
-	"rsa_verify",
-	"rsa_keygen",
-};
-
-static char *dh_op_str[] = {
-	"ph1",
-	"ph2"
-};
-
-static char *rsa_op_str_perf[WD_RSA_GENKEY + 1] = {
-	"invalid_op",
-	"sign",
-	"verify",
-	"gen",
-};
 
 struct ecc_curve_tbl ecc_curve_tbls[] = {
 #if 0 // todo ecc
@@ -535,18 +514,6 @@ struct ecdh_sw_opdata {
 	unsigned char *sign; // sign out or verf in
 	u32 sign_size;
 
-};
-
-static char *ecc_op_str[ECC_TEST_ITEM_MAX] = {
-	"invalid_op",
-	"xdh sw gen",
-	"xdh sw compute",
-	"xdh hw gen",
-	"xdh hw compute",
-	"ecc sw sign",
-	"ecc sw verf",
-	"ecc hw sign",
-	"ecc hw verf",
 };
 
 static __thread struct hpre_rsa_test_key_in *rsa_key_in = NULL;
@@ -1965,7 +1932,7 @@ int dh_init_test_ctx_setup(struct hpre_dh_test_ctx_setup *setup)
 	if (!setup)
 		return -1;
 
-	if (!strcmp(g_config.alg_mode, "-g2"))
+	if (!strcmp(g_config.alg_mode, "g2"))
 		setup->generator = DH_GENERATOR_2;
 	else
 		setup->generator = DH_GENERATOR_5;
@@ -2048,7 +2015,7 @@ int dh_init_test_ctx_setup(struct hpre_dh_test_ctx_setup *setup)
 		return -1;
 	}
 
-	if (!strcmp(g_config.alg_mode, "-g2")) {
+	if (!strcmp(g_config.alg_mode, "g2")) {
 		setup->g = dh_g_2;
 	} else {
 		setup->g = dh_g_5;
@@ -2114,7 +2081,7 @@ static void *_hpre_dh_sys_test_thread(void *data)
 		else
 			dh_setup.cb = _dh_cb;
 
-		if (!strcmp(g_config.alg_mode, "-g2"))
+		if (!strcmp(g_config.alg_mode, "g2"))
 			dh_setup.is_g2 = true;
 		else
 			dh_setup.is_g2 = false;
@@ -2182,8 +2149,8 @@ new_test_again:
 					goto fail_release;
 
 				if (is_allow_print(pdata->send_task_num, opType, thread_num)) {
-					HPRE_TST_PRT("Proc-%d, %d-TD dh %s succ!\n",
-						getpid(), (int)syscall(__NR_gettid), dh_op_str[opstr_idx]);
+					HPRE_TST_PRT("Proc-%d, %d-TD %s succ!\n",
+						getpid(), (int)syscall(__NR_gettid), g_config.op);
 				}
 
 				hpre_dh_del_test_ctx(test_ctx);
@@ -2207,16 +2174,13 @@ new_test_again:
 
 		if (g_config.seconds){
 			speed = pdata->send_task_num / time_used * 1000000;
-			HPRE_TST_PRT("Proc-%d, %d-TD: dh do %s send %u task, recv %u task, run %0.1f s at %0.3f ops\n",
-				 pid, thread_id, dh_op_str[opstr_idx],
-				pdata->send_task_num, pdata->recv_task_num,
-				time_used / 1000000, speed);
 		} else if (g_config.times) {
 			speed = 1 / (time_used / g_config.times) * 1000;
-			HPRE_TST_PRT("\r\nPID(%d)-thread-%d:%s g2 mode %dbits kgen %s time %0.0f us, pkt len ="
-				" %d bytes, %0.3f Kops\n", getpid(), (int)syscall(__NR_gettid), "dh",
-				key_bits, dh_op_str[opstr_idx],time_used, key_bits / 8, speed);
 		}
+		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
+			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
+		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
+		HPRE_TST_PRT("<< run %u s\n", time_used / 1000000);
 	}
 
 	/* wait for recv finish */
@@ -4437,7 +4401,7 @@ static void _ecc_perf_cb(const void *message, void *tag)
 	//ret = ecc_result_check(test_ctx);
 	//if (ret) {
 		//HPRE_TST_PRT("Proc-%d, %d-TD:%s result mismatching!\n",
-			//pid, threadId, ecc_op_str[test_ctx->op]);
+			//pid, threadId, g_config.op[test_ctx->op]);
 	//}
 
 	thread_data->recv_task_num++;
@@ -4465,7 +4429,7 @@ static void _ecc_cb(const void *message, void *tag)
 
 	if (resp->result != WD_SUCCESS) {
 		HPRE_TST_PRT("Proc-%d, %d-TD %s %dtimes fail!, status 0x%02x\n",
-			pid, threadId, ecc_op_str[test_ctx->op], thread_data->send_task_num, resp->result);
+			pid, threadId, g_config.op[test_ctx->op], thread_data->send_task_num, resp->result);
 		goto err;
 	}
 
@@ -4474,7 +4438,7 @@ static void _ecc_cb(const void *message, void *tag)
 		if (ret) {
 			failTimes++;
 			HPRE_TST_PRT("TD-%d:%s result mismatching!\n",
-				threadId, ecc_op_str[test_ctx->op]);
+				threadId, g_config.op[test_ctx->op]);
 		}
 	}
 
@@ -4484,7 +4448,7 @@ static void _ecc_cb(const void *message, void *tag)
 					(end_tval.tv_usec - start_tval.tv_usec);
 		speed = 1 / (time / thread_data->send_task_num) * 1000 * 1000;
 		HPRE_TST_PRT("Proc-%d, %d-TD %s %dtimes,%f us, %0.3fps, fail %dtimes(all TD)\n",
-				pid, threadId, ecc_op_str[test_ctx->op],
+				pid, threadId, g_config.op[test_ctx->op],
 				thread_data->send_task_num, time, speed, failTimes);
 	}
 
@@ -4789,7 +4753,7 @@ new_test_with_no_req_ctx: // async test
 				if (is_allow_print(pdata->send_task_num, opType, thread_num)) {
 					HPRE_TST_PRT("Proc-%d, %d-TD: %s %uth succ!, free_num = %d.\n",
 						getpid(), (int)syscall(__NR_gettid),
-						ecc_op_str[test_ctx->op], pdata->send_task_num, free_num);
+						g_config.op[test_ctx->op], pdata->send_task_num, free_num);
 				}
 
 				ecc_del_test_ctx(test_ctx);
@@ -4825,10 +4789,10 @@ new_test_with_no_req_ctx: // async test
 			speed = 1 / (time_used / g_config.times) * 1000;
 		}
 
-		HPRE_TST_PRT("Proc-%d, %d-TD: ecc %s send %u task, recv %u task, run %0.1f s at %0.3f ops\n",
-				pid, thread_id, ecc_op_str[test_ctx->op],
-			pdata->send_task_num, pdata->recv_task_num,
-			time_used / 1000000, speed);
+		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %u key_bits at %0.3f ops!\n",
+			pid, thread_id, g_config.op, g_config.key_bits, speed);
+		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
+		HPRE_TST_PRT("<< run %u s\n", time_used / 1000000);
 	}
 
 	/* wait for recv finish */
@@ -4846,16 +4810,16 @@ fail_release:
 		ecc_del_test_ctx(test_ctx);
 
 	if (ret)
-		HPRE_TST_PRT("%s test fail!\n", ecc_op_str[opstr_idx]);
+		HPRE_TST_PRT("%s test fail!\n", g_config.op);
 	else
-		HPRE_TST_PRT("%s test succ!\n", ecc_op_str[opstr_idx]);
+		HPRE_TST_PRT("%s test succ!\n", g_config.op);
 
 	HPRE_TST_PRT("ecc sys test end!\n");
 
 	return NULL;
 
 func_test_exit:
-	HPRE_TST_PRT("%s test succ!\n", ecc_op_str[opstr_idx]);
+	HPRE_TST_PRT("%s test succ!\n", g_config);
 
 	HPRE_TST_PRT("ecc sys test end!\n");
 
@@ -5994,117 +5958,6 @@ int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 }
 #endif
 
-#ifdef RSA_OP_DEBUG
-int hpre_test_rsa_op(enum alg_op_type op_type, void *c, __u8 *in,
-		    int in_size,  __u8 *out,  __u8 *key)
-{
-	struct wd_rsa_req req;
-	int ret, move;
-	void *tag;
-	int key_bits, key_size;
-
-	key_bits =  wd_dh_key_bits(c);
-	key_size = key_bits >> 3;
-	if (op_type == RSA_KEY_GEN) {
-		/* use openSSL generate key and store them to files at first */
-		ret = test_rsa_key_gen(c, (char *)in,
-				      (char *)out, (char *)key, 1);
-		if (ret < 0)
-			return ret;
-	} else {
-		struct wd_rsa_pubkey pubkey;
-		struct wd_rsa_prikey prvkey;
-
-		if (!key)
-			goto try_format_input;
-		memset(&pubkey, 0, sizeof(pubkey));
-		memset(&prvkey, 0, sizeof(prvkey));
-		if (op_type == RSA_PUB_EN) {
-			pubkey.e = key;
-			pubkey.n = key + (key_bits >> 3);
-			ret = wd_set_rsa_pubkey(c, &pubkey);
-			if (ret) {
-				HPRE_TST_PRT("wd_set_rsa_pubkey fail!\n");
-				return ret;
-			}
-		}
-		if (op_type == RSA_PRV_DE && wd_rsa_is_crt(c)) {
-			prvkey.pkey2.dq = key;
-			prvkey.pkey2.dp = key + (key_bits >> 4);
-			prvkey.pkey2.q = key + (key_bits >> 3);
-			prvkey.pkey2.p = key + (key_bits >> 4) * 3;
-			prvkey.pkey2.qinv = key + (key_bits >> 2);
-			ret = wd_set_rsa_prikey(c, &prvkey);
-			if (ret) {
-				HPRE_TST_PRT("wd_set_rsa_prikey crt fail!\n");
-				return ret;
-			}
-		} else if (op_type == RSA_PRV_DE && !wd_rsa_is_crt(c)) {
-			prvkey.pkey1.d = key;
-			prvkey.pkey1.n = key + (key_bits >> 3);
-			ret = wd_set_rsa_prikey(c, &prvkey);
-			if (ret) {
-				HPRE_TST_PRT("wd_set_rsa_prikey fail!\n");
-				return ret;
-			}
-		}
-try_format_input:
-		/* Padding zero in this sample */
-		if (in_size < key_size && op_type == RSA_PUB_EN) {
-			move =  key_size - in_size;
-			memmove(in + move, in, in_size);
-			memset(in, 0, move);
-		}
-	}
-
-	/* always key size bytes input */
-	req.src_bytes = key_size;
-	if (op_type == RSA_PRV_DE) {
-		req.op_type = WD_RSA_SIGN;
-	} else if (op_type == RSA_PUB_EN) {
-		req.op_type = WD_RSA_VERIFY;
-	} else if (op_type == RSA_KEY_GEN) {
-		req.op_type = WD_RSA_GENKEY;
-	} else {
-		ret = -EINVAL;
-		goto type_err;
-	}
-	if (op_type == RSA_KEY_GEN) {
-		ret = hpre_test_fill_keygen_opdata(c, &req);
-		if (ret)
-			goto type_err;
-	} else {
-		req.src = in;
-		req.dst = out;
-	}
-	tag = NULL;
-	ret = wd_do_rsa_sync(c, &req);
-	if (ret)
-		goto type_err;
-	if (g_config.check) {
-		ret = hpre_test_result_check(c, &req, key);
-		if (ret)
-			goto type_err;
-		else if (req->op_type == WD_RSA_GENKEY)
-			HPRE_TST_PRT("HPRE hardware key generate successfully!\n");
-	} else if (!g_config.check && op_type == RSA_KEY_GEN) {
-		HPRE_TST_PRT("HPRE hardware key generate finished!\n");
-	}
-	if (op_type == RSA_PRV_DE) {
-		__u8 *tmp = req.dst;
-
-		move = 0;
-		while (!tmp[move])
-			move++;
-		req.dst_bytes -= move;
-		memmove(out, out + move, req.dst_bytes);
-	}
-	return (int)req.dst_bytes;
-type_err:
-	return ret;
-}
-#endif
-
 int hpre_sys_qmng_test(int thread_num)
 {
 	int pid = getpid(), i = 0, ret;
@@ -6167,7 +6020,7 @@ new_test_again:
 	memset(&setup, 0, sizeof(setup));
 	memset(&req, 0, sizeof(req));
 	setup.key_bits = g_config.key_bits;
-	if (!strcmp(g_config.alg_mode, "-crt"))
+	if (!strcmp(g_config.alg_mode, "crt"))
 		setup.is_crt = true;
 	else
 		setup.is_crt = false;
@@ -6254,7 +6107,7 @@ new_test_again:
 			if (ret || req.status) {
 				HPRE_TST_PRT("Proc-%d, T-%d:hpre %s %dth status=%d fail!\n",
 					 pid, thread_id,
-					 rsa_op_str[req.op_type], i, req.status);
+					 g_config.op, i, req.status);
 				goto fail_release;
 			}
 		}
@@ -6277,7 +6130,7 @@ new_test_again:
 			if (ret) {
 				HPRE_TST_PRT("P-%d,T-%d:hpre %s %dth mismth\n",
 						 pid, thread_id,
-						 rsa_op_str[req.op_type], i);
+						 g_config.op, i);
 				goto fail_release;
 			}
 			else {
@@ -6310,7 +6163,7 @@ new_test_again:
 						   (cur_tval.tv_usec - pdata->start_tval.tv_usec));
 			speed = 1 / (time / i) * 1000;
 			HPRE_TST_PRT("Proc-%d, %d-TD %s %dtimes,%0.0fus, %0.3fkops\n",
-					 pid, thread_id, rsa_op_str[req.op_type],
+					 pid, thread_id, g_config.op,
 					 i, time, speed);
 		}
 
@@ -6355,11 +6208,10 @@ new_test_again:
 		} else if (g_config.times) {
 			speed = 1 / (time / g_config.times) * 1000;
 		}
-		
-		HPRE_TST_PRT("Proc-%d, %d-TD: %s %u key_bits at %0.3f ops!\n",
-			pid, thread_id, g_config.op, g_config.key_bits, speed);
-		HPRE_TST_PRT("	>> send %u task\n", pdata->send_task_num);
-		HPRE_TST_PRT("	>> run %u s\n", time / 1000000);
+		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
+			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
+		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
+		HPRE_TST_PRT("<< run %u s\n", time / 1000000);
 	}
 
 fail_release:
@@ -6622,7 +6474,7 @@ void *_rsa_async_op_test_thread(void *data)
 	memset(&setup, 0, sizeof(setup));
 	memset(&req, 0, sizeof(req));
 	setup.key_bits = g_config.key_bits;
-	if (!strcmp(g_config.alg_mode, "-crt"))
+	if (!strcmp(g_config.alg_mode, "crt"))
 		setup.is_crt = true;
 	else
 		setup.is_crt = false;
@@ -6812,8 +6664,7 @@ try_do_again:
 				goto try_do_again;
 			} else if (ret) {
 				HPRE_TST_PRT("Proc-%d, T-%d:hpre %s %dth fail!\n",
-					 pid, thread_id,
-					 rsa_op_str[req.op_type], i);
+					 pid, thread_id, g_config.op, i);
 				goto fail_release;
 			}
 			//usleep(100);
@@ -6834,16 +6685,13 @@ try_do_again:
 
 		if (g_config.seconds) {
 			speed = pdata->recv_task_num / time_used * 1000000;
-			HPRE_TST_PRT("Proc-%d, %d-TD: rsa do %s send %u task, recv %u task, run %0.1f s at %0.3f ops\n",
-				 pid, thread_id, rsa_op_str[req.op_type],
-				pdata->send_task_num, pdata->recv_task_num,
-				time_used / 1000000, speed);
 		} else if (g_config.times) {
 			speed = 1 / (time_used / g_config.times) * 1000;
-			HPRE_TST_PRT("\r\nPID(%d)-thread-%d:%s CRT mode %dbits %s time %0.0f us, pkt len ="
-				" %d bytes, %0.3f Kops\n", getpid(), (int)syscall(__NR_gettid), "rsa",
-				key_bits, rsa_op_str_perf[req.op_type], time_used, key_bits / 8, speed);
 		}
+		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
+			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
+		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
+		HPRE_TST_PRT("<< run %u s\n", time_used / 1000000);
 	}
 
 	/* wait for recv finish */
@@ -7533,32 +7381,6 @@ void *_hpre_sys_test_thread(void *data)
 	}
 }
 
-void normal_register(const char *format, ...)
-{
-    printf("wd log:%s", format);
-    return ;
-}
-
-void redirect_log_2_file(const char *format, ...)
-{
-    pthread_mutex_lock(&mute);
-    FILE *fp;
-    fp = fopen("file.txt", "a+");
-    fprintf(fp,format,__FILE__, __LINE__, __func__);
-    fclose(fp);
-    pthread_mutex_unlock(&mute);
-    return ;
-}
-
-void segmant_fault_register(const char *format, ...)
-{
-    int *ptr = NULL;
-    *ptr = 0;
-    return ;
-}
-
-// test -perf --alg=rsa --op=gen  --mode=crt --key_bits=1024 -t 2 -c 0xffff --dev_path=/dev/hisi_hpre-0 --trd_mode=sync
-
 static void print_help(void);
 static int parse_cmd_line(int argc, char *argv[])
 {
@@ -7695,33 +7517,21 @@ static int parse_cmd_line(int argc, char *argv[])
 	return ret;
 }
 
-
 int main(int argc, char *argv[])
 {
 	enum alg_op_type alg_op_type = HPRE_ALG_INVLD_TYPE;
 	enum alg_op_mode mode;
-	__u8 *in = NULL, *tp_in, *temp_in = NULL;
-	__u8 *out = NULL;
-	__u8 *key = NULL;
-	char *in_file = NULL;
-	char *out_file = NULL;
-	char *key_file = NULL;
-	int ret = 0, in_size = 0, op_size;
-	int priv_key_size, pub_key_size, key_info_size;
-	int read_size, out_fd = -1, try_close = 1;
-	struct wd_rsa_sess_setup setup;
-	//struct wd_dh_ctx_setup dh_setup; //todo
-	void *ctx = NULL;
-	int thread_num, bits;
-	__u64 core_mask[2];
-	u32 value = 0;
-	char dev_path[PATH_STR_SIZE] = {0};
-	unsigned int node_msk = 0;
-	char *alg_name;
+	int ret = 0;
 
 	ret = parse_cmd_line(argc, argv);
 	if (ret)
 		return -1;
+
+  	ret = init_hpre_global_config();
+  	if (ret) {
+  		HPRE_TST_PRT("failed to init_hpre_global_config, ret %d!\n", ret);
+  		return -1;
+  	}
 
 	if (!strcmp(g_config.op, "rsa-gen")) {
 		if (!strcmp(g_config.trd_mode, "async"))
@@ -7796,17 +7606,12 @@ int main(int argc, char *argv[])
 	else if (alg_op_type >= X448_GEN && alg_op_type <= X448_ASYNC_COMPUTE)
 		g_config.key_bits = 448;
 
-  	ret = init_hpre_global_config();
-  	if (ret) {
-  		HPRE_TST_PRT("failed to init_hpre_global_config, ret %d!\n", ret);
-  		return -1;
-  	}
 
 	HPRE_TST_PRT(">> Now start run %s :\n", g_config.op);
-	HPRE_TST_PRT("   key_bits = %u\n", g_config.key_bits);
-	HPRE_TST_PRT("   trd_mode = %s\n", g_config.trd_mode);
-	HPRE_TST_PRT("   trd_num = %u\n", g_config.trd_num);
-	HPRE_TST_PRT("   core_mask = [0x%llx][0xllx]\n", g_config.core_mask[1],
+	HPRE_TST_PRT(">> key_bits = %u\n", g_config.key_bits);
+	HPRE_TST_PRT(">> trd_mode = %s\n", g_config.trd_mode);
+	HPRE_TST_PRT(">> trd_num = %u\n", g_config.trd_num);
+	HPRE_TST_PRT(">> core_mask = [0x%llx][0xllx]\n", g_config.core_mask[1],
 		g_config.core_mask[0]);
 
 	if (alg_op_type < MAX_RSA_SYNC_TYPE ||
@@ -7815,11 +7620,11 @@ int main(int argc, char *argv[])
 		alg_op_type == ECDSA_SIGN || alg_op_type == ECDSA_VERF ||
 		alg_op_type == X25519_GEN || alg_op_type == X25519_COMPUTE ||
 		alg_op_type == X448_GEN || alg_op_type == X448_COMPUTE)
-			return hpre_sys_test(thread_num, core_mask[0],
-				core_mask[1], alg_op_type, g_config.dev_path, node_msk);
+			return hpre_sys_test(g_config.trd_num, g_config.core_mask[0],
+				g_config.core_mask[1], alg_op_type, g_config.dev_path, 0);
 	else if (alg_op_type > MAX_RSA_SYNC_TYPE && alg_op_type < MAX_RSA_ASYNC_TYPE)
-		return rsa_async_test(thread_num, core_mask[0],
-			core_mask[1], alg_op_type);
+		return rsa_async_test(g_config.trd_num, g_config.core_mask[0],
+			g_config.core_mask[1], alg_op_type);
 	else if (alg_op_type == DH_ASYNC_GEN || alg_op_type == DH_ASYNC_COMPUTE)
 		return 0;
 		//return dh_async_test(thread_num, core_mask[0],
@@ -7880,7 +7685,7 @@ static void print_help(void)
 	HPRE_TST_PRT("        secp521R1  = 521bit\n");
 	HPRE_TST_PRT("        null  = by set parameters\n");
 	HPRE_TST_PRT("    [--dev_path=]: designed dev path\n");
-	HPRE_TST_PRT("    [--seconds=]: test time set (s), default 10s\n");
-	HPRE_TST_PRT("    [--cycles=]: test cycle set (times), default 100 times\n");
+	HPRE_TST_PRT("    [--seconds=]: test time set (s)\n");
+	HPRE_TST_PRT("    [--cycles=]: test cycle set (times)\n");
 	HPRE_TST_PRT("    [--help]  = usage\n");
 }
