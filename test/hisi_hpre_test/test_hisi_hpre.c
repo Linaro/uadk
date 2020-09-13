@@ -7404,6 +7404,7 @@ static int parse_cmd_line(int argc, char *argv[])
             {"perf",    no_argument, 0,  0 },
             {"trd_mode",    required_argument, 0,  0 },
             {"curve",    required_argument, 0,  0 },
+            {"help",    no_argument, 0,  'h' },
             {0,         0,                 0,  0 }
         };
 
@@ -7427,15 +7428,17 @@ static int parse_cmd_line(int argc, char *argv[])
 				snprintf(g_config.dev_path, sizeof(g_config.dev_path), "%s", optarg);	
 			} else if (!strncmp(long_options[option_index].name, "key_bits", 8)) {
 				g_config.key_bits = strtoul((char *)optarg, NULL, 10);
-			} else if (!strncmp(long_options[option_index].name, "cycles", 5)) {
+			} else if (!strncmp(long_options[option_index].name, "cycles", 6)) {
 				g_config.times = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "seconds", 7)) {
 				g_config.seconds = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "log", 3)) {
-				g_config.with_log = 1;
+				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1))
+					g_config.with_log = 1;
 			} else if (!strncmp(long_options[option_index].name, "check", 5)) {
 				#ifdef WITH_OPENSSL_DIR	
-				g_config.check = 1;
+				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1))
+					g_config.check = 1;
 				#endif
 			} else if (!strncmp(long_options[option_index].name, "soft", 4)) {
 				g_config.soft_test = 1;
@@ -7505,6 +7508,7 @@ static int parse_cmd_line(int argc, char *argv[])
 			break;
 
 		case '?':
+		case 'h':
 			print_help();
 		    break;
 
