@@ -1126,7 +1126,7 @@ static int init_hpre_global_config(void)
 	struct uacce_dev_list *list, *uacce_node;
 	struct wd_ctx *ctx_attr;
 	struct wd_sched sched;
-	int ctx_num = 1024;
+	int ctx_num = g_config.trd_num;
 	__u32 op_type = 0;
 	int ret;
 	int j;
@@ -6204,10 +6204,9 @@ new_test_again:
 		} else if (g_config.times) {
 			speed = 1 / (time / g_config.times) * 1000;
 		}
+		pdata->perf = speed;
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
 			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
-		HPRE_TST_PRT("<< send %u task\n", pdata->send_task_num);
-		HPRE_TST_PRT("<< run %u s\n", time / 1000000);
 	}
 
 fail_release:
@@ -7537,6 +7536,7 @@ static int parse_cmd_line(int argc, char *argv[])
 		case '?':
 		case 'h':
 			print_help();
+			ret = -1;
 		    break;
 
 		default:
@@ -7642,7 +7642,7 @@ int main(int argc, char *argv[])
 	HPRE_TST_PRT(">> key_bits = %u\n", g_config.key_bits);
 	HPRE_TST_PRT(">> trd_mode = %s\n", g_config.trd_mode);
 	HPRE_TST_PRT(">> trd_num = %u\n", g_config.trd_num);
-	HPRE_TST_PRT(">> core_mask = [0x%llx][0xllx]\n", g_config.core_mask[1],
+	HPRE_TST_PRT(">> core_mask = [0x%llx][0x%llx]\n", g_config.core_mask[1],
 		g_config.core_mask[0]);
 
 	if (alg_op_type < MAX_RSA_SYNC_TYPE ||

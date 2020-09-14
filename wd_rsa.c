@@ -149,7 +149,6 @@ static int init_global_ctx_setting(struct wd_ctx_config *cfg)
 		pthread_mutex_init(&ctxs[i].lock, NULL);
 	}
 
-	memcpy(ctxs, cfg->ctxs, cfg->ctx_num * sizeof(struct wd_ctx));
 	wd_rsa_setting.config.ctxs = ctxs;
 
 	/* Can't copy with the size of priv structure. */
