@@ -190,7 +190,11 @@ static struct hpre_test_config g_config = {
 	.key_bits = 1024,
 	.times = 100,
 	.seconds = 0,
+	#ifdef WITH_OPENSSL_DIR	
 	.check = 1,
+	#else
+	.check = 0,
+	#endif
 	.perf_test = 0,
 	.with_log = 0,
 	.soft_test = 0,
@@ -1047,16 +1051,8 @@ static __u8 is_async_test(__u32 opType)
 __u32 rsa_pick_next_ctx(handle_t sched_ctx,
 				struct wd_rsa_req *req, struct sched_key *key)
 {
-	__u32 idx;
 
-	if (req->op_type == WD_RSA_GENKEY)
-		idx = 0;
-	else if (req->op_type == WD_RSA_SIGN)
-		idx = 1;
-	else
-		idx = 2;
-
-	return idx;
+	return 0;
 }
 
 int poll_policy(handle_t h_sched_ctx, struct wd_ctx_config *config, __u32 expect, __u32 *count)
@@ -7465,9 +7461,7 @@ static int parse_cmd_line(int argc, char *argv[])
 					g_config.with_log = 0;
 			} else if (!strncmp(long_options[option_index].name, "check", 5)) {
 				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1)) {
-				#ifdef WITH_OPENSSL_DIR	
 					g_config.check = 1;
-				#endif
 				} else {
 					g_config.check = 0;
 				}
