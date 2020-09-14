@@ -187,7 +187,7 @@ struct hpre_test_config {
 };
 
 static struct hpre_test_config g_config = {
-	.key_bits = 2048,
+	.key_bits = 1024,
 	.times = 100,
 	.seconds = 0,
 	.check = 1,
@@ -7461,11 +7461,16 @@ static int parse_cmd_line(int argc, char *argv[])
 			} else if (!strncmp(long_options[option_index].name, "log", 3)) {
 				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1))
 					g_config.with_log = 1;
+				else
+					g_config.with_log = 0;
 			} else if (!strncmp(long_options[option_index].name, "check", 5)) {
+				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1)) {
 				#ifdef WITH_OPENSSL_DIR	
-				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1))
 					g_config.check = 1;
 				#endif
+				} else {
+					g_config.check = 0;
+				}
 			} else if (!strncmp(long_options[option_index].name, "soft", 4)) {
 				g_config.soft_test = 1;
 			} else if (!strncmp(long_options[option_index].name, "perf", 4)) {
@@ -7644,6 +7649,8 @@ int main(int argc, char *argv[])
 	HPRE_TST_PRT(">> trd_num = %u\n", g_config.trd_num);
 	HPRE_TST_PRT(">> core_mask = [0x%llx][0x%llx]\n", g_config.core_mask[1],
 		g_config.core_mask[0]);
+	HPRE_TST_PRT(">> times = %u\n", g_config.times);
+	HPRE_TST_PRT(">> seconds = %u\n", g_config.seconds);
 
 	if (alg_op_type < MAX_RSA_SYNC_TYPE ||
 		alg_op_type == DH_GEN || alg_op_type == DH_COMPUTE ||
