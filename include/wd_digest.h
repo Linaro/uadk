@@ -63,6 +63,7 @@ struct wd_digest_sess {
  * @out: output data address
  * @in_bytes: input data size
  * @out_bytes: output data size
+ * @state: I/O operation resulte
  * @has_next: is there next data block
  * @cb: callback function for async mode
  * @cb_param: pointer of callback parameter
@@ -117,23 +118,23 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup);
 
 /**
  * wd_alg_digest_free_sess() - Free digest session.
- * @handle_t: session handler which will be free
+ * @h_sess: session handler which will be free
  */
-void wd_digest_free_sess(handle_t sess);
+void wd_digest_free_sess(handle_t h_sess);
 
 /**
  * wd_do_digest_sync() - Do sync digest task.
- * @sess: Session handler
+ * @h_sess: Session handler
  * @req: Operation parameters.
  */
-int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req);
+int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req);
 
 /**
  * wd_do_digest_async() - Do asynchronous digest task.
- * @sess: Session handler
+ * @h_sess: Session handler
  * @req: Operation parameters.
  */
-int wd_do_digest_async(handle_t sess, struct wd_digest_req *req);
+int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req);
 
 /**
  * wd_digest_set_key() - Set auth key to digest session.

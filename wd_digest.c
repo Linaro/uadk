@@ -423,9 +423,9 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->has_next = req->has_next;
 }
 
-int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
+int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 {
-	struct wd_digest_sess *dsess = (struct wd_digest_sess *)sess;
+	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_config *config = &g_wd_digest_setting.config;
 	void *sched_ctx = g_wd_digest_setting.sched_ctx;
 	struct wd_digest_msg msg;
@@ -433,7 +433,7 @@ int wd_do_digest_sync(handle_t sess, struct wd_digest_req *req)
 	handle_t h_ctx;
 	int ret;
 
-	if (!sess || !req) {
+	if (!dsess || !req) {
 		WD_ERR("digest input sess or req is NULL!\n");
 		return -EINVAL;
 	}
@@ -479,16 +479,16 @@ recv_err:
 	return ret;
 }
 
-int wd_do_digest_async(handle_t sess, struct wd_digest_req *req)
+int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 {
-	struct wd_digest_sess *dsess = (struct wd_digest_sess *)sess;
+	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
         struct wd_ctx_config *config = &g_wd_digest_setting.config;
         void *sched_ctx = g_wd_digest_setting.sched_ctx;
         struct wd_digest_msg *msg;
         handle_t h_ctx;
         int ret;
 
-        if (!sess || !req) {
+        if (!dsess || !req) {
                 WD_ERR("digest input sess or req is NULL!\n");
 		return -EINVAL;
         }

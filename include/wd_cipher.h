@@ -116,8 +116,8 @@ extern int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
  * @sess: wd cipher session
  * @req: operational data.
  */
-extern int wd_do_cipher_sync(handle_t sess, struct wd_cipher_req *req);
-extern int wd_do_cipher_async(handle_t sess, struct wd_cipher_req *req);
+extern int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req);
+extern int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req);
 /**
  * wd_cipher_poll_ctx() poll operation for asynchronous operation
  * @ctx: wd cipher context, the ctx which whill be polled.
