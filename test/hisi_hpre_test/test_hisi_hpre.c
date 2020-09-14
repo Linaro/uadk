@@ -190,6 +190,7 @@ static struct hpre_test_config g_config = {
 	.key_bits = 1024,
 	.times = 100,
 	.seconds = 0,
+	.trd_num = 2,
 	#ifdef WITH_OPENSSL_DIR	
 	.check = 1,
 	#else
