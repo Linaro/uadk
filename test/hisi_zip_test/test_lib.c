@@ -163,19 +163,24 @@ void *send_thread_func(void *arg)
 	struct priv_options *opts = info->popts;
 	handle_t h_sess = info->h_sess;
 	int j, ret;
+	size_t left;
 
 	stat_start(info);
 
 	for (j = 0; j < copts->compact_run_num; j++) {
-		if (opts->option & TEST_ZLIB)
+		if (opts->option & TEST_ZLIB) {
 			ret = zlib_deflate(info->out_buf, info->total_len *
 					   EXPANSION_RATIO, info->in_buf,
 					   info->total_len, &info->total_out);
-		else {
-			info->req.src = info->in_buf;
-			info->req.dst = info->out_buf;
-			info->req.src_len = copts->total_len;
-			info->req.dst_len = copts->total_len * EXPANSION_RATIO;
+			continue;
+		}
+		/* not TEST_ZLIB */
+		left = copts->total_len;
+		info->req.src = info->in_buf;
+		info->req.dst = info->out_buf;
+		while (left > 0) {
+			info->req.src_len = copts->block_size;
+			info->req.dst_len = copts->block_size * EXPANSION_RATIO;
 			info->req.cb = NULL;
 			info->req.cb_param = NULL;
 			if (copts->sync_mode) {
@@ -188,6 +193,13 @@ void *send_thread_func(void *arg)
 				WD_ERR("hizip test fail with %d\n", ret);
 				return NULL;
 			}
+			left -= copts->block_size;
+			info->req.src += copts->block_size;
+			/*
+			 * It's BLOCK (STATELESS) mode, so user needs to
+			 * combine output buffer by himself.
+			 */
+			info->req.dst += copts->block_size * EXPANSION_RATIO;
 		}
 	}
 
