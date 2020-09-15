@@ -49,7 +49,7 @@ static int sched_test_case1(const char *name)
 	int ret;
 	struct wd_sched *sched;
 
-	sched = sample_sched_alloc(SCHED_POLICY_BUTT, SCHED_TEST_TYPE_NUM, user_poll_func_stub_succee);
+	sched = sample_sched_alloc(SCHED_POLICY_BUTT, SCHED_TEST_TYPE_NUM, 0, user_poll_func_stub_succee);
 	if (sched) {
 		printf("CASE 1: %s failure, sched_type check failed\n", name);
 		return -EPERM;
@@ -70,7 +70,7 @@ static int sched_test_case2(const char *name)
 	int ret;
 	struct wd_sched *sched;
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, user_poll_func_stub_succee);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, 0, user_poll_func_stub_succee);
 	if (!sched) {
 		printf("CASE 2: %s failure, sample_sched_alloc failed\n", name);
 		return -ENOMEM;
@@ -110,7 +110,7 @@ static int sched_test_case3(const char *name)
 	struct sched_key key;
 	struct wd_sched *sched;
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, user_poll_func_stub_succee);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, 0, user_poll_func_stub_succee);
 	if (!sched) {
 		printf("CASE 3: %s failure, sample_sched_alloc failed\n", name);
 		return -ENOMEM;
@@ -156,7 +156,7 @@ int sched_test_case4(const char *name)
 	__u32 count = 0;
 	struct wd_sched *sched;
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, user_poll_func_stub_succee);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, 0, user_poll_func_stub_succee);
 	if (!sched) {
 		printf("CASE 4: %s failure, sample_sched_alloc failed\n", name);
 		return -ENOMEM;
@@ -189,7 +189,7 @@ int sched_test_case5(const char *name)
 	__u32 count = 0;
 	struct wd_sched *sched;
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, user_poll_func_stub_fail);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, SCHED_TEST_TYPE_NUM, 0, user_poll_func_stub_fail);
 	if (!sched) {
 		printf("CASE 5: %s failure, sample_sched_alloc failed\n", name);
 		return -ENOMEM;

@@ -312,7 +312,7 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 	list = wd_get_accel_list("zlib");
 	if (!list)
 		return -ENODEV;
-	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, lib_poll_func);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!sched) {
 		WD_ERR("sample_sched_alloc fail\n");
 		goto out_sched;

@@ -545,7 +545,7 @@ static int run_one_child(struct priv_options *opts)
 	info->req.dst_len = copts->total_len * EXPANSION_RATIO;
 	hizip_prepare_random_input_data(info);
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, lib_poll_func);
+	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!sched) {
 		WD_ERR("sample_sched_alloc fail\n");
 		goto out_ctx;

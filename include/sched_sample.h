@@ -36,10 +36,11 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
  * @sched_type: Reference sched_policy_type.
  * @type_num: The service type num of user's service. For example, the zip
  *            include comp and un comp, type nume is two.
+ * @numa_num: The number of numa that the user needs.
  * @func: The ctx poll function of user underlying operating.
  *
  */
-struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num,
+struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_num,
 				    user_poll_func func);
 
 /**

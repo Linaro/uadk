@@ -42,7 +42,7 @@ struct sample_sched_info {
 struct sample_sched_ctx {
 	__u32 policy;
 	__u32 type_num;
-	__u32 numa_num;
+	__u8  numa_num;
 	user_poll_func poll_func;
 	struct sample_sched_info sched_info[0];
 };
@@ -336,15 +336,13 @@ void sample_sched_release(struct wd_sched *sched)
 	return;
 }
 
-struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num,
+struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_num,
 				    user_poll_func func) 
 {
 	struct sample_sched_info *sched_info;
 	struct sample_sched_ctx *sched_ctx;
 	struct wd_sched *sched;
 	int i, j;
-	/* fix me: should be removed and add a input parameter as numa_num */
-	int numa_num = 2;
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
 		printf("Error: %s sched_type = %u or type_num = %u is invalid!\n",
