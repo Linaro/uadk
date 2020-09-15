@@ -68,7 +68,6 @@ struct priv_options {
 #define PERFORMANCE		(1UL << 0)
 #define TEST_ZLIB		(1UL << 1)
 #define TEST_THP		(1UL << 2)
-#define USE_POLL		(1UL << 3)
 	unsigned long option;
 
 #define STATS_NONE		0
@@ -313,9 +312,6 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 			buf = buf + page_size;
 		}
 	}
-
-	if (opts->option & USE_POLL)
-		sched.poll = true;
 
 	if (!(opts->option & TEST_ZLIB)) {
 		ret = hizip_test_init(&sched, copts, &default_test_ops, &ctx);
@@ -662,9 +658,6 @@ int main(int argc, char **argv)
 				break;
 			case 'z':
 				opts.option |= TEST_ZLIB;
-				break;
-			case 'i':
-				opts.option |= USE_POLL;
 				break;
 			default:
 				SYS_ERR_COND(1, "invalid argument to -o: '%s'\n", optarg);

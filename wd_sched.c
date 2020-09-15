@@ -3,6 +3,8 @@
 #include "wd_sched.h"
 #include "smm.h"
 
+#define USE_POLL
+
 /*
  * In SVA scenario, a whole user buffer could be divided into multiple frames.
  * In NOSVA scenario, data from a whole user buffer should be copied into
@@ -194,22 +196,23 @@ int wd_sched_work(struct wd_scheduler *sched, unsigned long remained)
 		MOV_INDEX(c_h);
 		sched->cl--;
 	} else {
-		if (sched->poll) {
-			ret = __poll_wait(sched);
-			if (ret && ret != -EAGAIN)
-				return ret;
-		} else {
-			ret = __sync_wait(sched);
-			if (ret)
-				return ret;
+#ifdef USE_POLL
+		ret = __poll_wait(sched);
+		if (ret && ret != -EAGAIN)
+			return ret;
+#else
 
-			ret = sched->output(&sched->msgs[sched->c_t], sched->priv);
-			if (ret)
-				return ret;
+		ret = __sync_wait(sched);
+		if (ret)
+			return ret;
 
-			MOV_INDEX(c_t);
-			sched->cl++;
-		}
+		ret = sched->output(&sched->msgs[sched->c_t], sched->priv);
+		if (ret)
+			return ret;
+
+		MOV_INDEX(c_t);
+		sched->cl++;
+#endif
 	}
 
 	return sched->cl;
