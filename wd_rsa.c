@@ -524,6 +524,10 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + idx;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+		WD_ERR("ctx %u mode=%hhu error!\n", idx, ctx->ctx_mode);
+		return -EINVAL;
+	}
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
 	ret = fill_rsa_msg(&msg, req, sess);
@@ -562,6 +566,10 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + idx;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+		WD_ERR("ctx %u mode=%hhu error!\n", idx, ctx->ctx_mode);
+		return -EINVAL;
+	}
 
 	msg = wd_get_msg_from_pool(&wd_rsa_setting.pool, ctx->ctx, req);
 	if (!msg)

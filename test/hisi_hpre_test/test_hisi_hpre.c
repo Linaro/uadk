@@ -218,7 +218,7 @@ struct wd_ctx_config g_ctx_cfg;
 static bool is_exit(struct test_hpre_pthread_dt *pdata);
 
 struct ecc_curve_tbl ecc_curve_tbls[] = {
-#if 0 // todo ecc
+#if 0 // will be added later ecc
 	{"secp128R1", 706, WD_SECP128R1},
 	{"secp192K1", 711, WD_SECP192K1},
 	{"secp256K1", 714, WD_SECP256K1},
@@ -1180,7 +1180,7 @@ static void uninit_hpre_global_config(void)
 	wd_rsa_uninit();
 }
 
-#if 0 // todo dh
+#if 0 // will be added later dh
 static int init_opdata_param(void *pool,
 			     struct wd_dh_op_data *req,
 			     int key_size, enum dh_check_index step)
@@ -1772,7 +1772,7 @@ static bool is_exit(struct test_hpre_pthread_dt *pdata)
 	return false;
 }
 
-#if 0
+#if 0 /* will be added later */
 static int dh_result_check(struct hpre_dh_test_ctx *test_ctx)
 {
 	struct wd_dh_op_data *req = test_ctx->req;
@@ -1860,7 +1860,7 @@ static bool is_allow_print(int cnt, enum alg_op_type opType, int thread_num)
 		return false;
 }
 
-#if 0 // todo dh
+#if 0 // will be added later dh
 static void _dh_perf_cb(const void *message, void *tag)
 {
 	//const struct wd_dh_msg *msg = message;
@@ -3615,8 +3615,8 @@ int ecxdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->kinv_size = sizeof(ecc_except_kinv_secp256k1);
 		setup->rp = ecdh_cp_pubkey_secp256k1 + 1;
 		setup->rp_size = key_size;
-		setup->cp_sign = ecdh_cp_pubkey_secp256k1 + 1; //todo
-		setup->cp_sign_size = 32; //todo
+		setup->cp_sign = ecdh_cp_pubkey_secp256k1 + 1; //will be added later
+		setup->cp_sign_size = 32; //will be added later
 
 		/* ecc verf */
 		setup->sign = ecc_cp_sign_secp256k1;
@@ -3859,14 +3859,6 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
 				return -1;
 			}
-			#if 0
-			int i;
-			for (i = 0; i < t_c->key_size; i++) {
-				if (i % 12 == 0)
-					printf("\n");
-				printf("0x%x, ", out_pub_key[i]);
-			}printf("\n");
-			#endif
 			free(out_pub_key);
 		} else {
 
@@ -3876,10 +3868,10 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 				HPRE_TST_PRT("EC_KEY_generate_key fail!\n");
 				return -1;
 			}
-		//#ifdef DEBUG
+		#ifdef DEBUG
 			ECParameters_print_fp(stdout, ec_key);
 			EC_KEY_print_fp(stdout, ec_key, 0);
-		//#endif
+		#endif
 		}
 	} else {
 		struct wd_ecc_op_data *req = t_c->req;
@@ -3936,14 +3928,6 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
 				return -1;
 			}
-			#if 0
-			int i;
-			for (i = 0; i < t_c->key_size; i++) {
-				if (i % 12 == 0)
-					printf("\n");
-				printf("0x%x, ", out_shared_key[i]);
-			}printf("\n");
-			#endif
 			free(out_shared_key);
 		} else {
 			struct ecdh_sw_opdata *req = t_c->req;
@@ -3957,8 +3941,8 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 			req->share_key_size = ret;
 		}
 #ifdef DEBUG
-	//ECParameters_print_fp(stdout, ec_key);
-	//print_data(req->share_key, ret, "openssl share key");
+	ECParameters_print_fp(stdout, ec_key);
+	print_data(req->share_key, ret, "openssl share key");
 
 #endif
 	} else {
@@ -4619,7 +4603,7 @@ static void *_ecc_sys_test_thread(void *data)
 	}
 
 	if ((!strncmp(q->capa.alg, "x25519", 6)) || (!strncmp(q->capa.alg, "x448", 4))) {
-		if (x_dh_init_test_ctx_setup(&setup, opType)) { // todo
+		if (x_dh_init_test_ctx_setup(&setup, opType)) { // will be added later
 			wd_del_ecc_ctx(ctx);
 			return NULL;
 		}
@@ -4687,32 +4671,32 @@ new_test_with_no_req_ctx: // async test
 		}
 
 		if (opType == ECDSA_ASYNC_SIGN || opType == ECDSA_SIGN) {
-			if (ecdsa_sign(test_ctx, pTag)) { // todo
+			if (ecdsa_sign(test_ctx, pTag)) { // will be added later
 				ret = -1;
 				goto fail_release;
 			}
 		} else if (opType == SM2_SIGN || opType == SM2_ASYNC_SIGN) {
-			if (sm2_sign(test_ctx, pTag)) { // todo
+			if (sm2_sign(test_ctx, pTag)) { // will be added later
 				ret = -1;
 				goto fail_release;
 			}
 		} else if (opType == ECDSA_VERF || opType == ECDSA_ASYNC_VERF) {
-			if (ecdsa_verf(test_ctx, pTag)) { // todo
+			if (ecdsa_verf(test_ctx, pTag)) { // will be added later
 				ret = -1;
 				goto fail_release;
 			}
 		} else if (opType == SM2_VERF || opType == SM2_ASYNC_VERF) {
-			if (sm2_verf(test_ctx, pTag)) { // todo
+			if (sm2_verf(test_ctx, pTag)) { // will be added later
 				ret = -1;
 				goto fail_release;
 			}
 		} else if (opType == SM2_ENC || opType == SM2_ASYNC_ENC) {
-			if (sm2_enc(test_ctx, pTag)) { // todo
+			if (sm2_enc(test_ctx, pTag)) { // will be added later
 				ret = -1;
 				goto fail_release;
 			}
 		} else if (opType == SM2_DEC || opType == SM2_ASYNC_DEC) {
-			if (sm2_dec(test_ctx, pTag)) { // todo
+			if (sm2_dec(test_ctx, pTag)) { // will be added later
 				ret = -1;
 				goto fail_release;
 			}
@@ -5657,7 +5641,7 @@ int hpre_test_result_check(void *ctx,  struct wd_rsa_req *req, void *key)
 	return 0;
 }
 
-#if 0
+#if 0 /* will be added later */
 int hpre_dh_test(void *c, struct hpre_queue_mempool *pool)
 {
 	DH *a = NULL, *b = NULL;
@@ -7060,7 +7044,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 	return 0;
 }
 
-#if 0
+#if 0 /* will be added later */
 static void *_dh_async_poll_test_thread(void *data)
 {
 	struct test_hpre_pthread_dt *pdata = data;
@@ -7244,7 +7228,7 @@ static void *_ecc_async_poll_test_thread(void *data)
 			ret = wd_ecxdh_poll(q, 1);
 		} else if (op == ECDSA_ASYNC_SIGN || op == ECDSA_ASYNC_VERF) {
 			ret = wd_ecdsa_poll(q, 1);
-		} else { // SM2, todo
+		} else { // SM2, will be added later
 			ret = -1;
 		}
 
@@ -7396,9 +7380,9 @@ void *_hpre_sys_test_thread(void *data)
 
 	op_type = pdata->op_type;
 	if (op_type > MAX_DH_TYPE && op_type < MAX_ECC_TYPE) {
-		// return _ecc_sys_test_thread(data); todo
+		// return _ecc_sys_test_thread(data); will be added later
 	} else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE) {
-		// return _hpre_dh_sys_test_thread(data); todo
+		// return _hpre_dh_sys_test_thread(data); will be added later
 	} else {
 		return _hpre_rsa_sys_test_thread(data);
 	}
@@ -7661,13 +7645,13 @@ int main(int argc, char *argv[])
 	else if (alg_op_type == DH_ASYNC_GEN || alg_op_type == DH_ASYNC_COMPUTE)
 		return 0;
 		//return dh_async_test(thread_num, core_mask[0],
-					//      core_mask[1], alg_op_type); todo
+					//      core_mask[1], alg_op_type); will be added later
 	else if (alg_op_type == ECDH_ASYNC_GEN || alg_op_type == ECDH_ASYNC_COMPUTE ||
 		alg_op_type == ECDSA_ASYNC_SIGN || alg_op_type == ECDSA_ASYNC_VERF ||
 		alg_op_type == X25519_ASYNC_GEN || alg_op_type == X25519_ASYNC_COMPUTE ||
 		alg_op_type == X448_ASYNC_GEN || alg_op_type == X448_ASYNC_COMPUTE)
 		//return ecc_async_test(thread_num, core_mask[0],
-		//      core_mask[1], alg_op_type); todo
+		//      core_mask[1], alg_op_type); will be added later
 		return 0;
 	else
 		return -1; /* to extend other test samples */
