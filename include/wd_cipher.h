@@ -94,16 +94,19 @@ struct wd_cipher_req {
  */
 extern int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched);
 extern void wd_cipher_uninit(void);
+
 /**
  * wd_cipher_alloc_sess() Allocate a wd cipher session
  * @ setup Parameters to setup this session.
  */
 extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
+
 /**
  * wd_cipher_free_sess()
  * @ sess, need to be freed sess
  */
 extern void wd_cipher_free_sess(handle_t h_sess);
+
 /**
  * wd_cipher_set_key() Set cipher key to cipher msg.
  * @sess: wd cipher sess.
@@ -111,6 +114,7 @@ extern void wd_cipher_free_sess(handle_t h_sess);
  * @key_len: cipher key length.
  */
 extern int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
+
 /**
  * wd_do_cipher_sync()/ async() Syn/asynchronous cipher operation
  * @sess: wd cipher session
@@ -118,6 +122,7 @@ extern int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
  */
 extern int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req);
 extern int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req);
+
 /**
  * wd_cipher_poll_ctx() poll operation for asynchronous operation
  * @ctx: wd cipher context, the ctx which whill be polled.
@@ -125,6 +130,7 @@ extern int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req);
  * @count: how many respondings this poll has to get.
  */
 extern int wd_cipher_poll_ctx(handle_t ctx, __u32 expt, __u32* count);
+
 /**
  * wd_cipher_poll() Poll finished request.
  * this function will call poll_policy function which is registered to wd cipher
