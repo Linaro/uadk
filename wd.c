@@ -592,7 +592,7 @@ int wd_wait(handle_t h_ctx, __u16 ms)
 	ret = poll(fds, 1, ms);
 	if (ret == -1)
 		return -errno;
-	return ret;
+	return 0;
 }
 
 int wd_is_nosva(handle_t h_ctx)
