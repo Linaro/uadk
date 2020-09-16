@@ -176,6 +176,11 @@ int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	__u64 recv_count = 0;
 	int ret;
 
+	if (unlikely(!h_ctx || !count)) {
+		WD_ERR("invalid, comp poll input ctx or count is NULL\n");
+		return -EINVAL;
+	}
+
 	do {
 		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
 		if (ret < 0) {
@@ -411,7 +416,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			avail_in = strm_req.src_len;
 			do {
 				if (strm_req.src_len == 0 && strm_req.last == 1) {
-				dbg("append_store, src_len = %d, dst_len =%d\n", req->src_len, req->dst_len);
+					dbg("append_store, src_len = %d, dst_len =%d\n", req->src_len, req->dst_len);
 					ret = append_store_block(h_sess, &strm_req);
 					req->dst_len += strm_req.dst_len;
 					req->status = 0;
@@ -422,8 +427,11 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 					return -ENOMEM;
 				strm_req.dst_len = avail_out;
 				ret = wd_do_comp_strm(h_sess, &strm_req);
-				if (ret < 0)
+				if (ret < 0 || strm_req.status == WD_IN_EPARA) {
+					WD_ERR("wd comp, invalid or incomplete deflate data! ret(%d), req.status(%d)\n",
+						ret, strm_req.status);
 					return ret;
+				}
 				req->dst_len += strm_req.dst_len;
 				strm_req.dst += strm_req.dst_len;
 				dbg("do, compstrm end, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
@@ -453,8 +461,11 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 				}
 				strm_req.dst_len = avail_out;
 				ret = wd_do_comp_strm(h_sess, &strm_req);
-				if (ret < 0)
+				if (ret < 0 || strm_req.status == WD_IN_EPARA) {
+					WD_ERR("wd decomp, invalid or incomplete deflate data! ret(%d), req.status(%d)\n",
+						ret, strm_req.status);
 					return ret;
+				}
 				req->dst_len += strm_req.dst_len;
 				strm_req.dst += strm_req.dst_len;
 				dbg("do, decompstrm end, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
@@ -542,11 +553,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	req->status = resp_msg.req.status;
 
 	sess->stream_pos = WD_COMP_STREAM_OLD;
-
-	if (req->status == WD_IN_EPARA) {
-		WD_ERR("wd comp, invalid or incomplete deflate data!\n");
-		return -EINVAL;
-	}
 
 	return 0;
 }

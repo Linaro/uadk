@@ -136,6 +136,8 @@ struct hisi_zip_sqe {
 #define lower_32_bits(addr) ((__u32)((__u64)(addr)))
 #define upper_32_bits(addr) ((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
 
+#define HZ_MAX_SIZE (8 * 1024 * 1024)
+
 struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
 };
@@ -193,6 +195,15 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 	__u8 state;
 	int ret;
 
+	if (unlikely(msg->req.src_len > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: out of range in_len(%u)!\n", msg->req.src_len);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > HZ_MAX_SIZE)) {
+		WD_ERR("warning: out of range avail_out(%u), will set 8MB size max!\n", msg->avail_out);
+		msg->avail_out = HZ_MAX_SIZE;
+	}
 	in_size = msg->req.src_len;
 	src = msg->req.src;
 	dst = msg->req.dst;
@@ -248,10 +259,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
 	sqe.input_data_length = in_size;
-	if (msg->avail_out > MIN_AVAILOUT_SIZE)
-		sqe.dest_avail_out = msg->avail_out;
-	else
-		sqe.dest_avail_out = MIN_AVAILOUT_SIZE;
+	sqe.dest_avail_out = msg->avail_out;
 	if (msg->ctx_buf) {
 		/* ctx_dwx uses 4 BYTES */
 		sqe.ctx_dw0 = *(__u32 *)msg->ctx_buf;
@@ -329,10 +337,8 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	/* last block no space, need resend null size req */
 	if (ctx_st == HZ_DECOMP_NO_SPACE)
 		recv_msg->req.status = WD_DECOMP_NEED_AGAIN;
-	if (ctx_st == HZ_DECOMP_BLK_NOSTART)
-		recv_msg->req.status = WD_IN_EPARA;
 
-	dbg("lst =%d, ctx_st=0x%x, status=0x%x, alg=%u\n", lstblk, ctx_st, status, type);
+	dbg("lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u\n", lstblk, ctx_st, status, type);
 	if (lstblk && (status == HZ_DECOMP_END))
 		recv_msg->req.status = WD_DECOMP_END;
 
