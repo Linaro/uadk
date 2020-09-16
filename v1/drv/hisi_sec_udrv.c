@@ -727,7 +727,7 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	ret = cipher_para_check(msg);
 	if (ret) {
-		WD_ERR("Invalid cipher alg = %d and mode = %d combination\n",
+		WD_ERR("Invalid cipher alg = %hhu and mode = %hhu combination\n",
 			msg->alg, msg->mode);
 		return ret;
 	}
@@ -765,7 +765,7 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	ret = cipher_para_check(msg);
 	if (ret) {
-		WD_ERR("Invalid cipher alg = %d and mode = %d combination\n",
+		WD_ERR("Invalid cipher alg = %hhu and mode = %hhu combination\n",
 			msg->alg, msg->mode);
 		return ret;
 	}
@@ -1324,7 +1324,7 @@ int qm_parse_cipher_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!cipher_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -1356,7 +1356,7 @@ int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!cipher_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -1438,7 +1438,7 @@ int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!digest_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -1758,7 +1758,7 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	ret = aead_para_check(msg);
 	if (ret) {
-		WD_ERR("Invalid aead cipher alg = %d and mode = %d combination\n",
+		WD_ERR("Invalid aead cipher alg = %hhu and mode = %hhu combination\n",
 			msg->calg, msg->cmode);
 		return ret;
 	}
@@ -1834,7 +1834,7 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!aead_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -1891,7 +1891,7 @@ int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!digest_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -2142,7 +2142,7 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	ret = aead_para_check(msg);
 	if (ret) {
-		WD_ERR("Invalid aead cipher alg = %d and mode = %d combination\n",
+		WD_ERR("Invalid aead cipher alg = %hhu and mode = %hhu combination\n",
 			msg->calg, msg->cmode);
 		return ret;
 	}
@@ -2217,7 +2217,7 @@ int qm_parse_aead_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!aead_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 

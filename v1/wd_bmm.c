@@ -162,7 +162,7 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *p)
 	 */
 #define NUM_TIMES(x)	(87 * (x) / 100)
 	if (dma_num <= NUM_TIMES(p->setup.block_num)) {
-		WD_ERR("dma_num = %d, not enough.\n", dma_num);
+		WD_ERR("dma_num = %u, not enough.\n", dma_num);
 		return -WD_EINVAL;
 	}
 
