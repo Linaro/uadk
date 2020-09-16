@@ -78,7 +78,7 @@ int wd_alloc_ctx_id(struct wd_queue *q, int max_num)
 		j = ctx_id % BYTE_TO_BIT;
 	}
 
-	qinfo->ctx_id[i] |= 0x1 << j;
+	qinfo->ctx_id[i] |= 0x1u << j;
 
 	return ctx_id + 1;
 }

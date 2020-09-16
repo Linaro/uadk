@@ -255,7 +255,7 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	struct wcrypto_rsa_ctx *c = ctx;
 	struct wd_mm_br *br;
 	int kg_out_size;
-	int kz;
+	__u32 kz;
 
 	if (!c) {
 		WD_ERR("ctx null at new rsa key gen out!\n");
@@ -405,7 +405,7 @@ static void put_rsa_cookie(struct wcrypto_rsa_ctx *ctx, struct wcrypto_rsa_cooki
 	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
 }
 
-static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, int ksz)
+static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, __u32 ksz)
 {
 	int hlf_ksz = CRT_PARAM_SZ(ksz);
 
@@ -422,7 +422,7 @@ static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, int ksz)
 	pkey2->key_size = ksz;
 }
 
-static void init_pkey1(struct wcrypto_rsa_prikey1 *pkey1, int ksz)
+static void init_pkey1(struct wcrypto_rsa_prikey1 *pkey1, __u32 ksz)
 {
 	pkey1->d.data = (char *)pkey1->data;
 	pkey1->n.data = pkey1->d.data + ksz;
@@ -431,7 +431,7 @@ static void init_pkey1(struct wcrypto_rsa_prikey1 *pkey1, int ksz)
 	pkey1->key_size = ksz;
 }
 
-static void init_pubkey(struct wcrypto_rsa_pubkey *pubkey, int ksz)
+static void init_pubkey(struct wcrypto_rsa_pubkey *pubkey, __u32 ksz)
 {
 	pubkey->e.data = (char *)pubkey->data;
 	pubkey->n.data = pubkey->e.data + ksz;

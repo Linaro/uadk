@@ -308,7 +308,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 
 	if (unlikely(!recv_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -353,7 +353,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 
 	if (unlikely(!recv_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
@@ -514,7 +514,7 @@ int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u64 dma_addr;
 
 	if (unlikely(!recv_msg)) {
-		WD_ERR("info->req_cache is null at index:%d\n", i);
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 

@@ -199,11 +199,12 @@ static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 
 static int qm_fill_rsa_genkey_in(struct wcrypto_rsa_kg_in *genkey)
 {
-	struct wd_dtb e, q, p;
+	struct wd_dtb e = {0};
+	struct wd_dtb q = {0};
+	struct wd_dtb p = {0};
 	int ret;
 
 	wcrypto_get_rsa_kg_in_params(genkey, &e, &q, &p);
-
 	ret = qm_crypto_bin_to_hpre_bin(e.data, (const char *)e.data,
 				e.bsize, e.dsize);
 	if (ret) {
@@ -502,8 +503,8 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 				struct hisi_hpre_sqe *hw_msg)
 {
-	void *x, *p;
 	uintptr_t phy;
+	void *x, *p;
 	int ret;
 
 	x = msg->x_p;
@@ -573,8 +574,8 @@ static int qm_dh_out_transfer(struct wcrypto_dh_msg *msg)
 
 int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 {
-	struct hisi_hpre_sqe *hw_msg;
 	struct wcrypto_dh_msg *msg = message;
+	struct hisi_hpre_sqe *hw_msg;
 	struct wd_queue *q = info->q;
 	uintptr_t phy, sqe;
 	int ret;
@@ -626,8 +627,8 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_dh_msg *dh_msg = info->req_cache[i];
 	struct hisi_hpre_sqe *hw_msg = msg;
-	struct wd_queue *q = info->q;
 	__u64 dma_out, dma_in, dma_key;
+	struct wd_queue *q = info->q;
 	int ret;
 
 	ASSERT(dh_msg);
