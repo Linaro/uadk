@@ -23,6 +23,8 @@ enum wd_dh_op_type {
 struct wd_dh_sess_setup {
 	__u16 key_bits; /* DH key bites */
 	bool is_g2; /* is g2 mode or not */
+	__u8 numa_id; /* numa id binded by sess thread */
+	__u8 mode; /* rsa sync or async mode, denoted by enum wd_ctx_mode */
 };
 
 struct wd_dh_req {

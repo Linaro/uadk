@@ -66,6 +66,7 @@ struct wd_rsa_sess {
 	struct wd_rsa_pubkey *pubkey;
 	struct wd_rsa_prikey *prikey;
 	struct wd_rsa_sess_setup setup;
+	struct sched_key key;
 };
 
 struct msg_pool {
@@ -448,6 +449,14 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 		return -WD_EINVAL;
 	}
 
+	if (msg->req.op_type == WD_RSA_SIGN ||
+		msg->req.op_type == WD_RSA_VERIFY) {
+		if (unlikely(msg->req.src_bytes != sess->key_size)) {
+			WD_ERR("sign or verf src_bytes != key_size!\n");
+			return -WD_EINVAL;
+		}
+	}
+
 	msg->key = key;
 
 	return 0;
@@ -518,7 +527,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
 		return -EINVAL;
@@ -550,6 +559,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
 	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
+	struct wd_rsa_sess *sess_t = (struct wd_rsa_sess *)sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_rsa_msg *msg;
 	__u32 idx;
@@ -560,7 +570,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, 0);
+	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess_t->key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
 		return -EINVAL;
@@ -1024,6 +1034,9 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 		del_sess(sess);
 		return 0;
 	}
+
+	sess->key.mode = setup->mode;
+	sess->key.numa_id = setup->numa_id;
 
 	return (handle_t)sess;
 }
