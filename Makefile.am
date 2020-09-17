@@ -10,6 +10,9 @@ if WD_STATIC_DRV
 AM_CFLAGS+=-DWD_STATIC_DRV
 endif
 
+include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
+		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h
+
 lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libhisi_hpre.la \
 		libwd_crypto.la libhisi_sec.la
 
