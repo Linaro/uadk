@@ -33,28 +33,28 @@
 #include "wd_cipher.h"
 #include "hisi_zip_udrv.h"
 
-#define BD_TYPE_SHIFT 28
-#define STREAM_FLUSH_SHIFT 25
-#define MIN_AVAILOUT_SIZE 4096
-#define STREAM_POS_SHIFT 2
-#define STREAM_MODE_SHIFT 1
-#define WINDOWS_SIZE_SHIFT 12
+#define BD_TYPE_SHIFT			28
+#define STREAM_FLUSH_SHIFT		25
+#define STREAM_POS_SHIFT		2
+#define STREAM_MODE_SHIFT		1
+#define WINDOWS_SIZE_SHIFT		12
 
-#define HW_NEGACOMPRESS 0x0d
-#define HW_CRC_ERR 0x10
-#define HW_DECOMP_END 0x13
-#define HW_IN_DATA_DIF_CHECK_ERR 0xf
-#define HW_UNCOMP_DIF_CHECK_ERR 0x12
+#define HW_NEGACOMPRESS			0x0d
+#define HW_CRC_ERR			0x10
+#define HW_DECOMP_END			0x13
+#define HW_IN_DATA_DIF_CHECK_ERR	0xf
+#define HW_UNCOMP_DIF_CHECK_ERR		0x12
 
-#define HW_DECOMP_NO_SPACE 0x01
-#define HW_DECOMP_BLK_NOSTART 0x03
-#define HW_DECOMP_NO_CRC 0x04
-#define ZIP_DIF_LEN 8
-#define ZIP_PAD_LEN 56
-#define lower_32_bits(phy) ((__u32)((__u64)(phy)))
-#define upper_32_bits(phy) ((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
+#define HW_DECOMP_NO_SPACE		0x01
+#define HW_DECOMP_BLK_NOSTART		0x03
+#define HW_DECOMP_NO_CRC		0x04
+#define ZIP_DIF_LEN			8
+#define ZIP_PAD_LEN			56
+#define MAX_BUFFER_SIZE			0x800000
+#define lower_32_bits(phy)		((__u32)((__u64)(phy)))
+#define upper_32_bits(phy)		((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
 
-#define get_window_size(dw) (((dw) >> WINDOWS_SIZE_SHIFT) && 0xFF)
+#define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) && 0xFF)
 
 enum {
 	BD_TYPE,
@@ -179,6 +179,20 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(msg->in_size > MAX_BUFFER_SIZE)) {
+		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
+		       msg->avail_out);
+		msg->avail_out = MAX_BUFFER_SIZE;
+	}
+
+	sqe->input_data_length = msg->in_size;
+	sqe->dest_avail_out = msg->avail_out;
+
 	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
 	if (ret)
 		return ret;
@@ -195,11 +209,6 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
 		     (flush_type)) << STREAM_FLUSH_SHIFT;
-	sqe->input_data_length = msg->in_size;
-	if (msg->avail_out > MIN_AVAILOUT_SIZE)
-		sqe->dest_avail_out = msg->avail_out;
-	else
-		sqe->dest_avail_out = MIN_AVAILOUT_SIZE;
 	sqe->ctx_dw0 = msg->ctx_priv0;
 	sqe->ctx_dw1 = msg->ctx_priv1;
 	sqe->ctx_dw2 = msg->ctx_priv2;
@@ -231,6 +240,20 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(msg->in_size > MAX_BUFFER_SIZE)) {
+		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
+		       msg->avail_out);
+		msg->avail_out = MAX_BUFFER_SIZE;
+	}
+
+	sqe->input_data_length = msg->in_size;
+	sqe->dest_avail_out = msg->avail_out;
+
 	if (msg->op_type == WCRYPTO_DEFLATE) {
 		ret = fill_zip_window_size(sqe, msg);
 		if (ret) {
@@ -256,11 +279,6 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
 		     (flush_type)) << STREAM_FLUSH_SHIFT |
 		     BD_TYPE3 << BD_TYPE_SHIFT;
-	sqe->input_data_length = msg->in_size;
-	if (msg->avail_out > MIN_AVAILOUT_SIZE)
-		sqe->dest_avail_out = msg->avail_out;
-	else
-		sqe->dest_avail_out = MIN_AVAILOUT_SIZE;
 	sqe->ctx_dw0 = msg->ctx_priv0;
 	sqe->ctx_dw1 = msg->ctx_priv1;
 	sqe->ctx_dw2 = msg->ctx_priv2;
