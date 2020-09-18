@@ -8,8 +8,19 @@
 # --with-openssl_dir=`pwd`/../openssl
 #
 
+COMPILE_TYPE="--disable-static --enable-shared"
+
+if [ $1 ]; then
+	if [ $1 = "--static" ]; then
+		echo "configure to static compile!"
+		COMPILE_TYPE="--enable-static --disable-shared --with-static_drv"
+	else
+		echo "invalid paramter, --static is static compile, compile to shared lib by default"
+	fi
+fi
+
 ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
 	--enable-perf=yes \
 	--host aarch64-linux-gnu \
 	--target aarch64-linux-gnu \
-	--program-prefix aarch64-linux-gnu-
+	$COMPILE_TYPE
