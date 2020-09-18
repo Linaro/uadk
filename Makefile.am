@@ -6,15 +6,13 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif
 
-lib_LTLIBRARIES=libwd.la libhisi_qm.la libwd_comp.la
-libwd_la_SOURCES=wd.c wd.h wd_sched.c wd_sched.h \
-		bmm.c bmm.h smm.c smm.h
+lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la
 
-libhisi_qm_la_SOURCES=drv/hisi_qm_udrv.c hisi_qm_udrv.h
-libhisi_qm_la_LIBADD= $(libwd_la_OBJECTS)
+libwd_la_SOURCES=wd.c wd.h
 
-libwd_comp_la_SOURCES=wd_comp.c wd_comp.h	\
-		drv/hisi_comp.c hisi_comp.h
-libwd_comp_la_LIBADD= $(libwd_la_OBJECTS)
+libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h
+libwd_comp_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 
-SUBDIRS=. test
+libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
+		hisi_qm_udrv.h wd_comp_drv.h
+libhisi_zip_la_LIBADD= -ldl
