@@ -1318,7 +1318,7 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 	else if (hw_msg->alg == HPRE_ALG_ECDSA_VERF)
 		ret = ecc_verf_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("ecc out trans fail alg %d error!\n", hw_msg->alg);
+		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
 
 	return ret;
 }
