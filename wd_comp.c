@@ -149,16 +149,14 @@ out:
 
 void wd_comp_uninit(void)
 {
-	void *priv;
+	void *priv = wd_comp_setting.priv;
 
-	/* driver uninit */
-	priv = wd_comp_setting.priv;
 	if (!priv)
 		return;
 
 	wd_comp_setting.driver->exit(priv);
 	free(priv);
-	priv = NULL;
+	wd_comp_setting.priv = NULL;
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
@@ -388,7 +386,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	}
 	if (req->op_type != WD_DIR_COMPRESS &&
 	    req->op_type != WD_DIR_DECOMPRESS) {
-		WD_ERR("invalid: op_type is %d!\n", req->op_type);
+		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
 		return -EINVAL;
 	}
 
@@ -397,7 +395,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	dbg("do, op_type = %d, in =%d, out_len =%d\n", req->op_type, req->src_len, req->dst_len);
+	dbg("do, op_type = %hhu, in =%u, out_len =%u\n", req->op_type, req->src_len, req->dst_len);
 
 	avail_out = req->dst_len > chunk ? chunk : req->dst_len;
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
@@ -416,25 +414,25 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			avail_in = strm_req.src_len;
 			do {
 				if (strm_req.src_len == 0 && strm_req.last == 1) {
-					dbg("append_store, src_len = %d, dst_len =%d\n", req->src_len, req->dst_len);
+					dbg("append_store, src_len = %u, dst_len =%u\n", req->src_len, req->dst_len);
 					ret = append_store_block(h_sess, &strm_req);
 					req->dst_len += strm_req.dst_len;
 					req->status = 0;
 					return 0;
 				}
-				dbg("do, compstrm start, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
+				dbg("do, compstrm start, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
 				if (req->dst_len + strm_req.src_len > total_avail_out)
 					return -ENOMEM;
 				strm_req.dst_len = avail_out;
 				ret = wd_do_comp_strm(h_sess, &strm_req);
 				if (ret < 0 || strm_req.status == WD_IN_EPARA) {
-					WD_ERR("wd comp, invalid or incomplete deflate data! ret(%d), req.status(%d)\n",
+					WD_ERR("wd comp, invalid or incomplete deflate data! ret(%d), req.status(%u)\n",
 						ret, strm_req.status);
 					return ret;
 				}
 				req->dst_len += strm_req.dst_len;
 				strm_req.dst += strm_req.dst_len;
-				dbg("do, compstrm end, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
+				dbg("do, compstrm end, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
 
 				strm_req.src += strm_req.src_len;
 				avail_in -= strm_req.src_len;
@@ -454,7 +452,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			strm_req.last = 0;
 			avail_in = strm_req.src_len;
 			do {
-				dbg("do, decompstrm start, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
+				dbg("do, decompstrm start, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
 				if (req->dst_len + strm_req.src_len > total_avail_out) {
 					dbg("err, outsize =%u, avail_out =%u, total_avail_out =%u\n", req->dst_len, avail_out, total_avail_out);
 					return -ENOMEM;
@@ -462,13 +460,13 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 				strm_req.dst_len = avail_out;
 				ret = wd_do_comp_strm(h_sess, &strm_req);
 				if (ret < 0 || strm_req.status == WD_IN_EPARA) {
-					WD_ERR("wd decomp, invalid or incomplete deflate data! ret(%d), req.status(%d)\n",
+					WD_ERR("wd decomp, invalid or incomplete deflate data! ret(%d), req.status(%u)\n",
 						ret, strm_req.status);
 					return ret;
 				}
 				req->dst_len += strm_req.dst_len;
 				strm_req.dst += strm_req.dst_len;
-				dbg("do, decompstrm end, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
+				dbg("do, decompstrm end, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
 
 				strm_req.src += strm_req.src_len;
 				avail_in -= strm_req.src_len;
@@ -478,7 +476,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		} while (strm_req.status != WD_DECOMP_END);
 	}
 
-	dbg("end, in =%d, out_len =%d\n", req->src_len, req->dst_len);
+	dbg("end, in =%u, out_len =%u\n", req->src_len, req->dst_len);
 
 	req->status = 0;
 
@@ -573,6 +571,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
+		return -EINVAL;
+	}
+
+	if (!req->cb || !req->cb_param) {
+		WD_ERR("invalid: req callback or param is NULL!\n");
 		return -EINVAL;
 	}
 
