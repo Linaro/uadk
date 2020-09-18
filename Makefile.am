@@ -11,7 +11,7 @@ AM_CFLAGS+=-DWD_STATIC_DRV
 endif
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libwd_crypto.la \
-		libhisi_sec.la
+		libhisi_sec.la libhisi_hpre.la
 
 libwd_la_SOURCES=wd.c wd.h
 
@@ -31,5 +31,9 @@ libwd_crypto_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 			hisi_qm_udrv.h wd_cipher_drv.h
 libhisi_sec_la_LIBADD= -ldl
+
+libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
+                hisi_qm_udrv.h wd_hpre_drv.h
+libhisi_hpre_la_LIBADD= -ldl
 
 SUBDIRS=. test
