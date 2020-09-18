@@ -43,6 +43,32 @@ struct wd_comp_setting {
 	struct wd_async_msg_pool pool;
 } wd_comp_setting;
 
+#ifdef WD_STATIC_DRV
+extern struct wd_comp_driver wd_comp_hisi_zip;
+static void wd_comp_set_static_drv(void)
+{
+	/*
+	 * Fix me: a parameter can be introduced to decide to choose
+	 * specific driver. Same as dynamic case.
+	 */
+	wd_comp_setting.driver = &wd_comp_hisi_zip;
+}
+#else
+static void __attribute__((constructor)) wd_comp_open_driver(void)
+{
+	void *driver;
+
+	driver = dlopen("libhisi_zip.so", RTLD_NOW);
+	if (!driver)
+		WD_ERR("Fail to open libhisi_zip.so\n");
+}
+#endif
+
+void wd_comp_set_driver(struct wd_comp_driver *drv)
+{
+	wd_comp_setting.driver = drv;
+}
+
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
@@ -74,6 +100,19 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("failed to set sched, ret = %d!\n", ret);
 		goto out;
 	}
+	/*
+	 * Fix me: ctx could be passed into wd_comp_set_static_drv to help to
+	 * choose static compiled vendor driver. For dynamic vendor driver,
+	 * wd_comp_open_driver will be called in the process of opening
+	 * libwd_comp.so to load related driver dynamic library. Vendor driver
+	 * pointer will be passed to wd_comp_setting.driver in the process of
+	 * opening of vendor driver dynamic library. A configure file could be
+	 * introduced to help to define which vendor driver lib should be
+	 * loaded.
+	 */
+#ifdef WD_STATIC_DRV
+	wd_comp_set_static_drv();
+#endif
 
 	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_comp_setting.pool,
