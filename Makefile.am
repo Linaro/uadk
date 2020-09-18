@@ -40,4 +40,8 @@ libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
 libhisi_hpre_la_LIBADD= $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 
+libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
+                hisi_qm_udrv.h wd_hpre_drv.h
+libhisi_hpre_la_LIBADD= -ldl
+
 SUBDIRS=. test
