@@ -6,6 +6,10 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif
 
+if WD_STATIC_DRV
+AM_CFLAGS+=-DWD_STATIC_DRV
+endif
+
 lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la
 
 libwd_la_SOURCES=wd.c wd.h
