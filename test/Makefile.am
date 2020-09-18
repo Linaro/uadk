@@ -1,1 +1,1 @@
-SUBDIRS=. hisi_zip_test
+SUBDIRS=. hisi_sec_test hisi_zip_test
