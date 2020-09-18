@@ -16,3 +16,5 @@ libwd_comp_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h
 libhisi_zip_la_LIBADD= -ldl
+
+SUBDIRS=. test
