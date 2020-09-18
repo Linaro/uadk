@@ -352,3 +352,5 @@ struct wd_comp_driver hisi_zip = {
 	.comp_send		= hisi_zip_comp_send,
 	.comp_recv		= hisi_zip_comp_recv,
 };
+
+WD_COMP_SET_DRIVER(hisi_zip);

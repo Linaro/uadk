@@ -55,6 +55,32 @@ struct wd_comp_setting {
 	struct wd_async_msg_pool pool;
 } wd_comp_setting;
 
+#ifdef WD_STATIC_DRV
+extern struct wd_comp_driver wd_comp_hisi_zip;
+static void wd_comp_set_static_drv(void)
+{
+	/*
+	 * Fix me: a parameter can be introduced to decide to choose
+	 * specific driver. Same as dynamic case.
+	 */
+	wd_comp_setting.driver = &wd_comp_hisi_zip;
+}
+#else
+static void __attribute__((constructor)) wd_comp_open_driver(void)
+{
+	void *driver;
+
+	driver = dlopen("libhisi_zip.so", RTLD_NOW);
+	if (!driver)
+		WD_ERR("Fail to open libhisi_zip.so\n");
+}
+#endif
+
+void wd_comp_set_driver(struct wd_comp_driver *drv)
+{
+	wd_comp_setting.driver = drv;
+}
+
 static void clone_ctx_to_internal(struct wd_ctx *ctx,
 				  struct wd_ctx_internal *ctx_in)
 {
