@@ -3,7 +3,7 @@
 #define __WD_DIGEST_H
 #include <dlfcn.h>
 
-#include "include/wd_alg_common.h"
+#include "wd_alg_common.h"
 #include "config.h"
 #include "wd.h"
 
