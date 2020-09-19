@@ -11,7 +11,8 @@ AM_CFLAGS+=-DWD_STATIC_DRV
 endif
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
-		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h
+		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
+		  include/uacce.h include/wd_alg_common.h
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libhisi_zip.la libhisi_hpre.la \
 		libwd_crypto.la libhisi_sec.la
@@ -33,9 +34,9 @@ libwd_crypto_la_LIBADD= $(libwd_la_OBJECTS) -ldl
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_cipher_drv.h
-libhisi_sec_la_LIBADD= -ldl
+libhisi_sec_la_LIBADD= $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
-libhisi_hpre_la_LIBADD= -ldl
+libhisi_hpre_la_LIBADD= $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 SUBDIRS=. test
