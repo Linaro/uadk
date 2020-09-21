@@ -2188,9 +2188,9 @@ new_test_again:
 				cur_tval.tv_usec - pdata->start_tval.tv_usec);
 
 		if (g_config.seconds){
-			speed = pdata->send_task_num / time_used * 1000000;
+			speed = pdata->recv_task_num / time_used * 1000000;
 		} else if (g_config.times) {
-			speed = 1 / (time_used / g_config.times) * 1000;
+			speed = pdata->recv_task_num * 1.0 * 1000 * 1000 / time_used;
 		}
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
 			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
@@ -3263,9 +3263,9 @@ new_test_again:
 				cur_tval.tv_usec - pdata->start_tval.tv_usec);
 
 		if (g_config.seconds) {
-			speed = pdata->send_task_num / time * 1000000;
+			speed = pdata->recv_task_num / time * 1000000;
 		} else if (g_config.times) {
-			speed = 1 / (time / g_config.times) * 1000;
+			speed = pdata->recv_task_num * 1.0 * 1000 * 1000 / time;
 		}
 		pdata->perf = speed;
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
@@ -3744,7 +3744,7 @@ try_do_again:
 		if (g_config.seconds) {
 			speed = pdata->recv_task_num / time_used * 1000000;
 		} else if (g_config.times) {
-			speed = 1 / (time_used / g_config.times) * 1000;
+			speed = pdata->recv_task_num * 1.0 * 1000 * 1000 / time_used;
 		}
 		HPRE_TST_PRT("<< Proc-%d, %d-TD: run %s %s mode %u key_bits at %0.3f ops!\n",
 			pid, thread_id, g_config.op, g_config.alg_mode, g_config.key_bits, speed);
@@ -4402,10 +4402,8 @@ static int parse_cmd_line(int argc, char *argv[])
 		}
         }
 
-        if (g_config.perf_test) {
+        if (g_config.perf_test)
         	g_config.check = 0;
-        	g_config.with_log = 0;
-        }
 
 	return ret;
 }
@@ -4507,7 +4505,7 @@ int main(int argc, char *argv[])
 	HPRE_TST_PRT(">> cycles = %u\n", g_config.times);
 	HPRE_TST_PRT(">> seconds = %u\n", g_config.seconds);
 	if (g_config.perf_test)
-		HPRE_TST_PRT(">> perf test, check and log closed\n");
+		HPRE_TST_PRT("perf test, check closed\n");
 
 	if (alg_op_type < MAX_RSA_SYNC_TYPE ||
 		alg_op_type == DH_GEN || alg_op_type == DH_COMPUTE ||
