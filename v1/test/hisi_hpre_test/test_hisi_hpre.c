@@ -3576,8 +3576,8 @@ try_again:
 			usleep(100);
 			goto try_again;
 		} else if (ret) {
-			//HPRE_TST_PRT("wcrypto_do_ecdsa fail!\n");
-			//return -1;
+			HPRE_TST_PRT("wcrypto_do_ecdsa fail!\n");
+			return -1;
 		}
 
 		if (tag)
