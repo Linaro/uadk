@@ -353,10 +353,10 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
 	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
 	struct wd_rsa_sess *sess_t = (struct wd_rsa_sess *)sess;
+	struct wd_rsa_msg *msg = NULL;
 	struct wd_ctx_internal *ctx;
-	struct wd_rsa_msg *msg;
-	__u32 index, idx;
-	int ret;
+	int ret, idx;
+	__u32 index;
 
 	if (unlikely(!req || !sess)) {
 		WD_ERR("input param NULL!\n");
@@ -376,10 +376,8 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	}
 
 	idx = wd_get_msg_from_pool(&wd_rsa_setting.pool, index, (void **)&msg);
-	if (idx < 0) {
-		WD_ERR("busy, failed to get msg from pool!\n");
+	if (idx < 0)
 		return -WD_EBUSY;
-	}
 
 	ret = fill_rsa_msg(msg, req, (struct wd_rsa_sess *)sess);
 	if (ret)
