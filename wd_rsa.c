@@ -422,19 +422,21 @@ int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		return -EINVAL;
 	}
 
-	pthread_mutex_unlock(&ctx->lock);
 	do {
+		pthread_mutex_lock(&ctx->lock);
 		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -EAGAIN) {
+			pthread_mutex_unlock(&ctx->lock);
 			break;
 		} else if (ret < 0) {
+			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_rsa_setting.pool, pos,
 					   recv_msg.tag);
-			pthread_mutex_unlock(&ctx->lock);
 			return ret;
 		}
+		pthread_mutex_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_rsa_setting.pool, pos,
 					  recv_msg.tag);
@@ -452,7 +454,6 @@ int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		wd_put_msg_to_pool(&wd_rsa_setting.pool, pos, recv_msg.tag);
 	} while (--expt);
 
-	pthread_mutex_unlock(&ctx->lock);
 	*count = rcv_cnt;
 
 	return ret;
