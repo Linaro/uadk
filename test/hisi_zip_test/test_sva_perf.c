@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Test performance of the SVA API
  */
@@ -10,14 +10,19 @@
 #include <time.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/resource.h>
-#include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <linux/perf_event.h>
 
 #include "test_lib.h"
+#include "sched_sample.h"
+
+struct priv_context {
+	struct hizip_test_info info;
+	struct priv_options *opts;
+};
 
 enum hizip_stats_variable {
 	ST_SEND,
@@ -58,23 +63,6 @@ enum hizip_stats_variable {
 
 struct hizip_stats {
 	double v[NUM_STATS];
-};
-
-struct priv_options {
-	struct test_options common;
-
-	int warmup_num;
-
-#define PERFORMANCE		(1UL << 0)
-#define TEST_ZLIB		(1UL << 1)
-#define TEST_THP		(1UL << 2)
-#define USE_POLL		(1UL << 3)
-	unsigned long option;
-
-#define STATS_NONE		0
-#define STATS_PRETTY		1
-#define STATS_CSV		2
-	unsigned long display_stats;
 };
 
 static int perf_event_open(struct perf_event_attr *attr,
@@ -193,7 +181,7 @@ static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 }
 
 static void enable_thp(struct priv_options *opts,
-		       struct hizip_test_context *ctx)
+		       struct hizip_test_info *info)
 {
 	int ret;
 	char *p;
@@ -229,13 +217,13 @@ static void enable_thp(struct priv_options *opts,
 		return;
 	}
 
-	ret = madvise(ctx->in_buf, ctx->total_len, MADV_HUGEPAGE);
+	ret = madvise(info->in_buf, info->total_len, MADV_HUGEPAGE);
 	if (ret) {
 		perror("madvise(MADV_HUGEPAGE)");
 		return;
 	}
 
-	ret = madvise(ctx->out_buf, ctx->total_len * EXPANSION_RATIO,
+	ret = madvise(info->out_buf, info->total_len * EXPANSION_RATIO,
 		      MADV_HUGEPAGE);
 	if (ret) {
 		perror("madvise(MADV_HUGEPAGE)");
@@ -246,54 +234,130 @@ out_err:
 	WD_ERR("THP unsupported?\n");
 }
 
+void stat_start(struct hizip_test_info *info)
+{
+	struct hizip_stats *stats = info->stats;
+
+	stats->v[ST_SEND] = 0;
+	stats->v[ST_RECV] = 0;
+	stats->v[ST_SEND_RETRY] = 0;
+	stats->v[ST_RECV_RETRY] = 0;
+
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.start_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.start_cputime);
+	getrusage(RUSAGE_SELF, &info->tv.start_rusage);
+}
+
+void stat_end(struct hizip_test_info *info)
+{
+	struct test_options *copts = info->opts;
+	struct hizip_stats *stats = info->stats;
+	int nr_fds = 0;
+	int *perf_fds = NULL;
+	double v;
+	unsigned long total_len;
+
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.end_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.end_cputime);
+	getrusage(RUSAGE_SELF, &info->tv.end_rusage);
+
+	stats->v[ST_SETUP_TIME] = (info->tv.start_time.tv_sec -
+				   info->tv.setup_time.tv_sec) * 1000000000 +
+				  info->tv.start_time.tv_nsec -
+				  info->tv.setup_time.tv_nsec;
+	stats->v[ST_RUN_TIME] = (info->tv.end_time.tv_sec -
+				 info->tv.start_time.tv_sec) * 1000000000 +
+				info->tv.end_time.tv_nsec -
+				info->tv.start_time.tv_nsec;
+
+	stats->v[ST_CPU_TIME] = (info->tv.end_cputime.tv_sec -
+				 info->tv.setup_cputime.tv_sec) * 1000000000 +
+				info->tv.end_cputime.tv_nsec -
+				info->tv.setup_cputime.tv_nsec;
+	stats->v[ST_USER_TIME] = (info->tv.end_rusage.ru_utime.tv_sec -
+				  info->tv.setup_rusage.ru_utime.tv_sec) *
+				 1000000 +
+				 info->tv.end_rusage.ru_utime.tv_usec -
+				 info->tv.setup_rusage.ru_utime.tv_usec;
+	stats->v[ST_SYSTEM_TIME] = (info->tv.end_rusage.ru_stime.tv_sec -
+				    info->tv.setup_rusage.ru_stime.tv_sec) *
+				   1000000 +
+				   info->tv.end_rusage.ru_stime.tv_usec -
+				   info->tv.setup_rusage.ru_stime.tv_usec;
+
+	stats->v[ST_MINFLT] = info->tv.end_rusage.ru_minflt -
+			      info->tv.setup_rusage.ru_minflt;
+	stats->v[ST_MAJFLT] = info->tv.end_rusage.ru_majflt -
+			      info->tv.setup_rusage.ru_majflt;
+
+	stats->v[ST_VCTX] = info->tv.end_rusage.ru_nvcsw -
+			    info->tv.setup_rusage.ru_nvcsw;
+	stats->v[ST_INVCTX] = info->tv.end_rusage.ru_nivcsw -
+			      info->tv.setup_rusage.ru_nivcsw;
+
+	stats->v[ST_SIGNALS] = info->tv.end_rusage.ru_nsignals -
+			       info->tv.setup_rusage.ru_nsignals;
+
+	/* check last loop is enough, same as below hizip_verify_output */
+	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
+					 info->total_out * 100;
+
+	total_len = copts->total_len * copts->compact_run_num;
+	stats->v[ST_SPEED] = (total_len * 1000) /
+				(1.024 * 1.024 * stats->v[ST_RUN_TIME]);
+
+	stats->v[ST_TOTAL_SPEED] = (total_len * 1000) /
+				   ((stats->v[ST_RUN_TIME] +
+				    stats->v[ST_SETUP_TIME]) * 1.024 * 1.024);
+
+	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
+
+	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
+	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
+	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
+}
+
 static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 {
-	int i, j;
-	double v;
 	int nr_fds;
 	int ret = 0;
 	int *perf_fds;
 	void *in_buf, *out_buf;
-	unsigned long total_len;
-	struct wd_scheduler sched = {0};
-	struct hizip_test_context ctx = {0}, ctx_save;
+	struct hizip_test_info info = {0};
 	struct test_options *copts = &opts->common;
-	struct timespec setup_time, start_time, end_time;
-	struct timespec setup_cputime, start_cputime, end_cputime;
-	struct rusage setup_rusage, start_rusage, end_rusage;
-	int stat_size = sizeof(*sched.stat) * copts->q_num;
+	struct wd_sched *sched = NULL;
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
 
-	ctx.opts = copts;
-	ctx.msgs = calloc(copts->req_cache_num, sizeof(*ctx.msgs));
-	if (!ctx.msgs)
+	info.stats = stats;
+	info.opts = copts;
+	info.popts = opts;
+	info.total_len = copts->total_len;
+
+	in_buf = info.in_buf = mmap_alloc(copts->total_len);
+	if (!in_buf)
 		return -ENOMEM;
 
-	ctx.total_len = copts->total_len;
-
-	in_buf = ctx.in_buf = mmap_alloc(copts->total_len);
-	if (!in_buf) {
-		ret = -ENOMEM;
-		goto out_with_msgs;
-	}
-
-	out_buf = ctx.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
+	info.req.src = in_buf;
+	info.req.dst = out_buf;
+	info.req.src_len = copts->total_len;
+	info.req.dst_len = copts->total_len * EXPANSION_RATIO;
 
-	enable_thp(opts, &ctx);
+	enable_thp(opts, &info);
 
-	hizip_prepare_random_input_data(&ctx);
+	hizip_prepare_random_input_data(&info);
 
 	perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds);
 
-	clock_gettime(CLOCK_MONOTONIC_RAW, &setup_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &setup_cputime);
-	getrusage(RUSAGE_SELF, &setup_rusage);
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info.tv.setup_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info.tv.setup_cputime);
+	getrusage(RUSAGE_SELF, &info.tv.setup_rusage);
 
 	if (opts->option & PERFORMANCE) {
 		/* hack:
@@ -301,116 +365,31 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		 * instead of later in the SMMU
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
-		 * Instead of memset the whole area, simply memset bytes of each page
-		 * can achieve the same result: iopf = 0
 		 */
-		long page_size = sysconf(_SC_PAGESIZE);
-		size_t len = copts->total_len * EXPANSION_RATIO;
-		void *buf = out_buf;
-
-		for (int i = 0; i < len / page_size; i++) {
-			memset(buf, 0, 1);
-			buf = buf + page_size;
-		}
+		memset(out_buf, 0, copts->total_len * EXPANSION_RATIO);
 	}
 
-	if (opts->option & USE_POLL)
-		sched.poll = true;
-
 	if (!(opts->option & TEST_ZLIB)) {
-		ret = hizip_test_init(&sched, copts, &default_test_ops, &ctx);
+		ret = init_ctx_config(copts, sched, &info);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
 		}
 	}
-	if (sched.qs)
-		ctx.is_nosva = wd_is_nosva(sched.qs[0]);
 
-	ctx_save = ctx;
+	info.stats = stats;
+	create_threads(&info);
+	attach_threads(&info);
 
-	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_cputime);
-	getrusage(RUSAGE_SELF, &start_rusage);
+	ret = hizip_verify_random_output(out_buf, copts, &info);
 
-	for (j = 0; j < copts->compact_run_num; j++) {
-		ctx = ctx_save;
-
-		if (opts->option & TEST_ZLIB)
-			ret = zlib_deflate(ctx.out_buf, ctx.total_len *
-					   EXPANSION_RATIO, ctx.in_buf,
-					   ctx.total_len, &ctx.total_out);
-		else
-			ret = hizip_test_sched(&sched, copts, &ctx);
-		if (ret < 0) {
-			WD_ERR("hizip test fail with %d\n", ret);
-			goto out_with_fini;
-		}
-
-		for (i = 0; i < copts->q_num && sched.stat; i++) {
-			stats->v[ST_SEND] += sched.stat[i].send;
-			stats->v[ST_RECV] += sched.stat[i].recv;
-			stats->v[ST_SEND_RETRY] += sched.stat[i].send_retries;
-			stats->v[ST_RECV_RETRY] += sched.stat[i].recv_retries;
-			memset(sched.stat, 0, stat_size);
-		}
-	}
-
-	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_cputime);
-	getrusage(RUSAGE_SELF, &end_rusage);
-
-	stats->v[ST_SETUP_TIME] = (start_time.tv_sec - setup_time.tv_sec) *
-		1000000000 + start_time.tv_nsec - setup_time.tv_nsec;
-	stats->v[ST_RUN_TIME] = (end_time.tv_sec - start_time.tv_sec) *
-		1000000000 + end_time.tv_nsec - start_time.tv_nsec;
-
-	stats->v[ST_CPU_TIME] = (end_cputime.tv_sec - setup_cputime.tv_sec) *
-		1000000000 + end_cputime.tv_nsec - setup_cputime.tv_nsec;
-	stats->v[ST_USER_TIME] = (end_rusage.ru_utime.tv_sec -
-				  setup_rusage.ru_utime.tv_sec) * 1000000 +
-		end_rusage.ru_utime.tv_usec - setup_rusage.ru_utime.tv_usec;
-	stats->v[ST_SYSTEM_TIME] = (end_rusage.ru_stime.tv_sec -
-				    setup_rusage.ru_stime.tv_sec) * 1000000 +
-		end_rusage.ru_stime.tv_usec - setup_rusage.ru_stime.tv_usec;
-
-	stats->v[ST_MINFLT] = end_rusage.ru_minflt - setup_rusage.ru_minflt;
-	stats->v[ST_MAJFLT] = end_rusage.ru_majflt - setup_rusage.ru_majflt;
-
-	stats->v[ST_VCTX] = end_rusage.ru_nvcsw - setup_rusage.ru_nvcsw;
-	stats->v[ST_INVCTX] = end_rusage.ru_nivcsw - setup_rusage.ru_nivcsw;
-
-	stats->v[ST_SIGNALS] = end_rusage.ru_nsignals - setup_rusage.ru_nsignals;
-
-	/* check last loop is enough, same as below hizip_verify_output */
-	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
-					 ctx.total_out * 100;
-
-	total_len = copts->total_len * copts->compact_run_num;
-	stats->v[ST_SPEED] = total_len / (stats->v[ST_RUN_TIME] / 1000) /
-		1024 / 1024 * 1000 * 1000;
-
-	stats->v[ST_TOTAL_SPEED] = total_len /
-		((stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME]) / 1000) /
-		1024 / 1024 * 1000 * 1000;
-
-	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
-
-	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
-	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
-	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
-
-	ret = hizip_verify_random_output(out_buf, copts, &ctx);
-
-out_with_fini:
+	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
-		hizip_test_fini(&sched, copts);
+		uninit_config(&info, sched);
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
-out_with_msgs:
-	free(ctx.msgs);
 	return ret;
 }
 
@@ -532,16 +511,205 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 	printf("\n");
 }
 
+static int run_one_child(struct priv_options *opts)
+{
+	int i;
+	int ret = 0;
+	void *in_buf, *out_buf;
+	struct priv_context priv_ctx;
+	struct hizip_test_info save_info;
+	struct hizip_test_info *info = &priv_ctx.info;
+	struct test_options *copts = &opts->common;
+	struct wd_sched *sched;
+
+	memset(&priv_ctx, 0, sizeof(struct priv_context));
+	priv_ctx.opts = opts;
+
+	info->opts = copts;
+
+	info->total_len = copts->total_len;
+
+	in_buf = info->in_buf = mmap_alloc(copts->total_len);
+	if (!in_buf)
+		return -ENOMEM;
+
+	out_buf = info->out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	if (!out_buf) {
+		ret = -ENOMEM;
+		goto out_with_in_buf;
+	}
+
+	info->req.src = in_buf;
+	info->req.dst = out_buf;
+	info->req.src_len = copts->total_len;
+	info->req.dst_len = copts->total_len * EXPANSION_RATIO;
+	hizip_prepare_random_input_data(info);
+
+	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
+	if (!sched) {
+		WD_ERR("sample_sched_alloc fail\n");
+		goto out_ctx;
+	}
+
+	ret = init_ctx_config(copts, sched, info);
+	if (ret < 0) {
+		WD_ERR("hizip init fail with %d\n", ret);
+		goto out_ctx;
+	}
+
+	if (opts->faults & INJECT_SIG_BIND)
+		kill(getpid(), SIGTERM);
+
+	save_info = *info;
+	for (i = 0; i < copts->compact_run_num; i++) {
+		*info = save_info;
+
+		ret = hizip_test_sched(sched, copts, info);
+		if (ret < 0) {
+			WD_ERR("hizip test fail with %d\n", ret);
+			break;
+		}
+	}
+
+	if (ret >= 0 && opts->faults & INJECT_TLB_FAULT) {
+		/*
+		 * Now unmap the buffers and retry the access. Normally we
+		 * should get an access fault, but if the TLB wasn't properly
+		 * invalidated, the access succeeds and corrupts memory!
+		 * This test requires small jobs, to make sure that we reuse
+		 * the same TLB entry between the tests. Run for example with
+		 * "-s 0x1000 -b 0x1000".
+		 */
+		ret = munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+		if (ret)
+			perror("unmap()");
+
+		/* A warning if the parameters might produce false positives */
+		if (copts->total_len > 0x54000)
+			fprintf(stderr, "NOTE: test might trash the TLB\n");
+
+		*info = save_info;
+		info->faulting = true;
+
+		ret = hizip_test_sched(sched, copts, info);
+		if (ret >= 0) {
+			WD_ERR("TLB test failed, broken invalidate! "
+			       "VA=%p-%p\n", out_buf, out_buf +
+			       copts->total_len * EXPANSION_RATIO - 1);
+			ret = -EFAULT;
+		} else {
+			printf("TLB test success\n");
+			ret = 0;
+		}
+		out_buf = NULL;
+	}
+
+	/* to do: wd_comp_uninit */
+
+	if (out_buf)
+		ret = hizip_verify_random_output(out_buf, copts, info);
+
+	uninit_config(info, sched);
+
+out_ctx:
+	if (out_buf)
+		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+out_with_in_buf:
+	munmap(in_buf, copts->total_len);
+	return ret;
+}
+
+static int run_bind_test(struct priv_options *opts)
+{
+	pid_t pid;
+	int i, ret;
+	pid_t *pids;
+	int nr_children = 0;
+	bool success = true;
+
+	if (!opts->children)
+		return run_one_child(opts);
+
+	pids = calloc(opts->children, sizeof(pid_t));
+	if (!pids)
+		return -ENOMEM;
+
+	for (i = 0; i < opts->children; i++) {
+		pid = fork();
+		if (pid < 0) {
+			WD_ERR("cannot fork: %d\n", errno);
+			success = false;
+			break;
+		} else if (pid > 0) {
+			/* Parent */
+			pids[nr_children++] = pid;
+			continue;
+		}
+
+		/* Child */
+		exit(run_one_child(opts));
+	}
+
+	dbg("%d children spawned\n", nr_children);
+	for (i = 0; i < nr_children; i++) {
+		int status;
+
+		pid = pids[i];
+
+		ret = waitpid(pid, &status, 0);
+		if (ret < 0) {
+			WD_ERR("wait(pid=%d) error %d\n", pid, errno);
+			success = false;
+			continue;
+		}
+
+		if (WIFEXITED(status)) {
+			ret = WEXITSTATUS(status);
+			if (ret) {
+				WD_ERR("child %d returned with %d\n",
+				       pid, ret);
+				success = false;
+			}
+		} else if (WIFSIGNALED(status)) {
+			ret = WTERMSIG(status);
+			WD_ERR("child %d killed by sig %d\n", pid, ret);
+			success = false;
+		} else {
+			WD_ERR("unexpected status for child %d\n", pid);
+			success = false;
+		}
+	}
+
+	free(pids);
+	return success ? 0 : -EFAULT;
+}
+
 static int run_test(struct priv_options *opts)
 {
 	int i;
 	int ret;
 	int n = opts->common.run_num;
 	int w = opts->warmup_num;
-	struct hizip_stats avg = {0};
-	struct hizip_stats std = {0};
-	struct hizip_stats variation = {0};
+	struct hizip_stats avg;
+	struct hizip_stats std;
+	struct hizip_stats variation;
 	struct hizip_stats stats[n];
+
+	memset(&avg , 0, sizeof(avg));
+	memset(&std , 0, sizeof(std));
+	memset(&variation , 0, sizeof(variation));
+
+	if (opts->children || opts->faults) {
+		for (i = 0; i < opts->common.run_num; i++) {
+			ret = run_bind_test(opts);
+			if (ret < 0)
+				return ret;
+		}
+
+		printf("SUCCESS\n");
+
+		return 0;
+	}
 
 	if (opts->display_stats == STATS_CSV)
 		output_csv_header();
@@ -551,6 +719,7 @@ static int run_test(struct priv_options *opts)
 		if (ret < 0)
 			return ret;
 	}
+
 	for (i = 0; i < n; i++) {
 		ret = run_one_test(opts, &stats[i]);
 		if (ret < 0)
@@ -617,28 +786,38 @@ static int run_test(struct priv_options *opts)
 	return 0;
 }
 
+static void handle_sigbus(int sig)
+{
+	    printf("SIGBUS!\n");
+	        _exit(0);
+}
+
 int main(int argc, char **argv)
 {
-	int opt;
-	int show_help = 0;
 	struct priv_options opts = {
 		.common = {
-			.alg_type	= GZIP,
-			.op_type	= DEFLATE,
-			.req_cache_num	= 4,
+			.alg_type	= WD_GZIP,
+			.op_type	= WD_DIR_COMPRESS,
 			.q_num		= 1,
 			.run_num	= 1,
 			.compact_run_num = 1,
+			.thread_num	= 0,
+			.sync_mode	= 0,
 			.block_size	= 512000,
 			.total_len	= opts.common.block_size * 10,
 			.verify		= false,
 			.verbose	= false,
+			.is_decomp	= false,
 		},
 		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
+		.children		= 0,
+		.faults			= 0,
 	};
+	int show_help = 0;
+	int opt;
 
-	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:o:w:")) != -1) {
+	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:o:w:k:r:")) != -1) {
 		switch (opt) {
 		case 'f':
 			if (strcmp(optarg, "none") == 0) {
@@ -663,9 +842,6 @@ int main(int argc, char **argv)
 			case 'z':
 				opts.option |= TEST_ZLIB;
 				break;
-			case 'i':
-				opts.option |= USE_POLL;
-				break;
 			default:
 				SYS_ERR_COND(1, "invalid argument to -o: '%s'\n", optarg);
 				break;
@@ -679,12 +855,35 @@ int main(int argc, char **argv)
 			if (opts.warmup_num < 0)
 				show_help = 1;
 			break;
+		case 'r':
+			opts.children = strtol(optarg, NULL, 0);
+			if (opts.children < 0)
+				show_help = 1;
+			break;
+		case 'k':
+			switch (optarg[0]) {
+			case 'b':
+				opts.faults |= INJECT_SIG_BIND;
+				break;
+			case 't':
+				opts.faults |= INJECT_TLB_FAULT;
+				break;
+			case 'w':
+				opts.faults |= INJECT_SIG_WORK;
+				break;
+			default:
+				SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
+				break;
+			}
+			break;
 		default:
 			show_help = parse_common_option(opt, optarg,
 							&opts.common);
 			break;
 		}
 	}
+
+	signal(SIGBUS, handle_sigbus);
 
 	hizip_test_adjust_len(&opts.common);
 
@@ -698,7 +897,12 @@ int main(int argc, char **argv)
 		     "                  'perf' prefaults the output pages\n"
 		     "                  'thp' try to enable transparent huge pages\n"
 		     "                  'zlib' use zlib instead of the device\n"
-		     "  -w <num>      number of warmup runs\n",
+		     "  -w <num>      number of warmup runs\n"
+		     "  -r <children> number of children to create\n"
+		     "  -k <mode>     kill thread\n"
+		     "                  'bind' kills the process after bind\n"
+		     "                  'tlb' tries to access an unmapped buffer\n"
+		     "                  'work' kills the process while the queue is working\n",
 		     argv[0]
 		    );
 

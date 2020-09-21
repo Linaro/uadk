@@ -5,7 +5,7 @@
 
 Make sure you have registered in the mailing list "linux-accelerators@lists.ozlabs.org".
 
-Clone WarpDrive from [Github](https://github.com/Linaro/warpdrive).
+Clone UADK from [Github](https://github.com/Linaro/uadk).
 
 ## Lincense
 
@@ -23,10 +23,10 @@ quickly read through the list of headers) and maintainability.
 		     *stddef.h* and *string.h*.
 
 **Library** includes: Head files under the *include/* directory within
-		      WarpDrive.
+		      UADK.
 
 **Internal** includes: Head files relating to an internal component within
-		       WarpDrive.
+		       UADK.
 
 Within each group, **\#include** statements must be in alphabetical order,
 taking both the file and directory names into account.
@@ -96,12 +96,12 @@ Clone kernel from [Github](https://github.com/Linaro/linux-kernel-warpdrive).
    Current working branch will be changed to Release branch once the mainline
    kernel which current working branch is based on is released.
 
-### WarpDrive Branch
+### UADK Branch
 
  Current working branch: master
 
    tags like wd-X.X will be added to match with kernel release branch
-   uacce-devel-X.X. However, WarpDrive should be alway compatible with
+   uacce-devel-X.X. However, UADK should be alway compatible with
    former kernel versions.
 
 ## Main maintainers

@@ -64,6 +64,12 @@ AC_ARG_WITH(log_file,
 AC_SUBST(with_log_file)
 AM_CONDITIONAL([WITH_LOG_FILE], [test -n "$with_log_file"])
 
+AC_ARG_WITH(static_drv,
+	AS_HELP_STRING([--with-static_drv], [File to write log]),
+	WD_STATIC_DRV=$withvar, WD_STATIC_DRV=)
+AC_SUBST(with_static_drv)
+AM_CONDITIONAL([WD_STATIC_DRV], [test -n "$with_static_drv"])
+
 AC_ARG_WITH(openssl_dir,
 	AS_HELP_STRING([--with-openssl_dir], [Path to OpenSSL source code]))
 AC_SUBST(with_openssl_dir)
@@ -90,5 +96,7 @@ AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
 AC_CONFIG_FILES([Makefile
                  test/Makefile
-                 test/hisi_hpre_test/Makefile])
+		 test/hisi_hpre_test/Makefile
+		 test/hisi_sec_test/Makefile
+                 test/hisi_zip_test/Makefile])
 AC_OUTPUT

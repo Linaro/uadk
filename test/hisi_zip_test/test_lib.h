@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: Apache-2.0
 #ifndef TEST_LIB_H_
 #define TEST_LIB_H_
 
@@ -6,11 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 #include <unistd.h>
 
-#include "hisi_qm_udrv.h"
-#include "wd_sched.h"
-#include "zip_usr_if.h"
+#include "wd_comp.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
@@ -30,68 +30,112 @@ do { \
 #define EXPANSION_RATIO	2
 
 struct test_options {
-#define ZLIB 0
-#define GZIP 1
 	int alg_type;
-
-#define DEFLATE 0
-#define INFLATE 1
 	int op_type;
 
 	/* bytes of data for a request */
 	int block_size;
-	int req_cache_num;
 	int q_num;
 	unsigned long total_len;
 
 #define MAX_RUNS	1024
 	int run_num;
+	/* tasks running in parallel */
 	int compact_run_num;
+
+	int thread_num;
+	/* 0: sync mode, 1: async mode */
+	int sync_mode;
 
 	bool verify;
 	bool verbose;
+	bool is_decomp;
 };
 
-struct hizip_test_context {
-	struct hisi_qp	*qp;
-	struct hisi_qm_capa capa;
+struct priv_options {
+	struct test_options common;
+
+	int warmup_num;
+
+#define PERFORMANCE		(1UL << 0)
+#define TEST_ZLIB		(1UL << 1)
+#define TEST_THP		(1UL << 2)
+	unsigned long option;
+
+#define STATS_NONE		0
+#define STATS_PRETTY		1
+#define STATS_CSV		2
+	unsigned long display_stats;
+
+	/* bind test case related below */
+	int children;
+
+#define INJECT_SIG_BIND		(1UL << 0)
+#define INJECT_SIG_WORK		(1UL << 1)
+#define INJECT_TLB_FAULT	(1UL << 2)
+	unsigned long faults;
+
+};
+
+struct hizip_test_info {
 	struct test_options *opts;
 	char *in_buf;
 	char *out_buf;
 	unsigned long total_len;
-	struct hisi_zip_sqe *msgs;
 	int is_nosva;
 	size_t total_out;
+	struct uacce_dev_list *list;
+	handle_t h_sess;
+	struct wd_ctx_config ctx_conf;
+	struct wd_comp_req req;
+	int thread_nums;
+	int thread_attached;
+	pthread_t *threads;
+	struct hizip_stats *stats;
+	struct priv_options *popts;
+	/* statistic */
+	struct {
+		int send;
+		int send_retries;
+		int recv;
+		int recv_retries;
+	} *stat;
+	struct {
+		struct timespec setup_time;
+		struct timespec start_time;
+		struct timespec end_time;
+		struct timespec setup_cputime;
+		struct timespec start_cputime;
+		struct timespec end_cputime;
+		struct rusage setup_rusage;
+		struct rusage start_rusage;
+		struct rusage end_rusage;
+	} tv;
 	/* Test is expected to fail */
 	bool faulting;
 };
 
-/* Default ops */
-void hizip_test_default_init_cache(struct wd_scheduler *sched, int i,
-				   void *priv);
-int hizip_test_default_input(struct wd_msg *msg, void *priv);
-int hizip_test_default_output(struct wd_msg *msg, void *priv);
+void stat_start(struct hizip_test_info *info);
+void stat_end(struct hizip_test_info *info);
+void *send_thread_func(void *arg);
+int create_threads(struct hizip_test_info *info);
+int attach_threads(struct hizip_test_info *info);
+int hizip_test_sched(struct wd_sched *sched,
+		     struct test_options *opts,
+		     struct hizip_test_info *info
+		     );
+int init_ctx_config(struct test_options *opts,
+		    struct wd_sched *sched,
+		    void *priv
+		    );
+void uninit_config(void *priv, struct wd_sched *sched);
 
-struct test_ops {
-	void (*init_cache)(struct wd_scheduler *sched, int i, void *priv);
-	int (*input)(struct wd_msg *msg, void *priv);
-	int (*output)(struct wd_msg *msg, void *priv);
-};
-
-extern struct test_ops default_test_ops;
-
-int hizip_test_init(struct wd_scheduler *sched, struct test_options *opts,
-		    struct test_ops *ops, void *priv);
-int hizip_test_sched(struct wd_scheduler *sched, struct test_options *opts,
-		     struct hizip_test_context *priv);
-void hizip_test_fini(struct wd_scheduler *sched, struct test_options *opts);
-
-void hizip_prepare_random_input_data(struct hizip_test_context *ctx);
+void hizip_prepare_random_input_data(struct hizip_test_info *info);
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
-			       struct hizip_test_context *ctx);
+			       struct hizip_test_info *info);
 
 void *mmap_alloc(size_t len);
-
+int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 #ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
@@ -128,7 +172,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvz"
+#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvzt:m:d"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -140,6 +184,9 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\
 	"  -z            test zlib algorithm, default gzip\n"		\
+	"  -t <num>      number of thread per process\n"		\
+	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
+	"  -d		 test decompression, default compression\n"	\
 	"\n\n"
 
 int parse_common_option(const char opt, const char *optarg,

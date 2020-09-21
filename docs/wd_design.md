@@ -1,5 +1,5 @@
 
-# WarpDrive Architecture Design
+# UADK Architecture Design
 
 
 | Version | Author | Changes |
@@ -15,7 +15,7 @@
 |         |                |   scenario since it's not important. |
 |         |                |2) Remove multiple queue since it's transparent to |
 |         |                |   user application. |
-|  0.94   |                |1) Split WarpDrive into UACCE, libwd, algorithm |
+|  0.94   |                |1) Split UADK into UACCE, libwd, algorithm |
 |         |                |   libraries and libaffinity. Change doc according |
 |         |                |   to this notion. |
 |         |                |2) Illustrate how to select hardware accelerator. |
@@ -87,8 +87,8 @@
 
 ## Overview
 
-WarpDrive is a framework for user application to access hardware accelerator 
-in a unified, secure, and efficient way. WarpDrive is comprised of UACCE, 
+UADK is a framework for user application to access hardware accelerator
+in a unified, secure, and efficient way. UADK is comprised of UACCE,
 libwd and many other algorithm libraries for different applications.
 
 ![overview](./wd_overview.png)
@@ -111,17 +111,17 @@ This document focuses on the design of libwd and algorithm libraries.
 
 ## Based Technology
 
-WarpDrive relies on SVA (Shared Virtual Address) that needs to be supported 
+UADK relies on SVA (Shared Virtual Address) that needs to be supported
 by IOMMU.
 
-In WarpDrive framework, virtual address could be used by vendor driver and 
+In UADK framework, virtual address could be used by vendor driver and
 application directly. And it's actually the same virtual address, memory copy 
 could be avoided between vendor driver and application with SVA.
 
 
 ### UACCE user space API
 
-As the kernel driver of WarpDrive, UACCE offers a set of APIs between kernel 
+As the kernel driver of UADK, UACCE offers a set of APIs between kernel
 and user space. UACCE is introduced in "uacce.rst" and "sysfs-driver-uacce" 
 in kernel documents.
 
@@ -141,7 +141,7 @@ context to user space.
 
 Hardware accelerator communicates with CPU by MMIO and contexts. Libwd helper 
 functions provide the interface that vendor driver could access memory from 
-WarpDrive. And libwd is only accessed by vendor driver.
+UADK. And libwd is only accessed by vendor driver.
 
 
 ### Context
@@ -151,7 +151,7 @@ accelerator and CPU. When a vendor driver wants to access resources of an
 accelerator, a context is the requisite resource.
 
 UACCE creates a char dev for each registered hardware device. Once the char dev 
-is opened by WarpDrive, a handle of context is created. Vendor driver or 
+is opened by UADK, a handle of context is created. Vendor driver or
 application could refer to the context by the handle.
 
 ```
@@ -702,7 +702,7 @@ context and free hardware.
 
 ## Extra Helper functions
 
-NOSVA is a special scenario in WarpDrive framework. It means that SVA feature 
+NOSVA is a special scenario in UADK framework. It means that SVA feature
 is disabled. Because of this, vendor driver can't access the same virtual 
 address from application. Memory copy has to be used in NOSVA scenario.
 
