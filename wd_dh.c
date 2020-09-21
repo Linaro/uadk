@@ -10,6 +10,7 @@
 #include "config.h"
 #include "include/drv/wd_dh_drv.h"
 #include "wd_dh.h"
+#include "wd_util.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define DH_BALANCE_THRHD		1280
@@ -26,18 +27,6 @@ struct wd_dh_sess {
 	struct wd_dtb g;
 	struct wd_dh_sess_setup setup;
 	struct sched_key key;
-};
-
-struct msg_pool {
-	struct wd_dh_msg msg[WD_POOL_MAX_ENTRIES];
-	int used[WD_POOL_MAX_ENTRIES];
-	int head;
-	int tail;
-};
-
-struct wd_async_msg_pool {
-	struct msg_pool *pools;
-	__u32 pool_nums;
 };
 
 static struct wd_dh_setting {
@@ -76,210 +65,6 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 	wd_dh_setting.driver = drv;
 }
 
-static void clone_ctx_to_internal(struct wd_ctx *ctx,
-				  struct wd_ctx_internal *ctx_in)
-{
-	ctx_in->ctx = ctx->ctx;
-	ctx_in->op_type = ctx->op_type;
-	ctx_in->ctx_mode = ctx->ctx_mode;
-}
-
-static int init_global_ctx_setting(struct wd_ctx_config *cfg)
-{
-	struct wd_ctx_internal *ctxs;
-	int i;
-
-	if (!cfg->ctx_num) {
-		WD_ERR("ctx_num error\n");
-		return -EINVAL;
-	}
-
-	ctxs = malloc(cfg->ctx_num * sizeof(struct wd_ctx_internal));
-	if (!ctxs)
-		return -ENOMEM;
-
-	for (i = 0; i < cfg->ctx_num; i++) {
-		if (!cfg->ctxs[i].ctx) {
-			WD_ERR("config ctx[%d] NULL\n", i);
-			free(ctxs);
-			return -EINVAL;
-		}
-
-		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
-		pthread_mutex_init(&ctxs[i].lock, NULL);
-	}
-
-	wd_dh_setting.config.ctxs = ctxs;
-
-	/* Can't copy with the size of priv structure. */
-	wd_dh_setting.config.priv = cfg->priv;
-	wd_dh_setting.config.ctx_num = cfg->ctx_num;
-
-	return 0;
-}
-
-static int copy_sched_to_global_setting(struct wd_sched *sched)
-{
-	if (!sched->name) {
-		WD_ERR("sched name NULL\n");
-		return -EINVAL;
-	}
-
-	wd_dh_setting.sched.name = strdup(sched->name);
-	wd_dh_setting.sched.pick_next_ctx = sched->pick_next_ctx;
-	wd_dh_setting.sched.poll_policy = sched->poll_policy;
-
-	return 0;
-}
-
-static void clear_sched_in_global_setting(void)
-{
-	free((void *)wd_dh_setting.sched.name);
-	wd_dh_setting.sched.name = NULL;
-	wd_dh_setting.sched.pick_next_ctx = NULL;
-	wd_dh_setting.sched.poll_policy = NULL;
-	wd_dh_setting.sched.name = NULL;
-}
-
-static void clear_config_in_global_setting(void)
-{
-	wd_dh_setting.config.priv = NULL;
-	wd_dh_setting.config.ctx_num = 0;
-	free(wd_dh_setting.config.ctxs);
-	wd_dh_setting.config.ctxs = NULL;
-}
-
-static int wd_init_async_request_pool(struct wd_async_msg_pool *pool)
-{
-	int num = wd_dh_setting.config.ctx_num;
-
-	pool->pools = malloc(num * sizeof(struct msg_pool));
-	if (!pool->pools)
-		return -ENOMEM;
-
-	memset(pool->pools, 0, num * sizeof(struct msg_pool));
-	pool->pool_nums = num;
-
-	return 0;
-}
-
-static void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
-{
-	struct msg_pool *p;
-	int i, j;
-
-	for (i = 0; i < pool->pool_nums; i++) {
-		p = &pool->pools[i];
-		for (j = 0; j < WD_POOL_MAX_ENTRIES; j++) {
-			if (p->used[j])
-				WD_ERR("pool %d isn't released from reqs pool.\n",
-						j);
-		}
-	}
-
-	free(pool->pools);
-	pool->pools = NULL;
-	pool->pool_nums = 0;
-}
-
-static struct wd_dh_req *wd_get_req_from_pool(struct wd_async_msg_pool *pool,
-				handle_t h_ctx,
-				struct wd_dh_msg *msg)
-{
-	struct wd_dh_msg *c_msg;
-	struct msg_pool *p;
-	int found = 0;
-	int i;
-
-	if (!msg->tag || msg->tag > WD_POOL_MAX_ENTRIES) {
-		WD_ERR("invalid msg cache tag(%llu)\n", msg->tag);
-		return NULL;
-	}
-
-	for (i = 0; i < wd_dh_setting.config.ctx_num; i++) {
-		if (h_ctx == wd_dh_setting.config.ctxs[i].ctx) {
-			found = 1;
-			break;
-		}
-	}
-	if (!found) {
-		WD_ERR("failed to find ctx\n");
-		return NULL;
-	}
-
-	p = &pool->pools[i];
-	c_msg = &p->msg[msg->tag - 1];
-	c_msg->req.pri_bytes = msg->req.pri_bytes;
-	c_msg->req.status = msg->result;
-
-	return &c_msg->req;
-}
-
-static struct wd_dh_msg *wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
-						handle_t h_ctx,
-						struct wd_dh_req *req)
-{
-	struct wd_dh_msg *msg;
-	struct msg_pool *p;
-	int found = 0;
-	__u32 idx = 0;
-	int cnt = 0;
-	int i;
-
-	for (i = 0; i < wd_dh_setting.config.ctx_num; i++) {
-		if (h_ctx == wd_dh_setting.config.ctxs[i].ctx) {
-			found = 1;
-			break;
-		}
-	}
-	if (!found) {
-		WD_ERR("failed to find ctx\n");
-		return NULL;
-	}
-
-	p = &pool->pools[i];
-	while (__atomic_test_and_set(&p->used[idx], __ATOMIC_ACQUIRE)) {
-		idx = (idx + 1) % (WD_POOL_MAX_ENTRIES - 1);
-		if (++cnt == WD_POOL_MAX_ENTRIES)
-			return NULL;
-	}
-
-	/* get msg from msg_pool[] */
-	msg = &p->msg[idx];
-	memcpy(&msg->req, req, sizeof(*req));
-	msg->tag = idx + 1;
-
-	return msg;
-}
-
-static void wd_put_msg_to_pool(struct wd_async_msg_pool *pool,
-			       handle_t h_ctx,
-			       struct wd_dh_msg *msg)
-{
-	struct msg_pool *p;
-	int found = 0;
-	int i;
-
-	if (!msg->tag || msg->tag > WD_POOL_MAX_ENTRIES) {
-		WD_ERR("invalid msg cache idx(%llu)\n", msg->tag);
-		return;
-	}
-	for (i = 0; i < wd_dh_setting.config.ctx_num; i++) {
-		if (h_ctx == wd_dh_setting.config.ctxs[i].ctx) {
-			found = 1;
-			break;
-		}
-	}
-	if (!found) {
-		WD_ERR("ctx handle not fonud!\n");
-		return;
-	}
-
-	p = &pool->pools[i];
-
-	__atomic_clear(&p->used[msg->tag - 1], __ATOMIC_RELEASE);
-}
-
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
@@ -301,15 +86,15 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		return -WD_EINVAL;
 	}
 
-	ret = init_global_ctx_setting(config);
+	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret) {
-		WD_ERR("failed to init global ctx setting\n");
+		WD_ERR("failed to wd init ctx config, ret = %d\n", ret);
 		return ret;
 	}
 
-	ret = copy_sched_to_global_setting(sched);
+	ret = wd_init_sched(&wd_dh_setting.sched, sched);
 	if (ret) {
-		WD_ERR("failed to copy sched to global setting\n");
+		WD_ERR("failed to wd init sched, ret = %d\n", ret);
 		goto out;
 	}
 
@@ -318,9 +103,11 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 #endif
 
 	/* init async request pool */
-	ret = wd_init_async_request_pool(&wd_dh_setting.pool);
+	ret = wd_init_async_request_pool(&wd_dh_setting.pool,
+					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 sizeof(struct wd_dh_msg));
 	if (ret) {
-		WD_ERR("failed to init async req pool!\n");
+		WD_ERR("failed to init async req pool, ret = %d!\n", ret);
 		goto out_sched;
 	}
 
@@ -347,16 +134,16 @@ out_init:
 out_priv:
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 out_sched:
-	clear_sched_in_global_setting();
+	wd_clear_sched(&wd_dh_setting.sched);
 out:
-	clear_config_in_global_setting();
+	wd_clear_ctx_config(&wd_dh_setting.config);
 
 	return ret;
 }
 
 void wd_dh_uninit(void)
 {
-	if (!wd_dh_setting.pool.pool_nums) {
+	if (!wd_dh_setting.pool.pool_num) {
 		WD_ERR("uninit dh error: repeat uninit dh\n");
 		return;
 	}
@@ -370,8 +157,8 @@ void wd_dh_uninit(void)
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 
 	/* unset config, sched, driver */
-	clear_sched_in_global_setting();
-	clear_config_in_global_setting();
+	wd_clear_sched(&wd_dh_setting.sched);
+	wd_clear_ctx_config(&wd_dh_setting.config);
 }
 
 static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
@@ -504,34 +291,36 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
 	handle_t h_sched_ctx = wd_dh_setting.sched.h_sched_ctx;
 	struct wd_dh_sess *sess_t = (struct wd_dh_sess *)sess;
+	struct wd_dh_msg *msg = NULL;
 	struct wd_ctx_internal *ctx;
-	struct wd_dh_msg *msg;
-	__u32 idx;
-	int ret;
+	int ret, idx;
+	__u32 index;
 
 	if (unlikely(!req || !sess)) {
 		WD_ERR("input param NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess_t->key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
+	index = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req,
+						  &sess_t->key);
+	if (unlikely(index >= config->ctx_num)) {
+		WD_ERR("failed to pick ctx, idx=%u!\n", index);
 		return -EINVAL;
 	}
-	ctx = config->ctxs + idx;
+	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", idx, ctx->ctx_mode);
+		WD_ERR("ctx %u mode=%hhu error!\n", index, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
-	msg = wd_get_msg_from_pool(&wd_dh_setting.pool, ctx->ctx, req);
-	if (!msg)
+	idx = wd_get_msg_from_pool(&wd_dh_setting.pool, index, (void **)&msg);
+	if (idx < 0)
 		return -WD_EBUSY;
 
 	ret = fill_dh_msg(msg, req, (struct wd_dh_sess *)sess);
 	if (ret)
 		goto fail_with_msg;
+	msg->tag = idx;
 
 	pthread_mutex_lock(&ctx->lock);
 	ret = dh_send(ctx->ctx, msg);
@@ -544,7 +333,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	return ret;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_dh_setting.pool, ctx->ctx, msg);
+	wd_put_msg_to_pool(&wd_dh_setting.pool, index, idx);
 
 	return ret;
 }
@@ -554,7 +343,8 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
 	struct wd_ctx_internal *ctx;
 	struct wd_dh_req *req;
-	struct wd_dh_msg msg;
+	struct wd_dh_msg *msg = NULL;
+	struct wd_dh_msg rcv_msg;
 	__u32 rcv_cnt = 0;
 	int ret;
 
@@ -570,9 +360,9 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		return -EINVAL;
 	}
 
-	pthread_mutex_lock(&ctx->lock);
 	do {
-		ret = wd_dh_setting.driver->recv(ctx->ctx, &msg);
+		pthread_mutex_lock(&ctx->lock);
+		ret = wd_dh_setting.driver->recv(ctx->ctx, &rcv_msg);
 		if (ret == -EAGAIN) {
 			pthread_mutex_unlock(&ctx->lock);
 			break;
@@ -580,15 +370,24 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_dh_setting.pool, ctx->ctx, &msg);
+			wd_put_msg_to_pool(&wd_dh_setting.pool, pos,
+					   rcv_msg.tag);
 			return ret;
 		}
 		pthread_mutex_unlock(&ctx->lock);
 		rcv_cnt++;
-		req = wd_get_req_from_pool(&wd_dh_setting.pool, ctx->ctx, &msg);
+		msg = wd_find_msg_in_pool(&wd_dh_setting.pool, pos, rcv_msg.tag);
+		if (!msg) {
+			WD_ERR("failed to find msg!\n");
+			break;
+		}
+
+		msg->req.pri_bytes = rcv_msg.req.pri_bytes;
+		msg->req.status = rcv_msg.result;
+		req = &msg->req;
 		if (likely(req && req->cb))
 			req->cb(req);
-		wd_put_msg_to_pool(&wd_dh_setting.pool, ctx->ctx, &msg);
+		wd_put_msg_to_pool(&wd_dh_setting.pool, pos, rcv_msg.tag);
 	} while (--expt);
 
 	*count = rcv_cnt;
