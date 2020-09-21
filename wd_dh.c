@@ -570,17 +570,20 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		return -EINVAL;
 	}
 
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_mutex_lock(&ctx->lock);
 	do {
 		ret = wd_dh_setting.driver->recv(ctx->ctx, &msg);
 		if (ret == -EAGAIN) {
+			pthread_mutex_unlock(&ctx->lock);
 			break;
 		} else if (ret < 0) {
+			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_dh_setting.pool, ctx->ctx, &msg);
 			return ret;
 		}
+		pthread_mutex_unlock(&ctx->lock);
 		rcv_cnt++;
 		req = wd_get_req_from_pool(&wd_dh_setting.pool, ctx->ctx, &msg);
 		if (likely(req && req->cb))
