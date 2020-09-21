@@ -974,6 +974,18 @@ static void correct_random(struct wd_dtb *k)
 	k->data[lens] = 0;
 }
 
+static bool is_all_zero(struct wd_dtb *e, struct wcrypto_ecc_msg *msg)
+{
+	int i;
+
+	for (i = 0; i < e->dsize && i < msg->key_bytes; i++) {
+		if (e->data[i])
+			return false;
+	}
+
+	return true;
+}
+
 static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg, void **data)
 {
 	struct wcrypto_ecc_in *in = (struct wcrypto_ecc_in *)msg->in;
@@ -992,6 +1004,11 @@ static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg, void **data)
 	k_set = *(__u8 *)(k + 1);
 	if (!k_set) {
 		WD_ERR("random k not set!\n");
+		return -WD_EINVAL;
+	}
+
+	if (is_all_zero(e, msg)) {
+		WD_ERR("sin e all zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1019,8 +1036,9 @@ static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg, void **data)
 	return 0;
 }
 
-static int ecc_prepare_verf_in(struct wcrypto_ecc_in *in, void **data)
+static int ecc_prepare_verf_in(struct wcrypto_ecc_msg *msg, void **data)
 {
+	struct wcrypto_ecc_in *in = (struct wcrypto_ecc_in *)msg->in;
 	struct wd_dtb *e = NULL;
 	struct wd_dtb *s = NULL;
 	struct wd_dtb *r = NULL;
@@ -1029,6 +1047,11 @@ static int ecc_prepare_verf_in(struct wcrypto_ecc_in *in, void **data)
 	wcrypto_get_ecdsa_verf_in_params(in, &e, &s, &r);
 	if (!e || !r || !s) {
 		WD_ERR("failed to get verf in param!\n");
+		return -WD_EINVAL;
+	}
+
+	if (is_all_zero(e, msg)) {
+		WD_ERR("vin e all zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1137,7 +1160,7 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg, void **data)
 		ret = ecc_prepare_sign_in(msg, data);
 		break;
 	case WCRYPTO_ECDSA_VERIFY:
-		ret = ecc_prepare_verf_in(in, data);
+		ret = ecc_prepare_verf_in(msg, data);
 		break;
 	default:
 		break;
