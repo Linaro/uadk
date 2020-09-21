@@ -39,6 +39,9 @@
 #define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
 
+#define CBC_3DES_BLOCK_SIZE 8
+#define CBC_AES_BLOCK_SIZE 16
+
 #define DES_WEAK_KEY_NUM 4
 static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
 	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
@@ -55,6 +58,7 @@ struct wcrypto_cipher_ctx {
 	unsigned long ctx_id;
 	void *key;
 	__u32 key_bytes;
+	__u32 iv_blk_size;
 	struct wd_queue *q;
 	struct wcrypto_cipher_ctx_setup setup;
 };
@@ -99,6 +103,23 @@ static void del_ctx_key(struct wcrypto_cipher_ctx *ctx)
 
 	if (br && br->free && ctx->key)
 		br->free(br->usr, ctx->key);
+}
+
+static __u32 get_iv_block_size(int alg, int mode)
+{
+	switch (mode) {
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_OFB:
+		if (alg == WCRYPTO_CIPHER_3DES ||
+		    alg == WCRYPTO_CIPHER_DES)
+			return CBC_3DES_BLOCK_SIZE;
+	case WCRYPTO_CIPHER_XTS:
+	case WCRYPTO_CIPHER_CFB:
+		return CBC_AES_BLOCK_SIZE;
+		break;
+	default:
+		return 0;
+	}
 }
 
 static int create_ctx_para_check(struct wd_queue *q,
@@ -195,6 +216,7 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		return NULL;
 	}
 
+	ctx->iv_blk_size = get_iv_block_size(setup->alg, setup->mode);
 	init_cipher_cookie(ctx, setup);
 
 	return ctx;
@@ -301,6 +323,10 @@ static int cipher_request_init(struct wcrypto_cipher_msg *req,
 	if (udata && udata->key) {
 		req->key = udata->key;
 		req->key_bytes = udata->key_bytes;
+	}
+	if (op->iv_bytes != c->iv_blk_size) {
+		WD_ERR("fail to check IV length!\n");
+		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
