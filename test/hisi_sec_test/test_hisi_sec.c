@@ -60,14 +60,13 @@ typedef struct wd_thread_res {
 	unsigned long long send_num;
 	unsigned long long recv_num;
 	struct timeval start_tval;
+	unsigned long long sum_perf;
 } thread_data_d;
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t system_test_thrds[NUM_THREADS];
 static thread_data_t thr_data[NUM_THREADS];
-static unsigned int async_flag = 0;
-static volatile int asyn_thread_exit = 0;
 
 static void hexdump(char *buff, unsigned int len)
 {
@@ -1218,7 +1217,11 @@ static int sec_digest_sync_once(void)
 	struct hash_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_digest_req req;
-	int cnt = g_times;
+	struct timeval start_tval;
+	struct timeval cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	unsigned long cnt = g_times;
 	int ret;
 
 	/* config setup */
@@ -1272,12 +1275,21 @@ static int sec_digest_sync_once(void)
 		hexdump(sess->key, sess->key_bytes);
 	}
 
+	gettimeofday(&start_tval, NULL);
 	while (cnt) {
 		ret = wd_do_digest_sync(h_sess, &req);
 		cnt--;
 	}
+	gettimeofday(&cur_tval, NULL);
 
-	printf("Test digest sync function: output dst-->\n");
+	time_used = (float)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+		cur_tval.tv_usec - start_tval.tv_usec);
+	speed = g_times / time_used * 1000000;
+	Perf = speed * req.in_bytes / 1024;
+	printf("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
+	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
+                        thread_id, speed, Perf);
+
 	hexdump(req.out, 64);
 
 out:
@@ -1305,8 +1317,8 @@ void *digest_send_thread(void *data)
 	thread_data_d *td_data = data;
 	struct wd_digest_req *req = td_data->req;
 	int try_cnt = 0;
+	unsigned long cnt = 0;
 	int ret;
-	int cnt = 0;
 
 	while (cnt < td_data->send_num) {
 		req->cb = digest_async_cb;
@@ -1353,13 +1365,12 @@ void *digest_poll_thread(void *data)
 		recv = 0;
 	}
 	gettimeofday(&cur_tval, NULL);
-	async_flag = 1;
 
 	pthread_mutex_lock(&mutex);
 	time_used = (float)((cur_tval.tv_sec - td_data->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - td_data->start_tval.tv_usec);
-	printf("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
-	speed = td_data->send_num / time_used * 1000000;
+	printf("time_used:%0.0f us, send task num:%ld\n", time_used, cnt);
+	speed = cnt / time_used * 1000000;
 	Perf = speed * req->in_bytes / 1024; //B->KB
 	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
@@ -1372,12 +1383,13 @@ void *digest_sync_send_thread(void *data)
 {
 	thread_data_d *td_data = data;
 	struct wd_digest_req *req = td_data->req;
-	struct timeval cur_tval;
+	struct timeval cur_tval, start_tval;
 	unsigned long Perf = 0;
 	float speed, time_used;
 	int ret;
 	int cnt = 0;
 
+	gettimeofday(&start_tval, NULL);
 	while (cnt < td_data->send_num) {
 		ret = wd_do_digest_sync(td_data->h_sess, req);
 		if (ret < 0) {
@@ -1388,11 +1400,10 @@ void *digest_sync_send_thread(void *data)
 		cnt++;
 	}
 	gettimeofday(&cur_tval, NULL);
-	__atomic_add_fetch(&async_flag, 1, __ATOMIC_RELAXED);
 
 	pthread_mutex_lock(&mutex);
-	time_used = (float)((cur_tval.tv_sec - td_data->start_tval.tv_sec) * 1000000 +
-				cur_tval.tv_usec - td_data->start_tval.tv_usec);
+	time_used = (float)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - start_tval.tv_usec);
 	printf("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
 	speed = td_data->send_num / time_used * 1000000;
 	Perf = speed * req->in_bytes / 1024; //B->KB
@@ -1460,6 +1471,7 @@ static int sec_digest_async_once(void)
 	td_data.h_sess = h_sess;
 	td_data.send_num = g_times;
 	td_data.recv_num = g_times * g_thread_num;
+	gettimeofday(&td_data.start_tval, NULL);
 	ret = pthread_create(&send_td, NULL, digest_send_thread, &td_data);
 	if (ret) {
 		printf("kthread create fail at %s", __func__);
@@ -1473,8 +1485,6 @@ static int sec_digest_async_once(void)
 		goto out;
 	}
 
-	async_flag = 0;
-	gettimeofday(&td_data.start_tval, NULL);
 	ret = pthread_join(send_td, NULL);
 	if (ret) {
 		printf("pthread_join fail at %s", __func__);
@@ -1485,10 +1495,6 @@ static int sec_digest_async_once(void)
 	if (ret) {
 		printf("pthread_join fail at %s", __func__);
 		goto out;
-	}
-
-	while (async_flag == 0) {
-		usleep(10000);
 	}
 
 out:
@@ -1569,7 +1575,7 @@ static int sec_digest_sync_multi(void)
 	/* send thread */
 	td_data.send_num = g_times;
 	td_data.recv_num = g_times;
-
+	td_data.sum_perf = 0;
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_create(&sendtd[i], NULL, digest_sync_send_thread, &td_data);
 		if (ret) {
@@ -1579,8 +1585,6 @@ static int sec_digest_sync_multi(void)
 	}
 
 	/* join thread */
-	async_flag = 0;
-	gettimeofday(&td_data.start_tval, NULL);
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_join(sendtd[i], NULL);
 		if (ret) {
@@ -1589,10 +1593,9 @@ static int sec_digest_sync_multi(void)
 		}
 	}
 
-	while (async_flag < g_thread_num) {
-		usleep(1000);
-	}
-
+	printf("digest sync %u threads, speed:%llu ops, perf: %llu KB/s\n",
+		g_thread_num, td_data.sum_perf,
+		(td_data.sum_perf >> 10) * req.in_bytes);
 	hexdump(req.out, 64);
 out:
 	if (req.in)
@@ -1664,6 +1667,8 @@ static int sec_digest_async_multi(void)
 	/* send thread */
 	td_data.send_num = g_times;
 	td_data.recv_num = g_times * g_thread_num;
+	td_data.sum_perf = 0;
+	gettimeofday(&td_data.start_tval, NULL);
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_create(&sendtd[i], NULL, digest_send_thread, &td_data);
 		if (ret) {
@@ -1680,8 +1685,6 @@ static int sec_digest_async_multi(void)
 	}
 
 	/* join thread */
-	async_flag = 0;
-	gettimeofday(&td_data.start_tval, NULL);
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_join(sendtd[i], NULL);
 		if (ret) {
@@ -1695,9 +1698,6 @@ static int sec_digest_async_multi(void)
 		return ret;
 	}
 
-	while (async_flag == 0) {
-		usleep(1000);
-	}
 	hexdump(req.out, 64);
 out:
 	if (req.in)
@@ -1744,8 +1744,12 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[3], "-optype")) {
 		g_direction = strtoul((char*)argv[4], NULL, 10);
 		if (algtype_class == DIGEST_CLASS) {
-			//0 is normal mode, 1 is HMAC mode.
+			//0 is normal mode, 1 is HMAC mode, 3 is long hash mode.
 			alg_op_type = g_direction;
+			if (g_direction == 3) {
+				alg_op_type = 0;
+				g_ivlen = 1;
+			}
 		}
 	}
 
