@@ -106,15 +106,12 @@ void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 	wd_rsa_setting.driver = drv;
 }
 
-int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	int ret;
-
 	/* wd_rsa_init() could only be invoked once for one process. */
 	if (wd_rsa_setting.config.ctx_num) {
 		WD_ERR("init rsa error: repeat init rsa\n");
-		return 0;
+		return -WD_EINVAL;
 	}
 
 	if (!config || !config->ctxs[0].ctx || !sched) {
@@ -126,6 +123,17 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("no sva, do not rsa init\n");
 		return -WD_EINVAL;
 	}
+
+	return 0;
+}
+
+int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	void *priv;
+	int ret;
+
+	if (param_check(config, sched))
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
 	if (ret < 0) {
@@ -246,7 +254,6 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 			WD_ERR("req dst bytes =%hu error!\n", req->dst_bytes);
 			return -EINVAL;
 		}
-
 	}
 
 	msg->key = key;
@@ -603,7 +610,6 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	else
 		kg_out_size = GEN_PARAMS_SZ(c->key_size);
 
-
 	kg_out = malloc(kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
 		WD_ERR("sess malloc kg_in memory fail!\n");
@@ -815,7 +821,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 
 	if (!setup) {
 		WD_ERR("alloc rsa sess setup NULL!\n");
-		return 0;
+		return(handle_t)0;
 	}
 
 	if (setup->key_bits != 1024 &&
@@ -823,7 +829,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 		setup->key_bits != 3072 &&
 		setup->key_bits != 4096) {
 		WD_ERR("alloc rsa sess key_bit %u err!\n", setup->key_bits);
-		return 0;
+		return (handle_t)0;
 	}
 
 	sess = calloc(1, sizeof(struct wd_rsa_sess));
@@ -837,13 +843,13 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	if (ret) {
 		WD_ERR("fail creating rsa sess keys!\n");
 		del_sess(sess);
-		return 0;
+		return (handle_t)0;
 	}
 
 	sess->key.mode = setup->mode;
 	sess->key.numa_id = setup->numa_id;
 
-	return (handle_t)sess;
+	return (handle_t)(uintptr_t)sess;
 }
 
 void wd_rsa_free_sess(handle_t sess)

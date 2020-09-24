@@ -43,7 +43,7 @@
 #define offsetof(t, m) ((size_t) &((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
-		(type *)((char *)__mptr - offsetof(type, member)); })
+		(type *)((char *)__mptr - offsetof(type, member));})
 
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,
@@ -75,7 +75,7 @@ struct hisi_hpre_sqe {
 	__u32 alg	: 5;
 
 	/* error type */
-	__u32 etype	:11;
+	__u32 etype	: 11;
 	__u32 resv0	: 14;
 	__u32 done	: 2;
 	__u32 task_len1	: 8;
@@ -88,8 +88,8 @@ struct hisi_hpre_sqe {
 	__u32 hi_in;
 	__u32 low_out;
 	__u32 hi_out;
-	__u32 tag	:16;
-	__u32 resv2	:16;
+	__u32 tag	: 16;
+	__u32 resv2	: 16;
 	__u32 rsvd1[7];
 };
 
@@ -117,7 +117,7 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 {
 	int i = d_size - 1;
 	bool is_hpre_bin;
-	int j = 0;
+	int j;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
 		WD_ERR("crypto bin to hpre bin params err!\n");
