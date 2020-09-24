@@ -65,15 +65,12 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 	wd_dh_setting.driver = drv;
 }
 
-int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	int ret;
-
 	/* wd_dh_init() could only be invoked once for one process. */
 	if (wd_dh_setting.config.ctx_num) {
 		WD_ERR("init dh error: repeat init dh\n");
-		return 0;
+		return -WD_EINVAL;
 	}
 
 	if (!config || !config->ctxs[0].ctx || !sched) {
@@ -85,6 +82,17 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("no sva, do not dh init\n");
 		return -WD_EINVAL;
 	}
+
+	return 0;
+}
+
+int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	void *priv;
+	int ret;
+
+	if (param_check(config, sched))
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret) {
@@ -342,9 +350,9 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
 	struct wd_ctx_internal *ctx;
-	struct wd_dh_req *req;
-	struct wd_dh_msg *msg = NULL;
 	struct wd_dh_msg rcv_msg;
+	struct wd_dh_req *req;
+	struct wd_dh_msg *msg;
 	__u32 rcv_cnt = 0;
 	int ret;
 
@@ -400,14 +408,16 @@ int wd_dh_poll(__u32 expt, __u32 *count)
 	return wd_dh_setting.sched.poll_policy(0, 0, expt, count);
 }
 
-bool wd_dh_is_g2(handle_t sess)
+int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)
 {
-	if (!sess) {
-		WD_ERR("dh is g2 judge, sess NULL, return false!\n");
-		return false;
+	if (!sess || !alg_mode) {
+		WD_ERR("dh get mode: param NULL!\n");
+		return -WD_EINVAL;
 	}
 
-	return ((struct wd_dh_sess *)sess)->setup.is_g2;
+	*alg_mode = ((struct wd_dh_sess *)sess)->setup.is_g2;
+
+	return 0;
 }
 
 int wd_dh_key_bits(handle_t sess)
@@ -462,6 +472,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 		return (handle_t)0;
 	}
 
+	/* key width check */
 	if (setup->key_bits != 768 &&
 		setup->key_bits != 1024 &&
 		setup->key_bits != 1536 &&
@@ -483,14 +494,14 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	sess->g.data = malloc(sess->key_size);
 	if (!sess->g.data) {
 		free(sess);
-		return (handle_t)0;		
+		return (handle_t)0;
 	}
 	sess->g.bsize = sess->key_size;
 
 	sess->key.mode = setup->mode;
 	sess->key.numa_id = setup->numa_id;
 
-	return (handle_t)sess;
+	return (handle_t)(uintptr_t)sess;
 }
 
 void wd_dh_free_sess(handle_t sess)

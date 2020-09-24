@@ -4560,7 +4560,7 @@ static void print_help(void)
 	HPRE_TST_PRT("    [--log=]:\n");
 	HPRE_TST_PRT("        y\n");
 	HPRE_TST_PRT("        n\n");
-	HPRE_TST_PRT("    [-perf]: use test algorithm perf\n");
+	HPRE_TST_PRT("    [--perf]: use test algorithm perf\n");
 	HPRE_TST_PRT("    [--check=]:\n");
 	HPRE_TST_PRT("        y: check result compared with openssl\n");
 	HPRE_TST_PRT("        n: no check\n");
