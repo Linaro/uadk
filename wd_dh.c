@@ -92,7 +92,7 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	int ret;
 
 	if (param_check(config, sched))
-		return ret;
+		return -WD_EINVAL;
 
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret) {
@@ -131,7 +131,7 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_dh_setting.priv = priv;
 	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv);
 	if (ret < 0) {
-		WD_ERR("failed to drv init, ret=%d\n", ret);
+		WD_ERR("failed to drv init, ret= %d\n", ret);
 		goto out_init;
 	}
 
@@ -176,6 +176,11 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 	msg->result = WD_EINVAL;
 	msg->key_bytes = sess->key_size;
 
+	if (unlikely(req->pri_bytes < sess->key_size)) {
+		WD_ERR("req pri bytes = %hu error!\n", req->pri_bytes);
+		return -EINVAL;
+	}
+
 	if (req->op_type == WD_DH_PHASE1) {
 		msg->g = (__u8 *)sess->g.data;
 		msg->gbytes = sess->g.dsize;
@@ -183,12 +188,7 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 		msg->g = (__u8 *)req->pv;
 		msg->gbytes = req->pvbytes;
 	} else {
-		WD_ERR("op_type=%hhu error!\n", req->op_type);
-		return -EINVAL;
-	}
-
-	if (unlikely(req->pri_bytes < sess->key_size)) {
-		WD_ERR("req pri bytes =%hu error!\n", req->pri_bytes);
+		WD_ERR("op_type = %hhu error!\n", req->op_type);
 		return -EINVAL;
 	}
 
@@ -267,12 +267,12 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 
 	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess_t->key);
 	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
+		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
 		return -EINVAL;
 	}
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", idx, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -304,7 +304,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	int ret, idx;
 	__u32 index;
 
-	if (unlikely(!req || !sess)) {
+	if (unlikely(!req || !sess || !req->cb)) {
 		WD_ERR("input param NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -312,12 +312,12 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	index = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						  &sess_t->key);
 	if (unlikely(index >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx=%u!\n", index);
+		WD_ERR("failed to pick ctx, idx = %u!\n", index);
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", index, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -357,14 +357,14 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count || pos >= config->ctx_num)) {
-		WD_ERR("param error, pos=%u, ctx_num=%u!\n",
+		WD_ERR("param error, pos = %u, ctx_num = %u!\n",
 			pos, config->ctx_num);
 		return -EINVAL;
 	}
 
 	ctx = config->ctxs + pos;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", pos, ctx->ctx_mode);
+		WD_ERR("ctx %u mode= %hhu error!\n", pos, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -374,7 +374,7 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		if (ret == -EAGAIN) {
 			pthread_mutex_unlock(&ctx->lock);
 			break;
-		} else if (ret < 0) {
+		} else if (unlikely(ret)) {
 			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
@@ -393,8 +393,7 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		msg->req.pri_bytes = rcv_msg.req.pri_bytes;
 		msg->req.status = rcv_msg.result;
 		req = &msg->req;
-		if (likely(req && req->cb))
-			req->cb(req);
+		req->cb(req);
 		wd_put_msg_to_pool(&wd_dh_setting.pool, pos, rcv_msg.tag);
 	} while (--expt);
 
@@ -420,7 +419,7 @@ int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)
 	return 0;
 }
 
-int wd_dh_key_bits(handle_t sess)
+__u32 wd_dh_key_bits(handle_t sess)
 {
 	if (!sess) {
 		WD_ERR("get dh key bits, sess NULL!\n");
@@ -439,9 +438,9 @@ int wd_dh_set_g(handle_t sess, struct wd_dtb *g)
 		return -WD_EINVAL;
 	}
 
-	if (g->dsize
-		&& g->bsize <= sess_t->g.bsize
-		&& g->dsize <= sess_t->g.bsize) {
+	if (g->dsize &&
+		g->bsize <= sess_t->g.bsize &&
+		g->dsize <= sess_t->g.bsize) {
 		memset(sess_t->g.data, 0, g->bsize);
 		memcpy(sess_t->g.data, g->data, g->dsize);
 		sess_t->g.dsize = g->dsize;
@@ -499,7 +498,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	sess->g.bsize = sess->key_size;
 
 	sess->key.mode = setup->mode;
-	sess->key.numa_id = setup->numa_id;
+	sess->key.numa_id = 0;
 
 	return (handle_t)(uintptr_t)sess;
 }
