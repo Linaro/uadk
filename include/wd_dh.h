@@ -15,6 +15,7 @@
 typedef void (*wd_dh_cb_t)(void *cb_param);
 
 enum wd_dh_op_type {
+
 	WD_DH_INVALID, /* invalid DH operation */
 	WD_DH_PHASE1, /* Phase1 DH key generate */
 	WD_DH_PHASE2 /* Phase2 DH key compute */
@@ -23,7 +24,6 @@ enum wd_dh_op_type {
 struct wd_dh_sess_setup {
 	__u16 key_bits; /* DH key bites */
 	bool is_g2; /* is g2 mode or not */
-	__u8 numa_id; /* numa id binded by sess thread */
 	__u8 mode; /* sync or async mode, denoted by enum wd_ctx_mode */
 };
 
@@ -48,7 +48,7 @@ struct wd_dh_req {
 };
 
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode);
-int wd_dh_key_bits(handle_t sess);
+__u32 wd_dh_key_bits(handle_t sess);
 int wd_dh_set_g(handle_t sess, struct wd_dtb *g);
 void wd_dh_get_g(handle_t sess, struct wd_dtb **g);
 handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup);

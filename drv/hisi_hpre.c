@@ -12,33 +12,18 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
+#include "hisi_qm_udrv.h"
+#include "wd.h"
 #include "../include/drv/wd_rsa_drv.h"
 #include "../include/drv/wd_dh_drv.h"
 
 #define HPRE_HW_TASK_DONE	3
 #define HPRE_HW_TASK_INIT	1
 
-#define QM_L32BITS_MASK		0xffffffff
-#define QM_HADDR_SHIFT		32
-#define LW_U32(pa)	((__u32)((pa) & QM_L32BITS_MASK))
-#define HI_U32(pa)	((__u32)(((pa) >> QM_HADDR_SHIFT) & QM_L32BITS_MASK))
-#define VA_ADDR(hi, lo)	((void *)(((__u64)(hi) << 32) | (__u64)(lo)))
-
-#include "hisi_qm_udrv.h"
-#include "wd.h"
-
-#define BYTE_BITS			8
-#define BYTE_BITS_SHIFT		3
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
-#define GET_NEGATIVE(val)	(0 - (val))
-#define XTS_MODE_KEY_DIVISOR	2
-#define AES_KEYSIZE_128		16
-#define AES_KEYSIZE_192		24
-#define AES_KEYSIZE_256		32
-#define CTX_ID_MAX_NUM		64
 
 #define offsetof(t, m) ((size_t) &((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
@@ -638,28 +623,22 @@ static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
 
 	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
-	if (req->op_type == WD_DH_PHASE1 ||
-		req->op_type == WD_DH_PHASE2) {
-		if (msg->is_g2 && req->op_type == WD_DH_PHASE1) {
-			hw_msg.low_in = 0;
-			hw_msg.hi_in = 0;
-		} else {
-			ret = crypto_bin_to_hpre_bin((char *)msg->g,
-				(const char *)msg->g, msg->key_bytes,
-				msg->gbytes);
-			if (ret) {
-				WD_ERR("dh g para format fail!\n");
-				return ret;
-			}
-
-			hw_msg.low_in = LW_U32((uintptr_t)msg->g);
-			hw_msg.hi_in = HI_U32((uintptr_t)msg->g);
+	if (!(msg->is_g2 && req->op_type == WD_DH_PHASE1)) {
+		ret = crypto_bin_to_hpre_bin((char *)msg->g,
+			(const char *)msg->g, msg->key_bytes,
+			msg->gbytes);
+		if (ret) {
+			WD_ERR("dh g para format fail!\n");
+			return ret;
 		}
 
-		ret = fill_dh_xp_params(msg, &hw_msg);
-		if (ret)
-			return ret;
+		hw_msg.low_in = LW_U32((uintptr_t)msg->g);
+		hw_msg.hi_in = HI_U32((uintptr_t)msg->g);
 	}
+
+	ret = fill_dh_xp_params(msg, &hw_msg);
+	if (ret)
+		return ret;
 
 	hw_msg.low_out = LW_U32((uintptr_t)req->pri);
 	hw_msg.hi_out = HI_U32((uintptr_t)req->pri);
@@ -714,4 +693,3 @@ static struct wd_dh_driver dh_hisi_hpre = {
 
 WD_RSA_SET_DRIVER(rsa_hisi_hpre);
 WD_DH_SET_DRIVER(dh_hisi_hpre);
-

@@ -10,6 +10,14 @@
 
 #define WD_CAPA_PRIV_DATA_SIZE		64
 
+#define QM_L32BITS_MASK		0xffffffff
+#define QM_HADDR_SHIFT		32
+#define LW_U32(pa)	((__u32)((pa) & QM_L32BITS_MASK))
+#define HI_U32(pa)	((__u32)(((pa) >> QM_HADDR_SHIFT) & QM_L32BITS_MASK))
+#define VA_ADDR(hi, lo)	((void *)(((__u64)(hi) << 32) | (__u64)(lo)))
+
+#define BYTE_BITS			8
+#define BYTE_BITS_SHIFT		3
 struct hisi_qm_priv {
 	__u16 sqe_size;
 	__u16 op_type;
