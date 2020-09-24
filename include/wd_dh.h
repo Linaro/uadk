@@ -47,7 +47,7 @@ struct wd_dh_req {
 	__u8 data_fmt; /* data format denoted by enum wd_buff_type */	
 };
 
-bool wd_dh_is_g2(handle_t sess);
+int wd_dh_get_mode(handle_t sess, __u8 *alg_mode);
 int wd_dh_key_bits(handle_t sess);
 int wd_dh_set_g(handle_t sess, struct wd_dtb *g);
 void wd_dh_get_g(handle_t sess, struct wd_dtb **g);
