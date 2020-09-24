@@ -133,7 +133,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	int ret;
 
 	if (param_check(config, sched))
-		return ret;
+		return -WD_EINVAL;
 
 	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
 	if (ret < 0) {
@@ -365,7 +365,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	int ret, idx;
 	__u32 index;
 
-	if (unlikely(!req || !sess)) {
+	if (unlikely(!req || !sess || !req->cb)) {
 		WD_ERR("input param NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -453,9 +453,7 @@ int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		msg->req.dst_bytes = recv_msg.req.dst_bytes;
 		msg->req.status = recv_msg.result;
 		req = &msg->req;
-
-		if (likely(req && req->cb))
-			req->cb(req);
+		req->cb(req);
 		wd_put_msg_to_pool(&wd_rsa_setting.pool, pos, recv_msg.tag);
 	} while (--expt);
 
@@ -847,7 +845,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	}
 
 	sess->key.mode = setup->mode;
-	sess->key.numa_id = setup->numa_id;
+	sess->key.numa_id = 0;
 
 	return (handle_t)(uintptr_t)sess;
 }
@@ -876,7 +874,7 @@ bool wd_rsa_is_crt(handle_t sess)
 	return ((struct wd_rsa_sess *)sess)->setup.is_crt;
 }
 
-int wd_rsa_key_bits(handle_t sess)
+__u32 wd_rsa_key_bits(handle_t sess)
 {
 	if (!sess) {
 		WD_ERR("get rsa key bits, sess NULL!\n");

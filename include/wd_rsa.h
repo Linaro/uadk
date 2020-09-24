@@ -55,12 +55,11 @@ enum wd_rsa_key_type {
 struct wd_rsa_sess_setup {
 	__u16 key_bits; /* RSA key bits */
 	bool is_crt; /* CRT mode or not */
-	__u8 numa_id; /* numa id binded by sess thread */
 	__u8 mode; /* rsa sync or async mode, denoted by enum wd_ctx_mode */
 };
 
 bool wd_rsa_is_crt(handle_t sess);
-int wd_rsa_key_bits(handle_t sess);
+__u32 wd_rsa_key_bits(handle_t sess);
 void wd_rsa_get_pubkey(handle_t sess, struct wd_rsa_pubkey **pubkey);
 void wd_rsa_get_prikey(handle_t sess, struct wd_rsa_prikey **prikey);
 int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n);
