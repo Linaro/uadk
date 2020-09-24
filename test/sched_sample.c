@@ -47,6 +47,82 @@ struct sample_sched_ctx {
 	struct sample_sched_info sched_info[0];
 };
 
+struct cache {
+    __u32 *buff;
+    __u32 depth;
+    __u32 head;
+    __u32 tail;
+    __u32 used_num;
+};
+
+int sched_cache_insert(struct cache *cache, __u32 value)
+{
+	if (cache->used_num >= cache->depth) {
+		return -EPERM;
+	}
+
+	cache->buff[cache->tail] = value;
+
+	cache->used_num++;
+	cache->tail++;
+	if (cache->tail == cache->depth)
+		cache->tail = 0;
+
+	return 0;
+};
+
+int sched_cache_get(struct cache *cache, __u32 *value)
+{
+	if (!cache->used_num)
+		return -EPERM;
+
+	*value = cache->buff[cache->head];
+
+	cache->used_num--;
+	cache->head++;
+	if (cache->head == cache->depth)
+		cache->head = 0;
+
+	return 0;
+}
+
+struct cache* sched_cache_alloc(__u32 depth, __u32 size)
+{
+	struct cache *cache;
+
+	if (!depth)
+		return NULL;
+
+	cache = calloc(1, sizeof(struct cache));
+	if (!cache)
+		return NULL;
+
+	cache->buff = calloc(depth, sizeof(__u32));
+	if (!cache->buff) {
+		free(cache);
+		return NULL;
+	}
+
+	cache->depth = depth;
+
+	return cache;
+}
+
+void cache_free(struct cache *cache)
+{
+	if (!cache)
+		return;
+
+	if (!cache->buff) {
+		free(cache);
+		return;
+	}
+
+	free(cache->buff);
+	free(cache);
+}
+
+
 /**
  * Fill privte para that the different mode needs, reserved for future.
  */
