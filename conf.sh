@@ -23,4 +23,5 @@ ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
 	--enable-perf=yes \
 	--host aarch64-linux-gnu \
 	--target aarch64-linux-gnu \
+	--includedir=/usr/local/include/uadk \
 	$COMPILE_TYPE
