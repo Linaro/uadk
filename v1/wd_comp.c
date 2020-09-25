@@ -115,7 +115,8 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	if (strncmp(q->capa.alg, "zlib", strlen("zlib")) &&
 	    strncmp(q->capa.alg, "gzip", strlen("gzip")) &&
-	    strncmp(q->capa.alg, "deflate", strlen("deflate"))) {
+	    strncmp(q->capa.alg, "deflate", strlen("deflate"))&&
+	    strncmp(q->capa.alg, "lz77_zstd", strlen("lz77_zstd"))) {
 		WD_ERR("alg mismatching!\n");
 		return NULL;
 	}
