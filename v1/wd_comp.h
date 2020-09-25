@@ -71,6 +71,8 @@ enum wcrypto_comp_alg_type {
 	WCRYPTO_ZLIB,
 	WCRYPTO_GZIP,
 	WCRYPTO_RAW_DEFLATE,
+	WCRYPTO_LZ77_ZSTD,
+	WCRYPTO_COMP_MAX_ALG,
 };
 
 /* Operational types for COMP */
@@ -179,6 +181,26 @@ struct wcrypto_comp_msg {
 	__u32 ctx_priv2; /* Denoted HW priv */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
 	__u64 udata;     /* Input user tag, indentify data of stream/user */
+};
+
+/**
+ * The output format defined by warpdrive and drivers should fill the format
+ * @literals_start:address of the literals data output by the hardware
+ * @sequences_start:address of the sequences data output by the hardware
+ * @lit_num:the size of literals
+ * @seq_num:the size of sequences
+ * @lit_length_overflow_cnt:the count of the literal length overflow
+ * @lit_length_overflow_pos:the position of the literal length overflow
+ * @freq:address of the frequence about sequences members
+ */
+struct wcrypto_lz77_zstd_format {
+	void *literals_start;
+	void *sequences_start;
+	__u32 lit_num;
+	__u32 seq_num;
+	__u32 lit_length_overflow_cnt;
+	__u32 lit_length_overflow_pos;
+	void *freq;
 };
 
 /**

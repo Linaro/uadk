@@ -23,6 +23,8 @@ enum hw_comp_alg_type {
 	HW_RAW_DEFLATE = 0x01,
 	HW_ZLIB,
 	HW_GZIP,
+	HW_LZ77_ZSTD_PRICE = 0x42,
+	HW_LZ77_ZSTD,
 };
 
 enum hw_zip_cipher_alg_type {
