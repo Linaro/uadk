@@ -220,8 +220,7 @@ int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 static void *poll_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
-	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
-	int i, ret = 0, total = 0;
+	int ret = 0, total = 0;
 	__u32 expected = 0, received;
 
 	if (!info->opts->sync_mode)
@@ -235,13 +234,11 @@ static void *poll_thread_func(void *arg)
 			usleep(10);
 			continue;
 		}
-		for (i = 0; i < ctx_conf->ctx_num; i++) {
-			expected = 1;
-			received = 0;
-			ret = wd_comp_poll(expected, &received);
-			if (ret == 0)
-				total += received;
-		}
+		expected = 1;
+		received = 0;
+		ret = wd_comp_poll(expected, &received);
+		if (ret == 0)
+			total += received;
 		if (count == total) {
 			pthread_mutex_unlock(&mutex);
 			break;
