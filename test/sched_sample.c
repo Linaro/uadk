@@ -174,9 +174,10 @@ static int sample_poll_region(struct sample_sched_ctx *ctx, __u32 begin,
 	for (i = begin; i <= end; i++) {
 		/* RR schedule, one time poll one */
 		ret = ctx->poll_func(i, 1, &poll_num);
-		if (ret)
+		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
-
+		else if (ret == -EAGAIN)
+			continue;
 		*count += poll_num;
 		if (*count >= expect)
 			break;
