@@ -38,6 +38,7 @@
 #define STREAM_POS_SHIFT		2
 #define STREAM_MODE_SHIFT		1
 #define WINDOWS_SIZE_SHIFT		12
+#define DW				4
 
 #define HW_NEGACOMPRESS			0x0d
 #define HW_CRC_ERR			0x10
@@ -51,8 +52,13 @@
 #define ZIP_DIF_LEN			8
 #define ZIP_PAD_LEN			56
 #define MAX_BUFFER_SIZE			0x800000
+#define MAX_ZSTD_INPUT_SIZE		0x20000
+
+#define get_arrsize(arr)		(sizeof(arr) / sizeof(arr[0]))
 #define lower_32_bits(phy)		((__u32)((__u64)(phy)))
 #define upper_32_bits(phy)		((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
+#define u64_lower_bits(phy)		((__u64)(phy))
+#define u64_upper_bits(phy)		(((__u64)(phy)) << QM_HADDR_SHIFT)
 
 #define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) && 0xFF)
 
@@ -65,6 +71,16 @@ struct hisi_zip_sqe_addr {
 	uintptr_t source_addr;
 	uintptr_t dest_addr;
 	uintptr_t ctxbuf_addr;
+};
+
+struct zip_fill_sqe_ops {
+	const char *alg_type;
+	int (*fill_sqe_alg)(void *ssqe, struct wcrypto_comp_msg *msg);
+	int (*fill_sqe_buffer_size)(void *ssqe, struct wcrypto_comp_msg *msg);
+	int (*fill_sqe_window_size)(void *ssqe, struct wcrypto_comp_msg *msg);
+	int (*fill_sqe_addr)(void *ssqe, struct wcrypto_comp_msg *msg,
+			     struct wd_queue *q);
+	void (*fill_sqe_hw_info)(void *ssqe, struct wcrypto_comp_msg *msg);
 };
 
 static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
@@ -84,46 +100,9 @@ static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
 	return WD_SUCCESS;
 }
 
-static int fill_zip_comp_alg_v3(struct hisi_zip_sqe_v3 *sqe,
-				struct wcrypto_comp_msg *msg)
-{
-	switch (msg->alg_type) {
-	case WCRYPTO_ZLIB:
-		sqe->dw9 = HW_ZLIB;
-		break;
-	case WCRYPTO_GZIP:
-		sqe->dw9 = HW_GZIP;
-		break;
-	case WCRYPTO_RAW_DEFLATE:
-		sqe->dw9 = HW_RAW_DEFLATE;
-		break;
-	default:
-		return -WD_EINVAL;
-	}
-
-	return WD_SUCCESS;
-}
-
-static int fill_zip_window_size(struct hisi_zip_sqe_v3 *sqe,
-				struct wcrypto_comp_msg *msg)
-{
-	switch (msg->win_size) {
-	case WCRYPTO_COMP_WS_4K:
-	case WCRYPTO_COMP_WS_8K:
-	case WCRYPTO_COMP_WS_16K:
-	case WCRYPTO_COMP_WS_24K:
-	case WCRYPTO_COMP_WS_32K:
-		sqe->dw9 |= msg->win_size << WINDOWS_SIZE_SHIFT;
-		break;
-	default:
-		return -WD_EINVAL;
-	}
-
-	return WD_SUCCESS;
-}
-
 static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
-		struct wcrypto_comp_msg *msg, struct wd_queue *q)
+					struct wcrypto_comp_msg *msg,
+					struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
 	uintptr_t phy_in, phy_out;
@@ -183,13 +162,11 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
-
 	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
 		       msg->avail_out);
 		msg->avail_out = MAX_BUFFER_SIZE;
 	}
-
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
 
@@ -217,74 +194,6 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->tag = msg->tag;
 	if (tag && info->sqe_fill_priv)
 		info->sqe_fill_priv(sqe, WCRYPTO_COMP, tag->priv);
-
-	info->req_cache[i] = msg;
-
-	return WD_SUCCESS;
-}
-
-int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
-{
-	struct hisi_zip_sqe_v3 *sqe = (struct hisi_zip_sqe_v3 *)info->sq_base + i;
-	struct wcrypto_comp_msg *msg = smsg;
-	struct hisi_zip_sqe_addr addr = {0};
-	struct wd_queue *q = info->q;
-	__u8 flush_type;
-	int ret;
-
-	memset((void *)sqe, 0, sizeof(*sqe));
-
-	ret = fill_zip_comp_alg_v3(sqe, msg);
-	if (ret) {
-		WD_ERR("The algorithm is invalid!\n");
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(msg->in_size > MAX_BUFFER_SIZE)) {
-		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
-		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-		       msg->avail_out);
-		msg->avail_out = MAX_BUFFER_SIZE;
-	}
-
-	sqe->input_data_length = msg->in_size;
-	sqe->dest_avail_out = msg->avail_out;
-
-	if (msg->op_type == WCRYPTO_DEFLATE) {
-		ret = fill_zip_window_size(sqe, msg);
-		if (ret) {
-			WD_ERR("The window size is invalid!\n");
-			return -WD_EINVAL;
-		}
-	}
-
-	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
-	if (ret)
-		return ret;
-
-	sqe->source_addr_l = lower_32_bits((__u64)addr.source_addr);
-	sqe->source_addr_h = upper_32_bits((__u64)addr.source_addr);
-	sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr);
-	sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr);
-	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
-	sqe->stream_ctx_addr_h = upper_32_bits((__u64)addr.ctxbuf_addr);
-
-	flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
-		      HZ_SYNC_FLUSH;
-	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
-		     (msg->stream_mode << STREAM_MODE_SHIFT) |
-		     (flush_type)) << STREAM_FLUSH_SHIFT |
-		     BD_TYPE3 << BD_TYPE_SHIFT;
-	sqe->ctx_dw0 = msg->ctx_priv0;
-	sqe->ctx_dw1 = msg->ctx_priv1;
-	sqe->ctx_dw2 = msg->ctx_priv2;
-	sqe->isize = msg->isize;
-	sqe->checksum = msg->checksum;
-	sqe->tag_l = msg->tag;
 
 	info->req_cache[i] = msg;
 
@@ -360,6 +269,266 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	return 1;
 }
 
+static int fill_zip_comp_alg_deflate(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	switch (msg->alg_type) {
+	case WCRYPTO_ZLIB:
+		sqe->dw9 = HW_ZLIB;
+		break;
+	case WCRYPTO_GZIP:
+		sqe->dw9 = HW_GZIP;
+		break;
+	case WCRYPTO_RAW_DEFLATE:
+		sqe->dw9 = HW_RAW_DEFLATE;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_comp_alg_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	if (msg->comp_lv == WCRYPTO_COMP_L9) {
+		sqe->dw9 = HW_LZ77_ZSTD_PRICE;
+	} else if (msg->comp_lv == WCRYPTO_COMP_L8 || msg->comp_lv == 0) {
+		sqe->dw9 = HW_LZ77_ZSTD;
+	} else {
+		WD_ERR("The compress level is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	if (unlikely(msg->in_size > MAX_BUFFER_SIZE)) {
+		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
+		       msg->avail_out);
+		msg->avail_out = MAX_BUFFER_SIZE;
+	}
+
+	sqe->input_data_length = msg->in_size;
+	sqe->dest_avail_out = msg->avail_out;
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	if (unlikely(msg->in_size > MAX_ZSTD_INPUT_SIZE)) {
+		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
+		       msg->avail_out);
+		msg->avail_out = MAX_BUFFER_SIZE;
+	}
+
+	sqe->input_data_length = msg->in_size;
+	sqe->dest_avail_out = msg->avail_out;
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_window_size(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	if (msg->op_type == WCRYPTO_INFLATE)
+		return WD_SUCCESS;
+
+	switch (msg->win_size) {
+	case WCRYPTO_COMP_WS_4K:
+	case WCRYPTO_COMP_WS_8K:
+	case WCRYPTO_COMP_WS_16K:
+	case WCRYPTO_COMP_WS_24K:
+	case WCRYPTO_COMP_WS_32K:
+		sqe->dw9 |= msg->win_size << WINDOWS_SIZE_SHIFT;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_addr_deflate(void *ssqe,
+				 struct wcrypto_comp_msg *msg,
+				 struct wd_queue *q)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	struct hisi_zip_sqe_addr addr = {0};
+	int ret;
+
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
+	if (ret)
+		return ret;
+
+	sqe->source_addr_l = lower_32_bits((__u64)addr.source_addr);
+	sqe->source_addr_h = upper_32_bits((__u64)addr.source_addr);
+	sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr);
+	sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr);
+	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
+	sqe->stream_ctx_addr_h = upper_32_bits((__u64)addr.ctxbuf_addr);
+
+	return WD_SUCCESS;
+}
+
+static int fill_zip_addr_lz77_zstd(void *ssqe,
+				   struct wcrypto_comp_msg *msg,
+				   struct wd_queue *q)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	struct hisi_zip_sqe_addr addr = {0};
+	int ret;
+
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
+	if (ret)
+		return ret;
+
+	sqe->source_addr_l = lower_32_bits((__u64)addr.source_addr);
+	sqe->source_addr_h = upper_32_bits((__u64)addr.source_addr);
+	sqe->cipher_key_addr_l = lower_32_bits((__u64)addr.dest_addr);
+	sqe->cipher_key_addr_h = upper_32_bits((__u64)addr.dest_addr);
+	sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr + msg->in_size);
+	sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr + msg->in_size);
+	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
+	sqe->stream_ctx_addr_h = upper_32_bits((__u64)addr.ctxbuf_addr);
+
+	return WD_SUCCESS;
+}
+
+static void fill_zip_sqe_hw_info(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	sqe->ctx_dw0 = msg->ctx_priv0;
+	sqe->ctx_dw1 = msg->ctx_priv1;
+	sqe->ctx_dw2 = msg->ctx_priv2;
+	sqe->isize = msg->isize;
+	sqe->checksum = msg->checksum;
+}
+
+static struct zip_fill_sqe_ops ops[] = { {
+		.alg_type = "zlib",
+		.fill_sqe_alg = fill_zip_comp_alg_deflate,
+		.fill_sqe_buffer_size = fill_zip_buffer_size_deflate,
+		.fill_sqe_window_size = fill_zip_window_size,
+		.fill_sqe_addr = fill_zip_addr_deflate,
+		.fill_sqe_hw_info = fill_zip_sqe_hw_info,
+	}, {
+		.alg_type = "gzip",
+		.fill_sqe_alg = fill_zip_comp_alg_deflate,
+		.fill_sqe_buffer_size = fill_zip_buffer_size_deflate,
+		.fill_sqe_window_size = fill_zip_window_size,
+		.fill_sqe_addr = fill_zip_addr_deflate,
+		.fill_sqe_hw_info = fill_zip_sqe_hw_info,
+	}, {
+		.alg_type = "raw_deflate",
+		.fill_sqe_alg = fill_zip_comp_alg_deflate,
+		.fill_sqe_buffer_size = fill_zip_buffer_size_deflate,
+		.fill_sqe_window_size = fill_zip_window_size,
+		.fill_sqe_addr = fill_zip_addr_deflate,
+		.fill_sqe_hw_info = fill_zip_sqe_hw_info,
+	}, {
+		.alg_type = "lz77_zstd",
+		.fill_sqe_alg = fill_zip_comp_alg_zstd,
+		.fill_sqe_buffer_size = fill_zip_buffer_size_zstd,
+		.fill_sqe_window_size = fill_zip_window_size,
+		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
+		.fill_sqe_hw_info = fill_zip_sqe_hw_info,
+	},
+};
+
+int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
+{
+	struct hisi_zip_sqe_v3 *sqe = (struct hisi_zip_sqe_v3 *)info->sq_base + i;
+	struct wcrypto_comp_msg *msg = smsg;
+	struct wd_queue *q = info->q;
+	__u8 flush_type;
+	int ret;
+
+	memset(sqe, 0, sizeof(*sqe));
+
+	if (unlikely(msg->alg_type >= get_arrsize(ops))) {
+		WD_ERR("The algorithm is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = ops[msg->alg_type].fill_sqe_alg(sqe, msg);
+	if (unlikely(ret)) {
+		WD_ERR("The algorithm is unsupported!\n");
+		return ret;
+	}
+
+	ret = ops[msg->alg_type].fill_sqe_buffer_size(sqe, msg);
+	if (unlikely(ret)) {
+		WD_ERR("The buffer size is invalid!\n");
+		return ret;
+	}
+
+	ret = ops[msg->alg_type].fill_sqe_window_size(sqe, msg);
+	if (unlikely(ret)) {
+		WD_ERR("The window size is invalid!\n");
+		return ret;
+	}
+
+	ret = ops[msg->alg_type].fill_sqe_addr(sqe, msg, q);
+	if (unlikely(ret))
+		return ret;
+
+	flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
+		      HZ_SYNC_FLUSH;
+	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
+		     (msg->stream_mode << STREAM_MODE_SHIFT) |
+		     (flush_type)) << STREAM_FLUSH_SHIFT |
+		     BD_TYPE3 << BD_TYPE_SHIFT;
+
+	ops[msg->alg_type].fill_sqe_hw_info(sqe, msg);
+	sqe->tag_l = msg->tag;
+
+	info->req_cache[i] = msg;
+
+	return WD_SUCCESS;
+}
+
+static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
+{
+	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)recv_msg->udata;
+	struct wcrypto_lz77_zstd_format *format = tag->priv;
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	__u32 *overflow_cnt, *overflow_pos;
+
+	format->literals_start = recv_msg->dst;
+	format->sequences_start = recv_msg->dst + recv_msg->in_size;
+	format->lit_num = sqe->comp_data_length;
+	format->seq_num = sqe->produced;
+	overflow_cnt = (__u32 *)(uintptr_t)(format->sequences_start +
+			((unsigned long)format->seq_num << 1) * DW);
+	format->lit_length_overflow_cnt = *overflow_cnt;
+	overflow_pos = overflow_cnt + 1;
+	format->lit_length_overflow_pos = *overflow_pos;
+	format->freq = (void *)(uintptr_t)(overflow_pos + 1);
+}
+
 int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 			__u16 i, __u16 usr)
 {
@@ -369,6 +538,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
+	struct wcrypto_comp_tag *tag;
 
 	if (unlikely(!recv_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
@@ -399,6 +569,10 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->checksum = sqe->checksum;
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+
+	tag = (void *)(uintptr_t)recv_msg->udata;
+	if (tag->priv && !info->sqe_fill_priv)
+		fill_priv_lz77_zstd(sqe, recv_msg);
 
 	return 1;
 }
