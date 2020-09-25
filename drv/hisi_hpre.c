@@ -661,7 +661,7 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 		return ret;
 
 	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
-		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
+		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
 			hw_msg.done, hw_msg.etype);
 		if (hw_msg.done == HPRE_HW_TASK_INIT)
 			msg->result = WD_EINVAL;
@@ -671,7 +671,7 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 		msg->tag = hw_msg.tag;
 		ret = dh_out_transfer(msg, &hw_msg);
 		if (ret) {
-			WD_ERR("qm rsa out transfer fail!\n");
+			WD_ERR("dh out transfer fail!\n");
 			msg->result = WD_OUT_EPARA;
 		} else {
 			msg->result = WD_SUCCESS;
