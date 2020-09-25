@@ -1,0 +1,77 @@
+Deploying UADK
+
+UADK is a framekwork for user application to access hardware, and it depends
+UACCE in kernel.
+
+
+1. Kernel Requirement
+
+User needs to make sure that UACCE is already supported in Linux kernel. The
+kernel version should be at least v5.9 with SVA (Shared Virtual Addressing)
+enabled.
+
+
+2. Kernel Configuration
+
+UACCE could be built as module or built-in.
+
+Here's an example to enable UACCE with hardware accelerator in Hisilicon
+platform.
+
+    CONFIG_IOMMU_SVA_LIB=y
+    CONFIG_ARM_SMMU=y
+    CONFIG_ARM_SMMU_V3=y
+    CONFIG_ARM_SMMU_V3_SVA=y
+    CONFIG_PCI_PASID=y
+    CONFIG_UACCE=y
+    CONFIG_CRYPTO_DEV_HISI_SEC2=y
+    CONFIG_CRYPTO_DEV_HISI_QM=y
+    CONFIG_CRYPTO_DEV_HISI_ZIP=y
+    CONFIG_CRYPTO_DEV_HISI_HPRE=y
+
+Make sure all these above kernel configurations are selected.
+
+Build kernel and install the kernel image on Hisilicon platform.
+
+
+3. Build UADK
+
+Configure UADK
+
+    $ ./autogen.sh
+    $ ./conf.sh
+
+    UADK could be configured as either static or dynamic library by conf.sh.
+    By default, it's configured as dynamic library.
+
+    $ make
+    $ make install
+
+    The dynamic libraries would be installed in /usr/local/lib directory. And
+    all head files would be installed in /usr/local/include/uadk directory.
+
+
+4. Run test applications
+
+Test on zip hardware accelerator
+
+    Synchronous mode
+    $ sudo ./test/hisi_zip_test/test_sva_perf -b 8192000 -l 1000 -v -m 0
+    Asynchronous mode
+    $ sudo ./test/hisi_zip_test/test_sva_perf -b 8192000 -l 1000 -v -m 1
+
+Test on sec hardware accelerator
+
+    Synchronous mode
+    $ sudo ./test/hisi_sec_test/test_hisi_sec -cipher 0 -optype 0 -pklen 16 -keylen 16 -times 1 -sync -multi 1
+    $ sudo ./test/hisi_sec_test/test_hisi_sec -digest 0 -optype 0 -pklen 16 -keylen 16 -times 1 -sync -multi 1
+    Asynchronous mode
+    $ sudo ./test/hisi_sec_test/test_hisi_sec -cipher 0 -optype 0 -pklen 16 -keylen 16 -times 1 -async -multi 1
+    $ sudo ./test/hisi_sec_test/test_hisi_sec -digest 0 -optype 0 -pklen 16 -keylen 16 -times 1 -async -multi 1
+
+Test on hpre hardware accelerator
+
+    Synchronous mode
+    $ sudo ./test/hisi_hpre_test/test_hisi_hpre --trd_mode=sync
+    Asynchronous mode
+    $ sudo ./test/hisi_hpre_test/test_hisi_hpre --trd_mode=async
