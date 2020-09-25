@@ -172,7 +172,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_rsa_setting.priv = priv;
 	ret = wd_rsa_setting.driver->init(&wd_rsa_setting.config, priv);
 	if (ret < 0) {
-		WD_ERR("failed to drv init, ret=%d\n", ret);
+		WD_ERR("failed to drv init, ret = %d\n", ret);
 		goto out_init;
 	}
 
@@ -250,8 +250,8 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 			return -WD_EINVAL;
 		}
 
-		if (unlikely(req->dst_bytes < sess->key_size)) {
-			WD_ERR("req dst bytes =%hu error!\n", req->dst_bytes);
+		if (unlikely(req->dst_bytes != sess->key_size)) {
+			WD_ERR("req dst bytes = %hu error!\n", req->dst_bytes);
 			return -EINVAL;
 		}
 	}
@@ -329,12 +329,12 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 
 	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->key);
 	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx=%u!\n", idx);
+		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
 		return -EINVAL;
 	}
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", idx, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -373,12 +373,12 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	index = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						   &sess_t->key);
 	if (unlikely(index >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, index=%u!\n", index);
+		WD_ERR("failed to pick ctx, index = %u!\n", index);
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", index, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -416,14 +416,14 @@ int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count || pos >= config->ctx_num)) {
-		WD_ERR("param error, pos=%u, ctx_num=%u!\n",
+		WD_ERR("param error, pos = %u, ctx_num = %u!\n",
 			pos, config->ctx_num);
 		return -EINVAL;
 	}
 
 	ctx = config->ctxs + pos;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode=%hhu error!\n", pos, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", pos, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
