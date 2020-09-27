@@ -43,11 +43,9 @@ typedef struct _thread_data_t {
 	int     tid;
 	int     flag;
 	int	mode;
+	int	cpu_id;
 	struct wd_cipher_req	*req;
 	struct wd_cipher_sess_setup *setup;
-	struct wd_digest_req	*hreq;
-	struct wd_digest_sess_setup *hsetup;
-	int cpu_id;
 	struct timeval start_tval;
 	unsigned long long send_task_num;
 	unsigned long long recv_task_num;
@@ -265,7 +263,7 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 static __u32 sched_single_pick_next_ctx(handle_t h_sched_ctx, const void *req,
 					const struct sched_key *key)
 {
-	return g_ctx_cfg.ctxs[0].ctx;
+	return 0;
 }
 
 static int sched_single_poll_policy(handle_t h_sched_ctx,
@@ -399,6 +397,9 @@ static int test_sec_cipher_sync_once(void)
 		printf("cipher req iv--------->:\n");
 		hexdump(req.iv, req.iv_bytes);
 	}
+	req.out_bytes = tv->len;
+	req.out_buf_bytes = BUFF_SIZE;
+
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
 		ret = -1;
@@ -507,6 +508,8 @@ static int test_sec_cipher_async_once(void)
 		printf("cipher req iv--------->:\n");
 		hexdump(req.iv, req.iv_bytes);
 	}
+	req.out_bytes = tv->len;
+	req.out_buf_bytes = BUFF_SIZE;
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
 		ret = -1;
@@ -531,7 +534,7 @@ static int test_sec_cipher_async_once(void)
 		/* poll thread */
 try_again:
 		num = 0;
-		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, &num);
+		ret = wd_cipher_poll_ctx(0, 1, &num);
 		if (ret == -EAGAIN) {
 			goto try_again; // loop poll
 		}
@@ -715,6 +718,7 @@ static int sec_cipher_sync_test(void)
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
+		req[i].out_buf_bytes = step;
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
@@ -799,10 +803,8 @@ try_do_again:
 		cnt--;
 		g_count++; // g_count means data block numbers
 	} while (cnt);
-
-	printf("Test cipher async function thread_id is:%d\n", thread_id);
-
 	pthread_mutex_unlock(&mutex);
+	printf("Test cipher async function thread_id is:%d\n", thread_id);
 
 	ret = 0;
 out:
@@ -822,16 +824,15 @@ static void *_test_sec_cipher_async(void *data)
 /* create poll threads */
 static void *poll_func(void *arg)
 {
+	__u32 count = 0;
+	__u32 index = 0;
 	int ret;
-	__u32 count = 0, index = 0;
-	int i = 0;
 
 	int expt = g_times * g_thread_num;
 
 	while (1) {
-		ret = wd_cipher_poll_ctx(g_ctx_cfg.ctxs[0].ctx, 1, &count);
-		i++;
-		// printf("cipher poll ctx: i=%d----------->\n", i);
+		ret = wd_cipher_poll_ctx(0, 1, &count);
+
 		if (ret != -EAGAIN && ret < 0) {
 			printf("poll ctx is error----------->\n");
 			break;
@@ -853,6 +854,10 @@ static void *poll_func(void *arg)
  */
 static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs, struct wd_cipher_sess_setup *setups)
 {
+	int thread_id = (int)syscall(__NR_gettid);
+	struct timeval cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
 	pthread_attr_t attr;
 	int i, ret;
 
@@ -892,6 +897,16 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 			printf("Join %dth thread fail!\n", i);
 			return ret;
 	}
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (double)((cur_tval.tv_sec - thr_data[0].start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - thr_data[0].start_tval.tv_usec);
+	printf("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
+	speed = g_times * g_thread_num / time_used * 1000000;
+	Perf = speed * g_pktlen / 1024; //B->KB
+	printf("Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
+		getpid(), thread_id, speed, Perf);
+
 
 	return 0;
 }
@@ -936,6 +951,7 @@ static int sec_cipher_async_test(void)
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
+		req[i].out_buf_bytes = step;
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
@@ -1222,7 +1238,6 @@ static int sec_digest_sync_once(void)
 	unsigned long Perf = 0;
 	float speed, time_used;
 	unsigned long cnt = g_times;
-	int pid = getpid();
 	int ret;
 
 	/* config setup */
@@ -1253,6 +1268,7 @@ static int sec_digest_sync_once(void)
 		ret = -1;
 		goto out;
 	}
+	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
 
 	req.has_next = 0;
@@ -1288,9 +1304,8 @@ static int sec_digest_sync_once(void)
 	speed = g_times / time_used * 1000000;
 	Perf = speed * req.in_bytes / 1024;
 	printf("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
-	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
-                        (int)syscall(__NR_gettid), speed, Perf);
-
+	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+			(int)syscall(__NR_gettid), speed, Perf);
 	hexdump(req.out, 64);
 
 out:
@@ -1353,7 +1368,7 @@ void *digest_poll_thread(void *data)
 	int ret;
 
 	while (cnt < td_data->recv_num) {
-		ret = wd_digest_poll_ctx(g_ctx_cfg.ctxs[0].ctx, expt, &recv);
+		ret = wd_digest_poll_ctx(0, expt, &recv);
 		if (ret < 0)
 			usleep(100);
 
@@ -1458,6 +1473,7 @@ static int sec_digest_async_once(void)
 		ret = -1;
 		goto out;
 	}
+	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
 	req.has_next = 0;
 
@@ -1548,6 +1564,7 @@ static int sec_digest_sync_multi(void)
 		ret = -1;
 		goto out;
 	}
+	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
 	req.has_next = 0;
 
@@ -1654,6 +1671,7 @@ static int sec_digest_async_multi(void)
 		goto out;
 	}
 
+	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
 	req.has_next = 0;
 	h_sess = wd_digest_alloc_sess(&setup);
