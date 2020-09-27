@@ -1718,6 +1718,7 @@ int main(int argc, char *argv[])
 	unsigned int algtype_class;
 	g_thread_num = 1;
 	int pktsize, keylen;
+	int ret = 0;
 
 	if (!argv[1]) {
 		g_testalg = 0;
@@ -1726,8 +1727,7 @@ int main(int argc, char *argv[])
 		g_keylen = 16;
 		printf("Test sec Cipher parameter default, alg:ecb(aes), set_times:10,"
 			"set_pktlen:16 bytes, set_keylen:128 bit.\n");
-		test_sec_cipher_sync_once();
-		return 0;
+		return  test_sec_cipher_sync_once();
 	}
 
 	if (!strcmp(argv[1], "-cipher")) {
@@ -1739,7 +1739,7 @@ int main(int argc, char *argv[])
 	} else {
 		printf("alg_class type error, please set a algorithm, cipher,"
 		"digest, aead");
-		return 0;
+		return -EINVAL;
 	}
 
 	if (!strcmp(argv[3], "-optype")) {
@@ -1776,18 +1776,18 @@ int main(int argc, char *argv[])
 			if (!strcmp(argv[12], "-multi")) {
 				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently cipher test is synchronize multi -%d threads!\n", g_thread_num);
-				sec_cipher_sync_test();
+				ret = sec_cipher_sync_test();
 			} else {
-				test_sec_cipher_sync_once();
+				ret = test_sec_cipher_sync_once();
 				printf("currently cipher test is synchronize once, one thread!\n");
 			}
 		} else if (algtype_class == DIGEST_CLASS) {
 			if (!strcmp(argv[12], "-multi")) {
 				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently digest test is synchronize multi -%d threads!\n", g_thread_num);
-				sec_digest_sync_multi();
+				ret = sec_digest_sync_multi();
 			} else {
-				sec_digest_sync_once();
+				ret = sec_digest_sync_once();
 				printf("currently digest test is synchronize once, one thread!\n");
 			}
 		}
@@ -1796,18 +1796,18 @@ int main(int argc, char *argv[])
 			if (!strcmp(argv[12], "-multi")) {
 				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently cipher test is asynchronous multi -%d threads!\n", g_thread_num);
-				sec_cipher_async_test();
+				ret = sec_cipher_async_test();
 			} else {
-				test_sec_cipher_async_once();
+				ret = test_sec_cipher_async_once();
 				printf("currently cipher test is asynchronous one, one thread!\n");
 			}
 		} else if (algtype_class == DIGEST_CLASS) {
 			if (!strcmp(argv[12], "-multi")) {
 				g_thread_num = strtoul((char*)argv[13], NULL, 10);
 				printf("currently digest test is asynchronous multi -%d threads!\n", g_thread_num);
-				sec_digest_async_multi();
+				ret = sec_digest_async_multi();
 			} else {
-				sec_digest_async_once();
+				ret = sec_digest_async_once();
 				printf("currently digest test is asynchronous one, one thread!\n");
 			}
 		}
@@ -1815,8 +1815,8 @@ int main(int argc, char *argv[])
 		printf("Please input a right session mode, -sync or -aync!\n");
 		// ./test_hisi_sec -cipher 1 -optype 0 -pktlen 16 -keylen 16 -times 2 -sync -multi 1
 		// ./test_hisi_sec -digest 0 -optype 0 -pktlen 16 -keylen 16 -times 2 -sync -multi 1
-		return 0;
+		ret = -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
