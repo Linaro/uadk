@@ -63,7 +63,7 @@ struct wd_digest_sess {
  * @out: output data address
  * @in_bytes: input data size
  * @out_bytes: output data size
- * @state: I/O operation resulte
+ * @out_buf_bytes: actual output buffer size
  * @has_next: is there next data block
  * @cb: callback function for async mode
  * @cb_param: pointer of callback parameter
@@ -78,6 +78,7 @@ struct wd_digest_req {
 	void		*out;
 	__u32		in_bytes;
 	__u32		out_bytes;
+	__u32		out_buf_bytes;
 	__u16		state;
 	__u16		has_next;
 	wd_digest_cb_t	*cb;
