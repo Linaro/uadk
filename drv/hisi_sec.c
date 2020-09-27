@@ -15,7 +15,6 @@
 #define BYTE_BITS		8
 #define SQE_BYTES_NUMS		128
 #define SEC_FLAG_OFFSET	7
-#define SEC_AUTH_OFFSET	6
 #define SEC_AUTH_KEY_OFFSET	5
 #define SEC_HW_TASK_DONE	0x1
 #define SEC_DONE_MASK		0x0001
@@ -48,6 +47,8 @@
 #define AUTHTYPE_OFFSET		6
 #define MAC_LEN_OFFSET		5
 #define AUTH_ALG_OFFSET		11
+#define WD_CIPHER_THEN_DIGEST	0
+#define WD_DIGEST_THEN_CIPHER	1
 
 enum C_ALG {
 	C_ALG_DES  = 0x0,
@@ -108,6 +109,11 @@ enum {
 };
 
 enum {
+	DATA_DST_ADDR_DISABLE,
+	DATA_DST_ADDR_ENABLE,
+};
+
+enum {
 	AI_GEN_INNER,
 	AI_GEN_IVIN_ADDR,
 	AI_GEN_CAL_IV_ADDR,
@@ -131,8 +137,8 @@ struct hisi_sec_ctx {
 struct hisi_sec_sqe_type2 {
 	/*
 	 * mac_len: 0~4 bits
-	 * a_key_len : 5~10 bits
-	 * a_alg : 11~16 bits
+	 * a_key_len: 5~10 bits
+	 * a_alg: 11~16 bits
 	 */
 	__u32 mac_key_alg;
 
@@ -144,19 +150,19 @@ struct hisi_sec_sqe_type2 {
 	 */
 	__u16 icvw_kmode;
 
-	/* c_alg; 0~3 bits */
+	/* c_alg: 0~3 bits */
 	__u8 c_alg;
 
 	__u8 rsvd4;
 	/*
 	 * a_len: 0~23 bits
-	 * iv_offset_l:24~31 bits
+	 * iv_offset_l: 24~31 bits
 	 */
 	__u32 alen_ivllen;
 
 	/*
-	 * a_len: 0~23 bits
-	 * iv_offset_h:24~31 bits
+	 * c_len: 0~23 bits
+	 * iv_offset_h: 24~31 bits
 	 */
 	__u32 clen_ivhlen;
 
@@ -176,8 +182,8 @@ struct hisi_sec_sqe_type2 {
 
 	/*
 	 * c_pad_type: 0~3 bits
-	 * c_pad_len : 4~11 bits
-	 * c_pad_data_type:12~15 bits
+	 * c_pad_len: 4~11 bits
+	 * c_pad_data_type: 12~15 bits
 	 */
 	__u16 cph_pad;
 	/* c_pad_len_field: 0~1 bits */
@@ -199,7 +205,7 @@ struct hisi_sec_sqe_type2 {
 	/*
 	 * done: 0 bit
 	 * icv: 1~3 bits
-	 *  csc:4~6 bits
+	 * csc: 4~6 bits
 	 * flag: 7~10 bits
 	 * dif_check: 11~13 bits
 	 */
@@ -220,8 +226,8 @@ struct hisi_sec_sqe_type2 {
 struct hisi_sec_sqe {
 	/*
 	 * type:  0~3 bits;
-	 * cipher : 4~5 bits;
-	 * auth : 6~7 bits;
+	 * cipher: 4~5 bits;
+	 * auth: 6~7 bits;
 	 */
 	__u8 type_auth_cipher;
 	/*
@@ -232,9 +238,9 @@ struct hisi_sec_sqe {
 	 */
 	__u8 sds_sa_type;
 	/*
-	 * src_addr_type 0~1 bits not used now.
-	 * dst_addr_type 2~4 bits;
-	 * mac_addr_type 5~7 bits;
+	 * src_addr_type: 0~1 bits not used now.
+	 * dst_addr_type: 2~4 bits;
+	 * mac_addr_type: 5~7 bits;
 	 */
 	__u8 sdm_addr_type;
 
@@ -251,7 +257,7 @@ struct hisi_sec_sqe {
 	 * rhf(type2): 0 bit;
 	 * c_key_type: 1~2 bits;
 	 * a_key_type: 3~4 bits
-	 * write_frame_len(type2):5~7bits;
+	 * write_frame_len(type2): 5~7bits;
 	 */
 	__u8 rca_key_frm;
 
@@ -293,7 +299,7 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 	struct hisi_sec_ctx *sec_ctx = priv;
 	struct hisi_qm_priv qm_priv;
 	handle_t h_ctx, h_qp;
-	int i;
+	int i, j;
 
 	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 	/* allocate qp for each context */
@@ -305,10 +311,12 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 			goto out;
 	}
 	memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config_internal));
+
 	return 0;
+
 out:
-	for (; i >= 0 ; i--) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
+	for (j = i - 1; j >= 0; j--) {
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return -EINVAL;
@@ -505,7 +513,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	sqe.type_auth_cipher = BD_TYPE2;
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
-	de = 0x1 << SEC_DE_OFFSET;
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
 	sqe.sds_sa_type = (__u8)(de | scene);
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION)
@@ -519,20 +527,20 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	if (ret)
 		return ret;
 	if (msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_XTS) {
-			ret = cipher_iv_check(msg);
-			if (ret)
-				return ret;
+		ret = cipher_iv_check(msg);
+		if (ret)
+			return ret;
 	}
 
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
-		WD_ERR("fail to fill bd alg!\n");
+		WD_ERR("failed to fill bd alg!\n");
 		return ret;
 	}
 
 	ret = fill_cipher_bd2_mode(msg, &sqe);
 	if (ret) {
-		WD_ERR("fail to fill bd mode!\n");
+		WD_ERR("failed to fill bd mode!\n");
 		return ret;
 	}
 
@@ -607,7 +615,6 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 
 		sqe->type2.mac_key_alg |=
 		(__u32)(g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET);
-	
 	} else {
 		WD_ERR("Invalid digest mode!\n");
 		return -WD_EINVAL;
@@ -661,6 +668,7 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 	}
 
 	recv_msg->tag = sqe->type2.tag;
+
 #ifdef DEBUG
 	WD_ERR("Dump digest recv sqe-->!\n");
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
@@ -687,11 +695,11 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
-	de = 0x0 << SEC_DE_OFFSET;
+	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET;
 
-	if (msg->in_bytes == 0 || msg->out_bytes == 0 ||
+	if (msg->in_bytes == 0 ||
 		msg->in_bytes > MAX_INPUT_DATA_LEN) {
-		WD_ERR("fail to check input data or mac length!\n");
+		WD_ERR("failed to check input data length!\n");
 		return -EINVAL;
 	}
 	sqe.sds_sa_type = (__u8)(de | scene);
@@ -701,7 +709,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret) {
-		WD_ERR("fail to fill digest bd alg!\n");
+		WD_ERR("failed to fill digest bd alg!\n");
 		return ret;
 	}
 
@@ -713,7 +721,6 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 #endif
 
 	sqe.type2.tag = msg->tag;
-
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
