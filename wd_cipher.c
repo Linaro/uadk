@@ -178,7 +178,10 @@ void wd_cipher_free_sess(handle_t h_sess)
 	}
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
-	free(sess->key);
+	if (sess->key) {
+		wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
+		free(sess->key);
+	}
 	free(sess);
 }
 
@@ -257,12 +260,12 @@ out:
 void wd_cipher_uninit(void)
 {
 	void *priv = g_wd_cipher_setting.priv;
-	if (!priv)
-		return;
 
-	g_wd_cipher_setting.driver->exit(priv);
-	free(priv);
-	g_wd_cipher_setting.priv = NULL;
+	if (!priv) {
+		g_wd_cipher_setting.driver->exit(priv);
+		g_wd_cipher_setting.priv = NULL;
+		free(priv);
+	}
 
 	wd_uninit_async_request_pool(&g_wd_cipher_setting.pool);
 
@@ -300,6 +303,11 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 	if (unlikely(!sess || !req)) {
 		WD_ERR("cipher input sess or req is NULL.\n");
+		return -EINVAL;
+	}
+
+	if (req->out_buf_bytes < req->in_bytes) {
+		WD_ERR("cipher set out_buf_bytes is error!\n");
 		return -EINVAL;
 	}
 
@@ -358,6 +366,11 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
+	if (req->out_buf_bytes < req->in_bytes) {
+		WD_ERR("cipher set out_buf_bytes is error!\n");
+		return -EINVAL;
+	}
+
 	index = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick a proper ctx!\n");
@@ -390,19 +403,23 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 
 int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 {
-	handle_t h_ctx = g_wd_cipher_setting.config.ctxs[index].ctx;
+	struct wd_ctx_config_internal *config = &g_wd_cipher_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs + index;
 	struct wd_cipher_msg resp_msg, *msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
-	if (unlikely(!h_ctx || !count)) {
+	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("wd cipher poll ctx input param is NULL!\n");
 		return -EINVAL;
 	}
 
 	do {
-		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &resp_msg);
+		pthread_mutex_lock(&ctx->lock);
+		ret = g_wd_cipher_setting.driver->cipher_recv(ctx->ctx,
+							      &resp_msg);
+		pthread_mutex_unlock(&ctx->lock);
 		if (ret == -EAGAIN) {
 			break;
 		} else if (ret < 0) {
