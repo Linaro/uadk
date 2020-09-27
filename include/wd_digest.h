@@ -24,6 +24,18 @@ enum wd_digest_type {
 	WD_DIGEST_TYPE_MAX,
 };
 
+enum wd_digest_mac_len {
+	WD_DIGEST_SM3_LEN	= 32,
+	WD_DIGEST_MD5_LEN	= 16,
+	WD_DIGEST_SHA1_LEN	= 20,
+	WD_DIGEST_SHA256_LEN	= 32,
+	WD_DIGEST_SHA224_LEN	= 28,
+	WD_DIGEST_SHA384_LEN	= 48,
+	WD_DIGEST_SHA512_LEN	= 64,
+	WD_DIGEST_SHA512_224_LEN	= 28,
+	WD_DIGEST_SHA512_256_LEN	= 32
+};
+
 /**
  * wd_digest_mode - Mode of digest
  * Mode should be offered by struct wd_digest_arg

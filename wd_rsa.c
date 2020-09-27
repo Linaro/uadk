@@ -467,14 +467,6 @@ int wd_rsa_poll(__u32 expt, __u32 *count)
 	return wd_rsa_setting.sched.poll_policy(0, 0, expt, count);
 }
 
-static void wd_memset_zero(void *data, __u32 size)
-{
-	char *s = data;
-
-	while (size--)
-		*s++ = 0;
-}
-
 int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)
 {
 	if (!ki || !data) {
