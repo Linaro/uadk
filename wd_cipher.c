@@ -17,8 +17,10 @@
 #define MAX_RETRY_COUNTS	200000000
 
 
-static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101,
-	0xFEFEFEFEFEFEFEFE, 0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
+static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {
+	0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
+	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E
+};
 
 struct wd_cipher_setting {
 	struct wd_ctx_config_internal config;
@@ -36,7 +38,7 @@ extern struct wd_cipher_driver wd_cipher_hisi_cipher_driver;
 static void wd_cipher_set_static_drv(void)
 {
 	/*
-	 * Fix me: a parameter can be introduced to decide to choose
+	 * a parameter can be introduced to decide to choose
 	 * specific driver. Same as dynamic case.
 	 */
 	g_wd_cipher_setting.driver = &wd_cipher_hisi_cipher_driver;
@@ -46,7 +48,7 @@ static void __attribute__((constructor)) wd_cipher_open_driver(void)
 {
 	void *driver;
 
-	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
+	/* vendor driver should be put in /usr/lib/wd/ */
 	driver = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("fail to open libhisi_sec.so\n");
@@ -58,7 +60,7 @@ void wd_cipher_set_driver(struct wd_cipher_driver *drv)
 	g_wd_cipher_setting.driver = drv;
 }
 
-static int is_des_weak_key(const __u64 *key, __u16 keylen)
+static int is_des_weak_key(const __u64 *key)
 {
 	int i;
 
@@ -129,7 +131,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		WD_ERR("cipher set key inpupt key length err!\n");
 		return -EINVAL;
 	}
-	if (sess->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key, length)) {
+	if (sess->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key)) {
 		WD_ERR("input des key is weak key!\n");
 		return -EINVAL;
 	}
@@ -216,7 +218,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_cipher_set_static_drv();
 #endif
 
-	/* fix me: sadly find we allocate async pool for every ctx */
+	/* sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&g_wd_cipher_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_cipher_msg));
@@ -351,7 +353,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_msg *msg;
 	int index, idx, ret;
 
-	if (unlikely(!sess || !req)) {
+	if (unlikely(!sess || !req || !req->cb)) {
 		WD_ERR("cipher input sess or req is NULL.\n");
 		return -EINVAL;
 	}
@@ -411,7 +413,7 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 		msg = wd_find_msg_in_pool(&g_wd_cipher_setting.pool, index,
 					  resp_msg.tag);
 		if (!msg) {
-			WD_ERR("get msg from pool is NULL!\n");
+			WD_ERR("failed to get msg from pool!\n");
 			break;
 		}
 
