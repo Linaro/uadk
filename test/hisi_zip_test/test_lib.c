@@ -156,6 +156,11 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
+static void *async_cb(struct wd_comp_req *req, void *data)
+{
+	return NULL;
+}
+
 void *send_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
@@ -181,8 +186,8 @@ void *send_thread_func(void *arg)
 		while (left > 0) {
 			info->req.src_len = copts->block_size;
 			info->req.dst_len = copts->block_size * EXPANSION_RATIO;
-			info->req.cb = NULL;
-			info->req.cb_param = NULL;
+			info->req.cb = async_cb;
+			info->req.cb_param = &info->req;
 			if (copts->sync_mode) {
 				count++;
 				ret = wd_do_comp_async(h_sess, &info->req);
