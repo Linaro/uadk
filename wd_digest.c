@@ -16,6 +16,12 @@
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
 
+static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
+	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
+	WD_DIGEST_SHA256_LEN, WD_DIGEST_SHA224_LEN,
+	WD_DIGEST_SHA384_LEN, WD_DIGEST_SHA512_LEN,
+	WD_DIGEST_SHA512_224_LEN, WD_DIGEST_SHA512_256_LEN
+};
 struct wd_digest_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched	sched;
@@ -63,9 +69,11 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		return -EINVAL;
 	}
 
-	if (key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("fail to check key length!\n");
-		return -WD_EINVAL;
+	if ((sess->alg <= WD_DIGEST_SHA224 && key_len >
+		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
+		key_len > MAX_HMAC_KEY_SIZE) {
+		WD_ERR("failed to check digest key length!\n");
+		return -EINVAL;
 	}
 
 	sess->key_bytes = key_len;
@@ -110,8 +118,10 @@ void wd_digest_free_sess(handle_t h_sess)
 		return;
 	}
 
-	if (sess->key)
+	if (sess->key) {
+		wd_memset_zero(sess->key, MAX_HMAC_KEY_SIZE);
 		free(sess->key);
+	}
 	free(sess);
 }
 
@@ -193,17 +203,35 @@ out:
 void wd_digest_uninit(void)
 {
 	void *priv = g_wd_digest_setting.priv;
-	if (!priv)
-		return;
 
-	g_wd_digest_setting.driver->exit(priv);
-	free(priv);
-	g_wd_digest_setting.priv = NULL;
-	
+	if (!priv) {
+		g_wd_digest_setting.driver->exit(priv);
+		g_wd_digest_setting.priv = NULL;
+		free(priv);
+		return;
+	}
+
 	wd_uninit_async_request_pool(&g_wd_digest_setting.pool);
 
 	wd_clear_sched(&g_wd_digest_setting.sched);
 	wd_clear_ctx_config(&g_wd_digest_setting.config);
+}
+
+static int digest_param_ckeck(struct wd_digest_sess *sess,
+	struct wd_digest_req *req)
+{
+	if (req->out_buf_bytes < req->out_bytes) {
+		WD_ERR("failed to check digest out buffer length!\n");
+		return -EINVAL;
+	}
+
+	if (sess->alg >= WD_DIGEST_TYPE_MAX || req->out_bytes == 0 ||
+	    req->out_bytes > g_digest_mac_len[sess->alg]) {
+		WD_ERR("failed to check digest type or mac length!\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void fill_request_msg(struct wd_digest_msg *msg,
@@ -236,6 +264,10 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		WD_ERR("digest input sess or req is NULL.\n");
 		return -EINVAL;
 	}
+
+	ret = digest_param_ckeck(dsess, req);
+	if (ret)
+		return -EINVAL;
 
 	/* fix me: maybe wrong */
 	index = g_wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
@@ -292,7 +324,11 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	if (unlikely(!dsess || !req || !req->cb)) {
 		WD_ERR("digest input sess or req is NULL.\n");
 		return -EINVAL;
-        }
+    }
+
+	ret = digest_param_ckeck(dsess, req);
+	if (ret)
+		return -EINVAL;
 
 	index = g_wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
