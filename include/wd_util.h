@@ -39,6 +39,13 @@ void wd_clear_sched(struct wd_sched *in);
 void wd_clear_ctx_config(struct wd_ctx_config_internal *in);
 
 /*
+ * wd_memset_zero() - memset the data to zero.
+ * @data: the data memory addr.
+ * @size: the data length.
+ */
+void wd_memset_zero(void *data, __u32 size);
+
+/*
  * wd_init_async_request_pool() - Init message pools.
  * @pool: Pointer of message pool.
  * @pool_num: Message pool number.

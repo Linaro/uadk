@@ -92,6 +92,17 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 	free(in->ctxs);
 }
 
+void wd_memset_zero(void *data, __u32 size)
+{
+	char *s = data;
+
+	if (!s)
+		return;
+
+	while (size--)
+		*s++ = 0;
+}
+
 static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 {
 	pool->msgs = calloc(1, msg_num * msg_size);
