@@ -298,7 +298,8 @@ struct bd3_storage_scene {
 	__u32 private_info;
 	__u32 gen_ref_ctrl:4;
 	__u32 page_pad_type:2;
-	__u32 rsvd0:2;
+	__u32 page_pad:1;
+	__u32 rsvd0:1;
 	__u32 chk_grd_ctrl:4;
 	__u32 chk_ref_ctrl:4;
 	__u32 block_size:16;
@@ -376,7 +377,8 @@ struct hisi_sec_bd3_sqe {
 	__u32 a_alg:6;
 	__u32 key_sel:4;
 	__u32 rsvd1:3;
-	__u32 key_wrap_num:3;
+	__u32 sva_perfetch:1;
+	__u32 key_wrap_num:2;
 	__u32 update_key:1;
 
 	__u32 salt3:8;
@@ -412,7 +414,8 @@ struct hisi_sec_bd3_sqe {
 	__u32 error_type:8;
 	__u32 warning_type:8;
 	union {
-		__u64 key_addr;
+		__u32 kek_key_addr_l;
+		__u32 kek_key_addr_h;
 		struct bd3_check_sum check_sum;
 		struct bd3_tls_type_back tls_type_back;
 	};
