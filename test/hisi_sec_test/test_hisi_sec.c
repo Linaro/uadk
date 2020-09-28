@@ -265,7 +265,7 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 static __u32 sched_single_pick_next_ctx(handle_t h_sched_ctx, const void *req,
 					const struct sched_key *key)
 {
-	return g_ctx_cfg.ctxs[0].ctx;
+	return 0;
 }
 
 static int sched_single_poll_policy(handle_t h_sched_ctx,
