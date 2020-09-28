@@ -6,6 +6,7 @@
 #include <sys/syscall.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <getopt.h>
 
 #include "test_hisi_sec.h"
 #include "wd_cipher.h"
@@ -32,7 +33,7 @@ static unsigned int g_testalg;
 static unsigned int g_keylen;
 static unsigned int g_pktlen;
 static unsigned int g_direction;
-static unsigned int alg_op_type;
+static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
@@ -61,8 +62,25 @@ typedef struct wd_thread_res {
 	unsigned long long sum_perf;
 } thread_data_d;
 
+/**
+ * struct test_sec_option - Define the test sec app option list.
+ * @algclass: 0:cipher 1:digest
+ * @algtype: The sub alg type, reference func get_cipher_resource.
+ * @syncmode: 0:sync mode 1:async mode
+ */
+struct test_sec_option {
+	__u32 algclass;
+	__u32 algtype;
+	__u32 optype;
+	__u32 pktlen;
+	__u32 keylen;
+	__u32 times;
+	__u32 syncmode;
+	__u32 xmulti;
+};
+
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t test_sec_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t system_test_thrds[NUM_THREADS];
 static thread_data_t thr_data[NUM_THREADS];
 
@@ -601,8 +619,8 @@ static int test_sec_cipher_sync(void *arg)
 	printf("cipher req key--------->:\n");
 	// hexdump(h_sess->key, h_sess->key_bytes);
 
-	pthread_mutex_lock(&mutex);
-	// pthread_cond_wait(&cond, &mutex);
+	pthread_mutex_lock(&test_sec_mutex);
+	// pthread_cond_wait(&cond, &test_sec_mutex);
 	/* run task */
 	while (cnt) {
 		ret = wd_do_cipher_sync(h_sess, req);
@@ -624,7 +642,7 @@ static int test_sec_cipher_sync(void *arg)
 	hexdump(req->dst, req->in_bytes);
 	printf("Test cipher sync function thread_id is:%d\n", thread_id);
 #endif
-	pthread_mutex_unlock(&mutex);
+	pthread_mutex_unlock(&test_sec_mutex);
 
 	ret = 0;
 out:
@@ -787,8 +805,8 @@ static int test_sec_cipher_async(void *arg)
 		goto out;;
 	}
 
-	pthread_mutex_lock(&mutex);
-	// pthread_cond_wait(&cond, &mutex);
+	pthread_mutex_lock(&test_sec_mutex);
+	// pthread_cond_wait(&cond, &test_sec_mutex);
 	/* run task */
 	do {
 try_do_again:
@@ -803,7 +821,7 @@ try_do_again:
 		cnt--;
 		g_count++; // g_count means data block numbers
 	} while (cnt);
-	pthread_mutex_unlock(&mutex);
+	pthread_mutex_unlock(&test_sec_mutex);
 	printf("Test cipher async function thread_id is:%d\n", thread_id);
 
 	ret = 0;
@@ -1059,7 +1077,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 
 	switch (g_testalg) {
 		case 0:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sm3)");
@@ -1075,7 +1093,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SM3;
 			break;
 		case 1:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(md5)");
@@ -1091,7 +1109,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_MD5;
 			break;
 		case 2:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha1)");
@@ -1107,7 +1125,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA1;
 			break;
 		case 3:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha256)");
@@ -1123,7 +1141,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA256;
 			break;
 		case 4:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha224)");
@@ -1139,7 +1157,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA224;
 			break;
 		case 5:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha384)");
@@ -1155,7 +1173,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA384;
 			break;
 		case 6:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha512)");
@@ -1171,7 +1189,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA512;
 			break;
 		case 7:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha512_224)");
@@ -1187,7 +1205,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA512_224;
 			break;
 		case 8:
-			switch (alg_op_type) {
+			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
 					printf("test alg: %s\n", "normal(sha512_256)");
@@ -1382,7 +1400,7 @@ void *digest_poll_thread(void *data)
 	}
 	gettimeofday(&cur_tval, NULL);
 
-	pthread_mutex_lock(&mutex);
+	pthread_mutex_lock(&test_sec_mutex);
 	time_used = (float)((cur_tval.tv_sec - td_data->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - td_data->start_tval.tv_usec);
 	printf("time_used:%0.0f us, send task num:%d\n", time_used, cnt);
@@ -1390,7 +1408,7 @@ void *digest_poll_thread(void *data)
 	Perf = speed * req->in_bytes / 1024; //B->KB
 	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
-	pthread_mutex_unlock(&mutex);
+	pthread_mutex_unlock(&test_sec_mutex);
 
 	return NULL;
 }
@@ -1417,7 +1435,7 @@ void *digest_sync_send_thread(void *data)
 	}
 	gettimeofday(&cur_tval, NULL);
 
-	pthread_mutex_lock(&mutex);
+	pthread_mutex_lock(&test_sec_mutex);
 	time_used = (float)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - start_tval.tv_usec);
 	printf("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
@@ -1425,7 +1443,7 @@ void *digest_sync_send_thread(void *data)
 	Perf = speed * req->in_bytes / 1024; //B->KB
 	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
-	pthread_mutex_unlock(&mutex);
+	pthread_mutex_unlock(&test_sec_mutex);
 
 	return NULL;
 }
@@ -1730,78 +1748,125 @@ out:
 	return ret;
 }
 
-int main(int argc, char *argv[])
+static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *option)
 {
-	printf("this is a hisi sec test.\n");
-	unsigned int algtype_class;
-	g_thread_num = 1;
-	int pktsize, keylen;
-	int ret = 0;
+    int option_index = 0;
+	int c;
 
-	if (!argv[1]) {
-		g_testalg = 0;
-		g_times = 10;
-		g_pktlen = 16;
-		g_keylen = 16;
-		printf("Test sec Cipher parameter default, alg:ecb(aes), set_times:10,"
-			"set_pktlen:16 bytes, set_keylen:128 bit.\n");
-		return  test_sec_cipher_sync_once();
+	static struct option long_options[] = {
+        	{"cipher",    required_argument, 0,  1},
+        	{"digest",    required_argument, 0,  2},
+		{"optype",    required_argument, 0,  3},
+		{"pktlen",    required_argument, 0,  4},
+		{"keylen",    required_argument, 0,  5},
+		{"times",     required_argument, 0,  6},
+		{"sync",      no_argument,       0,  7},
+		{"async",     no_argument,       0,  8},
+		{"multi",    required_argument, 0,  9},
+		{0, 0, 0, 0}
+	};
+
+	while (1) {
+		c = getopt_long(argc, argv, "", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 1:
+			option->algclass = CIPHER_CLASS;
+			option->algtype = strtol(optarg, NULL, 0);
+			break;
+		case 2:
+			option->algclass = DIGEST_CLASS;
+			option->algtype = strtol(optarg, NULL, 0);
+			break;
+		case 3:
+			option->optype = strtol(optarg, NULL, 0);
+			break;
+		case 4:
+			option->pktlen = strtol(optarg, NULL, 0);
+			break;
+		case 5:
+			option->keylen = strtol(optarg, NULL, 0);
+			break;
+		case 6:
+			option->times = strtol(optarg, NULL, 0);
+			break;
+		case 7:
+			option->syncmode = 0;
+			break;
+		case 8:
+			option->syncmode = 1;
+			break;
+		case 9:
+			option->xmulti = strtol(optarg, NULL, 0);
+			break;
+		default:
+			printf("bad input parameter, exit\n");
+			exit(-1);
+		}
 	}
+}
 
-	if (!strcmp(argv[1], "-cipher")) {
-		algtype_class = CIPHER_CLASS;
-		g_testalg = strtoul((char*)argv[2], NULL, 10);
-	} else if (!strcmp(argv[1], "-digest")) {
-		algtype_class = DIGEST_CLASS;
-		g_testalg = strtoul((char*)argv[2], NULL, 10);
-	} else {
-		printf("alg_class type error, please set a algorithm, cipher,"
-		"digest, aead");
+static int test_sec_option_convert(struct test_sec_option *option)
+{
+	if (option->algclass > DIGEST_CLASS) {
+		printf("alg_class type error, please set a algorithm, cipher or "
+			   "digest. The aead is not support now.");
+		return -EINVAL;
+	}
+	if (option->syncmode > 1) {
+		printf("Please input a right session mode, 0:sync 1:async. \n");
 		return -EINVAL;
 	}
 
-	if (!strcmp(argv[3], "-optype")) {
-		g_direction = strtoul((char*)argv[4], NULL, 10);
-		if (algtype_class == DIGEST_CLASS) {
-			//0 is normal mode, 1 is HMAC mode, 3 is long hash mode.
-			alg_op_type = g_direction;
-			if (g_direction == 3) {
-				alg_op_type = 0;
-				g_ivlen = 1;
-			}
+	g_testalg = option->algtype;
+	g_pktlen = option->pktlen;
+	g_keylen = option->keylen;
+	g_times = option->times ? option->times : 1;
+	printf("set global times is %lld\n", g_times);
+
+	g_thread_num = option->xmulti ? option->xmulti : 1;
+
+	g_direction = option->optype;
+	if (option->algclass == DIGEST_CLASS) {
+		//0 is normal mode, 1 is HMAC mode, 3 is long hash mode.
+		g_alg_op_type = g_direction;
+		if (g_direction == 3) {
+			g_alg_op_type = 0;
+			g_ivlen = 1;
 		}
 	}
 
-	if (!strcmp(argv[5], "-pktlen")) {
-		pktsize = strtoul((char*)argv[6], NULL, 10);
-		g_pktlen = pktsize;
-	}
-	if (!strcmp(argv[7], "-keylen")) {
-		keylen = strtoul((char*)argv[8], NULL, 10);
-		g_keylen = keylen;
-	}
+	return 0;
+}
 
-	if (!strcmp(argv[9], "-times")) {
-		g_times = strtoul((char*)argv[10], NULL, 10);
-	} else {
-		g_times = 1;
-	}
-	printf("set global times is %lld\n", g_times);
+static int test_sec_default_case()
+{
+	g_testalg = 0;
+	g_times = 10;
+	g_pktlen = 16;
+	g_keylen = 16;
+	printf("Test sec Cipher parameter default, alg:ecb(aes), set_times:10,"
+		"set_pktlen:16 bytes, set_keylen:128 bit.\n");
+	return	test_sec_cipher_sync_once();
+}
 
-	pthread_mutex_init(&mutex, NULL);
-	if (!strcmp(argv[11], "-sync")) {
-		if (algtype_class == CIPHER_CLASS) {
-			if (!strcmp(argv[12], "-multi")) {
-				g_thread_num = strtoul((char*)argv[13], NULL, 10);
+static int test_sec_run(__u32 sync_mode, __u32 alg_class)
+{
+	int ret = 0;
+
+	if (sync_mode == 0) {
+		if (alg_class == CIPHER_CLASS) {
+			if (g_thread_num > 1) {
 				printf("currently cipher test is synchronize multi -%d threads!\n", g_thread_num);
 				ret = sec_cipher_sync_test();
 			} else {
 				ret = test_sec_cipher_sync_once();
 				printf("currently cipher test is synchronize once, one thread!\n");
 			}
-		} else if (algtype_class == DIGEST_CLASS) {
-			if (!strcmp(argv[12], "-multi")) {
-				g_thread_num = strtoul((char*)argv[13], NULL, 10);
+		} else if (alg_class == DIGEST_CLASS) {
+			if (g_thread_num > 1) {
 				printf("currently digest test is synchronize multi -%d threads!\n", g_thread_num);
 				ret = sec_digest_sync_multi();
 			} else {
@@ -1809,19 +1874,17 @@ int main(int argc, char *argv[])
 				printf("currently digest test is synchronize once, one thread!\n");
 			}
 		}
-	} else if (!strcmp(argv[11], "-async")) {
-		if (algtype_class == CIPHER_CLASS) {
-			if (!strcmp(argv[12], "-multi")) {
-				g_thread_num = strtoul((char*)argv[13], NULL, 10);
+	} else {
+		if (alg_class == CIPHER_CLASS) {
+			if (g_thread_num > 1) {
 				printf("currently cipher test is asynchronous multi -%d threads!\n", g_thread_num);
 				ret = sec_cipher_async_test();
 			} else {
 				ret = test_sec_cipher_async_once();
 				printf("currently cipher test is asynchronous one, one thread!\n");
 			}
-		} else if (algtype_class == DIGEST_CLASS) {
-			if (!strcmp(argv[12], "-multi")) {
-				g_thread_num = strtoul((char*)argv[13], NULL, 10);
+		} else if (alg_class == DIGEST_CLASS) {
+			if (g_thread_num > 1) {
 				printf("currently digest test is asynchronous multi -%d threads!\n", g_thread_num);
 				ret = sec_digest_async_multi();
 			} else {
@@ -1829,12 +1892,29 @@ int main(int argc, char *argv[])
 				printf("currently digest test is asynchronous one, one thread!\n");
 			}
 		}
-	} else {
-		printf("Please input a right session mode, -sync or -aync!\n");
-		// ./test_hisi_sec -cipher 1 -optype 0 -pktlen 16 -keylen 16 -times 2 -sync -multi 1
-		// ./test_hisi_sec -digest 0 -optype 0 -pktlen 16 -keylen 16 -times 2 -sync -multi 1
-		ret = -EINVAL;
 	}
 
 	return ret;
+}
+
+int main(int argc, char *argv[])
+{
+	struct test_sec_option option = {0};
+	int ret = 0;
+
+	printf("this is a hisi sec test.\n");
+
+	g_thread_num = 1;
+	if (!argv[1]) {
+		return test_sec_default_case();
+	}
+
+	test_sec_cmd_parse(argc, argv, &option);
+	ret = test_sec_option_convert(&option);
+	if (ret)
+		return ret;
+
+	pthread_mutex_init(&test_sec_mutex, NULL);
+
+	return test_sec_run(option.syncmode, option.algclass);
 }

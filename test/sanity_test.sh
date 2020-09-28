@@ -33,26 +33,26 @@ run_zip_test()
 # failed: return 1; success: return 0
 run_sec_test()
 {
-	test_hisi_sec -cipher 0 -optype 0 -pklen 16 -keylen 16 -times 1 \
-		      -sync -multi 1 &> /dev/null
+	test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
+		      --sync --multi 1 &> /dev/null
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_sec -cipher 0 -optype 0 -pklen 16 -keylen 16 -times 1 \
-		      -async -multi 1 &> /dev/null
+	test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
+		      --async --multi 1 &> /dev/null
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_sec -digest 0 -optype 0 -pklen 16 -keylen 16 -times 1 \
-		      -sync -multi 1 &> /dev/null
+	test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
+		      --sync --multi 1 &> /dev/null
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_sec -digest 0 -optype 0 -pklen 16 -keylen 16 -times 1 \
-		      -async -multi 1 &> /dev/null
+	test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
+		      --async --multi 1 &> /dev/null
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
