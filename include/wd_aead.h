@@ -20,7 +20,7 @@ enum wd_aead_op_type {
 };
 
 /**
- * wd_cipher_type - Algorithm type of cipher
+ * wd_cipher_alg - Algorithm type of cipher
  * statement in wd_cipher.h
  *
  * wd_cipher_mode - Algorithm mode of cipher
@@ -88,6 +88,10 @@ struct wd_aead_req {
  * @ sched	    User defined schedule.
  */
 int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched);
+
+/**
+ * wd_aead_uninit() uninitialise ctx configuration and schedule.
+ */
 void wd_aead_uninit(void);
 
 /**
@@ -119,11 +123,17 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len);
 int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len);
 
 /**
- * wd_do_aead_sync()/ async() Syn/asynchronous aead operation
+ * wd_do_aead_sync() synchronous aead operation
  * @sess: wd aead session
  * @req: operational data.
  */
 int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req);
+
+/**
+ * wd_do_aead_async() asynchronous aead operation
+ * @sess: wd aead session
+ * @req: operational data.
+ */
 int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req);
 
 /**
