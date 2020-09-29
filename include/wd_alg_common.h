@@ -74,7 +74,7 @@ struct wd_ctx_config {
  * @type: Service type , the value must smaller than type_num.
  */
 struct sched_key {
-	__u8 numa_id;
+	int numa_id;
 	__u8 mode;
 	__u8 type;
 };

@@ -186,7 +186,7 @@ static int sample_poll_region(struct sample_sched_ctx *ctx, __u32 begin,
 	return 0;
 }
 
-static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, __u32 numa_id,
+static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, int numa_id,
 				 __u32 expect, __u32 *count)
 {
 	struct sched_ctx_region **region =
@@ -239,7 +239,7 @@ static bool sample_sched_key_valid(struct sample_sched_ctx *ctx,
 {
 	if (key->numa_id >= ctx->numa_num || key->mode >= SCHED_MODE_BUTT ||
 	    key->type >= ctx->type_num) {
-		printf("ERROR: %s key error - %u,%u,%u !\n",
+		printf("ERROR: %s key error - %d,%u,%u !\n",
 		       __FUNCTION__, key->numa_id, key->mode, key->type);
 		return false;
 	}
@@ -305,7 +305,7 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
 	struct sample_sched_info *sched_info;
-	__u8 numa_id;
+	int numa_id;
 	int ret;
 
 	if (!count || !cfg || !ctx) {
@@ -345,7 +345,7 @@ struct sample_sched_table {
 	},
 };
 
-int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
+int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 			   __u8 mode, __u8 type, __u32 begin, __u32 end)
 {
 	struct sample_sched_info *sched_info;
@@ -359,9 +359,10 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
 
 	sched_ctx = (struct sample_sched_ctx*)sched->h_sched_ctx;
 
-	if ((numa_id >= sched_ctx->numa_num) || (mode >= SCHED_MODE_BUTT) ||
+	if ((numa_id >= sched_ctx->numa_num) || (numa_id < 0) ||
+		(mode >= SCHED_MODE_BUTT) ||
 	    (type >= sched_ctx->type_num)) {
-		printf("ERROR: %s para err: numa_id=%u, mode=%u, type=%u\n",
+		printf("ERROR: %s para err: numa_id=%d, mode=%u, type=%u\n",
 		       __FUNCTION__, numa_id, mode, type);
 		return -EINVAL;
 	}
@@ -369,7 +370,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
 	sched_info = sched_ctx->sched_info;
 
 	if (!sched_info[numa_id].ctx_region[mode]) {
-		printf("ERROR: %s para err: ctx_region:numa_id=%u, mode=%u is null\n",
+		printf("ERROR: %s para err: ctx_region:numa_id=%d, mode=%u is null\n",
 		       __FUNCTION__, numa_id, mode);
 		return -EINVAL;
 	}

@@ -28,7 +28,7 @@ typedef int (*user_poll_func)(__u32 pos, __u32 expect, __u32 *count);
  * The shedule indexed mode is NUMA -> MODE -> TYPE -> [BEGIN : END],
  * then select one index from begin to end.
  */
-int sample_sched_fill_data(const struct wd_sched *sched, __u8 numa_id,
+int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 			   __u8 mode, __u8 type, __u32 begin, __u32 end);
 
 /**
