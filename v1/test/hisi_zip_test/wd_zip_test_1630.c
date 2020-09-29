@@ -62,6 +62,12 @@ struct user_comp_tag_info {
 	int tag;
 };
 
+struct seq_def {
+	__u32 offset;
+	__u16 litlen;
+	__u16 matlen;
+};
+
 #define HZIP_ZLIB_HEAD_SIZE		2
 #define HZIP_GZIP_HEAD_SIZE		10
 
@@ -334,6 +340,9 @@ static int zip_test_request_q(int alg_type, int op_type)
 		case WCRYPTO_RAW_DEFLATE:
 			q[i].capa.alg = "deflate";
 			break;
+		case WCRYPTO_LZ77_ZSTD:
+			q[i].capa.alg = "lz77_zstd";
+			break;
 		default:
 			q[i].capa.alg = "zlib";
 			break;
@@ -419,11 +428,25 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 			       __func__, block_size);
 			goto err_buffer_free;
 		}
+
+		if (pdata->alg_type == WCRYPTO_LZ77_ZSTD) {
+			pdata->opdata->priv = calloc(1, sizeof(struct wcrypto_lz77_zstd_format));
+			if (pdata->opdata->priv == NULL) {
+				WD_ERR("%s alloc %d format fail!\n", __func__, i);
+				goto err_format_free;
+			}
+		}
 	}
 
 	dbg("%s succeed!\n", __func__);
 
 	return 0;
+
+err_format_free:
+	wd_free_blk(test_thrds_data[i].pool,
+		    test_thrds_data[i].opdata->in);
+	wd_free_blk(test_thrds_data[i].pool,
+		    test_thrds_data[i].opdata->out);
 
 err_buffer_free:
 	free(test_thrds_data[i].opdata);
@@ -480,12 +503,81 @@ static void zip_test_exit(void)
 			    test_thrds_data[i].opdata->in);
 		wd_free_blk(test_thrds_data[i].pool,
 			    test_thrds_data[i].opdata->out);
+		if (test_thrds_data[i].alg_type == WCRYPTO_LZ77_ZSTD)
+			free(test_thrds_data[i].opdata->priv);
 		wcrypto_del_comp_ctx(test_thrds_data[i].ctx);
 		wd_blkpool_destroy(test_thrds_data[i].pool);
 		free(test_thrds_data[i].opdata);
 	}
 
 	zip_test_release_q(q_num);
+}
+
+static void dump_lz77_zstd_format(struct wcrypto_lz77_zstd_format *format)
+{
+#ifdef DEBUG_LOG
+
+	struct seq_def *seq;
+	int i;
+
+	dbg("%s start!\n", __func__);
+
+	dbg("%s literals number: %u\n", __func__, format->lit_num);
+
+	dbg("%s literals: ", __func__);
+	for (i = 0; i < format->lit_num; i++) {
+		dbg("%hhx", *(__u8 *)(format->literals_start + i));
+	}
+	dbg("\n");
+
+	dbg("%s sequences number: %u\n", __func__, format->seq_num);
+	seq = format->sequences_start;
+	dbg("%s sequences: \n", __func__);
+	for (i = 0; i < format->seq_num; i++) {
+		dbg("sequence[%d]: offset %u, litlen %hu, matlen %hu\n", i,
+		    seq[i].offset, seq[i].litlen, seq[i].matlen);
+	}
+
+	dbg("%s succeed!\n", __func__);
+
+#endif
+}
+
+static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format)
+{
+	struct wcrypto_lz77_zstd_format *format = output_format;
+	int write_size = 0;
+	FILE *fout;
+	int ret;
+
+	dbg("%s start!\n", __func__);
+
+	dump_lz77_zstd_format(format);
+	fout = fopen("./zstd_lz77", "wb+");
+	if (fout == NULL) {
+		WD_ERR("file open failed\n");
+		return -1;
+	}
+
+	ret = fwrite(&format->lit_num, sizeof(__u32), 1, fout);
+	write_size += ret * sizeof(__u32);
+
+	ret = fwrite(format->literals_start, sizeof(__u8), format->lit_num, fout);
+	write_size += ret * sizeof(__u8);
+
+	ret = fwrite(&format->seq_num, sizeof(__u32), 1, fout);
+	write_size += ret * sizeof(__u32);
+
+	ret = fwrite(format->sequences_start, sizeof(__u64), format->seq_num, fout);
+	write_size += ret * sizeof(__u64);
+
+	dbg("write size is %d\n", write_size);
+
+	fclose(fout);
+
+	dbg("%s succeed!\n", __func__);
+
+	return write_size;
 }
 
 static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
@@ -593,7 +685,6 @@ static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
 	}
 	gettimeofday(&end_tval, NULL);
 
-	zip_test_exit();
 
 	for (i = 0; i < thread_num; i++) {
 		total_in += test_thrds_data[i].src_len;
@@ -606,8 +697,11 @@ static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
 	dbg("%s end threadnum= %d, out_len=%ld\n",
 	    __func__, thread_num, test_thrds_data[thread_num-1].dst_len);
 
-	sz = fwrite(test_thrds_data[thread_num-1].dst, 1,
-		    test_thrds_data[thread_num-1].dst_len, dest);
+	if (alg_type == WCRYPTO_LZ77_ZSTD)
+		sz = write_zstd_file(test_thrds_data[thread_num-1].opdata->priv);
+	else
+		sz = fwrite(test_thrds_data[thread_num-1].dst, 1,
+			    test_thrds_data[thread_num-1].dst_len, dest);
 
 	if (op_type == WCRYPTO_DEFLATE) {
 		speed = total_in / tc / 1024 / 1024 *
@@ -622,6 +716,8 @@ static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
 			"Decompress threadnum= %d, speed=%0.3f MB/s, timedelay=%0.1f us\n",
 			thread_num, speed, tc / thread_num / iteration);
 	}
+
+	zip_test_exit();
 
 all_buf_free:
 	for (i = 0; i < thread_num; i++) {
@@ -659,7 +755,7 @@ int main(int argc, char *argv[])
 	int show_help = 0;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "zgfw:dasb:t:i:h")) != -1) {
+	while ((opt = getopt(argc, argv, "zgflw:dasb:t:i:h")) != -1) {
 		switch (opt) {
 		case 'z':
 			alg_type = WCRYPTO_ZLIB;
@@ -669,6 +765,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			alg_type = WCRYPTO_RAW_DEFLATE;
+			break;
+		case 'l':
+			alg_type = WCRYPTO_LZ77_ZSTD;
 			break;
 		case 'w':
 			window_size = atoi(optarg);
@@ -704,7 +803,7 @@ int main(int argc, char *argv[])
 	}
 
 	SYS_ERR_COND(show_help || optind > argc,
-		     "version 2.00:wd_test_zip -[g|z|f algorithm] "
+		     "version 3.00:wd_test_zip -[g|z|f|l algorithm] "
 		     "[-w window size] [-d decompress] [-b block size] "
 		     "-[a|s mode] [-t thread num] [-i iteration] < in > out\n");
 
