@@ -517,8 +517,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	/* fill true flag */
 	msg.req.last = req->last;
 	msg.stream_mode = WD_COMP_STATEFUL;
-	sess->isize = resp_msg.isize;
-	sess->checksum = resp_msg.checksum;
 
 	pthread_mutex_lock(&ctx->lock);
 
@@ -549,6 +547,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
 	req->status = resp_msg.req.status;
+	sess->isize = resp_msg.isize;
+	sess->checksum = resp_msg.checksum;
 
 	sess->stream_pos = WD_COMP_STREAM_OLD;
 
