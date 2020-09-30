@@ -204,7 +204,8 @@ static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
 
 	if (!strncmp(alg, "zlib", strlen("zlib")) ||
 	    !strncmp(alg, "gzip", strlen("gzip")) ||
-	    !strncmp(alg, "deflate", strlen("deflate"))) {
+	    !strncmp(alg, "deflate", strlen("deflate")) ||
+	    !strncmp(alg, "lz77_zstd", strlen("lz77_zstd"))) {
 		qinfo->atype = WCRYPTO_COMP;
 		info->sqe_size = QM_ZIP_BD_SIZE;
 		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
@@ -258,9 +259,8 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	return ret;
 }
 
-static int qm_set_db_info(struct wd_queue *q)
+static int qm_set_db_info(struct q_info *qinfo)
 {
-	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
 	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE) ||
@@ -312,7 +312,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] -
 		sizeof(uint32_t);
 	info->ds_rx_base = info->ds_tx_base - sizeof(uint32_t);
-	ret = qm_set_db_info(q);
+	ret = qm_set_db_info(qinfo);
 	if (ret)
 		goto err_with_regions;
 
@@ -375,143 +375,148 @@ void qm_uninit_queue(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-static void qm_tx_update(struct qm_queue_info *info)
+static void qm_tx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
 {
-	__u16 idx = info->sq_tail_index;
-
-	if (idx == QM_Q_DEPTH - 1)
-		idx = 0;
-	else
-		idx++;
-
-	info->db(info, DOORBELL_CMD_SQ, idx, 0);
 	info->sq_tail_index = idx;
-	__atomic_add_fetch(&info->used, 1, __ATOMIC_RELAXED);
+	info->db(info, DOORBELL_CMD_SQ, idx, 0);
+	__atomic_add_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
-int qm_send(struct wd_queue *q, void *req)
+int qm_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	int ret;
+	__u16 sq_tail;
+	int i, ret;
 
-	if (wd_reg_read(info->ds_tx_base) == 1) {
+	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
 		WD_ERR("wd queue hw error happened before qm send!\n");
 		return -WD_HW_EACCESS;
 	}
+
 	wd_spinlock(&info->sd_lock);
-	if (__atomic_load_n(&info->used, __ATOMIC_RELAXED) == QM_Q_DEPTH - 1) {
+	if (unlikely(__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
+		     QM_Q_DEPTH - num - 1)) {
 		wd_unspinlock(&info->sd_lock);
 		WD_ERR("queue is full!\n");
 		return -WD_EBUSY;
 	}
 
+	sq_tail = info->sq_tail_index;
+	for (i = 0; i < num; i++) {
+		ret = info->sqe_fill[qinfo->atype](req[i], qinfo->priv,
+				sq_tail);
+		if (unlikely(ret != WD_SUCCESS)) {
+			wd_unspinlock(&info->sd_lock);
+			WD_ERR("sqe fill error, ret %d!\n", ret);
+			return -WD_EINVAL;
+		}
 
-	ret = info->sqe_fill[qinfo->atype](req, qinfo->priv,
-			info->sq_tail_index);
-	if (ret != WD_SUCCESS) {
-		wd_unspinlock(&info->sd_lock);
-		WD_ERR("sqe fill error, ret %d!\n", ret);
-		return -WD_EINVAL;
+		if (sq_tail == QM_Q_DEPTH - 1)
+			sq_tail = 0;
+		else
+			sq_tail++;
 	}
 
 	/* make sure the request is all in memory before doorbell */
 	mb();
-	qm_tx_update(info);
+	qm_tx_update(info, sq_tail, num);
 	wd_unspinlock(&info->sd_lock);
 
 	return WD_SUCCESS;
 }
 
-static void qm_rx_update(struct qm_queue_info *info, void **resp)
+static void qm_rx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
 {
-	__u16 idx = info->cq_head_index;
-
-	*resp = info->req_cache[idx];
-	info->req_cache[idx] = NULL;
-
-	if (idx == QM_Q_DEPTH - 1) {
-		info->cqc_phase = !(info->cqc_phase);
-		idx = 0;
-	} else {
-		idx++;
-	}
-
+	info->cq_head_index = idx;
 	info->db(info, DOORBELL_CMD_CQ, idx, 0);
-
-	info->cq_head_index = idx;
-	__atomic_sub_fetch(&info->used, 1, __ATOMIC_RELAXED);
+	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
-static void qm_rx_from_cache(struct qm_queue_info *info, void **resp)
+static void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
 {
 	__u16 idx = info->cq_head_index;
+	int i;
 
-	*resp = info->req_cache[idx];
-	info->req_cache[idx] = NULL;
+	for (i = 0; i < num; i++) {
+		resp[i] = info->req_cache[idx];
+		info->req_cache[idx] = NULL;
 
-	if (idx == QM_Q_DEPTH - 1) {
-		info->cqc_phase = !(info->cqc_phase);
-		idx = 0;
-	} else {
-		idx++;
+		if (idx == QM_Q_DEPTH - 1) {
+			info->cqc_phase = !(info->cqc_phase);
+			idx = 0;
+		} else {
+			idx++;
+		}
 	}
 
 	info->cq_head_index = idx;
-	__atomic_sub_fetch(&info->used, 1, __ATOMIC_RELAXED);
+	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
-int qm_recv(struct wd_queue *q, void **resp)
+int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	void *sqe = NULL;
+	__u16 cq_head, sq_head;
 	struct cqe *cqe;
-	__u16 i, j;
-	int ret;
+	int i, ret;
+	void *sqe;
 
-	if (wd_reg_read(info->ds_rx_base) == 1) {
+	if (unlikely(wd_reg_read(info->ds_rx_base) == 1)) {
 		wd_spinlock(&info->rc_lock);
-		qm_rx_from_cache(info, resp);
+		qm_rx_from_cache(info, resp, num);
 		wd_unspinlock(&info->rc_lock);
 		return -WD_HW_EACCESS;
 	}
 
 	wd_spinlock(&info->rc_lock);
-	i = info->cq_head_index;
-	cqe = info->cq_base + i * sizeof(struct cqe);
-	if (info->cqc_phase == CQE_PHASE(cqe)) {
-		mb();  /* make sure the data is all in memory before read */
-		j = CQE_SQ_HEAD_INDEX(cqe);
-		if (j >= QM_Q_DEPTH) {
+	cq_head = info->cq_head_index;
+	for (i = 0; i < num; i++) {
+		cqe = info->cq_base + cq_head * sizeof(struct cqe);
+		if (info->cqc_phase != CQE_PHASE(cqe))
+			break;
+
+		mb(); /* make sure the data is all in memory before read */
+		sq_head = CQE_SQ_HEAD_INDEX(cqe);
+		if (unlikely(sq_head >= QM_Q_DEPTH)) {
 			wd_unspinlock(&info->rc_lock);
-			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", j);
+			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", sq_head);
 			return -WD_EIO;
 		}
-		sqe = (void *)((uintptr_t)info->sq_base + j * info->sqe_size);
+
+		sqe = (void *)((uintptr_t)info->sq_base + sq_head * info->sqe_size);
 		ret = info->sqe_parse[qinfo->atype](sqe,
 				(const struct qm_queue_info *)info,
-				i, (__u16)(uintptr_t)*resp);
+				cq_head, (__u16)(uintptr_t)resp[i]);
 		if (!ret) {
+			break;
+		} else if (ret < 0) {
 			wd_unspinlock(&info->rc_lock);
-			return 0;
-		} else if (ret < 0)
-			WD_ERR("recv sqe error %u\n",
-			CQE_SQ_HEAD_INDEX(info->cq_base +
-			info->cq_head_index * sizeof(struct cqe)));
-	} else {
-		wd_unspinlock(&info->rc_lock);
-		return 0;
-	}
-	qm_rx_update(info, resp);
-	wd_unspinlock(&info->rc_lock);
+			WD_ERR("recv sqe error %u\n", sq_head);
+			return ret;
+		}
 
+		resp[i] = info->req_cache[cq_head];
+		info->req_cache[cq_head] = NULL;
+		if (cq_head == QM_Q_DEPTH - 1) {
+			info->cqc_phase = !(info->cqc_phase);
+			cq_head = 0;
+		} else {
+			cq_head++;
+		}
+	}
+
+	if (i)
+		qm_rx_update(info, cq_head, i);
+
+	wd_unspinlock(&info->rc_lock);
 	if (wd_reg_read(info->ds_rx_base) == 1) {
 		WD_ERR("wd queue hw error happened in qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
 
-	return ret;
+	return i;
 }
 
 static int hw_type_check(struct wd_queue *q, const char *hw_type)

@@ -39,15 +39,15 @@ struct wd_drv_dio_if {
 	/* user space WD queue uninitiation */
 	void (*close)(struct wd_queue *q);
 	/* Send WCRYPTO message to WD queue */
-	int (*send)(struct wd_queue *q, void *req);
+	int (*send)(struct wd_queue *q, void **req, __u32 num);
 	/* Receive WCRYPTO msg from WD queue */
-	int (*recv)(struct wd_queue *q, void **req);
+	int (*recv)(struct wd_queue *q, void **req, __u32 num);
 };
 
 extern int drv_open(struct wd_queue *q);
 extern void drv_close(struct wd_queue *q);
-extern int drv_send(struct wd_queue *q, void *req);
-extern int drv_recv(struct wd_queue *q, void **req);
+extern int drv_send(struct wd_queue *q, void **req, __u32 num);
+extern int drv_recv(struct wd_queue *q, void **req, __u32 num);
 extern void drv_flush(struct wd_queue *q);
 extern void *drv_reserve_mem(struct wd_queue *q, size_t size);
 extern void drv_unmap_reserve_mem(struct wd_queue *q, void *addr, size_t size);

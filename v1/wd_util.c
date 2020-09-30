@@ -98,3 +98,13 @@ void wd_free_ctx_id(struct wd_queue *q, int ctx_id)
 	j = ctx_id % BYTE_TO_BIT;
 	qinfo->ctx_id[i] &= ~(0x1u << j);
 }
+
+int wd_burst_send(struct wd_queue *q, void **req, __u32 num)
+{
+	return drv_send(q, req, num);
+}
+
+int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num)
+{
+	return drv_recv(q, resp, num);
+}
