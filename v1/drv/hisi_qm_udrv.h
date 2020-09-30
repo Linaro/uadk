@@ -166,8 +166,8 @@ struct hisi_qm_inject_op {
 
 int qm_init_queue(struct wd_queue *q);
 void qm_uninit_queue(struct wd_queue *q);
-int qm_send(struct wd_queue *q, void *msg);
-int qm_recv(struct wd_queue *q, void **resp);
+int qm_send(struct wd_queue *q, void **msg, __u32 num);
+int qm_recv(struct wd_queue *q, void **resp, __u32 num);
 int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op);
 
 #define HISI_QM_API_VER_BASE "hisi_qm_v1"
