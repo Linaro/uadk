@@ -1036,6 +1036,7 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 		recv_msg->result = WD_SUCCESS;
 	}
 
+	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->type2.a_ivin_addr;
 	recv_msg->tag = sqe->type2.tag;
 
 #ifdef DEBUG

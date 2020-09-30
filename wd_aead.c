@@ -470,10 +470,12 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	ctx = config->ctxs + index;
 
 	memset(&msg, 0, sizeof(struct wd_aead_msg));
-	msg.aiv = malloc(req->iv_bytes);
-	if (req->iv_bytes == 0 || !msg.aiv) {
-		WD_ERR("failed to alloc auth iv memory!\n");
-		return -EINVAL;
+	if (req->iv_bytes != 0) {
+		msg.aiv = malloc(req->iv_bytes);
+		if (!msg.aiv) {
+			WD_ERR("failed to alloc auth iv memory!\n");
+			return -EINVAL;
+		}
 	}
 	memset(msg.aiv, 0, req->iv_bytes);
 	fill_request_msg(&msg, req, sess);
@@ -546,6 +548,14 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	}
 
 	fill_request_msg(msg, req, sess);
+	if (req->iv_bytes != 0) {
+		msg->aiv = malloc(req->iv_bytes);
+		if (!msg->aiv) {
+               		WD_ERR("failed to alloc auth iv memory!\n");
+               		return -EINVAL;
+		}
+	}
+	memset(msg->aiv, 0, req->iv_bytes);
 	msg->tag = idx;
 
 	pthread_mutex_lock(&ctx->lock);
@@ -554,6 +564,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		if (ret != -EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
 		wd_put_msg_to_pool(&g_wd_aead_setting.pool, index, msg->tag);
+		free(msg->aiv);
 	}
 	pthread_mutex_unlock(&ctx->lock);
 
@@ -599,6 +610,7 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		req->cb(req, req->cb_param);
 		wd_put_msg_to_pool(&g_wd_aead_setting.pool,
 				     index, resp_msg.tag);
+		free(msg->aiv);
 	} while (expt > 0);
 	*count = recv_count;
 
