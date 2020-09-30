@@ -34,6 +34,7 @@
 
 #include "wd.h"
 #include "wd_ecc.h"
+#include "wd_adapter.h"
 
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
@@ -341,4 +342,6 @@ void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
 int wd_alloc_ctx_id(struct wd_queue *q, int max_num);
 void wd_free_ctx_id(struct wd_queue *q, int ctx_id);
 const char *wd_get_drv(struct wd_queue *q);
+int wd_burst_send(struct wd_queue *q, void **req, __u32 num);
+int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num);
 #endif

@@ -71,14 +71,14 @@ void rng_uninit_queue(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-int rng_send(struct wd_queue *q, void *req)
+int rng_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info = qinfo->priv;
 
 	wd_spinlock(&info->lock);
 	if (!info->req_cache[info->send_idx]) {
-		info->req_cache[info->send_idx] = req;
+		info->req_cache[info->send_idx] = req[0];
 		info->send_idx++;
 		wd_unspinlock(&info->lock);
 		return 0;
@@ -125,7 +125,7 @@ recv_again:
 	return currsize;
 }
 
-int rng_recv(struct wd_queue *q, void **resp)
+int rng_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info = qinfo->priv;

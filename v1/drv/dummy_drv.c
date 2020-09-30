@@ -117,7 +117,7 @@ void dummy_unset_queue_dio(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-int dummy_add_to_dio_q(struct wd_queue *q, void *req)
+int dummy_add_to_dio_q(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;
@@ -130,8 +130,8 @@ int dummy_add_to_dio_q(struct wd_queue *q, void *req)
 	if ((priv->head + 1) % bd_num == priv->resp_tail)
 		return -EBUSY; /* the queue is full */
 	else {
-		priv->reg->ring[priv->head] = *((struct ring_bd *)req);
-		priv->reg->ring[priv->head].ptr = req;
+		priv->reg->ring[priv->head] = *((struct ring_bd *)(req[0]));
+		priv->reg->ring[priv->head].ptr = req[0];
 		priv->head = (priv->head + 1) % bd_num;
 		wd_reg_write(&priv->reg->head, priv->head);
 		printf("add to queue, new head=%d, %d\n", priv->head, priv->reg->head);
@@ -143,7 +143,7 @@ int dummy_add_to_dio_q(struct wd_queue *q, void *req)
 	return 0;
 }
 
-int dummy_get_from_dio_q(struct wd_queue *q, void **resp)
+int dummy_get_from_dio_q(struct wd_queue *q, void **resp, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;

@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#define WCRYPTO_MAX_BURST_NUM	16
+
 enum wcrypto_cipher_op_type {
 	WCRYPTO_CIPHER_ENCRYPTION,
 	WCRYPTO_CIPHER_DECRYPTION,
@@ -147,6 +149,8 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_cipher_ctx(void *ctx);
+int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
+			 void **tag, __u32 num);
 
 #ifdef __cplusplus
 }

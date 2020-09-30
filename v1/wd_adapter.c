@@ -113,18 +113,18 @@ void drv_close(struct wd_queue *q)
 	hw_dio_tbl[qinfo->hw_type_id].close(q);
 }
 
-int drv_send(struct wd_queue *q, void *req)
+int drv_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 
-	return hw_dio_tbl[qinfo->hw_type_id].send(q, req);
+	return hw_dio_tbl[qinfo->hw_type_id].send(q, req, num);
 }
 
-int drv_recv(struct wd_queue *q, void **req)
+int drv_recv(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 
-	return hw_dio_tbl[qinfo->hw_type_id].recv(q, req);
+	return hw_dio_tbl[qinfo->hw_type_id].recv(q, req, num);
 }
 
 void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
