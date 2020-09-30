@@ -562,12 +562,12 @@ void wd_release_queue(struct wd_queue *q)
 
 int wd_send(struct wd_queue *q, void *req)
 {
-	return drv_send(q, req);
+	return wd_burst_send(q, &req, 1);
 }
 
 int wd_recv(struct wd_queue *q, void **resp)
 {
-	return drv_recv(q, resp);
+	return wd_burst_recv(q, resp, 1);
 }
 
 static int wd_wait(struct wd_queue *q, __u16 ms)
