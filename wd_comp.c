@@ -395,85 +395,66 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	dbg("do, op_type = %hhu, in =%u, out_len =%u\n", req->op_type, req->src_len, req->dst_len);
+	dbg("do, op_type = %hhu, in =%u, out_len =%u\n",
+	    req->op_type, req->src_len, req->dst_len);
 
 	avail_out = req->dst_len > chunk ? chunk : req->dst_len;
+	/* strm_req and req share the same src and dst buffer */
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
 	req->dst_len = 0;
 
-	if (req->op_type == WD_DIR_COMPRESS) {
-		do {
-			if (req->src_len > chunk) {
-				strm_req.src_len = chunk;
-				req->src_len -= chunk;
-			} else {
-				strm_req.src_len = req->src_len;
-				req->src_len = 0;
-			}
+	strm_req.last = 0;
+	while (1) {
+		if (req->src_len > chunk) {
+			strm_req.src_len = chunk;
+			req->src_len -= chunk;
+		} else {
+			strm_req.src_len = req->src_len;
+			req->src_len = 0;
+		}
+		avail_in = strm_req.src_len;
+		if (req->op_type == WD_DIR_COMPRESS)
 			strm_req.last = (strm_req.src_len == chunk) ? 0 : 1;
-			avail_in = strm_req.src_len;
-			do {
-				if (strm_req.src_len == 0 && strm_req.last == 1) {
-					dbg("append_store, src_len = %u, dst_len =%u\n", req->src_len, req->dst_len);
-					ret = append_store_block(h_sess, &strm_req);
-					req->dst_len += strm_req.dst_len;
-					req->status = 0;
-					return 0;
-				}
-				dbg("do, compstrm start, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
-				if (req->dst_len + strm_req.src_len > total_avail_out)
-					return -ENOMEM;
-				strm_req.dst_len = avail_out;
-				ret = wd_do_comp_strm(h_sess, &strm_req);
-				if (ret < 0 || strm_req.status == WD_IN_EPARA) {
-					WD_ERR("wd comp, invalid or incomplete deflate data! ret(%d), req.status(%u)\n",
-						ret, strm_req.status);
-					return ret;
-				}
-				req->dst_len += strm_req.dst_len;
-				strm_req.dst += strm_req.dst_len;
-				dbg("do, compstrm end, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
 
-				strm_req.src += strm_req.src_len;
-				avail_in -= strm_req.src_len;
-				strm_req.src_len = avail_in;
-			} while (strm_req.src_len > 0);
-
-		} while (strm_req.last != 1);
-	} else {
 		do {
-			if (req->src_len > chunk) {
-				strm_req.src_len = chunk;
-				req->src_len -= chunk;
-			} else {
-				strm_req.src_len = req->src_len;
-				req->src_len = 0;
-			}
-			strm_req.last = 0;
-			avail_in = strm_req.src_len;
-			do {
-				dbg("do, decompstrm start, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
-				if (req->dst_len + strm_req.src_len > total_avail_out) {
-					dbg("err, outsize =%u, avail_out =%u, total_avail_out =%u\n", req->dst_len, avail_out, total_avail_out);
-					return -ENOMEM;
-				}
-				strm_req.dst_len = avail_out;
-				ret = wd_do_comp_strm(h_sess, &strm_req);
-				if (ret < 0 || strm_req.status == WD_IN_EPARA) {
-					WD_ERR("wd decomp, invalid or incomplete deflate data! ret(%d), req.status(%u)\n",
-						ret, strm_req.status);
-					return ret;
-				}
+			if (req->op_type == WD_DIR_COMPRESS &&
+			    strm_req.src_len == 0 &&
+			    strm_req.last == 1) {
+				dbg("append_store, src_len=%u, dst_len=%u\n",
+				    req->src_len, req->dst_len);
+				ret = append_store_block(h_sess, &strm_req);
 				req->dst_len += strm_req.dst_len;
-				strm_req.dst += strm_req.dst_len;
-				dbg("do, decompstrm end, in =%u, out_len =%u\n", strm_req.src_len, strm_req.dst_len);
+				req->status = 0;
+				return 0;
+			}
+			dbg("do, strm start, in =%u, out_len =%u\n",
+			    strm_req.src_len, strm_req.dst_len);
+			if (req->dst_len + strm_req.src_len > total_avail_out)
+				return -ENOMEM;
+			strm_req.dst_len = avail_out;
+			ret = wd_do_comp_strm(h_sess, &strm_req);
+			if (ret < 0 || strm_req.status == WD_IN_EPARA) {
+				WD_ERR("wd comp, invalid or incomplete data! "
+				       "ret(%d), req.status(%u)\n",
+				       ret, strm_req.status);
+				return ret;
+			}
+			req->dst_len += strm_req.dst_len;
+			strm_req.dst += strm_req.dst_len;
+			dbg("do, strm end, in =%u, out_len =%u\n",
+			    strm_req.src_len, strm_req.dst_len);
+			avail_out -= strm_req.dst_len;
 
-				strm_req.src += strm_req.src_len;
-				avail_in -= strm_req.src_len;
-				strm_req.src_len = avail_in;
-			} while (strm_req.src_len > 0);
+			strm_req.src += strm_req.src_len;
+			avail_in -= strm_req.src_len;
+			strm_req.src_len = avail_in;
+		} while (strm_req.src_len > 0);
 
-		} while (strm_req.status != WD_DECOMP_END);
+		if (req->op_type == WD_DIR_COMPRESS && strm_req.last == 1)
+			break;
+		if (req->op_type == WD_DIR_DECOMPRESS &&
+		    strm_req.status == WD_DECOMP_END)
+			break;
 	}
 
 	dbg("end, in =%u, out_len =%u\n", req->src_len, req->dst_len);
