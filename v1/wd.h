@@ -74,7 +74,7 @@ struct wcrypto_cb_tag {
 struct wcrypto_paras {
 	 /* 0--encipher/compress .etc, 1 ---decipher/decomp .etc */
 	__u8 direction;
-	bool is_poll;
+	__u8 is_poll;
 
 	 /* to be extended */
 };
