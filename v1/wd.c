@@ -577,11 +577,11 @@ int wd_wait(struct wd_queue *q, __u16 ms)
 	struct pollfd fds[1];
 	int ret;
 
-	if (!q || !ms)
+	if (unlikely(!q))
 		return -EINVAL;
 
 	priv = &q->capa.priv;
-	if (priv->is_poll != 1)
+	if (unlikely(!priv->is_poll))
 		return -EINVAL;
 
 	qinfo = q->qinfo;
@@ -599,9 +599,6 @@ int wd_wait(struct wd_queue *q, __u16 ms)
 int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms)
 {
 	int ret;
-
-	if (!q || !ms)
-		return -EINVAL;
 
 	ret = wd_wait(q, ms);
 	if (likely(ret > 0))
