@@ -566,7 +566,7 @@ static int run_one_child(struct priv_options *opts)
 
 		ret = hizip_test_sched(sched, copts, info);
 		if (ret < 0) {
-			WD_ERR("hizip test fail with %d\n", ret);
+			WD_ERR("hizip test sched fail with %d\n", ret);
 			break;
 		}
 	}
@@ -684,7 +684,7 @@ static int run_bind_test(struct priv_options *opts)
 	return success ? 0 : -EFAULT;
 }
 
-static int run_test(struct priv_options *opts)
+static int run_test(struct priv_options *opts, FILE *source, FILE *dest)
 {
 	int i;
 	int ret;
@@ -695,6 +695,9 @@ static int run_test(struct priv_options *opts)
 	struct hizip_stats variation;
 	struct hizip_stats stats[n];
 
+	if(opts->common.is_file) {
+		return comp_file_test(source, dest, opts);
+	}
 	memset(&avg , 0, sizeof(avg));
 	memset(&std , 0, sizeof(std));
 	memset(&variation , 0, sizeof(variation));
@@ -801,13 +804,15 @@ int main(int argc, char **argv)
 			.q_num		= 1,
 			.run_num	= 1,
 			.compact_run_num = 1,
-			.thread_num	= 0,
+			.thread_num	= 1,
 			.sync_mode	= 0,
 			.block_size	= 512000,
 			.total_len	= opts.common.block_size * 10,
 			.verify		= false,
 			.verbose	= false,
 			.is_decomp	= false,
+			.is_stream	= false,
+			.is_file	= false,
 		},
 		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
@@ -906,5 +911,5 @@ int main(int argc, char **argv)
 		     argv[0]
 		    );
 
-	return run_test(&opts);
+	return run_test(&opts, stdin, stdout);
 }
