@@ -9,7 +9,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <unistd.h>
-
+#include <sys/stat.h>
 #include "wd_comp.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
@@ -22,6 +22,11 @@ do { \
 		exit(EXIT_FAILURE); \
 	} \
 } while (0)
+
+enum mode {
+	MODE_BLOCK,
+	MODE_STREAM,
+};
 
 /*
  * I observed a worst case of 1.041x expansion with random data, but let's say 2
@@ -50,6 +55,8 @@ struct test_options {
 	bool verify;
 	bool verbose;
 	bool is_decomp;
+	bool is_stream;
+	bool is_file;
 };
 
 struct priv_options {
@@ -137,6 +144,27 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 void *mmap_alloc(size_t len);
 int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
+
+/* for block interface */
+int hw_blk_compress(int alg_type, int blksize,
+		    unsigned char *dst, __u32 *dstlen,
+		    unsigned char *src, __u32 srclen);
+
+int hw_blk_decompress(int alg_type, int blksize,
+		      unsigned char *dst, __u32 *dstlen,
+		      unsigned char *src, __u32 srclen);
+
+/* for stream memory interface */
+int hw_stream_compress(int alg_type, int blksize,
+		       unsigned char *dst, __u32 *dstlen,
+		       unsigned char *src, __u32 srclen);
+
+int hw_stream_decompress(int alg_type, int blksize,
+		         unsigned char *dst, __u32 *dstlen,
+		         unsigned char *src, __u32 srclen);
+
+int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts);
+
 #ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn check_output, void *opaque);
@@ -172,7 +200,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:c:l:s:Vvzt:m:d"
+#define COMMON_OPTSTRING "hb:n:q:c:l:FSs:Vvzt:m:d"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -180,6 +208,8 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -q <num>      number of queues\n"				\
 	"  -c <num>      number of caches\n"				\
 	"  -l <num>      number of compact runs\n"			\
+	"  -F <file>     input file, default no input\n"					\
+	"  -S <mode>     stream mode, default block mode\n"					\
 	"  -s <size>     total size\n"					\
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\

@@ -153,7 +153,7 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region,
 		 * If the pos's value is out of range, we can output the error
 		 * info and correct the error
 		 */
-		printf("ERROR:%s, pos = %u, begin = %u, end = %u\n",
+		WD_ERR("ERROR:%s, pos = %u, begin = %u, end = %u\n",
 		       __FUNCTION__, pos, region->begin, region->end);
 		region->last = region->begin;
 	}
@@ -239,7 +239,7 @@ static bool sample_sched_key_valid(struct sample_sched_ctx *ctx,
 {
 	if (key->numa_id >= ctx->numa_num || key->mode >= SCHED_MODE_BUTT ||
 	    key->type >= ctx->type_num) {
-		printf("ERROR: %s key error - %d,%u,%u !\n",
+		WD_ERR("ERROR: %s key error - %d,%u,%u !\n",
 		       __FUNCTION__, key->numa_id, key->mode, key->type);
 		return false;
 	}
@@ -266,12 +266,12 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 	struct sample_sched_info *sched_info;
 
 	if (!ctx || !key || !req) {
-		printf("ERROR: %s the pointer para is NULL !\n", __FUNCTION__);
+		WD_ERR("ERROR: %s the pointer para is NULL !\n", __FUNCTION__);
 		return INVALID_POS;
 	}
 
 	if (!sample_sched_key_valid(ctx, key)) {
-		printf("ERROR: %s the key is invalid !\n", __FUNCTION__);
+		WD_ERR("ERROR: %s the key is invalid !\n", __FUNCTION__);
 		return INVALID_POS;
 	}
 
@@ -309,7 +309,7 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 	int ret;
 
 	if (!count || !cfg || !ctx) {
-		printf("ERROR: %s the para is NULL !\n", __FUNCTION__);
+		WD_ERR("ERROR: %s the para is NULL !\n", __FUNCTION__);
 		return -EINVAL;
 	}
 
@@ -352,7 +352,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 	struct sample_sched_ctx *sched_ctx;
 
 	if (!sched || !sched->h_sched_ctx) {
-		printf("ERROR: %s para err: sched of h_sched_ctx is null\n",
+		WD_ERR("ERROR: %s para err: sched of h_sched_ctx is null\n",
 		       __FUNCTION__);
 		return -EINVAL;
 	}
@@ -362,7 +362,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 	if ((numa_id >= sched_ctx->numa_num) || (numa_id < 0) ||
 		(mode >= SCHED_MODE_BUTT) ||
 	    (type >= sched_ctx->type_num)) {
-		printf("ERROR: %s para err: numa_id=%d, mode=%u, type=%u\n",
+		WD_ERR("ERROR: %s para err: numa_id=%d, mode=%u, type=%u\n",
 		       __FUNCTION__, numa_id, mode, type);
 		return -EINVAL;
 	}
@@ -370,7 +370,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 	sched_info = sched_ctx->sched_info;
 
 	if (!sched_info[numa_id].ctx_region[mode]) {
-		printf("ERROR: %s para err: ctx_region:numa_id=%d, mode=%u is null\n",
+		WD_ERR("ERROR: %s para err: ctx_region:numa_id=%d, mode=%u is null\n",
 		       __FUNCTION__, numa_id, mode);
 		return -EINVAL;
 	}
@@ -423,32 +423,32 @@ struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_nu
 	int i, j;
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
-		printf("Error: %s sched_type = %u or type_num = %u is invalid!\n",
+		WD_ERR("Error: %s sched_type = %u or type_num = %u is invalid!\n",
 		       __FUNCTION__, sched_type, type_num);
 		return NULL;
 	}
 
 	if (!func) {
-		printf("Error: %s poll_func is null!\n", __FUNCTION__);
+		WD_ERR("Error: %s poll_func is null!\n", __FUNCTION__);
 		return NULL;
 	}
 
 	if (!numa_num) {
-		printf("Warning: %s set numa number as %d!\n", __FUNCTION__,
+		WD_ERR("Warning: %s set numa number as %d!\n", __FUNCTION__,
 		       MAX_NUMA_NUM);
 		numa_num = MAX_NUMA_NUM;
 	}
 
 	sched = calloc(1, sizeof(struct wd_sched));
 	if (!sched) {
-		printf("Error: %s wd_sched alloc error!\n", __FUNCTION__);
+		WD_ERR("Error: %s wd_sched alloc error!\n", __FUNCTION__);
 		return NULL;
 	}
 
 	sched_ctx = calloc(1, sizeof(struct sample_sched_ctx) +
 			   sizeof(struct sample_sched_info) * numa_num);
 	if (!sched_ctx) {
-		printf("Error: %s sched_ctx alloc error!\n", __FUNCTION__);
+		WD_ERR("Error: %s sched_ctx alloc error!\n", __FUNCTION__);
 		goto err_out;
 	}
 
