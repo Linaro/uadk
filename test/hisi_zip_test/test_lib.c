@@ -78,6 +78,205 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 	return 0;
 }
 
+/**
+ * compress() - compress memory buffer.
+ * @alg_type: alg_type.
+ *
+ * This function compress memory buffer.
+ */
+int hw_blk_compress(int alg_type, int blksize,
+		    unsigned char *dst, __u32 *dstlen,
+		    unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_COMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	ret = wd_do_comp_sync(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
+int hw_blk_decompress(int alg_type, int blksize,
+		      unsigned char *dst, __u32 *dstlen,
+		      unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_DECOMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+
+	ret = wd_do_comp_sync(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
+int hw_stream_compress(int alg_type, int blksize,
+		       unsigned char *dst, __u32 *dstlen,
+		       unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_COMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	ret = wd_do_comp_sync2(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
+
+int hw_stream_decompress(int alg_type, int blksize,
+		       unsigned char *dst, __u32 *dstlen,
+		       unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_DECOMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+
+	ret = wd_do_comp_sync2(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
 void hizip_prepare_random_input_data(struct hizip_test_info *info)
 {
 	__u32 seed = 0;
@@ -195,7 +394,7 @@ void *send_thread_func(void *arg)
 				ret = wd_do_comp_sync(h_sess, &info->req);
 			}
 			if (ret < 0) {
-				WD_ERR("hizip test fail with %d\n", ret);
+				WD_ERR("do comp test fail with %d\n", ret);
 				return NULL;
 			}
 			left -= copts->block_size;
@@ -464,6 +663,15 @@ int parse_common_option(const char opt, const char *optarg,
 		opts->q_num = strtol(optarg, NULL, 0);
 		if (opts->q_num <= 0)
 			return 1;
+		break;
+	case 'd':
+		opts->op_type = WD_DIR_DECOMPRESS;
+		break;
+	case 'F':
+		opts->is_file = true;
+		break;
+	case 'S':
+		opts->is_stream = MODE_STREAM;
 		break;
 	case 's':
 		opts->total_len = strtol(optarg, NULL, 0);
