@@ -312,7 +312,8 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
-	int index, ret;
+	__u32 index;
+	int ret;
 
 	if (!sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
@@ -332,7 +333,10 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
-
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		return -EINVAL;
+	}
 	fill_comp_msg(&msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
@@ -398,7 +402,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	dbg("do, op_type = %hhu, in =%u, out_len =%u\n",
 	    req->op_type, req->src_len, req->dst_len);
 
-	avail_out = req->dst_len > chunk ? chunk : req->dst_len;
+	avail_out = req->dst_len;
 	/* strm_req and req share the same src and dst buffer */
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
 	req->dst_len = 0;
@@ -431,7 +435,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			    strm_req.src_len, strm_req.dst_len);
 			if (req->dst_len + strm_req.src_len > total_avail_out)
 				return -ENOMEM;
-			strm_req.dst_len = avail_out;
+			strm_req.dst_len = avail_out > chunk ? chunk : avail_out;
 			ret = wd_do_comp_strm(h_sess, &strm_req);
 			if (ret < 0 || strm_req.status == WD_IN_EPARA) {
 				WD_ERR("wd comp, invalid or incomplete data! "
@@ -473,7 +477,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
-	int index, ret;
+	__u32 index;
+	int ret;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
@@ -488,6 +493,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		return -EINVAL;
+	}
 
 	fill_comp_msg(&msg, req);
 	msg.stream_pos = sess->stream_pos;
@@ -543,7 +552,8 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
-	int index, idx, ret = 0;
+	__u32 index;
+	int idx, ret;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
@@ -568,6 +578,10 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		return -EINVAL;
+	}
 
 	idx = wd_get_msg_from_pool(&wd_comp_setting.pool, index, (void **)&msg);
 	if (idx < 0) {
