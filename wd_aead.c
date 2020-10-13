@@ -53,7 +53,7 @@ static void __attribute__((constructor)) wd_aead_open_driver(void)
 {
 	void *driver;
 
-	driver = dlopen("/usr/lib/wd/libhisi_sec.so", RTLD_NOW);
+	driver = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("failed to open libhisi_sec.so\n");
 }
