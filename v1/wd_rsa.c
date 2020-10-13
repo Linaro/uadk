@@ -618,7 +618,7 @@ free_ctx_id:
 	return NULL;
 }
 
-bool wcrypto_rsa_is_crt(void *ctx)
+bool wcrypto_rsa_is_crt(const void *ctx)
 {
 	if (!ctx) {
 		WD_ERR("rsa is crt judge, ctx NULL, return false!\n");
@@ -628,7 +628,7 @@ bool wcrypto_rsa_is_crt(void *ctx)
 	return ((struct wcrypto_rsa_ctx *)ctx)->setup.is_crt;
 }
 
-int wcrypto_rsa_key_bits(void *ctx)
+int wcrypto_rsa_key_bits(const void *ctx)
 {
 	if (!ctx) {
 		WD_ERR("get rsa key bits, ctx NULL!\n");

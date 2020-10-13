@@ -148,7 +148,7 @@ struct wcrypto_ecc_msg {
 	__u64 usr_data;
 };
 
-int wcrypto_get_ecc_key_bits(void *ctx);
+int wcrypto_get_ecc_key_bits(const void *ctx);
 void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 			     struct wcrypto_ecc_ctx_setup *setup);
 void wcrypto_del_ecc_ctx(void *ctx);
