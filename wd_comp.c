@@ -609,12 +609,10 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 int wd_comp_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_sched_ctx;
-	struct wd_ctx_config *config;
 	struct wd_sched *sched;
 
 	h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
-	config = (struct wd_ctx_config *)&wd_comp_setting.config;
 	sched = &wd_comp_setting.sched;
 
-	return sched->poll_policy(h_sched_ctx, config, expt, count);
+	return sched->poll_policy(h_sched_ctx, expt, count);
 }
