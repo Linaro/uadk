@@ -200,13 +200,12 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:c:l:FSs:Vvzt:m:d"
+#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:d"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
 	"  -n <num>      number of runs\n"				\
 	"  -q <num>      number of queues\n"				\
-	"  -c <num>      number of caches\n"				\
 	"  -l <num>      number of compact runs\n"			\
 	"  -F            input file, default no input\n"					\
 	"  -S            stream mode, default block mode\n"					\
