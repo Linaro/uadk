@@ -269,11 +269,11 @@ struct hisi_sec_sqe {
 	struct hisi_sec_sqe_type2 type2;
 };
 
-static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
+static int digest_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
 	A_ALG_SHA384, A_ALG_SHA512, A_ALG_SHA512_224, A_ALG_SHA512_256
 };
-static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
+static int hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
 	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
 	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
@@ -606,7 +606,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WD_DIGEST_NORMAL)
 		sqe->type2.mac_key_alg |=
-		g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
+		digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
 	else if (msg->mode == WD_DIGEST_HMAC) {
 		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
 			WD_ERR("Invalid digest key_bytes!\n");
@@ -617,7 +617,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		sqe->type2.a_key_addr = (__u64)msg->key;
 
 		sqe->type2.mac_key_alg |=
-		(__u32)(g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET);
+		(__u32)(hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET);
 	} else {
 		WD_ERR("Invalid digest mode!\n");
 		return -WD_EINVAL;
