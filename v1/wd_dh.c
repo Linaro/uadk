@@ -175,7 +175,7 @@ free_ctx_id:
 	return NULL;
 }
 
-bool wcrypto_dh_is_g2(void *ctx)
+bool wcrypto_dh_is_g2(const void *ctx)
 {
 	if (!ctx) {
 		WD_ERR("dh is g2 judge, ctx NULL, return false!\n");
@@ -185,7 +185,7 @@ bool wcrypto_dh_is_g2(void *ctx)
 	return ((struct wcrypto_dh_ctx *)ctx)->setup.is_g2;
 }
 
-int wcrypto_dh_key_bits(void *ctx)
+int wcrypto_dh_key_bits(const void *ctx)
 {
 	if (!ctx) {
 		WD_ERR("get dh key bits, ctx NULL!\n");
