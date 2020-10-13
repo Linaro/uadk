@@ -77,14 +77,14 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 	int fd;
 	int size;
 
-	size = snprintf(attr_file, PATH_STR_SIZE, "%s/"WD_UACCE_DEV_ATTRS"/%s",
+	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s",
 			dev_root, attr);
 	if (size <= 0) {
 		WD_ERR("get %s/%s path fail!\n", dev_root, attr);
 		return size;
 	}
 
-	/* The attr_file = "/sys/class/uacce/attrs/xxx"
+	/* The attr_file = "/sys/class/uacce/xxx"
 	 * It's the Internal Definition File Node
 	 */
 	fd = open(attr_file, O_RDONLY, 0);

@@ -21,7 +21,6 @@
 #include <linux/ioctl.h>
 
 #define WD_UACCE_CLASS_NAME	"uacce"
-#define WD_UACCE_DEV_ATTRS	"attrs"
 
 /**
  * WD_UACCE Device Attributes:
