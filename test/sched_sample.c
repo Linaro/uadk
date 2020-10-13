@@ -144,19 +144,10 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region,
 
 	pos = region->last;
 
-	if (pos < region->end) {
+	if (pos < region->end)
 		region->last++;
-	} else if (pos == region->last) {
+	else if (pos >= region->end)
 		region->last = region->begin;
-	} else {
-		/*
-		 * If the pos's value is out of range, we can output the error
-		 * info and correct the error
-		 */
-		WD_ERR("ERROR:%s, pos = %u, begin = %u, end = %u\n",
-		       __FUNCTION__, pos, region->begin, region->end);
-		region->last = region->begin;
-	}
 
 	pthread_mutex_unlock(&region->lock);
 
@@ -225,11 +216,21 @@ static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, int numa_id,
  * sample_sched_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
  */
 static struct sched_ctx_region *
-sample_sched_get_ctx_range(struct sample_sched_info *sched_info,
+sample_sched_get_ctx_range(struct sample_sched_ctx *ctx,
 			   const struct sched_key *key)
 {
+	struct sample_sched_info *sched_info;
+	int numa_id;
+
+	sched_info = ctx->sched_info;
 	if (sched_info[key->numa_id].ctx_region[key->mode][key->type].valid)
 		return &sched_info[key->numa_id].ctx_region[key->mode][key->type];
+
+	/* If the key->numa_id is not exist, we should scan for a region */
+	for (numa_id = 0; numa_id < ctx->numa_num; numa_id++) {
+		if (sched_info[numa_id].ctx_region[key->mode][key->type].valid)
+			return &sched_info[numa_id].ctx_region[key->mode][key->type];
+	}
 
 	return NULL;
 }
@@ -263,7 +264,6 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
 	struct sched_ctx_region *region = NULL;
-	struct sample_sched_info *sched_info;
 
 	if (!ctx || !key || !req) {
 		WD_ERR("ERROR: %s the pointer para is NULL !\n", __FUNCTION__);
@@ -275,9 +275,7 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 		return INVALID_POS;
 	}
 
-	sched_info = ctx->sched_info;
-
-	region = sample_sched_get_ctx_range(sched_info, key);
+	region = sample_sched_get_ctx_range(ctx, key);
 	if (!region)
 		return INVALID_POS;
 
@@ -300,7 +298,6 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
  * func interval will not check the valid, becouse it will affect performance.
  */
 static int sample_sched_poll_policy(handle_t sched_ctx,
-				    const struct wd_ctx_config *cfg,
 				    __u32 expect, __u32 *count)
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
@@ -308,7 +305,7 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 	int numa_id;
 	int ret;
 
-	if (!count || !cfg || !ctx) {
+	if (!sched_ctx || !count || !ctx) {
 		WD_ERR("ERROR: %s the para is NULL !\n", __FUNCTION__);
 		return -EINVAL;
 	}
@@ -333,7 +330,6 @@ struct sample_sched_table {
 	__u32 (*pick_next_ctx)(handle_t h_sched_ctx, const void *req,
 			       const struct sched_key *key);
 	int (*poll_policy)(handle_t h_sched_ctx,
-			   const struct wd_ctx_config *config,
 			   __u32 expect,
 			   __u32 *count);
 } sched_table[SCHED_POLICY_BUTT] = {

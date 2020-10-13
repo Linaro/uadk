@@ -11,6 +11,7 @@
 #include "test_hisi_sec.h"
 #include "wd_cipher.h"
 #include "wd_digest.h"
+#include "sched_sample.h"
 
 #define  SEC_TST_PRT printf
 #define HW_CTX_SIZE (24 * 1024)
@@ -24,7 +25,7 @@
 #define MAX_ALGO_PER_TYPE 12
 
 static struct wd_ctx_config g_ctx_cfg;
-static struct wd_sched g_sched;
+static struct wd_sched *g_sched;
 
 static long long int g_times;
 static unsigned int g_thread_num;
@@ -278,23 +279,16 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 	return 0;
 }
 
-static __u32 sched_single_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-					const struct sched_key *key)
-{
-	return 0;
-}
-
 static int sched_single_poll_policy(handle_t h_sched_ctx,
-				    const struct wd_ctx_config *config,
 				    __u32 expect, __u32 *count)
 {
 	return 0;
 }
 
-static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
+static int init_sigle_ctx_config(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	int ret;
+	int ret = 0;
 
 	list = wd_get_accel_list("cipher");
 	if (!list)
@@ -313,15 +307,25 @@ static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
 		printf("Fail to request ctx!\n");
 		goto out;
 	}
+
 	g_ctx_cfg.ctxs[0].op_type = type;
-	g_ctx_cfg.ctxs[0].ctx_mode = mode;
+	g_ctx_cfg.ctxs[0].ctx_mode = (__u8)mode;
 
-	sched->name = SCHED_SINGLE;
-	sched->pick_next_ctx = sched_single_pick_next_ctx;
+	g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
+	if (!g_sched) {
+		printf("Fail to alloc sched!\n");
+		goto out;
+	}
 
-	sched->poll_policy = sched_single_poll_policy;
+	g_sched->name = SCHED_SINGLE;
+	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, 0);
+	if (ret) {
+		printf("Fail to fill sched data!\n");
+		goto out;
+	}
+
 	/*cipher init*/
-	ret = wd_cipher_init(&g_ctx_cfg, sched);
+	ret = wd_cipher_init(&g_ctx_cfg, g_sched);
 	if (ret) {
 		printf("Fail to cipher ctx!\n");
 		goto out;
@@ -332,6 +336,7 @@ static int init_sigle_ctx_config(int type, int mode, struct wd_sched *sched)
 	return 0;
 out:
 	free(g_ctx_cfg.ctxs);
+	sample_sched_release(g_sched);
 
 	return ret;
 }
@@ -344,6 +349,7 @@ static void uninit_config(void)
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
+	sample_sched_release(g_sched);
 }
 
 static void digest_uninit_config(void)
@@ -366,7 +372,7 @@ static int test_sec_cipher_sync_once(void)
 	int ret;
 
 	/* config setup */
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
+	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
 		printf("Fail to init sigle ctx config!\n");
 		return ret;
@@ -476,7 +482,7 @@ static int test_sec_cipher_async_once(void)
 	memset(&data, 0, sizeof(thread_data_t));
 	data.req = &req;
 	/* config setup */
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC, &g_sched);
+	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		printf("Fail to init sigle ctx config!\n");
 		return ret;
@@ -637,11 +643,6 @@ static int test_sec_cipher_sync(void *arg)
 	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
 			thread_id, speed, Perf);
 
-#if 0
-	printf("Test cipher sync function: output dst-->\n");
-	hexdump(req->dst, req->in_bytes);
-	printf("Test cipher sync function thread_id is:%d\n", thread_id);
-#endif
 	pthread_mutex_unlock(&test_sec_mutex);
 
 	ret = 0;
@@ -756,7 +757,7 @@ static int sec_cipher_sync_test(void)
 		}
 	}
 
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC, &g_sched);
+	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
 		printf("fail to init sigle ctx config!\n");
 		goto out_thr;
@@ -849,8 +850,7 @@ static void *poll_func(void *arg)
 	int expt = g_times * g_thread_num;
 
 	while (1) {
-		ret = wd_cipher_poll_ctx(0, 1, &count);
-
+		ret = g_sched->poll_policy(g_sched->h_sched_ctx, 1, &count);
 		if (ret != -EAGAIN && ret < 0) {
 			printf("poll ctx is error----------->\n");
 			break;
@@ -991,7 +991,7 @@ static int sec_cipher_async_test(void)
 		req[i].cb_param = &datas[i];
 	}
 
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC, &g_sched);
+	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		printf("fail to init sigle ctx config!\n");
 		goto out_thr;
@@ -1762,7 +1762,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"times",     required_argument, 0,  6},
 		{"sync",      no_argument,       0,  7},
 		{"async",     no_argument,       0,  8},
-		{"multi",    required_argument, 0,  9},
+		{"multi",     required_argument, 0,  9},
 		{0, 0, 0, 0}
 	};
 

@@ -74,6 +74,7 @@ struct wd_cipher_sess {
 	void			*priv;
 	void			*key;
 	__u32			key_bytes;
+	int				numa;
 };
 
 struct wd_cipher_req {
@@ -86,6 +87,7 @@ struct wd_cipher_req {
 	__u32			out_buf_bytes;
 	__u32			out_bytes;
 	__u16			state;
+	__u8			type;
 	wd_alg_cipher_cb_t	*cb;
 	void			*cb_param;
 };

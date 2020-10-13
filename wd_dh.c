@@ -404,7 +404,7 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 
 int wd_dh_poll(__u32 expt, __u32 *count)
 {
-	return wd_dh_setting.sched.poll_policy(0, 0, expt, count);
+	return wd_dh_setting.sched.poll_policy(0, expt, count);
 }
 
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)
