@@ -208,8 +208,8 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -q <num>      number of queues\n"				\
 	"  -c <num>      number of caches\n"				\
 	"  -l <num>      number of compact runs\n"			\
-	"  -F <file>     input file, default no input\n"					\
-	"  -S <mode>     stream mode, default block mode\n"					\
+	"  -F            input file, default no input\n"					\
+	"  -S            stream mode, default block mode\n"					\
 	"  -s <size>     total size\n"					\
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\
