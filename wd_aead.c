@@ -619,5 +619,5 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 
 int wd_aead_poll(__u32 expt, __u32 *count)
 {
-	return g_wd_aead_setting.sched.poll_policy(0, 0, expt, count);
+	return g_wd_aead_setting.sched.poll_policy(0, expt, count);
 }
