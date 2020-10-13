@@ -73,8 +73,8 @@ struct wcrypto_dh_msg {
 };
 
 void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *setup);
-bool wcrypto_dh_is_g2(void *ctx);
-int wcrypto_dh_key_bits(void *ctx);
+bool wcrypto_dh_is_g2(const void *ctx);
+int wcrypto_dh_key_bits(const void *ctx);
 
 /* Asynchronous/sync mode APIs of DH */
 int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag);

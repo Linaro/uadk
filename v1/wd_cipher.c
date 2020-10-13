@@ -428,7 +428,7 @@ static int param_check(struct wcrypto_cipher_ctx *ctx,
 int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 			 void **tag, __u32 num)
 {
-	struct wcrypto_cipher_cookie *cookies[WCRYPTO_MAX_BURST_NUM];
+	struct wcrypto_cipher_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
 	struct wcrypto_cipher_msg *req[WCRYPTO_MAX_BURST_NUM];
 	struct wcrypto_cipher_ctx *ctxt = ctx;
 	int i, ret;

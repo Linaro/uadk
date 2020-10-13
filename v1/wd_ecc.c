@@ -588,7 +588,7 @@ struct wcrypto_ecc_out *wcrypto_new_ecxdh_out(void *ctx)
 	return ecc_out;
 }
 
-int wcrypto_get_ecc_key_bits(void *ctx)
+int wcrypto_get_ecc_key_bits(const void *ctx)
 {
 	if (unlikely(!ctx)) {
 		WD_ERR("get ecc key bits, ctx NULL!\n");
@@ -1418,7 +1418,7 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 }
 
 static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
-		     void *src, __u32 src_len)
+		     const void *src, __u32 src_len)
 {
 	if (unlikely(!src || !src_len || *out_len + src_len > dst_len)) {
 		WD_ERR("src or src_len param error!\n");
@@ -1577,7 +1577,7 @@ int wcrypto_ecxdh_poll(struct wd_queue *q, unsigned int num)
 	if (unlikely(!q || (strcmp(q->capa.alg, "x25519") &&
 		strcmp(q->capa.alg, "x448") &&
 		strcmp(q->capa.alg, "ecdh")))) {
-		WD_ERR("ecxdh poll: alg = %s error!\n", q->capa.alg);
+		WD_ERR("ecxdh poll: input param error!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2046,7 +2046,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 int wcrypto_ecdsa_poll(struct wd_queue *q, unsigned int num)
 {
 	if (unlikely(!q || strcmp(q->capa.alg, "ecdsa"))) {
-		WD_ERR("sm2 poll: alg = %s error!\n", q->capa.alg);
+		WD_ERR("sm2 poll: input param error!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2138,7 +2138,7 @@ int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 int wcrypto_sm2_poll(struct wd_queue *q, unsigned int num)
 {
 	if (unlikely(!q || strcmp(q->capa.alg, "sm2"))) {
-		WD_ERR("sm2 poll: alg = %s error!\n", q->capa.alg);
+		WD_ERR("sm2 poll: input param error!\n");
 		return -WD_EINVAL;
 	}
 

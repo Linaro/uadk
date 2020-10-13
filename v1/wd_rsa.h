@@ -86,8 +86,8 @@ struct wcrypto_rsa_msg {
 	__u64 usr_data;
 };
 
-bool wcrypto_rsa_is_crt(void *ctx);
-int wcrypto_rsa_key_bits(void *ctx);
+bool wcrypto_rsa_is_crt(const void *ctx);
+int wcrypto_rsa_key_bits(const void *ctx);
 void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup);
 void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey);
 void wcrypto_get_rsa_prikey(void *ctx, struct wcrypto_rsa_prikey **prikey);
