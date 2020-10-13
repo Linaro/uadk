@@ -109,18 +109,14 @@ struct wd_sched {
 	__u32 (*pick_next_ctx)(handle_t h_sched_ctx,
 				  const void *req,
 				  const struct sched_key *key);
-	int (*poll_policy)(handle_t h_sched_ctx,
-			   const struct wd_ctx_config *config,
-			   __u32 expect,
-			   __u32 *count);
+	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
 };
 
 static inline void wd_spinlock(struct wd_lock *lock)
 {
 	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
-		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED))
-			;
+		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED));
 }
 
 static inline void wd_unspinlock(struct wd_lock *lock)

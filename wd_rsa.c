@@ -464,7 +464,7 @@ int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 
 int wd_rsa_poll(__u32 expt, __u32 *count)
 {
-	return wd_rsa_setting.sched.poll_policy(0, 0, expt, count);
+	return wd_rsa_setting.sched.poll_policy(0, expt, count);
 }
 
 int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)

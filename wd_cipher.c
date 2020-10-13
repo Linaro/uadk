@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdlib.h>
 #include <pthread.h>
+#include <sched.h>
+#include <numa.h>
 #include "wd_cipher.h"
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_util.h"
@@ -145,6 +147,8 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
+	int cpu;
+	int node;
 
 	if (!setup) {
 		WD_ERR("cipher input setup is NULL!\n");
@@ -165,7 +169,13 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		free(sess);
 		return (handle_t)0;
 	}
+
 	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
+
+	cpu = sched_getcpu();
+	node = numa_node_of_cpu(cpu);
+
+	sess->numa = node;
 
 	return (handle_t)sess;
 }
@@ -298,6 +308,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg msg;
+	struct sched_key key;
 	__u64 recv_cnt = 0;
 	int index, ret;
 
@@ -311,7 +322,10 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	index = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+	index = g_wd_cipher_setting.sched.pick_next_ctx(g_wd_cipher_setting.sched.h_sched_ctx, req, &key);
 	if (index >= config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
@@ -359,7 +373,9 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg *msg;
-	int index, idx, ret;
+	struct sched_key key;
+	int idx, ret;
+	__u32 index;
 
 	if (unlikely(!sess || !req || !req->cb)) {
 		WD_ERR("cipher input sess or req is NULL.\n");
@@ -371,7 +387,11 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	index = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
+	key.mode = CTX_MODE_ASYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+
+	index = g_wd_cipher_setting.sched.pick_next_ctx(g_wd_cipher_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
@@ -451,7 +471,7 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 {
 	int ret;
 
-	ret = g_wd_cipher_setting.sched.poll_policy(0, 0, expt, count);
+	ret = g_wd_cipher_setting.sched.poll_policy(0, expt, count);
 	if (ret < 0)
 		return ret;
 
