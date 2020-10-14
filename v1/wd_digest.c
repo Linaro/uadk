@@ -245,7 +245,7 @@ static int digest_recv_sync(struct wcrypto_digest_ctx *ctx,
 				break;
 			}
 		} else if (ret < 0) {
-			WD_ERR("do cipher wcrypto_recv err!\n");
+			WD_ERR("do digest wcrypto_recv err!\n");
 			break;
 		} else {
 			opdata->out = (void *)resp->out;

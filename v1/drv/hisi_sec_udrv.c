@@ -42,7 +42,8 @@
 #define WORD_ALIGNMENT_MASK	0x3
 #define U64_DATA_BYTES		8
 #define CTR_128BIT_COUNTER	16
-#define DIF_VERIFY_FAIL 2
+#define DIF_VERIFY_FAIL 	2
+#define AES_BLOCK_SIZE		16
 #define WCRYPTO_CIPHER_THEN_DIGEST	0
 #define WCRYPTO_DIGEST_THEN_CIPHER	1
 
@@ -1493,11 +1494,30 @@ static int fill_aead_bd3_alg(struct wcrypto_aead_msg *msg,
 	}
 
 	/* CCM/GCM this region is set to 0 */
-	if (msg->cmode == WCRYPTO_CIPHER_CCM ||
-		msg->cmode == WCRYPTO_CIPHER_GCM)
+	if (msg->cmode == WCRYPTO_CIPHER_CCM) {
+		if (unlikely(msg->auth_bytes < WORD_BYTES ||
+		    msg->auth_bytes > AES_BLOCK_SIZE ||
+		    msg->auth_bytes % (WORD_BYTES >> 1))) {
+		    WD_ERR("Invalid aead ccm mode auth_bytes!\n");
+		    return -WD_EINVAL;
+		}
 		return ret;
+	}
+	if (msg->cmode == WCRYPTO_CIPHER_GCM) {
+		if (unlikely(msg->auth_bytes < U64_DATA_BYTES ||
+		    msg->auth_bytes > AES_BLOCK_SIZE)) {
+		    WD_ERR("Invalid aead gcm mode auth_bytes!\n");
+		    return -WD_EINVAL;
+		}
+		return ret;
+	}
 
-	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+	if (unlikely(msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+		WD_ERR("Invalid aead assoc_bytes!\n");
+		return -WD_EINVAL;
+	}
+	if (unlikely(msg->auth_bytes != AES_BLOCK_SIZE &&
+	    msg->auth_bytes != AES_BLOCK_SIZE << 1)) {
 		WD_ERR("Invalid aead auth_bytes!\n");
 		return -WD_EINVAL;
 	}
@@ -1942,11 +1962,30 @@ static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
 	}
 
 	/* CCM/GCM this region is set to 0 */
-	if (msg->cmode == WCRYPTO_CIPHER_CCM ||
-		msg->cmode == WCRYPTO_CIPHER_GCM)
+	if (msg->cmode == WCRYPTO_CIPHER_CCM) {
+		if (unlikely(msg->auth_bytes < WORD_BYTES ||
+		    msg->auth_bytes > AES_BLOCK_SIZE ||
+		    msg->auth_bytes % (WORD_BYTES >> 1))) {
+		    WD_ERR("Invalid aead ccm mode auth_bytes!\n");
+		    return -WD_EINVAL;
+		}
 		return ret;
+	}
+	if (msg->cmode == WCRYPTO_CIPHER_GCM) {
+		if (unlikely(msg->auth_bytes < U64_DATA_BYTES ||
+		    msg->auth_bytes > AES_BLOCK_SIZE)) {
+		    WD_ERR("Invalid aead gcm mode auth_bytes!\n");
+		    return -WD_EINVAL;
+		}
+		return ret;
+	}
 
-	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+	if (unlikely(msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+		WD_ERR("Invalid aead assoc_bytes!\n");
+		return -WD_EINVAL;
+	}
+	if (unlikely(msg->auth_bytes != AES_BLOCK_SIZE &&
+	    msg->auth_bytes != AES_BLOCK_SIZE << 1)) {
 		WD_ERR("Invalid aead auth_bytes!\n");
 		return -WD_EINVAL;
 	}
