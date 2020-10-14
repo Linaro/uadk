@@ -367,7 +367,7 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	__u32 in_len, sz;
 	float tc = 0;
 	float speed;
-	ulong templen = 0;
+	ulong dstlen = 0;
 	float total_in = 0;
 	float total_out = 0;
 	int count = 0;
@@ -399,6 +399,12 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	if (ret)
 		return ret;
 
+	dstlen = (ulong)in_len * 2;
+	if (copts->block_size != 512000)
+		dstlen = copts->block_size; /* just for user configure dest size test*/
+
+	dstlen = dstlen > MAX_LEN ? MAX_LEN : dstlen;
+
 	cnt = copts->thread_num;
 	for (i = 0; i < cnt; i++) {
 		test_thrds_data[i].thread_num = cnt;
@@ -409,14 +415,7 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 		test_thrds_data[i].iteration = copts->run_num;
 		test_thrds_data[i].src = file_buf;
 		test_thrds_data[i].src_len = in_len;
-		templen = (ulong)in_len * 2;
-		if (copts->total_len != 5120000)
-			templen = copts->total_len; /* just for user configure dest size test*/
-		if(templen > MAX_LEN){
-			test_thrds_data[i].dst_len =  MAX_LEN;
-		} else {
-			test_thrds_data[i].dst_len =  templen;
-		}
+		test_thrds_data[i].dst_len = dstlen;
 		test_thrds_data[i].src = calloc(1, test_thrds_data[i].src_len);
 		if (test_thrds_data[i].src == NULL)
 			goto buf_free;
@@ -490,8 +489,11 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	}
 	for (i = 0; i < thread_num; i++) {
 		dbg("%s:free src[%d]:%p\n", __func__, i, test_thrds_data[i].src);
+
 		free(test_thrds_data[i].src);
+
 		dbg("%s:free dst[%d]:%p\n", __func__, i, test_thrds_data[i].dst);
+
 		free(test_thrds_data[i].dst);
 	}
 	if (copts->op_type == WD_DIR_COMPRESS) {
