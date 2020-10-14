@@ -38,11 +38,15 @@ Build kernel and install the kernel image on Hisilicon platform.
 
 Configure UADK
 
+    $ ./cleanup.sh
     $ ./autogen.sh
     $ ./conf.sh
 
     UADK could be configured as either static or dynamic library by conf.sh.
     By default, it's configured as dynamic library.
+
+    If user wants to switch between static and dynamic library, he needs to
+    make sure that cleanup.sh is executed before build.
 
     $ make
     $ make install
