@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/types.h>
@@ -80,8 +81,6 @@
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
-
-#define offsetof(t, m) ((size_t)(uintptr_t)&((t *)0)->m)
 
 struct wd_lock {
 	__u32 lock;
