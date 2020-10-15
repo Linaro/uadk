@@ -1462,7 +1462,7 @@ static int sec_digest_async_once(void)
 	int ret;
 
 	/* config setup */
-	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		printf("Fail to init sigle ctx config!\n");
 		return ret;
@@ -1660,7 +1660,7 @@ static int sec_digest_async_multi(void)
 	int i, ret;
 
 	/* config setup */
-	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		printf("Fail to init sigle ctx config!\n");
 		return ret;
