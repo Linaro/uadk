@@ -276,6 +276,10 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
@@ -336,6 +340,10 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	idx = wd_get_msg_from_pool(&g_wd_digest_setting.pool, index,
 				   (void **)&msg);
