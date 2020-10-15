@@ -12,9 +12,9 @@
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
 #define MAX_CIPHER_KEY_SIZE	64
 
-#define WD_AEAD_CCM_GCM_MIN	8
+#define WD_AEAD_CCM_GCM_MIN	4U
 #define WD_AEAD_CCM_GCM_MAX	16
-#define MAX_HMAC_KEY_SIZE	128
+#define MAX_HMAC_KEY_SIZE	128U
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
@@ -193,14 +193,22 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 		return -EINVAL;
 	}
 
-	if (sess->cmode == WD_CIPHER_CCM || sess->cmode == WD_CIPHER_GCM) {
+	if (sess->cmode == WD_CIPHER_CCM) {
 		if (authsize < WD_AEAD_CCM_GCM_MIN ||
+		    authsize > WD_AEAD_CCM_GCM_MAX ||
+		    authsize % (WD_AEAD_CCM_GCM_MIN >> 1)) {
+			WD_ERR("failed to check aead CCM authsize!\n");
+			return -EINVAL;
+		}
+	} else if (sess->cmode == WD_CIPHER_GCM) {
+		if (authsize < WD_AEAD_CCM_GCM_MIN << 1 ||
 		    authsize > WD_AEAD_CCM_GCM_MAX) {
-			WD_ERR("failed to check aead CCM/GCM authsize!\n");
+			WD_ERR("failed to check aead GCM authsize!\n");
 			return -EINVAL;
 		}
 	} else {
 		if (sess->dalg >= WD_DIGEST_TYPE_MAX ||
+		    authsize & (WD_AEAD_CCM_GCM_MAX - 1) ||
 		    authsize > g_aead_mac_len[sess->dalg]) {
 			WD_ERR("failed to check aead mac authsize!\n");
 			return -EINVAL;
