@@ -331,6 +331,10 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
@@ -397,6 +401,10 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	idx = wd_get_msg_from_pool(&g_wd_cipher_setting.pool, index,
 				   (void **)&msg);
