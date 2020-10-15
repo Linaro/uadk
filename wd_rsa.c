@@ -191,7 +191,7 @@ out:
 
 void wd_rsa_uninit(void)
 {
-	if (!wd_rsa_setting.pool.pool_num) {
+	if (!wd_rsa_setting.priv) {
 		WD_ERR("uninit rsa error: repeat uninit rsa\n");
 		return;
 	}
