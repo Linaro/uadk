@@ -464,6 +464,13 @@ static int cipher_len_check(struct wd_cipher_msg *msg)
 		return -EINVAL;
 	}
 
+	if (msg->mode == WD_CIPHER_XTS) {
+		if (msg->in_bytes < AES_BLOCK_SIZE) {
+			WD_ERR("input cipher length is too small!\n");
+			return -EINVAL;
+		}
+	}
+
 	if (msg->alg == WD_CIPHER_3DES || msg->alg == WD_CIPHER_DES) {
 		if (msg->in_bytes & (DES3_BLOCK_SIZE - 1)) {
 			WD_ERR("input 3DES or DES cipher parameter is error!\n");
