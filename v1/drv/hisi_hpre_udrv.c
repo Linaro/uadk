@@ -819,7 +819,8 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 		dat[0 + bsize - dsize] |= 128;
 	}
 
-	if (!less_than_latter(d, n)) {
+	if (id != WCRYPTO_X25519 && id != WCRYPTO_X448 &&
+	    !less_than_latter(d, n)) {
 		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
 		return -WD_EINVAL;
 	}
