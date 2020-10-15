@@ -168,19 +168,21 @@ void wd_comp_uninit(void)
 
 int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 {
-	handle_t h_ctx = wd_comp_setting.config.ctxs[index].ctx;
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg resp_msg, *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
-	if (unlikely(!h_ctx || !count)) {
-		WD_ERR("invalid, comp poll input ctx or count is NULL\n");
+	if (unlikely(index >= config->ctx_num || !count)) {
+		WD_ERR("comp poll input index is error or count is NULL\n");
 		return -EINVAL;
 	}
+	ctx = config->ctxs + index;
 
 	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
 		if (ret < 0) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw err!\n");

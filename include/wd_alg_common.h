@@ -2,6 +2,7 @@
 #define WD_ALG_COMMON_H
 
 #include <asm/types.h>
+#include <pthread.h>
 #include "wd.h"
 
 #ifndef WD_ERR
