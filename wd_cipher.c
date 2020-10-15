@@ -271,14 +271,14 @@ void wd_cipher_uninit(void)
 {
 	void *priv = g_wd_cipher_setting.priv;
 
-	if (!priv) {
-		g_wd_cipher_setting.driver->exit(priv);
-		g_wd_cipher_setting.priv = NULL;
-		free(priv);
-	}
+	if (!priv)
+		return;
+
+	g_wd_cipher_setting.driver->exit(priv);
+	g_wd_cipher_setting.priv = NULL;
+	free(priv);
 
 	wd_uninit_async_request_pool(&g_wd_cipher_setting.pool);
-
 	wd_clear_sched(&g_wd_cipher_setting.sched);
 	wd_clear_ctx_config(&g_wd_cipher_setting.config);
 }
