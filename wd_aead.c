@@ -476,6 +476,10 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+		WD_ERR("failed to check ctx mode!\n");
+		return -EINVAL;
+	}
 
 	memset(&msg, 0, sizeof(struct wd_aead_msg));
 	if (req->iv_bytes != 0) {
@@ -547,6 +551,10 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	idx = wd_get_msg_from_pool(&g_wd_aead_setting.pool,
 				     index, (void **)&msg);
