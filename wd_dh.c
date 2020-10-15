@@ -151,7 +151,7 @@ out:
 
 void wd_dh_uninit(void)
 {
-	if (!wd_dh_setting.pool.pool_num) {
+	if (!wd_dh_setting.priv) {
 		WD_ERR("uninit dh error: repeat uninit dh\n");
 		return;
 	}
