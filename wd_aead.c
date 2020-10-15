@@ -415,14 +415,14 @@ void wd_aead_uninit(void)
 {
 	void *priv = g_wd_aead_setting.priv;
 
-	if (priv) {
-		g_wd_aead_setting.driver->exit(priv);
-		g_wd_aead_setting.priv = NULL;
-		free(priv);
-	}
+	if (!priv)
+		return;
+
+	g_wd_aead_setting.driver->exit(priv);
+	g_wd_aead_setting.priv = NULL;
+	free(priv);
 
 	wd_uninit_async_request_pool(&g_wd_aead_setting.pool);
-
 	wd_clear_sched(&g_wd_aead_setting.sched);
 	wd_clear_ctx_config(&g_wd_aead_setting.config);
 }
