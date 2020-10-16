@@ -1420,10 +1420,8 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
 		     const void *src, __u32 src_len)
 {
-	if (unlikely(!src || !src_len || *out_len + src_len > dst_len)) {
-		WD_ERR("src or src_len param error!\n");
+	if (unlikely(!src || !src_len))
 		return;
-	}
 
 	memcpy(dst + *out_len, src, src_len);
 	*out_len += src_len;
@@ -1630,7 +1628,7 @@ static int set_sign_in_param(struct wcrypto_ecc_sign_in *sin,
 		}
 	}
 
-	if (plaintext) {
+	if (plaintext && plaintext->dsize) {
 		ret = set_param_single(&sin->plaintext, plaintext);
 		if (ret) {
 			WD_ERR("set ecc sign in plaintext err!\n");
@@ -1835,7 +1833,7 @@ static int set_verf_in_param(struct wcrypto_ecc_verf_in *vin,
 		}
 	}
 
-	if (plaintext) {
+	if (plaintext && plaintext->dsize) {
 		ret = set_param_single(&vin->plaintext, plaintext);
 		if (ret) {
 			WD_ERR("set ecc vin plaintext err!\n");
