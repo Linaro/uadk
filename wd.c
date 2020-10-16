@@ -119,7 +119,7 @@ static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 	struct dirent *dev_dir = NULL;
 	DIR *class = NULL;
 	char *name = NULL;
-	int len, ret;
+	int ret;
 
 	if (!dev_name)
 		return NULL;
@@ -142,10 +142,6 @@ static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 			if (ret < 0)
 				goto out_dir;
 
-			len = WD_NAME_SIZE - 1;
-			if (len > strlen(name) + 1)
-				len = strlen(name) + 1;
-			strncpy(dev->name, name, len);
 			ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
 				       "/dev/%s", dev_name);
 			if (ret < 0)
