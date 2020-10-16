@@ -9,6 +9,6 @@ AM_CFLAGS+=-Bstatic
 test_hisi_sec_LDADD=../../.libs/libwd.a ../../.libs/libwd_crypto.a \
 			../../.libs/libhisi_sec.a -lnuma
 else
-test_hisi_sec_LDADD=-L../../.libs -lwd -lwd_crypto -lhisi_sec -lnuma
+test_hisi_sec_LDADD=-L../../.libs -lwd -lwd_crypto -lnuma
 endif
 test_hisi_sec_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
