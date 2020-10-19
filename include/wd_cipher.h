@@ -3,7 +3,6 @@
 #define __WD_CIPHER_H
 
 #include <dlfcn.h>
-#include "config.h"
 #include "wd.h"
 #include "wd_alg_common.h"
 
