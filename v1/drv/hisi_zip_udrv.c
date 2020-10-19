@@ -60,7 +60,7 @@
 #define u64_lower_bits(phy)		((__u64)(phy))
 #define u64_upper_bits(phy)		(((__u64)(phy)) << QM_HADDR_SHIFT)
 
-#define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) && 0xFF)
+#define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) & 0xFF)
 
 enum {
 	BD_TYPE,
@@ -571,7 +571,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 
 	tag = (void *)(uintptr_t)recv_msg->udata;
-	if (tag->priv && !info->sqe_fill_priv)
+	if (tag && tag->priv && !info->sqe_fill_priv)
 		fill_priv_lz77_zstd(sqe, recv_msg);
 
 	return 1;
