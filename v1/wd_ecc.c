@@ -91,28 +91,76 @@ struct wcrypto_ecc_curve_list {
 };
 
 static const struct wcrypto_ecc_curve_list g_curve_list[] = {
-	{ CURVE_X25519, "x25519", 256, X25519_256_PARAM },
-	{ CURVE_X448, "x448", 448, X448_448_PARAM },
-	{ WCRYPTO_SECP128R1, "secp128r1", 128, SECG_P128_R1_PARAM },
-	{ WCRYPTO_SECP192K1, "secp192k1", 192, SECG_P192_K1_PARAM },
-	{ WCRYPTO_SECP256K1, "secp256k1", 256, SECG_P256_K1_PARAM },
-	{ WCRYPTO_BRAINPOOLP320R1, "bpP320r1", 320, BRAINPOOL_P320_R1_PARAM },
-	{ WCRYPTO_BRAINPOOLP384R1, "bpP384r1", 384, BRAINPOOL_P384_R1_PARAM },
-	{ WCRYPTO_SECP521R1, "secp521r1", 521, NIST_P521_R1_PARAM },
-	{ CURVE_SM2P256, "sm2", 256, SM2_P256_V1_PARAM },
+	{
+		.id = CURVE_X25519,
+		.name = "x25519",
+		.key_bits = 256,
+		.data = X25519_256_PARAM,
+	}, {
+		.id = CURVE_X448,
+		.name = "x448",
+		.key_bits = 448,
+		.data = X448_448_PARAM,
+	}, {
+		.id = WCRYPTO_SECP128R1,
+		.name = "secp128r1",
+		.key_bits = 128,
+		.data = SECG_P128_R1_PARAM,
+	}, {
+		.id = WCRYPTO_SECP192K1,
+		.name = "secp192k1",
+		.key_bits = 192,
+		.data = SECG_P192_K1_PARAM,
+	}, {
+		.id = WCRYPTO_SECP256K1,
+		.name = "secp256k1",
+		.key_bits = 256,
+		.data = SECG_P256_K1_PARAM,
+	}, {
+		.id = WCRYPTO_BRAINPOOLP320R1,
+		.name = "bpP320r1",
+		.key_bits = 320,
+		.data = BRAINPOOL_P320_R1_PARAM,
+	}, {
+		.id = WCRYPTO_BRAINPOOLP384R1,
+		.name = "bpP384r1",
+		.key_bits = 384,
+		.data = BRAINPOOL_P384_R1_PARAM,
+	}, {
+		.id = WCRYPTO_SECP521R1,
+		.name = "secp521r1",
+		.key_bits = 521,
+		.data = NIST_P521_R1_PARAM,
+	}, {
+		.id = CURVE_SM2P256,
+		.name = "sm2",
+		.key_bits = 256,
+		.data = SM2_P256_V1_PARAM,
+	}
 };
 
 static const struct curve_param_desc g_curve_param_list[] = {
-	{ ECC_CURVE_P, offsetof(struct wcrypto_ecc_prikey, p),
-		offsetof(struct wcrypto_ecc_pubkey, p) },
-	{ ECC_CURVE_A, offsetof(struct wcrypto_ecc_prikey, a),
-		offsetof(struct wcrypto_ecc_pubkey, a) },
-	{ ECC_CURVE_B, offsetof(struct wcrypto_ecc_prikey, b),
-		offsetof(struct wcrypto_ecc_pubkey, b) },
-	{ ECC_CURVE_N, offsetof(struct wcrypto_ecc_prikey, n),
-		offsetof(struct wcrypto_ecc_pubkey, n) },
-	{ ECC_CURVE_G, offsetof(struct wcrypto_ecc_prikey, g),
-		offsetof(struct wcrypto_ecc_pubkey, g) },
+	{
+		.type = ECC_CURVE_P,
+		.pri_offset = offsetof(struct wcrypto_ecc_prikey, p),
+		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, p)
+	}, {
+		.type = ECC_CURVE_A,
+		.pri_offset = offsetof(struct wcrypto_ecc_prikey, a),
+		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, a)
+	}, {
+		.type = ECC_CURVE_B,
+		.pri_offset = offsetof(struct wcrypto_ecc_prikey, b),
+		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, b)
+	}, {
+		.type = ECC_CURVE_N,
+		.pri_offset = offsetof(struct wcrypto_ecc_prikey, n),
+		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, n)
+	}, {
+		.type = ECC_CURVE_G,
+		.pri_offset = offsetof(struct wcrypto_ecc_prikey, g),
+		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, g)
+	}
 };
 
 static int trans_to_binpad(char *dst, const char *src,
