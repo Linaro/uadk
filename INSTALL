@@ -58,11 +58,11 @@ Test on zip hardware accelerator
 Test on sec hardware accelerator
 
     Synchronous mode
-    $ sudo test_hisi_sec -cipher 0 -optype 0 -pklen 16 -keylen 16 -times 1 -sync -multi 1
-    $ sudo test_hisi_sec -digest 0 -optype 0 -pklen 16 -keylen 16 -times 1 -sync -multi 1
+    $ sudo test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --sync --multi 1
+    $ sudo test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --sync --multi 1
     Asynchronous mode
-    $ sudo test_hisi_sec -cipher 0 -optype 0 -pklen 16 -keylen 16 -times 1 -async -multi 1
-    $ sudo test_hisi_sec -digest 0 -optype 0 -pklen 16 -keylen 16 -times 1 -async -multi 1
+    $ sudo test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --async --multi 1
+    $ sudo test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --async --multi 1
 
 Test on hpre hardware accelerator
 
