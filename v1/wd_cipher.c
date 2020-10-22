@@ -134,7 +134,6 @@ static __u32 get_iv_block_size(int alg, int mode)
 	case WCRYPTO_CIPHER_XTS:
 	case WCRYPTO_CIPHER_CFB:
 		return CBC_AES_BLOCK_SIZE;
-		break;
 	default:
 		return 0;
 	}
