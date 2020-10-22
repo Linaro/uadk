@@ -27,7 +27,6 @@
 
 struct dummy_q_priv {
 	int ver;
-	/* local mirror of the register space */
 	int head;		/* queue head */
 	int resp_tail;		/* resp tail in the queue */
 	/* so in the user side: when add to queue, head++ but don't exceed resp_tail.

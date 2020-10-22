@@ -562,11 +562,19 @@ void wd_release_queue(struct wd_queue *q)
 
 int wd_send(struct wd_queue *q, void *req)
 {
+	if (unlikely(!q || !req)) {
+		WD_ERR("wd send input param null!\n");
+		return -EINVAL;
+	}
 	return wd_burst_send(q, &req, 1);
 }
 
 int wd_recv(struct wd_queue *q, void **resp)
 {
+	if (unlikely(!q || !resp)) {
+		WD_ERR("wd recv input param null!\n");
+		return -EINVAL;
+	}
 	return wd_burst_recv(q, resp, 1);
 }
 
