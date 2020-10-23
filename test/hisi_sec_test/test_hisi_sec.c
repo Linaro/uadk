@@ -29,6 +29,7 @@ static struct wd_sched *g_sched;
 
 static long long int g_times;
 static unsigned int g_thread_num;
+static unsigned int ctx_num = 0;
 static int g_count; // total packets
 static unsigned int g_testalg;
 static unsigned int g_keylen;
@@ -78,6 +79,7 @@ struct test_sec_option {
 	__u32 times;
 	__u32 syncmode;
 	__u32 xmulti;
+	__u32 ctx;
 };
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -285,31 +287,27 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 	return 0;
 }
 
-static int init_sigle_ctx_config(int type, int mode)
+static int init_ctx_config(int type, int mode)
 {
 	struct uacce_dev_list *list;
 	int ret = 0;
+	int i;
 
 	list = wd_get_accel_list("cipher");
 	if (!list)
 		return -ENODEV;
 
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
-	g_ctx_cfg.ctx_num = 1;
-	g_ctx_cfg.ctxs = calloc(1, sizeof(struct wd_ctx));
+	g_ctx_cfg.ctx_num = ctx_num;
+	g_ctx_cfg.ctxs = calloc(ctx_num, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	/* Just use first found dev to test here */
-	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(list->dev);
-	if (!g_ctx_cfg.ctxs[0].ctx) {
-		ret = -EINVAL;
-		printf("Fail to request ctx!\n");
-		goto out;
+	for (i = 0; i < ctx_num; i++) {
+		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
+		g_ctx_cfg.ctxs[i].op_type = type;
+		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 	}
-
-	g_ctx_cfg.ctxs[0].op_type = type;
-	g_ctx_cfg.ctxs[0].ctx_mode = (__u8)mode;
 
 	g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
 	if (!g_sched) {
@@ -318,7 +316,7 @@ static int init_sigle_ctx_config(int type, int mode)
 	}
 
 	g_sched->name = SCHED_SINGLE;
-	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, 0);
+	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, ctx_num - 1);
 	if (ret) {
 		printf("Fail to fill sched data!\n");
 		goto out;
@@ -372,7 +370,7 @@ static int test_sec_cipher_sync_once(void)
 	int ret;
 
 	/* config setup */
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
 		printf("Fail to init sigle ctx config!\n");
 		return ret;
@@ -482,7 +480,7 @@ static int test_sec_cipher_async_once(void)
 	memset(&data, 0, sizeof(thread_data_t));
 	data.req = &req;
 	/* config setup */
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
+	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		printf("Fail to init sigle ctx config!\n");
 		return ret;
@@ -667,6 +665,10 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 {
 	pthread_attr_t attr;
 	int i, ret;
+	struct timeval cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	int thread_id = (int)syscall(__NR_gettid);
 
 	if (thread_num > NUM_THREADS - 1) {
 		printf("can't creat %d threads", thread_num - 1);
@@ -692,6 +694,16 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 	for (i = 0; i < thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 	}
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (double)((cur_tval.tv_sec - thr_data[0].start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - thr_data[0].start_tval.tv_usec);
+	printf("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
+	speed = g_times * g_thread_num / time_used * 1000000;
+	Perf = speed * g_pktlen / 1024; //B->KB
+	printf("Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
+		getpid(), thread_id, speed, Perf);
+
 
 	return 0;
 }
@@ -757,7 +769,7 @@ static int sec_cipher_sync_test(void)
 		}
 	}
 
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
 		printf("fail to init sigle ctx config!\n");
 		goto out_thr;
@@ -991,7 +1003,7 @@ static int sec_cipher_async_test(void)
 		req[i].cb_param = &datas[i];
 	}
 
-	ret = init_sigle_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
+	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		printf("fail to init sigle ctx config!\n");
 		goto out_thr;
@@ -1754,8 +1766,8 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 	int c;
 
 	static struct option long_options[] = {
-        	{"cipher",    required_argument, 0,  1},
-        	{"digest",    required_argument, 0,  2},
+		{"cipher",    required_argument, 0,  1},
+		{"digest",    required_argument, 0,  2},
 		{"optype",    required_argument, 0,  3},
 		{"pktlen",    required_argument, 0,  4},
 		{"keylen",    required_argument, 0,  5},
@@ -1763,6 +1775,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"sync",      no_argument,       0,  7},
 		{"async",     no_argument,       0,  8},
 		{"multi",     required_argument, 0,  9},
+		{"ctx",       required_argument, 0,  10},
 		{0, 0, 0, 0}
 	};
 
@@ -1801,6 +1814,9 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		case 9:
 			option->xmulti = strtol(optarg, NULL, 0);
 			break;
+		case 10:
+			option->ctx = strtol(optarg, NULL, 0);
+			break;
 		default:
 			printf("bad input parameter, exit\n");
 			exit(-1);
@@ -1837,6 +1853,8 @@ static int test_sec_option_convert(struct test_sec_option *option)
 			g_ivlen = 1;
 		}
 	}
+
+	ctx_num = option->ctx;
 
 	return 0;
 }
