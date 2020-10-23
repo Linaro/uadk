@@ -386,6 +386,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
 		uninit_config(&info, sched);
+	free(info.threads);
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
