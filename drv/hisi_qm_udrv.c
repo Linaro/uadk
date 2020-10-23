@@ -186,7 +186,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 
 	ret = hisi_qm_setup_db(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("setup region fail\n");
+		WD_ERR("setup db fail\n");
 		goto err_out;
 	}
 
