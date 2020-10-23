@@ -473,7 +473,7 @@ static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
 		return false;
 
 	if (*(str + strlen(alg_name)) == '\n' &&
-	    (*(str - 1) == '\n' || str == dev_alg_name))
+	    ((str > dev_alg_name && *(str - 1) == '\n') || str == dev_alg_name))
 		return true;
 
 	return false;
