@@ -39,34 +39,45 @@ Build kernel and install the kernel image on Hisilicon platform.
 Configure UADK
 
     $ make
-    $ make install
+    $ sudo make install
 
     Both dynamic and static libraries would be installed in /usr/local/lib
     directory. And all head files would be installed in /usr/local/include/uadk
     directory.
 
 
-4. Run test applications
+4. Set proper permission on device nodes
+
+Harware accelerators register in UADK. So char devices are created in dev
+directory. In order to make user access resources on hardware accelerators,
+write permission should be opened to user.
+
+    $ sudo chmod 777 /dev/hisi_hpre-*
+    $ sudo chmod 777 /dev/hisi_sec-*
+    $ sudo chmod 777 /dev/hisi_zip-*
+
+
+5. Run test applications
 
 Test on zip hardware accelerator
 
     Synchronous mode
-    $ sudo test_sva_perf -b 8192000 -l 1000 -v -m 0
+    $ test_sva_perf -b 8192000 -l 1000 -v -m 0
     Asynchronous mode
-    $ sudo test_sva_perf -b 8192000 -l 1000 -v -m 1
+    $ test_sva_perf -b 8192000 -l 1000 -v -m 1
 
 Test on sec hardware accelerator
 
     Synchronous mode
-    $ sudo test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --sync --multi 1
-    $ sudo test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --sync --multi 1
+    $ test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --sync --multi 1
+    $ test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --sync --multi 1
     Asynchronous mode
-    $ sudo test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --async --multi 1
-    $ sudo test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --async --multi 1
+    $ test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --async --multi 1
+    $ test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 --async --multi 1
 
 Test on hpre hardware accelerator
 
     Synchronous mode
-    $ sudo test_hisi_hpre --trd_mode=sync
+    $ test_hisi_hpre --trd_mode=sync
     Asynchronous mode
-    $ sudo test_hisi_hpre --trd_mode=async
+    $ test_hisi_hpre --trd_mode=async
