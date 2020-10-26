@@ -1,5 +1,5 @@
 CC		:= gcc
-CFLAGS		:=
+CFLAGS		:= -O2
 DYNCFLAGS	:= $(CFLAGS) -shared -fPIC
 STCCFLAGS	:= $(CFLAGS) -DWD_STATIC_DRV
 INCLUDES	:= -I../../include -I. -I../..
