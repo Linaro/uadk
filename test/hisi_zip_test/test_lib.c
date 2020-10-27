@@ -504,25 +504,76 @@ int attach_threads(struct hizip_test_info *info)
 	return 0;
 }
 
+/*
+ * Choose a device and check whether it can afford the requested contexts.
+ * Return a list whose the first device is chosen.
+ */
+struct uacce_dev_list *get_dev_list(struct priv_options *opts,
+				    int children)
+{
+	struct uacce_dev_list *list, *p, *head = NULL, *prev;
+	struct test_options *copts = &opts->common;
+	int max_q_num;
+
+	list = wd_get_accel_list("zlib");
+	if (!list)
+		return NULL;
+
+	p = list;
+	/* Find one device matching the requested contexts. */
+	while (p) {
+		max_q_num = wd_get_avail_ctx(p->dev);
+		/*
+		 * Check whether there's enough contexts.
+		 * There may be multiple taskes running together.
+		 * The number of multiple taskes is specified in children.
+		 */
+		if (max_q_num < 4 * copts->q_num * children) {
+			if (!head)
+				head = p;
+			prev = p;
+			p = p->next;
+		} else
+			break;
+	}
+
+	if (!p) {
+		WD_ERR("Request too much contexts: %d\n",
+		       copts->q_num * 4 * children);
+		goto out;
+	}
+
+	/* Adjust p to the head of list if p is in the middle. */
+	if (p && (p != list)) {
+		prev->next = p->next;
+		p->next = head;
+		return p;
+	}
+	return list;
+out:
+	wd_free_list_accels(list);
+	return NULL;
+}
+
+/*
+ * Initialize context numbers by the four times of opts->q_num.
+ * [sync, async] * [compress, decompress] = 4
+ */
 int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 		    void *priv)
 {
 	struct wd_comp_sess_setup setup;
-	struct uacce_dev_list *list;
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i, j, ret = -EINVAL;
-	int q_num;
+	int q_num, max_q_num;
 
-	list = wd_get_accel_list("zlib");
-	if (!list)
-		return -ENODEV;
+
 	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!sched) {
 		WD_ERR("sample_sched_alloc fail\n");
 		goto out_sched;
 	}
-	info->list = list;
 	q_num = opts->q_num;
 
 	sched->name = SCHED_RR_NAME;
@@ -565,7 +616,7 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 		goto out_fill;
 	}
 	for (i = 0; i < ctx_conf->ctx_num; i++) {
-		ctx_conf->ctxs[i].ctx = wd_request_ctx(list->dev);
+		ctx_conf->ctxs[i].ctx = wd_request_ctx(info->list->dev);
 		if (!ctx_conf->ctxs[i].ctx) {
 			WD_ERR("Fail to allocate context #%d\n", i);
 			ret = -EINVAL;
@@ -599,7 +650,6 @@ out_ctx:
 out_fill:
 	sample_sched_release(sched);
 out_sched:
-	wd_free_list_accels(list);
 	return ret;
 }
 
@@ -615,7 +665,6 @@ void uninit_config(void *priv, struct wd_sched *sched)
 		wd_release_ctx(ctx_conf->ctxs[i].ctx);
 	free(ctx_conf->ctxs);
 	sample_sched_release(sched);
-	wd_free_list_accels(info->list);
 }
 
 int hizip_test_sched(struct wd_sched *sched,
