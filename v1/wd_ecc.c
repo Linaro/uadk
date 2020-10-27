@@ -142,24 +142,24 @@ static const struct wcrypto_ecc_curve_list g_curve_list[] = {
 static const struct curve_param_desc g_curve_param_list[] = {
 	{
 		.type = ECC_CURVE_P,
-		.pri_offset = offsetof(struct wcrypto_ecc_prikey, p),
-		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, p)
+		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, p),
+		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, p),
 	}, {
 		.type = ECC_CURVE_A,
-		.pri_offset = offsetof(struct wcrypto_ecc_prikey, a),
-		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, a)
+		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, a),
+		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, a),
 	}, {
 		.type = ECC_CURVE_B,
-		.pri_offset = offsetof(struct wcrypto_ecc_prikey, b),
-		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, b)
+		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, b),
+		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, b),
 	}, {
 		.type = ECC_CURVE_N,
-		.pri_offset = offsetof(struct wcrypto_ecc_prikey, n),
-		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, n)
+		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, n),
+		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, n),
 	}, {
 		.type = ECC_CURVE_G,
-		.pri_offset = offsetof(struct wcrypto_ecc_prikey, g),
-		.pub_offset = offsetof(struct wcrypto_ecc_pubkey, g)
+		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, g),
+		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, g),
 	}
 };
 
