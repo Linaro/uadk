@@ -512,7 +512,7 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 	printf("\n");
 }
 
-static int run_one_child(struct priv_options *opts)
+static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 {
 	int i;
 	int ret = 0;
@@ -527,6 +527,7 @@ static int run_one_child(struct priv_options *opts)
 	priv_ctx.opts = opts;
 
 	info->opts = copts;
+	info->list = list;
 
 	info->total_len = copts->total_len;
 
@@ -623,13 +624,25 @@ out_with_in_buf:
 static int run_bind_test(struct priv_options *opts)
 {
 	pid_t pid;
-	int i, ret;
+	int i, ret, count;
 	pid_t *pids;
 	int nr_children = 0;
 	bool success = true;
+	struct uacce_dev_list *list;
 
 	if (!opts->children)
-		return run_one_child(opts);
+		count = 1;
+	else
+		count = opts->children;
+	list = get_dev_list(opts, count);
+	if (!list)
+		return -EINVAL;
+
+	if (!opts->children) {
+		ret = run_one_child(opts, list);
+		wd_free_list_accels(list);
+		return ret;
+	}
 
 	pids = calloc(opts->children, sizeof(pid_t));
 	if (!pids)
@@ -648,7 +661,7 @@ static int run_bind_test(struct priv_options *opts)
 		}
 
 		/* Child */
-		exit(run_one_child(opts));
+		exit(run_one_child(opts, list));
 	}
 
 	dbg("%d children spawned\n", nr_children);
@@ -682,6 +695,7 @@ static int run_bind_test(struct priv_options *opts)
 	}
 
 	free(pids);
+	wd_free_list_accels(list);
 	return success ? 0 : -EFAULT;
 }
 
