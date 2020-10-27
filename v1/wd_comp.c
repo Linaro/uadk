@@ -138,25 +138,24 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	}
 
 	if (qinfo->ctx_num >= WD_COMP_MAX_CTX) {
-		WD_ERR("err:create too many comp ctx!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err:create too many comp ctx!\n");
 		return NULL;
 	}
 
-	qinfo->ctx_num++;
 	ctx_id = wd_alloc_ctx_id(q, WD_COMP_MAX_CTX);
 	if (ctx_id < 0) {
-		WD_ERR("err: alloc ctx id fail!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err: alloc ctx id fail!\n");
 		return NULL;
 	}
-
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
 		WD_ERR("alloc ctx  fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 
 	ctx->q = q;
@@ -167,7 +166,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		if (!ctx->ctx_buf) {
 			WD_ERR("alloc ctx rsv buf fail!\n");
 			free(ctx);
-			return NULL;
+			goto free_ctx_id;
 		}
 	} else {
 		cache_num = WD_COMP_CTX_MSGCACHE_NUM;
@@ -186,6 +185,13 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	ctx->cb = setup->cb;
 
 	return ctx;
+
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
+	wd_free_ctx_id(q, ctx_id);
+	wd_unspinlock(&qinfo->qlock);
+	return NULL;
 }
 
 /**

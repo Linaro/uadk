@@ -202,25 +202,24 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 	}
 
 	if (qinfo->ctx_num >= WCRYPTO_CIPHER_MAX_CTX) {
-		WD_ERR("err:create too many cipher ctx!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err:create too many cipher ctx!\n");
 		return NULL;
 	}
 
-	qinfo->ctx_num++;
 	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_CIPHER_MAX_CTX);
 	if (ctx_id < 0) {
-		WD_ERR("err: alloc ctx id fail!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err: alloc ctx id fail!\n");
 		return NULL;
 	}
-
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_cipher_ctx));
 	if (!ctx) {
 		WD_ERR("Alloc ctx memory fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	memset(ctx, 0, sizeof(struct wcrypto_cipher_ctx));
 	memcpy(&ctx->setup, setup, sizeof(*setup));
@@ -230,13 +229,20 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 	if (!ctx->key) {
 		WD_ERR("alloc cipher ctx key fail!\n");
 		free(ctx);
-		return NULL;
+		goto free_ctx_id;
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->alg, setup->mode);
 	init_cipher_cookie(ctx, setup);
 
 	return ctx;
+
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
+	wd_free_ctx_id(q, ctx_id);
+	wd_unspinlock(&qinfo->qlock);
+	return NULL;
 }
 
 static int is_des_weak_key(const __u64 *key, __u16 keylen)

@@ -1041,19 +1041,22 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 	if (qinfo->br.usr != setup->br.usr) {
+		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating ecc ctx!\n");
-		goto free_spinlock;
+		return NULL;
 	}
 
 	if (unlikely(qinfo->ctx_num >= WD_ECC_MAX_CTX)) {
+		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("err:create too many ecc ctx!\n");
-		goto free_spinlock;
+		return NULL;
 	}
 
 	cid = wd_alloc_ctx_id(q, WD_ECC_MAX_CTX);
 	if (unlikely(cid < 0)) {
+		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("failed to alloc ctx id!\n");
-		goto free_spinlock;
+		return NULL;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
@@ -1084,10 +1087,6 @@ free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	wd_free_ctx_id(q, cid);
-
-free_spinlock:
-	wd_unspinlock(&qinfo->qlock);
-
 	return NULL;
 }
 
