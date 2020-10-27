@@ -335,9 +335,15 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	info.popts = opts;
 	info.total_len = copts->total_len;
 
+	info.list = get_dev_list(opts, 1);
+	if (!info.list)
+		return -EINVAL;
+
 	in_buf = info.in_buf = mmap_alloc(copts->total_len);
-	if (!in_buf)
-		return -ENOMEM;
+	if (!in_buf) {
+		ret = -ENOMEM;
+		goto out_list;
+	}
 
 	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
@@ -391,6 +397,8 @@ out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
+out_list:
+	wd_free_list_accels(info.list);
 	return ret;
 }
 
