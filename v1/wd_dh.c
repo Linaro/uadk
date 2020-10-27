@@ -120,16 +120,15 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 	}
 
 	if (qinfo->ctx_num >= WD_DH_MAX_CTX) {
-		WD_ERR("err: create too many dh ctx!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err: create too many dh ctx!\n");
 		return NULL;
 	}
 
 	ctx_id = wd_alloc_ctx_id(q, WD_DH_MAX_CTX);
 	if (ctx_id < 0) {
-
-		WD_ERR("err: alloc ctx id fail!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err: alloc ctx id fail!\n");
 		return NULL;
 	}
 	qinfo->ctx_num++;
