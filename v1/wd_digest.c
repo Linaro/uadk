@@ -155,25 +155,24 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 	}
 
 	if (qinfo->ctx_num >= WD_DIGEST_MAX_CTX) {
-		WD_ERR("err:create too many digest ctx!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err:create too many digest ctx!\n");
 		return NULL;
 	}
 
-	qinfo->ctx_num++;
 	ctx_id = wd_alloc_ctx_id(q, WD_DIGEST_MAX_CTX);
 	if (ctx_id < 0) {
-		WD_ERR("err: alloc ctx id fail!\n");
 		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err: alloc ctx id fail!\n");
 		return NULL;
 	}
-
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_digest_ctx));
 	if (!ctx) {
 		WD_ERR("Alloc ctx memory fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	memset(ctx, 0, sizeof(struct wcrypto_digest_ctx));
 	memcpy(&ctx->setup, setup, sizeof(*setup));
@@ -184,13 +183,20 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		if (!ctx->key) {
 			WD_ERR("alloc digest ctx key fail!\n");
 			free(ctx);
-			return NULL;
+			goto free_ctx_id;
 		}
 	}
 
 	init_digest_cookie(ctx, setup);
 
 	return ctx;
+
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
+	wd_free_ctx_id(q, ctx_id);
+	wd_unspinlock(&qinfo->qlock);
+	return NULL;
 }
 
 static int digest_request_init(struct wcrypto_digest_msg *req,

@@ -212,28 +212,30 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 
 	if (qinfo->br.usr != setup->br.usr) {
+		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating aead ctx!\n");
-		goto fail_with_lock;
+		return NULL;
 	}
 
 	if (qinfo->ctx_num >= WCRYPTO_AEAD_MAX_CTX) {
+		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("err: create too many aead ctx!\n");
-		goto fail_with_lock;
+		return NULL;
 	}
 
-	qinfo->ctx_num++;
 	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_AEAD_MAX_CTX);
 	if (ctx_id < 0) {
+		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("fail to alloc ctx id!\n");
-		goto fail_with_lock;
+		return NULL;
 	}
-
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_aead_ctx));
 	if (!ctx) {
 		WD_ERR("fail to alloc ctx memory!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	memset(ctx, 0, sizeof(struct wcrypto_aead_ctx));
 	memcpy(&ctx->setup, setup, sizeof(*setup));
@@ -243,13 +245,14 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	if (!ctx->ckey) {
 		WD_ERR("fail to alloc cipher ctx key!\n");
 		free(ctx);
-		return NULL;
+		goto free_ctx_id;
 	}
 	ctx->akey = setup->br.alloc(setup->br.usr, MAX_AEAD_KEY_SIZE);
 	if (!ctx->akey) {
 		WD_ERR("fail to alloc authenticate ctx key!\n");
+		setup->br.free(setup->br.usr, ctx->ckey);
 		free(ctx);
-		return NULL;
+		goto free_ctx_id;
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->cmode);
@@ -257,7 +260,10 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 
 	return ctx;
 
-fail_with_lock:
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
+	wd_free_ctx_id(q, ctx_id);
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
 }
