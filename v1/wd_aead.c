@@ -224,7 +224,7 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	/* lock at ctx creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
-		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
+		memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
 
 	if (qinfo->br.usr != setup->br.usr) {
 		wd_unspinlock(&qinfo->qlock);
@@ -253,7 +253,7 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 		goto free_ctx_id;
 	}
 	memset(ctx, 0, sizeof(struct wcrypto_aead_ctx));
-	memcpy(&ctx->setup, setup, sizeof(*setup));
+	memcpy(&ctx->setup, setup, sizeof(ctx->setup));
 	ctx->q = q;
 	ctx->ctx_id = ctx_id;
 	ctx->ckey = setup->br.alloc(setup->br.usr, MAX_CIPHER_KEY_SIZE);
