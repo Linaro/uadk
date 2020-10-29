@@ -264,7 +264,7 @@ void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
 		WD_ERR("Failed to malloc pool.\n");
 		return NULL;
 	}
-	memcpy(&pool->setup, setup, sizeof(*setup));
+	memcpy(&pool->setup, setup, sizeof(pool->setup));
 
 	ret = wd_pool_pre_layout(pool, setup);
 	if (ret)

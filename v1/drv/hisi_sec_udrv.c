@@ -198,22 +198,26 @@ static void update_iv(struct wcrypto_cipher_msg *msg)
 {
 	switch (msg->mode) {
 	case WCRYPTO_CIPHER_CBC:
-		if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION)
+		if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION &&
+			msg->out_bytes >= msg->iv_bytes)
 			memcpy(msg->iv, msg->out + msg->out_bytes -
 				msg->iv_bytes, msg->iv_bytes);
-		else
+		if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION &&
+			msg->in_bytes >= msg->iv_bytes)
 			memcpy(msg->iv, msg->in + msg->in_bytes -
 				msg->iv_bytes, msg->iv_bytes);
 		break;
 	case WCRYPTO_CIPHER_OFB:
 	case WCRYPTO_CIPHER_CFB:
-		memcpy(msg->iv, msg->out + msg->out_bytes -
+		if (msg->out_bytes >= msg->iv_bytes)
+			memcpy(msg->iv, msg->out + msg->out_bytes -
 				msg->iv_bytes, msg->iv_bytes);
 		break;
 	case WCRYPTO_CIPHER_CTR:
 		ctr_iv_inc(msg->iv, msg->in_bytes >> CTR_MODE_LEN_SHIFT);
 		break;
 	default:
+		WD_ERR("No cipher iv is updated!\n");
 		break;
 	}
 }
