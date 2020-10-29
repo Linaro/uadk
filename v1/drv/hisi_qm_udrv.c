@@ -376,7 +376,7 @@ void qm_uninit_queue(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-static void qm_tx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
+void qm_tx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
 {
 	info->sq_tail_index = idx;
 	info->db(info, DOORBELL_CMD_SQ, idx, 0);
@@ -387,7 +387,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	__u16 sq_tail;
+	__u16 sq_tail = 0;
 	int i, ret;
 
 	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
@@ -403,20 +403,19 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 		return -WD_EBUSY;
 	}
 
-	sq_tail = info->sq_tail_index;
 	for (i = 0; i < num; i++) {
 		ret = info->sqe_fill[qinfo->atype](req[i], qinfo->priv,
-				sq_tail);
+				info->sq_tail_index);
 		if (unlikely(ret != WD_SUCCESS)) {
 			wd_unspinlock(&info->sd_lock);
 			WD_ERR("sqe fill error, ret %d!\n", ret);
 			return -WD_EINVAL;
 		}
 
-		if (sq_tail == QM_Q_DEPTH - 1)
+		if (info->sq_tail_index == QM_Q_DEPTH - 1)
 			sq_tail = 0;
 		else
-			sq_tail++;
+			sq_tail = info->sq_tail_index + 1;
 	}
 
 	/* make sure the request is all in memory before doorbell */
@@ -427,7 +426,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 	return WD_SUCCESS;
 }
 
-static void qm_rx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
+void qm_rx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
 {
 	info->cq_head_index = idx;
 	/* set c_flag to enable interrupt when use poll */
@@ -499,13 +498,13 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 			return ret;
 		}
 
-		resp[i] = info->req_cache[cq_head];
-		info->req_cache[cq_head] = NULL;
-		if (cq_head == QM_Q_DEPTH - 1) {
+		resp[i] = info->req_cache[info->cq_head_index];
+		info->req_cache[info->cq_head_index] = NULL;
+		if (info->cq_head_index == QM_Q_DEPTH - 1) {
 			info->cqc_phase = !(info->cqc_phase);
 			cq_head = 0;
 		} else {
-			cq_head++;
+			cq_head = info->cq_head_index + 1;
 		}
 	}
 
