@@ -52,6 +52,7 @@
 #define DH_GENERATOR_2			2
 #define DH_GENERATOR_5			5
 #define TEST_CNT		10
+#define EVP_PKEY_CTRL_MD	1
 
 typedef unsigned int u32;
 
@@ -206,6 +207,8 @@ enum ecc_hash_item {
 	HASH_SHA1,
 	HASH_SHA224,
 	HASH_SHA256,
+	HASH_SHA384,
+	HASH_SHA512,
 	HASH_MD4,
 	HASH_MD5
 };
@@ -232,6 +235,8 @@ static char *ecc_curve_name = "secp256k1";
 static int set_msg = MSG_SHORT_PTEXT;
 static int set_rand = RAND_CB;
 static int set_hash = HASH_SM3;
+static unsigned long int set_plaintext_len = 4096;
+static unsigned int set_randparam_len = 256;
 static __thread u32 g_is_set_prikey; // ecdh used
 static __thread u32 g_is_set_pubkey; // ecc used
 static pthread_t system_test_thrds[TEST_MAX_THRD];
@@ -804,108 +809,6 @@ const EVP_MD *EVP_md5(void);
 
 static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async);
 
-#if 0
-static EC_GROUP *create_EC_group(const char *p_hex, const char *a_hex,
-				const char *b_hex, const char *x_hex,
-				const char *y_hex, const char *order_hex,
-				const char *cof_hex)
-{
-	BIGNUM *p = NULL;
-	BIGNUM *a = NULL;
-	BIGNUM *b = NULL;
-	BIGNUM *g_x = NULL;
-	BIGNUM *g_y = NULL;
-	BIGNUM *order = NULL;
-	BIGNUM *cof = NULL;
-	EC_POINT *generator = NULL;
-	EC_GROUP *group = NULL;
-	int ok = 0;
-
-	if (!BN_hex2bn(&p, p_hex)
-		|| !BN_hex2bn(&a, a_hex)
-		|| !BN_hex2bn(&b, b_hex))
-		goto done;
-
-	group = EC_GROUP_new_curve_GFp(p, a, b, NULL);
-	if (!group)
-		goto done;
-
-	generator = EC_POINT_new(group);
-	if (!generator)
-		goto done;
-
-	if (!BN_hex2bn(&g_x, x_hex)
-		|| !BN_hex2bn(&g_y, y_hex)
-		|| !EC_POINT_set_affine_coordinates(group, generator, g_x,
-								g_y, NULL))
-		goto done;
-
-	if (!BN_hex2bn(&order, order_hex)
-		|| !BN_hex2bn(&cof, cof_hex)
-		|| !EC_GROUP_set_generator(group, generator, order, cof))
-		goto done;
-
-	ok = 1;
-done:
-	BN_free(p);
-	BN_free(a);
-	BN_free(b);
-	BN_free(g_x);
-	BN_free(g_y);
-	EC_POINT_free(generator);
-	BN_free(order);
-	BN_free(cof);
-	if (!ok) {
-		EC_GROUP_free(group);
-		group = NULL;
-	}
-
-	return group;
-}
-#endif
-
-
-/* sm2 enc/dec stub */
-
-static struct wcrypto_ecc_in *wcrypto_new_sm2_enc_in(void *ctx,
-					      struct wd_dtb *k,
-					      struct wd_dtb *m)
-{
-	return NULL;
-}
-static struct wcrypto_ecc_in *wcrypto_new_sm2_dec_in(void *ctx,
-					      struct wcrypto_ecc_point *c1,
-					      struct wd_dtb *c2,
-					      struct wd_dtb *c3)
-{
-	return NULL;
-}
-
-static struct wcrypto_ecc_out *wcrypto_new_sm2_enc_out(void *ctx, unsigned long long mlen)
-{
-	return NULL;
-}
-
-static struct wcrypto_ecc_out *wcrypto_new_sm2_dec_out(void *ctx, unsigned long long mlen)
-{
-	return NULL;
-}
-
-static void wcrypto_get_sm2_enc_out_params(struct wcrypto_ecc_out *out,
-				    struct wcrypto_ecc_point **c1,
-				    struct wd_dtb **c2,
-				    struct wd_dtb **c3)
-{
-	return;
-}
-static void wcrypto_get_sm2_dec_out_params(struct wcrypto_ecc_out *out,
-				    struct wd_dtb **m)
-{
-	return;
-}
-
-
-
 static RAND_METHOD fake_rand;
 static const RAND_METHOD *saved_rand;
 static uint8_t *fake_rand_bytes = NULL;
@@ -1032,6 +935,10 @@ const EVP_MD *get_digest_handle(void)
 		digest = EVP_sha224();
 	else if (set_hash == HASH_SHA256)
 		digest = EVP_sha256();
+	else if (set_hash == HASH_SHA384)
+		digest = EVP_sha384();
+	else if (set_hash == HASH_SHA512)
+		digest = EVP_sha512();
 	else if (set_hash == HASH_MD4)
 		digest = EVP_md4();
 	else if (set_hash == HASH_MD5)
@@ -1158,7 +1065,7 @@ static int hpre_bin_sign_to_evp(char *evp, char *bin, __u32 ksz)
 	return total_len;
 }
 
-static int sm2_enc_in_bin_to_evp(char *evp, char *bin, __u32 m_len, __u32 ksz)
+static int sm2_enc_in_bin_to_evp(char *evp, char *bin, __u32 m_len, __u32 ksz, __u32 c3_sz)
 {
 	char *tmp;
 	char *c1 = bin;
@@ -1177,7 +1084,7 @@ static int sm2_enc_in_bin_to_evp(char *evp, char *bin, __u32 m_len, __u32 ksz)
 	__u8 c2_head_bytes = 2;
 	__u8 c1x_size = ksz;
 	__u8 c1y_size = ksz;
-	__u8 c3_size = ksz;
+	__u8 c3_size = c3_sz;
 	__u8 val;
 	int i;
 
@@ -1196,7 +1103,8 @@ static int sm2_enc_in_bin_to_evp(char *evp, char *bin, __u32 m_len, __u32 ksz)
 		c2_head[1] = m_len;
 	}
 
-	total_len = 96 + head_bytes + c1x_head_bytes + c1y_head_bytes +
+	c3_head[1] = c3_sz;
+	total_len = 64 + c3_sz + head_bytes + c1x_head_bytes + c1y_head_bytes +
 		c3_head_bytes + c2_head_bytes + m_len;
 
 	i = 0;
@@ -1233,12 +1141,12 @@ static int sm2_enc_in_bin_to_evp(char *evp, char *bin, __u32 m_len, __u32 ksz)
 		head[1] = 0x82;
 		head[2] = (total_len - 4) >> 8;
 		head[3] = (total_len - 4) & 0xff;
-		c2_head[1] = 0x82;
-		c2_head[2] = m_len >> 8;
-		c2_head[3] = m_len & 0xff;
+		//c2_head[1] = 0x82;
+		//c2_head[2] = m_len >> 8;
+		//c2_head[3] = m_len & 0xff;
 	} else {
 		head[1] = (total_len - 2) & 0xff;
-		c2_head[1] = m_len;
+		//c2_head[1] = m_len;
 	}
 
 	memcpy(tmp, head, head_bytes); // head
@@ -1276,7 +1184,7 @@ __u32 get_big_endian_value(char *buf, __u32 size)
 
 static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type)
 {
-	__u32 total_len;
+	__u32 total_len = 0;
 	__u32 l_sz = 0;
 	__u8 *data;
 	__u32 d_sz = 0;
@@ -1286,7 +1194,7 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
 	char *buf;
 	char *buf_backup;
 
-	buf = malloc(*evp_size);
+	buf = malloc(*evp_size + 64); /* may crypto bin len > evp_size */
 	if (!buf) {
 		HPRE_TST_PRT("%s: malloc fail\n", __func__);
 		return -1;
@@ -1294,7 +1202,6 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
 	memset(buf, 0, *evp_size);
 	buf_backup = buf;
 
-	/**/
 	cur_len += 1;
 	if (evp[cur_len] & 0x80) {
 		l_sz = evp[cur_len] & 0x7f;
@@ -1336,6 +1243,11 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
 		}
 
 		if (op_type == SM2_HW_ENC && cur_len + d_sz >= *evp_size) {
+			memcpy(buf, &evp[cur_len], d_sz);
+			buf += d_sz;
+			cur_len += d_sz;
+			out_len += d_sz;
+		} else if (op_type == SM2_HW_ENC && i == 2) {
 			memcpy(buf, &evp[cur_len], d_sz);
 			buf += d_sz;
 			cur_len += d_sz;
@@ -4305,7 +4217,7 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 	int ret;
 	u32 key_size;
 	EVP_PKEY *p_key = NULL;
-	EVP_PKEY_CTX *pctx;
+	EVP_PKEY_CTX *pctx = NULL;
 
 	if (!setup.q || !setup.pool) {
 		HPRE_TST_PRT("%s: parm err!\n", __func__);
@@ -4452,15 +4364,16 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 				goto free_pkey_ctx;
 			}
 			k.data = buff;
-			k.dsize = 32;
+			k.dsize = BITS_TO_BYTES(set_randparam_len);
 			kptr = &k;
 
 			/* openssl set rand*/
-			hex_str = OPENSSL_buf2hexstr((void *)buff, 32);
+			hex_str = OPENSSL_buf2hexstr((void *)buff, k.dsize);
 			start_fake_rand(hex_str);
 			OPENSSL_free(hex_str);
 
 			EVP_PKEY_encrypt_init(pctx);
+			EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
 			test_ctx->cp_enc_size = MAX_ENC_LENS;
 			ret = EVP_PKEY_encrypt(pctx, test_ctx->cp_enc, &test_ctx->cp_enc_size,
 				setup.plaintext, setup.plaintext_size);
@@ -4481,6 +4394,7 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 
 		} else {
 			EVP_PKEY_decrypt_init(pctx);
+			EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
 		}
 
 		ecc_in = wcrypto_new_sm2_enc_in(ctx, kptr, &e);
@@ -4534,7 +4448,7 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 	int ret;
 	u32 key_size;
 	EVP_PKEY *p_key = NULL;
-	EVP_PKEY_CTX *pctx;
+	EVP_PKEY_CTX *pctx = NULL;
 
 	if (!setup.q || !setup.pool) {
 		HPRE_TST_PRT("%s: parm err!\n", __func__);
@@ -4818,17 +4732,17 @@ int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 				setup->digest = sm2_digest;
 				setup->digest_size = sizeof(sm2_digest);
 			} else if (set_msg == MSG_LONG_PTEXT) {
-				setup->plaintext = malloc(4097);
+				setup->plaintext = malloc(BITS_TO_BYTES(set_plaintext_len));
 				if (!setup->plaintext) {
 					HPRE_TST_PRT("malloc plaintext fail\n");
 					return -1;
 				}
-				setup->plaintext_size = 4097;
+				setup->plaintext_size = BITS_TO_BYTES(set_plaintext_len);
 				memset(setup->plaintext, 0x55, setup->plaintext_size);
 			}
 
 			setup->kinv = sm2_k;
-			setup->kinv_size = sizeof(sm2_k);
+			setup->kinv_size = sizeof(BITS_TO_BYTES(set_randparam_len));
 			setup->cp_sign = sm2_cp_sign;
 			setup->cp_sign_size = sizeof(sm2_cp_sign);
 			setup->sign = sm2_cp_sign;
@@ -5786,6 +5700,7 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	char *buf, *ptext;
 	size_t lens = 0;
 	__u32 evp_len;
+	__u32 c3_len;
 	int ret;
 
 	buf = malloc(MAX_ENC_LENS);
@@ -5804,6 +5719,7 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	memset(ptext, 0, MAX_ENC_LENS);
 	lens = MAX_ENC_LENS;
 	wcrypto_get_sm2_enc_out_params(opdata->out, &c1, &c2, &c3);
+	c3_len = c3->dsize;
 	if (set_rand != RAND_PARAM) {
 				/* openssl and hpre rand inconsistent, verify step:
 				* 1. openssl do verify using hpre sign output
@@ -5813,8 +5729,8 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 		/* openssl dec check*/
 		qm_crypto_bin_to_hpre_bin(c1->x.data, c1->x.data, c1->x.bsize, c1->x.dsize);
 		qm_crypto_bin_to_hpre_bin(c1->y.data, c1->y.data, c1->y.bsize, c1->y.dsize);
-		qm_crypto_bin_to_hpre_bin(c3->data, c3->data, c3->bsize, c3->dsize);
-		evp_len = sm2_enc_in_bin_to_evp(buf, c1->x.data, c2->dsize, 32);
+		//qm_crypto_bin_to_hpre_bin(c3->data, c3->data, c3->bsize, c3->dsize);
+		evp_len = sm2_enc_in_bin_to_evp(buf, c1->x.data, c2->dsize, 32, c3->dsize);
 		ret = EVP_PKEY_decrypt(pctx, (void *)ptext, &lens, (void *)buf, evp_len);
 		if (ret != 1) {
 			HPRE_TST_PRT("openssl dec fail = %d!\n", ret);
@@ -5837,7 +5753,7 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 		/* hpre dec check*/
 		c1->x.dsize = 32;
 		c1->y.dsize = 32;
-		c3->dsize = 32;
+		c3->dsize = c3_len;
 		ecc_in = wcrypto_new_sm2_dec_in(ctx, c1, c2, c3);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
@@ -5878,9 +5794,9 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 		memcpy(buf + 32, c1->y.data, c1->y.dsize);
 		qm_crypto_bin_to_hpre_bin(buf + 32, c1->y.data, c1->y.bsize, c1->y.dsize);
 		memcpy(buf + 32 * 2, c3->data, c3->dsize);
-		qm_crypto_bin_to_hpre_bin(buf + 32 * 2, c3->data, c3->bsize, c3->dsize);
-		memcpy(buf + 32 * 3, c2->data, c2->dsize);
-		lens = 32 * 3 + c2->dsize;
+		//qm_crypto_bin_to_hpre_bin(buf + 32 * 2, c3->data, c3->bsize, c3->dsize);
+		memcpy(buf + 32 * 2 + c3->dsize, c2->data, c2->dsize);
+		lens = 32 * 2 + c2->dsize + c3->dsize;
 		if (lens != test_ctx->cp_enc_size ||
 			memcmp(test_ctx->cp_enc, buf, test_ctx->cp_enc_size)) {
 			HPRE_TST_PRT("sm2 op %d mismatch!\n", test_ctx->op);
@@ -6535,6 +6451,10 @@ static void *_ecc_sys_test_thread(void *data)
 				ctx_setup.hash.type = WCRYPTO_HASH_SHA224;
 			} else if (set_hash == HASH_SHA256) {
 				ctx_setup.hash.type = WCRYPTO_HASH_SHA256;
+			} else if (set_hash == HASH_SHA384) {
+				ctx_setup.hash.type = WCRYPTO_HASH_SHA384;
+			} else if (set_hash == HASH_SHA512) {
+				ctx_setup.hash.type = WCRYPTO_HASH_SHA512;
 			} else if (set_hash == HASH_MD4) {
 				ctx_setup.hash.type = WCRYPTO_HASH_MD4;
 			} else if (set_hash == HASH_MD5) {
@@ -8190,7 +8110,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 				setup.block_size = get_ecc_min_blocksize(key_bits) * 8;
 
 			if (!strncmp(q[j].capa.alg, "sm2", 3))
-				setup.block_size = 5000;
+				setup.block_size = BITS_TO_BYTES(set_plaintext_len) + get_ecc_min_blocksize(key_bits) * 8;
 
 			setup.block_num = block_num;
 			setup.align_size = 64;
@@ -9056,7 +8976,7 @@ static int ecc_async_test(int thread_num, __u64 lcore_mask,
 
 	memset(&setup, 0, sizeof(setup));
 	if (!strncmp(q->capa.alg, "sm2", 3))
-		setup.block_size = 5000;
+		setup.block_size = BITS_TO_BYTES(set_plaintext_len) + get_ecc_min_blocksize(key_bits) * 8;
 	else
 		setup.block_size = get_ecc_min_blocksize(key_bits) * 8;
 
@@ -9516,7 +9436,7 @@ int main(int argc, char *argv[])
 
 		q_num = (thread_num - 1) / ctx_num_per_q + 1;
 
-		if (argc == 13 || argc == 14) {
+		if (argc == 13 || argc == 14 || argc == 16) {
 			if (alg_op_type > MAX_DH_TYPE && alg_op_type < MAX_ECDSA_TYPE) {
 				ecc_curve_name = argv[10];
 			/* curve x25519/x448 has th only param which is denoted in drv */
@@ -9575,13 +9495,17 @@ int main(int argc, char *argv[])
 				return -EINVAL;
 			}
 
-			if (argc == 14) {
+			if (argc >= 14) {
 				if (!strcmp(argv[13], "set-sha1"))
 					set_hash = HASH_SHA1;
 				else if (!strcmp(argv[13], "set-sha224"))
 					set_hash = HASH_SHA224;
 				else if (!strcmp(argv[13], "set-sha256"))
 					set_hash = HASH_SHA256;
+				else if (!strcmp(argv[13], "set-sha384"))
+					set_hash = HASH_SHA384;
+				else if (!strcmp(argv[13], "set-sha512"))
+					set_hash = HASH_SHA512;
 				else if (!strcmp(argv[13], "set-sm3"))
 					set_hash = HASH_SM3;
 				else if (!strcmp(argv[13], "set-md4"))
@@ -9590,6 +9514,26 @@ int main(int argc, char *argv[])
 					set_hash = HASH_MD5;
 				else if (!strcmp(argv[13], "set-hash-non"))
 					set_hash = HASH_NON;
+			}
+
+			if (argc >= 16) {
+				value = strtoul(argv[15], NULL, 10);
+				if (!strcmp(argv[14], "set-plaintext-len")) {
+					set_plaintext_len = value;
+					if (value > 32768) {
+						HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
+						return -EINVAL;
+					}
+				} else if (!strcmp(argv[14], "set-rand-len")) {
+					if (set_rand != RAND_PARAM || value > 512) {
+						HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
+						return -EINVAL;
+					}
+					set_randparam_len = value;
+				} else {
+					HPRE_TST_PRT("pls use ./test_hisi_hpre -help get details!\n");
+					return -EINVAL;
+				}
 			}
 		}
 
