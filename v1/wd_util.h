@@ -60,6 +60,8 @@
 #define ECDH_HW_KEY_PARAM_NUM		5
 #define ECC_PUBKEY_PARAM_NUM		8
 #define SM2_KG_OUT_PARAM_NUM		3
+#define ECC_POINT_PARAM_NUM		2
+
 #define ECDH_HW_KEY_SZ(hsz)		((hsz) * ECDH_HW_KEY_PARAM_NUM)
 #define ECC_PRIKEY_SZ(hsz)		((hsz) * ECC_PRIKEY_PARAM_NUM)
 #define ECC_PUBKEY_SZ(hsz)		((hsz) * ECC_PUBKEY_PARAM_NUM)
@@ -112,6 +114,7 @@ struct q_info {
 	enum wcrypto_type atype;
 	int ctx_num;
 	struct wd_mm_br br;
+	struct wcrypto_hash_mt hash;
 	unsigned long qfrs_offset[WD_UACCE_QFRT_MAX];
 	struct wd_lock qlock;
 
@@ -251,8 +254,30 @@ struct wcrypto_ecc_sign_out {
 	struct wd_dtb s; /* signature s param */
 };
 
+struct wcrypto_sm2_enc_in {
+	struct wd_dtb k; /* random */
+	struct wd_dtb plaintext; /* original text */
+	__u8 k_set; /* 0 - not set 1 - set */
+};
+
+struct wcrypto_sm2_enc_out {
+	struct wcrypto_ecc_point c1;
+	struct wd_dtb c2;
+	struct wd_dtb c3;
+};
+
+struct wcrypto_sm2_dec_in {
+	struct wcrypto_ecc_point c1;
+	struct wd_dtb c2;
+	struct wd_dtb c3;
+};
+
 struct wcrypto_sm2_kg_in {
 	struct wcrypto_ecc_point g;
+};
+
+struct wcrypto_sm2_dec_out {
+	struct wd_dtb plaintext;
 };
 
 struct wcrypto_sm2_kg_out {
@@ -264,12 +289,16 @@ typedef union {
 	struct wcrypto_ecc_dh_in dh_in;
 	struct wcrypto_ecc_sign_in sin;
 	struct wcrypto_ecc_verf_in vin;
+	struct wcrypto_sm2_enc_in ein;
+	struct wcrypto_sm2_dec_in din;
 	struct wcrypto_sm2_kg_in kin;
 } wcrypto_ecc_in_param;
 
 typedef union {
 	struct wcrypto_ecc_dh_out dh_out;
 	struct wcrypto_ecc_sign_out sout;
+	struct wcrypto_sm2_enc_out eout;
+	struct wcrypto_sm2_dec_out dout;
 	struct wcrypto_sm2_kg_out kout;
 } wcrypto_ecc_out_param;
 

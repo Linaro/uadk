@@ -170,6 +170,9 @@ void qm_uninit_queue(struct wd_queue *q);
 int qm_send(struct wd_queue *q, void **msg, __u32 num);
 int qm_recv(struct wd_queue *q, void **resp, __u32 num);
 int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op);
+void qm_tx_update(struct qm_queue_info *info, __u32 num);
+void qm_rx_update(struct qm_queue_info *info, __u32 num);
+void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num);
 
 #define HISI_QM_API_VER_BASE "hisi_qm_v1"
 #define HISI_QM_API_VER2_BASE "hisi_qm_v2"
