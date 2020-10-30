@@ -31,6 +31,17 @@
 #include "wd_util.h"
 #include "hisi_hpre_udrv.h"
 
+#define MAX_WAIT_CNT			10000000
+#define SM2_KEY_SIZE			32
+#define MAX_HASH_LENS			BITS_TO_BYTES(521)
+#define HW_PLAINTEXT_BYTES_MAX		BITS_TO_BYTES(4096)
+
+/* realize with hardware ecc multiplication, avoid confict with wd_ecc.h */
+#define HPRE_SM2_ENC	0xE
+#define HPRE_SM2_DEC	0xF
+
+#define SM2_SQE_NUM			2
+
 static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 {
 	const char *temp = data + dsz;
@@ -47,19 +58,19 @@ static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 }
 
 static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
-				int b_size, int d_size)
+				     int b_size, int d_size, const char *str)
 {
 	int i = d_size - 1;
 	bool is_hpre_bin;
 	int j;
 
-	if (!dst || !src || b_size <= 0 || d_size <= 0) {
-		WD_ERR("crypto bin to hpre bin params err!\n");
+	if (unlikely(!dst || !src || b_size <= 0 || d_size <= 0)) {
+		WD_ERR("%s trans to hpre bin: params err!\n", str);
 		return -WD_EINVAL;
 	}
 
-	if (b_size < d_size) {
-		WD_ERR("crypto bin to hpre bin param data is too long!\n");
+	if (unlikely(b_size < d_size)) {
+		WD_ERR("%s trans to hpre bin: param data is too long!\n", str);
 		return  -WD_EINVAL;
 	}
 
@@ -76,14 +87,15 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 	return WD_SUCCESS;
 }
 
-static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
+static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
+				     const char *str)
 {
 	int i, cnt;
 	int j = 0;
 	int k = 0;
 
-	if (!dst || !src || b_size <= 0) {
-		WD_ERR("%s params err!\n", __func__);
+	if (unlikely(!dst || !src || b_size <= 0)) {
+		WD_ERR("%s trans to crypto bin: params err!\n", str);
 		return 0;
 	}
 
@@ -116,35 +128,31 @@ static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey,
 	wcrypto_get_rsa_crt_prikey_params(prikey, &wd_dq, &wd_dp,
 				&wd_qinv, &wd_q, &wd_p);
 	ret = qm_crypto_bin_to_hpre_bin(wd_dq->data, (const char *)wd_dq->data,
-				wd_dq->bsize, wd_dq->dsize);
-	if (ret) {
-		WD_ERR("rsa crt dq format fail!\n");
+				wd_dq->bsize, wd_dq->dsize, "rsa crt dq");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_dp->data, (const char *)wd_dp->data,
-				wd_dp->bsize, wd_dp->dsize);
-	if (ret) {
-		WD_ERR("rsa crt dp format fail!\n");
+				wd_dp->bsize, wd_dp->dsize, "rsa crt dp");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
-				wd_q->bsize, wd_q->dsize);
-	if (ret) {
-		WD_ERR("rsa crt q format fail!\n");
+				wd_q->bsize, wd_q->dsize, "rsa crt q");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_p->data,
-		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize);
-	if (ret) {
-		WD_ERR("rsa crt p format fail!\n");
+		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize, "rsa crt p");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_qinv->data,
-		(const char *)wd_qinv->data, wd_qinv->bsize, wd_qinv->dsize);
-	if (ret) {
-		WD_ERR("rsa crt qinv format fail!\n");
+		(const char *)wd_qinv->data, wd_qinv->bsize,
+		wd_qinv->dsize, "rsa crt qinv");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	*data = wd_dq->data;
 	return (int)(wd_dq->bsize + wd_qinv->bsize + wd_p->bsize +
 			wd_q->bsize + wd_dp->bsize);
@@ -158,18 +166,15 @@ static int qm_fill_rsa_prikey1(struct wcrypto_rsa_prikey *prikey, void **data)
 
 	wcrypto_get_rsa_prikey_params(prikey, &wd_d, &wd_n);
 	ret = qm_crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
-				wd_d->bsize, wd_d->dsize);
-	if (ret) {
-		WD_ERR("rsa prikey1 d format fail!\n");
+				wd_d->bsize, wd_d->dsize, "rsa prikey1 d");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
-				wd_n->bsize, wd_n->dsize);
-	if (ret) {
-		WD_ERR("rsa prikey1 n format fail!\n");
+				wd_n->bsize, wd_n->dsize, "rsa prikey1 n");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	*data = wd_d->data;
 	return (int)(wd_n->bsize + wd_d->bsize);
 }
@@ -182,17 +187,15 @@ static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 
 	wcrypto_get_rsa_pubkey_params(pubkey, &wd_e, &wd_n);
 	ret = qm_crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
-				wd_e->bsize, wd_e->dsize);
-	if (ret) {
-		WD_ERR("rsa pubkey e format fail!\n");
+				wd_e->bsize, wd_e->dsize, "rsa pubkey e");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
-				wd_n->bsize, wd_n->dsize);
-	if (ret) {
-		WD_ERR("rsa pubkey n format fail!\n");
+				wd_n->bsize, wd_n->dsize, "rsa pubkey n");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	*data = wd_e->data;
 	return (int)(wd_n->bsize + wd_e->bsize);
 }
@@ -206,43 +209,39 @@ static int qm_fill_rsa_genkey_in(struct wcrypto_rsa_kg_in *genkey)
 
 	wcrypto_get_rsa_kg_in_params(genkey, &e, &q, &p);
 	ret = qm_crypto_bin_to_hpre_bin(e.data, (const char *)e.data,
-				e.bsize, e.dsize);
-	if (ret) {
-		WD_ERR("rsa genkey e format fail!\n");
+				e.bsize, e.dsize, "rsa kg e");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
-				q.bsize, q.dsize);
-	if (ret) {
-		WD_ERR("rsa genkey q format fail!\n");
+				q.bsize, q.dsize, "rsa kg q");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	ret = qm_crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
-				p.bsize, p.dsize);
-	if (ret) {
-		WD_ERR("rsa genkey p format fail!\n");
+				p.bsize, p.dsize, "rsa kg p");
+	if (unlikely(ret))
 		return ret;
-	}
+
 	return WD_SUCCESS;
 }
 
 static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
-				struct wd_dtb *bin2)
+				struct wd_dtb *bin2, const char *str)
 {
 	int ret;
 
 	ret = qm_hpre_bin_to_crypto_bin(bin0->data, (const char *)bin0->data,
-				bin0->bsize);
-	if (!ret)
+				bin0->bsize, str);
+	if (unlikely(!ret))
 		return -WD_EINVAL;
 
 	bin0->dsize = ret;
 
 	if (bin1) {
 		ret = qm_hpre_bin_to_crypto_bin(bin1->data,
-			(const char *)bin1->data,
-					bin1->bsize);
-		if (!ret)
+			(const char *)bin1->data, bin1->bsize, str);
+		if (unlikely(!ret))
 			return -WD_EINVAL;
 
 		bin1->dsize = ret;
@@ -250,8 +249,8 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 	if (bin2) {
 		ret = qm_hpre_bin_to_crypto_bin(bin2->data,
-			(const char *)bin2->data, bin2->bsize);
-		if (!ret)
+			(const char *)bin2->data, bin2->bsize, str);
+		if (unlikely(!ret))
 			return -WD_EINVAL;
 
 		bin2->dsize = ret;
@@ -280,11 +279,9 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 		*in_len = GEN_PARAMS_SZ(kbytes);
 		*out_len = msg->out_bytes;
 		wcrypto_get_rsa_kg_out_crt_params(key, &qinv, &dq, &dp);
-		ret = qm_tri_bin_transfer(&qinv, &dq, &dp);
-		if (ret) {
-			WD_ERR("parse rsa genkey qinv&&dq&&dp format fail!\n");
+		ret = qm_tri_bin_transfer(&qinv, &dq, &dp, "rsa kg qinv&dp&dq");
+		if (unlikely(ret))
 			return ret;
-		}
 
 		wcrypto_set_rsa_kg_out_crt_psz(key, qinv.dsize,
 					       dq.dsize, dp.dsize);
@@ -294,11 +291,9 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 		*in_len = GEN_PARAMS_SZ(kbytes);
 
 		wcrypto_get_rsa_kg_out_params(key, &d, &n);
-		ret = qm_tri_bin_transfer(&d, &n, NULL);
-		if (ret) {
-			WD_ERR("parse rsa genkey1 d&&n format fail!\n");
+		ret = qm_tri_bin_transfer(&d, &n, NULL, "rsa kg d & n");
+		if (unlikely(ret))
 			return ret;
-		}
 
 		wcrypto_set_rsa_kg_out_psz(key, d.dsize, n.dsize);
 	} else {
@@ -319,27 +314,27 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	if (msg->op_type == WCRYPTO_RSA_SIGN) {
 		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
 			ret = qm_fill_rsa_crt_prikey2((void *)msg->key, &data);
-			if (ret <= 0)
-				return ret;
+			if (unlikely(ret <= 0))
+				return -WD_EINVAL;
 		} else {
 			ret = qm_fill_rsa_prikey1((void *)msg->key, &data);
-			if (ret < 0)
-				return ret;
+			if (unlikely(ret <= 0))
+				return -WD_EINVAL;
 			hw_msg->alg = HPRE_ALG_NC_NCRT;
 		}
 	} else if (msg->op_type == WCRYPTO_RSA_VERIFY) {
 		ret = qm_fill_rsa_pubkey((void *)msg->key, &data);
-		if (ret < 0)
-			return ret;
+		if (unlikely(ret <= 0))
+			return -WD_EINVAL;
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	} else if (msg->op_type == WCRYPTO_RSA_GENKEY) {
 		ret = qm_fill_rsa_genkey_in((void *)msg->key);
-		if (ret)
+		if (unlikely(ret))
 			return ret;
 		ret = wcrypto_rsa_kg_in_data((void *)msg->key, (char **)&data);
-		if (ret < 0) {
+		if (unlikely(ret <= 0)) {
 			WD_ERR("Get rsa gen key data in fail!\n");
-			return ret;
+			return -WD_EINVAL;
 		}
 		if (hw_msg->alg == HPRE_ALG_NC_CRT)
 			hw_msg->alg = HPRE_ALG_KG_CRT;
@@ -351,7 +346,7 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	}
 
 	phy  = (uintptr_t)drv_iova_map(q, msg->key, ret);
-	if (!phy) {
+	if (unlikely(!phy)) {
 		WD_ERR("Dma map rsa key fail!\n");
 		return -WD_ENOMEM;
 	}
@@ -367,9 +362,9 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 				struct hisi_hpre_sqe *hw_msg)
 {
 	struct wcrypto_rsa_kg_out *kout = (void *)msg->out;
-	int ret = WD_SUCCESS;
 	uintptr_t phy;
 	void *out;
+	int ret;
 
 	if (msg->op_type != WCRYPTO_RSA_GENKEY) {
 		phy = (uintptr_t)drv_iova_map(q, msg->in, msg->key_bytes);
@@ -380,7 +375,7 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
 		hw_msg->hi_in = HI_U32(phy);
 		phy = (uintptr_t)drv_iova_map(q, msg->out, msg->key_bytes);
-		if (!phy) {
+		if (unlikely(!phy)) {
 			WD_ERR("Get rsa out key dma address fail!\n");
 			return -WD_ENOMEM;
 		}
@@ -388,8 +383,8 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		hw_msg->low_in = 0;
 		hw_msg->hi_in = 0;
 		ret = wcrypto_rsa_kg_out_data(kout, (char **)&out);
-		if (ret < 0)
-			return ret;
+		if (unlikely(ret <= 0))
+			return -WD_EINVAL;
 		phy = (uintptr_t)drv_iova_map(q, kout, ret);
 		if (!phy) {
 			WD_ERR("Get rsa out buf dma address fail!\n");
@@ -399,7 +394,7 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	}
 	hw_msg->low_out = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_out = HI_U32(phy);
-	return ret;
+	return WD_SUCCESS;
 }
 
 int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
@@ -427,12 +422,12 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	/* prepare rsa key */
 	ret = qm_rsa_prepare_key(msg, q, hw_msg);
-	if (ret < 0)
+	if (unlikely(ret))
 		return ret;
 
 	/* prepare in/out put */
 	ret = qm_rsa_prepare_iot(msg, q, hw_msg);
-	if (ret < 0)
+	if (unlikely(ret))
 		return ret;
 
 	/* This need more processing logic. to do more */
@@ -485,7 +480,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 		}
 	} else {
 		ret = qm_rsa_out_transfer(rsa_msg, hw_msg, &ilen, &olen);
-		if (ret) {
+		if (unlikely(ret)) {
 			WD_ERR("qm rsa out transfer fail!\n");
 			rsa_msg->result = WD_OUT_EPARA;
 		} else {
@@ -510,22 +505,18 @@ static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	x = msg->x_p;
 	p = msg->x_p + msg->key_bytes;
 	ret = qm_crypto_bin_to_hpre_bin(x, (const char *)x,
-				msg->key_bytes, msg->xbytes);
-	if (ret) {
-		WD_ERR("dh x para format fail!\n");
+				msg->key_bytes, msg->xbytes, "dh x");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(p, (const char *)p,
-				msg->key_bytes, msg->pbytes);
-	if (ret) {
-		WD_ERR("dh p para format fail!\n");
+				msg->key_bytes, msg->pbytes, "dh p");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	phy = (uintptr_t)drv_iova_map(q, (void *)x,
 				GEN_PARAMS_SZ(msg->key_bytes));
-	if (!phy) {
+	if (unlikely(!phy)) {
 		WD_ERR("get dh xp para dma address fail!\n");
 		return -WD_ENOMEM;
 	}
@@ -542,7 +533,7 @@ static int qm_final_fill_dh_sqe(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	uintptr_t phy;
 
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->key_bytes);
-	if (!phy) {
+	if (unlikely(!phy)) {
 		WD_ERR("Get dh out buf dma address fail!\n");
 		return -WD_ENOMEM;
 	}
@@ -563,8 +554,8 @@ static int qm_dh_out_transfer(struct wcrypto_dh_msg *msg)
 	int ret;
 
 	ret = qm_hpre_bin_to_crypto_bin((char *)msg->out,
-		(const char *)msg->out, msg->key_bytes);
-	if (!ret)
+		(const char *)msg->out, msg->key_bytes, "dh out");
+	if (unlikely(!ret))
 		return -WD_EINVAL;
 
 	msg->out_bytes = ret;
@@ -598,14 +589,13 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		} else {
 			ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
 				(const char *)msg->g, msg->key_bytes,
-				msg->gbytes);
-			if (ret) {
-				WD_ERR("dh g para format fail!\n");
+				msg->gbytes, "dh g");
+			if (unlikely(ret))
 				return ret;
-			}
+
 			phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
 						msg->key_bytes);
-			if (!phy) {
+			if (unlikely(!phy)) {
 				WD_ERR("Get dh g para dma address fail!\n");
 				return -WD_ENOMEM;
 			}
@@ -614,7 +604,7 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		}
 
 		ret = qm_fill_dh_xp_params(q, msg, hw_msg);
-		if (ret)
+		if (unlikely(ret))
 			return ret;
 	}
 	ASSERT(!info->req_cache[i]);
@@ -646,7 +636,7 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 		}
 	} else {
 		ret = qm_dh_out_transfer(dh_msg);
-		if (ret) {
+		if (unlikely(ret)) {
 			dh_msg->result = WD_OUT_EPARA;
 			WD_ERR("parse dh format fail!\n");
 		} else {
@@ -677,11 +667,21 @@ static int qm_ecc_prepare_alg(struct hisi_hpre_sqe *hw_msg,
 		else if (msg->alg_type == WCRYPTO_ECDH)
 			hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
 		break;
+	case HPRE_SM2_ENC: /* fall through */
+	case HPRE_SM2_DEC: /* fall through */
+		hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
+		break;
 	case WCRYPTO_ECDSA_SIGN:
 		hw_msg->alg = HPRE_ALG_ECDSA_SIGN;
 		break;
 	case WCRYPTO_ECDSA_VERIFY:
 		hw_msg->alg = HPRE_ALG_ECDSA_VERF;
+		break;
+	case WCRYPTO_SM2_ENCRYPT:
+		hw_msg->alg = HPRE_ALG_SM2_ENC;
+		break;
+	case WCRYPTO_SM2_DECRYPT:
+		hw_msg->alg = HPRE_ALG_SM2_DEC;
 		break;
 	case WCRYPTO_SM2_SIGN:
 		hw_msg->alg = HPRE_ALG_SM2_SIGN;
@@ -706,46 +706,34 @@ static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
 	int ret;
 
 	ret = qm_crypto_bin_to_hpre_bin(p->data, (const char *)p->data,
-					p->bsize, p->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: priv p format error!\n");
+					p->bsize, p->dsize, "cv p");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(a->data, (const char *)a->data,
-					a->bsize, a->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: priv a format error!\n");
+					a->bsize, a->dsize, "cv a");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(b->data, (const char *)b->data,
-					b->bsize, b->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: priv b format error!\n");
+					b->bsize, b->dsize, "cv b");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(n->data, (const char *)n->data,
-					n->bsize, n->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: priv n format error!\n");
+					n->bsize, n->dsize, "cv n");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(g->x.data, (const char *)g->x.data,
-					g->x.bsize, g->x.dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: priv gx format error!\n");
+					g->x.bsize, g->x.dsize, "cv gx");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(g->y.data, (const char *)g->y.data,
-					g->y.bsize, g->y.dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: priv gy format error!\n");
+					g->y.bsize, g->y.dsize, "cv gy");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	return 0;
 }
@@ -755,11 +743,9 @@ static int trans_d_to_hpre_bin(struct wd_dtb *d)
 	int ret;
 
 	ret = qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
-					d->bsize, d->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: d format error!\n");
+					d->bsize, d->dsize, "ecc d");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	return 0;
 }
@@ -796,11 +782,11 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	wcrypto_get_ecc_prikey_params((void *)key, &p, &a, &b, &n, &g, &d);
 
 	ret = trans_cv_param_to_hpre_bin(p, a, b, n, g);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	ret = trans_d_to_hpre_bin(d);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	/*
@@ -837,19 +823,15 @@ static int trans_pub_to_hpre_bin(struct wcrypto_ecc_point *pub)
 
 	temp = &pub->x;
 	ret = qm_crypto_bin_to_hpre_bin(temp->data, (const char *)temp->data,
-					temp->bsize, temp->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: pub x format error!\n");
+					temp->bsize, temp->dsize, "ecc pub x");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	temp = &pub->y;
 	ret = qm_crypto_bin_to_hpre_bin(temp->data, (const char *)temp->data,
-					temp->bsize, temp->dsize);
-	if (ret) {
-		WD_ERR("failed to hpre bin: pub y format error!\n");
+					temp->bsize, temp->dsize, "ecc pub y");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	return 0;
 }
@@ -867,11 +849,11 @@ static int ecc_prepare_pubkey(struct wcrypto_ecc_key *key, void **data)
 	wcrypto_get_ecc_pubkey_params((void *)key, &p, &a, &b, &n, &g, &pub);
 
 	ret = trans_cv_param_to_hpre_bin(p, a, b, n, g);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	ret = trans_pub_to_hpre_bin(pub);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	*data = p->data;
@@ -890,9 +872,14 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
 	    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
 	    msg->op_type == WCRYPTO_ECDSA_SIGN ||
-	    msg->op_type == WCRYPTO_SM2_SIGN) {
+	    msg->op_type == WCRYPTO_SM2_DECRYPT ||
+	    msg->op_type == WCRYPTO_SM2_SIGN ||
+	    msg->op_type == HPRE_SM2_ENC ||
+	    msg->op_type == HPRE_SM2_DEC) {
 		if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
-		    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY) {
+		    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
+		    msg->op_type == HPRE_SM2_ENC ||
+		    msg->op_type == HPRE_SM2_DEC) {
 			if (msg->alg_type == WCRYPTO_X25519 ||
 			    msg->alg_type == WCRYPTO_X448)
 				ksz = X_DH_HW_KEY_SZ(msg->key_bytes);
@@ -904,21 +891,22 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 
 		ret = ecc_prepare_prikey((void *)msg->key, &data,
 					 msg->alg_type);
-		if (ret)
+		if (unlikely(ret))
 			return ret;
 	} else if (msg->op_type == WCRYPTO_ECDSA_VERIFY ||
 		msg->op_type == WCRYPTO_SM2_VERIFY ||
+		msg->op_type == WCRYPTO_SM2_ENCRYPT ||
 		msg->op_type == WCRYPTO_SM2_KG) {
 		ksz = ECC_PUBKEY_SZ(msg->key_bytes);
 		ret = ecc_prepare_pubkey((void *)msg->key, &data);
-		if (ret)
+		if (unlikely(ret))
 			return ret;
 	} else {
 		return -WD_EINVAL;
 	}
 
 	phy  = (uintptr_t)drv_iova_map(q, data, ksz);
-	if (!phy) {
+	if (unlikely(!phy)) {
 		WD_ERR("Dma map ecc key fail!\n");
 		return -WD_ENOMEM;
 	}
@@ -956,24 +944,20 @@ static int ecc_prepare_dh_compute_in(struct wcrypto_ecc_in *in, void **data)
 	int ret;
 
 	wcrypto_get_ecxdh_in_params(in, &pbk);
-	if (!pbk) {
+	if (unlikely(!pbk)) {
 		WD_ERR("failed to get ecxdh in param!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = qm_crypto_bin_to_hpre_bin(pbk->x.data, (const char *)pbk->x.data,
-					pbk->x.bsize, pbk->x.dsize);
-	if (ret) {
-		WD_ERR("ecc dh compute in x format fail!\n");
+		pbk->x.bsize, pbk->x.dsize, "ecdh pbk x");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(pbk->y.data, (const char *)pbk->y.data,
-					pbk->y.bsize, pbk->y.dsize);
-	if (ret) {
-		WD_ERR("ecc dh compute in y format fail!\n");
+		pbk->y.bsize, pbk->y.dsize, "ecdh pbk y");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	*data = pbk->x.data;
 
@@ -1029,18 +1013,14 @@ static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg,
 	}
 
 	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
-					e->bsize, e->dsize);
-	if (ret) {
-		WD_ERR("ecc sign in e format fail!\n");
+					e->bsize, e->dsize, "ecc sgn e");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
-					k->bsize, k->dsize);
-	if (ret) {
-		WD_ERR("ecc sign in k format fail!\n");
+					k->bsize, k->dsize, "ecc sgn k");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	wcrypto_get_ecc_prikey_params((void *)msg->key, NULL, NULL, NULL,
 				      &n, NULL, NULL);
@@ -1075,25 +1055,19 @@ static int ecc_prepare_verf_in(struct wcrypto_ecc_msg *msg, void **data)
 	}
 
 	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
-					e->bsize, e->dsize);
-	if (ret) {
-		WD_ERR("ecc verf in e format fail!\n");
+					e->bsize, e->dsize, "ecc vrf e");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(s->data, (const char *)s->data,
-					s->bsize, s->dsize);
-	if (ret) {
-		WD_ERR("ecc verf in s format fail!\n");
+					s->bsize, s->dsize, "ecc vrf s");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(r->data, (const char *)r->data,
-					r->bsize, r->dsize);
-	if (ret) {
-		WD_ERR("ecc verf in r format fail!\n");
+					r->bsize, r->dsize, "ecc vrf r");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	*data = e->data;
 
@@ -1105,18 +1079,14 @@ static int ecc_prepare_dh_gen_in(struct wcrypto_ecc_point *in, void **data)
 	int ret;
 
 	ret = qm_crypto_bin_to_hpre_bin(in->x.data, (const char *)in->x.data,
-					in->x.bsize, in->x.dsize);
-	if (ret) {
-		WD_ERR("ecc dh gen in x format fail!\n");
+					in->x.bsize, in->x.dsize, "ecdh gen x");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(in->y.data, (const char *)in->y.data,
-					in->y.bsize, in->y.dsize);
-	if (ret) {
-		WD_ERR("ecc dh gen in y format fail!\n");
+					in->y.bsize, in->y.dsize, "ecdh gen y");
+	if (unlikely(ret))
 		return ret;
-	}
 
 	*data = in->x.data;
 
@@ -1133,7 +1103,7 @@ static int u_is_in_p(struct wcrypto_ecc_msg *msg)
 				      NULL, NULL, NULL);
 
 	wcrypto_get_ecxdh_in_params(in, &pbk);
-	if (!pbk) {
+	if (unlikely(!pbk)) {
 		WD_ERR("failed to get ecxdh in param!\n");
 		return -WD_EINVAL;
 	}
@@ -1154,6 +1124,51 @@ static int u_is_in_p(struct wcrypto_ecc_msg *msg)
 	return 0;
 }
 
+static int ecc_prepare_sm2_enc_in(struct wcrypto_ecc_in *in,
+				  struct hisi_hpre_sqe *hw_msg, void **data)
+{
+	struct wcrypto_sm2_enc_in *ein = (void *)in;
+	struct wd_dtb *k = &ein->k;
+	int ret;
+
+	if (ein->k_set) {
+		ret = qm_crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
+						k->bsize, k->dsize, "sm2 enc k");
+		if (unlikely(ret))
+			return ret;
+	} else {
+		hw_msg->sm2_ksel = 1;
+	}
+
+	hw_msg->sm2_mlen = ein->plaintext.dsize - 1;
+	*data = k->data;
+
+	return 0;
+}
+
+static int ecc_prepare_sm2_dec_in(struct wcrypto_ecc_in *in,
+				  struct hisi_hpre_sqe *hw_msg, void **data)
+{
+	struct wcrypto_sm2_dec_in *din = (void *)in;
+	struct wcrypto_ecc_point *c1 = &din->c1;
+	int ret;
+
+	ret = qm_crypto_bin_to_hpre_bin(c1->x.data, (const char *)c1->x.data,
+		c1->x.bsize, c1->x.dsize, "sm2 dec c1 x");
+	if (unlikely(ret))
+		return ret;
+
+	ret = qm_crypto_bin_to_hpre_bin(c1->y.data, (const char *)c1->y.data,
+		c1->y.bsize, c1->y.dsize, "sm2 dec c1 y");
+	if (unlikely(ret))
+		return ret;
+
+	hw_msg->sm2_mlen = din->c2.dsize - 1;
+	*data = c1->x.data;
+
+	return 0;
+}
+
 static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 			     struct hisi_hpre_sqe *hw_msg, void **data)
 {
@@ -1163,6 +1178,8 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 	switch (msg->op_type) {
 	case WCRYPTO_ECXDH_GEN_KEY:
 	case WCRYPTO_SM2_KG:
+	case HPRE_SM2_ENC: /* fall through */
+	case HPRE_SM2_DEC: /* fall through */
 		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in,
 					    data);
 		break;
@@ -1175,7 +1192,6 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 		if (ret == 0 && (msg->alg_type == WCRYPTO_X25519 ||
 		    msg->alg_type == WCRYPTO_X448))
 			ret = u_is_in_p(msg);
-
 		break;
 	case WCRYPTO_ECDSA_SIGN:
 	case WCRYPTO_SM2_SIGN:
@@ -1184,6 +1200,12 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 	case WCRYPTO_ECDSA_VERIFY:
 	case WCRYPTO_SM2_VERIFY:
 		ret = ecc_prepare_verf_in(msg, data);
+		break;
+	case WCRYPTO_SM2_ENCRYPT:
+		ret = ecc_prepare_sm2_enc_in(in, hw_msg, data);
+		break;
+	case WCRYPTO_SM2_DECRYPT:
+		ret = ecc_prepare_sm2_dec_in(in, hw_msg, data);
 		break;
 	default:
 		break;
@@ -1197,7 +1219,7 @@ static int ecc_prepare_dh_out(struct wcrypto_ecc_out *out, void **data)
 	struct wcrypto_ecc_point *dh_out = NULL;
 
 	wcrypto_get_ecxdh_out_params(out, &dh_out);
-	if (!dh_out) {
+	if (unlikely(!dh_out)) {
 		WD_ERR("failed to get ecxdh out param!\n");
 		return -WD_EINVAL;
 	}
@@ -1213,7 +1235,7 @@ static int ecc_prepare_sign_out(struct wcrypto_ecc_out *out, void **data)
 	struct wd_dtb *s = NULL;
 
 	wcrypto_get_ecdsa_sign_out_params(out, &r, &s);
-	if (!r || !s) {
+	if (unlikely(!r || !s)) {
 		WD_ERR("failed to get ecdsa sign out param!\n");
 		return -WD_EINVAL;
 	}
@@ -1223,13 +1245,42 @@ static int ecc_prepare_sign_out(struct wcrypto_ecc_out *out, void **data)
 	return 0;
 }
 
+static int ecc_prepare_sm2_enc_out(struct wcrypto_ecc_out *out, void **data)
+{
+	struct wcrypto_ecc_point *c1 = NULL;
+
+	wcrypto_get_sm2_enc_out_params(out, &c1, NULL, NULL);
+	if (unlikely(!c1)) {
+		WD_ERR("failed to get sm2 enc out param!\n");
+		return -WD_EINVAL;
+	}
+
+	*data = c1->x.data;
+
+	return 0;
+}
+
+static int ecc_prepare_sm2_dec_out(struct wcrypto_ecc_out *out, void **data)
+{
+	struct wd_dtb *m = NULL;
+
+	wcrypto_get_sm2_dec_out_params(out, &m);
+	if (unlikely(!m)) {
+		WD_ERR("failed to get sm2 dec out param!\n");
+		return -WD_EINVAL;
+	}
+
+	*data = m->data;
+
+	return 0;
+}
 
 static int ecc_prepare_sm2_kg_out(struct wcrypto_ecc_out *out, void **data)
 {
 	struct wcrypto_ecc_point *pub = NULL;
 
 	wcrypto_get_sm2_kg_out_params(out, NULL, &pub);
-	if (!pub) {
+	if (unlikely(!pub)) {
 		WD_ERR("failed to get sm2 kg out param!\n");
 		return -WD_EINVAL;
 	}
@@ -1246,18 +1297,27 @@ static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
 	switch (msg->op_type) {
 	case WCRYPTO_ECXDH_GEN_KEY:
 	case WCRYPTO_ECXDH_COMPUTE_KEY:
-		ret = ecc_prepare_dh_out(out, data);
+	case HPRE_SM2_ENC: /* fall through */
+	case HPRE_SM2_DEC: /* fall through */
+		if (msg->op_type == HPRE_SM2_ENC ||
+			msg->op_type == HPRE_SM2_DEC)
+			*data = out;
+		else
+			ret = ecc_prepare_dh_out(out, data);
 		break;
-
 	case WCRYPTO_ECDSA_SIGN:
 	case WCRYPTO_SM2_SIGN:
 		ret = ecc_prepare_sign_out(out, data);
 		break;
-
 	case WCRYPTO_ECDSA_VERIFY:
 	case WCRYPTO_SM2_VERIFY:
 		break;
-
+	case WCRYPTO_SM2_ENCRYPT:
+		ret = ecc_prepare_sm2_enc_out(out, data);
+		break;
+	case WCRYPTO_SM2_DECRYPT:
+		ret = ecc_prepare_sm2_dec_out(out, data);
+		break;
 	case WCRYPTO_SM2_KG:
 		ret = ecc_prepare_sm2_kg_out(out, data);
 		break;
@@ -1280,13 +1340,13 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	kbytes = msg->key_bytes;
 	qm_ecc_get_io_len(hw_msg->alg, kbytes, &i_sz, &o_sz);
 	ret = qm_ecc_prepare_in(msg, hw_msg, &data);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("qm_ecc_prepare_in fail!\n");
 		return ret;
 	}
 
 	phy = (uintptr_t)drv_iova_map(q, data, i_sz);
-	if (!phy) {
+	if (unlikely(!phy)) {
 		WD_ERR("Get ecc in buf dma address fail!\n");
 		return -WD_ENOMEM;
 	}
@@ -1294,7 +1354,7 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	hw_msg->hi_in = HI_U32(phy);
 
 	ret = qm_ecc_prepare_out(msg, &data);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("qm_ecc_prepare_out fail!\n");
 		return ret;
 	}
@@ -1303,7 +1363,7 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 		return 0;
 
 	phy = (uintptr_t)drv_iova_map(q, data, o_sz);
-	if (!phy) {
+	if (unlikely(!phy)) {
 		WD_ERR("Get ecc out key dma address fail!\n");
 		return -WD_ENOMEM;
 	}
@@ -1319,11 +1379,12 @@ static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
 	struct wcrypto_ecc_out *out = (void *)msg->out;
 	struct wcrypto_ecc_point *key = NULL;
 	struct wd_dtb *y = NULL;
-	int ret;
 
+	if (msg->op_type == HPRE_SM2_DEC || msg->op_type == HPRE_SM2_ENC)
+		return WD_SUCCESS;
 
 	wcrypto_get_ecxdh_out_params(out, &key);
-	if (!key) {
+	if (unlikely(!key)) {
 		WD_ERR("failed to get ecxdh out param!\n");
 		return -WD_EINVAL;
 	}
@@ -1331,11 +1392,7 @@ static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
 	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
 		y = &key->y;
 
-	ret = qm_tri_bin_transfer(&key->x, y, NULL);
-	if (ret)
-		WD_ERR("parse ecdh out format fail!\n");
-
-	return ret;
+	return qm_tri_bin_transfer(&key->x, y, NULL, "ecdh out x & y");
 }
 
 static int ecc_sign_out_transfer(struct wcrypto_ecc_msg *msg,
@@ -1344,21 +1401,14 @@ static int ecc_sign_out_transfer(struct wcrypto_ecc_msg *msg,
 	struct wcrypto_ecc_out *out = (void *)msg->out;
 	struct wd_dtb *r = NULL;
 	struct wd_dtb *s = NULL;
-	int ret;
 
 	wcrypto_get_ecdsa_sign_out_params(out, &r, &s);
-	if (!r || !s) {
+	if (unlikely(!r || !s)) {
 		WD_ERR("failed to get ecdsa sign out param!\n");
 		return -WD_EINVAL;
 	}
 
-	ret = qm_tri_bin_transfer(r, s, NULL);
-	if (ret) {
-		WD_ERR("parse ecc sign out format fail!\n");
-		return ret;
-	}
-
-	return WD_SUCCESS;
+	return qm_tri_bin_transfer(r, s, NULL, "ecc sign r&s");
 }
 
 static int ecc_verf_out_transfer(struct wcrypto_ecc_msg *msg,
@@ -1379,20 +1429,30 @@ static int sm2_kg_out_transfer(struct wcrypto_ecc_msg *msg,
 {
 	struct wcrypto_ecc_out *out = (void *)msg->out;
 	struct wcrypto_ecc_point *pubkey = NULL;
-	struct wd_dtb *privkey = NULL;
-	int ret;
+	struct wd_dtb *prk = NULL;
 
-	wcrypto_get_sm2_kg_out_params(out, &privkey, &pubkey);
-	if (!privkey || !pubkey) {
+	wcrypto_get_sm2_kg_out_params(out, &prk, &pubkey);
+	if (unlikely(!prk || !pubkey)) {
 		WD_ERR("failed to get sm2 kg out param!\n");
 		return -WD_EINVAL;
 	}
 
-	ret = qm_tri_bin_transfer(privkey, &pubkey->x, &pubkey->y);
-	if (ret)
-		WD_ERR("parse sm2 kg out format fail!\n");
+	return qm_tri_bin_transfer(prk, &pubkey->x, &pubkey->y, "sm2 kg pub");
+}
 
-	return ret;
+static int sm2_enc_out_transfer(struct wcrypto_ecc_msg *msg,
+				struct hisi_hpre_sqe *hw_msg)
+{
+	struct wcrypto_ecc_out *out = (void *)msg->out;
+	struct wcrypto_ecc_point *c1 = NULL;
+
+	wcrypto_get_sm2_enc_out_params(out, &c1, NULL, NULL);
+	if (unlikely(!c1)) {
+		WD_ERR("failed to get sm2 enc out param!\n");
+		return -WD_EINVAL;
+	}
+
+	return qm_tri_bin_transfer(&c1->x, &c1->y, NULL, "sm2 enc out");
 }
 
 static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
@@ -1409,6 +1469,10 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 	else if (hw_msg->alg == HPRE_ALG_ECDSA_VERF ||
 		hw_msg->alg == HPRE_ALG_SM2_VERF)
 		ret = ecc_verf_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_SM2_ENC)
+		ret = sm2_enc_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_SM2_DEC)
+		ret = 0;
 	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
 		ret = sm2_kg_out_transfer(msg, hw_msg);
 	else
@@ -1417,7 +1481,8 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 	return ret;
 }
 
-int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
+static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
+				  __u16 i)
 {
 	struct wcrypto_ecc_msg *msg = message;
 	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->usr_data;
@@ -1434,17 +1499,17 @@ int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	/* prepare alg */
 	ret = qm_ecc_prepare_alg(hw_msg, msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	/* prepare key */
 	ret = qm_ecc_prepare_key(msg, q, hw_msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	/* prepare in/out put */
 	ret = qm_ecc_prepare_iot(msg, q, hw_msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	/* This need more processing logic. to do more */
@@ -1458,8 +1523,314 @@ int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	return WD_SUCCESS;
 }
 
-int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
-		     __u16 i, __u16 usr)
+static void init_prikey(struct wcrypto_ecc_prikey *prikey, __u32 bsz)
+{
+	prikey->p.dsize = 0;
+	prikey->p.bsize = bsz;
+	prikey->p.data = prikey->data;
+	prikey->a.dsize = 0;
+	prikey->a.bsize = bsz;
+	prikey->a.data = prikey->p.data + bsz;
+	prikey->d.dsize = 0;
+	prikey->d.bsize = bsz;
+	prikey->d.data = prikey->a.data + bsz;
+	prikey->b.dsize = 0;
+	prikey->b.bsize = bsz;
+	prikey->b.data = prikey->d.data + bsz;
+	prikey->n.dsize = 0;
+	prikey->n.bsize = bsz;
+	prikey->n.data = prikey->b.data + bsz;
+	prikey->g.x.dsize = 0;
+	prikey->g.x.bsize = bsz;
+	prikey->g.x.data = prikey->n.data + bsz;
+	prikey->g.y.dsize = 0;
+	prikey->g.y.bsize = bsz;
+	prikey->g.y.data = prikey->g.x.data + bsz;
+}
+
+static int set_param(struct wd_dtb *dst, const struct wd_dtb *src,
+		     const char *str)
+{
+	if (unlikely(!src || !src->data)) {
+		WD_ERR("%s: src or data NULL!\n", str);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(!src->dsize || src->dsize > dst->bsize)) {
+		WD_ERR("%s: src dsz = %u error, dst bsz = %u!\n",
+			str, src->dsize, dst->bsize);
+		return -WD_EINVAL;
+	}
+
+	dst->dsize = src->dsize;
+	memset(dst->data, 0, dst->bsize);
+	memcpy(dst->data, src->data, src->dsize);
+
+	return 0;
+}
+
+static int set_prikey(struct wcrypto_ecc_prikey *prikey,
+		      struct wcrypto_ecc_msg *req)
+{
+	struct wcrypto_ecc_key *key = (struct wcrypto_ecc_key *)req->key;
+	struct wcrypto_sm2_enc_in *ein = (void *)req->in;
+	struct wcrypto_ecc_pubkey *pubkey = key->pubkey;
+	int ret;
+
+	ret = set_param(&prikey->p, &pubkey->p, "p");
+	if (unlikely(ret))
+		return ret;
+
+	ret = set_param(&prikey->a, &pubkey->a, "a");
+	if (unlikely(ret))
+		return ret;
+
+	ret = set_param(&prikey->d, &ein->k, "k");
+	if (unlikely(ret))
+		return ret;
+
+	ret = set_param(&prikey->b, &pubkey->b, "b");
+	if (unlikely(ret))
+		return ret;
+
+	ret = set_param(&prikey->n, &pubkey->n, "n");
+	if (unlikely(ret))
+		return ret;
+
+	ret = set_param(&prikey->g.x, &pubkey->g.x, "gx");
+	if (unlikely(ret))
+		return ret;
+
+	return set_param(&prikey->g.y, &pubkey->g.y, "gy");
+}
+
+static int init_req(struct wcrypto_ecc_msg *dst, struct wcrypto_ecc_msg *src,
+		     struct wcrypto_ecc_key *key, struct qm_queue_info *info,
+		     __u8 req_idx)
+{
+	struct wcrypto_ecc_key *ecc_key = (struct wcrypto_ecc_key *)src->key;
+	struct wcrypto_ecc_pubkey *pubkey = ecc_key->pubkey;
+	struct q_info *qinfo = info->q->qinfo;
+	struct wd_mm_br *br = &qinfo->br;
+	__u32 ksz = src->key_bytes;
+
+	memcpy(dst, src, sizeof(*dst));
+	dst->key = (void *)key;
+	dst->op_type = HPRE_SM2_ENC;
+	*(struct wcrypto_ecc_msg **)(dst + 1) = src;
+
+	dst->out = br->alloc(br->usr, ECDH_OUT_PARAMS_SZ(ksz));
+	if (unlikely(!dst->out))
+		return -WD_ENOMEM;
+
+	if (!req_idx)
+		dst->in = (void *)&pubkey->g;
+	else
+		dst->in = (void *)&pubkey->pub;
+
+	return 0;
+}
+
+static struct wcrypto_ecc_msg *create_req(struct wcrypto_ecc_msg *src,
+					  struct qm_queue_info *info,
+					  __u8 req_idx)
+{
+	struct q_info *qinfo = info->q->qinfo;
+	struct wcrypto_ecc_prikey *prikey;
+	struct wd_mm_br *br = &qinfo->br;
+	struct wcrypto_ecc_key *ecc_key;
+	struct wcrypto_ecc_msg *dst;
+	int ret;
+
+	/* dst last store point "struct wcrypto_ecc_msg *" */
+	dst = malloc(sizeof(*dst) + sizeof(src));
+	if (unlikely(!dst))
+		return NULL;
+
+	ecc_key = malloc(sizeof(*ecc_key) + sizeof(*prikey));
+	if (unlikely(!ecc_key))
+		goto fail_alloc_key;
+
+	prikey = (struct wcrypto_ecc_prikey *)(ecc_key + 1);
+	ecc_key->prikey = prikey;
+	prikey->data = br->alloc(br->usr, ECC_PRIKEY_SZ(src->key_bytes));
+	if (unlikely(!prikey->data)) {
+		WD_ERR("failed to br alloc\n");
+		goto fail_alloc_key_data;
+	}
+	init_prikey(prikey, src->key_bytes);
+	ret = set_prikey(prikey, src);
+	if (unlikely(ret))
+		goto fail_set_prikey;
+
+	ret = init_req(dst, src, ecc_key, info, req_idx);
+	if (unlikely(ret)) {
+		WD_ERR("failed to init req, ret = %d\n", ret);
+		goto fail_set_prikey;
+	}
+
+	return dst;
+
+fail_set_prikey:
+	br->free(br->usr, prikey->data);
+fail_alloc_key_data:
+	free(ecc_key);
+fail_alloc_key:
+	free(dst);
+
+	return NULL;
+}
+
+static void free_req(struct qm_queue_info *info, struct wcrypto_ecc_msg *req)
+{
+	struct wcrypto_ecc_key *key = (void *)req->key;
+	struct q_info *qinfo = info->q->qinfo;
+	struct wd_mm_br *br = &qinfo->br;
+
+	br->free(br->usr, key->prikey->data);
+	free(req->key);
+	br->free(br->usr, req->out);
+	free(req);
+}
+
+static int split_req(struct qm_queue_info *info,
+		     struct wcrypto_ecc_msg *src, struct wcrypto_ecc_msg **dst)
+{
+	/* k * G */
+	dst[0] = create_req(src, info, 0);
+	if (unlikely(!dst[0]))
+		return -WD_ENOMEM;
+
+	/* k * pub */
+	dst[1] = create_req(src, info, 1);
+	if (unlikely(!dst[1])) {
+		free_req(info, dst[0]);
+		return -WD_ENOMEM;
+	}
+
+	return 0;
+}
+
+static int fill_sm2_enc_sqe(void *message, struct qm_queue_info *info, __u16 i)
+{
+	struct wcrypto_hash_mt *hash = &((struct q_info *)info->q->qinfo)->hash;
+	struct wcrypto_ecc_msg *req_src = message;
+	struct wcrypto_sm2_enc_in *ein = (void *)req_src->in;
+	struct wcrypto_ecc_msg *req_dst[2] = {NULL};
+	struct wd_dtb *plaintext = &ein->plaintext;
+	int ret;
+
+	if (plaintext->dsize <= HW_PLAINTEXT_BYTES_MAX &&
+		req_src->hash_type == WCRYPTO_HASH_SM3)
+		return qm_fill_ecc_sqe_general(req_src, info, i);
+
+	if (unlikely(!ein->k_set)) {
+		WD_ERR("error: k not set\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(!hash->cb || hash->type >= WCRYPTO_HASH_MAX)) {
+		WD_ERR("hash param error, type = %u\n", hash->type);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
+		    QM_Q_DEPTH - SM2_SQE_NUM - 1)) {
+		WD_ERR("fill sm2 enc sqe: queue is full!\n");
+		return -WD_EBUSY;
+	}
+
+	/* split message into two inner request msg
+	 * firest msg used to compute k * g
+	 * second msg used to compute k * pb
+	 */
+	ret = split_req(info, req_src, req_dst);
+	if (unlikely(ret)) {
+		WD_ERR("failed to split req, ret = %d\n", ret);
+		return ret;
+	}
+
+	ret = qm_fill_ecc_sqe_general(req_dst[0], info,  i);
+	if (unlikely(ret)) {
+		WD_ERR("failed to fill 1th sqe, ret = %d\n", ret);
+		goto fail_fill_sqe;
+	}
+
+	i = (i + 1) % QM_Q_DEPTH;
+	ret = qm_fill_ecc_sqe_general(req_dst[1], info, i);
+	if (unlikely(ret)) {
+		WD_ERR("failed to fill 2th sqe, ret = %d\n", ret);
+		goto fail_fill_sqe;
+	}
+
+	/* make sure the request is all in memory before doorbell */
+	mb();
+	info->sq_tail_index = i;
+	qm_tx_update(info, 1);
+
+	return ret;
+
+fail_fill_sqe:
+	free_req(info, req_dst[0]);
+	free_req(info, req_dst[1]);
+
+	return ret;
+}
+
+static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
+{
+	struct wcrypto_hash_mt *hash = &((struct q_info *)info->q->qinfo)->hash;
+	struct wcrypto_ecc_msg *req_src = message;
+	struct wcrypto_sm2_dec_in *din = (void *)req_src->in;
+	struct q_info *qinfo = info->q->qinfo;
+	struct wd_mm_br *br = &qinfo->br;
+	__u32 ksz = req_src->key_bytes;
+	struct wcrypto_ecc_msg *dst;
+
+	/* c2 data lens <= 4096 bit */
+	if (din->c2.dsize <= BITS_TO_BYTES(4096) &&
+		req_src->hash_type == WCRYPTO_HASH_SM3)
+		return qm_fill_ecc_sqe_general(req_src, info, i);
+
+	if (unlikely(!hash->cb || hash->type >= WCRYPTO_HASH_MAX)) {
+		WD_ERR("hash param error, type = %u\n", hash->type);
+		return -WD_EINVAL;
+	}
+
+	/* dst last store point "struct wcrypto_ecc_msg *" */
+	dst = malloc(sizeof(*dst) + sizeof(req_src));
+	if (unlikely(!dst))
+		return -WD_ENOMEM;
+
+	/* compute d * c1 */
+	memcpy(dst, req_src, sizeof(*dst));
+
+	dst->op_type = HPRE_SM2_DEC;
+	*(struct wcrypto_ecc_msg **)(dst + 1) = req_src;
+	dst->in = (void *)&din->c1;
+	dst->out = br->alloc(br->usr, ECDH_OUT_PARAMS_SZ(ksz));
+	if (unlikely(!dst->out)) {
+		free(dst);
+		return -WD_ENOMEM;
+	}
+
+	return qm_fill_ecc_sqe_general(dst, info, i);
+}
+
+int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
+{
+	struct wcrypto_ecc_msg *msg = message;
+
+	if (msg->op_type == WCRYPTO_SM2_ENCRYPT)
+		return fill_sm2_enc_sqe(message, info, i);
+	else if (msg->op_type == WCRYPTO_SM2_DECRYPT)
+		return fill_sm2_dec_sqe(message, info, i);
+	else
+		return qm_fill_ecc_sqe_general(message, info, i);
+}
+
+static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
+				    __u16 i, __u16 usr)
 {
 	struct wcrypto_ecc_msg *ecc_msg = info->req_cache[i];
 	struct hisi_hpre_sqe *hw_msg = msg;
@@ -1489,7 +1860,7 @@ int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
 	} else {
 		ecc_msg->result = WD_SUCCESS;
 		ret = qm_ecc_out_transfer(ecc_msg, hw_msg);
-		if (ret) {
+		if (unlikely(ret)) {
 			WD_ERR("qm ecc out transfer fail!\n");
 			ecc_msg->result = WD_OUT_EPARA;
 		}
@@ -1505,3 +1876,423 @@ int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
 	return 1;
 }
 
+static int parse_first_sqe(void *hw_msg, struct qm_queue_info *info, __u16 i,
+			   __u16 usr)
+{
+	struct wcrypto_ecc_msg *msg = info->req_cache[i];
+	struct wcrypto_ecc_msg *msg_src;
+	int ret;
+
+	ret = qm_parse_ecc_sqe_general(hw_msg, info, i, usr);
+	if (!ret)
+		return ret;
+
+	msg_src = *(struct wcrypto_ecc_msg **)(msg + 1);
+	msg_src->result = msg->result;
+	info->req_cache[i] = NULL;
+	if (i == QM_Q_DEPTH - 1) {
+		info->cqc_phase = !(info->cqc_phase);
+		i = 0;
+	} else {
+		i++;
+	}
+
+	if (msg->result != WD_SUCCESS)
+		WD_ERR("first BD error = %u\n", msg->result);
+
+	info->cq_head_index = i;
+	qm_rx_update(info, 1);
+
+	return 1;
+}
+
+static int parse_second_sqe(void *hw_msg, struct qm_queue_info *info, __u16 i,
+			    __u16 usr, struct wcrypto_ecc_msg *msg_src)
+{
+	struct wcrypto_ecc_msg *msg;
+	int ret = -WD_EIO;
+	void *sqe = NULL;
+	struct cqe *cqe;
+	int cnt = 0;
+	void *resp;
+	int j;
+
+	while (1) {
+		/* continue recv second cqe */
+		cqe = info->cq_base + i * sizeof(struct cqe);
+		if (info->cqc_phase == CQE_PHASE(cqe)) {
+			/* make sure the request is all in memory before doorbell */
+			mb();
+			j = CQE_SQ_HEAD_INDEX(cqe);
+			if (j >= QM_Q_DEPTH) {
+				WD_ERR("2th CQE_SQ_HEAD_INDEX(%u) error\n", j);
+				return ret;
+			}
+
+			msg = info->req_cache[i];
+			sqe = (void *)((uintptr_t)info->sq_base +
+				j * info->sqe_size);
+			ret = qm_parse_ecc_sqe_general(sqe, info, i, usr);
+			if (unlikely(!ret))
+				return ret;
+			break;
+		}
+
+		if (unlikely(wd_reg_read(info->ds_rx_base) == 1)) {
+			qm_rx_from_cache(info, &resp, 1);
+			return -WD_HW_EACCESS;
+		}
+
+		if (cnt++ > MAX_WAIT_CNT)
+			return 0;
+		usleep(1);
+	}
+
+	if (msg->result) {
+		WD_ERR("second BD error = %u\n", msg->result);
+		msg_src->result = WD_OUT_EPARA;
+	}
+
+	return ret;
+}
+
+static __u32 get_hash_bytes(__u8 type)
+{
+	__u32 val = 0;
+
+	switch (type) {
+
+	case WCRYPTO_HASH_SHA1:
+		val = BITS_TO_BYTES(160);
+		break;
+	case WCRYPTO_HASH_SHA256:
+	case WCRYPTO_HASH_SM3:
+		val = BITS_TO_BYTES(256);
+		break;
+	case WCRYPTO_HASH_MD4:
+	case WCRYPTO_HASH_MD5:
+		val = BITS_TO_BYTES(128);
+		break;
+	case WCRYPTO_HASH_SHA224:
+		val = BITS_TO_BYTES(224);
+		break;
+	case WCRYPTO_HASH_SHA384:
+		val = BITS_TO_BYTES(384);
+		break;
+	case WCRYPTO_HASH_SHA512:
+		val = BITS_TO_BYTES(512);
+		break;
+	default:
+		WD_ERR("get hash bytes: type %u error!\n", type);
+		break;
+	}
+
+	return val;
+}
+
+static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
+		     const void *src, __u32 src_len)
+{
+	if (unlikely(!src || !src_len))
+		return;
+
+	memcpy(dst + *out_len, src, src_len);
+	*out_len += src_len;
+}
+
+static int sm2_kdf(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
+		   __u64 m_len, struct q_info *q_info)
+{
+	struct wcrypto_hash_mt *hash = &q_info->hash;
+	char p_out[MAX_HASH_LENS] = {0};
+	__u32 h_bytes, x2y2_len;
+	char *tmp = out->data;
+	__u64 in_len, lens;
+	char *p_in, *t_out;
+	__u8 ctr[4];
+	int i = 1;
+	int ret;
+
+	h_bytes = get_hash_bytes(hash->type);
+	if (unlikely(!h_bytes))
+		return -WD_EINVAL;
+
+	x2y2_len = x2y2->x.dsize + x2y2->y.dsize;
+	lens = x2y2_len + sizeof(ctr);
+	p_in = malloc(lens);
+	if (unlikely(!p_in))
+		return -WD_ENOMEM;
+
+	out->dsize = m_len;
+	while (1) {
+		ctr[3] = i & 0xFF;
+		ctr[2] = (i >> 8) & 0xFF;
+		ctr[1] = (i >> 16) & 0xFF;
+		ctr[0] = (i >> 24) & 0xFF;
+		in_len = 0;
+		msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2_len);
+		msg_pack(p_in, lens, &in_len, ctr, sizeof(ctr));
+
+		t_out = m_len >= h_bytes ? tmp : p_out;
+		ret = hash->cb(p_in, in_len, t_out, h_bytes, hash->usr);
+		if (ret) {
+			WD_ERR("failed to hash cb, ret = %d!\n", ret);
+			break;
+		}
+
+		if (m_len >= h_bytes) {
+			tmp += h_bytes;
+			m_len -= h_bytes;
+			if (!m_len)
+				break;
+		} else {
+			memcpy(tmp, p_out, m_len);
+			break;
+		}
+
+		i++;
+	}
+
+	free(p_in);
+
+	return ret;
+}
+
+static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
+{
+	int i;
+
+	for (i = 0; i < val1->dsize; ++i)
+		val1->data[i] ^= val2->data[i];
+}
+
+static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
+{
+	if (src->dsize == dst->dsize &&
+		!memcmp(src->data, dst->data, src->dsize)) {
+		return 0;
+	}
+
+	return -1;
+}
+
+static int sm2_hash(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
+		    struct wd_dtb *msg, struct q_info *q_info)
+{
+
+	struct wcrypto_hash_mt *hash = &q_info->hash;
+	__u64 lens = msg->dsize + 2 * x2y2->x.dsize;
+	char hash_out[MAX_HASH_LENS] = {0};
+	__u64 in_len = 0;
+	__u32 h_bytes;
+	char *p_in;
+	int ret;
+
+	h_bytes = get_hash_bytes(hash->type);
+	if (unlikely(!h_bytes))
+		return -WD_EINVAL;
+
+	p_in = malloc(lens);
+	if (unlikely(!p_in))
+		return -WD_ENOMEM;
+
+	msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2->x.dsize);
+	msg_pack(p_in, lens, &in_len, msg->data, msg->dsize);
+	msg_pack(p_in, lens, &in_len, x2y2->y.data, x2y2->y.dsize);
+	ret = hash->cb(p_in, in_len, hash_out, h_bytes, hash->usr);
+	if (unlikely(ret)) {
+		WD_ERR("failed to hash cb, ret = %d!\n", ret);
+		goto fail;
+	}
+
+	out->dsize = h_bytes;
+	memcpy(out->data, hash_out, out->dsize);
+
+fail:
+	free(p_in);
+
+	return ret;
+}
+
+static int sm2_convert_enc_out(struct wcrypto_ecc_msg *src,
+			       struct wcrypto_ecc_msg *first,
+			       struct wcrypto_ecc_msg *second, void *q_info)
+{
+	struct wcrypto_ecc_out *out = (void *)src->out;
+	struct wcrypto_ecc_in *in = (void *)src->in;
+	struct wcrypto_sm2_enc_out *eout = &out->param.eout;
+	struct wcrypto_sm2_enc_in *ein = &in->param.ein;
+	struct wcrypto_ecc_point x2y2;
+	__u32 ksz = src->key_bytes;
+	struct wd_dtb *kdf_out;
+	int ret;
+
+	/* enc origin out data fmt:
+	 * | x1y1(2*256bit) | x2y2(2*256bit) | other |
+	 * final out data fmt:
+	 * | c1(2*256bit)   | c2(plaintext size) | c3(256bit) |
+	 */
+	x2y2.x.data = (void *)second->out;
+	x2y2.x.dsize = ksz;
+	x2y2.y.dsize = ksz;
+	x2y2.y.data = (void *)(second->out + ksz);
+
+	/* C1 */
+	memcpy(eout->c1.x.data, first->out, ksz + ksz);
+
+	/* C3 = hash(x2 || M || y2) */
+	ret = sm2_hash(&eout->c3, &x2y2, &ein->plaintext, q_info);
+	if (unlikely(ret)) {
+		WD_ERR("failed to sm2 hash, ret = %d!\n", ret);
+		return ret;
+	}
+
+	/* t = KDF(x2 || y2, klen) */
+	kdf_out = &eout->c2;
+	ret = sm2_kdf(kdf_out, &x2y2, ein->plaintext.dsize, q_info);
+	if (unlikely(ret)) {
+		WD_ERR("failed to sm2 kdf, ret = %d!\n", ret);
+		return ret;
+	}
+
+	/* C2 = M XOR t */
+	sm2_xor(kdf_out, &ein->plaintext);
+
+	return ret;
+}
+
+static int sm2_convert_dec_out(struct wcrypto_ecc_msg *src,
+			       struct wcrypto_ecc_msg *dst, void *q_info)
+{
+	struct wcrypto_ecc_out *out = (void *)src->out;
+	struct wcrypto_sm2_dec_out *dout = &out->param.dout;
+	struct wcrypto_ecc_in *in = (void *)src->in;
+	struct wcrypto_sm2_dec_in *din = &in->param.din;
+	struct wcrypto_ecc_point x2y2;
+	__u32 ksz = dst->key_bytes;
+	int ret;
+
+	/* dec origin out data fmt:
+	 * | x2y2(2*256bit) |   other      |
+	 * final out data fmt:
+	 * |         plaintext             |
+	 */
+
+	/* x2y2 :copy x2y2 into din->c1 */
+	x2y2.x.data = (void *)dst->out;
+	x2y2.y.data = (void *)(dst->out + ksz);
+	x2y2.x.dsize = ksz;
+	x2y2.y.dsize = ksz;
+
+	/* t = KDF(x2 || y2, klen) */
+	ret = sm2_kdf(&dout->plaintext, &x2y2, din->c2.dsize, q_info);
+	if (unlikely(ret)) {
+		WD_ERR("failed to sm2 kdf, ret = %d!\n", ret);
+		return ret;
+	}
+
+	/* M' = C2 XOR t */
+	sm2_xor(&dout->plaintext, &din->c2);
+
+	/* u = hash(x2 || M' || y2), save u to din->c2 */
+	ret = sm2_hash(&din->c1.x, &x2y2, &dout->plaintext, q_info);
+	if (unlikely(ret)) {
+		WD_ERR("failed to compute c3, ret = %d!\n", ret);
+		return ret;
+	}
+
+	/* u == c3 */
+	ret = is_equal(&din->c1.x, &din->c3);
+	if (ret)
+		WD_ERR("failed to dec sm2, u != C3!\n");
+
+	return ret;
+}
+
+static int parse_sm2_enc_sqe(void *hw_msg, struct qm_queue_info *info,
+			     __u16 i, __u16 usr)
+{
+	struct wcrypto_ecc_msg *first = info->req_cache[i];
+	struct wcrypto_ecc_msg *src, *second;
+	int ret;
+
+	ret = parse_first_sqe(hw_msg, info, i, usr);
+	if (!ret)
+		return ret;
+
+	src = *(struct wcrypto_ecc_msg **)(first + 1);
+	second = info->req_cache[info->cq_head_index];
+	ret = parse_second_sqe(hw_msg, info, info->cq_head_index, usr, src);
+	if (unlikely(!ret)) {
+		WD_ERR("failed to parse second sqe, timeout!\n");
+		goto fail;
+	} else if (unlikely(ret < 0)) {
+		WD_ERR("failed to parse second sqe, ret = %d!\n", ret);
+		goto fail;
+	}
+
+	src->op_type = WCRYPTO_SM2_ENCRYPT;
+	info->req_cache[info->cq_head_index] = src;
+	ret = sm2_convert_enc_out(src, first, second, info->q->qinfo);
+	if (unlikely(ret)) {
+		WD_ERR("failed to convert sm2 std fmt, ret = %d!\n", ret);
+		src->result = WD_OUT_EPARA;
+	}
+
+	ret = 1;
+fail:
+	free_req(info, first);
+	free_req(info, second);
+
+	return ret;
+}
+
+static int parse_sm2_dec_sqe(void *hw_msg, struct qm_queue_info *info,
+			     __u16 i, __u16 usr)
+{
+	struct wcrypto_ecc_msg *dst = info->req_cache[i];
+	struct q_info *qinfo = info->q->qinfo;
+	struct wd_mm_br *br = &qinfo->br;
+	struct wcrypto_ecc_msg *src;
+	int ret;
+
+	ret = qm_parse_ecc_sqe_general(hw_msg, info, i, usr);
+	if (!ret)
+		return ret;
+
+	src = *(struct wcrypto_ecc_msg **)(dst + 1);
+	src->op_type = WCRYPTO_SM2_DECRYPT;
+	src->result = dst->result;
+	info->req_cache[i] = src;
+
+	if (dst->result != WD_SUCCESS) {
+		WD_ERR("msg result error = %u!\n", dst->result);
+		src->result = WD_OUT_EPARA;
+		goto fail;
+	}
+
+	ret = sm2_convert_dec_out(src, dst, info->q->qinfo);
+	if (unlikely(ret)) {
+		WD_ERR("failed to convert sm2 dec out, ret = %d!\n", ret);
+		src->result = WD_OUT_EPARA;
+	}
+
+fail:
+	br->free(br->usr, dst->out);
+	free(dst);
+
+	return 1;
+}
+
+int qm_parse_ecc_sqe(void *message, const struct qm_queue_info *info,
+		     __u16 i, __u16 usr)
+{
+	struct wcrypto_ecc_msg *msg = info->req_cache[i];
+
+	if (msg->op_type == HPRE_SM2_ENC)
+		return parse_sm2_enc_sqe(message, (void *)info, i, usr);
+	else if (msg->op_type == HPRE_SM2_DEC)
+		return parse_sm2_dec_sqe(message, (void *)info, i, usr);
+
+	return qm_parse_ecc_sqe_general(message, (void *)info, i, usr);
+}

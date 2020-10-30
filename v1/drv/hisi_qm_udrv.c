@@ -431,7 +431,7 @@ void qm_rx_update(struct qm_queue_info *info, __u32 num)
 	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
-static void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
+void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
 {
 	__u16 idx = info->cq_head_index;
 	int i;
