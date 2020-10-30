@@ -68,8 +68,11 @@ enum wcrypto_ecc_hash_type {
 	WCRYPTO_HASH_SHA1,
 	WCRYPTO_HASH_SHA224,
 	WCRYPTO_HASH_SHA256,
+	WCRYPTO_HASH_SHA384,
+	WCRYPTO_HASH_SHA512,
 	WCRYPTO_HASH_MD4,
-	WCRYPTO_HASH_MD5
+	WCRYPTO_HASH_MD5,
+	WCRYPTO_HASH_MAX
 };
 
 struct wcrypto_ecc_curve {
@@ -234,10 +237,26 @@ struct wcrypto_ecc_out *wcrypto_new_sm2_sign_out(void *ctx);
 void wcrypto_get_sm2_sign_out_params(struct wcrypto_ecc_out *out,
 				       struct wd_dtb **r,
 				       struct wd_dtb **s);
+
+struct wcrypto_ecc_in *wcrypto_new_sm2_enc_in(void *ctx,
+					      struct wd_dtb *k,
+					      struct wd_dtb *plaintext);
+struct wcrypto_ecc_in *wcrypto_new_sm2_dec_in(void *ctx,
+					      struct wcrypto_ecc_point *c1,
+					      struct wd_dtb *c2,
+					      struct wd_dtb *c3);
+struct wcrypto_ecc_out *wcrypto_new_sm2_enc_out(void *ctx, __u32 plaintext_len);
+struct wcrypto_ecc_out *wcrypto_new_sm2_dec_out(void *ctx, __u32 plaintext_len);
 struct wcrypto_ecc_out *wcrypto_new_sm2_kg_out(void *ctx);
 void wcrypto_get_sm2_kg_out_params(struct wcrypto_ecc_out *out,
 				   struct wd_dtb **privkey,
 				   struct wcrypto_ecc_point **pubkey);
+void wcrypto_get_sm2_enc_out_params(struct wcrypto_ecc_out *out,
+				    struct wcrypto_ecc_point **c1,
+				    struct wd_dtb **c2,
+				    struct wd_dtb **c3);
+void wcrypto_get_sm2_dec_out_params(struct wcrypto_ecc_out *out,
+				    struct wd_dtb **plaintext);
 
 
 /**
