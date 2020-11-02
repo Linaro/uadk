@@ -177,20 +177,20 @@ int wcrypto_aead_get_maxauthsize(void *ctx);
  * wcrypto_do_aead() - syn/asynchronous aead operation
  * @ctx: context of user, created by wcrypto_create_aead_ctx.
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
  */
 int wcrypto_do_aead(void *ctx, struct wcrypto_aead_op_data *opdata,
 		void *tag);
 
 /**
- * wcrypto_burst_aead() - syn/asynchronous aead operation
+ * wcrypto_burst_aead() - (a)synchronous multiple aead operations
  * @ctx: context of user, created by wcrypto_create_aead_ctx.
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
- * @num: task numbers, max is MAX_BURST_NUM.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
+ * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
  */
 int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
-		void **tag, int num);
+		void **tag, __u32 num);
 
 /**
  * wcrypto_aead_poll() - poll operation for asynchronous operation

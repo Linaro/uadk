@@ -761,24 +761,28 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 	return 0;
 }
 
-int wd_digests_doimpl(void *ctx, struct wcrypto_digest_op_data *opdata, u32 *trycount)
+int wd_digests_doimpl(void *ctx, struct wcrypto_digest_op_data *opdata, u32 *send_count)
 {
 	int ret;
-	*trycount = 0;
-
+	int trycount = 0;
+	*send_count = 0;
 again:
-	ret = wcrypto_do_digest(ctx, opdata, NULL);
-	if (ret != WD_SUCCESS) {
-		if (ret == -WD_EBUSY && *trycount <= 5) { // try 5 times
+	ret = wcrypto_burst_digest(ctx, opdata, NULL, 2);
+	if (ret == 0) {
+		if (trycount <= 5) { // try 5 times
 			SEC_TST_PRT("do digest busy, retry again!");
-			(*trycount)++;
+			trycount++;
 			goto again;
 		} else {
-			SEC_TST_PRT("do digest failed!");
+			SEC_TST_PRT("do digest failed..\n!");
 			return -1;
 		}
+	} else if (ret < 0) {
+		SEC_TST_PRT("do digest failed ret < 0!");
+			return -1;
 	}
 
+	(*send_count)++;
 	return 0;
 }
 

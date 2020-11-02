@@ -40,6 +40,7 @@ extern "C" {
 #define PATH_STR_SIZE		256
 #define MAX_ATTR_STR_SIZE	256
 #define WD_NAME_SIZE		64
+#define WCRYPTO_MAX_BURST_NUM	16
 
 /* WD error code */
 #define	WD_SUCCESS		0
