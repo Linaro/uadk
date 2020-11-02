@@ -66,7 +66,8 @@ static void put_cipher_cookies(struct wcrypto_cipher_ctx *ctx,
 			       struct wcrypto_cipher_cookie **cookies,
 			       __u32 num)
 {
-	int i, idx;
+	__u32 i;
+	int idx;
 
 	for (i = 0; i < num; i++) {
 		idx = ((uintptr_t)cookies[i] - (uintptr_t)ctx->cookies) /
@@ -86,7 +87,7 @@ static int get_cipher_cookies(struct wcrypto_cipher_ctx *ctx,
 {
 	int idx = ctx->cidx;
 	int cnt = 0;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < num; i++) {
 		while (__atomic_test_and_set(&ctx->cstatus[idx],
@@ -103,8 +104,7 @@ static int get_cipher_cookies(struct wcrypto_cipher_ctx *ctx,
 	}
 
 	ctx->cidx = idx;
-
-	return 0;
+	return WD_SUCCESS;
 
 fail_with_cookies:
 	put_cipher_cookies(ctx, cookies, i);
@@ -254,6 +254,7 @@ static int is_des_weak_key(const __u64 *key, __u16 keylen)
 
 	return 0;
 }
+
 static int aes_key_len_check(__u16 length)
 {
 	switch (length) {
@@ -326,12 +327,12 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 	return ret;
 }
 
-static int cipher_request_init(struct wcrypto_cipher_msg **req,
+static int cipher_requests_init(struct wcrypto_cipher_msg **req,
 				struct wcrypto_cipher_op_data **op,
 				struct wcrypto_cipher_ctx *c, __u32 num)
 {
 	struct wd_sec_udata *udata;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < num; i++) {
 		req[i]->alg = c->setup.alg;
@@ -351,8 +352,8 @@ static int cipher_request_init(struct wcrypto_cipher_msg **req,
 			req[i]->key_bytes = udata->key_bytes;
 		}
 
-		if (op[i]->iv_bytes != c->iv_blk_size) {
-			WD_ERR("fail to check IV length!\n");
+		if (unlikely(op[i]->iv_bytes != c->iv_blk_size)) {
+			WD_ERR("fail to check IV length %u!\n", i);
 			return -WD_EINVAL;
 		}
 	}
@@ -366,7 +367,8 @@ static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
 	struct wcrypto_cipher_msg *resp[WCRYPTO_MAX_BURST_NUM];
 	__u32 recv_count = 0;
 	__u64 rx_cnt = 0;
-	int i, ret;
+	__u32 i;
+	int ret;
 
 	for (i = 0; i < num; i++)
 		resp[i] = (void *)(uintptr_t)ctx->ctx_id;
@@ -378,10 +380,9 @@ static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
 			if (recv_count == num)
 				break;
 
-			if (++rx_cnt > MAX_CIPHER_RETRY_CNT) {
-				WD_ERR("wcrypto_recv timeout error!\n");
+			if (++rx_cnt > MAX_CIPHER_RETRY_CNT)
 				break;
-			}
+
 			usleep(1);
 		} else {
 			WD_ERR("do cipher wcrypto_recv error!\n");
@@ -402,7 +403,7 @@ static int param_check(struct wcrypto_cipher_ctx *ctx,
 		       struct wcrypto_cipher_op_data **opdata,
 		       void **tag, __u32 num)
 {
-	int i;
+	__u32 i;
 
 	if (unlikely(!ctx || !opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
 		WD_ERR("input param err!\n");
@@ -411,22 +412,22 @@ static int param_check(struct wcrypto_cipher_ctx *ctx,
 
 	for (i = 0; i < num; i++) {
 		if (unlikely(!opdata[i])) {
-			WD_ERR("opdata[%d] is NULL!\n", i);
+			WD_ERR("opdata[%u] is NULL!\n", i);
 			return -WD_EINVAL;
 		}
 
 		if (unlikely(tag && !tag[i])) {
-			WD_ERR("tag[%d] is NULL!\n", i);
+			WD_ERR("tag[%u] is NULL!\n", i);
 			return -WD_EINVAL;
 		}
 	}
 
 	if (unlikely(tag && !ctx->setup.cb)) {
-		WD_ERR("ctx call back is null!\n");
+		WD_ERR("ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
@@ -435,13 +436,14 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 	struct wcrypto_cipher_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
 	struct wcrypto_cipher_msg *req[WCRYPTO_MAX_BURST_NUM];
 	struct wcrypto_cipher_ctx *ctxt = ctx;
-	int i, ret;
+	__u32 i;
+	int ret;
 
 	if (param_check(ctxt, opdata, tag, num))
 		return -WD_EINVAL;
 
-	ret = get_cipher_cookies(ctx, cookies, num);
-	if (ret) {
+	ret = get_cipher_cookies(ctxt, cookies, num);
+	if (unlikely(ret)) {
 		WD_ERR("failed to get cookies %d!\n", ret);
 		return ret;
 	}
@@ -453,12 +455,12 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
 
-	ret = cipher_request_init(req, opdata, ctx, num);
-	if (ret)
+	ret = cipher_requests_init(req, opdata, ctxt, num);
+	if (unlikely(ret))
 		goto fail_with_cookies;
 
 	ret = wd_burst_send(ctxt->q, (void **)req, num);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to send req %d!\n", ret);
 		goto fail_with_cookies;
 	}
@@ -484,11 +486,11 @@ int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 
 int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 {
-	struct wcrypto_cipher_ctx *ctx;
 	struct wcrypto_cipher_msg *resp = NULL;
+	struct wcrypto_cipher_ctx *ctx;
 	struct wcrypto_cipher_tag *tag;
-	int ret;
 	int count = 0;
+	int ret;
 
 	if (unlikely(!q)) {
 		WD_ERR("q is NULL!\n");
