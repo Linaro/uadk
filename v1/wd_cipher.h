@@ -26,8 +26,6 @@
 extern "C" {
 #endif
 
-#define WCRYPTO_MAX_BURST_NUM	16
-
 enum wcrypto_cipher_op_type {
 	WCRYPTO_CIPHER_ENCRYPTION,
 	WCRYPTO_CIPHER_DECRYPTION,
@@ -132,7 +130,7 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len);
  * wcrypto_do_cipher() - syn/asynchronous cipher operation
  * @ctx: context of user, created by wcrypto_create_cipher_ctx.
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
  */
 int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 		void *tag);
@@ -149,6 +147,14 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_cipher_ctx(void *ctx);
+
+/**
+ * wcrypto_burst_cipher() - (a)synchronous multiple cipher operations
+ * @ctx: context of user, created by wcrypto_create_cipher_ctx.
+ * @opdata: operational data
+ * @tag: asynchronous:user_tag; synchronous:NULL.
+ * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
+ */
 int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 			 void **tag, __u32 num);
 
