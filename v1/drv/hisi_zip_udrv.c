@@ -38,7 +38,7 @@
 #define STREAM_POS_SHIFT		2
 #define STREAM_MODE_SHIFT		1
 #define WINDOWS_SIZE_SHIFT		12
-#define DW				4
+#define SEQUENCE_SZIE			8
 
 #define HW_NEGACOMPRESS			0x0d
 #define HW_CRC_ERR			0x10
@@ -53,6 +53,10 @@
 #define ZIP_PAD_LEN			56
 #define MAX_BUFFER_SIZE			0x800000
 #define MAX_ZSTD_INPUT_SIZE		0x20000
+
+#define CTX_PRIV1_OFFSET		4
+#define CTX_PRIV2_OFFSET		8
+#define CTX_BUFFER_OFFSET		12
 
 #define get_arrsize(arr)		(sizeof(arr) / sizeof(arr[0]))
 #define lower_32_bits(phy)		((__u32)((__u64)(phy)))
@@ -135,7 +139,7 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 
 	addr->source_addr = phy_in;
 	addr->dest_addr = phy_out;
-	addr->ctxbuf_addr = phy_ctxbuf;
+	addr->ctxbuf_addr = phy_ctxbuf + CTX_BUFFER_OFFSET;
 
 	return WD_SUCCESS;
 }
@@ -186,9 +190,11 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
 		     (flush_type)) << STREAM_FLUSH_SHIFT;
-	sqe->ctx_dw0 = msg->ctx_priv0;
-	sqe->ctx_dw1 = msg->ctx_priv1;
-	sqe->ctx_dw2 = msg->ctx_priv2;
+	if (msg->ctx_buf) {
+		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
+		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
+		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
+	}
 	sqe->isize = msg->isize;
 	sqe->checksum = msg->checksum;
 	sqe->tag = msg->tag;
@@ -257,9 +263,11 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->comp_lv = 0;
 	recv_msg->op_type = 0;
 	recv_msg->win_size = 0;
-	recv_msg->ctx_priv0 = sqe->ctx_dw0;
-	recv_msg->ctx_priv1 = sqe->ctx_dw1;
-	recv_msg->ctx_priv2 = sqe->ctx_dw2;
+	if (recv_msg->ctx_buf) {
+		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_PRIV1_OFFSET) = sqe->ctx_dw1;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_PRIV2_OFFSET) = sqe->ctx_dw2;
+	}
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
 	recv_msg->tag = sqe->tag;
@@ -420,9 +428,12 @@ static void fill_zip_sqe_hw_info(void *ssqe, struct wcrypto_comp_msg *msg)
 {
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
 
-	sqe->ctx_dw0 = msg->ctx_priv0;
-	sqe->ctx_dw1 = msg->ctx_priv1;
-	sqe->ctx_dw2 = msg->ctx_priv2;
+	if (msg->ctx_buf) {
+		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
+		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
+		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
+	}
+
 	sqe->isize = msg->isize;
 	sqe->checksum = msg->checksum;
 }
@@ -522,7 +533,7 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 	format->lit_num = sqe->comp_data_length;
 	format->seq_num = sqe->produced;
 	overflow_cnt = (__u32 *)(uintptr_t)(format->sequences_start +
-			((unsigned long)format->seq_num << 1) * DW);
+			(unsigned long)format->seq_num * SEQUENCE_SZIE);
 	format->lit_length_overflow_cnt = *overflow_cnt;
 	overflow_pos = overflow_cnt + 1;
 	format->lit_length_overflow_pos = *overflow_pos;
@@ -562,9 +573,11 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->comp_lv = 0;
 	recv_msg->op_type = 0;
 	recv_msg->win_size = get_window_size(sqe->dw9);
-	recv_msg->ctx_priv0 = sqe->ctx_dw0;
-	recv_msg->ctx_priv1 = sqe->ctx_dw1;
-	recv_msg->ctx_priv2 = sqe->ctx_dw2;
+	if (recv_msg->ctx_buf) {
+		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
+		*(__u32 *)(recv_msg->ctx_buf + 4) = sqe->ctx_dw1;
+		*(__u32 *)(recv_msg->ctx_buf + 8) = sqe->ctx_dw2;
+	}
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
 
