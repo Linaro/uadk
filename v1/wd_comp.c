@@ -27,11 +27,11 @@
 #include "wd_util.h"
 #include "wd_comp.h"
 
-#define MAX_ALG_LEN 32
-#define MAX_RETRY_COUNTS 200000000
-#define WD_COMP_MAX_CTX		256
-#define WD_COMP_CTX_MSGCACHE_NUM 1024
-#define MAX_CTX_RSV_SIZE 65536
+#define MAX_ALG_LEN			32
+#define MAX_RETRY_COUNTS		200000000
+#define WD_COMP_MAX_CTX			256
+#define WD_COMP_CTX_MSGCACHE_NUM	1024
+#define MAX_CTX_RSV_SIZE		65536
 
 struct wcrypto_comp_cache {
 	struct wcrypto_comp_tag tag;
@@ -115,7 +115,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	if (strncmp(q->capa.alg, "zlib", strlen("zlib")) &&
 	    strncmp(q->capa.alg, "gzip", strlen("gzip")) &&
-	    strncmp(q->capa.alg, "deflate", strlen("deflate"))&&
+	    strncmp(q->capa.alg, "deflate", strlen("deflate")) &&
 	    strncmp(q->capa.alg, "lz77_zstd", strlen("lz77_zstd"))) {
 		WD_ERR("alg mismatching!\n");
 		return NULL;
@@ -127,7 +127,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	wd_spinlock(&qinfo->qlock);
 	br = &setup->br;
 	if (br->alloc && br->free &&
-		br->iova_map && br->iova_unmap) {
+	    br->iova_map && br->iova_unmap) {
 		if (!qinfo->br.alloc && !qinfo->br.iova_map)
 			memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 		if (qinfo->br.usr != setup->br.usr) {
@@ -287,9 +287,9 @@ int wcrypto_comp_poll(struct wd_queue *q, unsigned int num)
 
 	do {
 		ret = wd_recv(q, (void **)&resp);
-		if (ret == 0)
+		if (ret == 0) {
 			break;
-		else if (ret == -WD_HW_EACCESS) {
+		} else if (ret == -WD_HW_EACCESS) {
 			if (!resp) {
 				WD_ERR("recv err from req_cache!\n");
 				return ret;

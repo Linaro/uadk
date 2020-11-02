@@ -176,9 +176,6 @@ struct wcrypto_comp_msg {
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
 	__u32 checksum;  /* Denoted by zlib/gzip CRC */
-	__u32 ctx_priv0; /* Denoted HW priv */
-	__u32 ctx_priv1; /* Denoted HW priv */
-	__u32 ctx_priv2; /* Denoted HW priv */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
 	__u64 udata;     /* Input user tag, indentify data of stream/user */
 };
