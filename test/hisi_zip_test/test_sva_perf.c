@@ -335,9 +335,15 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	info.popts = opts;
 	info.total_len = copts->total_len;
 
+	info.list = get_dev_list(opts, 1);
+	if (!info.list)
+		return -EINVAL;
+
 	in_buf = info.in_buf = mmap_alloc(copts->total_len);
-	if (!in_buf)
-		return -ENOMEM;
+	if (!in_buf) {
+		ret = -ENOMEM;
+		goto out_list;
+	}
 
 	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
@@ -386,10 +392,13 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
 		uninit_config(&info, sched);
+	free(info.threads);
 out_with_out_buf:
 	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
 	munmap(in_buf, copts->total_len);
+out_list:
+	wd_free_list_accels(info.list);
 	return ret;
 }
 
@@ -511,7 +520,7 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 	printf("\n");
 }
 
-static int run_one_child(struct priv_options *opts)
+static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 {
 	int i;
 	int ret = 0;
@@ -526,6 +535,7 @@ static int run_one_child(struct priv_options *opts)
 	priv_ctx.opts = opts;
 
 	info->opts = copts;
+	info->list = list;
 
 	info->total_len = copts->total_len;
 
@@ -566,7 +576,7 @@ static int run_one_child(struct priv_options *opts)
 
 		ret = hizip_test_sched(sched, copts, info);
 		if (ret < 0) {
-			WD_ERR("hizip test fail with %d\n", ret);
+			WD_ERR("hizip test sched fail with %d\n", ret);
 			break;
 		}
 	}
@@ -622,13 +632,25 @@ out_with_in_buf:
 static int run_bind_test(struct priv_options *opts)
 {
 	pid_t pid;
-	int i, ret;
+	int i, ret, count;
 	pid_t *pids;
 	int nr_children = 0;
 	bool success = true;
+	struct uacce_dev_list *list;
 
 	if (!opts->children)
-		return run_one_child(opts);
+		count = 1;
+	else
+		count = opts->children;
+	list = get_dev_list(opts, count);
+	if (!list)
+		return -EINVAL;
+
+	if (!opts->children) {
+		ret = run_one_child(opts, list);
+		wd_free_list_accels(list);
+		return ret;
+	}
 
 	pids = calloc(opts->children, sizeof(pid_t));
 	if (!pids)
@@ -647,7 +669,7 @@ static int run_bind_test(struct priv_options *opts)
 		}
 
 		/* Child */
-		exit(run_one_child(opts));
+		exit(run_one_child(opts, list));
 	}
 
 	dbg("%d children spawned\n", nr_children);
@@ -681,10 +703,11 @@ static int run_bind_test(struct priv_options *opts)
 	}
 
 	free(pids);
+	wd_free_list_accels(list);
 	return success ? 0 : -EFAULT;
 }
 
-static int run_test(struct priv_options *opts)
+static int run_test(struct priv_options *opts, FILE *source, FILE *dest)
 {
 	int i;
 	int ret;
@@ -695,6 +718,9 @@ static int run_test(struct priv_options *opts)
 	struct hizip_stats variation;
 	struct hizip_stats stats[n];
 
+	if(opts->common.is_file) {
+		return comp_file_test(source, dest, opts);
+	}
 	memset(&avg , 0, sizeof(avg));
 	memset(&std , 0, sizeof(std));
 	memset(&variation , 0, sizeof(variation));
@@ -801,13 +827,15 @@ int main(int argc, char **argv)
 			.q_num		= 1,
 			.run_num	= 1,
 			.compact_run_num = 1,
-			.thread_num	= 0,
+			.thread_num	= 1,
 			.sync_mode	= 0,
 			.block_size	= 512000,
 			.total_len	= opts.common.block_size * 10,
 			.verify		= false,
 			.verbose	= false,
 			.is_decomp	= false,
+			.is_stream	= false,
+			.is_file	= false,
 		},
 		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
@@ -906,5 +934,5 @@ int main(int argc, char **argv)
 		     argv[0]
 		    );
 
-	return run_test(&opts);
+	return run_test(&opts, stdin, stdout);
 }

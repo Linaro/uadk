@@ -3,13 +3,16 @@
 #define __WD_CIPHER_H
 
 #include <dlfcn.h>
-#include "config.h"
 #include "wd.h"
 #include "wd_alg_common.h"
 
 #define AES_KEYSIZE_128 16
 #define AES_KEYSIZE_192 24
 #define AES_KEYSIZE_256 32
+#define AES_BLOCK_SIZE 16
+#define GCM_BLOCK_SIZE 12
+#define DES3_BLOCK_SIZE 8
+
 /**
  * config ctx operation type and task mode.
  *
@@ -48,6 +51,8 @@ enum wd_cipher_mode {
 	WD_CIPHER_XTS,
 	WD_CIPHER_OFB,
 	WD_CIPHER_CFB,
+	WD_CIPHER_CCM,
+	WD_CIPHER_GCM,
 	WD_CIPHER_MODE_TYPE_MAX,
 };
 
@@ -68,21 +73,20 @@ struct wd_cipher_sess {
 	void			*priv;
 	void			*key;
 	__u32			key_bytes;
+	int				numa;
 };
 
 struct wd_cipher_req {
-	enum wd_cipher_alg alg;
-	enum wd_cipher_mode mode;
 	enum wd_cipher_op_type op_type;
 	void			*src;
 	void			*dst;
 	void			*iv;
-	void			*key;
 	__u32			in_bytes;
 	__u32			iv_bytes;
+	__u32			out_buf_bytes;
 	__u32			out_bytes;
-	__u32			key_bytes;
 	__u16			state;
+	__u8			type;
 	wd_alg_cipher_cb_t	*cb;
 	void			*cb_param;
 };
@@ -92,49 +96,47 @@ struct wd_cipher_req {
  * @ config	    User defined ctx configuration.
  * @ sched	    User defined schedule.
  */
-extern int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched);
-extern void wd_cipher_uninit(void);
+int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched);
+void wd_cipher_uninit(void);
 
 /**
  * wd_cipher_alloc_sess() Allocate a wd cipher session
  * @ setup Parameters to setup this session.
  */
-extern handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
+handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup);
 
 /**
  * wd_cipher_free_sess()
  * @ sess, need to be freed sess
  */
-extern void wd_cipher_free_sess(handle_t h_sess);
+void wd_cipher_free_sess(handle_t h_sess);
 
 /**
  * wd_cipher_set_key() Set cipher key to cipher msg.
- * @sess: wd cipher sess.
+ * @h_sess: wd cipher session.
  * @key: cipher key addr.
  * @key_len: cipher key length.
  */
-extern int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
+int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
 
 /**
  * wd_do_cipher_sync()/ async() Syn/asynchronous cipher operation
  * @sess: wd cipher session
  * @req: operational data.
  */
-extern int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req);
-extern int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req);
-
+int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req);
+int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req);
 /**
  * wd_cipher_poll_ctx() poll operation for asynchronous operation
  * @index: index of ctx which will be polled.
  * @expt: user expected num respondings
  * @count: how many respondings this poll has to get.
  */
-extern int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count);
-
+int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count);
 /**
  * wd_cipher_poll() Poll finished request.
  * this function will call poll_policy function which is registered to wd cipher
  * by user.
  */
-extern int wd_cipher_poll(__u32 expt, __u32 *count);
+int wd_cipher_poll(__u32 expt, __u32 *count);
 #endif /* __WD_CIPHER_H */

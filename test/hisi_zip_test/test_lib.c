@@ -78,6 +78,209 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 	return 0;
 }
 
+/**
+ * compress() - compress memory buffer.
+ * @alg_type: alg_type.
+ *
+ * This function compress memory buffer.
+ */
+int hw_blk_compress(int alg_type, int blksize,
+		    unsigned char *dst, __u32 *dstlen,
+		    unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	setup.op_type = WD_DIR_COMPRESS;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_COMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	ret = wd_do_comp_sync(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
+int hw_blk_decompress(int alg_type, int blksize,
+		      unsigned char *dst, __u32 *dstlen,
+		      unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	setup.op_type = WD_DIR_DECOMPRESS;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_DECOMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+
+	ret = wd_do_comp_sync(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
+int hw_stream_compress(int alg_type, int blksize,
+		       unsigned char *dst, __u32 *dstlen,
+		       unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	setup.op_type = WD_DIR_COMPRESS;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_COMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	ret = wd_do_comp_sync2(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
+
+int hw_stream_decompress(int alg_type, int blksize,
+		       unsigned char *dst, __u32 *dstlen,
+		       unsigned char *src, __u32 srclen)
+{
+	handle_t h_sess;
+	struct wd_comp_sess_setup setup;
+	struct wd_comp_req req;
+	int ret = 0;
+
+
+	setup.alg_type = alg_type;
+	setup.mode = CTX_MODE_SYNC;
+	setup.op_type = WD_DIR_DECOMPRESS;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess) {
+		fprintf(stderr,"fail to alloc comp sess!\n");
+		return -EINVAL;
+	}
+	req.src = src;
+	req.src_len = srclen;
+	req.dst = dst;
+	req.dst_len = *dstlen;
+	req.op_type = WD_DIR_DECOMPRESS;
+
+	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+
+	ret = wd_do_comp_sync2(h_sess, &req);
+	if (ret < 0) {
+		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		return ret;
+	}
+
+	if (req.status) {
+		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		req.status);
+		wd_comp_free_sess(h_sess);
+		return req.status;
+	}
+	*dstlen = req.dst_len;
+
+	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+
+	wd_comp_free_sess(h_sess);
+
+	return ret;
+}
+
 void hizip_prepare_random_input_data(struct hizip_test_info *info)
 {
 	__u32 seed = 0;
@@ -156,6 +359,11 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	return 0;
 }
 
+static void *async_cb(struct wd_comp_req *req, void *data)
+{
+	return NULL;
+}
+
 void *send_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
@@ -181,8 +389,8 @@ void *send_thread_func(void *arg)
 		while (left > 0) {
 			info->req.src_len = copts->block_size;
 			info->req.dst_len = copts->block_size * EXPANSION_RATIO;
-			info->req.cb = NULL;
-			info->req.cb_param = NULL;
+			info->req.cb = async_cb;
+			info->req.cb_param = &info->req;
 			if (copts->sync_mode) {
 				count++;
 				ret = wd_do_comp_async(h_sess, &info->req);
@@ -190,7 +398,7 @@ void *send_thread_func(void *arg)
 				ret = wd_do_comp_sync(h_sess, &info->req);
 			}
 			if (ret < 0) {
-				WD_ERR("hizip test fail with %d\n", ret);
+				WD_ERR("do comp test fail with %d\n", ret);
 				return NULL;
 			}
 			left -= copts->block_size;
@@ -220,8 +428,7 @@ int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 static void *poll_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
-	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
-	int i, ret = 0, total = 0;
+	int ret = 0, total = 0;
 	__u32 expected = 0, received;
 
 	if (!info->opts->sync_mode)
@@ -235,13 +442,11 @@ static void *poll_thread_func(void *arg)
 			usleep(10);
 			continue;
 		}
-		for (i = 0; i < ctx_conf->ctx_num; i++) {
-			expected = 1;
-			received = 0;
-			ret = wd_comp_poll(expected, &received);
-			if (ret == 0)
-				total += received;
-		}
+		expected = 1;
+		received = 0;
+		ret = wd_comp_poll(expected, &received);
+		if (ret == 0)
+			total += received;
 		if (count == total) {
 			pthread_mutex_unlock(&mutex);
 			break;
@@ -299,25 +504,76 @@ int attach_threads(struct hizip_test_info *info)
 	return 0;
 }
 
+/*
+ * Choose a device and check whether it can afford the requested contexts.
+ * Return a list whose the first device is chosen.
+ */
+struct uacce_dev_list *get_dev_list(struct priv_options *opts,
+				    int children)
+{
+	struct uacce_dev_list *list, *p, *head = NULL, *prev;
+	struct test_options *copts = &opts->common;
+	int max_q_num;
+
+	list = wd_get_accel_list("zlib");
+	if (!list)
+		return NULL;
+
+	p = list;
+	/* Find one device matching the requested contexts. */
+	while (p) {
+		max_q_num = wd_get_avail_ctx(p->dev);
+		/*
+		 * Check whether there's enough contexts.
+		 * There may be multiple taskes running together.
+		 * The number of multiple taskes is specified in children.
+		 */
+		if (max_q_num < 4 * copts->q_num * children) {
+			if (!head)
+				head = p;
+			prev = p;
+			p = p->next;
+		} else
+			break;
+	}
+
+	if (!p) {
+		WD_ERR("Request too much contexts: %d\n",
+		       copts->q_num * 4 * children);
+		goto out;
+	}
+
+	/* Adjust p to the head of list if p is in the middle. */
+	if (p && (p != list)) {
+		prev->next = p->next;
+		p->next = head;
+		return p;
+	}
+	return list;
+out:
+	wd_free_list_accels(list);
+	return NULL;
+}
+
+/*
+ * Initialize context numbers by the four times of opts->q_num.
+ * [sync, async] * [compress, decompress] = 4
+ */
 int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 		    void *priv)
 {
 	struct wd_comp_sess_setup setup;
-	struct uacce_dev_list *list;
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i, j, ret = -EINVAL;
-	int q_num;
+	int q_num, max_q_num;
 
-	list = wd_get_accel_list("zlib");
-	if (!list)
-		return -ENODEV;
+
 	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!sched) {
 		WD_ERR("sample_sched_alloc fail\n");
 		goto out_sched;
 	}
-	info->list = list;
 	q_num = opts->q_num;
 
 	sched->name = SCHED_RR_NAME;
@@ -360,7 +616,7 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 		goto out_fill;
 	}
 	for (i = 0; i < ctx_conf->ctx_num; i++) {
-		ctx_conf->ctxs[i].ctx = wd_request_ctx(list->dev);
+		ctx_conf->ctxs[i].ctx = wd_request_ctx(info->list->dev);
 		if (!ctx_conf->ctxs[i].ctx) {
 			WD_ERR("Fail to allocate context #%d\n", i);
 			ret = -EINVAL;
@@ -394,7 +650,6 @@ out_ctx:
 out_fill:
 	sample_sched_release(sched);
 out_sched:
-	wd_free_list_accels(list);
 	return ret;
 }
 
@@ -410,7 +665,6 @@ void uninit_config(void *priv, struct wd_sched *sched)
 		wd_release_ctx(ctx_conf->ctxs[i].ctx);
 	free(ctx_conf->ctxs);
 	sample_sched_release(sched);
-	wd_free_list_accels(info->list);
 }
 
 int hizip_test_sched(struct wd_sched *sched,
@@ -462,6 +716,15 @@ int parse_common_option(const char opt, const char *optarg,
 		opts->q_num = strtol(optarg, NULL, 0);
 		if (opts->q_num <= 0)
 			return 1;
+		break;
+	case 'd':
+		opts->op_type = WD_DIR_DECOMPRESS;
+		break;
+	case 'F':
+		opts->is_file = true;
+		break;
+	case 'S':
+		opts->is_stream = MODE_STREAM;
 		break;
 	case 's':
 		opts->total_len = strtol(optarg, NULL, 0);

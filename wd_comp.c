@@ -7,7 +7,6 @@
 #include <string.h>
 #include <time.h>
 
-#include "config.h"
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 #include "wd_util.h"
@@ -149,16 +148,14 @@ out:
 
 void wd_comp_uninit(void)
 {
-	void *priv;
+	void *priv = wd_comp_setting.priv;
 
-	/* driver uninit */
-	priv = wd_comp_setting.priv;
 	if (!priv)
 		return;
 
 	wd_comp_setting.driver->exit(priv);
 	free(priv);
-	priv = NULL;
+	wd_comp_setting.priv = NULL;
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
@@ -170,14 +167,21 @@ void wd_comp_uninit(void)
 
 int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 {
-	handle_t h_ctx = wd_comp_setting.config.ctxs[index].ctx;
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg resp_msg, *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
+	if (unlikely(index >= config->ctx_num || !count)) {
+		WD_ERR("comp poll input index is error or count is NULL\n");
+		return -EINVAL;
+	}
+	ctx = config->ctxs + index;
+
 	do {
-		ret = wd_comp_setting.driver->comp_recv(h_ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
 		if (ret < 0) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw err!\n");
@@ -309,7 +313,8 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
-	int index, ret;
+	__u32 index;
+	int ret;
 
 	if (!sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
@@ -329,7 +334,10 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
-
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		return -EINVAL;
+	}
 	fill_comp_msg(&msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.alg_type = sess->alg_type;
@@ -383,7 +391,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	}
 	if (req->op_type != WD_DIR_COMPRESS &&
 	    req->op_type != WD_DIR_DECOMPRESS) {
-		WD_ERR("invalid: op_type is %d!\n", req->op_type);
+		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
 		return -EINVAL;
 	}
 
@@ -392,82 +400,69 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
-	dbg("do, op_type = %d, in =%d, out_len =%d\n", req->op_type, req->src_len, req->dst_len);
+	dbg("do, op_type = %hhu, in =%u, out_len =%u\n",
+	    req->op_type, req->src_len, req->dst_len);
 
-	avail_out = req->dst_len > chunk ? chunk : req->dst_len;
+	avail_out = req->dst_len;
+	/* strm_req and req share the same src and dst buffer */
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
 	req->dst_len = 0;
 
-	if (req->op_type == WD_DIR_COMPRESS) {
-		do {
-			if (req->src_len > chunk) {
-				strm_req.src_len = chunk;
-				req->src_len -= chunk;
-			} else {
-				strm_req.src_len = req->src_len;
-				req->src_len = 0;
-			}
+	strm_req.last = 0;
+	while (1) {
+		if (req->src_len > chunk) {
+			strm_req.src_len = chunk;
+			req->src_len -= chunk;
+		} else {
+			strm_req.src_len = req->src_len;
+			req->src_len = 0;
+		}
+		avail_in = strm_req.src_len;
+		if (req->op_type == WD_DIR_COMPRESS)
 			strm_req.last = (strm_req.src_len == chunk) ? 0 : 1;
-			avail_in = strm_req.src_len;
-			do {
-				if (strm_req.src_len == 0 && strm_req.last == 1) {
-				dbg("append_store, src_len = %d, dst_len =%d\n", req->src_len, req->dst_len);
-					ret = append_store_block(h_sess, &strm_req);
-					req->dst_len += strm_req.dst_len;
-					req->status = 0;
-					return 0;
-				}
-				dbg("do, compstrm start, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
-				if (req->dst_len + strm_req.src_len > total_avail_out)
-					return -ENOMEM;
-				strm_req.dst_len = avail_out;
-				ret = wd_do_comp_strm(h_sess, &strm_req);
-				if (ret < 0)
-					return ret;
-				req->dst_len += strm_req.dst_len;
-				strm_req.dst += strm_req.dst_len;
-				dbg("do, compstrm end, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
 
-				strm_req.src += strm_req.src_len;
-				avail_in -= strm_req.src_len;
-				strm_req.src_len = avail_in;
-			} while (strm_req.src_len > 0);
-
-		} while (strm_req.last != 1);
-	} else {
 		do {
-			if (req->src_len > chunk) {
-				strm_req.src_len = chunk;
-				req->src_len -= chunk;
-			} else {
-				strm_req.src_len = req->src_len;
-				req->src_len = 0;
-			}
-			strm_req.last = 0;
-			avail_in = strm_req.src_len;
-			do {
-				dbg("do, decompstrm start, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
-				if (req->dst_len + strm_req.src_len > total_avail_out) {
-					dbg("err, outsize =%u, avail_out =%u, total_avail_out =%u\n", req->dst_len, avail_out, total_avail_out);
-					return -ENOMEM;
-				}
-				strm_req.dst_len = avail_out;
-				ret = wd_do_comp_strm(h_sess, &strm_req);
-				if (ret < 0)
-					return ret;
+			if (req->op_type == WD_DIR_COMPRESS &&
+			    strm_req.src_len == 0 &&
+			    strm_req.last == 1) {
+				dbg("append_store, src_len=%u, dst_len=%u\n",
+				    req->src_len, req->dst_len);
+				ret = append_store_block(h_sess, &strm_req);
 				req->dst_len += strm_req.dst_len;
-				strm_req.dst += strm_req.dst_len;
-				dbg("do, decompstrm end, in =%d, out_len =%d\n", strm_req.src_len, strm_req.dst_len);
+				req->status = 0;
+				return 0;
+			}
+			dbg("do, strm start, in =%u, out_len =%u\n",
+			    strm_req.src_len, strm_req.dst_len);
+			if (req->dst_len + strm_req.src_len > total_avail_out)
+				return -ENOMEM;
+			strm_req.dst_len = avail_out > chunk ? chunk : avail_out;
+			ret = wd_do_comp_strm(h_sess, &strm_req);
+			if (ret < 0 || strm_req.status == WD_IN_EPARA) {
+				WD_ERR("wd comp, invalid or incomplete data! "
+				       "ret(%d), req.status(%u)\n",
+				       ret, strm_req.status);
+				return ret;
+			}
+			req->dst_len += strm_req.dst_len;
+			strm_req.dst += strm_req.dst_len;
+			dbg("do, strm end, in =%u, out_len =%u\n",
+			    strm_req.src_len, strm_req.dst_len);
+			avail_out -= strm_req.dst_len;
 
-				strm_req.src += strm_req.src_len;
-				avail_in -= strm_req.src_len;
-				strm_req.src_len = avail_in;
-			} while (strm_req.src_len > 0);
+			strm_req.src += strm_req.src_len;
+			avail_in -= strm_req.src_len;
+			strm_req.src_len = avail_in;
+		} while (strm_req.src_len > 0);
 
-		} while (strm_req.status != WD_DECOMP_END);
+		if (req->op_type == WD_DIR_COMPRESS && strm_req.last == 1)
+			break;
+		if (req->op_type == WD_DIR_DECOMPRESS &&
+		    strm_req.status == WD_DECOMP_END)
+			break;
 	}
 
-	dbg("end, in =%d, out_len =%d\n", req->src_len, req->dst_len);
+	dbg("end, in =%u, out_len =%u\n", req->src_len, req->dst_len);
 
 	req->status = 0;
 
@@ -483,7 +478,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
-	int index, ret;
+	__u32 index;
+	int ret;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
@@ -498,6 +494,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		return -EINVAL;
+	}
 
 	fill_comp_msg(&msg, req);
 	msg.stream_pos = sess->stream_pos;
@@ -508,8 +508,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	/* fill true flag */
 	msg.req.last = req->last;
 	msg.stream_mode = WD_COMP_STATEFUL;
-	sess->isize = resp_msg.isize;
-	sess->checksum = resp_msg.checksum;
 
 	pthread_mutex_lock(&ctx->lock);
 
@@ -540,13 +538,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
 	req->status = resp_msg.req.status;
+	sess->isize = resp_msg.isize;
+	sess->checksum = resp_msg.checksum;
 
 	sess->stream_pos = WD_COMP_STREAM_OLD;
-
-	if (req->status == WD_IN_EPARA) {
-		WD_ERR("wd comp, invalid or incomplete deflate data!\n");
-		return -EINVAL;
-	}
 
 	return 0;
 }
@@ -558,7 +553,8 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
-	int index, idx, ret = 0;
+	__u32 index;
+	int idx, ret;
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
@@ -570,6 +566,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
+	if (!req->cb || !req->cb_param) {
+		WD_ERR("invalid: req callback or param is NULL!\n");
+		return -EINVAL;
+	}
+
 	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						    req,
 						    &sess->key);
@@ -578,6 +579,10 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		return -EINVAL;
+	}
 
 	idx = wd_get_msg_from_pool(&wd_comp_setting.pool, index, (void **)&msg);
 	if (idx < 0) {
@@ -605,12 +610,10 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 int wd_comp_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_sched_ctx;
-	struct wd_ctx_config *config;
 	struct wd_sched *sched;
 
 	h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
-	config = (struct wd_ctx_config *)&wd_comp_setting.config;
 	sched = &wd_comp_setting.sched;
 
-	return sched->poll_policy(h_sched_ctx, config, expt, count);
+	return sched->poll_policy(h_sched_ctx, expt, count);
 }

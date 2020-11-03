@@ -1,22 +1,6 @@
-/*
- * Copyright 2019 Huawei Technologies Co.,Ltd.All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+/* SPDX-License-Identifier: Apache-2.0 */
 //#define DEBUG
 //#define WITH_OPENSSL_DIR
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1049,8 +1033,7 @@ __u32 hpre_pick_next_ctx(handle_t sched_ctx,
 	return last_ctx;
 }
 
-int rsa_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *config,
-		__u32 expect, __u32 *count)
+int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 {
 	int ret;
 	struct wd_ctx *ctxs;
@@ -1074,8 +1057,7 @@ int rsa_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *config,
 	return 0;
 }
 
-int dh_poll_policy(handle_t h_sched_ctx, const struct wd_ctx_config *config,
-		__u32 expect, __u32 *count)
+int dh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 {
 	int ret;
 	struct wd_ctx *ctxs;

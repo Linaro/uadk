@@ -8,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 #include "uacce.h"
-#include "config.h"
 
 #define PATH_STR_SIZE			256
 #define MAX_ATTR_STR_SIZE		256
@@ -68,23 +67,21 @@ extern FILE *flog_fd;
 #define	WD_ENOPROC			68
 
 struct wd_dtb {
-	char *data; /* data/buffer start address */
-	__u32 dsize; /* data size */
-	__u32 bsize; /* buffer size */
+	char *data;	/* data/buffer start address */
+	__u32 dsize;	/* data size */
+	__u32 bsize;	/* buffer size */
 };
 
 struct uacce_dev {
 	/* sysfs node content */
-	int flags;
-	char api[WD_NAME_SIZE];
-	char algs[MAX_ATTR_STR_SIZE];
+	int flags;				/* flag: SVA */
+	char api[WD_NAME_SIZE];			/* HW context type */
+	char algs[MAX_ATTR_STR_SIZE];		/* dev supported algorithms */
 	unsigned long qfrs_offs[UACCE_QFRT_MAX];
-	char dev_root[PATH_STR_SIZE];
+	char dev_root[PATH_STR_SIZE];		/* sysfs path with dev name */
 
-	char name[WD_NAME_SIZE];
-	char char_dev_path[MAX_DEV_NAME_LEN];
+	char char_dev_path[MAX_DEV_NAME_LEN];	/* dev path in devfs */
 
-	int dev_id;
 	int numa_id;
 };
 

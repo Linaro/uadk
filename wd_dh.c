@@ -7,7 +7,6 @@
 #include <time.h>
 #include <dlfcn.h>
 
-#include "config.h"
 #include "include/drv/wd_dh_drv.h"
 #include "wd_dh.h"
 #include "wd_util.h"
@@ -151,7 +150,7 @@ out:
 
 void wd_dh_uninit(void)
 {
-	if (!wd_dh_setting.pool.pool_num) {
+	if (!wd_dh_setting.priv) {
 		WD_ERR("uninit dh error: repeat uninit dh\n");
 		return;
 	}
@@ -404,9 +403,7 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 
 int wd_dh_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_sched_ctx = wd_dh_setting.sched.h_sched_ctx;
-
-	return wd_dh_setting.sched->poll_policy(h_sched_ctx, 0, expt, count);
+	return wd_dh_setting.sched.poll_policy(0, expt, count);
 }
 
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)

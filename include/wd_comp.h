@@ -4,7 +4,6 @@
 
 #include <stdbool.h>
 
-#include "config.h"
 #include "wd.h"
 #include "wd_alg_common.h"
 
@@ -49,14 +48,14 @@ typedef void *wd_alg_comp_cb_t(struct wd_comp_req *req, void *cb_param);
 
 struct wd_comp_req {
 	void			*src;
-	size_t			src_len;
+	__u32			src_len;
 	void			*dst;
-	size_t			dst_len;
+	__u32			dst_len;
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
 	__u8			op_type;     /* denoted by wd_comp_op_type */
-	uint32_t		last;
-	uint32_t		status;
+	__u32			last;
+	__u32			status;
 };
 
 /**

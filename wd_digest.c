@@ -16,6 +16,12 @@
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
 
+static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
+	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
+	WD_DIGEST_SHA256_LEN, WD_DIGEST_SHA224_LEN,
+	WD_DIGEST_SHA384_LEN, WD_DIGEST_SHA512_LEN,
+	WD_DIGEST_SHA512_224_LEN, WD_DIGEST_SHA512_256_LEN
+};
 struct wd_digest_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched	sched;
@@ -57,14 +63,17 @@ void wd_digest_set_driver(struct wd_digest_driver *drv)
 int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+
 	if (!key || !sess || !sess->key) {
-		WD_ERR("fail to check key param!\n");
+		WD_ERR("failed to check key param!\n");
 		return -EINVAL;
 	}
 
-	if (key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("fail to check key length!\n");
-		return -WD_EINVAL;
+	if ((sess->alg <= WD_DIGEST_SHA224 && key_len >
+		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
+		key_len > MAX_HMAC_KEY_SIZE) {
+		WD_ERR("failed to check digest key length!\n");
+		return -EINVAL;
 	}
 
 	sess->key_bytes = key_len;
@@ -78,7 +87,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	struct wd_digest_sess *sess = NULL;
 
 	if (!setup) {
-		WD_ERR("fail to check alloc sess param!\n");
+		WD_ERR("failed to check alloc sess param!\n");
 		return (handle_t)0;
 	}
 
@@ -92,7 +101,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	sess->key = malloc(MAX_HMAC_KEY_SIZE);
 	if (!sess->key) {
 		free(sess);
-		WD_ERR("fail to alloc sess key!\n");
+		WD_ERR("failed to alloc sess key!\n");
 		return (handle_t)0;
 	}
 	memset(sess->key, 0, MAX_HMAC_KEY_SIZE);
@@ -105,12 +114,14 @@ void wd_digest_free_sess(handle_t h_sess)
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 
 	if (!sess) {
-		WD_ERR("fail to check free sess param!\n");
-		return	;
+		WD_ERR("failed to check free sess param!\n");
+		return;
 	}
 
-	if (sess->key)
+	if (sess->key) {
+		wd_memset_zero(sess->key, MAX_HMAC_KEY_SIZE);
 		free(sess->key);
+	}
 	free(sess);
 }
 
@@ -126,7 +137,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 
 	if (!config || !sched) {
-		WD_ERR("fail to check input param\n");
+		WD_ERR("failed to check input param!\n");
 		return -EINVAL;
 	}
 
@@ -152,7 +163,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_digest_set_static_drv();
 #endif
 
-	/* fix me: sadly find we allocate async pool for every ctx */
+	/* sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&g_wd_digest_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_digest_msg));
@@ -164,7 +175,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* init ctx related resources in specific driver */
 	priv = malloc(sizeof(g_wd_digest_setting.driver->drv_ctx_size));
 	if (!priv) {
-		WD_ERR("fail to alloc digest driver ctx!\n");
+		WD_ERR("failed to alloc digest driver ctx!\n");
 		ret = -ENOMEM;
 		goto out_priv;
 	}
@@ -172,7 +183,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* sec init */
 	ret = g_wd_digest_setting.driver->init(&g_wd_digest_setting.config, priv);
 	if (ret < 0) {
-		WD_ERR("fail to init digest dirver!\n");
+		WD_ERR("failed to init digest dirver!\n");
 		goto out_init;
 	}
 
@@ -192,17 +203,35 @@ out:
 void wd_digest_uninit(void)
 {
 	void *priv = g_wd_digest_setting.priv;
+
 	if (!priv)
 		return;
 
 	g_wd_digest_setting.driver->exit(priv);
-	free(priv);
 	g_wd_digest_setting.priv = NULL;
-	
+	free(priv);
+
 	wd_uninit_async_request_pool(&g_wd_digest_setting.pool);
 
 	wd_clear_sched(&g_wd_digest_setting.sched);
 	wd_clear_ctx_config(&g_wd_digest_setting.config);
+}
+
+static int digest_param_ckeck(struct wd_digest_sess *sess,
+	struct wd_digest_req *req)
+{
+	if (req->out_buf_bytes < req->out_bytes) {
+		WD_ERR("failed to check digest out buffer length!\n");
+		return -EINVAL;
+	}
+
+	if (sess->alg >= WD_DIGEST_TYPE_MAX || req->out_bytes == 0 ||
+	    req->out_bytes > g_digest_mac_len[sess->alg]) {
+		WD_ERR("failed to check digest type or mac length!\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void fill_request_msg(struct wd_digest_msg *msg,
@@ -231,10 +260,14 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	__u64 recv_cnt = 0;
 	int index, ret;
 
-	if (!dsess || !req) {
-		WD_ERR("digest input sess or req is NULL!\n");
+	if (unlikely(!dsess || !req)) {
+		WD_ERR("digest input sess or req is NULL.\n");
 		return -EINVAL;
 	}
+
+	ret = digest_param_ckeck(dsess, req);
+	if (ret)
+		return -EINVAL;
 
 	/* fix me: maybe wrong */
 	index = g_wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
@@ -243,28 +276,31 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
 	req->state = 0;
 
 	pthread_mutex_lock(&ctx->lock);
-
 	ret = g_wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		pthread_mutex_unlock(&ctx->lock);
-		WD_ERR("fail to send bd!\n");
+		WD_ERR("failed to send bd!\n");
 		return ret;
 	}
 
 	do {
 		ret = g_wd_digest_setting.driver->digest_recv(ctx->ctx, &msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("fail to recv bd!\n");
+			WD_ERR("failed to recv bd!\n");
 			goto recv_err;
 		} else if (ret == -EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("fail to recv bd and timeout!\n");
+				WD_ERR("failed to recv bd and timeout!\n");
 				ret = -ETIMEDOUT;
 				goto recv_err;
 			}
@@ -289,10 +325,14 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
         struct wd_digest_msg *msg;
 	int index, idx, ret;
 
-        if (!dsess || !req) {
-                WD_ERR("digest input sess or req is NULL!\n");
+	if (unlikely(!dsess || !req || !req->cb)) {
+		WD_ERR("digest input sess or req is NULL.\n");
 		return -EINVAL;
-        }
+    }
+
+	ret = digest_param_ckeck(dsess, req);
+	if (ret)
+		return -EINVAL;
 
 	index = g_wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
@@ -300,6 +340,10 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	idx = wd_get_msg_from_pool(&g_wd_digest_setting.pool, index,
 				   (void **)&msg);
@@ -315,7 +359,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	ret = g_wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (ret < 0) {
-		WD_ERR("fail to  send BD, hw is err!\n");
+		WD_ERR("failed to send BD, hw is err!\n");
 		wd_put_msg_to_pool(&g_wd_digest_setting.pool, index, msg->tag);
 		return ret;
 	}
@@ -357,7 +401,7 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		msg = wd_find_msg_in_pool(&g_wd_digest_setting.pool, index,
 					  recv_msg.tag);
 		if (!msg) {
-			WD_ERR("get msg from pool is NULL!\n");
+			WD_ERR("failed to get msg from pool!\n");
 			break;
 		}
 
@@ -375,5 +419,5 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 
 int wd_digest_poll(__u32 expt, __u32 *count)
 {
-	return g_wd_digest_setting.sched.poll_policy(0, 0, expt, count);
+	return g_wd_digest_setting.sched.poll_policy(0, expt, count);
 }

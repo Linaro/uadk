@@ -136,6 +136,12 @@ struct hisi_zip_sqe {
 #define lower_32_bits(addr) ((__u32)((__u64)(addr)))
 #define upper_32_bits(addr) ((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
 
+#define HZ_MAX_SIZE (8 * 1024 * 1024)
+
+#define RSV_OFFSET 64
+#define CTX_DW1_OFFSET 4
+#define CTX_DW2_OFFSET 8
+
 struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
 };
@@ -179,26 +185,19 @@ static void hisi_zip_exit(void *priv)
 	}
 }
 
-static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
+
+static int comp_head_config(struct hisi_qp *qp, struct wd_comp_msg *msg,
+			    struct hisi_zip_sqe *sqe)
 {
-	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
-	handle_t h_qp = (handle_t)qp;
-	struct hisi_zip_sqe sqe = {0};
-	__u8 flush_type;
 	void *src, *dst;
-	__u32  in_size;
-	__u16 count = 0;
-	void *ctx_buf;
-	__u8 stream_pos;
-	__u8 state;
-	int ret;
+	__u32 in_size;
 
 	in_size = msg->req.src_len;
 	src = msg->req.src;
 	dst = msg->req.dst;
 	switch (msg->alg_type) {
 	case WD_ZLIB:
-		sqe.dw9 = HW_ZLIB;
+		sqe->dw9 = HW_ZLIB;
 		if (msg->stream_pos == WD_COMP_STREAM_NEW) {
 			if (qp->q_info.qc_type == WD_DIR_COMPRESS) {
 				memcpy(dst, ZLIB_HEADER, ZLIB_HEADER_SZ);
@@ -210,7 +209,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		}
 		break;
 	case WD_GZIP:
-		sqe.dw9 = HW_GZIP;
+		sqe->dw9 = HW_GZIP;
 		if (msg->stream_pos == WD_COMP_STREAM_NEW) {
 			if (qp->q_info.qc_type == WD_DIR_COMPRESS) {
 				memcpy(dst, GZIP_HEADER, GZIP_HEADER_SZ);
@@ -225,17 +224,37 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	sqe.source_addr_l = lower_32_bits((__u64)src);
-	sqe.source_addr_h = upper_32_bits((__u64)src);
-	sqe.dest_addr_l = lower_32_bits((__u64)dst);
-	sqe.dest_addr_h = upper_32_bits((__u64)dst);
+	sqe->source_addr_l = lower_32_bits((__u64)src);
+	sqe->source_addr_h = upper_32_bits((__u64)src);
+	sqe->dest_addr_l = lower_32_bits((__u64)dst);
+	sqe->dest_addr_h = upper_32_bits((__u64)dst);
+	sqe->input_data_length = in_size;
+
+	return 0;
+}
+
+static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
+			      struct hisi_zip_sqe *sqe)
+{
+	__u8 flush_type;
+	void *ctx_buf;
+	__u8 stream_pos;
+	__u8 state;
+	int ret;
+
+	ret = comp_head_config(qp, msg, sqe);
+	if (ret < 0) {
+		WD_ERR("failed to config comp head(%d)!\n", ret);
+		return ret;
+	}
+
 	if (msg->ctx_buf) {
-		ctx_buf = msg->ctx_buf + 64;  /* reserve 64 BYTE for ctx_dwx*/
-		sqe.stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
-		sqe.stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
+		ctx_buf = msg->ctx_buf + RSV_OFFSET;  /* reserve 64 BYTE for ctx_dwx*/
+		sqe->stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
+		sqe->stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
 	} else {
-		sqe.stream_ctx_addr_l = 0;
-		sqe.stream_ctx_addr_h = 0;
+		sqe->stream_ctx_addr_l = 0;
+		sqe->stream_ctx_addr_h = 0;
 	}
 
 	state = (msg->stream_mode == WD_COMP_STATEFUL) ? HZ_STATEFUL :
@@ -244,32 +263,26 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 		    HZ_STREAM_OLD;
 	flush_type = (msg->req.last == 1) ? HZ_FINISH :
 		     HZ_SYNC_FLUSH;
-	sqe.dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
+	sqe->dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
-	sqe.input_data_length = in_size;
-	if (msg->avail_out > MIN_AVAILOUT_SIZE)
-		sqe.dest_avail_out = msg->avail_out;
-	else
-		sqe.dest_avail_out = MIN_AVAILOUT_SIZE;
+	sqe->dest_avail_out = msg->avail_out;
 	if (msg->ctx_buf) {
 		/* ctx_dwx uses 4 BYTES */
-		sqe.ctx_dw0 = *(__u32 *)msg->ctx_buf;
-		sqe.ctx_dw1 = *(__u32 *)(msg->ctx_buf + 4);
-		sqe.ctx_dw2 = *(__u32 *)(msg->ctx_buf + 8);
+		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
+		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_DW1_OFFSET);
+		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_DW2_OFFSET);
 	}
-	sqe.isize = msg->isize;
-	sqe.checksum = msg->checksum;
-	sqe.tag = msg->tag;
+	sqe->isize = msg->isize;
+	sqe->checksum = msg->checksum;
+	sqe->tag = msg->tag;
 
-	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
-	if (ret < 0)
-		WD_ERR("qm send is err(%d)!\n", ret);
+	dbg("zip fill sqe: dest_avail_out=%u\n", sqe->dest_avail_out);
 
-	return ret;
+	return 0;
 }
 
-static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
+static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	handle_t h_qp = (handle_t)qp;
@@ -277,15 +290,35 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 	__u16 count = 0;
 	int ret;
 
-	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
-	if (ret < 0)
-		return ret;
+	if (unlikely(msg->req.src_len > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: out of range in_len(%u)!\n", msg->req.src_len);
+		return -WD_EINVAL;
+	}
 
-	__u16 ctx_st = sqe.ctx_dw0 & HZ_CTX_ST_MASK;
-	__u16 lstblk = sqe.dw3 & HZ_LSTBLK_MASK;
-	__u32 stream_pos = sqe.dw7 & HZ_STREAM_POS_MASK;
-	__u32 status = sqe.dw3 & HZ_STATUS_MASK;
-	__u32 type = sqe.dw9 & HZ_REQ_TYPE_MASK;
+	if (unlikely(msg->avail_out > HZ_MAX_SIZE)) {
+		WD_ERR("warning: out of range avail_out(%u), will set 8MB size max!\n", msg->avail_out);
+		msg->avail_out = HZ_MAX_SIZE;
+	}
+
+	ret = fill_zip_comp_sqe(qp, msg, &sqe);
+	if (ret < 0) {
+		WD_ERR("failed to fill zip sqe(%d)!\n", ret);
+		return ret;
+	}
+	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
+	if (ret < 0)
+		WD_ERR("qm send is err(%d)!\n", ret);
+
+	return ret;
+}
+static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe, 
+			 struct wd_comp_msg *recv_msg)
+{
+	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
+	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
+	__u32 stream_pos = sqe->dw7 & HZ_STREAM_POS_MASK;
+	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
+	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 
 	if (status != 0 && status != HZ_NEGACOMPRESS &&
 	    status != HZ_CRC_ERR && status != HZ_DECOMP_END) {
@@ -293,12 +326,12 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 		       ctx_st, status, type);
 		recv_msg->req.status = WD_IN_EPARA;
 	} else {
-		if (!sqe.consumed || !sqe.produced)
+		if (!sqe->consumed || !sqe->produced)
 			return -EAGAIN;
 		recv_msg->req.status = 0;
 	}
-	recv_msg->in_cons = sqe.consumed;
-	recv_msg->produced = sqe.produced;
+	recv_msg->in_cons = sqe->consumed;
+	recv_msg->produced = sqe->produced;
 
 	if (stream_pos) { /* bit:1 : stream_new */
 		if (type == HW_ZLIB) {
@@ -314,33 +347,47 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 				recv_msg->in_cons += GZIP_HEADER_SZ;
 		}
 	}
-	recv_msg->avail_out = sqe.dest_avail_out;
-	if (sqe.stream_ctx_addr_l && sqe.stream_ctx_addr_h) {
+
+	recv_msg->avail_out = sqe->dest_avail_out;
+	if (sqe->stream_ctx_addr_l && sqe->stream_ctx_addr_h) {
 		/*
 		 * In ASYNC mode, recv_msg->ctx_buf is NULL.
 		 * recv_msg->ctx_buf is only valid in SYNC mode.
 		 * ctx_dwx uses 4 BYTES
 		 */
-		*(__u32 *)recv_msg->ctx_buf = sqe.ctx_dw0;
-		*(__u32 *)(recv_msg->ctx_buf + 4) = sqe.ctx_dw1;
-		*(__u32 *)(recv_msg->ctx_buf + 8) = sqe.ctx_dw2;
+		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_DW1_OFFSET) = sqe->ctx_dw1;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_DW2_OFFSET) = sqe->ctx_dw2;
 	}
 
 	/* last block no space, need resend null size req */
 	if (ctx_st == HZ_DECOMP_NO_SPACE)
 		recv_msg->req.status = WD_DECOMP_NEED_AGAIN;
-	if (ctx_st == HZ_DECOMP_BLK_NOSTART)
-		recv_msg->req.status = WD_IN_EPARA;
 
-	dbg("lst =%d, ctx_st=0x%x, status=0x%x, alg=%u\n", lstblk, ctx_st, status, type);
+	dbg("zip recv lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u\n", lstblk, ctx_st, status, type);
 	if (lstblk && (status == HZ_DECOMP_END))
 		recv_msg->req.status = WD_DECOMP_END;
 
-	recv_msg->isize = sqe.isize;
-	recv_msg->checksum = sqe.checksum;
-	recv_msg->tag = sqe.tag;
+	recv_msg->isize = sqe->isize;
+	recv_msg->checksum = sqe->checksum;
+	recv_msg->tag = sqe->tag;
 
 	return 0;
+}
+
+static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
+{
+	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
+	handle_t h_qp = (handle_t)qp;
+	struct hisi_zip_sqe sqe = {0};
+	__u16 count = 0;
+	int ret;
+
+	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
+	if (ret < 0)
+		return ret;
+
+	return parse_zip_sqe(qp, &sqe, recv_msg);
 }
 
 struct wd_comp_driver hisi_zip = {

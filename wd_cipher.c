@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdlib.h>
 #include <pthread.h>
+#include <sched.h>
+#include <numa.h>
 #include "wd_cipher.h"
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_util.h"
@@ -17,8 +19,10 @@
 #define MAX_RETRY_COUNTS	200000000
 
 
-static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101,
-	0xFEFEFEFEFEFEFEFE, 0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
+static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {
+	0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
+	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E
+};
 
 struct wd_cipher_setting {
 	struct wd_ctx_config_internal config;
@@ -36,7 +40,7 @@ extern struct wd_cipher_driver wd_cipher_hisi_cipher_driver;
 static void wd_cipher_set_static_drv(void)
 {
 	/*
-	 * Fix me: a parameter can be introduced to decide to choose
+	 * a parameter can be introduced to decide to choose
 	 * specific driver. Same as dynamic case.
 	 */
 	g_wd_cipher_setting.driver = &wd_cipher_hisi_cipher_driver;
@@ -46,7 +50,7 @@ static void __attribute__((constructor)) wd_cipher_open_driver(void)
 {
 	void *driver;
 
-	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
+	/* vendor driver should be put in /usr/lib/wd/ */
 	driver = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!driver)
 		WD_ERR("fail to open libhisi_sec.so\n");
@@ -58,7 +62,7 @@ void wd_cipher_set_driver(struct wd_cipher_driver *drv)
 	g_wd_cipher_setting.driver = drv;
 }
 
-static int is_des_weak_key(const __u64 *key, __u16 keylen)
+static int is_des_weak_key(const __u64 *key)
 {
 	int i;
 
@@ -129,7 +133,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		WD_ERR("cipher set key inpupt key length err!\n");
 		return -EINVAL;
 	}
-	if (sess->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key, length)) {
+	if (sess->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key)) {
 		WD_ERR("input des key is weak key!\n");
 		return -EINVAL;
 	}
@@ -143,6 +147,8 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
+	int cpu;
+	int node;
 
 	if (!setup) {
 		WD_ERR("cipher input setup is NULL!\n");
@@ -163,7 +169,13 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		free(sess);
 		return (handle_t)0;
 	}
+
 	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
+
+	cpu = sched_getcpu();
+	node = numa_node_of_cpu(cpu);
+
+	sess->numa = node;
 
 	return (handle_t)sess;
 }
@@ -176,7 +188,10 @@ void wd_cipher_free_sess(handle_t h_sess)
 	}
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
-	free(sess->key);
+	if (sess->key) {
+		wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
+		free(sess->key);
+	}
 	free(sess);
 }
 
@@ -216,7 +231,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_cipher_set_static_drv();
 #endif
 
-	/* fix me: sadly find we allocate async pool for every ctx */
+	/* sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&g_wd_cipher_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_cipher_msg));
@@ -255,15 +270,15 @@ out:
 void wd_cipher_uninit(void)
 {
 	void *priv = g_wd_cipher_setting.priv;
+
 	if (!priv)
 		return;
 
 	g_wd_cipher_setting.driver->exit(priv);
-	free(priv);
 	g_wd_cipher_setting.priv = NULL;
+	free(priv);
 
 	wd_uninit_async_request_pool(&g_wd_cipher_setting.pool);
-
 	wd_clear_sched(&g_wd_cipher_setting.sched);
 	wd_clear_ctx_config(&g_wd_cipher_setting.config);
 }
@@ -293,6 +308,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg msg;
+	struct sched_key key;
 	__u64 recv_cnt = 0;
 	int index, ret;
 
@@ -301,12 +317,24 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	index = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
+	if (req->out_buf_bytes < req->in_bytes) {
+		WD_ERR("cipher set out_buf_bytes is error!\n");
+		return -EINVAL;
+	}
+
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+	index = g_wd_cipher_setting.sched.pick_next_ctx(g_wd_cipher_setting.sched.h_sched_ctx, req, &key);
 	if (index >= config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
@@ -349,19 +377,34 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg *msg;
-	int index, idx, ret;
+	struct sched_key key;
+	int idx, ret;
+	__u32 index;
 
-	if (unlikely(!sess || !req)) {
+	if (unlikely(!sess || !req || !req->cb)) {
 		WD_ERR("cipher input sess or req is NULL.\n");
 		return -EINVAL;
 	}
 
-	index = g_wd_cipher_setting.sched.pick_next_ctx(0, req, NULL);
+	if (req->out_buf_bytes < req->in_bytes) {
+		WD_ERR("cipher set out_buf_bytes is error!\n");
+		return -EINVAL;
+	}
+
+	key.mode = CTX_MODE_ASYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+
+	index = g_wd_cipher_setting.sched.pick_next_ctx(g_wd_cipher_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
 	}
 	ctx = config->ctxs + index;
+	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+                WD_ERR("failed to check ctx mode!\n");
+                return -EINVAL;
+        }
 
 	idx = wd_get_msg_from_pool(&g_wd_cipher_setting.pool, index,
 				   (void **)&msg);
@@ -388,19 +431,23 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 
 int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 {
-	handle_t h_ctx = g_wd_cipher_setting.config.ctxs[index].ctx;
+	struct wd_ctx_config_internal *config = &g_wd_cipher_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs + index;
 	struct wd_cipher_msg resp_msg, *msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
-	if (unlikely(!h_ctx || !count)) {
+	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("wd cipher poll ctx input param is NULL!\n");
 		return -EINVAL;
 	}
 
 	do {
-		ret = g_wd_cipher_setting.driver->cipher_recv(h_ctx, &resp_msg);
+		pthread_mutex_lock(&ctx->lock);
+		ret = g_wd_cipher_setting.driver->cipher_recv(ctx->ctx,
+							      &resp_msg);
+		pthread_mutex_unlock(&ctx->lock);
 		if (ret == -EAGAIN) {
 			break;
 		} else if (ret < 0) {
@@ -411,7 +458,7 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 		msg = wd_find_msg_in_pool(&g_wd_cipher_setting.pool, index,
 					  resp_msg.tag);
 		if (!msg) {
-			WD_ERR("get msg from pool is NULL!\n");
+			WD_ERR("failed to get msg from pool!\n");
 			break;
 		}
 
@@ -432,7 +479,7 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 {
 	int ret;
 
-	ret = g_wd_cipher_setting.sched.poll_policy(0, 0, expt, count);
+	ret = g_wd_cipher_setting.sched.poll_policy(0, expt, count);
 	if (ret < 0)
 		return ret;
 

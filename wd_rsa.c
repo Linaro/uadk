@@ -7,7 +7,6 @@
 #include <time.h>
 #include <dlfcn.h>
 
-#include "config.h"
 #include "include/drv/wd_rsa_drv.h"
 #include "wd_rsa.h"
 #include "wd_util.h"
@@ -191,7 +190,7 @@ out:
 
 void wd_rsa_uninit(void)
 {
-	if (!wd_rsa_setting.pool.pool_num) {
+	if (!wd_rsa_setting.priv) {
 		WD_ERR("uninit rsa error: repeat uninit rsa\n");
 		return;
 	}
@@ -464,17 +463,7 @@ int wd_rsa_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 
 int wd_rsa_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
-
-	return wd_rsa_setting.sched->poll_policy(h_sched_ctx, 0, expt, count);
-}
-
-static void wd_memset_zero(void *data, __u32 size)
-{
-	char *s = data;
-
-	while (size--)
-		*s++ = 0;
+	return wd_rsa_setting.sched.poll_policy(0, expt, count);
 }
 
 int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)
