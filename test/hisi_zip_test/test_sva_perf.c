@@ -534,6 +534,8 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 	memset(&priv_ctx, 0, sizeof(struct priv_context));
 	priv_ctx.opts = opts;
 
+	info->faults = opts->faults;
+
 	info->opts = copts;
 	info->list = list;
 
