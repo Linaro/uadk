@@ -29,7 +29,7 @@
 #include "../../wd_util.h"
 #include "../../wd_comp.h"
 #include "../../drv/hisi_qm_udrv.h"
-#include "../smm.h"
+#include "../../wd_bmm.h"
 enum mode {
 	MODE_BLOCK,
 	MODE_STREAM,
@@ -50,6 +50,7 @@ struct test_zip_pthread_dt {
 	ulong dst_len;
 	float com_time;
 	float decom_time;
+	void *pool;
 };
 
 struct user_comp_tag_info {
@@ -60,6 +61,8 @@ struct user_comp_tag_info {
 
 #define TEST_MAX_THRD		2048
 #define MAX_CORES		128
+#define WD_WAIT_MS		1000
+#define MAX_DMEMSIZE		8 * 1024 * 1024 	/* 8M */
 
 static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct test_zip_pthread_dt test_thrds_data[TEST_MAX_THRD];
@@ -174,14 +177,12 @@ void *zip_sys_async_test_thread(void *args)
 	struct test_zip_pthread_dt *pdata = args;
 	struct user_comp_tag_info u_tag;
 	int i = pdata->iteration;
-	size_t ss_region_size;
 	struct wcrypto_paras *priv;
 	struct wd_queue *q;
 	void *zip_ctx;
 	struct wcrypto_comp_ctx_setup ctx_setup;
+	struct wd_blkpool_setup blk_setup = { 0 };
 	struct wcrypto_comp_op_data *opdata;
-	void *in, *out, *ss_buf;
-	void *src, *dst;
 	int loop;
 
 	cpu_id = pdata->cpu_id;
@@ -204,7 +205,7 @@ void *zip_sys_async_test_thread(void *args)
 therad_no_affinity:
 
 	q = calloc(1, sizeof(struct wd_queue));
-	if (q == NULL) {
+	if (!q) {
 		ret = -ENOMEM;
 		fprintf(stderr, "alloc q fail, ret =%d\n", ret);
 		goto hw_q_free;
@@ -224,11 +225,11 @@ therad_no_affinity:
 		ctx_setup.alg_type = WCRYPTO_ZLIB;
 		q->capa.alg = "zlib";
 	}
-	ctx_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 	q->capa.latency = 0;
 	q->capa.throughput = 0;
 	priv = &q->capa.priv;
 	priv->direction = pdata->op_type;
+	priv->is_poll = 1;
 	ret = wd_request_queue(q);
 	if (ret) {
 		fprintf(stderr, "wd_request_queue fail, ret =%d\n", ret);
@@ -236,53 +237,52 @@ therad_no_affinity:
 	}
 	SYS_ERR_COND(ret, "wd_request_queue");
 
-	ss_region_size = 4096 + DMEMSIZE * 2 + HW_CTX_SIZE;
-
-#ifdef CONFIG_IOMMU_SVA
-	ss_buf = calloc(1, ss_region_size);
-#else
-	ss_buf = wd_reserve_memory(q, ss_region_size);
-#endif
-	if (!ss_buf) {
-		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
+	blk_setup.block_size = MAX_DMEMSIZE;
+	blk_setup.block_num = 3;
+	blk_setup.align_size = 128;
+	pdata->pool = wd_blkpool_create(q, &blk_setup);
+	if (!pdata->pool) {
 		ret = -ENOMEM;
+		WD_ERR("%s create pool fail!, ret =%d\n", __func__, ret);
 		goto release_q;
 	}
 
-	ret = smm_init(ss_buf, ss_region_size, 0xF);
-	if (ret)
-		goto buf_free;
-
-	src = in = smm_alloc(ss_buf, DMEMSIZE);
-	dst = out = smm_alloc(ss_buf, DMEMSIZE);
-
-	if (in == NULL || out == NULL) {
-		WD_ERR("not enough data ss_region memory for cache (bs=%d)\n",
-			DMEMSIZE);
-		goto buf_free;
-	}
-
+	ctx_setup.br.alloc = (void *)wd_alloc_blk;
+	ctx_setup.br.free = (void *)wd_free_blk;
+	ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
+	ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+	ctx_setup.br.get_bufsize = (void *)wd_blksize;
+	ctx_setup.win_size = WCRYPTO_COMP_WS_8K;
+	ctx_setup.br.usr = pdata->pool;
 	ctx_setup.cb = zip_callback;
+	ctx_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 	zip_ctx = wcrypto_create_comp_ctx(q, &ctx_setup);
-	if (zip_ctx == NULL) {
+	if (!zip_ctx) {
+		ret = -ENOMEM;
 		fprintf(stderr, "zip_alloc_comp_ctx fail, ret =%d\n", ret);
-		goto buf_free;
+		goto blkpool_free;
 	}
 
 	opdata = calloc(1, sizeof(struct wcrypto_comp_op_data));
-	if (opdata == NULL) {
+	if (!opdata) {
 		ret = -ENOMEM;
 		fprintf(stderr, "alloc opdata fail, ret =%d\n", ret);
 		goto comp_ctx_free;
 	}
-	opdata->in = in;
-	opdata->out = out;
+	opdata->in = wd_alloc_blk(pdata->pool);
+	opdata->out = wd_alloc_blk(pdata->pool);
+	if (!opdata->in || !opdata->out) {
+		ret = -ENOMEM;
+		WD_ERR("%s not enough data memory for cache (bs=%d), ret =%d\n",
+			__func__, block_size, ret);
+		goto buf_free;
+	}
 	opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
-	memcpy(src, pdata->src, pdata->src_len);
+	memcpy(opdata->in, pdata->src, pdata->src_len);
 
 	opdata->in_len = pdata->src_len;
-	opdata->avail_out = DMEMSIZE;
+	opdata->avail_out = MAX_DMEMSIZE;
 
 	u_tag.alg_type = ctx_setup.alg_type;
 	u_tag.cpu_id = cpu_id;
@@ -300,28 +300,29 @@ therad_no_affinity:
 
 		} while (--i);
 
-		ret = wcrypto_comp_poll(q, pdata->iteration);
-		if (ret < 0)
-			WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n",
-				cpu_id, (int)tid, ret);
-
-		WD_ERR("test poll end, count=%d\n", ret);
+		ret = wd_wait(q, WD_WAIT_MS);
+		if(likely(ret > 0)) {
+			ret = wcrypto_comp_poll(q, pdata->iteration);
+			if (ret < 0)
+				WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n",
+					cpu_id, (int)tid, ret);
+		}
 
 	} while (--loop);
 
 	opdata->produced = out_len;
 	dbg("%s(): test !,produce=%d\n", __func__, opdata->produced);
 
-	memcpy(pdata->dst, dst, opdata->produced);
+	memcpy(pdata->dst, opdata->out, opdata->produced);
 	pdata->dst_len = opdata->produced;
 
 	dbg("%s end thread_id=%d\n", __func__, pdata->cpu_id);
 
-	if (opdata)
-		free(opdata);
-
+	wd_free_blk(pdata->pool, opdata->in);
+	wd_free_blk(pdata->pool, opdata->out);
+	free(opdata);
 	wcrypto_del_comp_ctx(zip_ctx);
-
+	wd_blkpool_destroy(pdata->pool);
 	wd_release_queue(q);
 	free(q);
 
@@ -330,13 +331,11 @@ therad_no_affinity:
 comp_ctx_free:
 		wcrypto_del_comp_ctx(zip_ctx);
 buf_free:
-#ifdef CONFIG_IOMMU_SVA
-			if (ss_buf)
-				free(ss_buf);
-#endif
-
+		free(opdata);
+blkpool_free:
+		wd_blkpool_destroy(pdata->pool);
 release_q:
-	wd_release_queue(q);
+		wd_release_queue(q);
 hw_q_free:
 		free(q);
 
