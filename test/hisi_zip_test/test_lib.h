@@ -120,6 +120,8 @@ struct hizip_test_info {
 	} tv;
 	/* Test is expected to fail */
 	bool faulting;
+	/* copy of faults field in struct priv_options */
+	unsigned long faults;
 };
 
 void stat_start(struct hizip_test_info *info);
