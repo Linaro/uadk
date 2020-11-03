@@ -226,7 +226,7 @@ static void qm_parse_zip_sqe_set_status(struct wcrypto_comp_msg *recv_msg,
 	/* last block no space, need resend null size req */
 	else if (ctx_st == HW_DECOMP_NO_SPACE)
 		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
-	else if (ctx_st == HW_DECOMP_BLK_NOSTART)
+	else if (ctx_st == HW_DECOMP_BLK_NOSTART && lstblk)
 		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
 }
 
