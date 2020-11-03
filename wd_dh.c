@@ -345,7 +345,7 @@ fail_with_msg:
 	return ret;
 }
 
-int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
+int wd_dh_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
 	struct wd_ctx_internal *ctx;
@@ -355,15 +355,15 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 	__u32 rcv_cnt = 0;
 	int ret;
 
-	if (unlikely(!count || pos >= config->ctx_num)) {
-		WD_ERR("param error, pos = %u, ctx_num = %u!\n",
-			pos, config->ctx_num);
+	if (unlikely(!count || index >= config->ctx_num)) {
+		WD_ERR("param error, index = %u, ctx_num = %u!\n",
+			index, config->ctx_num);
 		return -EINVAL;
 	}
 
-	ctx = config->ctxs + pos;
+	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode= %hhu error!\n", pos, ctx->ctx_mode);
+		WD_ERR("ctx %u mode= %hhu error!\n", index, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -377,13 +377,13 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_dh_setting.pool, pos,
+			wd_put_msg_to_pool(&wd_dh_setting.pool, index,
 					   rcv_msg.tag);
 			return ret;
 		}
 		pthread_mutex_unlock(&ctx->lock);
 		rcv_cnt++;
-		msg = wd_find_msg_in_pool(&wd_dh_setting.pool, pos, rcv_msg.tag);
+		msg = wd_find_msg_in_pool(&wd_dh_setting.pool, index, rcv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to find msg!\n");
 			break;
@@ -393,7 +393,7 @@ int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count)
 		msg->req.status = rcv_msg.result;
 		req = &msg->req;
 		req->cb(req);
-		wd_put_msg_to_pool(&wd_dh_setting.pool, pos, rcv_msg.tag);
+		wd_put_msg_to_pool(&wd_dh_setting.pool, index, rcv_msg.tag);
 	} while (--expt);
 
 	*count = rcv_cnt;
