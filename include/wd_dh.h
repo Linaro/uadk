@@ -41,10 +41,10 @@ struct wd_dh_req {
 	__u16 xbytes; /* x bytes */
 	__u16 pvbytes; /* pv bytes */
 	wd_dh_cb_t cb;
-	void *cb_param;	
+	void *cb_param;
 	int status; /* output status */
 	__u8 op_type; /* operational type */
-	__u8 data_fmt; /* data format denoted by enum wd_buff_type */	
+	__u8 data_fmt; /* data format denoted by enum wd_buff_type */
 };
 
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode);
@@ -55,7 +55,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup);
 void wd_dh_free_sess(handle_t sess);
 int wd_do_dh_async(handle_t sess, struct wd_dh_req *req);
 int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req);
-int wd_dh_poll_ctx(__u32 pos, __u32 expt, __u32 *count);
+int wd_dh_poll_ctx(__u32 index, __u32 expt, __u32 *count);
 int wd_dh_poll(__u32 expt, __u32 *count);
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched);
 void wd_dh_uninit(void);
