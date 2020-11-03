@@ -434,6 +434,9 @@ static void *poll_thread_func(void *arg)
 	if (!info->opts->sync_mode)
 		return NULL;
 	while (1) {
+		if (info->faults & INJECT_SIG_WORK)
+			kill(getpid(), SIGTERM);
+
 		pthread_mutex_lock(&mutex);
 		if (!expected)
 			expected = 1;
@@ -686,6 +689,8 @@ int hizip_test_sched(struct wd_sched *sched,
 		ret = wd_do_comp_sync(h_sess, &info->req);
 		if (ret < 0)
 			return ret;
+		if (info->faults & INJECT_SIG_WORK)
+			kill(getpid(), SIGTERM);
 	}
 	info->total_out = info->req.dst_len;
 	return 0;
