@@ -13,10 +13,11 @@
 #define SEC_DIGEST_ALG_OFFSET	11
 #define WORD_ALIGNMENT_MASK	0x3
 #define BD_TYPE2		0x2
+#define CTR_MODE_LEN_SHIFT	4
 #define WORD_BYTES		4
 #define BYTE_BITS		8
 #define SQE_BYTES_NUMS		128
-#define SEC_FLAG_OFFSET	7
+#define SEC_FLAG_OFFSET		7
 #define SEC_AUTH_KEY_OFFSET	5
 #define SEC_HW_TASK_DONE	0x1
 #define SEC_DONE_MASK		0x0001
@@ -24,10 +25,10 @@
 #define SEC_TYPE_MASK		0x0f
 
 #define SEC_COMM_SCENE		  0
-#define SEC_IPSEC_SCENE	  1
+#define SEC_IPSEC_SCENE		  1
 #define SEC_SCENE_OFFSET	  3
 #define SEC_DE_OFFSET		  1
-#define SEC_AUTH_OFFSET  	  1
+#define SEC_AUTH_OFFSET  	  6
 #define SEC_CMODE_OFFSET	  12
 #define SEC_CKEY_OFFSET		  9
 #define SEC_CIPHER_OFFSET	  4
@@ -42,6 +43,7 @@
 
 #define DES3_BLOCK_SIZE		8
 #define AES_BLOCK_SIZE		16
+#define CTR_128BIT_COUNTER	16
 
 /* The max BD data length is 16M-512B */
 #define MAX_INPUT_DATA_LEN	0xFFFE00
@@ -285,16 +287,54 @@ static void sec_dump_bd(unsigned char *bd, unsigned int len)
 	unsigned int i;
 
 	for (i = 0; i < len; i++) {
-		WD_ERR("\\%02x", bd[i]);
-		if ((i + 1) % (WORD_BYTES << 1) == 0)
+		WD_ERR("\\0x%02x", bd[i]);
+		if ((i + 1) % WORD_BYTES == 0)
 			WD_ERR("\n");
 	}
 	WD_ERR("\n");
 }
 #endif
 
+/* increment counter (128-bit int) by software  */
+static void ctr_iv_inc(__u8 *counter, __u32 c)
+{
+	__u32 n = CTR_128BIT_COUNTER;
+
+	do {
+		--n;
+		c += counter[n];
+		counter[n] = (__u8)c;
+		c >>= BYTE_BITS;
+	} while (n);
+}
+
 static void update_iv(struct wd_cipher_msg *msg)
 {
+	switch (msg->mode) {
+	case WD_CIPHER_CBC:
+		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
+		    msg->out_bytes >= msg->iv_bytes)
+			memcpy(msg->iv, msg->out + msg->out_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		if (msg->op_type == WD_CIPHER_DECRYPTION &&
+		    msg->in_bytes >= msg->iv_bytes)
+			memcpy(msg->iv, msg->in + msg->in_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		break;
+	case WD_CIPHER_OFB:
+	case WD_CIPHER_CFB:
+		if (msg->out_bytes >= msg->iv_bytes)
+			memcpy(msg->iv, msg->out + msg->out_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		break;
+	case WD_CIPHER_CTR:
+		if (msg->iv_bytes >= AES_BLOCK_SIZE)
+			ctr_iv_inc(msg->iv, msg->iv_bytes >>
+				CTR_MODE_LEN_SHIFT);
+		break;
+	default:
+		break;
+	}
 }
 
 int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
@@ -769,22 +809,22 @@ WD_DIGEST_SET_DRIVER(hisi_digest_driver);
 
 static int aead_get_aes_key_len(struct wd_aead_msg *msg, __u8 *key_len)
 {
-        switch (msg->ckey_bytes) {
-        case AES_KEYSIZE_128:
-                *key_len = CKEY_LEN_128BIT;
-                break;
-        case AES_KEYSIZE_192:
-                *key_len = CKEY_LEN_192BIT;
-                break;
-        case AES_KEYSIZE_256:
-                *key_len = CKEY_LEN_256BIT;
-                break;
-        default:
-                WD_ERR("failed to check AES key size!\n");
-                return -EINVAL;
-        }
+	switch (msg->ckey_bytes) {
+	case AES_KEYSIZE_128:
+		*key_len = CKEY_LEN_128BIT;
+		break;
+	case AES_KEYSIZE_192:
+		*key_len = CKEY_LEN_192BIT;
+		break;
+	case AES_KEYSIZE_256:
+		*key_len = CKEY_LEN_256BIT;
+		break;
+	default:
+		WD_ERR("failed to check AES key size!\n");
+		return -EINVAL;
+	}
 
-        return 0;
+	return 0;
 }
 
 static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
@@ -852,9 +892,6 @@ static int fill_aead_bd2_mode(struct wd_aead_msg *msg,
 	__u16 c_mode;
 
 	switch (msg->cmode) {
-	case WD_CIPHER_ECB:
-		c_mode = C_MODE_ECB;
-		break;
 	case WD_CIPHER_CBC:
 		c_mode = C_MODE_CBC;
 		break;
@@ -863,13 +900,15 @@ static int fill_aead_bd2_mode(struct wd_aead_msg *msg,
 		break;
 	case WD_CIPHER_CCM:
 		c_mode = C_MODE_CCM;
-		sqe->type_auth_cipher |= NO_AUTH << SEC_AUTH_OFFSET;
+		sqe->type_auth_cipher &= ~(AUTH_HMAC_CALCULATE <<
+			SEC_AUTH_OFFSET);
 		sqe->type2.alen_ivllen = msg->assoc_bytes;
 		sqe->type2.icvw_kmode |= msg->auth_bytes;
 		break;
 	case WD_CIPHER_GCM:
 		c_mode = C_MODE_GCM;
-		sqe->type_auth_cipher |= NO_AUTH << SEC_AUTH_OFFSET;
+		sqe->type_auth_cipher &= ~(AUTH_HMAC_CALCULATE <<
+			SEC_AUTH_OFFSET);
 		sqe->type2.alen_ivllen = msg->assoc_bytes;
 		sqe->type2.icvw_kmode |= msg->auth_bytes;
 		break;
