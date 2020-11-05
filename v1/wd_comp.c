@@ -129,7 +129,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	if (br->alloc && br->free &&
 	    br->iova_map && br->iova_unmap) {
 		if (!qinfo->br.alloc && !qinfo->br.iova_map)
-			memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
+			memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
 		if (qinfo->br.usr != setup->br.usr) {
 			wd_unspinlock(&qinfo->qlock);
 			WD_ERR("Err mm br in creating comp ctx!\n");
