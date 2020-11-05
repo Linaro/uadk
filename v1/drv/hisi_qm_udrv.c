@@ -376,10 +376,9 @@ void qm_uninit_queue(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-void qm_tx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
+void qm_tx_update(struct qm_queue_info *info, __u32 num)
 {
-	info->sq_tail_index = idx;
-	info->db(info, DOORBELL_CMD_SQ, idx, 0);
+	info->db(info, DOORBELL_CMD_SQ, info->sq_tail_index, 0);
 	__atomic_add_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
@@ -387,7 +386,6 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	__u16 sq_tail = 0;
 	int i, ret;
 
 	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
@@ -413,24 +411,23 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 		}
 
 		if (info->sq_tail_index == QM_Q_DEPTH - 1)
-			sq_tail = 0;
+			info->sq_tail_index = 0;
 		else
-			sq_tail = info->sq_tail_index + 1;
+			info->sq_tail_index++;
 	}
 
 	/* make sure the request is all in memory before doorbell */
 	mb();
-	qm_tx_update(info, sq_tail, num);
+	qm_tx_update(info, num);
 	wd_unspinlock(&info->sd_lock);
 
 	return WD_SUCCESS;
 }
 
-void qm_rx_update(struct qm_queue_info *info, __u16 idx, __u32 num)
+void qm_rx_update(struct qm_queue_info *info, __u32 num)
 {
-	info->cq_head_index = idx;
 	/* set c_flag to enable interrupt when use poll */
-	info->db(info, DOORBELL_CMD_CQ, idx, info->is_poll);
+	info->db(info, DOORBELL_CMD_CQ, info->cq_head_index, info->is_poll);
 	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
@@ -489,7 +486,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		sqe = (void *)((uintptr_t)info->sq_base + sq_head * info->sqe_size);
 		ret = info->sqe_parse[qinfo->atype](sqe,
 				(const struct qm_queue_info *)info,
-				cq_head, (__u16)(uintptr_t)resp[i]);
+				info->cq_head_index, (__u16)(uintptr_t)resp[i]);
 		if (!ret) {
 			break;
 		} else if (ret < 0) {
@@ -502,14 +499,14 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		info->req_cache[info->cq_head_index] = NULL;
 		if (info->cq_head_index == QM_Q_DEPTH - 1) {
 			info->cqc_phase = !(info->cqc_phase);
-			cq_head = 0;
+			info->cq_head_index = 0;
 		} else {
-			cq_head = info->cq_head_index + 1;
+			info->cq_head_index++;
 		}
 	}
 
 	if (i)
-		qm_rx_update(info, cq_head, i);
+		qm_rx_update(info, i);
 
 	wd_unspinlock(&info->rc_lock);
 	if (wd_reg_read(info->ds_rx_base) == 1) {
