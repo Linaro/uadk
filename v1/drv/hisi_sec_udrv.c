@@ -46,6 +46,8 @@
 #define AES_BLOCK_SIZE		16
 #define WCRYPTO_CIPHER_THEN_DIGEST	0
 #define WCRYPTO_DIGEST_THEN_CIPHER	1
+#define CBC_3DES_BLOCK_SIZE 	8
+#define CBC_AES_BLOCK_SIZE 	16
 
 static int g_digest_a_alg[WCRYPTO_MAX_DIGEST_TYPE] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
@@ -442,15 +444,46 @@ static int fill_cipher_bd2_addr(struct wd_queue *q,
 	return WD_SUCCESS;
 }
 
+static int cipher_param_check(struct wcrypto_cipher_msg *msg)
+{
+	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH)) {
+		WD_ERR("input cipher len is too large!\n");
+		return -WD_EINVAL;
+	}
+
+	if (msg->alg == WCRYPTO_CIPHER_3DES ||
+			msg->alg == WCRYPTO_CIPHER_DES) {
+		if (unlikely(msg->in_bytes & (CBC_3DES_BLOCK_SIZE - 1))) {
+			WD_ERR("input 3DES or DES cipher parameter is error!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	if (msg->alg == WCRYPTO_CIPHER_AES ||
+			msg->alg == WCRYPTO_CIPHER_SM4) {
+		if (unlikely(msg->in_bytes & (CBC_AES_BLOCK_SIZE - 1))) {
+			WD_ERR("input AES or SM4 cipher parameter is error!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	return WD_SUCCESS;
+}
+
 static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_cipher_msg *msg, struct wcrypto_cipher_tag *tag)
 {
 	int ret;
 
+	ret = cipher_param_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	sqe->type = BD_TYPE2;
 	sqe->scene = SCENE_IPSEC;
 
 	sqe->de = DATA_DST_ADDR_ENABLE;
+
 	sqe->type2.c_len = msg->in_bytes;
 
 	ret = fill_cipher_bd2_alg(msg, sqe);
