@@ -141,7 +141,9 @@ static bool is_exit(struct test_sec_pthread_dt *pdata)
 
 void hexdump(char *buf, int num)
 {
-	for (int i = 0; i < num; i++) {
+	int i;
+
+	for (i = 0; i < num; i++) {
 		printf("\\%02X", buf[i]);
 		if ((i + 1) % 8 == 0)
 			printf("\n");
