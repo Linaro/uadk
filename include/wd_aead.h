@@ -4,6 +4,7 @@
 
 #include <dlfcn.h>
 #include "wd_alg_common.h"
+#include "config.h"
 #include "wd_cipher.h"
 #include "wd_digest.h"
 #include "wd.h"

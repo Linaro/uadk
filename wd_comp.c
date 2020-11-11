@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "config.h"
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 #include "wd_util.h"
