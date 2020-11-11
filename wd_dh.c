@@ -7,6 +7,7 @@
 #include <time.h>
 #include <dlfcn.h>
 
+#include "config.h"
 #include "include/drv/wd_dh_drv.h"
 #include "wd_dh.h"
 #include "wd_util.h"

@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <stdbool.h>
 
+#include "config.h"
 #include "wd.h"
 
 #define WD_CAPA_PRIV_DATA_SIZE		64
