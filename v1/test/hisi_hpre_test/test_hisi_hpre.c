@@ -925,6 +925,38 @@ static __u32 get_ecc_min_blocksize(__u32 key_bits)
 	return size;
 }
 
+static __u32 get_hash_bytes(void)
+{
+	__u32 val = 0;
+
+	switch (set_hash) {
+	case HASH_MD4:
+	case HASH_MD5:
+		val = BITS_TO_BYTES(128);
+		break;
+	case HASH_SHA1:
+		val = BITS_TO_BYTES(160);
+		break;
+	case HASH_SHA224:
+		val = BITS_TO_BYTES(224);
+		break;
+	case HASH_SHA256:
+	case HASH_SM3:
+		val = BITS_TO_BYTES(256);
+		break;
+	case HASH_SHA384:
+		val = BITS_TO_BYTES(384);
+		break;
+	case HASH_SHA512:
+		val = BITS_TO_BYTES(512);
+		break;
+	default:
+		break;
+	}
+
+	return val;
+}
+
 const EVP_MD *get_digest_handle(void)
 {
 	const EVP_MD *digest;
@@ -1237,7 +1269,7 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
 		cur_len += l_sz;
 
 		data = (void *)&evp[cur_len];
-		if (!data[0] && i < 3) { // c2 no need
+		if (!data[0] && i < 2) { //c3 c2 no need
 			cur_len += 1;
 			d_sz -= 1;
 		}
@@ -4560,6 +4592,7 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 		}
 
 		EVP_PKEY_encrypt_init(pctx);
+		EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
 		test_ctx->cp_enc_size = MAX_ENC_LENS;
 		ret = EVP_PKEY_encrypt(pctx, (void *)test_ctx->cp_enc, &test_ctx->cp_enc_size,
 			setup.plaintext, setup.plaintext_size);
@@ -4577,8 +4610,8 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 		c1.y.data = c1.x.data + 32;
 		c1.y.dsize = 32;
 		c3.data = c1.y.data + 32;
-		c3.dsize = 32;
-		c2.data = c3.data + 32;
+		c3.dsize = get_hash_bytes();
+		c2.data = c3.data + c3.dsize;
 		c2.dsize = setup.plaintext_size;
 		ecc_in = wcrypto_new_sm2_dec_in(ctx, &c1, &c2, &c3);
 		if (!ecc_in) {
@@ -6672,6 +6705,7 @@ fail_release:
 	return NULL;
 
 func_test_exit:
+
 	HPRE_TST_PRT("%s test succ!\n", ecc_op_str[opstr_idx]);
 
 	HPRE_TST_PRT("ecc sys test end!\n");
