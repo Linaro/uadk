@@ -123,7 +123,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	qinfo = q->qinfo;
 
-	/* lock at ctx  creating/deleting */
+	/* lock at ctx creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	br = &setup->br;
 	if (br->alloc && br->free &&
@@ -177,6 +177,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		ctx->caches[i].msg.win_size = setup->win_size;
 		ctx->caches[i].msg.alg_type = setup->alg_type;
 		ctx->caches[i].msg.stream_mode = setup->stream_mode;
+		ctx->caches[i].msg.data_fmt = setup->data_fmt;
 		ctx->caches[i].msg.ctx_buf = ctx->ctx_buf;
 		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
 		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;

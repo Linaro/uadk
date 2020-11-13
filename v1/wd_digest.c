@@ -350,7 +350,7 @@ int wcrypto_burst_digest(void *ctx, struct wcrypto_digest_op_data **opdata,
 		cookies[i]->tag.priv = opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
 		if (tag)
-			cookies[i]->tag.wcrypto_tag.tag = tag;
+			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
 
 	digest_requests_init(req, opdata, ctx, num);
