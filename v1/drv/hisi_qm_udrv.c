@@ -34,6 +34,175 @@
 #include "hisi_hpre_udrv.h"
 #include "hisi_sec_udrv.h"
 
+#define HISI_SGL_SGE_NUM_MAX	255
+#define HISI_SGL_ALIGN_SZ	64
+#define HISI_SGL_SGE_ALIGN_SZ	32
+
+/* get hisi hardware sgl information, like sge_size, sgl_size, and its algn size.
+ * sgl numbers in a chain : 256 at most;
+ * sge numbers of a sgl: 1 ~ 255;
+ * a sge size: 1B ~ 8M;
+ * data in little-endian in sgl;
+ */
+int qm_hw_sgl_info(struct hw_sgl_info *sgl_info)
+{
+	sgl_info->sge_sz = sizeof(struct hisi_sge);
+	sgl_info->sge_align_sz = HISI_SGL_SGE_ALIGN_SZ;
+	sgl_info->sgl_sz = sizeof(struct hisi_sgl);
+	sgl_info->sgl_align_sz = HISI_SGL_ALIGN_SZ;
+
+	return WD_SUCCESS;
+}
+
+/* 'num' starts from 1 */
+static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+			      struct wd_mm_br *br, int num, __u32 buf_sz)
+{
+	void *buf;
+
+	buf = wd_get_sge_buf(sgl, num);
+	if (!buf)
+		return -WD_EINVAL;
+
+	hisi_sgl->sge_entries[num - 1].buf = (uintptr_t)br->iova_map(br->usr,
+					buf, buf_sz);
+	if (!hisi_sgl->sge_entries[num - 1].buf) {
+		WD_ERR("failed to map buf!\n");
+		return -WD_ENOMEM;
+	}
+
+	hisi_sgl->sge_entries[num - 1].len = buf_sz;
+	drv_set_sgl_sge_pri(sgl, num - 1, &hisi_sgl->sge_entries[num - 1]);
+
+	return WD_SUCCESS;
+}
+
+/* 'num' starts from 1*/
+void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+			  int num, struct wd_mm_br *br, __u32 buf_sz)
+{
+	void *buf;
+
+	buf = wd_get_sge_buf(sgl, num);
+	if (!buf)
+		return;
+
+	br->iova_unmap(br->usr, (void *)hisi_sgl->sge_entries[num - 1].buf,
+		       buf, buf_sz);
+}
+
+int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
+{
+	int buf_num = wd_get_sgl_buf_num(sgl);
+	int sge_num = wd_get_sgl_sge_num(sgl);
+	struct hisi_sgl *hisi_sgl;
+	struct wd_mm_br *br;
+	int i, j, ret;
+	__u32 buf_sz;
+
+	if (!pool || buf_num < 0 || sge_num < 0) {
+		WD_ERR("hw_sgl_init init param err!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = wd_get_sgl_bufsize(sgl, &buf_sz);
+	if (ret) {
+		WD_ERR("failed to get sgl bufsize!\n");
+		return ret;
+	}
+
+	buf_num = MIN(buf_num, HISI_SGL_SGE_NUM_MAX);
+	sge_num = MIN(sge_num, HISI_SGL_SGE_NUM_MAX);
+	br = drv_get_br(pool);
+
+	hisi_sgl = br->alloc(br->usr, sizeof(struct hisi_sgl) +
+			     sizeof(struct hisi_sge) * buf_num);
+	if (!hisi_sgl)
+		return -WD_ENOMEM;
+
+	hisi_sgl->entry_sum_in_chain = buf_num;
+	hisi_sgl->entry_sum_in_sgl = buf_num;
+	hisi_sgl->entry_length_in_sgl = buf_num;
+	hisi_sgl->next_dma = 0;
+
+	for (i = 0; i < buf_num; i++) {
+		ret = qm_hw_sgl_sge_init(sgl, hisi_sgl, br, i + 1, buf_sz);
+		if (ret) {
+			WD_ERR("failed to map buf, ret = %d.\n", ret);
+			goto sgl_sge_init_err;
+		}
+	}
+
+	for (i = buf_num; i < sge_num; i++) {
+		hisi_sgl->sge_entries[i].len = 0;
+		hisi_sgl->sge_entries[i].buf = 0;
+		drv_set_sgl_sge_pri(sgl, i, &hisi_sgl->sge_entries[i]);
+	}
+
+	drv_set_sgl_pri(sgl, hisi_sgl);
+	return WD_SUCCESS;
+
+sgl_sge_init_err:
+	for (j = i - 1; j >= 0; j--)
+		qm_hw_sgl_sge_uninit(sgl, hisi_sgl, j + 1, br, buf_sz);
+
+	br->free(br->usr, hisi_sgl);
+
+	return ret;
+}
+
+void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
+{
+	struct hisi_sgl *hisi_sgl = drv_get_sgl_pri(sgl);
+	int buf_num = wd_get_sgl_buf_num(sgl);
+	struct wd_mm_br *br;
+	__u32 buf_sz;
+	int i, ret;
+	void *buf;
+
+	if (!pool || buf_num < 0) {
+		WD_ERR("hw_sgl_init init param err!\n");
+		return;
+	}
+
+	ret = wd_get_sgl_bufsize(sgl, &buf_sz);
+	if (ret)
+		return;
+
+	buf_num = MIN(buf_num, HISI_SGL_SGE_NUM_MAX);
+	br = drv_get_br(pool);
+
+	for (i = 0; i < buf_num; i++) {
+		buf = wd_get_sge_buf(sgl, i + 1);
+		if (!buf) {
+			WD_ERR("failed to get sge buf i = %d.\n", i);
+			return;
+		}
+		br->iova_unmap(br->usr, (void *)hisi_sgl->sge_entries[i].buf,
+			       buf, buf_sz);
+	}
+	br->free(br->usr, hisi_sgl);
+}
+
+int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
+{
+	struct hisi_sgl *d = drv_get_sgl_pri(dst_sgl);
+	struct hisi_sgl *s = drv_get_sgl_pri(src_sgl);
+	size_t size;
+	int ret;
+
+	ret = wd_get_sgl_mem_size(src_sgl, &size);
+	if (ret)
+		return ret;
+
+	d->next_dma = (uintptr_t)wd_sgl_iova_map(pool, src_sgl, size);
+	if (!d->next_dma)
+		return -WD_ENOMEM;
+
+	d->entry_sum_in_chain += s->entry_sum_in_chain;
+
+	return WD_SUCCESS;
+}
 
 int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
 	       __u16 idx, __u8 priority)
@@ -215,6 +384,10 @@ static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
 			info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe_v3;
 			info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe_v3;
 		}
+		info->sgl_info = qm_hw_sgl_info;
+		info->sgl_init = qm_hw_sgl_init;
+		info->sgl_uninit = qm_hw_sgl_uninit;
+		info->sgl_merge = qm_hw_sgl_merge;
 		is_find = true;
 	}
 
@@ -546,4 +719,51 @@ int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op)
 	info->sqe_parse_priv = op->sqe_parse_priv;
 
 	return 0;
+}
+
+int qm_get_hwsgl_info(struct wd_queue *q, struct hw_sgl_info *sgl_info)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
+
+	if (!info->sgl_info)
+		return -WD_EINVAL;
+
+	return info->sgl_info(sgl_info);
+}
+
+int qm_init_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
+
+	if (!info->sgl_init)
+		return -WD_EINVAL;
+
+	return info->sgl_init(pool, sgl);
+}
+
+int qm_uninit_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
+
+	if (!info->sgl_uninit)
+		return -WD_EINVAL;
+
+	info->sgl_uninit(pool, sgl);
+
+	return WD_SUCCESS;
+}
+
+int qm_merge_hwsgl(struct wd_queue *q, void *pool,
+		   struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
+
+	if (!info->sgl_merge)
+		return -WD_EINVAL;
+
+	return info->sgl_merge(pool, dst_sgl, src_sgl);
 }

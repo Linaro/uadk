@@ -25,11 +25,17 @@
 #include <sys/syscall.h>
 
 #include "../../wd.h"
-#include "zip_alg.h"
-#include "../../wd_util.h"
+#include "zip_alg_sgl.h"
 #include "../../wd_comp.h"
-#include "../../drv/hisi_qm_udrv.h"
+#include "../../wd_sgl.h"
 #include "../smm.h"
+
+#ifdef DEBUG_LOG
+#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
+#else
+#define dbg(msg, ...)
+#endif
+
 enum mode {
 	MODE_BLOCK,
 	MODE_STREAM,
@@ -41,6 +47,7 @@ struct test_zip_pthread_dt {
 	int thread_num;
 	int alg_type;
 	int op_type;
+	int data_fmt;
 	int hw_flag;
 	int blksize;
 	int iteration;
@@ -112,11 +119,12 @@ therad_no_affinity:
 							 pdata->dst,
 							 &pdata->dst_len,
 							 pdata->src,
-							 pdata->src_len);
+							 pdata->src_len,
+							 pdata->data_fmt);
 				if (ret < 0)
 					WD_ERR("comp fail! id=%d tid=%d ret=%d\n",
 						cpu_id, (int)tid, ret);
-			} 		
+			}
 		} else if (pdata->op_type == WCRYPTO_INFLATE) {
 			if (pdata->hw_flag) {
 				ret = hw_stream_decompress(pdata->alg_type,
@@ -124,7 +132,8 @@ therad_no_affinity:
 							   pdata->dst,
 							   &pdata->dst_len,
 							   pdata->src,
-							   pdata->src_len);
+							   pdata->src_len,
+							   pdata->data_fmt);
 				if (ret < 0)
 					WD_ERR("decomp fail! id=%d tid=%d ret=%d\n",
 						cpu_id, (int)tid, ret);
@@ -137,7 +146,8 @@ therad_no_affinity:
 						   pdata->src,
 						   &pdata->src_len,
 						   pdata->dst,
-						   pdata->dst_len);
+						   pdata->dst_len,
+						   pdata->data_fmt);
 			if (ret < 0)
 				WD_ERR("loop verify fail! ret=%d, id=%d\n",
 					ret, cpu_id);
@@ -180,8 +190,9 @@ void *zip_sys_async_test_thread(void *args)
 	void *zip_ctx;
 	struct wcrypto_comp_ctx_setup ctx_setup;
 	struct wcrypto_comp_op_data *opdata;
+	struct wd_sglpool_setup sp;
 	void *in, *out, *ss_buf;
-	void *src, *dst;
+	void *src = NULL, *dst = NULL;
 	int loop;
 
 	cpu_id = pdata->cpu_id;
@@ -241,7 +252,18 @@ therad_no_affinity:
 #ifdef CONFIG_IOMMU_SVA
 	ss_buf = calloc(1, ss_region_size);
 #else
-	ss_buf = wd_reserve_memory(q, ss_region_size);
+	if (pdata->data_fmt == 0) { /* use pbuf */
+		ss_buf = wd_reserve_memory(q, ss_region_size);
+	} else { /* pdata->data_fmt == 1, use nosva-sgl */
+		sp.buf_size = pdata->src_len / 10;
+		sp.align_size = 64;
+		sp.sge_num_in_sgl = 12;
+		sp.buf_num_in_sgl = sp.sge_num_in_sgl - 1;
+		sp.sgl_num = 3;
+		sp.buf_num = sp.buf_num_in_sgl * sp.sgl_num + sp.sgl_num + 2;
+		ss_buf = wd_sglpool_create(q, &sp);
+		WD_ERR("ss_buf = %p\n", ss_buf);
+	}
 #endif
 	if (!ss_buf) {
 		fprintf(stderr, "fail to reserve %ld dmabuf\n", ss_region_size);
@@ -249,17 +271,34 @@ therad_no_affinity:
 		goto release_q;
 	}
 
-	ret = smm_init(ss_buf, ss_region_size, 0xF);
-	if (ret)
-		goto buf_free;
+	if (pdata->data_fmt == 0) { /* use pbuf */
+		ctx_setup.data_fmt = WD_FLAT_BUF;
+		ret = smm_init(ss_buf, ss_region_size, 0xF);
+		if (ret)
+			goto buf_free;
 
-	src = in = smm_alloc(ss_buf, DMEMSIZE);
-	dst = out = smm_alloc(ss_buf, DMEMSIZE);
+		src = in = smm_alloc(ss_buf, DMEMSIZE);
+		dst = out = smm_alloc(ss_buf, DMEMSIZE);
+		if (in == NULL || out == NULL) {
+			WD_ERR("not enough data ss_region memory for cache (bs=%d)\n",
+				DMEMSIZE);
+			goto buf_free;
+		}
+	} else { /* pdata->data_fmt == 1, use nosva-sgl */
+		ctx_setup.data_fmt = WD_SGL_BUF;
+		src = in = wd_alloc_sgl(ss_buf, pdata->src_len);
+		dst = out = wd_alloc_sgl(ss_buf, pdata->src_len);
+		if (in == NULL || out == NULL) {
+			WD_ERR("sgl: not enough data ss_region memory for cache (bs=%d)\n",
+				DMEMSIZE);
+			goto buf_free;
+		}
 
-	if (in == NULL || out == NULL) {
-		WD_ERR("not enough data ss_region memory for cache (bs=%d)\n",
-			DMEMSIZE);
-		goto buf_free;
+		ctx_setup.br.alloc = (void *)wd_alloc_sgl;
+		ctx_setup.br.free = (void *)wd_free_sgl;
+		ctx_setup.br.iova_map = (void *)wd_sgl_iova_map;
+		ctx_setup.br.iova_unmap = (void *)wd_sgl_iova_unmap;
+		ctx_setup.br.usr = ss_buf;
 	}
 
 	ctx_setup.cb = zip_callback;
@@ -279,15 +318,23 @@ therad_no_affinity:
 	opdata->out = out;
 	opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
-	memcpy(src, pdata->src, pdata->src_len);
+	if (pdata->data_fmt == 0) { /* use pbuf */
+		memcpy(src, pdata->src, pdata->src_len);
+		opdata->avail_out = DMEMSIZE;
+	} else {  /* pdata->data_fmt == 1, use nosva-sgl */
 
+		wd_sgl_cp_from_pbuf((struct wd_sgl *)src, 0,
+				    pdata->src, pdata->src_len);
+		opdata->avail_out = sp.buf_size * sp.buf_num_in_sgl;
+	}
 	opdata->in_len = pdata->src_len;
-	opdata->avail_out = DMEMSIZE;
 
 	u_tag.alg_type = ctx_setup.alg_type;
 	u_tag.cpu_id = cpu_id;
 	u_tag.tid = tid;
 	loop = 10;
+	int loop1 = 100;
+
 	dbg("%s entry thread_id=%d\n", __func__, (int)tid);
 	do {
 		i = pdata->iteration;
@@ -300,19 +347,29 @@ therad_no_affinity:
 
 		} while (--i);
 
-		ret = wcrypto_comp_poll(q, pdata->iteration);
-		if (ret < 0)
-			WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n",
-				cpu_id, (int)tid, ret);
+		while (loop1--) {
+			ret = wcrypto_comp_poll(q, pdata->iteration);
+			if (ret < 0)
+				WD_ERR("poll fail! thread_id=%d, tid=%d. ret:%d\n",
+					cpu_id, (int)tid, ret);
 
-		WD_ERR("test poll end, count=%d\n", ret);
-
+			if (ret > 0) {
+				WD_ERR("test poll end, count=%d\n", ret);
+				break;
+			}
+			usleep(10);
+		}
 	} while (--loop);
 
 	opdata->produced = out_len;
 	dbg("%s(): test !,produce=%d\n", __func__, opdata->produced);
 
-	memcpy(pdata->dst, dst, opdata->produced);
+	if (pdata->data_fmt == 0) /* use pbuf */
+		memcpy(pdata->dst, dst, opdata->produced);
+	else /* pdata->data_fmt == 1, use nosva-sgl */
+		wd_sgl_cp_to_pbuf((struct wd_sgl *)dst, 0, pdata->dst,
+				  opdata->produced);
+
 	pdata->dst_len = opdata->produced;
 
 	dbg("%s end thread_id=%d\n", __func__, pdata->cpu_id);
@@ -321,6 +378,11 @@ therad_no_affinity:
 		free(opdata);
 
 	wcrypto_del_comp_ctx(zip_ctx);
+	if (pdata->data_fmt == 1) { /* use nosva-sgl */
+		wd_free_sgl(ss_buf, src);
+		wd_free_sgl(ss_buf, dst);
+		wd_sglpool_destroy(ss_buf);
+	}
 
 	wd_release_queue(q);
 	free(q);
@@ -328,17 +390,25 @@ therad_no_affinity:
 	return NULL;
 
 comp_ctx_free:
-		wcrypto_del_comp_ctx(zip_ctx);
+	wcrypto_del_comp_ctx(zip_ctx);
 buf_free:
 #ifdef CONFIG_IOMMU_SVA
-			if (ss_buf)
-				free(ss_buf);
+	if (ss_buf)
+		free(ss_buf);
 #endif
+	if (pdata->data_fmt == 1) { /* use nosva-sgl */
+		if (src)
+			wd_free_sgl(ss_buf, src);
+		if (dst)
+			wd_free_sgl(ss_buf, dst);
+
+		wd_sglpool_destroy(ss_buf);
+	}
 
 release_q:
 	wd_release_queue(q);
 hw_q_free:
-		free(q);
+	free(q);
 
 	return NULL;
 }
@@ -375,14 +445,16 @@ therad_no_affinity:
 		if (pdata->op_type == WCRYPTO_DEFLATE) {
 			ret = hw_blk_compress(pdata->alg_type, pdata->blksize,
 					      pdata->dst, &pdata->dst_len,
-					      pdata->src, pdata->src_len);
+					      pdata->src, pdata->src_len,
+					      pdata->data_fmt);
 			if (ret < 0)
 				WD_ERR("comp fail! thread_id=%d, tid=%d\n",
 					cpu_id, (int)tid);
 		} else if (pdata->op_type == WCRYPTO_INFLATE) {
 			ret = hw_blk_decompress(pdata->alg_type, pdata->blksize,
 						pdata->dst, &pdata->dst_len,
-						pdata->src, pdata->src_len);
+						pdata->src, pdata->src_len,
+						pdata->data_fmt);
 			if (ret < 0)
 				WD_ERR("decomp fail! thread_id=%d, tid=%d\n",
 					cpu_id, (int)tid);
@@ -390,7 +462,8 @@ therad_no_affinity:
 		if (verify) {
 			ret = hw_blk_decompress(pdata->alg_type, pdata->blksize,
 						pdata->src, &pdata->src_len,
-						pdata->dst, pdata->dst_len);
+						pdata->dst, pdata->dst_len,
+						pdata->data_fmt);
 			if (ret < 0)
 				WD_ERR("loop verify fail! ret=%d, id=%d\n",
 					ret, cpu_id);
@@ -405,7 +478,7 @@ therad_no_affinity:
 
 static int hizip_thread_test(FILE *source, FILE *dest,
 			     int thread_num, int alg_type, int op_type,
-			     int mode, int hw_flag, int iteration)
+			     int mode, int hw_flag, int data_fmt, int iteration)
 {
 	int fd;
 	struct stat s;
@@ -444,6 +517,7 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 		test_thrds_data[i].cpu_id = i;
 		test_thrds_data[i].alg_type = alg_type;
 		test_thrds_data[i].op_type = op_type;
+		test_thrds_data[i].data_fmt = data_fmt;
 		test_thrds_data[i].hw_flag = hw_flag;
 		test_thrds_data[i].blksize = block_size;
 		test_thrds_data[i].iteration = iteration;
@@ -504,14 +578,14 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	}
 	if (op_type == WCRYPTO_DEFLATE) {
 		speed = total_in / tc /
-			1024 / 1024 * 1000 * 1000 * iteration,
+			1024 / 1024 * 1000 * 1000 * iteration;
 		fprintf(stderr,
 			"Compress bz=%d, threadnum= %d, speed=%0.3f MB/s, timedelay=%0.1f us\n",
 			block_size, thread_num, speed,
 			tc / thread_num / count / iteration);
 	} else {
 		speed = total_out / tc /
-			1024 / 1024 * 1000 * 1000 * iteration,
+			1024 / 1024 * 1000 * 1000 * iteration;
 		fprintf(stderr,
 			"Decompress bz=%d, threadnum= %d, speed=%0.3f MB/s, timedelay=%0.1f us\n",
 			block_size, thread_num, speed,
@@ -548,8 +622,10 @@ int main(int argc, char *argv[])
 	int mode = 0;
 	int hw_flag = 1;
 	int iteration = 1;
+	/* data_fmt: 0 - pbuffer, 1 - sgl. */
+	bool data_fmt = 0;
 
-	while ((opt = getopt(argc, argv, "zghq:ab:dvc:kmsp:i:")) != -1) {
+	while ((opt = getopt(argc, argv, "zghq:ab:dvc:kmsp:i:f:")) != -1) {
 		switch (opt) {
 		case 'z':
 			alg_type = WCRYPTO_ZLIB;
@@ -602,6 +678,15 @@ int main(int argc, char *argv[])
 			if (iteration <= 0)
 				show_help = 1;
 			break;
+		case 'f':
+			data_fmt = atoi(optarg);
+			if (data_fmt == 0)
+				fprintf(stderr, "use memmory of pbuffer!\n");
+			else if(data_fmt == 1)
+				fprintf(stderr, "use memmory of sgl!\n");
+			else
+				show_help = 1;
+			break;
 		default:
 			show_help = 1;
 			break;
@@ -609,10 +694,10 @@ int main(int argc, char *argv[])
 	}
 
 	SYS_ERR_COND(show_help || optind > argc,
-		     "version 1.00:wd_test_zip -[k/m/s] -[g|z] -d [-b block][-p thread_num] [-i iteration] < in > out");
+		     "version 1.00:wd_test_zip -[k/m/s] -[g|z] -d [-b block][-p thread_num] [-i iteration] [-f num] < in > out");
 
 	(void)hizip_thread_test(stdin, stdout, thread_num, alg_type,
-				op_type, mode, hw_flag, iteration);
+				op_type, mode, hw_flag, data_fmt, iteration);
 
 	return EXIT_SUCCESS;
 }

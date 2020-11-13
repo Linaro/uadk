@@ -18,6 +18,7 @@ libwd_la_SOURCES=wd.c wd_adapter.c wd.h wd_adapter.h \
 	wd_rng.c wd_rng.h \
 	wd_util.c wd_util.h \
 	wd_bmm.c wd_bmm.h \
+	wd_sgl.c wd_sgl.h \
 	test/smm.c test/smm.h \
 	test/bmm.c test/bmm.h \
 	test/wd_sched.c test/wd_sched.h \
