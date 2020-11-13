@@ -83,6 +83,7 @@
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
+#define MIN(a, b)	(((a) < (b)) ? (a) : (b))
 
 struct wd_lock {
 	__u32 lock;
@@ -372,4 +373,11 @@ void wd_free_ctx_id(struct wd_queue *q, int ctx_id);
 const char *wd_get_drv(struct wd_queue *q);
 int wd_burst_send(struct wd_queue *q, void **req, __u32 num);
 int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num);
+
+void drv_set_sgl_sge_pri(struct wd_sgl *sgl, int num, void *priv);
+void *drv_get_sgl_sge_pri(struct wd_sgl *sgl, int num);
+void drv_set_sgl_pri(struct wd_sgl *sgl, void *priv);
+void *drv_get_sgl_pri(struct wd_sgl *sgl);
+struct wd_mm_br *drv_get_br(void *pool);
+
 #endif

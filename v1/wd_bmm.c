@@ -24,7 +24,6 @@
 #include <errno.h>
 #include <sys/queue.h>
 
-#include "wd.h"
 #include "wd_util.h"
 #include "wd_bmm.h"
 
@@ -43,7 +42,6 @@ struct wd_blk_hd {
 };
 
 TAILQ_HEAD(wd_blk_list, wd_blk_hd);
-
 struct wd_blkpool {
 	struct wd_lock pool_lock;
 	unsigned int free_blk_num;

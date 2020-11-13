@@ -24,6 +24,7 @@
 #include "../wd_rsa.h"
 #include "../wd_util.h"
 #include "../wd_dh.h"
+#include "../wd_sgl.h"
 
 
 /* default queue depth for sq/cq/eq */
@@ -78,6 +79,32 @@
 #define WD_SGL_PAD1_LEN			8
 #define WD_SGL_RESERVERD_LEN		24
 
+/* in little-endian */
+struct hisi_sge {
+	uintptr_t buf;
+	void *page_ctrl;
+	__le32 len;
+	__le32 pad;
+	__le32 pad0;
+	__le32 pad1;
+};
+
+/* use default sgl head size 64B, in little-endian */
+struct hisi_sgl {
+	/* next sgl point, to make up chain, 64bit */
+	uintptr_t next_dma;
+	/* sum of sge in all sgl chain */
+	__le16 entry_sum_in_chain;
+	/* valid sge num in this sgl */
+	__le16 entry_sum_in_sgl;
+	/* sge num in this sgl */
+	__le16 entry_length_in_sgl;
+	__le16 pad0;
+	__le64 pad1[6];
+
+	struct hisi_sge sge_entries[];
+};
+
 struct cqe {
 	__le32 rsvd0;
 	__le16 cmd_id;
@@ -129,34 +156,10 @@ struct qm_queue_info {
 	struct wd_lock sd_lock;
 	struct wd_lock rc_lock;
 	struct wd_queue *q;
-};
-
-struct wd_sgl_entry {
-	__u8 *buf;	/* Start address of page data, 64bit */
-	void *page_ctrl;
-	__u32 len;	/* Valid data length in Byte */
-	__u32 pad;
-	__u32 pad0;
-	__u32 pad1;
-};
-
-struct wd_sgl {
-	/* next sgl point, to make up chain, 64bit */
-	struct wd_sgl *next;
-	/* sum of entry_sum_in_sgl in sgl chain */
-	__u16 entry_sum_in_chain;
-	/* valid sgl_entry num in this sgl */
-	__u16 entry_sum_in_sgl;
-	/* sgl_entry num in this sgl */
-	__u16 entry_num_in_sgl;
-	__u8 pad0[WD_SGL_PAD0_LEN];
-	__u64 serial_num;
-	__u32 flag;
-	__u32 cpu_id;
-	__u8 pad1[WD_SGL_PAD1_LEN];
-	__u8 reserved[WD_SGL_RESERVERD_LEN];
-	/* sgl_entry point */
-	struct wd_sgl_entry entries[0];
+	int (*sgl_info)(struct hw_sgl_info *info);
+	int (*sgl_init)(void *pool, struct wd_sgl *sgl);
+	void (*sgl_uninit)(void *pool, struct wd_sgl *sgl);
+	int (*sgl_merge)(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl);
 };
 
 struct hisi_qm_inject_op {
@@ -170,6 +173,11 @@ void qm_uninit_queue(struct wd_queue *q);
 int qm_send(struct wd_queue *q, void **msg, __u32 num);
 int qm_recv(struct wd_queue *q, void **resp, __u32 num);
 int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op);
+int qm_get_hwsgl_info(struct wd_queue *q, struct hw_sgl_info *sgl_info);
+int qm_init_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
+int qm_uninit_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
+int qm_merge_hwsgl(struct wd_queue *q, void *pool,
+		   struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl);
 void qm_tx_update(struct qm_queue_info *info, __u32 num);
 void qm_rx_update(struct qm_queue_info *info, __u32 num);
 void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num);
