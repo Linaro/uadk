@@ -267,7 +267,9 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 
 	wd_ctx_init_qfrs_offs(ctx);
 
-	strncpy(ctx->dev_path, char_dev_path, MAX_DEV_NAME_LEN - 1);
+	strncpy(ctx->dev_path, char_dev_path, MAX_DEV_NAME_LEN);
+	ctx->dev_path[MAX_DEV_NAME_LEN - 1] = '\0';
+
 	ctx->fd = open(char_dev_path, O_RDWR | O_CLOEXEC);
 	if (ctx->fd < 0) {
 		WD_ERR("Failed to open %s (%d).\n", char_dev_path, -errno);
