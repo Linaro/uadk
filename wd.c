@@ -495,8 +495,8 @@ static void add_uacce_dev_to_list(struct uacce_dev_list *head,
 struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 {
 	struct uacce_dev_list *node, *head = NULL;
-	char dev_alg_name[MAX_ATTR_STR_SIZE];
-	char dev_path[MAX_DEV_NAME_LEN];
+	char dev_alg_name[MAX_ATTR_STR_SIZE] = {0};
+	char dev_path[MAX_DEV_NAME_LEN] = {0};
 	struct dirent *dev_dir;
 	DIR *wd_class;
 	int ret;
