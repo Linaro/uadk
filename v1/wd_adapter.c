@@ -46,36 +46,60 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+		.get_sgl_info = qm_get_hwsgl_info,
+		.init_sgl = qm_init_hwsgl_mem,
+		.uninit_sgl = qm_uninit_hwsgl_mem,
+		.sgl_merge = qm_merge_hwsgl,
 	}, {
 		.hw_type = HISI_QM_API_VER2_BASE WD_UACCE_API_VER_NOIOMMU_SUBFIX,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+		.get_sgl_info = qm_get_hwsgl_info,
+		.init_sgl = qm_init_hwsgl_mem,
+		.uninit_sgl = qm_uninit_hwsgl_mem,
+		.sgl_merge = qm_merge_hwsgl,
 	}, {
 		.hw_type = HISI_QM_API_VER3_BASE WD_UACCE_API_VER_NOIOMMU_SUBFIX,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+		.get_sgl_info = qm_get_hwsgl_info,
+		.init_sgl = qm_init_hwsgl_mem,
+		.uninit_sgl = qm_uninit_hwsgl_mem,
+		.sgl_merge = qm_merge_hwsgl,
 	}, {
 		.hw_type = HISI_QM_API_VER_BASE,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+		.get_sgl_info = qm_get_hwsgl_info,
+		.init_sgl = qm_init_hwsgl_mem,
+		.uninit_sgl = qm_uninit_hwsgl_mem,
+		.sgl_merge = qm_merge_hwsgl,
 	}, {
 		.hw_type = HISI_QM_API_VER2_BASE,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+		.get_sgl_info = qm_get_hwsgl_info,
+		.init_sgl = qm_init_hwsgl_mem,
+		.uninit_sgl = qm_uninit_hwsgl_mem,
+		.sgl_merge = qm_merge_hwsgl,
 	}, {
 		.hw_type = HISI_QM_API_VER3_BASE,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
 		.send = qm_send,
 		.recv = qm_recv,
+		.get_sgl_info = qm_get_hwsgl_info,
+		.init_sgl = qm_init_hwsgl_mem,
+		.uninit_sgl = qm_uninit_hwsgl_mem,
+		.sgl_merge = qm_merge_hwsgl,
 	}, {
 		.hw_type = "hisi-trng-v2",
 		.open = rng_init_queue,
@@ -209,4 +233,33 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 void drv_unmap_reserve_mem(struct wd_queue *q, void *addr, size_t size)
 {
 	wd_drv_unmmap_qfr(q, addr, WD_UACCE_QFRT_SS, size);
+}
+
+int drv_get_sgl_info(struct wd_queue *q, struct hw_sgl_info *info)
+{
+	struct q_info *qinfo = q->qinfo;
+
+	return hw_dio_tbl[qinfo->hw_type_id].get_sgl_info(q, info);
+}
+
+int drv_init_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl)
+{
+	struct q_info *qinfo = q->qinfo;
+
+	return hw_dio_tbl[qinfo->hw_type_id].init_sgl(q, pool, sgl);
+}
+
+int drv_uninit_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl)
+{
+	struct q_info *qinfo = q->qinfo;
+
+	return hw_dio_tbl[qinfo->hw_type_id].uninit_sgl(q, pool, sgl);
+}
+
+int drv_sgl_merge(struct wd_queue *q, void *pool, struct wd_sgl *dst_sgl,
+		  struct wd_sgl *src_sgl)
+{
+	struct q_info *qinfo = q->qinfo;
+
+	return hw_dio_tbl[qinfo->hw_type_id].sgl_merge(q, pool, dst_sgl, src_sgl);
 }

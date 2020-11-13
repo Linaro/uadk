@@ -32,6 +32,7 @@
 #include "wd_comp.h"
 #include "wd_cipher.h"
 #include "hisi_zip_udrv.h"
+#include "wd_sgl.h"
 
 #define BD_TYPE_SHIFT			28
 #define STREAM_FLUSH_SHIFT		25
@@ -162,11 +163,13 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->in_size > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
+		     msg->in_size > MAX_BUFFER_SIZE)) {
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
-	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
+		     msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
 		       msg->avail_out);
 		msg->avail_out = MAX_BUFFER_SIZE;
@@ -190,6 +193,10 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->dw7 |= ((msg->stream_pos << STREAM_POS_SHIFT) |
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
 		     (flush_type)) << STREAM_FLUSH_SHIFT;
+
+	/* data_fmt: 4'b0000 - Pbuffer, 4'b0001 - SGL */
+	sqe->dw9 |= msg->data_fmt << HZ_BUF_TYPE_SHIFT;
+
 	if (msg->ctx_buf) {
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
 		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
@@ -318,12 +325,14 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 {
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
 
-	if (unlikely(msg->in_size > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
+		     msg->in_size > MAX_BUFFER_SIZE)) {
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
+		     msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
 		       msg->avail_out);
 		msg->avail_out = MAX_BUFFER_SIZE;
@@ -344,7 +353,8 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
+		     msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
 		       msg->avail_out);
 		msg->avail_out = MAX_BUFFER_SIZE;

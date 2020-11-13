@@ -166,19 +166,27 @@ extern FILE *flog_fd;
 
 /* Capabilities */
 struct wd_capa {
-	const char *alg;	/* Algorithm name */
-	int throughput;	/* throughput capability */
-	int latency;	/* latency capability */
-	__u32 flags;	/* other capabilities */
+	/* Algorithm name */
+	const char *alg;
+	/* throughput capability */
+	int throughput;
+	/* latency capability */
+	int latency;
+	/* other capabilities */
+	__u32 flags;
+
 	/* For algorithm parameters, now it is defined in extending notions */
 	struct wcrypto_paras priv;
 };
 
 struct wd_queue {
 	struct wd_capa capa;
-	char dev_path[PATH_STR_SIZE]; /* if denote dev name, get its Q */
-	unsigned int node_mask; /* if denote dev node mask, get its Q */
-	void *qinfo; /* queue private */
+	/* if denote dev name, get its Q */
+	char dev_path[PATH_STR_SIZE];
+	/* if denote dev node mask, get its Q */
+	unsigned int node_mask;
+	/* queue private */
+	void *qinfo;
 };
 
 extern int wd_request_queue(struct wd_queue *q);
