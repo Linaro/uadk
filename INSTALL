@@ -38,6 +38,10 @@ Build kernel and install the kernel image on Hisilicon platform.
 
 Configure UADK
 
+    $ ./cleanup.sh
+
+    Make sure that all generated files could be removed.
+
     $ ./autogen.sh
     $ ./conf.sh
 
