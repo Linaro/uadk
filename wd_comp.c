@@ -327,6 +327,9 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -EINVAL;
 	}
 
+	memset(&msg, 0, sizeof(struct wd_comp_msg));
+	memset(&resp_msg, 0, sizeof(struct wd_comp_msg));
+
 	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						    req,
 						    &sess->key);
