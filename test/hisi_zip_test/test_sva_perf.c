@@ -376,7 +376,7 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
-		ret = init_ctx_config(copts, sched, &info);
+		ret = init_ctx_config(copts, &info, &sched);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
@@ -563,7 +563,7 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 		goto out_ctx;
 	}
 
-	ret = init_ctx_config(copts, sched, info);
+	ret = init_ctx_config(copts, info, &sched);
 	if (ret < 0) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_ctx;

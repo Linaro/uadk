@@ -134,8 +134,8 @@ int hizip_test_sched(struct wd_sched *sched,
 		     struct hizip_test_info *info
 		     );
 int init_ctx_config(struct test_options *opts,
-		    struct wd_sched *sched,
-		    void *priv
+		    void *priv,
+		    struct wd_sched **sched
 		    );
 void uninit_config(void *priv, struct wd_sched *sched);
 struct uacce_dev_list *get_dev_list(struct priv_options *opts, int children);
