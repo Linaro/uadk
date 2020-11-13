@@ -562,8 +562,8 @@ out:
  * Initialize context numbers by the four times of opts->q_num.
  * [sync, async] * [compress, decompress] = 4
  */
-int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
-		    void *priv)
+int init_ctx_config(struct test_options *opts, void *priv,
+		    struct wd_sched **sched)
 {
 	struct wd_comp_sess_setup setup;
 	struct hizip_test_info *info = priv;
@@ -572,38 +572,38 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 	int q_num, max_q_num;
 
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
-	if (!sched) {
+	*sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
+	if (!*sched) {
 		WD_ERR("sample_sched_alloc fail\n");
 		goto out_sched;
 	}
 	q_num = opts->q_num;
 
-	sched->name = SCHED_RR_NAME;
+	(*sched)->name = SCHED_RR_NAME;
 
 	/*
 	 * All contexts for 2 modes & 2 types.
 	 * The test only uses one kind of contexts at the same time.
 	 */
-	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 0, 0,
+	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 0, 0,
 				     0, q_num - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 0, 1,
+	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 0, 1,
 				     q_num, q_num * 2 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 1, 0,
+	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 1, 0,
 				     q_num * 2, q_num * 3 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)sched, 0, 1, 1,
+	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 1, 1,
 				     q_num * 3, q_num * 4 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
@@ -628,7 +628,7 @@ int init_ctx_config(struct test_options *opts, struct wd_sched *sched,
 		ctx_conf->ctxs[i].op_type = opts->op_type;
 		ctx_conf->ctxs[i].ctx_mode = opts->sync_mode;
 	}
-	wd_comp_init(ctx_conf, sched);
+	wd_comp_init(ctx_conf, *sched);
 
 	/* allocate a wd_comp session */
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
