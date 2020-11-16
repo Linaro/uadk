@@ -29,7 +29,7 @@ static struct wd_sched *g_sched;
 
 static long long int g_times;
 static unsigned int g_thread_num;
-static unsigned int ctx_num = 0;
+static unsigned int ctx_num = 1;
 static int g_count; // total packets
 static unsigned int g_testalg;
 static unsigned int g_keylen;
@@ -1854,7 +1854,8 @@ static int test_sec_option_convert(struct test_sec_option *option)
 		}
 	}
 
-	ctx_num = option->ctx;
+	if (option->ctx)
+		ctx_num = option->ctx;
 
 	return 0;
 }
