@@ -140,8 +140,8 @@ static int sgl_chain_build(struct wd_queue *q, struct wd_sglpool *pool)
 
 		for (j = 0; j < sgl_blk[i]->buf_num; j++) {
 			buf = br.alloc(br.usr, sp->buf_size);
-			if (sp->buf_size > wd_blksize(br.usr)) {
-				WD_ERR("alloc for sgl_buf failed !\n");
+			if (!buf) {
+				WD_ERR("alloc for sgl_buf failed, j = %d!\n", j);
 				goto alloc_buf_err;
 			}
 			sgl_sge_init(sgl_blk[i], j, buf);
@@ -440,6 +440,7 @@ void wd_sglpool_destroy(void *pool)
 	for (i = 0; i < sp.sgl_num; i++) {
 		sgl = p->sgl_blk[i];
 		drv_uninit_sgl(p->q, pool, sgl);
+
 		for (j = 0; j < sp.buf_num_in_sgl; j++)
 			wd_free_blk(p->buf_pool, sgl->sge[j].buf);
 	}
