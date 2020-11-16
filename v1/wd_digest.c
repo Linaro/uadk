@@ -331,8 +331,8 @@ static int param_check(struct wcrypto_digest_ctx *ctx,
 int wcrypto_burst_digest(void *ctx, struct wcrypto_digest_op_data **opdata,
 			 void **tag, __u32 num)
 {
-	struct wcrypto_digest_cookie *cookies[WCRYPTO_MAX_BURST_NUM];
-	struct wcrypto_digest_msg *req[WCRYPTO_MAX_BURST_NUM];
+	struct wcrypto_digest_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
+	struct wcrypto_digest_msg *req[WCRYPTO_MAX_BURST_NUM] = {NULL};
 	struct wcrypto_digest_ctx *ctxt = ctx;
 	__u32 i;
 	int ret;
