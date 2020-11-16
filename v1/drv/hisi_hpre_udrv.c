@@ -58,19 +58,19 @@ static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 }
 
 static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
-				     int b_size, int d_size, const char *str)
+				     int b_size, int d_size, const char *p_name)
 {
 	int i = d_size - 1;
 	bool is_hpre_bin;
 	int j;
 
 	if (unlikely(!dst || !src || b_size <= 0 || d_size <= 0)) {
-		WD_ERR("%s trans to hpre bin: params err!\n", str);
+		WD_ERR("%s trans to hpre bin: params err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(b_size < d_size)) {
-		WD_ERR("%s trans to hpre bin: param data is too long!\n", str);
+		WD_ERR("%s trans to hpre bin: param data is too long!\n", p_name);
 		return  -WD_EINVAL;
 	}
 
@@ -88,14 +88,14 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 }
 
 static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
-				     const char *str)
+				     const char *p_name)
 {
 	int i, cnt;
 	int j = 0;
 	int k = 0;
 
 	if (unlikely(!dst || !src || b_size <= 0)) {
-		WD_ERR("%s trans to crypto bin: params err!\n", str);
+		WD_ERR("%s trans to crypto bin: params err!\n", p_name);
 		return 0;
 	}
 
@@ -127,6 +127,11 @@ static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey,
 
 	wcrypto_get_rsa_crt_prikey_params(prikey, &wd_dq, &wd_dp,
 				&wd_qinv, &wd_q, &wd_p);
+	if (unlikely(!wd_dq || !wd_dp || !wd_qinv || !wd_q || !wd_p)) {
+		WD_ERR("failed to get rsa crt prikey params!\n");
+		return -WD_EINVAL;
+	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_dq->data, (const char *)wd_dq->data,
 				wd_dq->bsize, wd_dq->dsize, "rsa crt dq");
 	if (unlikely(ret))
@@ -165,6 +170,11 @@ static int qm_fill_rsa_prikey1(struct wcrypto_rsa_prikey *prikey, void **data)
 	int ret;
 
 	wcrypto_get_rsa_prikey_params(prikey, &wd_d, &wd_n);
+	if (unlikely(!wd_d || !wd_n)) {
+		WD_ERR("failed to get rsa prikey params!\n");
+		return -WD_EINVAL;
+	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
 				wd_d->bsize, wd_d->dsize, "rsa prikey1 d");
 	if (unlikely(ret))
@@ -227,12 +237,12 @@ static int qm_fill_rsa_genkey_in(struct wcrypto_rsa_kg_in *genkey)
 }
 
 static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
-				struct wd_dtb *bin2, const char *str)
+				struct wd_dtb *bin2, const char *p_name)
 {
 	int ret;
 
 	ret = qm_hpre_bin_to_crypto_bin(bin0->data, (const char *)bin0->data,
-				bin0->bsize, str);
+				bin0->bsize, p_name);
 	if (unlikely(!ret))
 		return -WD_EINVAL;
 
@@ -240,7 +250,7 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 	if (bin1) {
 		ret = qm_hpre_bin_to_crypto_bin(bin1->data,
-			(const char *)bin1->data, bin1->bsize, str);
+			(const char *)bin1->data, bin1->bsize, p_name);
 		if (unlikely(!ret))
 			return -WD_EINVAL;
 
@@ -249,7 +259,7 @@ static int qm_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 	if (bin2) {
 		ret = qm_hpre_bin_to_crypto_bin(bin2->data,
-			(const char *)bin2->data, bin2->bsize, str);
+			(const char *)bin2->data, bin2->bsize, p_name);
 		if (unlikely(!ret))
 			return -WD_EINVAL;
 
@@ -1549,16 +1559,16 @@ static void init_prikey(struct wcrypto_ecc_prikey *prikey, __u32 bsz)
 }
 
 static int set_param(struct wd_dtb *dst, const struct wd_dtb *src,
-		     const char *str)
+		     const char *p_name)
 {
 	if (unlikely(!src || !src->data)) {
-		WD_ERR("%s: src or data NULL!\n", str);
+		WD_ERR("%s: src or data NULL!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(!src->dsize || src->dsize > dst->bsize)) {
 		WD_ERR("%s: src dsz = %u error, dst bsz = %u!\n",
-			str, src->dsize, dst->bsize);
+			p_name, src->dsize, dst->bsize);
 		return -WD_EINVAL;
 	}
 
@@ -1643,7 +1653,7 @@ static struct wcrypto_ecc_msg *create_req(struct wcrypto_ecc_msg *src,
 	int ret;
 
 	/* dst last store point "struct wcrypto_ecc_msg *" */
-	dst = malloc(sizeof(*dst) + sizeof(src));
+	dst = malloc(sizeof(*dst) + sizeof(struct wcrypto_ecc_msg *));
 	if (unlikely(!dst))
 		return NULL;
 
@@ -1798,7 +1808,7 @@ static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	/* dst last store point "struct wcrypto_ecc_msg *" */
-	dst = malloc(sizeof(*dst) + sizeof(req_src));
+	dst = malloc(sizeof(*dst) + sizeof(struct wcrypto_ecc_msg *));
 	if (unlikely(!dst))
 		return -WD_ENOMEM;
 
@@ -1915,7 +1925,7 @@ static int parse_second_sqe(void *hw_msg, struct qm_queue_info *info, __u16 i,
 	struct cqe *cqe;
 	int cnt = 0;
 	void *resp;
-	int j;
+	__u16 j;
 
 	while (1) {
 		/* continue recv second cqe */
@@ -2010,7 +2020,7 @@ static int sm2_kdf(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 	__u64 in_len, lens;
 	char *p_in, *t_out;
 	__u8 ctr[4];
-	int i = 1;
+	__u32 i = 1;
 	int ret;
 
 	h_bytes = get_hash_bytes(hash->type);
@@ -2063,7 +2073,8 @@ static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 	int i;
 
 	for (i = 0; i < val1->dsize; ++i)
-		val1->data[i] ^= val2->data[i];
+		val1->data[i] = (char)((__u8)val1->data[i] ^
+			(__u8)val2->data[i]);
 }
 
 static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
