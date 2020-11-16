@@ -164,13 +164,13 @@ static const struct curve_param_desc g_curve_param_list[] = {
 };
 
 static int trans_to_binpad(char *dst, const char *src,
-			   __u32 b_size, __u32 d_size, const char *str)
+			   __u32 b_size, __u32 d_size, const char *p_name)
 {
 	int i = d_size - 1;
 	int j;
 
 	if (!dst || !src || !b_size || !d_size || b_size < d_size) {
-		WD_ERR("%s: trans to binpad params err!\n", str);
+		WD_ERR("%s: trans to binpad params err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
@@ -654,16 +654,16 @@ static void release_ecc_d(struct wcrypto_ecc_ctx *ctx)
 }
 
 static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src,
-			    const char *str)
+			    const char *p_name)
 {
 	if (unlikely(!src || !src->data)) {
-		WD_ERR("%s: src or data NULL!\n", str);
+		WD_ERR("%s: src or data NULL!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(!src->dsize || src->dsize > dst->dsize)) {
 		WD_ERR("%s: src dsz = %u error, dst dsz = %u!\n",
-			str, src->dsize, dst->dsize);
+			p_name, src->dsize, dst->dsize);
 		return -WD_EINVAL;
 	}
 
@@ -2326,7 +2326,7 @@ struct wcrypto_ecc_out *wcrypto_new_sm2_dec_out(void *ctx, __u32 plaintext_len)
 	}
 
 	if (unlikely(!cx->key_size || cx->key_size > ECC_MAX_KEY_SIZE)) {
-		WD_ERR("ctx key size %d error!\n", cx->key_size);
+		WD_ERR("ctx key size %u error!\n", cx->key_size);
 		return NULL;
 	}
 
