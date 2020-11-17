@@ -18,7 +18,7 @@
 #define HW_CTX_SIZE (24 * 1024)
 #define BUFF_SIZE 1024
 #define IV_SIZE   256
-#define NUM_THREADS	128
+#define THREADS_NUM	64
 #define SVA_THREADS	64
 #define USE_CTX_NUM	64
 #define BYTES_TO_MB	20
@@ -38,20 +38,32 @@ static unsigned int g_count; // total packets
 static unsigned int g_testalg;
 static unsigned int g_keylen;
 static unsigned int g_pktlen;
+static unsigned int g_block;
+static unsigned int g_blknum;
 static unsigned int g_direction;
 static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
+static unsigned int g_syncmode;
 static unsigned int g_ctxnum;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
 	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", NULL,};
+struct sva_bd {
+	char *src;
+	char *dst;
+};
+
+struct sva_bd_pool {
+	struct sva_bd *bds;
+};
 
 typedef struct _thread_data_t {
 	int     tid;
 	int     flag;
 	int	mode;
 	int	cpu_id;
+	struct sva_bd_pool *bd_pool;
 	struct wd_cipher_req	*req;
 	struct wd_cipher_sess_setup *setup;
 	struct timeval start_tval;
@@ -91,8 +103,8 @@ struct test_sec_option {
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t test_sec_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_t system_test_thrds[NUM_THREADS];
-static thread_data_t thr_data[NUM_THREADS];
+static pthread_t system_test_thrds[THREADS_NUM];
+static thread_data_t thr_data[THREADS_NUM];
 
 static void hexdump(char *buff, unsigned int len)
 {
@@ -275,6 +287,16 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 				return -EINVAL;
 			}
 			tv = &sm4_cfb_tv_template_128[0];
+			break;
+	case 16:
+			alg_type = WD_CIPHER_AES;
+			mode_type = WD_CIPHER_CBC;
+			SEC_TST_PRT("test alg: %s\n", "cbc(aes)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &aes_cbc_perf_128[0];
 			break;
 		default:
 			SEC_TST_PRT("keylenth error, default test alg: %s\n", "ecb(aes)");
@@ -699,7 +721,7 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 	pthread_attr_t attr;
 	int i, ret;
 
-	if (thread_num > NUM_THREADS - 1) {
+	if (thread_num > THREADS_NUM - 1) {
 		SEC_TST_PRT("can't creat %d threads", thread_num - 1);
 		return -EINVAL;
 	}
@@ -729,32 +751,32 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 
 static int sec_cipher_sync_test(void)
 {
-	struct wd_cipher_req	req[NUM_THREADS];
-	struct wd_cipher_sess_setup setup[NUM_THREADS];
+	struct wd_cipher_req	req[THREADS_NUM];
+	struct wd_cipher_sess_setup setup[THREADS_NUM];
 	void *src = NULL, *dst = NULL, *iv = NULL;
 	int parallel = g_thread_num;
 	struct cipher_testvec *tv = NULL;
 	int test_alg, test_mode;
 	int ret, i;
 
-	memset(req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
-	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * NUM_THREADS);
+	memset(req, 0, sizeof(struct wd_cipher_req) * THREADS_NUM);
+	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * THREADS_NUM);
 
 	/* get resource */
 	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 
 	int step = sizeof(char) * TEST_WORD_LEN;
-	src = malloc(step * NUM_THREADS);
+	src = malloc(step * THREADS_NUM);
 	if (!src) {
 		ret = -ENOMEM;
 		goto out_thr;
 	}
-	dst = malloc(step * NUM_THREADS);
+	dst = malloc(step * THREADS_NUM);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out_thr;
 	}
-	iv = malloc(step * NUM_THREADS);
+	iv = malloc(step * THREADS_NUM);
 	if (!iv) {
 		ret = -ENOMEM;
 		goto out_thr;
@@ -910,7 +932,7 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	pthread_attr_t attr;
 	int i, ret;
 
-	if (thread_num > NUM_THREADS - 1) {
+	if (thread_num > THREADS_NUM - 1) {
 		SEC_TST_PRT("can't creat %d threads", thread_num - 1);
 		return -EINVAL;
 	}
@@ -956,37 +978,36 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
 		getpid(), thread_id, speed, Perf);
 
-
 	return 0;
 }
 
 static int sec_cipher_async_test(void)
 {
-	struct wd_cipher_req	req[NUM_THREADS];
-	struct wd_cipher_sess_setup setup[NUM_THREADS];
+	struct wd_cipher_req	req[THREADS_NUM];
+	struct wd_cipher_sess_setup setup[THREADS_NUM];
 	void *src = NULL, *dst = NULL, *iv = NULL;
 	struct cipher_testvec *tv = NULL;
-	thread_data_t datas[NUM_THREADS];
+	thread_data_t datas[THREADS_NUM];
 	int parallel = g_thread_num;
 	int test_alg, test_mode;
 	int i, ret;
 
-	memset(datas, 0, sizeof(thread_data_t) * NUM_THREADS);
-	memset(req, 0, sizeof(struct wd_cipher_req) * NUM_THREADS);
+	memset(datas, 0, sizeof(thread_data_t) * THREADS_NUM);
+	memset(req, 0, sizeof(struct wd_cipher_req) * THREADS_NUM);
 	/* get resource */
 	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 	int step = sizeof(char) * TEST_WORD_LEN;
-	src = malloc(step * NUM_THREADS);
+	src = malloc(step * THREADS_NUM);
 	if (!src) {
 		ret = -ENOMEM;
 		goto out_thr;
 	}
-	dst = malloc(step * NUM_THREADS);
+	dst = malloc(step * THREADS_NUM);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out_thr;
 	}
-	iv = malloc(step * NUM_THREADS);
+	iv = malloc(step * THREADS_NUM);
 	if (!iv) {
 		ret = -ENOMEM;
 		goto out_thr;
@@ -2772,6 +2793,514 @@ out:
 	return ret;
 }
 
+/* --------------------------------------SVA perf  test-------------------------------*/
+int init_bd_pool(thread_data_t *td)
+{
+	struct cipher_testvec *tv = &aes_cbc_tv_template_128[0];
+	unsigned long step;
+	int i;
+
+	td->bd_pool = malloc(sizeof(struct sva_bd_pool));
+	if (!td->bd_pool) {
+		SEC_TST_PRT("init bd pool alloc thread failed!\n");
+		free(td->bd_pool);
+		return -ENOMEM;
+	}
+	td->bd_pool->bds = malloc(g_blknum * sizeof(struct sva_bd));
+	// make the block not align to 4K
+	step = sizeof(char) * g_block;
+	SEC_TST_PRT("init pool Block size: %lu, Block num: %u\n", step, g_blknum * 2);
+	for (i = 0; i < g_blknum; i++) {
+		td->bd_pool->bds[i].src = (char *)malloc(step);
+		td->bd_pool->bds[i].dst = (char *)malloc(step);
+		memcpy(td->bd_pool->bds[i].src, tv->ptext, tv->len);
+	}
+
+	SEC_TST_PRT("after init pool memory size: %lu MB\n",
+		(g_blknum * 2 * step) >> BYTES_TO_MB);
+	return 0;
+}
+
+void free_bd_pool(thread_data_t *td)
+{
+	int i;
+
+	if (td->bd_pool) {
+		if (td->bd_pool->bds) {
+			for (i = 0; i < g_blknum; i++) {
+				free(td->bd_pool->bds[i].src);
+				free(td->bd_pool->bds[i].dst);
+			}
+			free(td->bd_pool->bds);
+		}
+		free(td->bd_pool);
+	}
+}
+
+static void *sva_sec_cipher_async(void *arg)
+{
+	thread_data_t *pdata = (thread_data_t *)arg;
+	struct wd_cipher_sess_setup *setup = pdata->setup;
+	struct wd_cipher_req *req = pdata->req;
+	struct cipher_testvec *tv = NULL;
+	int cnt = g_times;
+	handle_t h_sess;
+	int ret;
+	int j;
+
+	/* get resource */
+	ret = get_cipher_resource(&tv, (int *)&setup->alg, (int *)&setup->mode);
+
+	h_sess = wd_cipher_alloc_sess(setup);
+	if (!h_sess)
+		return NULL;
+
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
+	if (ret) {
+		SEC_TST_PRT("test sec cipher set key is failed!\n");
+		goto out;;
+	}
+
+	g_count = 0;
+	pthread_mutex_lock(&test_sec_mutex);
+	/* run task */
+	do {
+try_do_again:
+		j = g_count % g_blknum;
+		req->src = pdata->bd_pool->bds[j].src;
+		req->dst = pdata->bd_pool->bds[j].dst;
+		ret = wd_do_cipher_async(h_sess, req);
+		if (ret == -EBUSY) { // busy
+			usleep(100);
+			goto try_do_again;
+		} else if (ret) {
+			SEC_TST_PRT("test sec cipher send req is error!\n");
+			goto out;
+		}
+		cnt--;
+		g_count++; // g_count means data block numbers
+	} while (cnt);
+	pthread_mutex_unlock(&test_sec_mutex);
+
+	ret = 0;
+out:
+	wd_cipher_free_sess(h_sess);
+	return NULL;
+}
+
+/* create poll threads */
+static void *sva_poll_func(void *arg)
+{
+	__u32 count = 0;
+	__u32 recv = 0;
+	int ret;
+
+	int expt = g_times * g_thread_num;
+
+	while (1) {
+		ret = wd_cipher_poll(1, &count);
+
+		recv += count;
+		count = 0;
+		if (expt == recv) {
+			break;
+		}
+		if (ret < 0) {
+			usleep(100);
+			//SEC_TST_PRT("poll ctx recv: %u\n", recv);
+		}
+	}
+
+	pthread_exit(NULL);
+	return NULL;
+}
+
+static int sva_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
+	struct wd_cipher_sess_setup *setups, thread_data_t *tds)
+{
+	int thread_id = (int)syscall(__NR_gettid);
+	struct timeval start_tval, cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	pthread_attr_t attr;
+	int i, ret;
+
+	if (thread_num > SVA_THREADS) {
+		SEC_TST_PRT("can't creat %d threads", thread_num);
+		return -EINVAL;
+	}
+
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	gettimeofday(&start_tval, NULL);
+	for (i = 0; i < thread_num; i++) {
+		thr_data[i].tid = i;
+		thr_data[i].req = &reqs[i];
+		thr_data[i].setup = &setups[i];
+		thr_data[i].bd_pool = tds[i].bd_pool;
+		ret = pthread_create(&system_test_thrds[i], &attr, sva_sec_cipher_async, &thr_data[i]);
+		if (ret) {
+			SEC_TST_PRT("Failed to create thread, ret:%d\n", ret);
+			return ret;
+		}
+	}
+
+	ret = pthread_create(&system_test_thrds[i], &attr, sva_poll_func, NULL);
+	if (ret) {
+		SEC_TST_PRT("Failed to create poll thread, ret:%d\n", ret);
+		return ret;
+	}
+	pthread_attr_destroy(&attr);
+	for (i = 0; i < thread_num; i++) {
+		ret = pthread_join(system_test_thrds[i], NULL);
+		if (ret) {
+			SEC_TST_PRT("Join %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+	// asyn_thread_exit = 1;
+	ret = pthread_join(system_test_thrds[i], NULL);
+	if (ret) {
+		SEC_TST_PRT("Join %dth thread fail!\n", i);
+		return ret;
+	}
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (double)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - start_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
+	speed = g_times * g_thread_num / time_used * 1000000;
+	Perf = speed * g_pktlen / 1024; //B->KB
+	SEC_TST_PRT("Async mode Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
+		getpid(), thread_id, speed, Perf);
+
+	return 0;
+}
+
+static void *sva_sec_cipher_sync(void *arg)
+{
+	thread_data_t *pdata = (thread_data_t *)arg;
+	struct wd_cipher_sess_setup *setup = pdata->setup;
+	struct wd_cipher_req *req = pdata->req;
+	struct cipher_testvec *tv = NULL;
+	struct timeval cur_tval;
+	unsigned long Perf = 0, pktlen;
+	handle_t	h_sess;
+	float speed, time_used;
+	int cnt = g_times;
+	int ret;
+	int j;
+
+	gettimeofday(&pdata->start_tval, NULL);
+	ret = get_cipher_resource(&tv, (int *)&setup->alg, (int *)&setup->mode);
+
+	h_sess = wd_cipher_alloc_sess(setup);
+	if (!h_sess)
+		return NULL;
+
+	pktlen = g_pktlen;
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
+	if (ret) {
+		SEC_TST_PRT("test sec cipher set key is failed!\n");
+		goto out;;
+	}
+
+	g_count = 0;
+	pthread_mutex_lock(&test_sec_mutex);
+	/* run task */
+	while (cnt) {
+		j = g_count % g_blknum;
+		req->src = pdata->bd_pool->bds[j].src;
+		req->dst = pdata->bd_pool->bds[j].dst;
+		ret = wd_do_cipher_sync(h_sess, req);
+		cnt--;
+		pdata->send_task_num++;
+		g_count++;
+	}
+	pthread_mutex_unlock(&test_sec_mutex);
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - pdata->start_tval.tv_usec);
+	speed = pdata->send_task_num / time_used * 1000000;
+	Perf = speed * pktlen / 1024; //B->KB
+	SEC_TST_PRT("Sync Mode thread time_used:%0.0f us, Perf: %ld KB/s\n",
+			time_used, Perf);
+
+out:
+	wd_cipher_free_sess(h_sess);
+	return NULL;
+}
+
+static int sva_sync_create_threads(int thread_num, struct wd_cipher_req *reqs,
+	struct wd_cipher_sess_setup *setups, thread_data_t *tds)
+{
+	int thread_id = (int)syscall(__NR_gettid);
+	struct timeval start_tval, cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	pthread_attr_t attr;
+	int i, ret;
+
+	if (thread_num > SVA_THREADS) {
+		SEC_TST_PRT("can't creat %d threads", thread_num);
+		return -EINVAL;
+	}
+
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	gettimeofday(&start_tval, NULL);
+	for (i = 0; i < thread_num; i++) {
+		thr_data[i].tid = i;
+		thr_data[i].req = &reqs[i];
+		thr_data[i].setup = &setups[i];
+		thr_data[i].bd_pool = tds[i].bd_pool;
+		ret = pthread_create(&system_test_thrds[i], &attr,
+			sva_sec_cipher_sync, &thr_data[i]);
+		if (ret) {
+			SEC_TST_PRT("Failed to create thread, ret:%d\n", ret);
+			return ret;
+		}
+	}
+
+	thr_data[i].tid = i;
+	pthread_attr_destroy(&attr);
+	for (i = 0; i < thread_num; i++) {
+		ret = pthread_join(system_test_thrds[i], NULL);
+	}
+
+	gettimeofday(&cur_tval, NULL);
+	time_used = (double)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - start_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
+	speed = g_times * g_thread_num / time_used * 1000000;
+	Perf = speed * g_pktlen / 1024; //B->KB
+	SEC_TST_PRT("Sync mode avg Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
+		getpid(), thread_id, speed, Perf);
+
+	return 0;
+}
+
+static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx, const void *req,
+					const struct sched_key *key)
+{
+	static int last_ctx = 0;
+
+	if (++last_ctx == g_ctx_cfg.ctx_num)
+		last_ctx = 0;
+
+	return last_ctx;
+
+}
+
+static int sva_sched_poll_policy(handle_t h_sched_ctx,
+				    __u32 expect, __u32 *count)
+{
+	int recv = 0;
+	__u32 cnt;
+	int ret;
+	int i;
+
+	if (unlikely(g_ctx_cfg.ctxs[0].ctx_mode != CTX_MODE_ASYNC)) {
+		SEC_TST_PRT("ctx mode is not AYNC!\n");
+		*count = 0;
+		return -1;
+	}
+
+	// recv expect msg then return, else loop the ctxs
+	for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
+		ret = wd_cipher_poll_ctx(i, 1, &cnt);
+		if (ret == 0) {//recv one msg OK
+			recv++;
+		}
+		if (recv == expect) {
+			*count = recv;
+			return 0;
+		}
+	}
+
+	// loop all ctx and can't recv expect BD OK, return error;
+	*count = recv;
+	return -1;
+
+}
+
+static int sva_init_ctx_config(int type, int mode)
+{
+	struct uacce_dev_list *list;
+	struct wd_sched sched;
+	struct wd_ctx *ctx_attr;
+	int ret;
+	int i;
+
+	list = wd_get_accel_list("cipher");
+	if (!list)
+		return -ENODEV;
+
+	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
+	if (g_ctxnum > USE_CTX_NUM)
+		SEC_TST_PRT("ctx nums request too much!\n");
+
+	ctx_attr = malloc(g_ctxnum * sizeof(struct wd_ctx));
+	if (!ctx_attr) {
+		SEC_TST_PRT("malloc ctx_attr memory fail!\n");
+		return -ENOMEM;
+	}
+	memset(ctx_attr, 0, g_ctxnum * sizeof(struct wd_ctx));
+
+	/* Just use first found dev to test here */
+	for (i = 0; i < g_ctxnum; i++) {
+		ctx_attr[i].ctx = wd_request_ctx(list->dev);
+		if (!ctx_attr[i].ctx) {
+			ret = -EINVAL;
+			SEC_TST_PRT("Fail to request ctx!\n");
+			goto out;
+		}
+		ctx_attr[i].op_type = type;
+		ctx_attr[i].ctx_mode = mode;
+	}
+
+	g_ctx_cfg.ctx_num = g_ctxnum;
+	g_ctx_cfg.ctxs = ctx_attr;
+	sched.name = "sched_multi";
+	sched.pick_next_ctx = sva_sched_pick_next_ctx;
+	sched.poll_policy = sva_sched_poll_policy;
+	/*cipher init*/
+	ret = wd_cipher_init(&g_ctx_cfg, &sched);
+	if (ret) {
+		SEC_TST_PRT("Fail to cipher ctx!\n");
+		goto out;
+	}
+	wd_free_list_accels(list);
+
+	return 0;
+out:
+	free(ctx_attr);
+	return ret;
+}
+
+static void sva_uninit_config(void)
+{
+	int i;
+
+	wd_cipher_uninit();
+	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+	free(g_ctx_cfg.ctxs);
+}
+
+static int sec_sva_test(void)
+{
+	struct wd_cipher_req	req[SVA_THREADS];
+	struct wd_cipher_sess_setup setup[SVA_THREADS];
+	thread_data_t datas[SVA_THREADS];
+	struct cipher_testvec *tv = NULL;
+	int threads = g_thread_num;
+	int test_alg, test_mode;
+	void *src = NULL;
+	void *dst = NULL;
+	void *iv = NULL;
+	int i = 0;
+	int j = 0;
+	int step;
+	int cpsize;
+	int ret;
+
+	memset(datas, 0, sizeof(thread_data_t) * g_thread_num);
+	memset(req, 0, sizeof(struct wd_cipher_req) * g_thread_num);
+	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * g_thread_num);
+
+	if (g_syncmode == 0)
+		ret = sva_init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	else
+		ret = sva_init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
+	if (ret) {
+		SEC_TST_PRT("fail to init ctx config!\n");
+		goto out_thr;
+	}
+
+	for (i = 0; i < threads; i++) {
+		ret = init_bd_pool(&datas[i]);
+		if (ret)
+			goto out_thr;
+	}
+
+	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
+	step = sizeof(char) * g_pktlen;
+	SEC_TST_PRT("BD package size: %u Bytes, total send pkts: %lld\n",
+		g_pktlen, g_times * g_thread_num);
+
+	src = malloc(step * g_thread_num);
+	if (!src) {
+		ret = -ENOMEM;
+		goto out_thr;
+	}
+	dst = malloc(step * g_thread_num);
+	if (!dst) {
+		ret = -ENOMEM;
+		goto out_thr;
+	}
+	iv = malloc(step * g_thread_num);
+	if (!iv) {
+		ret = -ENOMEM;
+		goto out_thr;
+	}
+
+	cpsize = step;
+	if (step > BUFF_SIZE)
+		cpsize = BUFF_SIZE;
+
+	for (i = 0; i < threads; i++) {
+		req[i].src = src + i * step;
+		memcpy(req[i].src, tv->ptext, cpsize);
+		req[i].in_bytes = step;
+
+		req[i].dst = dst + i * step;
+		req[i].out_bytes = tv->len;
+		req[i].out_buf_bytes = step;
+
+		req[i].iv = iv + i * step;
+		memset(req[i].iv, 0, step);
+
+		memcpy(req[i].iv, tv->iv, strlen(tv->iv));
+		req[i].iv_bytes = strlen(tv->iv);
+
+		/* config arg */
+		setup[i].alg = test_alg;
+		setup[i].mode = test_mode;
+
+		if (g_direction == 0)
+			req[i].op_type = WD_CIPHER_ENCRYPTION;
+		else {
+			req[i].op_type = WD_CIPHER_DECRYPTION;
+		}
+		req[i].cb = async_cb;
+		req[i].cb_param = &datas[i];
+	}
+
+	if (g_syncmode == 0)
+		ret = sva_sync_create_threads(threads, req, setup, datas);
+	else
+		ret = sva_async_create_threads(threads, req, setup, datas);
+	if (ret < 0)
+		goto out_config;
+
+out_config:
+	sva_uninit_config();
+out_thr:
+	for (j = i - 1; j >= 0; j--) {
+		free_bd_pool(&datas[j]);
+	}
+
+	if (src)
+		free(src);
+	if (dst)
+		free(dst);
+	if (iv)
+		free(iv);
+
+	return ret;
+}
+
 static void print_help(void)
 {
 	SEC_TST_PRT("NAME\n");
@@ -2922,6 +3451,27 @@ static int test_sec_option_convert(struct test_sec_option *option)
 		return -EINVAL;
 	}
 
+	if (option->algclass == PERF_CLASS) {
+		g_testalg = 16;
+		g_pktlen = option->pktlen ? option->pktlen : BUFF_SIZE;
+		g_block = option->block;
+		if (g_pktlen > g_block) {
+			SEC_TST_PRT("block size too smaller, block set to: %u\n", g_pktlen);
+			g_block = g_pktlen;
+		}
+		g_keylen = 16;
+		g_times = option->times ? option->times :
+			(BUFF_SIZE * BUFF_SIZE);
+
+		g_thread_num = option->xmulti ? option->xmulti : 1;
+		g_syncmode = option->syncmode;
+		g_ctxnum = option->ctxnum;
+		g_blknum = option->blknum > 0 ?
+			option->blknum : MIN_SVA_BD_NUM;
+		g_direction = 0;
+		return 0;
+	}
+
 	g_testalg = option->algtype;
 	g_pktlen = option->pktlen;
 	g_keylen = option->keylen;
@@ -3031,6 +3581,8 @@ int main(int argc, char *argv[])
 	ret = test_sec_option_convert(&option);
 	if (ret)
 		return ret;
+	if (option.algclass == PERF_CLASS)
+		return sec_sva_test();
 
 	pthread_mutex_init(&test_sec_mutex, NULL);
 
