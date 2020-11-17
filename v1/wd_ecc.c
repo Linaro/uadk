@@ -2385,6 +2385,9 @@ void wcrypto_get_sm2_dec_out_params(struct wcrypto_ecc_out *out,
 
 int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 {
+	struct wcrypto_ecc_out *out;
+	struct wcrypto_ecc_in *in;
+
 	if (unlikely(!opdata)) {
 		WD_ERR("do sm2: opdata null!\n");
 		return -WD_EINVAL;
@@ -2396,6 +2399,18 @@ int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 		opdata->op_type != WCRYPTO_SM2_ENCRYPT &&
 		opdata->op_type != WCRYPTO_SM2_DECRYPT)) {
 		WD_ERR("do sm2: op_type = %hhu error!\n", opdata->op_type);
+		return -WD_EINVAL;
+	}
+
+	in = opdata->in;
+	out = opdata->out;
+	if (opdata->op_type == WCRYPTO_SM2_ENCRYPT &&
+		out->param.eout.c2.dsize != in->param.ein.plaintext.dsize) {
+		WD_ERR("do sm2: enc output c2 size != input plaintext size!\n");
+		return -WD_EINVAL;
+	} else if (opdata->op_type == WCRYPTO_SM2_DECRYPT &&
+		out->param.dout.plaintext.dsize != in->param.din.c2.dsize) {
+		WD_ERR("do sm2: dec output plaintext size != input c2 size!\n");
 		return -WD_EINVAL;
 	}
 
