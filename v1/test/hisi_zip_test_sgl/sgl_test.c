@@ -20,6 +20,42 @@ void func_test(void *pool, void *sgl);
 
 int main(int argc, char *argv[])
 {
+        int opt;
+        __u16 sgl_num = 3;
+        __u32 buf_num = 40;
+	__u32 buf_size = 4096;
+	__u8 sge_num_in_sgl = 13;
+	__u8 buf_num_in_sgl = 12;
+        __u32 align_size = 64;
+
+        while ((opt = getopt(argc, argv, "a:b:c:d:e:f:")) != -1) {
+		switch (opt) {
+		case 'a':
+                        sgl_num = atoi(optarg);
+			break;
+		case 'b':
+                        buf_num = atoi(optarg);
+			break;
+		case 'c':
+                        buf_size = atoi(optarg);
+			break;
+		case 'd':
+                        sge_num_in_sgl = atoi(optarg);
+			break;
+		case 'e':
+                        buf_num_in_sgl = atoi(optarg);
+			break;
+                case 'f':
+                        align_size = atoi(optarg);
+                        break;
+                default:
+			fprintf(stderr, "./sgl [-a sgl_num] [-b buf_num] [-c buf_size] [-d sge_num_in_sgl] [-e buf_num_in_sgl] [-f align_size]\n");
+			return -1;
+                }
+        }
+fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %hhu, buf_num_in_sgl = %hhu, align_size = %u.\n\n",
+        sgl_num, buf_num, buf_size, sge_num_in_sgl, buf_num_in_sgl, align_size);
+
         struct wd_queue *q;
         struct wd_sglpool_setup sp;
         pthread_t test_thrds[2];
@@ -44,12 +80,12 @@ int main(int argc, char *argv[])
 		free(q);
 	}
 
-        sp.buf_size = 131072;   // 128K
-        sp.align_size = 4096;
-        sp.sge_num_in_sgl = 12;
-        sp.buf_num_in_sgl = sp.sge_num_in_sgl - 2;
-        sp.sgl_num = 128;
-        sp.buf_num = 122880;
+        sp.buf_size = buf_size;   // 128K
+        sp.align_size = align_size;
+        sp.sge_num_in_sgl = sge_num_in_sgl;
+        sp.buf_num_in_sgl = buf_num_in_sgl;
+        sp.sgl_num = sgl_num;
+        sp.buf_num = buf_num;
         //sp.buf_num = sp.buf_num_in_sgl * sp.sgl_num + sp.sgl_num + 2;
         /* 创建sgl pool */
         sgl_pool = wd_sglpool_create(q, &sp);
