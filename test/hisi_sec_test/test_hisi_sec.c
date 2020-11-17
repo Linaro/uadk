@@ -276,7 +276,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_cfb_tv_template_128[0];
 			break;
-
 		default:
 			SEC_TST_PRT("keylenth error, default test alg: %s\n", "ecb(aes)");
 			return -EINVAL;
@@ -373,15 +372,22 @@ static int test_sec_cipher_sync_once(void)
 	handle_t	h_sess = 0;
 	struct wd_cipher_sess_setup	setup;
 	struct wd_cipher_req req;
+	struct timeval bg_tval, cur_tval;
+	int thread_id = (int)syscall(__NR_gettid);
+	unsigned long Perf = 0;
+	float speed, time_used;
+	int pid = getpid();
+
 	int cnt = g_times;
 	int ret;
 
 	/* config setup */
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
-		printf("Fail to init sigle ctx config!\n");
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
 	}
+
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_cipher_req));
 	setup.alg = WD_CIPHER_AES;
@@ -397,25 +403,25 @@ static int test_sec_cipher_sync_once(void)
 
 	req.src  = malloc(BUFF_SIZE);
 	if (!req.src) {
-		printf("req src mem malloc failed!\n");
+		SEC_TST_PRT("req src mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	memcpy(req.src, tv->ptext, g_pktlen);
 	req.in_bytes = g_pktlen;
 
-	printf("req src--------->:\n");
+	SEC_TST_PRT("req src--------->:\n");
 	hexdump(req.src, g_pktlen);
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
-		printf("req dst mem malloc failed!\n");
+		SEC_TST_PRT("req dst mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
-		printf("req iv mem malloc failed!\n");
+		SEC_TST_PRT("req iv mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -423,7 +429,7 @@ static int test_sec_cipher_sync_once(void)
 		if (tv->iv)
 			memcpy(req.iv, tv->iv, strlen(tv->iv));
 		req.iv_bytes = strlen(tv->iv);
-		printf("cipher req iv--------->:\n");
+		SEC_TST_PRT("cipher req iv--------->:\n");
 		hexdump(req.iv, req.iv_bytes);
 	}
 	req.out_bytes = tv->len;
@@ -437,18 +443,27 @@ static int test_sec_cipher_sync_once(void)
 
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
-		printf("req set key failed!\n");
+		SEC_TST_PRT("req set key failed!\n");
 		goto out;
 	}
-	printf("cipher req key--------->:\n");
+	SEC_TST_PRT("cipher req key--------->:\n");
 	// hexdump(h_sess->key, tv->klen);
 
+	gettimeofday(&bg_tval, NULL);
 	while (cnt) {
 		ret = wd_do_cipher_sync(h_sess, &req);
 		cnt--;
 	}
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - bg_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - bg_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
+	speed = g_times / time_used * 1000000;
+	Perf = speed * g_pktlen / 1024; //B->KB
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
+			thread_id, speed, Perf);
 
-	printf("Test cipher sync function: output dst-->\n");
+	SEC_TST_PRT("Test cipher sync function: output dst-->\n");
 	hexdump(req.dst, req.in_bytes);
 
 out:
@@ -480,6 +495,12 @@ static int test_sec_cipher_async_once(void)
 	thread_data_t data;
 	handle_t h_sess = 0;
 	struct wd_cipher_req req;
+	struct timeval bg_tval, cur_tval;
+	int thread_id = (int)syscall(__NR_gettid);
+	unsigned long Perf = 0;
+	float speed, time_used;
+	int pid = getpid();
+
 	int cnt = g_times;
 	__u32 num = 0;
 	int ret;
@@ -489,9 +510,10 @@ static int test_sec_cipher_async_once(void)
 	/* config setup */
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
-		printf("Fail to init sigle ctx config!\n");
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
 	}
+
 	/* config arg */
 	memset(&req, 0, sizeof(struct wd_cipher_req));
 	setup.alg = WD_CIPHER_AES;
@@ -508,25 +530,25 @@ static int test_sec_cipher_async_once(void)
 
 	req.src  = malloc(BUFF_SIZE);
 	if (!req.src) {
-		printf("req src mem malloc failed!\n");
+		SEC_TST_PRT("req src mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	memcpy(req.src, tv->ptext, g_pktlen);
 	req.in_bytes = g_pktlen;
 
-	printf("req src--------->:\n");
+	SEC_TST_PRT("req src--------->:\n");
 	hexdump(req.src, g_pktlen);
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
-		printf("req dst mem malloc failed!\n");
+		SEC_TST_PRT("req dst mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
-		printf("req iv mem malloc failed!\n");
+		SEC_TST_PRT("req iv mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -534,7 +556,7 @@ static int test_sec_cipher_async_once(void)
 		if (tv->iv)
 			memcpy(req.iv, tv->iv, strlen(tv->iv));
 		req.iv_bytes = strlen(tv->iv);
-		printf("cipher req iv--------->:\n");
+		SEC_TST_PRT("cipher req iv--------->:\n");
 		hexdump(req.iv, req.iv_bytes);
 	}
 	req.out_bytes = tv->len;
@@ -547,11 +569,12 @@ static int test_sec_cipher_async_once(void)
 
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
-		printf("req set key failed!\n");
+		SEC_TST_PRT("req set key failed!\n");
 		goto out;
 	}
-	printf("cipher req key--------->:\n");
+	SEC_TST_PRT("cipher req key--------->:\n");
 	// hexdump(h_sess->key, tv->klen);
+	gettimeofday(&bg_tval, NULL);
 	while (cnt) {
 		req.cb = async_cb;
 		req.cb_param = &data;
@@ -569,9 +592,14 @@ try_again:
 		}
 		cnt--;
 	}
-
-	// printf("Test cipher async once function: output dst-->\n");
-	// hexdump(req.dst, req.out_bytes);
+	gettimeofday(&cur_tval, NULL);
+	time_used = (float)((cur_tval.tv_sec - bg_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - bg_tval.tv_usec);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
+	speed = g_times / time_used * 1000000;
+	Perf = speed * g_pktlen / 1024; //B->KB
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
+			thread_id, speed, Perf);
 
 	usleep(100000);
 out:
@@ -615,23 +643,21 @@ static int test_sec_cipher_sync(void *arg)
 	}
 
 	pktlen = req->in_bytes;
-	printf("cipher req src--------->:\n");
+	SEC_TST_PRT("cipher req src--------->:\n");
 	hexdump(req->src, req->in_bytes);
 
-	printf("ivlen = %d, cipher req iv--------->:\n", req->iv_bytes);
+	SEC_TST_PRT("ivlen = %d, cipher req iv--------->:\n", req->iv_bytes);
 	hexdump(req->iv, req->iv_bytes);
 
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
-		printf("test sec cipher set key is failed!\n");
+		SEC_TST_PRT("test sec cipher set key is failed!\n");
 		goto out;;
 	}
 
-	printf("cipher req key--------->:\n");
-	// hexdump(h_sess->key, h_sess->key_bytes);
+	SEC_TST_PRT("cipher req key--------->:\n");
 
 	pthread_mutex_lock(&test_sec_mutex);
-	// pthread_cond_wait(&cond, &test_sec_mutex);
 	/* run task */
 	while (cnt) {
 		ret = wd_do_cipher_sync(h_sess, req);
@@ -642,10 +668,10 @@ static int test_sec_cipher_sync(void *arg)
 	gettimeofday(&cur_tval, NULL);
 	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - pdata->start_tval.tv_usec);
-	printf("time_used:%0.0f us, send task num:%lld\n", time_used, pdata->send_task_num++);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, pdata->send_task_num++);
 	speed = pdata->send_task_num / time_used * 1000000;
 	Perf = speed * pktlen / 1024; //B->KB
-	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid,
 			thread_id, speed, Perf);
 
 	pthread_mutex_unlock(&test_sec_mutex);
@@ -672,13 +698,9 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 {
 	pthread_attr_t attr;
 	int i, ret;
-	struct timeval cur_tval;
-	unsigned long Perf = 0;
-	float speed, time_used;
-	int thread_id = (int)syscall(__NR_gettid);
 
 	if (thread_num > NUM_THREADS - 1) {
-		printf("can't creat %d threads", thread_num - 1);
+		SEC_TST_PRT("can't creat %d threads", thread_num - 1);
 		return -EINVAL;
 	}
 
@@ -691,7 +713,7 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 		gettimeofday(&thr_data[i].start_tval, NULL);
 		ret = pthread_create(&system_test_thrds[i], &attr, _test_sec_cipher_sync, &thr_data[i]);
 		if (ret) {
-			printf("Failed to create thread, ret:%d\n", ret);
+			SEC_TST_PRT("Failed to create thread, ret:%d\n", ret);
 			return ret;
 		}
 	}
@@ -701,16 +723,6 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 	for (i = 0; i < thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 	}
-
-	gettimeofday(&cur_tval, NULL);
-	time_used = (double)((cur_tval.tv_sec - thr_data[0].start_tval.tv_sec) * 1000000 +
-				cur_tval.tv_usec - thr_data[0].start_tval.tv_usec);
-	printf("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
-	speed = g_times * g_thread_num / time_used * 1000000;
-	Perf = speed * g_pktlen / 1024; //B->KB
-	printf("Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
-		getpid(), thread_id, speed, Perf);
-
 
 	return 0;
 }
@@ -778,7 +790,7 @@ static int sec_cipher_sync_test(void)
 
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
-		printf("fail to init sigle ctx config!\n");
+		SEC_TST_PRT("fail to init sigle ctx config!\n");
 		goto out_thr;
 	}
 
@@ -821,7 +833,7 @@ static int test_sec_cipher_async(void *arg)
 
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
-		printf("test sec cipher set key is failed!\n");
+		SEC_TST_PRT("test sec cipher set key is failed!\n");
 		goto out;;
 	}
 
@@ -835,14 +847,14 @@ try_do_again:
 			usleep(100);
 			goto try_do_again;
 		} else if (ret) {
-			printf("test sec cipher send req is error!\n");
+			SEC_TST_PRT("test sec cipher send req is error!\n");
 			goto out;
 		}
 		cnt--;
 		g_count++; // g_count means data block numbers
 	} while (cnt);
 	pthread_mutex_unlock(&test_sec_mutex);
-	printf("Test cipher async function thread_id is:%d\n", thread_id);
+	SEC_TST_PRT("Test cipher async function thread_id is:%d\n", thread_id);
 
 	ret = 0;
 out:
@@ -871,7 +883,7 @@ static void *poll_func(void *arg)
 	while (1) {
 		ret = g_sched->poll_policy(g_sched->h_sched_ctx, 1, &count);
 		if (ret != -EAGAIN && ret < 0) {
-			printf("poll ctx is error----------->\n");
+			SEC_TST_PRT("poll ctx is error----------->\n");
 			break;
 		}
 
@@ -899,7 +911,7 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	int i, ret;
 
 	if (thread_num > NUM_THREADS - 1) {
-		printf("can't creat %d threads", thread_num - 1);
+		SEC_TST_PRT("can't creat %d threads", thread_num - 1);
 		return -EINVAL;
 	}
 
@@ -912,7 +924,7 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 		gettimeofday(&thr_data[i].start_tval, NULL);
 		ret = pthread_create(&system_test_thrds[i], &attr, _test_sec_cipher_async, &thr_data[i]);
 		if (ret) {
-			printf("Failed to create thread, ret:%d\n", ret);
+			SEC_TST_PRT("Failed to create thread, ret:%d\n", ret);
 			return ret;
 		}
 	}
@@ -924,24 +936,24 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	for (i = 0; i < thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
-			printf("Join %dth thread fail!\n", i);
+			SEC_TST_PRT("Join %dth thread fail!\n", i);
 			return ret;
 		}
 	}
 	// asyn_thread_exit = 1;
 	ret = pthread_join(system_test_thrds[i], NULL);
 	if (ret) {
-			printf("Join %dth thread fail!\n", i);
+			SEC_TST_PRT("Join %dth thread fail!\n", i);
 			return ret;
 	}
 
 	gettimeofday(&cur_tval, NULL);
 	time_used = (double)((cur_tval.tv_sec - thr_data[0].start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - thr_data[0].start_tval.tv_usec);
-	printf("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%llu\n", time_used, g_times * g_thread_num);
 	speed = g_times * g_thread_num / time_used * 1000000;
 	Perf = speed * g_pktlen / 1024; //B->KB
-	printf("Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%f ops, Perf: %ld KB/s\n",
 		getpid(), thread_id, speed, Perf);
 
 
@@ -1012,7 +1024,7 @@ static int sec_cipher_async_test(void)
 
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
-		printf("fail to init sigle ctx config!\n");
+		SEC_TST_PRT("fail to init sigle ctx config!\n");
 		goto out_thr;
 	}
 
@@ -1062,7 +1074,7 @@ static int init_digest_ctx_config(int type, int mode)
 	g_ctx_cfg.ctxs[0].ctx = wd_request_ctx(list->dev);
 	if (!g_ctx_cfg.ctxs[0].ctx) {
 		ret = -EINVAL;
-		printf("Fail to request ctx!\n");
+		SEC_TST_PRT("Fail to request ctx!\n");
 		goto out;
 	}
 	g_ctx_cfg.ctxs[0].op_type = type;
@@ -1074,7 +1086,7 @@ static int init_digest_ctx_config(int type, int mode)
 	/* digest init */
 	ret = wd_digest_init(&g_ctx_cfg, &sched);
 	if (ret) {
-		printf("Fail to digest ctx!\n");
+		SEC_TST_PRT("Fail to digest ctx!\n");
 		goto out;
 	}
 
@@ -1099,12 +1111,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sm3)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sm3)");
 					tv = &sm3_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sm3)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sm3)");
 					tv = &hmac_sm3_tv_template[0];
 					break;
 			}
@@ -1115,12 +1127,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(md5)");
+					SEC_TST_PRT("test alg: %s\n", "normal(md5)");
 					tv = &md5_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(md5)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(md5)");
 					tv = &hmac_md5_tv_template[0];
 					break;
 			}
@@ -1131,12 +1143,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha1)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha1)");
 					tv = &sha1_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha1)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha1)");
 					tv = &hmac_sha1_tv_template[0];
 					break;
 			}
@@ -1147,12 +1159,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha256)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha256)");
 					tv = &sha256_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha256)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha256)");
 					tv = &hmac_sha256_tv_template[0];
 					break;
 			}
@@ -1163,12 +1175,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha224)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha224)");
 					tv = &sha224_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha224)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha224)");
 					tv = &hmac_sha224_tv_template[0];
 					break;
 			}
@@ -1179,12 +1191,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha384)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha384)");
 					tv = &sha384_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha384)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha384)");
 					tv = &hmac_sha384_tv_template[0];
 					break;
 			}
@@ -1195,12 +1207,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha512)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha512)");
 					tv = &sha512_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha512)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha512)");
 					tv = &hmac_sha512_tv_template[0];
 					break;
 			}
@@ -1211,12 +1223,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha512_224)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha512_224)");
 					tv = &sha512_224_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha512_224");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha512_224");
 					tv = &hmac_sha512_224_tv_template[0];
 					break;
 			}
@@ -1227,12 +1239,12 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			switch (g_alg_op_type) {
 				case 0:
 					mode_type = WD_DIGEST_NORMAL;
-					printf("test alg: %s\n", "normal(sha512_256)");
+					SEC_TST_PRT("test alg: %s\n", "normal(sha512_256)");
 					tv = &sha512_256_tv_template[0];
 					break;
 				case 1:
 					mode_type = WD_DIGEST_HMAC;
-					printf("test alg: %s\n", "hmac(sha512_256)");
+					SEC_TST_PRT("test alg: %s\n", "hmac(sha512_256)");
 					tv = &hmac_sha512_256_tv_template[0];
 					break;
 			}
@@ -1240,7 +1252,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			alg_type = WD_DIGEST_SHA512_256;
 			break;
 		default:
-			printf("keylenth error, default test alg: %s\n", "normal(sm3)");
+			SEC_TST_PRT("keylenth error, default test alg: %s\n", "normal(sm3)");
 			return -EINVAL;
 	}
 	if (g_ivlen == 1) {
@@ -1280,7 +1292,7 @@ static int sec_digest_sync_once(void)
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
-		printf("Fail to init sigle ctx config!\n");
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
 	}
 
@@ -1290,18 +1302,18 @@ static int sec_digest_sync_once(void)
 
 	req.in  = malloc(BUFF_SIZE);
 	if (!req.in) {
-		printf("req src in mem malloc failed!\n");
+		SEC_TST_PRT("req src in mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
 
-	printf("req src in--------->:\n");
+	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(req.in, tv->psize);
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
-		printf("req dst out mem malloc failed!\n");
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -1320,12 +1332,12 @@ static int sec_digest_sync_once(void)
 	if (setup.mode == WD_DIGEST_HMAC) {
 		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
 		if (ret) {
-			printf("sess set key failed!\n");
+			SEC_TST_PRT("sess set key failed!\n");
 			goto out;
 		}
 		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
-		printf("------->tv key:%s\n", tv->key);
-		printf("digest sess key--------->:\n");
+		SEC_TST_PRT("------->tv key:%s\n", tv->key);
+		SEC_TST_PRT("digest sess key--------->:\n");
 		hexdump(sess->key, sess->key_bytes);
 	}
 
@@ -1340,10 +1352,10 @@ static int sec_digest_sync_once(void)
 		cur_tval.tv_usec - start_tval.tv_usec);
 	speed = g_times / time_used * 1000000;
 	Perf = speed * req.in_bytes / 1024;
-	printf("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
-	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
-	hexdump(req.out, 64);
+	hexdump(req.out, req.out_bytes);
 
 out:
 	if (req.in)
@@ -1380,7 +1392,7 @@ void *digest_send_thread(void *data)
 			usleep(100);
 			try_cnt++;
 			if (try_cnt > 100) {
-				printf("Test digest current send fail 100 times !\n");
+				SEC_TST_PRT("Test digest current send fail 100 times !\n");
 				break;
 			}
 			continue;
@@ -1388,7 +1400,7 @@ void *digest_send_thread(void *data)
 		cnt++;
 	}
 
-	printf("Test digest multi send : %lu pkg !\n", cnt);
+	SEC_TST_PRT("Test digest multi send : %lu pkg !\n", cnt);
 	return NULL;
 }
 
@@ -1410,7 +1422,7 @@ void *digest_poll_thread(void *data)
 			usleep(100);
 
 		if (recv == 0) {
-			printf("current digest async poll --0-- pkg!\n");
+			SEC_TST_PRT("current digest async poll --0-- pkg!\n");
 			break;
 		}
 		expt -= recv;
@@ -1422,10 +1434,10 @@ void *digest_poll_thread(void *data)
 	pthread_mutex_lock(&test_sec_mutex);
 	time_used = (float)((cur_tval.tv_sec - td_data->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - td_data->start_tval.tv_usec);
-	printf("time_used:%0.0f us, send task num:%d\n", time_used, cnt);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%d\n", time_used, cnt);
 	speed = cnt / time_used * 1000000;
 	Perf = speed * req->in_bytes / 1024; //B->KB
-	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
 	pthread_mutex_unlock(&test_sec_mutex);
 
@@ -1447,7 +1459,7 @@ void *digest_sync_send_thread(void *data)
 		ret = wd_do_digest_sync(td_data->h_sess, req);
 		if (ret < 0) {
 			usleep(100);
-			printf("Test digest current send fail: have send %u pkg !\n", cnt);
+			SEC_TST_PRT("Test digest current send fail: have send %u pkg !\n", cnt);
 			continue;
 		}
 		cnt++;
@@ -1457,10 +1469,10 @@ void *digest_sync_send_thread(void *data)
 	pthread_mutex_lock(&test_sec_mutex);
 	time_used = (float)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - start_tval.tv_usec);
-	printf("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, td_data->send_num);
 	speed = td_data->send_num / time_used * 1000000;
 	Perf = speed * req->in_bytes / 1024; //B->KB
-	printf("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
 	pthread_mutex_unlock(&test_sec_mutex);
 
@@ -1483,7 +1495,7 @@ static int sec_digest_async_once(void)
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
-		printf("Fail to init sigle ctx config!\n");
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
 	}
 
@@ -1495,18 +1507,18 @@ static int sec_digest_async_once(void)
 
 	req.in  = malloc(BUFF_SIZE);
 	if (!req.in) {
-		printf("req src in mem malloc failed!\n");
+		SEC_TST_PRT("req src in mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
 
-	printf("req src in--------->:\n");
+	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(req.in, tv->psize);
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
-		printf("req dst out mem malloc failed!\n");
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -1520,6 +1532,19 @@ static int sec_digest_async_once(void)
 		goto out;
 	}
 
+	/* if mode is HMAC, should set key */
+	if (setup.mode == WD_DIGEST_HMAC) {
+		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		if (ret) {
+			SEC_TST_PRT("sess set key failed!\n");
+			goto out;
+		}
+		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+		SEC_TST_PRT("------->tv key:%s\n", tv->key);
+		SEC_TST_PRT("digest sess key--------->:\n");
+		hexdump(sess->key, sess->key_bytes);
+	}
+
 	/* send thread */
 	td_data.req = &req;
 	td_data.h_sess = h_sess;
@@ -1528,29 +1553,29 @@ static int sec_digest_async_once(void)
 	gettimeofday(&td_data.start_tval, NULL);
 	ret = pthread_create(&send_td, NULL, digest_send_thread, &td_data);
 	if (ret) {
-		printf("kthread create fail at %s", __func__);
+		SEC_TST_PRT("kthread create fail at %s", __func__);
 		goto out;
 	}
 
 	/* poll thread */
 	ret = pthread_create(&poll_td, NULL, digest_poll_thread, &td_data);
 	if (ret) {
-		printf("kthread create fail at %s", __func__);
+		SEC_TST_PRT("kthread create fail at %s", __func__);
 		goto out;
 	}
 
 	ret = pthread_join(send_td, NULL);
 	if (ret) {
-		printf("pthread_join fail at %s", __func__);
+		SEC_TST_PRT("pthread_join fail at %s", __func__);
 		goto out;
 	}
 
 	ret = pthread_join(poll_td, NULL);
 	if (ret) {
-		printf("pthread_join fail at %s", __func__);
+		SEC_TST_PRT("pthread_join fail at %s", __func__);
 		goto out;
 	}
-
+	hexdump(req.out, req.out_bytes);
 out:
 	if (req.in)
 		free(req.in);
@@ -1576,7 +1601,7 @@ static int sec_digest_sync_multi(void)
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
-		printf("Fail to init sigle ctx config!\n");
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
 	}
 
@@ -1586,18 +1611,18 @@ static int sec_digest_sync_multi(void)
 
 	req.in	= malloc(BUFF_SIZE);
 	if (!req.in) {
-		printf("req src in mem malloc failed!\n");
+		SEC_TST_PRT("req src in mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
 
-	printf("req src in--------->:\n");
+	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(req.in, tv->psize);
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
-		printf("req dst out mem malloc failed!\n");
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -1615,12 +1640,12 @@ static int sec_digest_sync_multi(void)
 	if (setup.mode == WD_DIGEST_HMAC) {
 		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
 		if (ret) {
-			printf("sess set key failed!\n");
+			SEC_TST_PRT("sess set key failed!\n");
 			goto out;
 		}
 		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
-		printf("------->tv key:%s\n", tv->key);
-		printf("digest sess key--------->:\n");
+		SEC_TST_PRT("------->tv key:%s\n", tv->key);
+		SEC_TST_PRT("digest sess key--------->:\n");
 		hexdump(sess->key, sess->key_bytes);
 	}
 
@@ -1634,7 +1659,7 @@ static int sec_digest_sync_multi(void)
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_create(&sendtd[i], NULL, digest_sync_send_thread, &td_data);
 		if (ret) {
-			printf("Create send thread fail!\n");
+			SEC_TST_PRT("Create send thread fail!\n");
 			return ret;
 		}
 	}
@@ -1643,15 +1668,15 @@ static int sec_digest_sync_multi(void)
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_join(sendtd[i], NULL);
 		if (ret) {
-			printf("Join sendtd thread fail!\n");
+			SEC_TST_PRT("Join sendtd thread fail!\n");
 			return ret;
 		}
 	}
 
-	printf("digest sync %u threads, speed:%llu ops, perf: %llu KB/s\n",
+	SEC_TST_PRT("digest sync %u threads, speed:%llu ops, perf: %llu KB/s\n",
 		g_thread_num, td_data.sum_perf,
 		(td_data.sum_perf >> 10) * req.in_bytes);
-	hexdump(req.out, 64);
+	hexdump(req.out, req.out_bytes);
 out:
 	if (req.in)
 		free(req.in);
@@ -1663,7 +1688,6 @@ out:
 
 	return ret;
 }
-
 
 static int sec_digest_async_multi(void)
 {
@@ -1681,7 +1705,7 @@ static int sec_digest_async_multi(void)
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
-		printf("Fail to init sigle ctx config!\n");
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
 	}
 
@@ -1693,17 +1717,17 @@ static int sec_digest_async_multi(void)
 
 	req.in  = malloc(BUFF_SIZE);
 	if (!req.in) {
-		printf("req src in mem malloc failed!\n");
+		SEC_TST_PRT("req src in mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
-	printf("req src in--------->:\n");
+	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(req.in, tv->psize);
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
-		printf("req dst out mem malloc failed!\n");
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
@@ -1717,6 +1741,19 @@ static int sec_digest_async_multi(void)
 		goto out;
 	}
 
+	/* if mode is HMAC, should set key */
+	if (setup.mode == WD_DIGEST_HMAC) {
+		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		if (ret) {
+			SEC_TST_PRT("sess set key failed!\n");
+			goto out;
+		}
+		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+		SEC_TST_PRT("------->tv key:%s\n", tv->key);
+		SEC_TST_PRT("digest sess key--------->:\n");
+		hexdump(sess->key, sess->key_bytes);
+	}
+
 	td_data.h_sess = h_sess;
 	td_data.req = &req;
 
@@ -1728,7 +1765,7 @@ static int sec_digest_async_multi(void)
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_create(&sendtd[i], NULL, digest_send_thread, &td_data);
 		if (ret) {
-			printf("Create send thread fail!\n");
+			SEC_TST_PRT("Create send thread fail!\n");
 			return ret;
 		}
 	}
@@ -1736,7 +1773,7 @@ static int sec_digest_async_multi(void)
 	/* poll thread */
 	ret = pthread_create(&polltd, NULL, digest_poll_thread, &td_data);
 	if (ret) {
-		printf("Create poll thread fail!\n");
+		SEC_TST_PRT("Create poll thread fail!\n");
 		return ret;
 	}
 
@@ -1744,17 +1781,17 @@ static int sec_digest_async_multi(void)
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_join(sendtd[i], NULL);
 		if (ret) {
-			printf("Join sendtd thread fail!\n");
+			SEC_TST_PRT("Join sendtd thread fail!\n");
 			return ret;
 		}
 	}
 	ret = pthread_join(polltd, NULL);
 	if (ret) {
-		printf("Join polltd thread fail!\n");
+		SEC_TST_PRT("Join polltd thread fail!\n");
 		return ret;
 	}
 
-	hexdump(req.out, 64);
+	hexdump(req.out, req.out_bytes);
 out:
 	if (req.in)
 		free(req.in);
