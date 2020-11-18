@@ -72,9 +72,9 @@ write permission should be opened to user.
 Test on zip hardware accelerator
 
     Synchronous mode
-    $ test_sva_perf -b 8192000 -l 1000 -v -m 0
+    $ zip_sva_perf -b 8192000 -l 1000 -v -m 0
     Asynchronous mode
-    $ test_sva_perf -b 8192000 -l 1000 -v -m 1
+    $ zip_sva_perf -b 8192000 -l 1000 -v -m 1
 
 Test on sec hardware accelerator
 
