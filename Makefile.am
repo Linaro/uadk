@@ -6,6 +6,11 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif
 
+if WITH_UADK_V1
+
+SUBDIRS= v1
+
+else
 if WD_STATIC_DRV
 AM_CFLAGS+=-DWD_STATIC_DRV
 endif
@@ -43,3 +48,5 @@ libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
 libhisi_hpre_la_LIBADD= -lwd -lwd_crypto
 SUBDIRS=. test
+
+endif
