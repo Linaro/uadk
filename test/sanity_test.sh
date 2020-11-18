@@ -17,12 +17,12 @@ hpre_result=-1
 # failed: return 1; success: return 0
 run_zip_test()
 {
-	test_sva_perf -b 8192000 -l 1000 -v -m 0 &> /dev/null
+	zip_sva_perf -b 8192 -l 1000 -v -m 0 &> /dev/null
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_sva_perf -b 8192000 -l 1 -v -m 1 &> /dev/null
+	zip_sva_perf -b 8192 -l 1 -v -m 1 &> /dev/null
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
