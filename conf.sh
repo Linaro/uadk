@@ -1,27 +1,26 @@
-#!/bin/sh
+#!/bin/bash
 
-#to build hpre
-# git clone https://github.com/openssl/openssl.git
-# cd openssl
-# ./Configure linux-aarch64 --cross-compile-prefix=aarch64-linux-gnu-
-# add the following configure to this project (assume it is in paralle dir):
-# --with-openssl_dir=`pwd`/../openssl
-#
+# Configure UADK to generate Makefile
 
+# Build UADK into static library
 COMPILE_TYPE="--disable-static --enable-shared"
+# Build UADK v2 by default
+UADK_VERSION=""
 
-if [ $1 ]; then
-	if [ $1 = "--static" ]; then
-		echo "configure to static compile!"
-		COMPILE_TYPE="--enable-static --disable-shared --with-static_drv"
-	else
-		echo "invalid paramter, --static is static compile, compile to shared lib by default"
-	fi
+# These two parameters could be in arbitary sequence
+if [[ $1 && $1 = "--static" ]] || [[ $2 && $2 = "--static" ]]; then
+	echo "Configure to static compile!"
+	COMPILE_TYPE="--enable-static --disable-shared --with-static_drv"
 fi
+if [[ $1 && $1 = "--with-uadk_v1" ]] || [[ $2 && $2 = "--with-uadk_v1" ]]; then
+	UADK_VERSION="--with-uadk_v1"
+fi
+
 
 ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
 	--enable-perf=yes \
 	--host aarch64-linux-gnu \
 	--target aarch64-linux-gnu \
 	--includedir=/usr/local/include/uadk \
-	$COMPILE_TYPE
+	$COMPILE_TYPE \
+	$UADK_VERSION

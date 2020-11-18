@@ -20,17 +20,6 @@ AM_PROG_LIBTOOL
 LT_INIT
 AM_PROG_CC_C_O
 
-AC_ARG_ENABLE([sva],
-	AS_HELP_STRING([--disable-sva], [enable support for SVA]),
-	[ AS_IF([test "x$enable_sva" = "xyes"],
-		AC_DEFINE(ENABLE_SVA, 1, [Support for SVA])
-		sva=true
-	],
-	[sva=false])
-  ],
-  [sva=false]
-)
-
 AC_ARG_ENABLE([debug-log],
 	AS_HELP_STRING([--enable-debug-log], [enable debug logging globally]),
 	[ AS_IF([test "x$enable_debug_log" = "xyes"],
@@ -65,7 +54,7 @@ AC_SUBST(with_log_file)
 AM_CONDITIONAL([WITH_LOG_FILE], [test -n "$with_log_file"])
 
 AC_ARG_WITH(static_drv,
-	AS_HELP_STRING([--with-static_drv], [File to write log]),
+	AS_HELP_STRING([--with-static_drv], [Built as static library]),
 	WD_STATIC_DRV=$withvar, WD_STATIC_DRV=)
 AC_SUBST(with_static_drv)
 AM_CONDITIONAL([WD_STATIC_DRV], [test -n "$with_static_drv"])
@@ -75,6 +64,12 @@ AC_ARG_WITH(openssl_dir,
 AC_SUBST(with_openssl_dir)
 
 AM_CONDITIONAL([WITH_OPENSSL_DIR], [test -n "$with_openssl_dir"])
+
+AC_ARG_WITH(uadk_v1,
+	AS_HELP_STRING([--with-uadk_v1], [Only build UADK v1]),
+	UADK_V1=$withvar, UADK_V1=)
+AC_SUBST(with_uadk_v1)
+AM_CONDITIONAL([WITH_UADK_V1], [test -n "$with_uadk_v1"])
 
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h limits.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/time.h unistd.h])
@@ -94,9 +89,19 @@ AC_FUNC_MALLOC
 AC_FUNC_MMAP
 AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
-AC_CONFIG_FILES([Makefile
-                 test/Makefile
-		 test/hisi_hpre_test/Makefile
-		 test/hisi_sec_test/Makefile
-                 test/hisi_zip_test/Makefile])
+AC_CONFIG_FILES([Makefile])
+AS_IF([test -n "$with_uadk_v1"],
+	AC_CONFIG_FILES([v1/Makefile]),
+	AC_CONFIG_FILES([test/Makefile
+			 test/hisi_hpre_test/Makefile
+			 test/hisi_sec_test/Makefile
+			 test/hisi_zip_test/Makefile])
+)
+
+#AC_CONFIG_FILES([Makefile
+#         test/Makefile
+#	 test/hisi_hpre_test/Makefile
+#	 test/hisi_sec_test/Makefile
+#         test/hisi_zip_test/Makefile
+#	 v1/Makefile])
 AC_OUTPUT
