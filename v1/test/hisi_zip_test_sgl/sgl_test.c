@@ -24,8 +24,8 @@ int main(int argc, char *argv[])
         __u16 sgl_num = 3;
         __u32 buf_num = 40;
 	__u32 buf_size = 4096;
-	__u8 sge_num_in_sgl = 13;
-	__u8 buf_num_in_sgl = 12;
+	__u8 sge_num_in_sgl = 4;
+	__u8 buf_num_in_sgl = 3;
         __u32 align_size = 64;
 
         while ((opt = getopt(argc, argv, "a:b:c:d:e:f:")) != -1) {
@@ -103,6 +103,28 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
                 printf("test: failed to alloc sgl.\n");
         printf("free_sgl_num = %d\n", free_sgl_num);
 
+#if 1
+        sgl_addr[0] = wd_alloc_sgl(sgl_pool, 4096 * 4);
+        func_test(sgl_pool, sgl_addr[0]);
+        char a[5016];
+        memset(a, 'f', sizeof(a));
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("coypy failed!\n");
+        func_test(sgl_pool, sgl_addr[0]);
+
+        memset(a, 0, sizeof(a));
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("coypy failed!\n");
+
+        for (i = 0; i < sizeof(a); i++)
+                WD_ERR("%c", a[i]);
+        WD_ERR("\n");
+#endif
+
+#if 0
         ret = pthread_create(&test_thrds[0], NULL, (void *)sgl_alloc_and_get_test, sgl_pool);
         if (ret) {
 		WD_ERR("Create 1'th thread fail!\n");
@@ -125,6 +147,10 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
 			return ret;
 		}
 	}
+#endif
+
+        wd_free_sgl(sgl_pool, sgl_addr[0]);
+        wd_free_sgl(sgl_pool, sgl_addr[0]);
 
         func_test(sgl_pool, sgl_addr[0]);
         wd_sglpool_destroy(sgl_pool);
