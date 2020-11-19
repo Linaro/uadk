@@ -426,7 +426,7 @@ void wd_sglpool_destroy(void *pool)
 	struct wd_sgl *sgl;
 	int i, j;
 
-	if (!p || !p->sgl_blk) {
+	if (!p || !p->sgl_blk || !p->buf_pool || !p->sgl_pool) {
 		WD_ERR("pool param is err!\n");
 		return;
 	}
@@ -446,8 +446,12 @@ void wd_sglpool_destroy(void *pool)
 	}
 
 	wd_blkpool_destroy(p->sgl_pool);
+	p->sgl_pool = NULL;
 	wd_blkpool_destroy(p->buf_pool);
+	p->buf_pool = NULL;
 	free(p->sgl_blk);
+	p->sgl_blk = NULL;
+
 	free(p);
 }
 
@@ -524,8 +528,8 @@ int wd_sgl_merge(struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 	struct wd_sglpool *dst_pool, *src_pool;
 	int ret;
 
-	if (unlikely(!dst_sgl || !src_sgl)) {
-		WD_ERR("dst_sgl or src_sgl is null!\n");
+	if (unlikely(!dst_sgl || !src_sgl || dst_sgl == src_sgl)) {
+		WD_ERR("dst_sgl or src_sgl is null, or they are the same!\n");
 		return -WD_EINVAL;
 	}
 
@@ -596,7 +600,7 @@ int wd_sgl_cp_to_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t size
 {
 	size_t strtsg, strtad, sz;
 
-	if (unlikely(!sgl || !sgl->pool || !size || !sgl->buf_num ||
+	if (unlikely(!sgl || !pbuf || !sgl->pool || !size || !sgl->buf_num ||
 	    !sgl->pool->setup.buf_size)) {
 		WD_ERR("sgl is null, or sgl is not a legal sgl!\n");
 		return -WD_EINVAL;
@@ -665,7 +669,7 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 	size_t strtsg, strtad, sz;
 	int i;
 
-	if (unlikely(!sgl || !sgl->pool || !size || !sgl->buf_num ||
+	if (unlikely(!sgl || !pbuf || !sgl->pool || !size || !sgl->buf_num ||
 	    !sgl->pool->setup.buf_size)) {
 		WD_ERR("sgl is null, or sgl is not a legal sgl!\n");
 		return -WD_EINVAL;
