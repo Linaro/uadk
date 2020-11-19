@@ -16,6 +16,7 @@
 #include "wd.h"
 #include "../include/drv/wd_rsa_drv.h"
 #include "../include/drv/wd_dh_drv.h"
+#include "../include/drv/wd_ecc_drv.h"
 
 #define HPRE_HW_TASK_DONE	3
 #define HPRE_HW_TASK_INIT	1
@@ -25,7 +26,6 @@
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 
-#define offsetof(t, m) ((size_t) &((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
 		(type *)((char *)__mptr - offsetof(type, member));})
@@ -66,16 +66,24 @@ struct hisi_hpre_sqe {
 	__u32 task_len1	: 8;
 	__u32 task_len2	: 8;
 	__u32 mrttest_num : 8;
-	__u32 resv1	: 8;
+	__u32 uwkey_enb : 1;
+	__u32 sm2_ksel	: 1;
+	__u32 resv1	: 6;
 	__u32 low_key;
 	__u32 hi_key;
 	__u32 low_in;
 	__u32 hi_in;
 	__u32 low_out;
 	__u32 hi_out;
-	__u32 tag	: 16;
-	__u32 resv2	: 16;
-	__u32 rsvd1[7];
+	__u32 low_tag;
+	__u32 hi_tag;
+	__u32 sm2_mlen	: 9;
+	__u32 rsvd1	: 7;
+	__u32 uwkey_sel	: 4;
+	__u32 wrap_num	: 3;
+	__u32 resv2	: 9;
+	__u32 kek_key;
+	__u32 rsvd3[4];
 };
 
 struct hisi_hpre_ctx {
@@ -98,19 +106,19 @@ static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 }
 
 static int crypto_bin_to_hpre_bin(char *dst, const char *src,
-				int b_size, int d_size)
+				  int b_size, int d_size, const char *p_name)
 {
 	int i = d_size - 1;
 	bool is_hpre_bin;
 	int j;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
-		WD_ERR("crypto bin to hpre bin params err!\n");
+		WD_ERR("%s: trans to hpre bin params err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (b_size < d_size) {
-		WD_ERR("crypto bin to hpre bin param data is too long!\n");
+		WD_ERR("%s: trans to hpre bin param data is too long!\n", p_name);
 		return  -WD_EINVAL;
 	}
 
@@ -128,14 +136,15 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 	return WD_SUCCESS;
 }
 
-static int hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size)
+static int hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
+				  const char *p_name)
 {
 	int i, cnt;
 	int j = 0;
 	int k = 0;
 
 	if (!dst || !src || b_size <= 0) {
-		WD_ERR("%s params err!\n", __func__);
+		WD_ERR("%s trans to crypto bin: params err!\n", p_name);
 		return 0;
 	}
 
@@ -164,35 +173,31 @@ static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 	wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp,
 				&wd_qinv, &wd_q, &wd_p);
 	ret = crypto_bin_to_hpre_bin(wd_dq->data, (const char *)wd_dq->data,
-				wd_dq->bsize, wd_dq->dsize);
-	if (ret) {
-		WD_ERR("rsa crt dq format fail!\n");
+				wd_dq->bsize, wd_dq->dsize, "rsa crt dq");
+	if (ret)
 		return ret;
-	}
+
 	ret = crypto_bin_to_hpre_bin(wd_dp->data, (const char *)wd_dp->data,
-				wd_dp->bsize, wd_dp->dsize);
-	if (ret) {
-		WD_ERR("rsa crt dp format fail!\n");
+				wd_dp->bsize, wd_dp->dsize, "rsa crt dp");
+	if (ret)
 		return ret;
-	}
+
 	ret = crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
-				wd_q->bsize, wd_q->dsize);
-	if (ret) {
-		WD_ERR("rsa crt q format fail!\n");
+				wd_q->bsize, wd_q->dsize, "rsa crt q");
+	if (ret)
 		return ret;
-	}
+
 	ret = crypto_bin_to_hpre_bin(wd_p->data,
-		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize);
-	if (ret) {
-		WD_ERR("rsa crt p format fail!\n");
+		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize, "rsa crt p");
+	if (ret)
 		return ret;
-	}
+
 	ret = crypto_bin_to_hpre_bin(wd_qinv->data,
-		(const char *)wd_qinv->data, wd_qinv->bsize, wd_qinv->dsize);
-	if (ret) {
-		WD_ERR("rsa crt qinv format fail!\n");
+		(const char *)wd_qinv->data, wd_qinv->bsize,
+		wd_qinv->dsize, "rsa crt qinv");
+	if (ret)
 		return ret;
-	}
+
 	*data = wd_dq->data;
 
 	return (int)(wd_dq->bsize + wd_qinv->bsize + wd_p->bsize +
@@ -206,18 +211,15 @@ static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 
 	wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
 	ret = crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
-				wd_d->bsize, wd_d->dsize);
-	if (ret) {
-		WD_ERR("rsa prikey1 d format fail!\n");
+				wd_d->bsize, wd_d->dsize, "rsa d");
+	if (ret)
 		return ret;
-	}
 
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
-				wd_n->bsize, wd_n->dsize);
-	if (ret) {
-		WD_ERR("rsa prikey1 n format fail!\n");
+				wd_n->bsize, wd_n->dsize, "rsa n");
+	if (ret)
 		return ret;
-	}
+
 	*data = wd_d->data;
 
 	return (int)(wd_n->bsize + wd_d->bsize);
@@ -230,17 +232,16 @@ static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 
 	wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
 	ret = crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
-				wd_e->bsize, wd_e->dsize);
+				wd_e->bsize, wd_e->dsize, "rsa e");
 	if (ret) {
 		WD_ERR("rsa pubkey e format fail!\n");
 		return ret;
 	}
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
-				wd_n->bsize, wd_n->dsize);
-	if (ret) {
-		WD_ERR("rsa pubkey n format fail!\n");
+				wd_n->bsize, wd_n->dsize, "rsa n");
+	if (ret)
 		return ret;
-	}
+
 	*data = wd_e->data;
 	return (int)(wd_n->bsize + wd_e->bsize);
 }
@@ -253,25 +254,17 @@ static int fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
 	wd_rsa_get_kg_in_params(genkey, &e, &q, &p);
 
 	ret = crypto_bin_to_hpre_bin(e.data, (const char *)e.data,
-				e.bsize, e.dsize);
-	if (ret) {
-		WD_ERR("rsa genkey e format fail!\n");
+				e.bsize, e.dsize, "rsa kg e");
+	if (ret)
 		return ret;
-	}
-	ret = crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
-				q.bsize, q.dsize);
-	if (ret) {
-		WD_ERR("rsa genkey q format fail!\n");
-		return ret;
-	}
-	ret = crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
-				p.bsize, p.dsize);
-	if (ret) {
-		WD_ERR("rsa genkey p format fail!\n");
-		return ret;
-	}
 
-	return WD_SUCCESS;
+	ret = crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
+				q.bsize, q.dsize, "rsa kg q");
+	if (ret)
+		return ret;
+
+	return crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
+				p.bsize, p.dsize, "rsa kg p");
 }
 
 static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
@@ -280,7 +273,7 @@ static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 	int ret;
 
 	ret = hpre_bin_to_crypto_bin(bin0->data, (const char *)bin0->data,
-				bin0->bsize);
+				bin0->bsize, "hpre");
 	if (!ret)
 		return -WD_EINVAL;
 
@@ -289,7 +282,7 @@ static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 	if (bin1) {
 		ret = hpre_bin_to_crypto_bin(bin1->data,
 			(const char *)bin1->data,
-					bin1->bsize);
+			bin1->bsize, "hpre");
 		if (!ret)
 			return -WD_EINVAL;
 
@@ -298,7 +291,7 @@ static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 
 	if (bin2) {
 		ret = hpre_bin_to_crypto_bin(bin2->data,
-			(const char *)bin2->data, bin2->bsize);
+			(const char *)bin2->data, bin2->bsize, "hpre");
 		if (!ret)
 			return -WD_EINVAL;
 
@@ -321,7 +314,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 
 	if (hw_msg->alg == HPRE_ALG_KG_CRT || hw_msg->alg == HPRE_ALG_KG_STD) {
 		/* async */
-		if (hw_msg->tag) {
+		if (LW_U16(hw_msg->low_tag)) {
 			data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 			key = container_of(data, struct wd_rsa_kg_out, data);
 		} else {
@@ -506,7 +499,7 @@ static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
 
 	hw_msg.done = 0x1;
 	hw_msg.etype = 0x0;
-	hw_msg.tag = msg->tag;
+	hw_msg.low_tag = msg->tag;
 
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
@@ -530,7 +523,7 @@ static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
 		else
 			msg->result = WD_IN_EPARA;
 	} else {
-		msg->tag = hw_msg.tag;
+		msg->tag = LW_U16(hw_msg.low_tag);
 		ret = rsa_out_transfer(msg, &hw_msg);
 		if (ret) {
 			WD_ERR("qm rsa out transfer fail!\n");
@@ -563,14 +556,14 @@ static int fill_dh_xp_params(struct wd_dh_msg *msg,
 	x = req->x_p;
 	p = req->x_p + msg->key_bytes;
 	ret = crypto_bin_to_hpre_bin(x, (const char *)x,
-				msg->key_bytes, req->xbytes);
+				msg->key_bytes, req->xbytes, "dh x");
 	if (ret) {
 		WD_ERR("dh x para format fail!\n");
 		return ret;
 	}
 
 	ret = crypto_bin_to_hpre_bin(p, (const char *)p,
-				msg->key_bytes, req->pbytes);
+				msg->key_bytes, req->pbytes, "dh p");
 	if (ret) {
 		WD_ERR("dh p para format fail!\n");
 		return ret;
@@ -591,13 +584,13 @@ static int dh_out_transfer(struct wd_dh_msg *msg,
 	int ret;
 
 	/* async */
-	if (hw_msg->tag)
+	if (LW_U16(hw_msg->low_tag))
 		out = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	else
 		out = req->pri;
 
 	ret = hpre_bin_to_crypto_bin((char *)out,
-		(const char *)out, key_bytes);
+		(const char *)out, key_bytes, "dh out");
 	if (!ret)
 		return -WD_EINVAL;
 
@@ -626,7 +619,7 @@ static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
 	if (!(msg->is_g2 && req->op_type == WD_DH_PHASE1)) {
 		ret = crypto_bin_to_hpre_bin((char *)msg->g,
 			(const char *)msg->g, msg->key_bytes,
-			msg->gbytes);
+			msg->gbytes, "dh g");
 		if (ret) {
 			WD_ERR("dh g para format fail!\n");
 			return ret;
@@ -644,7 +637,7 @@ static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
 	hw_msg.hi_out = HI_U32((uintptr_t)req->pri);
 	hw_msg.done = 0x1;
 	hw_msg.etype = 0x0;
-	hw_msg.tag = msg->tag;
+	hw_msg.low_tag = msg->tag;
 
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
@@ -668,7 +661,7 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 		else
 			msg->result = WD_IN_EPARA;
 	} else {
-		msg->tag = hw_msg.tag;
+		msg->tag = LW_U16(hw_msg.low_tag);
 		ret = dh_out_transfer(msg, &hw_msg);
 		if (ret) {
 			WD_ERR("dh out transfer fail!\n");
@@ -691,5 +684,673 @@ static struct wd_dh_driver dh_hisi_hpre = {
 	.recv			= dh_recv,
 };
 
+static int ecc_prepare_alg(struct wd_ecc_msg *msg,
+			   struct hisi_hpre_sqe *hw_msg)
+{
+	switch (msg->req.op_type) {
+	case WD_SM2_SIGN:
+		hw_msg->alg = HPRE_ALG_SM2_SIGN;
+		break;
+	case WD_SM2_VERIFY:
+		hw_msg->alg = HPRE_ALG_SM2_VERF;
+		break;
+	case WD_SM2_ENCRYPT:
+		hw_msg->alg = HPRE_ALG_SM2_ENC;
+		break;
+	case WD_SM2_DECRYPT:
+		hw_msg->alg = HPRE_ALG_SM2_DEC;
+		break;
+	case WD_SM2_KG:
+		hw_msg->alg = HPRE_ALG_SM2_KEY_GEN;
+		break;
+	default:
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+
+static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
+				      struct wd_dtb *b, struct wd_dtb *n,
+				      struct wd_ecc_point *g)
+{
+	int ret;
+
+	ret = crypto_bin_to_hpre_bin(p->data, (const char *)p->data,
+					p->bsize, p->dsize, "cv p");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(a->data, (const char *)a->data,
+					a->bsize, a->dsize, "cv a");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(b->data, (const char *)b->data,
+					b->bsize, b->dsize, "cv b");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(n->data, (const char *)n->data,
+					n->bsize, n->dsize, "cv n");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(g->x.data, (const char *)g->x.data,
+					g->x.bsize, g->x.dsize, "cv gx");
+	if (ret)
+		return ret;
+
+	return crypto_bin_to_hpre_bin(g->y.data, (const char *)g->y.data,
+					g->y.bsize, g->y.dsize, "cv gy");
+}
+
+static int trans_d_to_hpre_bin(struct wd_dtb *d)
+{
+	return crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
+				      d->bsize, d->dsize, "ecc d");
+}
+
+static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
+{
+	int ret, shift;
+
+	if (d->dsize > n->dsize)
+		return false;
+	else if (d->dsize < n->dsize)
+		return true;
+
+	shift = n->bsize - n->dsize;
+	ret = memcmp(d->data + shift, n->data + shift, n->dsize);
+	if (ret < 0)
+		return true;
+	else
+		return false;
+}
+
+static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
+{
+	struct wd_ecc_point *g = NULL;
+	struct wd_dtb *p = NULL;
+	struct wd_dtb *a = NULL;
+	struct wd_dtb *b = NULL;
+	struct wd_dtb *n = NULL;
+	struct wd_dtb *d = NULL;
+	char bsize, dsize;
+	char *dat;
+	int ret;
+
+	wd_ecc_get_prikey_params((void *)key, &p, &a, &b, &n, &g, &d);
+
+	ret = trans_cv_param_to_hpre_bin(p, a, b, n, g);
+	if (ret)
+		return ret;
+
+	ret = trans_d_to_hpre_bin(d);
+	if (ret)
+		return ret;
+
+	/*
+	 * This is a pretreatment of x25519/x448, as described in RFC7748
+	 * hpre is big-endian, so the byte is opposite.
+	 */
+	dat = d->data;
+	bsize = d->bsize;
+	dsize = d->dsize;
+	if (id == WD_X25519) {
+		dat[31] &= 248;
+		dat[0] &= 127;
+		dat[0] |= 64;
+	} else if (id == WD_X448) {
+		dat[55 + bsize - dsize] &= 252;
+		dat[0 + bsize - dsize] |= 128;
+	}
+
+	if (id != WD_X25519 && id != WD_X448 &&
+		!less_than_latter(d, n)) {
+		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
+		return -WD_EINVAL;
+	}
+
+	*data = p->data;
+
+	return 0;
+}
+
+static int trans_pub_to_hpre_bin(struct wd_ecc_point *pub)
+{
+	struct wd_dtb *temp;
+	int ret;
+
+	temp = &pub->x;
+	ret = crypto_bin_to_hpre_bin(temp->data, (const char *)temp->data,
+				     temp->bsize, temp->dsize, "ecc pub x");
+	if (ret)
+		return ret;
+
+	temp = &pub->y;
+	return crypto_bin_to_hpre_bin(temp->data, (const char *)temp->data,
+				      temp->bsize, temp->dsize, "ecc pub y");
+}
+
+static int ecc_prepare_pubkey(struct wd_ecc_key *key, void **data)
+{
+	struct wd_ecc_point *pub = NULL;
+	struct wd_ecc_point *g = NULL;
+	struct wd_dtb *p = NULL;
+	struct wd_dtb *a = NULL;
+	struct wd_dtb *b = NULL;
+	struct wd_dtb *n = NULL;
+	int ret;
+
+	wd_ecc_get_pubkey_params((void *)key, &p, &a, &b, &n, &g, &pub);
+
+	ret = trans_cv_param_to_hpre_bin(p, a, b, n, g);
+	if (ret)
+		return ret;
+
+	ret = trans_pub_to_hpre_bin(pub);
+	if (ret)
+		return ret;
+
+	*data = p->data;
+
+	return 0;
+}
+
+static int ecc_prepare_key(struct wd_ecc_msg *msg,
+			      struct hisi_hpre_sqe *hw_msg)
+{
+	void *data = NULL;
+	int ret;
+
+	if (msg->req.op_type >= WD_EC_OP_MAX) {
+		WD_ERR("op_type = %u error!\n", msg->req.op_type);
+		return -WD_EINVAL;
+	}
+
+	if (msg->req.op_type == WD_SM2_DECRYPT ||
+		msg->req.op_type == WD_SM2_SIGN) {
+		ret = ecc_prepare_prikey((void *)msg->key, &data, msg->curve_id);
+		if (ret)
+			return ret;
+	} else {
+		ret = ecc_prepare_pubkey((void *)msg->key, &data);
+		if (ret)
+			return ret;
+	}
+
+	hw_msg->low_key = LW_U32((uintptr_t)data);
+	hw_msg->hi_key = HI_U32((uintptr_t)data);
+
+	return 0;
+}
+
+static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
+			      size_t *olen)
+{
+	if (atype == HPRE_ALG_ECDH_MULTIPLY) {
+		*olen = ECDH_OUT_PARAMS_SZ(hsz);
+		*ilen = *olen;
+	} else if (atype == HPRE_ALG_X_DH_MULTIPLY) {
+		*olen = X_DH_OUT_PARAMS_SZ(hsz);
+		*ilen = *olen;
+	} else if (atype == HPRE_ALG_ECDSA_SIGN) {
+		*olen = ECC_SIGN_OUT_PARAMS_SZ(hsz);
+		*ilen = ECC_SIGN_IN_PARAMS_SZ(hsz);
+	} else if (atype == HPRE_ALG_ECDSA_VERF) {
+		*olen = ECC_VERF_OUT_PARAMS_SZ;
+		*ilen = ECC_VERF_IN_PARAMS_SZ(hsz);
+	} else {
+		*olen = hsz;
+		*ilen = hsz;
+	}
+}
+
+static bool is_all_zero(struct wd_dtb *e, struct wd_ecc_msg *msg)
+{
+	int i;
+
+	for (i= 0; i < e->dsize && i < msg->key_bytes; i++) {
+		if (e->data[i])
+			return false;
+	}
+
+	return true;
+}
+
+static void correct_random(struct wd_dtb *k)
+{
+	int lens = k->bsize - k->dsize;
+
+	k->data[lens] = 0;
+}
+
+static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
+			       struct hisi_hpre_sqe *hw_msg, void **data)
+{
+	struct wd_ecc_sign_in *in = (void *)msg->req.src;
+	struct wd_dtb *n = NULL;
+	struct wd_dtb *e = NULL;
+	struct wd_dtb *k = NULL;
+	int ret;
+
+	if (!in->dgst_set) {
+		WD_ERR("hash not set!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!in->k_set) {
+		if (msg->req.op_type == WD_ECDSA_SIGN) {
+			WD_ERR("random k not set!\n");
+			return -WD_EINVAL;
+		}
+		hw_msg->sm2_ksel = 1;
+	}
+
+	e = &in->dgst;
+	k = &in->k;
+
+	if (is_all_zero(e, msg)) {
+		WD_ERR("ecc sign in e all zero!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
+					e->bsize, e->dsize, "ecc sgn e");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
+					k->bsize, k->dsize, "ecc sgn k");
+	if (ret)
+		return ret;
+
+	wd_ecc_get_prikey_params((void *)msg->key, NULL, NULL, NULL,
+				 &n, NULL, NULL);
+	if (!less_than_latter(k, n))
+		correct_random(k);
+
+	*data = e->data;
+
+	return 0;
+}
+
+static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
+			       struct hisi_hpre_sqe *hw_msg, void **data)
+
+{
+	struct wd_ecc_verf_in *vin = (void *)msg->req.src;
+	struct wd_dtb *e = NULL;
+	struct wd_dtb *s = NULL;
+	struct wd_dtb *r = NULL;
+	int ret;
+
+	if (!vin->dgst_set) {
+		WD_ERR("hash not set!\n");
+		return -WD_EINVAL;
+	}
+
+	e = &vin->dgst;
+	s = &vin->s;
+	r = &vin->r;
+
+	if (is_all_zero(e, msg)) {
+		WD_ERR("ecc verf in e all zero!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
+					e->bsize, e->dsize, "ecc vrf e");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(s->data, (const char *)s->data,
+					s->bsize, s->dsize, "ecc vrf s");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(r->data, (const char *)r->data,
+					r->bsize, r->dsize, "ecc vrf r");
+	if (ret)
+		return ret;
+
+	*data = e->data;
+
+	return 0;
+}
+
+static int sm2_prepare_enc_in(struct wd_ecc_msg *msg,
+			       struct hisi_hpre_sqe *hw_msg, void **data)
+
+{
+	struct wd_sm2_enc_in *ein = (void *)msg->req.src;
+	struct wd_dtb *k = &ein->k;
+	int ret;
+
+	if (ein->k_set) {
+		ret = crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
+					     k->bsize, k->dsize, "sm2 enc k");
+		if (ret)
+			return ret;
+	} else {
+		hw_msg->sm2_ksel = 1;
+	}
+
+	hw_msg->sm2_mlen = ein->plaintext.dsize - 1;
+	*data = k->data;
+
+	return 0;
+}
+
+static int sm2_prepare_dec_in(struct wd_ecc_msg *msg,
+			      struct hisi_hpre_sqe *hw_msg, void **data)
+
+{
+	struct wd_sm2_dec_in *din = (void *)msg->req.src;
+	struct wd_ecc_point *c1 = &din->c1;
+	int ret;
+
+	ret = crypto_bin_to_hpre_bin(c1->x.data, (const char *)c1->x.data,
+		c1->x.bsize, c1->x.dsize, "sm2 dec c1 x");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(c1->y.data, (const char *)c1->y.data,
+		c1->y.bsize, c1->y.dsize, "sm2 dec c1 y");
+	if (ret)
+		return ret;
+
+	hw_msg->sm2_mlen = din->c2.dsize - 1;
+	*data = c1->x.data;
+
+	return 0;
+}
+
+static int ecc_prepare_dh_gen_in(struct wd_ecc_msg *msg,
+				 struct hisi_hpre_sqe *hw_msg, void **data)
+{
+	struct wd_ecc_point *in = msg->req.src;
+	int ret;
+
+	ret = crypto_bin_to_hpre_bin(in->x.data, (const char *)in->x.data,
+					in->x.bsize, in->x.dsize, "ecdh gen x");
+	if (ret)
+		return ret;
+
+	ret = crypto_bin_to_hpre_bin(in->y.data, (const char *)in->y.data,
+					in->y.bsize, in->y.dsize, "ecdh gen y");
+	if (ret)
+		return ret;
+
+	*data = in->x.data;
+
+	return 0;
+}
+
+static int ecc_prepare_in(struct wd_ecc_msg *msg,
+			     struct hisi_hpre_sqe *hw_msg, void **data)
+{
+	int ret = -WD_EINVAL;
+
+	switch (msg->req.op_type) {
+	case WD_SM2_KG:
+		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
+		break;
+	case WD_SM2_SIGN:
+		ret = ecc_prepare_sign_in(msg, hw_msg, data);
+		break;
+	case WD_SM2_VERIFY:
+		ret = ecc_prepare_verf_in(msg, hw_msg, data);
+		break;
+	case WD_SM2_ENCRYPT:
+		ret = sm2_prepare_enc_in(msg, hw_msg, data);
+		break;
+	case WD_SM2_DECRYPT:
+		ret = sm2_prepare_dec_in(msg, hw_msg, data);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
+{
+	struct wd_ecc_out *out = (struct wd_ecc_out *)msg->req.dst;
+	struct wd_ecc_sign_out *sout = &out->param.sout;
+	struct wd_sm2_enc_out *eout = &out->param.eout;
+	struct wd_sm2_dec_out *dout = &out->param.dout;
+	struct wd_sm2_kg_out *kout = &out->param.kout;
+	int ret = 0;
+
+	switch (msg->req.op_type) {
+	case WD_SM2_SIGN:
+		*data = sout->r.data;
+		break;
+	case WD_SM2_VERIFY:
+		break;
+	case WD_SM2_ENCRYPT:
+		*data = eout->c1.x.data;
+		break;
+	case WD_SM2_DECRYPT:
+		*data = dout->plaintext.data;
+		break;
+	case WD_SM2_KG:
+		*data = kout->pub.x.data;
+		break;
+	/* fall-through */
+	}
+
+	return ret;
+}
+
+/* prepare in/out hw msg */
+static int ecc_prepare_iot(struct wd_ecc_msg *msg,
+			      struct hisi_hpre_sqe *hw_msg)
+{
+	void *data = NULL;
+	size_t i_sz = 0;
+	size_t o_sz = 0;
+	__u16 kbytes;
+	int ret;
+
+	kbytes = msg->key_bytes;
+	ecc_get_io_len(hw_msg->alg, kbytes, &i_sz, &o_sz);
+	ret = ecc_prepare_in(msg, hw_msg, &data);
+	if (ret) {
+		WD_ERR("ecc_prepare_in fail!\n");
+		return ret;
+	}
+	hw_msg->low_in = LW_U32((uintptr_t)data);
+	hw_msg->hi_in = HI_U32((uintptr_t)data);
+
+	ret = ecc_prepare_out(msg, &data);
+	if (ret) {
+		WD_ERR("ecc_prepare_out fail!\n");
+		return ret;
+	}
+
+	if (!data)
+		return 0;
+
+	hw_msg->low_out = LW_U32((uintptr_t)data);
+	hw_msg->hi_out = HI_U32((uintptr_t)data);
+
+	return 0;
+}
+
+static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_hpre_sqe hw_msg;
+	__u16 send_cnt = 0;
+	int ret;
+
+	memset(&hw_msg, 0, sizeof(struct hisi_hpre_sqe));
+	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
+
+	/* prepare alg */
+	ret = ecc_prepare_alg(msg, &hw_msg);
+	if (ret)
+		return ret;
+
+	/* prepare key */
+	ret = ecc_prepare_key(msg, &hw_msg);
+	if (ret)
+		return ret;
+
+	/* prepare in/out put */
+	ret = ecc_prepare_iot(msg, &hw_msg);
+	if (ret)
+		return ret;
+
+	hw_msg.done = 0x1;
+	hw_msg.etype = 0x0;
+	hw_msg.low_tag = msg->tag;
+
+	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+}
+
+static int ecc_sign_out_transfer(struct wd_ecc_msg *msg,
+				 struct hisi_hpre_sqe *hw_msg)
+{
+	struct wd_ecc_out *out = (void *)msg->req.dst;
+	struct wd_dtb *r = NULL;
+	struct wd_dtb *s = NULL;
+	int ret;
+
+	wd_sm2_get_sign_out_params(out, &r, &s);
+	if (!r || !s) {
+		WD_ERR("failed to get ecc sign out param!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = hpre_tri_bin_transfer(r, s, NULL);
+	if (ret)
+		WD_ERR("fail to tri ecc sign out r&s!\n");
+
+	return ret;
+}
+
+static int ecc_verf_out_transfer(struct wd_ecc_msg *msg,
+				 struct hisi_hpre_sqe *hw_msg)
+{
+	__u32 result = hw_msg->low_out;
+
+	result >>= 1;
+	result &= 1;
+	if (!result)
+		msg->result = WD_VERIFY_ERR;
+
+	return WD_SUCCESS;
+}
+
+static int sm2_kg_out_transfer(struct wd_ecc_msg *msg,
+			       struct hisi_hpre_sqe *hw_msg)
+{
+	struct wd_ecc_out *out = (void *)msg->req.dst;
+	struct wd_ecc_point *pbk = NULL;
+	struct wd_dtb *prk = NULL;
+	int ret;
+
+	wd_sm2_get_kg_out_params(out, &prk, &pbk);
+	if (!prk || !pbk) {
+		WD_ERR("failed to get sm2 kg out param!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = hpre_tri_bin_transfer(prk, &pbk->x, &pbk->y);
+	if (ret)
+		WD_ERR("fail to tri sm2 kg out param!\n");
+
+	return ret;
+}
+
+static int sm2_enc_out_transfer(struct wd_ecc_msg *msg,
+			        struct hisi_hpre_sqe *hw_msg)
+{
+	struct wd_ecc_out *out = (void *)msg->req.dst;
+	struct wd_ecc_point *c1 = NULL;
+	int ret;
+
+	wd_sm2_get_enc_out_params(out, &c1, NULL, NULL);
+	if (!c1) {
+		WD_ERR("failed to get sm2 enc out param!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = hpre_tri_bin_transfer(&c1->x, &c1->y, NULL);
+	if (ret)
+		WD_ERR("fail to tri sm2 enc out param!\n");
+
+	return ret;
+}
+
+static int ecc_out_transfer(struct wd_ecc_msg *msg,
+			    struct hisi_hpre_sqe *hw_msg)
+{
+	int ret = -WD_EINVAL;
+
+	if (hw_msg->alg == HPRE_ALG_SM2_SIGN)
+		ret = ecc_sign_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_SM2_VERF)
+		ret = ecc_verf_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_SM2_ENC)
+		ret = sm2_enc_out_transfer(msg, hw_msg);
+	else if (hw_msg->alg == HPRE_ALG_SM2_DEC)
+		ret = 0;
+	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
+		ret = sm2_kg_out_transfer(msg, hw_msg);
+	else
+		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
+
+	return ret;
+}
+
+static int ecc_recv(handle_t ctx, struct wd_ecc_msg *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_hpre_sqe hw_msg = {0};
+	__u16 recv_cnt = 0;
+	int ret;
+
+	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
+	if (ret < 0)
+		return ret;
+
+	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
+		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "ecc",
+			hw_msg.done, hw_msg.etype);
+		if (hw_msg.done == HPRE_HW_TASK_INIT)
+			msg->result = WD_EINVAL;
+		else
+			msg->result = WD_IN_EPARA;
+	} else {
+		msg->tag = LW_U16(hw_msg.low_tag);
+		msg->result = WD_SUCCESS;
+		ret = ecc_out_transfer(msg, &hw_msg);
+		if (ret) {
+			WD_ERR("ecc out transfer fail!\n");
+			msg->result = WD_OUT_EPARA;
+		}
+	}
+
+	return 0;
+}
+
+static struct wd_ecc_driver ecc_hisi_hpre = {
+	.drv_name		= "hisi_hpre",
+	.alg_name		= "ecc",
+	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
+	.init			= hpre_init,
+	.exit			= hpre_exit,
+	.send			= ecc_send,
+	.recv			= ecc_recv,
+};
+
 WD_RSA_SET_DRIVER(rsa_hisi_hpre);
 WD_DH_SET_DRIVER(dh_hisi_hpre);
+WD_ECC_SET_DRIVER(ecc_hisi_hpre);
