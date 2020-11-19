@@ -61,7 +61,7 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
         pthread_t test_thrds[2];
         __u32 free_sgl_num;
         void *sgl_pool;
-        int loop = 10;
+        int loop = 1;
         int ret, i;
 
         q = calloc(1, sizeof(struct wd_queue));
@@ -108,13 +108,13 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
 		WD_ERR("Create 1'th thread fail!\n");
 		return ret;
 	}
-#if 1
+
         ret = pthread_create(&test_thrds[1], NULL, (void *)sgl_free_and_get_test, sgl_pool);
         if (ret) {
 		WD_ERR("Create 2'th thread fail!\n");
 		return ret;
 	}
-#endif
+
         while (loop--)
                 sleep(2);
 
@@ -126,6 +126,8 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
 		}
 	}
 
+        func_test(sgl_pool, sgl_addr[0]);
+        wd_sglpool_destroy(sgl_pool);
         wd_sglpool_destroy(sgl_pool);
         wd_release_queue(q);
 	free(q);
@@ -182,13 +184,9 @@ void sgl_free_and_get_test(void *pool)
         wd_free_sgl(pool, sgl_addr[0]);
         func_test(pool, sgl_addr[0]);
 
-        sleep(1);
-
         //wd_free_sgl(pool, sgl_addr[0]);
         //wd_free_sgl(pool, sgl_addr[1]);
         wd_free_sgl(pool, sgl_addr[2]);
-        WD_ERR("LAST ............\n");
-        func_test(pool, sgl_addr[0]);
 }
 
 void func_test(void *pool, void *sgl)
