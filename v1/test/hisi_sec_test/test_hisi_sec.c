@@ -251,8 +251,26 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 					return -EINVAL;
 			}
 			break;
-
 		case 5:
+			alg_type = WCRYPTO_CIPHER_AES;
+			mode_type = WCRYPTO_CIPHER_CTR;
+			SEC_TST_PRT("test alg: %s\n", "ctr(aes)");
+			switch (g_keylen) {
+				case AES_KEYSIZE_128:
+					tv = &aes_ctr_tv_template_128[0];
+					break;
+				case AES_KEYSIZE_192:
+					tv = &aes_ctr_tv_template_192[0];
+					break;
+				case AES_KEYSIZE_256:
+					tv = &aes_ctr_tv_template_256[0];
+					break;
+				default:
+					SEC_TST_PRT("%s: input key err!\n", __func__);
+					return -EINVAL;
+			}
+			break;
+		case 6:
 			alg_type = WCRYPTO_CIPHER_3DES;
 			mode_type = WCRYPTO_CIPHER_ECB;
 			SEC_TST_PRT("test alg: %s\n", "ecb(des3)");
@@ -265,7 +283,7 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 				return -EINVAL;
 			}
 			break;
-		case 6:
+		case 7:
 			alg_type = WCRYPTO_CIPHER_3DES;
 			mode_type = WCRYPTO_CIPHER_CBC;
 			SEC_TST_PRT("test alg: %s\n", "cbc(des3)");
@@ -278,7 +296,7 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 				return -EINVAL;
 			}
 			break;
-		case 7:
+		case 8:
 			alg_type = WCRYPTO_CIPHER_SM4;
 			mode_type = WCRYPTO_CIPHER_CBC;
 			SEC_TST_PRT("test alg: %s\n", "cbc(sm4)");
@@ -288,7 +306,7 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_cbc_tv_template[0];
 			break;
-		case 8:
+		case 9:
 			alg_type = WCRYPTO_CIPHER_SM4;
 			mode_type = WCRYPTO_CIPHER_XTS;
 			SEC_TST_PRT("test alg: %s\n", "xts(sm4)");
@@ -298,7 +316,7 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_xts_tv_template[0];
 			break;
-		case 9:
+		case 10:
 			alg_type = WCRYPTO_CIPHER_SM4;
 			mode_type = WCRYPTO_CIPHER_OFB;
 			SEC_TST_PRT("test alg: %s\n", "ofb(sm4)");
@@ -308,7 +326,7 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_ofb_tv_template_128[0];
 			break;
-		case 10:
+		case 11:
 			alg_type = WCRYPTO_CIPHER_SM4;
 			mode_type = WCRYPTO_CIPHER_CFB;
 			SEC_TST_PRT("test alg: %s\n", "cfb(sm4)");
@@ -318,7 +336,16 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_cfb_tv_template_128[0];
 			break;
-
+		case 12:
+			alg_type = WCRYPTO_CIPHER_SM4;
+			mode_type = WCRYPTO_CIPHER_CTR;
+			SEC_TST_PRT("test alg: %s\n", "ctr(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_ctr_tv_template_128[0];
+			break;
 		default:
 			SEC_TST_PRT("keylenth error, default test alg: %s\n", "ecb(aes)");
 			return -EINVAL;
