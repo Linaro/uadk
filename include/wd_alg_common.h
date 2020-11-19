@@ -31,6 +31,10 @@ extern FILE *flog_fd;
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 
+#define BYTE_BITS_SHIFT		3
+#define BITS_TO_BYTES(bits)	(((bits) + 7) >> 3)
+#define BYTES_TO_BITS(bytes)	((bytes) << 3)
+
 struct wd_lock {
 	__u32 lock;
 };

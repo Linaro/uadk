@@ -30,6 +30,7 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_aead.c wd_aead.h wd_aead_drv.h \
 			wd_rsa.c wd_rsa.h wd_rsa_drv.h \
 			wd_dh.c wd_dh.h wd_dh_drv.h \
+			wd_ecc.c wd_ecc.h wd_ecc_drv.h \
 			wd_digest.c wd_digest.h wd_digest_drv.h \
 			wd_util.c wd_util.h
 libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
