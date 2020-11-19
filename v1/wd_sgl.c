@@ -575,7 +575,7 @@ static void sgl_cp_to_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, sz);
 		size -= sz;
 	}
-	if (sgl->next == NULL) {
+	if (size <= sz || sgl->next == NULL) {
 		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, size);
 	} else {
 		sgl = sgl->next;
@@ -646,7 +646,7 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 		size -= sz;
 	}
 
-	if (sgl->next == NULL) {
+	if (size <= sz || sgl->next == NULL) {
 		memcpy(sgl->sge[i].buf, pbuf + (i - strtsg - 1) * sz, size);
 	} else {
 		sgl = sgl->next;
