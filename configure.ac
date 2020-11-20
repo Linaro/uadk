@@ -91,7 +91,10 @@ AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
 AC_CONFIG_FILES([Makefile])
 AS_IF([test -n "$with_uadk_v1"],
-	AC_CONFIG_FILES([v1/Makefile]),
+	AC_CONFIG_FILES([v1/Makefile
+			 v1/test/Makefile
+			 v1/test/bmm_test/Makefile
+			 v1/test/test_mm/Makefile]),
 	AC_CONFIG_FILES([test/Makefile
 			 test/hisi_hpre_test/Makefile
 			 test/hisi_sec_test/Makefile
