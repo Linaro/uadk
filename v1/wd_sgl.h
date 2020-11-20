@@ -53,7 +53,7 @@ void *wd_get_last_sge_buf(struct wd_sgl *sgl);
 void *wd_get_first_sge_buf(struct wd_sgl *sgl);
 int wd_get_sgl_sge_num(struct wd_sgl *sgl);
 int wd_get_sgl_buf_num(struct wd_sgl *sgl);
-void *wd_get_sge_buf(struct wd_sgl *sgl, int num);
+void *wd_get_sge_buf(struct wd_sgl *sgl, __u32 num);
 int wd_get_sgl_buf_sum(struct wd_sgl *sgl);
 int wd_get_sgl_mem_size(struct wd_sgl *sgl, size_t *size);
 int wd_get_free_sgl_num(void *pool, __u32 *free_sgl_num);
