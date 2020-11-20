@@ -766,7 +766,7 @@ int wd_get_sgl_buf_num(struct wd_sgl *sgl)
 }
 
 /* 'num' starts from 1 */
-void *wd_get_sge_buf(struct wd_sgl *sgl, int num)
+void *wd_get_sge_buf(struct wd_sgl *sgl, __u32 num)
 {
 	if (unlikely(!sgl || !num || num > sgl->sge_num)) {
 		WD_ERR("sgl is null, or num is valid, num = %d!\n", num);
@@ -788,7 +788,7 @@ int wd_get_sgl_buf_sum(struct wd_sgl *sgl)
 
 int wd_get_sgl_mem_size(struct wd_sgl *sgl, size_t *size)
 {
-	if (unlikely(!sgl || !sgl->pool)) {
+	if (unlikely(!sgl || !sgl->pool || !size)) {
 		WD_ERR("sgl param err!\n");
 		return -WD_EINVAL;
 	}
@@ -802,7 +802,7 @@ int wd_get_free_sgl_num(void *pool, __u32 *free_sgl_num)
 {
 	struct wd_sglpool *p = pool;
 
-	if (unlikely(!p)) {
+	if (unlikely(!p || !free_sgl_num)) {
 		WD_ERR("pool is null!\n");
 		return -WD_EINVAL;
 	}
@@ -814,7 +814,7 @@ int wd_get_free_sgl_num(void *pool, __u32 *free_sgl_num)
 
 int wd_get_free_sgl_sge_num(struct wd_sgl *sgl, __u32 *free_sgl_sge_num)
 {
-	if (unlikely(!sgl)) {
+	if (unlikely(!sgl || !free_sgl_sge_num)) {
 		WD_ERR("sgl is null!\n");
 		return -WD_EINVAL;
 	}
@@ -828,7 +828,7 @@ int wd_get_free_buf_num(void *pool, __u32 *free_buf_num)
 {
 	struct wd_sglpool *p = pool;
 
-	if (unlikely(!p)) {
+	if (unlikely(!p || !free_buf_num)) {
 		WD_ERR("pool is null!\n");
 		return -WD_EINVAL;
 	}
@@ -841,7 +841,7 @@ int wd_get_free_buf_num(void *pool, __u32 *free_buf_num)
 /* if sgl is a chain(has two sgl), the sgl_datalen is the data_len in chain */
 int wd_get_sgl_datalen(struct wd_sgl *sgl, __u32 *dtsize)
 {
-	if (unlikely(!sgl)) {
+	if (unlikely(!sgl || !dtsize)) {
 		WD_ERR("sgl is null!\n");
 		return -WD_EINVAL;
 	}
@@ -853,7 +853,7 @@ int wd_get_sgl_datalen(struct wd_sgl *sgl, __u32 *dtsize)
 /* get 'num'th' sge datalen in sgl */
 int wd_get_sge_datalen(struct wd_sgl *sgl, __u32 num, __u32 *dtsize)
 {
-	if (unlikely(!sgl || !num || num > sgl->sge_num)) {
+	if (unlikely(!sgl || !num || num > sgl->sge_num || !dtsize)) {
 		WD_ERR("sgl or num is invalid!\n");
 		return -WD_EINVAL;
 	}
@@ -864,7 +864,7 @@ int wd_get_sge_datalen(struct wd_sgl *sgl, __u32 num, __u32 *dtsize)
 
 int wd_get_sgl_bufsize(struct wd_sgl *sgl, __u32 *bufsz)
 {
-	if (unlikely(!sgl || !sgl->pool)) {
+	if (unlikely(!sgl || !sgl->pool || !bufsz)) {
 		WD_ERR("sgl is null, or sgl pool is null!\n");
 		return -WD_EINVAL;
 	}
