@@ -213,11 +213,6 @@ static int hisi_qm_get_free_num(struct hisi_qm_queue_info *q_info)
 	return (QM_Q_DEPTH - 1) - q_info->used_num;
 }
 
-handle_t hisi_qm_alloc_ctx(char *dev_path, void *priv, void **data)
-{
-	return (handle_t)NULL;
-}
-
 handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 {
 	struct hisi_qp *qp;
@@ -253,17 +248,6 @@ out_qp:
 	free(qp);
 out:
 	return (handle_t)NULL;
-}
-
-void hisi_qm_free_ctx(handle_t h_ctx)
-{
-	struct hisi_qp *qp = wd_ctx_get_priv(h_ctx);
-
-	wd_release_ctx_force(qp->h_ctx);
-
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
-	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-	wd_release_ctx(qp->h_ctx);
 }
 
 void hisi_qm_free_qp(handle_t h_qp)
