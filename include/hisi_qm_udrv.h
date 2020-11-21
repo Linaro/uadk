@@ -56,9 +56,6 @@ struct hisi_qm_capa {
 	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];/* For algorithm parameters */
 };
 
-handle_t hisi_qm_alloc_ctx(char *dev_path, void *priv, void **data);
-void hisi_qm_free_ctx(handle_t h_ctx);
-
 /**
  * hisi_qm_send - Send req to the queue of the device.
  * @h_qp: Handle of the qp.
