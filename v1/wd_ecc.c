@@ -55,8 +55,8 @@ static __thread int balance;
 
 struct curve_param_desc {
 	__u32 type;
-	__u32 pri_offset;
-	__u32 pub_offset;
+	__u32 prk_offset;
+	__u32 pbk_offset;
 };
 
 enum wcrypto_ecc_curve_param_type {
@@ -139,27 +139,27 @@ static const struct wcrypto_ecc_curve_list g_curve_list[] = {
 	}
 };
 
-static const struct curve_param_desc g_curve_param_list[] = {
+static const struct curve_param_desc g_cv_param_list[] = {
 	{
 		.type = ECC_CURVE_P,
-		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, p),
-		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, p),
+		.prk_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, p),
+		.pbk_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, p),
 	}, {
 		.type = ECC_CURVE_A,
-		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, a),
-		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, a),
+		.prk_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, a),
+		.pbk_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, a),
 	}, {
 		.type = ECC_CURVE_B,
-		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, b),
-		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, b),
+		.prk_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, b),
+		.pbk_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, b),
 	}, {
 		.type = ECC_CURVE_N,
-		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, n),
-		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, n),
+		.prk_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, n),
+		.pbk_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, n),
 	}, {
 		.type = ECC_CURVE_G,
-		.pri_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, g),
-		.pub_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, g),
+		.prk_offset = (__u32)offsetof(struct wcrypto_ecc_prikey, g),
+		.pbk_offset = (__u32)offsetof(struct wcrypto_ecc_pubkey, g),
 	}
 };
 
@@ -739,32 +739,30 @@ static int set_curve_param_single(struct wcrypto_ecc_key *key,
 				  const struct wd_dtb *param,
 				  __u32 type)
 {
-	struct wcrypto_ecc_prikey *pri = key->prikey;
-	struct wcrypto_ecc_pubkey *pub = key->pubkey;
-	char *tmp1, *tmp2;
+	struct wcrypto_ecc_prikey *prk = key->prikey;
+	struct wcrypto_ecc_pubkey *pbk = key->pubkey;
+	struct wd_dtb *t1, *t2;
 	int ret;
 
-	tmp1 = (char *)pri + g_curve_param_list[type].pri_offset;
-	tmp2 = (char *)pub + g_curve_param_list[type].pub_offset;
+	t1 = (struct wd_dtb *)((char *)prk + g_cv_param_list[type].prk_offset);
+	t2 = (struct wd_dtb *)((char *)pbk + g_cv_param_list[type].pbk_offset);
 
 	/* set gy */
 	if (type == ECC_CURVE_G) {
-		ret = set_param_single((struct wd_dtb *)tmp1 + 1, param + 1,
-					"ecc prikey gy");
+		ret = set_param_single(t1 + 1, param + 1, "set cv");
 		if (unlikely(ret))
 			return ret;
 
-		ret = set_param_single((struct wd_dtb *)tmp2 + 1, param + 1,
-					"ecc pubkey gy");
+		ret = set_param_single(t2 + 1, param + 1, "set cv");
 		if (unlikely(ret))
 			return ret;
 	}
 
-	ret = set_param_single((struct wd_dtb *)tmp1, param, "ecc prikey gx");
+	ret = set_param_single(t1, param, "set cv");
 	if (unlikely(ret))
 		return ret;
 
-	return set_param_single((struct wd_dtb *)tmp2, param, "ecc pubky gx");
+	return set_param_single(t2, param, "set cv");
 }
 
 static int set_curve_param(struct wcrypto_ecc_key *key,
@@ -808,21 +806,15 @@ static int set_curve_param(struct wcrypto_ecc_key *key,
 static const struct wcrypto_ecc_curve_list *find_curve_list(__u32 id)
 {
 	int len = WD_ARRAY_SIZE(g_curve_list);
-	int is_find = 0;
 	int i = 0;
 
 	while (i < len) {
-		if (g_curve_list[i].id == id) {
-			is_find = 1;
-			break;
-		}
+		if (g_curve_list[i].id == id)
+			return &g_curve_list[i];
 		i++;
 	}
 
-	if (!is_find)
-		return NULL;
-
-	return &g_curve_list[i];
+	return NULL;
 }
 
 static int fill_param_by_id(struct wcrypto_ecc_curve *c,
@@ -1808,7 +1800,8 @@ static int sm2_compute_digest(void *ctx, struct wd_dtb *hash_msg,
 	__u64 lens;
 	int ret;
 
-	if (unlikely(hash->type >= WCRYPTO_HASH_MAX)) {
+	hash_bytes = get_hash_bytes(hash->type);
+	if (unlikely(!hash_bytes || hash_bytes > SM2_KEY_SIZE)) {
 		WD_ERR("hash type = %u error!\n", hash->type);
 		return -WD_EINVAL;
 	}
@@ -1819,7 +1812,6 @@ static int sm2_compute_digest(void *ctx, struct wd_dtb *hash_msg,
 		return ret;
 	}
 
-	hash_bytes = get_hash_bytes(hash->type);
 	lens = plaintext->dsize + hash_bytes;
 	p_in = malloc(lens);
 	if (unlikely(!p_in))
