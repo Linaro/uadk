@@ -514,7 +514,7 @@ int attach_threads(struct hizip_test_info *info)
 struct uacce_dev_list *get_dev_list(struct priv_options *opts,
 				    int children)
 {
-	struct uacce_dev_list *list, *p, *head = NULL, *prev;
+	struct uacce_dev_list *list, *p, *head = NULL, *prev = NULL;
 	struct test_options *copts = &opts->common;
 	int max_q_num;
 
@@ -569,7 +569,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i, j, ret = -EINVAL;
-	int q_num, max_q_num;
+	int q_num;
 
 
 	*sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
@@ -651,7 +651,7 @@ out_ctx:
 		wd_release_ctx(ctx_conf->ctxs[j].ctx);
 	free(ctx_conf->ctxs);
 out_fill:
-	sample_sched_release(sched);
+	sample_sched_release(*sched);
 out_sched:
 	return ret;
 }
