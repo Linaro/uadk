@@ -49,7 +49,8 @@ enum wcrypto_ecc_op_type {
 	WCRYPTO_SM2_VERIFY, /* SM2 verify */
 	WCRYPTO_SM2_ENCRYPT, /* SM2 encrypt */
 	WCRYPTO_SM2_DECRYPT, /* SM2 decrypt */
-	WCRYPTO_SM2_KG /* SM2 key generate */
+	WCRYPTO_SM2_KG, /* SM2 key generate */
+	WCRYPTO_EC_OP_MAX /* max operation */
 };
 
 /* ECC operational types */

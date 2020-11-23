@@ -871,13 +871,32 @@ static int ecc_prepare_pubkey(struct wcrypto_ecc_key *key, void **data)
 	return 0;
 }
 
+static __u32 ecc_get_prikey_size(struct wcrypto_ecc_msg *msg)
+{
+	if (msg->op_type == WCRYPTO_SM2_SIGN ||
+		msg->op_type == WCRYPTO_ECDSA_SIGN ||
+		msg->op_type == WCRYPTO_SM2_DECRYPT)
+		return ECC_PRIKEY_SZ(msg->key_bytes);
+	else if (msg->alg_type == WCRYPTO_X25519 ||
+		msg->alg_type == WCRYPTO_X448)
+		return X_DH_HW_KEY_SZ(msg->key_bytes);
+	else
+		return ECDH_HW_KEY_SZ(msg->key_bytes);
+}
+
 static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 			      struct hisi_hpre_sqe *hw_msg)
 {
+	__u8 op_type = msg->op_type;
 	void *data = NULL;
 	uintptr_t phy;
 	size_t ksz;
 	int ret;
+
+	if (unlikely(!op_type || op_type >= WCRYPTO_EC_OP_MAX)) {
+		WD_ERR("op_type = %u error!\n", op_type);
+		return -WD_EINVAL;
+	}
 
 	if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
 	    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
@@ -886,33 +905,16 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	    msg->op_type == WCRYPTO_SM2_SIGN ||
 	    msg->op_type == HPRE_SM2_ENC ||
 	    msg->op_type == HPRE_SM2_DEC) {
-		if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
-		    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
-		    msg->op_type == HPRE_SM2_ENC ||
-		    msg->op_type == HPRE_SM2_DEC) {
-			if (msg->alg_type == WCRYPTO_X25519 ||
-			    msg->alg_type == WCRYPTO_X448)
-				ksz = X_DH_HW_KEY_SZ(msg->key_bytes);
-			else
-				ksz = ECDH_HW_KEY_SZ(msg->key_bytes);
-		} else {
-			ksz = ECC_PRIKEY_SZ(msg->key_bytes);
-		}
-
+		ksz = ecc_get_prikey_size(msg);
 		ret = ecc_prepare_prikey((void *)msg->key, &data,
 					 msg->alg_type);
 		if (unlikely(ret))
 			return ret;
-	} else if (msg->op_type == WCRYPTO_ECDSA_VERIFY ||
-		msg->op_type == WCRYPTO_SM2_VERIFY ||
-		msg->op_type == WCRYPTO_SM2_ENCRYPT ||
-		msg->op_type == WCRYPTO_SM2_KG) {
+	} else {
 		ksz = ECC_PUBKEY_SZ(msg->key_bytes);
 		ret = ecc_prepare_pubkey((void *)msg->key, &data);
 		if (unlikely(ret))
 			return ret;
-	} else {
-		return -WD_EINVAL;
 	}
 
 	phy  = (uintptr_t)drv_iova_map(q, data, ksz);
@@ -1447,7 +1449,7 @@ static int sm2_kg_out_transfer(struct wcrypto_ecc_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	return qm_tri_bin_transfer(prk, &pubkey->x, &pubkey->y, "sm2 kg pub");
+	return qm_tri_bin_transfer(prk, &pubkey->x, &pubkey->y, "sm2 kg out");
 }
 
 static int sm2_enc_out_transfer(struct wcrypto_ecc_msg *msg,
@@ -1971,7 +1973,6 @@ static __u32 get_hash_bytes(__u8 type)
 	__u32 val = 0;
 
 	switch (type) {
-
 	case WCRYPTO_HASH_SHA1:
 		val = BITS_TO_BYTES(160);
 		break;
