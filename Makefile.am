@@ -11,6 +11,9 @@ if WITH_UADK_V1
 SUBDIRS= v1
 
 else
+
+UADK_VERSION = -version-info 2:0:0
+
 if WD_STATIC_DRV
 AM_CFLAGS+=-DWD_STATIC_DRV
 endif
@@ -23,13 +26,16 @@ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
 libwd_la_SOURCES=wd.c wd.h
+libwd_la_LDFLAGS=$(UADK_VERSION)
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h
 libwd_comp_la_LIBADD= -lwd -ldl
+libwd_comp_la_LDFLAGS=$(UADK_VERSION)
 
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h
 libhisi_zip_la_LIBADD= -ldl
+libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
 
 libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_aead.c wd_aead.h wd_aead_drv.h \
@@ -39,14 +45,18 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_digest.c wd_digest.h wd_digest_drv.h \
 			wd_util.c wd_util.h
 libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
+libwd_crypto_la_LDFLAGS=$(UADK_VERSION)
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
+libhisi_sec_la_LDFLAGS=$(UADK_VERSION)
 
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
 libhisi_hpre_la_LIBADD= -lwd -lwd_crypto
+libhisi_hpre_la_LDFLAGS=$(UADK_VERSION)
+
 SUBDIRS=. test
 
 endif
