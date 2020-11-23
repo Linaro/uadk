@@ -25,5 +25,6 @@ libwd_la_SOURCES=wd.c wd_adapter.c wd.h wd_adapter.h \
 	drv/hisi_hpre_udrv.c drv/hisi_hpre_udrv.h \
 	drv/hisi_rde_udrv.c drv/hisi_rde_udrv.h \
 	drv/hisi_sec_udrv.c drv/hisi_sec_udrv.h
+libwd_la_LDFLAGS=-version-info 1:0:0
 SUBDIRS=. test
 
