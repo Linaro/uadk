@@ -395,7 +395,7 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	    __func__, block_size, count, thread_num, in_len);
 
-	ret = init_ctx_config(copts, sched, &info);
+	ret = init_ctx_config(copts, &info, &sched);
 	if (ret)
 		return ret;
 
