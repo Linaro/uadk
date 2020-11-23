@@ -9,7 +9,7 @@ if WD_STATIC_DRV
 zip_sva_perf_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
 		    ../../.libs/libhisi_zip.a -lpthread
 else
-zip_sva_perf_LDADD=-L../../.libs -lwd -lwd_comp -lpthread
+zip_sva_perf_LDADD=-L../../.libs -l:libwd.so.2 -l:libwd_comp.so.2 -lpthread
 endif
 zip_sva_perf_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
 
