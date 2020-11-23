@@ -1126,7 +1126,7 @@ static int init_hpre_global_config(__u32 op_type)
 	struct wd_ctx *ctx_attr;
 	struct wd_sched sched;
 	int ctx_num = g_config.trd_num;
-	int ret;
+	int ret = 0;
 	int j;
 
 #ifdef DEBUG
