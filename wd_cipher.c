@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <pthread.h>
 #include <sched.h>
