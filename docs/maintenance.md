@@ -78,7 +78,27 @@ they must also add their own **Signed-off-by:** line.
 Submit your changes for review at the mailing list
 "linux-accelerators@lists.ozlabs.org" targeting the **master** branch.
 
+Or submit your changes for review in [Github](https://github.com/Linaro/uadk).
+
 When the changes are accepted, the maintainers will integrate them.
+
+## Library Versions
+
+UADK could be built in dynamic library that is only linked for execution.
+Because of this, multiple different UADK dynamic libraries could coexist in
+system if the library versions are different. And application could link
+any library with specified library version.
+
+The library version likes libNAME.so.{x}.{y}.{z}
+
+```
+{x} stand for primary version, should change when APIs are changed which
+    making things incompatible.
+{y} stand for sub version, should change when new APIs are added. It still
+    keeps things compatible.
+{z} stand for mirror version, should change by fixing bug or optimizing.
+```
+
 
 ## Working Branch
 
