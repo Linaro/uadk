@@ -166,9 +166,6 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
 	case WCRYPTO_CIPHER_OFB:
 		sqe->type2.c_mode = C_MODE_CBC;
 		break;
-	case WCRYPTO_CIPHER_CTR:
-		sqe->type2.c_mode = C_MODE_CTR;
-		break;
 	case WCRYPTO_CIPHER_XTS:
 		sqe->type2.c_mode = C_MODE_XTS;
 		break;
@@ -2074,9 +2071,6 @@ static int fill_aead_bd2_mode(struct wcrypto_aead_msg *msg,
 		break;
 	case WCRYPTO_CIPHER_CBC:
 		sqe->type2.c_mode = C_MODE_CBC;
-		break;
-	case WCRYPTO_CIPHER_CTR:
-		sqe->type2.c_mode = C_MODE_CTR;
 		break;
 	case WCRYPTO_CIPHER_CCM:
 		sqe->type2.c_mode = C_MODE_CCM;
