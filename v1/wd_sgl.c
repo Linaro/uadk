@@ -565,17 +565,23 @@ static void sgl_cp_to_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 	__u32 act_sz = MIN(size, sz - strtad);
 	int i;
 
+	if (strtsg >= sgl->buf_num) {
+		strtsg = strtsg - sgl->buf_num;
+		sgl = sgl->next;
+	}
+
 	memcpy(pbuf, sgl->sge[strtsg].buf + strtad, act_sz);
 	if (act_sz == size)
 		return;
 
 	size -= sz - strtad;
 	pbuf += sz - strtad;
-	for (i = strtsg + 1; i < sgl->buf_num - 1 && size > sz; i++) {
+	for (i = strtsg + 1; i <= sgl->buf_num - 1 && size > sz; i++) {
 		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, sz);
 		size -= sz;
 	}
-	if (size <= sz || sgl->next == NULL) {
+
+	if (i <= sgl->buf_num - 1) {
 		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, size);
 	} else {
 		sgl = sgl->next;
@@ -599,6 +605,7 @@ static void sgl_cp_to_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 int wd_sgl_cp_to_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t size)
 {
 	size_t strtsg, strtad, sz;
+	__u32 buf_sz;
 
 	if (unlikely(!sgl || !pbuf || !sgl->pool || !size || !sgl->buf_num ||
 	    !sgl->pool->setup.buf_size)) {
@@ -607,15 +614,15 @@ int wd_sgl_cp_to_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t size
 	}
 
 	sz = sgl->pool->sgl_mem_sz;
-	strtsg = offset / sgl->pool->setup.buf_size;
-	strtad = offset % sgl->pool->setup.buf_size;
-
 	sgl->next ? sz <<= 1 : sz;
-
 	if (unlikely(offset >= sz)) {
 		WD_ERR("'offset' is out of memory!\n");
 		return -WD_EINVAL;
 	}
+
+	buf_sz = sgl->pool->setup.buf_size;
+	strtsg = offset / buf_sz;
+	strtad = offset % buf_sz;
 
 	if (sz - offset < size) {
 		sgl_cp_to_pbuf(sgl, strtsg, strtad, pbuf, sz - offset);
@@ -633,6 +640,11 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 	__u32 act_sz = MIN(size, sz - strtad);
 	int i;
 
+	if (strtsg >= sgl->buf_num) {
+		strtsg = strtsg - sgl->buf_num;
+		sgl = sgl->next;
+	}
+
 	memcpy(sgl->sge[strtsg].buf + strtad, pbuf, act_sz);
 	sgl->sge[strtsg].data_len = act_sz;
 	if (act_sz == size)
@@ -640,13 +652,13 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 
 	size -= sz - strtad;
 	pbuf += sz - strtad;
-	for (i = strtsg + 1; i < sgl->buf_num - 1 && size > sz; i++) {
+	for (i = strtsg + 1; i <= sgl->buf_num - 1 && size > sz; i++) {
 		memcpy(sgl->sge[i].buf, pbuf + (i - strtsg - 1) * sz, sz);
 		sgl->sge[i].data_len = sz;
 		size -= sz;
 	}
 
-	if (size <= sz || sgl->next == NULL) {
+	if (i <= sgl->buf_num - 1) {
 		memcpy(sgl->sge[i].buf, pbuf + (i - strtsg - 1) * sz, size);
 	} else {
 		sgl = sgl->next;
@@ -667,6 +679,7 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 			void *pbuf, size_t size)
 {
 	size_t strtsg, strtad, sz;
+	__u32 buf_sz;
 	int i;
 
 	if (unlikely(!sgl || !pbuf || !sgl->pool || !size || !sgl->buf_num ||
@@ -676,15 +689,16 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 	}
 
 	sz = sgl->pool->sgl_mem_sz;
-	strtsg = offset / sgl->pool->setup.buf_size;
-	strtad = offset % sgl->pool->setup.buf_size;
-
 	sgl->next ? sz <<= 1 : sz;
 
 	if (unlikely(offset >= sz)) {
 		WD_ERR("'offset' is out of memory!\n");
 		return -WD_EINVAL;
 	}
+
+	buf_sz = sgl->pool->setup.buf_size;
+	strtsg = offset / buf_sz;
+	strtad = offset % buf_sz;
 
 	for (i = 0; i < sgl->buf_num; i++)
 		sgl->sge[i].data_len = 0;
