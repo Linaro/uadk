@@ -893,7 +893,8 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	size_t ksz;
 	int ret;
 
-	if (unlikely(!op_type || op_type >= WCRYPTO_EC_OP_MAX)) {
+	if (unlikely(!op_type || (op_type >= WCRYPTO_EC_OP_MAX &&
+		op_type != HPRE_SM2_ENC && op_type != HPRE_SM2_DEC))) {
 		WD_ERR("op_type = %u error!\n", op_type);
 		return -WD_EINVAL;
 	}
