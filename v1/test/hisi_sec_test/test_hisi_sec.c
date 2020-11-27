@@ -794,7 +794,7 @@ int wd_digests_doimpl(void *ctx, struct wcrypto_digest_op_data *opdata, u32 *sen
 	int trycount = 0;
 	*send_count = 0;
 again:
-	ret = wcrypto_burst_digest(ctx, opdata, NULL, 2);
+	ret = wcrypto_burst_digest(ctx, &opdata, NULL, 1);
 	if (ret == 0) {
 		if (trycount <= 5) { // try 5 times
 			SEC_TST_PRT("do digest busy, retry again!");
@@ -843,6 +843,7 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 	unsigned long Perf = 0;
 	int pid = getpid();
 	void *ctx = NULL;
+	int data_len;
 	int ret;
 
 	memset(&setup, 0, sizeof(setup));
@@ -894,8 +895,7 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 	memset(opdata->out, 0, opdata->out_bytes);
 	opdata->has_next = 0;
 
-	u32 last_update_bufflen = 0;
-	u32 data_len = tv->psize;
+	data_len = tv->psize;
 	while (1) {
 		if (state == SEC_DIGEST_INIT) {
 			state = SEC_DIGEST_FIRST_UPDATING;
@@ -903,30 +903,28 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 			state = SEC_DIGEST_DOING;
 
 		if (data_len > 256) {
-			//memcpy(opdata->in, tv->plaintext + last_update_bufflen, 256);
 			opdata->in_bytes = 256;
-			last_update_bufflen += 256;
-			data_len = tv->psize - last_update_bufflen;
+			data_len -= 256;
+		} else if (data_len <= 0) {
+			break;
 		} else {
 			state = SEC_DIGEST_FINAL;
-			//memcpy(opdata->in, tv->plaintext + last_update_bufflen, data_len);
 			opdata->in_bytes = data_len;
 		}
-		SEC_TST_PRT("data_len:%d  last_update_bufflen:%d\n", data_len, last_update_bufflen);
+		SEC_TST_PRT("data_len:%d  in_bytes:%d\n", data_len, opdata->in_bytes);
 		hexdump(opdata->in, opdata->in_bytes);
 		opdata->has_next = (state == SEC_DIGEST_FINAL) ? false : true;
 		ret = wd_digests_doimpl(ctx, opdata, &pdata->send_task_num);
 		if (ret)
 			goto fail_release;
 
-		SEC_TST_PRT("digest out data:\n");
-		hexdump(opdata->out, 64);
-
 		if (state == SEC_DIGEST_FINAL)
 			break;
 		else
 			opdata->in += 256;
 	}
+	SEC_TST_PRT("digest out data:\n");
+	hexdump(opdata->out, tv->dsize);
 
 	gettimeofday(&cur_tval, NULL);
 	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
@@ -1184,9 +1182,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 		SEC_TST_PRT("alloc iv buffer fail!\n");
 		goto fail_release;
 	}
-
-	memcpy(opdata.iv, tv->iv, tv->ivlen);
-	opdata.iv_bytes = tv->ivlen;
+	sec_sync_test_set_iv(pdata, &opdata, tv);
 
 	do {
 		tag = malloc(sizeof(struct cipher_async_tag)); // set the user tag
@@ -1313,7 +1309,7 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 	}
 	memcpy(opdata.in, tv->plaintext, tv->psize);
 	opdata.in_bytes = tv->psize;
-	SEC_TST_PRT("cipher len:%d\n", opdata.in_bytes);
+	SEC_TST_PRT("digest len:%d\n", opdata.in_bytes);
 #ifdef DEBUG
 	hexdump(opdata.in, opdata.in_bytes);
 #endif
