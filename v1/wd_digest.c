@@ -143,6 +143,8 @@ static void init_digest_cookie(struct wcrypto_digest_ctx *ctx,
 		ctx->cookies[i].msg.alg = setup->alg;
 		ctx->cookies[i].msg.mode = setup->mode;
 		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
+		ctx->cookies[i].tag.long_data_len = 0;
+		ctx->cookies[i].tag.priv = NULL;
 		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
 		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx->ctx_id;
 		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;

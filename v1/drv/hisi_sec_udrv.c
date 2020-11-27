@@ -214,7 +214,6 @@ static void update_iv(struct wcrypto_cipher_msg *msg)
 		ctr_iv_inc(msg->iv, msg->in_bytes >> CTR_MODE_LEN_SHIFT);
 		break;
 	default:
-		WD_ERR("No cipher iv is updated!\n");
 		break;
 	}
 }
@@ -772,11 +771,10 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
 
-	if (tag && tag->priv)
+	if (tag->priv)
 		ret = fill_cipher_bd1(q, sqe, msg, tag);
 	else
 		ret = fill_cipher_bd2(q, sqe, msg, tag);
-
 	if (ret != WD_SUCCESS)
 		return ret;
 
@@ -810,9 +808,7 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
 
-	if (tag)
-		ret = fill_cipher_bd3(q, sqe, msg, tag);
-
+	ret = fill_cipher_bd3(q, sqe, msg, tag);
 	if (ret != WD_SUCCESS)
 		return ret;
 
@@ -828,8 +824,14 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 static int fill_digest_bd2_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	if (msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+	if (unlikely(msg->alg >= WCRYPTO_MAX_DIGEST_TYPE)) {
 		WD_ERR("Invalid digest type!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->in_bytes == 0 ||
+	    msg->in_bytes > MAX_CIPHER_LENGTH)) {
+		WD_ERR("Invalid digest in_bytes!\n");
 		return -WD_EINVAL;
 	}
 
@@ -888,8 +890,14 @@ static void qm_fill_digest_long_bd(struct wcrypto_digest_msg *msg,
 static int fill_digest_bd1_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	if (msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+	if (unlikely(msg->alg >= WCRYPTO_MAX_DIGEST_TYPE)) {
 		WD_ERR("Invalid digest type!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->in_bytes == 0 ||
+	    msg->in_bytes > MAX_CIPHER_LENGTH)) {
+		WD_ERR("Invalid digest in_bytes!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1064,7 +1072,7 @@ int qm_fill_digest_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
 
-	if (tag && tag->priv)
+	if (tag->priv)
 		ret = fill_digest_bd1(q, sqe, msg, tag);
 	else
 		ret = fill_digest_bd2(q, sqe, msg, tag);
@@ -1119,8 +1127,14 @@ static void qm_fill_digest_long_bd3(struct wcrypto_digest_msg *msg,
 static int fill_digest_bd3_alg(struct wcrypto_digest_msg *msg,
 		struct hisi_sec_bd3_sqe *sqe)
 {
-	if (msg->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+	if (unlikely(msg->alg >= WCRYPTO_MAX_DIGEST_TYPE)) {
 		WD_ERR("Invalid digest type!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->in_bytes == 0 ||
+	    msg->in_bytes > MAX_CIPHER_LENGTH)) {
+		WD_ERR("Invalid digest in_bytes!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1212,11 +1226,9 @@ int qm_fill_digest_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
 
-	if (tag) {
-		ret = fill_digest_bd3(q, sqe, msg, tag);
-		if (ret != WD_SUCCESS)
-			return ret;
-	}
+	ret = fill_digest_bd3(q, sqe, msg, tag);
+	if (ret != WD_SUCCESS)
+		return ret;
 
 	info->req_cache[i] = msg;
 
@@ -1751,10 +1763,6 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	sqe->scene = SCENE_IPSEC;
 	sqe->auth = AUTH_MAC_CALCULATE;
 	sqe->de = DATA_DST_ADDR_ENABLE;
-	if (msg->in_bytes > MAX_CIPHER_LENGTH) {
-		WD_ERR("fail to check input data length\n");
-		return -WD_EINVAL;
-	}
 	sqe->c_len = msg->in_bytes;
 	sqe->cipher_src_offset = msg->assoc_bytes;
 	sqe->a_len = msg->in_bytes + msg->assoc_bytes;
@@ -1786,6 +1794,12 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 static int aead_para_check(struct wcrypto_aead_msg *msg)
 {
 	int ret = WD_SUCCESS;
+
+	if (unlikely(msg->in_bytes == 0 ||
+	    msg->in_bytes > MAX_CIPHER_LENGTH)) {
+		WD_ERR("fail to check input data length\n");
+		return -WD_EINVAL;
+	}
 
 	switch (msg->calg) {
 	case WCRYPTO_CIPHER_SM4:
@@ -1822,11 +1836,9 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
 
-	if (tag) {
-		ret = fill_aead_bd3(q, sqe, msg, tag);
-		if (ret != WD_SUCCESS)
-			return ret;
-	}
+	ret = fill_aead_bd3(q, sqe, msg, tag);
+	if (ret != WD_SUCCESS)
+		return ret;
 
 	info->req_cache[i] = msg;
 
@@ -2171,10 +2183,6 @@ static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	sqe->scene = SCENE_IPSEC;
 	sqe->auth = AUTH_MAC_CALCULATE;
 	sqe->de = DATA_DST_ADDR_ENABLE;
-	if (msg->in_bytes > MAX_CIPHER_LENGTH) {
-		WD_ERR("fail to check input data length\n");
-		return -WD_EINVAL;
-	}
 	sqe->type2.c_len = msg->in_bytes;
 	sqe->type2.cipher_src_offset = msg->assoc_bytes;
 	sqe->type2.a_len = msg->in_bytes + msg->assoc_bytes;
@@ -2222,11 +2230,10 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
 
-	if (tag) {
-		ret = fill_aead_bd2(q, sqe, msg, tag);
-		if (ret != WD_SUCCESS)
-			return ret;
-	}
+	ret = fill_aead_bd2(q, sqe, msg, tag);
+	if (ret != WD_SUCCESS)
+		return ret;
+
 	info->req_cache[i] = msg;
 
 #ifdef DEBUG_LOG
