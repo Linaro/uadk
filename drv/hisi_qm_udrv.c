@@ -145,8 +145,8 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 	}
 
 	if (i == size) {
-		WD_ERR("fail to find matched type of QM\n");
-		return -ENODEV;
+		q_info->db = hacc_db_v2;
+		q_info->db_base = q_info->mmio_base + QM_V2_DOORBELL_OFFSET;
 	}
 
 	return 0;
