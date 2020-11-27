@@ -103,25 +103,224 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
                 printf("test: failed to alloc sgl.\n");
         printf("free_sgl_num = %d\n", free_sgl_num);
 
-#if 1
+
         sgl_addr[0] = wd_alloc_sgl(sgl_pool, 4096 * 4);
         func_test(sgl_pool, sgl_addr[0]);
-        char a[5016];
+        char a[5016] = { 0 };
+        char b[10000] = { 0 };
+        char c[20000] = { 0 };
         memset(a, 'f', sizeof(a));
-
-        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, a, sizeof(a));
+#if 1
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 300, a, sizeof(a));
         if (ret < 0)
                 WD_ERR("coypy failed!\n");
         func_test(sgl_pool, sgl_addr[0]);
 
-        memset(a, 0, sizeof(a));
-        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, a, sizeof(a));
+        memset(a, '2', sizeof(a));
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 300, a + 300, sizeof(a) - 300);
         if (ret < 0)
+
                 WD_ERR("coypy failed!\n");
 
-        for (i = 0; i < sizeof(a); i++)
+        for (i = 0; i < sizeof(a); i++) {
+                if (i % 200 == 0)
+                        WD_ERR("\n");
                 WD_ERR("%c", a[i]);
-        WD_ERR("\n");
+        }
+        WD_ERR("\nxxxxxxxxxxxxxxx\n\n");
+#endif
+
+#if 1
+WD_ERR("\n ......... wd_sgl_cp_from_pbuf start ........ \n");
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+
+WD_ERR("\n ......... test  1 ........ \n");
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 2407, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 2407, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 2407, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+
+WD_ERR("\n ......... test  2 ........ \n");
+
+         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 4000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 4000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 4000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+
+ WD_ERR("\n ......... test  3 ........ \n");
+
+         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 6000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 6000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 6000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+
+WD_ERR("\n ......... test  4 ........ \n");
+
+         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 9000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 9000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 9000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+
+WD_ERR("\n ......... test  5 ........ \n");
+
+         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 10000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 10000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 10000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+WD_ERR("\n ......... test end ........ \n");
+#endif
+
+#if 1
+WD_ERR("\n ......... wd_sgl_cp_to_pbuf start ........ \n");
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+
+WD_ERR("\n ......... test  1 ........ \n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 2407, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 2407, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 2407, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+
+WD_ERR("\n ......... test  2 ........ \n");
+
+         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 4000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 4000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 4000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+
+ WD_ERR("\n ......... test  3 ........ \n");
+
+         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 6000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 6000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 6000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+
+WD_ERR("\n ......... test  4 ........ \n");
+
+         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 9000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 9000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 9000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+
+WD_ERR("\n ......... test  5 ........ \n");
+
+         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 10000, a, sizeof(a));
+        if (ret < 0)
+                WD_ERR("a coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 10000, b, sizeof(b));
+        if (ret < 0)
+                WD_ERR("b coypy failed!\n");
+
+        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 10000, c, sizeof(c));
+        if (ret < 0)
+                WD_ERR("c coypy failed!\n");
+
+WD_ERR("\n ......... test end ........ \n");
 #endif
 
 #if 0

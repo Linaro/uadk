@@ -293,7 +293,7 @@ void wd_blkpool_destroy(void *pool)
 
 	setup = &p->setup;
 	if (p->free_blk_num != setup->block_num) {
-		WD_ERR("Can not destroy pool, as it's in use.\n");
+		WD_ERR("Can not destroy blk pool, as it's in use.\n");
 		return;
 	}
 
