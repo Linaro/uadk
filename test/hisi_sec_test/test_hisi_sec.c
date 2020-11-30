@@ -132,7 +132,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 0:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_ECB;
-			SEC_TST_PRT("test alg: %s\n", "ecb(aes)");
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_ecb_tv_template_128[0];
@@ -151,7 +150,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 1:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_CBC;
-			SEC_TST_PRT("test alg: %s\n", "cbc(aes)");
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_cbc_tv_template_128[0];
@@ -170,7 +168,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 2:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_XTS;
-			SEC_TST_PRT("test alg: %s\n", "xts(aes)");
 			switch (g_keylen / 2) {
 				case AES_KEYSIZE_128:
 					tv = &aes_xts_tv_template_256[0];
@@ -186,7 +183,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 3:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_OFB;
-			SEC_TST_PRT("test alg: %s\n", "ofb(aes)");
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_ofb_tv_template_128[0];
@@ -205,7 +201,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 4:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_CFB;
-			SEC_TST_PRT("test alg: %s\n", "cfb(aes)");
 			switch (g_keylen) {
 				case AES_KEYSIZE_128:
 					tv = &aes_cfb_tv_template_128[0];
@@ -225,7 +220,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 5:
 			alg_type = WD_CIPHER_3DES;
 			mode_type = WD_CIPHER_ECB;
-			SEC_TST_PRT("test alg: %s\n", "ecb(des3)");
 			if (g_keylen == 16)
 				tv = &des3_ecb_tv_template_128[0];
 			else if (g_keylen == 24)
@@ -238,7 +232,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 6:
 			alg_type = WD_CIPHER_3DES;
 			mode_type = WD_CIPHER_CBC;
-			SEC_TST_PRT("test alg: %s\n", "cbc(des3)");
 			if (g_keylen == 16)
 				tv = &des3_cbc_tv_template_128[0];
 			else if (g_keylen == 24)
@@ -251,7 +244,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 7:
 			alg_type = WD_CIPHER_SM4;
 			mode_type = WD_CIPHER_CBC;
-			SEC_TST_PRT("test alg: %s\n", "cbc(sm4)");
 			if (g_keylen != 16) {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
@@ -261,7 +253,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 8:
 			alg_type = WD_CIPHER_SM4;
 			mode_type = WD_CIPHER_XTS;
-			SEC_TST_PRT("test alg: %s\n", "xts(sm4)");
 			if (g_keylen != 32) {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
@@ -271,7 +262,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 9:
 			alg_type = WD_CIPHER_SM4;
 			mode_type = WD_CIPHER_OFB;
-			SEC_TST_PRT("test alg: %s\n", "ofb(sm4)");
 			if (g_keylen != 16) {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
@@ -281,7 +271,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 		case 10:
 			alg_type = WD_CIPHER_SM4;
 			mode_type = WD_CIPHER_CFB;
-			SEC_TST_PRT("test alg: %s\n", "cfb(sm4)");
 			if (g_keylen != 16) {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
@@ -291,7 +280,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 	case 16:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_CBC;
-			SEC_TST_PRT("test alg: %s\n", "cbc(aes)");
 			if (g_keylen != 16) {
 				SEC_TST_PRT("%s: input key err!\n", __func__);
 				return -EINVAL;
@@ -2809,15 +2797,12 @@ int init_bd_pool(thread_data_t *td)
 	td->bd_pool->bds = malloc(g_blknum * sizeof(struct sva_bd));
 	// make the block not align to 4K
 	step = sizeof(char) * g_block;
-	SEC_TST_PRT("init pool Block size: %lu, Block num: %u\n", step, g_blknum * 2);
 	for (i = 0; i < g_blknum; i++) {
 		td->bd_pool->bds[i].src = (char *)malloc(step);
 		td->bd_pool->bds[i].dst = (char *)malloc(step);
 		memcpy(td->bd_pool->bds[i].src, tv->ptext, tv->len);
 	}
 
-	SEC_TST_PRT("after init pool memory size: %lu MB\n",
-		(g_blknum * 2 * step) >> BYTES_TO_MB);
 	return 0;
 }
 
@@ -2983,22 +2968,17 @@ static void *sva_sec_cipher_sync(void *arg)
 	struct wd_cipher_sess_setup *setup = pdata->setup;
 	struct wd_cipher_req *req = pdata->req;
 	struct cipher_testvec *tv = NULL;
-	struct timeval cur_tval;
-	unsigned long Perf = 0, pktlen;
-	handle_t	h_sess;
-	float speed, time_used;
+	handle_t h_sess;
 	int cnt = g_times;
 	int ret;
 	int j;
 
-	gettimeofday(&pdata->start_tval, NULL);
 	ret = get_cipher_resource(&tv, (int *)&setup->alg, (int *)&setup->mode);
 
 	h_sess = wd_cipher_alloc_sess(setup);
 	if (!h_sess)
 		return NULL;
 
-	pktlen = g_pktlen;
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		SEC_TST_PRT("test sec cipher set key is failed!\n");
@@ -3018,13 +2998,6 @@ static void *sva_sec_cipher_sync(void *arg)
 		g_count++;
 	}
 	pthread_mutex_unlock(&test_sec_mutex);
-	gettimeofday(&cur_tval, NULL);
-	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
-				cur_tval.tv_usec - pdata->start_tval.tv_usec);
-	speed = pdata->send_task_num / time_used * 1000000;
-	Perf = speed * pktlen / 1024; //B->KB
-	SEC_TST_PRT("Sync Mode thread time_used:%0.0f us, Perf: %ld KB/s\n",
-			time_used, Perf);
 
 out:
 	wd_cipher_free_sess(h_sess);
@@ -3226,8 +3199,6 @@ static int sec_sva_test(void)
 
 	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 	step = sizeof(char) * g_pktlen;
-	SEC_TST_PRT("BD package size: %u Bytes, total send pkts: %lld\n",
-		g_pktlen, g_times * g_thread_num);
 
 	src = malloc(step * g_thread_num);
 	if (!src) {
