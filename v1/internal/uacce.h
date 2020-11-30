@@ -27,6 +27,7 @@
  *
  * NOIOMMU: the device has no IOMMU support
  *	can do ssva, but no map to the dev
+ * IOMMU: the device has IOMMU support
  * PASID: the device has IOMMU which support PASID setting
  *	can do ssva, mapped to dev per process
  * FAULT_FROM_DEV: the device has IOMMU which can do page fault request
@@ -39,6 +40,7 @@
 #define WD_UACCE_DEV_SVA		(1<<0)
 #define WD_UACCE_DEV_NOIOMMU		(1<<1)
 #define WD_UACCE_DEV_PASID		(1<<2)
+#define WD_UACCE_DEV_IOMMU		(1<<7)
 
 /* uacce mode of the driver */
 #define WD_UACCE_MODE_NOWD_UACCE	0 /* don't use uacce */

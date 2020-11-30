@@ -109,33 +109,25 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 					struct wcrypto_comp_msg *msg,
 					struct wd_queue *q)
 {
-	struct q_info *qinfo = q->qinfo;
 	uintptr_t phy_in, phy_out;
 	uintptr_t phy_ctxbuf = 0;
 
-	if (qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) {
-		phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
-		if (!phy_in) {
-			WD_ERR("Get zip in buf dma address fail!\n");
+	phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
+	if (!phy_in) {
+		WD_ERR("Get zip in buf dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
+	if (!phy_out) {
+		WD_ERR("Get zip out buf dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL) {
+		phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf, 0);
+		if (!phy_ctxbuf) {
+			WD_ERR("Get zip ctx buf dma address fail!\n");
 			return -WD_ENOMEM;
 		}
-		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
-		if (!phy_out) {
-			WD_ERR("Get zip out buf dma address fail!\n");
-			return -WD_ENOMEM;
-		}
-		if (msg->stream_mode == WCRYPTO_COMP_STATEFUL) {
-			phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf, 0);
-			if (!phy_ctxbuf) {
-				WD_ERR("Get zip ctx buf dma address fail!\n");
-				return -WD_ENOMEM;
-			}
-		}
-	} else {
-		phy_in = (uintptr_t)msg->src;
-		phy_out = (uintptr_t)msg->dst;
-		if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
-			phy_ctxbuf = (uintptr_t)msg->ctx_buf;
 	}
 
 	addr->source_addr = phy_in;

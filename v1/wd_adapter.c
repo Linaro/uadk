@@ -164,6 +164,7 @@ void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 			return;
 		}
 	}
+
 	TAILQ_INSERT_TAIL(&qinfo->ss_list, rgn, next);
 }
 
@@ -201,30 +202,28 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 
 	qinfo->ss_va = ptr;
 	qinfo->ss_size = size;
-	if (qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) {
-		size = 0;
-		while (ret > 0) {
-			info = (unsigned long)i;
-			ret = ioctl(qinfo->fd, WD_UACCE_CMD_GET_SS_DMA, &info);
-			if (ret < 0) {
-				drv_show_ss_slices(q);
-				WD_ERR("get PA fail!\n");
-				return NULL;
-			}
-			rgn = malloc(sizeof(*rgn));
-			if (!rgn) {
-				WD_ERR("alloc ss region fail!\n");
-				return NULL;
-			}
-			memset(rgn, 0, sizeof(*rgn));
-			rgn->size = (info & WD_UACCE_GRAN_NUM_MASK) <<
-				    WD_UACCE_GRAN_SHIFT;
-			rgn->pa = info - (rgn->size >> WD_UACCE_GRAN_SHIFT);
-			rgn->va = ptr + size;
-			size += rgn->size;
-			drv_add_slice(q, rgn);
-			i++;
+	size = 0;
+	while (ret > 0) {
+		info = (unsigned long)i;
+		ret = ioctl(qinfo->fd, WD_UACCE_CMD_GET_SS_DMA, &info);
+		if (ret < 0) {
+			drv_show_ss_slices(q);
+			WD_ERR("get DMA fail!\n");
+			return NULL;
 		}
+		rgn = malloc(sizeof(*rgn));
+		if (!rgn) {
+			WD_ERR("alloc ss region fail!\n");
+			return NULL;
+		}
+		memset(rgn, 0, sizeof(*rgn));
+		rgn->size = (info & WD_UACCE_GRAN_NUM_MASK) <<
+				WD_UACCE_GRAN_SHIFT;
+		rgn->pa = info - (rgn->size >> WD_UACCE_GRAN_SHIFT);
+		rgn->va = ptr + size;
+		size += rgn->size;
+		drv_add_slice(q, rgn);
+		i++;
 	}
 
 	return ptr;
