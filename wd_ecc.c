@@ -1294,7 +1294,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 
 	if (req->op_type == WD_ECXDH_GEN_KEY ||
 		req->op_type == WD_SM2_KG) {
-		struct wd_ecc_point *g;
+		struct wd_ecc_point *g = NULL;
 
 		wd_ecc_get_prikey_params((void *)key, NULL, NULL,
 			NULL, NULL, &g, NULL);
