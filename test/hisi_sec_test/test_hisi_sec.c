@@ -3495,6 +3495,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 
 static int test_sec_default_case()
 {
+	g_ctxnum = 1;
 	g_testalg = 0;
 	g_times = 10;
 	g_pktlen = 16;
