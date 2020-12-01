@@ -45,6 +45,8 @@ static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 static unsigned int g_syncmode;
 static unsigned int g_ctxnum;
+static pthread_spinlock_t lock = 0;
+static __u32 last_ctx = 0;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
@@ -2847,7 +2849,6 @@ static void *sva_sec_cipher_async(void *arg)
 	}
 
 	g_count = 0;
-	pthread_mutex_lock(&test_sec_mutex);
 	/* run task */
 	do {
 try_do_again:
@@ -2865,7 +2866,6 @@ try_do_again:
 		cnt--;
 		g_count++; // g_count means data block numbers
 	} while (cnt);
-	pthread_mutex_unlock(&test_sec_mutex);
 
 	ret = 0;
 out:
@@ -2884,19 +2884,17 @@ static void *sva_poll_func(void *arg)
 
 	while (1) {
 		ret = wd_cipher_poll(1, &count);
-
-		recv += count;
-		count = 0;
-		if (expt == recv) {
+		if (ret < 0 && ret != -EAGAIN) {
+			SEC_TST_PRT("poll ctx error: %d\n", ret);
 			break;
 		}
-		if (ret < 0) {
-			usleep(100);
-			//SEC_TST_PRT("poll ctx recv: %u\n", recv);
-		}
+		recv += count;
+		if (expt == recv)
+			break;
 	}
 
 	pthread_exit(NULL);
+
 	return NULL;
 }
 
@@ -2986,7 +2984,6 @@ static void *sva_sec_cipher_sync(void *arg)
 	}
 
 	g_count = 0;
-	pthread_mutex_lock(&test_sec_mutex);
 	/* run task */
 	while (cnt) {
 		j = g_count % g_blknum;
@@ -2997,7 +2994,6 @@ static void *sva_sec_cipher_sync(void *arg)
 		pdata->send_task_num++;
 		g_count++;
 	}
-	pthread_mutex_unlock(&test_sec_mutex);
 
 out:
 	wd_cipher_free_sess(h_sess);
@@ -3054,23 +3050,27 @@ static int sva_sync_create_threads(int thread_num, struct wd_cipher_req *reqs,
 }
 
 static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-					const struct sched_key *key)
+				     const struct sched_key *key)
 {
-	static int last_ctx = 0;
+	__u32 index;
+
+	pthread_spin_lock(&lock);
 
 	if (++last_ctx == g_ctx_cfg.ctx_num)
 		last_ctx = 0;
+	index = last_ctx;
 
-	return last_ctx;
+	pthread_spin_unlock(&lock);
 
+	return index;
 }
 
-static int sva_sched_poll_policy(handle_t h_sched_ctx,
-				    __u32 expect, __u32 *count)
+static int sva_sched_poll_policy(handle_t h_sched_ctx, __u32 expect,
+				 __u32 *count)
 {
 	int recv = 0;
+	int ret = 0;
 	__u32 cnt;
-	int ret;
 	int i;
 
 	if (unlikely(g_ctx_cfg.ctxs[0].ctx_mode != CTX_MODE_ASYNC)) {
@@ -3079,22 +3079,19 @@ static int sva_sched_poll_policy(handle_t h_sched_ctx,
 		return -1;
 	}
 
-	// recv expect msg then return, else loop the ctxs
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
 		ret = wd_cipher_poll_ctx(i, 1, &cnt);
-		if (ret == 0) {//recv one msg OK
+		/* ret is 0 means no error and recv 1 finished task */
+		if (!ret)
 			recv++;
-		}
-		if (recv == expect) {
-			*count = recv;
-			return 0;
-		}
+		/* here is an error, return ret and recv num currently */
+		else if (ret != -EAGAIN)
+			break;
 	}
 
-	// loop all ctx and can't recv expect BD OK, return error;
 	*count = recv;
-	return -1;
 
+	return ret;
 }
 
 static int sva_init_ctx_config(int type, int mode)
