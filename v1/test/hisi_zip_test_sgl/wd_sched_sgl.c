@@ -43,7 +43,7 @@ static int __init_cache(struct wd_scheduler *sched, int data_fmt)
 	qinfo = sched->qs[0].qinfo;
 	pool = qinfo->br.usr;
 	for (i = 0; i < sched->msg_cache_num; i++) {
-		if (data_fmt == 0) {  /* use pbuffer */
+		if (data_fmt == WD_FLAT_BUF) {  /* use pbuffer */
 			sched->msgs[i].data_in = wd_alloc_blk(pool);
 			sched->msgs[i].data_out = wd_alloc_blk(pool);
 			if (!sched->msgs[i].data_in || !sched->msgs[i].data_out) {
@@ -90,7 +90,7 @@ static void __fini_cache(struct wd_scheduler *sched, int data_fmt)
 	if (!(flags & WD_UACCE_DEV_PASID)) {
 		pool = qinfo->br.usr;
 		if (pool) {
-			if (data_fmt == 0) { /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF) { /* use pbuffer */
 				for (i = 0; i < sched->msg_cache_num; i++) {
 					if (sched->msgs[i].data_in)
 						wd_free_blk(pool, sched->msgs[i].data_in);
@@ -146,7 +146,7 @@ static int wd_sched_preinit(struct wd_scheduler *sched, int data_fmt)
 			goto out_with_queues;
 		}
 	} else {
-		if (data_fmt == 0) {  /* use pbuffer*/
+		if (data_fmt == WD_FLAT_BUF) {  /* use pbuffer*/
 			memset(&mm_setup, 0, sizeof(mm_setup));
 			mm_setup.block_size = sched->msg_data_size;
 			mm_setup.block_num = sched->msg_cache_num << 0x1; /* in and out */

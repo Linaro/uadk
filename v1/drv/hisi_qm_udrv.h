@@ -26,7 +26,6 @@
 #include "../wd_dh.h"
 #include "../wd_sgl.h"
 
-
 /* default queue depth for sq/cq/eq */
 #define QM_Q_DEPTH		1024
 
@@ -78,6 +77,11 @@
 #define WD_SGL_PAD0_LEN			2
 #define WD_SGL_PAD1_LEN			8
 #define WD_SGL_RESERVERD_LEN		24
+
+enum hisi_buff_type {
+	HISI_FLAT_BUF,
+	HISI_SGL_BUF,
+};
 
 /* in little-endian */
 struct hisi_sge {

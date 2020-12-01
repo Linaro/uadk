@@ -252,9 +252,9 @@ therad_no_affinity:
 #ifdef CONFIG_IOMMU_SVA
 	ss_buf = calloc(1, ss_region_size);
 #else
-	if (pdata->data_fmt == 0) { /* use pbuf */
+	if (pdata->data_fmt == WD_FLAT_BUF) { /* use pbuf */
 		ss_buf = wd_reserve_memory(q, ss_region_size);
-	} else { /* pdata->data_fmt == 1, use nosva-sgl */
+	} else { /* pdata->data_fmt == WD_SGL_BUF, use nosva-sgl */
 		sp.buf_size = pdata->src_len / 10;
 		sp.align_size = 64;
 		sp.sge_num_in_sgl = 12;
@@ -271,7 +271,7 @@ therad_no_affinity:
 		goto release_q;
 	}
 
-	if (pdata->data_fmt == 0) { /* use pbuf */
+	if (pdata->data_fmt == WD_FLAT_BUF) { /* use pbuf */
 		ctx_setup.data_fmt = WD_FLAT_BUF;
 		ret = smm_init(ss_buf, ss_region_size, 0xF);
 		if (ret)
@@ -284,7 +284,7 @@ therad_no_affinity:
 				DMEMSIZE);
 			goto buf_free;
 		}
-	} else { /* pdata->data_fmt == 1, use nosva-sgl */
+	} else { /* pdata->data_fmt == WD_SGL_BUF, use nosva-sgl */
 		ctx_setup.data_fmt = WD_SGL_BUF;
 		src = in = wd_alloc_sgl(ss_buf, pdata->src_len);
 		dst = out = wd_alloc_sgl(ss_buf, pdata->src_len);
@@ -318,10 +318,10 @@ therad_no_affinity:
 	opdata->out = out;
 	opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
-	if (pdata->data_fmt == 0) { /* use pbuf */
+	if (pdata->data_fmt == WD_FLAT_BUF) { /* use pbuf */
 		memcpy(src, pdata->src, pdata->src_len);
 		opdata->avail_out = DMEMSIZE;
-	} else {  /* pdata->data_fmt == 1, use nosva-sgl */
+	} else {  /* pdata->data_fmt == WD_SGL_BUF, use nosva-sgl */
 
 		wd_sgl_cp_from_pbuf((struct wd_sgl *)src, 0,
 				    pdata->src, pdata->src_len);
@@ -364,9 +364,9 @@ therad_no_affinity:
 	opdata->produced = out_len;
 	dbg("%s(): test !,produce=%d\n", __func__, opdata->produced);
 
-	if (pdata->data_fmt == 0) /* use pbuf */
+	if (pdata->data_fmt == WD_FLAT_BUF) /* use pbuf */
 		memcpy(pdata->dst, dst, opdata->produced);
-	else /* pdata->data_fmt == 1, use nosva-sgl */
+	else /* pdata->data_fmt == WD_SGL_BUF, use nosva-sgl */
 		wd_sgl_cp_to_pbuf((struct wd_sgl *)dst, 0, pdata->dst,
 				  opdata->produced);
 
@@ -378,7 +378,7 @@ therad_no_affinity:
 		free(opdata);
 
 	wcrypto_del_comp_ctx(zip_ctx);
-	if (pdata->data_fmt == 1) { /* use nosva-sgl */
+	if (pdata->data_fmt == WD_SGL_BUF) { /* use nosva-sgl */
 		wd_free_sgl(ss_buf, src);
 		wd_free_sgl(ss_buf, dst);
 		wd_sglpool_destroy(ss_buf);
@@ -396,7 +396,7 @@ buf_free:
 	if (ss_buf)
 		free(ss_buf);
 #endif
-	if (pdata->data_fmt == 1) { /* use nosva-sgl */
+	if (pdata->data_fmt == WD_SGL_BUF) { /* use nosva-sgl */
 		if (src)
 			wd_free_sgl(ss_buf, src);
 		if (dst)
@@ -680,9 +680,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			data_fmt = atoi(optarg);
-			if (data_fmt == 0)
+			if (data_fmt == WD_FLAT_BUF)
 				fprintf(stderr, "use memmory of pbuffer!\n");
-			else if(data_fmt == 1)
+			else if(data_fmt == WD_SGL_BUF)
 				fprintf(stderr, "use memmory of sgl!\n");
 			else
 				show_help = 1;

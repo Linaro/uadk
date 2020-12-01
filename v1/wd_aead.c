@@ -131,12 +131,26 @@ fail_with_cookies:
 static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
+	__u8 tmp[MAX_CIPHER_KEY_SIZE] = { 0 };
 
-	if (ctx->ckey)
-		memset(ctx->ckey, 0, MAX_CIPHER_KEY_SIZE);
+	/**
+	 * When data_fmt is 'WD_SGL_BUF',  'akey' and 'ckey' is a sgl, and if u
+	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
+	 * whose 'pbuf' is all zero.
+	 */
+	if (ctx->ckey) {
+		if (ctx->setup.data_fmt == WD_FLAT_BUF)
+			memset(ctx->ckey, 0, MAX_CIPHER_KEY_SIZE);
+		else if (ctx->setup.data_fmt == WD_SGL_BUF)
+			wd_sgl_cp_from_pbuf(ctx->ckey, 0, tmp, MAX_CIPHER_KEY_SIZE);
+	}
 
-	if (ctx->akey)
-		memset(ctx->akey, 0, MAX_AEAD_KEY_SIZE);
+	if (ctx->akey) {
+		if (ctx->setup.data_fmt == WD_FLAT_BUF)
+			memset(ctx->akey, 0, MAX_AEAD_KEY_SIZE);
+		else if (ctx->setup.data_fmt == WD_SGL_BUF)
+			wd_sgl_cp_from_pbuf(ctx->akey, 0, tmp, MAX_AEAD_KEY_SIZE);
+	}
 
 	if (br && br->free) {
 		if (ctx->ckey)
@@ -413,7 +427,11 @@ int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len)
 	}
 
 	ctxt->ckey_bytes = key_len;
-	memcpy(ctxt->ckey, key, key_len);
+
+	if (ctxt->setup.data_fmt == WD_SGL_BUF)
+		wd_sgl_cp_from_pbuf(ctxt->ckey, 0, key, key_len);
+	else
+		memcpy(ctxt->ckey, key, key_len);
 
 	return ret;
 }
@@ -433,7 +451,11 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 	}
 
 	ctxt->akey_bytes = key_len;
-	memcpy(ctxt->akey, key, key_len);
+
+	if (ctxt->setup.data_fmt == WD_SGL_BUF)
+		wd_sgl_cp_from_pbuf(ctxt->akey, 0, key, key_len);
+	else
+		memcpy(ctxt->akey, key, key_len);
 
 	return WD_SUCCESS;
 }
