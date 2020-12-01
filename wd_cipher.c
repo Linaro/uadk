@@ -415,15 +415,12 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = idx;
 
-	pthread_mutex_lock(&ctx->lock);
-
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, msg);
 	if (ret < 0) {
 		if (ret != -EBUSY)
 			WD_ERR("wd cipher async send err!\n");
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, index, msg->tag);
 	}
-	pthread_mutex_unlock(&ctx->lock);
 
 	return ret;
 }
@@ -443,10 +440,8 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 	}
 
 	do {
-		pthread_mutex_lock(&ctx->lock);
 		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx,
-							      &resp_msg);
-		pthread_mutex_unlock(&ctx->lock);
+							    &resp_msg);
 		if (ret == -EAGAIN) {
 			break;
 		} else if (ret < 0) {

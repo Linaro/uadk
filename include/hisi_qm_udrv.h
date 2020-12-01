@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #include "config.h"
 #include "wd.h"
@@ -40,6 +41,7 @@ struct hisi_qm_queue_info {
 	__u16 qc_type;
 	__u16 used_num;
 	bool cqc_phase;
+	pthread_spinlock_t lock;
 };
 
 struct hisi_qp {
