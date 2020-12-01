@@ -102,9 +102,19 @@ fail_with_cookies:
 static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
+	__u8 tmp[MAX_HMAC_KEY_SIZE] = { 0 };
 
-	if (ctx->key)
-		memset(ctx->key, 0, MAX_HMAC_KEY_SIZE);
+	/**
+	 * When data_fmt is 'WD_SGL_BUF',  'akey' and 'ckey' is a sgl, and if u
+	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
+	 * whose 'pbuf' is all zero.
+	 */
+	if (ctx->key) {
+		if (ctx->setup.data_fmt == WD_FLAT_BUF)
+			memset(ctx->key, 0, MAX_HMAC_KEY_SIZE);
+		else if (ctx->setup.data_fmt == WD_SGL_BUF)
+			wd_sgl_cp_from_pbuf(ctx->key, 0, tmp, MAX_HMAC_KEY_SIZE);
+	}
 
 	if (br && br->free && ctx->key)
 		br->free(br->usr, ctx->key);
@@ -251,7 +261,11 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 	}
 
 	ctxt->key_bytes = key_len;
-	memcpy(ctxt->key, key, key_len);
+
+	if (ctxt->setup.data_fmt == WD_SGL_BUF)
+		wd_sgl_cp_from_pbuf(ctxt->key, 0, key, key_len);
+	else
+		memcpy(ctxt->key, key, key_len);
 
 	return WD_SUCCESS;
 }

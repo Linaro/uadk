@@ -126,7 +126,7 @@ static int hizip_wd_sched_input(struct wd_msg *msg, void *priv)
 		}
 	}
 
-	if (m->data_fmt == 0) /* use pbuffer */
+	if (m->data_fmt == WD_FLAT_BUF) /* use pbuffer */
 		memcpy(msg->data_in, zip_priv->src, ilen);
 	else   /* use sgl */
 		wd_sgl_cp_from_pbuf(msg->data_in, 0, zip_priv->src, ilen);
@@ -174,7 +174,7 @@ static int hizip_wd_sched_output(struct wd_msg *msg, void *priv)
 		}
 	}
 
-	if (m->data_fmt == 0) /* use pbuffer */
+	if (m->data_fmt == WD_FLAT_BUF) /* use pbuffer */
 		memcpy(zip_priv->dst, msg->data_out, m->produced);
 	else   /* use sgl */
 		wd_sgl_cp_to_pbuf(msg->data_out, 0, zip_priv->dst, m->produced);
@@ -503,7 +503,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	}
 
 #else
-	if (zstrm->data_fmt == 0) { /* use pbuffer */
+	if (zstrm->data_fmt == WD_FLAT_BUF) { /* use pbuffer */
 		memset(&mm_setup, 0, sizeof(mm_setup));
 		mm_setup.block_size = DMEMSIZE;
 		mm_setup.block_num = block_mm_num;
@@ -553,7 +553,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 	memset(&ctx_setup, 0, sizeof(ctx_setup));
 	ctx_setup.alg_type = alg_type;
 	ctx_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
-	if (zstrm->data_fmt == 0) { /* use pbuffer */
+	if (zstrm->data_fmt == WD_FLAT_BUF) { /* use pbuffer */
 		ctx_setup.data_fmt = WD_FLAT_BUF;
 		ctx_setup.br.alloc = (void *)wd_alloc_blk;
 		ctx_setup.br.free = (void *)wd_free_blk;
@@ -561,7 +561,7 @@ static int hw_init(struct zip_stream *zstrm, int alg_type, int comp_optype)
 		ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
 		ctx_setup.br.get_bufsize = (void *)wd_blksize;
 		ctx_setup.br.usr = pool;
-	} else {  /* data_fmt = 1, use sgl */
+	} else {  /* WD_SGL_BUF */
 		ctx_setup.data_fmt = WD_SGL_BUF;
 		ctx_setup.br.alloc = (void *)wd_alloc_sgl;
 		ctx_setup.br.free = (void *)wd_free_sgl;
@@ -619,7 +619,7 @@ buf_free:
 	if (out)
 		free(out);
 #else
-	if (zstrm->data_fmt == 0) { /* use pbuffer */
+	if (zstrm->data_fmt == WD_FLAT_BUF) { /* use pbuffer */
 		if (in)
 			wd_free_blk(pool, in);
 		if (out)
@@ -655,7 +655,7 @@ static void hw_end(struct zip_stream *zstrm)
 		if (ctl->out)
 			free(ctl->out);
 #else
-	if (zstrm->data_fmt == 0) { /* use pbuffer */
+	if (zstrm->data_fmt == WD_FLAT_BUF) { /* use pbuffer */
 		if (ctl->in)
 			wd_free_blk(ctl->pool, ctl->in);
 		if (ctl->out)
@@ -671,7 +671,7 @@ static void hw_end(struct zip_stream *zstrm)
 	if (ctl->ctx)
 		wcrypto_del_comp_ctx(ctl->ctx);
 
-	if (zstrm->data_fmt == 0) /* use pbuffer */
+	if (zstrm->data_fmt == WD_FLAT_BUF) /* use pbuffer */
 		wd_blkpool_destroy(ctl->pool);
 	else   /* use sgl */
 		wd_sglpool_destroy(ctl->pool);
@@ -925,7 +925,7 @@ int hw_stream_compress(int alg_type, int blksize,
 
 	do {
 		if (srclen > stream_chunk) {
-			if (data_fmt == 0)  /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF)  /* use pbuffer */
 				memcpy(zstrm.next_in, src, stream_chunk);
 			else  /* use sgl */
 				wd_sgl_cp_from_pbuf((struct wd_sgl *)zstrm.next_in, 0, src, stream_chunk);
@@ -934,7 +934,7 @@ int hw_stream_compress(int alg_type, int blksize,
 			zstrm.avail_in = stream_chunk;
 			srclen -= stream_chunk;
 		} else {
-			if (data_fmt == 0)  /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF)  /* use pbuffer */
 				memcpy(zstrm.next_in, src, srclen);
 			else  /* use sgl */
 				wd_sgl_cp_from_pbuf((struct wd_sgl *)zstrm.next_in, 0, src, srclen);
@@ -952,7 +952,7 @@ int hw_stream_compress(int alg_type, int blksize,
 				return ret;
 			}
 			have = stream_chunk - zstrm.avail_out;
-			if (data_fmt == 0)  /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF)  /* use pbuffer */
 				memcpy(dst, zstrm.next_out, have);
 			else  /* use sgl */
 				wd_sgl_cp_to_pbuf((struct wd_sgl *)zstrm.next_out, 0, dst, have);
@@ -1003,7 +1003,7 @@ int hw_stream_decompress(int alg_type, int blksize,
 	}
 	do {
 		if (srclen > stream_chunk) {
-			if (data_fmt == 0)  /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF)  /* use pbuffer */
 				memcpy(zstrm.next_in, src, stream_chunk);
 			else  /* use sgl */
 				wd_sgl_cp_from_pbuf((struct wd_sgl *)zstrm.next_in, 0, src, stream_chunk);
@@ -1012,7 +1012,7 @@ int hw_stream_decompress(int alg_type, int blksize,
 			zstrm.avail_in = stream_chunk;
 			srclen -= stream_chunk;
 		} else {
-			if (data_fmt == 0)  /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF)  /* use pbuffer */
 				memcpy(zstrm.next_in, src, srclen);
 			else  /* use sgl */
 				wd_sgl_cp_from_pbuf((struct wd_sgl *)zstrm.next_in, 0, src, srclen);
@@ -1040,7 +1040,7 @@ int hw_stream_decompress(int alg_type, int blksize,
 				hw_end(&zstrm);
 				return -ENOMEM;
 			}
-			if (data_fmt == 0)  /* use pbuffer */
+			if (data_fmt == WD_FLAT_BUF)  /* use pbuffer */
 				memcpy(dst, zstrm.next_out, have);
 			else  /* use sgl */
 				wd_sgl_cp_to_pbuf((struct wd_sgl *)zstrm.next_out, 0, dst, have);
