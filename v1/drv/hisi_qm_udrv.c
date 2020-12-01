@@ -275,7 +275,7 @@ static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 	struct wcrypto_paras *priv = &q->capa.priv;
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	bool is_find = true;
+	bool is_found = true;
 
 	if (!strncmp(alg, "rsa", strlen("rsa"))) {
 		qinfo->atype = WCRYPTO_RSA;
@@ -318,16 +318,16 @@ static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 		info->sqe_parse[WCRYPTO_SM2] = qm_parse_ecc_sqe;
 		priv->direction = 1;
 	} else {
-		is_find = false;
+		is_found = false;
 	}
 
-	return is_find;
+	return is_found;
 }
 
 static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 {
 	struct qm_queue_info *info = qinfo->priv;
-	bool is_find = true;
+	bool is_found = true;
 
 	if (!strncmp(alg, "cipher", strlen("cipher"))) {
 		qinfo->atype = WCRYPTO_CIPHER;
@@ -360,16 +360,23 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 			info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_bd3_sqe;
 		}
 	} else {
-		is_find = false;
+		is_found = false;
 	}
 
-	return is_find;
+	if (is_found) {
+		info->sgl_info = qm_hw_sgl_info;
+		info->sgl_init = qm_hw_sgl_init;
+		info->sgl_uninit = qm_hw_sgl_uninit;
+		info->sgl_merge = qm_hw_sgl_merge;
+	}
+
+	return is_found;
 }
 
 static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
 {
 	struct qm_queue_info *info = qinfo->priv;
-	bool is_find = false;
+	bool is_found = false;
 
 	if (!strncmp(alg, "zlib", strlen("zlib")) ||
 	    !strncmp(alg, "gzip", strlen("gzip")) ||
@@ -388,10 +395,10 @@ static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
 		info->sgl_init = qm_hw_sgl_init;
 		info->sgl_uninit = qm_hw_sgl_uninit;
 		info->sgl_merge = qm_hw_sgl_merge;
-		is_find = true;
+		is_found = true;
 	}
 
-	return is_find;
+	return is_found;
 }
 
 static int qm_set_queue_alg_info(struct wd_queue *q)

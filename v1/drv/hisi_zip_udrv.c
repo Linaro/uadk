@@ -145,6 +145,7 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	struct hisi_zip_sqe_addr addr = {0};
 	struct wd_queue *q = info->q;
 	__u8 flush_type;
+	__u8 data_fmt;
 	int ret;
 
 	memset((void *)sqe, 0, sizeof(*sqe));
@@ -187,7 +188,8 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		     (flush_type)) << STREAM_FLUSH_SHIFT;
 
 	/* data_fmt: 4'b0000 - Pbuffer, 4'b0001 - SGL */
-	sqe->dw9 |= msg->data_fmt << HZ_BUF_TYPE_SHIFT;
+	data_fmt = (msg->data_fmt == WD_SGL_BUF) ? HISI_SGL_BUF : HISI_FLAT_BUF;
+	sqe->dw9 |= data_fmt << HZ_BUF_TYPE_SHIFT;
 
 	if (msg->ctx_buf) {
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
@@ -670,6 +672,7 @@ int qm_fill_zip_cipher_sqe(void *send_msg, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_cipher_msg *msg = send_msg;
 	struct wcrypto_cipher_tag *cipher_tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_queue *q = info->q;
+	__u8 data_fmt;
 	uintptr_t phy;
 	__u16 key_len;
 	int ret;
@@ -687,7 +690,9 @@ int qm_fill_zip_cipher_sqe(void *send_msg, struct qm_queue_info *info, __u16 i)
 	phy = (uintptr_t)msg->out;
 	sqe->dest_addr_l = lower_32_bits(phy);
 	sqe->dest_addr_h = upper_32_bits(phy);
-	sqe->dw9 |= msg->data_fmt << HZ_BUF_TYPE_SHIFT;
+
+	data_fmt = (msg->data_fmt == WD_SGL_BUF) ? HISI_SGL_BUF : HISI_FLAT_BUF;
+	sqe->dw9 |= data_fmt << HZ_BUF_TYPE_SHIFT;
 
 	phy = (uintptr_t)drv_iova_map(q, msg->key, msg->key_bytes);
 	if (!phy) {
