@@ -34,7 +34,6 @@ static struct wd_sched *g_sched;
 
 static long long int g_times;
 static unsigned int g_thread_num;
-static unsigned int g_count; // total packets
 static unsigned int g_testalg;
 static unsigned int g_keylen;
 static unsigned int g_pktlen;
@@ -181,6 +180,7 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 					SEC_TST_PRT("%s: input key err!\n", __func__);
 					return -EINVAL;
 			}
+			tv->ivlen = 16;
 			break;
 		case 3:
 			alg_type = WD_CIPHER_AES;
@@ -260,6 +260,7 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 				return -EINVAL;
 			}
 			tv = &sm4_xts_tv_template[0];
+			tv->ivlen = 16;
 			break;
 		case 9:
 			alg_type = WD_CIPHER_SM4;
@@ -437,10 +438,13 @@ static int test_sec_cipher_sync_once(void)
 		ret = -1;
 		goto out;
 	}
-	if (setup.mode == WD_CIPHER_CBC || setup.mode == WD_CIPHER_XTS) {
+	if (setup.mode != WD_CIPHER_ECB) {
+		req.iv_bytes = strlen(tv->iv);
+		if (tv->ivlen > 0)
+			req.iv_bytes = tv->ivlen;
+		memset(req.iv, 0, req.iv_bytes);
 		if (tv->iv)
 			memcpy(req.iv, tv->iv, strlen(tv->iv));
-		req.iv_bytes = strlen(tv->iv);
 		SEC_TST_PRT("cipher req iv--------->:\n");
 		hexdump(req.iv, req.iv_bytes);
 	}
@@ -564,10 +568,13 @@ static int test_sec_cipher_async_once(void)
 		ret = -1;
 		goto out;
 	}
-	if (setup.mode == WD_CIPHER_CBC || setup.mode == WD_CIPHER_XTS) {
+	if (setup.mode != WD_CIPHER_ECB) {
+		req.iv_bytes = strlen(tv->iv);
+		if (tv->ivlen > 0)
+			req.iv_bytes = tv->ivlen;
+		memset(req.iv, 0, req.iv_bytes);
 		if (tv->iv)
 			memcpy(req.iv, tv->iv, strlen(tv->iv));
-		req.iv_bytes = strlen(tv->iv);
 		SEC_TST_PRT("cipher req iv--------->:\n");
 		hexdump(req.iv, req.iv_bytes);
 	}
@@ -784,9 +791,11 @@ static int sec_cipher_sync_test(void)
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
-		if (test_mode == WD_CIPHER_CBC || test_mode == WD_CIPHER_XTS) {
-			memcpy(req[i].iv, tv->iv, strlen(tv->iv));
+		if (test_mode != WD_CIPHER_ECB) {
 			req[i].iv_bytes = strlen(tv->iv);
+			if (tv->ivlen > 0)
+				req[i].iv_bytes = tv->ivlen;
+			memcpy(req[i].iv, tv->iv, strlen(tv->iv));
 		}
 
 		/* config arg */
@@ -863,7 +872,6 @@ try_do_again:
 			goto out;
 		}
 		cnt--;
-		g_count++; // g_count means data block numbers
 	} while (cnt);
 	pthread_mutex_unlock(&test_sec_mutex);
 	SEC_TST_PRT("Test cipher async function thread_id is:%d\n", thread_id);
@@ -1015,9 +1023,11 @@ static int sec_cipher_async_test(void)
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
-		if (test_mode == WD_CIPHER_CBC || test_mode == WD_CIPHER_XTS) {
-			memcpy(req[i].iv, tv->iv, strlen(tv->iv));
+		if (test_mode != WD_CIPHER_ECB) {
 			req[i].iv_bytes = strlen(tv->iv);
+			if (tv->ivlen > 0)
+				req[i].iv_bytes = tv->ivlen;
+			memcpy(req[i].iv, tv->iv, req[i].iv_bytes);
 		}
 
 		/* config arg */
@@ -2830,6 +2840,7 @@ static void *sva_sec_cipher_async(void *arg)
 	struct wd_cipher_sess_setup *setup = pdata->setup;
 	struct wd_cipher_req *req = pdata->req;
 	struct cipher_testvec *tv = NULL;
+	unsigned int count = 0;
 	int cnt = g_times;
 	handle_t h_sess;
 	int ret;
@@ -2848,11 +2859,10 @@ static void *sva_sec_cipher_async(void *arg)
 		goto out;;
 	}
 
-	g_count = 0;
 	/* run task */
 	do {
 try_do_again:
-		j = g_count % g_blknum;
+		j = count % g_blknum;
 		req->src = pdata->bd_pool->bds[j].src;
 		req->dst = pdata->bd_pool->bds[j].dst;
 		ret = wd_do_cipher_async(h_sess, req);
@@ -2864,7 +2874,7 @@ try_do_again:
 			goto out;
 		}
 		cnt--;
-		g_count++; // g_count means data block numbers
+		count++; // count means data block numbers
 	} while (cnt);
 
 	ret = 0;
@@ -2966,6 +2976,7 @@ static void *sva_sec_cipher_sync(void *arg)
 	struct wd_cipher_sess_setup *setup = pdata->setup;
 	struct wd_cipher_req *req = pdata->req;
 	struct cipher_testvec *tv = NULL;
+	unsigned int count = 0;
 	handle_t h_sess;
 	int cnt = g_times;
 	int ret;
@@ -2983,16 +2994,15 @@ static void *sva_sec_cipher_sync(void *arg)
 		goto out;;
 	}
 
-	g_count = 0;
 	/* run task */
 	while (cnt) {
-		j = g_count % g_blknum;
+		j = count % g_blknum;
 		req->src = pdata->bd_pool->bds[j].src;
 		req->dst = pdata->bd_pool->bds[j].dst;
 		ret = wd_do_cipher_sync(h_sess, req);
 		cnt--;
 		pdata->send_task_num++;
-		g_count++;
+		count++;
 	}
 
 out:
@@ -3229,8 +3239,10 @@ static int sec_sva_test(void)
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
 
-		memcpy(req[i].iv, tv->iv, strlen(tv->iv));
 		req[i].iv_bytes = strlen(tv->iv);
+		if (tv->ivlen > 0)
+			req[i].iv_bytes = tv->ivlen;
+		memcpy(req[i].iv, tv->iv, req[i].iv_bytes);
 
 		/* config arg */
 		setup[i].alg = test_alg;
