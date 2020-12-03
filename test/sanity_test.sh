@@ -109,8 +109,6 @@ output_result()
 	echo
 }
 
-export LD_LIBRARY_PATH=/usr/local/lib
-
 # start to test
 find /dev -name hisi_zip-* &> /dev/null
 if [ $? -eq 0 ]; then
