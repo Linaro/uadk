@@ -542,6 +542,11 @@ static int fill_cipher_bd3_alg(struct wcrypto_cipher_msg *msg,
 		struct hisi_sec_bd3_sqe *sqe)
 {
 	int ret = WD_SUCCESS;
+
+	ret = cipher_param_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	__u8 c_key_len = 0;
 
 	switch (msg->alg) {
@@ -763,7 +768,7 @@ static int triple_des_mode_check(int mode)
 	}
 }
 
-static int cipher_para_check(struct wcrypto_cipher_msg *msg)
+static int cipher_comb_param_check(struct wcrypto_cipher_msg *msg)
 {
 	int ret = WD_SUCCESS;
 
@@ -796,7 +801,7 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	uintptr_t temp;
 	int ret;
 
-	ret = cipher_para_check(msg);
+	ret = cipher_comb_param_check(msg);
 	if (ret) {
 		WD_ERR("Invalid cipher alg = %hhu and mode = %hhu combination\n",
 			msg->alg, msg->mode);
@@ -833,7 +838,7 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	uintptr_t temp;
 	int ret;
 
-	ret = cipher_para_check(msg);
+	ret = cipher_comb_param_check(msg);
 	if (ret) {
 		WD_ERR("Invalid cipher alg = %hhu and mode = %hhu combination\n",
 			msg->alg, msg->mode);
@@ -1857,7 +1862,7 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	return ret;
 }
 
-static int aead_para_check(struct wcrypto_aead_msg *msg)
+static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 {
 	int ret = WD_SUCCESS;
 
@@ -1890,7 +1895,7 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	uintptr_t temp;
 	int ret;
 
-	ret = aead_para_check(msg);
+	ret = aead_comb_param_check(msg);
 	if (ret) {
 		WD_ERR("Invalid aead cipher alg = %hhu and mode = %hhu combination\n",
 			msg->calg, msg->cmode);
@@ -2303,7 +2308,7 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	uintptr_t temp;
 	int ret;
 
-	ret = aead_para_check(msg);
+	ret = aead_comb_param_check(msg);
 	if (ret) {
 		WD_ERR("Invalid aead cipher alg = %hhu and mode = %hhu combination\n",
 			msg->calg, msg->cmode);
