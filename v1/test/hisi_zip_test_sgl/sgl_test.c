@@ -104,13 +104,24 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
         printf("free_sgl_num = %d\n", free_sgl_num);
 
 
-        sgl_addr[0] = wd_alloc_sgl(sgl_pool, 4096 * 4);
+        sgl_addr[0] = wd_alloc_sgl(sgl_pool, 4096);
+        sgl_addr[1] = wd_alloc_sgl(sgl_pool, 4096);
+        /* 合并sgl */
+        ret = wd_sgl_merge(sgl_addr[0], sgl_addr[1]);
+        if (ret)
+                printf("test: wd_sgl_merge failed.\n");
+
+        printf("after merge 2 sgls ...\n");
+        sleep(2);
+
+
+#if 1
         func_test(sgl_pool, sgl_addr[0]);
         char a[5016] = { 0 };
         char b[10000] = { 0 };
         char c[20000] = { 0 };
         memset(a, 'f', sizeof(a));
-#if 1
+
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 300, a, sizeof(a));
         if (ret < 0)
                 WD_ERR("coypy failed!\n");
@@ -131,7 +142,7 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
         WD_ERR("\nxxxxxxxxxxxxxxx\n\n");
 #endif
 
-#if 1
+#if 0
 WD_ERR("\n ......... wd_sgl_cp_from_pbuf start ........ \n");
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, a, sizeof(a));
         if (ret < 0)
@@ -347,7 +358,7 @@ WD_ERR("\n ......... test end ........ \n");
 		}
 	}
 #endif
-
+        wd_free_sgl(sgl_pool, sgl_addr[1]);
         wd_free_sgl(sgl_pool, sgl_addr[0]);
         wd_free_sgl(sgl_pool, sgl_addr[0]);
 
