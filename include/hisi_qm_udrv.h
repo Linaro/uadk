@@ -19,6 +19,12 @@
 #define VA_ADDR(hi, lo)	((void *)(((__u64)(hi) << 32) | (__u64)(lo)))
 #define LW_U16(val)	((__u16)((val) & QM_L16BITS_MASK))
 
+enum hisi_hw_type {
+	HISI_QM_API_VER_BASE,
+	HISI_QM_API_VER2_BASE,
+	HISI_QM_API_VER3_BASE,
+};
+
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
 struct hisi_qm_priv {
@@ -40,6 +46,7 @@ struct hisi_qm_queue_info {
 	__u16 sqn;
 	__u16 qc_type;
 	__u16 used_num;
+	__u16 hw_type;
 	bool cqc_phase;
 	pthread_spinlock_t lock;
 };
