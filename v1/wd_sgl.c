@@ -35,6 +35,7 @@
 
 #define FLAG_SGE_CHAIN  0x01UL
 #define FLAG_SGE_END    0x02UL
+#define FLAG_MERGED_SGL    0x01UL
 
 #define SGL_NUM_MAX	2048
 #define SGE_NUM_MAX	60
@@ -510,6 +511,11 @@ void wd_free_sgl(void *pool, struct wd_sgl *sgl)
 		return;
 	}
 
+	if (unlikely((uintptr_t)sgl->next & FLAG_MERGED_SGL)) {
+		WD_ERR("This is a merged sgl, u cannot free it!\n");
+		return;
+	}
+
 	do {
 		next = sgl->next;
 		sgl->buf_sum = sgl->buf_num;
@@ -518,6 +524,7 @@ void wd_free_sgl(void *pool, struct wd_sgl *sgl)
 		/* have to update current 'wd_sgl' before free it */
 		wd_free_blk(p->sgl_pool, sgl);
 		wd_get_free_blk_num(p->sgl_pool, &p->free_sgl_num);
+		next = (struct wd_sgl *)((uintptr_t)next & (~FLAG_MERGED_SGL));
 		sgl = next;
 	} while (next);
 }
@@ -549,6 +556,7 @@ int wd_sgl_merge(struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 	dst_sgl->sge[dst_sgl->buf_num].flag |= FLAG_SGE_CHAIN;
 	dst_sgl->buf_sum += src_sgl->buf_sum;
 	dst_sgl->sum_data_bytes += src_sgl->sum_data_bytes;
+	src_sgl->next = (struct wd_sgl *)((uintptr_t)src_sgl->next | FLAG_MERGED_SGL);
 
 	ret = drv_sgl_merge(dst_pool->q, dst_pool, dst_sgl, src_sgl);
 	if (ret)
@@ -563,11 +571,13 @@ static void sgl_cp_to_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 {
 	__u32 sz = sgl->pool->setup.buf_size;
 	__u32 act_sz = MIN(size, sz - strtad);
+	struct wd_sgl *next;
 	int i;
 
+	next = (struct wd_sgl *)((uintptr_t)sgl->next & (~FLAG_MERGED_SGL));
 	if (strtsg >= sgl->buf_num) {
 		strtsg = strtsg - sgl->buf_num;
-		sgl = sgl->next;
+		sgl = next;
 	}
 
 	memcpy(pbuf, sgl->sge[strtsg].buf + strtad, act_sz);
@@ -584,7 +594,7 @@ static void sgl_cp_to_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 	if (i <= sgl->buf_num - 1) {
 		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, size);
 	} else {
-		sgl = sgl->next;
+		sgl = next;
 		for (i = 0; i < sgl->buf_num - 1 && size > sz; i++) {
 			memcpy(pbuf + (i + sgl->buf_num - strtsg - 1) * sz,
 			       sgl->sge[i].buf, sz);
@@ -614,7 +624,7 @@ int wd_sgl_cp_to_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t size
 	}
 
 	sz = sgl->pool->sgl_mem_sz;
-	sgl->next ? sz <<= 1 : sz;
+	((uintptr_t)sgl->next & (~FLAG_MERGED_SGL)) ? sz <<= 1 : sz;
 	if (unlikely(offset >= sz)) {
 		WD_ERR("'offset' is out of memory!\n");
 		return -WD_EINVAL;
@@ -638,11 +648,13 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 {
 	__u32 sz = sgl->pool->setup.buf_size;
 	__u32 act_sz = MIN(size, sz - strtad);
+	struct wd_sgl *next;
 	int i;
 
+	next = (struct wd_sgl *)((uintptr_t)sgl->next & (~FLAG_MERGED_SGL));
 	if (strtsg >= sgl->buf_num) {
 		strtsg = strtsg - sgl->buf_num;
-		sgl = sgl->next;
+		sgl = next;
 	}
 
 	memcpy(sgl->sge[strtsg].buf + strtad, pbuf, act_sz);
@@ -661,7 +673,7 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 	if (i <= sgl->buf_num - 1) {
 		memcpy(sgl->sge[i].buf, pbuf + (i - strtsg - 1) * sz, size);
 	} else {
-		sgl = sgl->next;
+		sgl = next;
 		for (i = 0; i < sgl->buf_num - 1 && size > sz; i++) {
 			memcpy(sgl->sge[i].buf,
 			       pbuf + (i + sgl->buf_num - strtsg - 1) * sz, sz);
@@ -679,6 +691,7 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 			void *pbuf, size_t size)
 {
 	size_t strtsg, strtad, sz;
+	uintptr_t next;
 	__u32 buf_sz;
 	int i;
 
@@ -689,7 +702,8 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 	}
 
 	sz = sgl->pool->sgl_mem_sz;
-	sgl->next ? sz <<= 1 : sz;
+	next = (uintptr_t)sgl->next & (~FLAG_MERGED_SGL);
+	next ? sz <<= 1 : sz;
 
 	if (unlikely(offset >= sz)) {
 		WD_ERR("'offset' is out of memory!\n");
@@ -703,9 +717,9 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 	for (i = 0; i < sgl->buf_num; i++)
 		sgl->sge[i].data_len = 0;
 
-	if (sgl->next) {
+	if (next) {
 		for (i = 0; i < sgl->buf_num; i++)
-			sgl->next->sge[i].data_len = 0;
+			((struct wd_sgl *)next)->sge[i].data_len = 0;
 	}
 
 	if (sz - offset < size) {
@@ -738,13 +752,16 @@ void wd_sgl_iova_unmap(void *pool, void *sgl_iova, struct wd_sgl *sgl)
 
 void *wd_get_last_sge_buf(struct wd_sgl *sgl)
 {
+	uintptr_t next;
+
 	if (unlikely(!sgl || !sgl->buf_num)) {
 		WD_ERR("sgl or buf_num in sgl is null!\n");
 		return NULL;
 	}
 
-	if (sgl->next)
-		sgl = sgl->next;
+	next = (uintptr_t)sgl->next & (~FLAG_MERGED_SGL);
+	if (next)
+		sgl = (struct wd_sgl *)next;
 
 	return sgl->sge[sgl->buf_num - 1].buf;
 }
