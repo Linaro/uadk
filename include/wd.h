@@ -8,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 #include "uacce.h"
-#include "config.h"
 
 #define PATH_STR_SIZE			256
 #define MAX_ATTR_STR_SIZE		256
