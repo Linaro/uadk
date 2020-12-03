@@ -76,6 +76,7 @@ run_hpre_test()
 	return 0
 }
 
+# failed: return 1; success: return 0
 output_result()
 {
 	echo "test result:"
@@ -105,8 +106,10 @@ output_result()
 
 	if [ $zip_result -ne 1 -a $sec_result -ne 1 -a $hpre_result -ne 1 ]; then
 		echo "===> tests for exited device are all passed!"
+		return 0
 	fi
-	echo
+
+	return 1
 }
 
 # start to test
