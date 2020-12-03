@@ -4,7 +4,6 @@
 
 #include <stdbool.h>
 
-#include "config.h"
 #include "wd.h"
 #include "wd_alg_common.h"
 
