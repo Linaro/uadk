@@ -755,6 +755,7 @@ static int sec_cipher_sync_test(void)
 	struct cipher_testvec *tv = NULL;
 	int test_alg, test_mode;
 	int ret, i;
+	unsigned int len;
 
 	memset(req, 0, sizeof(struct wd_cipher_req) * THREADS_NUM);
 	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * THREADS_NUM);
@@ -768,11 +769,13 @@ static int sec_cipher_sync_test(void)
 		ret = -ENOMEM;
 		goto out_thr;
 	}
+
 	dst = malloc(step * THREADS_NUM);
 	if (!dst) {
 		ret = -ENOMEM;
 		goto out_thr;
 	}
+
 	iv = malloc(step * THREADS_NUM);
 	if (!iv) {
 		ret = -ENOMEM;
@@ -782,8 +785,10 @@ static int sec_cipher_sync_test(void)
 	for (i = 0; i < parallel; i++) {
 		req[i].src = src + i * step;
 		memset(req[i].src, 0, step);
-		memcpy(req[i].src, tv->ptext, g_pktlen);
-		req[i].in_bytes = g_pktlen;
+
+		len = g_pktlen < tv->len ? g_pktlen : tv->len;
+		memcpy(req[i].src, tv->ptext, len);
+		req[i].in_bytes = len;
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
