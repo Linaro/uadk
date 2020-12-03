@@ -75,6 +75,10 @@ static struct hisi_qm_type qm_type[] = {
 		.qm_name	= "hisi_qm_v2",
 		.qm_db_offs	= QM_V2_DOORBELL_OFFSET,
 		.hacc_db	= hacc_db_v2,
+	}, {
+		.qm_name	= "hisi_qm_v3",
+		.qm_db_offs	= QM_V2_DOORBELL_OFFSET,
+		.hacc_db	= hacc_db_v2,
 	},
 };
 
@@ -145,9 +149,10 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 	}
 
 	if (i == size) {
-		q_info->db = hacc_db_v2;
-		q_info->db_base = q_info->mmio_base + QM_V2_DOORBELL_OFFSET;
+		WD_ERR("fail to find matched type of QM\n");
+		return -ENODEV;
 	}
+	q_info->hw_type = i;
 
 	return 0;
 }
