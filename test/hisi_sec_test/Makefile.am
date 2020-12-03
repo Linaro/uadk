@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -fno-strict-aliasing -I../../include -pthread
+AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I../../include -pthread
 
 bin_PROGRAMS=test_hisi_sec
 
