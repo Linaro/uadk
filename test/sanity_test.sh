@@ -110,7 +110,7 @@ output_result()
 }
 
 # start to test
-find /dev -name hisi_zip-* &> /dev/null
+sudo find /dev -name hisi_zip-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_zip-*
 	have_hisi_zip=1
@@ -118,7 +118,7 @@ if [ $? -eq 0 ]; then
 	zip_result=$?
 fi
 
-find /dev -name hisi_sec2-* &> /dev/null
+sudo find /dev -name hisi_sec2-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_sec2-*
 	have_hisi_sec=1
@@ -126,7 +126,7 @@ if [ $? -eq 0 ]; then
 	sec_result=$?
 fi
 
-find /dev -name hisi_hpre-* &> /dev/null
+sudo find /dev -name hisi_hpre-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_hpre-*
 	have_hisi_hpre=1
