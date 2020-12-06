@@ -676,6 +676,155 @@ static int cipher_iv_check(struct wd_cipher_msg *msg)
 	return 0;
 }
 
+static void hisi_sec_put_sgl(handle_t h_qp, struct wd_cipher_msg *msg)
+{
+	handle_t h_sgl_pool;
+
+	if (msg->data_fmt != WD_SGL_BUF)
+		return;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (!h_sgl_pool)
+		return;
+
+	hisi_qm_put_hw_sgl(h_sgl_pool, msg->in);
+	hisi_qm_put_hw_sgl(h_sgl_pool, msg->out);
+}
+
+static int hisi_sec_fill_sgl(handle_t h_qp, struct wd_cipher_msg *msg,
+		struct hisi_sec_sqe *sqe)
+{
+	handle_t h_sgl_pool;
+	void *hw_sgl_in;
+	void *hw_sgl_out;
+
+	if (msg->data_fmt != WD_SGL_BUF)
+		return 0;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (!h_sgl_pool)
+		return -ENOMEM;
+
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->in);
+	if (!hw_sgl_in) {
+		WD_ERR("failed to get hw sgl in!\n");
+		return -ENOMEM;
+	}
+
+	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->out);
+	if (!hw_sgl_out) {
+		WD_ERR("failed to get hw sgl out!\n");
+		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
+		return -ENOMEM;
+	}
+
+	sqe->sds_sa_type |= 0x80;
+	/*
+	 * src_addr_type: 0~1 bits not used now.
+	 * dst_addr_type: 2~4 bits;
+	 * mac_addr_type: 5~7 bits;
+	 */
+	sqe->sdm_addr_type |= 0x04;
+
+	msg->in = hw_sgl_in;
+	msg->out = hw_sgl_out;
+
+	return 0;
+}
+
+static int hisi_sec_fill_sgl_v3(handle_t h_qp, struct wd_cipher_msg *msg,
+		struct hisi_sec_sqe3 *sqe)
+{
+	handle_t h_sgl_pool;
+	void *hw_sgl_in;
+	void *hw_sgl_out;
+
+	if (msg->data_fmt != WD_SGL_BUF)
+		return 0;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (!h_sgl_pool)
+		return -ENOMEM;
+
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->in);
+	if (!hw_sgl_in) {
+		WD_ERR("failed to get hw sgl in!\n");
+		return -ENOMEM;
+	}
+
+	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->out);
+	if (!hw_sgl_out) {
+		WD_ERR("failed to get hw sgl out!\n");
+		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
+		return -ENOMEM;
+	}
+
+	/*
+	 * src_addr_type: 11~13 bit
+	 * dst_addr_type: 14~16 bit
+	 */
+	sqe->bd_param |= 0x4800;
+
+	msg->in = hw_sgl_in;
+	msg->out = hw_sgl_out;
+
+	return 0;
+}
+
+
+void dump_sqe(struct hisi_sec_sqe *sqe)
+{
+	printf("*************************************");
+	printf("type_auth_cipher: 0x%x\n", sqe->type_auth_cipher);
+	printf("sds_sa_type: 0x%x\n", sqe->sds_sa_type);
+	printf("sdm_addr_type: 0x%x\n", sqe->sdm_addr_type);
+	printf("rsvd0: 0x%x\n", sqe->rsvd0);
+	printf("huk_ci_key: 0x%x\n", sqe->huk_ci_key);
+	printf("ai_apd_cs: 0x%x\n", sqe->ai_apd_cs);
+	printf("rca_key_frm: 0x%x\n", sqe->rca_key_frm);
+	printf("iv_tls_ld: 0x%x\n", sqe->iv_tls_ld);
+
+	printf("mac_key_alg: 0x%x\n", sqe->type2.mac_key_alg);
+	printf("icvw_kmode: 0x%x\n", sqe->type2.icvw_kmode);
+	printf("c_alg: 0x%x\n", sqe->type2.c_alg);
+	printf("rsvd4: 0x%x\n", sqe->type2.rsvd4);
+	printf("alen_ivllen: 0x%x\n", sqe->type2.alen_ivllen);
+	printf("clen_ivhlen: 0x%x\n", sqe->type2.clen_ivhlen);
+	printf("auth_src_offset: 0x%x\n", sqe->type2.auth_src_offset);
+	printf("cipher_src_offset: 0x%x\n", sqe->type2.cipher_src_offset);
+	printf("cs_ip_header_offset: 0x%x\n", sqe->type2.cs_ip_header_offset);
+	printf("cs_udp_header_offset: 0x%x\n", sqe->type2.cs_udp_header_offset);
+	printf("pass_word_len: 0x%x\n", sqe->type2.pass_word_len);
+	printf("dk_len: 0x%x\n", sqe->type2.dk_len);
+	printf("salt3: 0x%x\n", sqe->type2.salt3);
+	printf("salt2: 0x%x\n", sqe->type2.salt2);
+	printf("salt1: 0x%x\n", sqe->type2.salt1);
+	printf("salt0: 0x%x\n", sqe->type2.salt0);
+	printf("tag: 0x%x\n", sqe->type2.tag);
+	printf("rsvd5: 0x%x\n", sqe->type2.rsvd5);
+	printf("cph_pad: 0x%x\n", sqe->type2.cph_pad);
+	printf("c_pad_len_field: 0x%x\n", sqe->type2.c_pad_len_field);
+	printf("long_a_data_len: 0x%llx\n", sqe->type2.long_a_data_len);
+	printf("a_ivin_addr: 0x%llx\n", sqe->type2.a_ivin_addr);
+	printf("a_key_addr: 0x%llx\n", sqe->type2.a_key_addr);
+	printf("mac_addr: 0x%llx\n", sqe->type2.mac_addr);
+	printf("c_ivin_addr: 0x%llx\n", sqe->type2.c_ivin_addr);
+	printf("c_key_addr: 0x%llx\n", sqe->type2.c_key_addr);
+	printf("data_src_addr: 0x%llx\n", sqe->type2.data_src_addr);
+	printf("data_dst_addr: 0x%llx\n", sqe->type2.data_dst_addr);
+	printf("done_flag: 0x%x\n", sqe->type2.done_flag);
+	printf("error_type: 0x%x\n", sqe->type2.error_type);
+	printf("warning_type: 0x%x\n", sqe->type2.warning_type);
+	printf("mac_i3: 0x%x\n", sqe->type2.mac_i3);
+	printf("mac_i2: 0x%x\n", sqe->type2.mac_i2);
+	printf("mac_i1: 0x%x\n", sqe->type2.mac_i1);
+	printf("mac_i0: 0x%x\n", sqe->type2.mac_i0);
+	printf("check_sum_i: 0x%x\n", sqe->type2.check_sum_i);
+	printf("tls_pad_len_i: 0x%x\n", sqe->type2.tls_pad_len_i);
+	printf("rsvd12: 0x%x\n", sqe->type2.rsvd12);
+	printf("counter: 0x%x\n", sqe->type2.counter);
+}
+
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -725,6 +874,12 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
+	ret = hisi_sec_fill_sgl(h_qp, msg, &sqe);
+	if (ret) {
+		WD_ERR("failed to get sgl!\n");
+		return ret;
+	}
+
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;
 	sqe.type2.data_dst_addr = (__u64)msg->out;
@@ -734,6 +889,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
+		hisi_sec_put_sgl(h_qp, msg);
 		return ret;
 	}
 
@@ -753,6 +909,8 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	parse_cipher_bd2(&sqe, recv_msg);
 	recv_msg->tag = sqe.type2.tag;
+
+	hisi_sec_put_sgl(h_qp, recv_msg);
 
 	return 0;
 }
@@ -876,6 +1034,12 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	ret = fill_cipher_bd3_mode(msg, &sqe);
 	if (ret) {
 		WD_ERR("failed to fill bd mode!\n");
+		return ret;
+	}
+
+	ret = hisi_sec_fill_sgl_v3(h_qp, msg, &sqe);
+	if (ret) {
+		WD_ERR("failed to get sgl!\n");
 		return ret;
 	}
 
