@@ -12,7 +12,13 @@ SUBDIRS= v1
 
 else	# WITH_UADK_V1
 
-UADK_VERSION = -version-info 2:0:1
+# libtool version is {current}:{revision}:{age}
+# libNAME.so.{x}.{y}.{z}
+# But {current}:{revision}:{age} doesn't equal to {x}.{y}.{z}
+# x = current - age
+# y = age
+# z = revision
+UADK_VERSION = -version-info 2:2:0
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
