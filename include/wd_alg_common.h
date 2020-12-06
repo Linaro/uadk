@@ -44,6 +44,11 @@ enum wd_ctx_mode {
 	CTX_MODE_ASYNC,
 };
 
+enum wd_buff_type {
+	WD_FLAT_BUF,
+	WD_SGL_BUF,
+};
+
 /**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
@@ -116,6 +121,12 @@ struct wd_sched {
 				  const struct sched_key *key);
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
+};
+
+struct wd_sgl {
+	void *data;
+	__u32 len;
+	struct wd_sgl *next;
 };
 
 static inline void wd_spinlock(struct wd_lock *lock)
