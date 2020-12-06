@@ -44,6 +44,7 @@ static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 static unsigned int g_syncmode;
 static unsigned int g_ctxnum;
+static unsigned int g_sgl = 0;
 static pthread_spinlock_t lock = 0;
 static __u32 last_ctx = 0;
 
@@ -100,6 +101,7 @@ struct test_sec_option {
 	__u32 ctxnum;
 	__u32 block;
 	__u32 blknum;
+	__u32 sgl;
 };
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -663,7 +665,11 @@ static int test_sec_cipher_sync(void *arg)
 
 	pktlen = req->in_bytes;
 	SEC_TST_PRT("cipher req src--------->:\n");
-	hexdump(req->src, req->in_bytes);
+	if (req->data_fmt == WD_SGL_BUF) {
+		hexdump(req->sgl->data, req->sgl->len);
+	} else {
+		hexdump(req->src, req->in_bytes);
+	}
 
 	SEC_TST_PRT("ivlen = %d, cipher req iv--------->:\n", req->iv_bytes);
 	hexdump(req->iv, req->iv_bytes);
@@ -746,6 +752,35 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 	return 0;
 }
 
+static void sec_cipher_sgl(struct wd_cipher_req *req)
+{
+	struct wd_sgl *sgl;
+
+	if (!g_sgl)
+		return;
+
+	/* fill src */
+	sgl = calloc(1, sizeof(struct wd_sgl));
+	if (!sgl)
+		return;
+
+	sgl->data = req->src;
+	sgl->len = req->in_bytes;
+	sgl->next = NULL;
+	req->src = sgl;
+
+	sgl = calloc(1, sizeof(struct wd_sgl));
+	if (!sgl)
+		return;
+
+	sgl->data = req->dst;
+	sgl->len = req->out_bytes;
+	sgl->next = NULL;
+	req->dst = sgl;
+
+	req->data_fmt = WD_SGL_BUF;
+}
+
 static int sec_cipher_sync_test(void)
 {
 	struct wd_cipher_req	req[THREADS_NUM];
@@ -793,6 +828,8 @@ static int sec_cipher_sync_test(void)
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
 		req[i].out_buf_bytes = step;
+
+		sec_cipher_sgl(&req[i]);
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
@@ -3360,6 +3397,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"block",     required_argument, 0,  13},
 		{"blknum",    required_argument, 0,  14},
 		{"help",      no_argument,       0,  15},
+		{"sgl",       required_argument, 0,  16},
 		{0, 0, 0, 0}
 	};
 
@@ -3417,6 +3455,9 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		case 15:
 			print_help();
 			exit(-1);
+		case 16:
+			option->sgl = strtol(optarg, NULL, 0);
+			break;
 		default:
 			SEC_TST_PRT("bad input parameter, exit\n");
 			print_help();
@@ -3462,6 +3503,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_keylen = option->keylen;
 	g_times = option->times ? option->times : 1;
 	g_ctxnum = option->ctxnum ? option->ctxnum : 1;
+	g_sgl = option->sgl ? 1 : 0;
 	SEC_TST_PRT("set global times is %lld\n", g_times);
 
 	g_thread_num = option->xmulti ? option->xmulti : 1;
