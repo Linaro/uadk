@@ -289,12 +289,11 @@ struct hisi_sec_sqe {
 	struct hisi_sec_sqe_type2 type2;
 };
 
-#pragma pack(4)
 struct bd3_auth_ivin {
 	__le64 a_ivin_addr;
 	__le32 rsvd0;
 	__le32 rsvd1;
-};
+} __attribute__((packed, aligned(4)));
 
 struct bd3_skip_data {
 	__le32 rsvd0;
@@ -330,14 +329,14 @@ struct bd3_stream_scene {
 	__u8 stream_auth_pad;
 	__u8 plaintext_type;
 	__le16 pad_len_1p3;
-};
+} __attribute__((packed, aligned(4)));
 
 struct bd3_no_scene {
 	__le64 c_ivin_addr;
 	__le32 rsvd0;
 	__le32 rsvd1;
 	__le32 rsvd2;
-};
+} __attribute__((packed, aligned(4)));
 
 struct bd3_check_sum {
 	__le16 check_sum_i;
@@ -447,8 +446,7 @@ struct hisi_sec_sqe3 {
 		struct bd3_tls_type_back tls_type_back;
 	};
 	__le32 counter;
-};
-#pragma pack()
+} __attribute__((packed, aligned(4)));
 
 static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
