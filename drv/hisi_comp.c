@@ -326,7 +326,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 		       ctx_st, status, type);
 		recv_msg->req.status = WD_IN_EPARA;
 	} else {
-		if (!sqe->consumed || !sqe->produced)
+		if (!sqe->produced)
 			return -EAGAIN;
 		recv_msg->req.status = 0;
 	}
