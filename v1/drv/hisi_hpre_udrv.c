@@ -314,8 +314,22 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 	return WD_SUCCESS;
 }
 
+static void rsa_key_unmap(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
+			  struct hisi_hpre_sqe *hw_msg,
+			  void *va, int size)
+{
+	struct wcrypto_rsa_kg_out *key = (void *)msg->key;
+	uintptr_t phy;
+
+	phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
+	phy -= (uintptr_t)va - (uintptr_t)key;
+
+	drv_iova_unmap(q, msg->key, (void *)phy, size);
+}
+
 static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
-				struct hisi_hpre_sqe *hw_msg)
+				struct hisi_hpre_sqe *hw_msg,
+				void **va, int *size)
 {
 	void *data = NULL;
 	uintptr_t phy;
@@ -365,6 +379,9 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 
 	hw_msg->low_key = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_key = HI_U32(phy);
+	*va = data;
+	*size = ret;
+
 	return WD_SUCCESS;
 }
 
@@ -387,6 +404,8 @@ static int qm_rsa_prepare_iot(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		phy = (uintptr_t)drv_iova_map(q, msg->out, msg->key_bytes);
 		if (unlikely(!phy)) {
 			WD_ERR("Get rsa out key dma address fail!\n");
+			phy = DMA_ADDR(hw_msg->hi_in, hw_msg->low_in);
+			drv_iova_unmap(q, msg->in, (void *)phy, msg->key_bytes);
 			return -WD_ENOMEM;
 		}
 	} else {
@@ -413,7 +432,9 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_rsa_msg *msg = message;
 	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_queue *q = info->q;
+	void *va = NULL;
 	uintptr_t sqe;
+	int size = 0;
 	int ret;
 
 	sqe = (uintptr_t)info->sq_base + i * info->sqe_size;
@@ -431,14 +452,16 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	hw_msg->task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
 	/* prepare rsa key */
-	ret = qm_rsa_prepare_key(msg, q, hw_msg);
+	ret = qm_rsa_prepare_key(msg, q, hw_msg, &va, &size);
 	if (unlikely(ret))
 		return ret;
 
 	/* prepare in/out put */
 	ret = qm_rsa_prepare_iot(msg, q, hw_msg);
-	if (unlikely(ret))
+	if (unlikely(ret)) {
+		rsa_key_unmap(msg, q, hw_msg, va, size);
 		return ret;
+	}
 
 	/* This need more processing logic. to do more */
 	if (tag)
@@ -503,6 +526,47 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	drv_iova_unmap(q, rsa_msg->out, (void *)(uintptr_t)dma_out, olen);
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in, ilen);
 	return 1;
+}
+
+static int fill_dh_g_param(struct wd_queue *q, struct wcrypto_dh_msg *msg,
+			    struct hisi_hpre_sqe *hw_msg)
+{
+	uintptr_t phy;
+	int ret;
+
+	ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
+		(const char *)msg->g, msg->key_bytes,
+		msg->gbytes, "dh g");
+	if (unlikely(ret))
+		return ret;
+
+	phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
+				msg->key_bytes);
+	if (unlikely(!phy)) {
+		WD_ERR("Get dh g para dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+	hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
+	hw_msg->hi_in = HI_U32(phy);
+
+	return 0;
+}
+
+static void dh_g_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
+		       struct hisi_hpre_sqe *hw_msg)
+{
+	uintptr_t phy = DMA_ADDR(hw_msg->low_in, hw_msg->hi_in);
+
+	if (phy)
+		drv_iova_unmap(q, msg->g, (void *)phy, msg->key_bytes);
+}
+
+static void dh_xp_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
+			struct hisi_hpre_sqe *hw_msg)
+{
+	uintptr_t phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
+
+	drv_iova_unmap(q, msg->x_p, (void *)phy, GEN_PARAMS_SZ(msg->key_bytes));
 }
 
 static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
@@ -578,7 +642,7 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_dh_msg *msg = message;
 	struct hisi_hpre_sqe *hw_msg;
 	struct wd_queue *q = info->q;
-	uintptr_t phy, sqe;
+	uintptr_t sqe;
 	int ret;
 
 	sqe = (uintptr_t)info->sq_base + i * info->sqe_size;
@@ -597,29 +661,30 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 			hw_msg->low_in = 0;
 			hw_msg->hi_in = 0;
 		} else {
-			ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
-				(const char *)msg->g, msg->key_bytes,
-				msg->gbytes, "dh g");
+			ret = fill_dh_g_param(q, msg, hw_msg);
 			if (unlikely(ret))
 				return ret;
-
-			phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
-						msg->key_bytes);
-			if (unlikely(!phy)) {
-				WD_ERR("Get dh g para dma address fail!\n");
-				return -WD_ENOMEM;
-			}
-			hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
-			hw_msg->hi_in = HI_U32(phy);
 		}
 
 		ret = qm_fill_dh_xp_params(q, msg, hw_msg);
 		if (unlikely(ret))
-			return ret;
+			goto map_xp_fail;
 	}
 	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
-	return qm_final_fill_dh_sqe(q, msg, hw_msg);
+
+	ret = qm_final_fill_dh_sqe(q, msg, hw_msg);
+	if (unlikely(ret))
+		goto map_out_fail;
+
+	return 0;
+
+map_out_fail:
+	dh_xp_unmap(msg, q, hw_msg);
+map_xp_fail:
+	dh_g_unmap(msg, q, hw_msg);
+
+	return ret;
 }
 
 int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
@@ -884,8 +949,19 @@ static __u32 ecc_get_prikey_size(struct wcrypto_ecc_msg *msg)
 		return ECDH_HW_KEY_SZ(msg->key_bytes);
 }
 
+static void ecc_key_unmap(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
+				struct hisi_hpre_sqe *hw_msg,
+				void *va, int size)
+{
+	uintptr_t phy;
+
+	phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
+	drv_iova_unmap(q, va, (void *)phy, size);
+}
+
 static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
-			      struct hisi_hpre_sqe *hw_msg)
+			      struct hisi_hpre_sqe *hw_msg,
+			      void **va, int *size)
 {
 	__u8 op_type = msg->op_type;
 	void *data = NULL;
@@ -926,6 +1002,8 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 
 	hw_msg->low_key = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_key = HI_U32(phy);
+	*va = data;
+	*size = ksz;
 
 	return 0;
 }
@@ -1348,6 +1426,7 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	size_t o_sz = 0;
 	uintptr_t phy;
 	__u16 kbytes;
+	void *va;
 	int ret;
 
 	kbytes = msg->key_bytes;
@@ -1358,7 +1437,8 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 		return ret;
 	}
 
-	phy = (uintptr_t)drv_iova_map(q, data, i_sz);
+	va = data;
+	phy = (uintptr_t)drv_iova_map(q, va, i_sz);
 	if (unlikely(!phy)) {
 		WD_ERR("Get ecc in buf dma address fail!\n");
 		return -WD_ENOMEM;
@@ -1369,7 +1449,7 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	ret = qm_ecc_prepare_out(msg, &data);
 	if (unlikely(ret)) {
 		WD_ERR("qm_ecc_prepare_out fail!\n");
-		return ret;
+		goto map_fail;
 	}
 
 	if (!data)
@@ -1378,12 +1458,19 @@ static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	phy = (uintptr_t)drv_iova_map(q, data, o_sz);
 	if (unlikely(!phy)) {
 		WD_ERR("Get ecc out key dma address fail!\n");
-		return -WD_ENOMEM;
+		ret = -WD_ENOMEM;
+		goto map_fail;
 	}
 	hw_msg->low_out = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_out = HI_U32(phy);
 
 	return 0;
+
+map_fail:
+	phy = DMA_ADDR(hw_msg->hi_in, hw_msg->low_in);
+	drv_iova_unmap(q, va, (void *)phy, i_sz);
+
+	return ret;
 }
 
 static int ecdh_out_transfer(struct wcrypto_ecc_msg *msg,
@@ -1501,7 +1588,9 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	struct wcrypto_cb_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_queue *q = info->q;
 	struct hisi_hpre_sqe *hw_msg;
+	void *va = NULL;
 	uintptr_t sqe;
+	int size = 0;
 	int ret;
 
 	sqe = (uintptr_t)info->sq_base + i * info->sqe_size;
@@ -1516,14 +1605,14 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 		return ret;
 
 	/* prepare key */
-	ret = qm_ecc_prepare_key(msg, q, hw_msg);
+	ret = qm_ecc_prepare_key(msg, q, hw_msg, &va, &size);
 	if (unlikely(ret))
 		return ret;
 
 	/* prepare in/out put */
 	ret = qm_ecc_prepare_iot(msg, q, hw_msg);
 	if (unlikely(ret))
-		return ret;
+		goto map_key_fail;
 
 	/* This need more processing logic. to do more */
 	if (tag)
@@ -1534,6 +1623,11 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	info->req_cache[i] = msg;
 
 	return WD_SUCCESS;
+
+map_key_fail:
+	ecc_key_unmap(msg, q, hw_msg, va, size);
+
+	return ret;
 }
 
 static void init_prikey(struct wcrypto_ecc_prikey *prikey, __u32 bsz)
