@@ -289,6 +289,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	return (handle_t)qp;
 
 out_qp:
+	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
 	free(qp);
 out:
 	return (handle_t)NULL;
@@ -304,6 +305,7 @@ void hisi_qm_free_qp(handle_t h_qp)
 
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
+	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
 
 	free(qp);
 }
@@ -453,7 +455,6 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
 		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
-		printf("sgl = %p\n", sgl_pool->sgl[i]);
 		if (ret)
 			goto err_out;
 	}
@@ -478,7 +479,8 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 	if (pool) {
 		if (pool->sgl) {
 			for (i = 0; i < pool->sgl_num; i++)
-				free(pool->sgl[i]);
+				if (pool->sgl[i])
+					free(pool->sgl[i]);
 
 			free(pool->sgl);
 		}
@@ -495,7 +497,7 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 	struct hisi_sgl *tmp1;
 	int i;
 
-	if (!pool || !hw_sgl)
+	if (!pool)
 		return;
 
 	/* The max hw sgl num is the pool depth */
