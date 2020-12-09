@@ -336,6 +336,10 @@ static int init_ctx_config(int type, int mode)
 		goto out;
 	}
 
+	/* If there is no numa, we defualt config to zero */
+	if (list->dev->numa_id < 0)
+		list->dev->numa_id = 0;
+
 	g_sched->name = SCHED_SINGLE;
 	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, g_ctxnum - 1);
 	if (ret) {
