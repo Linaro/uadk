@@ -1565,7 +1565,6 @@ int qm_parse_digest_sqe(void *msg, const struct qm_queue_info *info,
 static int fill_aead_bd3_alg(struct wcrypto_aead_msg *msg,
 		struct hisi_sec_bd3_sqe *sqe)
 {
-	int ret = WD_SUCCESS;
 	__u8 c_key_len = 0;
 
 	switch (msg->calg) {
@@ -1589,43 +1588,15 @@ static int fill_aead_bd3_alg(struct wcrypto_aead_msg *msg,
 		break;
 	default:
 		WD_ERR("Invalid cipher type!\n");
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	/* CCM/GCM this region is set to 0 */
-	if (msg->cmode == WCRYPTO_CIPHER_CCM) {
-		if (unlikely(msg->auth_bytes < WORD_BYTES ||
-		    msg->auth_bytes > AES_BLOCK_SIZE ||
-		    msg->auth_bytes % (WORD_BYTES >> 1))) {
-		    WD_ERR("Invalid aead ccm mode auth_bytes!\n");
-		    return -WD_EINVAL;
-		}
-		return ret;
-	}
-	if (msg->cmode == WCRYPTO_CIPHER_GCM) {
-		if (unlikely(msg->auth_bytes < U64_DATA_BYTES ||
-		    msg->auth_bytes > AES_BLOCK_SIZE)) {
-		    WD_ERR("Invalid aead gcm mode auth_bytes!\n");
-		    return -WD_EINVAL;
-		}
-		return ret;
-	}
+	if (msg->cmode == WCRYPTO_CIPHER_CCM ||
+	    msg->cmode == WCRYPTO_CIPHER_GCM)
+		return WD_SUCCESS;
 
-	if (unlikely(msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
-		WD_ERR("Invalid aead assoc_bytes!\n");
-		return -WD_EINVAL;
-	}
-	if (unlikely(msg->auth_bytes != AES_BLOCK_SIZE &&
-	    msg->auth_bytes != AES_BLOCK_SIZE << 1)) {
-		WD_ERR("Invalid aead auth_bytes!\n");
-		return -WD_EINVAL;
-	}
 	sqe->mac_len = msg->auth_bytes / SEC_SQE_LEN_RATE;
-
-	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("Invalid aead auth key bytes!\n");
-		return -WD_EINVAL;
-	}
 	sqe->a_key_len = msg->akey_bytes / SEC_SQE_LEN_RATE;
 
 	switch (msg->dalg) {
@@ -1640,10 +1611,10 @@ static int fill_aead_bd3_alg(struct wcrypto_aead_msg *msg,
 		break;
 	default:
 		WD_ERR("Invalid digest type!\n");
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
-	return ret;
+	return WD_SUCCESS;
 }
 
 static int fill_aead_bd3_mode(struct wcrypto_aead_msg *msg,
@@ -1864,11 +1835,45 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 
 static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 {
-	int ret = WD_SUCCESS;
+	int ret;
 
 	if (unlikely(msg->in_bytes == 0 ||
 	    msg->in_bytes > MAX_CIPHER_LENGTH)) {
 		WD_ERR("fail to check input data length\n");
+		return -WD_EINVAL;
+	}
+
+	if (msg->cmode == WCRYPTO_CIPHER_CCM) {
+		if (unlikely(msg->auth_bytes < WORD_BYTES ||
+		    msg->auth_bytes > AES_BLOCK_SIZE ||
+		    msg->auth_bytes % (WORD_BYTES >> 1))) {
+		    WD_ERR("Invalid aead ccm mode auth_bytes!\n");
+		    return -WD_EINVAL;
+		}
+		return WD_SUCCESS;
+	}
+	if (msg->cmode == WCRYPTO_CIPHER_GCM) {
+		if (unlikely(msg->auth_bytes < U64_DATA_BYTES ||
+		    msg->auth_bytes > AES_BLOCK_SIZE)) {
+		    WD_ERR("Invalid aead gcm mode auth_bytes!\n");
+		    return -WD_EINVAL;
+		}
+		return WD_SUCCESS;
+	}
+
+	if (unlikely(msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+		WD_ERR("Invalid aead assoc_bytes!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->auth_bytes != AES_BLOCK_SIZE &&
+	    msg->auth_bytes != AES_BLOCK_SIZE << 1)) {
+		WD_ERR("Invalid aead auth_bytes!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("Invalid aead auth key bytes!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2051,7 +2056,6 @@ int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
 static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	int ret = WD_SUCCESS;
 	__u8 c_key_len = 0;
 
 	switch (msg->calg) {
@@ -2075,43 +2079,15 @@ static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
 		break;
 	default:
 		WD_ERR("Invalid cipher type!\n");
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	/* CCM/GCM this region is set to 0 */
-	if (msg->cmode == WCRYPTO_CIPHER_CCM) {
-		if (unlikely(msg->auth_bytes < WORD_BYTES ||
-		    msg->auth_bytes > AES_BLOCK_SIZE ||
-		    msg->auth_bytes % (WORD_BYTES >> 1))) {
-		    WD_ERR("Invalid aead ccm mode auth_bytes!\n");
-		    return -WD_EINVAL;
-		}
-		return ret;
-	}
-	if (msg->cmode == WCRYPTO_CIPHER_GCM) {
-		if (unlikely(msg->auth_bytes < U64_DATA_BYTES ||
-		    msg->auth_bytes > AES_BLOCK_SIZE)) {
-		    WD_ERR("Invalid aead gcm mode auth_bytes!\n");
-		    return -WD_EINVAL;
-		}
-		return ret;
-	}
+	if (msg->cmode == WCRYPTO_CIPHER_CCM ||
+	    msg->cmode == WCRYPTO_CIPHER_GCM)
+		return WD_SUCCESS;
 
-	if (unlikely(msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
-		WD_ERR("Invalid aead assoc_bytes!\n");
-		return -WD_EINVAL;
-	}
-	if (unlikely(msg->auth_bytes != AES_BLOCK_SIZE &&
-	    msg->auth_bytes != AES_BLOCK_SIZE << 1)) {
-		WD_ERR("Invalid aead auth_bytes!\n");
-		return -WD_EINVAL;
-	}
 	sqe->type2.mac_len = msg->auth_bytes / SEC_SQE_LEN_RATE;
-
-	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("Invalid aead auth key bytes!\n");
-		return -WD_EINVAL;
-	}
 	sqe->type2.a_key_len = msg->akey_bytes / SEC_SQE_LEN_RATE;
 
 	switch (msg->dalg) {
@@ -2126,10 +2102,10 @@ static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
 		break;
 	default:
 		WD_ERR("Invalid digest type!\n");
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
-	return ret;
+	return WD_SUCCESS;
 }
 
 static int fill_aead_bd2_mode(struct wcrypto_aead_msg *msg,
