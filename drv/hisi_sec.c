@@ -1088,6 +1088,8 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 	parse_cipher_bd3(&sqe, recv_msg);
 	recv_msg->tag = sqe.tag;
 
+	hisi_sec_put_sgl(h_qp, recv_msg);
+
 	return 0;
 }
 
