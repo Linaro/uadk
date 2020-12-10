@@ -73,6 +73,7 @@ struct hisi_sgl_pool {
 	__u32 top;
 	__u32 sge_num;
 	__u32 sgl_num;
+	pthread_spinlock_t lock;
 };
 
 static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
@@ -463,6 +464,7 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	sgl_pool->sge_num = sge_num;
 	sgl_pool->depth = sge_num;
 	sgl_pool->top = sgl_num;
+	pthread_spin_init(&sgl_pool->lock, PTHREAD_PROCESS_SHARED);
 
 	return (handle_t)sgl_pool;
 
@@ -500,6 +502,8 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 	if (!pool)
 		return;
 
+	pthread_spin_lock(&pool->lock);
+
 	/* The max hw sgl num is the pool depth */
 	for (i = 0; i < pool->depth; i++) {
 		if (!tmp || pool->top > pool->depth) {
@@ -522,6 +526,8 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 		pool->sgl[pool->top] = tmp;
 		pool->top++;
 	}
+
+	pthread_spin_unlock(&pool->lock);
 }
 
 void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
@@ -537,8 +543,11 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 		return NULL;
 	}
 
+	pthread_spin_lock(&pool->lock);
+
 	if (pool->top == 0) {
 		WD_ERR("The sgl pool is empty\n");
+		pthread_spin_unlock(&pool->lock);
 		return NULL;
 	}
 
@@ -557,13 +566,16 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 		valid_num++;
 	}
 
+	/* There is no valid data, reback the hw_sgl to pool */
 	if (!valid_num) {
-		/* There is no valid data, reback the hw_sgl to pool */
-		hisi_qm_put_hw_sgl(sgl_pool, hw_sgl);
+		pool->top++;
+		pthread_spin_unlock(&pool->lock);
 		return NULL;
 	}
 
 	hw_sgl->entry_sum_in_sgl = valid_num;
+
+	pthread_spin_unlock(&pool->lock);
 
 	return hw_sgl;
 }
