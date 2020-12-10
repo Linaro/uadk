@@ -44,7 +44,7 @@ static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 static unsigned int g_syncmode;
 static unsigned int g_ctxnum;
-static unsigned int g_sgl = 0;
+static unsigned int g_data_fmt = 0;
 static pthread_spinlock_t lock = 0;
 static __u32 last_ctx = 0;
 
@@ -385,6 +385,42 @@ static void digest_uninit_config(void)
 	free(g_ctx_cfg.ctxs);
 }
 
+static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
+{
+	struct wd_sgl *sgl;
+
+	if (data_fmt != WD_SGL_BUF)
+		return buff;
+
+	sgl = malloc(sizeof(struct wd_sgl));
+	if (!sgl) {
+		SEC_TST_PRT("Fail to alloc memory for sgl!\n");
+		return NULL;
+	}
+
+	sgl->data = buff;
+	sgl->len = size;
+	sgl->next = NULL;
+
+	return sgl;
+}
+
+static void test_sec_buff_free(__u8 data_fmt, void *buff)
+{
+	struct wd_sgl *sgl;
+
+	if (!buff)
+		return;
+
+	if (data_fmt == WD_SGL_BUF) {
+		sgl = (struct wd_sgl*)buff;
+		if (sgl->data)
+			free(sgl->data);
+	}
+
+	free(buff);
+}
+
 static int test_sec_cipher_sync_once(void)
 {
 	struct cipher_testvec *tv = NULL;
@@ -420,7 +456,7 @@ static int test_sec_cipher_sync_once(void)
 	/* get resource */
 	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.src  = malloc(BUFF_SIZE);
+	req.src = malloc(BUFF_SIZE);
 	if (!req.src) {
 		SEC_TST_PRT("req src mem malloc failed!\n");
 		ret = -1;
@@ -428,15 +464,25 @@ static int test_sec_cipher_sync_once(void)
 	}
 	memcpy(req.src, tv->ptext, g_pktlen);
 	req.in_bytes = g_pktlen;
+	req.src = test_sec_buff_create(g_data_fmt, req.src, g_pktlen);
+	if (!req.src)
+		goto out;
 
 	SEC_TST_PRT("req src--------->:\n");
-	hexdump(req.src, g_pktlen);
+	if (g_data_fmt == WD_SGL_BUF)
+		hexdump(req.sgl->data, g_pktlen);
+	else
+		hexdump(req.src, g_pktlen);
+
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
 		SEC_TST_PRT("req dst mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
+	req.dst = test_sec_buff_create(g_data_fmt, req.dst, tv->len);
+	if (!req.dst)
+		goto out;
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
@@ -456,6 +502,7 @@ static int test_sec_cipher_sync_once(void)
 	}
 	req.out_bytes = tv->len;
 	req.out_buf_bytes = BUFF_SIZE;
+	req.data_fmt = g_data_fmt;
 
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
@@ -486,13 +533,15 @@ static int test_sec_cipher_sync_once(void)
 			thread_id, speed, Perf);
 
 	SEC_TST_PRT("Test cipher sync function: output dst-->\n");
-	hexdump(req.dst, req.in_bytes);
+	struct wd_sgl *sgl = (struct wd_sgl*)req.dst;
+	if (g_data_fmt == WD_SGL_BUF)
+		hexdump(sgl->data, sgl->len);
+	else
+		hexdump(req.dst, req.out_bytes);
 
 out:
-	if (req.src)
-		free(req.src);
-	if (req.dst)
-		free(req.dst);
+	test_sec_buff_free(g_data_fmt, req.src);
+	test_sec_buff_free(g_data_fmt, req.dst);
 	if (req.iv)
 		free(req.iv);
 	if (h_sess)
@@ -756,35 +805,6 @@ static int test_sync_create_threads(int thread_num, struct wd_cipher_req *reqs, 
 	return 0;
 }
 
-static void sec_cipher_sgl(struct wd_cipher_req *req)
-{
-	struct wd_sgl *sgl;
-
-	if (!g_sgl)
-		return;
-
-	/* fill src */
-	sgl = calloc(1, sizeof(struct wd_sgl));
-	if (!sgl)
-		return;
-
-	sgl->data = req->src;
-	sgl->len = req->in_bytes;
-	sgl->next = NULL;
-	req->src = sgl;
-
-	sgl = calloc(1, sizeof(struct wd_sgl));
-	if (!sgl)
-		return;
-
-	sgl->data = req->dst;
-	sgl->len = req->out_bytes;
-	sgl->next = NULL;
-	req->dst = sgl;
-
-	req->data_fmt = WD_SGL_BUF;
-}
-
 static int sec_cipher_sync_test(void)
 {
 	struct wd_cipher_req	req[THREADS_NUM];
@@ -832,8 +852,6 @@ static int sec_cipher_sync_test(void)
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
 		req[i].out_buf_bytes = step;
-
-		sec_cipher_sgl(&req[i]);
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
@@ -3507,7 +3525,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_keylen = option->keylen;
 	g_times = option->times ? option->times : 1;
 	g_ctxnum = option->ctxnum ? option->ctxnum : 1;
-	g_sgl = option->sgl ? 1 : 0;
+	g_data_fmt = option->sgl ? 1 : 0;
 	SEC_TST_PRT("set global times is %lld\n", g_times);
 
 	g_thread_num = option->xmulti ? option->xmulti : 1;
