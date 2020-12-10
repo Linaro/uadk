@@ -77,11 +77,32 @@ static void put_dh_cookie(struct wcrypto_dh_ctx *ctx, struct wcrypto_dh_cookie *
 	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
 		sizeof(struct wcrypto_dh_cookie);
 
-	if (idx < 0 || idx >= WD_DH_CTX_MSG_NUM) {
+	if (unlikely(idx < 0 || idx >= WD_DH_CTX_MSG_NUM)) {
 		WD_ERR("dh cookie not exist!\n");
 		return;
 	}
 	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
+}
+
+static int create_ctx_param_check(struct wd_queue *q,
+				  struct wcrypto_dh_ctx_setup *setup)
+{
+	if (!q || !setup) {
+		WD_ERR("%s(): input param err!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (!setup->br.alloc || !setup->br.free) {
+		WD_ERR("create dh ctx user mm br err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (strcmp(q->capa.alg, "dh")) {
+		WD_ERR("%s(): algorithm mismatch!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	return 0;
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -89,22 +110,11 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 {
 	struct wcrypto_dh_ctx *ctx;
 	struct q_info *qinfo;
-	int i, ctx_id;
+	int i, ctx_id, ret;
 
-	if (!q || !setup) {
-		WD_ERR("%s(): input param err!\n", __func__);
+	ret = create_ctx_param_check(q, setup);
+	if (ret)
 		return NULL;
-	}
-
-	if (!setup->br.alloc || !setup->br.free) {
-		WD_ERR("create dh ctx user mm br err!\n");
-		return NULL;
-	}
-
-	if (strcmp(q->capa.alg, "dh")) {
-		WD_ERR("%s(): algorithm mismatch!\n", __func__);
-		return NULL;
-	}
 
 	qinfo = q->qinfo;
 	/* lock at ctx creating */
@@ -245,13 +255,31 @@ static int dh_request_init(struct wcrypto_dh_msg *req, struct wcrypto_dh_op_data
 		req->gbytes = op->pvbytes;
 	}
 
-	if (!req->g) {
+	if (unlikely(!req->g)) {
 		WD_ERR("request dh g is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
 }
+
+static int do_dh_param_check(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
+{
+	struct wcrypto_dh_ctx *ctxt = ctx;
+
+	if (unlikely(!ctx || !opdata)) {
+		WD_ERR("input param err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(tag && !ctxt->setup.cb)) {
+		WD_ERR("ctx call back is null!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 {
 	struct wcrypto_dh_ctx *ctxt = ctx;
@@ -262,26 +290,20 @@ int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 	uint32_t rx_cnt = 0;
 	uint32_t tx_cnt = 0;
 
-	if (!ctx || !opdata) {
-		WD_ERR("input param err!\n");
+	ret = do_dh_param_check(ctx, opdata, tag);
+	if (unlikely(ret))
 		return ret;
-	}
 
 	cookie = get_dh_cookie(ctxt);
 	if (!cookie)
 		return -WD_EBUSY;
 
-	if (tag) {
-		if (!ctxt->setup.cb) {
-			WD_ERR("ctx call back is null!\n");
-			goto fail_with_cookie;
-		}
+	if (tag)
 		cookie->tag.tag = tag;
-	}
 
 	req = &cookie->msg;
 	ret = dh_request_init(req, opdata, ctxt);
-	if (ret)
+	if (unlikely(ret))
 		goto fail_with_cookie;
 
 send_again:
@@ -295,7 +317,7 @@ send_again:
 			WD_ERR("do dh send cnt %u, exit!\n", tx_cnt);
 			goto fail_with_cookie;
 		}
-	} else if (ret) {
+	} else if (unlikely(ret)) {
 		WD_ERR("do dh wd_send err!\n");
 		goto fail_with_cookie;
 	}
@@ -308,14 +330,14 @@ recv_again:
 	ret = wd_recv(ctxt->q, (void **)&resp);
 	if (!ret) {
 		rx_cnt++;
-		if (rx_cnt >= DH_RECV_MAX_CNT) {
+		if (unlikely(rx_cnt >= DH_RECV_MAX_CNT)) {
 			WD_ERR("failed to recv: timeout!\n");
 			return -WD_ETIMEDOUT;
 		} else if (balance > DH_BALANCE_THRHD) {
 			usleep(1);
 		}
 		goto recv_again;
-	} else if (ret < 0) {
+	} else if (unlikely(ret < 0)) {
 		WD_ERR("do dh wd_recv err!\n");
 		goto fail_with_cookie;
 	}
@@ -339,7 +361,7 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num)
 	int count = 0;
 	int ret;
 
-	if (!q) {
+	if (unlikely(!q)) {
 		WD_ERR("q is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -348,7 +370,7 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num)
 		ret = wd_recv(q, (void **)&resp);
 		if (ret == 0)
 			break;
-		else if (ret < 0) {
+		else if (unlikely(ret < 0)) {
 			WD_ERR("recv err at dh poll!\n");
 			return ret;
 		}

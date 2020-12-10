@@ -1261,7 +1261,7 @@ int wcrypto_set_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 int wcrypto_get_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_point **pubkey)
 {
-	if (unlikely(!ecc_key || !pubkey)) {
+	if (unlikely(!ecc_key || !pubkey || !ecc_key->pub)) {
 		WD_ERR("get ecc pubkey param err!\n");
 		return -WD_EINVAL;
 	}
@@ -1274,7 +1274,7 @@ int wcrypto_get_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 int wcrypto_get_ecc_curve(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_curve **cv)
 {
-	if (unlikely(!ecc_key || !cv)) {
+	if (unlikely(!ecc_key || !cv || !ecc_key->cv)) {
 		WD_ERR("get ecc pubkey param err!\n");
 		return -WD_EINVAL;
 	}
@@ -1690,14 +1690,72 @@ void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
 	return get_sign_out_params(out, r, s);
 }
 
+
+static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
+{
+	int ret, shift;
+
+	if (d->dsize != n->dsize)
+		return d->dsize < n->dsize;
+
+	shift = n->bsize - n->dsize;
+	ret = memcmp(d->data + shift, n->data + shift, n->dsize);
+	return ret < 0;
+}
+
+static bool is_all_zero(struct wd_dtb *p, struct wcrypto_ecc_ctx *ctx)
+{
+	int i;
+
+	for (i = 0; i < p->dsize && i < ctx->key_size; i++) {
+		if (p->data[i])
+			return false;
+	}
+
+	return true;
+}
+
+static bool check_k_param(struct wd_dtb *k, struct wcrypto_ecc_ctx *ctx)
+{
+	struct wcrypto_ecc_curve *cv = NULL;
+	int ret;
+
+	if (unlikely(!k->data)) {
+		WD_ERR("error: k->data NULL!\n");
+		return false;
+	}
+
+	ret = wcrypto_get_ecc_curve(&ctx->key, &cv);
+	if (unlikely(ret)) {
+		WD_ERR("failed to get ecc curve!\n");
+		return false;
+	}
+
+	if (unlikely(!less_than_latter(k, &cv->n))) {
+		WD_ERR("error: k >= n\n");
+		return false;
+	}
+
+	if (unlikely(is_all_zero(k, ctx))) {
+		WD_ERR("error: k all zero\n");
+		return false;
+	}
+
+	return true;
+}
+
 static int set_sign_in_param(struct wcrypto_ecc_sign_in *sin,
 			     struct wd_dtb *dgst,
 			     struct wd_dtb *k,
-			     struct wd_dtb *plaintext)
+			     struct wd_dtb *plaintext,
+			     struct wcrypto_ecc_ctx *ctx)
 {
 	int ret;
 
 	if (k) {
+		if (unlikely(!check_k_param(k, ctx)))
+			return -WD_EINVAL;
+
 		ret = set_param_single(&sin->k, k, "ecc sgn k");
 		if (unlikely(ret))
 			return ret;
@@ -1877,7 +1935,7 @@ static struct wcrypto_ecc_in *new_sign_in(struct wcrypto_ecc_ctx *ctx,
 		sin->dgst_set = 1;
 	}
 
-	ret = set_sign_in_param(sin, hash_msg, k, plaintext);
+	ret = set_sign_in_param(sin, hash_msg, k, plaintext, ctx);
 	if (unlikely(ret))
 		goto release_in;
 
@@ -2216,6 +2274,9 @@ struct wcrypto_ecc_in *wcrypto_new_sm2_enc_in(void *ctx,
 		ein->k_set = 1;
 
 	if (k) {
+		if (unlikely(!check_k_param(k, ctx)))
+			goto fail_set_param;
+
 		ret = set_param_single(&ein->k, k, "sm2 enc k");
 		if (unlikely(ret))
 			goto fail_set_param;

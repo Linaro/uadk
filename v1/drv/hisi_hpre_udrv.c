@@ -327,6 +327,53 @@ static void rsa_key_unmap(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	drv_iova_unmap(q, msg->key, (void *)phy, size);
 }
 
+static int rsa_prepare_sign_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
+				struct hisi_hpre_sqe *hw_msg, void **va)
+{
+	void *data = NULL;
+	int ret;
+
+	if (hw_msg->alg == HPRE_ALG_NC_CRT) {
+		ret = qm_fill_rsa_crt_prikey2((void *)msg->key, &data);
+		if (unlikely(ret <= 0))
+			return 0;
+	} else {
+		ret = qm_fill_rsa_prikey1((void *)msg->key, &data);
+		if (unlikely(ret <= 0))
+			return 0;
+		hw_msg->alg = HPRE_ALG_NC_NCRT;
+	}
+
+	*va = data;
+
+	return ret;
+}
+
+static int rsa_prepare_kg_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
+			      struct hisi_hpre_sqe *hw_msg, void **va)
+{
+	void *data = NULL;
+	int ret;
+
+	ret = qm_fill_rsa_genkey_in((void *)msg->key);
+	if (unlikely(ret))
+		return 0;
+
+	ret = wcrypto_rsa_kg_in_data((void *)msg->key, (char **)&data);
+	if (unlikely(ret <= 0)) {
+		WD_ERR("Get rsa gen key data in fail!\n");
+		return 0;
+	}
+	if (hw_msg->alg == HPRE_ALG_NC_CRT)
+		hw_msg->alg = HPRE_ALG_KG_CRT;
+	else
+		hw_msg->alg = HPRE_ALG_KG_STD;
+
+	*va = data;
+
+	return ret;
+}
+
 static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 				struct hisi_hpre_sqe *hw_msg,
 				void **va, int *size)
@@ -336,34 +383,18 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	int ret;
 
 	if (msg->op_type == WCRYPTO_RSA_SIGN) {
-		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
-			ret = qm_fill_rsa_crt_prikey2((void *)msg->key, &data);
-			if (unlikely(ret <= 0))
-				return -WD_EINVAL;
-		} else {
-			ret = qm_fill_rsa_prikey1((void *)msg->key, &data);
-			if (unlikely(ret <= 0))
-				return -WD_EINVAL;
-			hw_msg->alg = HPRE_ALG_NC_NCRT;
-		}
+		ret = rsa_prepare_sign_key(msg, q, hw_msg, &data);
+		if (unlikely(ret <= 0))
+			return -WD_EINVAL;
 	} else if (msg->op_type == WCRYPTO_RSA_VERIFY) {
 		ret = qm_fill_rsa_pubkey((void *)msg->key, &data);
 		if (unlikely(ret <= 0))
 			return -WD_EINVAL;
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	} else if (msg->op_type == WCRYPTO_RSA_GENKEY) {
-		ret = qm_fill_rsa_genkey_in((void *)msg->key);
-		if (unlikely(ret))
-			return ret;
-		ret = wcrypto_rsa_kg_in_data((void *)msg->key, (char **)&data);
-		if (unlikely(ret <= 0)) {
-			WD_ERR("Get rsa gen key data in fail!\n");
+		ret = rsa_prepare_kg_key(msg, q, hw_msg, &data);
+		if (unlikely(ret <= 0))
 			return -WD_EINVAL;
-		}
-		if (hw_msg->alg == HPRE_ALG_NC_CRT)
-			hw_msg->alg = HPRE_ALG_KG_CRT;
-		else
-			hw_msg->alg = HPRE_ALG_KG_STD;
 	} else {
 		WD_ERR("Invalid rsa operatin type!\n");
 		return -WD_EINVAL;
@@ -959,6 +990,17 @@ static void ecc_key_unmap(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 	drv_iova_unmap(q, va, (void *)phy, size);
 }
 
+static bool is_prikey_used(__u8 op_type)
+{
+	return op_type == WCRYPTO_ECXDH_GEN_KEY ||
+	       op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
+	       op_type == WCRYPTO_ECDSA_SIGN ||
+	       op_type == WCRYPTO_SM2_DECRYPT ||
+	       op_type == WCRYPTO_SM2_SIGN ||
+	       op_type == HPRE_SM2_ENC ||
+	       op_type == HPRE_SM2_DEC;
+}
+
 static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 			      struct hisi_hpre_sqe *hw_msg,
 			      void **va, int *size)
@@ -975,13 +1017,7 @@ static int qm_ecc_prepare_key(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 		return -WD_EINVAL;
 	}
 
-	if (msg->op_type == WCRYPTO_ECXDH_GEN_KEY ||
-	    msg->op_type == WCRYPTO_ECXDH_COMPUTE_KEY ||
-	    msg->op_type == WCRYPTO_ECDSA_SIGN ||
-	    msg->op_type == WCRYPTO_SM2_DECRYPT ||
-	    msg->op_type == WCRYPTO_SM2_SIGN ||
-	    msg->op_type == HPRE_SM2_ENC ||
-	    msg->op_type == HPRE_SM2_DEC) {
+	if (is_prikey_used(msg->op_type)) {
 		ksz = ecc_get_prikey_size(msg);
 		ret = ecc_prepare_prikey((void *)msg->key, &data,
 					 msg->alg_type);
@@ -1100,6 +1136,11 @@ static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg,
 	k = &in->k;
 	if (is_all_zero(e, msg)) {
 		WD_ERR("ecc sign in e all zero!\n");
+		return -WD_EINVAL;
+	}
+
+	if (is_all_zero(k, msg)) {
+		WD_ERR("ecc sign in k all zero!\n");
 		return -WD_EINVAL;
 	}
 
