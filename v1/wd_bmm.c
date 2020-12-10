@@ -88,7 +88,6 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 			      struct wd_blkpool *p,
 			      struct wd_blkpool_setup *sp)
 {
-	struct q_info *qinfo = q->qinfo;
 	unsigned int asz;
 	int ret;
 
@@ -109,7 +108,7 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 	 * in order to ensure the mem_pool to be succuss,
 	 * we should to reserve more memory
 	 */
-	if (!sp->br.alloc && qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU)
+	if (!sp->br.alloc)
 		p->act_mem_sz *= (1 + p->act_blk_sz / BLK_BALANCE_SZ);
 
 	return WD_SUCCESS;

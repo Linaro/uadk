@@ -4775,7 +4775,7 @@ int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 			}
 
 			setup->kinv = sm2_k;
-			setup->kinv_size = sizeof(BITS_TO_BYTES(set_randparam_len));
+			setup->kinv_size = BITS_TO_BYTES(set_randparam_len);
 			setup->cp_sign = sm2_cp_sign;
 			setup->cp_sign_size = sizeof(sm2_cp_sign);
 			setup->sign = sm2_cp_sign;
