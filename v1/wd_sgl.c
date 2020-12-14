@@ -505,6 +505,7 @@ void wd_free_sgl(void *pool, struct wd_sgl *sgl)
 {
 	struct wd_sglpool *p = pool;
 	struct wd_sgl *next;
+	int i;
 
 	if (unlikely(!p || !sgl)) {
 		WD_ERR("pool or sgl is null!\n");
@@ -520,6 +521,9 @@ void wd_free_sgl(void *pool, struct wd_sgl *sgl)
 		next = sgl->next;
 		sgl->buf_sum = sgl->buf_num;
 		sgl->next = NULL;
+		sgl->sum_data_bytes = 0;
+		for (i = 0; i < sgl->buf_num; i++)
+			sgl->sge[i].data_len = 0;
 
 		/* have to update current 'wd_sgl' before free it */
 		wd_free_blk(p->sgl_pool, sgl);
@@ -555,7 +559,6 @@ int wd_sgl_merge(struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 
 	dst_sgl->sge[dst_sgl->buf_num].flag |= FLAG_SGE_CHAIN;
 	dst_sgl->buf_sum += src_sgl->buf_sum;
-	dst_sgl->sum_data_bytes += src_sgl->sum_data_bytes;
 	src_sgl->next = (struct wd_sgl *)((uintptr_t)src_sgl->next | FLAG_MERGED_SGL);
 
 	ret = drv_sgl_merge(dst_pool->q, dst_pool, dst_sgl, src_sgl);
@@ -653,12 +656,16 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 
 	next = (struct wd_sgl *)((uintptr_t)sgl->next & (~FLAG_MERGED_SGL));
 	if (strtsg >= sgl->buf_num) {
+		for (i = 0; i < sgl->buf_num; i++)
+			sgl->sge[i].data_len = sz;
 		strtsg = strtsg - sgl->buf_num;
 		sgl = next;
 	}
+	for (i = 0; i < strtsg; i++)
+		sgl->sge[i].data_len = sz;
 
 	memcpy(sgl->sge[strtsg].buf + strtad, pbuf, act_sz);
-	sgl->sge[strtsg].data_len = act_sz;
+	sgl->sge[strtsg].data_len = strtad + act_sz;
 	if (act_sz == size)
 		return;
 
@@ -686,9 +693,7 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 	sgl->sge[i].data_len = size;
 }
 
-
-int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
-			void *pbuf, size_t size)
+int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t size)
 {
 	size_t strtsg, strtad, sz;
 	uintptr_t next;
@@ -716,20 +721,22 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset,
 
 	for (i = 0; i < sgl->buf_num; i++)
 		sgl->sge[i].data_len = 0;
+	sgl->sum_data_bytes = 0;
 
 	if (next) {
 		for (i = 0; i < sgl->buf_num; i++)
 			((struct wd_sgl *)next)->sge[i].data_len = 0;
+		((struct wd_sgl *)next)->sum_data_bytes = 0;
 	}
 
 	if (sz - offset < size) {
 		sgl_cp_from_pbuf(sgl, strtsg, strtad, pbuf, sz - offset);
-		sgl->sum_data_bytes = sz - offset;
+		sgl->sum_data_bytes = sz;
 		return sz - offset;
 	}
 
 	sgl_cp_from_pbuf(sgl, strtsg, strtad, pbuf, size);
-	sgl->sum_data_bytes = size;
+	sgl->sum_data_bytes =  offset + size;
 	return 0;
 }
 
@@ -872,16 +879,23 @@ int wd_get_free_buf_num(void *pool, __u32 *free_buf_num)
 /* if sgl is a chain(has two sgl), the sgl_datalen is the data_len in chain */
 int wd_get_sgl_datalen(struct wd_sgl *sgl, __u32 *dtsize)
 {
+	uintptr_t next;
+
 	if (unlikely(!sgl || !dtsize)) {
 		WD_ERR("sgl or dtsize is null!\n");
 		return -WD_EINVAL;
 	}
 
 	*dtsize = sgl->sum_data_bytes;
+
+	next = (uintptr_t)sgl->next & (~FLAG_MERGED_SGL);
+	if (next)
+		*dtsize += ((struct wd_sgl *)next)->sum_data_bytes;
+
 	return WD_SUCCESS;
 }
 
-/* get 'num'th' sge datalen in sgl */
+/* get 'num'th' sge datalen in sgl, 'num' from 1 */
 int wd_get_sge_datalen(struct wd_sgl *sgl, __u32 num, __u32 *dtsize)
 {
 	if (unlikely(!sgl || !num || num > sgl->sge_num || !dtsize)) {
