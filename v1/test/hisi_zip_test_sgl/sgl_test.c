@@ -17,11 +17,12 @@ void *sgl_addr[4];
 void sgl_alloc_and_get_test(void *addr);
 void sgl_free_and_get_test(void *addr);
 void func_test(void *pool, void *sgl);
+void func_get_len(struct wd_sgl *sgl);
 
 int main(int argc, char *argv[])
 {
         int opt;
-        __u16 sgl_num = 3;
+        __u16 sgl_num = 5;
         __u32 buf_num = 40;
 	__u32 buf_size = 4096;
 	__u8 sge_num_in_sgl = 4;
@@ -62,7 +63,7 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
         __u32 free_sgl_num;
         void *sgl_pool;
         int loop = 1;
-        int ret, i;
+        int ret;
 
         q = calloc(1, sizeof(struct wd_queue));
 	if (q == NULL) {
@@ -106,244 +107,285 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
 
         sgl_addr[0] = wd_alloc_sgl(sgl_pool, 4096);
         sgl_addr[1] = wd_alloc_sgl(sgl_pool, 4096);
+        sgl_addr[2] = wd_alloc_sgl(sgl_pool, 4096);
+        sgl_addr[3] = wd_alloc_sgl(sgl_pool, 4096);
         /* 合并sgl */
         ret = wd_sgl_merge(sgl_addr[0], sgl_addr[1]);
         if (ret)
                 printf("test: wd_sgl_merge failed.\n");
 
-        printf("after merge 2 sgls ...\n");
-        sleep(2);
-
+        printf("after merge sgl_addr[0] and sgl_addr[1] ...\n");
 
 #if 1
         func_test(sgl_pool, sgl_addr[0]);
         char a[5016] = { 0 };
         char b[10000] = { 0 };
-        char c[20000] = { 0 };
+        char c[50000] = { 0 };
         memset(a, 'f', sizeof(a));
+        __u32 dtsize = 0;
 
-        ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 300, a, sizeof(a));
-        if (ret < 0)
-                WD_ERR("coypy failed!\n");
-        func_test(sgl_pool, sgl_addr[0]);
-
-        memset(a, '2', sizeof(a));
-
-        ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 300, a + 300, sizeof(a) - 300);
-        if (ret < 0)
-
-                WD_ERR("coypy failed!\n");
-
-        for (i = 0; i < sizeof(a); i++) {
-                if (i % 200 == 0)
-                        WD_ERR("\n");
-                WD_ERR("%c", a[i]);
-        }
-        WD_ERR("\nxxxxxxxxxxxxxxx\n\n");
 #endif
 
-#if 0
-WD_ERR("\n ......... wd_sgl_cp_from_pbuf start ........ \n");
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[2], 1000, a, sizeof(a));
+        if (ret < 0)
+                printf("a coypy failed!\n");
+        printf("sgl_addr[2]:  coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[2]);
+
+        ret = wd_sgl_cp_from_pbuf(sgl_addr[3], 2000, a, sizeof(a));
+        if (ret < 0)
+                printf("a coypy failed!\n");
+        printf("sgl_addr[3]:  coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[3]);
+
+        ret = wd_sgl_merge(sgl_addr[2], sgl_addr[3]);
+        if (ret)
+                printf("test: wd_sgl_merge failed.\n");
+
+        printf("after merge sgl_addr[2] and sgl_addr[3]  ...\n");
+        func_get_len(sgl_addr[3]);
+        func_get_len(sgl_addr[2]);
+
+        wd_free_sgl(sgl_pool, sgl_addr[2]);
+        wd_free_sgl(sgl_pool, sgl_addr[3]);
+        wd_free_sgl(sgl_pool, sgl_addr[2]);
+
+printf("\n ......... wd_sgl_cp_from_pbuf start ........ \n");
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+                printf("a coypy failed!\n");
+        printf("1  coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+                printf("b coypy failed!\n");
+        printf("2  coypy sz = %ld.\n", (ret == 0) ? sizeof(b) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 0, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+                printf("c coypy failed!\n");
+        printf("3 coypy sz = %ld.\n", (ret == 0) ? sizeof(c) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
-WD_ERR("\n ......... test  1 ........ \n");
-
+printf("\n ......... test  1 ........ \n");
+#if 1
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 2407, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+                printf("a coypy failed!\n");
+        printf("1 coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 2407, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+                printf("b coypy failed!\n");
+        printf("2 coypy sz = %ld.\n", (ret == 0) ? sizeof(b) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 2407, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+                printf("c coypy failed!\n");
+        printf("3 coypy sz = %ld.\n", (ret == 0) ? sizeof(c) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
-WD_ERR("\n ......... test  2 ........ \n");
+printf("\n ......... test  2 ........ \n");
 
          ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 4000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+                printf("a coypy failed!\n");
+        printf("1 coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 4000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+                printf("b coypy failed!\n");
+        printf("2 coypy sz = %ld.\n", (ret == 0) ? sizeof(b) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 4000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+                printf("c coypy failed!\n");
+        printf("3 coypy sz = %ld.\n", (ret == 0) ? sizeof(c) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
- WD_ERR("\n ......... test  3 ........ \n");
+ printf("\n ......... test  3 ........ \n");
 
          ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 6000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
-
+                printf("a coypy failed!\n");
+        printf("1 coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 6000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+                printf("b coypy failed!\n");
+        printf("2 coypy sz = %ld.\n", (ret == 0) ? sizeof(b) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 6000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+                printf("c coypy failed!\n");
+        printf("3 coypy sz = %ld.\n", (ret == 0) ? sizeof(c) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
-WD_ERR("\n ......... test  4 ........ \n");
+printf("\n ......... test  4 ........ \n");
 
          ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 9000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+                printf("a coypy failed!\n");
+        printf("1 coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 9000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+                printf("b coypy failed!\n");
+        printf("2 coypy sz = %ld.\n", (ret == 0) ? sizeof(b) : ret);\
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 9000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
+                printf("c coypy failed!\n");
+        printf("3 coypy sz = %ld.\n", (ret == 0) ? sizeof(c) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
-WD_ERR("\n ......... test  5 ........ \n");
+printf("\n ......... test  5 ........ \n");
 
          ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 10000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(a) : ret);
+                printf("a coypy failed!\n");
+        printf("1 coypy sz = %ld.\n", (ret == 0) ? sizeof(a) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 10000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(b) : ret);
+                printf("b coypy failed!\n");
+        printf("2 coypy sz = %ld.\n", (ret == 0) ? sizeof(b) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
 
         ret = wd_sgl_cp_from_pbuf(sgl_addr[0], 10000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
-        WD_ERR("coypy sz = %d.\n", (ret == 0) ? sizeof(c) : ret);
-WD_ERR("\n ......... test end ........ \n");
+                printf("c coypy failed!\n");
+        printf("3 coypy sz = %ld.\n", (ret == 0) ? sizeof(c) : ret);
+        func_get_len(sgl_addr[0]);
+        func_get_len(sgl_addr[1]);
+printf("\n ......... test end ........ \n");
 #endif
 
 #if 1
-WD_ERR("\n ......... wd_sgl_cp_to_pbuf start ........ \n");
+printf("\n ......... wd_sgl_cp_to_pbuf start ........ \n");
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
+                printf("a coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
+                printf("b coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 0, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
+                printf("c coypy failed!\n");
 
-WD_ERR("\n ......... test  1 ........ \n");
+printf("\n ......... test  1 ........ \n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 2407, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
+                printf("a coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 2407, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
+                printf("b coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 2407, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
+                printf("c coypy failed!\n");
 
-WD_ERR("\n ......... test  2 ........ \n");
+printf("\n ......... test  2 ........ \n");
 
          ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 4000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
+                printf("a coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 4000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
+                printf("b coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 4000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
+                printf("c coypy failed!\n");
 
- WD_ERR("\n ......... test  3 ........ \n");
+ printf("\n ......... test  3 ........ \n");
 
          ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 6000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
+                printf("a coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 6000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
+                printf("b coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 6000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
+                printf("c coypy failed!\n");
 
-WD_ERR("\n ......... test  4 ........ \n");
+printf("\n ......... test  4 ........ \n");
 
          ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 9000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
+                printf("a coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 9000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
+                printf("b coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 9000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
+                printf("c coypy failed!\n");
 
-WD_ERR("\n ......... test  5 ........ \n");
+printf("\n ......... test  5 ........ \n");
 
          ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 10000, a, sizeof(a));
         if (ret < 0)
-                WD_ERR("a coypy failed!\n");
+                printf("a coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 10000, b, sizeof(b));
         if (ret < 0)
-                WD_ERR("b coypy failed!\n");
+                printf("b coypy failed!\n");
 
         ret = wd_sgl_cp_to_pbuf(sgl_addr[0], 10000, c, sizeof(c));
         if (ret < 0)
-                WD_ERR("c coypy failed!\n");
+                printf("c coypy failed!\n");
 
-WD_ERR("\n ......... test end ........ \n");
+printf("\n ......... test end ........ \n");
 #endif
 
 #if 0
         ret = pthread_create(&test_thrds[0], NULL, (void *)sgl_alloc_and_get_test, sgl_pool);
         if (ret) {
-		WD_ERR("Create 1'th thread fail!\n");
+		printf("Create 1'th thread fail!\n");
 		return ret;
 	}
 
         ret = pthread_create(&test_thrds[1], NULL, (void *)sgl_free_and_get_test, sgl_pool);
         if (ret) {
-		WD_ERR("Create 2'th thread fail!\n");
+		printf("Create 2'th thread fail!\n");
 		return ret;
 	}
 
@@ -353,7 +395,7 @@ WD_ERR("\n ......... test end ........ \n");
         for (i = 0; i < 2; i++) {
 		ret = pthread_join(test_thrds[i], NULL);
 		if (ret) {
-			WD_ERR("Join %dth thread fail!\n", i);
+			printf("Join %dth thread fail!\n", i);
 			return ret;
 		}
 	}
@@ -369,6 +411,27 @@ WD_ERR("\n ......... test end ........ \n");
 	free(q);
 
         return 0;
+}
+
+void func_get_len(struct wd_sgl *sgl)
+{
+        __u32 dtsize;
+        int ret, i;
+
+        ret = wd_get_sgl_datalen(sgl, &dtsize);
+        if (ret) {
+                printf("wd_get_sgl_datalen failed!\n");
+                return;
+        }
+        printf("wd_get_sgl_datalen ok: dtsize = %u!\n", dtsize);
+        for (i = 1; i <= 3; i++) {
+                ret = wd_get_sge_datalen(sgl, i, &dtsize);
+                if (ret) {
+                        printf("wd_get_sgl_datalen failed!\n");
+                        return;
+                }
+                printf("    wd_get_sge_datalen ok: dtsize = %u!\n", dtsize);
+        }
 }
 
 void sgl_alloc_and_get_test(void *pool)
