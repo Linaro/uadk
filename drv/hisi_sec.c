@@ -1045,12 +1045,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 	sqe.c_len_ivin |= (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)msg->in;
-
-	/*
-	 * Fixed me: src and dst use the same addr avoid the hw err,
-	 * this will be fixed after finding the root reason
-	 */
-	sqe.data_dst_addr = (__u64)msg->in;
+	sqe.data_dst_addr = (__u64)msg->out;
 	sqe.no_scene.c_ivin_addr = (__u64)msg->iv;
 	sqe.c_key_addr = (__u64)msg->key;
 	sqe.tag = (__u64)msg->tag;

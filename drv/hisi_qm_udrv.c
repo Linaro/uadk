@@ -19,6 +19,8 @@
 /* The max sge num in one sgl */
 #define HISI_SGL_SGE_NUM_MAX 255
 #define QM_SGL_NUM 16
+#define SGL_ALIGE 64
+#define ADDR_ALIGN_64(addr) ((((__u64)(addr) >> 6) + 1) << 6)
 
 struct hisi_qm_type {
 	char	*qm_name;
@@ -68,7 +70,11 @@ struct hisi_sgl {
 };
 
 struct hisi_sgl_pool {
+	/* the addr64 align offset base sgl */
+	void **sgl_align;
+	/* the sgl src addr array*/
 	void **sgl;
+	/* the sgl pool stack depth */
 	__u32 depth;
 	__u32 top;
 	__u32 sge_num;
@@ -413,28 +419,37 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	return ret;
 }
 
-static struct hisi_sgl *hisi_qm_create_sgl(__u32 sge_num)
+static void *hisi_qm_create_sgl(__u32 sge_num)
 {
-	struct hisi_sgl *sgl;
+	void *sgl;
 	int size;
 
-	size = sizeof(struct hisi_sgl) + sge_num * (sizeof(struct hisi_sge));
-	sgl = (struct hisi_sgl*)calloc(1, size);
+	size = sizeof(struct hisi_sgl) + sge_num * (sizeof(struct hisi_sge)) + SGL_ALIGE;
+	sgl = calloc(1, size);
 	if (!sgl)
 		return NULL;
-
-	sgl->entry_sum_in_chain = sge_num;
-	sgl->entry_sum_in_sgl = 0;
-	sgl->entry_length_in_sgl = sge_num;
-	sgl->next_dma = 0;
 
 	return sgl;
 }
 
+static struct hisi_sgl *hisi_qm_align_sgl(void *sgl, __u32 sge_num)
+{
+	struct hisi_sgl *sgl_align;
+
+	/* Hardware require the addr must be 64 align */
+	sgl_align = (struct hisi_sgl*)ADDR_ALIGN_64(sgl);
+	sgl_align->entry_sum_in_chain = sge_num;
+	sgl_align->entry_sum_in_sgl = 0;
+	sgl_align->entry_length_in_sgl = sge_num;
+	sgl_align->next_dma = 0;
+
+	return sgl_align;
+}
+
+
 handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 {
 	struct hisi_sgl_pool *sgl_pool;
-	int ret = 0;
 	int i;
 
 	if (!sgl_num || !sge_num || sge_num > HISI_SGL_SGE_NUM_MAX) {
@@ -450,14 +465,26 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	}
 
 	sgl_pool->sgl = calloc(sgl_num, sizeof(void*));
-	if (!sgl_pool->sgl)
+	if (!sgl_pool->sgl) {
+		WD_ERR("Sgl array alloc memory failed.\n");
 		goto err_out;
+	}
+
+	sgl_pool->sgl_align = calloc(sgl_num, sizeof(void*));
+	if (!sgl_pool->sgl_align) {
+		goto err_out;
+		WD_ERR("Sgl align array alloc memory failed.\n");
+	}
 
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
 		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
-		if (ret)
+		if (!sgl_pool->sgl[i]) {
+			WD_ERR("Sgl create failed.\n");
 			goto err_out;
+		}
+
+		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i], sge_num);
 	}
 
 	sgl_pool->sgl_num = sgl_num;
@@ -486,6 +513,9 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 
 			free(pool->sgl);
 		}
+
+		if (pool->sgl_align)
+			free(pool->sgl_align);
 		free(pool);
 	}
 
@@ -523,7 +553,7 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 		tmp1->entry_sum_in_sgl = 0;
 		tmp1->entry_sum_in_chain = pool->sge_num;
 		tmp1->entry_length_in_sgl = pool->sge_num;
-		pool->sgl[pool->top] = tmp;
+		pool->sgl_align[pool->top] = tmp;
 		pool->top++;
 	}
 
@@ -553,7 +583,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 
 	/* The top point to the upper of data location */
 	pool->top--;
-	hw_sgl = pool->sgl[pool->top];
+	hw_sgl = pool->sgl_align[pool->top];
 
 	/* Transform the data to hw data, now only support one sgl */
 	for (i= 0; i < hw_sgl->entry_length_in_sgl; i++) {
