@@ -65,7 +65,7 @@
 #define u64_lower_bits(phy)		((__u64)(phy))
 #define u64_upper_bits(phy)		(((__u64)(phy)) << QM_HADDR_SHIFT)
 
-#define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) & 0xFF)
+#define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) & 0xF)
 
 enum {
 	BD_TYPE,
