@@ -1791,16 +1791,16 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 {
 	switch (msg->cmode) {
 	case WD_CIPHER_CBC:
-		sqe->c_mode_alg = C_MODE_CBC;
+		sqe->c_mode_alg |= C_MODE_CBC;
 		break;
 	case WD_CIPHER_CCM:
-		sqe->c_mode_alg = C_MODE_CCM;
+		sqe->c_mode_alg |= C_MODE_CCM;
 		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
 		break;
 	case WD_CIPHER_GCM:
-		sqe->c_mode_alg = C_MODE_GCM;
+		sqe->c_mode_alg |= C_MODE_GCM;
 		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
