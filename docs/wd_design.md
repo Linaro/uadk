@@ -72,6 +72,7 @@
 |         |                |2) Update on mask and session. |
 |  0.110  |                |1) Remove fini() callback in *struct wd_alg_comp*. |
 |  0.111  |                |1) Change the meaning of *arg->src_len*. |
+|  1.0    |                |1) Update with the latest interface. |
 
 
 ## Terminology
@@ -160,12 +161,12 @@ typedef unsigned long long int    handle_t;
 
 Libwd defines APIs to allocate contexts.
 
-***handle_t \*wd_request_ctx(char \*node_path);***
+***handle_t \*wd_request_ctx(struct uacce_dev \*dev);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *node_path* | Input | Indicate the file path of hardware |
-|       |             |       | accelerator. |
+| libwd | *dev* | IN | A device in sysfs. All attrs informations in sysfs |
+|       |       |    | are recorded in this *struct uacce_dev*. |
 
 Return the context handle if it succeeds. Return 0 if it fails.
 
@@ -173,7 +174,7 @@ Return the context handle if it succeeds. Return 0 if it fails.
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *h_ctx* | Input | The handle indicates the working context. |
+| libwd | *h_ctx* | IN | The handle indicates the working context. |
 
 
 ### mmap
@@ -190,30 +191,26 @@ region).
 *wd_drv_mmap_qfr()* and *wd_drv_unmap_qfr()* are a pair of APIs to create and 
 destroy the mapping.
 
-***void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt, 
-size_t size);***
+***void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *h_ctx* | Input | The handle indicate the working context. |
-|       | *qfrt*  | Input | Indicate the queue file region type. It could be  |
-|       |         |       | MMIO (device MMIO region), DUS (device user share |
-|       |         |       | region) or SS (static share memory region for |
-|       |         |       | user). |
-|       | *size*  | Input | Indicate the size to be mapped. |
+| libwd | *h_ctx* | IN | The handle indicate the working context. |
+|       | *qfrt*  | IN | Indicate the queue file region type. It could be  |
+|       |         |    | MMIO (device MMIO region), DUS (device user share |
+|       |         |    | region) or SS (static share memory region for |
+|       |         |    | user). |
 
 Return virtual address if it succeeds. Return NULL if it fails.
 
 *wd_drv_mmap_qfr()* maps qfile region to user space.
 
-***void wd_drv_unmap_qfr(handle_t h_ctx, void \*addr, enum uacce_qfrt qfrt);***
+***void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *h_ctx* | Input | The handle indicate the working context. |
-|       | *addr*  | Input | Indicate the address that is mapped by |
-|       |         |       | *wd_drv_mmap_qfr()*. |
-|       | *qfrt*  | Input | Indicate the queue file region type. |
+| libwd | *h_ctx* | IN | The handle indicate the working context. |
+|       | *qfrt*  | IN | Indicate the queue file region type. |
 
 *wd_drv_unmap_qfr()* unmaps qfile region from user space.
 
@@ -221,108 +218,331 @@ qfrt means queue file region type. The details could be found in UACCE kernel
 driver.
 
 
-### Categorize Accelerators
+## Algorithm Libraries
 
-*wd_request_ctx()* only opens the specified hardware accelerator. If there're 
-mulitple hardware accelerators in system, vendor driver should decide to open 
-which accelerator. Libwd helps to categorize accelerators. It provides a set of 
-hardware accelerators that match the same requirement. Vendor driver or 
-application could make a decision based on the set.
+Libwd is a fundamental layer what user relies on to access hardware. UADK also 
+provides algorithm interfaces that user could get out of the hardware details, 
+such as contexts. With the algorithm interface, the user application could be 
+executed on multiple vendor's hardware.
 
-When each hardware accelerator registers in UACCE subsystem, it gets an ID that 
-is attached in the device name. And the ID information is exposed to user space 
-by sysfs. So libwd could parse IDs from sysfs and make use of them.
+
+### Compression Algorithm
+
+In compression algorithm, the contexts won't be accessed by user any more. 
+Instead, user only need to focus on compressing and decompressing.
+
+In libwd, everything is based on context resource. In compression algorithm, 
+everything is based on session. Session is a superset of context, since vendor 
+driver may apply multiple contexts for performance. With compression algorithm 
+layer, user doesn't care how the multiple contexts are used.
+
+
+#### Session in Compression Algorithm
+
+The session in compression algorithm records working algorithm, accelerator, 
+working mode, working context, and so on. It helps to gather more informations 
+and encapsulates them together. Application only needs to record the handle of 
+session.
+
+Whatever user wants to compress or decompress, a session is always necessary. 
+Each session could only support either compression or decompression. And there 
+are also some configurations of the compression/decompression. They are defined 
+in the *struct wd_comp_sess_setup*.
 
 ```
-    #define MAX_ACCELS               512
-    #define MAX_WORDS_FOR_ACCELS     (MAX_ACCELS / 32)
-    
-    struct wd_dev_mask {
-        unsigned int    mask[MAX_WORDS_FOR_ACCELS];
+struct wd_comp_sess_setup {
+    enum wd_comp_alg_type   alg_type;   // zlib or gzip
+    enum wd_comp_level      comp_lv;    // compression level
+    enum wd_comp_winsz_type win_sz;     // compression window size
+    enum wd_comp_op_type    op_type;    // compress or decompress
+    enum wd_ctx_mode        mode;       // synchronous or asynchronous
+};
+```
+
+With *struct wd_comp_sess_setup*, a session could be created. The details of 
+the session is encapsuled. Only a handle is exported to user.
+
+***handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup \*setup)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *setup* | IN | The structure describes the configurations of |
+| algorithm |         |    | compression or decompression. |
+
+If a session is created successfully, a non-zero handle value is returned. 
+If fails to create a session, just return 0.
+
+
+***void wd_comp_free_sess(handle_t h_sess)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *h_sess* | IN | A 64-bit handle value indicates working |
+| algorithm |          |    | session. |
+
+With the handle, a related session could be destroyed.
+
+
+#### Compression & Decompression
+
+Compression & decompression always submit data buffer to hardware accelerator 
+and collect the output. These buffer informations could be encapsulated into a 
+structure, *struct wd_comp_req*.
+
+```
+    typedef void *wd_alg_comp_cb_t(void *cb_param);
+    struct wd_comp_req {
+        void              *src;
+        __u32             src_len;
+        void              *dst;
+        __u32             dst_len;
+        wd_alg_comp_cb_t  *cb;
+        void              *cb_param;
+        __u8              op_type;
+        __u32             last;
+        __u32             status;
     };
-    typedef struct wd_dev_mask    wd_dev_mask_t;
 ```
 
-MAX_ACCELS is predefined in *wd.h*. Now MAX_ACCELS is 512 that means 512 
-accelerators are supported in the same time. Each accelerator could be denoted 
-by one bit. So 512 bits could be covered by 16 words. These 16 words are the 
-masks, *wd_dev_mask_t*. If more accelerators need to be supported, libwd could 
-extend the value of max accelerators automatically. The lowest bit indicates 
-the hardware accelerator 0. If a device matches the condition, the related bit 
-is set in the mask.
+| Field | Direction | Comments |
+| :-- | :-- | :-- |
+| *src*      | IN   | Input the virtual address of source buffer that is |
+|            |      | prepared by user application. |
+| *src_len*  | IN & | Input the length of source buffer. |
+|            | OUT  | When the operation is done, *src_len* is updated. |
+|            |      | It could indicate the length consumed by hardware. |
+| *dst*      | IN   | Input the virtual address of destination buffer that |
+|            |      | is prepared by user application. |
+| *dst_len*  | IN & | Input the length of destination buffer. |
+|            | OUT  | When the operation is done, *dst_len* is updated. |
+|            |      | It indicates the real length of output data. |
+| *cb*       | IN   | Indicate the user application callback that is used |
+|            |      | in asynchronous mode. |
+| *cb_param* | IN   | Indicate the parameter that is used by callback in |
+|            |      | asynchronous mode. |
+| *op_type*  | IN   | Indicate compression or decompression. |
+| *last*     | IN   | Indicate whether it's the last data frame. |
+| *status*   | OUT  | Indicate the result. 0 means successful, and others |
+|            |      | are error code. |
 
-The **mask** is actually a set of matched accelerators. *wd_get_accel_mask()* 
-and *wd_get_numa_accel_mask()* could help to get the **mask** from libwd.
+When an application gets a session, it could request hardware accelerator to 
+work in synchronous mode or asychronous mode. *cb* is the callback function 
+of user application that is only used in asynchronous mode. *cb_param* is the 
+parameter of the asynchronous callback function.
 
-***int wd_get_accel_mask(char \*alg_name, wd_dev_mask_t \*dev_mask);***
+Since synchronous or asynchronous mode is specified in *struct wd_comp_req*, 
+the compression or decompression could be treated that user submits requests to 
+a session.
+
+There're two kinds of compression interface. One is block mode that the data 
+in the request is not related to the previous or later data. And the other is 
+stream mode that the data in the request is related to the data in the previous 
+or later request. If user wants to compress/decompress large data buffer, it's 
+suggested to use stream mode.
+
+
+***int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req \*req)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *alg_name* | Input  | Indicate the name of algorithm. |
-|       | *dev_mask* | Output | Indicate the mask bits of valid UACCE |
-|       |            |        | devices matched with the algorithm. |
+| compress  | *h_sess* | IN   | Indicate the session. User application doesn't |
+| algorithm |          |      | know the details in context. |
+|           | *req*    | IN & | Indicate the source and destination buffer. |
+|           |          | OUT  | |
 
-Return 0 if it finds accelerators matched with *alg_name*. Otherwise, it 
-returns negative value.
+*wd_do_comp_sync()* sends a synchronous compression/decompression request for 
+block mode.
 
-***int wd_get_numa_accel_mask(int id, wd_dev_mask_t \*dev_mask);***
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+contains the buffer information.
+
+
+***int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req \*req)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *id*       | Input  | Indicate the ID of accelerator in UACCE |
-|       |            |        | subsystem. |
-|       | *dev_mask* | Output | Indicate the mask bits of valid UACCE |
-|       |            |        | devices in the same NUMA node range. |
+| compress  | *h_sess* | IN   | Indicate the session. User application doesn't |
+| algorithm |          |      | know the details in context. |
+|           | *req*    | IN & | Indicate the source and destination buffer. |
+|           |          | OUT  | |
+
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+contains the buffer information.
+
+*wd_do_comp_strm()* sends a synchronous compression/decompression request for 
+stream mode. *wd_do_comp_strm()* just likes *wd_do_comp_sync()*, user only 
+sends one request that the data buffer should be processed at one time.
 
 
-*wd_get_numa_accel_mask()* only wants to find the accelerators in the range of 
-the same NUMA node. Return 0 if it succeeds. Return negative value if it fails.
+***int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req \*req)***
 
-In the same NUMA node, memory should be in the equal distance from different 
-devices. User application should gain better performance on it if data needs 
-to be shared among different accelerators.
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *h_sess* | IN   | Indicate the session. User application doesn't |
+| algorithm |          |      | know the details in context. |
+|           | *req*    | IN & | Indicate the source and destination buffer. |
+|           |          | OUT  | |
 
-*wd_get_numa_accel_mask()* returns the set of matched accelerators that are in 
-the range of the same NUMA node. The set is stored in *dev_mask*. The return 
-value is 0 if the set is found. The return value is negative value if it fails 
-to find the set.
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+contains the buffer information.
 
-*wd_get_numa_accel_mask()* queries the set of matched accelerators. Then 
-application could choose an accelerator in this set. And the key is in the 
-*dev_mask* value.
+*wd_do_comp_sync2()* sends a synchronous compression/decompression request for 
+stream mode. *wd_do_comp_sync2()* is the superset of *wd_do_comp_strm()*. If 
+the data buffer of one request is too large to hardware accelerator, it could 
+split it into several requests until all data handled by hardware.
 
-When **mask** is gotten in application, it limits the range of checking 
-accelerator device. *wd_get_accel_mask()* and *wd_get_numa_accel_mask()* 
-provides different sets of accelerators. So the policy of choosing an 
-appropriate accelerator is decided in application, not libwd.
 
-The model of usage case is in below.
 
-Case 1:
+#### Asynchronous Mode
 
-Vendor driver calls *wd_get_accel_mask(alg_name, dev_mask, ...)* to get the 
-set of accelerators. Vendor driver or application could choose a right 
-accelerator from the set.
+In synchronous mode, user application is blocked until the submitted request 
+is finished by hardware accelerator. Then a new request could be submitted. 
+In hardware accelerator, multiple requests are always processed in a stream 
+line. If a process needs to submit multiple requests to hardware, it can't 
+get good performance in synchronous mode. Since the stream line isn't fully 
+used. In this case, asynchronous mode could help user application to gain 
+better performance.
 
-Case 2:
+In asynchronous mode, user application gets return immediately while a request 
+is submitted.
 
-An application needs to access resources on multiple accelerators for different 
-algorithms, and it hopes all accelerators in the same NUMA range for better 
-performance. Vendor driver calls *wd_get_accel_mask(alg_name, ...)* to finds 
-available accelerators for one algorithm in a set.
+***int wd_do_comp_async(handle_t h_sess, struct wd_comp_req \*req)***
 
-Then application picks up one accelerator from the set, and calls 
-*wd_get_numa_accel_mask()* to finds all accelerators in the same NUMA range by 
-another vendor driver.
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *h_sess* | IN   | Indicate the session. User application doesn't |
+| algorithm |          |      | know the details in context. |
+|           | *req*    | IN & | Indicate the source and destination buffer. |
+|           |          | OUT  | |
 
-With the combination of different sets, application could finally get a set 
-matches its requirement. Finally the right accelerator could be chosen from 
-the set.
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+contains the buffer information.
 
-Case 3:
+When hardware accelerator finishes the request, the callback that 
+is provided by user will be invoked. Because the compression library isn't 
+driven by interrupt, a polling function is necessary to check result.
 
-An application calls algorithm library directly with uninitialized value in 
-*dev_mask*. Algorithm finds an avaialbe accelerator automatically.
+***int wd_comp_poll(__u32 expt, __u32 \*count)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *expt*  | IN  | Indicate the expected receiving requests from |
+| algorithm |         |     | hardware accelerator. |
+|           | *count* | OUT | Indicate the real receiving requests from |
+|           |         |     | hardware accelerator. |
+
+Return 0 if all expected requests are received. Return error number if fails.
+
+Usually *wd_comp_poll()* could be invoked in a user defined polling thread.
+
+
+#### Bind Accelerator and Driver
+
+Compression algorithm library requires each vendor driver providing an 
+instance, *struct wd_comp_driver*. This instance represents a vendor driver. 
+Compression algorithm library binds an vendor driver by the instance.
+
+```
+    struct wd_comp_driver {
+        const char *drv_name;
+        const char *algo_name;
+        __u32 drv_ctx_size;
+        int  (*init)(struct wd_ctx_config_internal *config, void *priv);
+        void (*exit)(void *priv);
+        int (*comp_send)(handle_t ctx, struct wd_comp_msg *msg);
+        int (*comp_recv)(handle_t ctx, struct wd_comp_msg *msg);
+    };
+```
+
+| Field | Comments |
+| :-- | :-- |
+| *drv_name* | Driver name that is matched with device name. |
+| *alg_name* | Algorithm name |
+| *init*     | Hook to do hardware initialization that implemented in vendor |
+|            | driver. |
+| *exit*     | Hook to finish all hardware operation that implemented in |
+|            | vendor driver. |
+
+
+A matched vendor driver is bound to compression algorithm library in a global 
+instance, *struct wd_comp_setting*. The binding process is finished by 
+macro *WD_COMP_SET_DRIVER()*.
+
+
+*struct wd_comp_setting* binds context resources, user scheduler and vendor 
+driver together. At first, user application needs to allocate contexts and to 
+create scheduler instance. Then use *wd_comp_init()* to initialize vendor 
+device.
+
+***int wd_comp_init(struct wd_ctx_config \*config, struct wd_sched \*sched)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *config* | IN | Indicate a context set. |
+| algorithm | *sched*  | IN | Indicate a user scheduler that is used to |
+|           |          |    | arrange context resource to a session. |
+
+Return 0 if it succeeds. And return error number if it fails.
+
+In *wd_comp_init()*, context resources, user scheduler and vendor driver are 
+initialized.
+
+
+***void wd_comp_uninit(void)***
+
+In *wd_comp_uninit()*, all configurations on resources are cleared.
+
+
+
+### Scheduler
+
+When algorithm layer is used, context resource is not exposed to user any more. 
+So user could define a scheduler that allocate context resources, arrange 
+proper resources to sessions and free context resources.
+
+For user convenient, a sample scheduler is provided in UADK for reference.
+
+***struct wd_sched \*sample_sched_alloc(__u8 sched_type, __u8 type_num, 
+__u8 numa_num, user_poll_func func)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| user | *sched_type* | Input | The scheduler policy type that is supported |
+|      |              |       | in current scheduler. |
+|      | *type_num*   | Input | The service type number of user's service |
+|      |              |       | that is defined by user. |
+|      | *numa_num*   | Input | The NUMA number is used by user. |
+|      | *func*       | Input | User provided polling function to poll events |
+|      |              |       | on contexts. |
+
+Return a scheduler instance if it succeeds. And return NULL if it fails.
+
+
+***void sample_sched_release(struct wd_sched \*sched)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| user | *sched* | Input | The user defined scheduler. |
+
+*sample_sched_release()* is used to release a scheduler instance.
+
+
+***int sample_sched_fill_data(const struct wd_sched \*sched, int numa_id, 
+__u8 mode, __u8 type, __u32 begin, __u32 end)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| user | *sched*   | Input | The user defined scheduler |
+|      | *numa_id* | Input | The ID of NUMA node |
+|      | *mode*    | Input | Specify operation mode. |
+|      |           |       | 0 -- sync mode, 1 -- async mode. |
+|      | *type*    | Input | Service type that is defined by user. |
+|      | *begin*   | Input | The index of first context in the region. |
+|      | *end*     | Input | The index of last context in the region. |
+
+After context resources allocated by *wd_request_ctx()*, user could specify 
+which context resources are working in the specified mode or type by 
+*sample_sched_fill_data()*.
 
 
 ## Vendor Driver
@@ -343,298 +563,6 @@ driver should decide to choose which accelerator by itself.
 Application may want to track *context*. It's not good to share *context* to 
 application directly. It's better to transfer *context* to handle for security.
 
-
-## Algorithm Libraries
-
-According to the above sections, an application could not access libwd 
-directly that is only accessed by vendor driver. When multiple vendor drivers 
-are doing similar things, a common interface could be abstracted into 
-algorithm libraries. All APIs in algorithm libraries are provided to user 
-application.
-
-
-### Compression Algorithm
-
-It's similar to libwd. Compression Algorithm provides a similar interface to 
-allocate a session. Session is a superset of context, since vendor driver may 
-apply multiple contexts. Context is related to the interface of vendor driver, 
-and session is related to the interface of application. Session takes more job, 
-such as binding accelerator and vendor driver together.
-
-
-#### Session in Compression Algorithm
-
-The session in compression algorithm records working algorithm, accelerator, 
-working mode, working context, and so on. It helps to gather more informations 
-and encapsulates them together. Application only needs to know the handle of 
-session.
-
-***handle_t wd_alg_comp_alloc_sess(char \*alg_name, uint32_t mode, 
-wd_dev_mask_t dev_mask)***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| algorithm | *alg_name* | input  | Set the name of algorithm type, such as |
-|           |            |        | "zlib", "gzip", etc. |
-|           | *mode*     | input  | Indicate whether it's BLOCK mode (0) or |
-|           |            |        | STREAM mode (MODE_STREAM). |
-|           | *dev_mask* | input  | Set the mask value of UACCE devices. |
-|           |            |        | The mask value could be empty or from |
-|           |            |        | *wd_get_accel_mask()* and |
-|           |            |        | *wd_get_numa_accel_mask()*. |
-
-*wd_alg_comp_alloc_sess()* is used to allocate a session. Return a valid 
-handle if succeeds. Return 0 if fails.
-
-***void wd_alg_comp_free_sess(handle_t h_sess)***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| algorithm | *h_sess* | input | A 64-bit handle value indicates working |
-|           |          |       | session. |
-
-*wd_alg_comp_free_sess()* is used to release a session that is denoted by a 
-handle.
-
-Both *wd_alg_comp_alloc_sess()* and *wd_alg_comp_free_sess()* are used by user 
-applications.
-
-
-#### Compression & Decompression
-
-Compression & decompression always submit data buffer to hardware accelerator 
-and collect the output. These buffer informations could be encapsulated into a 
-structure, *struct wd_comp_arg*.
-
-```
-    typedef void *wd_alg_comp_cb_t(void *cb_param);
-    struct wd_comp_arg {
-        void              *src;
-        size_t            *src_len;
-        void              *dst;
-        size_t            *dst_len;
-        wd_alg_comp_cb_t  *cb;
-        void              *cb_param;
-        uint32_t          flag;
-        uint32_t          status;
-    };
-```
-
-| Field | Direction | Comments |
-| :-- | :-- | :-- |
-| *src*      | IN & OUT | Input the virtual address of source buffer that is |
-|            |          | prepared by user application. |
-|            |          | When the operation is done, *src* is updated. It |
-|            |          | points to the address that is not consumed by |
-|            |          | hardware yet. |
-| *src_len*  | IN & OUT | Input the length of source buffer. |
-|            |          | When the operation is done, *src_len* is updated. |
-|            |          | It could indicate the length consumed by hardware. |
-| *dst*      | IN & OUT | Input the virtual address of destination buffer that |
-|            |          | is prepared by user application. |
-|            |          | When the operation is done, *dst* is accumulated. |
-|            |          | Original *dst* points to the output data, the new |
-|            |          | *dst* points to the new slot for next output. |
-| *dst_len*  | IN & OUT | Input the length of destination buffer. |
-|            |          | When the operation is done, *dst_len* is updated. |
-|            |          | It indicates the real length of output data. |
-| *cb*       | IN       | Indicate the user application callback that is used |
-|            |          | in asynchronous mode. |
-| *cb_param* | IN       | Indicate the parameter that is used by callback in |
-|            |          | asynchronous mode. |
-| *flag*     | IN       | **FLAG_DEFLATE** or not indicate deflating or |
-|            |          | inflating. |
-|            |          | **FLAG_INPUT_FINISH** or not indicate the last frame |
-|            |          | of input or normal frame. |
-| *status*   | OUT      | **STATUS_OUT_READY** indicates output is ready in |
-|            |          | *dst* buffer. |
-|            |          | **STATUS_OUT_DRAINED** indicates that all data have |
-|            |          | been drained into *dst* buffer. |
-|            |          | **STATUS_IN_PART_USE** indicates only part data from |
-|            |          | *src* buffer is consumed by hardware. |
-|            |          | **STATUS_IN_EMPTY** indicates all data from *src* |
-|            |          | buffer is consumed by hardware. |
-
-When an application gets a session, it could request hardware accelerator to 
-work in synchronous mode or in asychronous mode. *cb* is the callback function 
-of user application. And it's optional. For synchronous mode, parameter *cb* 
-should be NULL. For asynchronous mode, parameter *cb* must be provided.
-
-If user application wants to do the compression or decompression, it needs to 
-functions in below.
-
-***int wd_alg_compress(handle_t h_sess, struct wd_comp_arg \*arg)***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| algorithm | *h_sess*  | Input | Indicate the session. User application |
-|           |           |       | doesn't know the details in context. |
-|           | *arg*     | Input | Indicate the source and destination buffer. |
-
-Return 0 if it succeeds. Return negative value if it fails. Parameter *arg* 
-contains the buffer information. If multiple contexts are supported in vendor 
-driver, vendor driver needs to judge which context should be used by the 
-informations if parameter *arg*.
-
-***int wd_alg_decompress(handle_t h_sess, struct wd_comp_arg \*arg)***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| algorithm | *h_sess*  | Input | Indicate the session. User application |
-|           |           |       | doesn't know the details in context. |
-|           | *arg*     | Input | Indicate the source and destination buffer. |
-
-Return 0 if it succeeds. Return negative value if it fails.
-
-In the pair of *wd_alg_comp_alloc_sess()* and *wd_alg_comp_free_sess()*, user 
-could select either compression or decompression. The mix of compression and 
-decompression in the pair operation is forbidden.
-
-Whatever the compression/decompression is BLOCK mode or STREAM mode, it's 
-always marked in the input parameters of *wd_alg_comp_alloc_sess()*. Then 
-*wd_alg_compress()* and *wd_alg_decompress()* could be shared in both modes 
-without any modification.
-
-
-
-#### Asynchronous Mode
-
-When it's in synchronous mode, user application is blocked in 
-*wd_alg_compress()* or *wd_alg_decompress()* until hardware is available for 
-the next data block. When it's in asynchronous mode, user application gets 
-return from *wd_alg_compress()* or *wd_alg_decompress()* immediately. But 
-hardware accelerator is still running. User application could call 
-*wd_alg_comp_poll()* to check whether hardware is done.
-
-If multiple jobs are running in hardware in parallel, *wd_alg_comp_poll()* 
-could save the time on polling hardware status. And user application could 
-sleep for a fixed time slot before polling status, it could save CPU resources.
-
-***int wd_alg_comp_poll(handle_t h_sess)***
-
-| Parameter | Direction | Comments |
-| :-- | :-- | :-- |
-| *h_sess* | Input | Indicate the session. User application doesn't know the |
-|          |       | details in session. |
-
-Return 0 if hardware is done. Return error number if hardware is still working.
-
-Finally, *wd_alg_comp_poll()* calls *async_poll()* in vendor driver to poll 
-the hardware.
-
-Because *wd_alg_comp_poll()* is a polling function. Suggest user application 
-invokes the polling for multiple times. Otherwise, it may miss the event of
-hardware accelerator completion.
-
-Vendor driver could merge and copy all these pieces into output buffer that 
-provided by application.
-
-
-#### Bind Accelerator and Driver
-
-Compression algorithm library requires each vendor driver providing an 
-instance, *struct wd_alg_comp*. This instance represents a vendor driver, 
-compression algorithm library binds an accelerator and a vendor driver into a 
-session. And *context* should also be stored in a *session*, but it's not a 
-public field in the *session*. *Context* should be stored in the vendor private 
-structure field in *session*.
-
-```
-    struct wd_alg_comp {
-        char *drv_name;
-        char *algo_name;
-        int  (*init)(struct wd_sess *sess);
-        void (*exit)(struct wd_sess *sess);
-        int  (*prep)(struct wd_sess *sess, struct wd_comp_arg *arg);
-        int  (*deflate)(struct wd_sess *sess, struct wd_comp_arg *arg);
-        int  (*inflate)(struct wd_sess *sess, struct wd_comp_arg *arg);
-        int  (*async_poll)(struct wd_sess *sess, struct wd_comp_arg *arg);
-    };
-```
-
-| Field | Comments |
-| :-- | :-- |
-| *alg_name*   | Algorithm name |
-| *drv_name*   | Driver name that is matched with device name. |
-| *init*       | Hook to do hardware initialization that implemented in vendor |
-|              | driver. |
-| *exit*       | Hook to finish all hardware operation that implemented in |
-|              | vendor driver. |
-| *prep*       | Hook to prepare before one hardware operation in vendor |
-|              | driver. |
-| *deflate*    | Hook to deflate by hardware that implemented in vendor |
-|              | driver. |
-| *inflate*    | Hook to inflate by hardware that implemented in vendor |
-|              | driver. |
-| *async_poll* | Hook to poll hardware status in asynchronous operation that |
-|              | implemented in vendor driver. |
-
-All the instances of *struct wd_alg_comp* from vendor drivers should be 
-referenced in an algorithm driver list of algorithm library.
-
-```
-    static struct wd_alg_comp wd_alg_comp_list[] = {
-        Accel_driver_A_hooks,
-        Accel_driver_B_hooks,
-        ...
-    };
-```
-
-When an application calls *wd_alg_comp_alloc_sess()* to request a session, 
-*wd_alg_comp_alloc_sess()* starts to search an available accelerator first. 
-Parameter *alg_name* and *dev_mask* are used to search accelerators.
-
-*wd_alg_comp_alloc_sess()* scans sysfs node to find devices matching *alg_name* 
-and form a device list. Each accelerator has an UACCE ID. If an accelerator's 
-ID doesn't exist in the *dev_mask*, it'll be skipped to insert the device list.
-
-The weight of the priority list is *avail_ctxs* that indicates the number of 
-context resources. If there're more contexts available to an accelerator, it 
-is in a high priority to be choosen. It's based on the policy of resource 
-balance. Compression algorithm library always choose the first accelerator in 
-the device list.
-
-As soon as an accelerator is chosen, the counterpart of the accelerator could 
-also be found by name. The matched vendor driver must use the same name of the 
-accelerator. Otherwise, algorithm library can't find the correct vendor driver. 
-Then the node path of accelerator and driver are stored in *struct 
-wd_comp_sess*.
-
-```
-    struct wd_comp_sess {
-        char                *alg_name;  /* zlib or gzip */
-        char                node_path[];
-        wd_dev_mask_t       dev_mask;
-        struct wd_alg_comp  *drv;
-        uint32_t            mode;       /* BLOCK mode or STREAM mode */
-        void                *priv;      /* vendor specific structure */
-    };
-```
-
-Field *priv* points to vendor specific structure. *struct priv_vendor_sess* is 
-an example of vendor specific structure.
-
-```
-    struct priv_vendor_sess {
-        handle_t   h_ctx;
-        ...
-    };
-```
-
-| Field | Comments |
-| :-- | :-- |
-| *h_ctx* | Indicate the context. |
-
-Whatever it's single context or mutiple contexts used in vendor driver, just 
-record them in vendor specific structure.
-
-After a session allocated, the control of CPU will be transfered to vendor 
-driver by *wd_alg_comp->init(sess)*. In the *init()*, vendor driver tries to 
-allocate a *context* by *wd_request_ctx()*.
-
-When application wants to free the accelerator, *wd_alg_comp_free_sess()* is 
-used. It'll execute *wd_alg_comp->exit(sess)* to free those contexts by 
-*wd_release_ctx()*.
 
 
 ## Example
@@ -680,81 +608,3 @@ interface that is defined by vendor driver.
 When application doesn't want to access hardware accelerator, vendor driver 
 could invokes *wd_release_ctx()* to release the hardware.
 
-
-### Vendor Driver in Compression Algorithm Library
-
-Here's an example of implementing vendor driver to support compression 
-algorithm.
-
-Vendor driver needs to implement the instance of *struct wd_alg_comp*. When 
-user application creates the context, the vendor driver and device are both 
-bound into context. Then *wd_alg_comp_alloc_sess()* continues to call 
-*sess->init()* that defined in vendor driver. In this function tries to request 
-context and initialize hardware.
-
-When user application invokes *wd_alg_compress()*, *sess->deflate()* is called. 
-It points to the implementation in vendor driver.
-
-When user application invokes *wd_alg_comp_free_sess()*, "wd_comp_sess->exit()" 
-is called. It also points to the implementation in vendor driver. It releases 
-context and free hardware.
-
-
-## Extra Helper functions
-
-NOSVA is a special scenario in UADK framework. It means that SVA feature
-is disabled. Because of this, vendor driver can't access the same virtual 
-address from application. Memory copy has to be used in NOSVA scenario.
-
-Vendor driver needs to access the hardware address of accelerator. Since vendor 
-driver is in user mode. This behavior stains Linux Kernel. So NOSVA scenario 
-isn't preferred to use. It might be removed in the future. If user really wants 
-to use NOSVA scenario, user must have the root permission. And the additional 
-APIs are provied in NOSVA scenario.
-
-
-***int wd_is_nosva(handle_t h_ctx);***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| libwd | *h_ctx* | Input | Indicate the working context. |
-
-Return 1 if the context related to the accelerator doesn't support SVA. Return 
-0 if the context related to the accelerator supports SVA.
-
-Vendor driver needs to identify whether the current accelerator is working in 
-SVA scenario or NOSVA scenario.
-
-In NOSVA scenario, vendor driver needs to allocate memory that could be 
-recognized by the accelerator.
-
-***void \*wd_reserve_mem(handle_t h_ctx, size_t size);***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| libwd | *h_ctx* | Input | Indicate the working context. |
-|       | *size*  | Input | Indicate the memory size that needs to be |
-|       |         |       | allocated. |
-
-Return virtual address if it succeeds. Return NULL if it fails.
-
-*wd_reserve_mem()* not only allocates memory, but also maps it to virtual 
-address that could be accessed by CPU. Then it returns the virtual address if 
-it succeeds. Actually the mapping is created by *wd_drv_mmap_qfr()*, and it's 
-invoked in *wd_reserve_mem()* by default.
-
-Since hardware accelerator needs to access memory, vendor driver needs to 
-provide address that could be accessed by hardware accelerator. Libwd helps 
-vendor driver to maintain the mapping between virtual address and the address 
-is recognized by accelerator, and returns the address. But it's insecure to 
-expose address that is recognized by accelerator to user space application.
-
-***void \*wd_get_dma_from_va(handle_t h_ctx, void \*va);***
-
-| Layer | Parameter | Direction | Comments |
-| :-- | :-- | :-- | :-- |
-| libwd | *h_ctx* | Input | Indicate the working context. |
-|       | *va*    | Input | Indicate the virtual address. |
-
-Return the address for accelerator if it succeeds. Return NULL if the input 
-virtual address is invalid.
