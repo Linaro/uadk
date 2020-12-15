@@ -614,6 +614,7 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 
 static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *recv_msg)
 {
+	struct wd_cipher_msg *rmsg;
 	__u16 done;
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
@@ -625,7 +626,8 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	update_iv(recv_msg);
+	rmsg = (struct wd_cipher_msg *)sqe->type2.mac_addr;
+	update_iv(rmsg);
 }
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
@@ -731,6 +733,18 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	sqe.type2.c_ivin_addr = (__u64)msg->iv;
 	sqe.type2.c_key_addr = (__u64)msg->key;
 	sqe.type2.tag = (__u16)msg->tag;
+
+	/*
+	 * Because some special algorithms need to update IV
+	 * after receiving the BD, and the relevant information
+	 * is in the send message, so the BD field segment is
+	 * needed to return the message pointer.
+	 * The Cipher algorithm does not use the mac_addr segment
+	 * in the BD domain and the hardware will copy all the
+	 * field values of the send BD when returning, so we use
+	 * mac_addr to carry the message pointer here.
+	 */
+	sqe.type2.mac_addr = (__u64)msg;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -886,6 +900,18 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	sqe.c_key_addr = (__u64)msg->key;
 	sqe.tag = (__u64)msg->tag;
 
+	/*
+	 * Because some special algorithms need to update IV
+	 * after receiving the BD, and the relevant information
+	 * is in the send message, so the BD field segment is
+	 * needed to return the message pointer.
+	 * The Cipher algorithm does not use the mac_addr segment
+	 * in the BD domain and the hardware will copy all the
+	 * field values of the send BD when returning, so we use
+	 * mac_addr to carry the message pointer here.
+	 */
+	sqe.mac_addr = (__u64)msg;
+
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		return ret;
@@ -896,6 +922,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *recv_msg)
 {
+	struct wd_cipher_msg *rmsg;
 	__u16 done;
 
 	done = sqe->done_flag & SEC_DONE_MASK;
@@ -907,7 +934,8 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *re
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	update_iv(recv_msg);
+	rmsg = (struct wd_cipher_msg *)sqe->mac_addr;
+	update_iv(rmsg);
 }
 
 int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
