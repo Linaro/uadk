@@ -405,20 +405,20 @@ static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
 	return sgl;
 }
 
-static void test_sec_buff_free(__u8 data_fmt, void *buff)
+static void test_sec_sgl_free(__u8 data_fmt, void *buff)
 {
 	struct wd_sgl *sgl;
+	struct wd_sgl *tmp;
 
-	if (!buff)
+	if (!buff || data_fmt != WD_SGL_BUF)
 		return;
 
-	if (data_fmt == WD_SGL_BUF) {
-		sgl = (struct wd_sgl*)buff;
-		if (sgl->data)
-			free(sgl->data);
+	sgl = (struct wd_sgl*)buff;
+	while (sgl) {
+		tmp = sgl;
+		sgl = sgl->next;
+		free(tmp);
 	}
-
-	free(buff);
 }
 
 static int test_sec_cipher_sync_once(void)
@@ -435,6 +435,8 @@ static int test_sec_cipher_sync_once(void)
 
 	int cnt = g_times;
 	int ret;
+	void *src_bak = NULL;
+	void *dst_bak = NULL;
 
 	/* config setup */
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -462,6 +464,8 @@ static int test_sec_cipher_sync_once(void)
 		ret = -1;
 		goto out;
 	}
+	src_bak = req.src;
+
 	memcpy(req.src, tv->ptext, g_pktlen);
 	req.in_bytes = g_pktlen;
 	req.src = test_sec_buff_create(g_data_fmt, req.src, g_pktlen);
@@ -480,6 +484,8 @@ static int test_sec_cipher_sync_once(void)
 		ret = -1;
 		goto out;
 	}
+	dst_bak = req.dst;
+
 	req.dst = test_sec_buff_create(g_data_fmt, req.dst, tv->len);
 	if (!req.dst)
 		goto out;
@@ -523,6 +529,7 @@ static int test_sec_cipher_sync_once(void)
 		ret = wd_do_cipher_sync(h_sess, &req);
 		cnt--;
 	}
+
 	gettimeofday(&cur_tval, NULL);
 	time_used = (float)((cur_tval.tv_sec - bg_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - bg_tval.tv_usec);
@@ -540,8 +547,12 @@ static int test_sec_cipher_sync_once(void)
 		hexdump(req.dst, req.out_bytes);
 
 out:
-	test_sec_buff_free(g_data_fmt, req.src);
-	test_sec_buff_free(g_data_fmt, req.dst);
+	test_sec_sgl_free(g_data_fmt, req.src);
+	test_sec_sgl_free(g_data_fmt, req.dst);
+	if (src_bak)
+		free(src_bak);
+	if (dst_bak)
+		free(dst_bak);
 	if (req.iv)
 		free(req.iv);
 	if (h_sess)
@@ -571,6 +582,8 @@ static int test_sec_cipher_async_once(void)
 	unsigned long Perf = 0;
 	float speed, time_used;
 	int pid = getpid();
+	void *src_bak = NULL;
+	void *dst_bak = NULL;
 
 	int cnt = g_times;
 	__u32 num = 0;
@@ -605,17 +618,29 @@ static int test_sec_cipher_async_once(void)
 		ret = -1;
 		goto out;
 	}
+	src_bak = req.src;
+
 	memcpy(req.src, tv->ptext, g_pktlen);
 	req.in_bytes = g_pktlen;
-
 	SEC_TST_PRT("req src--------->:\n");
 	hexdump(req.src, g_pktlen);
+	req.src = test_sec_buff_create(g_data_fmt, req.src, g_pktlen);
+	if (!req.src)
+		goto out;
+
 	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
 		SEC_TST_PRT("req dst mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
+	dst_bak = req.dst;
+
+	req.dst = test_sec_buff_create(g_data_fmt, req.dst, g_pktlen);
+	if (!req.dst)
+		goto out;
+
+	req.data_fmt = g_data_fmt;
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
@@ -677,10 +702,12 @@ try_again:
 
 	usleep(100000);
 out:
-	if (req.src)
-		free(req.src);
-	if (req.dst)
-		free(req.dst);
+	test_sec_sgl_free(g_data_fmt, req.src);
+	test_sec_sgl_free(g_data_fmt, req.dst);
+	if (src_bak)
+		free(src_bak);
+	if (dst_bak)
+		free(dst_bak);
 	if (req.iv)
 		free(req.iv);
 	if (h_sess)
@@ -848,10 +875,18 @@ static int sec_cipher_sync_test(void)
 		len = g_pktlen < tv->len ? g_pktlen : tv->len;
 		memcpy(req[i].src, tv->ptext, len);
 		req[i].in_bytes = len;
+		req[i].src = test_sec_buff_create(g_data_fmt, req[i].src, len);
+		if (!req[i].src)
+			goto out_thr;
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
 		req[i].out_buf_bytes = step;
+		req[i].dst = test_sec_buff_create(g_data_fmt, req[i].dst, step);
+		if (!req[i].dst)
+			goto out_thr;
+
+		req[i].data_fmt = g_data_fmt;
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
@@ -886,6 +921,11 @@ static int sec_cipher_sync_test(void)
 out_config:
 	uninit_config();
 out_thr:
+	for (i = 0; i < parallel; i++) {
+		test_sec_sgl_free(g_data_fmt, req[i].src);
+		test_sec_sgl_free(g_data_fmt, req[i].dst);
+	}
+
 	if (src)
 		free(src);
 	if (dst)
@@ -1080,10 +1120,18 @@ static int sec_cipher_async_test(void)
 		memset(req[i].src, 0, step);
 		memcpy(req[i].src, tv->ptext, g_pktlen);
 		req[i].in_bytes = g_pktlen;
+		req[i].src = test_sec_buff_create(g_data_fmt, req[i].src, g_pktlen);
+		if (!req[i].src)
+			goto out_thr;
 
 		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
 		req[i].out_buf_bytes = step;
+		req[i].dst = test_sec_buff_create(g_data_fmt, req[i].dst, step);
+		if (!req[i].dst)
+			goto out_thr;
+
+		req[i].data_fmt = g_data_fmt;
 
 		req[i].iv = iv + i * step;
 		memset(req[i].iv, 0, step);
@@ -1120,6 +1168,10 @@ static int sec_cipher_async_test(void)
 out_config:
 	uninit_config();
 out_thr:
+	for (i = 0; i < parallel; i++) {
+		test_sec_sgl_free(g_data_fmt, req[i].src);
+		test_sec_sgl_free(g_data_fmt, req[i].dst);
+	}
 	if (src)
 		free(src);
 	if (dst)

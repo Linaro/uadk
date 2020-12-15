@@ -18,7 +18,7 @@
 
 /* The max sge num in one sgl */
 #define HISI_SGL_SGE_NUM_MAX 255
-#define QM_SGL_NUM 16
+#define QM_SGL_NUM 255
 #define SGL_ALIGE 64
 #define ADDR_ALIGN_64(addr) ((((__u64)(addr) >> 6) + 1) << 6)
 
@@ -489,7 +489,7 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 
 	sgl_pool->sgl_num = sgl_num;
 	sgl_pool->sge_num = sge_num;
-	sgl_pool->depth = sge_num;
+	sgl_pool->depth = sgl_num;
 	sgl_pool->top = sgl_num;
 	pthread_spin_init(&sgl_pool->lock, PTHREAD_PROCESS_SHARED);
 
@@ -553,7 +553,7 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 		tmp1->entry_sum_in_sgl = 0;
 		tmp1->entry_sum_in_chain = pool->sge_num;
 		tmp1->entry_length_in_sgl = pool->sge_num;
-		pool->sgl_align[pool->top] = tmp;
+		pool->sgl_align[pool->top] = tmp1;
 		pool->top++;
 	}
 
