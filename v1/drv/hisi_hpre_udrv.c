@@ -1098,7 +1098,8 @@ static void correct_random(struct wd_dtb *k)
 	k->data[lens] = 0;
 }
 
-static bool is_all_zero(struct wd_dtb *e, struct wcrypto_ecc_msg *msg)
+static bool is_all_zero(struct wd_dtb *e, struct wcrypto_ecc_msg *msg,
+			const char *p_name)
 {
 	int i;
 
@@ -1106,6 +1107,8 @@ static bool is_all_zero(struct wd_dtb *e, struct wcrypto_ecc_msg *msg)
 		if (e->data[i])
 			return false;
 	}
+
+	WD_ERR("error: %s all zero!\n", p_name);
 
 	return true;
 }
@@ -1124,25 +1127,20 @@ static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg,
 		return -WD_EINVAL;
 	}
 
+	k = &in->k;
+	e = &in->dgst;
 	if (!in->k_set) {
 		if (msg->op_type != WCRYPTO_SM2_SIGN) {
 			WD_ERR("random k not set!\n");
 			return -WD_EINVAL;
 		}
 		hw_msg->sm2_ksel = 1;
-	}
-
-	e = &in->dgst;
-	k = &in->k;
-	if (is_all_zero(e, msg)) {
-		WD_ERR("ecc sign in e all zero!\n");
+	} else if (is_all_zero(k, msg, "ecc sgn k")) {
 		return -WD_EINVAL;
 	}
 
-	if (is_all_zero(k, msg)) {
-		WD_ERR("ecc sign in k all zero!\n");
+	if (is_all_zero(e, msg, "ecc sgn e"))
 		return -WD_EINVAL;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
 					e->bsize, e->dsize, "ecc sgn e");
@@ -1181,10 +1179,8 @@ static int ecc_prepare_verf_in(struct wcrypto_ecc_msg *msg, void **data)
 	s = &vin->s;
 	r = &vin->r;
 
-	if (is_all_zero(e, msg)) {
-		WD_ERR("ecc verf in e all zero!\n");
+	if (is_all_zero(e, msg, "ecc vrf e"))
 		return -WD_EINVAL;
-	}
 
 	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
 					e->bsize, e->dsize, "ecc vrf e");
@@ -1256,14 +1252,17 @@ static int u_is_in_p(struct wcrypto_ecc_msg *msg)
 	return 0;
 }
 
-static int ecc_prepare_sm2_enc_in(struct wcrypto_ecc_in *in,
+static int ecc_prepare_sm2_enc_in(struct wcrypto_ecc_msg *msg,
 				  struct hisi_hpre_sqe *hw_msg, void **data)
 {
-	struct wcrypto_sm2_enc_in *ein = (void *)in;
+	struct wcrypto_sm2_enc_in *ein = (void *)msg->in;
 	struct wd_dtb *k = &ein->k;
 	int ret;
 
 	if (ein->k_set) {
+		if (is_all_zero(k, msg, "sm2 enc k"))
+			return -WD_EINVAL;
+
 		ret = qm_crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
 						k->bsize, k->dsize, "sm2 enc k");
 		if (unlikely(ret))
@@ -1278,10 +1277,10 @@ static int ecc_prepare_sm2_enc_in(struct wcrypto_ecc_in *in,
 	return 0;
 }
 
-static int ecc_prepare_sm2_dec_in(struct wcrypto_ecc_in *in,
+static int ecc_prepare_sm2_dec_in(struct wcrypto_ecc_msg *msg,
 				  struct hisi_hpre_sqe *hw_msg, void **data)
 {
-	struct wcrypto_sm2_dec_in *din = (void *)in;
+	struct wcrypto_sm2_dec_in *din = (void *)msg->in;
 	struct wcrypto_ecc_point *c1 = &din->c1;
 	int ret;
 
@@ -1334,10 +1333,10 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 		ret = ecc_prepare_verf_in(msg, data);
 		break;
 	case WCRYPTO_SM2_ENCRYPT:
-		ret = ecc_prepare_sm2_enc_in(in, hw_msg, data);
+		ret = ecc_prepare_sm2_enc_in(msg, hw_msg, data);
 		break;
 	case WCRYPTO_SM2_DECRYPT:
-		ret = ecc_prepare_sm2_dec_in(in, hw_msg, data);
+		ret = ecc_prepare_sm2_dec_in(msg, hw_msg, data);
 		break;
 	default:
 		break;
