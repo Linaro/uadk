@@ -540,6 +540,9 @@ static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 		return -WD_EINVAL;
 	}
 
+	if (msg->mode == WCRYPTO_CIPHER_OFB || msg->mode == WCRYPTO_CIPHER_CFB)
+		return WD_SUCCESS;
+
 	if (msg->alg == WCRYPTO_CIPHER_3DES ||
 			msg->alg == WCRYPTO_CIPHER_DES) {
 		if (unlikely(msg->in_bytes & (CBC_3DES_BLOCK_SIZE - 1))) {
