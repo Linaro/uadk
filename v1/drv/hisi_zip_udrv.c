@@ -116,13 +116,14 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 	phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
 	if (!phy_out) {
 		WD_ERR("Get zip out buf dma address fail!\n");
-		return -WD_ENOMEM;
+		goto unmap_phy_in;
 	}
 	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL) {
-		phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf, 0);
+		phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf,
+						     MAX_CTX_RSV_SIZE);
 		if (!phy_ctxbuf) {
 			WD_ERR("Get zip ctx buf dma address fail!\n");
-			return -WD_ENOMEM;
+			goto unmap_phy_out;
 		}
 	}
 
@@ -131,6 +132,14 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 	addr->ctxbuf_addr = phy_ctxbuf + CTX_BUFFER_OFFSET;
 
 	return WD_SUCCESS;
+
+unmap_phy_out:
+	drv_iova_unmap(q, msg->dst, (void *)phy_out, msg->avail_out);
+
+unmap_phy_in:
+	drv_iova_unmap(q, msg->src, (void *)phy_in, msg->in_size);
+
+	return -WD_ENOMEM;
 }
 
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
@@ -236,6 +245,8 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
+	uintptr_t phy_in, phy_out, phy_ctxbuf;
+	struct wd_queue *q = info->q;
 
 	if (unlikely(!recv_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
@@ -262,6 +273,17 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	}
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
+
+	phy_in = DMA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
+	drv_iova_unmap(q, recv_msg->src, (void *)phy_in, recv_msg->in_size);
+	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
+	if (recv_msg->ctx_buf) {
+		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h,
+				      sqe->stream_ctx_addr_l);
+		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
+			       MAX_CTX_RSV_SIZE);
+	}
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 
@@ -543,6 +565,8 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
+	uintptr_t phy_in, phy_out, phy_ctxbuf;
+	struct wd_queue *q = info->q;
 	struct wcrypto_comp_tag *tag;
 
 	if (unlikely(!recv_msg)) {
@@ -569,6 +593,17 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	}
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
+
+	phy_in = DMA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
+	drv_iova_unmap(q, recv_msg->src, (void *)phy_in, recv_msg->in_size);
+	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
+	if (recv_msg->ctx_buf) {
+		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h,
+				      sqe->stream_ctx_addr_l);
+		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
+			       MAX_CTX_RSV_SIZE);
+	}
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 
