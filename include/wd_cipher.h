@@ -78,8 +78,14 @@ struct wd_cipher_sess {
 
 struct wd_cipher_req {
 	enum wd_cipher_op_type op_type;
-	void			*src;
-	void			*dst;
+	union {
+		struct wd_sgl *sgl_src;
+		void *src;
+	};
+	union {
+		struct wd_sgl *sgl_dst;
+		void *dst;
+	};
 	void			*iv;
 	__u32			in_bytes;
 	__u32			iv_bytes;
@@ -87,6 +93,7 @@ struct wd_cipher_req {
 	__u32			out_bytes;
 	__u16			state;
 	__u8			type;
+	__u8			data_fmt;
 	wd_alg_cipher_cb_t	*cb;
 	void			*cb_param;
 };
