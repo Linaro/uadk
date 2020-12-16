@@ -299,6 +299,7 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 	msg->key_bytes = sess->key_bytes;
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
+	msg->data_fmt = req->data_fmt;
 }
 
 int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
