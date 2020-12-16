@@ -30,9 +30,10 @@
 #include "wd_util.h"
 
 #define WD_DIGEST_CTX_MSG_NUM	1024
-#define WD_DIGEST_MAX_CTX		256
-#define MAX_HMAC_KEY_SIZE		128
-#define MAX_DIGEST_RETRY_CNT	20000000
+#define WD_DIGEST_MAX_CTX	256
+#define MAX_HMAC_KEY_SIZE	128
+#define MAX_DIGEST_RETRY_CNT	2000000
+#define DIGEST_SLEEP_INTERVAL	0xf
 
 struct wcrypto_digest_cookie {
 	struct wcrypto_digest_tag tag;
@@ -292,7 +293,8 @@ static int digest_recv_sync(struct wcrypto_digest_ctx *ctx,
 			if (++rx_cnt > MAX_DIGEST_RETRY_CNT)
 				break;
 
-			usleep(1);
+			if (!(rx_cnt & DIGEST_SLEEP_INTERVAL))
+				usleep(1);
 		} else {
 			WD_ERR("do digest wcrypto_recv error!\n");
 			return ret;

@@ -37,7 +37,8 @@
 #define MAX_AEAD_AUTH_SIZE		64
 #define MAX_AEAD_ASSOC_SIZE		65536
 #define MAX_HMAC_KEY_SIZE		128
-#define MAX_AEAD_RETRY_CNT		20000000
+#define MAX_AEAD_RETRY_CNT		2000000
+#define AEAD_SLEEP_INTERVAL		0xf
 
 #define DES_KEY_SIZE 8
 #define SM4_KEY_SIZE 16
@@ -553,7 +554,8 @@ static int aead_recv_sync(struct wcrypto_aead_ctx *ctx,
 			if (++rx_cnt > MAX_AEAD_RETRY_CNT)
 				break;
 
-			usleep(1);
+			if (!(rx_cnt & AEAD_SLEEP_INTERVAL))
+				usleep(1);
 		} else {
 			WD_ERR("fail to do aead wcrypto_recv!\n");
 			return ret;

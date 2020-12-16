@@ -32,7 +32,8 @@
 #define WCRYPTO_CIPHER_CTX_MSG_NUM	1024
 #define WCRYPTO_CIPHER_MAX_CTX		256
 #define MAX_CIPHER_KEY_SIZE		64
-#define MAX_CIPHER_RETRY_CNT	20000000
+#define MAX_CIPHER_RETRY_CNT		2000000
+#define CIPHER_SLEEP_INTERVAL		0xf
 
 #define DES_KEY_SIZE 8
 #define SM4_KEY_SIZE 16
@@ -398,7 +399,8 @@ static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
 			if (++rx_cnt > MAX_CIPHER_RETRY_CNT)
 				break;
 
-			usleep(1);
+			if (!(rx_cnt & CIPHER_SLEEP_INTERVAL))
+				usleep(1);
 		} else {
 			WD_ERR("do cipher wcrypto_recv error!\n");
 			return ret;
