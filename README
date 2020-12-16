@@ -30,3 +30,12 @@ include/*
 
 docs/*
 	Documentations.
+
+
+======================================
+
+The information of deploying UADK is in INSTALL file.
+
+The design document is in docs/wd_design.md file.
+
+The rules of library version are in docs/maintenance.md file.
