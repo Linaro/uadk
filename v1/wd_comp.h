@@ -31,6 +31,8 @@ typedef unsigned long long __u64;
 
 #define ZIP_LOG(format, args...) fprintf(stderr, format, ##args)
 
+#define MAX_CTX_RSV_SIZE		65536
+
 /* now hw not support config */
 enum wcrypto_comp_level {
 	WCRYPTO_COMP_L1 = 1, /* Compression level 1 */
