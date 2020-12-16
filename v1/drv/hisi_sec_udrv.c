@@ -368,6 +368,8 @@ static int map_addr(struct wd_queue *q, __u8 *key, __u16 len,
 	 * we use its first buffer as pBuffer, and 'buf_sz > key_sz' is needed.
 	 */
 	if (data_fmt == WD_SGL_BUF) {
+		if (unlikely(!key))
+			return -WD_ENOMEM;
 		p = drv_get_sgl_pri((struct wd_sgl *)key);
 		phy = ((struct hisi_sgl *)p)->sge_entries[0].buf;
 	} else {

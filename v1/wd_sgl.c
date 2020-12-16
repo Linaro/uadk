@@ -721,7 +721,6 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t si
 
 	for (i = 0; i < sgl->buf_num; i++)
 		sgl->sge[i].data_len = 0;
-	sgl->sum_data_bytes = 0;
 
 	if (next) {
 		for (i = 0; i < sgl->buf_num; i++)
