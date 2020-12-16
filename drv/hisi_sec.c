@@ -788,22 +788,22 @@ static int fill_cipher_bd3_alg(struct wd_cipher_msg *msg,
 
 	switch (msg->alg) {
 	case WD_CIPHER_SM4:
-		sqe->c_mode_alg = C_ALG_SM4 << SEC_CALG_OFFSET_V3;
-		sqe->c_icv_key = CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_SM4 << SEC_CALG_OFFSET_V3;
+		sqe->c_icv_key |= CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_AES:
-		sqe->c_mode_alg = C_ALG_AES << SEC_CALG_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_AES << SEC_CALG_OFFSET_V3;
 		ret = get_aes_c_key_len(msg, &c_key_len);
-		sqe->c_icv_key = (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
+		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_DES:
-		sqe->c_mode_alg = C_ALG_DES << SEC_CALG_OFFSET_V3;
-		sqe->c_icv_key = CKEY_LEN_DES << SEC_CKEY_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_DES << SEC_CALG_OFFSET_V3;
+		sqe->c_icv_key |= CKEY_LEN_DES << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_3DES:
-		sqe->c_mode_alg = C_ALG_3DES;
+		sqe->c_mode_alg |= C_ALG_3DES;
 		ret = get_3des_c_key_len(msg, &c_key_len);
-		sqe->c_icv_key = (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
+		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
 		WD_ERR("Invalid cipher type!\n");
@@ -951,6 +951,8 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	parse_cipher_bd3(&sqe, recv_msg);
 	recv_msg->tag = sqe.tag;
+
+	hisi_sec_put_sgl(h_qp, recv_msg);
 
 	return 0;
 }
@@ -1136,7 +1138,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	sqe->auth_mac_key = (msg->out_bytes / WORD_BYTES) <<
+	sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
 				SEC_MAC_OFFSET_V3;
 	if (msg->mode == WD_DIGEST_NORMAL) {
 		sqe->auth_mac_key |=
@@ -1597,13 +1599,13 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 
 	switch (msg->calg) {
 	case WD_CIPHER_SM4:
-		sqe->c_mode_alg = C_ALG_SM4 << SEC_CALG_OFFSET_V3;
-		sqe->c_icv_key = CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_SM4 << SEC_CALG_OFFSET_V3;
+		sqe->c_icv_key |= CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_AES:
-		sqe->c_mode_alg = C_ALG_AES << SEC_CALG_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_AES << SEC_CALG_OFFSET_V3;
 		ret = aead_get_aes_key_len(msg, &c_key_len);
-		sqe->c_icv_key = (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
+		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
 		WD_ERR("failed to check aead calg type!\n");
@@ -1653,16 +1655,16 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 {
 	switch (msg->cmode) {
 	case WD_CIPHER_CBC:
-		sqe->c_mode_alg = C_MODE_CBC;
+		sqe->c_mode_alg |= C_MODE_CBC;
 		break;
 	case WD_CIPHER_CCM:
-		sqe->c_mode_alg = C_MODE_CCM;
+		sqe->c_mode_alg |= C_MODE_CCM;
 		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
 		break;
 	case WD_CIPHER_GCM:
-		sqe->c_mode_alg = C_MODE_GCM;
+		sqe->c_mode_alg |= C_MODE_GCM;
 		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
