@@ -31,7 +31,6 @@
 #define MAX_RETRY_COUNTS		200000000
 #define WD_COMP_MAX_CTX			256
 #define WD_COMP_CTX_MSGCACHE_NUM	1024
-#define MAX_CTX_RSV_SIZE		65536
 
 struct wcrypto_comp_cache {
 	struct wcrypto_comp_tag tag;
