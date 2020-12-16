@@ -62,10 +62,6 @@
 #define get_arrsize(arr)		(sizeof(arr) / sizeof(arr[0]))
 #define lower_32_bits(phy)		((__u32)((__u64)(phy)))
 #define upper_32_bits(phy)		((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
-#define u64_lower_bits(phy)		((__u64)(phy))
-#define u64_upper_bits(phy)		(((__u64)(phy)) << QM_HADDR_SHIFT)
-
-#define get_window_size(dw)		(((dw) >> WINDOWS_SIZE_SHIFT) & 0xF)
 
 enum {
 	BD_TYPE,
@@ -258,12 +254,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		recv_msg->status = 0;
 	}
 	recv_msg->in_cons = sqe->consumed;
-	recv_msg->in_size = sqe->input_data_length;
 	recv_msg->produced = sqe->produced;
-	recv_msg->avail_out = sqe->dest_avail_out;
-	recv_msg->comp_lv = 0;
-	recv_msg->op_type = 0;
-	recv_msg->win_size = 0;
 	if (recv_msg->ctx_buf) {
 		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
 		*(__u32 *)(recv_msg->ctx_buf + CTX_PRIV1_OFFSET) = sqe->ctx_dw1;
@@ -271,7 +262,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	}
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
-	recv_msg->tag = sqe->tag;
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 
@@ -571,12 +561,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 		recv_msg->status = 0;
 	}
 	recv_msg->in_cons = sqe->consumed;
-	recv_msg->in_size = sqe->input_data_length;
 	recv_msg->produced = sqe->produced;
-	recv_msg->avail_out = sqe->dest_avail_out;
-	recv_msg->comp_lv = 0;
-	recv_msg->op_type = 0;
-	recv_msg->win_size = get_window_size(sqe->dw9);
 	if (recv_msg->ctx_buf) {
 		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
 		*(__u32 *)(recv_msg->ctx_buf + 4) = sqe->ctx_dw1;
