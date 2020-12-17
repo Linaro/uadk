@@ -135,19 +135,25 @@ static void del_ctx_key(struct wcrypto_cipher_ctx *ctx)
 
 static __u32 get_iv_block_size(int alg, int mode)
 {
+	__u32 iv_block_size = 0;
+
 	switch (mode) {
 	case WCRYPTO_CIPHER_CBC:
 	case WCRYPTO_CIPHER_OFB:
 		if (alg == WCRYPTO_CIPHER_3DES ||
 		    alg == WCRYPTO_CIPHER_DES)
-			return CBC_3DES_BLOCK_SIZE;
+			iv_block_size = CBC_3DES_BLOCK_SIZE;
+		break;
 	case WCRYPTO_CIPHER_XTS:
 	case WCRYPTO_CIPHER_CFB:
 	case WCRYPTO_CIPHER_CTR:
-		return CBC_AES_BLOCK_SIZE;
+		iv_block_size = CBC_AES_BLOCK_SIZE;
+		break;
 	default:
-		return 0;
+		break;
 	}
+
+	return iv_block_size;
 }
 
 static int create_ctx_para_check(struct wd_queue *q,
