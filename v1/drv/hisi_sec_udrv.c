@@ -508,6 +508,8 @@ static int fill_cipher_bd2_addr(struct wd_queue *q,
 		goto map_key_error;
 	}
 
+	if (msg->iv_bytes == 0)
+		return WD_SUCCESS;
 	ret = map_addr(q, msg->iv, msg->iv_bytes, &sqe->type2.c_ivin_addr_l,
 			    &sqe->type2.c_ivin_addr_h, msg->data_fmt);
 	if (unlikely(ret)) {
@@ -675,6 +677,8 @@ static int fill_cipher_bd3_area(struct wd_queue *q,
 	}
 	sqe->c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->c_key_addr_h = HI_U32(phy);
+	if (msg->iv_bytes == 0)
+		return WD_SUCCESS;
 	phy = (uintptr_t)drv_iova_map(q, msg->iv, msg->iv_bytes);
 	if (unlikely(!phy)) {
 		WD_ERR("Fail to get iv dma address\n");
@@ -1481,7 +1485,8 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 			cipher_msg->key_bytes);
 	dma_addr = DMA_ADDR(sqe->type2.c_ivin_addr_h,
 			sqe->type2.c_ivin_addr_l);
-	drv_iova_unmap(q, cipher_msg->iv, (void *)(uintptr_t)dma_addr,
+	if (cipher_msg->iv_bytes != 0)
+		drv_iova_unmap(q, cipher_msg->iv, (void *)(uintptr_t)dma_addr,
 			cipher_msg->iv_bytes);
 
 	update_iv(cipher_msg);
@@ -1517,8 +1522,9 @@ static void parse_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 			cipher_msg->key_bytes);
 	dma_addr = DMA_ADDR(sqe->ipsec_scene.c_ivin_addr_h,
 			sqe->ipsec_scene.c_ivin_addr_l);
-	drv_iova_unmap(q, cipher_msg->iv, (void *)(uintptr_t)dma_addr,
-			cipher_msg->iv_bytes);
+	if (cipher_msg->iv_bytes != 0)
+		drv_iova_unmap(q, cipher_msg->iv,
+			(void *)(uintptr_t)dma_addr, cipher_msg->iv_bytes);
 
 	update_iv(cipher_msg);
 }
