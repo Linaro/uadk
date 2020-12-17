@@ -509,7 +509,8 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 			goto err_uninit_requests;
 		}
 
-		if (unlikely(op[i]->iv_bytes != ctx->iv_blk_size)) {
+		if (unlikely(op[i]->iv_bytes != ctx->iv_blk_size ||
+		    op[i]->iv_bytes == 0)) {
 			WD_ERR("fail to check IV length %u!\n", i);
 			goto err_uninit_requests;
 		}
