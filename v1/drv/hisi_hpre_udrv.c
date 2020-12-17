@@ -316,7 +316,7 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 
 static void rsa_key_unmap(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 			  struct hisi_hpre_sqe *hw_msg,
-			  void *va, int size)
+			  const void *va, int size)
 {
 	struct wcrypto_rsa_kg_out *key = (void *)msg->key;
 	uintptr_t phy;
