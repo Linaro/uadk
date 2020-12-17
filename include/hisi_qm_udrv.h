@@ -20,14 +20,15 @@
 #define VA_ADDR(hi, lo)	((void *)(((__u64)(hi) << 32) | (__u64)(lo)))
 #define LW_U16(val)	((__u16)((val) & QM_L16BITS_MASK))
 
-enum hisi_hw_type {
-	HISI_QM_API_VER_BASE,
-	HISI_QM_API_VER2_BASE,
-	HISI_QM_API_VER3_BASE,
-};
-
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
+
+enum hisi_hw_type {
+	HISI_QM_API_VER_BASE = 1,
+	HISI_QM_API_VER2_BASE,
+	HISI_QM_API_VER3_BASE
+};
+
 struct hisi_qm_priv {
 	__u16 sqe_size;
 	__u16 op_type;

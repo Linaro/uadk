@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -12,6 +13,7 @@
 #define QM_Q_DEPTH		1024
 #define CQE_PHASE(cq)		(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
 #define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
+#define VERSION_ID_SHIFT	9
 
 #define UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
@@ -23,7 +25,7 @@
 #define ADDR_ALIGN_64(addr) ((((__u64)(addr) >> 6) + 1) << 6)
 
 struct hisi_qm_type {
-	char	*qm_name;
+	__u16	qm_ver;
 	int	qm_db_offs;
 	int	(*hacc_db)(struct hisi_qm_queue_info *q, __u8 cmd,
 			   __u16 index, __u8 prority);
@@ -112,11 +114,11 @@ static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
 
 static struct hisi_qm_type qm_type[] = {
 	{
-		.qm_name	= "hisi_qm_v1",
+		.qm_ver		= HISI_QM_API_VER_BASE,
 		.qm_db_offs	= QM_DOORBELL_OFFSET,
 		.hacc_db	= hacc_db_v1,
 	}, {
-		.qm_name	= "hisi_qm_v2",
+		.qm_ver		= HISI_QM_API_VER2_BASE,
 		.qm_db_offs	= QM_V2_DOORBELL_OFFSET,
 		.hacc_db	= hacc_db_v2,
 	}
@@ -172,15 +174,40 @@ static void hisi_qm_unset_region(handle_t h_ctx,
 	q_info->mmio_base = NULL;
 }
 
+static __u32 get_version_id(handle_t h_ctx)
+{
+	char *api_name, *id;
+	unsigned long ver;
+
+	api_name = wd_ctx_get_api(h_ctx);
+	if (strlen(api_name) <= VERSION_ID_SHIFT) {
+		WD_ERR("api name error = %s\n", api_name);
+		return 0;
+	}
+
+	id = api_name + VERSION_ID_SHIFT;
+	ver = strtoul(id, NULL, 10);
+	if (!ver || ver == ULONG_MAX) {
+		WD_ERR("fail to strtoul, ver = %lu\n", ver);
+		return 0;
+	}
+
+	return (__u32)ver;
+}
+
 static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 {
-	char *api_name;
+	__u32 ver_id;
 	int i, size;
 
+	ver_id = get_version_id(h_ctx);
+	if (!ver_id)
+		return -EINVAL;
+
+	q_info->hw_type = ver_id;
 	size = ARRAY_SIZE(qm_type);
-	api_name = wd_ctx_get_api(h_ctx);
 	for (i = 0; i < size; i++) {
-		if (!strncmp(api_name, qm_type[i].qm_name, strlen(api_name))) {
+		if (qm_type[i].qm_ver == ver_id) {
 			q_info->db = qm_type[i].hacc_db;
 			q_info->db_base = q_info->mmio_base +
 					  qm_type[i].qm_db_offs;
@@ -189,7 +216,6 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 	}
 
 	if (i == size) {
-		WD_ERR("default matched type v2 of QM\n");
 		q_info->db = hacc_db_v2;
 		q_info->db_base = q_info->mmio_base + QM_V2_DOORBELL_OFFSET;
 	}
