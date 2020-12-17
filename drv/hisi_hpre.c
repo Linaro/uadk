@@ -21,6 +21,9 @@
 #define HPRE_HW_TASK_DONE	3
 #define HPRE_HW_TASK_INIT	1
 
+#define HPRE_HW_V2_ALG_TYPE	0
+#define HPRE_HW_V3_ECC_ALG_TYPE	1
+
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
@@ -425,7 +428,7 @@ static int rsa_prepare_iot(struct wd_rsa_msg *msg,
 	return ret;
 }
 
-static int hpre_init(struct wd_ctx_config_internal *config, void *priv)
+static int hpre_init(struct wd_ctx_config_internal *config, void *priv, const char *alg_name)
 {
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
@@ -436,7 +439,13 @@ static int hpre_init(struct wd_ctx_config_internal *config, void *priv)
 
 	/* allocate qp for each context */
 	qm_priv.sqe_size = sizeof(struct hisi_hpre_sqe);
-	qm_priv.op_type = 0;
+
+	/* DH/RSA: qm sqc_type = 0, ECC: qm sqc_type = 1; */
+	if (!strncmp(alg_name, "ecc", sizeof("ecc")))
+		qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
+	else
+		qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
+
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
@@ -691,8 +700,14 @@ static int ecc_prepare_alg(struct wd_ecc_msg *msg,
 	case WD_SM2_SIGN:
 		hw_msg->alg = HPRE_ALG_SM2_SIGN;
 		break;
+	case WD_ECDSA_SIGN:
+		hw_msg->alg = HPRE_ALG_ECDSA_SIGN;
+		break;
 	case WD_SM2_VERIFY:
 		hw_msg->alg = HPRE_ALG_SM2_VERF;
+		break;
+	case WD_ECDSA_VERIFY:
+		hw_msg->alg = HPRE_ALG_ECDSA_VERF;
 		break;
 	case WD_SM2_ENCRYPT:
 		hw_msg->alg = HPRE_ALG_SM2_ENC;
@@ -702,6 +717,10 @@ static int ecc_prepare_alg(struct wd_ecc_msg *msg,
 		break;
 	case WD_SM2_KG:
 		hw_msg->alg = HPRE_ALG_SM2_KEY_GEN;
+		break;
+	case WD_ECXDH_GEN_KEY: /* fall through */
+	case WD_ECXDH_COMPUTE_KEY:
+		hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
 		break;
 	default:
 		return -WD_EINVAL;
@@ -767,6 +786,18 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 		return true;
 	else
 		return false;
+}
+
+void print_k(char *k, int sz)
+{
+	int i;
+	printf("sz = %d\n", sz);
+	for (i = 0; i < sz; i++) {
+		printf("0x%x, ", k[i]);
+		if ((i + 1) % 8 == 0)
+			printf("\n");
+	}
+	printf("\n");
 }
 
 static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
@@ -871,7 +902,10 @@ static int ecc_prepare_key(struct wd_ecc_msg *msg,
 	}
 
 	if (msg->req.op_type == WD_SM2_DECRYPT ||
-		msg->req.op_type == WD_SM2_SIGN) {
+		msg->req.op_type == WD_ECDSA_SIGN ||
+		msg->req.op_type == WD_SM2_SIGN ||
+		msg->req.op_type == WD_ECXDH_GEN_KEY ||
+		msg->req.op_type == WD_ECXDH_COMPUTE_KEY) {
 		ret = ecc_prepare_prikey((void *)msg->key, &data, msg->curve_id);
 		if (ret)
 			return ret;
@@ -937,7 +971,7 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	if (!in->dgst_set) {
-		WD_ERR("hash not set!\n");
+		WD_ERR("prepare sign_in, !\n");
 		return -WD_EINVAL;
 	}
 
@@ -988,7 +1022,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	if (!vin->dgst_set) {
-		WD_ERR("hash not set!\n");
+		WD_ERR("prepare verf_in, hash not set!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1089,18 +1123,56 @@ static int ecc_prepare_dh_gen_in(struct wd_ecc_msg *msg,
 	return 0;
 }
 
+static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
+				     struct hisi_hpre_sqe *hw_msg, void **data)
+{
+	struct wd_ecc_in *in = msg->req.src;
+	struct wd_ecc_point *pbk = NULL;
+	int ret;
+
+	wd_ecc_get_in_params(in, &pbk);
+	if (!pbk) {
+		WD_ERR("failed to get ecxdh in param!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = crypto_bin_to_hpre_bin(pbk->x.data, (const char *)pbk->x.data,
+				     pbk->x.bsize, pbk->x.dsize, "ecdh compute x");
+	if (ret) {
+		WD_ERR("ecc dh compute in x format fail!\n");
+		return ret;
+	}
+
+	ret = crypto_bin_to_hpre_bin(pbk->y.data, (const char *)pbk->y.data,
+				     pbk->y.bsize, pbk->y.dsize, "ecdh compute y");
+	if (ret) {
+		WD_ERR("ecc dh compute in y format fail!\n");
+		return ret;
+	}
+
+	*data = pbk->x.data;
+
+	return 0;
+}
+
 static int ecc_prepare_in(struct wd_ecc_msg *msg,
-			     struct hisi_hpre_sqe *hw_msg, void **data)
+			  struct hisi_hpre_sqe *hw_msg, void **data)
 {
 	int ret = -WD_EINVAL;
 
 	switch (msg->req.op_type) {
-	case WD_SM2_KG:
+	case WD_ECXDH_GEN_KEY:
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
 		break;
+	case WD_ECXDH_COMPUTE_KEY:
+		ret = ecc_prepare_dh_compute_in(msg, hw_msg, data);
+		break;
+	case WD_ECDSA_SIGN:
+	case WD_SM2_KG: /*fall through */
 	case WD_SM2_SIGN:
 		ret = ecc_prepare_sign_in(msg, hw_msg, data);
 		break;
+	case WD_ECDSA_VERIFY:
 	case WD_SM2_VERIFY:
 		ret = ecc_prepare_verf_in(msg, hw_msg, data);
 		break;
@@ -1117,6 +1189,21 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 	return ret;
 }
 
+static int ecc_prepare_dh_out(struct wd_ecc_out *out, void **data)
+{
+	struct wd_ecc_point *dh_out = NULL;
+
+	wd_ecc_get_out_params(out, &dh_out);
+	if (!dh_out) {
+		WD_ERR("failed to get ecxdh out param!\n");
+		return -WD_EINVAL;
+	}
+
+	*data = dh_out->x.data;
+
+	return 0;
+}
+
 static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
 {
 	struct wd_ecc_out *out = (struct wd_ecc_out *)msg->req.dst;
@@ -1127,9 +1214,15 @@ static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
 	int ret = 0;
 
 	switch (msg->req.op_type) {
+	case WD_ECXDH_GEN_KEY: /* fall through */
+	case WD_ECXDH_COMPUTE_KEY:
+		ret = ecc_prepare_dh_out(out, data);
+		break;
+	case WD_ECDSA_SIGN:
 	case WD_SM2_SIGN:
 		*data = sout->r.data;
 		break;
+	case WD_ECDSA_VERIFY:
 	case WD_SM2_VERIFY:
 		break;
 	case WD_SM2_ENCRYPT:
@@ -1182,15 +1275,33 @@ static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 	return 0;
 }
 
+static __u32 get_hw_keysz(__u32 ksz)
+{
+	__u32 size = 0;
+
+	if (ksz <= BITS_TO_BYTES(256))
+		size = BITS_TO_BYTES(256);
+	else if (ksz <= BITS_TO_BYTES(384))
+		size = BITS_TO_BYTES(384);
+	else if (ksz <= BITS_TO_BYTES(576))
+		size = BITS_TO_BYTES(576);
+	else
+		WD_ERR("failed to get hw keysize : ksz = %d.\n", ksz);
+
+	return size;
+}
+
 static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg;
 	__u16 send_cnt = 0;
+	__u32 hw_sz;
 	int ret;
 
 	memset(&hw_msg, 0, sizeof(struct hisi_hpre_sqe));
-	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
+	hw_sz = get_hw_keysz(msg->key_bytes);
+	hw_msg.task_len1 = hw_sz / BYTE_BITS - 0x1;
 
 	/* prepare alg */
 	ret = ecc_prepare_alg(msg, &hw_msg);
@@ -1212,6 +1323,27 @@ static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
 	hw_msg.low_tag = msg->tag;
 
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+}
+
+static int ecdh_out_transfer(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
+{
+	struct wd_ecc_out *out = (void *)msg->req.dst;
+	struct wd_ecc_point *key = NULL;
+	struct wd_dtb *y = NULL;
+	int ret;
+
+	wd_ecc_get_out_params(out, &key);
+
+	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
+		y = &key->y;
+
+	ret = hpre_tri_bin_transfer(&key->x, y, NULL);
+	if (ret) {
+		WD_ERR("parse ecdh out format fail!\n");
+		return ret;
+	}
+
+	return WD_SUCCESS;
 }
 
 static int ecc_sign_out_transfer(struct wd_ecc_msg *msg,
@@ -1294,9 +1426,11 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 {
 	int ret = -WD_EINVAL;
 
-	if (hw_msg->alg == HPRE_ALG_SM2_SIGN)
+	if (hw_msg->alg == HPRE_ALG_SM2_SIGN ||
+		hw_msg->alg == HPRE_ALG_ECDSA_SIGN)
 		ret = ecc_sign_out_transfer(msg, hw_msg);
-	else if (hw_msg->alg == HPRE_ALG_SM2_VERF)
+	else if (hw_msg->alg == HPRE_ALG_SM2_VERF ||
+		hw_msg->alg == HPRE_ALG_ECDSA_VERF)
 		ret = ecc_verf_out_transfer(msg, hw_msg);
 	else if (hw_msg->alg == HPRE_ALG_SM2_ENC)
 		ret = sm2_enc_out_transfer(msg, hw_msg);
@@ -1304,6 +1438,9 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 		ret = 0;
 	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
 		ret = sm2_kg_out_transfer(msg, hw_msg);
+	else if	(hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY ||
+		 hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
+		ret = ecdh_out_transfer(msg, hw_msg);
 	else
 		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
 

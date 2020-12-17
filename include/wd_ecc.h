@@ -47,10 +47,11 @@ enum wd_ecc_op_type {
 enum wd_ecc_curve_id {
 	WD_SECP128R1 = 0x10, /* SECG 128 bit prime field */
 	WD_SECP192K1 = 0x11, /* SECG 192 bit prime field */
-	WD_SECP256K1 = 0x12, /* SECG 256 bit prime field */
-	WD_BRAINPOOLP320R1 = 0x13, /* RFC5639 320 bit prime field */
-	WD_BRAINPOOLP384R1 = 0x14, /* RFC5639 384 bit prime field */
-	WD_SECP521R1 = 0x15, /* NIST/SECG 521 bit prime field */
+	WD_SECP224R1 = 0x12, /* SECG 224 bit prime field */
+	WD_SECP256K1 = 0x13, /* SECG 256 bit prime field */
+	WD_BRAINPOOLP320R1 = 0x14, /* RFC5639 320 bit prime field */
+	WD_SECP384R1 = 0x15, /* SECG 384 bit prime field */
+	WD_SECP521R1 = 0x16, /* NIST/SECG 521 bit prime field */
 };
 
 /* ECC hash callback func types */
@@ -176,12 +177,18 @@ extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
 extern int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 			     struct wd_ecc_point **pubkey);
 
+struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in);
+struct wd_ecc_out *wd_ecc_new_out(handle_t sess);
+void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk);
+void wd_ecc_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
+
 /**
  * wd_ecc_del_in() - Delete ecc input param handle.
  * @sess: Session handler.
  * @in: input param handle.
  */
 extern void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in);
+
 
 /**
  * wd_ecc_del_out() - Delete ecc output param handle.
@@ -346,6 +353,49 @@ extern void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
  */
 extern void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 			       struct wd_dtb **plaintext);
+
+/* APIs For ECDSA sign/verf */
+
+/**
+ * wd_ecdsa_new_sign_in() - Create ecdsa sign input params handle.
+ * @sess: Session handler.
+ * @dgst: sign input param digest.
+ * @k: sign input param random.
+ * Return input params handle, NULL otherwise.
+ */
+extern struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
+				struct wd_dtb *dgst,
+				struct wd_dtb *k);
+
+/**
+ * wd_ecdsa_new_verf_in() - Create ecdsa verification input params handle.
+ * @sess: Session handler.
+ * @dgst: verification input param digest.
+ * @r: sign input param r.
+ * @s: sign input param s.
+ * Return input params handle, NULL otherwise.
+ */
+extern struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
+				struct wd_dtb *dgst,
+				struct wd_dtb *r,
+				struct wd_dtb *s);
+
+/**
+ * wd_ecdsa_new_sign_out() - Create ecdsa sign output params handle.
+ * @sess: Session handler.
+ * Return output params handle, NULL otherwise.
+ */
+extern struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess);
+
+/**
+ * wd_ecdsa_get_sign_out_params() - Get ecdsa sign output params.
+ * @out: Output param handle.
+ * @r: sign ouput param r.
+ * @s: sign ouput param s.
+ */
+extern void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
+				struct wd_dtb **r,
+				struct wd_dtb **s);
 
 /**
  * wd_ecc_init() - Initialise ctx configuration and scheduler.

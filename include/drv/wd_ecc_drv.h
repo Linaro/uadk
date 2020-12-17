@@ -82,6 +82,10 @@ struct wd_ecc_dh_in {
 	struct wd_ecc_point pbk;
 };
 
+struct wd_ecc_dh_out {
+	struct wd_ecc_point out;
+};
+
 struct wd_ecc_sign_in {
 	struct wd_dtb dgst; /* hash msg */
 	struct wd_dtb k; /* random */
@@ -96,10 +100,6 @@ struct wd_ecc_verf_in {
 	struct wd_dtb r; /* signature r param */
 	struct wd_dtb plaintext; /* original text before hash */
 	__u8 dgst_set; /* 1 - dgst param set  0 - not set */
-};
-
-struct wd_ecc_dh_out {
-	struct wd_ecc_point out;
 };
 
 struct wd_ecc_sign_out {
@@ -171,7 +171,8 @@ struct wd_ecc_driver {
 	const char *drv_name;
 	const char *alg_name;
 	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config_internal *config, void *priv);
+	int (*init)(struct wd_ctx_config_internal *config, void *priv,
+		    const char *alg_name);
 	void (*exit)(void *priv);
 	int (*send)(handle_t sess, struct wd_ecc_msg *msg);
 	int (*recv)(handle_t sess, struct wd_ecc_msg *msg);
