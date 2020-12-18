@@ -491,6 +491,11 @@ static int fill_cipher_bd2_addr(struct wd_queue *q,
 			ret = -WD_EINVAL;
 			goto map_in_error;
 		}
+		/* While using OFB mode of cipher, out memory should be clear */
+		if (msg->data_fmt == WD_SGL_BUF)
+			wd_sgl_memset((struct wd_sgl *)msg->out, 0);
+		else
+			memset(msg->out, 0, msg->out_bytes);
 	} else {
 		phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 		if (unlikely(!phy)) {
