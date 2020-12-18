@@ -94,6 +94,59 @@ static void fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 	msg->status = 0;
 }
 
+static int set_comp_ctx_br(struct q_info *qinfo, struct wd_mm_br *br)
+{
+	if (!br->alloc || !br->free ||
+	    !br->iova_map || !br->iova_unmap) {
+		WD_ERR("err: invalid mm br in ctx_setup!\n");
+		return -WD_EINVAL;
+	}
+
+	if (qinfo->br.usr && (qinfo->br.usr != br->usr)) {
+		WD_ERR("err: qinfo and setup mm br.usr mismatch!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, br, sizeof(qinfo->br));
+
+	return WD_SUCCESS;
+}
+
+static int init_comp_ctx(struct wcrypto_comp_ctx *ctx, int ctx_id,
+			 struct wcrypto_comp_ctx_setup *setup)
+{
+	int cache_num = WD_COMP_CTX_MSGCACHE_NUM;
+	int i;
+
+	if (setup->stream_mode == WCRYPTO_COMP_STATEFUL) {
+		cache_num = 1;
+		ctx->ctx_buf = setup->br.alloc(setup->br.usr, MAX_CTX_RSV_SIZE);
+		if (!ctx->ctx_buf) {
+			WD_ERR("err: fail to alloc comp ctx buffer!\n");
+			return -WD_ENOMEM;
+		}
+	}
+
+	for (i = 0; i < cache_num; i++) {
+		ctx->caches[i].msg.comp_lv = setup->comp_lv;
+		ctx->caches[i].msg.op_type = setup->op_type;
+		ctx->caches[i].msg.win_size = setup->win_size;
+		ctx->caches[i].msg.alg_type = setup->alg_type;
+		ctx->caches[i].msg.stream_mode = setup->stream_mode;
+		ctx->caches[i].msg.data_fmt = setup->data_fmt;
+		ctx->caches[i].msg.ctx_buf = ctx->ctx_buf;
+		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
+		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
+		ctx->caches[i].msg.udata = (uintptr_t)&ctx->caches[i].tag;
+	}
+
+	ctx->cb = setup->cb;
+	ctx->ctx_id = ctx_id;
+
+	return WD_SUCCESS;
+}
+
 /**
  * wcrypto_create_comp_ctx()- create a compress context on the wrapdrive queue.
  * @q: wrapdrive queue, need requested by user.
@@ -103,9 +156,8 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 			      struct wcrypto_comp_ctx_setup *setup)
 {
 	struct wcrypto_comp_ctx *ctx;
-	struct wd_mm_br *br;
 	struct q_info *qinfo;
-	int ctx_id, cache_num, i;
+	int ctx_id, ret;
 
 	if (!q || !setup) {
 		WD_ERR("err, input param invalid!\n");
@@ -124,16 +176,12 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	/* lock at ctx creating/deleting */
 	wd_spinlock(&qinfo->qlock);
-	br = &setup->br;
-	if (br->alloc && br->free &&
-	    br->iova_map && br->iova_unmap) {
-		if (!qinfo->br.alloc && !qinfo->br.iova_map)
-			memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
-		if (qinfo->br.usr != setup->br.usr) {
-			wd_unspinlock(&qinfo->qlock);
-			WD_ERR("Err mm br in creating comp ctx!\n");
-			return NULL;
-		}
+
+	ret = set_comp_ctx_br(qinfo, &setup->br);
+	if (ret) {
+		wd_unspinlock(&qinfo->qlock);
+		WD_ERR("err: fail to set comp ctx br!\n");
+		return NULL;
 	}
 
 	if (qinfo->ctx_num >= WD_COMP_MAX_CTX) {
@@ -158,31 +206,11 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	}
 
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
-	if (setup->stream_mode == WCRYPTO_COMP_STATEFUL) {
-		cache_num = 1;
-		ctx->ctx_buf = setup->br.alloc(setup->br.usr, MAX_CTX_RSV_SIZE);
-		if (!ctx->ctx_buf) {
-			WD_ERR("alloc ctx rsv buf fail!\n");
-			free(ctx);
-			goto free_ctx_id;
-		}
-	} else {
-		cache_num = WD_COMP_CTX_MSGCACHE_NUM;
+	ret = init_comp_ctx(ctx, ctx_id, setup);
+	if (ret) {
+		WD_ERR("err: fail to init comp ctx!\n");
+		goto free_ctx_id;
 	}
-	for (i = 0; i < cache_num; i++) {
-		ctx->caches[i].msg.comp_lv = setup->comp_lv;
-		ctx->caches[i].msg.op_type = setup->op_type;
-		ctx->caches[i].msg.win_size = setup->win_size;
-		ctx->caches[i].msg.alg_type = setup->alg_type;
-		ctx->caches[i].msg.stream_mode = setup->stream_mode;
-		ctx->caches[i].msg.data_fmt = setup->data_fmt;
-		ctx->caches[i].msg.ctx_buf = ctx->ctx_buf;
-		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
-		ctx->caches[i].msg.udata = (uintptr_t)&ctx->caches[i].tag;
-	}
-	ctx->cb = setup->cb;
 
 	return ctx;
 
