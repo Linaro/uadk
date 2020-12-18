@@ -945,3 +945,16 @@ struct wd_mm_br *drv_get_br(void *pool)
 
 	return &p->buf_br;
 }
+
+void wd_sgl_memset(struct wd_sgl *sgl, int ch)
+{
+	int i;
+
+	if (!sgl || !sgl->buf_num || !sgl->pool || !sgl->pool->setup.buf_size) {
+		WD_ERR("sgl is null, no need to clear!\n");
+		return;
+	}
+
+	for (i = 0; i < sgl->buf_num; i++)
+		memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
+}
