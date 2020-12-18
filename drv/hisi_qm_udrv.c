@@ -219,7 +219,6 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 		q_info->db = hacc_db_v2;
 		q_info->db_base = q_info->mmio_base + QM_V2_DOORBELL_OFFSET;
 	}
-	q_info->hw_type = i;
 
 	return 0;
 }
