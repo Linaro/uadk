@@ -379,5 +379,6 @@ void *drv_get_sgl_sge_pri(struct wd_sgl *sgl, int num);
 void drv_set_sgl_pri(struct wd_sgl *sgl, void *priv);
 void *drv_get_sgl_pri(struct wd_sgl *sgl);
 struct wd_mm_br *drv_get_br(void *pool);
+void wd_sgl_memset(struct wd_sgl *sgl, int ch);
 
 #endif
