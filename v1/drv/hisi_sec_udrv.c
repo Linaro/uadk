@@ -491,7 +491,7 @@ static int fill_cipher_bd2_addr(struct wd_queue *q,
 			ret = -WD_EINVAL;
 			goto map_in_error;
 		}
-		/* While using OFB mode of cipher, out memory should be clear */
+		/* While using OFB mode of cipher, output buffer should be cleared */
 		if (msg->data_fmt == WD_SGL_BUF)
 			wd_sgl_memset((struct wd_sgl *)msg->out, 0);
 		else
