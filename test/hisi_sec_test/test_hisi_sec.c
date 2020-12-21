@@ -45,6 +45,7 @@ static unsigned int g_ivlen;
 static unsigned int g_syncmode;
 static unsigned int g_ctxnum;
 static unsigned int g_data_fmt = 0;
+static unsigned int g_sgl_num = 0;
 static pthread_spinlock_t lock = 0;
 static __u32 last_ctx = 0;
 
@@ -101,7 +102,7 @@ struct test_sec_option {
 	__u32 ctxnum;
 	__u32 block;
 	__u32 blknum;
-	__u32 sgl;
+	__u32 sgl_num;
 };
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -385,26 +386,6 @@ static void digest_uninit_config(void)
 	free(g_ctx_cfg.ctxs);
 }
 
-static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
-{
-	struct wd_sgl *sgl;
-
-	if (data_fmt != WD_SGL_BUF)
-		return buff;
-
-	sgl = malloc(sizeof(struct wd_sgl));
-	if (!sgl) {
-		SEC_TST_PRT("Fail to alloc memory for sgl!\n");
-		return NULL;
-	}
-
-	sgl->data = buff;
-	sgl->len = size;
-	sgl->next = NULL;
-
-	return sgl;
-}
-
 static void test_sec_sgl_free(__u8 data_fmt, void *buff)
 {
 	struct wd_sgl *sgl;
@@ -419,6 +400,47 @@ static void test_sec_sgl_free(__u8 data_fmt, void *buff)
 		sgl = sgl->next;
 		free(tmp);
 	}
+}
+
+static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
+{
+	struct wd_sgl *cur;
+	struct wd_sgl *next;
+	struct wd_sgl *head;
+	int size_unit, i;
+
+	if (data_fmt != WD_SGL_BUF)
+		return buff;
+
+	/* Divisible is guaranteed by the inputer */
+	size_unit = size / g_sgl_num;
+
+	head = malloc(sizeof(struct wd_sgl));
+	if (!head) {
+		SEC_TST_PRT("Fail to alloc memory for sgl head!\n");
+		return NULL;
+	}
+
+	head->data = buff;
+	head->len = size_unit;
+	head->next = NULL;
+	cur = head;
+
+	for (i = 1; i < g_sgl_num; i++) {
+		next = malloc(sizeof(struct wd_sgl));
+		if (!next) {
+			SEC_TST_PRT("Fail to alloc memory for sgl!\n");
+			test_sec_sgl_free(data_fmt, head);
+			return NULL;
+		}
+		next->data = buff + i * size_unit;
+		next->len = size_unit;
+		next->next = NULL;
+		cur->next = next;
+		cur = next;
+	}
+
+	return head;
 }
 
 static int test_sec_cipher_sync_once(void)
@@ -3469,7 +3491,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"block",     required_argument, 0,  13},
 		{"blknum",    required_argument, 0,  14},
 		{"help",      no_argument,       0,  15},
-		{"sgl",       required_argument, 0,  16},
+		{"sglnum",    required_argument, 0,  16},
 		{0, 0, 0, 0}
 	};
 
@@ -3528,7 +3550,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 			print_help();
 			exit(-1);
 		case 16:
-			option->sgl = strtol(optarg, NULL, 0);
+			option->sgl_num = strtol(optarg, NULL, 0);
 			break;
 		default:
 			SEC_TST_PRT("bad input parameter, exit\n");
@@ -3564,8 +3586,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 		g_thread_num = option->xmulti ? option->xmulti : 1;
 		g_syncmode = option->syncmode;
 		g_ctxnum = option->ctxnum;
-		g_blknum = option->blknum > 0 ?
-			option->blknum : MIN_SVA_BD_NUM;
+		g_blknum = option->blknum > 0 ? option->blknum : MIN_SVA_BD_NUM;
 		g_direction = 0;
 		return 0;
 	}
@@ -3575,7 +3596,9 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_keylen = option->keylen;
 	g_times = option->times ? option->times : 1;
 	g_ctxnum = option->ctxnum ? option->ctxnum : 1;
-	g_data_fmt = option->sgl ? 1 : 0;
+	g_data_fmt = option->sgl_num ? 1 : 0;
+	g_sgl_num = option->sgl_num;
+
 	SEC_TST_PRT("set global times is %lld\n", g_times);
 
 	g_thread_num = option->xmulti ? option->xmulti : 1;

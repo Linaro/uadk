@@ -522,56 +522,9 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 	return;
 }
 
-void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
+static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
 {
-	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
-	struct hisi_sgl *tmp = (struct hisi_sgl*)hw_sgl;
-	struct hisi_sgl *tmp1;
-	int i;
-
-	if (!pool)
-		return;
-
-	pthread_spin_lock(&pool->lock);
-
-	/* The max hw sgl num is the pool depth */
-	for (i = 0; i < pool->depth; i++) {
-		if (!tmp || pool->top > pool->depth) {
-			/* The pool stack is full : top > depth */
-			break;
-		}
-
-		/*
-		 * Because must clear the next dma befort put into the pool
-		 * so we should user two tmp here.
-		*/
-		tmp1 = tmp;
-		tmp = (struct hisi_sgl*)tmp->next_dma;
-
-		/* Restore the para before put into the pool*/
-		tmp1->next_dma = 0;
-		tmp1->entry_sum_in_sgl = 0;
-		tmp1->entry_sum_in_chain = pool->sge_num;
-		tmp1->entry_length_in_sgl = pool->sge_num;
-		pool->sgl_align[pool->top] = tmp1;
-		pool->top++;
-	}
-
-	pthread_spin_unlock(&pool->lock);
-}
-
-void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
-{
-	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
 	struct hisi_sgl *hw_sgl;
-	struct wd_sgl *tmp = sgl;
-	__u32 valid_num = 0;
-	int i;
-
-	if (!pool || !sgl) {
-		WD_ERR("Get hw sgl pool or sgl is NULL\n");
-		return NULL;
-	}
 
 	pthread_spin_lock(&pool->lock);
 
@@ -581,33 +534,109 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 		return NULL;
 	}
 
-	/* The top point to the upper of data location */
 	pool->top--;
 	hw_sgl = pool->sgl_align[pool->top];
+	pthread_spin_unlock(&pool->lock);
+	return hw_sgl;
+}
 
-	/* Transform the data to hw data, now only support one sgl */
-	for (i= 0; i < hw_sgl->entry_length_in_sgl; i++) {
-		if (!tmp || !tmp->data)
-			break;
+static int hisi_qm_sgl_push(struct hisi_sgl_pool *pool, struct hisi_sgl *hw_sgl)
+{
+	hw_sgl->next_dma = 0;
+	hw_sgl->entry_sum_in_sgl = 0;
+	hw_sgl->entry_sum_in_chain = pool->sge_num;
+	hw_sgl->entry_length_in_sgl = pool->sge_num;
 
-		hw_sgl->sge_entries[i].buff = (uintptr_t)tmp->data;
-		hw_sgl->sge_entries[i].len = tmp->len;
-		tmp = tmp->next;
-		valid_num++;
+	pthread_spin_lock(&pool->lock);
+	if (pool->top >= pool->depth) {
+		WD_ERR("The sgl pool is full\n");
+		pthread_spin_unlock(&pool->lock);
+		return -EINVAL;
 	}
 
-	/* There is no valid data, reback the hw_sgl to pool */
-	if (!valid_num) {
-		pool->top++;
-		pthread_spin_unlock(&pool->lock);
+	pool->sgl_align[pool->top] = hw_sgl;
+	pool->top++;
+	pthread_spin_unlock(&pool->lock);
+
+	return 0;
+}
+
+void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
+{
+	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
+	struct hisi_sgl *cur = (struct hisi_sgl*)hw_sgl;
+	struct hisi_sgl *next = (struct hisi_sgl*)hw_sgl;
+	int ret;
+
+	if (!pool)
+		return;
+
+	while (cur) {
+		next = (struct hisi_sgl*)cur->next_dma;
+		ret = hisi_qm_sgl_push(pool, cur);
+		if (ret)
+			break;
+
+		cur = next;
+	}
+
+	return;
+}
+
+void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
+{
+	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
+	struct hisi_sgl *head;
+	struct hisi_sgl *cur;
+	struct hisi_sgl *next;
+	struct wd_sgl *tmp = sgl;
+	int i = 0;
+
+	if (!pool || !sgl) {
+		WD_ERR("Get hw sgl pool or sgl is NULL\n");
 		return NULL;
 	}
 
-	hw_sgl->entry_sum_in_sgl = valid_num;
+	head = hisi_qm_sgl_pop(pool);
+	if (!head)
+		return NULL;
 
-	pthread_spin_unlock(&pool->lock);
+	cur = head;
+	tmp = sgl;
+	while (tmp && tmp->data) {
+		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
+		cur->sge_entries[i].len = tmp->len;
+		cur->entry_sum_in_sgl++;
+		i++;
 
-	return hw_sgl;
+		/*
+		 * If current sgl chain is full and there is still user sgl data,
+		 * we should alloc another hw sgl to hold up them until the sgl
+		 * pool is not enough or all the data is trasnform to hw sgl.
+		 */
+		if (i == pool->sge_num && tmp->next && tmp->next->data) {
+			next = hisi_qm_sgl_pop(pool);
+			if (!next) {
+				WD_ERR("The sgl pool is not enough");
+				return head;
+			}
+			cur->next_dma = (uintptr_t)next;
+			cur = next;
+			head->entry_sum_in_chain += pool->sge_num;
+			/* In the new sgl chain, the subscript must be reset */
+			i = 0;
+		}
+
+		tmp = tmp->next;
+	}
+
+	/* There is no data, reback the hw sgl head to pool */
+	if (!head->entry_sum_in_chain) {
+		hisi_qm_sgl_push(pool, head);
+		return NULL;
+	}
+
+	return head;
 }
 
 handle_t hisi_qm_get_sglpool(handle_t h_qp)
@@ -621,8 +650,8 @@ void hisi_qm_dump_sgl(void *sgl)
 	struct hisi_sgl *tmp = (struct hisi_sgl*)sgl;
 	int i;
 	while (tmp) {
-		printf("sgl = %p\n", sgl);
-		printf("sgl->next_dma : %lu\n", tmp->next_dma);
+		printf("sgl = %p\n", tmp);
+		printf("sgl->next_dma : 0x%lx\n", tmp->next_dma);
 		printf("sgl->entry_sum_in_chain : %u\n", tmp->entry_sum_in_chain);
 		printf("sgl->entry_sum_in_sgl : %u\n", tmp->entry_sum_in_sgl);
 		printf("sgl->entry_length_in_sgl : %d\n", tmp->entry_length_in_sgl);
@@ -630,7 +659,6 @@ void hisi_qm_dump_sgl(void *sgl)
 			printf("sgl->sge_entries[%d].buff : 0x%lx\n", i, tmp->sge_entries[i].buff);
 			printf("sgl->sge_entries[%d].len : %u\n", i, tmp->sge_entries[i].len);
 		}
-		printf("\n");
 		tmp = (struct hisi_sgl*)tmp->next_dma;
 	}
 }
