@@ -1844,19 +1844,22 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 {
 	uintptr_t phy;
 
-	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
-	if (unlikely(!phy)) {
-		WD_ERR("fail to get msg in dma address!\n");
-		return -WD_ENOMEM;
-	}
-	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
-	sqe->data_src_addr_h = HI_U32(phy);
+	/* AEAD algorithms CCM/GCM support 0 in_bytes */
+	if (likely(msg->in_bytes)) {
+		phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
+		if (unlikely(!phy)) {
+			WD_ERR("fail to get msg in dma address!\n");
+			return -WD_ENOMEM;
+		}
+		sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->data_src_addr_h = HI_U32(phy);
 
-	/* AEAD input MAC addr use in addr */
-	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
-		phy = phy + msg->assoc_bytes + msg->in_bytes;
-		sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
-		sqe->mac_addr_h = HI_U32(phy);
+		/* AEAD input MAC addr use in addr */
+		if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
+			phy = phy + msg->assoc_bytes + msg->in_bytes;
+			sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+			sqe->mac_addr_h = HI_U32(phy);
+		}
 	}
 
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
@@ -1923,7 +1926,9 @@ map_ckey_error:
 	drv_iova_unmap(q, msg->out, (void *)(uintptr_t)phy, msg->out_bytes);
 map_out_error:
 	phy = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
-	drv_iova_unmap(q, msg->in, (void *)(uintptr_t)phy, msg->in_bytes);
+	if (msg->in_bytes)
+		drv_iova_unmap(q, msg->in, (void *)(uintptr_t)phy,
+				msg->in_bytes);
 	return -WD_ENOMEM;
 }
 
@@ -1968,8 +1973,7 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 {
 	int ret;
 
-	if (unlikely(msg->in_bytes == 0 ||
-	    msg->in_bytes > MAX_CIPHER_LENGTH)) {
+	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH)) {
 		WD_ERR("fail to check input data length\n");
 		return -WD_EINVAL;
 	}
@@ -1992,7 +1996,9 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 		return WD_SUCCESS;
 	}
 
-	if (unlikely(msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+	/* CCM/GCM support 0 in_bytes, but others not support */
+	if (unlikely(msg->in_bytes == 0 ||
+	    msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
 		WD_ERR("Invalid aead assoc_bytes!\n");
 		return -WD_EINVAL;
 	}
@@ -2433,6 +2439,10 @@ static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		sqe->dst_addr_type = HISI_FLAT_BUF;
 	}
 
+	if (unlikely(msg->in_bytes == 0)) {
+		WD_ERR("fail to support input 0 length\n");
+		return -WD_EINVAL;
+	}
 	sqe->type2.c_len = msg->in_bytes;
 	sqe->type2.cipher_src_offset = msg->assoc_bytes;
 	sqe->type2.a_len = msg->in_bytes + msg->assoc_bytes;
