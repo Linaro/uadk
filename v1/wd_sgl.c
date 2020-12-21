@@ -688,7 +688,7 @@ static void sgl_cp_from_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 			size -= sz;
 		}
 		memcpy(sgl->sge[i].buf,
-		       pbuf + (i + sgl->buf_num - strtsg - 1) * sz, sz);
+		       pbuf + (i + sgl->buf_num - strtsg - 1) * sz, size);
 	}
 	sgl->sge[i].data_len = size;
 }
@@ -951,7 +951,7 @@ void wd_sgl_memset(struct wd_sgl *sgl, int ch)
 	int i;
 
 	if (!sgl || !sgl->buf_num || !sgl->pool || !sgl->pool->setup.buf_size) {
-		WD_ERR("sgl is null, no need to clear!\n");
+		WD_ERR("Sgl error!\n");
 		return;
 	}
 
