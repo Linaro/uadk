@@ -135,7 +135,7 @@ static void del_ctx_key(struct wcrypto_cipher_ctx *ctx)
 
 static __u32 get_iv_block_size(int alg, int mode)
 {
-	__u32 iv_block_size = 0;
+	__u32 iv_block_size = CBC_AES_BLOCK_SIZE;
 
 	switch (mode) {
 	case WCRYPTO_CIPHER_CBC:
@@ -147,9 +147,9 @@ static __u32 get_iv_block_size(int alg, int mode)
 	case WCRYPTO_CIPHER_XTS:
 	case WCRYPTO_CIPHER_CFB:
 	case WCRYPTO_CIPHER_CTR:
-		iv_block_size = CBC_AES_BLOCK_SIZE;
 		break;
 	default:
+		iv_block_size = 0;
 		break;
 	}
 

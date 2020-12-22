@@ -1436,7 +1436,7 @@ static void cipher_ofb_data_handle(struct wcrypto_cipher_msg *msg)
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = wd_get_sgl_bufsize((struct wd_sgl *)msg->out, &bufsz);
-		if (unlikely(ret))
+		if (unlikely(ret || !bufsz))
 			return;
 
 		/* When SGL pool creating, 'bufsz' is at least 4096, and align_sz
