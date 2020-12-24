@@ -238,6 +238,7 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_digest_req));
 
+	msg->alg_type = WD_DIGEST;
 	msg->alg = sess->alg;
 	msg->mode = sess->mode;
 	msg->key = sess->key;
@@ -247,6 +248,7 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->out = req->out;
 	msg->out_bytes = req->out_bytes;
 	msg->has_next = req->has_next;
+	msg->data_fmt = req->data_fmt;
 }
 
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
