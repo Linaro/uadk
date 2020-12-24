@@ -1702,8 +1702,8 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type_auth_cipher |= cipher;
 
-	if (msg->in_bytes == 0 ||
-		msg->in_bytes > MAX_INPUT_DATA_LEN) {
+	if (unlikely(msg->in_bytes == 0 ||
+		msg->in_bytes > MAX_INPUT_DATA_LEN)) {
 		WD_ERR("failed to check aead input data length!\n");
 		return -EINVAL;
 	}
@@ -1824,6 +1824,11 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	if (msg->cmode == WD_CIPHER_CCM ||
 	    msg->cmode == WD_CIPHER_GCM)
 		return ret;
+
+	if (unlikely(!msg->in_bytes)) {
+		WD_ERR("failed to check aead in_bytes 0 length!\n");
+		return -WD_EINVAL;
+	}
 
 	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
 		WD_ERR("failed to check aead auth_bytes!\n");
@@ -1948,8 +1953,7 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	}
 	sqe.bd_param |= (__u16)(de | scene);
 
-	if (msg->in_bytes == 0 ||
-		msg->in_bytes > MAX_INPUT_DATA_LEN) {
+	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
 		WD_ERR("failed to check aead input data length!\n");
 		return -EINVAL;
 	}
