@@ -18,10 +18,17 @@
 #define UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 
-/* The max sge num in one sgl */
-#define HISI_SGL_SGE_NUM_MAX 255
-#define QM_SGL_NUM 255
-#define SGL_ALIGE 64
+/* the max sge num in one sgl */
+#define HISI_SGE_NUM_IN_SGL 255
+
+/* the max sge num in on BD, QM user it be the sgl pool size */
+#define HISI_SGL_NUM_IN_BD 256
+
+/* sgl addr must be 64 alige */
+#define HISI_SGL_ALIGE 64
+
+#define HISI_MAX_SIZE_IN_SGE (1024 * 1024 * 8)
+
 #define ADDR_ALIGN_64(addr) ((((__u64)(addr) >> 6) + 1) << 6)
 
 struct hisi_qm_type {
@@ -308,7 +315,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	if (ret)
 		goto out_qp;
 
-	qp->h_sgl_pool = hisi_qm_create_sglpool(QM_SGL_NUM, HISI_SGL_SGE_NUM_MAX);
+	qp->h_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD, HISI_SGE_NUM_IN_SGL);
 	if (!qp->h_sgl_pool)
 		goto out_qp;
 
@@ -449,7 +456,7 @@ static void *hisi_qm_create_sgl(__u32 sge_num)
 	void *sgl;
 	int size;
 
-	size = sizeof(struct hisi_sgl) + sge_num * (sizeof(struct hisi_sge)) + SGL_ALIGE;
+	size = sizeof(struct hisi_sgl) + sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
 	sgl = calloc(1, size);
 	if (!sgl)
 		return NULL;
@@ -477,7 +484,7 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	struct hisi_sgl_pool *sgl_pool;
 	int i;
 
-	if (!sgl_num || !sge_num || sge_num > HISI_SGL_SGE_NUM_MAX) {
+	if (!sgl_num || !sge_num || sge_num > HISI_SGE_NUM_IN_SGL) {
 		WD_ERR("Create sgl_pool failed, sgl_num=%u, sge_num=%u\n",
 			sgl_num, sge_num);
 		return 0;
@@ -629,6 +636,9 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 	cur = head;
 	tmp = sgl;
 	while (tmp && tmp->data) {
+		if(tmp->len >= HISI_MAX_SIZE_IN_SGE)
+			goto err_out;
+		
 		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
 		cur->sge_entries[i].len = tmp->len;
 		cur->entry_sum_in_sgl++;
@@ -656,12 +666,13 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 	}
 
 	/* There is no data, reback the hw sgl head to pool */
-	if (!head->entry_sum_in_chain) {
-		hisi_qm_sgl_push(pool, head);
-		return NULL;
-	}
+	if (!head->entry_sum_in_chain)
+		goto err_out;
 
 	return head;
+err_out:
+	hisi_qm_put_hw_sgl(sgl_pool, head);
+	return NULL;
 }
 
 handle_t hisi_qm_get_sglpool(handle_t h_qp)
