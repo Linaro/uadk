@@ -316,9 +316,10 @@ static int init_ctx_config(int type, int mode)
 	int i;
 
 	list = wd_get_accel_list("cipher");
-	if (!list)
+	if (!list) {
+		printf("Fail to get cipher device\n");
 		return -ENODEV;
-
+	}
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = g_ctxnum;
 	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
@@ -408,12 +409,14 @@ static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
 	struct wd_sgl *next;
 	struct wd_sgl *head;
 	int size_unit, i;
+	unsigned int tail_size;
 
 	if (data_fmt != WD_SGL_BUF)
 		return buff;
 
 	/* Divisible is guaranteed by the inputer */
 	size_unit = size / g_sgl_num;
+	tail_size = size % g_sgl_num;
 
 	head = malloc(sizeof(struct wd_sgl));
 	if (!head) {
@@ -435,6 +438,9 @@ static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
 		}
 		next->data = buff + i * size_unit;
 		next->len = size_unit;
+		if (i == g_sgl_num - 1)
+			next->len += tail_size;
+
 		next->next = NULL;
 		cur->next = next;
 		cur = next;
@@ -508,7 +514,7 @@ static int test_sec_cipher_sync_once(void)
 	}
 	dst_bak = req.dst;
 
-	req.dst = test_sec_buff_create(g_data_fmt, req.dst, tv->len);
+	req.dst = test_sec_buff_create(g_data_fmt, req.dst, BUFF_SIZE);
 	if (!req.dst)
 		goto out;
 
@@ -1445,6 +1451,7 @@ static int sec_digest_sync_once(void)
 	float speed, time_used;
 	unsigned long cnt = g_times;
 	int ret;
+	void *bak_in = NULL;
 
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -1457,26 +1464,36 @@ static int sec_digest_sync_once(void)
 	memset(&req, 0, sizeof(struct wd_digest_req));
 	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.in  = malloc(BUFF_SIZE);
+	req.in = malloc(BUFF_SIZE);
 	if (!req.in) {
 		SEC_TST_PRT("req src in mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
+	bak_in = req.in;
+
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
+	req.in = test_sec_buff_create(g_data_fmt, req.in, req.in_bytes);
+	if (!req.in) {
+		ret = -1;
+		goto out;
+	}
 
 	SEC_TST_PRT("req src in--------->:\n");
-	hexdump(req.in, tv->psize);
+	hexdump(bak_in, tv->psize);
+
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
 		SEC_TST_PRT("req dst out mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
+
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
-
+	printf("req.data_fmtaaaa = %u\n", g_data_fmt);
+	req.data_fmt = g_data_fmt;
 	req.has_next = 0;
 
 	h_sess = wd_digest_alloc_sess(&setup);
@@ -1515,8 +1532,9 @@ static int sec_digest_sync_once(void)
 	hexdump(req.out, req.out_bytes);
 
 out:
-	if (req.in)
-		free(req.in);
+	test_sec_sgl_free(g_data_fmt, req.in);
+	if (bak_in)
+		free(bak_in);
 	if (req.out)
 		free(req.out);
 	if (h_sess)
@@ -1645,6 +1663,7 @@ static int sec_digest_async_once(void)
 	struct wd_digest_req req;
 	thread_data_d td_data;
 	handle_t h_sess = 0;
+	void *bak_in = NULL;
 	int test_alg = 0;
 	int test_mode = 0;
 	int ret;
@@ -1662,17 +1681,25 @@ static int sec_digest_async_once(void)
 	setup.alg = test_alg;
 	setup.mode = test_mode;
 
-	req.in  = malloc(BUFF_SIZE);
+	req.in = malloc(BUFF_SIZE);
 	if (!req.in) {
 		SEC_TST_PRT("req src in mem malloc failed!\n");
 		ret = -1;
 		goto out;
 	}
+	bak_in = req.in;
+
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
+	req.in = test_sec_buff_create(g_data_fmt, req.in, req.in_bytes);
+	if (!req.in) {
+		ret = -1;
+		goto out;
+	}
 
 	SEC_TST_PRT("req src in--------->:\n");
-	hexdump(req.in, tv->psize);
+	hexdump(bak_in, tv->psize);
+
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
 		SEC_TST_PRT("req dst out mem malloc failed!\n");
@@ -1682,6 +1709,7 @@ static int sec_digest_async_once(void)
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
 	req.has_next = 0;
+	req.data_fmt = g_data_fmt;
 
 	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
@@ -1734,8 +1762,9 @@ static int sec_digest_async_once(void)
 	}
 	hexdump(req.out, req.out_bytes);
 out:
-	if (req.in)
-		free(req.in);
+	test_sec_sgl_free(g_data_fmt, req.in);
+	if (bak_in)
+		free(bak_in);
 	if (req.out)
 		free(req.out);
 	if (h_sess)
@@ -1753,6 +1782,7 @@ static int sec_digest_sync_multi(void)
 	struct wd_digest_req req;
 	static pthread_t sendtd[64];
 	thread_data_d td_data;
+	void *bak_in = NULL;
 	int i, ret;
 
 	/* config setup */
@@ -1772,11 +1802,20 @@ static int sec_digest_sync_multi(void)
 		ret = -1;
 		goto out;
 	}
+
+	bak_in = req.in;
+
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
+	req.in = test_sec_buff_create(g_data_fmt, req.in, req.in_bytes);
+	if (!req.in) {
+		ret = -1;
+		goto out;
+	}
 
 	SEC_TST_PRT("req src in--------->:\n");
-	hexdump(req.in, tv->psize);
+	hexdump(bak_in, tv->psize);
+
 	req.out = malloc(BUFF_SIZE);
 	if (!req.out) {
 		SEC_TST_PRT("req dst out mem malloc failed!\n");
@@ -1833,10 +1872,12 @@ static int sec_digest_sync_multi(void)
 	SEC_TST_PRT("digest sync %u threads, speed:%llu ops, perf: %llu KB/s\n",
 		g_thread_num, td_data.sum_perf,
 		(td_data.sum_perf >> 10) * req.in_bytes);
+
 	hexdump(req.out, req.out_bytes);
 out:
-	if (req.in)
-		free(req.in);
+	test_sec_sgl_free(g_data_fmt, req.in);
+	if (bak_in)
+		free(bak_in);
 	if (req.out)
 		free(req.out);
 	if (h_sess)
@@ -2104,6 +2145,8 @@ static int sec_aead_sync_once(void)
 	unsigned long Perf = 0;
 	float speed, time_used;
 	unsigned long cnt = g_times;
+	void *bak_src = NULL;
+	void *bak_dst = NULL;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -2197,6 +2240,8 @@ static int sec_aead_sync_once(void)
 		ret = -1;
 		goto out;
 	}
+	bak_src = req.src;
+
 	memset(req.src, 0, in_size);
 	// copy the assoc data in the front of in data
 	SEC_TST_PRT("aead set assoc_bytes: %u\n", req.assoc_bytes);
@@ -2215,11 +2260,25 @@ static int sec_aead_sync_once(void)
 	} else {
 		req.out_bytes = req.assoc_bytes + tv->plen;
 	}
+
+	req.src = test_sec_buff_create(g_data_fmt, req.src, in_size);
+	if (!req.src) {
+		ret = -1;
+		goto out;
+	}
+
 	req.out_buf_bytes = req.out_bytes + auth_size;
 	// alloc out buffer memory
 	req.dst = malloc(req.out_buf_bytes);
 	if (!req.dst) {
 		SEC_TST_PRT("req dst out mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+
+	bak_dst = req.dst;
+	req.dst = test_sec_buff_create(g_data_fmt, req.dst, req.out_buf_bytes);
+	if (!req.dst) {
 		ret = -1;
 		goto out;
 	}
@@ -2238,6 +2297,8 @@ static int sec_aead_sync_once(void)
 	req.iv_bytes = iv_len;
 	memcpy(req.iv, tv->iv, iv_len);
 
+	req.data_fmt = g_data_fmt;
+
 	gettimeofday(&start_tval, NULL);
 	while (cnt) {
 		ret = wd_do_aead_sync(h_sess, &req);
@@ -2252,13 +2313,18 @@ static int sec_aead_sync_once(void)
 	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
 	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
-	hexdump(req.dst, req.out_bytes);
 
+	if (g_data_fmt == WD_SGL_BUF)
+		hexdump(req.sgl_dst->data, req.out_bytes);
+	else
+		hexdump(req.dst, req.out_bytes);
 out:
-	if (req.src)
-		free(req.src);
-	if (req.dst)
-		free(req.dst);
+	test_sec_sgl_free(g_data_fmt, req.src);
+	test_sec_sgl_free(g_data_fmt, req.dst);
+	if (bak_src)
+		free(bak_src);
+	if (bak_dst)
+		free(bak_dst);
 	if (req.iv)
 		free(req.iv);
 	if (h_sess)
@@ -2391,6 +2457,8 @@ static int sec_aead_async_once(void)
 	static pthread_t send_td;
 	static pthread_t poll_td;
 	thread_data_d td_data;
+	void *bak_src = NULL;
+	void *bak_dst = NULL;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -2474,6 +2542,8 @@ static int sec_aead_async_once(void)
 		ret = -1;
 		goto out;
 	}
+	bak_src = req.src;
+
 	// copy the assoc data in the front of in data
 	in_size = tv->alen + tv->plen + auth_size;
 	if (in_size > BUFF_SIZE) {
@@ -2490,8 +2560,14 @@ static int sec_aead_async_once(void)
 		req.in_bytes = tv->clen - auth_size;
 	}
 
+	req.src = test_sec_buff_create(g_data_fmt, req.src, in_size);
+	if (!req.src) {
+		ret = -1;
+		goto out;
+	}
+
 	SEC_TST_PRT("aead req src in--------->: %u\n", tv->alen + req.in_bytes);
-	hexdump(req.src, tv->alen + req.in_bytes);
+	hexdump(bak_src, tv->alen + req.in_bytes);
 
 	// alloc out buffer memory
 	req.dst = malloc(BUFF_SIZE);
@@ -2500,11 +2576,19 @@ static int sec_aead_async_once(void)
 		ret = -1;
 		goto out;
 	}
+	bak_dst = req.dst;
+
 	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
 		req.out_bytes = tv->alen + tv->clen;
 	else
 		req.out_bytes = tv->alen + tv->plen;
+
+	req.dst = test_sec_buff_create(g_data_fmt, req.dst, req.out_bytes);
+	if (!req.dst) {
+		ret = -1;
+		goto out;
+	}
 
 	// set iv
 	req.iv = malloc(IV_SIZE);
@@ -2519,6 +2603,8 @@ static int sec_aead_async_once(void)
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
 	memcpy(req.iv, tv->iv, iv_len);
+
+	req.data_fmt = g_data_fmt;
 
 	/* send thread */
 	td_data.areq = &req;
@@ -2551,12 +2637,14 @@ static int sec_aead_async_once(void)
 		goto out;
 	}
 
-	hexdump(req.dst, req.out_bytes);
+	hexdump(bak_dst, req.out_bytes);
 out:
-	if (req.src)
-		free(req.src);
-	if (req.dst)
-		free(req.dst);
+	test_sec_sgl_free(g_data_fmt, req.src);
+	test_sec_sgl_free(g_data_fmt, req.dst);
+	if (bak_src)
+		free(bak_src);
+	if (bak_dst)
+		free(bak_dst);
 	if (req.iv)
 		free(req.iv);
 	if (h_sess)
@@ -2574,6 +2662,8 @@ static int sec_aead_sync_multi(void)
 	struct wd_aead_req req;
 	static pthread_t sendtd[64];
 	thread_data_d td_data;
+	void *bak_src = NULL;
+	void *bak_dst = NULL;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -2657,6 +2747,8 @@ static int sec_aead_sync_multi(void)
 		ret = -1;
 		goto out;
 	}
+	bak_src = req.src;
+
 	// copy the assoc data in the front of in data
 	in_size = tv->alen + tv->plen + auth_size;
 	if (in_size > BUFF_SIZE) {
@@ -2672,6 +2764,11 @@ static int sec_aead_sync_multi(void)
 		memcpy((req.src + tv->alen), tv->ctext, tv->clen);
 		req.in_bytes = tv->clen - auth_size;
 	}
+	req.src = test_sec_buff_create(g_data_fmt, req.src, req.in_bytes);
+	if (!req.src) {
+		ret = -1;
+		goto out;
+	}
 
 	SEC_TST_PRT("aead req src in--------->: %u\n", tv->alen + req.in_bytes);
 	hexdump(req.src, tv->alen + req.in_bytes);
@@ -2683,11 +2780,19 @@ static int sec_aead_sync_multi(void)
 		ret = -1;
 		goto out;
 	}
+	bak_dst = req.dst;
+
 	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
 		req.out_bytes = tv->alen + tv->clen;
 	else
 		req.out_bytes = tv->alen + tv->plen;
+
+	req.dst = test_sec_buff_create(g_data_fmt, req.dst, req.out_bytes);
+	if (!req.dst) {
+		ret = -1;
+		goto out;
+	}
 
 	// set iv
 	req.iv = malloc(IV_SIZE);
@@ -2717,6 +2822,7 @@ static int sec_aead_sync_multi(void)
 			return ret;
 		}
 	}
+
 	/* join thread */
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_join(sendtd[i], NULL);
@@ -2728,10 +2834,12 @@ static int sec_aead_sync_multi(void)
 
 	hexdump(req.dst, req.out_bytes);
 out:
-	if (req.src)
-		free(req.src);
-	if (req.dst)
-		free(req.dst);
+	test_sec_sgl_free(g_data_fmt, req.src);
+	test_sec_sgl_free(g_data_fmt, req.dst);
+	if (bak_src)
+		free(bak_src);
+	if (bak_dst)
+		free(bak_dst);
 	if (req.iv)
 		free(req.iv);
 	if (h_sess)

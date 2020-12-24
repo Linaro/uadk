@@ -66,6 +66,12 @@ extern FILE *flog_fd;
 #define	WD_IN_EPARA			67
 #define	WD_ENOPROC			68
 
+enum wcrypto_type {
+	WD_CIPHER,
+	WD_DIGEST,
+	WD_AEAD,
+};
+
 struct wd_dtb {
 	char *data;	/* data/buffer start address */
 	__u32 dsize;	/* data size */

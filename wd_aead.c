@@ -430,6 +430,7 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_aead_req));
 
+	msg->alg_type = WD_AEAD;
 	msg->calg = sess->calg;
 	msg->cmode = sess->cmode;
 	msg->dalg = sess->dalg;
@@ -447,6 +448,7 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 	msg->iv_bytes = req->iv_bytes;
 	msg->assoc_bytes = req->assoc_bytes;
 	msg->auth_bytes = sess->auth_bytes;
+	msg->data_fmt = req->data_fmt;
 }
 
 int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)

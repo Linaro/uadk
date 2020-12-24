@@ -68,16 +68,22 @@ struct wd_aead_sess {
  */
 struct wd_aead_req {
 	enum wd_aead_op_type op_type;
-	void			*src;
-	void			*dst;
+	union {
+		struct wd_sgl *sgl_src;
+		void *src;
+	};
+	union {
+		struct wd_sgl *sgl_dst;
+		void *dst;
+	};
 	void			*iv;
-
 	__u32			in_bytes;
 	__u32			out_bytes;
 	__u32			out_buf_bytes;
 	__u16			iv_bytes;
 	__u16			assoc_bytes;
 	__u16			state;
+	__u8		    data_fmt;
 	wd_alg_aead_cb_t	*cb;
 	void			*cb_param;
 };
