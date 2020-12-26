@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "wd.h"
+#include "wd_alg_common.h"
 
 #define WD_CAPA_PRIV_DATA_SIZE		64
 
@@ -53,6 +54,7 @@ struct hisi_qm_queue_info {
 
 struct hisi_qp {
 	struct hisi_qm_queue_info q_info;
+	handle_t h_sgl_pool;
 	handle_t h_ctx;
 };
 
@@ -90,4 +92,37 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count);
 handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx);
 void hisi_qm_free_qp(handle_t h_qp);
 
+/**
+ * hisi_qm_create_sglpool - Create sgl pool in qm.
+ * @sgl_num: the sgl number.
+ * @sge_num: the sge num in every sgl num.
+ *
+ * Fixed me: the sge buff's size now is Fixed.
+ */
+handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num);
+
+/**
+ * hisi_qm_destroy_sglpool - Destroy sgl pool in qm.
+ * @sgl_pool: Handle of the sgl pool.
+ */
+void hisi_qm_destroy_sglpool(handle_t sgl_pool);
+
+/**
+ * hisi_qm_get_hw_sgl - Get sgl pointer from sgl pool.
+ * @sgl_pool: Handle of the sgl pool.
+ * @sgl: The user sgl info's pointer.
+ *
+ * Return the hw sgl addr which can fill into the sqe.
+ */
+void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl);
+
+/**
+ * hisi_qm_put_hw_sgl - Reback the hw sgl to the sgl pool.
+ * @sgl_pool: Handle of the sgl pool.
+ * @hw_sgl: The pointer of the hw sgl which get from sgl pool.
+ */
+void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl);
+handle_t hisi_qm_get_sglpool(handle_t h_qp);
+int hisi_qm_get_sqe(handle_t h_qp, void *sqe);
+void hisi_qm_dump_sgl(void *sgl);
 #endif

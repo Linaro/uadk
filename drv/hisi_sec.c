@@ -289,12 +289,11 @@ struct hisi_sec_sqe {
 	struct hisi_sec_sqe_type2 type2;
 };
 
-#pragma pack(4)
 struct bd3_auth_ivin {
 	__le64 a_ivin_addr;
 	__le32 rsvd0;
 	__le32 rsvd1;
-};
+} __attribute__((packed, aligned(4)));
 
 struct bd3_skip_data {
 	__le32 rsvd0;
@@ -330,14 +329,14 @@ struct bd3_stream_scene {
 	__u8 stream_auth_pad;
 	__u8 plaintext_type;
 	__le16 pad_len_1p3;
-};
+} __attribute__((packed, aligned(4)));
 
 struct bd3_no_scene {
 	__le64 c_ivin_addr;
 	__le32 rsvd0;
 	__le32 rsvd1;
 	__le32 rsvd2;
-};
+} __attribute__((packed, aligned(4)));
 
 struct bd3_check_sum {
 	__le16 check_sum_i;
@@ -447,8 +446,7 @@ struct hisi_sec_sqe3 {
 		struct bd3_tls_type_back tls_type_back;
 	};
 	__le32 counter;
-};
-#pragma pack()
+} __attribute__((packed, aligned(4)));
 
 static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
@@ -616,6 +614,7 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 
 static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *recv_msg)
 {
+	struct wd_cipher_msg *rmsg;
 	__u16 done;
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
@@ -627,7 +626,8 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	update_iv(recv_msg);
+	rmsg = (struct wd_cipher_msg *)sqe->type2.mac_addr;
+	update_iv(rmsg);
 }
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
@@ -676,6 +676,155 @@ static int cipher_iv_check(struct wd_cipher_msg *msg)
 	}
 
 	return 0;
+}
+
+static void hisi_sec_put_sgl(handle_t h_qp, struct wd_cipher_msg *msg)
+{
+	handle_t h_sgl_pool;
+
+	if (msg->data_fmt != WD_SGL_BUF)
+		return;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (!h_sgl_pool)
+		return;
+
+	hisi_qm_put_hw_sgl(h_sgl_pool, msg->in);
+	hisi_qm_put_hw_sgl(h_sgl_pool, msg->out);
+}
+
+static int hisi_sec_fill_sgl(handle_t h_qp, struct wd_cipher_msg *msg,
+		struct hisi_sec_sqe *sqe)
+{
+	handle_t h_sgl_pool;
+	void *hw_sgl_in;
+	void *hw_sgl_out;
+
+	if (msg->data_fmt != WD_SGL_BUF)
+		return 0;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (!h_sgl_pool)
+		return -ENOMEM;
+
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->in);
+	if (!hw_sgl_in) {
+		WD_ERR("failed to get hw sgl in!\n");
+		return -ENOMEM;
+	}
+
+	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->out);
+	if (!hw_sgl_out) {
+		WD_ERR("failed to get hw sgl out!\n");
+		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
+		return -ENOMEM;
+	}
+
+	sqe->sds_sa_type |= 0x80;
+	/*
+	 * src_addr_type: 0~1 bits not used now.
+	 * dst_addr_type: 2~4 bits;
+	 * mac_addr_type: 5~7 bits;
+	 */
+	sqe->sdm_addr_type |= 0x04;
+
+	msg->in = hw_sgl_in;
+	msg->out = hw_sgl_out;
+
+	return 0;
+}
+
+static int hisi_sec_fill_sgl_v3(handle_t h_qp, struct wd_cipher_msg *msg,
+		struct hisi_sec_sqe3 *sqe)
+{
+	handle_t h_sgl_pool;
+	void *hw_sgl_in;
+	void *hw_sgl_out;
+
+	if (msg->data_fmt != WD_SGL_BUF)
+		return 0;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (!h_sgl_pool)
+		return -ENOMEM;
+
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->in);
+	if (!hw_sgl_in) {
+		WD_ERR("failed to get hw sgl in!\n");
+		return -ENOMEM;
+	}
+
+	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)msg->out);
+	if (!hw_sgl_out) {
+		WD_ERR("failed to get hw sgl out!\n");
+		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
+		return -ENOMEM;
+	}
+
+	/*
+	 * src_addr_type: 11~13 bit
+	 * dst_addr_type: 14~16 bit
+	 */
+	sqe->bd_param |= 0x4800;
+
+	msg->in = hw_sgl_in;
+	msg->out = hw_sgl_out;
+
+	return 0;
+}
+
+
+void dump_sqe(struct hisi_sec_sqe *sqe)
+{
+	printf("*************************************");
+	printf("type_auth_cipher: 0x%x\n", sqe->type_auth_cipher);
+	printf("sds_sa_type: 0x%x\n", sqe->sds_sa_type);
+	printf("sdm_addr_type: 0x%x\n", sqe->sdm_addr_type);
+	printf("rsvd0: 0x%x\n", sqe->rsvd0);
+	printf("huk_ci_key: 0x%x\n", sqe->huk_ci_key);
+	printf("ai_apd_cs: 0x%x\n", sqe->ai_apd_cs);
+	printf("rca_key_frm: 0x%x\n", sqe->rca_key_frm);
+	printf("iv_tls_ld: 0x%x\n", sqe->iv_tls_ld);
+
+	printf("mac_key_alg: 0x%x\n", sqe->type2.mac_key_alg);
+	printf("icvw_kmode: 0x%x\n", sqe->type2.icvw_kmode);
+	printf("c_alg: 0x%x\n", sqe->type2.c_alg);
+	printf("rsvd4: 0x%x\n", sqe->type2.rsvd4);
+	printf("alen_ivllen: 0x%x\n", sqe->type2.alen_ivllen);
+	printf("clen_ivhlen: 0x%x\n", sqe->type2.clen_ivhlen);
+	printf("auth_src_offset: 0x%x\n", sqe->type2.auth_src_offset);
+	printf("cipher_src_offset: 0x%x\n", sqe->type2.cipher_src_offset);
+	printf("cs_ip_header_offset: 0x%x\n", sqe->type2.cs_ip_header_offset);
+	printf("cs_udp_header_offset: 0x%x\n", sqe->type2.cs_udp_header_offset);
+	printf("pass_word_len: 0x%x\n", sqe->type2.pass_word_len);
+	printf("dk_len: 0x%x\n", sqe->type2.dk_len);
+	printf("salt3: 0x%x\n", sqe->type2.salt3);
+	printf("salt2: 0x%x\n", sqe->type2.salt2);
+	printf("salt1: 0x%x\n", sqe->type2.salt1);
+	printf("salt0: 0x%x\n", sqe->type2.salt0);
+	printf("tag: 0x%x\n", sqe->type2.tag);
+	printf("rsvd5: 0x%x\n", sqe->type2.rsvd5);
+	printf("cph_pad: 0x%x\n", sqe->type2.cph_pad);
+	printf("c_pad_len_field: 0x%x\n", sqe->type2.c_pad_len_field);
+	printf("long_a_data_len: 0x%llx\n", sqe->type2.long_a_data_len);
+	printf("a_ivin_addr: 0x%llx\n", sqe->type2.a_ivin_addr);
+	printf("a_key_addr: 0x%llx\n", sqe->type2.a_key_addr);
+	printf("mac_addr: 0x%llx\n", sqe->type2.mac_addr);
+	printf("c_ivin_addr: 0x%llx\n", sqe->type2.c_ivin_addr);
+	printf("c_key_addr: 0x%llx\n", sqe->type2.c_key_addr);
+	printf("data_src_addr: 0x%llx\n", sqe->type2.data_src_addr);
+	printf("data_dst_addr: 0x%llx\n", sqe->type2.data_dst_addr);
+	printf("done_flag: 0x%x\n", sqe->type2.done_flag);
+	printf("error_type: 0x%x\n", sqe->type2.error_type);
+	printf("warning_type: 0x%x\n", sqe->type2.warning_type);
+	printf("mac_i3: 0x%x\n", sqe->type2.mac_i3);
+	printf("mac_i2: 0x%x\n", sqe->type2.mac_i2);
+	printf("mac_i1: 0x%x\n", sqe->type2.mac_i1);
+	printf("mac_i0: 0x%x\n", sqe->type2.mac_i0);
+	printf("check_sum_i: 0x%x\n", sqe->type2.check_sum_i);
+	printf("tls_pad_len_i: 0x%x\n", sqe->type2.tls_pad_len_i);
+	printf("rsvd12: 0x%x\n", sqe->type2.rsvd12);
+	printf("counter: 0x%x\n", sqe->type2.counter);
 }
 
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
@@ -727,6 +876,12 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
+	ret = hisi_sec_fill_sgl(h_qp, msg, &sqe);
+	if (ret) {
+		WD_ERR("failed to get sgl!\n");
+		return ret;
+	}
+
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;
 	sqe.type2.data_dst_addr = (__u64)msg->out;
@@ -734,8 +889,21 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	sqe.type2.c_key_addr = (__u64)msg->key;
 	sqe.type2.tag = (__u16)msg->tag;
 
+	/*
+	 * Because some special algorithms need to update IV
+	 * after receiving the BD, and the relevant information
+	 * is in the send message, so the BD field segment is
+	 * needed to return the message pointer.
+	 * The Cipher algorithm does not use the mac_addr segment
+	 * in the BD domain and the hardware will copy all the
+	 * field values of the send BD when returning, so we use
+	 * mac_addr to carry the message pointer here.
+	 */
+	sqe.type2.mac_addr = (__u64)msg;
+
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
+		hisi_sec_put_sgl(h_qp, msg);
 		return ret;
 	}
 
@@ -755,6 +923,8 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	parse_cipher_bd2(&sqe, recv_msg);
 	recv_msg->tag = sqe.type2.tag;
+
+	hisi_sec_put_sgl(h_qp, recv_msg);
 
 	return 0;
 }
@@ -776,22 +946,22 @@ static int fill_cipher_bd3_alg(struct wd_cipher_msg *msg,
 
 	switch (msg->alg) {
 	case WD_CIPHER_SM4:
-		sqe->c_mode_alg = C_ALG_SM4 << SEC_CALG_OFFSET_V3;
-		sqe->c_icv_key = CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_SM4 << SEC_CALG_OFFSET_V3;
+		sqe->c_icv_key |= CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_AES:
-		sqe->c_mode_alg = C_ALG_AES << SEC_CALG_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_AES << SEC_CALG_OFFSET_V3;
 		ret = get_aes_c_key_len(msg, &c_key_len);
-		sqe->c_icv_key = (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
+		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_DES:
-		sqe->c_mode_alg = C_ALG_DES << SEC_CALG_OFFSET_V3;
-		sqe->c_icv_key = CKEY_LEN_DES << SEC_CKEY_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_DES << SEC_CALG_OFFSET_V3;
+		sqe->c_icv_key |= CKEY_LEN_DES << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_3DES:
-		sqe->c_mode_alg = C_ALG_3DES;
+		sqe->c_mode_alg |= C_ALG_3DES;
 		ret = get_3des_c_key_len(msg, &c_key_len);
-		sqe->c_icv_key = (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
+		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
 		WD_ERR("Invalid cipher type!\n");
@@ -881,12 +1051,30 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
+	ret = hisi_sec_fill_sgl_v3(h_qp, msg, &sqe);
+	if (ret) {
+		WD_ERR("failed to get sgl!\n");
+		return ret;
+	}
+
 	sqe.c_len_ivin |= (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)msg->in;
 	sqe.data_dst_addr = (__u64)msg->out;
 	sqe.no_scene.c_ivin_addr = (__u64)msg->iv;
 	sqe.c_key_addr = (__u64)msg->key;
 	sqe.tag = (__u64)msg->tag;
+
+	/*
+	 * Because some special algorithms need to update IV
+	 * after receiving the BD, and the relevant information
+	 * is in the send message, so the BD field segment is
+	 * needed to return the message pointer.
+	 * The Cipher algorithm does not use the mac_addr segment
+	 * in the BD domain and the hardware will copy all the
+	 * field values of the send BD when returning, so we use
+	 * mac_addr to carry the message pointer here.
+	 */
+	sqe.mac_addr = (__u64)msg;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -898,6 +1086,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *recv_msg)
 {
+	struct wd_cipher_msg *rmsg;
 	__u16 done;
 
 	done = sqe->done_flag & SEC_DONE_MASK;
@@ -909,7 +1098,8 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *re
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	update_iv(recv_msg);
+	rmsg = (struct wd_cipher_msg *)sqe->mac_addr;
+	update_iv(rmsg);
 }
 
 int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
@@ -925,6 +1115,8 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	parse_cipher_bd3(&sqe, recv_msg);
 	recv_msg->tag = sqe.tag;
+
+	hisi_sec_put_sgl(h_qp, recv_msg);
 
 	return 0;
 }
@@ -1110,7 +1302,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	sqe->auth_mac_key = (msg->out_bytes / WORD_BYTES) <<
+	sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
 				SEC_MAC_OFFSET_V3;
 	if (msg->mode == WD_DIGEST_NORMAL) {
 		sqe->auth_mac_key |=
@@ -1571,13 +1763,13 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 
 	switch (msg->calg) {
 	case WD_CIPHER_SM4:
-		sqe->c_mode_alg = C_ALG_SM4 << SEC_CALG_OFFSET_V3;
-		sqe->c_icv_key = CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_SM4 << SEC_CALG_OFFSET_V3;
+		sqe->c_icv_key |= CKEY_LEN_SM4 << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_AES:
-		sqe->c_mode_alg = C_ALG_AES << SEC_CALG_OFFSET_V3;
+		sqe->c_mode_alg |= C_ALG_AES << SEC_CALG_OFFSET_V3;
 		ret = aead_get_aes_key_len(msg, &c_key_len);
-		sqe->c_icv_key = (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
+		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
 		WD_ERR("failed to check aead calg type!\n");
@@ -1627,16 +1819,16 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 {
 	switch (msg->cmode) {
 	case WD_CIPHER_CBC:
-		sqe->c_mode_alg = C_MODE_CBC;
+		sqe->c_mode_alg |= C_MODE_CBC;
 		break;
 	case WD_CIPHER_CCM:
-		sqe->c_mode_alg = C_MODE_CCM;
+		sqe->c_mode_alg |= C_MODE_CCM;
 		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
 		break;
 	case WD_CIPHER_GCM:
-		sqe->c_mode_alg = C_MODE_GCM;
+		sqe->c_mode_alg |= C_MODE_GCM;
 		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;

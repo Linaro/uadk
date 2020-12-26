@@ -2038,6 +2038,7 @@ void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 		*plaintext = &dout->plaintext;
 }
 
+
 struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
 					struct wd_dtb *dgst,
 					struct wd_dtb *k)
