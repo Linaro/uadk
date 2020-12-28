@@ -38,36 +38,69 @@ struct hisi_zip_sqe {
 	__u32 consumed;
 	__u32 produced;
 	__u32 comp_data_length;
+
+	/*
+	 * status: 0~7 bits
+	 * rsvd: 8~31 bits
+	 */
 	__u32 dw3;
+
 	__u32 input_data_length;
-	__u32 lba_l;
-	__u32 lba_h;
+	__u32 dw5;
+	__u32 dw6;
+
+	/*
+	 * in_sge_data_offset: 0~23 bits
+	 * rsvd: 24 bit
+	 * flush_type: 25 bit
+	 * stream_mode: 26 bit
+	 * steam_new_flag: 27 bit
+	 * sqe_type: 28~31 bits
+	 */
 	__u32 dw7;
+
+	/*
+	 * out_sge_data_offset: 0~23 bits
+	 * rsvd: 24~31 bits
+	 */
 	__u32 dw8;
+
+	/*
+	 * request_type: 0~7 bits
+	 * buffer_type: 8~11 bits
+	 * window_size: 12~15 bits
+	 * rsvd: 16~31 bits
+	 */
 	__u32 dw9;
+
 	__u32 dw10;
-	__u32 priv_info;
+	__u32 dw11;
 	__u32 dw12;
-	__u32 tag;
+
+	/* tag: in sqe type 0 */
+	__u32 dw13;
+
 	__u32 dest_avail_out;
 	__u32 ctx_dw0;
-	__u32 comp_head_addr_l;
-	__u32 comp_head_addr_h;
+	__u32 dw16;
+	__u32 dw17;
 	__u32 source_addr_l;
 	__u32 source_addr_h;
 	__u32 dest_addr_l;
 	__u32 dest_addr_h;
 	__u32 stream_ctx_addr_l;
 	__u32 stream_ctx_addr_h;
-	__u32 cipher_key1_addr_l;
-	__u32 cipher_key1_addr_h;
-	__u32 cipher_key2_addr_l;
-	__u32 cipher_key2_addr_h;
+	__u32 dw24;
+	__u32 dw25;
+
+	/* tag: in sqe type 3 */
+	__u32 dw26;
+
+	__u32 dw27;
 	__u32 ctx_dw1;
 	__u32 ctx_dw2;
 	__u32 isize;
 	__u32 checksum;
-
 };
 
 #define BLOCK_SIZE	(1 << 19)
@@ -275,7 +308,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	}
 	sqe->isize = msg->isize;
 	sqe->checksum = msg->checksum;
-	sqe->tag = msg->tag;
+	sqe->dw13 = msg->tag;
 
 	dbg("zip fill sqe: dest_avail_out=%u\n", sqe->dest_avail_out);
 
@@ -370,7 +403,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
-	recv_msg->tag = sqe->tag;
+	recv_msg->tag = sqe->dw13;
 
 	return 0;
 }
