@@ -169,6 +169,7 @@ void wd_comp_uninit(void)
 int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+	void *priv = wd_comp_setting.priv;
 	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg resp_msg, *msg;
 	struct wd_comp_req *req;
@@ -182,7 +183,8 @@ int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	ctx = config->ctxs + index;
 
 	do {
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
+							priv);
 		if (ret < 0) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw err!\n");
@@ -311,6 +313,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
+	void *priv = wd_comp_setting.priv;
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
@@ -349,7 +352,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	pthread_mutex_lock(&ctx->lock);
 
-	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg);
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
 	if (ret < 0) {
 		pthread_mutex_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
@@ -357,7 +360,8 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
+							priv);
 		if (ret == -WD_HW_EACCESS) {
 			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
@@ -479,6 +483,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
+	void *priv = wd_comp_setting.priv;
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
 	__u64 recv_count = 0;
@@ -515,7 +520,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 	pthread_mutex_lock(&ctx->lock);
 
-	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg);
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
 	if (ret < 0) {
 		pthread_mutex_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
@@ -523,7 +528,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg);
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
+							priv);
 		if (ret == -WD_HW_EACCESS) {
 			pthread_mutex_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
@@ -555,6 +561,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
+	void *priv = wd_comp_setting.priv;
 	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
 	__u32 index;
@@ -600,7 +607,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	pthread_mutex_lock(&ctx->lock);
 
-	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg);
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg, priv);
 	if (ret < 0) {
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		wd_put_msg_to_pool(&wd_comp_setting.pool, index, msg->tag);
