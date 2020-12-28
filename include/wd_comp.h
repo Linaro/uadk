@@ -14,8 +14,10 @@ enum wd_comp_op_status {
 };
 
 enum wd_comp_alg_type {
-	WD_ZLIB = 1,
+	WD_DEFLATE,
+	WD_ZLIB,
 	WD_GZIP,
+	WD_COMP_ALG_MAX,
 };
 
 enum wd_comp_op_type {
