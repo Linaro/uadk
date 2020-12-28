@@ -289,7 +289,7 @@ static int append_store_block(handle_t h_sess, struct wd_comp_req *req)
 		memcpy(req->dst + 5, &checksum, 4);
 		memcpy(req->dst + 9, &isize, 4);
 		req->dst_len += 8;
-	} else {
+	} else if (sess->alg_type >= WD_COMP_ALG_MAX) {
 		WD_ERR("in append store block, wrong alg type %d.\n", sess->alg_type);
 		return -EINVAL;
 	}
