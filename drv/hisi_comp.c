@@ -15,7 +15,8 @@
 #define HW_CTX_SIZE	(64*1024)
 
 enum alg_type {
-	HW_ZLIB  = 0x02,
+	HW_DEFLATE = 0x1,
+	HW_ZLIB,
 	HW_GZIP,
 };
 
@@ -210,6 +211,21 @@ static void fill_buf_addr_deflate(struct hisi_zip_sqe *sqe, void *src,
 	sqe->stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
 }
 
+static void fill_buf_deflate(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
+{
+	struct wd_comp_req *req = &msg->req;
+	void *ctx_buf;
+
+	fill_buf_size_deflate(sqe, req->src_len, msg->avail_out);
+
+	if (msg->ctx_buf)
+		ctx_buf = msg->ctx_buf + RSV_OFFSET;
+	else
+		ctx_buf = NULL;
+
+	fill_buf_addr_deflate(sqe, req->src, req->dst, ctx_buf);
+}
+
 static void fill_buf_zlib(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 {
 	__u32 in_size = msg->req.src_len;
@@ -284,6 +300,14 @@ static void fill_sqe_type_v3(struct hisi_zip_sqe *sqe)
 	sqe->dw7 = val;
 }
 
+static void fill_alg_deflate(struct hisi_zip_sqe *sqe)
+{
+	__u32 val;
+	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+	val |= HW_DEFLATE;
+	sqe->dw9 = val;
+}
+
 static void fill_alg_zlib(struct hisi_zip_sqe *sqe)
 {
 	__u32 val;
@@ -308,6 +332,13 @@ static void fill_tag_v1(struct hisi_zip_sqe *sqe, __u32 tag)
 static void fill_tag_v3(struct hisi_zip_sqe *sqe, __u32 tag)
 {
 	sqe->dw26 = tag;
+}
+
+static void get_data_size_deflate(struct hisi_zip_sqe *sqe, int op_type,
+				  struct wd_comp_msg *recv_msg)
+{
+	recv_msg->in_cons = sqe->consumed;
+	recv_msg->produced = sqe->produced;
 }
 
 static void get_data_size_zlib(struct hisi_zip_sqe *sqe, int op_type,
@@ -353,6 +384,13 @@ static int get_tag_v3(struct hisi_zip_sqe *sqe)
 }
 
 struct hisi_zip_sqe_ops ops[] = { {
+		.alg_name = "deflate",
+		.fill_buf = fill_buf_deflate,
+		.fill_sqe_type = fill_sqe_type_v3,
+		.fill_alg = fill_alg_deflate,
+		.fill_tag = fill_tag_v3,
+		.get_data_size = get_data_size_deflate,
+		.get_tag = get_tag_v3,
 	}, {
 		.alg_name = "zlib",
 		.fill_buf = fill_buf_zlib,
@@ -520,7 +558,9 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 		recv_msg->req.status = 0;
 	}
 
-	if (type == HW_ZLIB)
+	if (type == HW_DEFLATE)
+		alg_type = WD_DEFLATE;
+	else if (type == HW_ZLIB)
 		alg_type = WD_ZLIB;
 	else if (type == HW_GZIP)
 		alg_type = WD_GZIP;
