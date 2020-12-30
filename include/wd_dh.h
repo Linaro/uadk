@@ -40,10 +40,10 @@ struct wd_dh_req {
 	__u16 xbytes; /* x bytes */
 	__u16 pvbytes; /* pv bytes */
 	wd_dh_cb_t cb;
-	void *cb_param;	
+	void *cb_param;
 	int status; /* output status */
 	__u8 op_type; /* operational type */
-	__u8 data_fmt; /* data format denoted by enum wd_buff_type */	
+	__u8 data_fmt; /* data format denoted by enum wd_buff_type */
 };
 
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode);
