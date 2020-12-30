@@ -744,13 +744,13 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 data_fmt, __u8 **in,
 	if (!h_sgl_pool)
 		return -ENOMEM;
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)(*in));
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*in));
 	if (!hw_sgl_in) {
 		WD_ERR("failed to get hw sgl in!\n");
 		return -ENOMEM;
 	}
 
-	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)(*out));
+	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*out));
 	if (!hw_sgl_out) {
 		WD_ERR("failed to get hw sgl out!\n");
 		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
@@ -785,7 +785,7 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 data_fmt, __u8 **in,
 	if (!h_sgl_pool)
 		return -ENOMEM;
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)(*in));
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*in));
 	if (!hw_sgl_in) {
 		WD_ERR("failed to get hw sgl in!\n");
 		return -ENOMEM;
@@ -795,7 +795,7 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 data_fmt, __u8 **in,
 		hw_sgl_out = *out;
 		sqe->bd_param |= 0x800;
 	} else {
-		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_sgl*)(*out));
+		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*out));
 		if (!hw_sgl_out) {
 			WD_ERR("failed to get hw sgl out!\n");
 			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);

@@ -617,13 +617,13 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 	return;
 }
 
-void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
+void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 {
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
 	struct hisi_sgl *head;
 	struct hisi_sgl *cur;
 	struct hisi_sgl *next;
-	struct wd_sgl *tmp = sgl;
+	struct wd_datalist *tmp = sgl;
 	int i = 0;
 
 	if (!pool || !sgl) {
