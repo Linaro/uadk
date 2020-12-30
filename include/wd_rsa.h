@@ -162,7 +162,7 @@ extern __u32 wd_rsa_poll(void);
  * @expt:	Max number of requests to poll. If 0, polled all finished
  * 		requests in this ctx.
  * @count:	The number of polled requests.
- * Return 	0-succ others-fail.
+ * Return:	0-succ others-fail.
  *
  * This is a help function which can be used by user's poll_policy function.
  * User defines polling policy in poll_policiy, when it needs to poll a

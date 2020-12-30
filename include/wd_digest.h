@@ -85,13 +85,17 @@ struct wd_digest_sess {
  * fix me: for hmac, seems we need *key also?
  */
 struct wd_digest_req {
-	void		*in;
+	union {
+		void *in;
+		struct wd_sgl *sgl_in;
+	};
 	void		*out;
 	__u32		in_bytes;
 	__u32		out_bytes;
 	__u32		out_buf_bytes;
 	__u16		state;
 	__u16		has_next;
+	__u8        data_fmt;
 	wd_digest_cb_t	*cb;
 	void		*cb_param;
 };

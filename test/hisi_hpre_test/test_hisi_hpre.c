@@ -21,6 +21,10 @@
 #include "../../include/wd.h"
 #include "../../include/wd_rsa.h"
 #include "../../include/wd_dh.h"
+#include "../../include/wd_ecc.h"
+#include "../../include/drv/wd_ecc_drv.h"
+
+#define DEBUG 1
 
 #define HPRE_TST_PRT		printf
 #define BN_ULONG		unsigned long
@@ -177,19 +181,19 @@ static struct hpre_test_config g_config = {
 	.times = 100,
 	.seconds = 0,
 	.trd_num = 2,
-	#ifdef WITH_OPENSSL_DIR	
+	#ifdef WITH_OPENSSL_DIR
 	.check = 1,
 	#else
 	.check = 0,
 	#endif
-	.perf_test = 0,
+	.perf_test = 1,
 	.with_log = 0,
 	.soft_test = 0,
 	.core_mask = {0, 0},
 	.trd_mode = "sync",
 	.op = "rsa-gen",
 	.alg_mode = "com",
-	.curve = "secp256k1",
+	.curve = "secp256K1",
 	.dev_path = "/dev/hisi_hpre-0",
 };
 
@@ -198,19 +202,20 @@ static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct test_hpre_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static struct async_test_openssl_param ssl_params;
 struct wd_ctx_config g_ctx_cfg;
+static __thread u32 g_is_set_prikey; // ecdh used
+//static __thread u32 g_is_set_pubkey; // ecc used
 
 static bool is_exit(struct test_hpre_pthread_dt *pdata);
 
 struct ecc_curve_tbl ecc_curve_tbls[] = {
-#if 0 // will be added later ecc
 	{"secp128R1", 706, WD_SECP128R1},
 	{"secp192K1", 711, WD_SECP192K1},
+	{"secp224R1", 712, WD_SECP224R1},
 	{"secp256K1", 714, WD_SECP256K1},
 	{"brainpoolP320R1", 929, WD_BRAINPOOLP320R1},
-	{"brainpoolP384R1", 931, WD_BRAINPOOLP384R1},
+	{"secp384R1", 715, WD_SECP384R1},
 	{"secp521R1", 716, WD_SECP521R1},
 	{"null", 0, 0},
-#endif
 };
 
 enum dh_test_item {
@@ -497,7 +502,18 @@ struct ecdh_sw_opdata {
 	BIGNUM *except_rp;
 	unsigned char *sign; // sign out or verf in
 	u32 sign_size;
+};
 
+static char *ecc_op_str[ECC_TEST_ITEM_MAX] = {
+	"invalid_op",
+	"xdh sw gen",
+	"xdh sw compute",
+	"xdh hw gen",
+	"xdh hw compute",
+	"ecc sw sign",
+	"ecc sw verf",
+	"ecc hw sign",
+	"ecc hw verf",
 };
 
 static __thread struct hpre_rsa_test_key_in *rsa_key_in = NULL;
@@ -792,10 +808,11 @@ EC_GROUP *EC_GROUP_new_by_curve_name(int nid)
 	return NULL;
 }
 
+/*
 int ecdh_compute_key(void *test_ctx, void *tag)
 {
 	return 0;
-}
+} */
 
 int ECDH_compute_key(void *out, size_t outlen, EC_POINT *pub_key,
                      EC_KEY *ecdh,
@@ -1045,7 +1062,7 @@ int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_rsa_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);
 					return ret;
 				}
 			}
@@ -1069,12 +1086,35 @@ int dh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_dh_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);
 					return ret;
 				}
 			}
 		}
+		break;
+	}
 
+	return 0;
+}
+
+
+int ecdh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
+{
+	int ret;
+	struct wd_ctx *ctxs;
+	int i;
+
+	while (1) {
+		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
+			ctxs = &g_ctx_cfg.ctxs[i];
+			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
+				ret = wd_ecc_poll_ctx(i, 1, count);
+				if (ret != -EAGAIN && ret < 0) {
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);
+					return ret;
+				}
+			}
+		}
 		break;
 	}
 
@@ -1137,6 +1177,8 @@ static int init_hpre_global_config(__u32 op_type)
 		list = wd_get_accel_list("rsa");
 	else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE)
 		list = wd_get_accel_list("dh");
+	else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE)
+		list = wd_get_accel_list("ecdh");
 	if (!list)
 		return -ENODEV;
 
@@ -1171,6 +1213,9 @@ static int init_hpre_global_config(__u32 op_type)
 	} else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE) {
 		sched.poll_policy = dh_poll_policy;
 		ret = wd_dh_init(&g_ctx_cfg, &sched);
+	}  else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE) {
+		sched.poll_policy = ecdh_poll_policy;
+		ret = wd_ecc_init(&g_ctx_cfg, &sched);
 	}
 	if (ret) {
 		HPRE_TST_PRT("failed to init alg, ret %d!\n", ret);
@@ -1189,6 +1234,8 @@ static void uninit_hpre_global_config(__u32 op_type)
 		wd_rsa_uninit();
 	else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE)
 		wd_dh_uninit();
+	else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE)
+		wd_ecc_uninit();
 }
 
 static int init_opdata_param(struct wd_dh_req *req,
@@ -2031,6 +2078,1637 @@ int dh_init_test_ctx_setup(struct hpre_dh_test_ctx_setup *setup)
 	return 0;
 }
 
+/* **************************** ECDH ******************************* */
+static int get_ecc_nid(const char *name, __u32 *nid, __u32 *curve_id)
+{
+	int i;
+
+	for (i = 0; i < sizeof(ecc_curve_tbls) / sizeof(ecc_curve_tbls[0]); i++) {
+
+		if (!strcmp(name, ecc_curve_tbls[i].name)) {
+			*nid = ecc_curve_tbls[i].nid;
+			*curve_id = ecc_curve_tbls[i].curve_id;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
+static int hpre_get_rand(char *out, size_t out_len, void *usr)
+{
+	int ret;
+
+	if (!out) {
+		return -1;
+	}
+
+	ret = RAND_priv_bytes((void *)out, out_len);
+	if (ret != 1) {
+		HPRE_TST_PRT("RAND_priv_bytes fail = %d\n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+void fill_ecdh_param_of_curve(struct wd_ecc_curve *param)
+{
+	__u32 key_size = (g_config.key_bits + 7) / 8;
+
+	if (g_config.key_bits == 128) {
+		param->a.data = ecdh_a_secp128k1;
+		param->b.data = ecdh_b_secp128k1;
+		param->p.data = ecdh_p_secp128k1;
+		param->n.data = ecdh_n_secp128k1;
+		param->g.x.data = ecdh_g_secp128k1;
+		param->g.y.data = ecdh_g_secp128k1 + key_size;
+	} else if (g_config.key_bits == 192) {
+		param->a.data = ecdh_a_secp192k1;
+		param->b.data = ecdh_b_secp192k1;
+		param->p.data = ecdh_p_secp192k1;
+		param->n.data = ecdh_n_secp192k1;
+		param->g.x.data = ecdh_g_secp192k1;
+		param->g.y.data = ecdh_g_secp192k1 + key_size;
+	} else if (g_config.key_bits == 224) {
+		param->a.data = ecdh_a_secp224r1;
+		param->b.data = ecdh_b_secp224r1;
+		param->p.data = ecdh_p_secp224r1;
+		param->n.data = ecdh_n_secp224r1;
+		param->g.x.data = ecdh_g_secp224r1;
+		param->g.y.data = ecdh_g_secp224r1 + key_size;
+	} else if (g_config.key_bits == 256) {
+		param->a.data = ecdh_a_secp256k1;
+		param->b.data = ecdh_b_secp256k1;
+		param->p.data = ecdh_p_secp256k1;
+		param->n.data = ecdh_n_secp256k1;
+		param->g.x.data = ecdh_g_secp256k1;
+		param->g.y.data = ecdh_g_secp256k1 + key_size;
+	} else if (g_config.key_bits == 320) {
+		param->a.data = ecdh_a_secp320k1;
+		param->b.data = ecdh_b_secp320k1;
+		param->p.data = ecdh_p_secp320k1;
+		param->n.data = ecdh_n_secp320k1;
+		param->g.x.data = ecdh_g_secp320k1;
+		param->g.y.data = ecdh_g_secp320k1 + key_size;
+	} else if (g_config.key_bits == 384) {
+		param->a.data = ecdh_a_secp384r1;
+		param->b.data = ecdh_b_secp384r1;
+		param->p.data = ecdh_p_secp384r1;
+		param->n.data = ecdh_n_secp384r1;
+		param->g.x.data = ecdh_g_secp384r1;
+		param->g.y.data = ecdh_g_secp384r1 + key_size;
+	} else if (g_config.key_bits == 521) {
+		param->a.data = ecdh_a_secp521k1;
+		param->b.data = ecdh_b_secp521k1;
+		param->p.data = ecdh_p_secp521k1;
+		param->n.data = ecdh_n_secp521k1;
+		param->g.x.data = ecdh_g_secp521k1;
+		param->g.y.data = ecdh_g_secp521k1 + key_size;
+	} else {
+		HPRE_TST_PRT("key_bits %d not find\n", g_config.key_bits);
+		return;
+	}
+
+	param->a.bsize = key_size;
+	param->a.dsize = key_size;
+	param->b.bsize = key_size;
+	param->b.dsize = key_size;
+	param->p.bsize = key_size;
+	param->p.dsize = key_size;
+	param->n.bsize = key_size;
+	param->n.dsize = key_size;
+	param->g.x.bsize = key_size;
+	param->g.x.dsize = key_size;
+	param->g.y.bsize = key_size;
+	param->g.y.dsize = key_size;
+}
+
+static struct ecc_test_ctx *ecc_create_sw_gen_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+	struct ecc_test_ctx *test_ctx;
+	EC_KEY *key = NULL;
+	EC_GROUP *group;
+	int ret;
+
+	if (ECDH_SW_GENERATE != setup.op_type) {
+		HPRE_TST_PRT("%s: err op type %d\n", __func__, setup.op_type);
+		return NULL;
+	}
+
+	key = EC_KEY_new();
+	if (!key) {
+		printf("EC_KEY_new err!\n");
+		return NULL;
+	}
+
+	group = EC_GROUP_new_by_curve_name(setup.nid);
+	if(!group) {
+		printf("EC_GROUP_new_by_curve_name err!\n");
+		goto free_ec_key;
+	}
+
+	ret = EC_KEY_set_group(key, group);
+	if(ret != 1) {
+		printf("EC_KEY_set_group err.\n");
+		goto free_ec_key;
+	}
+
+	EC_GROUP_free(group);
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		printf("malloc failed.\n");
+		goto free_ec_key;
+	}
+
+	if (setup.key_from) {
+		BIGNUM *privKey;
+
+		privKey = BN_bin2bn(setup.d, setup.d_size, NULL);
+		ret = EC_KEY_set_private_key(key, privKey);
+		if (ret != 1) {
+			printf("EC_KEY_set_private_key failed\n");
+			goto free_ctx;
+		}
+	} else {}
+
+	test_ctx->op = ECDH_SW_GENERATE;
+	test_ctx->priv = key;
+	test_ctx->key_size = setup.key_bits >> 3;
+
+#ifdef DEBUG
+	ECParameters_print_fp(stdout, key);
+	EC_KEY_print_fp(stdout, key, 0);
+#endif
+
+	return test_ctx;
+
+free_ctx:
+	free(test_ctx);
+free_ec_key:
+	EC_KEY_free(key);
+	return NULL;
+}
+
+
+static struct ecc_test_ctx *ecc_create_hw_gen_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+	struct ecc_test_ctx *test_ctx;
+	struct wd_ecc_key *ecc_key;
+	struct wd_ecc_out *ecc_out;
+	struct wd_ecc_req *req;
+	handle_t sess = setup.sess;
+	struct wd_dtb d;
+	int ret;
+	u32 key_size;
+
+	req = malloc(sizeof(struct wd_ecc_req));
+	if (!req)
+		return NULL;
+	memset(req, 0, sizeof(struct wd_ecc_req));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_req;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wd_ecc_get_key_bits(sess) + 7) / 8;
+	test_ctx->cp_pub_key = malloc(2 * key_size);
+	if (!test_ctx->cp_pub_key) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_ctx;
+	}
+
+	ecc_out = wd_ecc_new_out(sess);
+	if (!ecc_out) {
+		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
+		goto free_cp_key;
+	}
+
+	ecc_key = wd_ecc_get_key(sess);
+
+	if (setup.key_from) {  // performance || async ,the param is ready by curve
+		if (!setup.d || !setup.cp_pub_key ||
+			!setup.cp_pub_key_size) {
+			HPRE_TST_PRT("%s: d parm err\n", __func__);
+			goto del_ecc_out;
+		}
+
+		if ((!g_is_set_prikey && is_async_test(op_type)) || !is_async_test(op_type)) {
+			d.data = setup.d;
+			d.dsize = setup.d_size;
+			d.bsize = setup.d_size;
+			ret = wd_ecc_set_prikey(ecc_key, &d);
+			if (ret) {
+				HPRE_TST_PRT("%s: set prikey err\n", __func__);
+				goto del_ecc_out;
+			}
+			g_is_set_prikey = true;
+		}
+
+		if (op_type >= X25519_GEN && op_type <= X448_ASYNC_COMPUTE) {
+			memcpy(test_ctx->cp_pub_key, setup.cp_pub_key, key_size);
+			test_ctx->cp_pub_key_size = setup.cp_pub_key_size;
+		} else {
+			memcpy(test_ctx->cp_pub_key, setup.cp_pub_key + 1, key_size * 2);
+			test_ctx->cp_pub_key_size = setup.cp_pub_key_size - 1;
+		}
+	} else { // sync && not performance, the prikey/pubkey are from openssl
+		if (op_type == X25519_GEN ||op_type == X25519_COMPUTE) { // x25519
+			/* ret = x_genkey_by_openssl(test_ctx, ecc_key, key_size, 1);
+			if (ret == 0) {
+				return NULL;
+			} */
+		} else if (op_type == X448_GEN ||op_type == X448_COMPUTE) { // x448
+			/* ret = x_genkey_by_openssl(test_ctx, ecc_key, key_size, 2);
+			if (ret == 0) {
+				return NULL;
+			} */
+		} else { // ecdh
+			EC_KEY *key_a = NULL;
+			EC_GROUP *group_a;
+			EC_POINT *point;
+			BIGNUM *d;
+			struct wd_dtb dtb_d;
+			char *tmp;
+			size_t len;
+
+			key_a = EC_KEY_new();
+			if (!key_a) {
+				printf("EC_KEY_new err!\n");
+				goto del_ecc_out;
+			}
+
+			group_a = EC_GROUP_new_by_curve_name(setup.nid);
+			if(!group_a) {
+				printf("EC_GROUP_new_by_curve_name err!\n");
+				EC_KEY_free(key_a);
+				goto del_ecc_out;
+			}
+
+			ret = EC_KEY_set_group(key_a, group_a);
+			if(ret != 1) {
+				printf("EC_KEY_set_group err.\n");
+				EC_KEY_free(key_a);
+				goto del_ecc_out;
+			}
+
+			ret = EC_KEY_generate_key(key_a);
+			if(ret != 1) {
+				printf("EC_KEY_generate_key err.\n");
+				ECParameters_print_fp(stdout, key_a);
+				EC_KEY_print_fp(stdout, key_a, 4);
+				EC_KEY_free(key_a);
+				goto del_ecc_out;
+			}
+
+			d = EC_KEY_get0_private_key(key_a);
+			if (!d) {
+				printf("EC_KEY_get0_private_key err.\n");
+				EC_KEY_free(key_a);
+				goto del_ecc_out;
+			}
+
+			tmp = malloc(key_size);
+			if (!tmp) {
+				printf("malloc fail!\n");
+				EC_KEY_free(key_a);
+				goto del_ecc_out;
+			}
+
+			memset(tmp, 0, key_size);
+			dtb_d.dsize = BN_bn2bin(d, (void *)tmp);
+			dtb_d.bsize = key_size;
+			dtb_d.data = tmp;
+			ret = wd_ecc_set_prikey(ecc_key, &dtb_d);
+			if (ret) {
+				HPRE_TST_PRT("%s: set prikey err\n", __func__);
+				EC_KEY_free(key_a);
+				free(tmp);
+				goto del_ecc_out;
+			}
+			free(tmp);
+
+			point = EC_KEY_get0_public_key(key_a);
+			if (!point) {
+				printf("EC_KEY_get0_public_key err.\n");
+				EC_KEY_free(key_a);
+				goto del_ecc_out;
+			}
+			len = EC_POINT_point2buf(group_a, point, 4, &tmp, NULL);
+			memcpy(test_ctx->cp_pub_key, tmp + 1, 2 * key_size);
+			test_ctx->cp_pub_key_size = len - 1;
+
+			EC_GROUP_free(group_a);
+			OPENSSL_free(tmp);
+			EC_KEY_free(key_a);
+		}
+	}
+
+#ifdef DEBUG
+	//struct wd_dtb *p;
+
+	//wd_ecc_get_prikey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+	//print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "prikey");
+	//print_data(test_ctx->cp_pub_key, test_ctx->cp_pub_key_size, "cp_pub_key");
+#endif
+
+	req->op_type = WD_ECXDH_GEN_KEY;
+	req->dst = ecc_out;
+	test_ctx->req = req;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = (void *)sess; //init ctx
+	test_ctx->key_size = key_size;
+
+	return test_ctx;
+
+del_ecc_out:
+	(void)wd_ecc_del_out(sess, ecc_out);
+free_cp_key:
+	free(test_ctx->cp_pub_key);
+free_ctx:
+	free(test_ctx);
+free_req:
+	free(req);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *ecc_create_sw_compute_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+	struct ecc_test_ctx *test_ctx;
+	struct ecdh_sw_opdata *req;
+
+	EC_KEY *key_a = NULL;
+	EC_KEY *key_b = NULL;
+	EC_GROUP *group_a, *group_b;
+	BIGNUM *privKey, *pubKey;
+	EC_POINT *point_tmp, *ptr;
+	int ret;
+
+	if (ECDH_SW_COMPUTE != setup.op_type) {
+		HPRE_TST_PRT("%s: err op type %d\n", __func__, setup.op_type);
+		return NULL;
+	}
+
+	key_a = EC_KEY_new();
+	if (!key_a) {
+		printf("EC_KEY_new err!\n");
+		return NULL;
+	}
+
+	group_a = EC_GROUP_new_by_curve_name(setup.nid);
+	if(!group_a) {
+		printf("EC_GROUP_new_by_curve_name err!\n");
+		goto free_ec_key_a;
+	}
+
+	ret = EC_KEY_set_group(key_a, group_a);
+	if(ret != 1) {
+		printf("EC_KEY_set_group err.\n");
+		goto free_ec_key_a;
+	}
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		printf("malloc failed.\n");
+		goto free_ec_key_a;
+	}
+
+	req = malloc(sizeof(struct ecdh_sw_opdata));
+	if (!req) {
+		EC_KEY_free(key_a);
+		free(test_ctx);
+		goto free_ctx;
+	}
+
+	memset(req, 0, sizeof(struct ecdh_sw_opdata));
+	test_ctx->req = req;
+
+	req->share_key = malloc((setup.key_bits >> 3) * 3);
+	if (!req->share_key) {
+		goto free_req;
+	}
+	req->share_key_size = (setup.key_bits >> 3) * 3;
+
+	if (setup.key_from) {
+		point_tmp = EC_GROUP_get0_generator(group_a);
+		pubKey = BN_bin2bn(setup.except_pub_key, setup.except_pub_key_size, NULL);
+		ptr = EC_POINT_bn2point(group_a, pubKey, point_tmp, NULL);
+		if (!ptr) {
+			printf("EC_POINT_bn2point failed\n");
+			BN_free(pubKey);
+			goto free_req;
+		}
+		BN_free(pubKey);
+		req->except_pub_key = point_tmp;
+		privKey = BN_bin2bn(setup.d, setup.d_size, NULL);
+		ret = EC_KEY_set_private_key(key_a, privKey);
+		if (ret != 1) {
+			printf("EC_KEY_set_private_key failed\n");
+			goto free_req;
+		}
+		BN_free(privKey);
+	} else {
+		ret = EC_KEY_generate_key(key_a);
+		if(ret != 1) {
+			printf("EC_KEY_generate_key err.\n");
+			goto free_share_key;
+		}
+
+		key_b = EC_KEY_new();
+		if (!key_b) {
+			printf("EC_KEY_new err!\n");
+			goto free_share_key;
+		}
+
+		group_b = EC_GROUP_new_by_curve_name(setup.nid);
+		if(!group_b) {
+			printf("EC_GROUP_new_by_curve_name err!\n");
+			goto free_ec_key_b;
+		}
+
+		ret = EC_KEY_set_group(key_b, group_b);
+		if(ret != 1) {
+			printf("EC_KEY_set_group err.\n");
+			goto free_ec_key_b;
+		}
+
+		ret = EC_KEY_generate_key(key_b);
+		if(ret != 1) {
+			printf("EC_KEY_generate_key err.\n");
+			goto free_ec_key_b;
+		}
+
+		req->except_pub_key = EC_POINT_dup(EC_KEY_get0_public_key(key_b), group_b);
+		if (!req->except_pub_key) {
+			printf("EC_KEY_get0_public_key err.\n");
+			goto free_ec_key_b;
+		}
+
+		EC_GROUP_free(group_b);
+#ifdef DEBUG
+	printf("except_pub_key:\n");
+	ECParameters_print_fp(stdout, key_b);
+	EC_KEY_print_fp(stdout, key_b, 0);
+#endif
+		EC_KEY_free(key_b);
+	}
+
+	EC_GROUP_free(group_a);
+	test_ctx->op = ECDH_SW_COMPUTE;
+	test_ctx->priv = key_a;
+	test_ctx->key_size = setup.key_bits >> 3;
+
+#ifdef DEBUG
+	ECParameters_print_fp(stdout, key_a);
+	EC_KEY_print_fp(stdout, key_a, 0);
+#endif
+	return test_ctx;
+
+free_ec_key_b:
+	EC_KEY_free(key_b);
+free_share_key:
+	free(req->share_key);
+free_req:
+	free(test_ctx->req);
+free_ctx:
+	free(test_ctx);
+free_ec_key_a:
+	EC_KEY_free(key_a);
+
+	return NULL;
+}
+
+static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+	struct ecc_test_ctx *test_ctx;
+	struct wd_ecc_key *ecc_key;
+	struct wd_ecc_out *ecc_out;
+	struct wd_ecc_in *ecc_in;
+	struct wd_ecc_req *req;
+	struct wd_ecc_point tmp;
+	struct wd_dtb d;
+	int ret;
+	u32 key_size;
+	size_t len;
+
+	req = malloc(sizeof(struct wd_ecc_req));
+	if (!req)
+		return NULL;
+	memset(req, 0, sizeof(struct wd_ecc_req));
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_req;
+	}
+	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
+
+	key_size = (wd_ecc_get_key_bits(setup.sess) + 7) / 8;
+	test_ctx->cp_share_key = malloc(key_size * 4);
+	if (!test_ctx->cp_share_key) {
+		HPRE_TST_PRT("%s: malloc fail!\n", __func__);
+		goto free_ctx;
+	}
+
+	ecc_out = wd_ecc_new_out(setup.sess);
+	if (!ecc_out) {
+		goto free_cp_key;
+	}
+
+	ecc_key = wd_ecc_get_key(setup.sess);
+	if (setup.key_from) {
+		if (op_type == X25519_GEN || op_type == X25519_COMPUTE ||
+		    op_type == X448_GEN || op_type == X448_COMPUTE ||
+		    op_type == X25519_ASYNC_GEN || op_type == X25519_ASYNC_COMPUTE ||
+		    op_type == X448_ASYNC_GEN || op_type == X448_ASYNC_COMPUTE) {
+			tmp.x.data = setup.except_pub_key;
+		} else {
+			tmp.x.data = setup.except_pub_key + 1; // step 0x04
+		}
+		tmp.x.bsize = key_size;
+		tmp.x.dsize = key_size;
+		tmp.y.data = tmp.x.data + key_size;
+		tmp.y.bsize = key_size;
+		tmp.y.dsize = key_size;
+		ecc_in = wd_ecc_new_in(setup.sess, &tmp);
+		if (!ecc_in) {
+			goto del_ecc_out;
+		}
+
+		if ((!g_is_set_prikey && is_async_test(op_type)) || !is_async_test(op_type)) {
+			d.data = setup.d;
+			d.dsize = setup.d_size;
+			d.bsize = setup.d_size;
+			ret = wd_ecc_set_prikey(ecc_key, &d);
+			if (ret) {
+				HPRE_TST_PRT("%s: set prikey err\n", __func__);
+				goto del_ecc_in;
+			}
+			g_is_set_prikey = true;
+		}
+
+		memcpy(test_ctx->cp_share_key, setup.cp_share_key, setup.cp_share_key_size);
+		test_ctx->cp_share_key_size = setup.cp_share_key_size;
+	} else {
+#if 0
+		if (op_type == X25519_GEN ||op_type == X25519_COMPUTE) { // x25519
+			ret = x_compkey_by_openssl(test_ctx, ctx, &ecc_in, ecc_key, key_size, 1);
+			if (ret == 0) {
+				return NULL;
+			}
+		} else if (op_type == X448_GEN ||op_type == X448_COMPUTE) { // x448
+			ret = x_compkey_by_openssl(test_ctx, ctx, &ecc_in, ecc_key, key_size, 2);
+			if (ret == 0) {
+				return NULL;
+			}
+		} else { // ecdh
+#endif
+		EC_KEY *key_a = NULL;
+		EC_GROUP *group_a;
+		EC_POINT *point;
+		BIGNUM *d;
+		struct wd_dtb dtb_d;
+		char *buff;
+
+		key_a = EC_KEY_new();
+		if (!key_a) {
+			printf("EC_KEY_new err!\n");
+			goto del_ecc_out;
+		}
+
+		group_a = EC_GROUP_new_by_curve_name(setup.nid);
+		if(!group_a) {
+			printf("EC_GROUP_new_by_curve_name err!\n");
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_set_group(key_a, group_a);
+		if(ret != 1) {
+			printf("EC_KEY_set_group err.\n");
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		ret = EC_KEY_generate_key(key_a);
+		if(ret != 1) {
+			printf("EC_KEY_generate_key err.\n");
+			ECParameters_print_fp(stdout, key_a);
+			EC_KEY_print_fp(stdout, key_a, 4);
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		d = EC_KEY_get0_private_key(key_a);
+		if (!d) {
+			printf("EC_KEY_get0_private_key err.\n");
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		buff = malloc(key_size);
+		if (!buff) {
+			printf("malloc fail!\n");
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		dtb_d.dsize = BN_bn2bin(d, (void *)buff);
+		dtb_d.bsize = key_size;
+		dtb_d.data = buff;
+		ret = wd_ecc_set_prikey(ecc_key, &dtb_d);
+		if (ret) {
+			HPRE_TST_PRT("%s: set prikey err\n", __func__);
+			EC_KEY_free(key_a);
+			free(buff);
+			goto del_ecc_out;
+		}
+		free(buff);
+
+		point = EC_KEY_get0_public_key(key_a);
+		if (!point) {
+			printf("EC_KEY_get0_public_key err.\n");
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		len = EC_POINT_point2buf(group_a, point, 4, &buff, NULL);
+		if (len != 2 * key_size + 1) {
+			printf("EC_POINT_point2buf err.\n");
+		}
+
+		EC_GROUP_free(group_a);
+
+		tmp.x.data = buff + 1;
+		tmp.x.dsize = key_size;
+		tmp.x.bsize = key_size;
+		tmp.y.data = tmp.x.data + key_size;
+		tmp.y.dsize = key_size;
+		tmp.y.bsize = key_size;
+		ecc_in = wd_ecc_new_in(setup.sess, &tmp);
+		if (!ecc_in) {
+			printf("wd_ecc_new_in err.\n");
+			EC_KEY_free(key_a);
+			free(buff);
+			goto del_ecc_out;
+		}
+
+#ifdef DEBUG
+		//print_data(buff + 1, len - 1, "except_pub_key");
+#endif
+		free(buff);
+
+		ret = ECDH_compute_key(test_ctx->cp_share_key, key_size * 4,
+			point, key_a, NULL);
+		if (ret <= 0) {
+			printf("ECDH_compute_key err.\n");
+			EC_KEY_free(key_a);
+			goto del_ecc_out;
+		}
+
+		test_ctx->cp_share_key_size = ret;
+		EC_KEY_free(key_a);
+	}
+	//}
+
+#ifdef DEBUG
+	//struct wd_dtb *p;
+
+	//wd_ecc_get_prikey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+	//print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "prikey");
+	//print_data(test_ctx->cp_share_key, test_ctx->cp_share_key_size, "cp_share_key");
+#endif
+
+	req->op_type = WD_ECXDH_COMPUTE_KEY;
+	req->src = ecc_in;
+	req->dst = ecc_out;
+	test_ctx->req = req;
+	test_ctx->op = setup.op_type;
+	test_ctx->priv = (void *)(setup.sess); //init ctx
+	test_ctx->key_size = key_size;
+
+	return test_ctx;
+
+del_ecc_in:
+	(void)wd_ecc_del_in(setup.sess, ecc_in);
+del_ecc_out:
+	(void)wd_ecc_del_out(setup.sess, ecc_out);
+free_cp_key:
+	free(test_ctx->cp_pub_key);
+free_ctx:
+	free(test_ctx);
+free_req:
+	free(req);
+
+	return NULL;
+}
+
+
+struct ecc_test_ctx *ecc_create_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+	struct ecc_test_ctx *test_ctx = NULL;
+
+	switch (setup.op_type) {
+		case ECDH_SW_GENERATE:
+		{
+			if (optype == ECDH_GEN || optype == ECDH_ASYNC_GEN) {
+				test_ctx = ecc_create_sw_gen_test_ctx(setup, optype);
+			} else if (optype == X25519_GEN || optype == X25519_ASYNC_GEN ||
+				   optype == X448_GEN || optype == X448_ASYNC_GEN) {
+				//test_ctx = x_create_sw_gen_test_ctx(setup, optype);
+			}
+		}
+		break;
+		case ECDH_HW_GENERATE:
+		{
+			test_ctx = ecc_create_hw_gen_test_ctx(setup, optype);
+		}
+		break;
+		case ECDH_SW_COMPUTE:
+		{
+			if (optype == ECDH_COMPUTE || optype == ECDH_ASYNC_COMPUTE) {
+				test_ctx = ecc_create_sw_compute_test_ctx(setup, optype);
+			} else if (optype == X25519_COMPUTE || optype == X25519_ASYNC_COMPUTE ||
+				optype == X448_COMPUTE || optype == X448_ASYNC_COMPUTE) {
+				//test_ctx = x_create_sw_compute_test_ctx(setup, optype);
+			}
+		}
+		break;
+		case ECDH_HW_COMPUTE:
+		{
+			test_ctx = ecc_create_hw_compute_test_ctx(setup, optype);
+		}
+		break;
+		case ECC_HW_SIGN:
+		{
+			//test_ctx = ecc_create_hw_sign_test_ctx(setup, optype);
+		}
+		break;
+		case ECC_HW_VERF:
+		{
+			//test_ctx = ecc_create_hw_verf_test_ctx(setup, optype);
+		}
+		break;
+		case ECC_SW_SIGN:
+		{
+			//test_ctx = ecc_create_sw_sign_test_ctx(setup, optype);
+		}
+		break;
+		case ECC_SW_VERF:
+		{
+			//test_ctx = ecc_create_sw_verf_test_ctx(setup, optype);
+		}
+		break;
+		default:
+		break;
+	}
+
+	if (test_ctx)
+		test_ctx->setup = setup;
+
+	return test_ctx;
+}
+
+int ecdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
+{
+	int key_size = (g_config.key_bits + 7) / 8;
+
+	if (!setup)
+		return -1;
+
+	//if (g_config.perf_test || op_type == ECDH_ASYNC_GEN || op_type == ECDH_ASYNC_COMPUTE)
+	if (g_config.perf_test)
+		setup->key_from = 1; //0 - Openssl  1 - Designed
+	else
+		setup->key_from = 0; //0 - Openssl  1 - Designed
+
+	setup->key_bits = g_config.key_bits;
+
+	if (setup->nid == 714 || g_config.key_bits == 256) { //NID_secp256k1
+		setup->d = ecdh_da_secp256k1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp256k1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp256k1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp256k1;
+		setup->d_size = sizeof(ecdh_da_secp256k1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp256k1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp256k1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp256k1);
+
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp256k1;
+		setup->degist_size = sizeof(ecc_except_e_secp256k1);
+		setup->kinv = ecc_except_kinv_secp256k1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp256k1);
+		setup->rp = ecdh_cp_pubkey_secp256k1 + 1;
+		setup->rp_size = key_size;
+		setup->cp_sign = ecdh_cp_pubkey_secp256k1 + 1; //todo
+		setup->cp_sign_size = 32; //todo
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp256k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+	} else if (setup->nid == 706 || g_config.key_bits == 128) {
+		setup->d = ecdh_da_secp128k1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp128k1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp128k1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp128k1;
+		setup->d_size = sizeof(ecdh_da_secp128k1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp128k1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp128k1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp128k1);
+
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp128k1;
+		setup->degist_size = sizeof(ecc_except_e_secp128k1);
+		setup->kinv = ecc_except_kinv_secp128k1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp128k1);
+		setup->rp = ecdh_cp_pubkey_secp128k1 + 1;
+		setup->rp_size = key_size;
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp256k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+
+	} else if (setup->nid == 711 || g_config.key_bits == 192) {
+		setup->d = ecdh_da_secp192k1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp192k1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp192k1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp192k1;
+		setup->d_size = sizeof(ecdh_da_secp192k1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp192k1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp192k1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp192k1);
+
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp192k1;
+		setup->degist_size = sizeof(ecc_except_e_secp192k1);
+		setup->kinv = ecc_except_kinv_secp192k1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp192k1);
+		setup->rp = ecdh_cp_pubkey_secp192k1 + 1;
+		setup->rp_size = key_size;
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp256k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+	} else if (setup->nid == 712 || g_config.key_bits == 224) {
+#if 1
+		setup->d = ecdh_da_secp224r1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp224r1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp224r1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp224r1;
+		setup->d_size = sizeof(ecdh_da_secp224r1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp224r1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp224r1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp224r1);
+#endif
+#if 0
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp224r1;
+		setup->degist_size = sizeof(ecc_except_e_secp224r1);
+		setup->kinv = ecc_except_kinv_secp224r1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp224r1);
+		setup->rp = ecdh_cp_pubkey_secp224r1 + 1;
+		setup->rp_size = key_size;
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp224r1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp224r1);
+#endif
+	} else if (setup->nid == 929 || g_config.key_bits == 320) {
+		setup->d = ecdh_da_secp320k1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp320k1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp320k1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp320k1;
+		setup->d_size = sizeof(ecdh_da_secp320k1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp320k1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp320k1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp320k1);
+
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp320k1;
+		setup->degist_size = sizeof(ecc_except_e_secp320k1);
+		setup->kinv = ecc_except_kinv_secp320k1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp320k1);
+		setup->rp = ecdh_cp_pubkey_secp192k1 + 1;
+		setup->rp_size = key_size;
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp256k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+
+	} else if (setup->nid == 715 || g_config.key_bits == 384) {
+		setup->d = ecdh_da_secp384r1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp384r1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp384r1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp384r1;
+		setup->d_size = sizeof(ecdh_da_secp384r1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp384r1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp384r1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp384r1);
+
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp384r1;
+		setup->degist_size = sizeof(ecc_except_e_secp384r1);
+		setup->kinv = ecc_except_kinv_secp384r1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp384r1);
+		setup->rp = ecdh_cp_pubkey_secp384r1 + 1;
+		setup->rp_size = key_size;
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp256k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+
+	} else if (setup->nid == 716 || g_config.key_bits == 521) {
+		setup->d = ecdh_da_secp521k1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp521k1;
+		setup->cp_pub_key = ecdh_cp_pubkey_secp521k1;
+		setup->cp_share_key = ecdh_cp_sharekey_secp521k1;
+		setup->d_size = sizeof(ecdh_da_secp521k1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp521k1);
+		setup->cp_pub_key_size = sizeof(ecdh_cp_pubkey_secp521k1);
+		setup->cp_share_key_size = sizeof(ecdh_cp_sharekey_secp521k1);
+
+		/* ecc sign */
+		setup->degist = ecc_except_e_secp521k1;
+		setup->degist_size = sizeof(ecc_except_e_secp521k1);
+		setup->kinv = ecc_except_kinv_secp521k1;
+		setup->kinv_size = sizeof(ecc_except_kinv_secp521k1);
+		setup->rp = ecdh_cp_pubkey_secp521k1 + 1;
+		setup->rp_size = key_size;
+
+		/* ecc verf */
+		setup->sign = ecc_cp_sign_secp256k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+
+	} else {
+		HPRE_TST_PRT("init test ctx setup not find this bits %d or nid %d\n",
+				g_config.key_bits, setup->nid);
+		return -1;
+	}
+
+	return 0;
+}
+
+int ecdh_generate_key(void *test_ctx, void *tag)
+{
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == ECDH_SW_GENERATE) {
+#if 0  // x25519/x448, add later
+		if (t_c->is_x25519_x448){
+			EVP_PKEY_METHOD *pmeth;
+			EVP_PKEY_CTX pkey_ctx;
+			size_t key_sz;
+			EVP_PKEY pkey;
+			ECX_KEY ecx;
+
+			memset(&pkey_ctx, 0, sizeof(EVP_PKEY_CTX));
+			memset(&pkey, 0, sizeof(EVP_PKEY));
+			memset(&ecx, 0, sizeof(ECX_KEY));
+
+			if (t_c->key_size == 32) { // x25519
+				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
+				ecx.privkey = x25519_aprikey;
+				memcpy(ecx.pubkey, x25519_x_param, 32);
+			} else { // if (t_c->key_size == 56) { // x448
+				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
+				ecx.privkey = x448_aprikey;
+				memcpy(ecx.pubkey, x448_x_param, 56);
+			}
+			pkey.pkey.ecx = &ecx;
+			pkey_ctx.pkey = &pkey;
+			pkey_ctx.peerkey = &pkey;
+
+			uint8_t *out_pub_key = calloc(t_c->key_size, sizeof(char));
+
+			ret = pmeth->derive(&pkey_ctx, out_pub_key, &key_sz);
+			if (ret == 0) {
+				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
+				return -1;
+			}
+			#if 0
+			int i;
+			for (i = 0; i < t_c->key_size; i++) {
+				if (i % 12 == 0)
+					printf("\n");
+				printf("0x%x, ", out_pub_key[i]);
+			}printf("\n");
+			#endif
+			free(out_pub_key);
+		} else
+#endif
+		{
+			EC_KEY *ec_key = t_c->priv;
+
+			if (!EC_KEY_generate_key(ec_key)) {
+				HPRE_TST_PRT("EC_KEY_generate_key fail!\n");
+				return -1;
+			}
+		//#ifdef DEBUG
+			ECParameters_print_fp(stdout, ec_key);
+			EC_KEY_print_fp(stdout, ec_key, 0);
+		//#endif
+		}
+	} else {
+		struct wd_ecc_req *req = t_c->req;
+		handle_t sess = (handle_t)t_c->priv;
+try_again:
+		if (tag)
+			ret = wd_do_ecc_async(sess, req);
+		else
+			ret = wd_do_ecc_sync(sess, req);
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wd_do_ecc fail!\n");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+
+int ecdh_compute_key(void *test_ctx, void *tag)
+{
+	struct ecc_test_ctx *t_c = test_ctx;
+	int ret = 0;
+
+	if (t_c->op == ECDH_SW_COMPUTE) {
+#if 0
+		if (t_c->is_x25519_x448){
+			EVP_PKEY_METHOD *pmeth;
+			EVP_PKEY_CTX pkey_ctx;
+			EVP_PKEY pkey;
+			ECX_KEY ecx;
+			size_t key_sz;
+			int ret;
+
+			memset(&pkey_ctx, 0, sizeof(EVP_PKEY_CTX));
+			memset(&pkey, 0, sizeof(EVP_PKEY));
+			memset(&ecx, 0, sizeof(ECX_KEY));
+
+			if (t_c->key_size == 32) { // x25519
+				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
+				ecx.privkey = x25519_aprikey;
+				memcpy(ecx.pubkey, x25519_bpubkey, 32);
+			} else { // if (t_c->key_size == 56) { // x448
+				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
+				ecx.privkey = x448_aprikey;
+				memcpy(ecx.pubkey, x448_bpubkey, 56);
+			}
+			pkey.pkey.ecx = &ecx;
+			pkey_ctx.pkey = &pkey;
+			pkey_ctx.peerkey = &pkey;
+
+			uint8_t *out_shared_key = calloc(t_c->key_size, sizeof(char));
+
+			ret = pmeth->derive(&pkey_ctx, out_shared_key, &key_sz);
+			if (ret <= 0) {
+				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
+				return -1;
+			}
+			#if 0
+			int i;
+			for (i = 0; i < t_c->key_size; i++) {
+				if (i % 12 == 0)
+					printf("\n");
+				printf("0x%x, ", out_shared_key[i]);
+			}printf("\n");
+			#endif
+			free(out_shared_key);
+		} else {
+#endif
+		struct ecdh_sw_opdata *req = t_c->req;
+		EC_KEY *ec_key = t_c->priv;
+		ret = ECDH_compute_key(req->share_key, req->share_key_size,
+			req->except_pub_key, ec_key, NULL);
+		if (ret <= 0) {
+			HPRE_TST_PRT("ECDH_compute_key fail!\n");
+			return -1;
+		}
+		req->share_key_size = ret;
+		//}
+#ifdef DEBUG
+	//ECParameters_print_fp(stdout, ec_key);
+	//print_data(req->share_key, ret, "openssl share key");
+
+#endif
+	} else {
+		struct wd_ecc_req *req = t_c->req;
+		handle_t sess = (handle_t)t_c->priv;
+try_again:
+
+		if (tag)
+			ret = wd_do_ecc_async(sess, req);
+		else
+			ret = wd_do_ecc_sync(sess, req);
+
+		if (ret == -WD_EBUSY) {
+			usleep(100);
+			goto try_again;
+		} else if (ret) {
+			HPRE_TST_PRT("wd_do_ecc fail!\n");
+			return -1;
+		}
+#ifdef DEBUG
+		//print_data(req->pri, req->pri_bytes,"hpre share key");
+#endif
+	}
+
+	return 0;
+}
+
+int ecc_point1buf(struct wd_ecc_point *in, int ksz, void *buf, int bsz)
+{
+	struct wd_dtb *x;
+	int ret = 0;
+
+	if (!buf || !in)
+		return -1;
+
+	x = &in->x;
+
+	ret = x->dsize;
+	if (ret > bsz)
+		return -1;
+
+	memcpy(buf, x->data, x->dsize);
+
+	return ret;
+}
+
+int ecc_point2buf(struct wd_ecc_point *in, int ksz, void *buf, int bsz)
+{
+	struct wd_dtb *x, *y;
+	int ret = 0;
+
+	if (!buf || !in)
+		return -1;
+
+	x = &in->x;
+	y = &in->y;
+
+	ret = x->dsize + y->dsize;
+	if (ret > bsz)
+		return -1;
+#ifdef DEBUG
+	//print_data(x->data, x->dsize, "x");
+	//print_data(y->data, y->dsize, "y");
+#endif
+	memcpy(buf, x->data, x->dsize);
+	memcpy(buf + x->dsize, y->data, y->dsize);
+
+	return ret;
+}
+
+int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
+{
+	struct wd_ecc_req *req = test_ctx->req;
+	handle_t sess = (handle_t)test_ctx->priv;
+	unsigned char *cp_key;
+	u32 cp_size;
+	u32 key_size = (wd_ecc_get_key_bits(sess) + 7) / 8;
+	void *o_buf;
+	int ret;
+
+	//if (!g_config.check)
+	//	return 0;
+
+	if (test_ctx->op == ECDH_HW_GENERATE ||
+		test_ctx->op == ECDH_HW_COMPUTE) {
+		struct wd_ecc_point *key = NULL;
+		BIGNUM *tmp;
+		__u32 out_sz;
+
+		if (test_ctx->op == ECDH_HW_GENERATE) {
+			cp_key = test_ctx->cp_pub_key;
+			cp_size = test_ctx->cp_pub_key_size;
+		} else {
+			cp_key = test_ctx->cp_share_key;
+			cp_size = test_ctx->cp_share_key_size;
+		}
+
+		wd_ecc_get_out_params(req->dst, &key);
+		if (test_ctx->is_x25519_x448)
+			o_buf = malloc(key_size);
+		else
+			o_buf = malloc(key_size * 2);
+
+		if (!o_buf) {
+			HPRE_TST_PRT("malloc fail!\n");
+			return -1;
+		}
+
+		if (test_ctx->op == ECDH_HW_GENERATE) {
+			if (test_ctx->is_x25519_x448) {
+				ret = ecc_point1buf(key, key_size, o_buf, key_size);
+				if (ret < 0) {
+					HPRE_TST_PRT("ecc_point1buf fail!\n");
+					free(o_buf);
+					return -1;
+				}
+			} else {
+				ret = ecc_point2buf(key, key_size, o_buf, key_size * 2);
+				if (ret < 0) {
+					HPRE_TST_PRT("ecc_point2buf fail!\n");
+					free(o_buf);
+					return -1;
+				}
+			}
+			out_sz = ret;
+			tmp = BN_bin2bn(cp_key, key_size, NULL);
+			ret = BN_bn2bin(tmp, cp_key);
+			cp_size = ret;
+			BN_free(tmp);
+			if (!test_ctx->is_x25519_x448) {
+				tmp = BN_bin2bn(cp_key + key_size, key_size, NULL);
+				ret = BN_bn2bin(tmp, cp_key + ret);
+				cp_size += ret;
+				BN_free(tmp);
+			}
+
+		} else {
+			ret = key->x.dsize;
+			out_sz = ret;
+			memcpy(o_buf, key->x.data, ret);
+			tmp = BN_bin2bn(cp_key, key_size, NULL);
+			ret = BN_bn2bin(tmp, cp_key);
+			cp_size = ret;
+			BN_free(tmp);
+		}
+
+		if (out_sz != cp_size || memcmp(cp_key, o_buf, cp_size)) {
+			HPRE_TST_PRT("ecdh op %d mismatch!\n", test_ctx->op);
+
+//#ifdef DEBUG
+			struct wd_ecc_key *ecc_key;
+			struct wd_dtb *p = NULL;
+
+			ecc_key = wd_ecc_get_key((handle_t)(test_ctx->priv));
+			wd_ecc_get_prikey_params(ecc_key, &p, NULL, NULL, NULL, NULL, NULL);
+
+			print_data(p->data, ECC_PRIKEY_SZ(p->bsize), "prikey");
+			if (test_ctx->op == ECDH_HW_GENERATE)
+				print_data(test_ctx->cp_pub_key, test_ctx->cp_pub_key_size, "cp_pub_key");
+			else
+				print_data(test_ctx->cp_share_key, test_ctx->cp_share_key_size, "cp_share_key");
+			print_data(o_buf, out_sz, "hpre out");
+			print_data(cp_key, cp_size, "openssl out");
+//#endif
+			free(o_buf);
+			return -1;
+		}
+		free(o_buf);
+	} /*else if (test_ctx->op == ECC_HW_SIGN) {
+		ret = ecc_sign_result_check(test_ctx, is_async);
+		if (ret)
+			return ret;
+	} else if (test_ctx->op == ECC_HW_VERF) {
+		if (req->status != 0) {
+			HPRE_TST_PRT("hpre verf faild = %d!\n", req->status);
+			return -1;
+		}
+	} */ else {}
+
+	return 0;
+}
+
+
+void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
+{
+	if (!test_ctx)
+		return;
+
+	if (ECDH_SW_GENERATE == test_ctx->op) {
+		if (test_ctx->is_x25519_x448 == 1) {
+
+		} else {
+			EC_KEY_free(test_ctx->priv);
+		}
+	} else if (ECDH_SW_COMPUTE == test_ctx->op) {
+		struct ecdh_sw_opdata *req = test_ctx->req;
+
+		if (test_ctx->is_x25519_x448 == 1) {
+
+		} else {
+			free(req->share_key);
+			free(req);
+			EC_KEY_free(test_ctx->priv);
+		}
+	} else if (ECDH_HW_GENERATE == test_ctx->op) {
+		struct wd_ecc_req *req = test_ctx->req;
+
+		wd_ecc_del_out((handle_t)(test_ctx->priv), req->dst);
+		free(req);
+		free(test_ctx->cp_pub_key);
+	} else if (ECDH_HW_COMPUTE == test_ctx->op) {
+		struct wd_ecc_req *req = test_ctx->req;
+
+		wd_ecc_del_out((handle_t)test_ctx->priv, req->dst);
+		wd_ecc_del_in((handle_t)test_ctx->priv, req->src);
+		free(req);
+		free(test_ctx->cp_share_key);
+	}/* else if (ECC_SW_SIGN == test_ctx->op) {
+		struct ecdh_sw_opdata *req = test_ctx->req;
+
+		free(req->sign);
+		BN_free(req->except_kinv);
+		free(req);
+		EC_KEY_free(test_ctx->priv);
+	} else if (ECC_HW_SIGN == test_ctx->op) {
+		struct wd_ecc_req *req = test_ctx->req;
+
+		if (test_ctx->priv1)
+			EC_KEY_free(test_ctx->priv1);
+
+		wd_ecc_del_out(test_ctx->priv, req->dst);
+		wd_ecc_del_in(test_ctx->priv, req->src);
+		free(req);
+	} else if (ECC_SW_VERF == test_ctx->op) {
+		struct ecdh_sw_opdata *req = test_ctx->req;
+
+		free(req);
+		EC_KEY_free(test_ctx->priv);
+	} else if (ECC_HW_VERF == test_ctx->op) {
+		struct wd_ecc_req *req = test_ctx->req;
+
+		wd_ecc_del_in(test_ctx->priv, req->src);
+		free(req);
+	} */ else {
+		HPRE_TST_PRT("%s: no op %d\n", __func__, test_ctx->op);
+	}
+
+	free(test_ctx);
+}
+
+static void *_hpre_ecc_sys_test_thread(void *data)
+{
+	struct test_hpre_pthread_dt *pdata = data;
+	struct dh_user_tag_info *pTag = NULL;
+	struct ecc_test_ctx *test_ctx;
+	struct ecc_test_ctx_setup setup;
+	struct timeval cur_tval;
+	enum alg_op_type opType;
+	//float time_used, speed = 0.0;
+	int thread_num;
+	cpu_set_t mask;
+	int pid = getpid();
+	int thread_id = (int)syscall(__NR_gettid);
+	int ret, cpuid;
+	handle_t sess = 0llu;
+	struct wd_ecc_sess_setup ecc_setup;
+	struct wd_ecc_curve param;
+	struct wd_ecc_req *req;
+	int count_p = 0;
+
+	CPU_ZERO(&mask);
+	cpuid = pdata->cpu_id;
+	opType = pdata->op_type;
+	thread_num = pdata->thread_num;
+
+	if (g_config.perf_test && (!g_config.times && !g_config.seconds)) {
+		HPRE_TST_PRT("g_config.times or  g_config.seconds err\n");
+		return NULL;
+	}
+
+	CPU_SET(cpuid, &mask);
+	if (cpuid) {
+		ret = pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+		if (ret < 0) {
+			HPRE_TST_PRT("Proc-%d, thrd-%d:set affinity fail!\n",
+						 pid, thread_id);
+			return NULL;
+		}
+		HPRE_TST_PRT("Proc-%d, thrd-%d bind to cpu-%d!\n",
+					 pid, thread_id, cpuid);
+	}
+
+	if (opType > MAX_DH_TYPE && opType < MAX_ECDH_TYPE) {
+		ret = get_ecc_nid(g_config.curve, &setup.nid, &setup.curve_id);
+		if (ret < 0) {
+			HPRE_TST_PRT("%s not find curve!\n", __func__);
+			return NULL;
+		}
+	}
+
+	if (!g_config.soft_test) {
+		memset(&ecc_setup, 0, sizeof(ecc_setup));
+		if (opType > MAX_DH_TYPE && opType < MAX_ECDH_TYPE) {
+			if (g_config.curve == NULL) { // by set parameters
+				ecc_setup.cv.type = WD_CV_CFG_PARAM;
+				fill_ecdh_param_of_curve(&param);
+				ecc_setup.cv.cfg.pparam = &param;
+			} else {
+				ecc_setup.cv.type = WD_CV_CFG_ID;
+				ecc_setup.cv.cfg.id = setup.curve_id;
+			}
+		}
+		ecc_setup.key_bits = g_config.key_bits;
+		ecc_setup.rand.cb = hpre_get_rand;
+	}
+
+	if (ecdh_init_test_ctx_setup(&setup, opType)) {
+		HPRE_TST_PRT("%s, ecdh_init_test_ctx_setup fail!\n", __func__);
+		return NULL;
+	}
+
+	if (opType == ECDSA_SIGN || opType == SM2_SIGN || opType == ECDSA_ASYNC_SIGN)
+		setup.op_type = (g_config.soft_test) ? ECC_SW_SIGN: ECC_HW_SIGN;
+	else if (opType == ECDSA_VERF || opType == SM2_VERF || opType == ECDSA_ASYNC_VERF)
+		setup.op_type = (g_config.soft_test) ? ECC_SW_VERF: ECC_HW_VERF;
+	else if (opType == SM2_ENC)
+		setup.op_type = (g_config.soft_test) ? SM2_SW_ENC: SM2_HW_ENC;
+	else if (opType == SM2_DEC)
+		setup.op_type = (g_config.soft_test) ? SM2_SW_DEC: SM2_HW_DEC;
+	else if (opType == ECDH_ASYNC_GEN || opType == ECDH_GEN ||
+		 opType == X25519_ASYNC_GEN || opType == X25519_GEN ||
+		 opType == X448_ASYNC_GEN || opType == X448_GEN)
+		setup.op_type = (g_config.soft_test) ? ECDH_SW_GENERATE: ECDH_HW_GENERATE;
+	else if (opType == ECDH_ASYNC_COMPUTE || opType == ECDH_COMPUTE ||
+		 opType == X25519_ASYNC_COMPUTE || opType == X25519_COMPUTE ||
+		 opType == X448_ASYNC_COMPUTE || opType == X448_COMPUTE)
+		setup.op_type = (g_config.soft_test) ? ECDH_SW_COMPUTE: ECDH_HW_COMPUTE;
+
+	ecc_setup.alg = "ecdh";
+new_test_again:
+	if (!g_config.soft_test) {
+		sess = wd_ecc_alloc_sess(&ecc_setup);
+		if (!sess) {
+			HPRE_TST_PRT("wd_ecc_alloc_sess failed\n");
+			return NULL;
+		}
+		setup.sess = sess;
+	}
+
+new_test_with_no_req_ctx: // async test
+
+	test_ctx = ecc_create_test_ctx(setup, opType);
+	if (!test_ctx) {
+		HPRE_TST_PRT("ecc_create_test_ctx failed\n");
+		return NULL;
+	}
+	if (opType >= X25519_GEN && opType <= X448_ASYNC_COMPUTE)
+		test_ctx->is_x25519_x448 = 1;
+
+	//opstr_idx = test_ctx->op;
+	req = test_ctx->req;
+
+	do {
+		if (opType == ECDH_ASYNC_GEN ||
+			opType == ECDH_ASYNC_COMPUTE) {
+
+			pTag = malloc(sizeof(struct dh_user_tag_info));
+			if (!pTag) {
+				HPRE_TST_PRT("malloc pTag fail!\n");
+				goto fail_release;
+			}
+
+			pTag->test_ctx = test_ctx;
+			pTag->thread_data = pdata;
+			pTag->pid = pid;
+			pTag->thread_id = thread_id;
+			if (g_config.perf_test)
+				;//req->cb = _ecdh_perf_cb;
+			else
+				//req->cb = _ecdh_cb;
+			req->cb_param = pTag;
+		}
+
+		if (opType == ECDSA_ASYNC_SIGN || opType == ECDSA_SIGN) {
+			/*if (ecdsa_sign(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}*/
+		} else if (opType == SM2_SIGN || opType == SM2_ASYNC_SIGN) {
+			/*if (sm2_sign(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}*/
+		} else if (opType == ECDSA_VERF || opType == ECDSA_ASYNC_VERF) {
+			/*if (ecdsa_verf(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}*/
+		} else if (opType == SM2_VERF || opType == SM2_ASYNC_VERF) {
+			/*if (sm2_verf(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}*/
+		} else if (opType == SM2_ENC || opType == SM2_ASYNC_ENC) {
+			/*if (sm2_enc(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}*/
+		} else if (opType == SM2_DEC || opType == SM2_ASYNC_DEC) {
+			/*if (sm2_dec(test_ctx, pTag)) { // todo
+				ret = -1;
+				goto fail_release;
+			}*/
+		} else if (opType == ECDH_ASYNC_GEN || opType == ECDH_GEN ||
+			   opType == X25519_ASYNC_GEN || opType == X25519_GEN ||
+			   opType == X448_ASYNC_GEN || opType == X448_GEN) {
+			if (ecdh_generate_key(test_ctx, pTag)) {
+				ret = -1;
+				goto fail_release;
+			}
+		} else if (opType == ECDH_ASYNC_COMPUTE || opType == ECDH_COMPUTE ||
+			   opType == X25519_ASYNC_COMPUTE || opType == X25519_COMPUTE ||
+			   opType == X448_ASYNC_COMPUTE || opType == X448_COMPUTE) {
+			if (ecdh_compute_key(test_ctx, pTag)) {
+				ret = -1;
+				goto fail_release;
+			}
+		}
+		pdata->send_task_num++;
+		count_p++;
+		if (!is_async_test(opType)) {
+			if (g_config.soft_test && !g_config.perf_test) {
+				ecc_del_test_ctx(test_ctx);
+				goto new_test_with_no_req_ctx;
+			} else { //if (!g_config.perf_test) {
+				if (ecc_result_check(test_ctx, 0)) {
+					ret = -1;
+					goto fail_release;
+				}
+
+				if (is_allow_print(pdata->send_task_num, opType, thread_num)) {
+					HPRE_TST_PRT("Proc-%d, %d-TD: %s %uth succ!.\n",
+						getpid(), (int)syscall(__NR_gettid),
+						ecc_op_str[test_ctx->op], pdata->send_task_num);
+				}
+
+				ecc_del_test_ctx(test_ctx);
+				wd_ecc_free_sess((uintptr_t)test_ctx->priv);
+				test_ctx = NULL;
+
+				if (is_exit(pdata))
+					goto func_test_exit;
+
+				goto new_test_again;
+			}
+		} else {
+			if (is_exit(pdata))
+				break;
+
+			goto new_test_with_no_req_ctx;
+		}
+	} while(!is_exit(pdata));
+
+	if (!is_async_test(opType))
+		pdata->recv_task_num = pdata->send_task_num;
+
+	if (g_config.perf_test) {
+		gettimeofday(&cur_tval, NULL);
+#if 0
+		time_used = (float)((cur_tval.tv_sec -pdata->start_tval.tv_sec) * 1000000 +
+				cur_tval.tv_usec - pdata->start_tval.tv_usec);
+		if (g_config_times || g_config.seconds){
+			speed = pdata->send_task_num / time_used * 1000000;
+		} else if (t_times) {
+			speed = 1 / (time_used / t_times) * 1000;
+		}
+
+		HPRE_TST_PRT("Proc-%d, %d-TD: ecc %s send %u task, recv %u task, run %0.1f s at %0.3f ops\n",
+				id, thread_id, ecc_op_str[test_ctx->op],
+			pdata->send_task_num, pdata->recv_task_num,
+			time_used / 1000000, speed);
+#endif
+	}
+
+	/* wait for recv finish */
+	while (pdata->send_task_num != pdata->recv_task_num)
+		usleep(1000);
+
+	ret = 0;
+
+fail_release:
+	if (!g_config.soft_test && !is_async_test(opType))
+		wd_ecc_free_sess((uintptr_t)test_ctx->priv);
+	if (!is_async_test(opType))
+		ecc_del_test_ctx(test_ctx);
+#if 0
+	if (ret)
+		HPRE_TST_PRT("%s test fail!\n", ecc_op_str[opstr_idx]);
+	else
+		HPRE_TST_PRT("%s test succ!\n", ecc_op_str[opstr_idx]);
+#endif
+	HPRE_TST_PRT("ecc sys test end!\n");
+	return NULL;
+
+func_test_exit:
+//	HPRE_TST_PRT("%s test succ!\n", ecc_op_str[opstr_idx]);
+	HPRE_TST_PRT("ecc sys test end!\n");
+	return NULL;
+}
+
 static void *_hpre_dh_sys_test_thread(void *data)
 {
 	struct test_hpre_pthread_dt *pdata = data;
@@ -2184,7 +3862,7 @@ new_test_again:
 		usleep(1000 * 1000);
 		if (g_config.with_log)
 			HPRE_TST_PRT("<< Proc-%d, %d-TD: total send %u: recv %u, wait recv finish...!\n",
-				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);			
+				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);
 	}
 
 fail_release:
@@ -2341,7 +4019,7 @@ static int get_rsa_key_from_test_sample(handle_t sess, char *pubkey_file,
 		HPRE_TST_PRT("set rsa pubkey failed %d!\n", ret);
 		goto gen_fail;
 	}
-  
+
 	if (pubkey_file && is_file) {
 		ret = hpre_test_write_to_file((unsigned char *)wd_e.data, g_config.key_bits >> 2,
 					  pubkey_file, -1, 1);
@@ -2577,7 +4255,7 @@ static int test_rsa_key_gen(handle_t sess, char *pubkey_file,
         	HPRE_TST_PRT("failed to malloc!\n");
         	goto gen_fail;
         }
-        
+
         memcpy(tmp, wd_e.data, wd_e.dsize);
         crypto_bin_to_hpre_bin(wd_e.data, tmp, wd_e.bsize, wd_e.dsize);
         memcpy(tmp, wd_n.data, wd_n.dsize);
@@ -3024,7 +4702,7 @@ int hpre_test_result_check(handle_t sess,  struct wd_rsa_req *req, void *key)
 			HPRE_TST_PRT("prv decrypto result  mismatch!\n");
                         print_data(ssl_out, req->src_bytes, "openssl out");
                         print_data(req->dst, req->dst_bytes, "hpre out");
-                        RSA_print_fp(stdout, rsa, 4);  
+                        RSA_print_fp(stdout, rsa, 4);
 			return -EINVAL;
 		}
 		free(ssl_out);
@@ -3361,7 +5039,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 			g_config.trd_mode, g_config.trd_num, g_config.op,
 			g_config.alg_mode, g_config.key_bits, speed);
 	HPRE_TST_PRT("<< test finish!\n");
-	
+
 	return 0;
 }
 
@@ -3459,7 +5137,7 @@ static void _rsa_cb(void *req_t)
 					HPRE_TST_PRT("prv decrypto result  mismatch!\n");
 					return;
 				}
-		}		
+		}
 	}
 
 	if (is_allow_print(cnt, op_type, 1))
@@ -3738,7 +5416,7 @@ try_do_again:
 		usleep(1000 * 1000);
 		if (g_config.with_log)
 			HPRE_TST_PRT("<< Proc-%d, %d-TD: total send %u: recv %u, wait recv finish...!\n",
-				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);			
+				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);
 	}
 
 
@@ -4223,7 +5901,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 			g_config.trd_mode, g_config.trd_num, g_config.op,
 			g_config.alg_mode, g_config.key_bits, speed);
 	HPRE_TST_PRT("<< test finish!\n");
-	
+
 	return 0;
 }
 
@@ -4234,7 +5912,7 @@ void *_hpre_sys_test_thread(void *data)
 
 	op_type = pdata->op_type;
 	if (op_type > MAX_DH_TYPE && op_type < MAX_ECC_TYPE) {
-		// return _ecc_sys_test_thread(data); will be added later
+		return _hpre_ecc_sys_test_thread(data);
 	} else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE) {
 		return _hpre_dh_sys_test_thread(data);
 	} else {
@@ -4285,11 +5963,13 @@ static int parse_cmd_line(int argc, char *argv[])
 		switch (c) {
 		case 0:
 			if (!strncmp(long_options[option_index].name, "mode", 4)) {
-				snprintf(g_config.alg_mode, sizeof(g_config.alg_mode), "%s", optarg);				
+				snprintf(g_config.alg_mode, sizeof(g_config.alg_mode), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "dev_path", 8)) {
-				snprintf(g_config.dev_path, sizeof(g_config.dev_path), "%s", optarg);	
+				snprintf(g_config.dev_path, sizeof(g_config.dev_path), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "key_bits", 8)) {
 				g_config.key_bits = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "curve", 8)) {
+				snprintf(g_config.curve, sizeof(g_config.curve), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "cycles", 6)) {
 				g_config.times = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "seconds", 7)) {
@@ -4310,9 +5990,9 @@ static int parse_cmd_line(int argc, char *argv[])
 			} else if (!strncmp(long_options[option_index].name, "perf", 4)) {
 				g_config.perf_test = 1;
 			} else if (!strncmp(long_options[option_index].name, "trd_mode", 8)) {
-				snprintf(g_config.trd_mode, sizeof(g_config.trd_mode), "%s", optarg);	
+				snprintf(g_config.trd_mode, sizeof(g_config.trd_mode), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "op", 2)) {
-				snprintf(g_config.op, sizeof(g_config.op), "%s", optarg);	
+				snprintf(g_config.op, sizeof(g_config.op), "%s", optarg);
 			}
 			break;
 
@@ -4390,6 +6070,133 @@ static int parse_cmd_line(int argc, char *argv[])
 	return ret;
 }
 
+static void *_ecc_async_poll_test_thread(void *data)
+{
+	struct test_hpre_pthread_dt *pdata = data;
+	int ret, cpuid;
+	int pid = getpid();
+	cpu_set_t mask;
+	int thread_id = (int)syscall(__NR_gettid);
+	__u32 count = 0;
+	int op = pdata->op_type;
+
+	CPU_ZERO(&mask);
+	cpuid = pdata->cpu_id;
+	CPU_SET(cpuid, &mask);
+	if (cpuid) {
+		ret = pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+		if (ret < 0) {
+			HPRE_TST_PRT("Proc-%d, thrd-%d:set affinity fail!\n",
+						 pid, thread_id);
+			return NULL;
+		}
+		HPRE_TST_PRT("Proc-%d, poll thrd-%d bind to cpu-%d!\n",
+					 pid, thread_id, cpuid);
+	}
+
+	while (1) {
+		if (op == ECDH_ASYNC_GEN || op == ECDH_ASYNC_COMPUTE ||
+		    op == X25519_ASYNC_GEN || op == X25519_ASYNC_COMPUTE ||
+		    op == X448_ASYNC_GEN || op == X448_ASYNC_COMPUTE) {
+			ret = wd_ecc_poll(0, &count);
+		} else if (op == ECDSA_ASYNC_SIGN || op == ECDSA_ASYNC_VERF) {
+			//ret = wcrypto_ecdsa_poll(q, 1);
+		} else { // SM2, todo
+			ret = -1;
+		}
+
+		if (ret < 0) {
+			break;
+		}
+
+		if (asyn_thread_exit)
+			break;
+	}
+
+	HPRE_TST_PRT("%s exit!\n", __func__);
+	return NULL;
+}
+
+static int ecc_async_test(int thread_num, __u64 lcore_mask,
+			  __u64 hcore_mask, enum alg_op_type op_type)
+{
+	int i, ret, cnt = 0;
+	int h_cpuid;
+	float speed = 0.0;
+
+	if (_get_one_bits(lcore_mask) > 0)
+		cnt =  _get_one_bits(lcore_mask);
+	else if (_get_one_bits(lcore_mask) == 0 &&
+		 _get_one_bits(hcore_mask) == 0)
+		cnt = thread_num;
+
+	/* Create poll thread at first */
+	test_thrds_data[0].thread_num = 1;
+	test_thrds_data[0].op_type = op_type;
+	test_thrds_data[0].cpu_id = 0;
+	ret = pthread_create(&system_test_thrds[0], NULL,
+			     _ecc_async_poll_test_thread, &test_thrds_data[0]);
+	if (ret) {
+		HPRE_TST_PRT("Create poll thread fail!\n");
+		return ret;
+	}
+
+	for (i = 1; i <= cnt; i++) {
+		test_thrds_data[i].thread_num = thread_num;
+		test_thrds_data[i].op_type = op_type;
+		test_thrds_data[i].cpu_id = _get_cpu_id(i - 1, lcore_mask);
+		gettimeofday(&test_thrds_data[i].start_tval, NULL);
+		ret = pthread_create(&system_test_thrds[i], NULL,
+				    _hpre_ecc_sys_test_thread, &test_thrds_data[i]);
+		if (ret) {
+			HPRE_TST_PRT("Create %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+
+	for (i = 1; i <= thread_num - cnt; i++) {
+		h_cpuid = _get_cpu_id(i - 1, hcore_mask);
+		if (h_cpuid > 0)
+			h_cpuid += 64;
+
+		test_thrds_data[i + cnt].thread_num = thread_num;
+		test_thrds_data[i + cnt].op_type = op_type;
+		test_thrds_data[i + cnt].cpu_id = h_cpuid;
+		gettimeofday(&test_thrds_data[i + cnt].start_tval, NULL);
+		ret = pthread_create(&system_test_thrds[i + cnt], NULL,
+				 _hpre_ecc_sys_test_thread, &test_thrds_data[i + cnt]);
+		if (ret) {
+			HPRE_TST_PRT("Create %dth thread fail!\n", i);
+			return ret;
+		}
+	}
+
+	for (i = 1; i <= thread_num; i++) {
+		ret = pthread_join(system_test_thrds[i], NULL);
+		if (ret) {
+			HPRE_TST_PRT("Join %dth thread fail!\n", i);
+			return ret;
+		}
+		speed += test_thrds_data[i].perf;
+	}
+
+	asyn_thread_exit = 1;
+
+	ret = pthread_join(system_test_thrds[0], NULL);
+	if (ret) {
+		HPRE_TST_PRT("Join %dth thread fail!\n", i);
+		return ret;
+	}
+
+	if (g_config.perf_test)
+		HPRE_TST_PRT("<< %s %u thread %s %s mode %u key_bits at %0.3f ops!\n",
+			g_config.trd_mode, g_config.trd_num, g_config.op,
+			g_config.alg_mode, g_config.key_bits, speed);
+	HPRE_TST_PRT("<< test finish!\n");
+
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	enum alg_op_type alg_op_type = HPRE_ALG_INVLD_TYPE;
@@ -4403,27 +6210,27 @@ int main(int argc, char *argv[])
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_GEN;
 		else
-			alg_op_type = RSA_KEY_GEN;			
+			alg_op_type = RSA_KEY_GEN;
 	} else if (!strcmp(g_config.op, "rsa-vrf")) {
-		if (!strcmp(g_config.trd_mode, "async"))		
+		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_EN;
 		else
-			alg_op_type = RSA_PUB_EN;			
+			alg_op_type = RSA_PUB_EN;
 	} else if (!strcmp(g_config.op, "rsa-sgn")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_DE;
 		else
-			alg_op_type = RSA_PRV_DE;		
+			alg_op_type = RSA_PRV_DE;
 	} else if (!strcmp(g_config.op, "dh-gen1")) {
-		if (!strcmp(g_config.trd_mode, "async"))	
+		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = DH_ASYNC_GEN;
 		else
-			alg_op_type = DH_GEN;		
+			alg_op_type = DH_GEN;
 	} else if (!strcmp(g_config.op, "dh-gen2")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = DH_ASYNC_COMPUTE;
 		else
-			alg_op_type = DH_COMPUTE;		
+			alg_op_type = DH_COMPUTE;
 	} else if (!strcmp(g_config.op, "ecdh-gen1")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = ECDH_ASYNC_GEN;
@@ -4507,9 +6314,8 @@ int main(int argc, char *argv[])
 		alg_op_type == ECDSA_ASYNC_SIGN || alg_op_type == ECDSA_ASYNC_VERF ||
 		alg_op_type == X25519_ASYNC_GEN || alg_op_type == X25519_ASYNC_COMPUTE ||
 		alg_op_type == X448_ASYNC_GEN || alg_op_type == X448_ASYNC_COMPUTE)
-		//return ecc_async_test(thread_num, core_mask[0],
-		//      core_mask[1], alg_op_type); will be added later
-		ret = 0;
+		ret = ecc_async_test(g_config.trd_num, g_config.core_mask[0],
+					      g_config.core_mask[1], alg_op_type);
 	else
 		ret = -1; /* to extend other test samples */
 
@@ -4559,7 +6365,7 @@ static void print_help(void)
 	HPRE_TST_PRT("        secp192K1  = 192 bit\n");
 	HPRE_TST_PRT("        secp256K1  = 256bit\n");
 	HPRE_TST_PRT("        brainpoolP320R1  = 320bit\n");
-	HPRE_TST_PRT("        brainpoolP385R1  = 384bit\n");
+	HPRE_TST_PRT("        secpP384R1  = 384bit\n");
 	HPRE_TST_PRT("        secp521R1  = 521bit\n");
 	HPRE_TST_PRT("        null  = by set parameters\n");
 	HPRE_TST_PRT("    [--dev_path=]: designed dev path\n");

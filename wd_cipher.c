@@ -288,6 +288,7 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_cipher_req));
 
+	msg->alg_type = WD_CIPHER;
 	msg->alg = sess->alg;
 	msg->mode = sess->mode;
 	msg->op_type = req->op_type;
