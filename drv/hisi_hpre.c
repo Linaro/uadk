@@ -953,7 +953,7 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	if (!in->dgst_set) {
-		WD_ERR("prepare sign_in, !\n");
+		WD_ERR("prepare sign_in, hash not set!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1112,7 +1112,7 @@ static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 	struct wd_ecc_point *pbk = NULL;
 	int ret;
 
-	wd_ecc_get_in_params(in, &pbk);
+	wd_ecxdh_get_in_params(in, &pbk);
 	if (!pbk) {
 		WD_ERR("failed to get ecxdh in param!\n");
 		return -WD_EINVAL;
@@ -1175,7 +1175,7 @@ static int ecc_prepare_dh_out(struct wd_ecc_out *out, void **data)
 {
 	struct wd_ecc_point *dh_out = NULL;
 
-	wd_ecc_get_out_params(out, &dh_out);
+	wd_ecxdh_get_out_params(out, &dh_out);
 	if (!dh_out) {
 		WD_ERR("failed to get ecxdh out param!\n");
 		return -WD_EINVAL;
@@ -1314,7 +1314,7 @@ static int ecdh_out_transfer(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_ms
 	struct wd_dtb *y = NULL;
 	int ret;
 
-	wd_ecc_get_out_params(out, &key);
+	wd_ecxdh_get_out_params(out, &key);
 
 	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
 		y = &key->y;

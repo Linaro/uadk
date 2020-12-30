@@ -177,10 +177,10 @@ extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
 extern int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 			     struct wd_ecc_point **pubkey);
 
-extern struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in);
-extern struct wd_ecc_out *wd_ecc_new_out(handle_t sess);
-extern void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk);
-extern void wd_ecc_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
+extern struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in);
+extern struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess);
+extern void wd_ecxdh_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk);
+extern void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
 
 /**
  * wd_ecc_del_in() - Delete ecc input param handle.
