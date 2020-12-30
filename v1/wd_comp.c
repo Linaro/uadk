@@ -209,11 +209,13 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	ret = init_comp_ctx(ctx, ctx_id, setup);
 	if (ret) {
 		WD_ERR("err: fail to init comp ctx!\n");
-		goto free_ctx_id;
+		goto free_ctx_buf;
 	}
 
 	return ctx;
 
+free_ctx_buf:
+	free(ctx);
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
