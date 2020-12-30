@@ -73,8 +73,9 @@ struct hisi_sgl {
 	/* the sge num in this sgl */
 	__le16 entry_length_in_sgl;
 	__le16 pad0;
-	__le64 pad1[6];
-
+	__le64 pad1[5];
+	/* valid sge buffs total size */
+	__le64 entry_size_in_sgl;
 	struct hisi_sge sge_entries[];
 };
 
@@ -574,17 +575,18 @@ static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
 
 static int hisi_qm_sgl_push(struct hisi_sgl_pool *pool, struct hisi_sgl *hw_sgl)
 {
-	hw_sgl->next_dma = 0;
-	hw_sgl->entry_sum_in_sgl = 0;
-	hw_sgl->entry_sum_in_chain = pool->sge_num;
-	hw_sgl->entry_length_in_sgl = pool->sge_num;
-
 	pthread_spin_lock(&pool->lock);
 	if (pool->top >= pool->depth) {
 		WD_ERR("The sgl pool is full\n");
 		pthread_spin_unlock(&pool->lock);
 		return -EINVAL;
 	}
+
+	hw_sgl->next_dma = 0;
+	hw_sgl->entry_sum_in_sgl = 0;
+	hw_sgl->entry_sum_in_chain = pool->sge_num;
+	hw_sgl->entry_length_in_sgl = pool->sge_num;
+	hw_sgl->entry_size_in_sgl = 0;
 
 	pool->sgl_align[pool->top] = hw_sgl;
 	pool->top++;
@@ -642,6 +644,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl)
 		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
 		cur->sge_entries[i].len = tmp->len;
 		cur->entry_sum_in_sgl++;
+		cur->entry_size_in_sgl += tmp->len;
 		i++;
 
 		/*
@@ -679,6 +682,87 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp)
 {
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	return qp->h_sgl_pool;
+}
+
+static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl, int begin_sge,
+	__u32 sge_offset, __u32 size)
+{
+	struct hisi_sgl *tmp = hw_sgl;
+	__u32 offset = 0;
+	__u32 len;
+	int i;
+
+	len = tmp->sge_entries[begin_sge].len - sge_offset;
+	/* the first one is enough for copy size, copy and return*/
+	if (len >= size) {
+		memcpy(dst_buff, (void*)tmp->sge_entries[begin_sge].buff + sge_offset, size);
+		return;
+	}
+
+	memcpy(dst_buff, (void*)tmp->sge_entries[begin_sge].buff + sge_offset, len);
+	offset += len;
+
+	i = begin_sge + 1;
+
+	while (tmp) {
+		for (; i < tmp->entry_sum_in_sgl; i++) {
+			if (offset + tmp->sge_entries[i].len >= size) {
+				memcpy(dst_buff + offset, (void*)tmp->sge_entries[i].buff, size - offset);
+				return;
+			}
+
+			memcpy(dst_buff + offset, (void*)tmp->sge_entries[i].buff, tmp->sge_entries[i].len);
+			offset += tmp->sge_entries[i].len;
+		}
+
+		tmp = (struct hisi_sgl*)tmp->next_dma;
+		i = 0;
+	}
+}
+
+void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
+{
+	struct hisi_sgl *tmp = (struct hisi_sgl*)hw_sgl;
+	__u32 len = 0;
+	__u32 sge_offset = 0;
+	int begin_sge = 0;
+	int i;
+
+	if (!dst_buff || !hw_sgl || !size)
+		return;
+
+	/* find the sgl chain position */
+	while (tmp) {
+		if (len + tmp->entry_size_in_sgl > offset) {
+			/* the sgl chain is find */
+			break;
+		}
+
+		if (!tmp->next_dma) {
+			/* the offset is over the sgl */
+			return;
+		}
+
+		tmp = (struct hisi_sgl*)tmp->next_dma;
+		len += tmp->entry_size_in_sgl;
+	}
+
+	/* find the start sge position and start offset */
+	for (i = 0; i < tmp->entry_sum_in_sgl; i++)	{
+		if (len + tmp->sge_entries[i].len > offset) {
+			begin_sge = i;
+			sge_offset = offset - len;
+			break;
+		} else if(len + tmp->sge_entries[i].len == offset) {
+			begin_sge = i + 1;
+			sge_offset = 0;
+			break;
+		} else {
+			len += tmp->sge_entries[i].len;
+		}
+	}
+
+	hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
 }
 
 void hisi_qm_dump_sgl(void *sgl)

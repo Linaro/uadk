@@ -487,6 +487,7 @@ static void ctr_iv_inc(__u8 *counter, __u32 c)
 		c >>= BYTE_BITS;
 	} while (n);
 }
+extern void hexdump(char *buff, unsigned int len);
 
 static void update_iv(struct wd_cipher_msg *msg)
 {
@@ -505,6 +506,35 @@ static void update_iv(struct wd_cipher_msg *msg)
 	case WD_CIPHER_CFB:
 		if (msg->out_bytes >= msg->iv_bytes)
 			memcpy(msg->iv, msg->out + msg->out_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		break;
+	case WD_CIPHER_CTR:
+		if (msg->iv_bytes >= AES_BLOCK_SIZE)
+			ctr_iv_inc(msg->iv, msg->iv_bytes >>
+				CTR_MODE_LEN_SHIFT);
+		break;
+	default:
+		break;
+	}
+}
+
+static void update_iv_sgl(struct wd_cipher_msg *msg)
+{
+	switch (msg->mode) {
+	case WD_CIPHER_CBC:
+		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
+		    msg->out_bytes >= msg->iv_bytes)
+			hisi_qm_sgl_copy(msg->iv, msg->out, msg->out_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		if (msg->op_type == WD_CIPHER_DECRYPTION &&
+		    msg->in_bytes >= msg->iv_bytes)
+			hisi_qm_sgl_copy(msg->iv, msg->in, msg->in_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		break;
+	case WD_CIPHER_OFB:
+	case WD_CIPHER_CFB:
+		if (msg->out_bytes >= msg->iv_bytes)
+			hisi_qm_sgl_copy(msg->iv, msg->out, msg->out_bytes -
 				msg->iv_bytes, msg->iv_bytes);
 		break;
 	case WD_CIPHER_CTR:
@@ -627,7 +657,11 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 	}
 
 	rmsg = (struct wd_cipher_msg *)sqe->type2.mac_addr;
-	update_iv(rmsg);
+
+	if (rmsg->data_fmt != WD_SGL_BUF)
+		update_iv(rmsg);
+	else
+		update_iv_sgl(rmsg);
 }
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
@@ -1110,7 +1144,10 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *re
 	}
 
 	rmsg = (struct wd_cipher_msg *)sqe->mac_addr;
-	update_iv(rmsg);
+	if (rmsg->data_fmt != WD_SGL_BUF)
+		update_iv(rmsg);
+	else
+		update_iv_sgl(rmsg);
 }
 
 int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
