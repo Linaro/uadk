@@ -87,7 +87,7 @@ struct wd_digest_sess {
 struct wd_digest_req {
 	union {
 		void *in;
-		struct wd_sgl *sgl_in;
+		struct wd_datalist *list_in;
 	};
 	void		*out;
 	__u32		in_bytes;

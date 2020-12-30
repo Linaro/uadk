@@ -389,13 +389,13 @@ static void digest_uninit_config(void)
 
 static void test_sec_sgl_free(__u8 data_fmt, void *buff)
 {
-	struct wd_sgl *sgl;
-	struct wd_sgl *tmp;
+	struct wd_datalist *sgl;
+	struct wd_datalist *tmp;
 
 	if (!buff || data_fmt != WD_SGL_BUF)
 		return;
 
-	sgl = (struct wd_sgl*)buff;
+	sgl = (struct wd_datalist*)buff;
 	while (sgl) {
 		tmp = sgl;
 		sgl = sgl->next;
@@ -405,9 +405,9 @@ static void test_sec_sgl_free(__u8 data_fmt, void *buff)
 
 static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
 {
-	struct wd_sgl *cur;
-	struct wd_sgl *next;
-	struct wd_sgl *head;
+	struct wd_datalist *cur;
+	struct wd_datalist *next;
+	struct wd_datalist *head;
 	int size_unit, i;
 	unsigned int tail_size;
 
@@ -418,7 +418,7 @@ static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
 	size_unit = size / g_sgl_num;
 	tail_size = size % g_sgl_num;
 
-	head = malloc(sizeof(struct wd_sgl));
+	head = malloc(sizeof(struct wd_datalist));
 	if (!head) {
 		SEC_TST_PRT("Fail to alloc memory for sgl head!\n");
 		return NULL;
@@ -430,7 +430,7 @@ static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
 	cur = head;
 
 	for (i = 1; i < g_sgl_num; i++) {
-		next = malloc(sizeof(struct wd_sgl));
+		next = malloc(sizeof(struct wd_datalist));
 		if (!next) {
 			SEC_TST_PRT("Fail to alloc memory for sgl!\n");
 			test_sec_sgl_free(data_fmt, head);
@@ -502,7 +502,7 @@ static int test_sec_cipher_sync_once(void)
 
 	SEC_TST_PRT("req src--------->:\n");
 	if (g_data_fmt == WD_SGL_BUF)
-		hexdump(req.sgl_src->data, g_pktlen);
+		hexdump(req.list_src->data, g_pktlen);
 	else
 		hexdump(req.src, g_pktlen);
 
@@ -568,7 +568,7 @@ static int test_sec_cipher_sync_once(void)
 
 	SEC_TST_PRT("Test cipher sync function: output dst-->\n");
 	if (g_data_fmt == WD_SGL_BUF)
-		hexdump(req.sgl_dst->data, req.out_bytes);
+		hexdump(req.list_dst->data, req.out_bytes);
 	else
 		hexdump(req.dst, req.out_bytes);
 
@@ -772,7 +772,7 @@ static int test_sec_cipher_sync(void *arg)
 	pktlen = req->in_bytes;
 	SEC_TST_PRT("cipher req src--------->:\n");
 	if (req->data_fmt == WD_SGL_BUF) {
-		hexdump(req->sgl_src->data, req->sgl_src->len);
+		hexdump(req->list_src->data, req->list_src->len);
 	} else {
 		hexdump(req->src, req->in_bytes);
 	}
@@ -2315,7 +2315,7 @@ static int sec_aead_sync_once(void)
 			(int)syscall(__NR_gettid), speed, Perf);
 
 	if (g_data_fmt == WD_SGL_BUF)
-		hexdump(req.sgl_dst->data, req.out_bytes);
+		hexdump(req.list_dst->data, req.out_bytes);
 	else
 		hexdump(req.dst, req.out_bytes);
 out:

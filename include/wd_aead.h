@@ -69,11 +69,11 @@ struct wd_aead_sess {
 struct wd_aead_req {
 	enum wd_aead_op_type op_type;
 	union {
-		struct wd_sgl *sgl_src;
+		struct wd_datalist *list_src;
 		void *src;
 	};
 	union {
-		struct wd_sgl *sgl_dst;
+		struct wd_datalist *list_dst;
 		void *dst;
 	};
 	void			*iv;
