@@ -123,7 +123,23 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl);
  * @hw_sgl: The pointer of the hw sgl which get from sgl pool.
  */
 void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl);
+
+/**
+ * hisi_qm_get_sglpool - Get the qp's hw sgl pool handle
+ * @h_qp: Handle of the qp.
+ */
 handle_t hisi_qm_get_sglpool(handle_t h_qp);
-int hisi_qm_get_sqe(handle_t h_qp, void *sqe);
-void hisi_qm_dump_sgl(void *sgl);
+
+/**
+ * hisi_qm_sgl_copy: Buffer copying from hw sgl to pbuff
+ * @dst_buff: Dst pbuff point
+ * @hw_sgl: Src hw sgl ponint
+ * @offset: Offset in hw sgl chanin
+ * @size: Copy size
+ *
+ * If the len of sgl is not enough, will copy much as soon as
+ * possible before the offset to end of the sgl.
+ */
+void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size);
+
 #endif
