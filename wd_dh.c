@@ -282,7 +282,7 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	if (unlikely(ret))
 		return ret;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 	ret = dh_send(ctx->ctx, &msg);
 	if (unlikely(ret))
 		goto fail;
@@ -290,7 +290,7 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	ret = dh_recv_sync(ctx->ctx, &msg);
 	req->pri_bytes = msg.req.pri_bytes;
 fail:
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 }
@@ -331,13 +331,13 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 		goto fail_with_msg;
 	msg->tag = idx;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 	ret = dh_send(ctx->ctx, msg);
 	if (ret) {
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		goto fail_with_msg;
 	}
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 
@@ -370,20 +370,20 @@ int wd_dh_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	}
 
 	do {
-		pthread_mutex_lock(&ctx->lock);
+		pthread_spin_lock(&ctx->lock);
 		ret = wd_dh_setting.driver->recv(ctx->ctx, &rcv_msg);
 		if (ret == -EAGAIN) {
-			pthread_mutex_unlock(&ctx->lock);
+			pthread_spin_unlock(&ctx->lock);
 			break;
 		} else if (unlikely(ret)) {
-			pthread_mutex_unlock(&ctx->lock);
+			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_dh_setting.pool, index,
 					   rcv_msg.tag);
 			return ret;
 		}
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_dh_setting.pool, index, rcv_msg.tag);
 		if (!msg) {

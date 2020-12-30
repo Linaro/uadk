@@ -1477,14 +1477,14 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	if (unlikely(ret))
 		return ret;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, &msg);
 	if (unlikely(ret))
 		goto fail;
 
 	ret = ecc_recv_sync(ctx->ctx, &msg);
 fail:
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 }
@@ -2157,13 +2157,13 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = idx;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, msg);
 	if (ret) {
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		goto fail_with_msg;
 	}
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 
@@ -2194,20 +2194,20 @@ int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	}
 
 	do {
-		pthread_mutex_lock(&ctx->lock);
+		pthread_spin_lock(&ctx->lock);
 		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -EAGAIN) {
-			pthread_mutex_unlock(&ctx->lock);
+			pthread_spin_unlock(&ctx->lock);
 			break;
 		} else if (ret < 0) {
-			pthread_mutex_unlock(&ctx->lock);
+			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_ecc_setting.pool, index,
 					   recv_msg.tag);
 			return ret;
 		}
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, index,
 					  recv_msg.tag);
