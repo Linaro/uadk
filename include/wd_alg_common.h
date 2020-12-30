@@ -123,10 +123,10 @@ struct wd_sched {
 	handle_t h_sched_ctx;
 };
 
-struct wd_sgl {
+struct wd_datalist {
 	void *data;
 	__u32 len;
-	struct wd_sgl *next;
+	struct wd_datalist *next;
 };
 
 static inline void wd_spinlock(struct wd_lock *lock)
