@@ -1179,6 +1179,11 @@ static int init_hpre_global_config(__u32 op_type)
 		list = wd_get_accel_list("dh");
 	else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE)
 		list = wd_get_accel_list("ecdh");
+	else if (op_type > MAX_ECDSA_TYPE && op_type <= X25519_ASYNC_COMPUTE)
+		list = wd_get_accel_list("x25519");
+	else if (op_type > X25519_ASYNC_COMPUTE && op_type <=
+		X448_ASYNC_COMPUTE)
+		list = wd_get_accel_list("x448");
 	if (!list)
 		return -ENODEV;
 
@@ -1216,6 +1221,9 @@ static int init_hpre_global_config(__u32 op_type)
 	}  else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE) {
 		sched.poll_policy = ecdh_poll_policy;
 		ret = wd_ecc_init(&g_ctx_cfg, &sched);
+	} else if (op_type > MAX_ECDSA_TYPE && op_type <= X448_ASYNC_COMPUTE) {
+		sched.poll_policy = ecdh_poll_policy;
+		ret = wd_ecc_init(&g_ctx_cfg, &sched);
 	}
 	if (ret) {
 		HPRE_TST_PRT("failed to init alg, ret %d!\n", ret);
@@ -1235,6 +1243,8 @@ static void uninit_hpre_global_config(__u32 op_type)
 	else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE)
 		wd_dh_uninit();
 	else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE)
+		wd_ecc_uninit();
+	else if (op_type > MAX_ECDSA_TYPE && op_type <= X448_ASYNC_COMPUTE)
 		wd_ecc_uninit();
 }
 
@@ -2251,6 +2261,166 @@ free_ec_key:
 	return NULL;
 }
 
+/**
+ * id = 1: x25519, 32bytes
+ * id = 2: x448, 56bytes
+ */
+#define KEYLENID(id)	(id == 1) ? 32：56
+int x_genkey_by_openssl(struct ecc_test_ctx *test_ctx,struct wd_ecc_key
+			*ecc_key, int key_size, int id)
+{
+	EVP_PKEY_METHOD *pmeth = NULL;
+	EVP_PKEY_CTX ctx;
+	struct wd_dtb d;
+	EVP_PKEY pkey;
+	ECX_KEY *ecx = NULL;
+	char *data;
+	char data_pub[key_size];
+	int ret;
+	int i;
+
+	memset(&pkey, 0, sizeof(EVP_PKEY));
+	if (id == 1) {
+		pkey.save_type = EVP_PKEY_X25519;
+		//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
+	} else if (id == 2){
+		pkey.save_type = EVP_PKEY_X448;
+		//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
+	}
+	ctx.pmeth = pmeth;
+	ret = pmeth->keygen(&ctx, &pkey);
+	if (ret <= 0)
+		return -1;
+	ecx = (ECX_KEY *)(pkey.pkey.ptr);
+	data = calloc(key_size, sizeof(char));
+	memset(data_pub, 0, key_size);
+	for (i = 0; i < key_size; i++) {
+		data[i] = ecx->privkey[key_size - i - 1];
+		data_pub[i] = ecx->pubkey[key_size - i - 1];
+	}
+	d.data = data;
+	d.dsize = key_size;
+	d.bsize = key_size;
+
+	ret = wd_ecc_set_prikey(ecc_key, &d);
+	if (ret) {
+		HPRE_TST_PRT("%s: set prikey err\n", __func__);
+		return 0;
+	}
+	memcpy(test_ctx->cp_pub_key, data_pub, key_size);
+	test_ctx->cp_pub_key_size = key_size;
+
+	free(data);
+	return 1;
+
+
+}
+
+/**
+ * return 0:err
+ * return 1:success
+ */
+
+int x_compkey_by_openssl(struct ecc_test_ctx *test_ctx, void *ctx, struct
+			 wd_ecc_in **ecc_in, struct wd_ecc_key *ecc_key,size_t
+			 key_size, int id)
+{
+	EVP_PKEY_METHOD *pmeth = NULL;
+	EVP_PKEY_CTX pkey_ctx;
+	struct wd_dtb d;
+	EVP_PKEY pkey;
+	ECX_KEY *ecx;
+	char *data = NULL;
+	int ret;
+	int i;
+
+	memset(&pkey_ctx, 0, sizeof(EVP_PKEY_CTX));
+	memset(&pkey, 0, sizeof(EVP_PKEY));
+
+	if(id == 1) {
+		pkey.save_type = EVP_PKEY_X25519;
+		//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
+	} else if (id == 2) {
+		pkey.save_type = EVP_PKEY_X448;
+		//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
+	}
+	pkey_ctx.pmeth = pmeth;
+	ret = pmeth->keygen(&pkey_ctx, &pkey);
+	if (ret <= 0)
+		return -1;
+	ecx = (ECX_KEY *)(pkey.pkey.ptr);
+	for (int i = 0; i < key_size; i++) {
+		data[i] = ecx->privkey[key_size - i -1];
+	}
+	d.data = data;
+	d.dsize = key_size;
+	d.bsize = key_size;
+
+	//set prikey
+	ret = wd_ecc_set_prikey(ecc_key, &d);
+	if (ret) {
+		HPRE_TST_PRT("%s: set prikey err!\n", __func__);
+		return 0;
+	}
+	//set the pubkey(point_in)
+	struct wd_ecc_point tmp;
+	memset(data, 0, key_size);
+	for(i = 0; i < key_size; i++) {
+		data[i] = ecx->pubkey[key_size - i - 1];
+	}
+	tmp.x.data = data;
+	tmp.x.dsize = key_size;
+	tmp.x.bsize = key_size;
+	tmp.y.data = tmp.x.data;
+	tmp.y.dsize = key_size;
+	tmp.y.bsize = key_size;
+
+	*ecc_in = wd_ecxdh_new_in((handle_t)ctx, &tmp);
+	if(!*ecc_in)
+	{
+		printf("%s, wd_ecxdh_new_in err!\n", __func__);
+		return 0;
+	}
+
+	//compute the shared key
+	memset(&pkey_ctx, 0, sizeof(EVP_PKEY_CTX));
+	pkey_ctx.pkey = &pkey;
+	pkey_ctx.peerkey = &pkey;
+
+	uint8_t *out_shared_key = calloc(key_size, sizeof(char));
+
+	ret = pmeth->derive(&pkey_ctx, out_shared_key, &key_size);
+	if (ret == 0) {
+		HPRE_TST_PRT("%s:pmeth->derive err.\n", __func__);
+		return 0;
+	}
+	char share_big[key_size];
+	memset(share_big, 0, key_size);
+	for (i = 0; i < key_size; i++) {
+		share_big[i] = out_shared_key[key_size - i - 1];
+	}
+	memcpy(test_ctx->cp_share_key, share_big, key_size);
+	test_ctx->cp_share_key_size = key_size;
+
+	free(data);
+	return 1;
+}
+
+//TODO
+static struct ecc_test_ctx *x_create_sw_gen_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+	struct ecc_test_ctx *test_ctx;
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		printf("malloc failed.\n");
+		return NULL;
+	}
+	test_ctx->op = ECDH_SW_GENERATE;
+	test_ctx->key_size = setup.key_bits >> 3;
+
+	return test_ctx;
+}
 
 static struct ecc_test_ctx *ecc_create_hw_gen_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
 {
@@ -2282,7 +2452,7 @@ static struct ecc_test_ctx *ecc_create_hw_gen_test_ctx(struct ecc_test_ctx_setup
 		goto free_ctx;
 	}
 
-	ecc_out = wd_ecc_new_out(sess);
+	ecc_out = wd_ecxdh_new_out(sess);
 	if (!ecc_out) {
 		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
 		goto free_cp_key;
@@ -2437,6 +2607,16 @@ free_req:
 	return NULL;
 }
 
+//TODO
+static struct ecc_test_ctx *x_create_hw_gen_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+	struct ecc_test_ctx *test_ctx;
+
+	test_ctx = NULL;
+
+	return test_ctx;
+}
+
 static struct ecc_test_ctx *ecc_create_sw_compute_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
 {
 	struct ecc_test_ctx *test_ctx;
@@ -2583,6 +2763,22 @@ free_ec_key_a:
 	return NULL;
 }
 
+//TODO
+static struct ecc_test_ctx *x_create_sw_compute_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
+{
+	struct ecc_test_ctx *test_ctx;
+
+	test_ctx = malloc(sizeof(struct ecc_test_ctx));
+	if (!test_ctx) {
+		printf("malloc failed!\n");
+		return NULL;
+	}
+	test_ctx->op = ECDH_SW_GENERATE;
+	test_ctx->key_size = setup.key_bits >> 3;
+
+	return test_ctx;
+}
+
 static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
 {
 	struct ecc_test_ctx *test_ctx;
@@ -2615,7 +2811,7 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		goto free_ctx;
 	}
 
-	ecc_out = wd_ecc_new_out(setup.sess);
+	ecc_out = wd_ecxdh_new_out(setup.sess);
 	if (!ecc_out) {
 		goto free_cp_key;
 	}
@@ -2635,7 +2831,7 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		tmp.y.data = tmp.x.data + key_size;
 		tmp.y.bsize = key_size;
 		tmp.y.dsize = key_size;
-		ecc_in = wd_ecc_new_in(setup.sess, &tmp);
+		ecc_in = wd_ecxdh_new_in(setup.sess, &tmp);
 		if (!ecc_in) {
 			goto del_ecc_out;
 		}
@@ -2750,9 +2946,9 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		tmp.y.data = tmp.x.data + key_size;
 		tmp.y.dsize = key_size;
 		tmp.y.bsize = key_size;
-		ecc_in = wd_ecc_new_in(setup.sess, &tmp);
+		ecc_in = wd_ecxdh_new_in(setup.sess, &tmp);
 		if (!ecc_in) {
-			printf("wd_ecc_new_in err.\n");
+			printf("wd_ecxdh_new_in err.\n");
 			EC_KEY_free(key_a);
 			free(buff);
 			goto del_ecc_out;
@@ -2808,6 +3004,13 @@ free_req:
 	return NULL;
 }
 
+//TODO
+static struct ecc_test_ctx *x_create_hw_compute_test_ctx(struct ecc_test_ctx_setup setup, u32 op_type)
+{
+	struct ecc_test_ctx *test_ctx = NULL;
+
+	return test_ctx;
+}
 
 struct ecc_test_ctx *ecc_create_test_ctx(struct ecc_test_ctx_setup setup, u32 optype)
 {
@@ -2820,13 +3023,20 @@ struct ecc_test_ctx *ecc_create_test_ctx(struct ecc_test_ctx_setup setup, u32 op
 				test_ctx = ecc_create_sw_gen_test_ctx(setup, optype);
 			} else if (optype == X25519_GEN || optype == X25519_ASYNC_GEN ||
 				   optype == X448_GEN || optype == X448_ASYNC_GEN) {
-				//test_ctx = x_create_sw_gen_test_ctx(setup, optype);
+				test_ctx = x_create_sw_gen_test_ctx(setup, optype);
 			}
 		}
 		break;
 		case ECDH_HW_GENERATE:
 		{
-			test_ctx = ecc_create_hw_gen_test_ctx(setup, optype);
+			if (optype == ECDH_GEN || optype == ECDH_ASYNC_GEN) {
+				test_ctx = ecc_create_hw_gen_test_ctx(setup, optype);
+			} else if (optype == X25519_GEN || optype == X25519_ASYNC_GEN ||
+				   optype == X448_GEN || optype ==
+				   X448_ASYNC_GEN) {
+				   test_ctx = x_create_hw_gen_test_ctx(setup,
+				   optype);
+			}
 		}
 		break;
 		case ECDH_SW_COMPUTE:
@@ -2835,13 +3045,18 @@ struct ecc_test_ctx *ecc_create_test_ctx(struct ecc_test_ctx_setup setup, u32 op
 				test_ctx = ecc_create_sw_compute_test_ctx(setup, optype);
 			} else if (optype == X25519_COMPUTE || optype == X25519_ASYNC_COMPUTE ||
 				optype == X448_COMPUTE || optype == X448_ASYNC_COMPUTE) {
-				//test_ctx = x_create_sw_compute_test_ctx(setup, optype);
+				test_ctx = x_create_sw_compute_test_ctx(setup, optype);
 			}
 		}
 		break;
 		case ECDH_HW_COMPUTE:
 		{
-			test_ctx = ecc_create_hw_compute_test_ctx(setup, optype);
+			if (optype == ECDH_COMPUTE || optype == ECDH_ASYNC_COMPUTE) {
+				test_ctx = ecc_create_hw_compute_test_ctx(setup, optype);
+			} else if (optype == X25519_COMPUTE || optype == X25519_ASYNC_COMPUTE ||
+				optype == X448_COMPUTE || optype == X448_ASYNC_COMPUTE) {
+				test_ctx = x_create_hw_compute_test_ctx(setup, optype);
+			}
 		}
 		break;
 		case ECC_HW_SIGN:
@@ -3054,15 +3269,20 @@ int ecdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 	return 0;
 }
 
+/**
+ * ecdh_generate_key()- This function is used to generate public key of one's
+ * own side.
+ * @test_ctx: It is the testing context.
+ * @tag: It is used to denote the "sync mode"(0) or "async mode"(1).
+ */
 int ecdh_generate_key(void *test_ctx, void *tag)
 {
 	struct ecc_test_ctx *t_c = test_ctx;
 	int ret = 0;
 
 	if (t_c->op == ECDH_SW_GENERATE) {
-#if 0  // x25519/x448, add later
 		if (t_c->is_x25519_x448){
-			EVP_PKEY_METHOD *pmeth;
+			EVP_PKEY_METHOD *pmeth = NULL;
 			EVP_PKEY_CTX pkey_ctx;
 			size_t key_sz;
 			EVP_PKEY pkey;
@@ -3073,11 +3293,11 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 			memset(&ecx, 0, sizeof(ECX_KEY));
 
 			if (t_c->key_size == 32) { // x25519
-				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
+				//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
 				ecx.privkey = x25519_aprikey;
 				memcpy(ecx.pubkey, x25519_x_param, 32);
-			} else { // if (t_c->key_size == 56) { // x448
-				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
+			} else if (t_c->key_size == 56) { // x448
+				//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
 				ecx.privkey = x448_aprikey;
 				memcpy(ecx.pubkey, x448_x_param, 56);
 			}
@@ -3092,17 +3312,14 @@ int ecdh_generate_key(void *test_ctx, void *tag)
 				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
 				return -1;
 			}
-			#if 0
 			int i;
 			for (i = 0; i < t_c->key_size; i++) {
 				if (i % 12 == 0)
 					printf("\n");
 				printf("0x%x, ", out_pub_key[i]);
 			}printf("\n");
-			#endif
 			free(out_pub_key);
 		} else
-#endif
 		{
 			EC_KEY *ec_key = t_c->priv;
 
@@ -3135,16 +3352,25 @@ try_again:
 	return 0;
 }
 
-
+/**
+ * ecdh_compute_key()-This function is used to compute the shared key of
+ * both sides with opposite side's public key.
+ * @test_ctx: It is the testing context.
+ * @tag: It is used to denote the "sync mode"(0) or "async mode"(1).
+ */
 int ecdh_compute_key(void *test_ctx, void *tag)
 {
 	struct ecc_test_ctx *t_c = test_ctx;
 	int ret = 0;
+	int i;
+	uint8_t *out_shared_key;
+	EC_KEY *ec_key;
+	struct ecdh_sw_opdata *req;
+
 
 	if (t_c->op == ECDH_SW_COMPUTE) {
-#if 0
-		if (t_c->is_x25519_x448){
-			EVP_PKEY_METHOD *pmeth;
+		if (t_c->is_x25519_x448) {
+			EVP_PKEY_METHOD *pmeth = NULL;
 			EVP_PKEY_CTX pkey_ctx;
 			EVP_PKEY pkey;
 			ECX_KEY ecx;
@@ -3156,11 +3382,11 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 			memset(&ecx, 0, sizeof(ECX_KEY));
 
 			if (t_c->key_size == 32) { // x25519
-				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
+				//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X25519);
 				ecx.privkey = x25519_aprikey;
 				memcpy(ecx.pubkey, x25519_bpubkey, 32);
-			} else { // if (t_c->key_size == 56) { // x448
-				pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
+			} else if (t_c->key_size == 56){ // x448
+				//pmeth = EVP_PKEY_meth_find(EVP_PKEY_X448);
 				ecx.privkey = x448_aprikey;
 				memcpy(ecx.pubkey, x448_bpubkey, 56);
 			}
@@ -3168,26 +3394,22 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 			pkey_ctx.pkey = &pkey;
 			pkey_ctx.peerkey = &pkey;
 
-			uint8_t *out_shared_key = calloc(t_c->key_size, sizeof(char));
+			out_shared_key = calloc(t_c->key_size, sizeof(char));
 
 			ret = pmeth->derive(&pkey_ctx, out_shared_key, &key_sz);
 			if (ret <= 0) {
 				HPRE_TST_PRT("%s: pmeth->derive err.\n", __func__);
 				return -1;
 			}
-			#if 0
-			int i;
 			for (i = 0; i < t_c->key_size; i++) {
 				if (i % 12 == 0)
 					printf("\n");
 				printf("0x%x, ", out_shared_key[i]);
 			}printf("\n");
-			#endif
 			free(out_shared_key);
 		} else {
-#endif
-		struct ecdh_sw_opdata *req = t_c->req;
-		EC_KEY *ec_key = t_c->priv;
+		req = t_c->req;
+		ec_key = t_c->priv;
 		ret = ECDH_compute_key(req->share_key, req->share_key_size,
 			req->except_pub_key, ec_key, NULL);
 		if (ret <= 0) {
@@ -3195,9 +3417,9 @@ int ecdh_compute_key(void *test_ctx, void *tag)
 			return -1;
 		}
 		req->share_key_size = ret;
-		//}
+		}
 #ifdef DEBUG
-	//ECParameters_print_fp(stdout, ec_key);
+	ECParameters_print_fp(stdout, ec_key);
 	//print_data(req->share_key, ret, "openssl share key");
 
 #endif
@@ -3279,9 +3501,6 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	void *o_buf;
 	int ret;
 
-	//if (!g_config.check)
-	//	return 0;
-
 	if (test_ctx->op == ECDH_HW_GENERATE ||
 		test_ctx->op == ECDH_HW_COMPUTE) {
 		struct wd_ecc_point *key = NULL;
@@ -3296,7 +3515,7 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 			cp_size = test_ctx->cp_share_key_size;
 		}
 
-		wd_ecc_get_out_params(req->dst, &key);
+		wd_ecxdh_get_out_params(req->dst, &key);
 		if (test_ctx->is_x25519_x448)
 			o_buf = malloc(key_size);
 		else
@@ -3389,7 +3608,8 @@ void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
 
 	if (ECDH_SW_GENERATE == test_ctx->op) {
 		if (test_ctx->is_x25519_x448 == 1) {
-
+			//FIXME
+			EC_KEY_free(test_ctx->priv);
 		} else {
 			EC_KEY_free(test_ctx->priv);
 		}
@@ -3397,7 +3617,10 @@ void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
 		struct ecdh_sw_opdata *req = test_ctx->req;
 
 		if (test_ctx->is_x25519_x448 == 1) {
-
+			//FIXME
+			free(req->share_key);
+			free(req);
+			EC_KEY_free(test_ctx->priv);
 		} else {
 			free(req->share_key);
 			free(req);
@@ -6343,6 +6566,10 @@ static void print_help(void)
 	HPRE_TST_PRT("        dh-gen2  = DH phase 2 key generate test\n");
 	HPRE_TST_PRT("        ecdh-gen1  = ECDH phase 1 key generate test\n");
 	HPRE_TST_PRT("        ecdh-gen2  = ECDH phase 2 key generate test\n");
+	HPRE_TST_PRT("        x25519-gen1  = X25519 phase 1 key generate test\n");
+	HPRE_TST_PRT("        x25519-gen2  = X25519 phase 2 key generate test\n");
+	HPRE_TST_PRT("        x448-gen1  = X448 phase 1 key generate test\n");
+	HPRE_TST_PRT("        x448-gen2  = X448 phase 2 key generate test\n");
 	HPRE_TST_PRT("    [-t]: start thread total\n");
 	HPRE_TST_PRT("    [-c]: mask for bind cpu core, as 0x3 bind to cpu-1 and cpu-2\n");
 	HPRE_TST_PRT("    [--log=]:\n");
