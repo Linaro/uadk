@@ -74,10 +74,11 @@ static const struct wd_ecc_curve_list curve_list[] = {
 	{ WD_X448, "x448", 448, X448_448_PARAM },
 	{ WD_SECP128R1, "secp128r1", 128, SECG_P128_R1_PARAM },
 	{ WD_SECP192K1, "secp192k1", 192, SECG_P192_K1_PARAM },
+	{ WD_SECP224R1, "secp224R1", 224, SECG_P224_R1_PARAM },
 	{ WD_SECP256K1, "secp256k1", 256, SECG_P256_K1_PARAM },
 	{ WD_BRAINPOOLP320R1, "bpP320r1", 320, BRAINPOOL_P320_R1_PARAM },
-	{ WD_BRAINPOOLP384R1, "bpP384r1", 384, BRAINPOOL_P384_R1_PARAM },
-	{ WD_SECP521R1, "secp521r1", 521, NIST_P521_R1_PARAM },
+	{ WD_SECP384R1, "secp384r1", 384, SECG_P384_R1_PARAM },
+	{ WD_SECP521R1, "secp521r1", 521, SECG_P521_R1_PARAM },
 	{ WD_SM2P256, "sm2", 256, SM2_P256_V1_PARAM }
 };
 
@@ -180,7 +181,8 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	memset(priv, 0, wd_ecc_setting.driver->drv_ctx_size);
 	wd_ecc_setting.priv = priv;
-	ret = wd_ecc_setting.driver->init(&wd_ecc_setting.config, priv);
+	ret = wd_ecc_setting.driver->init(&wd_ecc_setting.config, priv,
+					  wd_ecc_setting.driver->alg_name);
 	if (ret < 0) {
 		WD_ERR("failed to drv init, ret = %d\n", ret);
 		goto out_init;
@@ -254,7 +256,7 @@ static __u32 get_key_bsz(__u32 ksz)
 	else if (ksz <= BITS_TO_BYTES(576))
 		size = BITS_TO_BYTES(576);
 	else
-		WD_ERR("failed to get hw keysize : ksz = %d.\n", ksz);
+		WD_ERR("failed to get key buffer size : ksz = %d.\n", ksz);
 
 	return size;
 }
@@ -402,8 +404,7 @@ static void release_ecc_in(struct wd_ecc_sess *sess,
 	free(ecc_in);
 }
 
-static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess,
-					    __u32 num)
+static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess, __u32 num)
 {
 	struct wd_ecc_in *in;
 	__u32 hsz, len;
@@ -505,7 +506,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 }
 
 static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
-                                       __u64 *len, __u32 st_sz)
+				   __u64 *len, __u32 st_sz)
 {
 	struct wd_hash_mt *hash = &sess->setup.hash;
 	struct wd_ecc_point *c1;
@@ -562,8 +563,7 @@ static struct wd_ecc_in *create_ecc_sign_in(struct wd_ecc_sess *sess,
 		return create_sm2_sign_in(sess, m_len);
 }
 
-static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess,
-					      __u32 num)
+static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess, __u32 num)
 {
 	struct wd_ecc_out *out;
 	__u32 hsz, len;
@@ -944,25 +944,22 @@ free_prikey:
 static bool is_key_width_support(__u32 key_bits)
 {
 	/* key bit width check */
-	if (unlikely(key_bits != 128 &&
-		key_bits != 192 &&
-		key_bits != 256 &&
-		key_bits != 320 &&
-		key_bits != 384 &&
-		key_bits != 448 &&
-		key_bits != 521))
-			return false;
+	if (unlikely(key_bits != 128 && key_bits != 192 &&
+	    key_bits != 224 && key_bits != 256 &&
+	    key_bits != 320 && key_bits != 384 &&
+	    key_bits != 448 && key_bits != 521))
+		return false;
 
 	return true;
 }
 
 static bool is_alg_support(const char *alg)
 {
-	if (unlikely(strcmp(alg, "ecdh") &&
-		strcmp(alg, "ecdsa") &&
-		strcmp(alg, "x25519") &&
-		strcmp(alg, "x448") &&
-		strcmp(alg, "sm2")))
+	if (unlikely(strcmp(alg, "ecdh") && strcmp(alg, "ECDH") &&
+		strcmp(alg, "ecdsa") && strcmp(alg, "ECDSA") &&
+		strcmp(alg, "x25519") && strcmp(alg, "X25519") &&
+		strcmp(alg, "x448") && strcmp(alg, "X448") &&
+		strcmp(alg, "sm2") && strcmp(alg, "SM2")))
 		return false;
 
 	return true;
@@ -1019,7 +1016,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 		return (handle_t)sess;
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
-	sess->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
+	sess->key_size = BITS_TO_BYTES(setup->key_bits);
 	sess->s_key.mode = setup->mode;
 	sess->s_key.numa_id = 0;
 
@@ -1033,7 +1030,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 	return (handle_t)(uintptr_t)sess;
 }
 
-void wd_ecc_del_sess(handle_t sess)
+void wd_ecc_free_sess(handle_t sess)
 {
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 
@@ -1097,8 +1094,7 @@ int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
 	return WD_SUCCESS;
 }
 
-int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
-			   struct wd_ecc_point *pubkey)
+int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key, struct wd_ecc_point *pubkey)
 {
 	struct wd_ecc_pubkey *ecc_pubkey;
 	struct wd_ecc_point *pub;
@@ -1125,12 +1121,12 @@ int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
 		return ret;
 
 	ret = trans_to_binpad(pub->x.data, pubkey->x.data,
-			      pub->x.bsize, pubkey->x.dsize,"ecc pub x");
+			      pub->x.bsize, pubkey->x.dsize, "ecc pub x");
 	if (ret)
 		return ret;
 
 	return trans_to_binpad(pub->y.data, pubkey->y.data,
-			       pub->y.bsize, pubkey->y.dsize,"ecc pub y");
+			       pub->y.bsize, pubkey->y.dsize, "ecc pub y");
 }
 
 int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
@@ -1160,10 +1156,10 @@ int wd_ecc_get_curve(struct wd_ecc_key *ecc_key,
 }
 
 void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
-				  struct wd_dtb **p, struct wd_dtb **a,
-				  struct wd_dtb **b, struct wd_dtb **n,
-				  struct wd_ecc_point **g,
-				  struct wd_dtb **d)
+			      struct wd_dtb **p, struct wd_dtb **a,
+			      struct wd_dtb **b, struct wd_dtb **n,
+			      struct wd_ecc_point **g,
+			      struct wd_dtb **d)
 {
 	struct wd_ecc_prikey *prk;
 
@@ -1194,10 +1190,10 @@ void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
 }
 
 void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
-				  struct wd_dtb **p, struct wd_dtb **a,
-				  struct wd_dtb **b, struct wd_dtb **n,
-				  struct wd_ecc_point **g,
-				  struct wd_ecc_point **pub)
+			      struct wd_dtb **p, struct wd_dtb **a,
+			      struct wd_dtb **b, struct wd_dtb **n,
+			      struct wd_ecc_point **g,
+			      struct wd_ecc_point **pub)
 {
 	struct wd_ecc_pubkey *pbk;
 
@@ -1225,6 +1221,86 @@ void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
 
 	if (pub)
 		*pub = &pbk->pub;
+}
+
+struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in)
+{
+	struct wd_ecc_sess *s = (struct wd_ecc_sess *)sess;
+	struct wd_ecc_dh_in *dh_in;
+	struct wd_ecc_in *ecc_in;
+	int ret;
+
+	if (!s || !in) {
+		WD_ERR("new ecc dh in param error!\n");
+		return NULL;
+	}
+
+	ecc_in = create_ecc_in(s, ECDH_IN_PARAM_NUM);
+	if (!ecc_in) {
+		WD_ERR("failed to create ecc in!\n");
+		return NULL;
+	}
+
+	dh_in = &ecc_in->param.dh_in;
+	ret = set_param_single(&dh_in->pbk.x, &in->x, "ecc in x");
+	if (ret) {
+		WD_ERR("failed to set ecdh in: x error!\n");
+		release_ecc_in(s, ecc_in);
+		return NULL;
+	}
+
+	ret = set_param_single(&dh_in->pbk.y, &in->y, "ecc in y");
+	if (ret) {
+		WD_ERR("failed to set ecdh in: y error!\n");
+		release_ecc_in(s, ecc_in);
+		return NULL;
+	}
+
+	return ecc_in;
+}
+
+struct wd_ecc_out *wd_ecc_new_out(handle_t sess)
+{
+	struct wd_ecc_out *ecc_out;
+
+	if (!sess) {
+		WD_ERR("new ecc dh out sess NULL!\n");
+		return NULL;
+	}
+
+	ecc_out = create_ecc_out((struct wd_ecc_sess *)sess, ECDH_OUT_PARAM_NUM);
+	if (!ecc_out) {
+		WD_ERR("failed to create ecc out!\n");
+		return NULL;
+	}
+
+	return ecc_out;
+}
+
+void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk)
+{
+	struct wd_ecc_dh_in *dh_in = (void *)in;
+
+	if (!in) {
+		WD_ERR("input NULL in get ecdh in!\n");
+		return;
+	}
+
+	if (pbk)
+		*pbk = &dh_in->pbk;
+}
+
+void wd_ecc_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
+{
+	struct wd_ecc_dh_out *dh_out = (void *)out;
+
+	if (!dh_out) {
+		WD_ERR("input NULL in get ecdh out!\n");
+		return;
+	}
+
+	if (key)
+		*key = &dh_out->out;
 }
 
 void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
@@ -1477,7 +1553,7 @@ static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 }
 
 static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
-                               struct wd_ecc_sess *sess)
+			       struct wd_ecc_sess *sess)
 
 {
 	__u32 key_size = BITS_TO_BYTES(sess->setup.key_bits);
@@ -1494,13 +1570,13 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	int ret;
 
 	if (id && BYTES_TO_BITS(id->dsize) > UINT16_MAX) {
-	   WD_ERR("id lens = %u error!\n", id->dsize);
-	   return -WD_EINVAL;
+		WD_ERR("id lens = %u error!\n", id->dsize);
+		return -WD_EINVAL;
 	}
 
 	if (id) {
-	   id_bits = BYTES_TO_BITS(id->dsize);
-	   id_bytes = id->dsize;
+		id_bits = BYTES_TO_BITS(id->dsize);
+		id_bytes = id->dsize;
 	}
 
 	#define REGULAR_LENS  (6 * key_size) /* a b xG yG xA yA */
@@ -1508,7 +1584,7 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	lens = sizeof(__u16) + id_bytes + REGULAR_LENS;
 	p_in = malloc(lens);
 	if (unlikely(!p_in))
-	   return -WD_ENOMEM;
+		return -WD_ENOMEM;
 
 	memset(p_in, 0, lens);
 	temp = id_bits >> 8;
@@ -1516,7 +1592,7 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	temp = id_bits & 0xFF;
 	msg_pack(p_in, lens, &in_len, &temp, sizeof(__u8));
 	if (id)
-	   msg_pack(p_in, lens, &in_len, id->data, id_bytes);
+		msg_pack(p_in, lens, &in_len, id->data, id_bytes);
 	msg_pack(p_in, lens, &in_len, cv->a.data, key_size);
 	msg_pack(p_in, lens, &in_len, cv->b.data, key_size);
 	msg_pack(p_in, lens, &in_len, cv->g.x.data, key_size);
@@ -1526,7 +1602,7 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	hash_bytes = get_hash_bytes(hash->type);
 	*len = hash_bytes;
 	ret = hash->cb((const char *)p_in, in_len,
-	            (void *)za, hash_bytes, hash->usr);
+			(void *)za, hash_bytes, hash->usr);
 
 	free(p_in);
 
@@ -1534,7 +1610,7 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 }
 
 static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
-                              struct wd_dtb *plaintext, struct wd_dtb *id)
+			      struct wd_dtb *plaintext, struct wd_dtb *id)
 
 {
 	struct wd_hash_mt *hash = &sess->setup.hash;
@@ -1569,7 +1645,7 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 	msg_pack(p_in, lens, &in_len, plaintext->data, plaintext->dsize);
 	hash_msg->dsize = hash_bytes;
 	ret = hash->cb((const char *)p_in, in_len, hash_msg->data,
-	            hash_bytes, hash->usr);
+			hash_bytes, hash->usr);
 	if (unlikely(ret))
 		WD_ERR("failed to compute e, ret = %d!\n", ret);
 
