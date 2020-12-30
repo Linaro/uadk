@@ -93,7 +93,7 @@ struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
-	pthread_mutex_t lock;
+	pthread_spinlock_t lock;
 };
 
 struct wd_ctx_config_internal {
