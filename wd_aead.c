@@ -493,11 +493,11 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("failed to send aead bd!\n");
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		return ret;
 	}
 
@@ -514,14 +514,14 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 			}
 		}
 	} while (ret < 0);
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 	free(msg.aiv);
 
 	return 0;
 
 recv_err:
 	req->state = msg.result;
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 	free(msg.aiv);
 	return ret;
 }

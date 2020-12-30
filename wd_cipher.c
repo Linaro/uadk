@@ -341,11 +341,11 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd cipher send err!\n");
 		return ret;
 	}
@@ -363,12 +363,12 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 			}
 		}
 	} while (ret < 0);
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 
 	return 0;
 recv_err:
 	req->state = msg.result;
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 

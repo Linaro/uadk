@@ -285,10 +285,10 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(&msg, req, dsess);
 	req->state = 0;
 
-	pthread_mutex_lock(&ctx->lock);
+	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_mutex_unlock(&ctx->lock);
+		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("failed to send bd!\n");
 		return ret;
 	}
@@ -307,13 +307,13 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		}
 	} while (ret < 0);
 
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 
 	return 0;
 
 recv_err:
 	req->state = msg.result;
-	pthread_mutex_unlock(&ctx->lock);
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 
