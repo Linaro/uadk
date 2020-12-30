@@ -170,7 +170,8 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	memset(priv, 0, wd_rsa_setting.driver->drv_ctx_size);
 	wd_rsa_setting.priv = priv;
-	ret = wd_rsa_setting.driver->init(&wd_rsa_setting.config, priv);
+	ret = wd_rsa_setting.driver->init(&wd_rsa_setting.config, priv,
+					  wd_rsa_setting.driver->alg_name);
 	if (ret < 0) {
 		WD_ERR("failed to drv init, ret = %d\n", ret);
 		goto out_init;
