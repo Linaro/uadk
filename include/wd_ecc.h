@@ -353,6 +353,49 @@ extern void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
 extern void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 				      struct wd_dtb **plaintext);
 
+/* APIs For ECDSA sign/verf */
+
+/**
+ * wd_ecdsa_new_sign_in() - Create ecdsa sign input params handle.
+ * @sess: Session handler.
+ * @dgst: sign input param digest.
+ * @k: sign input param random.
+ * Return input params handle, NULL otherwise.
+ */
+extern struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
+				struct wd_dtb *dgst,
+				struct wd_dtb *k);
+
+/**
+ * wd_ecdsa_new_verf_in() - Create ecdsa verification input params handle.
+ * @sess: Session handler.
+ * @dgst: verification input param digest.
+ * @r: sign input param r.
+ * @s: sign input param s.
+ * Return input params handle, NULL otherwise.
+ */
+extern struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
+				struct wd_dtb *dgst,
+				struct wd_dtb *r,
+				struct wd_dtb *s);
+
+/**
+ * wd_ecdsa_new_sign_out() - Create ecdsa sign output params handle.
+ * @sess: Session handler.
+ * Return output params handle, NULL otherwise.
+ */
+extern struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess);
+
+/**
+ * wd_ecdsa_get_sign_out_params() - Get ecdsa sign output params.
+ * @out: Output param handle.
+ * @r: sign ouput param r.
+ * @s: sign ouput param s.
+ */
+extern void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
+				struct wd_dtb **r,
+				struct wd_dtb **s);
+
 /**
  * wd_ecc_init() - Initialise ctx configuration and scheduler.
  * @ config:	    User defined ctx configuration.

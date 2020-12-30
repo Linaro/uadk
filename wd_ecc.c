@@ -1709,13 +1709,6 @@ release_in:
 	return NULL;
 }
 
-struct wd_ecc_in *wd_new_ecdsa_sign_in(handle_t sess,
-						 struct wd_dtb *dgst,
-						 struct wd_dtb *k)
-{
-	return new_sign_in((struct wd_ecc_sess *)sess, dgst, k, NULL, 1);
-}
-
 static int set_verf_in_param(struct wd_ecc_verf_in *vin,
 			     struct wd_dtb *dgst,
 			     struct wd_dtb *r,
@@ -2119,6 +2112,33 @@ void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 
 	if (plaintext)
 		*plaintext = &dout->plaintext;
+}
+
+
+struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
+					struct wd_dtb *dgst,
+					struct wd_dtb *k)
+{
+	return new_sign_in((struct wd_ecc_sess *)sess, dgst, k, NULL, 1);
+}
+
+struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess)
+{
+	return wd_ecc_new_sign_out((void *)sess);
+}
+
+void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
+				struct wd_dtb **r, struct wd_dtb **s)
+{
+	return get_sign_out_params(out, r, s);
+}
+
+struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
+					struct wd_dtb *dgst,
+					struct wd_dtb *r,
+					struct wd_dtb *s)
+{
+	return new_verf_in(sess, dgst, r, s, NULL, 1);
 }
 
 int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)

@@ -700,8 +700,14 @@ static int ecc_prepare_alg(struct wd_ecc_msg *msg,
 	case WD_SM2_SIGN:
 		hw_msg->alg = HPRE_ALG_SM2_SIGN;
 		break;
+	case WD_ECDSA_SIGN:
+		hw_msg->alg = HPRE_ALG_ECDSA_SIGN;
+		break;
 	case WD_SM2_VERIFY:
 		hw_msg->alg = HPRE_ALG_SM2_VERF;
+		break;
+	case WD_ECDSA_VERIFY:
+		hw_msg->alg = HPRE_ALG_ECDSA_VERF;
 		break;
 	case WD_SM2_ENCRYPT:
 		hw_msg->alg = HPRE_ALG_SM2_ENC;
