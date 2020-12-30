@@ -129,7 +129,8 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	memset(priv, 0, wd_dh_setting.driver->drv_ctx_size);
 	wd_dh_setting.priv = priv;
-	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv);
+	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv,
+					 wd_dh_setting.driver->alg_name);
 	if (ret < 0) {
 		WD_ERR("failed to drv init, ret= %d\n", ret);
 		goto out_init;

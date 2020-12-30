@@ -47,10 +47,11 @@ enum wd_ecc_op_type {
 enum wd_ecc_curve_id {
 	WD_SECP128R1 = 0x10, /* SECG 128 bit prime field */
 	WD_SECP192K1 = 0x11, /* SECG 192 bit prime field */
-	WD_SECP256K1 = 0x12, /* SECG 256 bit prime field */
-	WD_BRAINPOOLP320R1 = 0x13, /* RFC5639 320 bit prime field */
-	WD_BRAINPOOLP384R1 = 0x14, /* RFC5639 384 bit prime field */
-	WD_SECP521R1 = 0x15, /* NIST/SECG 521 bit prime field */
+	WD_SECP224R1 = 0x12, /* SECG 224 bit prime field */
+	WD_SECP256K1 = 0x13, /* SECG 256 bit prime field */
+	WD_BRAINPOOLP320R1 = 0x14, /* RFC5639 320 bit prime field */
+	WD_SECP384R1 = 0x15, /* SECG 384 bit prime field */
+	WD_SECP521R1 = 0x16, /* NIST/SECG 521 bit prime field */
 };
 
 /* ECC hash callback func types */
@@ -165,7 +166,7 @@ extern int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
  * Return 0, less than 0 otherwise.
  */
 extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
-			         struct wd_ecc_point *pubkey);
+			     struct wd_ecc_point *pubkey);
 
 /**
  * wd_ecc_get_pubkey() - Get ecc public key param.
@@ -175,6 +176,11 @@ extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
  */
 extern int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 			     struct wd_ecc_point **pubkey);
+
+extern struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in);
+extern struct wd_ecc_out *wd_ecc_new_out(handle_t sess);
+extern void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk);
+extern void wd_ecc_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
 
 /**
  * wd_ecc_del_in() - Delete ecc input param handle.
@@ -201,10 +207,10 @@ extern void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out);
  * @d: private pointer.
  */
 extern void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
-		                     struct wd_dtb **p, struct wd_dtb **a,
-		                     struct wd_dtb **b, struct wd_dtb **n,
-		                     struct wd_ecc_point **g,
-		                     struct wd_dtb **d);
+				     struct wd_dtb **p, struct wd_dtb **a,
+				     struct wd_dtb **b, struct wd_dtb **n,
+				     struct wd_ecc_point **g,
+				     struct wd_dtb **d);
 
 /**
  * wd_ecc_get_pubkey_params() - Get public key params.
@@ -217,10 +223,10 @@ extern void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
  * @pub: public key  pointer.
  */
 extern void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
-			             struct wd_dtb **p, struct wd_dtb **a,
-			             struct wd_dtb **b, struct wd_dtb **n,
-			             struct wd_ecc_point **g,
-			             struct wd_ecc_point **pub);
+				     struct wd_dtb **p, struct wd_dtb **a,
+				     struct wd_dtb **b, struct wd_dtb **n,
+				     struct wd_ecc_point **g,
+				     struct wd_ecc_point **pub);
 
 /* APIs For SM2 sign/verf/enc/dec/kg */
 
@@ -233,10 +239,10 @@ extern void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
  * Return input params handle, NULL otherwise.
  */
 extern struct wd_ecc_in *wd_sm2_new_sign_in(handle_t sess,
-			                    struct wd_dtb *e,
-			                    struct wd_dtb *k,
-			                    struct wd_dtb *id,
-			                    __u8 is_dgst);
+					    struct wd_dtb *e,
+					    struct wd_dtb *k,
+					    struct wd_dtb *id,
+					    __u8 is_dgst);
 
 /**
  * wd_sm2_new_verf_in() - Create sm2 verification input params handle.
@@ -247,11 +253,11 @@ extern struct wd_ecc_in *wd_sm2_new_sign_in(handle_t sess,
  * Return input params handle, NULL otherwise.
  */
 extern struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
-			                    struct wd_dtb *e,
-			                    struct wd_dtb *r,
-			                    struct wd_dtb *s,
-			                    struct wd_dtb *id,
-			                    __u8 is_dgst);
+					    struct wd_dtb *e,
+					    struct wd_dtb *r,
+					    struct wd_dtb *s,
+					    struct wd_dtb *id,
+					    __u8 is_dgst);
 
 /**
  * wd_sm2_new_enc_in() - Create sm2 encrypt input params handle.
@@ -261,8 +267,8 @@ extern struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
  * Return input params handle, NULL otherwise.
  */
 extern struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
-			                   struct wd_dtb *k,
-			                   struct wd_dtb *plaintext);
+					   struct wd_dtb *k,
+					   struct wd_dtb *plaintext);
 /**
  * wd_sm2_new_dec_in() - Create sm2 decrypt input params handle.
  * @sess: Session handler.
@@ -272,9 +278,9 @@ extern struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
  * Return input params handle, NULL otherwise.
  */
 extern struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
-			                   struct wd_ecc_point *c1,
-			                   struct wd_dtb *c2,
-			                   struct wd_dtb *c3);
+					   struct wd_ecc_point *c1,
+					   struct wd_dtb *c2,
+					   struct wd_dtb *c3);
 
 /**
  * wd_sm2_new_sign_out() - Create sm2 sign output params handle.
@@ -315,8 +321,8 @@ extern struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess);
  * @s: sm2 sign ouput param s.
  */
 extern void wd_sm2_get_sign_out_params(struct wd_ecc_out *out,
-			               struct wd_dtb **r,
-			               struct wd_dtb **s);
+				       struct wd_dtb **r,
+				       struct wd_dtb **s);
 /**
  * wd_sm2_get_kg_out_params() - Get sm2 key generate output params.
  * @out: output param handle.
@@ -324,8 +330,8 @@ extern void wd_sm2_get_sign_out_params(struct wd_ecc_out *out,
  * @pubkey: output public key.
  */
 extern void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
-			      struct wd_dtb **privkey,
-			      struct wd_ecc_point **pubkey);
+				     struct wd_dtb **privkey,
+				     struct wd_ecc_point **pubkey);
 
 /**
  * wd_sm2_get_enc_out_params() - Get sm2 encrypt output params.
@@ -335,9 +341,9 @@ extern void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
  * @c3: encrypt output C3.
  */
 extern void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
-			       struct wd_ecc_point **c1,
-			       struct wd_dtb **c2,
-			       struct wd_dtb **c3);
+				      struct wd_ecc_point **c1,
+				      struct wd_dtb **c2,
+				      struct wd_dtb **c3);
 
 /**
  * wd_sm2_get_dec_out_params() - Get sm2 decrypt output params.
@@ -345,7 +351,7 @@ extern void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
  * @plaintext: decrypt output plaintext.
  */
 extern void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
-			       struct wd_dtb **plaintext);
+				      struct wd_dtb **plaintext);
 
 /**
  * wd_ecc_init() - Initialise ctx configuration and scheduler.
@@ -377,7 +383,7 @@ extern void wd_ecc_free_sess(handle_t sess);
  *
  * This function will call poll_policy function which is registered to wd ecc
  * by user.
-*/
+ */
 extern int wd_ecc_poll(__u32 expt, __u32 *count);
 
 /**
@@ -399,9 +405,9 @@ extern int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
  * wd_ecc_poll_ctx() - Poll a ctx.
  * @pos:	The ctx index which will be polled.
  * @expt:	Max number of requests to poll. If 0, polled all finished
- * 		requests in this ctx.
+ *		requests in this ctx.
  * @count:	The number of polled requests.
- * Return 	0-succ others-fail.
+ * Return:	0-succ others-fail.
  *
  * This is a help function which can be used by user's poll_policy function.
  * User defines polling policy in poll_policiy, when it needs to poll a
