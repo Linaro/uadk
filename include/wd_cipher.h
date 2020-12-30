@@ -79,11 +79,11 @@ struct wd_cipher_sess {
 struct wd_cipher_req {
 	enum wd_cipher_op_type op_type;
 	union {
-		struct wd_sgl *sgl_src;
+		struct wd_datalist *list_src;
 		void *src;
 	};
 	union {
-		struct wd_sgl *sgl_dst;
+		struct wd_datalist *list_dst;
 		void *dst;
 	};
 	void			*iv;

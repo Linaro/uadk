@@ -115,7 +115,7 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool);
  *
  * Return the hw sgl addr which can fill into the sqe.
  */
-void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_sgl *sgl);
+void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl);
 
 /**
  * hisi_qm_put_hw_sgl - Reback the hw sgl to the sgl pool.
