@@ -395,6 +395,10 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	    __func__, block_size, count, thread_num, in_len);
 
+	info.list = get_dev_list(opts, 1);
+	if (!info.list)
+		return -EINVAL;
+
 	ret = init_ctx_config(copts, &info, &sched);
 	if (ret)
 		return ret;
@@ -529,6 +533,7 @@ buf_free:
 	free(file_buf);
 
 	WD_ERR("thread malloc fail!ENOMEM!\n");
+	wd_free_list_accels(info.list);
 
 	return -ENOMEM;
 }
