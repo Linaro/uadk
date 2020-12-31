@@ -318,7 +318,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	if (req->out_buf_bytes < req->in_bytes) {
+	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
 		WD_ERR("cipher set out_buf_bytes is error!\n");
 		return -EINVAL;
 	}
@@ -327,7 +327,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	key.type = 0;
 	key.numa_id = sess->numa;
 	index = wd_cipher_setting.sched.pick_next_ctx(wd_cipher_setting.sched.h_sched_ctx, req, &key);
-	if (index >= config->ctx_num) {
+	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick a proper ctx!\n");
 		return -EINVAL;
 	}
@@ -387,7 +387,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return -EINVAL;
 	}
 
-	if (req->out_buf_bytes < req->in_bytes) {
+	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
 		WD_ERR("cipher set out_buf_bytes is error!\n");
 		return -EINVAL;
 	}

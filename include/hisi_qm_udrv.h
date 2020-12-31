@@ -42,6 +42,8 @@ struct hisi_qm_queue_info {
 	void *db_base;
 	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
 		  __u16 index, __u8 priority);
+	void *ds_tx_base;
+	void *ds_rx_base;
 	__u16 sq_tail_index;
 	__u16 sq_head_index;
 	__u16 cq_head_index;
@@ -51,6 +53,7 @@ struct hisi_qm_queue_info {
 	__u16 hw_type;
 	bool cqc_phase;
 	pthread_spinlock_t lock;
+	unsigned long region_size[UACCE_QFRT_MAX];
 };
 
 struct hisi_qp {
