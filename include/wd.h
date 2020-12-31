@@ -304,4 +304,13 @@ extern void wd_free_list_accels(struct uacce_dev_list *list);
  */
 extern int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
 
+/**
+ * wd_ctx_get_region_size() - Get region offset size
+ * @h_ctx: The handle of context.
+ * @qfrt: Name of context region, which could be got in kernel head file
+ *        include/uapi/misc/uacce/uacce.h
+ * Return device region size.
+ */
+extern unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt);
+
 #endif

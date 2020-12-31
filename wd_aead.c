@@ -471,7 +471,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		return -EINVAL;
 
 	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
-	if (index >= config->ctx_num) {
+	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -EINVAL;
 	}

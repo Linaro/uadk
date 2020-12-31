@@ -251,6 +251,25 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 	return 0;
 }
 
+static int hisi_qm_get_qfrs_offs(handle_t h_ctx,
+				 struct hisi_qm_queue_info *q_info)
+{
+	q_info->region_size[UACCE_QFRT_DUS] = wd_ctx_get_region_size(h_ctx,
+								UACCE_QFRT_DUS);
+	if (!q_info->region_size[UACCE_QFRT_DUS]) {
+		WD_ERR("fail to get DUS qfrs offset.\n");
+		return -EINVAL;
+	}
+	q_info->region_size[UACCE_QFRT_MMIO] = wd_ctx_get_region_size(h_ctx,
+								UACCE_QFRT_MMIO);
+	if (!q_info->region_size[UACCE_QFRT_MMIO]) {
+		WD_ERR("fail to get MMIO qfrs offset.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 {
 	struct hisi_qm_queue_info *q_info = NULL;
@@ -260,6 +279,12 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	ret = hisi_qm_setup_region(qp->h_ctx, q_info);
 	if (ret) {
 		WD_ERR("setup region fail\n");
+		return ret;
+	}
+
+	ret = hisi_qm_get_qfrs_offs(qp->h_ctx, q_info);
+	if (ret) {
+		WD_ERR("get dev qfrs offset fail.\n");
 		return ret;
 	}
 
@@ -278,6 +303,11 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->sqe_size = config->sqe_size;
 	q_info->cqc_phase = 1;
 	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
+	/* The last 32 bits of DUS show device or qp statuses */
+	q_info->ds_tx_base = q_info->sq_base +
+		q_info->region_size[UACCE_QFRT_DUS] - sizeof(uint32_t);
+	q_info->ds_rx_base = q_info->ds_tx_base - sizeof(uint32_t);
+
 	pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
 
 	return 0;
@@ -364,6 +394,11 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 
 	pthread_spin_lock(&q_info->lock);
 
+	if (wd_ioread32(q_info->ds_tx_base) == 1) {
+		WD_ERR("wd queue hw error happened before qm send!\n");
+		return -WD_HW_EACCESS;
+	}
+
 	free_num = hisi_qm_get_free_num(q_info);
 	if (!free_num) {
 		pthread_spin_unlock(&q_info->lock);
@@ -438,6 +473,10 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 		return -EINVAL;
 
 	q_info = &qp->q_info;
+	if (wd_ioread32(q_info->ds_rx_base) == 1) {
+		WD_ERR("wd queue hw error happened before qm receive!\n");
+		return -WD_HW_EACCESS;
+	}
 
 	for (i = 0; i < expect; i++) {
 		offset = i * q_info->sqe_size;
@@ -448,6 +487,10 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	}
 
 	*count = recv_num++;
+	if (wd_ioread32(q_info->ds_rx_base) == 1) {
+		WD_ERR("wd queue hw error happened in qm receive!\n");
+		return -WD_HW_EACCESS;
+	}
 
 	return ret;
 }
