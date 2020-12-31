@@ -203,7 +203,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:d"
+#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:da"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -215,6 +215,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -s <size>     total size\n"					\
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\
+	"  -a            test deflate algorithm, default gzip\n"		\
 	"  -z            test zlib algorithm, default gzip\n"		\
 	"  -t <num>      number of thread per process\n"		\
 	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
