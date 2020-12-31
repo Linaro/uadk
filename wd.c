@@ -366,6 +366,14 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 		munmap(ctx->qfrs_base[qfrt], ctx->qfrs_offs[qfrt]);
 }
 
+unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt)
+{
+	struct wd_ctx_h *ctx = (struct wd_ctx_h *)h_ctx;
+	if (!ctx || qfrt >= UACCE_QFRT_MAX)
+			return 0;
+	return ctx->qfrs_offs[qfrt];
+}
+
 void *wd_ctx_get_priv(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
