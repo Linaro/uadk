@@ -271,7 +271,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	/* fix me: maybe wrong */
 	index = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
-	if (index >= config->ctx_num) {
+	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -EINVAL;
 	}
