@@ -171,7 +171,7 @@ struct hpre_test_config {
 	__u64 core_mask[2];
 	char alg_mode[10];
 	char trd_mode[10];
-	char op[10];
+	char op[20];
 	char curve[20];
 	char dev_path[PATH_STR_SIZE];
 };
@@ -4017,7 +4017,7 @@ void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
 		wd_ecc_del_in((handle_t)test_ctx->priv, req->src);
 		free(req);
 		free(test_ctx->cp_share_key);
-	}/* else if (ECC_SW_SIGN == test_ctx->op) {
+	} else if (ECC_SW_SIGN == test_ctx->op) {
 		struct ecdh_sw_opdata *req = test_ctx->req;
 
 		free(req->sign);
@@ -4030,8 +4030,8 @@ void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
 		if (test_ctx->priv1)
 			EC_KEY_free(test_ctx->priv1);
 
-		wd_ecc_del_out(test_ctx->priv, req->dst);
-		wd_ecc_del_in(test_ctx->priv, req->src);
+		wd_ecc_del_out((handle_t)test_ctx->priv, req->dst);
+		wd_ecc_del_in((handle_t)test_ctx->priv, req->src);
 		free(req);
 	} else if (ECC_SW_VERF == test_ctx->op) {
 		struct ecdh_sw_opdata *req = test_ctx->req;
@@ -4041,9 +4041,9 @@ void ecc_del_test_ctx(struct ecc_test_ctx *test_ctx)
 	} else if (ECC_HW_VERF == test_ctx->op) {
 		struct wd_ecc_req *req = test_ctx->req;
 
-		wd_ecc_del_in(test_ctx->priv, req->src);
+		wd_ecc_del_in((handle_t)test_ctx->priv, req->src);
 		free(req);
-	} */ else {
+	}  else {
 		HPRE_TST_PRT("%s: no op %d\n", __func__, test_ctx->op);
 	}
 
@@ -4092,7 +4092,7 @@ static void *_hpre_ecc_sys_test_thread(void *data)
 					 pid, thread_id, cpuid);
 	}
 
-	if (opType > MAX_DH_TYPE && opType < MAX_ECDH_TYPE) {
+	if (opType > MAX_DH_TYPE && opType < MAX_ECDSA_TYPE) {
 		ret = get_ecc_nid(g_config.curve, &setup.nid, &setup.curve_id);
 		if (ret < 0) {
 			HPRE_TST_PRT("%s not find curve!\n", __func__);
@@ -4102,7 +4102,7 @@ static void *_hpre_ecc_sys_test_thread(void *data)
 
 	if (!g_config.soft_test) {
 		memset(&ecc_setup, 0, sizeof(ecc_setup));
-		if (opType > MAX_DH_TYPE && opType < MAX_ECDH_TYPE) {
+		if (opType > MAX_DH_TYPE && opType < MAX_ECDSA_TYPE) {
 			if (g_config.curve == NULL) { // by set parameters
 				ecc_setup.cv.type = WD_CV_CFG_PARAM;
 				fill_ecdh_param_of_curve(&param);
