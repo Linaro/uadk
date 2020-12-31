@@ -752,6 +752,9 @@ int parse_common_option(const char opt, const char *optarg,
 	case 'v':
 		opts->verbose = true;
 		break;
+	case 'a':
+		opts->alg_type = WD_DEFLATE;
+		break;
 	case 'z':
 		opts->alg_type = WD_ZLIB;
 		break;
