@@ -1223,7 +1223,7 @@ void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
 		*pub = &pbk->pub;
 }
 
-struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in)
+struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in)
 {
 	struct wd_ecc_sess *s = (struct wd_ecc_sess *)sess;
 	struct wd_ecc_dh_in *dh_in;
@@ -1259,7 +1259,7 @@ struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in)
 	return ecc_in;
 }
 
-struct wd_ecc_out *wd_ecc_new_out(handle_t sess)
+struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 {
 	struct wd_ecc_out *ecc_out;
 
@@ -1277,7 +1277,7 @@ struct wd_ecc_out *wd_ecc_new_out(handle_t sess)
 	return ecc_out;
 }
 
-void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk)
+void wd_ecxdh_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk)
 {
 	struct wd_ecc_dh_in *dh_in = (void *)in;
 
@@ -1290,7 +1290,7 @@ void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk)
 		*pbk = &dh_in->pbk;
 }
 
-void wd_ecc_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
+void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
 {
 	struct wd_ecc_dh_out *dh_out = (void *)out;
 
