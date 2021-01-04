@@ -340,7 +340,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	enable_thp(opts, &info);
 
-	hizip_prepare_random_input_data(&info);
+	hizip_prepare_random_input_data(in_buf, opts->total_len,
+					opts->block_size);
 
 	if (!event_unavailable &&
 	    perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
@@ -555,7 +556,8 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	info.req.dst = out_buf;
 	info.req.src_len = opts->total_len;
 	info.req.dst_len = opts->total_len * EXPANSION_RATIO;
-	hizip_prepare_random_input_data(&info);
+	hizip_prepare_random_input_data(in_buf, opts->total_len,
+					opts->block_size);
 
 	ret = init_ctx_config(opts, &info, &sched);
 	if (ret < 0) {
