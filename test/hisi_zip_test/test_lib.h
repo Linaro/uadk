@@ -107,8 +107,6 @@ struct hizip_test_info {
 	} tv;
 };
 
-void stat_start(struct hizip_test_info *info);
-void stat_end(struct hizip_test_info *info);
 void *send_thread_func(void *arg);
 int create_threads(struct hizip_test_info *info);
 int attach_threads(struct hizip_test_info *info);
