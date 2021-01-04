@@ -794,8 +794,8 @@ int hizip_check_output(void *buf, size_t size, size_t *checked,
 	stream.next_out = out_buffer;
 	stream.avail_out = out_buf_size;
 
-	/* Pass -15 to skip parsing of header, since we have raw data. */
-	ret = inflateInit2(&stream, -15);
+	/* Window size of 15, +32 for auto-decoding gzip/zlib */
+	ret = inflateInit2(&stream, 15 + 32);
 	if (ret != Z_OK) {
 		WD_ERR("zlib inflateInit: %d\n", ret);
 		ret = -EINVAL;
@@ -847,8 +847,8 @@ int zlib_deflate(void *output, unsigned int out_size,
 		.avail_out	= out_size,
 	};
 
-	/* Pass -15 to output raw deflate data */
-	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, -15, 9,
+	/* Window size of 15 for zlib */
+	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, 15, 9,
 			   Z_DEFAULT_STRATEGY);
 	if (ret != Z_OK) {
 		WD_ERR("zlib deflateInit: %d\n", ret);
