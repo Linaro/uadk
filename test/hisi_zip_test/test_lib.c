@@ -372,8 +372,6 @@ void *send_thread_func(void *arg)
 	int j, ret;
 	size_t left;
 
-	stat_start(info);
-
 	for (j = 0; j < opts->compact_run_num; j++) {
 		if (opts->option & TEST_ZLIB) {
 			ret = zlib_deflate(info->out_buf, info->total_len *
@@ -410,8 +408,6 @@ void *send_thread_func(void *arg)
 			info->total_out += info->req.dst_len;
 		}
 	}
-
-	stat_end(info);
 	return NULL;
 }
 
@@ -460,7 +456,6 @@ static void *poll_thread_func(void *arg)
 			usleep(10);
 		}
 	}
-	stat_end(info);
 	pthread_exit(NULL);
 }
 
