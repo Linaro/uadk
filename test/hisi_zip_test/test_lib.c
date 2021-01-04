@@ -281,24 +281,20 @@ int hw_stream_decompress(int alg_type, int blksize,
 	return ret;
 }
 
-void hizip_prepare_random_input_data(struct hizip_test_info *info)
+void hizip_prepare_random_input_data(char *buf, size_t len, size_t block_size)
 {
 	__u32 seed = 0;
 	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
 
 	unsigned long remain_size;
-	__u32 block_size, size;
-	char *in_buf;
+	__u32 size;
 	size_t i, j;
 
 	/*
 	 * TODO: change state for each buffer, to make sure there is no TLB
-	 * aliasing. Can we store the seed into priv_info?
+	 * aliasing.
 	 */
-	//__u32 seed = info->state++;
-	block_size = info->opts->block_size;
-	remain_size = info->total_len;
-	in_buf = info->in_buf;
+	remain_size = len;
 
 	while (remain_size > 0) {
 		if (remain_size > block_size)
@@ -317,10 +313,10 @@ void hizip_prepare_random_input_data(struct hizip_test_info *info)
 			__u64 n = nrand48(rand_state);
 
 			for (j = 0; j < 4 && i + j < size; j++)
-				in_buf[i + j] = (n >> (8 * j)) & 0xff;
+				buf[i + j] = (n >> (8 * j)) & 0xff;
 		}
 
-		in_buf += size;
+		buf += size;
 		remain_size -= size;
 	}
 }

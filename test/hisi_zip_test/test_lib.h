@@ -117,7 +117,7 @@ int init_ctx_config(struct test_options *opts,
 void uninit_config(void *priv, struct wd_sched *sched);
 struct uacce_dev_list *get_dev_list(struct test_options *opts, int children);
 
-void hizip_prepare_random_input_data(struct hizip_test_info *info);
+void hizip_prepare_random_input_data(char *buf, size_t len, size_t block_size);
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 			       struct hizip_test_info *info);
 
