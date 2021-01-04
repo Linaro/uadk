@@ -1445,12 +1445,16 @@ static void cipher_ofb_data_handle(struct wcrypto_cipher_msg *msg)
 		for (i = 1; i < msg->out_bytes / bufsz + 1; i++) {
 			in_data = wd_get_sge_buf((struct wd_sgl *)msg->in, i);
 			out_data = wd_get_sge_buf((struct wd_sgl *)msg->out, i);
+			if (unlikely(!in_data || !out_data))
+				return;
 			for (j = 0; j < (bufsz >> U64_DATA_SHIFT) + 1; j++)
 				out_data[j] = in_data[j] ^ out_data[j];
 		}
 
 		in = wd_get_sge_buf((struct wd_sgl *)msg->in, i);
 		out = wd_get_sge_buf((struct wd_sgl *)msg->out, i);
+		if (unlikely(!in || !out))
+			return;
 		for (j = 0; j < msg->out_bytes - bufsz * (i - 1); j++)
 			out[j] = in[j] ^ out[j];
 	} else {
