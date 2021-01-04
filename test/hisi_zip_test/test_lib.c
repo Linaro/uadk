@@ -408,6 +408,7 @@ void *send_thread_func(void *arg)
 			 * combine output buffer by himself.
 			 */
 			info->req.dst += copts->block_size * EXPANSION_RATIO;
+			info->total_out += info->req.dst_len;
 		}
 	}
 
