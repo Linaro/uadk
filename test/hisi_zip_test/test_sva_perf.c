@@ -224,19 +224,24 @@ out_err:
 	WD_ERR("THP unsupported?\n");
 }
 
-void stat_start(struct hizip_test_info *info)
+static void stat_setup(struct hizip_test_info *info)
+{
+	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.setup_time);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.setup_cputime);
+	getrusage(RUSAGE_SELF, &info->tv.setup_rusage);
+}
+
+static void stat_start(struct hizip_test_info *info)
 {
 	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.start_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.start_cputime);
 	getrusage(RUSAGE_SELF, &info->tv.start_rusage);
 }
 
-void stat_end(struct hizip_test_info *info)
+static void stat_end(struct hizip_test_info *info)
 {
 	struct test_options *opts = info->opts;
 	struct hizip_stats *stats = info->stats;
-	int nr_fds = 0;
-	int *perf_fds = NULL;
 	double v;
 	unsigned long total_len;
 
@@ -293,8 +298,6 @@ void stat_end(struct hizip_test_info *info)
 				   ((stats->v[ST_RUN_TIME] +
 				    stats->v[ST_SETUP_TIME]) * 1.024 * 1.024);
 
-	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
-
 	v = stats->v[ST_RUN_TIME] + stats->v[ST_SETUP_TIME];
 	stats->v[ST_CPU_IDLE] = (v - stats->v[ST_CPU_TIME]) / v * 100;
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
@@ -339,9 +342,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds);
 
-	clock_gettime(CLOCK_MONOTONIC_RAW, &info.tv.setup_time);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info.tv.setup_cputime);
-	getrusage(RUSAGE_SELF, &info.tv.setup_rusage);
+	stat_setup(&info);
 
 	if (opts->option & PERFORMANCE) {
 		/* hack:
@@ -361,9 +362,12 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		}
 	}
 
-	info.stats = stats;
+	stat_start(&info);
 	create_threads(&info);
 	attach_threads(&info);
+
+	stat_end(&info);
+	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
 
 	ret = hizip_verify_random_output(out_buf, opts, &info);
 
