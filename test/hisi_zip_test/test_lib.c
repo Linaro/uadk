@@ -738,13 +738,13 @@ int parse_common_option(const char opt, const char *optarg,
 		break;
 	case 't':
 		opts->thread_num = strtol(optarg, NULL, 0);
-		SYS_ERR_COND(opts->total_len < 0, "invalid thread num '%s'\n",
+		SYS_ERR_COND(opts->thread_num < 0, "invalid thread num '%s'\n",
 			     optarg);
 		break;
 	case 'm':
 		opts->sync_mode = strtol(optarg, NULL, 0);
-		SYS_ERR_COND(opts->total_len < 0, "invalid sync mode '%s'\n",
-			     optarg);
+		SYS_ERR_COND(opts->sync_mode < 0 || opts->sync_mode > 1,
+			     "invalid sync mode '%s'\n", optarg);
 		break;
 	case 'V':
 		opts->verify = true;
