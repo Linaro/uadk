@@ -2282,7 +2282,7 @@ static struct ecc_test_ctx *ecc_create_hw_gen_test_ctx(struct ecc_test_ctx_setup
 		goto free_ctx;
 	}
 
-	ecc_out = wd_ecc_new_out(sess);
+	ecc_out = wd_ecxdh_new_out(sess);
 	if (!ecc_out) {
 		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
 		goto free_cp_key;
@@ -2615,7 +2615,7 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		goto free_ctx;
 	}
 
-	ecc_out = wd_ecc_new_out(setup.sess);
+	ecc_out = wd_ecxdh_new_out(setup.sess);
 	if (!ecc_out) {
 		goto free_cp_key;
 	}
@@ -2635,7 +2635,7 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		tmp.y.data = tmp.x.data + key_size;
 		tmp.y.bsize = key_size;
 		tmp.y.dsize = key_size;
-		ecc_in = wd_ecc_new_in(setup.sess, &tmp);
+		ecc_in = wd_ecxdh_new_in(setup.sess, &tmp);
 		if (!ecc_in) {
 			goto del_ecc_out;
 		}
@@ -2750,9 +2750,9 @@ static struct ecc_test_ctx *ecc_create_hw_compute_test_ctx(struct ecc_test_ctx_s
 		tmp.y.data = tmp.x.data + key_size;
 		tmp.y.dsize = key_size;
 		tmp.y.bsize = key_size;
-		ecc_in = wd_ecc_new_in(setup.sess, &tmp);
+		ecc_in = wd_ecxdh_new_in(setup.sess, &tmp);
 		if (!ecc_in) {
-			printf("wd_ecc_new_in err.\n");
+			printf("wd_ecxdh_new_in err.\n");
 			EC_KEY_free(key_a);
 			free(buff);
 			goto del_ecc_out;
@@ -3296,7 +3296,7 @@ int ecc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 			cp_size = test_ctx->cp_share_key_size;
 		}
 
-		wd_ecc_get_out_params(req->dst, &key);
+		wd_ecxdh_get_out_params(req->dst, &key);
 		if (test_ctx->is_x25519_x448)
 			o_buf = malloc(key_size);
 		else
