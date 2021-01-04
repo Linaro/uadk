@@ -177,11 +177,6 @@ extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
 extern int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 			     struct wd_ecc_point **pubkey);
 
-extern struct wd_ecc_in *wd_ecc_new_in(handle_t sess, struct wd_ecc_point *in);
-extern struct wd_ecc_out *wd_ecc_new_out(handle_t sess);
-extern void wd_ecc_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk);
-extern void wd_ecc_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
-
 /**
  * wd_ecc_del_in() - Delete ecc input param handle.
  * @sess: Session handler.
@@ -227,6 +222,31 @@ extern void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
 				     struct wd_dtb **b, struct wd_dtb **n,
 				     struct wd_ecc_point **g,
 				     struct wd_ecc_point **pub);
+
+/* APIs For ECXDH gen/comp */
+
+/**
+ * wd_ecxdh_new_in() - Create ECXDH input params handle in compute shared key.
+ * @sess: Session handler.
+ * @in: input param used for compute shared key.
+ * Return input params handle, NULL otherwise.
+ */
+extern struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in);
+
+/**
+ * wd_ecxdh_new_out() - Create ECXDH output params handle.
+ * @sess: Session handler.
+ * Return output params handle, NULL otherwise.
+ */
+extern struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess);
+
+/**
+ * wd_ecxdh_get_out_params() - Get ECXDH output params.
+ * @out: Output param handle.
+ * @pbk: ECXDH ouput param.
+ */
+extern void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
+
 
 /* APIs For SM2 sign/verf/enc/dec/kg */
 
