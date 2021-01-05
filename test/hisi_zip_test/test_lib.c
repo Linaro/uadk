@@ -376,7 +376,8 @@ void *send_thread_func(void *arg)
 		if (opts->option & TEST_ZLIB) {
 			ret = zlib_deflate(info->out_buf, info->total_len *
 					   EXPANSION_RATIO, info->in_buf,
-					   info->total_len, &info->total_out);
+					   info->total_len, &info->total_out,
+					   opts->alg_type);
 			continue;
 		}
 		/* not TEST_ZLIB */
@@ -805,9 +806,10 @@ out_free_buf:
 
 int zlib_deflate(void *output, unsigned int out_size,
 		 void *input, unsigned int in_size,
-		 unsigned long *produced)
+		 unsigned long *produced, int alg_type)
 {
 	int ret;
+	int windowBits;
 	z_stream stream = {
 		.next_in	= input,
 		.avail_in	= in_size,
@@ -815,8 +817,21 @@ int zlib_deflate(void *output, unsigned int out_size,
 		.avail_out	= out_size,
 	};
 
-	/* Window size of 15 for zlib */
-	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, 15, 9,
+	switch (alg_type) {
+	case WD_ZLIB:
+		windowBits = 15;
+		break;
+	case WD_DEFLATE:
+		windowBits = -15;
+		break;
+	case WD_GZIP:
+		windowBits = 15 + 16;
+		break;
+	default:
+		WD_ERR("algorithm %d unsupported by zlib\n", alg_type);
+	}
+
+	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, windowBits, 9,
 			   Z_DEFAULT_STRATEGY);
 	if (ret != Z_OK) {
 		WD_ERR("zlib deflateInit: %d\n", ret);

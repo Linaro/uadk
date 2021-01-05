@@ -149,7 +149,8 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts);
 int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn check_output, void *opaque);
 int zlib_deflate(void *output, unsigned int out_size,
-		 void *input, unsigned int in_size, unsigned long *produced);
+		 void *input, unsigned int in_size, unsigned long *produced,
+		 int alg_type);
 #else
 static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 				     check_output_fn check_output,
@@ -164,7 +165,8 @@ static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 	return -ENOSYS;
 }
 static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
-			       unsigned int in_size, unsigned long *produced)
+			       unsigned int in_size, unsigned long *produced,
+			       int alg_type)
 {
 	WD_ERR("no zlib available\n");
 	return -ENOSYS;
