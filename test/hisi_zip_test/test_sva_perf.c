@@ -564,103 +564,13 @@ static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 	printf("\n");
 }
 
-static int hizip_test_sched(struct test_options *opts,
-			    struct hizip_test_info *info)
-{
-	int ret;
-
-	if (opts->sync_mode) {
-		/* async */
-		create_threads(info);
-	} else {
-		ret = wd_do_comp_sync(info->h_sess, &info->req);
-		if (ret < 0)
-			return ret;
-	}
-	info->total_out = info->req.dst_len;
-	return 0;
-}
-
-static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
-{
-	int i;
-	int ret = 0;
-	void *in_buf, *out_buf;
-	struct hizip_test_info info = {0};
-	struct wd_sched *sched;
-
-	info.opts = opts;
-	info.list = list;
-
-	in_buf = info.in_buf = mmap_alloc(opts->total_len);
-	if (!in_buf)
-		return -ENOMEM;
-
-	out_buf = info.out_buf = mmap_alloc(opts->total_len * EXPANSION_RATIO);
-	if (!out_buf) {
-		ret = -ENOMEM;
-		goto out_with_in_buf;
-	}
-
-	info.req.src = in_buf;
-	info.req.dst = out_buf;
-	info.req.src_len = opts->total_len;
-	info.req.dst_len = opts->total_len * EXPANSION_RATIO;
-	hizip_prepare_random_input_data(in_buf, opts->total_len,
-					opts->block_size);
-
-	ret = init_ctx_config(opts, &info, &sched);
-	if (ret < 0) {
-		WD_ERR("hizip init fail with %d\n", ret);
-		goto out_ctx;
-	}
-
-	for (i = 0; i < opts->compact_run_num; i++) {
-
-		ret = hizip_test_sched(opts, &info);
-		if (ret < 0) {
-			WD_ERR("hizip test sched fail with %d\n", ret);
-			break;
-		}
-	}
-
-	/* to do: wd_comp_uninit */
-
-	if (out_buf)
-		ret = hizip_verify_random_output(opts, &info);
-
-	uninit_config(&info, sched);
-
-out_ctx:
-	if (out_buf)
-		munmap(out_buf, opts->total_len * EXPANSION_RATIO);
-out_with_in_buf:
-	munmap(in_buf, opts->total_len);
-	return ret;
-}
-
-static int run_bind_test(struct test_options *opts)
+static int run_fork_tests(struct test_options *opts)
 {
 	pid_t pid;
-	int i, ret, count;
+	int i, ret;
 	pid_t *pids;
 	int nr_children = 0;
 	bool success = true;
-	struct uacce_dev_list *list;
-
-	if (!opts->children)
-		count = 1;
-	else
-		count = opts->children;
-	list = get_dev_list(opts, count);
-	if (!list)
-		return -EINVAL;
-
-	if (!opts->children) {
-		ret = run_one_child(opts, list);
-		wd_free_list_accels(list);
-		return ret;
-	}
 
 	pids = calloc(opts->children, sizeof(pid_t));
 	if (!pids)
@@ -679,7 +589,7 @@ static int run_bind_test(struct test_options *opts)
 		}
 
 		/* Child */
-		exit(run_one_child(opts, list));
+		return 0;
 	}
 
 	dbg("%d children spawned\n", nr_children);
@@ -713,8 +623,7 @@ static int run_bind_test(struct test_options *opts)
 	}
 
 	free(pids);
-	wd_free_list_accels(list);
-	return success ? 0 : -EFAULT;
+	return success ? 1 : -EFAULT;
 }
 
 static int run_test(struct test_options *opts, FILE *source, FILE *dest)
@@ -736,15 +645,17 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 	memset(&variation , 0, sizeof(variation));
 
 	if (opts->children) {
-		for (i = 0; i < opts->run_num; i++) {
-			ret = run_bind_test(opts);
-			if (ret < 0)
-				return ret;
+		opts->display_stats = STATS_NONE;
+		ret = run_fork_tests(opts);
+		if (ret) {
+			/* Parent */
+			if (ret > 0) {
+				printf("SUCCESS\n");
+				ret = 0;
+			}
+			return ret;
 		}
-
-		printf("SUCCESS\n");
-
-		return 0;
+		/* Child */
 	}
 
 	if (opts->display_stats == STATS_CSV)
