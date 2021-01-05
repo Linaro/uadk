@@ -82,9 +82,8 @@ struct test_options {
 
 struct hizip_test_info {
 	struct test_options *opts;
-	char *in_buf;
-	char *out_buf;
-	unsigned long total_len;
+	char *in_buf, *out_buf;
+	size_t in_size, out_size;
 	size_t total_out;
 	struct uacce_dev_list *list;
 	handle_t h_sess;
@@ -118,7 +117,11 @@ void uninit_config(void *priv, struct wd_sched *sched);
 struct uacce_dev_list *get_dev_list(struct test_options *opts, int children);
 
 void hizip_prepare_random_input_data(char *buf, size_t len, size_t block_size);
-int hizip_verify_random_output(char *out_buf, struct test_options *opts,
+int hizip_prepare_random_compressed_data(char *buf, size_t out_len,
+					 size_t in_len, size_t *produced,
+					 struct test_options *opts);
+
+int hizip_verify_random_output(struct test_options *opts,
 			       struct hizip_test_info *info);
 
 void *mmap_alloc(size_t len);
