@@ -664,31 +664,6 @@ void uninit_config(void *priv, struct wd_sched *sched)
 	sample_sched_release(sched);
 }
 
-int hizip_test_sched(struct wd_sched *sched,
-		     struct test_options *opts,
-		     struct hizip_test_info *info
-		     )
-{
-	handle_t h_sess = info->h_sess;
-	//struct sched_key key;
-	int ret;
-
-	//key.numa_id = 0;
-	//key.mode = opts->sync_mode;
-	//key.type = 0;
-	if (opts->sync_mode) {
-		/* async */
-		create_threads(info);
-	} else {
-		ret = wd_do_comp_sync(h_sess, &info->req);
-		if (ret < 0)
-			return ret;
-		if (info->opts->faults & INJECT_SIG_WORK)
-			kill(getpid(), SIGTERM);
-	}
-	info->total_out = info->req.dst_len;
-	return 0;
-}
 
 int parse_common_option(const char opt, const char *optarg,
 			struct test_options *opts)
