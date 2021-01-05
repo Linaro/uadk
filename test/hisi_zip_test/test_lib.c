@@ -321,7 +321,38 @@ void hizip_prepare_random_input_data(char *buf, size_t len, size_t block_size)
 	}
 }
 
-int hizip_verify_random_output(char *out_buf, struct test_options *opts,
+int hizip_prepare_random_compressed_data(char *buf, size_t out_len, size_t in_len,
+					 size_t *produced,
+					 struct test_options *opts)
+{
+	off_t off;
+	int ret = -EINVAL;
+	void *init_buf = mmap_alloc(in_len);
+	size_t in_block_size = opts->block_size;
+	size_t out_block_size = 2 * in_block_size;
+
+	if (!init_buf) {
+		ret = -ENOMEM;
+		goto out_unmap;
+	}
+
+	hizip_prepare_random_input_data(init_buf, in_len, opts->block_size);
+
+	/* Compress each chunk separately since we're working in stateless mode */
+	for (off = 0; off < in_len; off += in_block_size) {
+		ret = zlib_deflate(buf, out_block_size, init_buf + off,
+				   in_block_size, produced, opts->alg_type);
+		if (ret)
+			break;
+		buf += out_block_size;
+	}
+
+out_unmap:
+	munmap(init_buf, in_len);
+	return ret;
+}
+
+int hizip_verify_random_output(struct test_options *opts,
 			       struct hizip_test_info *info)
 {
 	int ret;
@@ -336,8 +367,13 @@ int hizip_verify_random_output(char *out_buf, struct test_options *opts,
 	if (!opts->verify)
 		return 0;
 
+	if (opts->op_type == WD_DIR_DECOMPRESS)
+		/* Check plain output */
+		return hizip_check_rand((void *)info->out_buf, info->total_out,
+					&rand_ctx);
+
 	do {
-		ret = hizip_check_output(out_buf + off, info->total_out,
+		ret = hizip_check_output(info->out_buf + off, info->total_out,
 					 &checked, hizip_check_rand, &rand_ctx);
 		if (ret) {
 			WD_ERR("Check output failed with %d\n", ret);
@@ -364,16 +400,24 @@ void *send_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
 	struct test_options *opts = info->opts;
+	size_t src_block_size, dst_block_size;
 	handle_t h_sess = info->h_sess;
 	int j, ret;
 	size_t left;
 
+	if (opts->op_type == WD_DIR_COMPRESS) {
+		src_block_size = opts->block_size;
+		dst_block_size = opts->block_size * EXPANSION_RATIO;
+	} else {
+		src_block_size = opts->block_size * EXPANSION_RATIO;
+		dst_block_size = opts->block_size;
+	}
+
 	for (j = 0; j < opts->compact_run_num; j++) {
 		if (opts->option & TEST_ZLIB) {
-			ret = zlib_deflate(info->out_buf, info->total_len *
-					   EXPANSION_RATIO, info->in_buf,
-					   info->total_len, &info->total_out,
-					   opts->alg_type);
+			ret = zlib_deflate(info->out_buf, info->out_size,
+					   info->in_buf, info->in_size,
+					   &info->total_out, opts->alg_type);
 			continue;
 		}
 		/* not TEST_ZLIB */
@@ -381,8 +425,8 @@ void *send_thread_func(void *arg)
 		info->req.src = info->in_buf;
 		info->req.dst = info->out_buf;
 		while (left > 0) {
-			info->req.src_len = opts->block_size;
-			info->req.dst_len = opts->block_size * EXPANSION_RATIO;
+			info->req.src_len = src_block_size;
+			info->req.dst_len = dst_block_size;
 			info->req.cb = async_cb;
 			info->req.cb_param = &info->req;
 			if (opts->sync_mode) {
@@ -395,13 +439,16 @@ void *send_thread_func(void *arg)
 				WD_ERR("do comp test fail with %d\n", ret);
 				return NULL;
 			}
-			left -= opts->block_size;
-			info->req.src += opts->block_size;
+			if (opts->op_type == WD_DIR_COMPRESS)
+				left -= src_block_size;
+			else
+				left -= dst_block_size;
+			info->req.src += src_block_size;
 			/*
 			 * It's BLOCK (STATELESS) mode, so user needs to
 			 * combine output buffer by himself.
 			 */
-			info->req.dst += opts->block_size * EXPANSION_RATIO;
+			info->req.dst += dst_block_size;
 			info->total_out += info->req.dst_len;
 		}
 	}
@@ -629,6 +676,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	setup.mode = opts->sync_mode;
 	setup.op_type = opts->op_type;
 	info->h_sess = wd_comp_alloc_sess(&setup);
+	info->req.op_type = opts->op_type;
 	if (!info->h_sess) {
 		ret = -EINVAL;
 		goto out_sess;

@@ -207,14 +207,13 @@ static void enable_thp(struct test_options *opts,
 		return;
 	}
 
-	ret = madvise(info->in_buf, info->total_len, MADV_HUGEPAGE);
+	ret = madvise(info->in_buf, info->in_size, MADV_HUGEPAGE);
 	if (ret) {
 		perror("madvise(MADV_HUGEPAGE)");
 		return;
 	}
 
-	ret = madvise(info->out_buf, info->total_len * EXPANSION_RATIO,
-		      MADV_HUGEPAGE);
+	ret = madvise(info->out_buf, info->out_size, MADV_HUGEPAGE);
 	if (ret) {
 		perror("madvise(MADV_HUGEPAGE)");
 	}
@@ -310,38 +309,60 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	int ret = 0;
 	int nr_fds = 0;
 	int *perf_fds = NULL;
-	void *in_buf, *out_buf;
+	void *defl_buf, *infl_buf;
+	size_t defl_size, infl_size;
 	struct hizip_test_info info = {0};
 	struct wd_sched *sched = NULL;
 
 	info.stats = stats;
 	info.opts = opts;
-	info.total_len = opts->total_len;
 
 	info.list = get_dev_list(opts, 1);
 	if (!info.list)
 		return -EINVAL;
 
-	in_buf = info.in_buf = mmap_alloc(opts->total_len);
-	if (!in_buf) {
+	infl_size = opts->total_len;
+	infl_buf = mmap_alloc(infl_size);
+	if (!infl_buf) {
 		ret = -ENOMEM;
 		goto out_list;
 	}
 
-	out_buf = info.out_buf = mmap_alloc(opts->total_len * EXPANSION_RATIO);
-	if (!out_buf) {
+	/*
+	 * Counter-intuitive: defl_size > infl_size, because random data is
+	 * incompressible and deflate may add a header. See comment in
+	 * hizip_prepare_random_input_data().
+	 */
+	defl_size = opts->total_len * EXPANSION_RATIO;
+	defl_buf = mmap_alloc(defl_size);
+	if (!defl_buf) {
 		ret = -ENOMEM;
-		goto out_with_in_buf;
+		goto out_with_infl_buf;
 	}
-	info.req.src = in_buf;
-	info.req.dst = out_buf;
-	info.req.src_len = opts->total_len;
-	info.req.dst_len = opts->total_len * EXPANSION_RATIO;
+
+	if (opts->op_type == WD_DIR_COMPRESS) {
+		hizip_prepare_random_input_data(infl_buf, infl_size,
+						opts->block_size);
+		info.in_buf = infl_buf;
+		info.in_size = infl_size;
+		info.out_buf = defl_buf;
+		info.out_size = defl_size;
+	} else {
+		size_t produced;
+
+		/* Prepare a buffer of compressed data */
+		ret = hizip_prepare_random_compressed_data(defl_buf, defl_size,
+							   infl_size, &produced,
+							   opts);
+		if (ret)
+			goto out_with_defl_buf;
+		info.in_buf = defl_buf;
+		info.in_size = defl_size;
+		info.out_buf = infl_buf;
+		info.out_size = infl_size;
+	}
 
 	enable_thp(opts, &info);
-
-	hizip_prepare_random_input_data(in_buf, opts->total_len,
-					opts->block_size);
 
 	if (!event_unavailable &&
 	    perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
@@ -359,14 +380,14 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
 		 */
-		memset(out_buf, 0, opts->total_len * EXPANSION_RATIO);
+		memset(info.out_buf, 0, info.out_size);
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
 		ret = init_ctx_config(opts, &info, &sched);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
-			goto out_with_out_buf;
+			goto out_with_defl_buf;
 		}
 	}
 
@@ -377,16 +398,16 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stat_end(&info);
 	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
 
-	ret = hizip_verify_random_output(out_buf, opts, &info);
+	ret = hizip_verify_random_output(opts, &info);
 
 	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
 		uninit_config(&info, sched);
 	free(info.threads);
-out_with_out_buf:
-	munmap(out_buf, opts->total_len * EXPANSION_RATIO);
-out_with_in_buf:
-	munmap(in_buf, opts->total_len);
+out_with_defl_buf:
+	munmap(defl_buf, defl_size);
+out_with_infl_buf:
+	munmap(infl_buf, infl_size);
 out_list:
 	wd_free_list_accels(info.list);
 	return ret;
@@ -540,8 +561,6 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	info.opts = opts;
 	info.list = list;
 
-	info.total_len = opts->total_len;
-
 	in_buf = info.in_buf = mmap_alloc(opts->total_len);
 	if (!in_buf)
 		return -ENOMEM;
@@ -610,7 +629,7 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	/* to do: wd_comp_uninit */
 
 	if (out_buf)
-		ret = hizip_verify_random_output(out_buf, opts, &info);
+		ret = hizip_verify_random_output(opts, &info);
 
 	uninit_config(&info, sched);
 
