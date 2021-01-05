@@ -509,6 +509,25 @@ static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 	printf("\n");
 }
 
+static int hizip_test_sched(struct test_options *opts,
+			    struct hizip_test_info *info)
+{
+	int ret;
+
+	if (opts->sync_mode) {
+		/* async */
+		create_threads(info);
+	} else {
+		ret = wd_do_comp_sync(info->h_sess, &info->req);
+		if (ret < 0)
+			return ret;
+		if (info->opts->faults & INJECT_SIG_WORK)
+			kill(getpid(), SIGTERM);
+	}
+	info->total_out = info->req.dst_len;
+	return 0;
+}
+
 static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 {
 	int i;
@@ -558,7 +577,7 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	for (i = 0; i < opts->compact_run_num; i++) {
 		info = save_info;
 
-		ret = hizip_test_sched(sched, opts, &info);
+		ret = hizip_test_sched(opts, &info);
 		if (ret < 0) {
 			WD_ERR("hizip test sched fail with %d\n", ret);
 			break;
@@ -584,7 +603,7 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 
 		info = save_info;
 
-		ret = hizip_test_sched(sched, opts, &info);
+		ret = hizip_test_sched(opts, &info);
 		if (ret >= 0) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", out_buf, out_buf +
