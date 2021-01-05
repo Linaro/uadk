@@ -680,10 +680,13 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 
 	cur = head;
 	tmp = sgl;
-	while (tmp && tmp->data) {
-		if(tmp->len >= HISI_MAX_SIZE_IN_SGE)
+	while (tmp) {
+		if (!tmp->data || !tmp->len)
+			continue;
+
+		if(tmp->len > HISI_MAX_SIZE_IN_SGE)
 			goto err_out;
-		
+
 		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
 		cur->sge_entries[i].len = tmp->len;
 		cur->entry_sum_in_sgl++;
@@ -699,7 +702,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 			next = hisi_qm_sgl_pop(pool);
 			if (!next) {
 				WD_ERR("The sgl pool is not enough");
-				return head;
+				goto err_out;
 			}
 			cur->next_dma = (uintptr_t)next;
 			cur = next;
