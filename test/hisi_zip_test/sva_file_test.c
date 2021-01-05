@@ -357,7 +357,7 @@ therad_no_affinity:
 
 #define MAX_LEN (~0U)
 
-int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
+int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 {
 	int fd;
 	struct stat s;
@@ -374,9 +374,8 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	struct wd_sched *sched = NULL;
 	struct hizip_test_info info = {0};
 	struct timeval start_tval, end_tval;
-	struct test_options *copts = &opts->common;
-	int mode = copts->sync_mode;
-	int thread_num = copts->thread_num;
+	int mode = opts->sync_mode;
+	int thread_num = opts->thread_num;
 
 	fd = fileno(source);
 	SYS_ERR_COND(fstat(fd, &s) < 0, "fstat");
@@ -399,24 +398,24 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	if (!info.list)
 		return -EINVAL;
 
-	ret = init_ctx_config(copts, &info, &sched);
+	ret = init_ctx_config(opts, &info, &sched);
 	if (ret)
 		return ret;
 
 	dstlen = (ulong)in_len * 2;
-	if (copts->block_size != 512000)
-		dstlen = copts->block_size; /* just for user configure dest size test*/
+	if (opts->block_size != 512000)
+		dstlen = opts->block_size; /* just for user configure dest size test*/
 
 	dstlen = dstlen > MAX_LEN ? MAX_LEN : dstlen;
 
-	cnt = copts->thread_num;
+	cnt = opts->thread_num;
 	for (i = 0; i < cnt; i++) {
 		test_thrds_data[i].thread_num = cnt;
 		test_thrds_data[i].cpu_id = i;
-		test_thrds_data[i].alg_type = copts->alg_type;
-		test_thrds_data[i].op_type = copts->op_type;
-		test_thrds_data[i].blksize = copts->block_size;
-		test_thrds_data[i].iteration = copts->run_num;
+		test_thrds_data[i].alg_type = opts->alg_type;
+		test_thrds_data[i].op_type = opts->op_type;
+		test_thrds_data[i].blksize = opts->block_size;
+		test_thrds_data[i].iteration = opts->run_num;
 		test_thrds_data[i].src = file_buf;
 		test_thrds_data[i].src_len = in_len;
 		test_thrds_data[i].dst_len = dstlen;
@@ -436,7 +435,7 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 					     zip_sys_async_test_thread,
 					     &test_thrds_data[i]);
 		} else {
-			if (copts->is_stream == MODE_STREAM)
+			if (opts->is_stream == MODE_STREAM)
 				ret = pthread_create(&system_test_thrds[i], NULL,
 						     zlib_sys_stream_test_thread,
 						     &test_thrds_data[i]);
@@ -456,7 +455,7 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 					     zip_sys_async_test_poll_thread,
 					     &test_thrds_data[0]);
 
-	for (i = 0; i < copts->thread_num; i++) {
+	for (i = 0; i < opts->thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
 			WD_ERR("Join %dth thread fail!\n", i);
@@ -473,7 +472,7 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 	}
 
 	gettimeofday(&end_tval, NULL);
-	for (i = 0; i < copts->thread_num; i++) {
+	for (i = 0; i < opts->thread_num; i++) {
 		total_in += test_thrds_data[i].src_len;
 		total_out += test_thrds_data[i].dst_len;
 	}
@@ -500,20 +499,20 @@ int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts)
 
 		free(test_thrds_data[i].dst);
 	}
-	if (copts->op_type == WD_DIR_COMPRESS) {
+	if (opts->op_type == WD_DIR_COMPRESS) {
 		speed = total_in / tc /
-			1024 / 1024 * 1000 * 1000 * copts->run_num,
+			1024 / 1024 * 1000 * 1000 * opts->run_num,
 		fprintf(stderr,
 			"Compress bz=%d, threadnum= %d, speed=%0.3f MB/s, timedelay=%0.1f us\n",
 			block_size, thread_num, speed,
-			tc / thread_num / count / copts->run_num);
+			tc / thread_num / count / opts->run_num);
 	} else {
 		speed = total_out / tc /
-			1024 / 1024 * 1000 * 1000 * copts->run_num,
+			1024 / 1024 * 1000 * 1000 * opts->run_num,
 		fprintf(stderr,
 			"Decompress bz=%d, threadnum= %d, speed=%0.3f MB/s, timedelay=%0.1f us\n",
 			block_size, thread_num, speed,
-			tc / thread_num / count / copts->run_num);
+			tc / thread_num / count / opts->run_num);
 	}
 
 	free(file_buf);
