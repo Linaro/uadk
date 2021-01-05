@@ -437,7 +437,9 @@ void *send_thread_func(void *arg)
 			}
 			if (ret < 0) {
 				WD_ERR("do comp test fail with %d\n", ret);
-				return NULL;
+				return (void *)(uintptr_t)ret;
+			} else if (info->req.status) {
+				return (void *)(uintptr_t)info->req.status;
 			}
 			if (opts->op_type == WD_DIR_COMPRESS)
 				left -= src_block_size;
@@ -533,17 +535,18 @@ int create_threads(struct hizip_test_info *info)
 int attach_threads(struct hizip_test_info *info)
 {
 	int ret;
+	void *tret;
 
 	if (info->thread_attached)
 		return 0;
-	ret = pthread_join(info->threads[1], NULL);
+	ret = pthread_join(info->threads[1], &tret);
 	if (ret < 0)
 		WD_ERR("Fail on send thread with %d\n", ret);
 	ret = pthread_join(info->threads[0], NULL);
 	if (ret < 0)
 		WD_ERR("Fail on poll thread with %d\n", ret);
 	info->thread_attached = 1;
-	return 0;
+	return (int)(uintptr_t)tret;
 }
 
 /*
