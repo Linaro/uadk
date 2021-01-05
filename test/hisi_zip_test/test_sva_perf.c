@@ -305,9 +305,11 @@ static void stat_end(struct hizip_test_info *info)
 
 static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
-	int nr_fds;
+	static bool event_unavailable;
+
 	int ret = 0;
-	int *perf_fds;
+	int nr_fds = 0;
+	int *perf_fds = NULL;
 	void *in_buf, *out_buf;
 	struct hizip_test_info info = {0};
 	struct wd_sched *sched = NULL;
@@ -340,7 +342,12 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 	hizip_prepare_random_input_data(&info);
 
-	perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds);
+	if (!event_unavailable &&
+	    perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
+		WD_ERR("IOPF statistic unavailable\n");
+		/* No need to retry and print an error on every run */
+		event_unavailable = true;
+	}
 
 	stat_setup(&info);
 
