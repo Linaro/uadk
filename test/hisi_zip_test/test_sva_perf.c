@@ -601,7 +601,6 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 			fprintf(stderr, "NOTE: test might trash the TLB\n");
 
 		*info = save_info;
-		info->faulting = true;
 
 		ret = hizip_test_sched(sched, copts, info);
 		if (ret >= 0) {
