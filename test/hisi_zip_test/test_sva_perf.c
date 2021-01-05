@@ -534,7 +534,6 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct hizip_test_info info = {0};
-	struct hizip_test_info save_info;
 	struct wd_sched *sched;
 
 	info.opts = opts;
@@ -558,12 +557,6 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	info.req.dst_len = opts->total_len * EXPANSION_RATIO;
 	hizip_prepare_random_input_data(&info);
 
-	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
-	if (!sched) {
-		WD_ERR("sample_sched_alloc fail\n");
-		goto out_ctx;
-	}
-
 	ret = init_ctx_config(opts, &info, &sched);
 	if (ret < 0) {
 		WD_ERR("hizip init fail with %d\n", ret);
@@ -573,9 +566,7 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
 
-	save_info = info;
 	for (i = 0; i < opts->compact_run_num; i++) {
-		info = save_info;
 
 		ret = hizip_test_sched(opts, &info);
 		if (ret < 0) {
@@ -600,8 +591,6 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 		/* A warning if the parameters might produce false positives */
 		if (opts->total_len > 0x54000)
 			fprintf(stderr, "NOTE: test might trash the TLB\n");
-
-		info = save_info;
 
 		ret = hizip_test_sched(opts, &info);
 		if (ret >= 0) {
