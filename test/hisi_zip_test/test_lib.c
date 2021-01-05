@@ -367,15 +367,14 @@ static void *async_cb(struct wd_comp_req *req, void *data)
 void *send_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
-	struct test_options *copts = info->opts;
-	struct priv_options *opts = info->popts;
+	struct test_options *opts = info->opts;
 	handle_t h_sess = info->h_sess;
 	int j, ret;
 	size_t left;
 
 	stat_start(info);
 
-	for (j = 0; j < copts->compact_run_num; j++) {
+	for (j = 0; j < opts->compact_run_num; j++) {
 		if (opts->option & TEST_ZLIB) {
 			ret = zlib_deflate(info->out_buf, info->total_len *
 					   EXPANSION_RATIO, info->in_buf,
@@ -383,15 +382,15 @@ void *send_thread_func(void *arg)
 			continue;
 		}
 		/* not TEST_ZLIB */
-		left = copts->total_len;
+		left = opts->total_len;
 		info->req.src = info->in_buf;
 		info->req.dst = info->out_buf;
 		while (left > 0) {
-			info->req.src_len = copts->block_size;
-			info->req.dst_len = copts->block_size * EXPANSION_RATIO;
+			info->req.src_len = opts->block_size;
+			info->req.dst_len = opts->block_size * EXPANSION_RATIO;
 			info->req.cb = async_cb;
 			info->req.cb_param = &info->req;
-			if (copts->sync_mode) {
+			if (opts->sync_mode) {
 				count++;
 				ret = wd_do_comp_async(h_sess, &info->req);
 			} else {
@@ -401,13 +400,13 @@ void *send_thread_func(void *arg)
 				WD_ERR("do comp test fail with %d\n", ret);
 				return NULL;
 			}
-			left -= copts->block_size;
-			info->req.src += copts->block_size;
+			left -= opts->block_size;
+			info->req.src += opts->block_size;
 			/*
 			 * It's BLOCK (STATELESS) mode, so user needs to
 			 * combine output buffer by himself.
 			 */
-			info->req.dst += copts->block_size * EXPANSION_RATIO;
+			info->req.dst += opts->block_size * EXPANSION_RATIO;
 			info->total_out += info->req.dst_len;
 		}
 	}
@@ -435,7 +434,7 @@ static void *poll_thread_func(void *arg)
 	if (!info->opts->sync_mode)
 		return NULL;
 	while (1) {
-		if (info->faults & INJECT_SIG_WORK)
+		if (info->opts->faults & INJECT_SIG_WORK)
 			kill(getpid(), SIGTERM);
 
 		pthread_mutex_lock(&mutex);
@@ -512,11 +511,10 @@ int attach_threads(struct hizip_test_info *info)
  * Choose a device and check whether it can afford the requested contexts.
  * Return a list whose the first device is chosen.
  */
-struct uacce_dev_list *get_dev_list(struct priv_options *opts,
+struct uacce_dev_list *get_dev_list(struct test_options *opts,
 				    int children)
 {
 	struct uacce_dev_list *list, *p, *head = NULL, *prev = NULL;
-	struct test_options *copts = &opts->common;
 	int max_q_num;
 
 	list = wd_get_accel_list("zlib");
@@ -532,7 +530,7 @@ struct uacce_dev_list *get_dev_list(struct priv_options *opts,
 		 * There may be multiple taskes running together.
 		 * The number of multiple taskes is specified in children.
 		 */
-		if (max_q_num < 4 * copts->q_num * children) {
+		if (max_q_num < 4 * opts->q_num * children) {
 			if (!head)
 				head = p;
 			prev = p;
@@ -543,7 +541,7 @@ struct uacce_dev_list *get_dev_list(struct priv_options *opts,
 
 	if (!p) {
 		WD_ERR("Request too much contexts: %d\n",
-		       copts->q_num * 4 * children);
+		       opts->q_num * 4 * children);
 		goto out;
 	}
 
@@ -690,7 +688,7 @@ int hizip_test_sched(struct wd_sched *sched,
 		ret = wd_do_comp_sync(h_sess, &info->req);
 		if (ret < 0)
 			return ret;
-		if (info->faults & INJECT_SIG_WORK)
+		if (info->opts->faults & INJECT_SIG_WORK)
 			kill(getpid(), SIGTERM);
 	}
 	info->total_out = info->req.dst_len;
