@@ -175,7 +175,7 @@ static unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 	return total;
 }
 
-static void enable_thp(struct priv_options *opts,
+static void enable_thp(struct test_options *opts,
 		       struct hizip_test_info *info)
 {
 	int ret;
@@ -245,7 +245,7 @@ void stat_start(struct hizip_test_info *info)
 
 void stat_end(struct hizip_test_info *info)
 {
-	struct test_options *copts = info->opts;
+	struct test_options *opts = info->opts;
 	struct hizip_stats *stats = info->stats;
 	int nr_fds = 0;
 	int *perf_fds = NULL;
@@ -294,10 +294,10 @@ void stat_end(struct hizip_test_info *info)
 			       info->tv.setup_rusage.ru_nsignals;
 
 	/* check last loop is enough, same as below hizip_verify_output */
-	stats->v[ST_COMPRESSION_RATIO] = (double)copts->total_len /
+	stats->v[ST_COMPRESSION_RATIO] = (double)opts->total_len /
 					 info->total_out * 100;
 
-	total_len = copts->total_len * copts->compact_run_num;
+	total_len = opts->total_len * opts->compact_run_num;
 	stats->v[ST_SPEED] = (total_len * 1000) /
 				(1.024 * 1.024 * stats->v[ST_RUN_TIME]);
 
@@ -312,43 +312,41 @@ void stat_end(struct hizip_test_info *info)
 	stats->v[ST_FAULTS] = stats->v[ST_MAJFLT] + stats->v[ST_MINFLT];
 }
 
-static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
+static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 {
 	int nr_fds;
 	int ret = 0;
 	int *perf_fds;
 	void *in_buf, *out_buf;
 	struct hizip_test_info info = {0};
-	struct test_options *copts = &opts->common;
 	struct wd_sched *sched = NULL;
 
 	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
 			    stats->v[ST_RECV_RETRY] = 0;
 
 	info.stats = stats;
-	info.opts = copts;
-	info.popts = opts;
-	info.total_len = copts->total_len;
+	info.opts = opts;
+	info.total_len = opts->total_len;
 
 	info.list = get_dev_list(opts, 1);
 	if (!info.list)
 		return -EINVAL;
 
-	in_buf = info.in_buf = mmap_alloc(copts->total_len);
+	in_buf = info.in_buf = mmap_alloc(opts->total_len);
 	if (!in_buf) {
 		ret = -ENOMEM;
 		goto out_list;
 	}
 
-	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = info.out_buf = mmap_alloc(opts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
 	info.req.src = in_buf;
 	info.req.dst = out_buf;
-	info.req.src_len = copts->total_len;
-	info.req.dst_len = copts->total_len * EXPANSION_RATIO;
+	info.req.src_len = opts->total_len;
+	info.req.dst_len = opts->total_len * EXPANSION_RATIO;
 
 	enable_thp(opts, &info);
 
@@ -367,11 +365,11 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
 		 */
-		memset(out_buf, 0, copts->total_len * EXPANSION_RATIO);
+		memset(out_buf, 0, opts->total_len * EXPANSION_RATIO);
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
-		ret = init_ctx_config(copts, &info, &sched);
+		ret = init_ctx_config(opts, &info, &sched);
 		if (ret) {
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_out_buf;
@@ -382,16 +380,16 @@ static int run_one_test(struct priv_options *opts, struct hizip_stats *stats)
 	create_threads(&info);
 	attach_threads(&info);
 
-	ret = hizip_verify_random_output(out_buf, copts, &info);
+	ret = hizip_verify_random_output(out_buf, opts, &info);
 
 	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
 		uninit_config(&info, sched);
 	free(info.threads);
 out_with_out_buf:
-	munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+	munmap(out_buf, opts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
-	munmap(in_buf, copts->total_len);
+	munmap(in_buf, opts->total_len);
 out_list:
 	wd_free_list_accels(info.list);
 	return ret;
@@ -492,13 +490,13 @@ static void output_csv_header(void)
 	printf("\n");
 }
 
-static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
+static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 {
 	/* Keep in sync with output_csv_header() */
 
 	printf("%d;", csv_format_version);
-	printf("%lu;%u;", opts->common.total_len, opts->common.block_size);
-	printf("%u;", opts->common.compact_run_num);
+	printf("%lu;%u;", opts->total_len, opts->block_size);
+	printf("%u;", opts->compact_run_num);
 	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
 	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
 	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
@@ -515,27 +513,25 @@ static void output_csv_stats(struct hizip_stats *s, struct priv_options *opts)
 	printf("\n");
 }
 
-static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
+static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 {
 	int i;
 	int ret = 0;
 	void *in_buf, *out_buf;
 	struct hizip_test_info info = {0};
 	struct hizip_test_info save_info;
-	struct test_options *copts = &opts->common;
 	struct wd_sched *sched;
 
-	info.faults = opts->faults;
-	info.opts = copts;
+	info.opts = opts;
 	info.list = list;
 
-	info.total_len = copts->total_len;
+	info.total_len = opts->total_len;
 
-	in_buf = info.in_buf = mmap_alloc(copts->total_len);
+	in_buf = info.in_buf = mmap_alloc(opts->total_len);
 	if (!in_buf)
 		return -ENOMEM;
 
-	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = info.out_buf = mmap_alloc(opts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
@@ -543,8 +539,8 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 
 	info.req.src = in_buf;
 	info.req.dst = out_buf;
-	info.req.src_len = copts->total_len;
-	info.req.dst_len = copts->total_len * EXPANSION_RATIO;
+	info.req.src_len = opts->total_len;
+	info.req.dst_len = opts->total_len * EXPANSION_RATIO;
 	hizip_prepare_random_input_data(&info);
 
 	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
@@ -553,7 +549,7 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 		goto out_ctx;
 	}
 
-	ret = init_ctx_config(copts, &info, &sched);
+	ret = init_ctx_config(opts, &info, &sched);
 	if (ret < 0) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_ctx;
@@ -563,10 +559,10 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 		kill(getpid(), SIGTERM);
 
 	save_info = info;
-	for (i = 0; i < copts->compact_run_num; i++) {
+	for (i = 0; i < opts->compact_run_num; i++) {
 		info = save_info;
 
-		ret = hizip_test_sched(sched, copts, &info);
+		ret = hizip_test_sched(sched, opts, &info);
 		if (ret < 0) {
 			WD_ERR("hizip test sched fail with %d\n", ret);
 			break;
@@ -582,21 +578,21 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 		 * the same TLB entry between the tests. Run for example with
 		 * "-s 0x1000 -b 0x1000".
 		 */
-		ret = munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+		ret = munmap(out_buf, opts->total_len * EXPANSION_RATIO);
 		if (ret)
 			perror("unmap()");
 
 		/* A warning if the parameters might produce false positives */
-		if (copts->total_len > 0x54000)
+		if (opts->total_len > 0x54000)
 			fprintf(stderr, "NOTE: test might trash the TLB\n");
 
 		info = save_info;
 
-		ret = hizip_test_sched(sched, copts, &info);
+		ret = hizip_test_sched(sched, opts, &info);
 		if (ret >= 0) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", out_buf, out_buf +
-			       copts->total_len * EXPANSION_RATIO - 1);
+			       opts->total_len * EXPANSION_RATIO - 1);
 			ret = -EFAULT;
 		} else {
 			printf("TLB test success\n");
@@ -608,19 +604,19 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 	/* to do: wd_comp_uninit */
 
 	if (out_buf)
-		ret = hizip_verify_random_output(out_buf, copts, &info);
+		ret = hizip_verify_random_output(out_buf, opts, &info);
 
 	uninit_config(&info, sched);
 
 out_ctx:
 	if (out_buf)
-		munmap(out_buf, copts->total_len * EXPANSION_RATIO);
+		munmap(out_buf, opts->total_len * EXPANSION_RATIO);
 out_with_in_buf:
-	munmap(in_buf, copts->total_len);
+	munmap(in_buf, opts->total_len);
 	return ret;
 }
 
-static int run_bind_test(struct priv_options *opts)
+static int run_bind_test(struct test_options *opts)
 {
 	pid_t pid;
 	int i, ret, count;
@@ -698,18 +694,18 @@ static int run_bind_test(struct priv_options *opts)
 	return success ? 0 : -EFAULT;
 }
 
-static int run_test(struct priv_options *opts, FILE *source, FILE *dest)
+static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 {
 	int i;
 	int ret;
-	int n = opts->common.run_num;
+	int n = opts->run_num;
 	int w = opts->warmup_num;
 	struct hizip_stats avg;
 	struct hizip_stats std;
 	struct hizip_stats variation;
 	struct hizip_stats stats[n];
 
-	if(opts->common.is_file) {
+	if(opts->is_file) {
 		return comp_file_test(source, dest, opts);
 	}
 	memset(&avg , 0, sizeof(avg));
@@ -717,7 +713,7 @@ static int run_test(struct priv_options *opts, FILE *source, FILE *dest)
 	memset(&variation , 0, sizeof(variation));
 
 	if (opts->children || opts->faults) {
-		for (i = 0; i < opts->common.run_num; i++) {
+		for (i = 0; i < opts->run_num; i++) {
 			ret = run_bind_test(opts);
 			if (ret < 0)
 				return ret;
@@ -762,12 +758,12 @@ static int run_test(struct priv_options *opts, FILE *source, FILE *dest)
 
 	fprintf(stderr,
 		"Compress bz=%d nb=%u×%lu, speed=%.1f MB/s (±%0.1f%% N=%d) overall=%.1f MB/s (±%0.1f%%)\n",
-		opts->common.block_size, opts->common.compact_run_num,
-		opts->common.total_len / opts->common.block_size,
+		opts->block_size, opts->compact_run_num,
+		opts->total_len / opts->block_size,
 		avg.v[ST_SPEED], variation.v[ST_SPEED], n,
 		avg.v[ST_TOTAL_SPEED], variation.v[ST_TOTAL_SPEED]);
 
-	if (opts->common.verbose)
+	if (opts->verbose)
 		fprintf(stderr,
 		" send          %12.0f     ±%0.1f%%\n"
 		" recv          %12.0f     ±%0.1f%%\n"
@@ -811,23 +807,21 @@ static void handle_sigbus(int sig)
 
 int main(int argc, char **argv)
 {
-	struct priv_options opts = {
-		.common = {
-			.alg_type	= WD_GZIP,
-			.op_type	= WD_DIR_COMPRESS,
-			.q_num		= 1,
-			.run_num	= 1,
-			.compact_run_num = 1,
-			.thread_num	= 1,
-			.sync_mode	= 0,
-			.block_size	= 512000,
-			.total_len	= opts.common.block_size * 10,
-			.verify		= false,
-			.verbose	= false,
-			.is_decomp	= false,
-			.is_stream	= false,
-			.is_file	= false,
-		},
+	struct test_options opts = {
+		.alg_type		= WD_GZIP,
+		.op_type		= WD_DIR_COMPRESS,
+		.q_num			= 1,
+		.run_num		= 1,
+		.compact_run_num	= 1,
+		.thread_num		= 1,
+		.sync_mode		= 0,
+		.block_size		= 512000,
+		.total_len		= opts.block_size * 10,
+		.verify			= false,
+		.verbose		= false,
+		.is_decomp		= false,
+		.is_stream		= false,
+		.is_file		= false,
 		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
 		.children		= 0,
@@ -896,15 +890,14 @@ int main(int argc, char **argv)
 			}
 			break;
 		default:
-			show_help = parse_common_option(opt, optarg,
-							&opts.common);
+			show_help = parse_common_option(opt, optarg, &opts);
 			break;
 		}
 	}
 
 	signal(SIGBUS, handle_sigbus);
 
-	hizip_test_adjust_len(&opts.common);
+	hizip_test_adjust_len(&opts);
 
 	SYS_ERR_COND(show_help || optind > argc,
 		     COMMON_HELP
