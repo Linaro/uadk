@@ -57,10 +57,6 @@ struct test_options {
 	bool is_decomp;
 	bool is_stream;
 	bool is_file;
-};
-
-struct priv_options {
-	struct test_options common;
 
 	int warmup_num;
 
@@ -98,7 +94,6 @@ struct hizip_test_info {
 	int thread_attached;
 	pthread_t *threads;
 	struct hizip_stats *stats;
-	struct priv_options *popts;
 	struct {
 		struct timespec setup_time;
 		struct timespec start_time;
@@ -110,8 +105,6 @@ struct hizip_test_info {
 		struct rusage start_rusage;
 		struct rusage end_rusage;
 	} tv;
-	/* copy of faults field in struct priv_options */
-	unsigned long faults;
 };
 
 void stat_start(struct hizip_test_info *info);
@@ -128,7 +121,7 @@ int init_ctx_config(struct test_options *opts,
 		    struct wd_sched **sched
 		    );
 void uninit_config(void *priv, struct wd_sched *sched);
-struct uacce_dev_list *get_dev_list(struct priv_options *opts, int children);
+struct uacce_dev_list *get_dev_list(struct test_options *opts, int children);
 
 void hizip_prepare_random_input_data(struct hizip_test_info *info);
 int hizip_verify_random_output(char *out_buf, struct test_options *opts,
@@ -156,7 +149,7 @@ int hw_stream_decompress(int alg_type, int blksize,
 		         unsigned char *dst, __u32 *dstlen,
 		         unsigned char *src, __u32 srclen);
 
-int comp_file_test(FILE *source, FILE *dest, struct priv_options *opts);
+int comp_file_test(FILE *source, FILE *dest, struct test_options *opts);
 
 #ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
