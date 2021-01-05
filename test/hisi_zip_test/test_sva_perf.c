@@ -20,11 +20,6 @@
 #include "sched_sample.h"
 
 enum hizip_stats_variable {
-	ST_SEND,
-	ST_RECV,
-	ST_SEND_RETRY,
-	ST_RECV_RETRY,
-
 	ST_SETUP_TIME,
 	ST_RUN_TIME,
 	ST_CPU_TIME,
@@ -231,13 +226,6 @@ out_err:
 
 void stat_start(struct hizip_test_info *info)
 {
-	struct hizip_stats *stats = info->stats;
-
-	stats->v[ST_SEND] = 0;
-	stats->v[ST_RECV] = 0;
-	stats->v[ST_SEND_RETRY] = 0;
-	stats->v[ST_RECV_RETRY] = 0;
-
 	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.start_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.start_cputime);
 	getrusage(RUSAGE_SELF, &info->tv.start_rusage);
@@ -320,9 +308,6 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	void *in_buf, *out_buf;
 	struct hizip_test_info info = {0};
 	struct wd_sched *sched = NULL;
-
-	stats->v[ST_SEND] = stats->v[ST_RECV] = stats->v[ST_SEND_RETRY] =
-			    stats->v[ST_RECV_RETRY] = 0;
 
 	info.stats = stats;
 	info.opts = opts;
@@ -497,8 +482,8 @@ static void output_csv_stats(struct hizip_stats *s, struct test_options *opts)
 	printf("%d;", csv_format_version);
 	printf("%lu;%u;", opts->total_len, opts->block_size);
 	printf("%u;", opts->compact_run_num);
-	printf("%.0f;%.0f;%.0f;%.0f;", s->v[ST_SEND], s->v[ST_RECV],
-	       s->v[ST_SEND_RETRY], s->v[ST_RECV_RETRY]);
+	/* Send/recv are deprecated */
+	printf("0;0;0;0;");
 	printf("%.0f;%.0f;%.0f;", s->v[ST_SETUP_TIME], s->v[ST_RUN_TIME],
 	       s->v[ST_CPU_TIME]);
 	printf("%.0f;%.0f;", s->v[ST_USER_TIME] * 1000,
@@ -765,10 +750,6 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 
 	if (opts->verbose)
 		fprintf(stderr,
-		" send          %12.0f     ±%0.1f%%\n"
-		" recv          %12.0f     ±%0.1f%%\n"
-		" send retry    %12.0f     ±%0.1f%%\n"
-		" recv retry    %12.0f     ±%0.1f%%\n"
 		" setup time    %12.2f us  ±%0.1f%%\n"
 		" run time      %12.2f us  ±%0.1f%%\n"
 		" CPU time      %12.2f us  ±%0.1f%%\n"
@@ -780,10 +761,6 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 		" voluntary cs  %12.0f     ±%0.1f%%\n"
 		" invol cs      %12.0f     ±%0.1f%%\n"
 		" compression   %12.0f %%   ±%0.1f%%\n",
-		avg.v[ST_SEND],			variation.v[ST_SEND],
-		avg.v[ST_RECV],			variation.v[ST_RECV],
-		avg.v[ST_SEND_RETRY],		variation.v[ST_SEND_RETRY],
-		avg.v[ST_RECV_RETRY],		variation.v[ST_RECV_RETRY],
 		avg.v[ST_SETUP_TIME] / 1000,	variation.v[ST_SETUP_TIME],
 		avg.v[ST_RUN_TIME] / 1000,	variation.v[ST_RUN_TIME],
 		avg.v[ST_CPU_TIME] / 1000,	variation.v[ST_CPU_TIME],
