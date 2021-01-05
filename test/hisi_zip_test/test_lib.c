@@ -623,7 +623,9 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		ctx_conf->ctxs[i].op_type = opts->op_type;
 		ctx_conf->ctxs[i].ctx_mode = opts->sync_mode;
 	}
-	wd_comp_init(ctx_conf, *sched);
+	ret = wd_comp_init(ctx_conf, *sched);
+	if (ret)
+		goto out_ctx;
 
 	/* allocate a wd_comp session */
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
