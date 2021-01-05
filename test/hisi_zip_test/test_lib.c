@@ -54,7 +54,7 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 	j = &rand_ctx->off;
 	for (i = 0; i < size; i += 4) {
 		if (*j) {
-			/* Somthing left from a previous run */
+			/* Something left from a previous run */
 			n = rand_ctx->last;
 		} else {
 			n = nrand48(rand_ctx->state);
