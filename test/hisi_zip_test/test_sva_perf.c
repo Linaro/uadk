@@ -19,11 +19,6 @@
 #include "test_lib.h"
 #include "sched_sample.h"
 
-struct priv_context {
-	struct hizip_test_info info;
-	struct priv_options *opts;
-};
-
 enum hizip_stats_variable {
 	ST_SEND,
 	ST_RECV,
@@ -525,37 +520,32 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 	int i;
 	int ret = 0;
 	void *in_buf, *out_buf;
-	struct priv_context priv_ctx;
+	struct hizip_test_info info = {0};
 	struct hizip_test_info save_info;
-	struct hizip_test_info *info = &priv_ctx.info;
 	struct test_options *copts = &opts->common;
 	struct wd_sched *sched;
 
-	memset(&priv_ctx, 0, sizeof(struct priv_context));
-	priv_ctx.opts = opts;
+	info.faults = opts->faults;
+	info.opts = copts;
+	info.list = list;
 
-	info->faults = opts->faults;
+	info.total_len = copts->total_len;
 
-	info->opts = copts;
-	info->list = list;
-
-	info->total_len = copts->total_len;
-
-	in_buf = info->in_buf = mmap_alloc(copts->total_len);
+	in_buf = info.in_buf = mmap_alloc(copts->total_len);
 	if (!in_buf)
 		return -ENOMEM;
 
-	out_buf = info->out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
+	out_buf = info.out_buf = mmap_alloc(copts->total_len * EXPANSION_RATIO);
 	if (!out_buf) {
 		ret = -ENOMEM;
 		goto out_with_in_buf;
 	}
 
-	info->req.src = in_buf;
-	info->req.dst = out_buf;
-	info->req.src_len = copts->total_len;
-	info->req.dst_len = copts->total_len * EXPANSION_RATIO;
-	hizip_prepare_random_input_data(info);
+	info.req.src = in_buf;
+	info.req.dst = out_buf;
+	info.req.src_len = copts->total_len;
+	info.req.dst_len = copts->total_len * EXPANSION_RATIO;
+	hizip_prepare_random_input_data(&info);
 
 	sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!sched) {
@@ -563,7 +553,7 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 		goto out_ctx;
 	}
 
-	ret = init_ctx_config(copts, info, &sched);
+	ret = init_ctx_config(copts, &info, &sched);
 	if (ret < 0) {
 		WD_ERR("hizip init fail with %d\n", ret);
 		goto out_ctx;
@@ -572,11 +562,11 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
 
-	save_info = *info;
+	save_info = info;
 	for (i = 0; i < copts->compact_run_num; i++) {
-		*info = save_info;
+		info = save_info;
 
-		ret = hizip_test_sched(sched, copts, info);
+		ret = hizip_test_sched(sched, copts, &info);
 		if (ret < 0) {
 			WD_ERR("hizip test sched fail with %d\n", ret);
 			break;
@@ -600,9 +590,9 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 		if (copts->total_len > 0x54000)
 			fprintf(stderr, "NOTE: test might trash the TLB\n");
 
-		*info = save_info;
+		info = save_info;
 
-		ret = hizip_test_sched(sched, copts, info);
+		ret = hizip_test_sched(sched, copts, &info);
 		if (ret >= 0) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", out_buf, out_buf +
@@ -618,9 +608,9 @@ static int run_one_child(struct priv_options *opts, struct uacce_dev_list *list)
 	/* to do: wd_comp_uninit */
 
 	if (out_buf)
-		ret = hizip_verify_random_output(out_buf, copts, info);
+		ret = hizip_verify_random_output(out_buf, copts, &info);
 
-	uninit_config(info, sched);
+	uninit_config(&info, sched);
 
 out_ctx:
 	if (out_buf)
