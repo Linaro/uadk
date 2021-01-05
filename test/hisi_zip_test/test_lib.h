@@ -89,7 +89,6 @@ struct hizip_test_info {
 	char *in_buf;
 	char *out_buf;
 	unsigned long total_len;
-	int is_nosva;
 	size_t total_out;
 	struct uacce_dev_list *list;
 	handle_t h_sess;
@@ -100,13 +99,6 @@ struct hizip_test_info {
 	pthread_t *threads;
 	struct hizip_stats *stats;
 	struct priv_options *popts;
-	/* statistic */
-	struct {
-		int send;
-		int send_retries;
-		int recv;
-		int recv_retries;
-	} *stat;
 	struct {
 		struct timespec setup_time;
 		struct timespec start_time;
@@ -118,8 +110,6 @@ struct hizip_test_info {
 		struct rusage start_rusage;
 		struct rusage end_rusage;
 	} tv;
-	/* Test is expected to fail */
-	bool faulting;
 	/* copy of faults field in struct priv_options */
 	unsigned long faults;
 };
