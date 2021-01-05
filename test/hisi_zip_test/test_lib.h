@@ -110,10 +110,6 @@ struct hizip_test_info {
 void *send_thread_func(void *arg);
 int create_threads(struct hizip_test_info *info);
 int attach_threads(struct hizip_test_info *info);
-int hizip_test_sched(struct wd_sched *sched,
-		     struct test_options *opts,
-		     struct hizip_test_info *info
-		     );
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
 		    struct wd_sched **sched
