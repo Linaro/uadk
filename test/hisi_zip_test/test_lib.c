@@ -434,6 +434,8 @@ void *send_thread_func(void *arg)
 				ret = wd_do_comp_async(h_sess, &info->req);
 			} else {
 				ret = wd_do_comp_sync(h_sess, &info->req);
+				if (info->opts->faults & INJECT_SIG_WORK)
+					kill(getpid(), SIGTERM);
 			}
 			if (ret < 0) {
 				WD_ERR("do comp test fail with %d\n", ret);
