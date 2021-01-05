@@ -47,7 +47,6 @@ static unsigned int g_ctxnum;
 static unsigned int g_data_fmt = 0;
 static unsigned int g_sgl_num = 0;
 static pthread_spinlock_t lock = 0;
-static __u32 last_ctx = 0;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
@@ -3302,115 +3301,6 @@ static int sva_sync_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	return 0;
 }
 
-static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-				     const struct sched_key *key)
-{
-	__u32 index;
-
-	pthread_spin_lock(&lock);
-
-	if (++last_ctx == g_ctx_cfg.ctx_num)
-		last_ctx = 0;
-	index = last_ctx;
-
-	pthread_spin_unlock(&lock);
-
-	return index;
-}
-
-static int sva_sched_poll_policy(handle_t h_sched_ctx, __u32 expect,
-				 __u32 *count)
-{
-	int recv = 0;
-	int ret = 0;
-	__u32 cnt;
-	int i;
-
-	if (unlikely(g_ctx_cfg.ctxs[0].ctx_mode != CTX_MODE_ASYNC)) {
-		SEC_TST_PRT("ctx mode is not AYNC!\n");
-		*count = 0;
-		return -1;
-	}
-
-	for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
-		ret = wd_cipher_poll_ctx(i, 1, &cnt);
-		/* ret is 0 means no error and recv 1 finished task */
-		if (!ret)
-			recv++;
-		/* here is an error, return ret and recv num currently */
-		else if (ret != -EAGAIN)
-			break;
-	}
-
-	*count = recv;
-
-	return ret;
-}
-
-static int sva_init_ctx_config(int type, int mode)
-{
-	struct uacce_dev_list *list;
-	struct wd_sched sched;
-	struct wd_ctx *ctx_attr;
-	int ret;
-	int i;
-
-	list = wd_get_accel_list("cipher");
-	if (!list)
-		return -ENODEV;
-
-	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
-	if (g_ctxnum > USE_CTX_NUM)
-		SEC_TST_PRT("ctx nums request too much!\n");
-
-	ctx_attr = malloc(g_ctxnum * sizeof(struct wd_ctx));
-	if (!ctx_attr) {
-		SEC_TST_PRT("malloc ctx_attr memory fail!\n");
-		return -ENOMEM;
-	}
-	memset(ctx_attr, 0, g_ctxnum * sizeof(struct wd_ctx));
-
-	/* Just use first found dev to test here */
-	for (i = 0; i < g_ctxnum; i++) {
-		ctx_attr[i].ctx = wd_request_ctx(list->dev);
-		if (!ctx_attr[i].ctx) {
-			ret = -EINVAL;
-			SEC_TST_PRT("Fail to request ctx!\n");
-			goto out;
-		}
-		ctx_attr[i].op_type = type;
-		ctx_attr[i].ctx_mode = mode;
-	}
-
-	g_ctx_cfg.ctx_num = g_ctxnum;
-	g_ctx_cfg.ctxs = ctx_attr;
-	sched.name = "sched_multi";
-	sched.pick_next_ctx = sva_sched_pick_next_ctx;
-	sched.poll_policy = sva_sched_poll_policy;
-	/*cipher init*/
-	ret = wd_cipher_init(&g_ctx_cfg, &sched);
-	if (ret) {
-		SEC_TST_PRT("Fail to cipher ctx!\n");
-		goto out;
-	}
-	wd_free_list_accels(list);
-
-	return 0;
-out:
-	free(ctx_attr);
-	return ret;
-}
-
-static void sva_uninit_config(void)
-{
-	int i;
-
-	wd_cipher_uninit();
-	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
-		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
-	free(g_ctx_cfg.ctxs);
-}
-
 static int sec_sva_test(void)
 {
 	struct wd_cipher_req	req[SVA_THREADS];
@@ -3433,9 +3323,9 @@ static int sec_sva_test(void)
 	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * g_thread_num);
 
 	if (g_syncmode == 0)
-		ret = sva_init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+		ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	else
-		ret = sva_init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
+		ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		SEC_TST_PRT("fail to init ctx config!\n");
 		goto out_thr;
@@ -3508,7 +3398,7 @@ static int sec_sva_test(void)
 		goto out_config;
 
 out_config:
-	sva_uninit_config();
+	uninit_config();
 out_thr:
 	for (j = i - 1; j >= 0; j--) {
 		free_bd_pool(&datas[j]);
