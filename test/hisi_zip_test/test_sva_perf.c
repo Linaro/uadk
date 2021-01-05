@@ -389,6 +389,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 			WD_ERR("hizip init fail with %d\n", ret);
 			goto out_with_defl_buf;
 		}
+		if (opts->faults & INJECT_SIG_BIND)
+			kill(getpid(), SIGTERM);
 	}
 
 	stat_start(&info);
@@ -398,7 +400,38 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stat_end(&info);
 	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
 
-	ret = hizip_verify_random_output(opts, &info);
+	if (opts->faults & INJECT_TLB_FAULT) {
+		/*
+		 * Now unmap the buffers and retry the access. Normally we
+		 * should get an access fault, but if the TLB wasn't properly
+		 * invalidated, the access succeeds and corrupts memory!
+		 * This test requires small jobs, to make sure that we reuse
+		 * the same TLB entry between the tests. Run for example with
+		 * "-s 0x1000 -b 0x1000".
+		 */
+		ret = munmap(infl_buf, infl_size);
+		if (ret)
+			perror("unmap()");
+
+		/* A warning if the parameters might produce false positives */
+		if (opts->total_len > 0x54000)
+			fprintf(stderr, "NOTE: test might trash the TLB\n");
+
+		create_threads(&info);
+		ret = attach_threads(&info);
+		if (!ret) {
+			WD_ERR("TLB test failed, broken invalidate! "
+			       "VA=%p-%p\n", infl_buf, infl_buf +
+			       opts->total_len * EXPANSION_RATIO - 1);
+			ret = -EFAULT;
+		} else {
+			printf("TLB test success, returned %d\n", ret);
+			ret = 0;
+		}
+		infl_buf = NULL;
+	} else {
+		ret = hizip_verify_random_output(opts, &info);
+	}
 
 	usleep(10);
 	if (!(opts->option & TEST_ZLIB))
@@ -543,8 +576,6 @@ static int hizip_test_sched(struct test_options *opts,
 		ret = wd_do_comp_sync(info->h_sess, &info->req);
 		if (ret < 0)
 			return ret;
-		if (info->opts->faults & INJECT_SIG_WORK)
-			kill(getpid(), SIGTERM);
 	}
 	info->total_out = info->req.dst_len;
 	return 0;
@@ -584,9 +615,6 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 		goto out_ctx;
 	}
 
-	if (opts->faults & INJECT_SIG_BIND)
-		kill(getpid(), SIGTERM);
-
 	for (i = 0; i < opts->compact_run_num; i++) {
 
 		ret = hizip_test_sched(opts, &info);
@@ -594,36 +622,6 @@ static int run_one_child(struct test_options *opts, struct uacce_dev_list *list)
 			WD_ERR("hizip test sched fail with %d\n", ret);
 			break;
 		}
-	}
-
-	if (ret >= 0 && opts->faults & INJECT_TLB_FAULT) {
-		/*
-		 * Now unmap the buffers and retry the access. Normally we
-		 * should get an access fault, but if the TLB wasn't properly
-		 * invalidated, the access succeeds and corrupts memory!
-		 * This test requires small jobs, to make sure that we reuse
-		 * the same TLB entry between the tests. Run for example with
-		 * "-s 0x1000 -b 0x1000".
-		 */
-		ret = munmap(out_buf, opts->total_len * EXPANSION_RATIO);
-		if (ret)
-			perror("unmap()");
-
-		/* A warning if the parameters might produce false positives */
-		if (opts->total_len > 0x54000)
-			fprintf(stderr, "NOTE: test might trash the TLB\n");
-
-		ret = hizip_test_sched(opts, &info);
-		if (ret >= 0) {
-			WD_ERR("TLB test failed, broken invalidate! "
-			       "VA=%p-%p\n", out_buf, out_buf +
-			       opts->total_len * EXPANSION_RATIO - 1);
-			ret = -EFAULT;
-		} else {
-			printf("TLB test success\n");
-			ret = 0;
-		}
-		out_buf = NULL;
 	}
 
 	/* to do: wd_comp_uninit */
@@ -737,7 +735,7 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 	memset(&std , 0, sizeof(std));
 	memset(&variation , 0, sizeof(variation));
 
-	if (opts->children || opts->faults) {
+	if (opts->children) {
 		for (i = 0; i < opts->run_num; i++) {
 			ret = run_bind_test(opts);
 			if (ret < 0)
