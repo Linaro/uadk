@@ -409,10 +409,8 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 
 	idx = wd_get_msg_from_pool(&wd_cipher_setting.pool, index,
 				   (void **)&msg);
-	if (idx < 0) {
-		WD_ERR("busy, failed to get msg from pool!\n");
+	if (idx < 0)
 		return -EBUSY;
-	}
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = idx;
@@ -442,20 +440,19 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 	}
 
 	do {
-		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx,
-							    &resp_msg);
-		if (ret == -EAGAIN) {
-			break;
-		} else if (ret < 0) {
+		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx, &resp_msg);
+		if (ret == -EAGAIN)
+			return ret;
+		else if (ret < 0) {
 			WD_ERR("wd cipher recv hw err!\n");
-			break;
+			return ret;
 		}
 		recv_count++;
 		msg = wd_find_msg_in_pool(&wd_cipher_setting.pool, index,
 					  resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
-			break;
+			return -EINVAL;
 		}
 
 		msg->tag = resp_msg.tag;
@@ -465,8 +462,8 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, index,
 				   resp_msg.tag);
-	} while (--expt);
-	*count = recv_count;
+		*count = recv_count;
+	} while (expt > *count);
 
 	return ret;
 }
