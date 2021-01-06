@@ -3129,21 +3129,17 @@ out:
 static void *sva_poll_func(void *arg)
 {
 	__u32 count = 0;
-	__u32 recv = 0;
 	int ret;
 
 	int expt = g_times * g_thread_num;
 
-	while (1) {
-		ret = wd_cipher_poll(1, &count);
+	do {
+		ret = wd_cipher_poll(expt, &count);
 		if (ret < 0 && ret != -EAGAIN) {
 			SEC_TST_PRT("poll ctx error: %d\n", ret);
 			break;
 		}
-		recv += count;
-		if (expt == recv)
-			break;
-	}
+	} while (expt - count);
 
 	pthread_exit(NULL);
 
