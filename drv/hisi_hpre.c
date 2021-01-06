@@ -1114,15 +1114,9 @@ static int ecc_prepare_dh_gen_in(struct wd_ecc_msg *msg,
 static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 				     struct hisi_hpre_sqe *hw_msg, void **data)
 {
-	struct wd_ecc_in *in = msg->req.src;
-	struct wd_ecc_point *pbk = NULL;
+	struct wd_ecc_dh_in *dh_in = (void *)msg->req.src;
+	struct wd_ecc_point *pbk = &dh_in->pbk;
 	int ret;
-
-	wd_ecxdh_get_in_params(in, &pbk);
-	if (!pbk) {
-		WD_ERR("failed to get ecxdh in param!\n");
-		return -WD_EINVAL;
-	}
 
 	ret = crypto_bin_to_hpre_bin(pbk->x.data, (const char *)pbk->x.data,
 				     pbk->x.bsize, pbk->x.dsize, "ecdh compute x");
@@ -1413,6 +1407,13 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 			    struct hisi_hpre_sqe *hw_msg)
 {
 	int ret = -WD_EINVAL;
+	void *va;
+
+	/* async */
+	if (LW_U16(hw_msg->low_tag)) {
+		va = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
+		msg->req.dst = container_of(va, struct wd_ecc_out, data);
+	}
 
 	if (hw_msg->alg == HPRE_ALG_SM2_SIGN ||
 		hw_msg->alg == HPRE_ALG_ECDSA_SIGN)
