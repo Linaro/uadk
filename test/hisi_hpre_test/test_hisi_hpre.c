@@ -3105,7 +3105,6 @@ static struct ecc_test_ctx *ecc_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 	EC_KEY *key_a = NULL;
 	EC_GROUP *group_a;
 	BIGNUM *pubKey;
-	//void *ctx = setup.ctx;
 	struct wd_dtb d, e, k;
 	int ret;
 	u32 key_size;
@@ -3302,7 +3301,7 @@ static struct ecc_test_ctx *ecc_create_hw_verf_test_ctx(struct ecc_test_ctx_setu
 	e.bsize = key_size;
 
 	if (setup.key_from) {
-		r.data = setup.sign + 4;
+		r.data = setup.sign;
 		r.dsize = key_size;
 		r.bsize = key_size;
 		s.data = r.data + key_size;
@@ -3532,8 +3531,8 @@ int ecdh_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_type)
 		setup->rp_size = key_size;
 
 		/* ecc verf */
-		setup->sign = ecc_cp_sign_secp256k1;
-		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
+		setup->sign = ecc_cp_sign_secp128k1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp128k1);
 
 	} else if (setup->nid == 711 || g_config.key_bits == 192) {
 		setup->d = ecdh_da_secp192k1;
