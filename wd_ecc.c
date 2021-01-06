@@ -534,7 +534,7 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 	}
 
 	c1 = (struct wd_ecc_point *)start;
-	c1->x.data = start + st_sz;
+	c1->x.data = (char *)start + st_sz;
 	c1->x.dsize = ksz;
 	c1->x.bsize = ksz;
 	c1->y.data = c1->x.data + ksz;
@@ -967,7 +967,7 @@ static bool is_alg_support(const char *alg)
 
 static int setup_param_check(struct wd_ecc_sess_setup *setup)
 {
-	if (!setup) {
+	if (!setup || !setup->alg) {
 		WD_ERR("input param error!\n");
 		return -WD_EINVAL;
 	}
@@ -1275,19 +1275,6 @@ struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 	}
 
 	return ecc_out;
-}
-
-void wd_ecxdh_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk)
-{
-	struct wd_ecc_dh_in *dh_in = (void *)in;
-
-	if (!in) {
-		WD_ERR("input NULL in get ecdh in!\n");
-		return;
-	}
-
-	if (pbk)
-		*pbk = &dh_in->pbk;
 }
 
 void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
