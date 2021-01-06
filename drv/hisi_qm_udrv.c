@@ -500,7 +500,8 @@ static void *hisi_qm_create_sgl(__u32 sge_num)
 	void *sgl;
 	int size;
 
-	size = sizeof(struct hisi_sgl) + sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
+	size = sizeof(struct hisi_sgl) +
+			sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
 	sgl = calloc(1, size);
 	if (!sgl)
 		return NULL;
@@ -522,41 +523,40 @@ static struct hisi_sgl *hisi_qm_align_sgl(void *sgl, __u32 sge_num)
 	return sgl_align;
 }
 
-
 handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 {
 	struct hisi_sgl_pool *sgl_pool;
 	int i;
 
 	if (!sgl_num || !sge_num || sge_num > HISI_SGE_NUM_IN_SGL) {
-		WD_ERR("Create sgl_pool failed, sgl_num=%u, sge_num=%u\n",
+		WD_ERR("create sgl_pool failed, sgl_num=%u, sge_num=%u\n",
 			sgl_num, sge_num);
 		return 0;
 	}
 
 	sgl_pool = calloc(1, sizeof(struct hisi_sgl_pool));
 	if (!sgl_pool) {
-		WD_ERR("Sgl pool alloc memory failed.\n");
-		return (handle_t)0;
+		WD_ERR("sgl pool alloc memory failed.\n");
+		return 0;
 	}
 
 	sgl_pool->sgl = calloc(sgl_num, sizeof(void*));
 	if (!sgl_pool->sgl) {
-		WD_ERR("Sgl array alloc memory failed.\n");
+		WD_ERR("sgl array alloc memory failed.\n");
 		goto err_out;
 	}
 
 	sgl_pool->sgl_align = calloc(sgl_num, sizeof(void*));
 	if (!sgl_pool->sgl_align) {
+		WD_ERR("sgl align array alloc memory failed.\n");
 		goto err_out;
-		WD_ERR("Sgl align array alloc memory failed.\n");
 	}
 
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
 		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
 		if (!sgl_pool->sgl[i]) {
-			WD_ERR("Sgl create failed.\n");
+			WD_ERR("sgl create failed.\n");
 			goto err_out;
 		}
 
@@ -594,8 +594,6 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 			free(pool->sgl_align);
 		free(pool);
 	}
-
-	return;
 }
 
 static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
@@ -663,14 +661,14 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 {
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
-	struct hisi_sgl *head;
-	struct hisi_sgl *cur;
-	struct hisi_sgl *next;
 	struct wd_datalist *tmp = sgl;
+	struct hisi_sgl *head;
+	struct hisi_sgl *next;
+	struct hisi_sgl *cur;
 	int i = 0;
 
 	if (!pool || !sgl) {
-		WD_ERR("Get hw sgl pool or sgl is NULL\n");
+		WD_ERR("get hw sgl pool or sgl is NULL\n");
 		return NULL;
 	}
 
@@ -681,11 +679,16 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	cur = head;
 	tmp = sgl;
 	while (tmp) {
-		if (!tmp->data || !tmp->len)
+		/* if the user's data is NULL, jump next one */
+		if (!tmp->data || tmp->len == 0) {
+			tmp = tmp->next;
 			continue;
+		}
 
-		if(tmp->len > HISI_MAX_SIZE_IN_SGE)
+		if (tmp->len > HISI_MAX_SIZE_IN_SGE) {
+			WD_ERR("the data len is invalid: %u\n", tmp->len);
 			goto err_out;
+		}
 
 		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
 		cur->sge_entries[i].len = tmp->len;
@@ -698,10 +701,10 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 		 * we should alloc another hw sgl to hold up them until the sgl
 		 * pool is not enough or all the data is trasnform to hw sgl.
 		 */
-		if (i == pool->sge_num && tmp->next && tmp->next->data) {
+		if (i == pool->sge_num && tmp->next) {
 			next = hisi_qm_sgl_pop(pool);
 			if (!next) {
-				WD_ERR("The sgl pool is not enough");
+				WD_ERR("the sgl pool is not enough");
 				goto err_out;
 			}
 			cur->next_dma = (uintptr_t)next;
@@ -779,15 +782,13 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
 
 	/* find the sgl chain position */
 	while (tmp) {
-		if (len + tmp->entry_size_in_sgl > offset) {
-			/* the sgl chain is find */
+		/* the sgl chain is find */
+		if (len + tmp->entry_size_in_sgl > offset)
 			break;
-		}
 
-		if (!tmp->next_dma) {
-			/* the offset is over the sgl */
+		/* the offset is over the sgl */
+		if (!tmp->next_dma)
 			return;
-		}
 
 		tmp = (struct hisi_sgl*)tmp->next_dma;
 		len += tmp->entry_size_in_sgl;

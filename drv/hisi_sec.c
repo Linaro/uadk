@@ -44,6 +44,11 @@
 #define SEC_AI_GEN_OFFSET_V3	2
 #define SEC_SEQ_OFFSET_V3	6
 
+#define SEC_SGL_MODE_MASK_V3 0x4800
+#define SEC_PBUFF_MODE_MASK_V3 0x800
+#define SEC_SGL_SDS_MASK 0x80
+#define SEC_SGL_SDM_MASK 0x04
+
 #define DES_KEY_SIZE		  8
 #define SEC_3DES_2KEY_SIZE	  (2 * DES_KEY_SIZE)
 #define SEC_3DES_3KEY_SIZE	  (3 * DES_KEY_SIZE)
@@ -487,7 +492,6 @@ static void ctr_iv_inc(__u8 *counter, __u32 c)
 		c >>= BYTE_BITS;
 	} while (n);
 }
-extern void hexdump(char *buff, unsigned int len);
 
 static void update_iv(struct wd_cipher_msg *msg)
 {
@@ -757,13 +761,13 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 data_fmt, __u8 **in,
 		return -ENOMEM;
 	}
 
-	sqe->sds_sa_type |= 0x80;
+	sqe->sds_sa_type |= SEC_SGL_SDS_MASK;
 	/*
 	 * src_addr_type: 0~1 bits not used now.
 	 * dst_addr_type: 2~4 bits;
 	 * mac_addr_type: 5~7 bits;
 	 */
-	sqe->sdm_addr_type |= 0x04;
+	sqe->sdm_addr_type |= SEC_SGL_SDM_MASK;
 
 	*in = hw_sgl_in;
 	*out = hw_sgl_out;
@@ -783,90 +787,36 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 data_fmt, __u8 **in,
 
 	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
 	if (!h_sgl_pool)
-		return -ENOMEM;
+		return -EINVAL;
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*in));
 	if (!hw_sgl_in) {
 		WD_ERR("failed to get hw sgl in!\n");
-		return -ENOMEM;
+		return -EINVAL;
 	}
 
 	if (type == WD_DIGEST) {
 		hw_sgl_out = *out;
-		sqe->bd_param |= 0x800;
+		sqe->bd_param |= SEC_PBUFF_MODE_MASK_V3;
 	} else {
 		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*out));
 		if (!hw_sgl_out) {
 			WD_ERR("failed to get hw sgl out!\n");
 			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-			return -ENOMEM;
+			return -EINVAL;
 		}
 
 		/*
 		 * src_addr_type: 11~13 bit
 		 * dst_addr_type: 14~16 bit
 		 */
-		sqe->bd_param |= 0x4800;
+		sqe->bd_param |= SEC_SGL_MODE_MASK_V3;
 	}
 
 	*in = hw_sgl_in;
 	*out = hw_sgl_out;
 
 	return 0;
-}
-
-
-void dump_sqe(struct hisi_sec_sqe *sqe)
-{
-	printf("*************************************");
-	printf("type_auth_cipher: 0x%x\n", sqe->type_auth_cipher);
-	printf("sds_sa_type: 0x%x\n", sqe->sds_sa_type);
-	printf("sdm_addr_type: 0x%x\n", sqe->sdm_addr_type);
-	printf("rsvd0: 0x%x\n", sqe->rsvd0);
-	printf("huk_ci_key: 0x%x\n", sqe->huk_ci_key);
-	printf("ai_apd_cs: 0x%x\n", sqe->ai_apd_cs);
-	printf("rca_key_frm: 0x%x\n", sqe->rca_key_frm);
-	printf("iv_tls_ld: 0x%x\n", sqe->iv_tls_ld);
-
-	printf("mac_key_alg: 0x%x\n", sqe->type2.mac_key_alg);
-	printf("icvw_kmode: 0x%x\n", sqe->type2.icvw_kmode);
-	printf("c_alg: 0x%x\n", sqe->type2.c_alg);
-	printf("rsvd4: 0x%x\n", sqe->type2.rsvd4);
-	printf("alen_ivllen: 0x%x\n", sqe->type2.alen_ivllen);
-	printf("clen_ivhlen: 0x%x\n", sqe->type2.clen_ivhlen);
-	printf("auth_src_offset: 0x%x\n", sqe->type2.auth_src_offset);
-	printf("cipher_src_offset: 0x%x\n", sqe->type2.cipher_src_offset);
-	printf("cs_ip_header_offset: 0x%x\n", sqe->type2.cs_ip_header_offset);
-	printf("cs_udp_header_offset: 0x%x\n", sqe->type2.cs_udp_header_offset);
-	printf("pass_word_len: 0x%x\n", sqe->type2.pass_word_len);
-	printf("dk_len: 0x%x\n", sqe->type2.dk_len);
-	printf("salt3: 0x%x\n", sqe->type2.salt3);
-	printf("salt2: 0x%x\n", sqe->type2.salt2);
-	printf("salt1: 0x%x\n", sqe->type2.salt1);
-	printf("salt0: 0x%x\n", sqe->type2.salt0);
-	printf("tag: 0x%x\n", sqe->type2.tag);
-	printf("rsvd5: 0x%x\n", sqe->type2.rsvd5);
-	printf("cph_pad: 0x%x\n", sqe->type2.cph_pad);
-	printf("c_pad_len_field: 0x%x\n", sqe->type2.c_pad_len_field);
-	printf("long_a_data_len: 0x%llx\n", sqe->type2.long_a_data_len);
-	printf("a_ivin_addr: 0x%llx\n", sqe->type2.a_ivin_addr);
-	printf("a_key_addr: 0x%llx\n", sqe->type2.a_key_addr);
-	printf("mac_addr: 0x%llx\n", sqe->type2.mac_addr);
-	printf("c_ivin_addr: 0x%llx\n", sqe->type2.c_ivin_addr);
-	printf("c_key_addr: 0x%llx\n", sqe->type2.c_key_addr);
-	printf("data_src_addr: 0x%llx\n", sqe->type2.data_src_addr);
-	printf("data_dst_addr: 0x%llx\n", sqe->type2.data_dst_addr);
-	printf("done_flag: 0x%x\n", sqe->type2.done_flag);
-	printf("error_type: 0x%x\n", sqe->type2.error_type);
-	printf("warning_type: 0x%x\n", sqe->type2.warning_type);
-	printf("mac_i3: 0x%x\n", sqe->type2.mac_i3);
-	printf("mac_i2: 0x%x\n", sqe->type2.mac_i2);
-	printf("mac_i1: 0x%x\n", sqe->type2.mac_i1);
-	printf("mac_i0: 0x%x\n", sqe->type2.mac_i0);
-	printf("check_sum_i: 0x%x\n", sqe->type2.check_sum_i);
-	printf("tls_pad_len_i: 0x%x\n", sqe->type2.tls_pad_len_i);
-	printf("rsvd12: 0x%x\n", sqe->type2.rsvd12);
-	printf("counter: 0x%x\n", sqe->type2.counter);
 }
 
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
