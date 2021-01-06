@@ -410,7 +410,6 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	idx = wd_get_msg_from_pool(&wd_cipher_setting.pool, index,
 				   (void **)&msg);
 	if (idx < 0) {
-		WD_ERR("busy, failed to get msg from pool!\n");
 		return -EBUSY;
 	}
 
@@ -465,7 +464,7 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, index,
 				   resp_msg.tag);
-	} while (--expt);
+	} while (0);
 	*count = recv_count;
 
 	return ret;

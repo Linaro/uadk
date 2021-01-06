@@ -3129,7 +3129,6 @@ out:
 static void *sva_poll_func(void *arg)
 {
 	__u32 count = 0;
-	__u32 recv = 0;
 	int ret;
 
 	int expt = g_times * g_thread_num;
@@ -3140,8 +3139,7 @@ static void *sva_poll_func(void *arg)
 			SEC_TST_PRT("poll ctx error: %d\n", ret);
 			break;
 		}
-		recv += count;
-		if (expt == recv)
+		if (expt == count)
 			break;
 	}
 
