@@ -704,7 +704,7 @@ static int test_sec_cipher_async_once(void)
 		req.cb_param = &data;
 		ret = wd_do_cipher_async(h_sess, &req);
 		if (ret < 0) {
-			usleep(100);
+			goto out;
 			continue;
 		}
 		/* poll thread */
