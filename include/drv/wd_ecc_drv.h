@@ -186,12 +186,4 @@ extern const struct wd_ecc_driver wd_##drv __attribute__((alias(#drv)));	\
 static void __attribute__((constructor)) set_driver_ecc(void)		\
 {}
 
-/**
- * wd_ecxdh_get_in_params() - Get ECXDH input params.
- * @in: input param handle.
- * @pbk: ECXDH sign ouput param.
- */
-extern void wd_ecxdh_get_in_params(struct wd_ecc_in *in, struct wd_ecc_point **pbk);
-
-
 #endif /* __WD_ECC_DRV_H */
