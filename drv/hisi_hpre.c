@@ -771,6 +771,21 @@ static int trans_d_to_hpre_bin(struct wd_dtb *d)
 				      d->bsize, d->dsize, "ecc d");
 }
 
+static bool big_than_one(char *data, __u32 data_sz)
+{
+	int i;
+
+	for (i = 0; i < data_sz - 1; i++) {
+		if (data[i] > 0)
+			return true;
+	}
+
+	if (data[i] == 0 || data[i] == 1)
+		return false;
+
+	return true;
+}
+
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
 	int ret, shift;
@@ -824,6 +839,11 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 	} else if (id == WD_X448) {
 		dat[55 + bsize - dsize] &= 252;
 		dat[0 + bsize - dsize] |= 128;
+	}
+
+	if (!big_than_one(dat, bsize)) {
+		WD_ERR("failed to prepare ecc prikey: d <= 1!\n");
+		return -WD_EINVAL;
 	}
 
 	if (id != WD_X25519 && id != WD_X448 &&
@@ -959,7 +979,7 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	if (!in->dgst_set) {
-		WD_ERR("prepare sign_in, !\n");
+		WD_ERR("prepare sign_in, hash not set!\n");
 		return -WD_EINVAL;
 	}
 
