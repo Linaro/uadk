@@ -50,6 +50,8 @@ libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 if WD_STATIC_DRV
 AM_CFLAGS+=-DWD_STATIC_DRV
 
+libwd_la_LIBADD=$(libwd_la_OBJECTS)
+
 libwd_comp_la_LIBADD=$(libwd_la_OBJECTS) -ldl
 
 libhisi_zip_la_LIBADD= -ldl
@@ -64,18 +66,22 @@ libwd_la_LDFLAGS=$(UADK_VERSION)
 
 libwd_comp_la_LIBADD= -lwd -ldl
 libwd_comp_la_LDFLAGS=$(UADK_VERSION)
+libwd_comp_la_DEPENDENCIES= libwd.la
 
 libhisi_zip_la_LIBADD= -ldl
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
 
 libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION)
+libwd_crypto_la_DEPENDENCIES= libwd.la
 
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
 libhisi_sec_la_LDFLAGS=$(UADK_VERSION)
+libhisi_sec_la_DEPENDENCIES= libwd.la libwd_crypto.la
 
 libhisi_hpre_la_LIBADD= -lwd -lwd_crypto
 libhisi_hpre_la_LDFLAGS=$(UADK_VERSION)
+libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
 
 
