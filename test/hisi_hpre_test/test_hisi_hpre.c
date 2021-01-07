@@ -1626,7 +1626,7 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
         __u32 i = 0;
         char *buf;
         char *buf_backup;
- 
+
         buf = malloc(*evp_size + 64); /* may crypto bin len > evp_size */
         if (!buf) {
                 HPRE_TST_PRT("%s: malloc fail\n", __func__);
@@ -1728,7 +1728,7 @@ int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_rsa_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);
 					return ret;
 				}
 			}
@@ -1752,7 +1752,7 @@ static int dh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_dh_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);
 					return ret;
 				}
 			}
@@ -1775,7 +1775,7 @@ static int ecc_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
 				ret = wd_ecc_poll_ctx(i, 1, count);
 				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);	
+					HPRE_TST_PRT("fail poll ctx %d!\n", i);
 					return ret;
 				}
 			}
@@ -3185,7 +3185,7 @@ static EC_KEY *create_ec_key(__u32 nid, struct wd_dtb *pubkey, struct wd_dtb *pr
 		BN_free(priv);
 	}
 
-	EC_GROUP_free(group_a);	
+	EC_GROUP_free(group_a);
 
 	return key_a;
 
@@ -3215,7 +3215,7 @@ static EVP_MD_CTX *create_evp_md_ctx(__u32 nid, EC_KEY *ecc_key)
 	if (!pctx) {
 		printf("EVP_PKEY_CTX_new failed\n");
 		goto del_pkey;
-	}	
+	}
 
 	md_ctx = EVP_MD_CTX_new();
 	if (!md_ctx) {
@@ -3406,7 +3406,7 @@ static struct ecc_test_ctx *ecxdh_create_hw_gen_test_ctx(struct ecc_test_ctx_set
 
 	ecc_key = wd_ecc_get_key(sess);
 
-	if (setup.key_from) {  // performance || async ,the param is ready by curve
+	if (setup.key_from || !setup.nid) {  // performance || async, the param is ready by curve
 		if ((!g_is_set_prikey && is_async_test(op_type)) || !is_async_test(op_type)) {
 			d.data = (void *)setup.priv_key;
 			d.dsize = setup.priv_key_size;
@@ -3729,7 +3729,7 @@ static struct ecc_test_ctx *ecxdh_create_hw_compute_test_ctx(struct ecc_test_ctx
 	}
 
 	ecc_key = wd_ecc_get_key(setup.sess);
-	if (setup.key_from) {
+	if (setup.key_from || !setup.nid) {
 		if (op_type == X25519_GEN || op_type == X25519_COMPUTE ||
 		    op_type == X448_GEN || op_type == X448_COMPUTE ||
 		    op_type == X25519_ASYNC_GEN || op_type == X25519_ASYNC_COMPUTE ||
@@ -3895,7 +3895,7 @@ static struct ecc_test_ctx *ecxdh_create_hw_compute_test_ctx(struct ecc_test_ctx
 	req->src = ecc_in;
 	req->dst = ecc_out;
 	test_ctx->req = req;
-	test_ctx->priv = (void *)(setup.sess); //init sess 
+	test_ctx->priv = (void *)(setup.sess); //init sess
 	test_ctx->key_size = key_size;
 
 	return test_ctx;
@@ -3951,7 +3951,7 @@ static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 
 	e.data = setup.msg;
 	e.dsize = setup.msg_size;
-	e.bsize = setup.msg_size;		
+	e.bsize = setup.msg_size;
 	if (setup.key_from) {
 		k.data = (void *)setup.k;
 		k.dsize = setup.k_size;
@@ -3994,7 +3994,7 @@ static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 				setup.msg, setup.msg_size);
 			if (ret != 1) {
 				printf("EVP_PKEY_sign fail, ret %d\n", ret);
-				goto del_ecc_out;				
+				goto del_ecc_out;
 			}
 		} else {
 			id.data = (void *)setup.userid;
@@ -4008,7 +4008,7 @@ static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 			ret = EVP_DigestSignFinal(md_ctx, test_ctx->cp_sign, &test_ctx->cp_sign_size);
 			if (ret != 1) {
 				printf("EVP_DigestSignFinal fail, ret %d\n", ret);
-				goto del_ecc_out;			
+				goto del_ecc_out;
 			}
 		}
 
@@ -4104,7 +4104,7 @@ static struct ecc_test_ctx *sm2_create_hw_verf_test_ctx(struct ecc_test_ctx_setu
 
 		test_ctx->cp_sign_size = MAX_SIGN_LEN;
 		id.data = (void *)setup.userid;
-		id.dsize = setup.userid_size;		
+		id.dsize = setup.userid_size;
 		EVP_PKEY_CTX_set1_id(pctx, setup.userid, setup.userid_size);
 		p_key = EVP_PKEY_CTX_get0_pkey(pctx);
 		EVP_DigestSignInit(md_ctx, NULL, get_digest_handle(), NULL, p_key);
@@ -4196,12 +4196,12 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 
 	e.data = setup.msg;
 	e.dsize = setup.msg_size;
-	e.bsize = setup.msg_size;			
+	e.bsize = setup.msg_size;
 	if (setup.key_from) {
 		k.data = (void *)setup.k;
 		k.dsize = setup.k_size;
 		k.bsize = key_size;
-		kptr = &k;		
+		kptr = &k;
 	} else if (g_config.rand_type == RAND_PARAM) {
 		EVP_MD_CTX *md_ctx = setup.openssl_handle;
 		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
@@ -4227,8 +4227,8 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 			setup.msg, setup.msg_size);
 		if (ret != 1) {
 			printf("EVP_PKEY_encrypt fail, ret %d\n", ret);
-			goto del_ecc_out;				
-		}		
+			goto del_ecc_out;
+		}
 
 		#ifdef DEBUG
 		struct wd_ecc_key *ecc_key = wd_ecc_get_key(sess);
@@ -4249,7 +4249,7 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
 
 		EVP_PKEY_decrypt_init(pctx);
-		EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());		
+		EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
 	}
 
 	ecc_in = wd_sm2_new_enc_in(sess, kptr, &e);
@@ -4311,7 +4311,7 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
 		goto free_ctx;
 	}
-	
+
 	if (setup.key_from) {
 		c1.x.data = (void *)setup.msg;
 		c1.x.dsize = 32;
@@ -4320,16 +4320,16 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 		c3.data = c1.y.data + 32;
 		c3.dsize = 32;
 		c2.data = c3.data + 32;
-		c2.dsize = test_ctx->setup.ciphertext_size - 32 * 3;		
+		c2.dsize = test_ctx->setup.ciphertext_size - 32 * 3;
 		ecc_in = wd_sm2_new_dec_in(sess, &c1, &c2, &c3);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
 			goto del_ecc_out;
-		}		
+		}
 	} else {
 		EVP_MD_CTX *md_ctx = setup.openssl_handle;
 		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
-		
+
 		EVP_PKEY_encrypt_init(pctx);
 		EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
 		test_ctx->cp_enc_size = MAX_ENC_LEN;
@@ -4353,7 +4353,7 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 		c3.data = c1.y.data + 32;
 		c3.dsize = get_hash_bytes();
 		c2.data = c3.data + c3.dsize;
-		c2.dsize = setup.msg_size;	
+		c2.dsize = setup.msg_size;
 		ecc_in = wd_sm2_new_dec_in(sess, &c1, &c2, &c3);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
@@ -5083,7 +5083,7 @@ static int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_ty
 			setup->priv_key_size = sizeof(sm2_priv);
 			setup->pub_key = sm2_pubkey;
 			setup->pub_key_size = sizeof(sm2_pubkey);
-			
+
 			len = (g_config.msg_len == INVALID_LEN) ? MAX_ENC_LEN : g_config.msg_len;
 			setup->msg = malloc(len);
 			if (!setup->msg)
@@ -5093,14 +5093,14 @@ static int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_ty
 			if (g_config.msg_type == MSG_DIGEST) {
 				memcpy(setup->msg, sm2_digest, sizeof(sm2_digest));
 				setup->msg_size = (g_config.msg_len == INVALID_LEN) ? sizeof(sm2_digest) : g_config.msg_len;
-			} else if (g_config.msg_type == MSG_CIPHERTEXT) {	
+			} else if (g_config.msg_type == MSG_CIPHERTEXT) {
 				memcpy(setup->msg, sm2_ciphertext, sizeof(sm2_ciphertext));
 				setup->msg_size = (g_config.msg_len == INVALID_LEN) ? sizeof(sm2_ciphertext) : g_config.msg_len;
 			} else {
 				memcpy(setup->msg, sm2_plaintext, sizeof(sm2_plaintext));
 				setup->msg_size = (g_config.msg_len == INVALID_LEN) ? sizeof(sm2_plaintext) : g_config.msg_len;
 			}
-			
+
 			setup->k = sm2_k;
 			setup->k_size = (g_config.k_len == INVALID_LEN) ? sizeof(sm2_k) : g_config.k_len;
 			setup->userid = sm2_id;
@@ -5129,26 +5129,26 @@ static int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_ty
 			setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
 		}
 	} else if (setup->nid == 706 || key_bits == 128) {
-		setup->priv_key = ecdh_da_secp128k1;
-		setup->except_pub_key = ecdh_except_b_pubkey_secp128k1;
-		setup->pub_key = ecdh_cp_pubkey_secp128k1;
-		setup->share_key = ecdh_cp_sharekey_secp128k1;
-		setup->priv_key_size = sizeof(ecdh_da_secp128k1);
-		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp128k1);
-		setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp128k1);
-		setup->share_key_size = sizeof(ecdh_cp_sharekey_secp128k1);
+		setup->priv_key = ecdh_da_secp128r1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp128r1;
+		setup->pub_key = ecdh_cp_pubkey_secp128r1;
+		setup->share_key = ecdh_cp_sharekey_secp128r1;
+		setup->priv_key_size = sizeof(ecdh_da_secp128r1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp128r1);
+		setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp128r1);
+		setup->share_key_size = sizeof(ecdh_cp_sharekey_secp128r1);
 
 		/* ecc sign */
-		setup->msg = ecc_except_e_secp128k1;
-		setup->msg_size = sizeof(ecc_except_e_secp128k1);
-		setup->k = ecc_except_kinv_secp128k1;
-		setup->k_size = sizeof(ecc_except_kinv_secp128k1);
-		setup->rp = ecdh_cp_pubkey_secp128k1 + 1;
+		setup->msg = ecc_except_e_secp128r1;
+		setup->msg_size = sizeof(ecc_except_e_secp128r1);
+		setup->k = ecc_except_kinv_secp128r1;
+		setup->k_size = sizeof(ecc_except_kinv_secp128r1);
+		setup->rp = ecdh_cp_pubkey_secp128r1 + 1;
 		setup->rp_size = key_size;
 
 		/* ecc verf */
-		setup->sign = ecc_cp_sign_secp128k1;
-		setup->sign_size = sizeof(ecc_cp_sign_secp128k1);
+		setup->sign = ecc_cp_sign_secp128r1;
+		setup->sign_size = sizeof(ecc_cp_sign_secp128r1);
 
 	} else if (setup->nid == 711 || key_bits == 192) {
 		setup->priv_key = ecdh_da_secp192k1;
@@ -5224,21 +5224,21 @@ static int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_ty
 		setup->sign = ecc_cp_sign_secp256k1;
 		setup->sign_size = sizeof(ecc_cp_sign_secp256k1);
 	} else if (setup->nid == 716 || key_bits == 521) {
-		setup->priv_key = ecdh_da_secp521k1;
-		setup->except_pub_key = ecdh_except_b_pubkey_secp521k1;
-		setup->pub_key = ecdh_cp_pubkey_secp521k1;
-		setup->share_key = ecdh_cp_sharekey_secp521k1;
-		setup->priv_key_size = sizeof(ecdh_da_secp521k1);
-		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp521k1);
-		setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp521k1);
-		setup->share_key_size = sizeof(ecdh_cp_sharekey_secp521k1);
+		setup->priv_key = ecdh_da_secp521r1;
+		setup->except_pub_key = ecdh_except_b_pubkey_secp521r1;
+		setup->pub_key = ecdh_cp_pubkey_secp521r1;
+		setup->share_key = ecdh_cp_sharekey_secp521r1;
+		setup->priv_key_size = sizeof(ecdh_da_secp521r1);
+		setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp521r1);
+		setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp521r1);
+		setup->share_key_size = sizeof(ecdh_cp_sharekey_secp521r1);
 
 		/* ecc sign */
-		setup->msg = ecc_except_e_secp521k1;
-		setup->msg_size = sizeof(ecc_except_e_secp521k1);
-		setup->k = ecc_except_kinv_secp521k1;
-		setup->k_size = sizeof(ecc_except_kinv_secp521k1);
-		setup->rp = ecdh_cp_pubkey_secp521k1 + 1;
+		setup->msg = ecc_except_e_secp521r1;
+		setup->msg_size = sizeof(ecc_except_e_secp521r1);
+		setup->k = ecc_except_kinv_secp521r1;
+		setup->k_size = sizeof(ecc_except_kinv_secp521r1);
+		setup->rp = ecdh_cp_pubkey_secp521r1 + 1;
 		setup->rp_size = key_size;
 
 		/* ecc verf */
@@ -6155,19 +6155,12 @@ void fill_ecc_param_of_curve(struct wd_ecc_curve *param)
 	__u32 key_size = (key_bits + 7) / 8;
 
 	if (g_config.key_bits == 128) {
-		param->a.data = ecdh_a_secp128k1;
-		param->b.data = ecdh_b_secp128k1;
-		param->p.data = ecdh_p_secp128k1;
-		param->n.data = ecdh_n_secp128k1;
-		param->g.x.data = ecdh_g_secp128k1;
-		param->g.y.data = ecdh_g_secp128k1 + key_size;
-	} else if (key_bits == 256) {
-		param->a.data = ecdh_a_secp256k1;
-		param->b.data = ecdh_b_secp256k1;
-		param->p.data = ecdh_p_secp256k1;
-		param->n.data = ecdh_n_secp256k1;
-		param->g.x.data = ecdh_g_secp256k1;
-		param->g.y.data = ecdh_g_secp256k1 + key_size;
+		param->a.data = ecdh_a_secp128r1;
+		param->b.data = ecdh_b_secp128r1;
+		param->p.data = ecdh_p_secp128r1;
+		param->n.data = ecdh_n_secp128r1;
+		param->g.x.data = ecdh_g_secp128r1;
+		param->g.y.data = ecdh_g_secp128r1 + key_size;
 	} else if (key_bits == 192) {
 		param->a.data = ecdh_a_secp192k1;
 		param->b.data = ecdh_b_secp192k1;
@@ -6204,12 +6197,12 @@ void fill_ecc_param_of_curve(struct wd_ecc_curve *param)
 		param->g.x.data = ecdh_g_secp384r1;
 		param->g.y.data = ecdh_g_secp384r1 + key_size;
 	} else if (key_bits == 521) {
-		param->a.data = ecdh_a_secp521k1;
-		param->b.data = ecdh_b_secp521k1;
-		param->p.data = ecdh_p_secp521k1;
-		param->n.data = ecdh_n_secp521k1;
-		param->g.x.data = ecdh_g_secp521k1;
-		param->g.y.data = ecdh_g_secp521k1 + key_size;
+		param->a.data = ecdh_a_secp521r1;
+		param->b.data = ecdh_b_secp521r1;
+		param->p.data = ecdh_p_secp521r1;
+		param->n.data = ecdh_n_secp521r1;
+		param->g.x.data = ecdh_g_secp521r1;
+		param->g.y.data = ecdh_g_secp521r1 + key_size;
 	} else {
 		HPRE_TST_PRT("key_bits %d not find\n", key_bits);
 		return;
@@ -6258,6 +6251,7 @@ static void *_ecc_sys_test_thread(void *data)
 
 	HPRE_TST_PRT("ecc sys test start!\n");
 
+	memset(&setup, 0, sizeof(setup));
 	if (g_config.perf_test && (!g_config.times && !g_config.seconds)) {
 		HPRE_TST_PRT("g_config.times or  g_config.seconds err\n");
 		return NULL;
@@ -6275,7 +6269,7 @@ static void *_ecc_sys_test_thread(void *data)
 					 pid, thread_id, cpuid);
 	}
 
-	if (!(!strncmp(g_config.op, "x448", 4) || !strncmp(g_config.op, "x25519", 5))) {
+	if (strcmp(g_config.curve, "") && !(!strncmp(g_config.op, "x448", 4) || !strncmp(g_config.op, "x25519", 5))) {
 		ret = get_ecc_nid(g_config.curve, &setup.nid, &setup.curve_id);
 		if (ret < 0) {
 			HPRE_TST_PRT("ecc sys test not find curve!\n");
@@ -6288,7 +6282,7 @@ static void *_ecc_sys_test_thread(void *data)
 		if (!(!strncmp(g_config.op, "x448", 4) ||
 			!strncmp(g_config.op, "x25519", 5) ||
 			!strncmp(g_config.op, "sm2", 3))) {
-			if (!setup.curve_id) {
+			if (!strcmp(g_config.curve, "")) {
 				sess_setup.cv.type = WD_CV_CFG_PARAM;
 				fill_ecc_param_of_curve(&param);
 				sess_setup.cv.cfg.pparam = &param;
@@ -6326,7 +6320,7 @@ static void *_ecc_sys_test_thread(void *data)
 			else if (g_config.hash_type == HASH_MD5)
 				sess_setup.hash.type = WD_HASH_MD5;
 			else
-				sess_setup.hash.type = WD_HASH_SM3;					
+				sess_setup.hash.type = WD_HASH_SM3;
 		}
 	}
 
@@ -6503,12 +6497,14 @@ new_test_with_no_req_ctx: // async test
 						ecc_op_str[test_ctx->setup.op_type], pdata->send_task_num);
 				}
 
-				ecc_del_test_ctx(test_ctx);
-				wd_ecc_free_sess(sess);
-				if (!strncmp(g_config.op, "sm3", 3)) {
+
+				if (!strncmp(g_config.op, "sm2", 3)) {
 					ecc_del_openssl_handle(test_ctx->setup.openssl_handle);
 					test_ctx->setup.openssl_handle = NULL;
 				}
+
+				wd_ecc_free_sess(sess);
+				ecc_del_test_ctx(test_ctx);
 				sess = 0;
 				test_ctx = NULL;
 
@@ -6548,7 +6544,7 @@ new_test_with_no_req_ctx: // async test
 		usleep(1000 * 1000);
 		if (g_config.with_log)
 			HPRE_TST_PRT("<< Proc-%d, %d-TD: total send %u: recv %u, wait recv finish...!\n",
-				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);			
+				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);
 	}
 
 	ret = 0;
@@ -6708,7 +6704,7 @@ static int get_rsa_key_from_test_sample(handle_t sess, char *pubkey_file,
 		HPRE_TST_PRT("set rsa pubkey failed %d!\n", ret);
 		goto gen_fail;
 	}
-  
+
 	if (pubkey_file && is_file) {
 		ret = hpre_test_write_to_file((unsigned char *)wd_e.data, g_config.key_bits >> 2,
 					  pubkey_file, -1, 1);
@@ -6944,7 +6940,7 @@ static int test_rsa_key_gen(handle_t sess, char *pubkey_file,
         	HPRE_TST_PRT("failed to malloc!\n");
         	goto gen_fail;
         }
-        
+
         memcpy(tmp, wd_e.data, wd_e.dsize);
         crypto_bin_to_hpre_bin(wd_e.data, tmp, wd_e.bsize, wd_e.dsize);
         memcpy(tmp, wd_n.data, wd_n.dsize);
@@ -7391,7 +7387,7 @@ int hpre_test_result_check(handle_t sess,  struct wd_rsa_req *req, void *key)
 			HPRE_TST_PRT("prv decrypto result  mismatch!\n");
                         print_data(ssl_out, req->src_bytes, "openssl out");
                         print_data(req->dst, req->dst_bytes, "hpre out");
-                        RSA_print_fp(stdout, rsa, 4);  
+                        RSA_print_fp(stdout, rsa, 4);
 			return -EINVAL;
 		}
 		free(ssl_out);
@@ -7728,7 +7724,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 			g_config.trd_mode, g_config.trd_num, g_config.op,
 			g_config.alg_mode, g_config.key_bits, speed);
 	HPRE_TST_PRT("<< test finish!\n");
-	
+
 	return 0;
 }
 
@@ -7826,7 +7822,7 @@ static void _rsa_cb(void *req_t)
 					HPRE_TST_PRT("prv decrypto result  mismatch!\n");
 					return;
 				}
-		}		
+		}
 	}
 
 	if (is_allow_print(cnt, op_type, 1))
@@ -8105,7 +8101,7 @@ try_do_again:
 		usleep(1000 * 1000);
 		if (g_config.with_log)
 			HPRE_TST_PRT("<< Proc-%d, %d-TD: total send %u: recv %u, wait recv finish...!\n",
-				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);			
+				pid, thread_id, pdata->send_task_num, pdata->recv_task_num);
 	}
 
 
@@ -8590,7 +8586,7 @@ static int dh_async_test(int thread_num, __u64 lcore_mask,
 			g_config.trd_mode, g_config.trd_num, g_config.op,
 			g_config.alg_mode, g_config.key_bits, speed);
 	HPRE_TST_PRT("<< test finish!\n");
-	
+
 	return 0;
 }
 
@@ -8710,7 +8706,7 @@ static int ecc_async_test(int thread_num, __u64 lcore_mask,
 			g_config.alg_mode, g_config.key_bits, speed);
 
 	HPRE_TST_PRT("<< test finish!\n");
-	
+
 	return 0;
 }
 
@@ -8761,16 +8757,16 @@ static int parse_cmd_line(int argc, char *argv[])
 		switch (c) {
 		case 0:
 			if (!strncmp(long_options[option_index].name, "mode", 4)) {
-				snprintf(g_config.alg_mode, sizeof(g_config.alg_mode), "%s", optarg);				
+				snprintf(g_config.alg_mode, sizeof(g_config.alg_mode), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "dev_path", 8)) {
-				snprintf(g_config.dev_path, sizeof(g_config.dev_path), "%s", optarg);	
+				snprintf(g_config.dev_path, sizeof(g_config.dev_path), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "key_bits", 8)) {
 				g_config.key_bits = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "cycles", 6)) {
 				g_config.times = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "seconds", 7)) {
 				g_config.seconds = strtoul((char *)optarg, NULL, 10);
-			} else if (!strncmp(long_options[option_index].name, "curve", 8)) {
+			} else if (!strncmp(long_options[option_index].name, "curve", 5)) {
 				snprintf(g_config.curve, sizeof(g_config.curve), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "log", 3)) {
 				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1))
@@ -8788,16 +8784,16 @@ static int parse_cmd_line(int argc, char *argv[])
 			} else if (!strncmp(long_options[option_index].name, "perf", 4)) {
 				g_config.perf_test = 1;
 			} else if (!strncmp(long_options[option_index].name, "trd_mode", 8)) {
-				snprintf(g_config.trd_mode, sizeof(g_config.trd_mode), "%s", optarg);	
+				snprintf(g_config.trd_mode, sizeof(g_config.trd_mode), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "op", 2)) {
-				snprintf(g_config.op, sizeof(g_config.op), "%s", optarg);	
+				snprintf(g_config.op, sizeof(g_config.op), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "msg_type", 8)) {
 				if (!strncmp(optarg, "digest", 6))
 					g_config.msg_type = MSG_DIGEST;
 				else if (!strncmp(optarg, "ciphertext", 10))
-					g_config.msg_type = MSG_CIPHERTEXT;				
+					g_config.msg_type = MSG_CIPHERTEXT;
 				else if (!strncmp(optarg, "plaintext", 9))
-					g_config.msg_type = MSG_PLAINTEXT;				
+					g_config.msg_type = MSG_PLAINTEXT;
 			} else if (!strncmp(long_options[option_index].name, "msg_len", 7)) {
 				g_config.msg_len = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "id_len", 6)) {
@@ -8924,27 +8920,27 @@ int main(int argc, char *argv[])
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_GEN;
 		else
-			alg_op_type = RSA_KEY_GEN;			
+			alg_op_type = RSA_KEY_GEN;
 	} else if (!strcmp(g_config.op, "rsa-vrf")) {
-		if (!strcmp(g_config.trd_mode, "async"))		
+		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_EN;
 		else
-			alg_op_type = RSA_PUB_EN;			
+			alg_op_type = RSA_PUB_EN;
 	} else if (!strcmp(g_config.op, "rsa-sgn")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_DE;
 		else
-			alg_op_type = RSA_PRV_DE;		
+			alg_op_type = RSA_PRV_DE;
 	} else if (!strcmp(g_config.op, "dh-gen1")) {
-		if (!strcmp(g_config.trd_mode, "async"))	
+		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = DH_ASYNC_GEN;
 		else
-			alg_op_type = DH_GEN;		
+			alg_op_type = DH_GEN;
 	} else if (!strcmp(g_config.op, "dh-gen2")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = DH_ASYNC_COMPUTE;
 		else
-			alg_op_type = DH_COMPUTE;		
+			alg_op_type = DH_COMPUTE;
 	} else if (!strcmp(g_config.op, "ecdh-gen1")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = ECDH_ASYNC_GEN;
@@ -9107,11 +9103,12 @@ static void print_help(void)
 	HPRE_TST_PRT("        sync  = synchronize test\n");
 	HPRE_TST_PRT("        async  = asynchronize test\n");
 	HPRE_TST_PRT("    [--curve=]:\n");
-	HPRE_TST_PRT("        secp256R1  = 256 bit\n");
+	HPRE_TST_PRT("        secp128R1  = 128 bit\n");
 	HPRE_TST_PRT("        secp192K1  = 192 bit\n");
+	HPRE_TST_PRT("        secp224R1  = 224 bit\n");
 	HPRE_TST_PRT("        secp256K1  = 256bit\n");
 	HPRE_TST_PRT("        brainpoolP320R1  = 320bit\n");
-	HPRE_TST_PRT("        brainpoolP385R1  = 384bit\n");
+	HPRE_TST_PRT("        secp384R1  = 384bit\n");
 	HPRE_TST_PRT("        secp521R1  = 521bit\n");
 	HPRE_TST_PRT("        null  = by set parameters\n");
 	HPRE_TST_PRT("    [--dev_path=]: designed dev path\n");
