@@ -29,6 +29,7 @@
 #define MAX_HASH_LENS			ECC_MAX_KEY_SIZE
 #define SM2_KEY_SIZE			32
 #define GET_NEGATIVE(val)		(0 - (val))
+#define ZA_PARAM_NUM  			6
 
 static __thread int balance;
 
@@ -249,6 +250,7 @@ static __u32 get_key_bsz(__u32 ksz)
 {
 	__u32 size = 0;
 
+	/* key width */
 	if (ksz <= BITS_TO_BYTES(256))
 		size = BITS_TO_BYTES(256);
 	else if (ksz <= BITS_TO_BYTES(384))
@@ -268,7 +270,7 @@ static __u32 get_hash_bytes(__u8 type)
 	switch (type) {
 	case WD_HASH_MD4:
 	case WD_HASH_MD5:
-		val = BITS_TO_BYTES(128);
+		val = BITS_TO_BYTES(128); /* output width */
 		break;
 	case WD_HASH_SHA1:
 		val = BITS_TO_BYTES(160);
@@ -509,8 +511,8 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 				   __u64 *len, __u32 st_sz)
 {
 	struct wd_hash_mt *hash = &sess->setup.hash;
-	struct wd_ecc_point *c1;
 	__u32 ksz = sess->key_size;
+	struct wd_ecc_point *c1;
 	struct wd_dtb *c3, *c2;
 	__u32 h_byts;
 	void *start;
@@ -803,7 +805,7 @@ static int fill_param_by_id(struct wd_ecc_curve *c,
 static void setup_curve_cfg(struct wd_ecc_sess_setup *setup)
 {
 	if (!strcmp(setup->alg, "x25519")) {
-		setup->key_bits = 256;
+		setup->key_bits = 256; /* key width */
 		setup->cv.type = WD_CV_CFG_ID;
 		setup->cv.cfg.id = WD_X25519;
 	} else if (!strcmp(setup->alg, "x448")) {
@@ -1566,9 +1568,8 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 		id_bytes = id->dsize;
 	}
 
-	#define REGULAR_LENS  (6 * key_size) /* a b xG yG xA yA */
 	/* ZA = h(ENTL || ID || a || b || xG || yG || xA || yA) */
-	lens = sizeof(__u16) + id_bytes + REGULAR_LENS;
+	lens = sizeof(__u16) + id_bytes + ZA_PARAM_NUM * key_size;
 	p_in = malloc(lens);
 	if (unlikely(!p_in))
 		return -WD_ENOMEM;
@@ -1645,11 +1646,11 @@ static struct wd_ecc_in *new_sign_in(struct wd_ecc_sess *sess,
 					  struct wd_dtb *e, struct wd_dtb *k,
 					  struct wd_dtb *id, __u8 is_dgst)
 {
-	struct wd_ecc_in *ecc_in = NULL;
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
-	struct wd_ecc_sign_in *sin;
+	struct wd_ecc_in *ecc_in = NULL;
 	struct wd_dtb *plaintext = NULL;
 	struct wd_dtb *hash_msg = NULL;
+	struct wd_ecc_sign_in *sin;
 	int ret;
 
 	if (!sess || !e) {
@@ -1877,7 +1878,6 @@ struct wd_ecc_out *wd_sm2_new_sign_out(handle_t sess)
 
 struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess)
 {
-
 	struct wd_ecc_out *ecc_out;
 
 	if (!sess) {
@@ -1966,8 +1966,8 @@ struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
 					      struct wd_dtb *c2,
 					      struct wd_dtb *c3)
 {
-	__u32 struct_size = sizeof(struct wd_ecc_in);
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
+	__u32 struct_size = sizeof(struct wd_ecc_in);
 	struct wd_sm2_dec_in *din;
 	struct wd_ecc_in *ecc_in;
 	__u64 len = 0;
@@ -2012,8 +2012,8 @@ fail_set_param:
 
 struct wd_ecc_out *wd_sm2_new_enc_out(handle_t sess, __u32 plaintext_len)
 {
-	__u32 struct_size = sizeof(struct wd_ecc_out);
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
+	__u32 struct_size = sizeof(struct wd_ecc_out);
 	struct wd_ecc_out *ecc_out;
 	__u64 len = 0;
 
@@ -2182,9 +2182,9 @@ fail_with_msg:
 int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
+	struct wd_ecc_msg recv_msg, *msg;
 	struct wd_ctx_internal *ctx;
 	struct wd_ecc_req *req;
-	struct wd_ecc_msg recv_msg, *msg;
 	__u32 rcv_cnt = 0;
 	int ret;
 
