@@ -48,19 +48,23 @@ libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
 if WD_STATIC_DRV
-AM_CFLAGS+=-DWD_STATIC_DRV
+AM_CFLAGS += -DWD_STATIC_DRV
 
-libwd_la_LIBADD=$(libwd_la_OBJECTS)
+libwd_la_LIBADD = $(libwd_la_OBJECTS)
 
-libwd_comp_la_LIBADD=$(libwd_la_OBJECTS) -ldl
+libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl
+libwd_comp_la_DEPENDENCIES = libwd.la
 
-libhisi_zip_la_LIBADD= -ldl
+libhisi_zip_la_LIBADD = -ldl
 
-libwd_crypto_la_LIBADD=$(libwd_la_OBJECTS) -ldl -lnuma
+libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
+libwd_crypto_la_DEPENDENCIES = libwd.la
 
-libhisi_sec_la_LIBADD=$(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
+libhisi_sec_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
+libhisi_sec_la_DEPENDENCIES = libwd.la libwd_crypto.la
 
-libhisi_hpre_la_LIBADD=$(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
+libhisi_hpre_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
+libhisi_hpre_la_DEPENDENCIES = libwd.la libwd_crypto.la
 else
 libwd_la_LDFLAGS=$(UADK_VERSION)
 
