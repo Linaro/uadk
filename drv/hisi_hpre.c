@@ -1143,18 +1143,18 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 	int ret = -WD_EINVAL;
 
 	switch (msg->req.op_type) {
-	case WD_SM2_KG: /*fall through */
+	case WD_SM2_KG: /* fall through */
 	case WD_ECXDH_GEN_KEY:
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
 		break;
 	case WD_ECXDH_COMPUTE_KEY:
 		ret = ecc_prepare_dh_compute_in(msg, hw_msg, data);
 		break;
-	case WD_ECDSA_SIGN: /*fall through */
+	case WD_ECDSA_SIGN: /* fall through */
 	case WD_SM2_SIGN:
 		ret = ecc_prepare_sign_in(msg, hw_msg, data);
 		break;
-	case WD_ECDSA_VERIFY: /*fall through */
+	case WD_ECDSA_VERIFY: /* fall through */
 	case WD_SM2_VERIFY:
 		ret = ecc_prepare_verf_in(msg, hw_msg, data);
 		break;
