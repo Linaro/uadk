@@ -103,7 +103,8 @@ struct wd_hash_mt {
 
 /* ECC context setting up input parameters from user */
 struct wd_ecc_sess_setup {
-	/* Ec algorithm name,
+	/*
+	 * Ec algorithm name,
 	 * find "/sys/class/uacce/hisi_hpre-xx/algorithms"
 	 */
 	const char *alg;
