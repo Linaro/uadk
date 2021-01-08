@@ -71,6 +71,7 @@ static struct wd_ecc_setting {
 } wd_ecc_setting;
 
 static const struct wd_ecc_curve_list curve_list[] = {
+	/* param 3 is key width */
 	{ WD_X25519, "x25519", 256, X25519_256_PARAM },
 	{ WD_X448, "x448", 448, X448_448_PARAM },
 	{ WD_SECP128R1, "secp128r1", 128, SECG_P128_R1_PARAM },
@@ -258,7 +259,7 @@ static __u32 get_key_bsz(__u32 ksz)
 	else if (ksz <= BITS_TO_BYTES(576))
 		size = BITS_TO_BYTES(576);
 	else
-		WD_ERR("failed to get key buffer size : ksz = %d.\n", ksz);
+		WD_ERR("failed to get key buffer size : ksz = %u.\n", ksz);
 
 	return size;
 }
@@ -557,7 +558,7 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 }
 
 static struct wd_ecc_in *create_ecc_sign_in(struct wd_ecc_sess *sess,
-						 __u64 m_len, __u8 is_dgst)
+					    __u64 m_len, __u8 is_dgst)
 {
 	if (is_dgst)
 		return create_ecc_in(sess, ECC_SIGN_IN_PARAM_NUM);
@@ -592,7 +593,7 @@ static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess, __u32 num)
 
 static struct wd_ecc_curve *create_ecc_curve(struct wd_ecc_sess *sess)
 {
-	struct wd_ecc_curve *cv = NULL;
+	struct wd_ecc_curve *cv;
 	__u32 ksize, len;
 
 	ksize = sess->key_size;
@@ -611,7 +612,7 @@ static struct wd_ecc_curve *create_ecc_curve(struct wd_ecc_sess *sess)
 
 static struct wd_ecc_point *create_ecc_pub(struct wd_ecc_sess *sess)
 {
-	struct wd_ecc_point *pub = NULL;
+	struct wd_ecc_point *pub;
 	__u32 ksize, len;
 
 	ksize = sess->key_size;
@@ -630,7 +631,7 @@ static struct wd_ecc_point *create_ecc_pub(struct wd_ecc_sess *sess)
 
 static struct wd_dtb *create_ecc_d(struct wd_ecc_sess *sess)
 {
-	struct wd_dtb *d = NULL;
+	struct wd_dtb *d;
 	__u32 ksize, len;
 
 	ksize = sess->key_size;
@@ -782,12 +783,12 @@ const static struct wd_ecc_curve_list *find_curve_list(__u32 id)
 static int fill_param_by_id(struct wd_ecc_curve *c,
 			    __u16 key_bits, __u32 id)
 {
-	struct wd_ecc_curve_list *item = NULL;
+	struct wd_ecc_curve_list *item;
 	__u32 key_size;
 
 	item = (struct wd_ecc_curve_list *)find_curve_list(id);
 	if (!item) {
-		WD_ERR("failed to find curve id %d!\n", id);
+		WD_ERR("failed to find curve id %u!\n", id);
 		return -WD_EINVAL;
 	}
 
@@ -912,14 +913,12 @@ static int create_sess_key(struct wd_ecc_sess_setup *setup,
 	ret = fill_user_curve_cfg(sess->key.cv, setup);
 	if (ret) {
 		WD_ERR("failed to fill user curve cfg!\n");
-		ret = -WD_EINVAL;
 		goto free_d;
 	}
 
 	ret = set_curve_param(&sess->key, sess->key.cv);
 	if (ret) {
 		WD_ERR("failed to set curve param!\n");
-		ret = -WD_EINVAL;
 		goto free_d;
 	}
 
@@ -969,7 +968,7 @@ static bool is_alg_support(const char *alg)
 
 static int setup_param_check(struct wd_ecc_sess_setup *setup)
 {
-	if (!setup || !setup->alg) {
+	if (unlikely(!setup || !setup->alg)) {
 		WD_ERR("input param error!\n");
 		return -WD_EINVAL;
 	}
@@ -1011,11 +1010,11 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 	int ret;
 
 	if (setup_param_check(setup))
-		return (handle_t)NULL;
+		return (handle_t)0;
 
 	sess = calloc(1, sizeof(struct wd_ecc_sess));
 	if (!sess)
-		return (handle_t)sess;
+		return (handle_t)0;
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
@@ -1029,7 +1028,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 		return (handle_t)0;
 	}
 
-	return (handle_t)(uintptr_t)sess;
+	return (handle_t)sess;
 }
 
 void wd_ecc_free_sess(handle_t sess)
@@ -1132,7 +1131,7 @@ int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key, struct wd_ecc_point *pubkey)
 }
 
 int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
-			   struct wd_ecc_point **pubkey)
+		      struct wd_ecc_point **pubkey)
 {
 	if (!ecc_key || !pubkey) {
 		WD_ERR("get ecc pubkey param err!\n");
@@ -1145,7 +1144,7 @@ int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 }
 
 int wd_ecc_get_curve(struct wd_ecc_key *ecc_key,
-			   struct wd_ecc_curve **cv)
+		     struct wd_ecc_curve **cv)
 {
 	if (!ecc_key || !cv) {
 		WD_ERR("get ecc pubkey param err!\n");
@@ -1238,10 +1237,8 @@ struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in)
 	}
 
 	ecc_in = create_ecc_in(s, ECDH_IN_PARAM_NUM);
-	if (!ecc_in) {
-		WD_ERR("failed to create ecc in!\n");
+	if (!ecc_in)
 		return NULL;
-	}
 
 	dh_in = &ecc_in->param.dh_in;
 	ret = set_param_single(&dh_in->pbk.x, &in->x, "ecc in x");
@@ -1271,10 +1268,8 @@ struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 	}
 
 	ecc_out = create_ecc_out((struct wd_ecc_sess *)sess, ECDH_OUT_PARAM_NUM);
-	if (!ecc_out) {
-		WD_ERR("failed to create ecc out!\n");
+	if (!ecc_out)
 		return NULL;
-	}
 
 	return ecc_out;
 }
@@ -1303,7 +1298,7 @@ void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
 
 	bsz = in->size;
 	if (!bsz) {
-		WD_ERR("del ecc in: va NULL!\n");
+		WD_ERR("del ecc in: bsz 0!\n");
 		return;
 	}
 
@@ -1643,14 +1638,14 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 }
 
 static struct wd_ecc_in *new_sign_in(struct wd_ecc_sess *sess,
-					  struct wd_dtb *e, struct wd_dtb *k,
-					  struct wd_dtb *id, __u8 is_dgst)
+				     struct wd_dtb *e, struct wd_dtb *k,
+				     struct wd_dtb *id, __u8 is_dgst)
 {
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
-	struct wd_ecc_in *ecc_in = NULL;
 	struct wd_dtb *plaintext = NULL;
 	struct wd_dtb *hash_msg = NULL;
 	struct wd_ecc_sign_in *sin;
+	struct wd_ecc_in *ecc_in;
 	int ret;
 
 	if (!sess || !e) {
@@ -1729,7 +1724,7 @@ static int set_verf_in_param(struct wd_ecc_verf_in *vin,
 }
 
 static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
-						 __u64 m_len)
+					    __u64 m_len)
 {
 	struct wd_dtb *dgst, *s, *r, *plaintext;
 	struct wd_ecc_in *in;
@@ -1776,7 +1771,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 }
 
 static struct wd_ecc_in *create_ecc_verf_in(struct wd_ecc_sess *sess,
-						 __u64 m_len, __u8 is_dgst)
+					    __u64 m_len, __u8 is_dgst)
 {
 	if (is_dgst)
 		return create_ecc_in(sess, ECC_VERF_IN_PARAM_NUM);
@@ -1785,17 +1780,17 @@ static struct wd_ecc_in *create_ecc_verf_in(struct wd_ecc_sess *sess,
 }
 
 static struct wd_ecc_in *new_verf_in(handle_t sess,
-						      struct wd_dtb *e,
-						      struct wd_dtb *r,
-						      struct wd_dtb *s,
-						      struct wd_dtb *id,
-						      __u8 is_dgst)
+				     struct wd_dtb *e,
+				     struct wd_dtb *r,
+				     struct wd_dtb *s,
+				     struct wd_dtb *id,
+				     __u8 is_dgst)
 {
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
-	struct wd_ecc_verf_in *vin = NULL;
-	struct wd_ecc_in *ecc_in = NULL;
 	struct wd_dtb *plaintext = NULL;
 	struct wd_dtb *hash_msg = NULL;
+	struct wd_ecc_verf_in *vin;
+	struct wd_ecc_in *ecc_in;
 	int ret;
 
 	if (!sess_t || !r || !e || !s) {
@@ -1835,20 +1830,20 @@ release_in:
 }
 
 struct wd_ecc_in *wd_sm2_new_sign_in(handle_t sess,
-					       struct wd_dtb *e,
-					       struct wd_dtb *k,
-					       struct wd_dtb *id,
-					       __u8 is_dgst)
+				     struct wd_dtb *e,
+				     struct wd_dtb *k,
+				     struct wd_dtb *id,
+				     __u8 is_dgst)
 {
 	return new_sign_in((void *)sess, e, k, id, is_dgst);
 }
 
 struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
-					       struct wd_dtb *e,
-					       struct wd_dtb *r,
-					       struct wd_dtb *s,
-					       struct wd_dtb *id,
-					       __u8 is_dgst)
+				     struct wd_dtb *e,
+				     struct wd_dtb *r,
+				     struct wd_dtb *s,
+				     struct wd_dtb *id,
+				     __u8 is_dgst)
 {
 	return new_verf_in(sess, e, r, s, id, is_dgst);
 }
@@ -1863,10 +1858,8 @@ static struct wd_ecc_out *wd_ecc_new_sign_out(struct wd_ecc_sess *sess)
 	}
 
 	ecc_out = create_ecc_out(sess, ECC_SIGN_OUT_PARAM_NUM);
-	if (!ecc_out) {
-		WD_ERR("create ecc out err!\n");
+	if (!ecc_out)
 		return NULL;
-	}
 
 	return ecc_out;
 }
@@ -1887,10 +1880,8 @@ struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess)
 
 	ecc_out = create_ecc_out((struct wd_ecc_sess *)sess,
 				 SM2_KG_OUT_PARAM_NUM);
-	if (!ecc_out) {
-		WD_ERR("failed to create ecc out!\n");
+	if (!ecc_out)
 		return NULL;
-	}
 
 	return ecc_out;
 }
@@ -1914,8 +1905,8 @@ void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
 }
 
 struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
-					      struct wd_dtb *k,
-					      struct wd_dtb *m)
+				    struct wd_dtb *k,
+				    struct wd_dtb *m)
 {
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 	struct wd_sm2_enc_in *ein;
@@ -1962,9 +1953,9 @@ fail_set_param:
 }
 
 struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
-					      struct wd_ecc_point *c1,
-					      struct wd_dtb *c2,
-					      struct wd_dtb *c3)
+				    struct wd_ecc_point *c1,
+				    struct wd_dtb *c2,
+				    struct wd_dtb *c3)
 {
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 	__u32 struct_size = sizeof(struct wd_ecc_in);
@@ -2066,9 +2057,9 @@ struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess, __u32 plaintext_len)
 }
 
 void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
-				    struct wd_ecc_point **c1,
-				    struct wd_dtb **c2,
-				    struct wd_dtb **c3)
+			       struct wd_ecc_point **c1,
+			       struct wd_dtb **c2,
+			       struct wd_dtb **c3)
 {
 	struct wd_sm2_enc_out *eout = (void *)out;
 
@@ -2103,8 +2094,8 @@ void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 
 
 struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
-					struct wd_dtb *dgst,
-					struct wd_dtb *k)
+				       struct wd_dtb *dgst,
+				       struct wd_dtb *k)
 {
 	return new_sign_in((struct wd_ecc_sess *)sess, dgst, k, NULL, 1);
 }
@@ -2115,15 +2106,15 @@ struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess)
 }
 
 void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
-				struct wd_dtb **r, struct wd_dtb **s)
+				  struct wd_dtb **r, struct wd_dtb **s)
 {
 	return get_sign_out_params(out, r, s);
 }
 
 struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
-					struct wd_dtb *dgst,
-					struct wd_dtb *r,
-					struct wd_dtb *s)
+				       struct wd_dtb *dgst,
+				       struct wd_dtb *r,
+				       struct wd_dtb *s)
 {
 	return new_verf_in(sess, dgst, r, s, NULL, 1);
 }
