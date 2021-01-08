@@ -899,7 +899,7 @@ static int ecc_prepare_pubkey(struct wd_ecc_key *key, void **data)
 }
 
 static int ecc_prepare_key(struct wd_ecc_msg *msg,
-			      struct hisi_hpre_sqe *hw_msg)
+			   struct hisi_hpre_sqe *hw_msg)
 {
 	void *data = NULL;
 	int ret;
@@ -974,8 +974,7 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 {
 	struct wd_ecc_sign_in *in = (void *)msg->req.src;
 	struct wd_dtb *n = NULL;
-	struct wd_dtb *e = NULL;
-	struct wd_dtb *k = NULL;
+	struct wd_dtb *e, *k;
 	int ret;
 
 	if (!in->dgst_set) {
@@ -1024,9 +1023,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 
 {
 	struct wd_ecc_verf_in *vin = (void *)msg->req.src;
-	struct wd_dtb *e = NULL;
-	struct wd_dtb *s = NULL;
-	struct wd_dtb *r = NULL;
+	struct wd_dtb *e, *s, *r;
 	int ret;
 
 	if (!vin->dgst_set) {
@@ -1064,7 +1061,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 }
 
 static int sm2_prepare_enc_in(struct wd_ecc_msg *msg,
-			       struct hisi_hpre_sqe *hw_msg, void **data)
+			      struct hisi_hpre_sqe *hw_msg, void **data)
 
 {
 	struct wd_sm2_enc_in *ein = (void *)msg->req.src;
@@ -1158,7 +1155,7 @@ static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 }
 
 static int ecc_prepare_in(struct wd_ecc_msg *msg,
-			     struct hisi_hpre_sqe *hw_msg, void **data)
+			  struct hisi_hpre_sqe *hw_msg, void **data)
 {
 	int ret = -WD_EINVAL;
 
@@ -1244,7 +1241,7 @@ static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
 
 /* prepare in/out hw msg */
 static int ecc_prepare_iot(struct wd_ecc_msg *msg,
-			      struct hisi_hpre_sqe *hw_msg)
+			   struct hisi_hpre_sqe *hw_msg)
 {
 	void *data = NULL;
 	size_t i_sz = 0;
