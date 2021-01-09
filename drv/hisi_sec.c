@@ -24,6 +24,7 @@
 #define SEC_TYPE_MASK		0x0f
 
 #define SEC_IPSEC_SCENE		0x1
+#define SEC_STREAM_SCENE	0x7
 #define SEC_SCENE_OFFSET	  3
 #define SEC_DE_OFFSET		  1
 #define SEC_AUTH_OFFSET  	  6
@@ -1052,7 +1053,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
-	sqe.c_len_ivin |= (__u32)msg->in_bytes;
+	sqe.c_len_ivin = (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)msg->in;
 	sqe.data_dst_addr = (__u64)msg->out;
 	sqe.no_scene.c_ivin_addr = (__u64)msg->iv;
@@ -1322,7 +1323,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 			return -WD_EINVAL;
 		}
 		sqe->auth_mac_key |= (__u32)(msg->key_bytes /
-			WORD_BYTES) << SEC_MAC_OFFSET_V3;
+			WORD_BYTES) << SEC_AKEY_OFFSET_V3;
 		sqe->a_key_addr = (__u64)msg->key;
 		sqe->auth_mac_key |=
 		(__u32)(g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3);
@@ -1384,7 +1385,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
 
 	/* config scence */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
+	scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET_V3;
 	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET_V3;
 
 	if (msg->in_bytes == 0 ||
@@ -1401,7 +1402,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	}
 
 	sqe.bd_param |= (__u16)(de | scene);
-	sqe.c_len_ivin |= (__u32)msg->in_bytes;
+	sqe.a_len_key |= (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)msg->in;
 	sqe.mac_addr = (__u64)msg->out;
 
