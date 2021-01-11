@@ -79,6 +79,7 @@ static const struct wd_ecc_curve_list curve_list[] = {
 	{ WD_SECP224R1, "secp224R1", 224, SECG_P224_R1_PARAM },
 	{ WD_SECP256K1, "secp256k1", 256, SECG_P256_K1_PARAM },
 	{ WD_BRAINPOOLP320R1, "bpP320r1", 320, BRAINPOOL_P320_R1_PARAM },
+	{ WD_BRAINPOOLP384R1, "bpP384r1", 384, BRAINPOOL_P384_R1_PARAM },
 	{ WD_SECP384R1, "secp384r1", 384, SECG_P384_R1_PARAM },
 	{ WD_SECP521R1, "secp521r1", 521, SECG_P521_R1_PARAM },
 	{ WD_SM2P256, "sm2", 256, SM2_P256_V1_PARAM }
@@ -956,11 +957,9 @@ static bool is_key_width_support(__u32 key_bits)
 
 static bool is_alg_support(const char *alg)
 {
-	if (unlikely(strcmp(alg, "ecdh") && strcmp(alg, "ECDH") &&
-		strcmp(alg, "ecdsa") && strcmp(alg, "ECDSA") &&
-		strcmp(alg, "x25519") && strcmp(alg, "X25519") &&
-		strcmp(alg, "x448") && strcmp(alg, "X448") &&
-		strcmp(alg, "sm2") && strcmp(alg, "SM2")))
+	if (unlikely(strcmp(alg, "ecdh") && strcmp(alg, "ecdsa") &&
+		     strcmp(alg, "x25519") && strcmp(alg, "x448") &&
+		     strcmp(alg, "sm2")))
 		return false;
 
 	return true;
@@ -1242,20 +1241,18 @@ struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in)
 
 	dh_in = &ecc_in->param.dh_in;
 	ret = set_param_single(&dh_in->pbk.x, &in->x, "ecc in x");
-	if (ret) {
-		WD_ERR("failed to set ecdh in: x error!\n");
-		release_ecc_in(s, ecc_in);
-		return NULL;
-	}
+	if (ret)
+		goto set_param_error;
 
 	ret = set_param_single(&dh_in->pbk.y, &in->y, "ecc in y");
-	if (ret) {
-		WD_ERR("failed to set ecdh in: y error!\n");
-		release_ecc_in(s, ecc_in);
-		return NULL;
-	}
+	if (ret)
+		goto set_param_error;
 
 	return ecc_in;
+
+set_param_error:
+	release_ecc_in(s, ecc_in);
+	return NULL;
 }
 
 struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)

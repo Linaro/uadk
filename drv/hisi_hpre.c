@@ -972,7 +972,7 @@ static void correct_random(struct wd_dtb *k)
 static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 			       struct hisi_hpre_sqe *hw_msg, void **data)
 {
-	struct wd_ecc_sign_in *in = (void *)msg->req.src;
+	struct wd_ecc_sign_in *in = msg->req.src;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *e, *k;
 	int ret;
@@ -1022,7 +1022,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 			       struct hisi_hpre_sqe *hw_msg, void **data)
 
 {
-	struct wd_ecc_verf_in *vin = (void *)msg->req.src;
+	struct wd_ecc_verf_in *vin = msg->req.src;
 	struct wd_dtb *e, *s, *r;
 	int ret;
 
@@ -1064,7 +1064,7 @@ static int sm2_prepare_enc_in(struct wd_ecc_msg *msg,
 			      struct hisi_hpre_sqe *hw_msg, void **data)
 
 {
-	struct wd_sm2_enc_in *ein = (void *)msg->req.src;
+	struct wd_sm2_enc_in *ein = msg->req.src;
 	struct wd_dtb *k = &ein->k;
 	int ret;
 
@@ -1087,7 +1087,7 @@ static int sm2_prepare_dec_in(struct wd_ecc_msg *msg,
 			      struct hisi_hpre_sqe *hw_msg, void **data)
 
 {
-	struct wd_sm2_dec_in *din = (void *)msg->req.src;
+	struct wd_sm2_dec_in *din = msg->req.src;
 	struct wd_ecc_point *c1 = &din->c1;
 	int ret;
 
@@ -1131,7 +1131,7 @@ static int ecc_prepare_dh_gen_in(struct wd_ecc_msg *msg,
 static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 				     struct hisi_hpre_sqe *hw_msg, void **data)
 {
-	struct wd_ecc_dh_in *dh_in = (void *)msg->req.src;
+	struct wd_ecc_dh_in *dh_in = msg->req.src;
 	struct wd_ecc_point *pbk = &dh_in->pbk;
 	int ret;
 
@@ -1285,7 +1285,7 @@ static __u32 get_hw_keysz(__u32 ksz)
 	else if (ksz <= BITS_TO_BYTES(576))
 		size = BITS_TO_BYTES(576);
 	else
-		WD_ERR("failed to get hw keysize : ksz = %d.\n", ksz);
+		WD_ERR("failed to get hw keysize : ksz = %u.\n", ksz);
 
 	return size;
 }
