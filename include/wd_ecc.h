@@ -50,8 +50,9 @@ enum wd_ecc_curve_id {
 	WD_SECP224R1 = 0x12, /* SECG 224 bit prime field */
 	WD_SECP256K1 = 0x13, /* SECG 256 bit prime field */
 	WD_BRAINPOOLP320R1 = 0x14, /* RFC5639 320 bit prime field */
-	WD_SECP384R1 = 0x15, /* SECG 384 bit prime field */
-	WD_SECP521R1 = 0x16, /* NIST/SECG 521 bit prime field */
+	WD_BRAINPOOLP384R1 = 0x15, /* RFC5639 384 bit prime field */
+	WD_SECP384R1 = 0x16, /* SECG 384 bit prime field */
+	WD_SECP521R1 = 0x17, /* NIST/SECG 521 bit prime field */
 };
 
 /* ECC hash callback func types */
