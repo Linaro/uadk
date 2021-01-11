@@ -880,6 +880,7 @@ int zlib_deflate(void *output, unsigned int out_size,
 		break;
 	default:
 		WD_ERR("algorithm %d unsupported by zlib\n", alg_type);
+		return -EINVAL;
 	}
 
 	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, windowBits, 9,
