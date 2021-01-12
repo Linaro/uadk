@@ -661,10 +661,8 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 {
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
+	struct hisi_sgl *head, *next, *cur;
 	struct wd_datalist *tmp = sgl;
-	struct hisi_sgl *head;
-	struct hisi_sgl *next;
-	struct hisi_sgl *cur;
 	int i = 0;
 
 	if (!pool || !sgl) {
@@ -680,7 +678,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	tmp = sgl;
 	while (tmp) {
 		/* if the user's data is NULL, jump next one */
-		if (!tmp->data || tmp->len == 0) {
+		if (!tmp->data || !tmp->len) {
 			tmp = tmp->next;
 			continue;
 		}
@@ -769,7 +767,39 @@ static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl, int 
 	}
 }
 
-void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
+static void hisi_qm_pbuff_copy_inner(void *buff, struct hisi_sgl *hw_sgl, int begin_sge,
+	__u32 sge_offset, __u32 size)
+{
+	struct hisi_sgl *tmp = hw_sgl;
+	__u32 offset = 0;
+	__u32 len;
+	int i;
+
+	len = tmp->sge_entries[begin_sge].len - sge_offset;
+	if (len >= size) {
+		memcpy((void*)tmp->sge_entries[begin_sge].buff + sge_offset, buff, size);
+		return;
+	}
+
+	i = begin_sge + 1;
+	while (tmp) {
+		for (; i < tmp->entry_sum_in_sgl; i++) {
+			if (offset + tmp->sge_entries[i].len >= size) {
+				memcpy((void*)tmp->sge_entries[i].buff, buff + offset, size - offset);
+				return;
+			}
+
+			memcpy((void*)tmp->sge_entries[i].buff, buff + offset, tmp->sge_entries[i].len);
+			offset += tmp->sge_entries[i].len;
+		}
+
+		tmp = (struct hisi_sgl*)tmp->next_dma;
+		i = 0;
+	}
+}
+
+void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset,
+		__u32 size, __u8 direct)
 {
 	struct hisi_sgl *tmp = (struct hisi_sgl*)hw_sgl;
 	__u32 len = 0;
@@ -809,7 +839,10 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
 		}
 	}
 
-	hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+	if (direct == 0)
+		hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+	else
+		hisi_qm_pbuff_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
 }
 
 void hisi_qm_dump_sgl(void *sgl)

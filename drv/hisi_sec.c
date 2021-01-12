@@ -530,17 +530,17 @@ static void update_iv_sgl(struct wd_cipher_msg *msg)
 		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
 		    msg->out_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->out, msg->out_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+				msg->iv_bytes, msg->iv_bytes, COPY_SGL_TO_PBUFF);
 		if (msg->op_type == WD_CIPHER_DECRYPTION &&
 		    msg->in_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->in, msg->in_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+				msg->iv_bytes, msg->iv_bytes, COPY_SGL_TO_PBUFF);
 		break;
 	case WD_CIPHER_OFB:
 	case WD_CIPHER_CFB:
 		if (msg->out_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->out, msg->out_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+				msg->iv_bytes, msg->iv_bytes, COPY_SGL_TO_PBUFF);
 		break;
 	case WD_CIPHER_CTR:
 		if (msg->iv_bytes >= AES_BLOCK_SIZE)
@@ -667,6 +667,11 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		update_iv(rmsg);
 	else
 		update_iv_sgl(rmsg);
+
+	recv_msg->data_fmt = rmsg->data_fmt;
+	recv_msg->alg_type = rmsg->alg_type;
+	recv_msg->in = rmsg->in;
+	recv_msg->out = rmsg->out;
 }
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
@@ -717,6 +722,26 @@ static int cipher_iv_check(struct wd_cipher_msg *msg)
 	return 0;
 }
 
+static __u8 hisi_sec_get_data_fmt_v3(__u32 bd_param)
+{
+	/* Only check the src addr type */
+	if (bd_param & SEC_PBUFF_MODE_MASK_V3) {
+		return WD_SGL_BUF;
+	}
+
+	return WD_FLAT_BUF;
+}
+
+static __u8 hisi_sec_get_data_fmt_v2(__u32 sds_sa_type)
+{
+	/* Only check the src addr type */
+	if (sds_sa_type & SEC_SGL_SDS_MASK) {
+		return WD_SGL_BUF;
+	}
+
+	return WD_FLAT_BUF;
+}
+
 static void hisi_sec_put_sgl(handle_t h_qp, __u8 data_fmt, __u8 alg_type,
 	void *in, void *out)
 {
@@ -736,7 +761,7 @@ static void hisi_sec_put_sgl(handle_t h_qp, __u8 data_fmt, __u8 alg_type,
 }
 
 static int hisi_sec_fill_sgl(handle_t h_qp, __u8 data_fmt, __u8 **in,
-	__u8 **out, struct hisi_sec_sqe *sqe)
+	__u8 **out, struct hisi_sec_sqe *sqe, __u8 type)
 {
 	handle_t h_sgl_pool;
 	void *hw_sgl_in;
@@ -755,20 +780,19 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 data_fmt, __u8 **in,
 		return -ENOMEM;
 	}
 
-	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*out));
-	if (!hw_sgl_out) {
-		WD_ERR("failed to get hw sgl out!\n");
-		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-		return -ENOMEM;
+	if (type == WD_DIGEST) {
+		hw_sgl_out = *out;
+	} else {
+		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist*)(*out));
+		if (!hw_sgl_out) {
+			WD_ERR("failed to get hw sgl out!\n");
+			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
+			return -ENOMEM;
+		}
+		sqe->sdm_addr_type |= SEC_SGL_SDM_MASK;
 	}
 
 	sqe->sds_sa_type |= SEC_SGL_SDS_MASK;
-	/*
-	 * src_addr_type: 0~1 bits not used now.
-	 * dst_addr_type: 2~4 bits;
-	 * mac_addr_type: 5~7 bits;
-	 */
-	sqe->sdm_addr_type |= SEC_SGL_SDM_MASK;
 
 	*in = hw_sgl_in;
 	*out = hw_sgl_out;
@@ -869,7 +893,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
-	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out, &sqe);
+	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out, &sqe, msg->alg_type);
 	if (ret) {
 		WD_ERR("failed to get sgl!\n");
 		return ret;
@@ -1099,6 +1123,11 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *re
 		update_iv(rmsg);
 	else
 		update_iv_sgl(rmsg);
+
+	recv_msg->data_fmt = rmsg->data_fmt;
+	recv_msg->alg_type = rmsg->alg_type;
+	recv_msg->in = rmsg->in;
+	recv_msg->out = rmsg->out;
 }
 
 int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
@@ -1117,7 +1146,6 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	hisi_sec_put_sgl(h_qp, recv_msg->data_fmt, recv_msg->alg_type,
 		recv_msg->in, recv_msg->out);
-
 	return 0;
 }
 
@@ -1203,6 +1231,10 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 
 	recv_msg->tag = sqe->type2.tag;
 
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
+	recv_msg->in = (__u8*)sqe->type2.data_src_addr;
+	recv_msg->alg_type = WD_DIGEST;
+
 #ifdef DEBUG
 	WD_ERR("Dump digest recv sqe-->!\n");
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
@@ -1237,13 +1269,13 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		return -EINVAL;
 	}
 
-	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out, &sqe);
+	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out, &sqe, msg->alg_type);
 	if (ret) {
 		WD_ERR("failed to get sgl!\n");
 		return ret;
 	}
 
-	sqe.sds_sa_type = (__u8)(de | scene);
+	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;
 	sqe.type2.mac_addr = (__u64)msg->out;
@@ -1402,7 +1434,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	}
 
 	sqe.bd_param |= (__u16)(de | scene);
-	sqe.a_len_key |= (__u32)msg->in_bytes;
+	sqe.a_len_key = (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)msg->in;
 	sqe.mac_addr = (__u64)msg->out;
 
@@ -1444,6 +1476,10 @@ static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe, struct wd_digest_msg *re
 	}
 
 	recv_msg->tag = sqe->tag;
+
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
+	recv_msg->in = (__u8*)sqe->data_src_addr;
+	recv_msg->alg_type = WD_DIGEST;
 
 #ifdef DEBUG
 	WD_ERR("Dump digest recv sqe-->!\n");
@@ -1625,25 +1661,49 @@ static void set_aead_auth_iv(struct wd_aead_msg *msg)
 	}
 }
 
-static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
-		struct hisi_sec_sqe *sqe)
+static void fill_aead_mac_addr_pbuff(struct wd_aead_msg *msg, __u64 *mac_addr)
 {
 	__u64 addr;
 
-	sqe->type2.data_src_addr = (__u64)msg->in;
-	sqe->type2.data_dst_addr = (__u64)msg->out;
-
-	/* AEAD input MAC addr use in addr */
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
 	    addr = (__u64)msg->in + msg->in_bytes + msg->assoc_bytes;
-		sqe->type2.mac_addr = addr;
+		*mac_addr = addr;
 	}
 
 	/* AEAD output MAC addr use out addr */
 	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
-	    addr = (__u64)msg->out + msg->out_bytes - msg->auth_bytes;
-		sqe->type2.mac_addr = addr;
+		addr = (__u64)msg->out + msg->out_bytes - msg->auth_bytes;
+		*mac_addr = addr;
 	}
+}
+
+static void fill_aead_mac_addr_sgl(struct wd_aead_msg *msg, __u64 *mac_addr)
+{
+	msg->mac = calloc(1, msg->auth_bytes);
+	if (!msg->mac) {
+		WD_ERR("failed to alloc mac memory!\n");
+		return;
+	}
+
+	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
+		hisi_qm_sgl_copy(msg->mac, msg->in,
+			msg->in_bytes + msg->assoc_bytes, msg->auth_bytes, COPY_SGL_TO_PBUFF);
+	}
+
+	*mac_addr = (__u64)msg->mac;
+}
+
+static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
+		struct hisi_sec_sqe *sqe)
+{
+	sqe->type2.data_src_addr = (__u64)msg->in;
+	sqe->type2.data_dst_addr = (__u64)msg->out;
+
+	/* AEAD input MAC addr use in addr */
+	if (msg->data_fmt == WD_FLAT_BUF)
+		fill_aead_mac_addr_pbuff(msg, &sqe->type2.mac_addr);
+	else
+		fill_aead_mac_addr_sgl(msg, &sqe->type2.mac_addr);
 
 	sqe->type2.c_key_addr = (__u64)msg->ckey;
 	sqe->type2.a_key_addr = (__u64)msg->akey;
@@ -1711,7 +1771,7 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 		return ret;
 	}
 
-	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out, &sqe);
+	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out, &sqe, msg->alg_type);
 	if (ret) {
 		WD_ERR("failed to get sgl!\n");
 		return ret;
@@ -1752,6 +1812,12 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->type2.a_ivin_addr;
 	recv_msg->tag = sqe->type2.tag;
 
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
+	recv_msg->in = (__u8*)sqe->type2.data_src_addr;
+	recv_msg->out = (__u8*)sqe->type2.data_dst_addr;
+	recv_msg->alg_type = WD_AEAD;
+	recv_msg->mac = (__u8*)sqe->type2.mac_addr;
+
 #ifdef DEBUG
 	WD_ERR("Dump aead recv sqe-->!\n");
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
@@ -1770,6 +1836,13 @@ int hisi_sec_aead_recv(handle_t ctx, struct wd_aead_msg *recv_msg)
 		return ret;
 
 	parse_aead_bd2(&sqe, recv_msg);
+
+	if (recv_msg->data_fmt == WD_SGL_BUF &&
+		sqe.type_auth_cipher & (SEC_CIPHER_ENC << SEC_CIPHER_OFFSET)) {
+		hisi_qm_sgl_copy(recv_msg->mac, recv_msg->out,
+			recv_msg->out_bytes - recv_msg->auth_bytes,
+			recv_msg->auth_bytes, COPY_PBUFF_TO_SGL);
+	}
 
 	hisi_sec_put_sgl(h_qp, recv_msg->data_fmt, recv_msg->alg_type,
 		recv_msg->in, recv_msg->out);
@@ -1881,22 +1954,14 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 static void fill_aead_bd3_addr(struct wd_aead_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
-	__u64 addr;
-
 	sqe->data_src_addr = (__u64)msg->in;
 	sqe->data_dst_addr = (__u64)msg->out;
 
-	/* AEAD input MAC addr use in addr */
-	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
-	    addr = (__u64)msg->in + msg->in_bytes + msg->assoc_bytes;
-		sqe->mac_addr = addr;
-	}
-
-	/* AEAD output MAC addr use out addr */
-	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
-	    addr = (__u64)msg->out + msg->out_bytes - msg->auth_bytes;
-		sqe->mac_addr = addr;
-	}
+	/* AEAD input MAC addr use in and out addr */
+	if (msg->data_fmt == WD_FLAT_BUF)
+		fill_aead_mac_addr_pbuff(msg, &sqe->mac_addr);
+	else
+		fill_aead_mac_addr_sgl(msg, &sqe->mac_addr);
 
 	sqe->c_key_addr = (__u64)msg->ckey;
 	sqe->a_key_addr = (__u64)msg->akey;
@@ -2002,6 +2067,11 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->auth_ivin.a_ivin_addr;
 	recv_msg->tag = sqe->tag;
 
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
+	recv_msg->in = (__u8*)sqe->data_src_addr;
+	recv_msg->out = (__u8*)sqe->data_dst_addr;
+	recv_msg->alg_type = WD_AEAD;
+
 #ifdef DEBUG
 	WD_ERR("Dump aead recv sqe-->!\n");
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
@@ -2020,6 +2090,14 @@ int hisi_sec_aead_recv_v3(handle_t ctx, struct wd_aead_msg *recv_msg)
 		return ret;
 
 	parse_aead_bd3(&sqe, recv_msg);
+
+	if (recv_msg->data_fmt == WD_SGL_BUF &&
+		(sqe.c_icv_key & SEC_CIPHER_ENC)) {
+		hisi_qm_sgl_copy(recv_msg->mac, recv_msg->out,
+			recv_msg->out_bytes - recv_msg->auth_bytes,
+			recv_msg->auth_bytes, COPY_PBUFF_TO_SGL);
+	}
+
 	hisi_sec_put_sgl(h_qp, recv_msg->data_fmt, recv_msg->alg_type,
 		recv_msg->in, recv_msg->out);
 

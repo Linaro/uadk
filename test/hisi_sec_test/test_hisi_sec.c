@@ -485,7 +485,7 @@ static int test_sec_cipher_sync_once(void)
 	/* get resource */
 	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.src = malloc(g_pktlen);
+	req.src = malloc(BUFF_SIZE);
 	if (!req.src) {
 		SEC_TST_PRT("req src mem malloc failed!\n");
 		ret = -1;
@@ -505,7 +505,7 @@ static int test_sec_cipher_sync_once(void)
 	else
 		hexdump(req.src, g_pktlen);
 
-	req.dst = malloc(g_pktlen);
+	req.dst = malloc(BUFF_SIZE);
 	if (!req.dst) {
 		SEC_TST_PRT("req dst mem malloc failed!\n");
 		ret = -1;
@@ -2260,6 +2260,7 @@ static int sec_aead_sync_once(void)
 		req.out_bytes = req.assoc_bytes + tv->plen;
 	}
 
+	hexdump(req.src, in_size);
 	req.src = test_sec_buff_create(g_data_fmt, req.src, in_size);
 	if (!req.src) {
 		ret = -1;
@@ -2313,10 +2314,7 @@ static int sec_aead_sync_once(void)
 	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
 
-	if (g_data_fmt == WD_SGL_BUF)
-		hexdump(req.list_dst->data, req.out_bytes);
-	else
-		hexdump(req.dst, req.out_bytes);
+	hexdump(bak_dst, req.out_bytes);
 out:
 	test_sec_sgl_free(g_data_fmt, req.src);
 	test_sec_sgl_free(g_data_fmt, req.dst);
