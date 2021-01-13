@@ -27,7 +27,7 @@ include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
-libwd_la_SOURCES=wd.c wd.h
+libwd_la_SOURCES=wd.c wd_mempool.c wd.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h
 
@@ -50,7 +50,7 @@ libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV
 
-libwd_la_LIBADD = $(libwd_la_OBJECTS)
+libwd_la_LIBADD = $(libwd_la_OBJECTS) -lnuma
 
 libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl
 libwd_comp_la_DEPENDENCIES = libwd.la
@@ -67,6 +67,7 @@ libhisi_hpre_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 libhisi_hpre_la_DEPENDENCIES = libwd.la libwd_crypto.la
 else
 libwd_la_LDFLAGS=$(UADK_VERSION)
+libwd_la_LIBADD= -lnuma
 
 libwd_comp_la_LIBADD= -lwd -ldl
 libwd_comp_la_LDFLAGS=$(UADK_VERSION)
