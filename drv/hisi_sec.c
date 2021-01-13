@@ -954,7 +954,7 @@ static int fill_cipher_bd3_alg(struct wd_cipher_msg *msg,
 		sqe->c_icv_key |= CKEY_LEN_DES << SEC_CKEY_OFFSET_V3;
 		break;
 	case WD_CIPHER_3DES:
-		sqe->c_mode_alg |= C_ALG_3DES;
+		sqe->c_mode_alg |= C_ALG_3DES << SEC_CALG_OFFSET_V3;
 		ret = get_3des_c_key_len(msg, &c_key_len);
 		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
