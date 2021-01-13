@@ -10,7 +10,7 @@
 #include "uacce.h"
 
 #define PATH_STR_SIZE			256
-#define MAX_ATTR_STR_SIZE		256
+#define MAX_ATTR_STR_SIZE		384
 #define WD_NAME_SIZE			64
 #define MAX_DEV_NAME_LEN		256
 
@@ -67,6 +67,9 @@ extern FILE *flog_fd;
 #define	WD_IN_EPARA			67 /* input parameter error */
 #define	WD_ENOPROC			68 /* no processed */
 
+#define WD_HANDLE_ERR(h)		((long long)(h))
+#define WD_IS_ERR(h)			((unsigned long long)(h) > \
+					(unsigned long long)(-1000))
 enum wcrypto_type {
 	WD_CIPHER,
 	WD_DIGEST,
@@ -313,5 +316,126 @@ extern int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
  * Return device region size.
  */
 extern unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt);
+
+enum wd_page_type {
+	WD_HUGE_PAGE = 0,
+	WD_NORMAL_PAGE,
+};
+
+/*
+ * struct wd_mempool_stats - Use to dump statistics info about mempool
+ * @page_type: 0 huge page, 1 mmap + pin.
+ * @page_size: Page size.
+ * @pape_num: Page numbers in mempool.
+ * @blk_size: Memory in mempool will be divied into blocks with same size,
+ *	      this is size of each block. Currently it is 4KB fixed.
+ * @blk_num: Number of blocks in mempool.
+ * @free_blk_num: Number of free blocks in mempool.
+ * @blk_usage_rate: In wd_blkpool_create function, it gets memory from
+ *		    mempool by mempool blocks. As continuous blocks in mempool
+ *		    may be needed, wd_blkpool_create may fail. blk_usage_rate
+ * 		    helps to show the usage rate of mempool. It will be helpful
+ *		    to show the state of memory fragmentation. e.g. 30 is 30%.
+ */
+struct wd_mempool_stats {
+	enum wd_page_type page_type;
+	unsigned long page_size;
+	unsigned long page_num;
+	unsigned long blk_size;
+	unsigned long blk_num;
+	unsigned long free_blk_num;
+	unsigned long blk_usage_rate;
+};
+
+/*
+ * struct wd_blkpool_stats - Use to dump statistics info about blkpool
+ * @block_size: Block size.
+ * @block_num: Number of blocks.
+ * @free_block_num: Number of free blocks.
+ * @block_usage_rate: Block usage rate, e.g. 30 is 30%
+ * @mem_waste_rate: When blkpool allocate memory from mempool, it may waste
+ *		    some memory as below figure. This is the waste rate,
+ *		    e.g. 30 is 30%.
+ *    +--+--+--+--+                    +-------------------+
+ *    |  |  |  |  |    waste memory    |                   |    waste memory
+ *    +--+--+--+--+  /                 +-------------------+  /
+ *                  /                                        /
+ *    +-------------+                  +-----+-----+-----+-----+
+ *    |             |                  |     |     |     |     |
+ *    +-------------+                  +-----+-----+-----+-----+
+ */
+struct wd_blkpool_stats {
+	unsigned long block_size;
+	unsigned long block_num;
+	unsigned long free_block_num;
+	unsigned long block_usage_rate;
+	unsigned long mem_waste_rate;
+};
+
+/**
+ * wd_block_alloc() - Allocate block memory from blkpool.
+ * @blkpool: The handle of blkpool.
+ *
+ * Return addr of block memory.
+ */
+extern void *wd_block_alloc(handle_t blkpool);
+
+/**
+ * wd_block_free() - Free block memory.
+ * @blkpool: The handle of blkpool.
+ * @addr: The addr of block memory.
+ */
+extern void wd_block_free(handle_t blkpool, void *addr);
+
+/**
+ * wd_blkpool_create() - Blkpool allocate memory from mempool.
+ * @mempool: The handle of mempool.
+ * @block_size: Size of every block in blkpool.
+ * @block_num: Number of blocks in blkpool.
+ *
+ * Return handle of blkpool if suceessful; On error, errno is set to indicate
+ * the error. WD_EINVAL: An invalid value was specified for mempool、block_size
+ * or block_num. WD_ENOMEM: Insufficient kernel memory was available.
+ */
+extern handle_t wd_blkpool_create(handle_t mempool, size_t block_size,
+				  size_t block_num);
+
+/**
+ * wd_blkpool_destory() - Destory blkpool and release memory to the mempool.
+ * @blkpool: The handle of blkpool.
+ */
+extern void wd_blkpool_destory(handle_t blkpool);
+
+/**
+ * wd_mempool_create() - Creat mempool.
+ * @size: Size of mempool.
+ * @node: Node of numa, the memory policy defines from which node memory is
+ *	  allocated. If system does't support numa, node will be -1.
+ *
+ * Return handle of mempool if suceessful; On error,  errno is set to indicate
+ * the error. WD_EINVAL: An invalid value was specified for size or node.
+ * WD_ENOMEM: Insufficient kernel memory was available.
+ */
+extern handle_t wd_mempool_create(size_t size, int node);
+
+/**
+ * wd_mempool_destory() - Destory mempool.
+ * @mempool: The handle of mempool.
+ */
+extern void wd_mempool_destory(handle_t mempool);
+
+/**
+ * wd_mempool_stats() - Dump statistics information about mempool.
+ * @mempool: The handle of mempool.
+ * @stats: Pointer of struct wd_mempool_stats.
+ */
+extern void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
+
+/**
+ * wd_blkpool_stats() - Dump statistics information about blkpool.
+ * @blkpool: The handle of blkpool.
+ * @stats: Pointer of struct wd_blkpool_stats.
+ */
+extern void wd_blkpool_stats(handle_t blkpool, struct wd_blkpool_stats *stats);
 
 #endif
