@@ -13,10 +13,6 @@
 #define BITS_TO_BYTES(bits)	(((bits) + 7) >> 3)
 #define BYTES_TO_BITS(bytes)	((bytes) << 3)
 
-struct wd_lock {
-	__u32 lock;
-};
-
 enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
 	CTX_MODE_ASYNC,
@@ -106,17 +102,5 @@ struct wd_datalist {
 	__u32 len;
 	struct wd_datalist *next;
 };
-
-static inline void wd_spinlock(struct wd_lock *lock)
-{
-	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
-		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED));
-}
-
-static inline void wd_unspinlock(struct wd_lock *lock)
-{
-	__atomic_clear(&lock->lock, __ATOMIC_RELEASE);
-}
-
 
 #endif
