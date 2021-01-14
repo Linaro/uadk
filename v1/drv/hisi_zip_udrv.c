@@ -367,7 +367,12 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 	}
 
 	sqe->input_data_length = msg->in_size;
-	sqe->dest_avail_out = msg->avail_out;
+
+	/* fill the literals output size */
+	sqe->dw13 = msg->in_size;
+
+	/* fill the sequences output size */
+	sqe->dest_avail_out = msg->avail_out - msg->in_size;
 
 	return WD_SUCCESS;
 }
