@@ -253,8 +253,8 @@ void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
 	struct wd_blkpool *pool;
 	int ret;
 
-	if (!q || !setup) {
-		WD_ERR("q or setup is NULL!\n");
+	if (!setup) {
+		WD_ERR("setup is NULL!\n");
 		return NULL;
 	}
 
