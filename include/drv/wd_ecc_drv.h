@@ -41,6 +41,7 @@
 /* ECC message format */
 struct wd_ecc_msg {
 	struct wd_ecc_req req;
+	struct wd_hash_mt hash;
 	__u64 tag; /* User-defined request identifier */
 	__u8 *key; /* Input key VA, should be DMA buffer */
 	__u16 key_bytes; /* key bytes */
