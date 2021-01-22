@@ -317,10 +317,17 @@ err_out:
 	return ret;
 }
 
-static int hisi_qm_get_free_num(struct hisi_qm_queue_info *q_info)
+static int get_free_num(struct hisi_qm_queue_info *q_info)
 {
 	/* The device should reserve one buffer. */
 	return (QM_Q_DEPTH - 1) - q_info->used_num;
+}
+
+int hisi_qm_get_free_sqe_num(handle_t h_qp)
+{
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+
+	return get_free_num(&qp->q_info);
 }
 
 handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
@@ -399,7 +406,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 		return -WD_HW_EACCESS;
 	}
 
-	free_num = hisi_qm_get_free_num(q_info);
+	free_num = get_free_num(q_info);
 	if (!free_num) {
 		pthread_spin_unlock(&q_info->lock);
 		return -EBUSY;
