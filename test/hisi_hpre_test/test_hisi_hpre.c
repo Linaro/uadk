@@ -217,6 +217,7 @@ struct hpre_test_config {
 	__u8 perf_test;
 	__u8 soft_test;
 	__u8 with_log;
+	__u8 data_from; // 0 - openssl generate 1 - sample data
 	__u8 trd_num;
 	__u8 msg_type; // 0-plaintext 1-digest 2-ciphertext;
 	__u8 rand_type; // 0-non 1-cb 2-param;
@@ -248,6 +249,7 @@ static struct hpre_test_config g_config = {
 	#else
 	.check = 0,
 	#endif
+	.data_from = 0,
 	.perf_test = 0,
 	.with_log = 0,
 	.soft_test = 0,
@@ -266,6 +268,7 @@ static struct async_test_openssl_param ssl_params;
 struct wd_ctx_config g_ctx_cfg;
 static __thread u32 g_is_set_prikey; // ecdh used
 static __thread u32 g_is_set_pubkey; // ecc used
+static pthread_spinlock_t g_lock;
 
 static bool is_exit(struct test_hpre_pthread_dt *pdata);
 
@@ -515,9 +518,10 @@ struct ecc_test_ctx_setup {
 	const void *rp; //ecdsa sign in
 	const void *sign; // ecdsa sign out or verf in
 	const void *priv_key; // use in ecdsa sign
-	void *msg; // sm2 plaintext or digest input
+	void *msg; // sm2 plaintext,ciphertext or digest input
 	const void *userid; // sm2 user id
 	const void *ciphertext; // sm2 ciphertext
+	const void *plaintext; // sm2 plaintext
 	u32 key_size;
 	u32 share_key_size;
 	u32 except_pub_key_size;
@@ -530,6 +534,7 @@ struct ecc_test_ctx_setup {
 	u32 msg_size;
 	u32 userid_size;
 	u32 ciphertext_size;
+	u32 plaintext_size;
 	u32 op_type;
 	u32 key_bits;
 	u32 key_from; //0 - Openssl  1 - Designed
@@ -772,6 +777,7 @@ int EVP_PKEY_verify_init(EVP_PKEY_CTX *ctx);
 int EVP_PKEY_verify(EVP_PKEY_CTX *ctx,
                     const unsigned char *sig, size_t siglen,
                     const unsigned char *tbs, size_t tbslen);
+void ERR_print_errors_fp(FILE *fp);
 
 const EVP_MD *EVP_sha1(void);
 const EVP_MD *EVP_sha224(void);
@@ -1319,6 +1325,49 @@ int EVP_DigestUpdate(EVP_MD_CTX *ctx, const void *d, size_t cnt)
 	return 0;
 }
 
+unsigned char *OPENSSL_hexstr2buf(const char *str, long *len)
+{
+	return NULL;
+}
+
+char *OPENSSL_buf2hexstr(const unsigned char *buffer, long len)
+{
+	return NULL;
+}
+
+void RAND_set_rand_method(const RAND_METHOD *meth)
+{}
+
+int EVP_PKEY_set1_EC_KEY(EVP_PKEY *pkey, struct ec_key_st *key)
+{
+	return 0;
+}
+
+int EVP_PKEY_set_alias_type(EVP_PKEY *pkey, int type)
+{
+	return 0;
+}
+
+EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *pkey, ENGINE *e)
+{
+	return NULL;
+}
+
+void EVP_MD_CTX_set_pkey_ctx(EVP_MD_CTX *ctx, EVP_PKEY_CTX *pctx)
+{}
+
+void CRYPTO_free(void *ptr, const char *file, int line)
+{}
+
+const RAND_METHOD *RAND_get_rand_method(void)
+{
+	return NULL;
+}
+
+EVP_PKEY *EVP_PKEY_new(void)
+{
+	return NULL;
+}
 #endif
 
 #define EVP_DigestSignUpdate(a, b, c)	EVP_DigestUpdate(a, b, c)
@@ -1382,6 +1431,8 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 				int b_size, int d_size)
 {
 	int i = d_size - 1;
+	char *buff = NULL;
+	char *src_tmp;
 	int j = 0;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
@@ -1394,15 +1445,28 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 		return  -WD_EINVAL;
 	}
 
-	if (b_size == d_size || (dst == src))
+	if (b_size == d_size)
 		return WD_SUCCESS;
+
+	if (dst == src) {
+		buff = malloc(d_size);
+		if (!buff)
+			return  -WD_ENOMEM;
+		memcpy(buff, src, d_size);
+		src_tmp = buff;
+	} else {
+		src_tmp = (void *)src;
+	}
 
 	for (j = b_size - 1; j >= 0; j--, i--) {
 		if (i >= 0)
-			dst[j] = src[i];
+			dst[j] = src_tmp[i];
 		else
 			dst[j] = 0;
 	}
+
+	if (buff)
+		free(buff);
 
 	return WD_SUCCESS;
 }
@@ -1710,8 +1774,10 @@ __u32 hpre_pick_next_ctx(handle_t sched_ctx,
 	if (!strncmp(g_config.trd_mode, "async", 5))
 		return 0;
 
+	pthread_spin_lock(&g_lock);
 	if (++last_ctx == g_ctx_cfg.ctx_num)
 		last_ctx = 0;
+	pthread_spin_unlock(&g_lock);
 
 	return last_ctx;
 }
@@ -1835,7 +1901,7 @@ static int init_hpre_global_config(__u32 op_type)
 	int j;
 
 #ifdef DEBUG
-	HPRE_TST_PRT("%s req %d ctx!\n", g_config.dev_path, ctx_num);
+	HPRE_TST_PRT("request ctx[%d] from %s!\n", ctx_num, g_config.dev_path);
 #endif
 
 	if (op_type > HPRE_ALG_INVLD_TYPE && op_type < MAX_RSA_ASYNC_TYPE)
@@ -3956,11 +4022,14 @@ static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 		k.data = (void *)setup.k;
 		k.dsize = setup.k_size;
 		k.bsize = key_size;
-		ecc_in = wd_sm2_new_sign_in(sess, &e, &k, NULL, is_dgst);
+		ecc_in = wd_sm2_new_sign_in(sess, &e, &k, NULL, 1);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
 			goto del_ecc_out;
 		}
+		
+		memcpy(test_ctx->cp_sign, (void *)setup.sign, setup.sign_size);
+		test_ctx->cp_sign_size = setup.sign_size;
 	} else {
 		EVP_MD_CTX *md_ctx = setup.openssl_handle;
 		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
@@ -3973,7 +4042,7 @@ static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 				goto del_ecc_out;
 			}
 			k.data = buff;
-			k.dsize = 32;
+			k.dsize = setup.k_size;
 			kptr = &k;
 
 			/* openssl set rand */
@@ -4086,7 +4155,7 @@ static struct ecc_test_ctx *sm2_create_hw_verf_test_ctx(struct ecc_test_ctx_setu
 	e.dsize = setup.msg_size;
 	e.bsize = key_size;
 	if (setup.key_from) {
-		r.data = (void *)setup.msg;
+		r.data = (void *)setup.sign;
 		r.dsize = key_size;
 		r.bsize = key_size;
 		s.data = r.data + key_size;
@@ -4194,14 +4263,19 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 		goto free_ctx;
 	}
 
-	e.data = setup.msg;
+	e.data = (void *)setup.msg;
 	e.dsize = setup.msg_size;
 	e.bsize = setup.msg_size;
 	if (setup.key_from) {
+		e.data = (void *)setup.plaintext;
+		e.dsize = setup.plaintext_size;
+		e.bsize = setup.plaintext_size;
 		k.data = (void *)setup.k;
 		k.dsize = setup.k_size;
 		k.bsize = key_size;
 		kptr = &k;
+		memcpy(test_ctx->cp_enc, (void *)setup.ciphertext, setup.ciphertext_size);
+		test_ctx->cp_enc_size = setup.ciphertext_size;
 	} else if (g_config.rand_type == RAND_PARAM) {
 		EVP_MD_CTX *md_ctx = setup.openssl_handle;
 		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
@@ -4212,7 +4286,7 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 			goto del_ecc_out;
 		}
 		k.data = buff;
-		k.dsize = g_config.k_len;
+		k.dsize = setup.k_size;
 		kptr = &k;
 
 		/* openssl set rand */
@@ -4244,12 +4318,6 @@ static struct ecc_test_ctx *sm2_create_hw_enc_test_ctx(struct ecc_test_ctx_setup
 		#ifdef DEBUG
 		print_data(test_ctx->cp_enc, test_ctx->cp_enc_size, "cp_enc");
 		#endif
-	} else {
-		EVP_MD_CTX *md_ctx = setup.openssl_handle;
-		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
-
-		EVP_PKEY_decrypt_init(pctx);
-		EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
 	}
 
 	ecc_in = wd_sm2_new_enc_in(sess, kptr, &e);
@@ -4306,26 +4374,24 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 	memset(test_ctx, 0, sizeof(struct ecc_test_ctx));
 
 	key_size = (wd_ecc_get_key_bits(sess) + 7) / 8;
-	ecc_out = wd_sm2_new_dec_out(sess, setup.msg_size);
-	if (!ecc_out) {
-		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
-		goto free_ctx;
-	}
+
 
 	if (setup.key_from) {
-		c1.x.data = (void *)setup.msg;
+		c1.x.data = (void *)setup.ciphertext;
 		c1.x.dsize = 32;
 		c1.y.data = c1.x.data + 32;
 		c1.y.dsize = 32;
 		c3.data = c1.y.data + 32;
 		c3.dsize = 32;
 		c2.data = c3.data + 32;
-		c2.dsize = test_ctx->setup.ciphertext_size - 32 * 3;
+		c2.dsize = setup.ciphertext_size - 32 * 3;
 		ecc_in = wd_sm2_new_dec_in(sess, &c1, &c2, &c3);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
-			goto del_ecc_out;
+			goto free_ctx;
 		}
+		memcpy(test_ctx->cp_enc, setup.plaintext, setup.plaintext_size);
+		test_ctx->cp_enc_size = setup.plaintext_size;
 	} else {
 		EVP_MD_CTX *md_ctx = setup.openssl_handle;
 		EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
@@ -4337,7 +4403,7 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 			setup.msg, setup.msg_size);
 		if (ret != 1) {
 			printf("EVP_PKEY_encrypt fail, ret %d\n", ret);
-			goto del_ecc_out;
+			goto free_ctx;
 		}
 
 		#ifdef DEBUG
@@ -4353,12 +4419,21 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 		c3.data = c1.y.data + 32;
 		c3.dsize = get_hash_bytes();
 		c2.data = c3.data + c3.dsize;
-		c2.dsize = setup.msg_size;
+		c2.dsize = setup.plaintext_size;
 		ecc_in = wd_sm2_new_dec_in(sess, &c1, &c2, &c3);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
-			goto del_ecc_out;
+			goto free_ctx;
 		}
+
+		memcpy(test_ctx->cp_enc, setup.msg, setup.msg_size);
+		test_ctx->cp_enc_size = setup.msg_size;
+	}
+
+	ecc_out = wd_sm2_new_dec_out(sess, c2.dsize);
+	if (!ecc_out) {
+		HPRE_TST_PRT("%s: new ecc out fail!\n", __func__);
+		goto free_ctx;
 	}
 
 	#ifdef DEBUG
@@ -4378,8 +4453,6 @@ static struct ecc_test_ctx *sm2_create_hw_dec_test_ctx(struct ecc_test_ctx_setup
 
 	return test_ctx;
 
-del_ecc_out:
-	(void)wd_ecc_del_out(sess, ecc_out);
 free_ctx:
 	free(test_ctx);
 free_req:
@@ -5065,10 +5138,14 @@ static int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_ty
 	int key_size = (key_bits + 7) / 8;
 	u32 len;
 
-	if (g_config.perf_test || op_type == ECDH_ASYNC_GEN || op_type == ECDH_ASYNC_COMPUTE)
+	if (op_type == ECDH_ASYNC_GEN || op_type == ECDH_ASYNC_COMPUTE) {
 		setup->key_from = 1; // Designed
-	else
-		setup->key_from = 0;
+	} else {
+		setup->key_from = g_config.data_from;
+	}
+
+	if (setup->key_from)
+		HPRE_TST_PRT("Input data comes from fixed sample data\n");
 
 	setup->key_bits = key_bits;
 
@@ -5093,18 +5170,31 @@ static int ecc_init_test_ctx_setup(struct ecc_test_ctx_setup *setup, __u32 op_ty
 			if (g_config.msg_type == MSG_DIGEST) {
 				memcpy(setup->msg, sm2_digest, sizeof(sm2_digest));
 				setup->msg_size = (g_config.msg_len == INVALID_LEN) ? sizeof(sm2_digest) : g_config.msg_len;
-			} else if (g_config.msg_type == MSG_CIPHERTEXT) {
-				memcpy(setup->msg, sm2_ciphertext, sizeof(sm2_ciphertext));
-				setup->msg_size = (g_config.msg_len == INVALID_LEN) ? sizeof(sm2_ciphertext) : g_config.msg_len;
 			} else {
 				memcpy(setup->msg, sm2_plaintext, sizeof(sm2_plaintext));
 				setup->msg_size = (g_config.msg_len == INVALID_LEN) ? sizeof(sm2_plaintext) : g_config.msg_len;
+			}
+
+			if (setup->msg_size > 512) {
+				if (setup->msg_size != 513 && setup->key_from == 1)
+					HPRE_TST_PRT("Sample data is fixed as 513 bytes\n");
+				setup->ciphertext = sm2_ciphertext_l;
+				setup->ciphertext_size = sizeof(sm2_ciphertext_l);
+				setup->plaintext = sm2_plaintext_l;
+				setup->plaintext_size = sizeof(sm2_plaintext_l);
+			} else {
+				setup->ciphertext = sm2_ciphertext;
+				setup->ciphertext_size = sizeof(sm2_ciphertext);
+				setup->plaintext = sm2_plaintext;
+				setup->plaintext_size = sizeof(sm2_plaintext);
 			}
 
 			setup->k = sm2_k;
 			setup->k_size = (g_config.k_len == INVALID_LEN) ? sizeof(sm2_k) : g_config.k_len;
 			setup->userid = sm2_id;
 			setup->userid_size = (g_config.id_len == INVALID_LEN) ? sizeof(sm2_id) : g_config.id_len;
+			setup->sign = sm2_sign_data;
+			setup->sign_size = sizeof(sm2_sign_data);
 
 		} else {
 			setup->priv_key = ecdh_da_secp256k1;
@@ -5743,10 +5833,11 @@ static int ecdsa_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 {
 	struct wd_ecc_req *req = test_ctx->req;
-	EVP_MD_CTX *md_ctx = test_ctx->setup.openssl_handle;
-	EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(pctx);
-	EC_KEY *ec_key = EVP_PKEY_get0(p_key);
+	struct wd_dtb prk, pbk;
+	EVP_MD_CTX *md_ctx;
+	EVP_PKEY_CTX *pctx;
+	EVP_PKEY *p_key;
+	EC_KEY *ec_key;
 	struct wd_dtb *r, *s;
 	char buff[MAX_SIGN_LEN] = {0};
 	size_t len;
@@ -5758,7 +5849,17 @@ static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	memcpy(buff + 32, s->data, s->dsize);
 	crypto_bin_to_hpre_bin(buff + 32, s->data, s->bsize, s->dsize);
 
-	if (g_config.rand_type != RAND_PARAM) {
+	if (g_config.rand_type != RAND_PARAM && !test_ctx->setup.key_from) {
+		pbk.data = (void *)test_ctx->setup.pub_key;
+		pbk.dsize = test_ctx->setup.pub_key_size;
+		prk.data = (void *)test_ctx->setup.priv_key;
+		prk.dsize = test_ctx->setup.priv_key_size;
+		md_ctx = ecc_create_openssl_handle(&prk, &pbk);
+		if (!md_ctx)
+			return -1;
+		pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
+		p_key = EVP_PKEY_CTX_get0_pkey(pctx);
+		ec_key = EVP_PKEY_get0(p_key);
 
 		/* openssl verf check */
 		len = hpre_bin_sign_to_evp(buff, buff, 32);
@@ -5787,6 +5888,7 @@ static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 			return -1;
 		}
 
+		ecc_del_openssl_handle(md_ctx);
 		#ifdef DEBUG
 			HPRE_TST_PRT("sm2 verf pass!\n");
 		#endif
@@ -5806,10 +5908,11 @@ static int sm2_sign_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 {
 	struct wd_ecc_req *req = test_ctx->req;
-	EVP_MD_CTX *md_ctx = test_ctx->setup.openssl_handle;
-	EVP_PKEY_CTX *pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
+	EVP_MD_CTX *md_ctx;
+	EVP_PKEY_CTX *pctx;
 	struct wd_ecc_point *c1 = NULL;
 	struct wd_dtb *c2 = NULL, *c3 = NULL;
+	struct wd_dtb pbk, prk;
 	char *buf, *ptext;
 	size_t lens = 0;
 	__u32 evp_len;
@@ -5831,7 +5934,18 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 	memset(ptext, 0, MAX_ENC_LEN);
 	lens = MAX_ENC_LEN;
 	wd_sm2_get_enc_out_params(req->dst, &c1, &c2, &c3);
-	if (g_config.rand_type != RAND_PARAM) {
+	if (g_config.rand_type != RAND_PARAM && !test_ctx->setup.key_from) {
+		pbk.data = (void *)test_ctx->setup.pub_key;
+		pbk.dsize = test_ctx->setup.pub_key_size;
+		prk.data = (void *)test_ctx->setup.priv_key;
+		prk.dsize = test_ctx->setup.priv_key_size;
+		md_ctx = ecc_create_openssl_handle(&prk, &pbk);
+		if (!md_ctx)
+			return -1;
+		pctx = EVP_MD_CTX_pkey_ctx(md_ctx);
+		EVP_PKEY_decrypt_init(pctx);
+		EVP_PKEY_CTX_ctrl(pctx, -1, -1, EVP_PKEY_CTRL_MD, -1, (void *)get_digest_handle());
+
 		/* openssl check */
 		crypto_bin_to_hpre_bin(c1->x.data, c1->x.data, c1->x.bsize, c1->x.dsize);
 		crypto_bin_to_hpre_bin(c1->y.data, c1->y.data, c1->y.bsize, c1->y.dsize);
@@ -5842,10 +5956,12 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 			return -1;
 		}
 
+		ecc_del_openssl_handle(md_ctx);
+
 		if (lens != test_ctx->setup.msg_size ||
 			memcmp(test_ctx->setup.msg, ptext, lens)){
 			HPRE_TST_PRT("openssl decrypt mismatch\n");
-			print_data(buf, lens, "openssl dec out");
+			print_data(ptext, lens, "openssl dec out");
 			return -1;
 		}
 	} else {
@@ -5855,7 +5971,7 @@ static int sm2_enc_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 		crypto_bin_to_hpre_bin(buf + 32, c1->y.data, c1->y.bsize, c1->y.dsize);
 		memcpy(buf + 32 * 2, c3->data, c3->dsize);
 		memcpy(buf + 32 * 2 + c3->dsize, c2->data, c2->dsize);
-		lens = 33 * 2 + c2->dsize + c3->dsize;
+		lens = 32 * 2 + c2->dsize + c3->dsize;
 		if (lens != test_ctx->cp_enc_size ||
 			memcmp(test_ctx->cp_enc, buf, test_ctx->cp_enc_size)){
 			HPRE_TST_PRT("sm2 op %d mismatch\n", test_ctx->setup.op_type);
@@ -5882,12 +5998,12 @@ static int sm2_dec_result_check(struct ecc_test_ctx *test_ctx, __u8 is_async)
 
 	wd_sm2_get_dec_out_params(req->dst, &m);
 
-	if (m->dsize != test_ctx->setup.msg_size ||
-		memcmp(test_ctx->setup.msg, m->data, m->dsize)){
+	if (m->dsize != test_ctx->cp_enc_size ||
+		memcmp(test_ctx->cp_enc, m->data, m->dsize)){
 		HPRE_TST_PRT("sm2 op %d mismatch\n", test_ctx->setup.op_type);
 		print_data(m->data, m->dsize, "hpre out");
-		print_data((void *)test_ctx->setup.msg,
-			test_ctx->setup.msg_size, "openssl out");
+		print_data((void *)test_ctx->cp_enc,
+			test_ctx->cp_enc_size, "openssl out");
 		return -1;
 	}
 
@@ -6248,8 +6364,6 @@ static void *_ecc_sys_test_thread(void *data)
 	cpuid = pdata->cpu_id;
 	opType = pdata->op_type;
 	thread_num = pdata->thread_num;
-
-	HPRE_TST_PRT("ecc sys test start!\n");
 
 	memset(&setup, 0, sizeof(setup));
 	if (g_config.perf_test && (!g_config.times && !g_config.seconds)) {
@@ -8714,6 +8828,11 @@ static void print_help(void);
 static int parse_cmd_line(int argc, char *argv[])
 {
         int option_index = 0;
+	int rand_type_set = 0;
+	int msg_type_set = 0;
+	int id_len_set = 0;
+	int hash_type_set = 0;
+	int rand_len_set = 0;
         int optind_t;
 	int ret = 0;
 	int bits;
@@ -8728,6 +8847,7 @@ static int parse_cmd_line(int argc, char *argv[])
             {"seconds",    required_argument, 0,  0 },
             {"log",    required_argument, 0,  0 },
             {"check",    required_argument, 0,  0 },
+            {"data_from",    required_argument, 0,  0 },
             {"soft",    no_argument, 0,  0 },
             {"perf",    no_argument, 0,  0 },
             {"trd_mode",    required_argument, 0,  0 },
@@ -8768,6 +8888,12 @@ static int parse_cmd_line(int argc, char *argv[])
 				g_config.seconds = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "curve", 5)) {
 				snprintf(g_config.curve, sizeof(g_config.curve), "%s", optarg);
+			} else if (!strncmp(long_options[option_index].name, "data_from", 9)) {
+				g_config.data_from = strtoul((char *)optarg, NULL, 10);
+				if (g_config.data_from != 0 && g_config.data_from != 1) {
+					HPRE_TST_PRT("data must set 0 or 1\n");
+					return -1;
+				}
 			} else if (!strncmp(long_options[option_index].name, "log", 3)) {
 				if (!strncmp(optarg, "y", 1) || !strncmp(optarg, "Y", 1))
 					g_config.with_log = 1;
@@ -8790,40 +8916,45 @@ static int parse_cmd_line(int argc, char *argv[])
 			} else if (!strncmp(long_options[option_index].name, "msg_type", 8)) {
 				if (!strncmp(optarg, "digest", 6))
 					g_config.msg_type = MSG_DIGEST;
-				else if (!strncmp(optarg, "ciphertext", 10))
-					g_config.msg_type = MSG_CIPHERTEXT;
 				else if (!strncmp(optarg, "plaintext", 9))
 					g_config.msg_type = MSG_PLAINTEXT;
+				msg_type_set = 1;
 			} else if (!strncmp(long_options[option_index].name, "msg_len", 7)) {
 				g_config.msg_len = strtoul((char *)optarg, NULL, 10);
 			} else if (!strncmp(long_options[option_index].name, "id_len", 6)) {
 				g_config.id_len = strtoul((char *)optarg, NULL, 10);
+				id_len_set = 1;
 			} else if (!strncmp(long_options[option_index].name, "rand_type", 9)) {
 				if (!strncmp(optarg, "param", 5))
 					g_config.rand_type = RAND_PARAM;
 				else if (!strncmp(optarg, "cb", 2))
 					g_config.rand_type = RAND_CB;
+				else if (!strncmp(optarg, "non", 2))
+					g_config.rand_type = RAND_NON;
+				rand_type_set = 1;
 			} else if (!strncmp(long_options[option_index].name, "rand_len", 8)) {
 				g_config.k_len = strtoul((char *)optarg, NULL, 10);
+				rand_len_set = 1;
 			} else if (!strncmp(long_options[option_index].name, "hash_type", 9)) {
 				if (!strncmp(optarg, "non", 3))
-					g_config.rand_type = HASH_NON;
+					g_config.hash_type = HASH_NON;
 				else if (!strncmp(optarg, "sm3", 3))
-					g_config.rand_type = HASH_SM3;
+					g_config.hash_type = HASH_SM3;
 				else if (!strncmp(optarg, "sha1", 4))
-					g_config.rand_type = HASH_SHA1;
+					g_config.hash_type = HASH_SHA1;
 				else if (!strncmp(optarg, "sha224", 6))
-					g_config.rand_type = HASH_SHA224;
+					g_config.hash_type = HASH_SHA224;
 				else if (!strncmp(optarg, "sha256", 6))
-					g_config.rand_type = HASH_SHA256;
+					g_config.hash_type = HASH_SHA256;
 				else if (!strncmp(optarg, "sha384", 6))
-					g_config.rand_type = HASH_SHA384;
+					g_config.hash_type = HASH_SHA384;
 				else if (!strncmp(optarg, "sha512", 6))
-					g_config.rand_type = HASH_SHA512;
+					g_config.hash_type = HASH_SHA512;
 				else if (!strncmp(optarg, "md4", 3))
-					g_config.rand_type = HASH_MD4;
+					g_config.hash_type = HASH_MD4;
 				else if (!strncmp(optarg, "md5", 3))
-					g_config.rand_type = HASH_MD5;
+					g_config.hash_type = HASH_MD5;
+				hash_type_set = 1;
 			}
 			break;
 
@@ -8893,16 +9024,21 @@ static int parse_cmd_line(int argc, char *argv[])
 		    printf("?? getopt returned character code 0%o ??\n", c);
 		    break;
 		}
-        }
+	}
+
+	if (g_config.perf_test)
+		g_config.data_from = 1;
 
 	if (!strncmp(g_config.op, "sm2-verf", 8) && g_config.msg_type != MSG_PLAINTEXT) {
 		g_config.msg_type = MSG_PLAINTEXT;
-		HPRE_TST_PRT("%s test: msg only support plantext!\n", g_config.op);
-	} else if (!strncmp(g_config.op, "sm2-dec", 8) && g_config.msg_type != MSG_CIPHERTEXT) {
-		g_config.msg_type = MSG_CIPHERTEXT;
-	} else if (!strncmp(g_config.op, "sm2-enc", 8) && g_config.msg_type != MSG_PLAINTEXT) {
-		g_config.msg_type = MSG_PLAINTEXT;
+		HPRE_TST_PRT("message only support plantext!\n");
+	} else if (g_config.data_from && (!strncmp(g_config.op, "sm2-sign", 8) || !strncmp(g_config.op, "sm2-verf", 8))) {
+		g_config.msg_type = MSG_DIGEST;
 	}
+
+	if (g_config.data_from &&
+		(rand_type_set || msg_type_set || id_len_set || rand_len_set || hash_type_set))
+		HPRE_TST_PRT("The algorithm input parameters comes from samples, do not config it!\n");
 
 	return ret;
 }
@@ -9027,10 +9163,20 @@ int main(int argc, char *argv[])
 	HPRE_TST_PRT(">> trd_num = %u\n", g_config.trd_num);
 	HPRE_TST_PRT(">> core_mask = [0x%llx][0x%llx]\n", g_config.core_mask[1],
 		g_config.core_mask[0]);
+	HPRE_TST_PRT(">> msg_type = %u\n", g_config.msg_type);
+	HPRE_TST_PRT(">> msg_len = 0x%x\n", g_config.msg_len);
+	HPRE_TST_PRT(">> id_len = 0x%x\n", g_config.id_len);
+	HPRE_TST_PRT(">> hash_type = %u\n", g_config.hash_type);
+	HPRE_TST_PRT(">> rand_type = %u\n", g_config.rand_type);
+	HPRE_TST_PRT(">> rand_len = 0x%x\n", g_config.k_len);
+	HPRE_TST_PRT(">> data_from = %u\n", g_config.data_from);
+	HPRE_TST_PRT(">> perf_test = %u\n", g_config.perf_test);
+	HPRE_TST_PRT(">> check = %u\n", g_config.check);
 	HPRE_TST_PRT(">> cycles = %u\n", g_config.times);
 	HPRE_TST_PRT(">> seconds = %u\n", g_config.seconds);
+
 	if (g_config.perf_test)
-		HPRE_TST_PRT("perf test, check closed\n");
+		HPRE_TST_PRT("performance test did not verify output!\n");
 
 	if (alg_op_type < MAX_RSA_SYNC_TYPE ||
 		alg_op_type == DH_GEN || alg_op_type == DH_COMPUTE ||
@@ -9069,13 +9215,15 @@ int main(int argc, char *argv[])
 
 static void print_help(void)
 {
-	HPRE_TST_PRT("UPDATE:2020-09-12\n");
+	HPRE_TST_PRT("UPDATE:2021-01-16\n");
 	HPRE_TST_PRT("NAME\n");
 	HPRE_TST_PRT("    test_hisi_hpre: test wd hpre function,etc\n");
 	HPRE_TST_PRT("USAGE\n");
 	HPRE_TST_PRT("    test_hisi_hpre [--op=] [-t] [-c] [--mode=] [--help]\n");
-	HPRE_TST_PRT("    test_hisi_hpre [--dev_path=] [--curve] [--key_bits=]\n");
-	HPRE_TST_PRT("    test_hisi_hpre [--seconds=] [--times [--trd_mode=]\n");
+	HPRE_TST_PRT("    test_hisi_hpre [--dev_path=] [--curve=] [--key_bits=]\n");
+	HPRE_TST_PRT("    test_hisi_hpre [--seconds=] [--times=] [--trd_mode=]\n");
+	HPRE_TST_PRT("    test_hisi_hpre [--msg_type=] [--msg_len=] [--id_len=]\n");
+	HPRE_TST_PRT("    test_hisi_hpre [--rand_type=] [--rand_len=] [--hash_type=]\n");
 	HPRE_TST_PRT("DESCRIPTION\n");
 	HPRE_TST_PRT("    [--op=]:\n");
 	HPRE_TST_PRT("        rsa-gen  = RSA key generate test\n");
@@ -9085,6 +9233,11 @@ static void print_help(void)
 	HPRE_TST_PRT("        dh-gen2  = DH phase 2 key generate test\n");
 	HPRE_TST_PRT("        ecdh-gen1  = ECDH phase 1 key generate test\n");
 	HPRE_TST_PRT("        ecdh-gen2  = ECDH phase 2 key generate test\n");
+	HPRE_TST_PRT("        sm2-sign  = SM2 sign test\n");
+	HPRE_TST_PRT("        sm2-verf  = SM2 verify test\n");
+	HPRE_TST_PRT("        sm2-enc  = SM2 encrypt test\n");
+	HPRE_TST_PRT("        sm2-dec  = SM2 decrypt test\n");
+	HPRE_TST_PRT("        sm2-kg  = SM2 key generate test\n");
 	HPRE_TST_PRT("    [-t]: start thread total\n");
 	HPRE_TST_PRT("    [-c]: mask for bind cpu core, as 0x3 bind to cpu-1 and cpu-2\n");
 	HPRE_TST_PRT("    [--log=]:\n");
@@ -9095,14 +9248,14 @@ static void print_help(void)
 	HPRE_TST_PRT("        y: check result compared with openssl\n");
 	HPRE_TST_PRT("        n: no check\n");
 	HPRE_TST_PRT("    [--key_bits=]:key size (bits)\n");
-	HPRE_TST_PRT("    [--mode=]:\n");
+	HPRE_TST_PRT("    [--mode=]: used by DH/RSA\n");
 	HPRE_TST_PRT("        g2  = DH G2 mode\n");
 	HPRE_TST_PRT("        com  = common mode\n");
 	HPRE_TST_PRT("        crt  = RSA CRT mode\n");
 	HPRE_TST_PRT("    [--trd_mode=]:\n");
 	HPRE_TST_PRT("        sync  = synchronize test\n");
 	HPRE_TST_PRT("        async  = asynchronize test\n");
-	HPRE_TST_PRT("    [--curve=]:\n");
+	HPRE_TST_PRT("    [--curve=]: used by ECDH/ECDSA\n");
 	HPRE_TST_PRT("        secp128R1  = 128 bit\n");
 	HPRE_TST_PRT("        secp192K1  = 192 bit\n");
 	HPRE_TST_PRT("        secp224R1  = 224 bit\n");
@@ -9111,6 +9264,19 @@ static void print_help(void)
 	HPRE_TST_PRT("        secp384R1  = 384bit\n");
 	HPRE_TST_PRT("        secp521R1  = 521bit\n");
 	HPRE_TST_PRT("        null  = by set parameters\n");
+	HPRE_TST_PRT("    [--msg_type=]: used by SM2\n");
+	HPRE_TST_PRT("        digest  = hash value\n");
+	HPRE_TST_PRT("        plaintext\n");
+	HPRE_TST_PRT("    [--msg_len=]: used by SM2, default size base on sample data\n");
+	HPRE_TST_PRT("    [--rand_type=]: used by SM2\n");
+	HPRE_TST_PRT("        param  = from user input param\n");
+	HPRE_TST_PRT("        cb  = from user callback\n");
+	HPRE_TST_PRT("        non  = both not config\n");
+	HPRE_TST_PRT("    [--rand_len=]: used by SM2, default size base on sample data\n");
+	HPRE_TST_PRT("    [--id_len=]: used by SM2, default size base on sample data\n");
+	HPRE_TST_PRT("    [--hash_type=]: used by SM2, default SM3\n");
+	HPRE_TST_PRT("        sha1/sha224/sha256/sha384/sha512/md4/md5\n");
+	HPRE_TST_PRT("    [--data_from=]: 0 - from openssl, 1 - from sample data\n");
 	HPRE_TST_PRT("    [--dev_path=]: designed dev path\n");
 	HPRE_TST_PRT("    [--seconds=]: test time set (s)\n");
 	HPRE_TST_PRT("    [--cycles=]: test cycle set (times)\n");
