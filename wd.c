@@ -503,8 +503,8 @@ static void add_uacce_dev_to_list(struct uacce_dev_list *head,
 struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 {
 	struct uacce_dev_list *node, *head = NULL;
-	char dev_alg_name[MAX_ATTR_STR_SIZE] = {0};
-	char dev_path[MAX_DEV_NAME_LEN] = {0};
+	char dev_alg_name[MAX_ATTR_STR_SIZE];
+	char dev_path[MAX_DEV_NAME_LEN];
 	struct dirent *dev_dir;
 	DIR *wd_class;
 	int ret;
@@ -523,17 +523,19 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 		    !strncmp(dev_dir->d_name, "..", 2))
 			continue;
 
+		memset(dev_path, 0, sizeof(dev_path));
 		ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
 			       SYS_CLASS_DIR, dev_dir->d_name);
 		if (ret > MAX_DEV_NAME_LEN || ret < 0)
 			goto free_list;
 
+		memset(dev_alg_name, 0, sizeof(dev_alg_name));
 		ret = get_dev_alg_name(dev_path, dev_alg_name,
 				       sizeof(dev_alg_name));
 		if (ret < 0) {
 			WD_ERR("Failed to get alg for %s, ret = %d\n",
 			       dev_path, ret);
-			return NULL;
+			goto free_list;
 		}
 
 		if (dev_has_alg(dev_alg_name, alg_name)) {
@@ -542,8 +544,10 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 				goto free_list;
 
 			node->dev = read_uacce_sysfs(dev_dir->d_name);
-			if (!node->dev)
-				goto free_list;
+			if (!node->dev) {
+				free(node);
+				continue;
+			}
 
 			if (!head)
 				head = node;
@@ -560,6 +564,7 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 	return head;
 
 free_list:
+	closedir(wd_class);
 	wd_free_list_accels(head);
 	return NULL;
 }
