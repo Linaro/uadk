@@ -1598,7 +1598,8 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	/* split message into two inner request msg
+	/*
+	 * split message into two inner request msg
 	 * firest msg used to compute k * g
 	 * second msg used to compute k * pb
 	 */
@@ -1825,11 +1826,11 @@ static __u32 get_hash_bytes(__u8 type)
 	case WD_HASH_SHA1:
 		val = BITS_TO_BYTES(160);
 		break;
-	case WD_HASH_SHA256:
+	case WD_HASH_SHA256: /* fall through */
 	case WD_HASH_SM3:
 		val = BITS_TO_BYTES(256);
 		break;
-	case WD_HASH_MD4:
+	case WD_HASH_MD4: /* fall through */
 	case WD_HASH_MD5:
 		val = BITS_TO_BYTES(128);
 		break;
@@ -1884,11 +1885,11 @@ static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 
 	out->dsize = m_len;
 	while (1) {
+		in_len = 0;
 		ctr[3] = i & 0xFF;
 		ctr[2] = (i >> 8) & 0xFF;
 		ctr[1] = (i >> 16) & 0xFF;
 		ctr[0] = (i >> 24) & 0xFF;
-		in_len = 0;
 		msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2_len);
 		msg_pack(p_in, lens, &in_len, ctr, sizeof(ctr));
 
@@ -1933,7 +1934,7 @@ static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 		return 0;
 	}
 
-	return -1;
+	return -WD_EINVAL;
 }
 
 static int sm2_hash(struct wd_dtb *out, struct wd_ecc_point *x2y2,
@@ -1988,7 +1989,8 @@ static int sm2_convert_enc_out(struct wd_ecc_msg *src,
 	struct wd_dtb *kdf_out;
 	int ret;
 
-	/* enc origin out data fmt:
+	/*
+	 * enc origin out data fmt:
 	 * | x1y1(2*256bit) | x2y2(2*256bit) | other |
 	 * final out data fmt:
 	 * | c1(2*256bit)   | c2(plaintext size) | c3(256bit) |
@@ -2038,7 +2040,8 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	char buff[64] = {0};
 	int ret;
 
-	/* dec origin out data fmt:
+	/*
+	 * dec origin out data fmt:
 	 * | x2y2(2*256bit) |   other      |
 	 * final out data fmt:
 	 * |         plaintext             |
@@ -2128,7 +2131,8 @@ static int parse_second_sqe(handle_t h_qp,
 
 	data = VA_ADDR(hw_msg.hi_out, hw_msg.low_out);
 	hsz = (hw_msg.task_len1 + 1) * BYTE_BITS;
-	dst = *(struct wd_ecc_msg **)(data + hsz * ECDH_OUT_PARAM_NUM);
+	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
+		hsz * ECDH_OUT_PARAM_NUM);
 	hw_msg.low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse(dst, &hw_msg);
 	msg->result = dst->result;
@@ -2150,7 +2154,8 @@ static int sm2_enc_parse(handle_t h_qp,
 
 	data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	hsz = (hw_msg->task_len1 + 1) * BYTE_BITS;
-	first = *(struct wd_ecc_msg **)(data + hsz * ECDH_OUT_PARAM_NUM);
+	first = *(struct wd_ecc_msg **)((uintptr_t)data +
+		hsz * ECDH_OUT_PARAM_NUM);
 	memcpy(&src, first + 1, sizeof(src));
 
 	/* parse first sqe */
@@ -2194,7 +2199,8 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 
 	data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	hsz = (hw_msg->task_len1 + 1) * BYTE_BITS;
-	dst = *(struct wd_ecc_msg **)(data + hsz * ECDH_OUT_PARAM_NUM);
+	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
+		hsz * ECDH_OUT_PARAM_NUM);
 	memcpy(&src, dst + 1, sizeof(src));
 
 	/* parse first sqe */
