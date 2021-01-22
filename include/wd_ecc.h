@@ -468,7 +468,7 @@ extern int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
 
 /**
  * wd_ecc_poll_ctx() - Poll a ctx.
- * @pos:	The ctx index which will be polled.
+ * @pos:	The ctx idx which will be polled.
  * @expt:	Max number of requests to poll. If 0, polled all finished
  *		requests in this ctx.
  * @count:	The number of polled requests.
@@ -478,7 +478,7 @@ extern int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count);
+extern int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
 #ifdef __cplusplus
 }
