@@ -145,4 +145,12 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp);
  */
 void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size);
 
+/**
+ * hisi_qm_get_free_sqe_num - Get the qp's available sqe num
+ * @h_qp: Handle of the qp.
+ *
+ * This interface does not add locks, guaranteed by the caller
+ */
+int hisi_qm_get_free_sqe_num(handle_t h_qp);
+
 #endif
