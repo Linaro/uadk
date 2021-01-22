@@ -58,7 +58,7 @@ struct wd_ecc_curve_list {
 	__u32 id;
 	const char *name;
 	__u32 key_bits;
-	char data[MAX_CURVE_SIZE];
+	__u8 data[MAX_CURVE_SIZE];
 };
 
 static struct wd_ecc_setting {
@@ -106,7 +106,7 @@ static void __attribute__((constructor)) wd_ecc_open_driver(void)
 
 	driver = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!driver)
-		WD_ERR("Fail to open libhisi_hpre.so\n");
+		WD_ERR("failed to open libhisi_hpre.so\n");
 }
 #endif
 
@@ -352,14 +352,14 @@ static struct wd_ecc_prikey *create_ecc_prikey(struct wd_ecc_sess *sess)
 	hsz = get_key_bsz(sess->key_size);
 	prikey = malloc(sizeof(struct wd_ecc_prikey));
 	if (!prikey) {
-		WD_ERR("failed to alloc!\n");
+		WD_ERR("failed to malloc prikey!\n");
 		return NULL;
 	}
 
 	dsz = ECC_PRIKEY_SZ(hsz);
 	data = malloc(dsz);
 	if (!data) {
-		WD_ERR("failed to alloc, sz = %u!\n", dsz);
+		WD_ERR("failed to malloc prikey data, sz = %u!\n", dsz);
 		free(prikey);
 		return NULL;
 	}
@@ -388,7 +388,7 @@ static struct wd_ecc_pubkey *create_ecc_pubkey(struct wd_ecc_sess *sess)
 	dsz = ECC_PUBKEY_SZ(hsz);
 	data = malloc(dsz);
 	if (!data) {
-		WD_ERR("failed to alloc, sz = %u!\n", dsz);
+		WD_ERR("failed to malloc pubkey data, sz = %u!\n", dsz);
 		free(pubkey);
 		return NULL;
 	}
@@ -422,7 +422,7 @@ static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess, __u32 num)
 	len = sizeof(struct wd_ecc_in) + hsz * num;
 	in = malloc(len);
 	if (!in) {
-		WD_ERR("failed to alloc, sz = %u!\n", len);
+		WD_ERR("failed to malloc ecc in, sz = %u!\n", len);
 		return NULL;
 	}
 
@@ -450,7 +450,7 @@ static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
 		+ ECC_SIGN_IN_PARAM_NUM * ksz + m_len;
 	in = malloc(len);
 	if (!in) {
-		WD_ERR("failed to alloc, sz = %llu!\n", len);
+		WD_ERR("failed to malloc sm2 sign in, sz = %llu!\n", len);
 		return NULL;
 	}
 
@@ -490,7 +490,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 	len = sizeof(struct wd_ecc_in) + ksz + m_len;
 	in = malloc(len);
 	if (!in) {
-		WD_ERR("failed to alloc, sz = %llu!\n", len);
+		WD_ERR("failed to malloc sm2 enc in, sz = %llu!\n", len);
 		return NULL;
 	}
 
@@ -563,8 +563,8 @@ static struct wd_ecc_in *create_ecc_sign_in(struct wd_ecc_sess *sess,
 {
 	if (is_dgst)
 		return create_ecc_in(sess, ECC_SIGN_IN_PARAM_NUM);
-	else
-		return create_sm2_sign_in(sess, m_len);
+
+	return create_sm2_sign_in(sess, m_len);
 }
 
 static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess, __u32 num)
@@ -581,7 +581,7 @@ static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess, __u32 num)
 	len = sizeof(struct wd_ecc_out) + hsz * num;
 	out = malloc(len);
 	if (!out) {
-		WD_ERR("failed to alloc, sz = %u!\n", len);
+		WD_ERR("failed to malloc out, sz = %u!\n", len);
 		return NULL;
 	}
 
@@ -601,7 +601,7 @@ static struct wd_ecc_curve *create_ecc_curve(struct wd_ecc_sess *sess)
 	len = sizeof(*cv) + ksize * CURVE_PARAM_NUM;
 	cv = malloc(len);
 	if (!cv) {
-		WD_ERR("failed to malloc!\n");
+		WD_ERR("failed to malloc curve!\n");
 		return NULL;
 	}
 
@@ -620,7 +620,7 @@ static struct wd_ecc_point *create_ecc_pub(struct wd_ecc_sess *sess)
 	len = sizeof(*pub) + ksize * ECC_POINT_NUM;
 	pub = malloc(len);
 	if (!pub) {
-		WD_ERR("failed to malloc!\n");
+		WD_ERR("failed to malloc pub!\n");
 		return NULL;
 	}
 
@@ -639,7 +639,7 @@ static struct wd_dtb *create_ecc_d(struct wd_ecc_sess *sess)
 	len = sizeof(*d) + ksize;
 	d = malloc(len);
 	if (!d) {
-		WD_ERR("failed to malloc!\n");
+		WD_ERR("failed to malloc d!\n");
 		return NULL;
 	}
 
@@ -767,7 +767,7 @@ static int set_curve_param(struct wd_ecc_key *key,
 	return 0;
 }
 
-const static struct wd_ecc_curve_list *find_curve_list(__u32 id)
+static const struct wd_ecc_curve_list *find_curve_list(__u32 id)
 {
 	int len = WD_ARRAY_SIZE(curve_list);
 	int i = 0;
@@ -1022,7 +1022,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 	ret = create_sess_key(setup, sess);
 	if (ret) {
-		WD_ERR("fail creating ecc sess keys!\n");
+		WD_ERR("failed creat ecc sess keys!\n");
 		free(sess);
 		return (handle_t)0;
 	}
@@ -1523,10 +1523,10 @@ static int set_sign_in_param(struct wd_ecc_sign_in *sin,
 
 static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 {
-	struct wd_rand_mt rand = sess->setup.rand;
+	struct wd_rand_mt rand_t = sess->setup.rand;
 	int ret;
 
-	ret = rand.cb(k->data, k->dsize, rand.usr);
+	ret = rand_t.cb(k->data, k->dsize, rand_t.usr);
 	if (ret)
 		WD_ERR("failed to rand cb: ret = %d!\n", ret);
 
@@ -1738,7 +1738,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 		m_len;
 	in = malloc(len);
 	if (!in) {
-		WD_ERR("failed to alloc, sz = %llu!\n", len);
+		WD_ERR("failed to malloc sm2 verf in, sz = %llu!\n", len);
 		return NULL;
 	}
 
@@ -2040,7 +2040,7 @@ struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess, __u32 plaintext_len)
 	len = sizeof(*ecc_out) + plaintext_len;
 	ecc_out = malloc(len);
 	if (!ecc_out) {
-		WD_ERR("failed to alloc, sz = %llu!\n", len);
+		WD_ERR("failed to malloc ecc_out, sz = %llu!\n", len);
 		return NULL;
 	}
 	memset(ecc_out, 0, len);
@@ -2123,34 +2123,34 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 	struct wd_ecc_msg *msg = NULL;
 	struct wd_ctx_internal *ctx;
-	int ret, idx;
-	__u32 index;
+	int ret, mid;
+	int idx;
 
 	if (unlikely(!req || !sess || !req->cb)) {
 		WD_ERR("input param NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	index = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req,
+	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						   &sess_t->s_key);
-	if (unlikely(index >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, index = %u!\n", index);
+	if (unlikely(idx >= config->ctx_num)) {
+		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
 		return -EINVAL;
 	}
-	ctx = config->ctxs + index;
+	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
-	idx = wd_get_msg_from_pool(&wd_ecc_setting.pool, index, (void **)&msg);
-	if (idx < 0)
+	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);
+	if (mid < 0)
 		return -WD_EBUSY;
 
 	ret = fill_ecc_msg(msg, req, (struct wd_ecc_sess *)sess);
 	if (ret)
 		goto fail_with_msg;
-	msg->tag = idx;
+	msg->tag = mid;
 
 	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, msg);
@@ -2163,11 +2163,11 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	return ret;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_ecc_setting.pool, index, idx);
+	wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, mid);
 	return ret;
 }
 
-int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count)
+int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
 	struct wd_ecc_msg recv_msg, *msg;
@@ -2176,15 +2176,15 @@ int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	__u32 rcv_cnt = 0;
 	int ret;
 
-	if (unlikely(!count || index >= config->ctx_num)) {
-		WD_ERR("param error, index = %u, ctx_num = %u!\n",
-			index, config->ctx_num);
+	if (unlikely(!count || idx >= config->ctx_num)) {
+		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
+			idx, config->ctx_num);
 		return -EINVAL;
 	}
 
-	ctx = config->ctxs + index;
+	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
+		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
 		return -EINVAL;
 	}
 
@@ -2198,13 +2198,13 @@ int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_ecc_setting.pool, index,
+			wd_put_msg_to_pool(&wd_ecc_setting.pool, idx,
 					   recv_msg.tag);
 			return ret;
 		}
 		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
-		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, index,
+		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, idx,
 					  recv_msg.tag);
 		if (!msg) {
 			WD_ERR("get msg from pool is NULL!\n");
@@ -2215,7 +2215,7 @@ int wd_ecc_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		msg->req.status = recv_msg.result;
 		req = &msg->req;
 		req->cb(req);
-		wd_put_msg_to_pool(&wd_ecc_setting.pool, index, recv_msg.tag);
+		wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, recv_msg.tag);
 	} while (--expt);
 
 	*count = rcv_cnt;
