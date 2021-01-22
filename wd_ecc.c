@@ -1328,7 +1328,9 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 	void *key = NULL;
 
 	memcpy(&msg->req, req, sizeof(msg->req));
+	msg->hash = sess->setup.hash;
 	msg->key_bytes = sess->key_size;
+	msg->curve_id = sess->setup.cv.cfg.id;
 	msg->result = WD_EINVAL;
 
 	switch (req->op_type) {
@@ -1602,8 +1604,9 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 	__u64 lens;
 	int ret;
 
-	if (unlikely(hash->type >= WD_HASH_MAX)) {
-		WD_ERR("hash type = %u error!\n", hash->type);
+	hash_bytes = get_hash_bytes(hash->type);
+	if (unlikely(!hash_bytes || hash_bytes > SM2_KEY_SIZE)) {
+		WD_ERR("hash type = %hhu error!\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -1613,7 +1616,6 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 		return ret;
 	}
 
-	hash_bytes = get_hash_bytes(hash->type);
 	lens = plaintext->dsize + hash_bytes;
 	p_in = malloc(lens);
 	if (unlikely(!p_in))
