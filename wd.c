@@ -168,7 +168,8 @@ out:
 char *wd_get_accel_name(char *dev_path, int no_apdx)
 {
 	int i, appendix, len;
-	char *name, *dash;
+	char *dash = NULL;
+	char *name;
 
 	if (!dev_path || (no_apdx != 0 && no_apdx != 1))
 		return NULL;
@@ -211,7 +212,7 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 	}
 
 	/* remove '-' and digits */
-	len = appendix ? strlen(name) - strlen(dash) : strlen(name);
+	len = (dash && appendix) ? strlen(name) - strlen(dash) : strlen(name);
 
 	return strndup(name, len);
 }
@@ -340,7 +341,7 @@ void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 	size_t size;
 	void *addr;
 
-	if (!ctx || !ctx->qfrs_offs[qfrt] || qfrt < 0 ||
+	if (!ctx || !ctx->qfrs_offs[qfrt] ||
 	    qfrt >= UACCE_QFRT_MAX)
 		return NULL;
 
@@ -359,7 +360,7 @@ void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	if (!ctx || qfrt < 0 || qfrt >= UACCE_QFRT_MAX)
+	if (!ctx || qfrt >= UACCE_QFRT_MAX)
 		return;
 
 	if (ctx->qfrs_offs[qfrt] != 0)
