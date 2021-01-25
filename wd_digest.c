@@ -295,6 +295,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	do {
 		ret = wd_digest_setting.driver->digest_recv(ctx->ctx, &msg);
+		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
 			goto recv_err;
@@ -312,7 +313,6 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	return 0;
 
 recv_err:
-	req->state = msg.result;
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
@@ -399,6 +399,7 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 			break;
 		}
 
+		msg->req.state = recv_msg.result;
 		req = &msg->req;
 		if (likely(req))
 			req->cb(req);

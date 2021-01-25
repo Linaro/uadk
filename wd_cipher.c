@@ -352,6 +352,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 	do {
 		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx, &msg);
+		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd cipher recv err!\n");
 			goto recv_err;
@@ -367,7 +368,6 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 	return 0;
 recv_err:
-	req->state = msg.result;
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
@@ -456,6 +456,7 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 		}
 
 		msg->tag = resp_msg.tag;
+		msg->req.state = resp_msg.result;
 		req = &msg->req;
 
 		req->cb(req, req->cb_param);
