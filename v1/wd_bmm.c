@@ -68,9 +68,13 @@ static struct wd_blk_hd *wd_blk_head(struct wd_blkpool *pool, void *blk)
 
 static int pool_params_check(struct wd_blkpool_setup *setup)
 {
-#define MAX_ALIGN_SIZE 0x1000
-	if (!setup->block_num || !setup->block_size) {
-		WD_ERR("Invalid block_size or block_num.\n");
+#define MAX_ALIGN_SIZE 0x1000 /* 4KB */
+#define MAX_BLOCK_SIZE 0x10000000 /* 256MB */
+
+	if (!setup->block_num || !setup->block_size ||
+		setup->block_size > MAX_BLOCK_SIZE) {
+		WD_ERR("Invalid block_size or block_num(%x, %u)!\n",
+			setup->block_size, setup->block_num);
 		return -WD_EINVAL;
 	}
 
@@ -88,8 +92,17 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 			      struct wd_blkpool *p,
 			      struct wd_blkpool_setup *sp)
 {
+	struct q_info *qinfo;
 	unsigned int asz;
 	int ret;
+
+	if (!sp->br.alloc && !q) {
+		WD_ERR("q is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!sp->br.alloc)
+		qinfo = q->qinfo;
 
 #define BLK_BALANCE_SZ		0x100000ul
 	ret = pool_params_check(sp);
@@ -108,7 +121,7 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 	 * in order to ensure the mem_pool to be succuss,
 	 * we should to reserve more memory
 	 */
-	if (!sp->br.alloc)
+	if (!sp->br.alloc && !qinfo->iommu_type)
 		p->act_mem_sz *= (1 + p->act_blk_sz / BLK_BALANCE_SZ);
 
 	return WD_SUCCESS;
@@ -217,11 +230,6 @@ static void *pool_init(struct wd_queue *q, struct wd_blkpool *pool,
 		}
 	} else {
 		/* use wd to reserve memory */
-		if (!q) {
-			WD_ERR("q is NULL.\n");
-			goto err_pool_init;
-		}
-
 		addr = wd_reserve_memory(q, pool->act_mem_sz);
 		if (!addr) {
 			WD_ERR("wd_reserve_memory fail.\n");

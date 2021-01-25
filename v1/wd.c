@@ -62,6 +62,7 @@ struct dev_info {
 	int flags;
 	int ref;
 	int available_instances;
+	int iommu_type;
 	unsigned int weight;
 	char dev_root[PATH_STR_SIZE];
 	char name[WD_NAME_SIZE];
@@ -216,6 +217,30 @@ static bool is_weight_more(unsigned int new, unsigned int old)
 		return ins_new * INSTANCE_RATIO_FOR_DEV_SCHED >= ins_old;
 }
 
+static int get_iommu_type(struct dev_info *dinfo, const char *attr)
+{
+	char buf[PATH_STR_SIZE];
+	int ret;
+
+	ret = snprintf(buf, PATH_STR_SIZE, "%s/%s", dinfo->dev_root, attr);
+	if (ret <= 0) {
+		WD_ERR("get %s/%s path fail!\n", dinfo->dev_root, attr);
+		return -WD_EINVAL;
+	}
+
+	ret = access(buf, F_OK);
+	if (ret < 0)
+		return 0;
+
+	ret = get_raw_attr(dinfo->dev_root, attr, buf, PATH_STR_SIZE);
+	if (ret <= 0)
+		return -WD_EINVAL;
+
+	/* Handing the read string's end tails '\n' to '\0' */
+	buf[ret - 1] = '\0';
+	return !strcmp(buf, "DMA");
+}
+
 static int get_dev_info(struct dev_info *dinfo, const char *alg)
 {
 	char buf[PATH_STR_SIZE] = {0};
@@ -275,6 +300,11 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 		&dinfo->qfrs_offset[WD_UACCE_QFRT_DUS], 1);
 	if (ret < 0)
 		return ret;
+
+	ret = get_iommu_type(dinfo, "device/iommu_group/type");
+	if (ret < 0)
+		return ret;
+	dinfo->iommu_type = ret;
 
 	/*
 	 * Use available_instances and numa_distance combine weight.
@@ -439,6 +469,7 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 
 	qinfo->hw_type = dev->api;
 	qinfo->dev_flags = dev->flags;
+	qinfo->iommu_type = dev->iommu_type;
 	qinfo->dev_info = dev;
 	qinfo->head = &qinfo->ss_list;
 	__atomic_clear(&qinfo->ref, __ATOMIC_RELEASE);
@@ -642,10 +673,7 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	tgt_info = tqinfo->dev_info;
 	info = qinfo->dev_info;
 
-	if (((qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) &&
-		!(tqinfo->dev_flags & WD_UACCE_DEV_NOIOMMU)) ||
-		(!(qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU) &&
-		(tqinfo->dev_flags & WD_UACCE_DEV_NOIOMMU))) {
+	if (qinfo->iommu_type != tqinfo->iommu_type) {
 		WD_ERR("IOMMU type mismatching as share mem!\n");
 		return -WD_EINVAL;
 	}
@@ -659,7 +687,7 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	}
 
 	/* Just share DMA mem from 'q' in NO-IOMMU mode */
-	if (qinfo->dev_flags & WD_UACCE_DEV_NOIOMMU)
+	if (!qinfo->iommu_type)
 		tqinfo->head = qinfo->head;
 
 	__atomic_add_fetch(&qinfo->ref, 1, __ATOMIC_RELAXED);

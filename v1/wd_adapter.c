@@ -190,7 +190,8 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	int ret = 1;
 
 	/* Make sure mmap granulity size align */
-	size = ALIGN(size, WD_UACCE_GRAN_SIZE);
+	if (!qinfo->iommu_type)
+		size = ALIGN(size, WD_UACCE_GRAN_SIZE);
 
 	ptr = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_SS, size);
 	if (ptr == MAP_FAILED) {
@@ -217,9 +218,13 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 			return NULL;
 		}
 		memset(rgn, 0, sizeof(*rgn));
-		rgn->size = (info & WD_UACCE_GRAN_NUM_MASK) <<
+
+		if (qinfo->iommu_type)
+			rgn->size = qinfo->ss_size;
+		else
+			rgn->size = (info & WD_UACCE_GRAN_NUM_MASK) <<
 				WD_UACCE_GRAN_SHIFT;
-		rgn->pa = info - (rgn->size >> WD_UACCE_GRAN_SHIFT);
+		rgn->pa = info & (~WD_UACCE_GRAN_NUM_MASK);
 		rgn->va = ptr + size;
 		size += rgn->size;
 		drv_add_slice(q, rgn);
