@@ -111,7 +111,7 @@ struct q_info {
 	struct wd_ss_region_list ss_list;
 	struct wd_ss_region_list *head;
 	unsigned int dev_flags;
-	unsigned int ss_size;
+	unsigned long ss_size;
 	enum wcrypto_type atype;
 	int ctx_num;
 	struct wd_mm_br br;
