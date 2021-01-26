@@ -466,7 +466,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		if (req->op_type == WD_DIR_COMPRESS && strm_req.last == 1)
 			break;
 		if (req->op_type == WD_DIR_DECOMPRESS &&
-		    strm_req.status == WD_DECOMP_END)
+		    strm_req.status == WD_STREAM_END)
 			break;
 	}
 
