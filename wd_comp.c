@@ -13,7 +13,6 @@
 #include "wd_util.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
-#define WD_HW_EACCESS			62
 #define MAX_RETRY_COUNTS		200000000
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
@@ -82,12 +81,12 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	if (!config || !sched) {
 		WD_ERR("invalid params, config or sched is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
 		WD_ERR("err, non sva, please check system!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = wd_init_ctx_config(&wd_comp_setting.config, config);
@@ -125,7 +124,7 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
 	if (!priv) {
-		ret = -ENOMEM;
+		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
 	wd_comp_setting.priv = priv;
@@ -178,7 +177,7 @@ int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 
 	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("comp poll input index is error or count is NULL\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 
@@ -293,7 +292,7 @@ static int append_store_block(handle_t h_sess, struct wd_comp_req *req)
 		req->dst_len += 8;
 	} else if (sess->alg_type >= WD_COMP_ALG_MAX) {
 		WD_ERR("in append store block, wrong alg type %d.\n", sess->alg_type);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return 0;
@@ -322,12 +321,12 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_comp_msg));
@@ -338,12 +337,12 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 						    &sess->key);
 	if (index >= config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	fill_comp_msg(&msg, req);
 	msg.ctx_buf = sess->ctx_buf;
@@ -366,14 +365,14 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
 			return ret;
-		} else if (ret == -EAGAIN) {
+		} else if (ret == -WD_EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				pthread_spin_unlock(&ctx->lock);
 				WD_ERR("wd comp recv timeout fail!\n");
-				return -ETIMEDOUT;
+				return -WD_ETIMEDOUT;
 			}
 		}
-	} while (ret == -EAGAIN);
+	} while (ret == -WD_EAGAIN);
 
 	pthread_spin_unlock(&ctx->lock);
 
@@ -395,17 +394,17 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!h_sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	if (req->op_type != WD_DIR_COMPRESS &&
 	    req->op_type != WD_DIR_DECOMPRESS) {
 		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	dbg("do, op_type = %hhu, in =%u, out_len =%u\n",
@@ -443,7 +442,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			dbg("do, strm start, in =%u, out_len =%u\n",
 			    strm_req.src_len, strm_req.dst_len);
 			if (req->dst_len + strm_req.src_len > total_avail_out)
-				return -ENOMEM;
+				return -WD_ENOMEM;
 			strm_req.dst_len = avail_out > chunk ? chunk : avail_out;
 			ret = wd_do_comp_strm(h_sess, &strm_req);
 			if (ret < 0 || strm_req.status == WD_IN_EPARA) {
@@ -492,7 +491,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
@@ -500,12 +499,12 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 						    &sess->key);
 	if (index >= config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	fill_comp_msg(&msg, req);
@@ -534,14 +533,14 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
 			return ret;
-		} else if (ret == -EAGAIN) {
+		} else if (ret == -WD_EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
 				pthread_spin_unlock(&ctx->lock);
 				WD_ERR("wd comp recv timeout fail!\n");
-				return -ETIMEDOUT;
+				return -WD_ETIMEDOUT;
 			}
 		}
-	} while (ret == -EAGAIN);
+	} while (ret == -WD_EAGAIN);
 
 	pthread_spin_unlock(&ctx->lock);
 
@@ -569,17 +568,17 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!sess || !req) {
 		WD_ERR("sess or req is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!req->cb || !req->cb_param) {
 		WD_ERR("invalid: req callback or param is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
@@ -587,18 +586,18 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 						    &sess->key);
 	if (index >= config->ctx_num) {
 		WD_ERR("fail to pick a proper ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", index, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	idx = wd_get_msg_from_pool(&wd_comp_setting.pool, index, (void **)&msg);
 	if (idx < 0) {
 		WD_ERR("busy, failed to get msg from pool!\n");
-		return -EBUSY;
+		return -WD_EBUSY;
 	}
 	fill_comp_msg(msg, req);
 	msg->tag = idx;

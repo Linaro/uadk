@@ -30,18 +30,18 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 
 	if (!cfg->ctx_num) {
 		WD_ERR("invalid params, ctx_num is 0!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx_internal));
 	if (!ctxs)
-		return -ENOMEM;
+		return -WD_ENOMEM;
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
 			WD_ERR("invalid params, ctx is NULL!\n");
 			free(ctxs);
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
@@ -58,7 +58,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 int wd_init_sched(struct wd_sched *in, struct wd_sched *from)
 {
 	if (!from->name)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	in->h_sched_ctx = from->h_sched_ctx;
 	in->name = strdup(from->name);
@@ -108,12 +108,12 @@ static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 {
 	pool->msgs = calloc(1, msg_num * msg_size);
 	if (!pool->msgs)
-		return -ENOMEM;
+		return -WD_ENOMEM;
 
 	pool->used = calloc(1, msg_num * sizeof(int));
 	if (!pool->used) {
 		free(pool->msgs);
-		return -ENOMEM;
+		return -WD_ENOMEM;
 	}
 
 	pool->msg_size = msg_size;
@@ -138,7 +138,7 @@ int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
 
 	pool->pools = calloc(1, pool_num * sizeof(struct msg_pool));
 	if (!pool->pools)
-		return -ENOMEM;
+		return -WD_ENOMEM;
 
 	pool->pool_num = pool_num;
 	for (i = 0; i < pool_num; i++) {
@@ -199,7 +199,7 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int index, void **msg)
 		idx = (idx + 1) % msg_num;
 		cnt++;
 		if (cnt == msg_num)
-			return -EBUSY;
+			return -WD_EBUSY;
 	}
 
 	*msg = p->msgs + msg_size * idx;
