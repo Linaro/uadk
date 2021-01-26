@@ -170,7 +170,7 @@ static int hisi_qm_setup_region(handle_t h_ctx,
 err_out:
 	q_info->sq_base = NULL;
 	q_info->mmio_base = NULL;
-	return -ENOMEM;
+	return -WD_ENOMEM;
 }
 
 static void hisi_qm_unset_region(handle_t h_ctx,
@@ -210,7 +210,7 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 
 	ver_id = get_version_id(h_ctx);
 	if (!ver_id)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	q_info->hw_type = ver_id;
 	size = ARRAY_SIZE(qm_type);
@@ -258,13 +258,13 @@ static int hisi_qm_get_qfrs_offs(handle_t h_ctx,
 								UACCE_QFRT_DUS);
 	if (!q_info->region_size[UACCE_QFRT_DUS]) {
 		WD_ERR("fail to get DUS qfrs offset.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	q_info->region_size[UACCE_QFRT_MMIO] = wd_ctx_get_region_size(h_ctx,
 								UACCE_QFRT_MMIO);
 	if (!q_info->region_size[UACCE_QFRT_MMIO]) {
 		WD_ERR("fail to get MMIO qfrs offset.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return 0;
@@ -395,7 +395,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 	__u16 tail;
 
 	if (!qp || !req || !count)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	q_info = &qp->q_info;
 
@@ -409,7 +409,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 	free_num = get_free_num(q_info);
 	if (!free_num) {
 		pthread_spin_unlock(&q_info->lock);
-		return -EBUSY;
+		return -WD_EBUSY;
 	}
 
 	send_num = expect > free_num ? free_num : expect;
@@ -439,13 +439,13 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
 			WD_ERR("CQE_SQ_HEAD_INDEX(%d) error\n", j);
-			errno = -EIO;
-			return -EIO;
+			errno = -WD_EIO;
+			return -WD_EIO;
 		}
 		memcpy(resp, (void *)q_info->sq_base + j * q_info->sqe_size,
 		       q_info->sqe_size);
 	} else {
-		return -EAGAIN;
+		return -WD_EAGAIN;
 	}
 
 	if (i == QM_Q_DEPTH - 1) {
@@ -477,7 +477,7 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	int ret = 0;
 
 	if (!resp || !qp || !count)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	q_info = &qp->q_info;
 	if (wd_ioread32(q_info->ds_rx_base) == 1) {
@@ -627,7 +627,7 @@ static int hisi_qm_sgl_push(struct hisi_sgl_pool *pool, struct hisi_sgl *hw_sgl)
 	if (pool->top >= pool->depth) {
 		WD_ERR("The sgl pool is full\n");
 		pthread_spin_unlock(&pool->lock);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	hw_sgl->next_dma = 0;

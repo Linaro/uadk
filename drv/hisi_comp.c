@@ -145,11 +145,6 @@ struct hisi_zip_sqe_ops {
 #define HISI_SCHED_INPUT	0
 #define HISI_SCHED_OUTPUT	1
 
-#define Z_OK            0
-#define Z_STREAM_END    1
-#define Z_ERRNO		(-1)
-#define Z_STREAM_ERROR	(-EIO)
-
 #define swab32(x) \
 	((((x) & 0x000000ff) << 24) | \
 	(((x) & 0x0000ff00) <<  8) | \
@@ -452,7 +447,7 @@ out:
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-	return -EINVAL;
+	return -WD_EINVAL;
 }
 
 static void hisi_zip_exit(void *priv)
@@ -477,7 +472,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 
 	if (alg_type >= WD_COMP_ALG_MAX) {
 		WD_ERR("invalid algorithm type(%d)\n", alg_type);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ops[alg_type].fill_buf(sqe, msg);
@@ -554,7 +549,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 		recv_msg->req.status = WD_IN_EPARA;
 	} else {
 		if (!sqe->produced)
-			return -EAGAIN;
+			return -WD_EAGAIN;
 		recv_msg->req.status = 0;
 	}
 

@@ -83,7 +83,7 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool);
  * Return tag of got message. This tag can be used to put a message and
  * find a message in wd_put_msg_to_pool() and wd_find_msg_in_pool(). Returned
  * tag will be in 1 ~ msg_num indicating msg_0 ~ msg_n-1; tag value 0 will NOT
- * be used to avoid possible error; -EBUSY will return if related message pool
+ * be used to avoid possible error; -WD_EBUSY will return if related message pool
  * is full.
  */
 int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int index, void **msg);
