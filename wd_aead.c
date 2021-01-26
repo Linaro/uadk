@@ -82,7 +82,7 @@ static int aes_key_len_check(__u16 length)
 	case AES_KEYSIZE_256:
 		return 0;
 	default:
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 }
 
@@ -93,14 +93,14 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 	switch (alg) {
 	case WD_CIPHER_SM4:
 		if (length != SM4_KEY_SIZE)
-			ret = -EINVAL;
+			ret = -WD_EINVAL;
 		break;
 	case WD_CIPHER_AES:
 		ret = aes_key_len_check(length);
 		break;
 	default:
 		WD_ERR("failed to check cipher key!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return ret;
@@ -138,7 +138,7 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 
 	if (!key || !sess || !sess->ckey) {
 		WD_ERR("failed to check cipher key inpupt param!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (sess->cmode == WD_CIPHER_XTS)
@@ -147,11 +147,11 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	ret = cipher_key_len_check(sess->calg, length);
 	if (ret) {
 		WD_ERR("failed to check cipher key length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	if (sess->calg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key)) {
 		WD_ERR("failed to check des key!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	sess->ckey_bytes = key_len;
@@ -166,14 +166,14 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 
 	if (!key || !sess || !sess->akey) {
 		WD_ERR("failed to check authenticate key param!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if ((sess->dalg <= WD_DIGEST_SHA224 && key_len >
 	    MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
 	    key_len > MAX_HMAC_KEY_SIZE) {
 		WD_ERR("failed to check authenticate key length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	sess->akey_bytes = key_len;
@@ -188,7 +188,7 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 
 	if (!sess) {
 		WD_ERR("failed to check session parameter!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (sess->cmode == WD_CIPHER_CCM) {
@@ -196,20 +196,20 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 		    authsize > WD_AEAD_CCM_GCM_MAX ||
 		    authsize % (WD_AEAD_CCM_GCM_MIN >> 1)) {
 			WD_ERR("failed to check aead CCM authsize!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 	} else if (sess->cmode == WD_CIPHER_GCM) {
 		if (authsize < WD_AEAD_CCM_GCM_MIN << 1 ||
 		    authsize > WD_AEAD_CCM_GCM_MAX) {
 			WD_ERR("failed to check aead GCM authsize!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 	} else {
 		if (sess->dalg >= WD_DIGEST_TYPE_MAX ||
 		    authsize & (WD_AEAD_CCM_GCM_MAX - 1) ||
 		    authsize > g_aead_mac_len[sess->dalg]) {
 			WD_ERR("failed to check aead mac authsize!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 	}
 
@@ -224,7 +224,7 @@ int wd_aead_get_authsize(handle_t h_sess)
 
 	if (!sess) {
 		WD_ERR("failed to check session parameter!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return sess->auth_bytes;
@@ -236,7 +236,7 @@ int wd_aead_get_maxauthsize(handle_t h_sess)
 
 	if (!sess || sess->dalg >= WD_DIGEST_TYPE_MAX) {
 		WD_ERR("failed to check session parameter!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (sess->cmode == WD_CIPHER_CCM || sess->cmode == WD_CIPHER_GCM)
@@ -314,23 +314,23 @@ static int aead_param_ckeck(struct wd_aead_sess *sess,
 	   (req->in_bytes & (AES_BLOCK_SIZE - 1) ||
 	    req->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
 		WD_ERR("failed to check input data length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (req->iv_bytes != get_iv_block_size(sess->cmode)) {
 		WD_ERR("failed to check aead IV length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (req->out_buf_bytes < req->out_bytes) {
 		WD_ERR("failed to check aead out buffer length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (req->op_type == WD_CIPHER_ENCRYPTION_DIGEST &&
 	    req->out_buf_bytes < (req->out_bytes + sess->auth_bytes)) {
 		WD_ERR("failed to check aead type or mac length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return 0;
@@ -348,12 +348,12 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	if (!config || !sched) {
 		WD_ERR("failed to check aead init input param!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
 		WD_ERR("failed to system is SVA mode!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = wd_init_ctx_config(&wd_aead_setting.config, config);
@@ -385,7 +385,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	/* init ctx related resources in specific driver */
 	priv = malloc(sizeof(wd_aead_setting.driver->drv_ctx_size));
 	if (!priv) {
-		ret = -ENOMEM;
+		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
 	wd_aead_setting.priv = priv;
@@ -463,22 +463,22 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 
 	if (unlikely(!sess || !req)) {
 		WD_ERR("aead input sess or req is NULL.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = aead_param_ckeck(sess, req);
 	if (ret)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("failed to check ctx mode!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_aead_msg));
@@ -486,7 +486,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		msg.aiv = malloc(req->iv_bytes);
 		if (!msg.aiv) {
 			WD_ERR("failed to alloc auth iv memory!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 	}
 	memset(msg.aiv, 0, req->iv_bytes);
@@ -507,10 +507,10 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
 			goto recv_err;
-		} else if (ret == -EAGAIN) {
+		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
-				ret = -ETIMEDOUT;
+				ret = -WD_ETIMEDOUT;
 				goto recv_err;
 			}
 		}
@@ -538,29 +538,29 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 
 	if (unlikely(!sess || !req || !req->cb)) {
 		WD_ERR("aead input sess or req is NULL.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = aead_param_ckeck(sess, req);
 	if (ret)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
                 WD_ERR("failed to check ctx mode!\n");
-                return -EINVAL;
+                return -WD_EINVAL;
         }
 
 	idx = wd_get_msg_from_pool(&wd_aead_setting.pool,
 				     index, (void **)&msg);
 	if (idx < 0) {
 		WD_ERR("failed to get msg from pool!\n");
-		return -EBUSY;
+		return -WD_EBUSY;
 	}
 
 	fill_request_msg(msg, req, sess);
@@ -568,7 +568,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		msg->aiv = malloc(req->iv_bytes);
 		if (!msg->aiv) {
 			WD_ERR("failed to alloc auth iv memory!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 	}
 	memset(msg->aiv, 0, req->iv_bytes);
@@ -576,7 +576,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
 	if (ret < 0) {
-		if (ret != -EBUSY)
+		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
 		wd_put_msg_to_pool(&wd_aead_setting.pool, index, msg->tag);
 		free(msg->aiv);
@@ -596,12 +596,12 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 
 	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("aead poll ctx input param is NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	do {
 		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &resp_msg);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			break;
 		} else if (ret < 0) {
 			WD_ERR("wd aead recv hw err!\n");
@@ -637,7 +637,7 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 
 	if (unlikely(!sched->poll_policy)) {
 		WD_ERR("failed to check aead poll_policy!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return sched->poll_policy(h_ctx, expt, count);

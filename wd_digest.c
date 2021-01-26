@@ -64,14 +64,14 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 
 	if (!key || !sess || !sess->key) {
 		WD_ERR("failed to check key param!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if ((sess->alg <= WD_DIGEST_SHA224 && key_len >
 		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
 		key_len > MAX_HMAC_KEY_SIZE) {
 		WD_ERR("failed to check digest key length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	sess->key_bytes = key_len;
@@ -136,12 +136,12 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	if (!config || !sched) {
 		WD_ERR("failed to check input param!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
 		WD_ERR("err, non sva, please check system!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
@@ -174,7 +174,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	priv = malloc(sizeof(wd_digest_setting.driver->drv_ctx_size));
 	if (!priv) {
 		WD_ERR("failed to alloc digest driver ctx!\n");
-		ret = -ENOMEM;
+		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
 	wd_digest_setting.priv = priv;
@@ -220,13 +220,13 @@ static int digest_param_ckeck(struct wd_digest_sess *sess,
 {
 	if (req->out_buf_bytes < req->out_bytes) {
 		WD_ERR("failed to check digest out buffer length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (sess->alg >= WD_DIGEST_TYPE_MAX || req->out_bytes == 0 ||
 	    req->out_bytes > g_digest_mac_len[sess->alg]) {
 		WD_ERR("failed to check digest type or mac length!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return 0;
@@ -262,23 +262,23 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	if (unlikely(!dsess || !req)) {
 		WD_ERR("digest input sess or req is NULL.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = digest_param_ckeck(dsess, req);
 	if (ret)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	/* fix me: maybe wrong */
 	index = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
                 WD_ERR("failed to check ctx mode!\n");
-                return -EINVAL;
+                return -WD_EINVAL;
         }
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
@@ -299,10 +299,10 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
 			goto recv_err;
-		} else if (ret == -EAGAIN) {
+		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
-				ret = -ETIMEDOUT;
+				ret = -WD_ETIMEDOUT;
 				goto recv_err;
 			}
 		}
@@ -327,29 +327,29 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	if (unlikely(!dsess || !req || !req->cb)) {
 		WD_ERR("digest input sess or req is NULL.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = digest_param_ckeck(dsess, req);
 	if (ret)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	index = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
                 WD_ERR("failed to check ctx mode!\n");
-                return -EINVAL;
+                return -WD_EINVAL;
         }
 
 	idx = wd_get_msg_from_pool(&wd_digest_setting.pool, index,
 				   (void **)&msg);
 	if (idx < 0) {
 		WD_ERR("busy, failed to get msg from pool!\n");
-		return -EBUSY;
+		return -WD_EBUSY;
 	}
 
 	fill_request_msg(msg, req, dsess);
@@ -376,13 +376,13 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 
 	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("digest input poll ctx or count is NULL.\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	do {
 		ret = wd_digest_setting.driver->digest_recv(ctx->ctx,
 							    &recv_msg);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			break;
 		} else if (ret < 0) {
 			WD_ERR("wd recv err!\n");
@@ -419,7 +419,7 @@ int wd_digest_poll(__u32 expt, __u32 *count)
 
 	if (unlikely(!sched->poll_policy)) {
 		WD_ERR("failed to check digest poll_policy!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return sched->poll_policy(h_ctx, expt, count);

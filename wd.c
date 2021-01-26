@@ -34,22 +34,22 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	int fd;
 
 	if (!dev_root || !attr || !buf || (sz == 0))
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s", dev_root, attr);
 	if (size < 0)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	fd = open(attr_file, O_RDONLY, 0);
 	if (fd < 0) {
 		WD_ERR("open %s fail (%d)!\n", attr_file, -errno);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	size = read(fd, buf, sz);
 	if (size <= 0) {
 		WD_ERR("read nothing at %s!\n", attr_file);
-		size = -EIO;
+		size = -WD_EIO;
 	}
 
 	close(fd);
@@ -63,7 +63,7 @@ static int get_int_attr(struct uacce_dev *dev, char *attr, int *val)
 	int ret;
 
 	if (!dev || !attr || !val)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	ret = get_raw_attr(dev->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
 	if (ret < 0)
@@ -80,7 +80,7 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 	int ret;
 
 	if (!dev || !attr || !buf || (buf_sz == 0))
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	ret = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
 	if (ret < 0) {
@@ -310,7 +310,7 @@ int wd_ctx_start(handle_t h_ctx)
 	int ret;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
 	if (ret)
@@ -325,7 +325,7 @@ int wd_release_ctx_force(handle_t h_ctx)
 	int ret;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
 	if (ret)
@@ -390,7 +390,7 @@ int wd_ctx_set_priv(handle_t h_ctx, void *priv)
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	ctx->priv = priv;
 
@@ -414,7 +414,7 @@ int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 	int ret;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	fds[0].fd = ctx->fd;
 	fds[0].events = POLLIN;
@@ -430,7 +430,7 @@ int wd_is_sva(handle_t h_ctx)
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	if (ctx->dev->flags & UACCE_DEV_SVA)
 		return 1;
@@ -443,7 +443,7 @@ int wd_get_numa_id(handle_t h_ctx)
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	return ctx->dev->numa_id;
 }
@@ -592,7 +592,7 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
 	if (!ctx)
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	if (!arg)
 		return ioctl(ctx->fd, cmd);
@@ -604,12 +604,12 @@ int wd_register_log(wd_log log)
 {
 	if (!log) {
 		WD_ERR("param null!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (log_out) {
 		WD_ERR("can not duplicate register!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	log_out = log;

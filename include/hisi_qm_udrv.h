@@ -80,7 +80,7 @@ struct hisi_qm_capa {
  *
  * There is not one locked in the qm internal, Alg should
  * ensure resource non-reentrant.
- * If the free queue num is zero, the return value is -EBUSY
+ * If the free queue num is zero, the return value is -WD_EBUSY
  */
 int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count);
 

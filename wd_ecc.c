@@ -178,7 +178,7 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	priv = malloc(wd_ecc_setting.driver->drv_ctx_size);
 	if (!priv) {
 		WD_ERR("failed to calloc drv ctx\n");
-		ret = -ENOMEM;
+		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
 
@@ -1386,7 +1386,7 @@ static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
 
 	do {
 		ret = wd_ecc_setting.driver->send(ctx, msg);
-		if (ret == -EBUSY) {
+		if (ret == -WD_EBUSY) {
 			if (tx_cnt++ >= ECC_RESEND_CNT) {
 				WD_ERR("failed to send: retry exit!\n");
 				break;
@@ -1408,10 +1408,10 @@ static int ecc_recv_sync(handle_t ctx, struct wd_ecc_msg *msg)
 
 	do {
 		ret = wd_ecc_setting.driver->recv(ctx, msg);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			if (rx_cnt++ >= ECC_RECV_MAX_CNT) {
 				WD_ERR("failed to recv: timeout!\n");
-				return -ETIMEDOUT;
+				return -WD_ETIMEDOUT;
 			}
 
 			if (balance > ECC_BALANCE_THRHD)
@@ -1447,12 +1447,12 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->s_key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_ecc_msg));
@@ -2137,12 +2137,12 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 						   &sess_t->s_key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);
@@ -2181,19 +2181,19 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	if (unlikely(!count || idx >= config->ctx_num)) {
 		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
 			idx, config->ctx_num);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	do {
 		pthread_spin_lock(&ctx->lock);
 		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			pthread_spin_unlock(&ctx->lock);
 			break;
 		} else if (ret < 0) {
