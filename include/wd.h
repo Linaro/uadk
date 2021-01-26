@@ -58,13 +58,13 @@ extern FILE *flog_fd;
 #define	WD_ENODEV			ENODEV
 #define	WD_EINVAL			EINVAL
 #define	WD_ETIMEDOUT			ETIMEDOUT
-#define	WD_ADDR_ERR			61
-#define	WD_HW_EACCESS			62
-#define	WD_SGL_ERR			63
-#define	WD_VERIFY_ERR			64
-#define	WD_OUT_EPARA			66
-#define	WD_IN_EPARA			67
-#define	WD_ENOPROC			68
+#define	WD_ADDR_ERR			61 /* address error */
+#define	WD_HW_EACCESS			62 /* hardware access denied, such as resetting */
+#define	WD_SGL_ERR			63 /* sgl input parameter error */
+#define	WD_VERIFY_ERR			64 /* verified error */
+#define	WD_OUT_EPARA			66 /* output parameter error */
+#define	WD_IN_EPARA			67 /* input parameter error */
+#define	WD_ENOPROC			68 /* no processed */
 
 enum wcrypto_type {
 	WD_CIPHER,

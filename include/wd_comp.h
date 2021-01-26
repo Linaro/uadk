@@ -7,12 +7,6 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
-enum wd_comp_op_status {
-	WD_COMP_OK,
-	WD_DECOMP_END,
-	WD_DECOMP_NEED_AGAIN, /* last block no space, need resend null size req */
-};
-
 enum wd_comp_alg_type {
 	WD_DEFLATE,
 	WD_ZLIB,

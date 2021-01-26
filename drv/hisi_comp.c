@@ -581,11 +581,11 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	/* last block no space, need resend null size req */
 	if (ctx_st == HZ_DECOMP_NO_SPACE)
-		recv_msg->req.status = WD_DECOMP_NEED_AGAIN;
+		recv_msg->req.status = WD_EAGAIN;
 
 	dbg("zip recv lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u\n", lstblk, ctx_st, status, type);
 	if (lstblk && (status == HZ_DECOMP_END))
-		recv_msg->req.status = WD_DECOMP_END;
+		recv_msg->req.status = WD_STREAM_END;
 
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
