@@ -1053,6 +1053,17 @@ static void del_ctx_key(struct wd_mm_br *br,
 		free(ctx->key.pubkey);
 		ctx->key.pubkey = NULL;
 	}
+
+	if (ctx->key.cv)
+		free(ctx->key.cv);
+
+	if (ctx->key.pub)
+		free(ctx->key.pub);
+
+	if (ctx->key.d) {
+		wd_memset_zero(ctx->key.d + 1, ctx->key_size);
+		free(ctx->key.d);
+	}
 }
 
 static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
