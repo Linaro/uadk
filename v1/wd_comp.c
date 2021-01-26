@@ -300,7 +300,7 @@ err_put_cache:
 /**
  * wcrypto_comp_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_comp_poll(struct wd_queue *q, unsigned int num)
 {

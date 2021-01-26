@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* Block Memory Menagament (lib): A block memory algorithm */
+/* Block Memory Management (lib): A block memory algorithm */
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -387,7 +387,7 @@ void *wd_blk_iova_map(void *pool, void *blk)
 
 void wd_blk_iova_unmap(void *pool, void *blk_dma, void *blk)
 {
-	/* do nothting at no-iommu mode */
+	/* do nothing at no-iommu mode */
 }
 
 int wd_get_free_blk_num(void *pool, __u32 *free_num)

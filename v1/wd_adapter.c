@@ -189,7 +189,7 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	void *ptr = NULL;
 	int ret = 1;
 
-	/* Make sure mmap granulity size align */
+	/* Make sure mmap granularity size align */
 	if (!qinfo->iommu_type)
 		size = ALIGN(size, WD_UACCE_GRAN_SIZE);
 
