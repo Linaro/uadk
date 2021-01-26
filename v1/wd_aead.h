@@ -71,18 +71,18 @@ struct wcrypto_aead_ctx_setup {
 /**
  * operational data per I/O operation
  * AEAD encryption input:    assoc data  || plaintext
- * AEAD encryption output: assoc data  || cipherntext || auth tag
+ * AEAD encryption output: assoc data  || ciphertext || auth tag
  * AEAD decryption input:    assoc data || ciphertext   || auth tag
  * AEAD decryption output: assoc data || plaintext
  * @op_type:aead operation type, denoted by enum wcrypto_aead_op_type
  * @status:I/O operation return status
  * @in: input data address
  * @out:output data address
- * @iv:initializtion verctor data address
+ * @iv:initialization verctor data address
  * @in_bytes: input data size
  * @out_bytes:output data size
  * @out_buf_bytes:output buffer size
- * @iv_bytes:initializtion verctor data size
+ * @iv_bytes:initialization verctor data size
  * @assoc_size: aead associated data size
  * @priv:reserved data field segment
  */
@@ -114,7 +114,7 @@ struct wcrypto_aead_msg {
 	__u16 ckey_bytes;	/* Key bytes */
 	__u16 akey_bytes;	/* Key bytes */
 	__u16 assoc_bytes;	/* Input associated data bytes */
-	__u16 auth_bytes;	/* Outpue authentication bytes */
+	__u16 auth_bytes;	/* Output authentication bytes */
 	__u16 iv_bytes;		/* IV bytes */
 	__u32 in_bytes;		/* Input data bytes */
 	__u32 out_bytes; 	/* Output data bytes */
@@ -195,7 +195,7 @@ int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
 /**
  * wcrypto_aead_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_aead_poll(struct wd_queue *q, unsigned int num);
 

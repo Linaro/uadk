@@ -714,7 +714,7 @@ void wcrypto_del_aead_ctx(void *ctx)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("fail to del aead ctx!\n");
+		WD_ERR("fail to delete aead ctx!\n");
 		return;
 	}
 	wd_unspinlock(&qinfo->qlock);

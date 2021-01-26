@@ -33,7 +33,7 @@ struct wd_sglpool_setup {
 	__u8 buf_num_in_sgl;
 	/* Total number of sgl for entries and buffers */
 	__u16 sgl_num;
-	/* SGE data buffer startging address align size */
+	/* SGE data buffer starting address align size */
 	__u32 align_size;
 	/* memory from user if don't use WD memory */
 	struct wd_mm_br br;

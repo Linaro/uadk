@@ -38,7 +38,7 @@
 #define HISI_SGL_ALIGN_SZ	64
 #define HISI_SGL_SGE_ALIGN_SZ	32
 
-/* get hisi hardware sgl information, like sge_size, sgl_size, and its algn size.
+/* get hisi hardware sgl information, like sge_size, sgl_size, and its align size.
  * sgl numbers in a chain : 256 at most;
  * sge numbers of a sgl: 1 ~ 255;
  * a sge size: 1B ~ 8M;

@@ -146,7 +146,7 @@ struct wcrypto_ecc_msg {
 	__u8 *out; /* Output data VA, should be DMA buffer */
 	__u8 *key; /* Input key VA, should be DMA buffer */
 	/*
-	 * Input user tag, used for indentify data stream/user:
+	 * Input user tag, used for identify data stream/user:
 	 * struct wcrypto_cb_tag
 	 */
 	__u64 usr_data;
