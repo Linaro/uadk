@@ -25,7 +25,7 @@ extern "C" {
 struct wd_blkpool_setup {
 	__u32 block_size;	/* Block buffer size */
 	__u32 block_num;	/* Block buffer number */
-	__u32 align_size;	/* Block buffer startging address align size */
+	__u32 align_size;	/* Block buffer starting address align size */
 	struct wd_mm_br br;	/* memory from user if don't use WD memory */
 };
 

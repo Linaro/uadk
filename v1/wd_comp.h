@@ -179,7 +179,7 @@ struct wcrypto_comp_msg {
 	__u32 isize;	 /* Denoted by gzip isize */
 	__u32 checksum;  /* Denoted by zlib/gzip CRC */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
-	__u64 udata;     /* Input user tag, indentify data of stream/user */
+	__u64 udata;     /* Input user tag, identify data of stream/user */
 };
 
 /**
@@ -190,7 +190,7 @@ struct wcrypto_comp_msg {
  * @seq_num:the size of sequences
  * @lit_length_overflow_cnt:the count of the literal length overflow
  * @lit_length_overflow_pos:the position of the literal length overflow
- * @freq:address of the frequence about sequences members
+ * @freq:address of the frequency about sequences members
  */
 struct wcrypto_lz77_zstd_format {
 	void *literals_start;
@@ -214,14 +214,14 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
  * wcrypto_do_comp() - syn/asynchronous compressing/decompressing operation
  * @ctx: context of user
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
  */
 int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag);
 
 /**
  * wcrypto_comp_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_comp_poll(struct wd_queue *q, unsigned int num);
 

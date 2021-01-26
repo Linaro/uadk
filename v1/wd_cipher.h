@@ -71,10 +71,10 @@ struct wcrypto_cipher_ctx_setup {
  * @status:I/O operation return status
  * @in: input data address
  * @out:output data address
- * @iv:initializtion verctor data address
+ * @iv:initialization verctor data address
  * @in_bytes: input data size
  * @out_bytes:output data size
- * @iv_bytes:initializtion verctor data size
+ * @iv_bytes:initialization verctor data size
  * @priv:reserved data field segment
  */
 struct wcrypto_cipher_op_data {
@@ -138,7 +138,7 @@ int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 /**
  * wcrypto_cipher_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num);
 

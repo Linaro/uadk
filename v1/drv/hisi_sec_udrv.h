@@ -200,8 +200,8 @@ struct hisi_sec_sqe {
 	__u32 mac_addr_type:3;
 	__u32 rsvd0:8;
 	union {
-		struct hisi_sec_sqe_type1 type1; /* storage sence */
-		struct hisi_sec_sqe_type2 type2; /* the other sence */
+		struct hisi_sec_sqe_type1 type1; /* storage scene */
+		struct hisi_sec_sqe_type2 type2; /* the other scene */
 	};
 };
 
@@ -333,7 +333,7 @@ struct bd3_tls_type_back {
 	__u32 pad_len_1p3_back:16;
 };
 
-/* the hi1630 sence */
+/* the hi1630 scene */
 struct hisi_sec_bd3_sqe {
 	__u32 type:4;
 	__u32 inveld:1;
