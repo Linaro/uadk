@@ -544,12 +544,15 @@ map_in_error:
 
 static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 {
-	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH)) {
+	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH ||
+	    !msg->in_bytes)) {
 		WD_ERR("input cipher len is too large!\n");
 		return -WD_EINVAL;
 	}
 
-	if (msg->mode == WCRYPTO_CIPHER_OFB || msg->mode == WCRYPTO_CIPHER_CFB)
+	if (msg->mode == WCRYPTO_CIPHER_OFB ||
+	    msg->mode == WCRYPTO_CIPHER_CFB ||
+	    msg->mode == WCRYPTO_CIPHER_CTR)
 		return WD_SUCCESS;
 
 	if (msg->alg == WCRYPTO_CIPHER_3DES ||
