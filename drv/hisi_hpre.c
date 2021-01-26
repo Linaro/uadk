@@ -474,7 +474,7 @@ out:
 		hisi_qm_free_qp(h_qp);
 	}
 
-	return -EINVAL;
+	return -WD_EINVAL;
 }
 
 static void hpre_exit(void *priv)
@@ -1634,7 +1634,7 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 
 	ret = hisi_qm_get_free_sqe_num(h_qp);
 	if (ret < SM2_SQE_NUM) {
-		ret = -EBUSY;
+		ret = -WD_EBUSY;
 		goto fail_fill_sqe;
 	}
 
@@ -2129,7 +2129,7 @@ static int parse_second_sqe(handle_t h_qp,
 
 	while (1) {
 		ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			if (cnt++ > MAX_WAIT_CNT)
 				return ret;
 			usleep(1);

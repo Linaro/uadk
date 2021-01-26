@@ -164,7 +164,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	priv = malloc(wd_rsa_setting.driver->drv_ctx_size);
 	if (!priv) {
 		WD_ERR("failed to calloc drv ctx\n");
-		ret = -ENOMEM;
+		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
 
@@ -253,7 +253,7 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 
 		if (unlikely(req->dst_bytes != sess->key_size)) {
 			WD_ERR("req dst bytes = %hu error!\n", req->dst_bytes);
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 	}
 
@@ -269,7 +269,7 @@ static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
 
 	do {
 		ret = wd_rsa_setting.driver->send(ctx, msg);
-		if (ret == -EBUSY) {
+		if (ret == -WD_EBUSY) {
 			if (tx_cnt++ >= RSA_RESEND_CNT) {
 				WD_ERR("failed to send: retry exit!\n");
 				break;
@@ -292,10 +292,10 @@ static int rsa_recv_sync(handle_t ctx, struct wd_rsa_msg *msg)
 
 	do {
 		ret = wd_rsa_setting.driver->recv(ctx, msg);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			if (rx_cnt++ >= RSA_RECV_MAX_CNT) {
 				WD_ERR("failed to recv: timeout!\n");
-				return -ETIMEDOUT;
+				return -WD_ETIMEDOUT;
 			}
 
 			if (balance > RSA_BALANCE_THRHD)
@@ -331,12 +331,12 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
@@ -375,12 +375,12 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 						   &sess_t->key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	mid = wd_get_msg_from_pool(&wd_rsa_setting.pool, idx, (void **)&msg);
@@ -419,19 +419,19 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	if (unlikely(!count || idx >= config->ctx_num)) {
 		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
 			idx, config->ctx_num);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	do {
 		pthread_spin_lock(&ctx->lock);
 		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
-		if (ret == -EAGAIN) {
+		if (ret == -WD_EAGAIN) {
 			pthread_spin_unlock(&ctx->lock);
 			break;
 		} else if (ret < 0) {
