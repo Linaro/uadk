@@ -128,7 +128,7 @@ int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 /**
  * wcrypto_digest_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_digest_poll(struct wd_queue *q, unsigned int num);
 

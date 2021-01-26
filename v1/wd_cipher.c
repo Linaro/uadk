@@ -563,7 +563,7 @@ void wcrypto_del_cipher_ctx(void *ctx)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("errer:repeat del cipher ctx!\n");
+		WD_ERR("error:repeat del cipher ctx!\n");
 		return;
 	}
 	wd_unspinlock(&qinfo->qlock);

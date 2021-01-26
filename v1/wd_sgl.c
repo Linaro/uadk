@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* SGL Memory Menagament (lib): A SGL memory algorithm */
+/* SGL Memory Management (lib): A SGL memory algorithm */
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -224,7 +224,7 @@ static void *sgl_mem_iova_map(void *usr, void *va, size_t sz)
 
 static void sgl_mem_iova_unmap(void *usr, void *va, void *dma, size_t sz)
 {
-	/* do nothting */
+	/* do nothing */
 }
 
 static void *sgl_blk_pool_init(struct wd_queue *q, struct wd_sglpool *pool)

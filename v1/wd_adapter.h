@@ -44,7 +44,7 @@ struct wd_drv_dio_if {
 	char *hw_type;
 	/* user space WD queue initiation */
 	int (*open)(struct wd_queue *q);
-	/* user space WD queue uninitiation */
+	/* user space WD queue uninitiated */
 	void (*close)(struct wd_queue *q);
 	/* Send WCRYPTO message to WD queue */
 	int (*send)(struct wd_queue *q, void **req, __u32 num);

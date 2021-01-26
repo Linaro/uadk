@@ -157,7 +157,7 @@ void wcrypto_del_rng_ctx(void *ctx)
 	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("repeat del trng ctx!\n");
+		WD_ERR("repeat delete trng ctx!\n");
 		return;
 	}
 	wd_unspinlock(&qinfo->qlock);
