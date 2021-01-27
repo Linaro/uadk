@@ -113,7 +113,7 @@ struct wcrypto_rsa_prikey {
 	struct wcrypto_rsa_prikey2 pkey2;
 };
 
-/* RSA CRT prikey param types */
+/* RSA CRT private key parameter types */
 enum wcrypto_rsa_crt_prikey_para {
 	WD_CRT_PRIKEY_DQ,
 	WD_CRT_PRIKEY_DP,
@@ -125,7 +125,7 @@ enum wcrypto_rsa_crt_prikey_para {
 int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data)
 {
 	if (!ki || !data) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -136,7 +136,7 @@ int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data)
 int wcrypto_rsa_kg_out_data(struct wcrypto_rsa_kg_out *ko, char **data)
 {
 	if (!ko || !data) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -253,7 +253,7 @@ static void del_kg(void *ctx, void *k)
 	struct wd_mm_br  *br;
 
 	if (!c || !k) {
-		WD_ERR("del key generate params err!\n");
+		WD_ERR("delete key generate parameters err!\n");
 		return;
 	}
 
@@ -298,7 +298,7 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	}
 	if (unlikely(br->get_bufsize &&
 	    br->get_bufsize(br->usr) < kg_out_size + sizeof(*kg_out))) {
-		WD_ERR("Blk_size < need_size<0x%lx>.\n", kg_out_size + sizeof(*kg_out));
+		WD_ERR("blk_size < need_size<0x%lx>.\n", kg_out_size + sizeof(*kg_out));
 		return NULL;
 	}
 	kg_out = br->alloc(br->usr, kg_out_size + sizeof(*kg_out));
@@ -330,7 +330,7 @@ void wcrypto_get_rsa_kg_out_params(struct wcrypto_rsa_kg_out *kout, struct wd_dt
 					struct wd_dtb *n)
 {
 	if (!kout) {
-		WD_ERR("input null at get key gen params!\n");
+		WD_ERR("input null at get key gen parameters!\n");
 		return;
 	}
 
@@ -574,7 +574,7 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 	int ret, cid;
 
 	if (!q || !setup) {
-		WD_ERR("create rsa ctx input param err!\n");
+		WD_ERR("create rsa ctx input parameter err!\n");
 		return NULL;
 	}
 	if (!setup->br.alloc || !setup->br.free) {
@@ -886,7 +886,7 @@ void wcrypto_get_rsa_crt_prikey_params(struct wcrypto_rsa_prikey *pvk,
 void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey)
 {
 	if (!ctx || !pubkey) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return;
 	}
 
@@ -896,7 +896,7 @@ void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey)
 void wcrypto_get_rsa_prikey(void *ctx, struct wcrypto_rsa_prikey **prikey)
 {
 	if (!ctx || !prikey) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return;
 	}
 
@@ -944,7 +944,7 @@ static int param_check(void *ctx, void *opdata, void *tag)
 	struct wcrypto_rsa_ctx *ctxt = ctx;
 
 	if (unlikely(!ctx || !opdata)) {
-		WD_ERR("input param err!\n");
+		WD_ERR("input parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1068,7 +1068,7 @@ void wcrypto_del_rsa_ctx(void *ctx)
 	struct q_info *qinfo;
 
 	if (!ctx) {
-		WD_ERR("Delete rsa param err!\n");
+		WD_ERR("delete rsa parameter err!\n");
 		return;
 	}
 	cx = ctx;
@@ -1077,7 +1077,7 @@ void wcrypto_del_rsa_ctx(void *ctx)
 	wd_spinlock(&qinfo->qlock);
 	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("error:repeat del rsa ctx!\n");
+		WD_ERR("error: repeat del rsa ctx!\n");
 		return;
 	}
 

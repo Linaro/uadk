@@ -87,7 +87,7 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	int i, ctx_id;
 
 	if (!q || !setup) {
-		WD_ERR("input param err!\n");
+		WD_ERR("input parameter err!\n");
 		return NULL;
 	}
 
@@ -174,7 +174,7 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 	int ret;
 
 	if (!q) {
-		WD_ERR("%s(): input param err!\n", __func__);
+		WD_ERR("%s(): input parameter err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
@@ -210,7 +210,7 @@ int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
 	int ret = 0;
 
 	if (!ctx || !opdata) {
-		WD_ERR("input param err!\n");
+		WD_ERR("input parameter err!\n");
 		return -WD_EINVAL;
 	}
 

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* the common drv header define the unified interface for wd */
+/* the common driver header define the unified interface for wd */
 #ifndef __WD_UTIL_H__
 #define __WD_UTIL_H__
 
@@ -103,7 +103,7 @@ struct q_info {
 	const char *hw_type;
 	int hw_type_id;
 	int ref;
-	void *priv; /* private data used by the drv layer */
+	void *priv; /* private data used by the drive layer */
 	const void *dev_info;
 	void *ss_va;
 	int fd;
@@ -231,19 +231,19 @@ struct wcrypto_ecc_dh_in {
 };
 
 struct wcrypto_ecc_sign_in {
-	struct wd_dtb dgst; /* hash msg */
+	struct wd_dtb dgst; /* hash message */
 	struct wd_dtb k; /* random */
 	struct wd_dtb plaintext; /* original text before hash */
-	__u8 k_set; /* 1 - k param set  0 - not set */
-	__u8 dgst_set; /* 1 - dgst param set  0 - not set */
+	__u8 k_set; /* 1 - k parameter set  0 - not set */
+	__u8 dgst_set; /* 1 - dgst parameter set  0 - not set */
 };
 
 struct wcrypto_ecc_verf_in {
-	struct wd_dtb dgst; /* hash msg */
-	struct wd_dtb s; /* signature s param */
-	struct wd_dtb r; /* signature r param */
+	struct wd_dtb dgst; /* hash message */
+	struct wd_dtb s; /* signature s parameter */
+	struct wd_dtb r; /* signature r parameter */
 	struct wd_dtb plaintext; /* original text before hash */
-	__u8 dgst_set; /* 1 - dgst param set  0 - not set */
+	__u8 dgst_set; /* 1 - dgst parameter set  0 - not set */
 };
 
 struct wcrypto_ecc_dh_out {
@@ -251,8 +251,8 @@ struct wcrypto_ecc_dh_out {
 };
 
 struct wcrypto_ecc_sign_out {
-	struct wd_dtb r; /* signature r param */
-	struct wd_dtb s; /* signature s param */
+	struct wd_dtb r; /* signature r parameter */
+	struct wd_dtb s; /* signature s parameter */
 };
 
 struct wcrypto_sm2_enc_in {

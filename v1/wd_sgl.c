@@ -63,7 +63,7 @@ struct wd_sgl {
 	struct wd_sglpool *pool;
 	struct wd_sgl *next;
 
-	/* user config, 60 sges max */
+	/* user configuration, 60 sges max */
 	struct wd_sge sge[];
 };
 
@@ -151,7 +151,7 @@ static int sgl_chain_build(struct wd_queue *q, struct wd_sglpool *pool)
 		ret = drv_init_sgl(q, pool, sgl_blk[i]);
 		if (ret) {
 			i++;
-			WD_ERR("init hardware sgl failed, ret = %d\n", ret);
+			WD_ERR("initialize hardware sgl failed, ret = %d\n", ret);
 			goto alloc_sgl_err;
 		}
 	}
@@ -428,7 +428,7 @@ void wd_sglpool_destroy(void *pool)
 	int i, j;
 
 	if (!p || !p->sgl_blk || !p->buf_pool || !p->sgl_pool) {
-		WD_ERR("pool param is err!\n");
+		WD_ERR("pool parameter is err!\n");
 		return;
 	}
 
@@ -826,7 +826,7 @@ int wd_get_sgl_buf_sum(struct wd_sgl *sgl)
 int wd_get_sgl_mem_size(struct wd_sgl *sgl, size_t *size)
 {
 	if (unlikely(!sgl || !sgl->pool || !size)) {
-		WD_ERR("sgl param err!\n");
+		WD_ERR("sgl parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -909,7 +909,7 @@ int wd_get_sge_datalen(struct wd_sgl *sgl, __u32 num, __u32 *dtsize)
 int wd_get_sgl_bufsize(struct wd_sgl *sgl, __u32 *bufsz)
 {
 	if (unlikely(!sgl || !sgl->pool || !bufsz)) {
-		WD_ERR("sgl param err or bufsz is null!\n");
+		WD_ERR("sgl parameter err or bufsz is null!\n");
 		return -WD_EINVAL;
 	}
 

@@ -36,7 +36,7 @@
 #define MAX_HASH_LENS			BITS_TO_BYTES(521)
 #define HW_PLAINTEXT_BYTES_MAX		BITS_TO_BYTES(4096)
 
-/* realize with hardware ecc multiplication, avoid confict with wd_ecc.h */
+/* realize with hardware ecc multiplication, avoid conflict with wd_ecc.h */
 #define HPRE_SM2_ENC	0xE
 #define HPRE_SM2_DEC	0xF
 
@@ -65,12 +65,12 @@ static int qm_crypto_bin_to_hpre_bin(char *dst, const char *src,
 	int j;
 
 	if (unlikely(!dst || !src || b_size <= 0 || d_size <= 0)) {
-		WD_ERR("%s trans to hpre bin: params err!\n", p_name);
+		WD_ERR("%s trans to hpre bin: parameters err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(b_size < d_size)) {
-		WD_ERR("%s trans to hpre bin: param data is too long!\n", p_name);
+		WD_ERR("%s trans to hpre bin: parameter data is too long!\n", p_name);
 		return  -WD_EINVAL;
 	}
 
@@ -95,7 +95,7 @@ static int qm_hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
 	int k = 0;
 
 	if (unlikely(!dst || !src || b_size <= 0)) {
-		WD_ERR("%s trans to crypto bin: params err!\n", p_name);
+		WD_ERR("%s trans to crypto bin: parameters err!\n", p_name);
 		return 0;
 	}
 
@@ -396,7 +396,7 @@ static int qm_rsa_prepare_key(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 		if (unlikely(ret <= 0))
 			return -WD_EINVAL;
 	} else {
-		WD_ERR("Invalid rsa operatin type!\n");
+		WD_ERR("Invalid rsa operation type!\n");
 		return -WD_EINVAL;
 	}
 
@@ -494,7 +494,7 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		return ret;
 	}
 
-	/* This need more processing logic. to do more */
+	/* This need more processing logic. */
 	if (tag)
 		hw_msg->low_tag = tag->ctx_id;
 	hw_msg->done = 0x1;
@@ -519,7 +519,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 
 	ASSERT(rsa_msg);
 
-	/* if this hw msg not belong to me, then try again */
+	/* if this hardware message not belong to me, then try again */
 	if (usr && LOW_U16(hw_msg->low_tag) != usr)
 		return 0;
 	kbytes = rsa_msg->key_bytes;
@@ -528,7 +528,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 			hw_msg->done, hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			rsa_msg->result = WD_EINVAL;
-		} else { /* Need to indentify which hw err happened */
+		} else { /* Need to identify which hw err happened */
 			rsa_msg->result = WD_IN_EPARA;
 		}
 
@@ -574,7 +574,7 @@ static int fill_dh_g_param(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
 				msg->key_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Get dh g para dma address fail!\n");
+		WD_ERR("Get dh g parameter dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	hw_msg->low_in = (__u32)(phy & QM_L32BITS_MASK);
@@ -622,7 +622,7 @@ static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	phy = (uintptr_t)drv_iova_map(q, (void *)x,
 				GEN_PARAMS_SZ(msg->key_bytes));
 	if (unlikely(!phy)) {
-		WD_ERR("get dh xp para dma address fail!\n");
+		WD_ERR("get dh xp parameter dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	hw_msg->low_key = (__u32)(phy & QM_L32BITS_MASK);
@@ -639,13 +639,13 @@ static int qm_final_fill_dh_sqe(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->key_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Get dh out buf dma address fail!\n");
+		WD_ERR("Get dh out buffer dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	hw_msg->low_out = (__u32)(phy & QM_L32BITS_MASK);
 	hw_msg->hi_out = HI_U32(phy);
 
-	/* This need more processing logic. to do more */
+	/* This need more processing logic. */
 	if (tag)
 		hw_msg->low_tag = tag->ctx_id;
 	hw_msg->done = 0x1;
@@ -736,7 +736,7 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			dh_msg->result = WD_EINVAL;
 			ret = -WD_EINVAL;
-		} else { /* Need to indentify which hw err happened */
+		} else { /* Need to identify which hw err happened */
 			dh_msg->result = WD_IN_EPARA;
 			ret = -WD_IN_EPARA;
 		}
@@ -896,7 +896,7 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 		return ret;
 
 	/*
-	 * This is a pretreatment of x25519/x448, as described in RFC7748
+	 * This is a pretreatment of x25519/x448, as described in RFC 7748
 	 * hpre is big-endian, so the byte is opposite.
 	 */
 	dat = d->data;
@@ -1237,9 +1237,9 @@ static int u_is_in_p(struct wcrypto_ecc_msg *msg)
 	}
 
 	/*
-	 * In big-endian order, when receving u-array, implementations of X25519
-	 * shold mask the most significant bit in the 1st byte.
-	 * See RFC7748 for details;
+	 * In big-endian order, when receiving u-array, implementations of X25519
+	 * should mask the most significant bit in the 1st byte.
+	 * See RFC 7748 for details;
 	 */
 	if (msg->alg_type == WCRYPTO_X25519)
 		pbk->x.data[0] &= 0x7f;
@@ -1457,7 +1457,7 @@ static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
 	return ret;
 }
 
-/* prepare in/out hw msg */
+/* prepare in/out hardware message */
 static int qm_ecc_prepare_iot(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 				struct hisi_hpre_sqe *hw_msg)
 {
@@ -1639,7 +1639,7 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 	hw_msg->task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
-	/* prepare alg */
+	/* prepare algorithm */
 	ret = qm_ecc_prepare_alg(hw_msg, msg);
 	if (unlikely(ret))
 		return ret;
@@ -1654,7 +1654,7 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	if (unlikely(ret))
 		goto map_key_fail;
 
-	/* This need more processing logic. to do more */
+	/* This need more processing logic. */
 	if (tag)
 		hw_msg->low_tag = tag->ctx_id;
 	hw_msg->done = 0x1;
@@ -1877,7 +1877,7 @@ static int fill_sm2_enc_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	if (unlikely(!hash->cb || hash->type >= WCRYPTO_HASH_MAX)) {
-		WD_ERR("hash param error, type = %u\n", hash->type);
+		WD_ERR("hash parameter error, type = %u\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -1940,7 +1940,7 @@ static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		return qm_fill_ecc_sqe_general(req_src, info, i);
 
 	if (unlikely(!hash->cb || hash->type >= WCRYPTO_HASH_MAX)) {
-		WD_ERR("hash param error, type = %u\n", hash->type);
+		WD_ERR("hash parameter error, type = %u\n", hash->type);
 		return -WD_EINVAL;
 	}
 
