@@ -41,7 +41,7 @@ struct wcrypto_ecc_point {
 /* ECC operational types */
 enum wcrypto_ecc_op_type {
 	WCRYPTO_EC_OP_INVALID, /* invalid ecc operation */
-	WCRYPTO_ECXDH_GEN_KEY, /* ECDH/X448/X25519 generate pubkey */
+	WCRYPTO_ECXDH_GEN_KEY, /* ECDH/X448/X25519 generate public key */
 	WCRYPTO_ECXDH_COMPUTE_KEY, /* ECDH/X448/X25519 compute share key */
 	WCRYPTO_ECDSA_SIGN, /* ECDSA sign */
 	WCRYPTO_ECDSA_VERIFY, /* ECDSA verify */
@@ -63,7 +63,7 @@ enum wcrypto_ecc_curve_id {
 	WCRYPTO_SECP521R1 = 0x15, /* NIST/SECG 521 bit prime field */
 };
 
-/* ECC hash callback func types */
+/* ECC hash callback function types */
 enum wcrypto_ecc_hash_type {
 	WCRYPTO_HASH_SM3,
 	WCRYPTO_HASH_SHA1,
@@ -85,8 +85,8 @@ struct wcrypto_ecc_curve {
 };
 
 enum wcrypto_ecc_curve_cfg_type {
-	WCRYPTO_CV_CFG_ID, /* set curve param by denote curve ID */
-	WCRYPTO_CV_CFG_PARAM /* set curve param by denote curve param */
+	WCRYPTO_CV_CFG_ID, /* set curve parameter by denote curve ID */
+	WCRYPTO_CV_CFG_PARAM /* set curve parameter by denote curve parameter */
 };
 
 struct wcrypto_ecc_curve_cfg {
@@ -100,12 +100,12 @@ struct wcrypto_ecc_curve_cfg {
 
 struct wcrypto_rand_mt {
 	wcrypto_rand cb; /* rand callback */
-	void *usr; /* user private param */
+	void *usr; /* user private parameter */
 };
 
 struct wcrypto_hash_mt {
 	wcrypto_hash cb; /* hash callback */
-	void *usr; /* user private param */
+	void *usr; /* user private parameter */
 	__u8 type; /* hash type, denoted by enum wcrypto_ecc_hash_type */
 	__u8 rsv[3]; /* reserve */
 };

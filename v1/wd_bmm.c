@@ -78,7 +78,7 @@ static int pool_params_check(struct wd_blkpool_setup *setup)
 		return -WD_EINVAL;
 	}
 
-	/* check the params, and align_size must be 2^N */
+	/* check parameters, and align_size must be 2^N */
 	if (setup->align_size == 0x1 || setup->align_size > MAX_ALIGN_SIZE ||
 	    setup->align_size & (setup->align_size - 0x1)) {
 		WD_ERR("Invalid align_size.\n");
@@ -118,7 +118,7 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 			 (unsigned long)sp->block_num + asz;
 
 	/* When we use WD reserve memory and the blk_sz is larger than 1M,
-	 * in order to ensure the mem_pool to be succuss,
+	 * in order to ensure the mem_pool to be success,
 	 * we should to reserve more memory
 	 */
 	if (!sp->br.alloc && !qinfo->iommu_type)
@@ -140,7 +140,7 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *p)
 
 	act_num = p->act_mem_sz / (p->act_hd_sz + p->act_blk_sz);
 
-	/* get dma addr and init blks */
+	/* get dma address and initialize blocks */
 	for (i = 0; i < act_num; i++) {
 		va = (void *)((uintptr_t)p->act_start + p->act_hd_sz +
 			      (unsigned long)(p->act_hd_sz +
@@ -198,7 +198,7 @@ static int usr_pool_init(struct wd_blkpool *p)
 		hd->blk = (void *)((uintptr_t)hd + p->act_hd_sz);
 		hd->blk_dma = sp->br.iova_map(sp->br.usr, hd->blk, blk_size);
 		if (!hd->blk_dma) {
-			WD_ERR("Usr blk map failed.\n");
+			WD_ERR("failed to map usr blk.\n");
 			return -WD_ENOMEM;
 		}
 		hd->blk_tag = TAG_FREE;
@@ -219,28 +219,28 @@ static void *pool_init(struct wd_queue *q, struct wd_blkpool *pool,
 	if (setup->br.alloc) {
 		addr = setup->br.alloc(setup->br.usr, pool->act_mem_sz);
 		if (!addr) {
-			WD_ERR("User pool ops_alloc fail.\n");
+			WD_ERR("failed to allocate memory in user pool.\n");
 			return NULL;
 		}
 
 		pool->usr_mem_start = addr;
 		if (usr_pool_init(pool)) {
-			WD_ERR("User pool init failed.\n");
+			WD_ERR("failed to initialize user pool.\n");
 			goto err_pool_init;
 		}
 	} else {
 		/* use wd to reserve memory */
 		addr = wd_reserve_memory(q, pool->act_mem_sz);
 		if (!addr) {
-			WD_ERR("wd_reserve_memory fail.\n");
+			WD_ERR("wd pool failed to reserve memory.\n");
 			goto err_pool_init;
 		}
 
 		pool->usr_mem_start = addr;
 		if (wd_pool_init(q, pool)) {
-			WD_ERR("WD pool init failed.\n");
+			WD_ERR("failed to initialize wd pool.\n");
 
-			/* release q will free the addr */
+			/* release q will free memory */
 			goto err_pool_init;
 		}
 		setup->block_num = pool->setup.block_num;
@@ -268,7 +268,7 @@ void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
 
 	pool = calloc(1, sizeof(*pool));
 	if (!pool) {
-		WD_ERR("Failed to malloc pool.\n");
+		WD_ERR("failed to malloc pool.\n");
 		return NULL;
 	}
 	memcpy(&pool->setup, setup, sizeof(pool->setup));
@@ -348,13 +348,13 @@ void wd_free_blk(void *pool, void *blk)
 	struct wd_blk_hd *hd;
 
 	if (unlikely(!p || !blk)) {
-		WD_ERR("free blk params err!\n");
+		WD_ERR("free blk parameters err!\n");
 		return;
 	}
 
 	hd = wd_blk_head(p, blk);
 	if (unlikely(hd->blk_tag != TAG_USED)) {
-		WD_ERR("Free block fail!\n");
+		WD_ERR("free block fail!\n");
 		return;
 	}
 
@@ -395,7 +395,7 @@ int wd_get_free_blk_num(void *pool, __u32 *free_num)
 	struct wd_blkpool *p = pool;
 
 	if (!p || !free_num) {
-		WD_ERR("get_free_blk_num err, param err!\n");
+		WD_ERR("get_free_blk_num err, parameter err!\n");
 		return -WD_EINVAL;
 	}
 

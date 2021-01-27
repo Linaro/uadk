@@ -88,7 +88,7 @@ static int create_ctx_param_check(struct wd_queue *q,
 				  struct wcrypto_dh_ctx_setup *setup)
 {
 	if (!q || !setup) {
-		WD_ERR("%s(): input param err!\n", __func__);
+		WD_ERR("%s(): input parameter err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
@@ -209,7 +209,7 @@ int wcrypto_set_dh_g(void *ctx, struct wd_dtb *g)
 	struct wcrypto_dh_ctx *cx = ctx;
 
 	if (!cx || !g) {
-		WD_ERR("param NULL!\n");
+		WD_ERR("parameter NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -230,7 +230,7 @@ int wcrypto_set_dh_g(void *ctx, struct wd_dtb *g)
 void wcrypto_get_dh_g(void *ctx, struct wd_dtb **g)
 {
 	if (!ctx || !g) {
-		WD_ERR("param NULL!\n");
+		WD_ERR("parameter NULL!\n");
 		return;
 	}
 
@@ -268,7 +268,7 @@ static int do_dh_param_check(void *ctx, struct wcrypto_dh_op_data *opdata, void 
 	struct wcrypto_dh_ctx *ctxt = ctx;
 
 	if (unlikely(!ctx || !opdata)) {
-		WD_ERR("input param err!\n");
+		WD_ERR("input parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -331,7 +331,7 @@ recv_again:
 	if (!ret) {
 		rx_cnt++;
 		if (unlikely(rx_cnt >= DH_RECV_MAX_CNT)) {
-			WD_ERR("failed to recv: timeout!\n");
+			WD_ERR("failed to receive: timeout!\n");
 			return -WD_ETIMEDOUT;
 		} else if (balance > DH_BALANCE_THRHD) {
 			usleep(1);
@@ -371,7 +371,7 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num)
 		if (ret == 0)
 			break;
 		else if (unlikely(ret < 0)) {
-			WD_ERR("recv err at dh poll!\n");
+			WD_ERR("receive err at dh poll!\n");
 			return ret;
 		}
 
@@ -393,7 +393,7 @@ void wcrypto_del_dh_ctx(void *ctx)
 	struct q_info *qinfo;
 
 	if (!ctx) {
-		WD_ERR("Delete dh param err!\n");
+		WD_ERR("delete dh parameter err!\n");
 		return;
 	}
 
@@ -404,7 +404,7 @@ void wcrypto_del_dh_ctx(void *ctx)
 	wd_spinlock(&qinfo->qlock);
 	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("error:repeat del dh ctx!\n");
+		WD_ERR("error: repeat del dh ctx!\n");
 		return;
 	}
 	wd_free_ctx_id(cx->q, cx->ctx_id);
