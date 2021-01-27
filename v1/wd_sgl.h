@@ -29,7 +29,7 @@ struct wd_sglpool_setup {
 	__u32 buf_size;
 	/* Fixed SGE number in the SGL of the pool */
 	__u8 sge_num_in_sgl;
-	/* Initiated buf number in the SGL of the pool, changable */
+	/* Initiated buf number in the SGL of the pool, changeable */
 	__u8 buf_num_in_sgl;
 	/* Total number of sgl for entries and buffers */
 	__u16 sgl_num;

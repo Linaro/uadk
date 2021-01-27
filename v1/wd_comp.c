@@ -123,7 +123,7 @@ static int init_comp_ctx(struct wcrypto_comp_ctx *ctx, int ctx_id,
 		cache_num = 1;
 		ctx->ctx_buf = setup->br.alloc(setup->br.usr, MAX_CTX_RSV_SIZE);
 		if (!ctx->ctx_buf) {
-			WD_ERR("err: fail to alloc comp ctx buffer!\n");
+			WD_ERR("err: fail to alloc compress ctx buffer!\n");
 			return -WD_ENOMEM;
 		}
 	}
@@ -148,9 +148,9 @@ static int init_comp_ctx(struct wcrypto_comp_ctx *ctx, int ctx_id,
 }
 
 /**
- * wcrypto_create_comp_ctx()- create a compress context on the wrapdrive queue.
- * @q: wrapdrive queue, need requested by user.
- * @setup:setup data of user
+ * wcrypto_create_comp_ctx()- create a compress context on the warpdrive queue.
+ * @q: warpdrive queue, need requested by user.
+ * @setup: setup data of user
  */
 void *wcrypto_create_comp_ctx(struct wd_queue *q,
 			      struct wcrypto_comp_ctx_setup *setup)
@@ -160,7 +160,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	int ctx_id, ret;
 
 	if (!q || !setup) {
-		WD_ERR("err, input param invalid!\n");
+		WD_ERR("err, input parameter invalid!\n");
 		return NULL;
 	}
 
@@ -168,7 +168,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	    strncmp(q->capa.alg, "gzip", strlen("gzip")) &&
 	    strncmp(q->capa.alg, "deflate", strlen("deflate")) &&
 	    strncmp(q->capa.alg, "lz77_zstd", strlen("lz77_zstd"))) {
-		WD_ERR("alg mismatching!\n");
+		WD_ERR("algorithm mismatch!\n");
 		return NULL;
 	}
 
@@ -180,13 +180,13 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	ret = set_comp_ctx_br(qinfo, &setup->br);
 	if (ret) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("err: fail to set comp ctx br!\n");
+		WD_ERR("err: fail to set compress ctx br!\n");
 		return NULL;
 	}
 
 	if (qinfo->ctx_num >= WD_COMP_MAX_CTX) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("err:create too many comp ctx!\n");
+		WD_ERR("err: create too many compress ctx!\n");
 		return NULL;
 	}
 
@@ -201,14 +201,14 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
-		WD_ERR("alloc ctx  fail!\n");
+		WD_ERR("alloc ctx fail!\n");
 		goto free_ctx_id;
 	}
 
 	ctx->q = q;
 	ret = init_comp_ctx(ctx, ctx_id, setup);
 	if (ret) {
-		WD_ERR("err: fail to init comp ctx!\n");
+		WD_ERR("err: fail to init compress ctx!\n");
 		goto free_ctx_buf;
 	}
 
@@ -239,7 +239,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	int ret;
 
 	if (!ctx || !opdata) {
-		WD_ERR("input param err!\n");
+		WD_ERR("input parameter err!\n");
 		return -EINVAL;
 	}
 
@@ -311,7 +311,7 @@ int wcrypto_comp_poll(struct wd_queue *q, unsigned int num)
 	int ret;
 
 	if (!q) {
-		WD_ERR("%s(): input param err!\n", __func__);
+		WD_ERR("%s(): input parameter err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
@@ -352,7 +352,7 @@ void wcrypto_del_comp_ctx(void *ctx)
 	struct wd_mm_br *br;
 
 	if (!cctx) {
-		WD_ERR("delete comp ctx is NULL!\n");
+		WD_ERR("delete compress ctx is NULL!\n");
 		return;
 	}
 
@@ -368,7 +368,7 @@ void wcrypto_del_comp_ctx(void *ctx)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	} else if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("error:repeat del comp ctx!\n");
+		WD_ERR("error: repeat delete compress ctx!\n");
 		return;
 	}
 	wd_unspinlock(&qinfo->qlock);

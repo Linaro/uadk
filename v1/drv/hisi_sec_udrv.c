@@ -479,7 +479,7 @@ static int fill_cipher_bd2_addr(struct wd_queue *q,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Get msg out dma address fail!\n");
+		WD_ERR("Get message out dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -499,7 +499,7 @@ static int fill_cipher_bd2_addr(struct wd_queue *q,
 	} else {
 		phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 		if (unlikely(!phy)) {
-			WD_ERR("Get msg in dma address fail!\n");
+			WD_ERR("Get message in dma address fail!\n");
 			goto map_in_error;
 		}
 	}
@@ -666,14 +666,14 @@ static int fill_cipher_bd3_area(struct wd_queue *q,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Fail to get msg in dma address.\n");
+		WD_ERR("Fail to get message in dma address.\n");
 		return -WD_ENOMEM;
 	}
 	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->data_src_addr_h = HI_U32(phy);
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Fail to get msg out dma address.\n");
+		WD_ERR("Fail to get message out dma address.\n");
 		goto map_out_error;
 	}
 	sqe->data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -1154,7 +1154,7 @@ static int fill_digest_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Get msg in dma address fail!\n");
+		WD_ERR("Get message in dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -1163,7 +1163,7 @@ static int fill_digest_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	ret = map_addr(q, msg->out, msg->out_bytes, &sqe->type2.mac_addr_l,
 			    &sqe->type2.mac_addr_h, msg->data_fmt);
 	if (unlikely(ret)) {
-		WD_ERR("Get msg out dma address fail!\n");
+		WD_ERR("Get message out dma address fail!\n");
 		goto map_out_error;
 	}
 
@@ -1326,7 +1326,7 @@ static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Get msg in dma address fail!\n");
+		WD_ERR("Get message in dma address fail!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -1334,7 +1334,7 @@ static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("Get msg out dma address fail!\n");
+		WD_ERR("Get message out dma address fail!\n");
 		goto map_out_error;
 	}
 	sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -1855,13 +1855,13 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 	if (likely(msg->in_bytes)) {
 		phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 		if (unlikely(!phy)) {
-			WD_ERR("fail to get msg in dma address!\n");
+			WD_ERR("fail to get message in dma address!\n");
 			return -WD_ENOMEM;
 		}
 		sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 		sqe->data_src_addr_h = HI_U32(phy);
 
-		/* AEAD input MAC addr use in addr */
+		/* AEAD input MAC address use in address */
 		if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
 			phy = phy + msg->assoc_bytes + msg->in_bytes;
 			sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -1871,13 +1871,13 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 
 	phy = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy)) {
-		WD_ERR("fail to get msg out dma address!\n");
+		WD_ERR("fail to get message out dma address!\n");
 		goto map_out_error;
 	}
 	sqe->data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
 	sqe->data_dst_addr_h = HI_U32(phy);
 
-	/* AEAD output MAC addr use out addr */
+	/* AEAD output MAC address use out address */
 	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
 		phy = phy + msg->out_bytes - msg->auth_bytes;
 		sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
@@ -2303,16 +2303,16 @@ static int fill_aead_bd2_addr_src(struct wd_queue *q,
 
 	phy1 = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy1)) {
-		WD_ERR("fail to get msg in dma address!\n");
+		WD_ERR("fail to get message in dma address!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.data_src_addr_l = (__u32)(phy1 & QM_L32BITS_MASK);
 	sqe->type2.data_src_addr_h = HI_U32(phy1);
 
-	/* AEAD input MAC addr use in addr */
+	/* AEAD input MAC address use in address */
 	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
 		if (msg->data_fmt == WD_SGL_BUF) {
-			/* if 'msg->in' uses sgl, we should get its 'buf' addr */
+			/* if 'msg->in' uses sgl, we should get its 'buf' address */
 			p = drv_get_sgl_pri((struct wd_sgl *)msg->in);
 			phy2 = ((struct hisi_sgl *)p)->sge_entries[0].buf;
 			if (unlikely(!phy2)) {
@@ -2340,15 +2340,15 @@ static int fill_aead_bd2_addr_dst(struct wd_queue *q,
 
 	phy1 = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy1)) {
-		WD_ERR("fail to get msg out dma address!\n");
+		WD_ERR("fail to get message out dma address!\n");
 		return -WD_ENOMEM;
 	}
 	sqe->type2.data_dst_addr_l = (__u32)(phy1 & QM_L32BITS_MASK);
 	sqe->type2.data_dst_addr_h = HI_U32(phy1);
 
-	/* AEAD output MAC addr use out addr */
+	/* AEAD output MAC address use out address */
 	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
-		/* if 'msg->out' uses sgl, we should get its 'buf' addr */
+		/* if 'msg->out' uses sgl, we should get its 'buf' address */
 		if (msg->data_fmt == WD_SGL_BUF) {
 			p = drv_get_sgl_pri((struct wd_sgl *)msg->out);
 			phy2 = ((struct hisi_sgl *)p)->sge_entries[0].buf;
