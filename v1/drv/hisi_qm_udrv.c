@@ -644,6 +644,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 	if (unlikely(wd_reg_read(info->ds_rx_base) == 1)) {
 		wd_spinlock(&info->rc_lock);
 		qm_rx_from_cache(info, resp, num);
+		WD_ERR("wd queue hw error happened before qm receive!\n");
 		wd_unspinlock(&info->rc_lock);
 		return -WD_HW_EACCESS;
 	}
@@ -690,7 +691,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 
 	wd_unspinlock(&info->rc_lock);
 	if (wd_reg_read(info->ds_rx_base) == 1) {
-		WD_ERR("wd queue hw error happened in qm receive!\n");
+		WD_ERR("wd queue hw error happened after qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
 
