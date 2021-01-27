@@ -460,7 +460,7 @@ void wcrypto_del_digest_ctx(void *ctx)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("error:repeat del digest ctx!\n");
+		WD_ERR("error: repeat del digest ctx!\n");
 		return;
 	}
 	wd_unspinlock(&qinfo->qlock);

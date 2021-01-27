@@ -109,7 +109,6 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 	},
 };
 
-/* todo: there should be some stable way to match the device and the driver */
 #define MAX_HW_TYPE (sizeof(hw_dio_tbl) / sizeof(hw_dio_tbl[0]))
 
 int drv_open(struct wd_queue *q)
@@ -117,7 +116,7 @@ int drv_open(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	int i;
 
-	/* todo: try to find another dev if the user driver is not available */
+	/* try to find another device if the user driver is not available */
 	for (i = 0; i < MAX_HW_TYPE; i++) {
 		if (!strcmp(qinfo->hw_type,
 			hw_dio_tbl[i].hw_type)) {
@@ -189,7 +188,7 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	void *ptr = NULL;
 	int ret = 1;
 
-	/* Make sure mmap granularity size align */
+	/* Make sure memory map granularity size align */
 	if (!qinfo->iommu_type)
 		size = ALIGN(size, WD_UACCE_GRAN_SIZE);
 

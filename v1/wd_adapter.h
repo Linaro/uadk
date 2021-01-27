@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* the common drv header define the unified interface for wd */
+/* the common driver header define the unified interface for wd */
 #ifndef __WD_ADAPTER_H__
 #define __WD_ADAPTER_H__
 
@@ -42,16 +42,16 @@ struct hw_sgl_info {
 struct wd_drv_dio_if {
 	/* vendor tag which is used to select right vendor driver */
 	char *hw_type;
-	/* user space WD queue initiation */
+	/* user space WD queue initialize */
 	int (*open)(struct wd_queue *q);
-	/* user space WD queue uninitiated */
+	/* user space WD queue uninitialize */
 	void (*close)(struct wd_queue *q);
 	/* Send WCRYPTO message to WD queue */
 	int (*send)(struct wd_queue *q, void **req, __u32 num);
-	/* Receive WCRYPTO msg from WD queue */
+	/* Receive WCRYPTO message from WD queue */
 	int (*recv)(struct wd_queue *q, void **req, __u32 num);
 
-	/* Get hardware sgl infomation from WD queue */
+	/* Get hardware sgl information from WD queue */
 	int (*get_sgl_info)(struct wd_queue *q, struct hw_sgl_info *info);
 	/* Initialize hardware sgl from WD queue */
 	int (*init_sgl)(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
