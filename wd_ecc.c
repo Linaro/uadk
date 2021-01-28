@@ -441,7 +441,7 @@ static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
 	struct wd_ecc_in *in;
 	__u64 len;
 
-	if (!ksz || ksz > ECC_MAX_KEY_SIZE) {
+	if (ksz != SM2_KEY_SIZE) {
 		WD_ERR("sess key size %u error!\n", ksz);
 		return NULL;
 	}
@@ -482,7 +482,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 	struct wd_ecc_in *in;
 	__u64 len;
 
-	if (!ksz || ksz > ECC_MAX_KEY_SIZE) {
+	if (ksz != SM2_KEY_SIZE) {
 		WD_ERR("sess key size %u error!\n", sess->key_size);
 		return NULL;
 	}
@@ -519,7 +519,7 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 	__u32 h_byts;
 	void *start;
 
-	if (unlikely(!ksz || ksz > ECC_MAX_KEY_SIZE)) {
+	if (unlikely(ksz != SM2_KEY_SIZE)) {
 		WD_ERR("sess key size %u error!\n", ksz);
 		return NULL;
 	}
@@ -1000,6 +1000,15 @@ static void del_sess_key(struct wd_ecc_sess *sess)
 		free(sess->key.pubkey->data);
 		free(sess->key.pubkey);
 		sess->key.pubkey = NULL;
+	}
+
+	if (sess->key.cv)
+		free(sess->key.cv);
+	if (sess->key.pub)
+		free(sess->key.pub);
+	if (sess->key.d) {
+		wd_memset_zero(sess->key.d + 1, sess->key_size);
+		free(sess->key.d);
 	}
 }
 
@@ -1552,7 +1561,8 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	__u8 temp;
 	int ret;
 
-	if (id && BYTES_TO_BITS(id->dsize) > UINT16_MAX) {
+	if (id && (!BYTES_TO_BITS(id->dsize) ||
+		   BYTES_TO_BITS(id->dsize) > UINT16_MAX)) {
 		WD_ERR("id lens = %u error!\n", id->dsize);
 		return -WD_EINVAL;
 	}
@@ -1730,7 +1740,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 	__u64 len;
 	__u32 hsz;
 
-	if (!sess->key_size || sess->key_size > ECC_MAX_KEY_SIZE) {
+	if (sess->key_size != SM2_KEY_SIZE) {
 		WD_ERR("sess key size %u error!\n", sess->key_size);
 		return NULL;
 	}
@@ -1905,19 +1915,19 @@ void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
 
 struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
 				    struct wd_dtb *k,
-				    struct wd_dtb *m)
+				    struct wd_dtb *plaintext)
 {
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 	struct wd_sm2_enc_in *ein;
 	struct wd_ecc_in *ecc_in;
 	int ret;
 
-	if (!sess_t || !m) {
+	if (!sess_t || !plaintext) {
 		WD_ERR("new sm2 enc in param error!\n");
 		return NULL;
 	}
 
-	ecc_in = create_sm2_enc_in(sess_t, m->dsize);
+	ecc_in = create_sm2_enc_in(sess_t, plaintext->dsize);
 	if (!ecc_in) {
 		WD_ERR("failed to create sm2 enc in!\n");
 		return NULL;
@@ -1939,7 +1949,7 @@ struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
 			goto fail_set_param;
 	}
 
-	ret = set_param_single(&ein->plaintext, m, "ein m");
+	ret = set_param_single(&ein->plaintext, plaintext, "ein plaintext");
 	if (ret)
 		goto fail_set_param;
 
@@ -2029,12 +2039,12 @@ struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess, __u32 plaintext_len)
 	struct wd_ecc_out *ecc_out;
 	__u64 len;
 
-	if (!sess) {
+	if (!sess || !plaintext_len) {
 		WD_ERR("new ecc sout sess NULL!\n");
 		return NULL;
 	}
 
-	if (!sess_t->key_size || sess_t->key_size > ECC_MAX_KEY_SIZE) {
+	if (sess_t->key_size != SM2_KEY_SIZE) {
 		WD_ERR("sess key size %u error!\n", sess_t->key_size);
 		return NULL;
 	}
