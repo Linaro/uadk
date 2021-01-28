@@ -2203,10 +2203,6 @@ static int fill_aead_bd2_alg(struct wcrypto_aead_msg *msg,
 	__u8 c_key_len = 0;
 
 	switch (msg->calg) {
-	case WCRYPTO_CIPHER_SM4:
-		sqe->type2.c_alg = C_ALG_SM4;
-		sqe->type2.c_key_len = CKEY_LEN_SM4;
-		break;
 	case WCRYPTO_CIPHER_AES:
 		sqe->type2.c_alg = C_ALG_AES;
 		if (msg->ckey_bytes == AES_KEYSIZE_128)
