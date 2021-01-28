@@ -3146,8 +3146,8 @@ static void *sva_poll_func(void *arg)
 	return NULL;
 }
 
-static int sva_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
-	struct wd_cipher_sess_setup *setups, thread_data_t *tds)
+static int sva_async_create_threads(int thread_num,
+				    thread_data_t *tds)
 {
 	int thread_id = (int)syscall(__NR_gettid);
 	struct timeval start_tval, cur_tval;
@@ -3165,11 +3165,8 @@ static int sva_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	gettimeofday(&start_tval, NULL);
 	for (i = 0; i < thread_num; i++) {
-		thr_data[i].tid = i;
-		thr_data[i].req = &reqs[i];
-		thr_data[i].setup = &setups[i];
-		thr_data[i].bd_pool = tds[i].bd_pool;
-		ret = pthread_create(&system_test_thrds[i], &attr, sva_sec_cipher_async, &thr_data[i]);
+		ret = pthread_create(&system_test_thrds[i], &attr,
+				     sva_sec_cipher_async, &tds[i]);
 		if (ret) {
 			SEC_TST_PRT("Failed to create thread, ret:%d\n", ret);
 			return ret;
@@ -3248,8 +3245,7 @@ out:
 	return NULL;
 }
 
-static int sva_sync_create_threads(int thread_num, struct wd_cipher_req *reqs,
-	struct wd_cipher_sess_setup *setups, thread_data_t *tds)
+static int sva_sync_create_threads(int thread_num, thread_data_t *tds)
 {
 	int thread_id = (int)syscall(__NR_gettid);
 	struct timeval start_tval, cur_tval;
@@ -3267,19 +3263,14 @@ static int sva_sync_create_threads(int thread_num, struct wd_cipher_req *reqs,
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	gettimeofday(&start_tval, NULL);
 	for (i = 0; i < thread_num; i++) {
-		thr_data[i].tid = i;
-		thr_data[i].req = &reqs[i];
-		thr_data[i].setup = &setups[i];
-		thr_data[i].bd_pool = tds[i].bd_pool;
 		ret = pthread_create(&system_test_thrds[i], &attr,
-			sva_sec_cipher_sync, &thr_data[i]);
+				     sva_sec_cipher_sync, &tds[i]);
 		if (ret) {
 			SEC_TST_PRT("Failed to create thread, ret:%d\n", ret);
 			return ret;
 		}
 	}
 
-	thr_data[i].tid = i;
 	pthread_attr_destroy(&attr);
 	for (i = 0; i < thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
@@ -3384,12 +3375,16 @@ static int sec_sva_test(void)
 		}
 		req[i].cb = async_cb;
 		req[i].cb_param = &datas[i];
+
+		datas[i].tid = i;
+		datas[i].req = &req[i];
+		datas[i].setup = &setup[i];
 	}
 
 	if (g_syncmode == 0)
-		ret = sva_sync_create_threads(threads, req, setup, datas);
+		ret = sva_sync_create_threads(threads, datas);
 	else
-		ret = sva_async_create_threads(threads, req, setup, datas);
+		ret = sva_async_create_threads(threads, datas);
 	if (ret < 0)
 		goto out_config;
 
