@@ -29,14 +29,15 @@ extern wd_log log_out;
 	fprintf(stderr, format, ##args))
 #else
 extern FILE *flog_fd;
-#define WD_ERR(format, args...)				\
+#define WD_ERR(format, args...)	do {			\
 	if (!flog_fd)					\
 		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
 	if (flog_fd)					\
 		fprintf(flog_fd, format, ##args);	\
 	else						\
 		fprintf(stderr, "log %s not exists!",	\
-			WITH_LOG_FILE);
+			WITH_LOG_FILE);			\
+} while (0)
 #endif
 #endif
 
