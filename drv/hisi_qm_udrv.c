@@ -35,7 +35,7 @@ struct hisi_qm_type {
 	__u16	qm_ver;
 	int	qm_db_offs;
 	int	(*hacc_db)(struct hisi_qm_queue_info *q, __u8 cmd,
-			   __u16 index, __u8 prority);
+			   __u16 idx, __u8 prority);
 };
 
 struct cqe {
@@ -93,28 +93,28 @@ struct hisi_sgl_pool {
 };
 
 static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
-		      __u16 index, __u8 priority)
+		      __u16 idx, __u8 priority)
 {
 	void *base = q->db_base;
 	__u16 sqn = q->sqn;
-	__u64 doorbell = 0;
+	__u64 doorbell;
 
 	doorbell = (__u64)sqn | ((__u64)cmd << 16);
-	doorbell |= ((__u64)index | ((__u64)priority << 16)) << 32;
+	doorbell |= ((__u64)idx | ((__u64)priority << 16)) << 32;
 	wd_iowrite64(base, doorbell);
 
 	return 0;
 }
 
 static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
-		      __u16 index, __u8 priority)
+		      __u16 idx, __u8 priority)
 {
 	__u16 sqn = q->sqn & 0x3ff;
 	void *base = q->db_base;
-	__u64 doorbell = 0;
+	__u64 doorbell;
 
 	doorbell = (__u64)sqn | ((__u64)(cmd & 0xf) << 12);
-	doorbell |= ((__u64)index | ((__u64)priority << 16)) << 32;
+	doorbell |= ((__u64)idx | ((__u64)priority << 16)) << 32;
 	wd_iowrite64(base, doorbell);
 
 	return 0;
@@ -137,15 +137,17 @@ static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info,
 {
 	int sqe_size = info->sqe_size;
 	void *sq_base = info->sq_base;
-	int sqe_offset;
+	int idx;
 
 	if (tail + num < QM_Q_DEPTH) {
-		memcpy(sq_base + tail * sqe_size, sqe, sqe_size * num);
+		memcpy((void *)((uintptr_t)sq_base + tail * sqe_size),
+			sqe, sqe_size * num);
 	} else {
-		sqe_offset = QM_Q_DEPTH - tail;
-		memcpy(sq_base + tail * sqe_size, sqe, sqe_size * sqe_offset);
-		memcpy(sq_base, sqe + sqe_size * sqe_offset, sqe_size *
-		       (num - sqe_offset));
+		idx = QM_Q_DEPTH - tail;
+		memcpy((void *)((uintptr_t)sq_base + tail * sqe_size),
+			sqe, sqe_size * idx);
+		memcpy(sq_base, (void *)((uintptr_t)sqe + sqe_size * idx),
+			sqe_size * (num - idx));
 	}
 }
 
@@ -359,14 +361,15 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 
 	ret = wd_ctx_start(qp->h_ctx);
 	if (ret)
-		goto out_qp;
+		goto free_pool;
 
 	wd_ctx_set_priv(qp->h_ctx, qp);
 
 	return (handle_t)qp;
 
-out_qp:
+free_pool:
 	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+out_qp:
 	free(qp);
 out:
 	return (handle_t)NULL;
@@ -382,7 +385,8 @@ void hisi_qm_free_qp(handle_t h_qp)
 
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+	if (qp->h_sgl_pool)
+		hisi_qm_destroy_sglpool(qp->h_sgl_pool);
 
 	free(qp);
 }
@@ -442,8 +446,8 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 			errno = -WD_EIO;
 			return -WD_EIO;
 		}
-		memcpy(resp, (void *)q_info->sq_base + j * q_info->sqe_size,
-		       q_info->sqe_size);
+		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
+			j * q_info->sqe_size), q_info->sqe_size);
 	} else {
 		return -WD_EAGAIN;
 	}
@@ -473,11 +477,13 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	struct hisi_qp *qp = (struct hisi_qp*)h_qp;
 	struct hisi_qm_queue_info *q_info;
 	int recv_num = 0;
-	int i, offset;
-	int ret = 0;
+	int i, ret, offset;
 
 	if (!resp || !qp || !count)
 		return -WD_EINVAL;
+
+	if (!expect)
+		return 0;
 
 	q_info = &qp->q_info;
 	if (wd_ioread32(q_info->ds_rx_base) == 1) {
@@ -588,19 +594,21 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool*)sgl_pool;
 	int i;
 
-	if (pool) {
-		if (pool->sgl) {
-			for (i = 0; i < pool->sgl_num; i++)
-				if (pool->sgl[i])
-					free(pool->sgl[i]);
-
-			free(pool->sgl);
-		}
-
-		if (pool->sgl_align)
-			free(pool->sgl_align);
-		free(pool);
+	if (!pool) {
+		WD_ERR("sgl_pool is NULL\n");
+		return;
 	}
+	if (pool->sgl) {
+		for (i = 0; i < pool->sgl_num; i++)
+			if (pool->sgl[i])
+				free(pool->sgl[i]);
+
+		free(pool->sgl);
+	}
+
+	if (pool->sgl_align)
+		free(pool->sgl_align);
+	free(pool);
 }
 
 static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
@@ -802,7 +810,7 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
 	}
 
 	/* find the start sge position and start offset */
-	for (i = 0; i < tmp->entry_sum_in_sgl; i++)	{
+	for (i = 0; i < tmp->entry_sum_in_sgl; i++) {
 		if (len + tmp->sge_entries[i].len > offset) {
 			begin_sge = i;
 			sge_offset = offset - len;
