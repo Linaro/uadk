@@ -427,27 +427,26 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	pthread_spin_lock(&ctx->lock);
 	do {
-		pthread_spin_lock(&ctx->lock);
 		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
-		if (ret == -WD_EAGAIN) {
-			pthread_spin_unlock(&ctx->lock);
-			break;
-		} else if (ret < 0) {
+		if (ret == -WD_EAGAIN)
+			goto out;
+		else if (ret < 0) {
 			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
 					   recv_msg.tag);
-			return ret;
+			goto out;
 		}
-		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_rsa_setting.pool, idx,
 					  recv_msg.tag);
 		if (!msg) {
 			WD_ERR("get msg from pool is NULL!\n");
-			break;
+			ret = -WD_EINVAL;
+			goto out;
 		}
 
 		msg->req.dst_bytes = recv_msg.req.dst_bytes;
@@ -458,7 +457,8 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	} while (--expt);
 
 	*count = rcv_cnt;
-
+out:
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 

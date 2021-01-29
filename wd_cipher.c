@@ -345,9 +345,8 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd cipher send err!\n");
-		return ret;
+		goto out;
 	}
 
 	do {
@@ -355,19 +354,16 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd cipher recv err!\n");
-			goto recv_err;
+			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("wd cipher recv timeout fail!\n");
 				ret = -WD_ETIMEDOUT;
-				goto recv_err;
+				goto out;
 			}
 		}
 	} while (ret < 0);
-	pthread_spin_unlock(&ctx->lock);
-
-	return 0;
-recv_err:
+out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
@@ -415,12 +411,14 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = idx;
 
+	pthread_spin_lock(&ctx->lock);
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, msg);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, index, msg->tag);
 	}
+	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 }
@@ -439,20 +437,22 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 		return -WD_EINVAL;
 	}
 
+	pthread_spin_lock(&ctx->lock);
 	do {
 		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN)
-			return ret;
+			goto out;
 		else if (ret < 0) {
 			WD_ERR("wd cipher recv hw err!\n");
-			return ret;
+			goto out;
 		}
 		recv_count++;
 		msg = wd_find_msg_in_pool(&wd_cipher_setting.pool, index,
 					  resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
-			return -WD_EINVAL;
+			ret = -WD_EINVAL;
+			goto out;
 		}
 
 		msg->tag = resp_msg.tag;
@@ -465,7 +465,8 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count)
 				   resp_msg.tag);
 		*count = recv_count;
 	} while (expt > *count);
-
+out:
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 

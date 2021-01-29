@@ -497,8 +497,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("failed to send aead bd!\n");
-		pthread_spin_unlock(&ctx->lock);
-		return ret;
+		goto out;
 	}
 
 	do {
@@ -506,21 +505,16 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
-			goto recv_err;
+			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
 				ret = -WD_ETIMEDOUT;
-				goto recv_err;
+				goto out;
 			}
 		}
 	} while (ret < 0);
-	pthread_spin_unlock(&ctx->lock);
-	free(msg.aiv);
-
-	return 0;
-
-recv_err:
+out:
 	pthread_spin_unlock(&ctx->lock);
 	free(msg.aiv);
 	return ret;
@@ -574,6 +568,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	memset(msg->aiv, 0, req->iv_bytes);
 	msg->tag = idx;
 
+	pthread_spin_lock(&ctx->lock);
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
@@ -581,6 +576,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		wd_put_msg_to_pool(&wd_aead_setting.pool, index, msg->tag);
 		free(msg->aiv);
 	}
+	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 }
@@ -599,13 +595,14 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	pthread_spin_lock(&ctx->lock);
 	do {
 		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &resp_msg);
-		if (ret == -WD_EAGAIN) {
-			break;
-		} else if (ret < 0) {
+		if (ret == -WD_EAGAIN)
+			goto out;
+		else if (ret < 0) {
 			WD_ERR("wd aead recv hw err!\n");
-			break;
+			goto out;
 		}
 
 		expt--;
@@ -614,7 +611,8 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 					    index, resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
-			break;
+			ret = -WD_EINVAL;
+			goto out;
 		}
 
 		msg->tag = resp_msg.tag;
@@ -626,7 +624,8 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		free(msg->aiv);
 	} while (expt > 0);
 	*count = recv_count;
-
+out:
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 

@@ -288,9 +288,8 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("failed to send bd!\n");
-		return ret;
+		goto out;
 	}
 
 	do {
@@ -298,21 +297,16 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
-			goto recv_err;
+			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
 				ret = -WD_ETIMEDOUT;
-				goto recv_err;
+				goto out;
 			}
 		}
 	} while (ret < 0);
-
-	pthread_spin_unlock(&ctx->lock);
-
-	return 0;
-
-recv_err:
+out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
@@ -355,14 +349,16 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = idx;
 
+	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (ret < 0) {
 		WD_ERR("failed to send BD, hw is err!\n");
 		wd_put_msg_to_pool(&wd_digest_setting.pool, index, msg->tag);
-		return ret;
+		goto out;
 	}
-
-	return 0;
+out:
+	pthread_spin_unlock(&ctx->lock);
+	return ret;
 }
 
 int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
@@ -379,14 +375,15 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	pthread_spin_lock(&ctx->lock);
 	do {
 		ret = wd_digest_setting.driver->digest_recv(ctx->ctx,
 							    &recv_msg);
 		if (ret == -WD_EAGAIN) {
-			break;
+			goto out;
 		} else if (ret < 0) {
 			WD_ERR("wd recv err!\n");
-			break;
+			goto out;
 		}
 
 		expt--;
@@ -396,7 +393,8 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 					  recv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
-			break;
+			ret = -WD_EINVAL;
+			goto out;
 		}
 
 		msg->req.state = recv_msg.result;
@@ -408,7 +406,8 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 				   recv_msg.tag);
 	} while (expt > 0);
 	*count = recv_cnt;
-
+out:
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 
