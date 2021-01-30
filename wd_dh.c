@@ -69,7 +69,7 @@ static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_dh_init() could only be invoked once for one process. */
 	if (wd_dh_setting.config.ctx_num) {
-		WD_ERR("init dh error: repeat init dh\n");
+		WD_ERR("init dh error: repeat initialize dh\n");
 		return -WD_EINVAL;
 	}
 
@@ -96,13 +96,13 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret) {
-		WD_ERR("failed to wd init ctx config, ret = %d\n", ret);
+		WD_ERR("failed to wd initialize ctx config, ret = %d\n", ret);
 		return ret;
 	}
 
 	ret = wd_init_sched(&wd_dh_setting.sched, sched);
 	if (ret) {
-		WD_ERR("failed to wd init sched, ret = %d\n", ret);
+		WD_ERR("failed to wd initialize sched, ret = %d\n", ret);
 		goto out;
 	}
 
@@ -110,16 +110,16 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_dh_set_static_drv();
 #endif
 
-	/* init async request pool */
+	/* initialize async request pool */
 	ret = wd_init_async_request_pool(&wd_dh_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_dh_msg));
 	if (ret) {
-		WD_ERR("failed to init async req pool, ret = %d!\n", ret);
+		WD_ERR("failed to initialize async req pool, ret = %d!\n", ret);
 		goto out_sched;
 	}
 
-	/* init ctx related resources in specific driver */
+	/* initialize ctx related resources in specific driver */
 	priv = malloc(wd_dh_setting.driver->drv_ctx_size);
 	if (!priv) {
 		WD_ERR("failed to calloc drv ctx\n");

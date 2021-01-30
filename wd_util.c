@@ -29,7 +29,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	int i;
 
 	if (!cfg->ctx_num) {
-		WD_ERR("invalid params, ctx_num is 0!\n");
+		WD_ERR("invalid parameters, ctx_num is 0!\n");
 		return -WD_EINVAL;
 	}
 
@@ -39,7 +39,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
-			WD_ERR("invalid params, ctx is NULL!\n");
+			WD_ERR("invalid parameters, ctx is NULL!\n");
 			free(ctxs);
 			return -WD_EINVAL;
 		}
@@ -175,7 +175,7 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag)
 
 	/* tag value start from 1 */
 	if (tag == 0 || tag > msg_num) {
-		WD_ERR("invalid msg cache tag(%d)\n", tag);
+		WD_ERR("invalid message cache tag(%d)\n", tag);
 		return NULL;
 	}
 
@@ -214,7 +214,7 @@ void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int index, __u32 tag)
 
 	/* tag value start from 1 */
 	if (!tag || tag > msg_num) {
-		WD_ERR("invalid msg cache idx(%d)\n", tag);
+		WD_ERR("invalid message cache idx(%d)\n", tag);
 		return;
 	}
 
