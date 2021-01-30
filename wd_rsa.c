@@ -9,7 +9,6 @@
 
 #include "config.h"
 #include "include/drv/wd_rsa_drv.h"
-#include "wd_rsa.h"
 #include "wd_util.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
@@ -501,7 +500,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 	int kg_in_size;
 
-	if (!sess || !c || !e || !p || !q) {
+	if (!c || !e || !p || !q) {
 		WD_ERR("sess malloc kg_in memory fail!\n");
 		return NULL;
 	}
@@ -511,15 +510,15 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 		return NULL;
 	}
 
-	if (e->dsize > c->key_size) {
+	if (!e->dsize || e->dsize > c->key_size) {
 		WD_ERR("e para err at create kg in!\n");
 		return NULL;
 	}
-	if (p->dsize > CRT_PARAM_SZ(c->key_size)) {
+	if (!p->dsize || p->dsize > CRT_PARAM_SZ(c->key_size)) {
 		WD_ERR("p para err at create kg in!\n");
 		return NULL;
 	}
-	if (q->dsize > CRT_PARAM_SZ(c->key_size)) {
+	if (!q->dsize || q->dsize > CRT_PARAM_SZ(c->key_size)) {
 		WD_ERR("q para err at create kg in!\n");
 		return NULL;
 	}
@@ -547,7 +546,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 }
 
 void wd_rsa_get_kg_in_params(struct wd_rsa_kg_in *kin, struct wd_dtb *e,
-				      struct wd_dtb *q, struct wd_dtb *p)
+			     struct wd_dtb *q, struct wd_dtb *p)
 {
 	if (!kin || !e || !q || !p) {
 		WD_ERR("para err at get input parameters key generate !\n");
@@ -883,13 +882,13 @@ int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 {
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 
-	if (!sess) {
+	if (!c || !c->pubkey || !c->pubkey->key_size) {
 		WD_ERR("sess NULL in set rsa public key!\n");
 		return -WD_EINVAL;
 	}
 
 	if (e) {
-		if (e->dsize > c->pubkey->key_size || !e->data) {
+		if (!e->dsize || !e->data || e->dsize > c->pubkey->key_size) {
 			WD_ERR("e err in set rsa public key!\n");
 			return -WD_EINVAL;
 		}
@@ -900,7 +899,7 @@ int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 	}
 
 	if (n) {
-		if (n->dsize > c->pubkey->key_size || !n->data) {
+		if (!n->dsize || !n->data || n->dsize > c->pubkey->key_size) {
 			WD_ERR("n err in set rsa public key!\n");
 			return -WD_EINVAL;
 		}
@@ -932,13 +931,13 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 	struct wd_rsa_prikey1 *pkey1;
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 
-	if (!sess || wd_rsa_is_crt(sess)) {
+	if (!c || wd_rsa_is_crt(sess) || !c->prikey) {
 		WD_ERR("sess err in set rsa private key1!\n");
 		return -WD_EINVAL;
 	}
 	pkey1 = &c->prikey->pkey1;
 	if (d) {
-		if (d->dsize > pkey1->key_size || !d->data) {
+		if (!d->dsize || !d->data || d->dsize > pkey1->key_size) {
 			WD_ERR("d err in set rsa private key1!\n");
 			return -WD_EINVAL;
 		}
@@ -948,7 +947,7 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 		memcpy(pkey1->d.data, d->data, d->dsize);
 	}
 	if (n) {
-		if (n->dsize > pkey1->key_size || !n->data) {
+		if (!n->dsize || !n->data || n->dsize > pkey1->key_size) {
 			WD_ERR("en err in set rsa private key1!\n");
 			return -WD_EINVAL;
 		}
