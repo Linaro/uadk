@@ -12,7 +12,7 @@
 #include "wd_util.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
-#define WD_HW_EACCESS 			62
+#define WD_HW_EACCESS			62
 
 #define RSA_BALANCE_THRHD		1280
 #define RSA_RESEND_CNT	8
@@ -35,7 +35,7 @@ struct wd_rsa_prikey1 {
 	void *data[];
 };
 
-/* RSA crt private key */
+/* RSA CRT mode private key */
 struct wd_rsa_prikey2 {
 	struct wd_dtb p;
 	struct wd_dtb q;
@@ -51,7 +51,7 @@ struct wd_rsa_prikey {
 	struct wd_rsa_prikey2 pkey2;
 };
 
-/* RSA CRT prikey param types */
+/* RSA private key parameter types */
 enum wd_rsa_crt_prikey_para {
 	WD_CRT_PRIKEY_DQ,
 	WD_CRT_PRIKEY_DP,
@@ -109,7 +109,7 @@ static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_rsa_init() could only be invoked once for one process. */
 	if (wd_rsa_setting.config.ctx_num) {
-		WD_ERR("init rsa error: repeat init rsa\n");
+		WD_ERR("init rsa error: repeat initialize rsa\n");
 		return -WD_EINVAL;
 	}
 
@@ -155,11 +155,11 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_rsa_msg));
 	if (ret < 0) {
-		WD_ERR("failed to init async req pool, ret = %d!\n", ret);
+		WD_ERR("failed to initialize async req pool, ret = %d!\n", ret);
 		goto out_sched;
 	}
 
-	/* init ctx related resources in specific driver */
+	/* initialize ctx related resources in specific driver */
 	priv = malloc(wd_rsa_setting.driver->drv_ctx_size);
 	if (!priv) {
 		WD_ERR("failed to calloc drv ctx\n");
