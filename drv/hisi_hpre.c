@@ -24,7 +24,7 @@
 #define HPRE_HW_V2_ALG_TYPE	0
 #define HPRE_HW_V3_ECC_ALG_TYPE	1
 
-/* realize with hardware ecc multiplication, avoid confict with wd_ecc.h */
+/* realize with hardware ECC multiplication, avoid conflict with wd_ecc.h */
 #define HPRE_SM2_ENC	0xE
 #define HPRE_SM2_DEC	0xF
 
@@ -70,7 +70,7 @@ enum hpre_alg_type {
 	HPRE_ALG_SM2_DEC = 0x15
 };
 
-/* I think put venodr hw msg as a user interface is not suitable here */
+/* put vendor hardware message as a user interface is not suitable here */
 struct hisi_hpre_sqe {
 	__u32 alg	: 5;
 
@@ -128,12 +128,12 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 	int j;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
-		WD_ERR("%s: trans to hpre bin params err!\n", p_name);
+		WD_ERR("%s: trans to hpre bin parameters err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (b_size < d_size) {
-		WD_ERR("%s: trans to hpre bin param data is too long!\n", p_name);
+		WD_ERR("%s: trans to hpre bin data too long!\n", p_name);
 		return  -WD_EINVAL;
 	}
 
@@ -159,7 +159,7 @@ static int hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
 	int k = 0;
 
 	if (!dst || !src || b_size <= 0) {
-		WD_ERR("%s trans to crypto bin: params err!\n", p_name);
+		WD_ERR("%s trans to crypto bin: parameters err!\n", p_name);
 		return 0;
 	}
 
@@ -843,15 +843,15 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 		return ret;
 
 	/*
-	 * This is a pretreatment of X25519/X448, as described in RFC7748:
+	 * This is a pretreatment of X25519/X448, as described in RFC 7748:
 	 * For X25519, in order to decode 32 random bytes as an integer
 	 * scaler, set the three LSB of the first byte and MSB of the last
 	 * to zero, set the second MSB of the last byte to 1.
 	 * For X448, set the two LSB of the first byte to 0, and MSB of the
 	 * last byte to 1. Decode in little-endian mode.
 	 * HPRE hardware module uses big-endian mode, so the bytes to be
-	 * set are reversed compared to RFC7748:
-	 * For example, dat[0] of X25519 in RFC7748 is reversed to dat[31]
+	 * set are reversed compared to RFC 7748:
+	 * For example, dat[0] of X25519 in RFC 7748 is reversed to dat[31]
 	 * in HPRE specification, so does X448.
 	 */
 	dat = d->data;
@@ -1097,7 +1097,7 @@ static int sm2_prepare_enc_in(struct wd_ecc_msg *msg,
 
 	if (ein->k_set) {
 		ret = crypto_bin_to_hpre_bin(k->data, (const char *)k->data,
-					     k->bsize, k->dsize, "sm2 enc k");
+					     k->bsize, k->dsize, "sm2 encode k");
 		if (ret)
 			return ret;
 	} else {
@@ -1119,12 +1119,12 @@ static int sm2_prepare_dec_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	ret = crypto_bin_to_hpre_bin(c1->x.data, (const char *)c1->x.data,
-		c1->x.bsize, c1->x.dsize, "sm2 dec c1 x");
+		c1->x.bsize, c1->x.dsize, "sm2 decode c1 x");
 	if (ret)
 		return ret;
 
 	ret = crypto_bin_to_hpre_bin(c1->y.data, (const char *)c1->y.data,
-		c1->y.bsize, c1->y.dsize, "sm2 dec c1 y");
+		c1->y.bsize, c1->y.dsize, "sm2 decode c1 y");
 	if (ret)
 		return ret;
 
@@ -1189,7 +1189,7 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 	switch (msg->req.op_type) {
 	case HPRE_SM2_ENC: /* fall through */
 	case HPRE_SM2_DEC: /* fall through */
-		/* driver to identify sm2 algorithm when async recv */
+		/* driver to identify sm2 algorithm when async receive */
 		hw_msg->sm2_mlen = msg->req.op_type;
 	case WD_SM2_KG: /* fall through */
 	case WD_ECXDH_GEN_KEY:
@@ -1272,7 +1272,7 @@ static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
 	return ret;
 }
 
-/* prepare in/out hw msg */
+/* prepare in/out hw message */
 static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 			   struct hisi_hpre_sqe *hw_msg)
 {
@@ -1547,7 +1547,7 @@ static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 
 	memset(hw_msg, 0, sizeof(*hw_msg));
 
-	/* prepare alg */
+	/* prepare algorithm */
 	ret = ecc_prepare_alg(msg, hw_msg);
 	if (ret)
 		return ret;
@@ -1605,14 +1605,14 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 	}
 
 	if (unlikely(!hash->cb || hash->type >= WD_HASH_MAX)) {
-		WD_ERR("hash param error, type = %u\n", hash->type);
+		WD_ERR("hash parameter error, type = %u\n", hash->type);
 		return -WD_EINVAL;
 	}
 
 	/*
-	 * split message into two inner request msg
-	 * firest msg used to compute k * g
-	 * second msg used to compute k * pb
+	 * split message into two inner request message
+	 * first message used to compute k * g
+	 * second message used to compute k * pb
 	 */
 	ret = split_req(msg, msg_dst);
 	if (unlikely(ret)) {
@@ -1659,7 +1659,7 @@ static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
 		return ecc_general_send(ctx, msg);
 
 	if (unlikely(!hash->cb || hash->type >= WD_HASH_MAX)) {
-		WD_ERR("hash param error, type = %u\n", hash->type);
+		WD_ERR("hash parameter error, type = %u\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -1784,13 +1784,13 @@ static int sm2_enc_out_transfer(struct wd_ecc_msg *msg,
 
 	wd_sm2_get_enc_out_params(out, &c1, NULL, NULL);
 	if (!c1) {
-		WD_ERR("failed to get sm2 enc out param!\n");
+		WD_ERR("failed to get sm2 encode out param!\n");
 		return -WD_EINVAL;
 	}
 
 	ret = hpre_tri_bin_transfer(&c1->x, &c1->y, NULL);
 	if (ret)
-		WD_ERR("failed to tri sm2 enc out param!\n");
+		WD_ERR("failed to tri sm2 encode out param!\n");
 
 	return ret;
 }
@@ -1823,7 +1823,7 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 		 hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
+		WD_ERR("ecc out trans fail algorithm %u error!\n", hw_msg->alg);
 
 	return ret;
 }
@@ -1951,7 +1951,6 @@ static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 static int sm2_hash(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 		    struct wd_dtb *msg, struct wd_hash_mt *hash)
 {
-
 	__u64 lens = msg->dsize + 2 * x2y2->x.dsize;
 	char hash_out[MAX_HASH_LENS] = {0};
 	__u64 in_len = 0;
@@ -2001,9 +2000,9 @@ static int sm2_convert_enc_out(struct wd_ecc_msg *src,
 	int ret;
 
 	/*
-	 * enc origin out data fmt:
+	 * encode origin out data format:
 	 * | x1y1(2*256bit) | x2y2(2*256bit) | other |
-	 * final out data fmt:
+	 * final out data format:
 	 * | c1(2*256bit)   | c2(plaintext size) | c3(256bit) |
 	 */
 	dh_out = second->req.dst;
@@ -2052,9 +2051,9 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	int ret;
 
 	/*
-	 * dec origin out data fmt:
+	 * decode origin out data format:
 	 * | x2y2(2*256bit) |   other      |
-	 * final out data fmt:
+	 * final out data format:
 	 * |         plaintext             |
 	 */
 
@@ -2086,7 +2085,7 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	/* u == c3 */
 	ret = is_equal(&tmp, &din->c3);
 	if (ret)
-		WD_ERR("failed to dec sm2, u != C3!\n");
+		WD_ERR("failed to decode sm2, u != C3!\n");
 
 	return ret;
 }
@@ -2186,7 +2185,7 @@ static int sm2_enc_parse(handle_t h_qp,
 
 	ret = sm2_convert_enc_out(&src, first, second);
 	if (unlikely(ret)) {
-		WD_ERR("failed to convert sm2 std fmt, ret = %d!\n", ret);
+		WD_ERR("failed to convert sm2 std format, ret = %d!\n", ret);
 		goto fail;
 	}
 
@@ -2218,14 +2217,14 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 	hw_msg->low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse(dst, hw_msg);
 	if (ret) {
-		WD_ERR("failed to parse dec BD, ret = %d\n", ret);
+		WD_ERR("failed to parse decode BD, ret = %d\n", ret);
 		goto fail;
 	}
 	msg->result = dst->result;
 
 	ret = sm2_convert_dec_out(&src, dst);
 	if (unlikely(ret)) {
-		WD_ERR("failed to convert sm2 dec out, ret = %d!\n", ret);
+		WD_ERR("failed to convert sm2 decode out, ret = %d!\n", ret);
 		goto fail;
 	}
 fail:

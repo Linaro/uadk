@@ -14,7 +14,6 @@
 typedef void (*wd_dh_cb_t)(void *cb_param);
 
 enum wd_dh_op_type {
-
 	WD_DH_INVALID, /* invalid DH operation */
 	WD_DH_PHASE1, /* Phase1 DH key generate */
 	WD_DH_PHASE2 /* Phase2 DH key compute */
