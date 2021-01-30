@@ -1504,10 +1504,6 @@ static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 	int ret = 0;
 
 	switch (msg->calg) {
-	case WD_CIPHER_SM4:
-		sqe->type2.c_alg = C_ALG_SM4;
-		sqe->type2.icvw_kmode = CKEY_LEN_SM4 << SEC_CKEY_OFFSET;
-		break;
 	case WD_CIPHER_AES:
 		sqe->type2.c_alg = C_ALG_AES;
 		ret = aead_get_aes_key_len(msg, &c_key_len);
