@@ -671,10 +671,16 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
 {
-	if (msg->in_bytes > MAX_INPUT_DATA_LEN) {
-		WD_ERR("input cipher len is too large!\n");
+	if (msg->in_bytes > MAX_INPUT_DATA_LEN ||
+	    !msg->in_bytes) {
+		WD_ERR("input cipher length is error!\n");
 		return -WD_EINVAL;
 	}
+
+	if (msg->mode == WD_CIPHER_OFB ||
+	    msg->mode == WD_CIPHER_CFB ||
+	    msg->mode == WD_CIPHER_CTR)
+		return 0;
 
 	if (msg->mode == WD_CIPHER_XTS) {
 		if (msg->in_bytes < AES_BLOCK_SIZE) {
