@@ -18,7 +18,7 @@ else	# WITH_UADK_V1
 # x = current - age
 # y = age
 # z = revision
-UADK_VERSION = -version-info 4:10:2
+UADK_VERSION = -version-info 4:11:2
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
