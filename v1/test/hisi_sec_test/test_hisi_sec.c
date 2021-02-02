@@ -49,6 +49,7 @@ typedef unsigned int u32;
 static int q_num = 1;
 static int ctx_num_per_q = 1;
 static long long g_total_perf = 0;
+static long long total_recv_task;
 enum alg_class g_algclass = CIPHER_CLASS;
 enum cipher_op_type alg_op_type;
 
@@ -132,7 +133,7 @@ static bool is_exit(struct test_sec_pthread_dt *pdata)
 	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
 			cur_tval.tv_usec - pdata->start_tval.tv_usec);
 	if (t_seconds)
-		return time_used >= t_seconds * t_times;
+		return time_used >= t_seconds * 1000000;
 	else if (t_times)
 		return pdata->send_task_num >= t_times;
 
@@ -1135,7 +1136,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 		return ret;
 	}
 
-	hexdump((char *)tv->key, tv->klen);
+	// hexdump((char *)tv->key, tv->klen);
 	ret = wcrypto_set_cipher_key(ctx, (__u8*)tv->key, (__u16)tv->klen);
 	if (ret) {
 		SEC_TST_PRT("set key fail!\n");
@@ -1168,8 +1169,10 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	}
 
 	opdata.priv = NULL;
+#if 0
 	printf("ptext:\n");
 	hexdump(opdata.in, opdata.in_bytes);
+#endif
 	opdata.out = wd_alloc_blk(pdata->pool);
 	opdata.out_bytes = opdata.in_bytes;
 	if (!opdata.out) {
@@ -1195,27 +1198,25 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	try_do_again:
 		ret = wcrypto_do_cipher(ctx, &opdata, tag);
 		if (ret == -WD_EBUSY) {
-			usleep(100);
+			usleep(200);
 			SEC_TST_PRT("wcrypto_do_cipher busy!\n");
 			goto try_do_again;
 		}
 		pdata->send_task_num++;
 		i++;
-		if (pdata->send_task_num == 1) {
-			SEC_TST_PRT("dump output!\n");
-			hexdump(opdata.out, opdata.out_bytes);
-		}
 	} while(!is_exit(pdata));
 
 	gettimeofday(&cur_tval, NULL);
 	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - pdata->start_tval.tv_usec);
-	SEC_TST_PRT("time_used:%0.0f us, send task num:%d\n", time_used, pdata->send_task_num++);
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%d, recv task num: %d\n", time_used,
+				pdata->send_task_num++, pdata->recv_task_num);
 	if (t_seconds) {
 		speed = pdata->send_task_num / time_used * 1000000;
 		Perf = speed * pktlen / 1024; //B->KB
 		pthread_mutex_lock(&perf_mutex);
 		g_total_perf += Perf;
+		total_recv_task += pdata->recv_task_num;
 		pthread_mutex_unlock(&perf_mutex);
 		SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid, thread_id, speed, Perf);
 	} else if (t_times) {
@@ -1223,6 +1224,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 		Perf = speed * pktlen / 1024; //B->KB
 		pthread_mutex_lock(&perf_mutex);
 		g_total_perf += Perf;
+		total_recv_task += pdata->recv_task_num;
 		pthread_mutex_unlock(&perf_mutex);
 		SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", pid, thread_id, speed, Perf);
 	}
@@ -1477,6 +1479,8 @@ static int sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		SEC_TST_PRT("Join %dth thread fail!\n", i);
 		return ret;
 	}
+	SEC_TST_PRT("%d-threads, total Perf: %lld KB/s, total recv task nums:%lld\n",
+    thread_num, g_total_perf, total_recv_task);
 
 	wd_release_queue(&q);
 	wd_blkpool_destroy(pool);
