@@ -28,7 +28,7 @@ struct sched_ctx_region {
 	__u32 end;
 	__u32 last;
 	bool valid;
-	pthread_spinlock_t *locks;	/* locks for contexes */
+	pthread_mutex_t *locks;	/* locks for contexes */
 };
 
 /**
@@ -153,7 +153,7 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region,
 		if (pos > region->end)
 			pos = region->begin;
 		offs = pos - region->begin;
-		ret = pthread_spin_trylock(&region->locks[offs]);
+		ret = pthread_mutex_trylock(&region->locks[offs]);
 	} while (ret);
 	region->last = pos;
 
@@ -364,7 +364,7 @@ static int sample_sched_get_ctx(handle_t h_sched_ctx, __u32 pos)
 		return -EINVAL;
 	}
 	offs = pos - rgn->begin;
-	pthread_spin_lock(&rgn->locks[offs]);
+	pthread_mutex_lock(&rgn->locks[offs]);
 	return 0;
 }
 
@@ -381,7 +381,7 @@ static int sample_sched_put_ctx(handle_t h_sched_ctx, __u32 pos)
 		return -EINVAL;
 	}
 	offs = pos - rgn->begin;
-	pthread_spin_unlock(&rgn->locks[offs]);
+	pthread_mutex_unlock(&rgn->locks[offs]);
 	return 0;
 }
 
@@ -439,13 +439,13 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 	}
 
 	rgn = &sched_info[numa_id].ctx_region[mode][type];
-	rgn->locks = calloc(1, (end - begin + 1) * sizeof(pthread_spinlock_t));
+	rgn->locks = calloc(1, (end - begin + 1) * sizeof(pthread_mutex_t));
 	if (!rgn->locks) {
 		WD_ERR("ERROR: %s fail to allocate array\n", __FUNCTION__);
 		return -ENOMEM;
 	}
 	for (i = 0; i < end - begin + 1; i++)
-		pthread_spin_init(&rgn->locks[i], PTHREAD_PROCESS_SHARED);
+		pthread_mutex_init(&rgn->locks[i], NULL);
 	rgn->begin = begin;
 	rgn->end = end;
 	rgn->last = begin;
