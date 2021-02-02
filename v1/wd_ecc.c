@@ -1815,8 +1815,9 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	__u8 temp;
 	int ret;
 
-	if (id && BYTES_TO_BITS(id->dsize) > UINT16_MAX) {
-		WD_ERR("id lens = %u error!\n", id->dsize);
+	if (id && (!BYTES_TO_BITS(id->dsize) || !id->data ||
+		   BYTES_TO_BITS(id->dsize) > UINT16_MAX)) {
+		WD_ERR("id error: lens = %u!\n", id->dsize);
 		return -WD_EINVAL;
 	}
 
