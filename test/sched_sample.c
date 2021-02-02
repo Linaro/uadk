@@ -28,7 +28,6 @@ struct sched_ctx_region {
 	__u32 end;
 	__u32 last;
 	bool valid;
-	pthread_mutex_t lock;		/* region lock */
 	pthread_spinlock_t *locks;	/* locks for contexes */
 };
 
@@ -145,17 +144,18 @@ static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region,
 				    void *para)
 {
 	__u32 pos;
-
-	pthread_mutex_lock(&region->lock);
+	int offs, ret;
 
 	pos = region->last;
 
-	if (pos < region->end)
-		region->last++;
-	else if (pos >= region->end)
-		region->last = region->begin;
-
-	pthread_mutex_unlock(&region->lock);
+	do {
+		pos++;
+		if (pos > region->end)
+			pos = region->begin;
+		offs = pos - region->begin;
+		ret = pthread_spin_trylock(&region->locks[offs]);
+	} while (ret);
+	region->last = pos;
 
 	return pos;
 }
@@ -291,8 +291,6 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
 	struct sched_ctx_region *region = NULL;
-	__u32 pos;
-	int offs;
 
 	if (!ctx || !key || !req) {
 		WD_ERR("ERROR: %s the pointer para is NULL !\n", __FUNCTION__);
@@ -313,10 +311,7 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 	 * before using
 	 */
 	sample_get_para_rr(req, NULL);
-	pos = sample_get_next_pos_rr(region, NULL);
-	offs = pos - region->begin;
-	pthread_spin_lock(&region->locks[offs]);
-	return pos;
+	return sample_get_next_pos_rr(region, NULL);
 }
 
 /**
@@ -456,9 +451,6 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 	rgn->last = begin;
 	rgn->valid = true;
 	sched_info[numa_id].valid = true;
-
-	pthread_mutex_init(&sched_info[numa_id].ctx_region[mode][type].lock,
-			   NULL);
 
 	return 0;
 }
