@@ -13,17 +13,23 @@ enum sched_region_mode {
 };
 
 /**
- * struct sched_ctx_range - define one ctx pos.
- * @begin: the start pos in ctxs of config.
- * @end: the end pos in ctxx of config.
- * @last: the last one which be distributed.
+ * struct sched_ctx_region - define a region of the total contexes.
+ * All contexes are arranged in a one dimensional array in the config of
+ * current process. The index of context of this array is used directly in
+ * the region.
+ * In the region, the indexes of contexts are continuous.
+ * If there's only one context in the region, @begin should be equal to @end.
+ * @begin: the start pos in the total contexes.
+ * @end: the end pos in the total contexes.
+ * @last: the latest context that is assigned to user app.
  */
 struct sched_ctx_region {
 	__u32 begin;
 	__u32 end;
 	__u32 last;
 	bool valid;
-	pthread_mutex_t lock;
+	pthread_mutex_t lock;		/* region lock */
+	pthread_spinlock_t *locks;	/* locks for contexes */
 };
 
 /**
@@ -248,6 +254,27 @@ static bool sample_sched_key_valid(struct sample_sched_ctx *ctx,
 	return true;
 }
 
+static struct sched_ctx_region *
+sample_sched_find_region(struct sample_sched_ctx *ctx, __u32 pos)
+{
+	struct sample_sched_info *sched_info = ctx->sched_info;
+	struct sched_ctx_region *rgn;
+	int numa, mode, type;
+
+	for (numa = 0; numa < ctx->numa_num; numa++) {
+		for (mode = 0; mode < SCHED_MODE_BUTT; mode++) {
+			for (type = 0; type < ctx->type_num; type++) {
+				rgn = &sched_info[numa].ctx_region[mode][type];
+				if (!rgn->valid)
+					continue;
+				if (pos >= rgn->begin && pos <= rgn->end)
+					return rgn;
+			}
+		}
+	}
+	return NULL;
+}
+
 /**
  * ssample_pick_next_ctx - Get one ctx from ctxs by the sched_ctx and arg.
  * @sched_ctx: Schedule ctx, reference the struct sample_sched_ctx.
@@ -264,6 +291,8 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
 	struct sched_ctx_region *region = NULL;
+	__u32 pos;
+	int offs;
 
 	if (!ctx || !key || !req) {
 		WD_ERR("ERROR: %s the pointer para is NULL !\n", __FUNCTION__);
@@ -284,7 +313,10 @@ static __u32 sample_sched_pick_next_ctx(handle_t sched_ctx, const void *req,
 	 * before using
 	 */
 	sample_get_para_rr(req, NULL);
-	return sample_get_next_pos_rr(region, NULL);
+	pos = sample_get_next_pos_rr(region, NULL);
+	offs = pos - region->begin;
+	pthread_spin_lock(&region->locks[offs]);
+	return pos;
 }
 
 /**
@@ -324,6 +356,40 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 	return 0;
 }
 
+static int sample_sched_get_ctx(handle_t h_sched_ctx, __u32 pos)
+{
+	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)h_sched_ctx;
+	struct sched_ctx_region *rgn;
+	int offs;
+
+	rgn = sample_sched_find_region(ctx, pos);
+	if (!rgn) {
+		WD_ERR("ERROR: %s can't find the region by pos %d\n",
+		       __FUNCTION__, pos);
+		return -EINVAL;
+	}
+	offs = pos - rgn->begin;
+	pthread_spin_lock(&rgn->locks[offs]);
+	return 0;
+}
+
+static int sample_sched_put_ctx(handle_t h_sched_ctx, __u32 pos)
+{
+	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)h_sched_ctx;
+	struct sched_ctx_region *rgn;
+	int offs;
+
+	rgn = sample_sched_find_region(ctx, pos);
+	if (!rgn) {
+		WD_ERR("ERROR: %s can't find the region by pos %d\n",
+		       __FUNCTION__, pos);
+		return -EINVAL;
+	}
+	offs = pos - rgn->begin;
+	pthread_spin_unlock(&rgn->locks[offs]);
+	return 0;
+}
+
 struct sample_sched_table {
 	const char *name;
 	enum sched_policy_type type;
@@ -332,12 +398,16 @@ struct sample_sched_table {
 	int (*poll_policy)(handle_t h_sched_ctx,
 			   __u32 expect,
 			   __u32 *count);
+	int (*get_ctx)(handle_t h_sched_ctx, __u32 pos);
+	int (*put_ctx)(handle_t h_sched_ctx, __u32 pos);
 } sched_table[SCHED_POLICY_BUTT] = {
 	{
 		.name = "RR scheduler",
 		.type = SCHED_POLICY_RR,
 		.pick_next_ctx = sample_sched_pick_next_ctx,
 		.poll_policy = sample_sched_poll_policy,
+		.get_ctx = sample_sched_get_ctx,
+		.put_ctx = sample_sched_put_ctx,
 	},
 };
 
@@ -346,6 +416,8 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 {
 	struct sample_sched_info *sched_info;
 	struct sample_sched_ctx *sched_ctx;
+	struct sched_ctx_region *rgn;
+	int i;
 
 	if (!sched || !sched->h_sched_ctx) {
 		WD_ERR("ERROR: %s para err: sched of h_sched_ctx is null\n",
@@ -371,10 +443,18 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 		return -EINVAL;
 	}
 
-	sched_info[numa_id].ctx_region[mode][type].begin = begin;
-	sched_info[numa_id].ctx_region[mode][type].end = end;
-	sched_info[numa_id].ctx_region[mode][type].last = begin;
-	sched_info[numa_id].ctx_region[mode][type].valid = true;
+	rgn = &sched_info[numa_id].ctx_region[mode][type];
+	rgn->locks = calloc(1, (end - begin + 1) * sizeof(pthread_spinlock_t));
+	if (!rgn->locks) {
+		WD_ERR("ERROR: %s fail to allocate array\n", __FUNCTION__);
+		return -ENOMEM;
+	}
+	for (i = 0; i < end - begin + 1; i++)
+		pthread_spin_init(&rgn->locks[i], PTHREAD_PROCESS_SHARED);
+	rgn->begin = begin;
+	rgn->end = end;
+	rgn->last = begin;
+	rgn->valid = true;
 	sched_info[numa_id].valid = true;
 
 	pthread_mutex_init(&sched_info[numa_id].ctx_region[mode][type].lock,
@@ -387,7 +467,8 @@ void sample_sched_release(struct wd_sched *sched)
 {
 	struct sample_sched_info *sched_info;
 	struct sample_sched_ctx *sched_ctx;
-	int i, j;
+	struct sched_ctx_region *rgn;
+	int i, j, k;
 
 	if (!sched)
 		return;
@@ -397,8 +478,14 @@ void sample_sched_release(struct wd_sched *sched)
 		sched_info = sched_ctx->sched_info;
 		for (i = 0; i < sched_ctx->numa_num; i++) {
 			for (j = 0; j < SCHED_MODE_BUTT; j++) {
-				if (sched_info[i].ctx_region[j])
-					free(sched_info[i].ctx_region[j]);
+				if (!sched_info[i].ctx_region[j])
+					continue;
+				for (k = 0; k < sched_ctx->type_num; k++) {
+					rgn = &sched_info[i].ctx_region[j][k];
+					if (rgn && rgn->locks)
+						free((void *)rgn->locks);
+				}
+				free(sched_info[i].ctx_region[j]);
 			}
 		}
 	
@@ -466,6 +553,8 @@ struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_nu
 
 	sched->pick_next_ctx = sched_table[sched_type].pick_next_ctx;
 	sched->poll_policy = sched_table[sched_type].poll_policy;
+	sched->get_ctx = sched_table[sched_type].get_ctx;
+	sched->put_ctx = sched_table[sched_type].put_ctx;
 	sched->h_sched_ctx = (handle_t)sched_ctx;
 
 	return sched;

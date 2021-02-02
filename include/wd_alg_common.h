@@ -2,7 +2,6 @@
 #define WD_ALG_COMMON_H
 
 #include <asm/types.h>
-#include <pthread.h>
 #include "wd.h"
 
 /* Required compiler attributes */
@@ -71,7 +70,6 @@ struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
-	pthread_spinlock_t lock;
 };
 
 struct wd_ctx_config_internal {
@@ -98,6 +96,8 @@ struct wd_sched {
 				  const void *req,
 				  const struct sched_key *key);
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
+	int (*get_ctx)(handle_t h_sched_ctx, __u32 pos);
+	int (*put_ctx)(handle_t h_sched_ctx, __u32 pos);
 	handle_t h_sched_ctx;
 };
 

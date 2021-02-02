@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdlib.h>
-#include <pthread.h>
 #include "include/drv/wd_aead_drv.h"
 #include "wd_aead.h"
 #include "wd_util.h"
@@ -460,6 +459,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	__u64 recv_cnt = 0;
 	int index;
 	int ret;
+	handle_t h_sched_ctx = wd_aead_setting.sched.h_sched_ctx;
 
 	if (unlikely(!sess || !req)) {
 		WD_ERR("aead input sess or req is NULL.\n");
@@ -470,7 +470,8 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	if (ret)
 		return -WD_EINVAL;
 
-	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
+	memset(&msg, 0, sizeof(struct wd_aead_msg));
+	index = wd_aead_setting.sched.pick_next_ctx(h_sched_ctx, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
@@ -478,22 +479,22 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("failed to check ctx mode!\n");
-		return -WD_EINVAL;
+		ret = -WD_EINVAL;
+		goto out;
 	}
 
-	memset(&msg, 0, sizeof(struct wd_aead_msg));
 	if (req->iv_bytes != 0) {
 		msg.aiv = malloc(req->iv_bytes);
 		if (!msg.aiv) {
 			WD_ERR("failed to alloc auth iv memory!\n");
-			return -WD_EINVAL;
+			ret = -WD_ENOMEM;
+			goto out;
 		}
 	}
 	memset(msg.aiv, 0, req->iv_bytes);
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("failed to send aead bd!\n");
@@ -515,8 +516,9 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		}
 	} while (ret < 0);
 out:
-	pthread_spin_unlock(&ctx->lock);
-	free(msg.aiv);
+	if (msg.aiv)
+		free(msg.aiv);
+	wd_aead_setting.sched.put_ctx(h_sched_ctx, index);
 	return ret;
 }
 
@@ -529,6 +531,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	int index;
 	int idx;
 	int ret;
+	handle_t h_sched_ctx = wd_aead_setting.sched.h_sched_ctx;
 
 	if (unlikely(!sess || !req || !req->cb)) {
 		WD_ERR("aead input sess or req is NULL.\n");
@@ -539,7 +542,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	if (ret)
 		return -WD_EINVAL;
 
-	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
+	index = wd_aead_setting.sched.pick_next_ctx(h_sched_ctx, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
@@ -547,14 +550,16 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
                 WD_ERR("failed to check ctx mode!\n");
-                return -WD_EINVAL;
+                ret = -WD_EINVAL;
+		goto out;
         }
 
 	idx = wd_get_msg_from_pool(&wd_aead_setting.pool,
 				     index, (void **)&msg);
 	if (idx < 0) {
 		WD_ERR("failed to get msg from pool!\n");
-		return -WD_EBUSY;
+		ret = -WD_EBUSY;
+		goto out;
 	}
 
 	fill_request_msg(msg, req, sess);
@@ -562,21 +567,23 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		msg->aiv = malloc(req->iv_bytes);
 		if (!msg->aiv) {
 			WD_ERR("failed to alloc auth iv memory!\n");
-			return -WD_EINVAL;
+			ret = -WD_ENOMEM;
+			goto out;
 		}
 	}
 	memset(msg->aiv, 0, req->iv_bytes);
 	msg->tag = idx;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
 		wd_put_msg_to_pool(&wd_aead_setting.pool, index, msg->tag);
-		free(msg->aiv);
 	}
-	pthread_spin_unlock(&ctx->lock);
+out:
+	if (msg->aiv)
+		free(msg->aiv);
+	wd_aead_setting.sched.put_ctx(h_sched_ctx, index);
 
 	return ret;
 }
@@ -589,13 +596,14 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	struct wd_aead_req *req;
 	__u64 recv_count = 0;
 	int ret;
+	handle_t h_sched_ctx = wd_aead_setting.sched.h_sched_ctx;
 
 	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("aead poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	pthread_spin_lock(&ctx->lock);
+	wd_aead_setting.sched.get_ctx(h_sched_ctx, index);
 	do {
 		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN)
@@ -625,7 +633,7 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	} while (expt > 0);
 	*count = recv_count;
 out:
-	pthread_spin_unlock(&ctx->lock);
+	wd_aead_setting.sched.put_ctx(h_sched_ctx, index);
 	return ret;
 }
 
@@ -641,3 +649,5 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 
 	return sched->poll_policy(h_ctx, expt, count);
 }
+/* SPDX-License-Identifier: Apache-2.0 */
+#include <stdlib.h>

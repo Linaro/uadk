@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdlib.h>
-#include <pthread.h>
 #include "wd_digest.h"
 #include "include/drv/wd_digest_drv.h"
 #include "wd_util.h"
@@ -259,6 +258,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_digest_msg msg;
 	__u64 recv_cnt = 0;
 	int index, ret;
+	handle_t h_sched_ctx = wd_digest_setting.sched.h_sched_ctx;
 
 	if (unlikely(!dsess || !req)) {
 		WD_ERR("digest input sess or req is NULL.\n");
@@ -270,7 +270,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 
 	/* fix me: maybe wrong */
-	index = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
+	index = wd_digest_setting.sched.pick_next_ctx(h_sched_ctx, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -278,14 +278,14 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
                 WD_ERR("failed to check ctx mode!\n");
-                return -WD_EINVAL;
+                ret = -WD_EINVAL;
+		goto out;
         }
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
 	req->state = 0;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("failed to send bd!\n");
@@ -307,7 +307,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		}
 	} while (ret < 0);
 out:
-	pthread_spin_unlock(&ctx->lock);
+	wd_digest_setting.sched.put_ctx(h_sched_ctx, index);
 	return ret;
 }
 
@@ -318,6 +318,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_ctx_internal *ctx;
         struct wd_digest_msg *msg;
 	int index, idx, ret;
+	handle_t h_sched_ctx = wd_digest_setting.sched.h_sched_ctx;
 
 	if (unlikely(!dsess || !req || !req->cb)) {
 		WD_ERR("digest input sess or req is NULL.\n");
@@ -328,7 +329,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	if (ret)
 		return -WD_EINVAL;
 
-	index = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
+	index = wd_digest_setting.sched.pick_next_ctx(h_sched_ctx, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -336,20 +337,21 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	ctx = config->ctxs + index;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
                 WD_ERR("failed to check ctx mode!\n");
-                return -WD_EINVAL;
+                ret = -WD_EINVAL;
+		goto out;
         }
 
 	idx = wd_get_msg_from_pool(&wd_digest_setting.pool, index,
 				   (void **)&msg);
 	if (idx < 0) {
 		WD_ERR("busy, failed to get msg from pool!\n");
-		return -WD_EBUSY;
+		ret = -WD_EBUSY;
+		goto out;
 	}
 
 	fill_request_msg(msg, req, dsess);
 	msg->tag = idx;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (ret < 0) {
 		WD_ERR("failed to send BD, hw is err!\n");
@@ -357,7 +359,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		goto out;
 	}
 out:
-	pthread_spin_unlock(&ctx->lock);
+	wd_digest_setting.sched.put_ctx(h_sched_ctx, index);
 	return ret;
 }
 
@@ -369,13 +371,14 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
 	int ret;
+	handle_t h_sched_ctx = wd_digest_setting.sched.h_sched_ctx;
 
 	if (unlikely(index >= config->ctx_num || !count)) {
 		WD_ERR("digest input poll ctx or count is NULL.\n");
 		return -WD_EINVAL;
 	}
 
-	pthread_spin_lock(&ctx->lock);
+	wd_digest_setting.sched.get_ctx(h_sched_ctx, index);
 	do {
 		ret = wd_digest_setting.driver->digest_recv(ctx->ctx,
 							    &recv_msg);
@@ -407,7 +410,7 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 	} while (expt > 0);
 	*count = recv_cnt;
 out:
-	pthread_spin_unlock(&ctx->lock);
+	wd_digest_setting.sched.put_ctx(h_sched_ctx, index);
 	return ret;
 }
 

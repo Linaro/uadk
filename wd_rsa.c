@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <dirent.h>
 #include <errno.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -335,22 +334,22 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
+		ret = -WD_EINVAL;
+		goto out;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
 	ret = fill_rsa_msg(&msg, req, sess);
 	if (unlikely(ret))
-		return ret;
+		goto out;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = rsa_send(ctx->ctx, &msg);
 	if (unlikely(ret))
-		goto fail;
+		goto out;
 
 	ret = rsa_recv_sync(ctx->ctx, &msg);
-fail:
-	pthread_spin_unlock(&ctx->lock);
+out:
+	wd_rsa_setting.sched.put_ctx(h_sched_ctx, idx);
 
 	return ret;
 }
@@ -379,30 +378,30 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
+		ret = -WD_EINVAL;
+		goto out;
 	}
 
 	mid = wd_get_msg_from_pool(&wd_rsa_setting.pool, idx, (void **)&msg);
-	if (mid < 0)
-		return -WD_EBUSY;
+	if (mid < 0) {
+		ret = -WD_EBUSY;
+		goto out;
+	}
 
 	ret = fill_rsa_msg(msg, req, (struct wd_rsa_sess *)sess);
 	if (ret)
-		goto fail_with_msg;
+		goto out_msg;
 	msg->tag = mid;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = rsa_send(ctx->ctx, msg);
-	if (ret) {
-		pthread_spin_unlock(&ctx->lock);
-		goto fail_with_msg;
-	}
-	pthread_spin_unlock(&ctx->lock);
+	if (ret)
+		goto out_msg;
 
 	return ret;
-
-fail_with_msg:
+out_msg:
 	wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, mid);
+out:
+	wd_rsa_setting.sched.put_ctx(h_sched_ctx, idx);
 	return ret;
 }
 
@@ -414,6 +413,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_rsa_msg recv_msg, *msg;
 	__u32 rcv_cnt = 0;
 	int ret;
+	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
 
 	if (unlikely(!count || idx >= config->ctx_num)) {
 		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
@@ -427,13 +427,12 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
-	pthread_spin_lock(&ctx->lock);
+	wd_rsa_setting.sched.get_ctx(h_sched_ctx, idx);
 	do {
 		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN)
 			goto out;
 		else if (ret < 0) {
-			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
@@ -458,7 +457,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 	*count = rcv_cnt;
 out:
-	pthread_spin_unlock(&ctx->lock);
+	wd_rsa_setting.sched.put_ctx(h_sched_ctx, idx);
 	return ret;
 }
 

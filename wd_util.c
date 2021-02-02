@@ -45,7 +45,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		}
 
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
-		pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 	}
 
 	in->ctxs = ctxs;
@@ -64,6 +63,8 @@ int wd_init_sched(struct wd_sched *in, struct wd_sched *from)
 	in->name = strdup(from->name);
 	in->pick_next_ctx = from->pick_next_ctx;
 	in->poll_policy = from->poll_policy;
+	in->get_ctx = from->get_ctx;
+	in->put_ctx = from->put_ctx;
 
 	return 0;
 }
@@ -78,15 +79,12 @@ void wd_clear_sched(struct wd_sched *in)
 	in->name = NULL;
 	in->pick_next_ctx = NULL;
 	in->poll_policy = NULL;
+	in->get_ctx = NULL;
+	in->put_ctx = NULL;
 }
 
 void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
-	int i;
-
-	for (i = 0; i < in->ctx_num; i++)
-		pthread_spin_destroy(&in->ctxs[i].lock);
-
 	in->priv = NULL;
 	in->ctx_num = 0;
 	if (in->ctxs)

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <dirent.h>
 #include <errno.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -1461,22 +1460,22 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
+		ret = -WD_EINVAL;
+		goto out;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_ecc_msg));
 	ret = fill_ecc_msg(&msg, req, sess);
 	if (unlikely(ret))
-		return ret;
+		goto out;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, &msg);
 	if (unlikely(ret))
-		goto fail;
+		goto out;
 
 	ret = ecc_recv_sync(ctx->ctx, &msg);
-fail:
-	pthread_spin_unlock(&ctx->lock);
+out:
+	wd_ecc_setting.sched.put_ctx(h_sched_ctx, idx);
 
 	return ret;
 }
@@ -2152,30 +2151,33 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
+		ret = -WD_EINVAL;
+		goto out;
 	}
 
 	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);
-	if (mid < 0)
-		return -WD_EBUSY;
+	if (mid < 0) {
+		ret = -WD_EBUSY;
+		goto out;
+	}
 
 	ret = fill_ecc_msg(msg, req, (struct wd_ecc_sess *)sess);
 	if (ret)
-		goto fail_with_msg;
+		goto out_msg;
 	msg->tag = mid;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, msg);
-	if (ret) {
-		pthread_spin_unlock(&ctx->lock);
-		goto fail_with_msg;
-	}
-	pthread_spin_unlock(&ctx->lock);
+	if (ret)
+		goto out_msg;
+
+	wd_ecc_setting.sched.put_ctx(h_sched_ctx, idx);
 
 	return ret;
 
-fail_with_msg:
+out_msg:
 	wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, mid);
+out:
+	wd_ecc_setting.sched.put_ctx(h_sched_ctx, idx);
 	return ret;
 }
 
@@ -2187,6 +2189,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_ecc_req *req;
 	__u32 rcv_cnt = 0;
 	int ret;
+	handle_t h_sched_ctx = wd_ecc_setting.sched.h_sched_ctx;
 
 	if (unlikely(!count || idx >= config->ctx_num)) {
 		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
@@ -2194,13 +2197,15 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	wd_ecc_setting.sched.get_ctx(h_sched_ctx, idx);
+
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
+		ret = -WD_EINVAL;
+		goto out;
 	}
 
-	pthread_spin_lock(&ctx->lock);
 	do {
 		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN)
@@ -2210,7 +2215,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_ecc_setting.pool, idx,
 					   recv_msg.tag);
-			return ret;
+			goto out;
 		}
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, idx,
@@ -2230,7 +2235,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 	*count = rcv_cnt;
 out:
-	pthread_spin_unlock(&ctx->lock);
+	wd_ecc_setting.sched.put_ctx(h_sched_ctx, idx);
 	return ret;
 }
 
