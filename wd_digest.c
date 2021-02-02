@@ -253,24 +253,28 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
-	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
+	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg msg;
+	struct sched_key key;
 	__u64 recv_cnt = 0;
 	int index, ret;
 	handle_t h_sched_ctx = wd_digest_setting.sched.h_sched_ctx;
 
-	if (unlikely(!dsess || !req)) {
+	if (unlikely(!sess || !req)) {
 		WD_ERR("digest input sess or req is NULL.\n");
 		return -WD_EINVAL;
 	}
 
-	ret = digest_param_ckeck(dsess, req);
+	ret = digest_param_ckeck(sess, req);
 	if (ret)
 		return -WD_EINVAL;
 
 	/* fix me: maybe wrong */
-	index = wd_digest_setting.sched.pick_next_ctx(h_sched_ctx, req, NULL);
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = 0;
+	index = wd_digest_setting.sched.pick_next_ctx(h_sched_ctx, req, &key);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -283,7 +287,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
         }
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
-	fill_request_msg(&msg, req, dsess);
+	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
@@ -314,22 +318,26 @@ out:
 int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
-	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
+	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
         struct wd_digest_msg *msg;
+	struct sched_key key;
 	int index, idx, ret;
 	handle_t h_sched_ctx = wd_digest_setting.sched.h_sched_ctx;
 
-	if (unlikely(!dsess || !req || !req->cb)) {
+	if (unlikely(!sess || !req || !req->cb)) {
 		WD_ERR("digest input sess or req is NULL.\n");
 		return -WD_EINVAL;
 	}
 
-	ret = digest_param_ckeck(dsess, req);
+	ret = digest_param_ckeck(sess, req);
 	if (ret)
 		return -WD_EINVAL;
 
-	index = wd_digest_setting.sched.pick_next_ctx(h_sched_ctx, req, NULL);
+	key.mode = CTX_MODE_ASYNC;
+	key.type = 0;
+	key.numa_id = 0;
+	index = wd_digest_setting.sched.pick_next_ctx(h_sched_ctx, req, &key);
 	if (unlikely(index >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -349,7 +357,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		goto out;
 	}
 
-	fill_request_msg(msg, req, dsess);
+	fill_request_msg(msg, req, sess);
 	msg->tag = idx;
 
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);

@@ -302,12 +302,6 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 	return 0;
 }
 
-static int sched_single_poll_policy(handle_t h_sched_ctx,
-				    __u32 expect, __u32 *count)
-{
-	return 0;
-}
-
 static int init_ctx_config(int type, int mode)
 {
 	struct uacce_dev_list *list;
@@ -370,10 +364,10 @@ static void uninit_config(void)
 	int i;
 
 	wd_cipher_uninit();
+	sample_sched_release(g_sched);
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
-	sample_sched_release(g_sched);
 }
 
 static void digest_uninit_config(void)
@@ -381,6 +375,7 @@ static void digest_uninit_config(void)
 	int i;
 
 	wd_digest_uninit();
+	sample_sched_release(g_sched);
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
@@ -1207,17 +1202,9 @@ out_thr:
 }
 
 /* ------------------digest alg, nomal mode and hmac mode------------------ */
-static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-					const struct sched_key *key)
-{
-	/* alway return first ctx */
-	return 0;
-}
-
 static int init_digest_ctx_config(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	struct wd_sched sched;
 	int ret;
 
 	list = wd_get_accel_list("digest");
@@ -1241,19 +1228,35 @@ static int init_digest_ctx_config(int type, int mode)
 	g_ctx_cfg.ctxs[0].op_type = type;
 	g_ctx_cfg.ctxs[0].ctx_mode = mode;
 
-	sched.name = SCHED_SINGLE;
-	sched.pick_next_ctx = sched_digest_pick_next_ctx;
-	sched.poll_policy = sched_single_poll_policy;
+	g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM,
+				     wd_digest_poll_ctx);
+	if (!g_sched) {
+		printf("Fail to alloc sched!\n");
+		ret = -EINVAL;
+		goto out_sched;
+	}
+	/* If there is no numa, we defualt config to zero */
+	if (list->dev->numa_id < 0)
+		list->dev->numa_id = 0;
+
+	g_sched->name = SCHED_SINGLE;
+	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, g_ctxnum - 1);
+	if (ret) {
+		printf("Fail to fill sched data!\n");
+		goto out_sched;
+	}
 	/* digest init */
-	ret = wd_digest_init(&g_ctx_cfg, &sched);
+	ret = wd_digest_init(&g_ctx_cfg, g_sched);
 	if (ret) {
 		SEC_TST_PRT("Fail to digest ctx!\n");
-		goto out;
+		goto out_sched;
 	}
 
 	wd_free_list_accels(list);
 
 	return 0;
+out_sched:
+	sample_sched_release(g_sched);
 out:
 	free(g_ctx_cfg.ctxs);
 
@@ -2001,16 +2004,9 @@ out:
 }
 
 /* ------------------------------aead alg, ccm mode and gcm mode------------------ */
-static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-	const struct sched_key *key)
-{
-	return 0;
-}
-
 static int init_aead_ctx_config(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	struct wd_sched sched;
 	int ret;
 
 	list = wd_get_accel_list("aead");
@@ -2034,11 +2030,24 @@ static int init_aead_ctx_config(int type, int mode)
 	g_ctx_cfg.ctxs[0].op_type = type;
 	g_ctx_cfg.ctxs[0].ctx_mode = mode;
 
-	sched.name = SCHED_SINGLE;
-	sched.pick_next_ctx = sched_aead_pick_next_ctx;
-	sched.poll_policy = sched_single_poll_policy;
+	g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM,
+				     wd_digest_poll_ctx);
+	if (!g_sched) {
+		printf("Fail to alloc sched!\n");
+		ret = -EINVAL;
+		goto out_sched;
+	}
+	/* If there is no numa, we defualt config to zero */
+	if (list->dev->numa_id < 0)
+		list->dev->numa_id = 0;
+	g_sched->name = SCHED_SINGLE;
+	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, g_ctxnum - 1);
+	if (ret) {
+		printf("Fail to fill sched data!\n");
+		goto out_sched;
+	}
 	/* aead init*/
-	ret = wd_aead_init(&g_ctx_cfg, &sched);
+	ret = wd_aead_init(&g_ctx_cfg, g_sched);
 	if (ret) {
 		SEC_TST_PRT("Fail to aead ctx!\n");
 		goto out;
@@ -2048,6 +2057,8 @@ static int init_aead_ctx_config(int type, int mode)
 
 	return 0;
 
+out_sched:
+	sample_sched_release(g_sched);
 out:
 	free(g_ctx_cfg.ctxs);
 	return ret;
@@ -2058,6 +2069,7 @@ static void aead_uninit_config(void)
 	int i;
 
 	wd_aead_uninit();
+	sample_sched_release(g_sched);
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
