@@ -2,7 +2,7 @@ AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I../../include -pthread
 
 bin_PROGRAMS=test_hisi_hpre
 
-test_hisi_hpre_SOURCES=test_hisi_hpre.c test_hisi_hpre.h
+test_hisi_hpre_SOURCES=test_hisi_hpre.c ../sched_sample.c
 	
 if WD_STATIC_DRV
 test_hisi_hpre_LDADD=../../.libs/libwd.a ../../.libs/libwd_crypto.a \

@@ -18,6 +18,7 @@
 #include <semaphore.h>
 #include <getopt.h>
 #include "hpre_test_sample.h"
+#include "sched_sample.h"
 #include "test_hisi_hpre.h"
 #include "../../include/wd.h"
 #include "../../include/wd_rsa.h"
@@ -266,6 +267,7 @@ static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct test_hpre_pthread_dt test_thrds_data[TEST_MAX_THRD];
 static struct async_test_openssl_param ssl_params;
 struct wd_ctx_config g_ctx_cfg;
+struct wd_sched *g_sched;
 static __thread u32 g_is_set_prikey; // ecdh used
 static __thread u32 g_is_set_pubkey; // ecc used
 static pthread_spinlock_t g_lock;
@@ -1765,93 +1767,6 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
         return total_len;
 }
 
-__u32 hpre_pick_next_ctx(handle_t sched_ctx,
-				const void *req,
-				const struct sched_key *key)
-{
-	static int last_ctx = 0;
-
-	if (!strncmp(g_config.trd_mode, "async", 5))
-		return 0;
-
-	pthread_spin_lock(&g_lock);
-	if (++last_ctx == g_ctx_cfg.ctx_num)
-		last_ctx = 0;
-	pthread_spin_unlock(&g_lock);
-
-	return last_ctx;
-}
-
-int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
-{
-	int ret;
-	struct wd_ctx *ctxs;
-	int i;
-
-	while (1) {
-		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
-			ctxs = &g_ctx_cfg.ctxs[i];
-			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
-				ret = wd_rsa_poll_ctx(i, 1, count);
-				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);
-					return ret;
-				}
-			}
-		}
-
-		break;
-	}
-
-	return 0;
-}
-
-static int dh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
-{
-	int ret;
-	struct wd_ctx *ctxs;
-	int i;
-
-	while (1) {
-		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
-			ctxs = &g_ctx_cfg.ctxs[i];
-			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
-				ret = wd_dh_poll_ctx(i, 1, count);
-				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);
-					return ret;
-				}
-			}
-		}
-		break;
-	}
-
-	return 0;
-}
-
-static int ecc_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
-{
-	int ret;
-	struct wd_ctx *ctxs;
-	int i;
-
-	while (1) {
-		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
-			ctxs = &g_ctx_cfg.ctxs[i];
-			if (ctxs->ctx_mode == CTX_MODE_ASYNC) {
-				ret = wd_ecc_poll_ctx(i, 1, count);
-				if (ret != -EAGAIN && ret < 0) {
-					HPRE_TST_PRT("fail poll ctx %d!\n", i);
-					return ret;
-				}
-			}
-		}
-		break;
-	}
-
-	return 0;
-}
-
 static __u32 get_alg_op_type(enum alg_op_type op_type)
 {
 	__u32 value = 0;
@@ -1890,12 +1805,11 @@ static struct uacce_dev_list *get_uacce_dev_by_alg(struct uacce_dev_list *list,
 
 }
 
-static int init_hpre_global_config(__u32 op_type)
+static int init_hpre_global_config(__u32 op_type, int mode)
 {
 	struct uacce_dev_list *list = NULL;
 	struct uacce_dev_list *uacce_node;
 	struct wd_ctx *ctx_attr;
-	struct wd_sched sched;
 	int ctx_num = g_config.trd_num;
 	int ret = 0;
 	int j;
@@ -1944,28 +1858,72 @@ static int init_hpre_global_config(__u32 op_type)
 
 	g_ctx_cfg.ctx_num = ctx_num;
 	g_ctx_cfg.ctxs = ctx_attr;
-	sched.name = "hpre-sched-0";
-	sched.pick_next_ctx = hpre_pick_next_ctx;
+
+	/* If there is no numa, we defualt config to zero */
+	if (list->dev->numa_id < 0)
+		list->dev->numa_id = 0;
 	if (op_type > HPRE_ALG_INVLD_TYPE && op_type < MAX_RSA_ASYNC_TYPE) {
-		sched.poll_policy = rsa_poll_policy;
-		ret = wd_rsa_init(&g_ctx_cfg, &sched);
+		g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM,
+					     wd_rsa_poll_ctx);
+		if (!g_sched) {
+			printf("Fail to alloc sched!\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode,
+					     0, 0, ctx_num - 1);
+		if (ret) {
+			printf("Fail to fill sched data!\n");
+			goto out_sched;
+		}
+		g_sched->name = "hpre-sched-0";
+		ret = wd_rsa_init(&g_ctx_cfg, g_sched);
 	} else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE) {
-		sched.poll_policy = dh_poll_policy;
-		ret = wd_dh_init(&g_ctx_cfg, &sched);
+		g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM,
+					     wd_dh_poll_ctx);
+		if (!g_sched) {
+			printf("Fail to alloc sched!\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode,
+					     0, 0, ctx_num - 1);
+		if (ret) {
+			printf("Fail to fill sched data!\n");
+			goto out_sched;
+		}
+		g_sched->name = "hpre-sched-0";
+		ret = wd_dh_init(&g_ctx_cfg, g_sched);
 	} else {
-		sched.poll_policy = ecc_poll_policy;
-		ret = wd_ecc_init(&g_ctx_cfg, &sched);
+		g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM,
+					     wd_ecc_poll_ctx);
+		if (!g_sched) {
+			printf("Fail to alloc sched!\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode,
+					     0, 0, ctx_num - 1);
+		if (ret) {
+			printf("Fail to fill sched data!\n");
+			goto out_sched;
+		}
+		g_sched->name = "hpre-sched-0";
+		ret = wd_ecc_init(&g_ctx_cfg, g_sched);
 	}
 
 	if (ret) {
 		HPRE_TST_PRT("failed to init alg, ret %d!\n", ret);
-		return -1;
+		goto out_sched;
 	}
 
 	wd_free_list_accels(list);
 
 	return ret;
-
+out_sched:
+	sample_sched_release(g_sched);
+out:
+	return ret;
 }
 
 static void uninit_hpre_global_config(__u32 op_type)
@@ -1976,6 +1934,7 @@ static void uninit_hpre_global_config(__u32 op_type)
 		wd_dh_uninit();
 	else
 		wd_ecc_uninit();
+	sample_sched_release(g_sched);
 }
 
 static int init_opdata_param(struct wd_dh_req *req,
@@ -9047,11 +9006,16 @@ int main(int argc, char *argv[])
 {
 	enum alg_op_type alg_op_type = HPRE_ALG_INVLD_TYPE;
 	int ret = 0;
+	int mode;
 
 	ret = parse_cmd_line(argc, argv);
 	if (ret)
 		return -1;
 
+	if (!strcmp(g_config.trd_mode, "async"))
+		mode = CTX_MODE_ASYNC;
+	else
+		mode = CTX_MODE_SYNC;
 	if (!strcmp(g_config.op, "rsa-gen")) {
 		if (!strcmp(g_config.trd_mode, "async"))
 			alg_op_type = RSA_ASYNC_GEN;
@@ -9151,7 +9115,7 @@ int main(int argc, char *argv[])
 	else if (alg_op_type >= X448_GEN && alg_op_type <= X448_ASYNC_COMPUTE)
 		g_config.key_bits = 448;
 
-  	ret = init_hpre_global_config(alg_op_type);
+	ret = init_hpre_global_config(alg_op_type, mode);
   	if (ret) {
   		HPRE_TST_PRT("failed to init_hpre_global_config, ret %d!\n", ret);
   		return -1;
