@@ -1188,9 +1188,9 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 
 	switch (msg->req.op_type) {
 	case HPRE_SM2_ENC: /* fall through */
-	case HPRE_SM2_DEC: /* fall through */
+	case HPRE_SM2_DEC:
 		/* driver to identify sm2 algorithm when async receive */
-		hw_msg->sm2_mlen = msg->req.op_type;
+		hw_msg->sm2_mlen = msg->req.op_type; /* fall through */
 	case WD_SM2_KG: /* fall through */
 	case WD_ECXDH_GEN_KEY:
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
