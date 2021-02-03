@@ -504,7 +504,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	sess->key.mode = setup->mode;
 	sess->key.numa_id = 0;
 
-	return (handle_t)(uintptr_t)sess;
+	return (handle_t)sess;
 }
 
 void wd_dh_free_sess(handle_t sess)
