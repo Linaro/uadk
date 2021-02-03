@@ -812,6 +812,9 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
 		len += tmp->entry_size_in_sgl;
 	}
 
+	if (!tmp)
+		return;
+
 	/* find the start sge position and start offset */
 	for (i = 0; i < tmp->entry_sum_in_sgl; i++) {
 		if (len + tmp->sge_entries[i].len > offset) {
