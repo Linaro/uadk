@@ -33,7 +33,7 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	ssize_t size;
 	int fd;
 
-	if (!dev_root || !attr || !buf || (sz == 0))
+	if (!dev_root || !attr || !buf || !sz)
 		return -WD_EINVAL;
 
 	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s", dev_root, attr);
@@ -88,7 +88,7 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 		return ret;
 	}
 
-	if ((size_t)ret == buf_sz)
+	if (ret == buf_sz)
 		ret--;
 
 	buf[ret] = '\0';
@@ -469,7 +469,7 @@ static int get_dev_alg_name(char *dev_path, char *buf, size_t sz)
 		return ret;
 	}
 
-	if ((size_t)ret == sz)
+	if (ret == sz)
 		buf[sz - 1] = '\0';
 
 	return 0;
