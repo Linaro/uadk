@@ -933,6 +933,7 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 static struct wd_cipher_driver hisi_cipher_driver = {
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "cipher",
+		.drv_ctx_size	= sizeof(struct hisi_sec_ctx),
 		.init		= hisi_sec_init,
 		.exit		= hisi_sec_exit,
 };
@@ -1299,6 +1300,7 @@ int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
 static struct wd_digest_driver hisi_digest_driver = {
 		.drv_name	= "hisi_sec2",
 		.alg_name	= "digest",
+		.drv_ctx_size	= sizeof(struct hisi_sec_ctx),
 		.init		= hisi_sec_init,
 		.exit		= hisi_sec_exit,
 };
@@ -1782,6 +1784,7 @@ int hisi_sec_aead_recv(handle_t ctx, struct wd_aead_msg *recv_msg)
 static struct wd_aead_driver hisi_aead_driver = {
 	.drv_name	= "hisi_sec2",
 	.alg_name	= "aead",
+	.drv_ctx_size	= sizeof(struct hisi_sec_ctx),
 	.init		= hisi_sec_init,
 	.exit		= hisi_sec_exit,
 };
