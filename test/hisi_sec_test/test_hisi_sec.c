@@ -504,7 +504,7 @@ static int test_sec_cipher_sync_once(void)
 	else
 		hexdump(req.src, g_pktlen);
 
-	req.dst = malloc(g_pktlen);
+	req.dst = calloc(1, g_pktlen);
 	if (!req.dst) {
 		SEC_TST_PRT("req dst mem malloc failed!\n");
 		ret = -1;
