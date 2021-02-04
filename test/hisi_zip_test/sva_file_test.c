@@ -400,7 +400,7 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 
 	ret = init_ctx_config(opts, &info, &sched);
 	if (ret)
-		return ret;
+		goto out;
 
 	dstlen = (ulong)in_len * 2;
 	if (opts->block_size != 512000)
@@ -421,11 +421,11 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 		test_thrds_data[i].dst_len = dstlen;
 		test_thrds_data[i].src = calloc(1, test_thrds_data[i].src_len);
 		if (test_thrds_data[i].src == NULL)
-			goto buf_free;
+			goto out_src;
 		memcpy(test_thrds_data[i].src, file_buf, in_len);
 		test_thrds_data[i].dst = calloc(1, test_thrds_data[i].dst_len);
 		if (test_thrds_data[i].dst == NULL)
-			goto src_buf_free;
+			goto out_dst;
 	}
 
 	gettimeofday(&start_tval, NULL);
@@ -446,7 +446,7 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 		}
 		if (ret) {
 			WD_ERR("Create %dth thread fail!\n", i);
-			return ret;
+			goto out_thr;
 		}
 	}
 
@@ -459,7 +459,7 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
 			WD_ERR("Join %dth thread fail!\n", i);
-			return ret;
+			goto out_thr;
 		}
 	}
 
@@ -467,7 +467,7 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 		ret = pthread_join(system_test_poll_thrds, NULL);
 		if (ret) {
 			WD_ERR("Join poll thread fail!\n");
-			return ret;
+			goto out_thr;
 		}
 	}
 
@@ -515,25 +515,27 @@ int comp_file_test(FILE *source, FILE *dest, struct test_options *opts)
 			tc / thread_num / count / opts->run_num);
 	}
 
+	wd_free_list_accels(info.list);
 	free(file_buf);
 	uninit_config(&info, sched);
 
 	return 0;
 
-src_buf_free:
+out_thr:
+	free(test_thrds_data[i].dst);
+out_dst:
 	free(test_thrds_data[i].src);
 
-buf_free:
+out_src:
 	for (j = 0; j < i; j++) {
 		free(test_thrds_data[i].src);
 		free(test_thrds_data[i].dst);
 	}
 
+out:
+	wd_free_list_accels(info.list);
 	free(file_buf);
 
-	WD_ERR("thread malloc fail!ENOMEM!\n");
-	wd_free_list_accels(info.list);
-
-	return -ENOMEM;
+	return ret;
 }
 
