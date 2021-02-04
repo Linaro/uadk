@@ -3374,6 +3374,110 @@ out_thr:
 	return ret;
 }
 
+void *mmap_alloc(size_t len)
+{
+	void *p;
+	long page_size = sysconf(_SC_PAGESIZE);
+
+	if (len % page_size) {
+		WD_ERR("unaligned allocation must use malloc\n");
+		return NULL;
+	}
+
+	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
+		-1, 0);
+	if (p == MAP_FAILED)
+		WD_ERR("Failed to allocate %zu bytes\n", len);
+
+	return p == MAP_FAILED ? NULL : p;
+}
+
+
+int tlb_test(void)
+{
+	struct wd_cipher_req req;
+	struct wd_cipher_sess_setup setup;
+	struct cipher_testvec *tv = NULL;
+	handle_t h_sess;
+	int ret;
+
+	ret = sva_init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	if (ret) {
+		SEC_TST_PRT("fail to init ctx config!\n");
+		return -1;
+	}
+
+	setup.alg = WD_CIPHER_AES;
+	setup.mode = WD_CIPHER_ECB;
+	g_keylen = AES_KEYSIZE_128;
+	get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
+
+	req.src = mmap_alloc(BUFF_SIZE * 4);
+	req.in_bytes = tv->len;
+	memcpy(req.src, tv->ptext, tv->len);
+
+	req.dst = mmap_alloc(BUFF_SIZE * 4);
+	req.out_bytes = tv->len;
+	req.out_buf_bytes = BUFF_SIZE;
+	memset(req.dst, 0, BUFF_SIZE);
+
+	req.iv = mmap_alloc(BUFF_SIZE * 4);
+	req.iv_bytes = tv->ivlen;
+	memcpy(req.iv, tv->iv, req.iv_bytes);
+
+	req.op_type = WD_CIPHER_ENCRYPTION;
+
+	h_sess = wd_cipher_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -1;
+		munmap(req.dst, BUFF_SIZE * 4);
+		goto out_sess;
+	}
+
+	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
+	if (ret) {
+		munmap(req.dst, BUFF_SIZE * 4);
+		SEC_TST_PRT("test sec cipher set key is failed!\n");
+		ret = -1;
+		goto out_setkey;
+	}
+
+	ret = wd_do_cipher_sync(h_sess, &req);
+	if (ret != 0) {
+		munmap(req.dst, BUFF_SIZE * 4);
+		SEC_TST_PRT("test sec cipher is failed\n");
+		ret = -1;
+		goto out_setkey;
+	}
+
+	SEC_TST_PRT("The first time test sec cipher is successful\n");
+
+	ret = munmap(req.dst, BUFF_SIZE * 4);
+	if (ret)
+		perror("unmap()");
+	if (g_times > 1) {
+		ret = wd_do_cipher_sync(h_sess, &req);
+		if (ret == 0) {
+			WD_ERR("TLB test failed, broken invalidate! "
+				"VA=%p-%p  state:%d\n", req.dst, req.dst +
+				BUFF_SIZE, req.state);
+			ret = -EFAULT;
+		} else {
+			printf("TLB test success\n");
+			ret = 0;
+		}
+	}
+
+	req.dst = NULL;
+out_setkey:
+	wd_cipher_free_sess(h_sess);
+out_sess:
+	sva_uninit_config();
+	munmap(req.src, BUFF_SIZE * 4);
+	munmap(req.iv, BUFF_SIZE * 4);
+	return ret;
+}
+
 static void print_help(void)
 {
 	SEC_TST_PRT("NAME\n");
@@ -3449,6 +3553,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"blknum",    required_argument, 0,  14},
 		{"help",      no_argument,       0,  15},
 		{"sglnum",    required_argument, 0,  16},
+		{"tlb",      no_argument,       0,  17},
 		{0, 0, 0, 0}
 	};
 
@@ -3472,6 +3577,9 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 			break;
 		case 4:
 			option->algclass = PERF_CLASS;
+			break;
+		case 17:
+			option->algclass = TLB_CLASS;
 			break;
 		case 5:
 			option->optype = strtol(optarg, NULL, 0);
@@ -3519,7 +3627,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 
 static int test_sec_option_convert(struct test_sec_option *option)
 {
-	if (option->algclass > PERF_CLASS) {
+	if (option->algclass > TLB_CLASS) {
 		print_help();
 		return -EINVAL;
 	}
@@ -3664,6 +3772,9 @@ int main(int argc, char *argv[])
 		return ret;
 	if (option.algclass == PERF_CLASS)
 		return sec_sva_test();
+	
+	if (option.algclass == TLB_CLASS)
+		return tlb_test();
 
 	pthread_mutex_init(&test_sec_mutex, NULL);
 

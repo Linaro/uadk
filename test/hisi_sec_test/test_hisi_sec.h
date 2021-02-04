@@ -7,6 +7,7 @@ enum alg_class {
 	AEAD_CLASS,
 	DIGEST_CLASS,
 	PERF_CLASS,
+	TLB_CLASS,
 };
 
 enum cipher_op_type {
