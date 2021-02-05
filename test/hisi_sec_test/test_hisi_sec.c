@@ -29,6 +29,8 @@
 #define MAX_ALGO_PER_TYPE 12
 #define MIN_SVA_BD_NUM	1
 
+#define SGL_ALIGNED_BYTES	64
+
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched *g_sched;
 
@@ -44,7 +46,7 @@ static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 static unsigned int g_syncmode;
 static unsigned int g_ctxnum;
-static unsigned int g_data_fmt = 0;
+static unsigned int g_data_fmt = WD_FLAT_BUF;
 static unsigned int g_sgl_num = 0;
 static pthread_spinlock_t lock = 0;
 
@@ -125,6 +127,9 @@ static void hexdump(char *buff, unsigned int len)
 	SEC_TST_PRT("\n");
 }
 
+/*
+ * Parse alg & mode from variable g_testalg.
+ */
 int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 {
 	struct cipher_testvec *tv;
@@ -386,66 +391,74 @@ static void digest_uninit_config(void)
 	free(g_ctx_cfg.ctxs);
 }
 
-static void test_sec_sgl_free(__u8 data_fmt, void *buff)
+/*
+ * Calculate SGL unit size.
+ */
+static inline size_t cal_unit_sz(size_t sz, int sgl_num)
 {
-	struct wd_datalist *sgl;
-	struct wd_datalist *tmp;
-
-	if (!buff || data_fmt != WD_SGL_BUF)
-		return;
-
-	sgl = (struct wd_datalist*)buff;
-	while (sgl) {
-		tmp = sgl;
-		sgl = sgl->next;
-		free(tmp);
-	}
+	return (sz + SGL_ALIGNED_BYTES - 1) & ~(SGL_ALIGNED_BYTES - 1);
 }
 
-static void *test_sec_buff_create(__u8 data_fmt, void *buff, unsigned int size)
+/*
+ * Create SGL or common memory buffer.
+ */
+static void *create_buf(int sgl, size_t sz, size_t unit_sz)
 {
-	struct wd_datalist *cur;
-	struct wd_datalist *next;
-	struct wd_datalist *head;
-	int size_unit, i;
-	unsigned int tail_size;
+	struct wd_datalist *head, *p, *q;
+	int i, tail_sz, sgl_num;
+	void *buf;
 
-	if (data_fmt != WD_SGL_BUF)
-		return buff;
-
-	/* Divisible is guaranteed by the inputer */
-	size_unit = size / g_sgl_num;
-	tail_size = size % g_sgl_num;
-
-	head = malloc(sizeof(struct wd_datalist));
-	if (!head) {
-		SEC_TST_PRT("Fail to alloc memory for sgl head!\n");
+	buf = calloc(1, sz);
+	if (!buf) {
+		SEC_TST_PRT("Fail to allocate buffer %ld size!\n", sz);
 		return NULL;
 	}
+	if (sgl == WD_FLAT_BUF)
+		return buf;
+	tail_sz = sz % unit_sz;
+	sgl_num = sz / unit_sz;	/* the number with unit_sz bytes */
 
-	head->data = buff;
-	head->len = size_unit;
-	head->next = NULL;
-	cur = head;
-
-	for (i = 1; i < g_sgl_num; i++) {
-		next = malloc(sizeof(struct wd_datalist));
-		if (!next) {
-			SEC_TST_PRT("Fail to alloc memory for sgl!\n");
-			test_sec_sgl_free(data_fmt, head);
-			return NULL;
-		}
-		next->data = buff + i * size_unit;
-		next->len = size_unit;
-		if (i == g_sgl_num - 1)
-			next->len += tail_size;
-
-		next->next = NULL;
-		cur->next = next;
-		cur = next;
+	/* the additional slot is for tail_sz */
+	head = calloc(1, sizeof(struct wd_datalist) * (sgl_num + 1));
+	if (!head) {
+		SEC_TST_PRT("Fail to allocate memory for SGL head!\n");
+		goto out;
 	}
-
+	for (i = 0, p = head, q = NULL; i < sgl_num;) {
+		p->data = buf + i * unit_sz;
+		p->len = unit_sz;
+		if (q)
+			q->next = p;
+		q = p;
+		p = &head[++i];
+	}
+	if (tail_sz) {
+		p->data = buf + i * unit_sz;
+		p->len = tail_sz;
+		if (q)
+			q->next = p;
+	}
 	return head;
+out:
+	free(buf);
+	return NULL;
+}
+
+static void free_buf(int sgl, void *buf)
+{
+	struct wd_datalist *p;
+
+	if (!buf)
+		return;
+	if (sgl == WD_FLAT_BUF) {
+		free(buf);
+		return;
+	}
+	p = (struct wd_datalist *)buf;
+	/* free the whole data buffer of SGL */
+	free(p->data);
+	/* free SGL headers */
+	free(buf);
 }
 
 static int test_sec_cipher_sync_once(void)
@@ -461,8 +474,7 @@ static int test_sec_cipher_sync_once(void)
 	int pid = getpid();
 	int cnt = g_times;
 	int ret;
-	void *src_bak = NULL;
-	void *dst_bak = NULL;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -477,26 +489,21 @@ static int test_sec_cipher_sync_once(void)
 	setup.mode = WD_CIPHER_CBC;
 	if (g_direction == 0)
 		req.op_type = WD_CIPHER_ENCRYPTION;
-	else {
+	else
 		req.op_type = WD_CIPHER_DECRYPTION;
-	}
 
 	/* get resource */
 	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.src = malloc(g_pktlen);
+	unit_sz = cal_unit_sz(g_pktlen, g_sgl_num);
+	req.src = create_buf(g_data_fmt, g_pktlen, unit_sz);
 	if (!req.src) {
-		SEC_TST_PRT("req src mem malloc failed!\n");
-		ret = -1;
+		ret = -ENOMEM;
 		goto out;
 	}
-	src_bak = req.src;
 
 	memcpy(req.src, tv->ptext, tv->len);
 	req.in_bytes = g_pktlen;
-	req.src = test_sec_buff_create(g_data_fmt, req.src, g_pktlen);
-	if (!req.src)
-		goto out;
 
 	SEC_TST_PRT("req src--------->:\n");
 	if (g_data_fmt == WD_SGL_BUF)
@@ -504,23 +511,16 @@ static int test_sec_cipher_sync_once(void)
 	else
 		hexdump(req.src, g_pktlen);
 
-	req.dst = calloc(1, g_pktlen);
+	req.dst = create_buf(g_data_fmt, g_pktlen, unit_sz);
 	if (!req.dst) {
-		SEC_TST_PRT("req dst mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
-	dst_bak = req.dst;
-
-	req.dst = test_sec_buff_create(g_data_fmt, req.dst, g_pktlen);
-	if (!req.dst)
-		goto out;
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
-		SEC_TST_PRT("req iv mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_iv;
 	}
 	if (setup.mode != WD_CIPHER_ECB) {
 		req.iv_bytes = strlen(tv->iv);
@@ -538,14 +538,14 @@ static int test_sec_cipher_sync_once(void)
 
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
-		goto out;
+		ret = -EINVAL;
+		goto out_sess;
 	}
 
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		SEC_TST_PRT("req set key failed!\n");
-		goto out;
+		goto out_key;
 	}
 	SEC_TST_PRT("cipher req key--------->:\n");
 	// hexdump(h_sess->key, tv->klen);
@@ -570,17 +570,15 @@ static int test_sec_cipher_sync_once(void)
 	else
 		hexdump(req.dst, req.out_bytes);
 
+out_key:
+	wd_cipher_free_sess(h_sess);
+out_sess:
+	free(req.iv);
+out_iv:
+	free_buf(g_data_fmt, req.dst);
+out_dst:
+	free_buf(g_data_fmt, req.src);
 out:
-	test_sec_sgl_free(g_data_fmt, req.src);
-	test_sec_sgl_free(g_data_fmt, req.dst);
-	if (src_bak)
-		free(src_bak);
-	if (dst_bak)
-		free(dst_bak);
-	if (req.iv)
-		free(req.iv);
-	if (h_sess)
-		wd_cipher_free_sess(h_sess);
 	uninit_config();
 
 	return ret;
@@ -606,8 +604,7 @@ static int test_sec_cipher_async_once(void)
 	unsigned long Perf = 0;
 	float speed, time_used;
 	int pid = getpid();
-	void *src_bak = NULL;
-	void *dst_bak = NULL;
+	size_t unit_sz;
 
 	int cnt = g_times;
 	__u32 num = 0;
@@ -636,41 +633,30 @@ static int test_sec_cipher_async_once(void)
 	/* get resource */
 	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.src  = malloc(BUFF_SIZE);
+	unit_sz = cal_unit_sz(g_pktlen, g_sgl_num);
+	req.src = create_buf(g_data_fmt, g_pktlen, unit_sz);
 	if (!req.src) {
-		SEC_TST_PRT("req src mem malloc failed!\n");
-		ret = -1;
+		ret = -ENOMEM;
 		goto out;
 	}
-	src_bak = req.src;
 
 	memcpy(req.src, tv->ptext, g_pktlen);
 	req.in_bytes = g_pktlen;
 	SEC_TST_PRT("req src--------->:\n");
 	hexdump(req.src, g_pktlen);
-	req.src = test_sec_buff_create(g_data_fmt, req.src, g_pktlen);
-	if (!req.src)
-		goto out;
 
-	req.dst = malloc(BUFF_SIZE);
+	req.dst = create_buf(g_data_fmt, g_pktlen, unit_sz);
 	if (!req.dst) {
-		SEC_TST_PRT("req dst mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
-	dst_bak = req.dst;
-
-	req.dst = test_sec_buff_create(g_data_fmt, req.dst, g_pktlen);
-	if (!req.dst)
-		goto out;
 
 	req.data_fmt = g_data_fmt;
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
-		SEC_TST_PRT("req iv mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_iv;
 	}
 	if (setup.mode != WD_CIPHER_ECB) {
 		req.iv_bytes = strlen(tv->iv);
@@ -687,13 +673,13 @@ static int test_sec_cipher_async_once(void)
 	h_sess = wd_cipher_alloc_sess(&setup);
 	if (!h_sess) {
 		ret = -1;
-		goto out;
+		goto out_sess;
 	}
 
 	ret = wd_cipher_set_key(h_sess, (const __u8*)tv->key, tv->klen);
 	if (ret) {
 		SEC_TST_PRT("req set key failed!\n");
-		goto out;
+		goto out_key;
 	}
 	SEC_TST_PRT("cipher req key--------->:\n");
 	// hexdump(h_sess->key, tv->klen);
@@ -702,16 +688,17 @@ static int test_sec_cipher_async_once(void)
 		req.cb = async_cb;
 		req.cb_param = &data;
 		ret = wd_do_cipher_async(h_sess, &req);
-		if (ret < 0) {
+		if (ret < 0)
 			goto out;
-			continue;
-		}
 		/* poll thread */
 try_again:
 		num = 0;
 		ret = wd_cipher_poll_ctx(0, 1, &num);
-		if (ret == -EAGAIN) {
-			goto try_again; // loop poll
+		if (ret < 0) {
+			if (ret == -EAGAIN)
+				goto try_again; // loop poll
+			else
+				goto out;
 		}
 		cnt--;
 	}
@@ -725,17 +712,16 @@ try_again:
 			thread_id, speed, Perf);
 
 	usleep(100000);
+
+out_key:
+	wd_cipher_free_sess(h_sess);
+out_sess:
+	free(req.iv);
+out_iv:
+	free_buf(g_data_fmt, req.dst);
+out_dst:
+	free_buf(g_data_fmt, req.src);
 out:
-	test_sec_sgl_free(g_data_fmt, req.src);
-	test_sec_sgl_free(g_data_fmt, req.dst);
-	if (src_bak)
-		free(src_bak);
-	if (dst_bak)
-		free(dst_bak);
-	if (req.iv)
-		free(req.iv);
-	if (h_sess)
-		wd_cipher_free_sess(h_sess);
 	uninit_config();
 
 	return ret;
@@ -860,12 +846,13 @@ static int sec_cipher_sync_test(void)
 {
 	struct wd_cipher_req	req[THREADS_NUM];
 	struct wd_cipher_sess_setup setup[THREADS_NUM];
-	void *src = NULL, *dst = NULL, *iv = NULL;
+	void *iv = NULL;
 	int parallel = g_thread_num;
 	struct cipher_testvec *tv = NULL;
 	int test_alg, test_mode;
-	int ret, i;
+	int ret, i, j;
 	unsigned int len;
+	size_t unit_sz;
 
 	memset(req, 0, sizeof(struct wd_cipher_req) * THREADS_NUM);
 	memset(setup, 0, sizeof(struct wd_cipher_sess_setup) * THREADS_NUM);
@@ -873,47 +860,35 @@ static int sec_cipher_sync_test(void)
 	/* get resource */
 	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 
-	int step = sizeof(char) * TEST_WORD_LEN;
-	src = malloc(step * THREADS_NUM);
-	if (!src) {
-		ret = -ENOMEM;
-		goto out_thr;
-	}
-
-	dst = malloc(step * THREADS_NUM);
-	if (!dst) {
-		ret = -ENOMEM;
-		goto out_thr;
-	}
-
-	iv = malloc(step * THREADS_NUM);
+	iv = calloc(1, IV_SIZE * THREADS_NUM);
 	if (!iv) {
 		ret = -ENOMEM;
-		goto out_thr;
+		goto out_iv;
 	}
 
+
+	len = g_pktlen < tv->len ? g_pktlen : tv->len;
+	unit_sz = cal_unit_sz(len, g_sgl_num);
 	for (i = 0; i < parallel; i++) {
-		req[i].src = src + i * step;
-		memset(req[i].src, 0, step);
-
-		len = g_pktlen < tv->len ? g_pktlen : tv->len;
-		memcpy(req[i].src, tv->ptext, len);
+		req[i].src = create_buf(g_data_fmt, len, unit_sz);
+		if (!req[i].src) {
+			ret = -ENOMEM;
+			goto out_src;
+		}
 		req[i].in_bytes = len;
-		req[i].src = test_sec_buff_create(g_data_fmt, req[i].src, len);
-		if (!req[i].src)
-			goto out_thr;
+		memcpy(req[i].src, tv->ptext, len);
 
-		req[i].dst = dst + i * step;
 		req[i].out_bytes = tv->len;
-		req[i].out_buf_bytes = step;
-		req[i].dst = test_sec_buff_create(g_data_fmt, req[i].dst, step);
-		if (!req[i].dst)
-			goto out_thr;
+		req[i].out_buf_bytes = len;
+		req[i].dst = create_buf(g_data_fmt, len, unit_sz);
+		if (!req[i].dst) {
+			ret = -ENOMEM;
+			goto out_dst;
+		}
 
 		req[i].data_fmt = g_data_fmt;
 
-		req[i].iv = iv + i * step;
-		memset(req[i].iv, 0, step);
+		req[i].iv = iv + i * IV_SIZE;
 		if (test_mode != WD_CIPHER_ECB) {
 			req[i].iv_bytes = strlen(tv->iv);
 			if (tv->ivlen > 0)
@@ -927,36 +902,38 @@ static int sec_cipher_sync_test(void)
 
 		if (g_direction == 0)
 			req[i].op_type = WD_CIPHER_ENCRYPTION;
-		else {
+		else
 			req[i].op_type = WD_CIPHER_DECRYPTION;
-		}
 	}
 
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 	if (ret) {
 		SEC_TST_PRT("fail to init sigle ctx config!\n");
-		goto out_thr;
+		goto out_cfg;
 	}
 
 	ret = test_sync_create_threads(parallel, req, setup);
 	if (ret < 0)
-		goto out_config;
+		goto out_thr;
 
-out_config:
-	uninit_config();
 out_thr:
-	for (i = 0; i < parallel; i++) {
-		test_sec_sgl_free(g_data_fmt, req[i].src);
-		test_sec_sgl_free(g_data_fmt, req[i].dst);
+	uninit_config();
+out_cfg:
+	for (j = 0; j < i; j++) {
+		free_buf(g_data_fmt, req[j].src);
+		free_buf(g_data_fmt, req[j].dst);
 	}
-
-	if (src)
-		free(src);
-	if (dst)
-		free(dst);
-	if (iv)
-		free(iv);
-
+	free(iv);
+	return ret;
+out_dst:
+	free_buf(g_data_fmt, req[i].src);
+out_src:
+	for (j = 0; j < i; j++) {
+		free_buf(g_data_fmt, req[j].src);
+		free_buf(g_data_fmt, req[j].dst);
+	}
+out_iv:
+	free(iv);
 	return ret;
 }
 
@@ -1111,49 +1088,42 @@ static int sec_cipher_async_test(void)
 {
 	struct wd_cipher_req	req[THREADS_NUM];
 	struct wd_cipher_sess_setup setup[THREADS_NUM];
-	void *src = NULL, *dst = NULL, *iv = NULL;
+	void *iv = NULL;
 	struct cipher_testvec *tv = NULL;
 	thread_data_t datas[THREADS_NUM];
 	int parallel = g_thread_num;
 	int test_alg, test_mode;
-	int i, ret;
+	int i, j, ret;
+	size_t unit_sz;
 
 	memset(datas, 0, sizeof(thread_data_t) * THREADS_NUM);
 	memset(req, 0, sizeof(struct wd_cipher_req) * THREADS_NUM);
 	/* get resource */
 	ret = get_cipher_resource(&tv, &test_alg, &test_mode);
 	int step = sizeof(char) * TEST_WORD_LEN;
-	src = malloc(step * THREADS_NUM);
-	if (!src) {
-		ret = -ENOMEM;
-		goto out_thr;
-	}
-	dst = malloc(step * THREADS_NUM);
-	if (!dst) {
-		ret = -ENOMEM;
-		goto out_thr;
-	}
 	iv = malloc(step * THREADS_NUM);
 	if (!iv) {
 		ret = -ENOMEM;
-		goto out_thr;
+		goto out_iv;
 	}
 
+	unit_sz = cal_unit_sz(g_pktlen, g_sgl_num);
 	for (i = 0; i < parallel; i++) {
-		req[i].src = src + i * step;
-		memset(req[i].src, 0, step);
-		memcpy(req[i].src, tv->ptext, g_pktlen);
+		req[i].src = create_buf(g_data_fmt, g_pktlen, unit_sz);
+		if (!req[i].src) {
+			ret = -ENOMEM;
+			goto out_src;
+		}
 		req[i].in_bytes = g_pktlen;
-		req[i].src = test_sec_buff_create(g_data_fmt, req[i].src, g_pktlen);
-		if (!req[i].src)
-			goto out_thr;
+		memcpy(req[i].src, tv->ptext, g_pktlen);
 
-		req[i].dst = dst + i * step;
+		req[i].dst = create_buf(g_data_fmt, g_pktlen, unit_sz);
+		if (!req[i].dst) {
+			ret = -ENOMEM;
+			goto out_dst;
+		}
 		req[i].out_bytes = tv->len;
-		req[i].out_buf_bytes = step;
-		req[i].dst = test_sec_buff_create(g_data_fmt, req[i].dst, step);
-		if (!req[i].dst)
-			goto out_thr;
+		req[i].out_buf_bytes = g_pktlen;
 
 		req[i].data_fmt = g_data_fmt;
 
@@ -1172,9 +1142,8 @@ static int sec_cipher_async_test(void)
 
 		if (g_direction == 0)
 			req[i].op_type = WD_CIPHER_ENCRYPTION;
-		else {
+		else
 			req[i].op_type = WD_CIPHER_DECRYPTION;
-		}
 		req[i].cb = async_cb;
 		req[i].cb_param = &datas[i];
 	}
@@ -1182,27 +1151,31 @@ static int sec_cipher_async_test(void)
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
 	if (ret) {
 		SEC_TST_PRT("fail to init sigle ctx config!\n");
-		goto out_thr;
+		goto out_cfg;
 	}
 
 	ret = test_async_create_threads(parallel, req, setup);
 	if (ret < 0)
-		goto out_config;
+		goto out_thr;
 
-out_config:
-	uninit_config();
 out_thr:
-	for (i = 0; i < parallel; i++) {
-		test_sec_sgl_free(g_data_fmt, req[i].src);
-		test_sec_sgl_free(g_data_fmt, req[i].dst);
+	uninit_config();
+out_cfg:
+	for (j = 0; j < i; j++) {
+		free_buf(g_data_fmt, req[j].src);
+		free_buf(g_data_fmt, req[j].dst);
 	}
-	if (src)
-		free(src);
-	if (dst)
-		free(dst);
-	if (iv)
-		free(iv);
-
+	free(iv);
+	return ret;
+out_dst:
+	free_buf(g_data_fmt, req[i].src);
+out_src:
+	for (j = 0; j < i; j++) {
+		free_buf(g_data_fmt, req[j].src);
+		free_buf(g_data_fmt, req[j].dst);
+	}
+out_iv:
+	free(iv);
 	return ret;
 }
 
@@ -1450,6 +1423,7 @@ static int sec_digest_sync_once(void)
 	unsigned long cnt = g_times;
 	int ret;
 	void *bak_in = NULL;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -1462,30 +1436,24 @@ static int sec_digest_sync_once(void)
 	memset(&req, 0, sizeof(struct wd_digest_req));
 	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.in = malloc(BUFF_SIZE);
+	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
+	req.in = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.in) {
-		SEC_TST_PRT("req src in mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_src;
 	}
 	bak_in = req.in;
 
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
-	req.in = test_sec_buff_create(g_data_fmt, req.in, req.in_bytes);
-	if (!req.in) {
-		ret = -1;
-		goto out;
-	}
 
 	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(bak_in, tv->psize);
 
-	req.out = malloc(BUFF_SIZE);
+	req.out = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.out) {
-		SEC_TST_PRT("req dst out mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
 
 	req.out_buf_bytes = BUFF_SIZE;
@@ -1496,8 +1464,8 @@ static int sec_digest_sync_once(void)
 
 	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
-		goto out;
+		ret = -EINVAL;
+		goto out_sess;
 	}
 
 	/* if mode is HMAC, should set key */
@@ -1505,7 +1473,7 @@ static int sec_digest_sync_once(void)
 		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
-			goto out;
+			goto out_key;
 		}
 		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 		SEC_TST_PRT("------->tv key:%s\n", tv->key);
@@ -1529,14 +1497,13 @@ static int sec_digest_sync_once(void)
 			(int)syscall(__NR_gettid), speed, Perf);
 	hexdump(req.out, req.out_bytes);
 
-out:
-	test_sec_sgl_free(g_data_fmt, req.in);
-	if (bak_in)
-		free(bak_in);
-	if (req.out)
-		free(req.out);
-	if (h_sess)
-		wd_digest_free_sess(h_sess);
+out_key:
+	wd_digest_free_sess(h_sess);
+out_sess:
+	free_buf(g_data_fmt, req.out);
+out_dst:
+	free_buf(g_data_fmt, req.in);
+out_src:
 	digest_uninit_config();
 
 	return ret;
@@ -1665,6 +1632,7 @@ static int sec_digest_async_once(void)
 	int test_alg = 0;
 	int test_mode = 0;
 	int ret;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
@@ -1679,30 +1647,24 @@ static int sec_digest_async_once(void)
 	setup.alg = test_alg;
 	setup.mode = test_mode;
 
-	req.in = malloc(BUFF_SIZE);
+	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
+	req.in = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.in) {
-		SEC_TST_PRT("req src in mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_src;
 	}
 	bak_in = req.in;
 
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
-	req.in = test_sec_buff_create(g_data_fmt, req.in, req.in_bytes);
-	if (!req.in) {
-		ret = -1;
-		goto out;
-	}
 
 	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(bak_in, tv->psize);
 
-	req.out = malloc(BUFF_SIZE);
+	req.out = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.out) {
-		SEC_TST_PRT("req dst out mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
@@ -1711,8 +1673,8 @@ static int sec_digest_async_once(void)
 
 	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
-		goto out;
+		ret = -EINVAL;
+		goto out_sess;
 	}
 
 	/* if mode is HMAC, should set key */
@@ -1720,7 +1682,7 @@ static int sec_digest_async_once(void)
 		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
-			goto out;
+			goto out_key;
 		}
 		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 		SEC_TST_PRT("------->tv key:%s\n", tv->key);
@@ -1737,36 +1699,37 @@ static int sec_digest_async_once(void)
 	ret = pthread_create(&send_td, NULL, digest_send_thread, &td_data);
 	if (ret) {
 		SEC_TST_PRT("kthread create fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
 	/* poll thread */
 	ret = pthread_create(&poll_td, NULL, digest_poll_thread, &td_data);
 	if (ret) {
 		SEC_TST_PRT("kthread create fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
 	ret = pthread_join(send_td, NULL);
 	if (ret) {
 		SEC_TST_PRT("pthread_join fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
 	ret = pthread_join(poll_td, NULL);
 	if (ret) {
 		SEC_TST_PRT("pthread_join fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 	hexdump(req.out, req.out_bytes);
-out:
-	test_sec_sgl_free(g_data_fmt, req.in);
-	if (bak_in)
-		free(bak_in);
-	if (req.out)
-		free(req.out);
-	if (h_sess)
-		wd_digest_free_sess(h_sess);
+
+out_thr:
+out_key:
+	wd_digest_free_sess(h_sess);
+out_sess:
+	free_buf(g_data_fmt, req.out);
+out_dst:
+	free_buf(g_data_fmt, req.in);
+out_src:
 	digest_uninit_config();
 
 	return ret;
@@ -1782,6 +1745,7 @@ static int sec_digest_sync_multi(void)
 	thread_data_d td_data;
 	void *bak_in = NULL;
 	int i, ret;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -1794,31 +1758,25 @@ static int sec_digest_sync_multi(void)
 	memset(&req, 0, sizeof(struct wd_digest_req));
 	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.in	= malloc(BUFF_SIZE);
+	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
+	req.in = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.in) {
-		SEC_TST_PRT("req src in mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_src;
 	}
 
 	bak_in = req.in;
 
 	memcpy(req.in, tv->plaintext, tv->psize);
 	req.in_bytes = tv->psize;
-	req.in = test_sec_buff_create(g_data_fmt, req.in, req.in_bytes);
-	if (!req.in) {
-		ret = -1;
-		goto out;
-	}
 
 	SEC_TST_PRT("req src in--------->:\n");
 	hexdump(bak_in, tv->psize);
 
-	req.out = malloc(BUFF_SIZE);
+	req.out = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.out) {
-		SEC_TST_PRT("req dst out mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
@@ -1826,8 +1784,8 @@ static int sec_digest_sync_multi(void)
 
 	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
-		goto out;
+		ret = -EINVAL;
+		goto out_sess;
 	}
 
 	/* if mode is HMAC, should set key */
@@ -1835,7 +1793,7 @@ static int sec_digest_sync_multi(void)
 		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
-			goto out;
+			goto out_key;
 		}
 		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 		SEC_TST_PRT("------->tv key:%s\n", tv->key);
@@ -1854,7 +1812,7 @@ static int sec_digest_sync_multi(void)
 		ret = pthread_create(&sendtd[i], NULL, digest_sync_send_thread, &td_data);
 		if (ret) {
 			SEC_TST_PRT("Create send thread fail!\n");
-			return ret;
+			goto out_thr;
 		}
 	}
 
@@ -1863,7 +1821,7 @@ static int sec_digest_sync_multi(void)
 		ret = pthread_join(sendtd[i], NULL);
 		if (ret) {
 			SEC_TST_PRT("Join sendtd thread fail!\n");
-			return ret;
+			goto out_thr;
 		}
 	}
 
@@ -1872,14 +1830,14 @@ static int sec_digest_sync_multi(void)
 		(td_data.sum_perf >> 10) * req.in_bytes);
 
 	hexdump(req.out, req.out_bytes);
-out:
-	test_sec_sgl_free(g_data_fmt, req.in);
-	if (bak_in)
-		free(bak_in);
-	if (req.out)
-		free(req.out);
-	if (h_sess)
-		wd_digest_free_sess(h_sess);
+out_thr:
+out_key:
+	wd_digest_free_sess(h_sess);
+out_sess:
+	free_buf(g_data_fmt, req.out);
+out_dst:
+	free_buf(g_data_fmt, req.in);
+out_src:
 	digest_uninit_config();
 
 	return ret;
@@ -2143,12 +2101,11 @@ static int sec_aead_sync_once(void)
 	unsigned long Perf = 0;
 	float speed, time_used;
 	unsigned long cnt = g_times;
-	void *bak_src = NULL;
-	void *bak_dst = NULL;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
 	int ret;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_aead_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -2168,7 +2125,7 @@ static int sec_aead_sync_once(void)
 
 	h_sess = wd_aead_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
+		ret = -EINVAL;
 		goto out;
 	}
 
@@ -2179,20 +2136,20 @@ static int sec_aead_sync_once(void)
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
-			goto out;
+			goto out_key;
 		}
 	} else {
 		// AEAD template's cipher key is the tail data
 		ret = wd_aead_set_ckey(h_sess, (__u8*)tv->key + 0x28, 0x10);
 		if (ret) {
 			SEC_TST_PRT("set cipher key fail!\n");
-			goto out;
+			goto out_key;
 		}
 		// AEAD template's auth key is the mid data
 		ret = wd_aead_set_akey(h_sess, (__u8*)tv->key + 0x08, 0x20);
 		if (ret) {
 			SEC_TST_PRT("set auth key fail!\n");
-			goto out;
+			goto out_key;
 		}
 	}
 
@@ -2200,20 +2157,20 @@ static int sec_aead_sync_once(void)
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
-		goto out;
+		goto out_key;
 	}
 
 	// test the auth size
 	ret = wd_aead_get_authsize(h_sess);
 	if (ret != auth_size) {
 		SEC_TST_PRT("get auth size fail!\n");
-		goto out;
+		goto out_key;
 	}
 
 	ret = wd_aead_get_maxauthsize(h_sess);
 	if (ret < auth_size) {
 		SEC_TST_PRT("get max auth size fail!\n");
-		goto out;
+		goto out_key;
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
 
@@ -2230,15 +2187,14 @@ static int sec_aead_sync_once(void)
 	}
 	if (in_size > BUFF_SIZE) {
 		SEC_TST_PRT("alloc in buffer block size too small!\n");
-		goto out;
+		goto out_key;
 	}
-	req.src  = malloc(in_size);
+	unit_sz = cal_unit_sz(in_size, g_sgl_num);
+	req.src  = create_buf(g_data_fmt, in_size, unit_sz);
 	if (!req.src) {
-		SEC_TST_PRT("req src in mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_src;
 	}
-	bak_src = req.src;
 
 	memset(req.src, 0, in_size);
 	// copy the assoc data in the front of in data
@@ -2259,34 +2215,20 @@ static int sec_aead_sync_once(void)
 		req.out_bytes = req.assoc_bytes + tv->plen;
 	}
 
-	req.src = test_sec_buff_create(g_data_fmt, req.src, in_size);
-	if (!req.src) {
-		ret = -1;
-		goto out;
-	}
-
 	req.out_buf_bytes = req.out_bytes + auth_size;
 	// alloc out buffer memory
-	req.dst = malloc(req.out_buf_bytes);
+	req.dst = create_buf(g_data_fmt, req.out_buf_bytes, unit_sz);
 	if (!req.dst) {
-		SEC_TST_PRT("req dst out mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
-
-	bak_dst = req.dst;
-	req.dst = test_sec_buff_create(g_data_fmt, req.dst, req.out_buf_bytes);
-	if (!req.dst) {
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
 
 	// set iv
 	req.iv = malloc(AES_BLOCK_SIZE);
 	if (!req.iv) {
 		SEC_TST_PRT("req iv mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
 		iv_len = GCM_BLOCK_SIZE;
@@ -2316,17 +2258,16 @@ static int sec_aead_sync_once(void)
 		hexdump(req.list_dst->data, req.out_bytes);
 	else
 		hexdump(req.dst, req.out_bytes);
+
+	free(req.iv);
+out_iv:
+	free_buf(g_data_fmt, req.dst);
+out_dst:
+	free_buf(g_data_fmt, req.src);
+out_src:
+out_key:
+	wd_aead_free_sess(h_sess);
 out:
-	test_sec_sgl_free(g_data_fmt, req.src);
-	test_sec_sgl_free(g_data_fmt, req.dst);
-	if (bak_src)
-		free(bak_src);
-	if (bak_dst)
-		free(bak_dst);
-	if (req.iv)
-		free(req.iv);
-	if (h_sess)
-		wd_aead_free_sess(h_sess);
 	aead_uninit_config();
 
 	return ret;
@@ -2455,12 +2396,11 @@ static int sec_aead_async_once(void)
 	static pthread_t send_td;
 	static pthread_t poll_td;
 	thread_data_d td_data;
-	void *bak_src = NULL;
-	void *bak_dst = NULL;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
 	int ret;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_aead_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
@@ -2475,12 +2415,12 @@ static int sec_aead_async_once(void)
 				  (int *)&setup.dalg, (int *)&setup.dmode);
 	if (ret) {
 		SEC_TST_PRT("get aead resource fail!\n");
-		return ret;
+		goto out;
 	}
 
 	h_sess = wd_aead_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
+		ret = -EINVAL;
 		goto out;
 	}
 
@@ -2491,20 +2431,20 @@ static int sec_aead_async_once(void)
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
-			goto out;
+			goto out_key;
 		}
 	} else {
 		// AEAD template's cipher key is the tail data
 		ret = wd_aead_set_ckey(h_sess, (__u8*)tv->key + 0x28, 0x10);
 		if (ret) {
 			SEC_TST_PRT("set cipher key fail!\n");
-			goto out;
+			goto out_key;
 		}
 		// AEAD template's auth key is the mid data
 		ret = wd_aead_set_akey(h_sess, (__u8*)tv->key + 0x08, 0x20);
 		if (ret) {
 			SEC_TST_PRT("set auth key fail!\n");
-			goto out;
+			goto out_key;
 		}
 	}
 
@@ -2512,19 +2452,19 @@ static int sec_aead_async_once(void)
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
-		goto out;
+		goto out_key;
 	}
 
 	// test the auth size
 	ret = wd_aead_get_authsize(h_sess);
 	if (ret != auth_size) {
 		SEC_TST_PRT("get auth size fail!\n");
-		goto out;
+		goto out_key;
 	}
 	ret = wd_aead_get_maxauthsize(h_sess);
 	if (ret < auth_size) {
 		SEC_TST_PRT("get max auth size fail!\n");
-		goto out;
+		goto out_key;
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
 
@@ -2533,21 +2473,21 @@ static int sec_aead_async_once(void)
 	else
 		req.op_type = WD_CIPHER_DECRYPTION_DIGEST;
 
-	req.assoc_bytes = tv->alen;
-	req.src  = malloc(BUFF_SIZE);
-	if (!req.src) {
-		SEC_TST_PRT("req src in mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
-	bak_src = req.src;
-
 	// copy the assoc data in the front of in data
 	in_size = tv->alen + tv->plen + auth_size;
 	if (in_size > BUFF_SIZE) {
 		SEC_TST_PRT("alloc in buffer block size too small!\n");
-		goto out;
+		goto out_key;
 	}
+	req.assoc_bytes = tv->alen;
+	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
+	req.src = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
+	if (!req.src) {
+		SEC_TST_PRT("req src in mem malloc failed!\n");
+		ret = -ENOMEM;
+		goto out_src;
+	}
+
 	if (g_direction == 0) {
 		memcpy(req.src, tv->assoc, tv->alen);
 		memcpy((req.src + tv->alen), tv->ptext, tv->plen);
@@ -2558,23 +2498,15 @@ static int sec_aead_async_once(void)
 		req.in_bytes = tv->clen - auth_size;
 	}
 
-	req.src = test_sec_buff_create(g_data_fmt, req.src, in_size);
-	if (!req.src) {
-		ret = -1;
-		goto out;
-	}
-
 	SEC_TST_PRT("aead req src in--------->: %u\n", tv->alen + req.in_bytes);
-	hexdump(bak_src, tv->alen + req.in_bytes);
+	hexdump(req.src, tv->alen + req.in_bytes);
 
 	// alloc out buffer memory
-	req.dst = malloc(BUFF_SIZE);
+	req.dst = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.dst) {
-		SEC_TST_PRT("req dst out mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
-	bak_dst = req.dst;
 
 	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
@@ -2582,18 +2514,12 @@ static int sec_aead_async_once(void)
 	else
 		req.out_bytes = tv->alen + tv->plen;
 
-	req.dst = test_sec_buff_create(g_data_fmt, req.dst, req.out_bytes);
-	if (!req.dst) {
-		ret = -1;
-		goto out;
-	}
-
 	// set iv
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
 		SEC_TST_PRT("req iv mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
 		iv_len = GCM_BLOCK_SIZE;
@@ -2613,40 +2539,39 @@ static int sec_aead_async_once(void)
 	ret = pthread_create(&send_td, NULL, aead_send_thread, &td_data);
 	if (ret) {
 		SEC_TST_PRT("kthread create fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
 	/* poll thread */
 	ret = pthread_create(&poll_td, NULL, aead_poll_thread, &td_data);
 	if (ret) {
 		SEC_TST_PRT("kthread create fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
 	ret = pthread_join(send_td, NULL);
 	if (ret) {
 		SEC_TST_PRT("pthread_join fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
 	ret = pthread_join(poll_td, NULL);
 	if (ret) {
 		SEC_TST_PRT("pthread_join fail at %s", __func__);
-		goto out;
+		goto out_thr;
 	}
 
-	hexdump(bak_dst, req.out_bytes);
+	hexdump(req.dst, req.out_bytes);
+out_thr:
+	free(req.iv);
+out_iv:
+	free_buf(g_data_fmt, req.dst);
+out_dst:
+	free_buf(g_data_fmt, req.src);
+out_src:
+out_key:
+	wd_aead_free_sess(h_sess);
 out:
-	test_sec_sgl_free(g_data_fmt, req.src);
-	test_sec_sgl_free(g_data_fmt, req.dst);
-	if (bak_src)
-		free(bak_src);
-	if (bak_dst)
-		free(bak_dst);
-	if (req.iv)
-		free(req.iv);
-	if (h_sess)
-		wd_aead_free_sess(h_sess);
 	aead_uninit_config();
 
 	return ret;
@@ -2660,12 +2585,11 @@ static int sec_aead_sync_multi(void)
 	struct wd_aead_req req;
 	static pthread_t sendtd[64];
 	thread_data_d td_data;
-	void *bak_src = NULL;
-	void *bak_dst = NULL;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
 	int i, ret;
+	size_t unit_sz;
 
 	/* config setup */
 	ret = init_aead_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -2680,12 +2604,12 @@ static int sec_aead_sync_multi(void)
 		(int *)&setup.cmode,(int *)&setup.dalg, (int *)&setup.dmode);
 	if (ret) {
 		SEC_TST_PRT("get aead resource fail!\n");
-		return ret;
+		goto out;
 	}
 
 	h_sess = wd_aead_alloc_sess(&setup);
 	if (!h_sess) {
-		ret = -1;
+		ret = -EINVAL;
 		goto out;
 	}
 
@@ -2696,20 +2620,20 @@ static int sec_aead_sync_multi(void)
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
-			goto out;
+			goto out_key;
 		}
 	} else {
 		// AEAD template's cipher key is the tail data
 		ret = wd_aead_set_ckey(h_sess, (__u8*)tv->key + 0x28, 0x10);
 		if (ret) {
 			SEC_TST_PRT("set cipher key fail!\n");
-			goto out;
+			goto out_key;
 		}
 		// AEAD template's auth key is the mid data
 		ret = wd_aead_set_akey(h_sess, (__u8*)tv->key + 0x08, 0x20);
 		if (ret) {
 			SEC_TST_PRT("set auth key fail!\n");
-			goto out;
+			goto out_key;
 		}
 	}
 
@@ -2717,19 +2641,19 @@ static int sec_aead_sync_multi(void)
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
-		goto out;
+		goto out_key;
 	}
 
 	// test the auth size
 	ret = wd_aead_get_authsize(h_sess);
 	if (ret != auth_size) {
 		SEC_TST_PRT("get auth size fail!\n");
-		goto out;
+		goto out_key;
 	}
 	ret = wd_aead_get_maxauthsize(h_sess);
 	if (ret < auth_size) {
 		SEC_TST_PRT("get max auth size fail!\n");
-		goto out;
+		goto out_key;
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
 
@@ -2739,20 +2663,19 @@ static int sec_aead_sync_multi(void)
 		req.op_type = WD_CIPHER_DECRYPTION_DIGEST;
 
 	req.assoc_bytes = tv->alen;
-	req.src  = malloc(BUFF_SIZE);
-	if (!req.src) {
-		SEC_TST_PRT("req src in mem malloc failed!\n");
-		ret = -1;
-		goto out;
-	}
-	bak_src = req.src;
-
 	// copy the assoc data in the front of in data
 	in_size = tv->alen + tv->plen + auth_size;
 	if (in_size > BUFF_SIZE) {
 		SEC_TST_PRT("alloc in buffer block size too small!\n");
-		goto out;
+		goto out_key;
 	}
+	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
+	req.src  = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
+	if (!req.src) {
+		ret = -ENOMEM;
+		goto out_src;
+	}
+
 	if (g_direction == 0) {
 		memcpy(req.src, tv->assoc, tv->alen);
 		memcpy((req.src + tv->alen), tv->ptext, tv->plen);
@@ -2762,23 +2685,16 @@ static int sec_aead_sync_multi(void)
 		memcpy((req.src + tv->alen), tv->ctext, tv->clen);
 		req.in_bytes = tv->clen - auth_size;
 	}
-	req.src = test_sec_buff_create(g_data_fmt, req.src, req.in_bytes);
-	if (!req.src) {
-		ret = -1;
-		goto out;
-	}
 
 	SEC_TST_PRT("aead req src in--------->: %u\n", tv->alen + req.in_bytes);
 	hexdump(req.src, tv->alen + req.in_bytes);
 
 	// alloc out buffer memory
-	req.dst = malloc(BUFF_SIZE);
+	req.dst = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
 	if (!req.dst) {
-		SEC_TST_PRT("req dst out mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_dst;
 	}
-	bak_dst = req.dst;
 
 	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
@@ -2786,18 +2702,12 @@ static int sec_aead_sync_multi(void)
 	else
 		req.out_bytes = tv->alen + tv->plen;
 
-	req.dst = test_sec_buff_create(g_data_fmt, req.dst, req.out_bytes);
-	if (!req.dst) {
-		ret = -1;
-		goto out;
-	}
-
 	// set iv
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
 		SEC_TST_PRT("req iv mem malloc failed!\n");
-		ret = -1;
-		goto out;
+		ret = -ENOMEM;
+		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
 		iv_len = GCM_BLOCK_SIZE;
@@ -2817,7 +2727,7 @@ static int sec_aead_sync_multi(void)
 		ret = pthread_create(&sendtd[i], NULL, aead_sync_send_thread, &td_data);
 		if (ret) {
 			SEC_TST_PRT("Create send thread fail!\n");
-			return ret;
+			goto out_thr;
 		}
 	}
 
@@ -2826,22 +2736,21 @@ static int sec_aead_sync_multi(void)
 		ret = pthread_join(sendtd[i], NULL);
 		if (ret) {
 			SEC_TST_PRT("Join sendtd thread fail!\n");
-			return ret;
+			goto out_thr;
 		}
 	}
 
 	hexdump(req.dst, req.out_bytes);
+out_thr:
+	free(req.iv);
+out_iv:
+	free_buf(g_data_fmt, req.dst);
+out_dst:
+	free_buf(g_data_fmt, req.src);
+out_src:
+out_key:
+	wd_aead_free_sess(h_sess);
 out:
-	test_sec_sgl_free(g_data_fmt, req.src);
-	test_sec_sgl_free(g_data_fmt, req.dst);
-	if (bak_src)
-		free(bak_src);
-	if (bak_dst)
-		free(bak_dst);
-	if (req.iv)
-		free(req.iv);
-	if (h_sess)
-		wd_aead_free_sess(h_sess);
 	aead_uninit_config();
 
 	return ret;
@@ -3585,7 +3494,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_keylen = option->keylen;
 	g_times = option->times ? option->times : 1;
 	g_ctxnum = option->ctxnum ? option->ctxnum : 1;
-	g_data_fmt = option->sgl_num ? 1 : 0;
+	g_data_fmt = option->sgl_num ? WD_SGL_BUF : WD_FLAT_BUF;
 	g_sgl_num = option->sgl_num;
 
 	SEC_TST_PRT("set global times is %lld\n", g_times);
