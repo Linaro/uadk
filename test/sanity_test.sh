@@ -13,6 +13,8 @@
 # $sudo LD_LIBRARY_PATH={library path} PATH={bin path}	\
 # C_INCLUDE_PATH={head path} sanity_test.sh
 
+#VALGRIND=valgrind
+
 have_hisi_zip=0
 have_hisi_sec=0
 have_hisi_hpre=0
@@ -53,15 +55,26 @@ check_uadk_lib()
 	return 0
 }
 
+run_cmd()
+{
+	exit_code=0
+	if [ -z ${VALGRIND} ]; then
+		$@ &> /dev/null || exit_code=$?
+	else
+		${VALGRIND} $@
+	fi
+	return $exit_code
+}
+
 # failed: return 1; success: return 0
 run_zip_test()
 {
-	zip_sva_perf -b 8192 -l 1000 -v -m 0 &> /dev/null
+	run_cmd zip_sva_perf -b 8192 -l 1000 -v -m 0
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	zip_sva_perf -b 8192 -l 1 -v -m 1 &> /dev/null
+	run_cmd zip_sva_perf -b 8192 -l 1 -v -m 1
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
@@ -110,26 +123,26 @@ run_zip_test()
 # failed: return 1; success: return 0
 run_sec_test()
 {
-	test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
-		      --sync --multi 1 &> /dev/null
+	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+		--times 1 --sync --multi 1
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
-		      --async --multi 1 &> /dev/null
+	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+		--times 1 --async --multi 1
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
-		      --sync --multi 1 &> /dev/null
+	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+		--times 1 --sync --multi 1
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 --times 1 \
-		      --async --multi 1 &> /dev/null
+	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+		--times 1 --async --multi 1
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
@@ -140,12 +153,12 @@ run_sec_test()
 # failed: return 1; success: return 0
 run_hpre_test()
 {
-	test_hisi_hpre --trd_mode=sync &> /dev/null
+	run_cmd test_hisi_hpre --trd_mode=sync
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	test_hisi_hpre --trd_mode=async &> /dev/null
+	run_cmd test_hisi_hpre --trd_mode=async
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
