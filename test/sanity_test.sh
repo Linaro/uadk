@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 #
 # This is a sanity test about uadk algorithms.
 #
@@ -70,14 +70,8 @@ run_cmd()
 run_zip_test()
 {
 	run_cmd zip_sva_perf -b 8192 -l 1000 -v -m 0
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
 
 	run_cmd zip_sva_perf -b 8192 -l 1 -v -m 1
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
 
 	dd if=/dev/urandom of=origin bs=1M count=1 &> /dev/null
 	md5sum origin > ori.md5
@@ -95,7 +89,7 @@ run_zip_test()
 	md5sum origin > ori.md5
 	zip_sva_perf -F -m 1 < origin > hw.gz
 	zip_sva_perf -F -d -m 1 < hw.gz > origin
-	md5sum -c ori.md5
+	md5sum -c ori.md5 || exit_code=$?
 
 
 	dd if=/dev/urandom of=origin bs=10M count=50 &> /dev/null
@@ -116,8 +110,6 @@ run_zip_test()
 	zip_sva_perf -S -F < origin > hw.gz
 	gunzip < hw.gz > origin
 	md5sum -c ori.md5
-
-	return 0
 }
 
 # failed: return 1; success: return 0
@@ -125,45 +117,23 @@ run_sec_test()
 {
 	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
 
 	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
 
 	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
 
 	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
-
-	return 0
 }
 
 # failed: return 1; success: return 0
 run_hpre_test()
 {
 	run_cmd test_hisi_hpre --trd_mode=sync
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
 
 	run_cmd test_hisi_hpre --trd_mode=async
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
-
-	return 0
 }
 
 # failed: return 1; success: return 0
@@ -202,8 +172,9 @@ output_result()
 	return 1
 }
 
-check_uadk_lib
-if [ $? -ne 0 ]; then
+exit_code=0
+check_uadk_lib || exit_code=$?
+if [ $exit_code -ne 0 ]; then
 	# Abandon the test since v1 tests are not supported yet.
 	# And it's not treated as an error.
 	exit 0
