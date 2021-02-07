@@ -1523,7 +1523,7 @@ static int set_sign_in_param(struct wd_ecc_sign_in *sin,
 			return ret;
 	}
 
-	if (plaintext) {
+	if (plaintext && plaintext->dsize) {
 		ret = set_param_single(&sin->plaintext, plaintext, "sign m");
 		if (ret)
 			return ret;
@@ -1561,9 +1561,9 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 	__u8 temp;
 	int ret;
 
-	if (id && (!BYTES_TO_BITS(id->dsize) ||
+	if (id && (!BYTES_TO_BITS(id->dsize) || !id->data ||
 		   BYTES_TO_BITS(id->dsize) > UINT16_MAX)) {
-		WD_ERR("id lens = %u error!\n", id->dsize);
+		WD_ERR("id error: lens = %u!\n", id->dsize);
 		return -WD_EINVAL;
 	}
 
@@ -1715,7 +1715,7 @@ static int set_verf_in_param(struct wd_ecc_verf_in *vin,
 			return ret;
 	}
 
-	if (plaintext) {
+	if (plaintext && plaintext->dsize) {
 		ret = set_param_single(&vin->plaintext, plaintext, "vrf m");
 		if (ret)
 			return ret;
