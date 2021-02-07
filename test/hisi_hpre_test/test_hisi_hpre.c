@@ -4081,6 +4081,7 @@ static struct ecc_test_ctx *sm2_create_hw_sign_test_ctx(struct ecc_test_ctx_setu
 			}
 		}
 
+		evp_sign_to_hpre_bin((void *)test_ctx->cp_sign, &test_ctx->cp_sign_size, 32);
 		ecc_in = wd_sm2_new_sign_in(sess, &e, kptr, idptr, is_dgst);
 		if (!ecc_in) {
 			HPRE_TST_PRT("%s: new ecc in fail!\n", __func__);
@@ -6974,7 +6975,7 @@ static int test_rsa_key_gen(handle_t sess, char *pubkey_file,
 			char *privkey_file,
 			char *crt_privkey_file, int is_file)
 {
-	int ret, bits;
+	int ret;
 	RSA *test_rsa;
 	BIGNUM *p, *q, *e_value, *n, *e, *d, *dmp1, *dmq1, *iqmp;
 	//struct wd_dtb *wd_e, *wd_d, *wd_n, *wd_dq, *wd_dp, *wd_qinv, *wd_q, *wd_p;
@@ -6994,9 +6995,8 @@ static int test_rsa_key_gen(handle_t sess, char *pubkey_file,
 	memset(&wd_q, 0, sizeof(wd_q));
 	memset(&wd_p, 0, sizeof(wd_p));
 
-	bits = wd_rsa_key_bits(sess);
 	test_rsa = RSA_new();
-	if (!test_rsa || !bits) {
+	if (!test_rsa) {
 		HPRE_TST_PRT("RSA new fail!\n");
 		return -ENOMEM;
 	}
@@ -9215,7 +9215,7 @@ int main(int argc, char *argv[])
 
 static void print_help(void)
 {
-	HPRE_TST_PRT("UPDATE:2021-01-16\n");
+	HPRE_TST_PRT("UPDATE:2021-02-01\n");
 	HPRE_TST_PRT("NAME\n");
 	HPRE_TST_PRT("    test_hisi_hpre: test wd hpre function,etc\n");
 	HPRE_TST_PRT("USAGE\n");
