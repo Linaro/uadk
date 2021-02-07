@@ -36,6 +36,7 @@
 #define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
 
 #define SEC_HW_TASK_DONE	1
+#define SEC_HW_ICV_ERR		0x2
 #define SQE_BYTES_NUMS		128
 #define CTR_MODE_LEN_SHIFT	4
 #define WORD_BYTES		4
@@ -1754,9 +1755,11 @@ static int fill_aead_bd3_mode(struct wcrypto_aead_msg *msg,
 
 	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
 		sqe->cipher = CIPHER_ENCRYPT;
+		sqe->auth = AUTH_MAC_CALCULATE;
 		sqe->seq = WCRYPTO_CIPHER_THEN_DIGEST;
 	} else if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
 		sqe->cipher = CIPHER_DECRYPT;
+		sqe->auth = AUTH_MAC_VERIFY;
 		sqe->seq = WCRYPTO_DIGEST_THEN_CIPHER;
 	} else {
 		WD_ERR("Invalid cipher op type!\n");
@@ -1946,7 +1949,6 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 
 	sqe->type = BD_TYPE3;
 	sqe->scene = SCENE_IPSEC;
-	sqe->auth = AUTH_MAC_CALCULATE;
 	sqe->de = DATA_DST_ADDR_ENABLE;
 	sqe->c_len = msg->in_bytes;
 	sqe->cipher_src_offset = msg->assoc_bytes;
@@ -2074,12 +2076,14 @@ static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 {
 	__u64 dma_addr;
 
-	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("SEC BD3 %s fail! done=0x%x, etype=0x%x\n", "aead",
-		sqe->done, sqe->error_type);
+	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type ||
+	    sqe->icv == SEC_HW_ICV_ERR) {
+		WD_ERR("SEC BD3 aead fail! done=0x%x, etype=0x%x, icv=0x%x\n",
+		sqe->done, sqe->error_type, sqe->icv);
 		msg->result = WD_IN_EPARA;
-	} else
+	} else {
 		msg->result = WD_SUCCESS;
+	}
 
 	dma_addr = DMA_ADDR(sqe->data_src_addr_h,
 			sqe->data_src_addr_l);
@@ -2255,9 +2259,11 @@ static int fill_aead_bd2_mode(struct wcrypto_aead_msg *msg,
 
 	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
 		sqe->cipher = CIPHER_ENCRYPT;
+		sqe->auth = AUTH_MAC_CALCULATE;
 		sqe->seq = WCRYPTO_CIPHER_THEN_DIGEST;
 	} else if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
 		sqe->cipher = CIPHER_DECRYPT;
+		sqe->auth = AUTH_MAC_VERIFY;
 		sqe->seq = WCRYPTO_DIGEST_THEN_CIPHER;
 	} else {
 		WD_ERR("Invalid cipher op type!\n");
@@ -2431,7 +2437,6 @@ static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 
 	sqe->type = BD_TYPE2;
 	sqe->scene = SCENE_IPSEC;
-	sqe->auth = AUTH_MAC_CALCULATE;
 	sqe->de = DATA_DST_ADDR_ENABLE;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
@@ -2511,12 +2516,14 @@ static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 {
 	__u64 dma_addr;
 
-	if (sqe->type2.done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
-		WD_ERR("SEC BD2 %s fail! done=0x%x, etype=0x%x\n", "aead",
-		sqe->type2.done, sqe->type2.error_type);
+	if (sqe->type2.done != SEC_HW_TASK_DONE || sqe->type2.error_type ||
+	    sqe->type2.icv == SEC_HW_ICV_ERR) {
+		WD_ERR("SEC BD2 aead fail! done=0x%x, etype=0x%x, icv=0x%x\n",
+		sqe->type2.done, sqe->type2.error_type, sqe->type2.icv);
 		msg->result = WD_IN_EPARA;
-	} else
+	} else {
 		msg->result = WD_SUCCESS;
+	}
 
 	dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
 			sqe->type2.data_src_addr_l);
