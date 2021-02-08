@@ -18,10 +18,11 @@
 #define SQE_BYTES_NUMS		128
 #define SEC_FLAG_OFFSET		7
 #define SEC_AUTH_KEY_OFFSET	5
+#define SEC_HW_ICV_ERR		0x2
 #define SEC_HW_TASK_DONE	0x1
 #define SEC_DONE_MASK		0x0001
-#define SEC_FLAG_MASK		0x780
-#define SEC_TYPE_MASK		0x0f
+#define SEC_ICV_MASK		0x000E
+#define SEC_AUTH_MASK		0x3F
 
 #define SEC_IPSEC_SCENE		0x1
 #define SEC_STREAM_SCENE	0x7
@@ -44,6 +45,7 @@
 #define SEC_AUTH_CIPHER_V3	0x40
 #define SEC_AI_GEN_OFFSET_V3	2
 #define SEC_SEQ_OFFSET_V3	6
+#define SEC_AUTH_MASK_V3	0xFFFFFFFC
 
 #define SEC_SGL_MODE_MASK_V3 0x4800
 #define SEC_PBUFF_MODE_MASK_V3 0x800
@@ -1562,15 +1564,13 @@ static int fill_aead_bd2_mode(struct wd_aead_msg *msg,
 		break;
 	case WD_CIPHER_CCM:
 		c_mode = C_MODE_CCM;
-		sqe->type_auth_cipher &= ~(AUTH_HMAC_CALCULATE <<
-			SEC_AUTH_OFFSET);
+		sqe->type_auth_cipher &= SEC_AUTH_MASK;
 		sqe->type2.alen_ivllen = msg->assoc_bytes;
 		sqe->type2.icvw_kmode |= msg->auth_bytes;
 		break;
 	case WD_CIPHER_GCM:
 		c_mode = C_MODE_GCM;
-		sqe->type_auth_cipher &= ~(AUTH_HMAC_CALCULATE <<
-			SEC_AUTH_OFFSET);
+		sqe->type_auth_cipher &= SEC_AUTH_MASK;
 		sqe->type2.alen_ivllen = msg->assoc_bytes;
 		sqe->type2.icvw_kmode |= msg->auth_bytes;
 		break;
@@ -1661,7 +1661,7 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe sqe;
-	__u8 scene, cipher, de, auth;
+	__u8 scene, cipher, de;
 	__u16 count = 0;
 	int ret;
 
@@ -1676,15 +1676,17 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
-	auth = AUTH_HMAC_CALCULATE << SEC_AUTH_OFFSET;
-	sqe.type_auth_cipher |= auth;
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
 		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
 		sqe.sds_sa_type = WD_CIPHER_THEN_DIGEST;
+		sqe.type_auth_cipher |= AUTH_HMAC_CALCULATE <<
+					SEC_AUTH_OFFSET;
 	} else if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
 		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
 		sqe.sds_sa_type = WD_DIGEST_THEN_CIPHER;
+		sqe.type_auth_cipher |= AUTH_MAC_VERIFY <<
+					SEC_AUTH_OFFSET;
 	} else {
 		WD_ERR("failed to check aead op type!\n");
 		return -WD_EINVAL;
@@ -1740,12 +1742,14 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 	struct wd_aead_msg *recv_msg)
 {
-	__u16 done;
+	__u16 done, icv;
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
-	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
-		WD_ERR("SEC BD %s fail! done=0x%x, etype=0x%x\n", "aead",
-			done, sqe->type2.error_type);
+	icv = (sqe->type2.done_flag & SEC_ICV_MASK) >> 1;
+	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type ||
+	    icv == SEC_HW_ICV_ERR) {
+		WD_ERR("SEC BD aead fail! done=0x%x, etype=0x%x, icv=0x%x\n",
+			done, sqe->type2.error_type, icv);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
 		recv_msg->result = WD_SUCCESS;
@@ -1862,13 +1866,13 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 		break;
 	case WD_CIPHER_CCM:
 		sqe->c_mode_alg |= C_MODE_CCM;
-		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
+		sqe->auth_mac_key &= SEC_AUTH_MASK_V3;
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
 		break;
 	case WD_CIPHER_GCM:
 		sqe->c_mode_alg |= C_MODE_GCM;
-		sqe->auth_mac_key &= ~(AUTH_HMAC_CALCULATE);
+		sqe->auth_mac_key &= SEC_AUTH_MASK_V3;
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
 		break;
@@ -1929,13 +1933,14 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	/* config scence */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
 	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
-	sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
 		sqe.c_icv_key = SEC_CIPHER_ENC;
+		sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
 		sqe.huk_iv_seq = WD_CIPHER_THEN_DIGEST << SEC_SEQ_OFFSET_V3;
 	} else if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
 		sqe.c_icv_key = SEC_CIPHER_DEC;
+		sqe.auth_mac_key = AUTH_MAC_VERIFY;
 		sqe.huk_iv_seq = WD_DIGEST_THEN_CIPHER << SEC_SEQ_OFFSET_V3;
 	} else {
 		WD_ERR("failed to check aead op type!\n");
@@ -1990,12 +1995,14 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 	struct wd_aead_msg *recv_msg)
 {
-	__u16 done;
+	__u16 done, icv;
 
 	done = sqe->done_flag & SEC_DONE_MASK;
-	if (done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("SEC BD3 %s fail! done=0x%x, etype=0x%x\n", "aead",
-			done, sqe->error_type);
+	icv = (sqe->done_flag & SEC_ICV_MASK) >> 1;
+	if (done != SEC_HW_TASK_DONE || sqe->error_type ||
+	    icv == SEC_HW_ICV_ERR) {
+		WD_ERR("SEC BD3 aead fail! done=0x%x, etype=0x%x, icv=0x%x\n",
+			done, sqe->error_type, icv);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
 		recv_msg->result = WD_SUCCESS;
