@@ -36,10 +36,10 @@
 #include "../../wd_bmm.h"
 #include "../../wd_util.h"
 
-#define  SEC_TST_PRT printf
+#define SEC_TST_PRT printf
 #define TEST_MAX_THRD 128
 #define SQE_SIZE 128
-#define MAX_BLOCK_SZ	1024
+#define MAX_BLOCK_SZ	1024 * 8
 #define MAX_BLOCK_NM	128
 #define MAX_ALGO_PER_TYPE 12
 
@@ -56,8 +56,8 @@ enum cipher_op_type alg_op_type;
 pthread_mutex_t perf_mutex;
 
 struct test_sec_pthread_dt {
-    int cpu_id;
-    enum cipher_op_type op_type;
+	int cpu_id;
+	enum cipher_op_type op_type;
 	int thread_num;
 	void *pool;
 	void *q;
@@ -1169,7 +1169,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	}
 
 	opdata.priv = NULL;
-#if 0
+#if DEBUG
 	printf("ptext:\n");
 	hexdump(opdata.in, opdata.in_bytes);
 #endif
@@ -1210,7 +1210,7 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	time_used = (float)((cur_tval.tv_sec - pdata->start_tval.tv_sec) * 1000000 +
 				cur_tval.tv_usec - pdata->start_tval.tv_usec);
 	SEC_TST_PRT("time_used:%0.0f us, send task num:%d, recv task num: %d\n", time_used,
-				pdata->send_task_num++, pdata->recv_task_num);
+		pdata->send_task_num++, pdata->recv_task_num);
 	if (t_seconds) {
 		speed = pdata->send_task_num / time_used * 1000000;
 		Perf = speed * pktlen / 1024; //B->KB
@@ -1448,7 +1448,7 @@ static int sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		cnt = thread_num;
 	else
 		cnt = 1;
-	printf("cnt:%d\n", cnt);
+
 	for (i = 1 ; i <= cnt; i++) {
 		test_thrds_data[i].pool = pool;
 		test_thrds_data[i].q = &q;
@@ -1479,8 +1479,9 @@ static int sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		SEC_TST_PRT("Join %dth thread fail!\n", i);
 		return ret;
 	}
+
 	SEC_TST_PRT("%d-threads, total Perf: %lld KB/s, total recv task nums:%lld\n",
-    thread_num, g_total_perf, total_recv_task);
+		thread_num, g_total_perf, total_recv_task);
 
 	wd_release_queue(&q);
 	wd_blkpool_destroy(pool);
@@ -2054,7 +2055,7 @@ static int sec_aead_async_test(int thd_num, __u64 lcore_mask,
 		cnt = thd_num;
 	else
 		cnt = 1;
-	printf("cnt:%d\n", cnt);
+
 	for (i = 1 ; i <= cnt; i++) {
 		test_thrds_data[i].pool = pool;
 		test_thrds_data[i].q = &q;
@@ -2090,7 +2091,6 @@ static int sec_aead_async_test(int thd_num, __u64 lcore_mask,
 	wd_blkpool_destroy(pool);
 	return 0;
 }
-
 
 int main(int argc, char *argv[])
 {
