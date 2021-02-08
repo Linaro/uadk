@@ -112,20 +112,21 @@ run_zip_test()
 	md5sum -c ori.md5
 }
 
+# Accept more paraterms
 # failed: return 1; success: return 0
 run_sec_test()
 {
 	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
-		--times 1 --sync --multi 1
+		--times 1 --sync --multi 1 $@
 
 	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
-		--times 1 --async --multi 1
+		--times 1 --async --multi 1 $@
 
 	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
-		--times 1 --sync --multi 1
+		--times 1 --sync --multi 1 $@
 
 	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
-		--times 1 --async --multi 1
+		--times 1 --async --multi 1 $@
 }
 
 # failed: return 1; success: return 0
@@ -193,7 +194,11 @@ find /dev -name hisi_sec2-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_sec2-*
 	have_hisi_sec=1
+	# Run without sglnum parameter
 	run_sec_test
+	sec_result=$?
+	# Re-run with sglnum parameter
+	run_sec_test --sglnum=2
 	sec_result=$?
 fi
 
