@@ -215,7 +215,7 @@ void wd_digest_uninit(void)
 	wd_clear_ctx_config(&wd_digest_setting.config);
 }
 
-static int digest_param_ckeck(struct wd_digest_sess *sess,
+static int digest_param_check(struct wd_digest_sess *sess,
 	struct wd_digest_req *req)
 {
 	if (req->out_buf_bytes < req->out_bytes) {
@@ -265,7 +265,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	ret = digest_param_ckeck(dsess, req);
+	ret = digest_param_check(dsess, req);
 	if (ret)
 		return -WD_EINVAL;
 
@@ -330,7 +330,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	ret = digest_param_ckeck(dsess, req);
+	ret = digest_param_check(dsess, req);
 	if (ret)
 		return -WD_EINVAL;
 

@@ -264,7 +264,7 @@ struct hisi_sec_sqe {
 	/*
 	 * seq: 0 bits;
 	 * de: 1~2 bits;
-	 * scece: 3~6 bits;
+	 * scene: 3~6 bits;
 	 * src_addr_type: 7 bits;
 	 */
 	__u8 sds_sa_type;
@@ -844,7 +844,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
 	/* config BD type */
 	sqe.type_auth_cipher = BD_TYPE2;
-	/* config scence */
+	/* config scene */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
 	sqe.sds_sa_type = (__u8)(de | scene);
@@ -1024,7 +1024,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
 	/* config BD type */
 	sqe.bd_param = BD_TYPE3;
-	/* config scence */
+	/* config scene */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
 	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
 	sqe.bd_param |= (__u16)(de | scene);
@@ -1173,7 +1173,7 @@ static void qm_fill_digest_long_bd(struct wd_digest_msg *msg,
 	__u64 total_bits;
 
 	if (msg->has_next && (msg->iv_bytes == 0)) {
-		/* LOGN BD FIRST */
+		/* LONG BD FIRST */
 		sqe->ai_apd_cs = AI_GEN_INNER;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
 		msg->iv_bytes = msg->out_bytes;
@@ -1184,7 +1184,7 @@ static void qm_fill_digest_long_bd(struct wd_digest_msg *msg,
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
 		msg->iv_bytes = msg->out_bytes;
 	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
-		/* LOGN BD END */
+		/* LONG BD END */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_PAD << AUTHPAD_OFFSET;
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
@@ -1236,7 +1236,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.type_auth_cipher = BD_TYPE2;
 	sqe.type_auth_cipher |= AUTH_HMAC_CALCULATE << AUTHTYPE_OFFSET;
 
-	/* config scence */
+	/* config scene */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET;
 
@@ -1352,7 +1352,7 @@ static void qm_fill_digest_long_bd3(struct wd_digest_msg *msg,
 	__u64 total_bits;
 
 	if (msg->has_next && (msg->iv_bytes == 0)) {
-		/* LOGN BD FIRST */
+		/* LONG BD FIRST */
 		sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
 		msg->iv_bytes = msg->out_bytes;
@@ -1363,7 +1363,7 @@ static void qm_fill_digest_long_bd3(struct wd_digest_msg *msg,
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
 		msg->iv_bytes = msg->out_bytes;
 	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
-		/* LOGN BD END */
+		/* LONG BD END */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_PAD;
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
@@ -1394,7 +1394,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.bd_param = BD_TYPE3;
 	sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
 
-	/* config scence */
+	/* config scene */
 	scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET_V3;
 	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET_V3;
 
@@ -1675,7 +1675,7 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
 	/* config BD type */
 	sqe.type_auth_cipher = BD_TYPE2;
-	/* config scence */
+	/* config scene */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
 
@@ -1933,7 +1933,7 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
 	/* config BD type */
 	sqe.bd_param = BD_TYPE3;
-	/* config scence */
+	/* config scene */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
 	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
 
