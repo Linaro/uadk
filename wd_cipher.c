@@ -120,7 +120,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	int ret;
 
 	if (!key || !sess || !sess->key) {
-		WD_ERR("cipher set key inpupt param err!\n");
+		WD_ERR("cipher set key input param err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -129,7 +129,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 
 	ret = cipher_key_len_check(sess->alg, length);
 	if (ret) {
-		WD_ERR("cipher set key inpupt key length err!\n");
+		WD_ERR("cipher set key input key length err!\n");
 		return -WD_EINVAL;
 	}
 	if (sess->alg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key)) {

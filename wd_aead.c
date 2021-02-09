@@ -306,7 +306,7 @@ void wd_aead_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-static int aead_param_ckeck(struct wd_aead_sess *sess,
+static int aead_param_check(struct wd_aead_sess *sess,
 	struct wd_aead_req *req)
 {
 
@@ -373,7 +373,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_aead_set_static_drv();
 #endif
 
-	/* init sysnc request pool */
+	/* init sync request pool */
 	ret = wd_init_async_request_pool(&wd_aead_setting.pool,
 				config->ctx_num, WD_POOL_MAX_ENTRIES,
 				sizeof(struct wd_aead_msg));
@@ -466,7 +466,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		return -WD_EINVAL;
 	}
 
-	ret = aead_param_ckeck(sess, req);
+	ret = aead_param_check(sess, req);
 	if (ret)
 		return -WD_EINVAL;
 
@@ -541,7 +541,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		return -WD_EINVAL;
 	}
 
-	ret = aead_param_ckeck(sess, req);
+	ret = aead_param_check(sess, req);
 	if (ret)
 		return -WD_EINVAL;
 
