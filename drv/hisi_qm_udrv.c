@@ -363,7 +363,11 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	if (ret)
 		goto free_pool;
 
-	wd_ctx_set_priv(qp->h_ctx, qp);
+	ret = wd_ctx_set_priv(qp->h_ctx, qp);
+	if (ret) {
+		wd_release_ctx_force(qp->h_ctx);
+		goto free_pool;
+	}
 
 	return (handle_t)qp;
 
@@ -384,6 +388,7 @@ void hisi_qm_free_qp(handle_t h_qp)
 		return;
 	}
 
+	wd_release_ctx_force(qp->h_ctx);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
 	wd_drv_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	if (qp->h_sgl_pool)
