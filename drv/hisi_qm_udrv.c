@@ -408,6 +408,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 
 	if (wd_ioread32(q_info->ds_tx_base) == 1) {
 		WD_ERR("wd queue hw error happened before qm send!\n");
+		pthread_spin_unlock(&q_info->lock);
 		return -WD_HW_EACCESS;
 	}
 
