@@ -522,8 +522,6 @@ static void *hisi_qm_create_sgl(__u32 sge_num)
 	size = sizeof(struct hisi_sgl) +
 			sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
 	sgl = calloc(1, size);
-	if (!sgl)
-		return NULL;
 
 	return sgl;
 }
