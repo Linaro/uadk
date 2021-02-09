@@ -96,7 +96,7 @@ struct wd_aead_req {
 int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched);
 
 /**
- * wd_aead_uninit() uninitialise ctx configuration and schedule.
+ * wd_aead_uninit() uninitialized ctx configuration and schedule.
  */
 void wd_aead_uninit(void);
 
@@ -164,8 +164,8 @@ int wd_aead_get_maxauthsize(handle_t h_sess);
 /**
  * wd_aead_poll_ctx() poll operation for asynchronous operation
  * @index: index of ctx which will be polled.
- * @expt: user expected num respondings
- * @count: how many respondings this poll has to get.
+ * @expt: user expected num respondences
+ * @count: how many respondences this poll has to get.
  */
 int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32* count);
 
@@ -173,8 +173,8 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32* count);
  * wd_aead_poll() Poll finished request.
  * this function will call poll_policy function which is registered to wd aead
  * by user.
- * @expt: user expected num respondings
- * @count: how many respondings this poll has to get.
+ * @expt: user expected num respondences
+ * @count: how many respondences this poll has to get.
  */
 int wd_aead_poll(__u32 expt, __u32 *count);
 #endif /* __WD_AEAD_H */
