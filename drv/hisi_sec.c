@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdbool.h>
+#include <stdlib.h>
 #include <pthread.h>
 #include "../include/drv/wd_cipher_drv.h"
 #include "../include/drv/wd_digest_drv.h"
