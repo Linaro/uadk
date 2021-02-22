@@ -304,7 +304,7 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 }
 
 static int wd_cipher_check_params(handle_t h_sess,
-				struct wd_cipher_req *req,__u8 mode)
+				struct wd_cipher_req *req, __u8 mode)
 {
 	int ret = 0;
 
@@ -330,6 +330,7 @@ static int wd_cipher_check_params(handle_t h_sess,
 			return -WD_EINVAL;
 		}
 
+		/* cipher dst len is equal to src len */
 		ret = wd_check_datalist(req->list_dst, req->in_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the dst datalist!\n");
@@ -353,6 +354,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_SYNC);
 	if (ret) {
 		WD_ERR("failed to check cipher params!\n");
+		return ret;
 	}
 
 	key.mode = CTX_MODE_SYNC;
