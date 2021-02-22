@@ -450,7 +450,6 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
 			WD_ERR("CQE_SQ_HEAD_INDEX(%d) error\n", j);
-			errno = -WD_EIO;
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
@@ -674,17 +673,13 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 
 		cur = next;
 	}
-
-	return;
 }
 
 void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 {
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool *)sgl_pool;
 	struct wd_datalist *tmp = sgl;
-	struct hisi_sgl *head;
-	struct hisi_sgl *next;
-	struct hisi_sgl *cur;
+	struct hisi_sgl *head, *next, *cur;
 	int i = 0;
 
 	if (!pool || !sgl) {
@@ -700,7 +695,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	tmp = sgl;
 	while (tmp) {
 		/* if the user's data is NULL, jump next one */
-		if (!tmp->data || tmp->len == 0) {
+		if (!tmp->data || !tmp->len) {
 			tmp = tmp->next;
 			continue;
 		}
@@ -725,7 +720,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 		if (i == pool->sge_num && tmp->next) {
 			next = hisi_qm_sgl_pop(pool);
 			if (!next) {
-				WD_ERR("the sgl pool is not enough");
+				WD_ERR("the sgl pool is not enough\n");
 				goto err_out;
 			}
 			cur->next_dma = (uintptr_t)next;
@@ -766,7 +761,8 @@ static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl,
 	len = tmp->sge_entries[begin_sge].len - sge_offset;
 	/* the first one is enough for copy size, copy and return*/
 	if (len >= size) {
-		memcpy(dst_buff, (void *)tmp->sge_entries[begin_sge].buff + sge_offset, size);
+		memcpy(dst_buff,
+			(void *)tmp->sge_entries[begin_sge].buff + sge_offset, size);
 		return;
 	}
 
@@ -826,7 +822,7 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
 			sge_offset = offset - len;
 			break;
 		}
-		if(len + tmp->sge_entries[i].len == offset) {
+		if (len + tmp->sge_entries[i].len == offset) {
 			begin_sge = i + 1;
 			sge_offset = 0;
 			break;
