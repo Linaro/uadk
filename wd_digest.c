@@ -218,6 +218,8 @@ void wd_digest_uninit(void)
 static int digest_param_check(struct wd_digest_sess *sess,
 	struct wd_digest_req *req)
 {
+	int ret;
+
 	if (req->out_buf_bytes < req->out_bytes) {
 		WD_ERR("failed to check digest out buffer length!\n");
 		return -WD_EINVAL;
@@ -227,6 +229,14 @@ static int digest_param_check(struct wd_digest_sess *sess,
 	    req->out_bytes > g_digest_mac_len[sess->alg]) {
 		WD_ERR("failed to check digest type or mac length!\n");
 		return -WD_EINVAL;
+	}
+
+	if (req->data_fmt == WD_SGL_BUF) {
+		ret = wd_check_datalist(req->list_in, req->in_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("failed to check the src datalist!\n");
+			return -WD_EINVAL;
+		}
 	}
 
 	return 0;
