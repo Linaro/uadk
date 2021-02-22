@@ -106,4 +106,13 @@ void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int index, __u32 tag);
  */
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag);
 
+/*
+ * wd_check_datalist() - Check the data list
+ * @head: Data list's head pointer.
+ * @size: The size which is expected.
+ *
+ * Return 0 if the datalist is vaild.
+ */
+int wd_check_datalist(struct wd_datalist *head, __u32 size);
+
 #endif /* __WD_UTIL_H */
