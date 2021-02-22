@@ -927,9 +927,9 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
+		WD_ERR("hisi qm send is err(%d)!\n", ret);
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 			msg->in, msg->out);
-		return ret;
 	}
 
 	return ret;
@@ -1106,7 +1106,9 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		return ret;
+		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
+				msg->in, msg->out);
 	}
 
 	return ret;
@@ -1307,7 +1309,8 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
-		return ret;
+		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
+				msg->in, msg->out);
 	}
 
 	return ret;
@@ -1467,7 +1470,8 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
-		return ret;
+		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
+				msg->in, msg->out);
 	}
 
 	return ret;
@@ -1797,7 +1801,8 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
-		return ret;
+		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
+				msg->in, msg->out);
 	}
 
 	return ret;
@@ -2058,7 +2063,8 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		WD_ERR("hisi qm send is err(%d)!\n", ret);
-		return ret;
+		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
+				msg->in, msg->out);
 	}
 
 	return ret;
