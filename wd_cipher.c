@@ -303,6 +303,43 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 	msg->data_fmt = req->data_fmt;
 }
 
+static int wd_cipher_check_params(handle_t h_sess,
+				struct wd_cipher_req *req,__u8 mode)
+{
+	int ret = 0;
+
+	if (unlikely(!h_sess || !req)) {
+		WD_ERR("cipher input sess or req is NULL.\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(mode == CTX_MODE_ASYNC && !req->cb)) {
+		WD_ERR("cipher req cb is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
+		WD_ERR("cipher set out_buf_bytes is error!\n");
+		return -WD_EINVAL;
+	}
+
+	if (req->data_fmt == WD_SGL_BUF) {
+		ret = wd_check_datalist(req->list_src, req->in_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("failed to check the src datalist!\n");
+			return -WD_EINVAL;
+		}
+
+		ret = wd_check_datalist(req->list_dst, req->in_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("failed to check the dst datalist!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
@@ -313,14 +350,9 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	__u64 recv_cnt = 0;
 	int index, ret;
 
-	if (unlikely(!sess || !req)) {
-		WD_ERR("cipher input sess or req is NULL.\n");
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
-		WD_ERR("cipher set out_buf_bytes is error!\n");
-		return -WD_EINVAL;
+	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_SYNC);
+	if (ret) {
+		WD_ERR("failed to check cipher params!\n");
 	}
 
 	key.mode = CTX_MODE_SYNC;
@@ -382,15 +414,10 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	int idx, ret;
 	__u32 index;
 
-	if (unlikely(!sess || !req || !req->cb)) {
-		WD_ERR("cipher input sess or req is NULL.\n");
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
-		WD_ERR("cipher set out_buf_bytes is error!\n");
-		return -WD_EINVAL;
-	}
+        ret = wd_cipher_check_params(h_sess, req, CTX_MODE_ASYNC);
+        if (ret) {
+                WD_ERR("failed to check cipher params!\n");
+        }
 
 	key.mode = CTX_MODE_ASYNC;
 	key.type = 0;
