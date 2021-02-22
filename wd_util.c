@@ -222,3 +222,18 @@ void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int index, __u32 tag)
 
 	__atomic_clear(&p->used[tag - 1], __ATOMIC_RELEASE);
 }
+
+int wd_check_datalist(struct wd_datalist *head, __u32 size)
+{
+	struct wd_datalist *tmp = head;
+	__u32 list_size = 0;
+
+	while (tmp) {
+		if (tmp->data)
+			list_size += tmp->len;
+
+		tmp = tmp->next;
+	}
+
+	return list_size >= size ? 0 : -WD_EINVAL;
+}
