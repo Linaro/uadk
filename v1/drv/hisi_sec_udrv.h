@@ -205,7 +205,9 @@ struct hisi_sec_sqe {
 	};
 };
 
-struct bd3_auth_ivin {
+struct bd3_auth_key_iv {
+	__u32 a_key_addr_l;
+	__u32 a_key_addr_h;
 	__u32 a_ivin_addr_l;
 	__u32 a_ivin_addr_h;
 	__u32 rsvd0;
@@ -213,6 +215,8 @@ struct bd3_auth_ivin {
 };
 
 struct bd3_skip_data {
+	__u32 c_iv_a_key_l;
+	__u32 c_iv_a_key_h;
 	__u32 rsvd0;
 	__u32 gran_num:16;
 	__u32 rsvd1:16;
@@ -230,7 +234,8 @@ struct bd3_ipsec_scene {
 	__u32 protocol_type:4;
 	__u32 mode:2;
 	__u32 ip_type:2;
-	__u32 rsvd0:2;
+	__u32 mac_sel:1;
+	__u32 rsvd0:1;
 	__u32 next_header:8;
 	__u32 pad_len:8;
 	__u32 iv_offset:16;
@@ -257,7 +262,8 @@ struct bd3_stream_scene {
 	__u32 long_a_data_len_h;
 	__u32 auth_pad:2;
 	__u32 stream_protocol:3;
-	__u32 rsvd0:3;
+	__u32 mac_sel:1;
+	__u32 rsvd0:2;
 	__u32 plaintext_type:8;
 	__u32 pad_len_1p3:16;
 };
@@ -281,14 +287,15 @@ struct bd3_tls1p3_scene {
 	__u32 a_ivin_addr_l;
 	__u32 a_ivin_addr_h;
 	__u32 deal_tls_1p3:3;
-	__u32 rsvd0:5;
+	__u32 mac_sel:1;
+	__u32 rsvd0:4;
 	__u32 plaintext_type:8;
 	__u32 pad_len_1p3:16;
 };
 
 struct bd3_storage_scene {
-	__u32 c_ivin_addr_l;
-	__u32 c_ivin_addr_h;
+	__u32 lba_l;
+	__u32 lba_h;
 	__u32 gen_page_pad_ctrl:4;
 	__u32 gen_grd_ctrl:4;
 	__u32 gen_ver_ctrl:4;
@@ -298,8 +305,8 @@ struct bd3_storage_scene {
 	__u32 private_info;
 	__u32 gen_ref_ctrl:4;
 	__u32 page_pad_type:2;
-	__u32 page_pad:1;
-	__u32 rsvd0:1;
+	__u32 pagePadNogen:1;
+	__u32 pagePadNocheck:1;
 	__u32 chk_grd_ctrl:4;
 	__u32 chk_ref_ctrl:4;
 	__u32 block_size:16;
@@ -333,7 +340,7 @@ struct bd3_tls_type_back {
 	__u32 pad_len_1p3_back:16;
 };
 
-/* the hi1630 scene */
+/* the kp930 sence */
 struct hisi_sec_bd3_sqe {
 	__u32 type:4;
 	__u32 inveld:1;
@@ -361,10 +368,9 @@ struct hisi_sec_bd3_sqe {
 	__u32 tag_h;
 	__u32 data_src_addr_l;
 	__u32 data_src_addr_h;
-	__u32 a_key_addr_l;
-	__u32 a_key_addr_h;
+
 	union {
-		struct bd3_auth_ivin auth_ivin;
+		struct bd3_auth_key_iv auth_key_iv;
 		struct bd3_skip_data skip_data;
 	};
 
@@ -376,9 +382,9 @@ struct hisi_sec_bd3_sqe {
 	__u32 a_key_len:6;
 	__u32 a_alg:6;
 	__u32 key_sel:4;
-	__u32 rsvd1:3;
-	__u32 sva_perfetch:1;
-	__u32 key_wrap_num:2;
+	__u32 ctr_counter_mode:2;
+	__u32 sva_prefetch:1;
+	__u32 key_wrap_num:3;
 	__u32 update_key:1;
 
 	__u32 salt3:8;
@@ -408,9 +414,9 @@ struct hisi_sec_bd3_sqe {
 	__u32 done:1;
 	__u32 icv:3;
 	__u32 csc:3;
-	__u32 flag:3;
+	__u32 flag:4;
 	__u32 dc:3;
-	__u32 rsvd10:3;
+	__u32 rsvd10:2;
 	__u32 error_type:8;
 	__u32 warning_type:8;
 	union {
