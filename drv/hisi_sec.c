@@ -1135,10 +1135,10 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *re
 	else
 		update_iv_sgl(rmsg);
 
-        recv_msg->data_fmt = rmsg->data_fmt;
-        recv_msg->alg_type = rmsg->alg_type;
-        recv_msg->in = rmsg->in;
-        recv_msg->out = rmsg->out;
+	recv_msg->data_fmt = rmsg->data_fmt;
+	recv_msg->alg_type = rmsg->alg_type;
+	recv_msg->in = rmsg->in;
+	recv_msg->out = rmsg->out;
 }
 
 int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
@@ -1157,7 +1157,6 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	hisi_sec_put_sgl(h_qp, recv_msg->data_fmt, recv_msg->alg_type,
 		recv_msg->in, recv_msg->out);
-
 	return 0;
 }
 
@@ -1689,7 +1688,7 @@ static void fill_aead_mac_addr_pbuff(struct wd_aead_msg *msg, __u64 *mac_addr)
 static void fill_aead_mac_addr_sgl(struct wd_aead_msg *msg, __u64 *mac_addr)
 {
 	msg->mac = calloc(1, msg->auth_bytes);
-	if (!msg->mac){
+	if (!msg->mac) {
 		WD_ERR("failed to alloc mac memory!\n");
 		return;
 	}
@@ -1975,10 +1974,10 @@ static void fill_aead_bd3_addr(struct wd_aead_msg *msg,
 	sqe->data_src_addr = (__u64)msg->in;
 	sqe->data_dst_addr = (__u64)msg->out;
 
-	/* AEAD input MAC addr use in addr */
-        if (msg->data_fmt == WD_FLAT_BUF)
+	/* AEAD input MAC addr use in and out addr */
+	if (msg->data_fmt == WD_FLAT_BUF)
 		fill_aead_mac_addr_pbuff(msg, &mac_addr);
-        else
+	else
 		fill_aead_mac_addr_sgl(msg, &mac_addr);
 
 	sqe->mac_addr = mac_addr;

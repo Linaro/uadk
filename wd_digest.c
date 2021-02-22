@@ -332,7 +332,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
-        struct wd_digest_msg *msg;
+	struct wd_digest_msg *msg;
 	int index, idx, ret;
 
 	if (unlikely(!dsess || !req || !req->cb)) {

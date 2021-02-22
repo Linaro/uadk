@@ -867,9 +867,9 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
 	}
 
 	if (direct == COPY_SGL_TO_PBUFF)
-		hisi_qm_pbuff_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
-	else
 		hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+	else
+		hisi_qm_pbuff_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
 }
 
 void hisi_qm_dump_sgl(void *sgl)
