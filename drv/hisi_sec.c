@@ -669,6 +669,11 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		update_iv(rmsg);
 	else
 		update_iv_sgl(rmsg);
+
+	recv_msg->data_fmt = rmsg->data_fmt;
+	recv_msg->alg_type = rmsg->alg_type;
+	recv_msg->in = rmsg->in;
+	recv_msg->out = rmsg->out;
 }
 
 static int cipher_len_check(struct wd_cipher_msg *msg)
@@ -723,6 +728,24 @@ static int cipher_iv_check(struct wd_cipher_msg *msg)
 	}
 
 	return 0;
+}
+
+static __u8 hisi_sec_get_data_fmt_v3(__u32 bd_param)
+{
+	/* Only check the src addr type */
+	if (bd_param & SEC_PBUFF_MODE_MASK_V3)
+		return WD_SGL_BUF;
+
+	return WD_FLAT_BUF;
+}
+
+static __u8 hisi_sec_get_data_fmt_v2(__u32 sds_sa_type)
+{
+	/* Only check the src addr type */
+	if (sds_sa_type & SEC_SGL_SDS_MASK)
+		return WD_SGL_BUF;
+
+	return WD_FLAT_BUF;
 }
 
 static void hisi_sec_put_sgl(handle_t h_qp, __u8 data_fmt, __u8 alg_type,
@@ -1108,6 +1131,11 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *re
 		update_iv(rmsg);
 	else
 		update_iv_sgl(rmsg);
+
+        recv_msg->data_fmt = rmsg->data_fmt;
+        recv_msg->alg_type = rmsg->alg_type;
+        recv_msg->in = rmsg->in;
+        recv_msg->out = rmsg->out;
 }
 
 int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
@@ -1211,6 +1239,10 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 	}
 
 	recv_msg->tag = sqe->type2.tag;
+
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
+	recv_msg->in = (__u8 *)sqe->type2.data_src_addr;
+	recv_msg->alg_type = WD_DIGEST;
 
 #ifdef DEBUG
 	WD_ERR("Dump digest recv sqe-->!\n");
@@ -1441,7 +1473,8 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	return ret;
 }
 
-static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe, struct wd_digest_msg *recv_msg)
+static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
+				struct wd_digest_msg *recv_msg)
 {
 	__u16 done;
 
@@ -1455,6 +1488,10 @@ static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe, struct wd_digest_msg *re
 	}
 
 	recv_msg->tag = sqe->tag;
+
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
+	recv_msg->in = (__u8 *)sqe->data_src_addr;
+	recv_msg->alg_type = WD_DIGEST;
 
 #ifdef DEBUG
 	WD_ERR("Dump digest recv sqe-->!\n");
@@ -1785,6 +1822,12 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->type2.a_ivin_addr;
 	recv_msg->tag = sqe->type2.tag;
 
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
+	recv_msg->in = (__u8 *)sqe->type2.data_src_addr;
+	recv_msg->out = (__u8 *)sqe->type2.data_dst_addr;
+	recv_msg->alg_type = WD_AEAD;
+	recv_msg->mac = (__u8 *)sqe->type2.mac_addr;
+
 #ifdef DEBUG
 	WD_ERR("Dump aead recv sqe-->!\n");
 	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
@@ -2039,6 +2082,11 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 
 	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->auth_ivin.a_ivin_addr;
 	recv_msg->tag = sqe->tag;
+
+	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
+	recv_msg->in = (__u8 *)sqe->data_src_addr;
+	recv_msg->out = (__u8 *)sqe->data_dst_addr;
+	recv_msg->alg_type = WD_AEAD;
 
 #ifdef DEBUG
 	WD_ERR("Dump aead recv sqe-->!\n");
