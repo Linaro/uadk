@@ -414,10 +414,11 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	int idx, ret;
 	__u32 index;
 
-        ret = wd_cipher_check_params(h_sess, req, CTX_MODE_ASYNC);
-        if (ret) {
-                WD_ERR("failed to check cipher params!\n");
-        }
+	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_ASYNC);
+	if (ret) {
+		WD_ERR("failed to check cipher params!\n");
+		return ret;
+	}
 
 	key.mode = CTX_MODE_ASYNC;
 	key.type = 0;
