@@ -31,6 +31,7 @@ struct wd_aead_msg {
 	__u8 *aiv;		/* input auth iv pointer */
 	__u8 *in;		/* input data pointer */
 	__u8 *out;		/* output data pointer  */
+	__u8 *mac;		/* mac */
 };
 
 struct wd_aead_driver {
