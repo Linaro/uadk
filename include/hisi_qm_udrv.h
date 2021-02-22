@@ -23,6 +23,11 @@
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
 
+enum hisi_qm_sgl_copy_dir {
+	COPY_SGL_TO_PBUFF,
+	COPY_PBUFF_TO_SGL
+};
+
 enum hisi_hw_type {
 	HISI_QM_API_VER_BASE = 1,
 	HISI_QM_API_VER2_BASE,
@@ -139,11 +144,13 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp);
  * @hw_sgl: Src hw sgl ponint
  * @offset: Offset in hw sgl chanin
  * @size: Copy size
+ * @direct: 0:sgl to pbuff, 1:pbuff to sgl, from enum hisi_qm_sgl_copy_dir
  *
  * If the len of sgl is not enough, will copy much as soon as
  * possible before the offset to end of the sgl.
  */
-void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size);
+void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset,
+	__u32 size, __u8 direct);
 
 /**
  * hisi_qm_get_free_sqe_num - Get the qp's available sqe num

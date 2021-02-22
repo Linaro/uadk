@@ -791,7 +791,42 @@ static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl,
 	}
 }
 
-void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
+static void hisi_qm_pbuff_copy_inner(void *buff, struct hisi_sgl *hw_sgl,
+				int begin_sge, __u32 sge_offset, __u32 size)
+{
+	struct hisi_sgl *tmp = hw_sgl;
+	__u32 offset = 0;
+	__u32 len;
+	int i;
+
+	len = tmp->sge_entries[begin_sge].len - sge_offset;
+	if (len >= size) {
+		memcpy((void *)tmp->sge_entries[begin_sge].buff + sge_offset,
+			buff, size);
+		return;
+	}
+
+	i = begin_sge + 1;
+	while (tmp) {
+		for (; i < tmp->entry_sum_in_sgl; i++) {
+			if (offset + tmp->sge_entries[i].len >= size) {
+				memcpy((void *)tmp->sge_entries[i].buff,
+					buff + offset, size - offset);
+				return;
+			}
+
+			memcpy((void *)tmp->sge_entries[i].buff,
+				buff + offset, tmp->sge_entries[i].len);
+			offset += tmp->sge_entries[i].len;
+		}
+
+		tmp = (struct hisi_sgl *)tmp->next_dma;
+		i = 0;
+	}
+}
+
+void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
+			__u8 direct)
 {
 	struct hisi_sgl *tmp = (struct hisi_sgl *)hw_sgl;
 	__u32 len = 0;
@@ -835,7 +870,10 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size)
 		len += tmp->sge_entries[i].len;
 	}
 
-	hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+	if (direct == COPY_SGL_TO_PBUFF)
+		hisi_qm_pbuff_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+	else
+		hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
 }
 
 void hisi_qm_dump_sgl(void *sgl)
