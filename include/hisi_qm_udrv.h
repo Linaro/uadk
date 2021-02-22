@@ -79,7 +79,7 @@ struct hisi_qm_capa {
 /**
  * hisi_qm_send - Send req to the queue of the device.
  * @h_qp: Handle of the qp.
- * @req: User req from the alg drvie.
+ * @req: User req from the alg driver.
  * @expect: User send req num.
  * @count: The count of actual sending message.
  *
@@ -141,8 +141,8 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp);
 /**
  * hisi_qm_sgl_copy: Buffer copying from hw sgl to pbuff
  * @dst_buff: Dst pbuff point
- * @hw_sgl: Src hw sgl ponint
- * @offset: Offset in hw sgl chanin
+ * @hw_sgl: Src hw sgl point
+ * @offset: Offset in hw sgl chain
  * @size: Copy size
  * @direct: 0:sgl to pbuff, 1:pbuff to sgl, from enum hisi_qm_sgl_copy_dir
  *
