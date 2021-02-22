@@ -309,6 +309,8 @@ void wd_aead_free_sess(handle_t h_sess)
 static int aead_param_check(struct wd_aead_sess *sess,
 	struct wd_aead_req *req)
 {
+	__u32 len;
+	int ret;
 
 	if (sess->cmode == WD_CIPHER_CBC &&
 	   (req->in_bytes & (AES_BLOCK_SIZE - 1) ||
@@ -331,6 +333,24 @@ static int aead_param_check(struct wd_aead_sess *sess,
 	    req->out_buf_bytes < (req->out_bytes + sess->auth_bytes)) {
 		WD_ERR("failed to check aead type or mac length!\n");
 		return -WD_EINVAL;
+	}
+
+	if (req->data_fmt == WD_SGL_BUF) {
+		len = req->in_bytes + req->assoc_bytes;
+		if (req->op_type == WD_CIPHER_DECRYPTION_DIGEST)
+			len += sess->auth_bytes;
+
+		ret = wd_check_datalist(req->list_src, len);
+		if (unlikely(ret)) {
+			WD_ERR("failed to check the src datalist!\n");
+			return -WD_EINVAL;
+		}
+
+		ret = wd_check_datalist(req->list_dst, req->out_buf_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("failed to check the dst datalist!\n");
+			return -WD_EINVAL;
+		}
 	}
 
 	return 0;
