@@ -450,6 +450,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
 			WD_ERR("CQE_SQ_HEAD_INDEX(%d) error\n", j);
+			errno = -WD_EIO;
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
