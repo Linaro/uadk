@@ -532,17 +532,17 @@ static void update_iv_sgl(struct wd_cipher_msg *msg)
 		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
 		    msg->out_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->out, msg->out_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+				msg->iv_bytes, msg->iv_bytes, COPY_SGL_TO_PBUFF);
 		if (msg->op_type == WD_CIPHER_DECRYPTION &&
 		    msg->in_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->in, msg->in_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+				msg->iv_bytes, msg->iv_bytes, COPY_SGL_TO_PBUFF);
 		break;
 	case WD_CIPHER_OFB:
 	case WD_CIPHER_CFB:
 		if (msg->out_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->out, msg->out_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+				msg->iv_bytes, msg->iv_bytes, COPY_SGL_TO_PBUFF);
 		break;
 	case WD_CIPHER_CTR:
 		if (msg->iv_bytes >= AES_BLOCK_SIZE)
