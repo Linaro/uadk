@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdbool.h>
-#include <stdlib.h>
 #include <pthread.h>
 #include "../include/drv/wd_cipher_drv.h"
 #include "../include/drv/wd_digest_drv.h"
@@ -1647,11 +1646,12 @@ static void fill_aead_mac_addr_pbuff(struct wd_aead_msg *msg, __u64 *mac_addr)
 
 static void fill_aead_mac_addr_sgl(struct wd_aead_msg *msg, __u64 *mac_addr)
 {
-	msg->mac = calloc(1, msg->auth_bytes);
-	if (!msg->mac){
-		WD_ERR("failed to alloc mac memory!\n");
-		return;
-	}
+	msg->mac = NULL;
+	//msg->mac = calloc(1, msg->auth_bytes);
+	//if (!msg->mac){
+	//	WD_ERR("failed to alloc mac memory!\n");
+	//	return;
+	//}
 
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
 		hisi_qm_sgl_copy(msg->mac, msg->in,
