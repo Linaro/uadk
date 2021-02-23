@@ -139,7 +139,7 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl);
 handle_t hisi_qm_get_sglpool(handle_t h_qp);
 
 /**
- * hisi_qm_sgl_copy: Buffer copying from hw sgl to pbuff
+ * hisi_qm_sgl_copy: Buffer copying from hw sgl to pbuff or pbuff to sgl
  * @dst_buff: Dst pbuff point
  * @hw_sgl: Src hw sgl point
  * @offset: Offset in hw sgl chain
