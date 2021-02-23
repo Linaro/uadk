@@ -1,4 +1,5 @@
-#!/bin/bash -e
+#!/bin/bash
+set -x
 #
 # This is a sanity test about uadk algorithms.
 #
