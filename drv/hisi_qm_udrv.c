@@ -673,6 +673,8 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 
 		cur = next;
 	}
+
+	return;
 }
 
 void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
