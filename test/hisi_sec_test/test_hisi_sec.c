@@ -1517,7 +1517,7 @@ static int sec_digest_sync_once(void)
 		 (void *)tv->plaintext, tv->psize);
 	dump_mem(g_data_fmt, req.in, req.in_bytes);
 
-	req.out = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
+	req.out = create_buf(WD_FLAT_BUF, BUFF_SIZE, unit_sz);
 	if (!req.out) {
 		ret = -ENOMEM;
 		goto out_dst;
@@ -1562,12 +1562,12 @@ static int sec_digest_sync_once(void)
 	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
 	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
-	dump_mem(g_data_fmt, req.out, req.out_bytes);
+	dump_mem(WD_FLAT_BUF, req.out, req.out_bytes);
 
 out_key:
 	wd_digest_free_sess(h_sess);
 out_sess:
-	free_buf(g_data_fmt, req.out);
+	free_buf(WD_FLAT_BUF, req.out);
 out_dst:
 	free_buf(g_data_fmt, req.in);
 out_src:
@@ -1727,7 +1727,7 @@ static int sec_digest_async_once(void)
 		 (void *)tv->plaintext, (size_t)tv->psize);
 	dump_mem(g_data_fmt, req.in, req.in_bytes);
 
-	req.out = create_buf(g_data_fmt, BUFF_SIZE, unit_sz);
+	req.out = create_buf(WD_FLAT_BUF, BUFF_SIZE, unit_sz);
 	if (!req.out) {
 		ret = -ENOMEM;
 		goto out_dst;
@@ -1786,13 +1786,13 @@ static int sec_digest_async_once(void)
 		SEC_TST_PRT("pthread_join fail at %s", __func__);
 		goto out_thr;
 	}
-	dump_mem(g_data_fmt, req.out, req.out_bytes);
+	dump_mem(WD_FLAT_BUF, req.out, req.out_bytes);
 
 out_thr:
 out_key:
 	wd_digest_free_sess(h_sess);
 out_sess:
-	free_buf(g_data_fmt, req.out);
+	free_buf(WD_FLAT_BUF, req.out);
 out_dst:
 	free_buf(g_data_fmt, req.in);
 out_src:
