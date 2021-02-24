@@ -1287,7 +1287,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		return ret;
 	}
 
-	sqe.sds_sa_type = (__u8)(de | scene);
+	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
 	sqe.type2.data_src_addr = (__u64)msg->in;
 	sqe.type2.mac_addr = (__u64)msg->out;
@@ -1448,7 +1448,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	}
 
 	sqe.bd_param |= (__u16)(de | scene);
-	sqe.a_len_key |= (__u32)msg->in_bytes;
+	sqe.a_len_key = (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)msg->in;
 	sqe.mac_addr = (__u64)msg->out;
 
