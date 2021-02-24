@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+set -ex
 #
 # This is a sanity test about uadk algorithms.
 #
