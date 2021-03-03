@@ -20,9 +20,9 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <errno.h>
-#include "bmm.h"
-#include "wd.h"
-#include "wd_util.h"
+#include "v1/test/bmm.h"
+#include "v1/wd.h"
+#include "v1/wd_util.h"
 
 #define BITMAP_MAX_BYTE   32
 #define BITMAP_BYTE_OFFSET   5

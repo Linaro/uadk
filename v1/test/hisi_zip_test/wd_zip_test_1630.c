@@ -23,11 +23,11 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include "../../drv/hisi_qm_udrv.h"
-#include "../../wd.h"
-#include "../../wd_bmm.h"
-#include "../../wd_comp.h"
-#include "../../wd_util.h"
+#include "v1/drv/hisi_qm_udrv.h"
+#include "v1/wd.h"
+#include "v1/wd_bmm.h"
+#include "v1/wd_comp.h"
+#include "v1/wd_util.h"
 
 typedef unsigned int u32;
 typedef unsigned char u8;

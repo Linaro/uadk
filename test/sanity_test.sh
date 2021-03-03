@@ -22,39 +22,6 @@ zip_result=-1
 sec_result=-1
 hpre_result=-1
 
-TEST_FILE=test_uadk_lib.c
-
-# wd_get_acce_list() is available in v2. Use this function to test
-# whether libwd.so is v2.
-cat << EOF > ${TEST_FILE}
-#include <stdio.h>
-#include <uadk/wd.h>
-
-int main(void)
-{
-	wd_get_accel_list("zip");
-	return 0;
-}
-EOF
-
-# failed: return 1; success: return 0
-check_uadk_lib()
-{
-	# check UADK v2
-	exit_code=0
-	if [ ! -z ${LD_LIBRARY_PATH} ]; then
-		gcc -Wl,-v ${TEST_FILE} -L${LD_LIBRARY_PATH} -lwd || exit_code=$?
-	else
-		gcc -Wl,-v ${TEST_FILE} -lwd || exit_code=$?
-	fi
-	if [ $exit_code -ne 0 ]; then
-		rm ${TEST_FILE}
-		return 1
-	fi
-	rm ${TEST_FILE}
-	return 0
-}
-
 run_cmd()
 {
 	exit_code=0
@@ -172,14 +139,6 @@ output_result()
 
 	return 1
 }
-
-exit_code=0
-check_uadk_lib || exit_code=$?
-if [ $exit_code -ne 0 ]; then
-	# Abandon the test since v1 tests are not supported yet.
-	# And it's not treated as an error.
-	exit 0
-fi
 
 # start to test
 find /dev -name hisi_zip-* &> /dev/null
