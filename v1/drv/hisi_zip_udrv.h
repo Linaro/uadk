@@ -17,7 +17,7 @@
 #ifndef HISI_ZIP_USR_IF_H
 #define HISI_ZIP_USR_IF_H
 
-#include "hisi_qm_udrv.h"
+#include "v1/drv/hisi_qm_udrv.h"
 
 enum hw_comp_alg_type {
 	HW_RAW_DEFLATE = 0x01,

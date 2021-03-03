@@ -19,13 +19,13 @@
 
 #include <linux/types.h>
 #include "config.h"
-#include "wd.h"
-#include "wd_util.h"
-#include "wd_cipher.h"
-#include "wd_digest.h"
-#include "wd_aead.h"
+#include "v1/wd.h"
+#include "v1/wd_util.h"
+#include "v1/wd_cipher.h"
+#include "v1/wd_digest.h"
+#include "v1/wd_aead.h"
 
-#include "hisi_qm_udrv.h"
+#include "v1/drv/hisi_qm_udrv.h"
 
 typedef unsigned int __u32;
 typedef unsigned char __u8;

@@ -19,9 +19,9 @@
 
 #include <linux/types.h>
 #include "config.h"
-#include "wd.h"
-#include "wd_util.h"
-#include "wd_rng.h"
+#include "v1/wd.h"
+#include "v1/wd_util.h"
+#include "v1/wd_rng.h"
 
 #define TRNG_Q_DEPTH	256
 

@@ -73,6 +73,8 @@
 |  0.110  |                |1) Remove fini() callback in *struct wd_alg_comp*. |
 |  0.111  |                |1) Change the meaning of *arg->src_len*. |
 |  1.0    |                |1) Update with the latest interface. |
+|  1.1    |                |1) Rename *wd_drv_mmap_qfr()/wd_drv_unmap_qfr()* |
+|         |                |   to *wd_mmap_qfr()/wd_unmap_qfr()*. |
 
 
 ## Terminology
@@ -188,10 +190,10 @@ address. The mapping could cover three different types. They are MMIO (device
 MMIO region), DUS (device user share region) and SS (static share memory 
 region).
 
-*wd_drv_mmap_qfr()* and *wd_drv_unmap_qfr()* are a pair of APIs to create and 
+*wd_mmap_qfr()* and *wd_unmap_qfr()* are a pair of APIs to create and 
 destroy the mapping.
 
-***void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
+***void *wd_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
@@ -203,16 +205,16 @@ destroy the mapping.
 
 Return virtual address if it succeeds. Return NULL if it fails.
 
-*wd_drv_mmap_qfr()* maps qfile region to user space.
+*wd_mmap_qfr()* maps qfile region to user space.
 
-***void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
+***void wd_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
 | libwd | *h_ctx* | IN | The handle indicate the working context. |
 |       | *qfrt*  | IN | Indicate the queue file region type. |
 
-*wd_drv_unmap_qfr()* unmaps qfile region from user space.
+*wd_unmap_qfr()* unmaps qfile region from user space.
 
 qfrt means queue file region type. The details could be found in UACCE kernel 
 driver.

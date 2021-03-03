@@ -4,6 +4,7 @@
 #include <asm/types.h>
 #include <pthread.h>
 #include "wd.h"
+#include "wd_common.h"
 
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
@@ -16,11 +17,6 @@
 enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
 	CTX_MODE_ASYNC,
-};
-
-enum wd_buff_type {
-	WD_FLAT_BUF,
-	WD_SGL_BUF,
 };
 
 /**

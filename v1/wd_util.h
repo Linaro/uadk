@@ -32,9 +32,9 @@
 #include <sys/eventfd.h>
 #include <sys/queue.h>
 
-#include "wd.h"
-#include "wd_ecc.h"
-#include "wd_adapter.h"
+#include "v1/wd.h"
+#include "v1/wd_ecc.h"
+#include "v1/wd_adapter.h"
 
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3

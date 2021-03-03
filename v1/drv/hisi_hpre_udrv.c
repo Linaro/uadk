@@ -28,7 +28,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
-#include "wd_util.h"
+#include "v1/wd_util.h"
 #include "hisi_hpre_udrv.h"
 
 #define MAX_WAIT_CNT			10000000

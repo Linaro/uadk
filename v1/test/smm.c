@@ -19,9 +19,9 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
-#include "smm.h"
-#include "wd.h"
-#include "wd_util.h"
+#include "v1/test/smm.h"
+#include "v1/wd.h"
+#include "v1/wd_util.h"
 
 #define SMM_HEAD_TAG 0xE5E5
 #define SMMB_HEAD_FREE_TAG 0x5E5E
