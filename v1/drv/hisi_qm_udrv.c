@@ -29,10 +29,10 @@
 #include <sys/eventfd.h>
 #include <sys/types.h>
 
-#include "hisi_qm_udrv.h"
-#include "hisi_zip_udrv.h"
-#include "hisi_hpre_udrv.h"
-#include "hisi_sec_udrv.h"
+#include "v1/drv/hisi_qm_udrv.h"
+#include "v1/drv/hisi_zip_udrv.h"
+#include "v1/drv/hisi_hpre_udrv.h"
+#include "v1/drv/hisi_sec_udrv.h"
 
 #define HISI_SGL_SGE_NUM_MAX	255
 #define HISI_SGL_ALIGN_SZ	64

@@ -25,9 +25,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "wd.h"
-#include "wd_cipher.h"
-#include "wd_util.h"
+#include "v1/wd.h"
+#include "v1/wd_cipher.h"
+#include "v1/wd_util.h"
 
 #define WCRYPTO_CIPHER_CTX_MSG_NUM	1024
 #define WCRYPTO_CIPHER_MAX_CTX		256

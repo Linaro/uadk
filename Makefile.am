@@ -6,12 +6,6 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif	# WITH_LOG_FILE
 
-if WITH_UADK_V1
-
-SUBDIRS= v1
-
-else	# WITH_UADK_V1
-
 # libtool version is {current}:{revision}:{age}
 # libNAME.so.{x}.{y}.{z}
 # But {current}:{revision}:{age} doesn't equal to {x}.{y}.{z}
@@ -27,7 +21,27 @@ include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
-libwd_la_SOURCES=wd.c wd_mempool.c wd.h
+libwd_la_SOURCES=wd.c wd_mempool.c wd.h		\
+		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
+		 v1/test/smm.c v1/test/smm.h v1/test/bmm.c v1/test/bmm.h \
+		 v1/test/wd_sched.c v1/test/wd_sched.h	\
+		 v1/wd_rng.c v1/wd_rng.h	\
+		 v1/wd_rsa.c v1/wd_rsa.h	\
+		 v1/wd_aead.c v1/wd_aead.h	\
+		 v1/wd_dh.c v1/wd_dh.h		\
+		 v1/wd_comp.c v1/wd_comp.h	\
+		 v1/wd_cipher.c v1/wd_cipher.h	\
+		 v1/wd_digest.c v1/wd_digest.h	\
+		 v1/wd_util.c v1/wd_util.h	\
+		 v1/wd_bmm.c v1/wd_bmm.h	\
+		 v1/wd_ecc.c v1/wd_ecc.h	\
+		 v1/wd_sgl.c v1/wd_sgl.h	\
+		 v1/drv/dummy_drv.c v1/drv/dummy_drv.h \
+		 v1/drv/hisi_qm_udrv.c v1/drv/hisi_qm_udrv.h \
+		 v1/drv/hisi_zip_udrv.c v1/drv/hisi_zip_udrv.h \
+		 v1/drv/hisi_hpre_udrv.c v1/drv/hisi_hpre_udrv.h \
+		 v1/drv/hisi_sec_udrv.c v1/drv/hisi_sec_udrv.h \
+		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h
 
@@ -90,6 +104,4 @@ libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
 
 
-SUBDIRS=. test
-
-endif	# WITH_UADK_V1
+SUBDIRS=. test v1/test

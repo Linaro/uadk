@@ -2,6 +2,8 @@
 #ifndef __WD_UTIL_H
 #define __WD_UTIL_H
 
+#include "wd_alg_common.h"
+
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
 	__u32 pool_num;

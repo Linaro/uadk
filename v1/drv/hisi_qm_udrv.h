@@ -19,12 +19,12 @@
 
 #include <linux/types.h>
 #include "config.h"
-#include "../wd.h"
-#include "../wd_ecc.h"
-#include "../wd_rsa.h"
-#include "../wd_util.h"
-#include "../wd_dh.h"
-#include "../wd_sgl.h"
+#include "v1/wd.h"
+#include "v1/wd_ecc.h"
+#include "v1/wd_rsa.h"
+#include "v1/wd_util.h"
+#include "v1/wd_dh.h"
+#include "v1/wd_sgl.h"
 
 /* default queue depth for sq/cq/eq */
 #define QM_Q_DEPTH		1024

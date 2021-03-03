@@ -24,12 +24,12 @@
 #include <sys/time.h>
 #include <sys/syscall.h>
 
-#include "../../wd.h"
+#include "v1/wd.h"
 #include "zip_alg.h"
-#include "../../wd_util.h"
-#include "../../wd_comp.h"
-#include "../../drv/hisi_qm_udrv.h"
-#include "../../wd_bmm.h"
+#include "v1/wd_util.h"
+#include "v1/wd_comp.h"
+#include "v1/drv/hisi_qm_udrv.h"
+#include "v1/wd_bmm.h"
 enum mode {
 	MODE_BLOCK,
 	MODE_STREAM,

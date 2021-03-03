@@ -25,13 +25,13 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include "../../drv/hisi_qm_udrv.h"
+#include "v1/drv/hisi_qm_udrv.h"
 #include "zlib.h"
-#include "../smm.h"
+#include "v1/test/smm.h"
 #include "zip_alg.h"
-#include "../../wd_comp.h"
-#include "../../wd.h"
-#include "../../wd_util.h"
+#include "v1/wd_comp.h"
+#include "v1/wd.h"
+#include "v1/wd_util.h"
 
 static inline int _get_cpu_id(int thr, __u64 core_mask)
 {

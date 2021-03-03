@@ -22,7 +22,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 
-#include "wd_util.h"
+#include "v1/wd_util.h"
 #include "dummy_drv.h"
 
 struct dummy_q_priv {
