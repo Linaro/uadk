@@ -17,7 +17,7 @@
 #ifndef HISI_HPRE_UDRV_H
 #define HISI_HPRE_UDRV_H
 
-#include "hisi_qm_udrv.h"
+#include "v1/drv/hisi_qm_udrv.h"
 
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,

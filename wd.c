@@ -14,7 +14,7 @@
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
-wd_log log_out = NULL;
+//wd_log log_out = NULL;
 
 struct wd_ctx_h {
 	int fd;
@@ -334,7 +334,7 @@ int wd_release_ctx_force(handle_t h_ctx)
 	return ret;
 }
 
-void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
+void *wd_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	off_t off = qfrt * getpagesize();
@@ -356,7 +356,7 @@ void *wd_drv_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 	return addr;
 }
 
-void wd_drv_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
+void wd_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
@@ -600,6 +600,7 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 	return ioctl(ctx->fd, cmd, arg);
 }
 
+#if 0
 int wd_register_log(wd_log log)
 {
 	if (!log) {
@@ -617,3 +618,4 @@ int wd_register_log(wd_log log)
 
 	return 0;
 }
+#endif

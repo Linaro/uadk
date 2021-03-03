@@ -31,6 +31,7 @@
 #include <limits.h>
 #include <assert.h>
 #include "internal/uacce.h"
+#include "../include/wd_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,11 +124,6 @@ enum wcrypto_type {
 	WCRYPTO_SM2,
 	WCRYPTO_AEAD,
 	WCRYPTO_MAX_ALG
-};
-
-enum wd_buff_type {
-	WD_FLAT_BUF,
-	WD_SGL_BUF,
 };
 
 #ifndef true

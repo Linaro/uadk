@@ -28,9 +28,9 @@
 #include <dirent.h>
 #include <sys/poll.h>
 
-#include "wd.h"
-#include "wd_util.h"
-#include "wd_adapter.h"
+#include "v1/wd.h"
+#include "v1/wd_util.h"
+#include "v1/wd_adapter.h"
 
 #define SYS_CLASS_DIR	"/sys/class"
 #define LINUX_DEV_DIR	"/dev"
