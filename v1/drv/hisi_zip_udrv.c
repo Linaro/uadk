@@ -54,6 +54,8 @@
 #define ZIP_PAD_LEN			56
 #define MAX_BUFFER_SIZE			0x800000
 #define MAX_ZSTD_INPUT_SIZE		0x20000
+#define ZSTD_LIT_RSV_SIZE		16
+#define ZSTD_FREQ_DATA_SIZE		784
 
 #define CTX_PRIV1_OFFSET		4
 #define CTX_PRIV2_OFFSET		8
@@ -352,6 +354,7 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 
 static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 {
+	__u32 lit_size = msg->in_size + ZSTD_LIT_RSV_SIZE;
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
 
 	if (unlikely(msg->in_size > MAX_ZSTD_INPUT_SIZE)) {
@@ -366,13 +369,23 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 		msg->avail_out = MAX_BUFFER_SIZE;
 	}
 
+	/*
+	 * For lz77_zstd, the hardware need 784 Bytes buffer to output
+	 * the frequence information about input data.
+	 */
+	if (unlikely(msg->avail_out < ZSTD_FREQ_DATA_SIZE + lit_size)) {
+		WD_ERR("output buffer size of lz77_zstd is not enough(%u)\n",
+		       ZSTD_FREQ_DATA_SIZE + lit_size);
+		return -WD_EINVAL;
+	}
+
 	sqe->input_data_length = msg->in_size;
 
 	/* fill the literals output size */
-	sqe->dw13 = msg->in_size;
+	sqe->dw13 = lit_size;
 
 	/* fill the sequences output size */
-	sqe->dest_avail_out = msg->avail_out - msg->in_size;
+	sqe->dest_avail_out = msg->avail_out - lit_size;
 
 	return WD_SUCCESS;
 }

@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #include <stdio.h>
 #include <assert.h>
 #include <getopt.h>
@@ -524,19 +523,11 @@ static void dump_lz77_zstd_format(struct wcrypto_lz77_zstd_format *format)
 
 	dbg("%s literals number: %u\n", __func__, format->lit_num);
 
-	dbg("%s literals: ", __func__);
-	for (i = 0; i < format->lit_num; i++) {
-		dbg("%hhx", *(__u8 *)(format->literals_start + i));
-	}
-	dbg("\n");
-
 	dbg("%s sequences number: %u\n", __func__, format->seq_num);
-	seq = format->sequences_start;
-	dbg("%s sequences: \n", __func__);
-	for (i = 0; i < format->seq_num; i++) {
-		dbg("sequence[%d]: offset %u, litlen %hu, matlen %hu\n", i,
-		    seq[i].offset, seq[i].litlen, seq[i].matlen);
-	}
+
+	dbg("%s overflow cnt: %u\n", __func__, format->lit_length_overflow_cnt);
+
+	dbg("%s overflow pos: %u\n", __func__, format->lit_length_overflow_pos);
 
 	dbg("%s succeed!\n", __func__);
 
@@ -558,6 +549,12 @@ static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format)
 		WD_ERR("file open failed\n");
 		return -1;
 	}
+
+	ret = fwrite(&format->lit_length_overflow_cnt, sizeof(__u32), 1, fout);
+	write_size += ret * sizeof(__u32);
+
+	ret = fwrite(&format->lit_length_overflow_pos, sizeof(__u32), 1, fout);
+	write_size += ret * sizeof(__u32);
 
 	ret = fwrite(&format->lit_num, sizeof(__u32), 1, fout);
 	write_size += ret * sizeof(__u32);
