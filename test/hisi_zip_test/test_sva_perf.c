@@ -778,13 +778,13 @@ int main(int argc, char **argv)
 			case 't':
 				opts.option |= TEST_THP;
 				break;
-			case 'z':
-				opts.option |= TEST_ZLIB;
-				break;
 			default:
 				SYS_ERR_COND(1, "invalid argument to -o: '%s'\n", optarg);
 				break;
 			}
+			break;
+		case 'c':
+			opts.option |= TEST_ZLIB;
 			break;
 		case 'w':
 			opts.warmup_num = strtol(optarg, NULL, 0);
