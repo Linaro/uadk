@@ -192,12 +192,12 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -n <num>      number of runs\n"				\
 	"  -q <num>      number of queues\n"				\
 	"  -l <num>      number of compact runs\n"			\
-	"  -F            input file, default no input\n"					\
-	"  -S            stream mode, default block mode\n"					\
+	"  -F            input file, default no input\n"		\
+	"  -S            stream mode, default block mode\n"		\
 	"  -s <size>     total size\n"					\
 	"  -V            verify output\n"				\
 	"  -v            display detailed performance information\n"	\
-	"  -a            test deflate algorithm, default gzip\n"		\
+	"  -a            test deflate algorithm, default gzip\n"	\
 	"  -z            test zlib algorithm, default gzip\n"		\
 	"  -t <num>      number of thread per process\n"		\
 	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
