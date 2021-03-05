@@ -185,7 +185,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:da"
+#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:dac"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -202,6 +202,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -t <num>      number of thread per process\n"		\
 	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
 	"  -d		 test decompression, default compression\n"	\
+	"  -c		 use cpu to do zlib\n"				\
 	"\n\n"
 
 int parse_common_option(const char opt, const char *optarg,
