@@ -380,7 +380,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		 * Enhance performance in sva case
 		 * no impact to non-sva case
 		 */
-		memset(info.out_buf, 0, info.out_size);
+		memset(info.out_buf, 5, info.out_size);
 	}
 
 	if (!(opts->option & TEST_ZLIB)) {
