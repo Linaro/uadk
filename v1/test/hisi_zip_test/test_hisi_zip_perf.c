@@ -121,7 +121,6 @@ struct user_comp_tag_info {
 #define TEST_MAX_THRD		2048
 #define MAX_CORES		128
 #define Q_MAX_CTX		1
-#define MIN(a, b)		((a) < (b) ? (a) : (b))
 #define CTX_NUM(a, b)		(((a / Q_MAX_CTX) >= (b + 1))		\
 				? Q_MAX_CTX : (a % Q_MAX_CTX))
 
@@ -160,7 +159,7 @@ void  *zip_sys_async_poll_thread(void *args)
 	int workq_num = q_num;
 	int ret, i;
 
-	pid_t tid = gettid();
+	//pid_t tid = gettid();
 	//dbg("%s poll thread_id=%d\n", __func__, (int)tid);
 
 	for (i = 0; i < q_num; i++)
@@ -340,7 +339,7 @@ void  *zip_sys_stream_thread(void *args)
 {
 	struct test_zip_pthread_dt *pdata = args;
 	int i = pdata->iteration;
-	pid_t tid = gettid();
+	//pid_t tid = gettid();
 	int ret;
 	int cpu_id = pdata->cpu_id;
 	cpu_set_t mask;
@@ -373,8 +372,8 @@ therad_no_affinity:
 	//dbg("thread_id=%d do_comp is ok\n",  (int)tid);
 	gettimeofday(&end_tval, NULL);
 
-	float tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
-		     end_tval.tv_usec - start_tval.tv_usec);
+	//float tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
+	//	     end_tval.tv_usec - start_tval.tv_usec);
 	//dbg("%s end, time = %f\n", __func__, tc);
 
 	return NULL;
@@ -384,7 +383,7 @@ void  *zip_sys_block_thread(void *args)
 {
 	struct test_zip_pthread_dt *pdata = args;
 	int i = pdata->iteration;
-	pid_t tid = gettid();
+	//pid_t tid = gettid();
 	int ret;
 	int cpu_id = pdata->cpu_id;
 	cpu_set_t mask;
@@ -418,8 +417,8 @@ therad_no_affinity:
 	//dbg("thread_id=%d do_comp is ok\n",  (int)tid);
 	gettimeofday(&end_tval, NULL);
 
-	float tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
-		     end_tval.tv_usec - start_tval.tv_usec);
+	//float tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
+	//	     end_tval.tv_usec - start_tval.tv_usec);
 	//dbg("%s end, time = %f\n", __func__, tc);
 
 	return NULL;
@@ -694,7 +693,7 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 
 	//dbg("%s entry blocksize=%d, count=%d, threadnum= %d, in_len=%d\n",
 	//   __func__, block_size, count, thread_num, in_len);
-	int cnt;
+	int cnt = 0;
 	if (_get_one_bits(lcore_mask) > 0)
 		cnt =  _get_one_bits(lcore_mask);
 	else if (_get_one_bits(lcore_mask) == 0 &&
@@ -804,8 +803,8 @@ static int hizip_thread_test(FILE *source, FILE *dest,
 	}
 	gettimeofday(&end_tval, NULL);
 
-	float poll_time = (float)((end_tval.tv_sec-poll_tval.tv_sec) * 1000000 +
-		     end_tval.tv_usec - poll_tval.tv_usec);
+	//float poll_time = (float)((end_tval.tv_sec-poll_tval.tv_sec) * 1000000 +
+	//	     end_tval.tv_usec - poll_tval.tv_usec);
 	tc = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
 		     end_tval.tv_usec - start_tval.tv_usec);
 	//dbg("%s end threadnum = %d,time = %f, poll time = %f\n",
@@ -871,9 +870,9 @@ int main(int argc, char *argv[])
 	int show_help = 0;
 	int hw_flag = 1;
 	int mode = 0;
-			__u64 core_mask[2] = {0}; 
-			int small;
-			int cpu_mask_c = 0;
+	__u64 core_mask[2] = {0};
+	//int small;
+	int cpu_mask_c = 0;
 	int opt;
 
 	while ((opt = getopt(argc, argv, "mkazgdb:p:q:i:c:vh")) != -1) {
