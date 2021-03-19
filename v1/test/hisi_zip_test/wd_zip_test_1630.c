@@ -75,7 +75,6 @@ struct seq_def {
 #define DMEMSIZE			(1024 * 4)	/* 4K */
 
 #define MAX(a, b)			((a) > (b) ? (a) : (b))
-#define MIN(a, b)			((a) < (b) ? (a) : (b))
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
