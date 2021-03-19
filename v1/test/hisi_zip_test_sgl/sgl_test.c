@@ -59,11 +59,13 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
 
         struct wd_queue *q;
         struct wd_sglpool_setup sp;
-        pthread_t test_thrds[2];
         __u32 free_sgl_num;
         void *sgl_pool;
-        int loop = 1;
         int ret;
+#if 0
+        pthread_t test_thrds[2];
+        int loop = 1;
+#endif
 
         q = calloc(1, sizeof(struct wd_queue));
 	if (q == NULL) {
@@ -122,7 +124,6 @@ fprintf(stderr, "sgl_num = %hu, buf_num = %u, buf_size = %u.\nsge_num_in_sgl = %
         char b[10000] = { 0 };
         char c[50000] = { 0 };
         memset(a, 'f', sizeof(a));
-        __u32 dtsize = 0;
 
 #endif
 
