@@ -216,7 +216,7 @@ extern void *wd_ctx_get_priv(handle_t h_ctx);
 extern char *wd_ctx_get_api(handle_t h_ctx);
 
 /**
- * wd_mmap_qfr() - Map and get the base address of one context region.
+ * wd_ctx_mmap_qfr() - Map and get the base address of one context region.
  * @h_ctx: The handle of context.
  * @qfrt: Name of context region, which could be got in kernel head file
  *        include/uapi/misc/uacce/uacce.h
@@ -226,15 +226,15 @@ extern char *wd_ctx_get_api(handle_t h_ctx);
  * Normally, UACCE_QFRT_MMIO is for MMIO registers of one context,
  * UACCE_QFRT_DUS is for task communication memory of one context.
  */
-extern void *wd_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+extern void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 
 /**
- * wd_unmap_qfr() - Unmap one context region.
+ * wd_ctx_unmap_qfr() - Unmap one context region.
  * @h_ctx: The handle of context.
  * @qfrt: Name of context region, which could be got in kernel head file
  *        include/uapi/misc/uacce/uacce.h.
  */
-extern void wd_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+extern void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 
 /**
  * wd_ctx_wait() - Wait task in context finished.
