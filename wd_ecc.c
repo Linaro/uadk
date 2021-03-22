@@ -94,7 +94,7 @@ static const struct curve_param_desc curve_pram_list[] = {
 };
 
 #ifdef WD_STATIC_DRV
-extern struct wd_ecc_driver wd_ecc_hisi_hpre;
+extern const struct wd_ecc_driver wd_ecc_hisi_hpre;
 static void wd_ecc_set_static_drv(void)
 {
 	wd_ecc_setting.driver = &wd_ecc_hisi_hpre;
