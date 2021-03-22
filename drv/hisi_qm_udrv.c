@@ -154,15 +154,15 @@ static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info,
 static int hisi_qm_setup_region(handle_t h_ctx,
 				struct hisi_qm_queue_info *q_info)
 {
-	q_info->sq_base = wd_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
+	q_info->sq_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
 	if (q_info->sq_base == MAP_FAILED) {
 		WD_ERR("mmap dus fail\n");
 		goto err_out;
 	}
 
-	q_info->mmio_base = wd_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
+	q_info->mmio_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
 	if (q_info->mmio_base == MAP_FAILED) {
-		wd_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
+		wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
 		WD_ERR("mmap mmio fail\n");
 		goto err_out;
 	}
@@ -178,8 +178,8 @@ err_out:
 static void hisi_qm_unset_region(handle_t h_ctx,
 				 struct hisi_qm_queue_info *q_info)
 {
-	wd_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
-	wd_unmap_qfr(h_ctx, UACCE_QFRT_MMIO);
+	wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
+	wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_MMIO);
 	q_info->sq_base = NULL;
 	q_info->mmio_base = NULL;
 }
@@ -389,8 +389,8 @@ void hisi_qm_free_qp(handle_t h_qp)
 	}
 
 	wd_release_ctx_force(qp->h_ctx);
-	wd_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
-	wd_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
+	wd_ctx_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
+	wd_ctx_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
 	if (qp->h_sgl_pool)
 		hisi_qm_destroy_sglpool(qp->h_sgl_pool);
 
