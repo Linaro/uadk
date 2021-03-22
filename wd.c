@@ -334,7 +334,7 @@ int wd_release_ctx_force(handle_t h_ctx)
 	return ret;
 }
 
-void *wd_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
+void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	off_t off = qfrt * getpagesize();
@@ -356,7 +356,7 @@ void *wd_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 	return addr;
 }
 
-void wd_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
+void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
