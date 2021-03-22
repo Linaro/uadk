@@ -182,9 +182,15 @@ struct wd_ecc_driver {
 
 void wd_ecc_set_driver(struct wd_ecc_driver *drv);
 
+#ifdef WD_STATIC_DRV
 #define WD_ECC_SET_DRIVER(drv)						\
-extern const struct wd_ecc_driver wd_##drv __attribute__((alias(#drv)));	\
+extern const struct wd_ecc_driver wd_##drv __attribute__((alias(#drv)))
+#else
+#define WD_ECC_SET_DRIVER(drv)						\
 static void __attribute__((constructor)) set_driver_ecc(void)		\
-{}
+{									\
+	wd_ecc_set_driver(&drv);					\
+}
+#endif
 
 #endif /* __WD_ECC_DRV_H */

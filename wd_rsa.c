@@ -79,7 +79,7 @@ static struct wd_rsa_setting {
 } wd_rsa_setting;
 
 #ifdef WD_STATIC_DRV
-extern struct wd_rsa_driver wd_rsa_hisi_hpre;
+extern const struct wd_rsa_driver wd_rsa_hisi_hpre;
 static void wd_rsa_set_static_drv(void)
 {
 	wd_rsa_setting.driver = &wd_rsa_hisi_hpre;
