@@ -28,9 +28,15 @@ struct wd_dh_driver {
 
 void wd_dh_set_driver(struct wd_dh_driver *drv);
 
+#ifdef WD_STATIC_DRV
 #define WD_DH_SET_DRIVER(drv)						\
-extern const struct wd_dh_driver wd_##drv __attribute__((alias(#drv)));	\
+extern const struct wd_dh_driver wd_##drv __attribute__((alias(#drv)))
+#else
+#define WD_DH_SET_DRIVER(drv)						\
 static void __attribute__((constructor)) set_driver_dh(void)		\
-{}
+{									\
+	wd_dh_set_driver(&drv);						\
+}
+#endif
 
 #endif /* __WD_DH_DRV_H */

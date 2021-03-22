@@ -39,7 +39,7 @@ static struct wd_dh_setting {
 } wd_dh_setting;
 
 #ifdef WD_STATIC_DRV
-extern struct wd_dh_driver wd_dh_hisi_hpre;
+extern const struct wd_dh_driver wd_dh_hisi_hpre;
 static void wd_dh_set_static_drv(void)
 {
 	wd_dh_setting.driver = &wd_dh_hisi_hpre;

@@ -54,11 +54,15 @@ struct wd_rsa_driver {
 
 void wd_rsa_set_driver(struct wd_rsa_driver *drv);
 
+#ifdef WD_STATIC_DRV
 #define WD_RSA_SET_DRIVER(drv)						      \
-extern const struct wd_rsa_driver wd_##drv __attribute__((alias(#drv)));\
+extern const struct wd_rsa_driver wd_##drv __attribute__((alias(#drv)))
+#else
+#define WD_RSA_SET_DRIVER(drv)						      \
 static void __attribute__((constructor)) set_driver_rsa(void)		      \
 {									      \
 	wd_rsa_set_driver(&drv);					      \
 }
+#endif
 
 #endif /* __WD_RSA_DRV_H */
