@@ -380,23 +380,21 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
-		return ret;
+		goto err_out;
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
 							priv);
 		if (ret == -WD_HW_EACCESS) {
-			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
-			return ret;
+			goto err_out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
-				pthread_spin_unlock(&ctx->lock);
 				WD_ERR("wd comp recv timeout fail!\n");
-				return -WD_ETIMEDOUT;
+				ret = -WD_ETIMEDOUT;
+				goto err_out;
 			}
 		}
 	} while (ret == -WD_EAGAIN);
@@ -408,6 +406,10 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	req->status = resp_msg.req.status;
 
 	return 0;
+
+err_out:
+	pthread_spin_unlock(&ctx->lock);
+	return ret;
 }
 
 int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
@@ -551,23 +553,21 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
-		return ret;
+		goto err_out;
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
 							priv);
 		if (ret == -WD_HW_EACCESS) {
-			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw err!\n");
-			return ret;
+			goto err_out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_count > MAX_RETRY_COUNTS) {
-				pthread_spin_unlock(&ctx->lock);
 				WD_ERR("wd comp recv timeout fail!\n");
-				return -WD_ETIMEDOUT;
+				ret = -WD_ETIMEDOUT;
+				goto err_out;
 			}
 		}
 	} while (ret == -WD_EAGAIN);
@@ -583,6 +583,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	sess->stream_pos = WD_COMP_STREAM_OLD;
 
 	return 0;
+
+err_out:
+	pthread_spin_unlock(&ctx->lock);
+	return ret;
 }
 
 int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
