@@ -214,6 +214,11 @@ static int digest_param_check(struct wd_digest_sess *sess,
 {
 	int ret;
 
+	if (unlikely(!sess || !req)) {
+		WD_ERR("digest input sess or req is NULL.\n");
+		return -WD_EINVAL;
+	}
+
 	if (req->out_buf_bytes < req->out_bytes) {
 		WD_ERR("failed to check digest out buffer length!\n");
 		return -WD_EINVAL;
@@ -263,11 +268,6 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_digest_msg msg;
 	__u64 recv_cnt = 0;
 	int index, ret;
-
-	if (unlikely(!dsess || !req)) {
-		WD_ERR("digest input sess or req is NULL.\n");
-		return -WD_EINVAL;
-	}
 
 	ret = digest_param_check(dsess, req);
 	if (ret)
@@ -329,14 +329,14 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_digest_msg *msg;
 	int index, idx, ret;
 
-	if (unlikely(!dsess || !req || !req->cb)) {
-		WD_ERR("digest input sess or req is NULL.\n");
-		return -WD_EINVAL;
-	}
-
 	ret = digest_param_check(dsess, req);
 	if (ret)
 		return -WD_EINVAL;
+
+	if (unlikely(!req->cb)) {
+		WD_ERR("digest input req cb is NULL.\n");
+		return -WD_EINVAL;
+	}
 
 	index = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {

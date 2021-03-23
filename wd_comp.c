@@ -307,6 +307,32 @@ static void fill_comp_msg(struct wd_comp_msg *msg, struct wd_comp_req *req)
 	msg->req.last = 1;
 }
 
+static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
+				__u8 mode)
+{
+	if (!h_sess || !req) {
+		WD_ERR("invalid: sess or req is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (mode == CTX_MODE_ASYNC && !req->cb) {
+		WD_ERR("async comp input cb is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (mode == CTX_MODE_ASYNC && !req->cb_param) {
+		WD_ERR("async comp input cb param is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (mode == CTX_MODE_SYNC && req->cb) {
+		WD_ERR("sync comp input cb should be NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
@@ -319,9 +345,10 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	__u32 index;
 	int ret;
 
-	if (!sess || !req) {
-		WD_ERR("invalid: sess or req is NULL!\n");
-		return -WD_EINVAL;
+	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
+	if (ret) {
+		WD_ERR("fail to check params!\n");
+		return ret;
 	}
 
 	if (!req->src_len) {
@@ -392,10 +419,12 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	__u32 avail_out;
 	int ret;
 
-	if (!h_sess || !req) {
-		WD_ERR("invalid: sess or req is NULL!\n");
-		return -WD_EINVAL;
+	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
+	if (ret) {
+		WD_ERR("fail to check params!\n");
+		return ret;
 	}
+
 	if (req->op_type != WD_DIR_COMPRESS &&
 	    req->op_type != WD_DIR_DECOMPRESS) {
 		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
@@ -489,9 +518,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	__u32 index;
 	int ret;
 
-	if (!sess || !req) {
-		WD_ERR("sess or req is NULL!\n");
-		return -WD_EINVAL;
+	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
+	if (ret) {
+		WD_ERR("fail to check params!\n");
+		return ret;
 	}
 
 	index = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
@@ -566,18 +596,14 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	__u32 index;
 	int idx, ret;
 
-	if (!sess || !req) {
-		WD_ERR("sess or req is NULL!\n");
-		return -WD_EINVAL;
+	ret = wd_comp_check_params(h_sess, req, CTX_MODE_ASYNC);
+	if (ret) {
+		WD_ERR("fail to check params!\n");
+		return ret;
 	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
-		return -WD_EINVAL;
-	}
-
-	if (!req->cb || !req->cb_param) {
-		WD_ERR("invalid: req callback or param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
