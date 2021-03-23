@@ -92,7 +92,7 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 			      struct wd_blkpool *p,
 			      struct wd_blkpool_setup *sp)
 {
-	struct q_info *qinfo;
+	struct q_info *qinfo = NULL;
 	unsigned int asz;
 	int ret;
 
