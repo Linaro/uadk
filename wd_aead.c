@@ -312,6 +312,11 @@ static int aead_param_check(struct wd_aead_sess *sess,
 	__u32 len;
 	int ret;
 
+	if (unlikely(!sess || !req)) {
+		WD_ERR("aead input sess or req is NULL.\n");
+		return -WD_EINVAL;
+	}
+
 	if (sess->cmode == WD_CIPHER_CBC &&
 	   (req->in_bytes & (AES_BLOCK_SIZE - 1) ||
 	    req->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
@@ -481,11 +486,6 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	int index;
 	int ret;
 
-	if (unlikely(!sess || !req)) {
-		WD_ERR("aead input sess or req is NULL.\n");
-		return -WD_EINVAL;
-	}
-
 	ret = aead_param_check(sess, req);
 	if (ret)
 		return -WD_EINVAL;
@@ -556,14 +556,14 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	int idx;
 	int ret;
 
-	if (unlikely(!sess || !req || !req->cb)) {
-		WD_ERR("aead input sess or req is NULL.\n");
-		return -WD_EINVAL;
-	}
-
 	ret = aead_param_check(sess, req);
 	if (ret)
 		return -WD_EINVAL;
+
+	if (unlikely(!req->cb)) {
+		WD_ERR("aead input req cb is NULL.\n");
+		return -WD_EINVAL;
+	}
 
 	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
 	if (unlikely(index >= config->ctx_num)) {
