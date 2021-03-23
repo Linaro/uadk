@@ -16,7 +16,8 @@ UADK_VERSION = -version-info 5:1:3
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
-		  include/uacce.h include/wd_alg_common.h
+		  include/uacce.h include/wd_alg_common.h \
+		  include/wd_common.h
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
