@@ -19,6 +19,9 @@
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
 
+#define POLL_SIZE		70000
+#define POLL_TIME		0
+
 static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {
 	0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
 	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E
@@ -518,6 +521,14 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	if (ret < 0) {
 		WD_ERR("failed to send aead bd!\n");
 		goto err_out;
+	}
+
+	if (req->in_bytes >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait err(%d)!\n", ret);
+			goto err_out;
+		}
 	}
 
 	do {

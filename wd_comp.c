@@ -16,6 +16,8 @@
 #define MAX_RETRY_COUNTS		200000000
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
+#define POLL_SIZE			250000
+#define POLL_TIME			0
 
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
@@ -383,6 +385,15 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		goto err_out;
 	}
+
+	if (req->src_len >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait err(%d)!\n", ret);
+			goto err_out;
+		}
+	}
+
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
@@ -556,6 +567,15 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		goto err_out;
 	}
+
+	if (req->src_len >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait err(%d)!\n", ret);
+			goto err_out;
+		}
+	}
+
 	resp_msg.ctx_buf = sess->ctx_buf;
 	do {
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,

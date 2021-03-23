@@ -16,6 +16,9 @@
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
 
+#define POLL_SIZE		100000
+#define POLL_TIME		0
+
 static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
 	WD_DIGEST_SHA256_LEN, WD_DIGEST_SHA224_LEN,
@@ -294,6 +297,14 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	if (ret < 0) {
 		WD_ERR("failed to send bd!\n");
 		goto err_out;
+	}
+
+	if (req->in_bytes >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait err(%d)!\n", ret);
+			goto err_out;
+		}
 	}
 
 	do {
