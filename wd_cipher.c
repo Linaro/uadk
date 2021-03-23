@@ -375,9 +375,8 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd cipher send err!\n");
-		return ret;
+		goto err_out;
 	}
 
 	do {
@@ -385,19 +384,19 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd cipher recv err!\n");
-			goto recv_err;
+			goto err_out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("wd cipher recv timeout fail!\n");
 				ret = -WD_ETIMEDOUT;
-				goto recv_err;
+				goto err_out;
 			}
 		}
 	} while (ret < 0);
 	pthread_spin_unlock(&ctx->lock);
 
 	return 0;
-recv_err:
+err_out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
