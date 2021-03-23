@@ -427,9 +427,9 @@ void *send_thread_func(void *arg)
 		while (left > 0) {
 			info->req.src_len = src_block_size;
 			info->req.dst_len = dst_block_size;
-			info->req.cb = async_cb;
-			info->req.cb_param = &info->req;
 			if (opts->sync_mode) {
+				info->req.cb = async_cb;
+				info->req.cb_param = &info->req;
 				count++;
 				ret = wd_do_comp_async(h_sess, &info->req);
 			} else {
