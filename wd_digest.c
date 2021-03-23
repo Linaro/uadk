@@ -292,9 +292,8 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("failed to send bd!\n");
-		return ret;
+		goto err_out;
 	}
 
 	do {
@@ -302,12 +301,12 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
-			goto recv_err;
+			goto err_out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
 				ret = -WD_ETIMEDOUT;
-				goto recv_err;
+				goto err_out;
 			}
 		}
 	} while (ret < 0);
@@ -316,7 +315,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	return 0;
 
-recv_err:
+err_out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
