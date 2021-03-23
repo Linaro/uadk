@@ -106,6 +106,7 @@ int hw_blk_compress(int alg_type, int blksize,
 	req.dst = dst;
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_COMPRESS;
+	req.cb = NULL;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -155,6 +156,7 @@ int hw_blk_decompress(int alg_type, int blksize,
 	req.dst = dst;
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_DECOMPRESS;
+	req.cb = NULL;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -204,6 +206,7 @@ int hw_stream_compress(int alg_type, int blksize,
 	req.dst = dst;
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_COMPRESS;
+	req.cb = NULL;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -254,6 +257,7 @@ int hw_stream_decompress(int alg_type, int blksize,
 	req.dst = dst;
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_DECOMPRESS;
+	req.cb = NULL;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -427,12 +431,13 @@ void *send_thread_func(void *arg)
 		while (left > 0) {
 			info->req.src_len = src_block_size;
 			info->req.dst_len = dst_block_size;
+			info->req.cb_param = &info->req;
 			if (opts->sync_mode) {
 				info->req.cb = async_cb;
-				info->req.cb_param = &info->req;
 				count++;
 				ret = wd_do_comp_async(h_sess, &info->req);
 			} else {
+				info->req.cb = NULL;
 				ret = wd_do_comp_sync(h_sess, &info->req);
 				if (info->opts->faults & INJECT_SIG_WORK)
 					kill(getpid(), SIGTERM);
