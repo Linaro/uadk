@@ -91,7 +91,7 @@ static inline int _get_one_bits(__u64 val)
 	return count;
 }
 
-int *_trng_sys_test_thread(void *data)
+void *_trng_sys_test_thread(void *data)
 {
 	int ret, cpuid, i = 0;
 	struct test_trng_pthread_dt *pdata = data;
@@ -103,12 +103,11 @@ int *_trng_sys_test_thread(void *data)
 	int *out_data;
 	void *ctx = NULL;
 	void *tag = NULL;
+
 	cpu_set_t mask;
-	int thread_num;
 	CPU_ZERO(&mask);
 	cpuid = pdata->cpu_id;
 	q = pdata->q;
-	thread_num = pdata->thread_num;
 	CPU_SET(cpuid, &mask);
 
 	if (cpuid) {
@@ -155,7 +154,7 @@ fail_release:
 		free(opdata.out);
 	if (ctx)
 		wcrypto_del_rng_ctx(ctx);
-	return ret;
+	return NULL;
 }
 
 
@@ -235,9 +234,7 @@ static void _trng_cb(const void *message, void *tag)
 	const struct wcrypto_rng_msg *msg = message;
 	struct trng_user_tag_info* pSwData = (struct trng_user_tag_info*)tag;
 	struct wcrypto_rng_op_data opdata;
-	int i, pid, threadId;
-	int ret;
-	static int failTimes = 0;
+	int pid, threadId;
 
 	if (NULL == pSwData) {
 		RNG_TST_PRT("pSwData NULL!\n");
@@ -246,7 +243,7 @@ static void _trng_cb(const void *message, void *tag)
 	memset(&opdata, 0, sizeof(opdata));
 
 	opdata.out = (void *)msg->out;
-	opdata.out_bytes = (void *)msg->out_bytes;
+	opdata.out_bytes = msg->out_bytes;
 	pid = pSwData->pid;
 	threadId = pSwData->thread_id;
 	RNG_TST_PRT("Proc-%d, %d-TD trng\n", pid, threadId);
@@ -269,7 +266,6 @@ static void *_trng_asys_test_thread(void *data)
 	struct wcrypto_rng_ctx *ctx = NULL;
 	struct trng_user_tag_info *tag = NULL;
 	struct wcrypto_rng_op_data opdata;
-	int thread_num;
 	int pid = getpid();
 	int thread_id = (int)syscall(__NR_gettid);
 	int *out_data;
@@ -278,7 +274,6 @@ static void *_trng_asys_test_thread(void *data)
 	CPU_ZERO(&mask);
 	cpuid = pdata->cpu_id;
 	q = (struct wd_queue *)pdata->q;
-	thread_num = pdata->thread_num;
 	CPU_SET(cpuid, &mask);
 	
 	if (!q) {
@@ -380,7 +375,6 @@ static int trng_asys_test(int thread_num, __u64 lcore_mask, __u64 hcore_mask)
 	int i, ret, cnt = 0;
 	struct wd_queue q;
 	int h_cpuid;
-	int index = 0;
 
 	memset(&q, 0, sizeof(q));
 
@@ -613,7 +607,11 @@ int main(int argc, char *argv[])
         	printf("read error %d\n", ret);
         	return ret;
     }*/
-	write(fd_w,opdata.out,opdata.out_bytes);
+	ret = write(fd_w,opdata.out,opdata.out_bytes);
+	if (ret < 0) {
+		printf("write error %d\n", ret);
+		return ret;
+	}
 	close(fd);
 	close(fd_w);
 del_ctx:
