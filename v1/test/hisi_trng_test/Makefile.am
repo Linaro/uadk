@@ -6,6 +6,6 @@ test_hisi_trngu_SOURCES=test_hisi_trngu.c
 test_hisi_trngk_SOURCES=test_hisi_trngk.c
 test_hisi_trngp_SOURCES=test_hisi_trngp.c
 
-test_hisi_trngu_LDADD=../../../.libs/libwd.so
-test_hisi_trngk_LDADD=../../../.libs/libwd.so
-test_hisi_trngp_LDADD=../../../.libs/libwd.so
+test_hisi_trngu_LDADD=../../../.libs/libwd.la
+test_hisi_trngk_LDADD=../../../.libs/libwd.la
+test_hisi_trngp_LDADD=../../../.libs/libwd.la
