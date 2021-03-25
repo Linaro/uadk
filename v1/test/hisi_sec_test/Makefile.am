@@ -4,4 +4,4 @@ bin_PROGRAMS=test_hisi_sec
 
 test_hisi_sec_SOURCES=test_hisi_sec.c test_hisi_sec.h
 
-test_hisi_sec_LDADD=../../.libs/libwd.so
+test_hisi_sec_LDADD=../../../.libs/libwd.so
