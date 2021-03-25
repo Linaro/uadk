@@ -5,5 +5,5 @@ bin_PROGRAMS=bmm_test
 
 bmm_test_SOURCES=bmm_test.c bmm_test.h
 
-bmm_test_LDADD=../../../.libs/libwd.so
+bmm_test_LDADD=../../../.libs/libwd.la
 endif
