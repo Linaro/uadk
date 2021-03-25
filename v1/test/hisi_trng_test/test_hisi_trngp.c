@@ -6,6 +6,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <unistd.h>
+
 static int input;
 static int thread_num;
 struct thread_info
@@ -15,7 +17,7 @@ struct thread_info
 	int num;
 };
 
-void *trng_thread(void *args,int thread_num)
+void *trng_thread(void *args)
 {
 	int j;
 	int fd = -1;
@@ -30,16 +32,16 @@ void *trng_thread(void *args,int thread_num)
 	num = tinfo->num;
 	size=si/num;
 	printf("Now try to get  bytes random number from /dev/random.\n");
-	fd = open ("/dev/random", O_RDONLY);
+	fd = open("/dev/random", O_RDONLY);
 	if (fd <0 ) {
 		printf("can not open\n");
-		return fd;
+		return NULL;
 	}
 	for (j = 0; j< size; j++) {
 		ret = read(fd, &data, 1);
 		if (ret < 0) {
 			printf("read error %d\n", ret);
-			return ret;
+			return NULL;
 		}
 //		else if (ret < 1)
 //		goto rd_ag;
@@ -52,26 +54,28 @@ void *trng_thread(void *args,int thread_num)
 	fd_w = open ("/root/trng_file", O_RDWR | O_CREAT |O_APPEND , 0777);
 	if (fd_w <0 ) {
 		printf("can not open trng_file\n");
-		return fd_w;
+		return NULL;
 	}
-	write(fd_w,&data,size);
+	ret = write(fd_w,&data,size);
+	if (ret < 0) {
+		printf("write error %d\n", ret);
+		return NULL;
+	}
 	close(fd);
 	close(fd_w);
-	return 0;
+	return NULL;
 }
 
 void trng_test(int input,int thread_num)
 {
 	int i;
-	int num;
-	int addr;
 	void *ret = NULL;
 	struct thread_info *tinfo;
 	tinfo = calloc(thread_num, sizeof(struct thread_info));
 	if(tinfo == NULL)
 	{
 		printf("calloc fail...\n");
-		return -1;
+		return;
 	}
 	for(i = 0; i<thread_num; ++i)
 	{
@@ -82,7 +86,7 @@ void trng_test(int input,int thread_num)
 		tinfo[i].size = input;
 		if((pthread_create(&tinfo[i].thread_id,NULL,trng_thread, (void *)&tinfo[i])) != 0)
 		{
-			return -1;
+			return;
 		}
 	}
 
@@ -91,7 +95,7 @@ void trng_test(int input,int thread_num)
 		if(pthread_join(tinfo[i].thread_id, &ret) != 0)
 		{
 			printf("thread is not exit....\n");
-			return -1;
+			return;
 		}
 //      	printf("thread exit coid %d\n", (int *)ret);
 		free(ret);
