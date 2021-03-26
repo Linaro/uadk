@@ -22,10 +22,45 @@ zip_result=-1
 sec_result=-1
 hpre_result=-1
 
+# arg1: zip/sec/hpre
+# Return UACCE mode. Return -1 if UACCE module is invalid.
+check_uacce_mode()
+{
+	case $1 in
+	"zip")
+		if [ ! -f "/sys/module/hisi_zip/parameters/uacce_mode" ]; then
+			mode=-1
+		else
+			mode=`cat /sys/module/hisi_zip/parameters/uacce_mode`
+		fi
+		;;
+	"sec")
+		if [ ! -f "/sys/module/hisi_sec2/parameters/uacce_mode" ]; then
+			mode=-1
+		else
+			mode=`cat /sys/module/hisi_sec2/parameters/uacce_mode`
+		fi
+		;;
+	"hpre")
+		if [ ! -f "/sys/module/hisi_hpre/parameters/uacce_mode" ]; then
+			mode=-1
+		else
+			mode=`cat /sys/module/hisi_hpre/parameters/uacce_mode`
+		fi
+		;;
+	*)
+		mode=-1
+		;;
+	esac
+	return $mode
+}
+
 run_cmd()
 {
 	exit_code=0
 	if [ -z ${VALGRIND} ]; then
+		# "|| exit_code=$?" is used to capature the return value.
+		# It could prevent bash to stop scripts when error occurs.
 		$@ &> /dev/null || exit_code=$?
 	else
 		${VALGRIND} $@
@@ -33,8 +68,17 @@ run_cmd()
 	return $exit_code
 }
 
+run_zip_test_v1()
+{
+	dd if=/dev/urandom of=origin bs=512K count=1 >& /dev/null
+	run_cmd test_hisi_zip -z < origin > hw.zlib
+
+	dd if=/dev/urandom of=origin bs=512K count=1 >& /dev/null
+	run_cmd test_hisi_zip -g < origin > hw.gz
+}
+
 # failed: return 1; success: return 0
-run_zip_test()
+run_zip_test_v2()
 {
 	run_cmd zip_sva_perf -b 8192 -l 1000 -v -m 0
 
@@ -81,7 +125,7 @@ run_zip_test()
 
 # Accept more paraterms
 # failed: return 1; success: return 0
-run_sec_test()
+run_sec_test_v2()
 {
 	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
@@ -97,7 +141,7 @@ run_sec_test()
 }
 
 # failed: return 1; success: return 0
-run_hpre_test()
+run_hpre_test_v2()
 {
 	run_cmd test_hisi_hpre --trd_mode=sync
 
@@ -145,28 +189,46 @@ find /dev -name hisi_zip-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_zip-*
 	have_hisi_zip=1
-	run_zip_test
-	zip_result=$?
+	check_uacce_mode zip || exit_code=$?
+	if [ $exit_code -eq 1 ]; then
+		run_zip_test_v2
+		zip_result=$?
+	else
+		run_zip_test_v1
+		zip_result=$?
+	fi
 fi
 
 find /dev -name hisi_sec2-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_sec2-*
 	have_hisi_sec=1
-	# Run without sglnum parameter
-	run_sec_test
-	sec_result=$?
-	# Re-run with sglnum parameter
-	run_sec_test --sglnum=2
-	sec_result=$?
+	check_uacce_mode sec || exit_code=$?
+	if [ $exit_code -eq 1 ]; then
+		# Run without sglnum parameter
+		run_sec_test_v2
+		sec_result=$?
+		# Re-run with sglnum parameter
+		run_sec_test_v2 --sglnum=2
+		sec_result=$?
+	else
+		# Skip to test sec temporarily
+		sec_result=0
+	fi
 fi
 
 find /dev -name hisi_hpre-* &> /dev/null
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_hpre-*
 	have_hisi_hpre=1
-	run_hpre_test
-	hpre_result=$?
+	check_uacce_mode hpre || exit_code=$?
+	if [ $exit_code -eq 1 ]; then
+		run_hpre_test_v2
+		hpre_result=$?
+	else
+		# Skip to test sec temporarily
+		hpre_result=0
+	fi
 fi
 
 output_result
