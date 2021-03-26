@@ -3297,7 +3297,7 @@ new_test_again:
 				free(key_info);
 			if (pdata->send_task_num == t_times) {
 			    HPRE_TST_PRT("opType:%d run %d times or %d seconds will return!\n", pdata->op_type, t_times, t_seconds);
-			    return NULL;
+			    return 0;
 			}
 			goto new_test_again;
 		}
@@ -3305,7 +3305,7 @@ new_test_again:
 
 	if (!performance_test) {
 		HPRE_TST_PRT("opType:%d run %d times or %d seconds will return!\n", pdata->op_type, t_times, t_seconds);
-	    return NULL;
+	    return 0;
 	}
 
 	pdata->recv_task_num = pdata->send_task_num;
@@ -3425,7 +3425,7 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 				q[j].capa.alg = "rsa";
 
 			if (dev_path)
-				strncpy(q[j].dev_path, dev_path, sizeof(q[j].dev_path));
+				strcpy(q[j].dev_path, dev_path);
 			q[j].node_mask = node_msk;
 			ret = wd_request_queue(&q[j]);
 			if (ret) {
@@ -4226,26 +4226,26 @@ void *_hpre_sys_test_thread(void *data)
 		return _hpre_rsa_sys_test_thread(data);
 	}
 }
-void normal_register(const char *format)
+void normal_register(const char *format, ...)
 {
     printf("wd log:%s", format);
-    return ;
+    return;
 }
 
-void redirect_log_2_file(const char *format)
+void redirect_log_2_file(const char *format, ...)
 {
     FILE *fp;
     fp = fopen("file.txt", "a+");
     fprintf(fp,format,__FILE__, __LINE__, __func__);
     fclose(fp);
-    return ;
+    return;
 }
 
-void segmant_fault_register(const char *format)
+void segmant_fault_register(const char *format, ...)
 {
     int *ptr = NULL;
     *ptr = 0;
-    return ;
+    return;
 }
 int main(int argc, char *argv[])
 {
@@ -4303,7 +4303,8 @@ int main(int argc, char *argv[])
             wd_get_node_id(q);
             FILE *fp = NULL;
             fp = fopen("file.txt", "r");
-            fgets(content,1024,fp);
+            if (fgets(content,1024,fp) == NULL)
+		    return -EIO;
             if (strstr(content,error_info) == NULL){
                 return -EINVAL;
             }
@@ -4495,7 +4496,7 @@ int main(int argc, char *argv[])
 					return -EINVAL;
 				}
 			} else if (!strcmp(argv[11], "-dev")) {
-				strncpy(dev_path, argv[12], sizeof(dev_path));
+				strcpy(dev_path, argv[12]);
 			} else if (!strcmp(argv[11], "-node")) {
 				node_msk = strtoul(argv[12], NULL, 16);
 			} else {
@@ -4519,7 +4520,7 @@ int main(int argc, char *argv[])
 					return -EINVAL;
 				}
 			} else if (!strcmp(argv[10], "-dev")) {
-				strncpy(dev_path, argv[11], sizeof(dev_path));
+				strcpy(dev_path, argv[11]);
 			} else if (!strcmp(argv[10], "-node")) {
 				node_msk = strtoul(argv[11], NULL, 16);
 			} else {
@@ -4667,7 +4668,7 @@ basic_function_test:
 	key_file = argv[6];
 	memset((void *)&q, 0, sizeof(q));
 	if (argc >= 9) {
-		strncpy(q.dev_path, argv[8], sizeof(q.dev_path));
+		strcpy(q.dev_path, argv[8]);
 		HPRE_TST_PRT("denote dev path:%s\n", argv[8]);
 	}
 

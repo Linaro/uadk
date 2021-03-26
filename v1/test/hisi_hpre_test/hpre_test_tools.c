@@ -10,6 +10,8 @@
 #include <sys/syscall.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <semaphore.h>
 #include <stdlib.h>
@@ -102,7 +104,7 @@ char* s2c(char* a, char* b) {
         //printf("%d => %x \n",i, s[i]);
         printf("%d %x %x\n", i, a[i], b[i]);
         if(a[i] != b[i])
-        printf("error: No. i failed\n", i);
+        printf("error: No. %d failed\n", i);
         }
         printf("\n");
 }
@@ -619,7 +621,6 @@ int hpre_dev_queue_req(char *dev, char *alg_type, unsigned long m_size)
 ***/
 int application_release_multiple_queue(char *dev, char *alg_type, unsigned int q_num)
 {
-	void *addr;
 	int ret = 0;
 	struct wd_queue *q;
 
@@ -968,12 +969,12 @@ void *create_queue(void *arg)
 	if(ret)
 	{
 		printf("wd request queue fail!\n");
-		return ret;
+		return NULL;
 	}
 	printf("wd request queue success\n");
 
 	sleep(tinfo ->p_time);
-	return 0;
+	return NULL;
 }
 /***
 
@@ -984,7 +985,7 @@ int hpre_mult_thread_request_queue(char *dev, char *alg_type, int p_num, time_t 
 	void *ret = NULL;
 	struct thread_info *tinfo;
 
-	printf("pthread_num:%d, times:%d\n", p_num, p_time);
+	printf("pthread_num:%d, times:%ld\n", p_num, p_time);
 	tinfo = calloc(p_num, sizeof(struct thread_info));
 	if(NULL == tinfo)
 	{
@@ -1015,7 +1016,7 @@ int hpre_mult_thread_request_queue(char *dev, char *alg_type, int p_num, time_t 
 			printf("thread_id:%ld thread is not exit....\n", tinfo[i].thread_id);
 			return 1;
 		}
-		printf("thread_id:%ld thread exit coid %d\n", tinfo[i].thread_id, (int *)ret);
+		printf("thread_id:%ld thread exit coid %d\n", tinfo[i].thread_id, *(int *)ret);
 		wd_release_queue(&tinfo[i].q);
 		free(ret);
 	}
@@ -1384,17 +1385,16 @@ release_q:
         return ret;
 }
 
-void wd_alloc_free_test(void *blkpool)
+void *wd_alloc_free_test(void *blkpool)
 {
         void *blk=NULL;
 	 void *tmap=NULL;
         unsigned int blk_count = 0;
         struct wd_blkpool *pool = (struct wd_blkpool *)blkpool;
-        int thread_id = (int)syscall(__NR_gettid);
 
         if (wd_get_free_blk_num(pool, &blk_count) != WD_SUCCESS) {
 	         printf("wd_get_free_blk_num fail, blk_count:%u\n", blk_count);
-		  return -WD_EINVAL;
+		  return NULL;
 	 }
         for(unsigned int i=0; i<blk_count; i++)
         {
@@ -1405,18 +1405,18 @@ void wd_alloc_free_test(void *blkpool)
 		              printf("wd_blk_alloc_failures fail, blk_count:%u\n", blk_count);
                     }
                     printf("create blk fail,blk_count:%u\n", blk_count);
-                    return -WD_EINVAL;
+                    return NULL;
             }
             tmap = wd_blk_iova_map(pool, blk);
 	     if (!tmap) {
 	             printf("wd_blk_iova_map blk fail\n");
-                    return -WD_EINVAL;
+                    return NULL;
 	     }
             wd_free_blk(pool, blk);
         }
         //printf("test wd_alloc_free_test end!\n");
 
-	 return 0;
+	 return NULL;
 }
 
 
@@ -1461,7 +1461,7 @@ int hpre_blkpool_thread(char *dev, unsigned int blk_sz, unsigned int blk_num, un
                 ret = pthread_create(&pid[i], NULL, wd_alloc_free_test, (void *)pool);
 	         if (ret != 0)
                 {
-		        printf("pid:%d, can't create thread: %s\n", pid[i], strerror(ret));
+		        printf("pid:%ld, can't create thread: %s\n", pid[i], strerror(ret));
                 }
         }
 
@@ -1533,7 +1533,6 @@ int hpre_blkpool_create_des(char *dev, unsigned int blk_sz, unsigned int blk_num
 
 int hpre_blkpool_interface_fault(void)
 {
-        unsigned int ret = 0;
 	 unsigned int blk_count = 0;
         void *blk =  NULL;
         struct wd_blkpool *pool = NULL;
@@ -1613,17 +1612,16 @@ int hpre_node_mask_do(char *dev, unsigned int node, char *alg)
 
         struct wd_queue q;
         memset((void *)&q, 0, sizeof(q));
-		q.capa.alg = alg;
-	    snprintf(q.dev_path, sizeof(q.dev_path), "%s", dev);
-		q.node_mask = node;
+	q.capa.alg = alg;
+	snprintf(q.dev_path, sizeof(q.dev_path), "%s", dev);
+	q.node_mask = node;
         ret = wd_request_queue(&q);
         if (ret) {
                 printf("error: request q fail\n");
                 return ret;
         }
-	    static int t;
-		t = wd_get_node_id(&q);
-		t = wd_get_available_dev_num(alg);
+	wd_get_node_id(&q);
+	wd_get_available_dev_num(alg);
         wd_release_queue(&q);
         return ret;
 }
@@ -1660,7 +1658,7 @@ int main(int arc, char *argv[])
 		argv[2] - 表示算法类型
 		***/
 		//查询算法的可用设备
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
 		count = wd_get_available_dev_num(algorithm_type);
 		printf("algorithm dev:%d\n",count);
 
@@ -1674,8 +1672,8 @@ int main(int arc, char *argv[])
 		argv[4] - 表示申请队列的预留内存大小
 		***/
 		//申请单个队列，并给队列预留内存
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
 		memory_size = strtoul(argv[4], NULL, 10);
 		ret = hpre_dev_queue_req(dev, algorithm_type, memory_size);
 		if(0 != ret)
@@ -1691,8 +1689,8 @@ int main(int arc, char *argv[])
 		argv[4] - 表示队列数量
 		***/
 		//申请多个队列
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
 		queue_num = strtoul(argv[4], NULL, 10);
 		ret = application_release_multiple_queue(dev, algorithm_type, queue_num);
 		if(0 != ret)
@@ -1709,9 +1707,9 @@ int main(int arc, char *argv[])
 		argv[5] - 表示申请队列的预留内存大小
 		***/
 		//申请单个队列，预留内存，与其它队列共享预留内存
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
-		snprintf(share_dev, sizeof(share_dev), argv[4]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
+		snprintf(share_dev, sizeof(share_dev), "%s", argv[4]);
 		memory_size = strtoul(argv[5], NULL, 10);
 
 		ret = hpre_dev_queue_share(dev, share_dev, algorithm_type, memory_size);
@@ -1730,8 +1728,8 @@ int main(int arc, char *argv[])
 		argv[6] - 表示申请队列的预留内存大小
 		***/
 		//申请单个队列，预留内存，与其它队列共享预留内存
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
 		unsigned int node=0;
         node = strtoul(argv[4], NULL, 16);
 		unsigned int share_node=0;
@@ -1753,9 +1751,9 @@ int main(int arc, char *argv[])
 		argv[5] - 表示申请队列的预留内存大小
 		***/
 		//队列预留内存后作为共享的目标队列
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
-		snprintf(share_dev, sizeof(share_dev), argv[4]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
+		snprintf(share_dev, sizeof(share_dev), "%s", argv[4]);
 		memory_size = strtoul(argv[5], NULL, 10);
 
 		ret = hpre_dev_queue_interact_share(dev, share_dev, algorithm_type, memory_size);
@@ -1772,8 +1770,8 @@ int main(int arc, char *argv[])
 		argv[4] - 表示申请队列的预留内存大小
 		***/
 		//跨进程进行队列共享
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
 		memory_size = strtoul(argv[4], NULL, 10);
 		ret = hpre_dev_queue_cross_proc_share(dev, algorithm_type, memory_size);
 		if(0 != ret)
@@ -1790,8 +1788,8 @@ int main(int arc, char *argv[])
 		argv[5] - 线程睡眠时间
 		***/
 		//多线程申请多队列
-		snprintf(algorithm_type, sizeof(algorithm_type), argv[2]);
-		snprintf(dev, sizeof(dev), argv[3]);
+		snprintf(algorithm_type, sizeof(algorithm_type), "%s", argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[3]);
 		pthread_num = strtoul(argv[4], NULL, 10);
 		p_time = strtoul(argv[5], NULL, 10);
 
@@ -1811,7 +1809,7 @@ int main(int arc, char *argv[])
                 ***/
 
                 //申请队列->创建内存池->申请内存块->映射内存块->释放内存块->注销内存池->释放队列
-		  snprintf(dev, sizeof(dev), argv[2]);
+		snprintf(dev, sizeof(dev), "%s", argv[2]);
                 blk_size = strtoul(argv[3], NULL, 10);
                 blk_num = strtoul(argv[4], NULL, 10);
                 align_size = strtoul(argv[5], NULL, 10);
@@ -1828,7 +1826,7 @@ int main(int arc, char *argv[])
                 argv[2] - 表示申请队列的设备
                 ***/
                 //申请队列->创建内存池->申请内存块->再次申请内存块
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
 
                 ret = hpre_blkpool_alloc(dev);
                 if(0 != ret)
@@ -1842,7 +1840,7 @@ int main(int arc, char *argv[])
                 argv[2] - 表示申请队列的设备
                 ***/
                 //申请队列->创建内存池->申请内存块->释放内存块->再次释放内存块
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
 
                 ret = hpre_blkpool_free(dev);
                 if(0 != ret)
@@ -1856,7 +1854,7 @@ int main(int arc, char *argv[])
                 argv[2] - 表示申请队列的设备
                 ***/
                 //内存块未被释放，检查是否可以注销内存池
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
 
                 ret = hpre_blkpool_des(dev);
                 if(0 != ret)
@@ -1873,7 +1871,7 @@ int main(int arc, char *argv[])
                 argv[5] - 内存对齐
                 ***/
                 //创建内存池，多线程申请块内存并释放块内存
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
                 blk_size = strtoul(argv[3], NULL, 10);
                 blk_num = strtoul(argv[4], NULL, 10);
                 align_size = strtoul(argv[5], NULL, 10);
@@ -1893,7 +1891,7 @@ int main(int arc, char *argv[])
                 argv[5] - 内存对齐
                 ***/
                 //重复创建内存池和释放内存池
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
                 blk_size = strtoul(argv[3], NULL, 10);
                 blk_num = strtoul(argv[4], NULL, 10);
                 align_size = strtoul(argv[5], NULL, 10);
@@ -1922,11 +1920,11 @@ int main(int arc, char *argv[])
                 blk_num = strtoul(argv[4], NULL, 10);
                 align_size = strtoul(argv[5], NULL, 10);
                 ***/
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
 				unsigned int node=0;
                 node = strtoul(argv[3], NULL, 10);
 			    char alg[256]={0};
-                snprintf(alg, sizeof(alg), argv[4]);
+                snprintf(alg, sizeof(alg), "%s", argv[4]);
 
                 ret = hpre_node_mask(dev, node, alg);
                 if(0 != ret)
@@ -1945,39 +1943,39 @@ int main(int arc, char *argv[])
                 blk_num = strtoul(argv[4], NULL, 10);
                 align_size = strtoul(argv[5], NULL, 10);
                 ***/
-                snprintf(dev, sizeof(dev), argv[2]);
+                snprintf(dev, sizeof(dev), "%s", argv[2]);
 				unsigned int node=0;
                 node = strtoul(argv[3], NULL, 10);
 			    char alg[256]={0};
-                snprintf(alg, sizeof(alg), argv[4]);
+                snprintf(alg, sizeof(alg), "%s", argv[4]);
 				unsigned int NUM_Threads=0;
                 NUM_Threads = strtoul(argv[5], NULL, 10);
 					pthread_t Pthread[NUM_Threads];
 					THDATA index[NUM_Threads];
 					static int i;
-				static cnt;
-			while(1){
-					usleep(1);
-					for (i = 0; i < NUM_Threads; i++)
-					{
-						index[i].threadid = i;
-						index[i].dev = dev;
-						index[i].node = node;
-						index[i].alg = alg;
-						ret = pthread_create(&Pthread[i], NULL, hpre_node_mask_thread, (void *)&index[i]);
-						if (0 != ret)
-						{
-							printf("error: creating failed!\n");
-						}
-					}
-					if(cnt > 63)
-					break;
-					cnt++;
-
-					//pthread_join(&Pthread[i], NULL);
+		static int cnt;
+		while(1){
+			usleep(1);
+			for (i = 0; i < NUM_Threads; i++)
+			{
+				index[i].threadid = i;
+				index[i].dev = dev;
+				index[i].node = node;
+				index[i].alg = alg;
+				ret = pthread_create(&Pthread[i], NULL, hpre_node_mask_thread, (void *)&index[i]);
+				if (0 != ret)
+				{
+					printf("error: creating failed!\n");
+				}
 			}
-					pthread_exit(NULL);
+			if(cnt > 63)
+			break;
+			cnt++;
+
+			//pthread_join(&Pthread[i], NULL);
 		}
+		pthread_exit(NULL);
+	}
 	return 0;
 }
 
