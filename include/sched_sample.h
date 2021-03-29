@@ -35,7 +35,7 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
  * sample_sched_alloc - Allocate a schedule instance.
  * @sched_type: Reference sched_policy_type.
  * @type_num: The service type num of user's service. For example, the zip
- *            include comp and un comp, type nume is two.
+ *            include comp and decomp, type nume is two.
  * @numa_num: The number of numa that the user needs.
  * @func: The ctx poll function of user underlying operating.
  *

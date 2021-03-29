@@ -1,0 +1,60 @@
+Define WD related environment variables
+=======================================
+
+-v0.1 2021.3.29 Sherlock         Init
+-v0.2 2021.4. 1 Barry, Sherlock  Remove driver, sched, async polling env
+
+Currently WD lib offers init related APIs to init accelerator resources in
+one process. User should call libwd and libwd_comp/libwd_crypto APIs to do
+this. WD lib could help to do this by parsing a set of WD configurations
+set by user. This document defines this set of WD environment variables to
+offer process level WD configures.
+
+1. WD environment variables define
+==================================
+
+WD_<alg>_NUMA
+-------------
+
+ Define which uacce device to be used. The NUMA nodes are separated by commas.
+ For example: WD_<alg>_NUMA=0, WD_<alg>_NUMA=1,2,3
+
+WD_<alg>_SYNC_CTX_NUM
+---------------------
+
+ Define the sync ctx number in NUMA node. For example:
+ WD_<alg>_SYNC_CTX_NUM=10@0,30@2 means to configure 10 sync ctxs in node0, and
+ 30 sync ctxs in node2.
+
+WD_<alg>_ASYNC_CTX_NUM
+----------------------
+
+ Define the async ctx number in NUMA node. For example:
+ WD_<alg>_ASYNC_CTX_NUM=10@0,30@2 means to configure 10 async ctxs in node0, and
+ 30 async ctxs in node2.
+
+WD_<alg>_ASYNC_POLL_EN
+----------------------
+
+ Define if enble polling threads in WD. WD_<alg>_ASYNC_POLL_EN=1 means enable
+ polling threads in WD, otherwise caller should poll finished request by
+ WD APIs.
+
+WD_<alg>_CTX_TYPE
+-----------------
+
+ Define the algorithm operation type of a group of ctxs. For example:
+ WD_<alg>_CTX_TYPE=sync-comp:10@0,async-decomp:20@1 means 10 sync ctxs are used
+ for compression in node0, and 20 async ctxs are used for decompression in
+ node1.
+
+ currently, we only have:
+ <sync-comp|sync-decomp|async-comp|async-decomp>:<num>@<node>
+
+alg above could be COMP, CIPHER, AEAD, DIGEST, DH, RSA, ECC. alg in
+WD_<alg>_CTX_TYPE is only COMP as other algorithms do not need ctx type.
+
+2. User model
+=============
+
+ (to do: ...)
