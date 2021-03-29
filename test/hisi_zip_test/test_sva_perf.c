@@ -758,6 +758,7 @@ int main(int argc, char **argv)
 		{"out",		required_argument,	0, 0 },
 		{"ilist",	required_argument,	0, 0 },
 		{"olist",	required_argument,	0, 0 },
+		{"env",		no_argument,	0, 0 },
 		{0,		0,		0, 0 },
 	};
 	int show_help = 0;
@@ -773,9 +774,9 @@ int main(int argc, char **argv)
 		switch (opt) {
 		case 0:
 			switch (option_idx) {
-			case 0:
+			case 0:		/* self */
 				return run_self_test();
-			case 1:
+			case 1:		/* in */
 				if (optarg) {
 					opts.fd_in = open(optarg, O_RDONLY);
 					if (opts.fd_in < 0) {
@@ -793,7 +794,7 @@ int main(int argc, char **argv)
 					show_help = 1;
 				}
 				break;
-			case 2:
+			case 2:		/* out */
 				if (optarg) {
 					opts.fd_out = open(optarg,
 							   O_CREAT | O_WRONLY,
@@ -814,7 +815,7 @@ int main(int argc, char **argv)
 					show_help = 1;
 				}
 				break;
-			case 3:
+			case 3:		/* ilist */
 				if (!optarg) {
 					printf("IN list file is missing!\n");
 					show_help = 1;
@@ -833,7 +834,7 @@ int main(int argc, char **argv)
 					break;
 				}
 				break;
-			case 4:
+			case 4:		/* olist */
 				if (!optarg) {
 					printf("OUT list file is missing!\n");
 					show_help = 1;
@@ -854,6 +855,10 @@ int main(int argc, char **argv)
 					show_help = 1;
 					break;
 				}
+				break;
+			case 5:		/* env */
+				opts.use_env = true;
+				break;
 			default:
 				show_help = 1;
 				break;

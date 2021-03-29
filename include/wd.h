@@ -70,6 +70,12 @@ extern FILE *flog_fd;
 #define WD_HANDLE_ERR(h)		((long long)(h))
 #define WD_IS_ERR(h)			((unsigned long long)(h) > \
 					(unsigned long long)(-1000))
+
+static inline void *WD_ERR_PTR(long error)
+{
+	return (void *)error;
+}
+
 enum wcrypto_type {
 	WD_CIPHER,
 	WD_DIGEST,
