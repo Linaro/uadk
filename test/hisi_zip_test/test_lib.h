@@ -89,6 +89,7 @@ struct test_options {
 	bool is_decomp;
 	bool is_stream;
 	bool is_file;
+	bool use_env;
 
 	int warmup_num;
 

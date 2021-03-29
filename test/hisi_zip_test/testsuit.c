@@ -759,6 +759,31 @@ int store_olist(struct hizip_test_info *info, char *model)
 	return (int)sum;
 }
 
+static int nonenv_resource_init(struct test_options *opts,
+				struct hizip_test_info *info,
+				struct wd_sched **sched)
+{
+	int ret;
+
+	info->list = get_dev_list(opts, 1);
+	if (!info->list)
+		return -EINVAL;
+	ret = init_ctx_config(opts, info, sched);
+	if (ret < 0) {
+		wd_free_list_accels(info->list);
+		return ret;
+	}
+	return 0;
+}
+
+static void nonenv_resource_uninit(struct test_options *opts,
+				   struct hizip_test_info *info,
+				   struct wd_sched *sched)
+{
+	uninit_config(info, sched);
+	wd_free_list_accels(info->list);
+}
+
 int test_hw(struct test_options *opts, char *model)
 {
 	struct hizip_test_info info = {0};
@@ -860,14 +885,13 @@ int test_hw(struct test_options *opts, char *model)
 		goto out;
 	}
 
-	info.list = get_dev_list(opts, 1);
-	if (!info.list) {
-		ret = -EINVAL;
+	if (opts->use_env)
+		ret = wd_comp_env_init();
+	else
+		ret = nonenv_resource_init(opts, &info, &sched);
+	if (ret < 0)
 		goto out;
-	}
-	ret = init_ctx_config(opts, &info, &sched);
-	if (ret)
-		goto out_cfg;
+
 	if (opts->is_file) {
 		ret = fstat(opts->fd_in, &statbuf);
 		if (!ret) {
@@ -960,9 +984,11 @@ int test_hw(struct test_options *opts, char *model)
 	}
 	printf("%s at %.2fMB/s in %f usec (BLK:%d, Bnum:%d).\n",
 	       zbuf, speed, usec, opts->block_size, opts->batch_num);
-	uninit_config(&info, sched);
 	free_threads(&info);
-	wd_free_list_accels(info.list);
+	if (opts->use_env)
+		wd_comp_env_uninit();
+	else
+		nonenv_resource_uninit(opts, &info, sched);
 	usleep(1000);
 	return 0;
 out_buf:
@@ -973,9 +999,10 @@ out_dfl:
 	if (ifl_flag && tbuf && tbuf_sz)
 		mmap_free(tbuf, tbuf_sz);
 out_src:
-	uninit_config(&info, sched);
-out_cfg:
-	wd_free_list_accels(info.list);
+	if (opts->use_env)
+		wd_comp_env_uninit();
+	else
+		nonenv_resource_uninit(opts, &info, sched);
 out:
 	printf("Fail to run %s() (%d)!\n", model, ret);
 	return ret;

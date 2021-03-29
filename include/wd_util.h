@@ -2,11 +2,77 @@
 #ifndef __WD_UTIL_H
 #define __WD_UTIL_H
 
+#include <stdbool.h>
 #include "wd_alg_common.h"
 
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
 	__u32 pool_num;
+};
+
+struct wd_ctx_range {
+	__u32 begin;
+	__u32 end;
+	__u32 size;
+};
+
+struct wd_env_config_per_numa {
+	/* Config begin */
+	unsigned long node;
+	unsigned long sync_ctx_num;
+	unsigned long async_ctx_num;
+	/*
+	 * Define which polling thread to poll each async ctx, polling thread
+	 * number stars from 0.
+	 *
+	 * async_ctx_poll: 0, 0, 0, 1, 1, means polling thread 0 polls async
+	 * ctx 0, 1, 2, polling thread 1 polls async ctx 3, 4.
+	 */
+	unsigned long *async_ctx_poll;
+
+	/*
+	 * +---------+-----------------+---------------+
+	 * |         |       sync      |      async    |
+	 * +---------+-----------------+---------------+
+	 * | op_type |  begine    end  |  begin    end |
+	 * |         |                 |               |
+	 *   ...
+	 */
+	__u8 op_type_num;
+	struct wd_ctx_range **ctx_table;
+
+	/* Resource begin */
+	struct uacce_dev dev;
+	/* This can be made statically currently */
+	unsigned long async_poll_num;
+	struct async_task_queue *async_task_queue_array;
+};
+
+struct wd_env_config {
+	unsigned long numa_num;
+	struct wd_env_config_per_numa *config_per_numa;
+	/* Let's make it as a gobal config, not per numa */
+	bool enable_internal_poll;
+	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
+	void (*alg_uninit)(void);
+
+	/* resource config */
+	struct wd_sched *sched;
+	struct wd_ctx_config *ctx_config;
+};
+
+struct wd_config_variable {
+	const char *name;
+	const char *def_val;
+	int (*parse_fn)(struct wd_env_config *, const char *);
+};
+
+struct wd_alg_ops {
+	char *alg_name;
+	__u8 op_type_num;
+	int (*alg_init)(struct wd_ctx_config *, struct wd_sched *);
+	void (*alg_uninit)(void);
+	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
 };
 
 /*
@@ -116,5 +182,92 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag);
  * Return 0 if the datalist is not less than expected size.
  */
 int wd_check_datalist(struct wd_datalist *head, __u32 size);
+
+/*
+ * wd_parse_numa() - Parse NUMA environment variable and store it.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @s: Related environment variable string.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_parse_numa(struct wd_env_config *config, const char *s);
+
+/*
+ * wd_parse_sync_ctx_num() - Parse sync ctx related environment variables and
+ * 			     store it.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @s: Related environment variable string.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_parse_sync_ctx_num(struct wd_env_config *config, const char *s);
+
+/*
+ * wd_parse_async_ctx_num() - Parse async ctx related environment variables and
+ * 			      store it.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @s: Related environment variable string.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_parse_async_ctx_num(struct wd_env_config *config, const char *s);
+
+/*
+ * wd_parse_comp_ctx_type() - Parse wd compress ctx type environment variable
+ * 			      and store it.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @s: Related environment variable string.
+ *
+ * Currently only wd comp need this environment variable.
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_parse_comp_ctx_type(struct wd_env_config *config, const char *s);
+
+/*
+ * wd_parse_async_poll_en() - Parse async polling thread related environment
+ * 			      variable and store it.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @s: Related environment variable string.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_parse_async_poll_en(struct wd_env_config *config, const char *s);
+
+/*
+ * wd_alg_env_init() - Init wd algorithm environment variable configurations.
+ * 		       This is a help function which can be used by specific
+ * 		       wd algorithm APIs.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @table: Table which is used to define specific environment variable、its
+ * 	   default value and related parsing operations.
+ * @table_size: Size of above table.
+ * @ops: Define functions which will be used by specific wd algorithm
+ * 	 environment init.
+ */
+int wd_alg_env_init(struct wd_env_config *config,
+		    const struct wd_config_variable *table, __u32 table_size,
+		    const struct wd_alg_ops *ops);
+
+/*
+ * wd_alg_env_uninit() - uninit specific wd algorithm environment configuration.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ */
+void wd_alg_env_uninit(struct wd_env_config *env_config);
+
+/*
+ * wd_add_task_to_async_queue() - Add an async request to its related async
+ * 				  task queue.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @index: Index of ctx in config.
+ */
+int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index);
 
 #endif /* __WD_UTIL_H */

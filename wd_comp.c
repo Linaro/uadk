@@ -16,6 +16,7 @@
 #define MAX_RETRY_COUNTS		200000000
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
+#define WD_COMP_ENV_NUM			5
 
 #define POLL_SIZE			2500000
 #define POLL_TIME			1000
@@ -46,6 +47,8 @@ struct wd_comp_setting {
 	void *priv;
 	struct wd_async_msg_pool pool;
 } wd_comp_setting;
+
+struct wd_env_config wd_comp_env_config;
 
 #ifdef WD_STATIC_DRV
 extern struct wd_comp_driver wd_comp_hisi_zip;
@@ -346,7 +349,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 						  req,
 						  &sess->key);
 	if (idx >= config->ctx_num) {
-		WD_ERR("fail to pick a proper ctx!\n");
+		WD_ERR("fail to pick a proper ctx: index: %d\n", idx);
 		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
@@ -693,6 +696,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	pthread_spin_unlock(&ctx->lock);
 
+	if (wd_comp_env_config.enable_internal_poll)
+		wd_add_task_to_async_queue(&wd_comp_env_config, idx);
+
 	return ret;
 }
 
@@ -705,4 +711,46 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 	sched = &wd_comp_setting.sched;
 
 	return sched->poll_policy(h_sched_ctx, expt, count);
+}
+
+static const struct wd_config_variable table[WD_COMP_ENV_NUM] = {
+	{ .name = "WD_COMP_NUMA",
+	  .def_val = "0",
+	  .parse_fn = wd_parse_numa
+	},
+	{ .name = "WD_COMP_SYNC_CTX_NUM",
+	  .def_val = "6@0",
+	  .parse_fn = wd_parse_sync_ctx_num
+	},
+	{ .name = "WD_COMP_ASYNC_CTX_NUM",
+	  .def_val = "6@0",
+	  .parse_fn = wd_parse_async_ctx_num
+	},
+	{ .name = "WD_COMP_CTX_TYPE",
+	  .def_val = "sync-comp:3@0,sync-decomp:3@0,async-comp:3@0,async-decomp:3@0",
+	  .parse_fn = wd_parse_comp_ctx_type
+	},
+	{ .name = "WD_COMP_ASYNC_POLL_EN",
+	  .def_val = "1",
+	  .parse_fn = wd_parse_async_poll_en
+	}
+};
+
+static const struct wd_alg_ops wd_comp_ops = {
+	.alg_name = "zlib",
+	.op_type_num = 2,
+	.alg_init = wd_comp_init,
+	.alg_uninit = wd_comp_uninit,
+	.alg_poll_ctx = wd_comp_poll_ctx
+};
+
+int wd_comp_env_init(void)
+{
+	return wd_alg_env_init(&wd_comp_env_config, table, WD_COMP_ENV_NUM,
+			       &wd_comp_ops);
+}
+
+void wd_comp_env_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_comp_env_config);
 }
