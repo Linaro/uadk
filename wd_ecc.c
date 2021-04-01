@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <dirent.h>
 #include <errno.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -1469,15 +1468,12 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	if (unlikely(ret))
 		return ret;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, &msg);
 	if (unlikely(ret))
 		goto fail;
 
 	ret = ecc_recv_sync(ctx->ctx, &msg);
 fail:
-	pthread_spin_unlock(&ctx->lock);
-
 	return ret;
 }
 
@@ -2164,13 +2160,10 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, msg);
 	if (ret) {
-		pthread_spin_unlock(&ctx->lock);
 		goto fail_with_msg;
 	}
-	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
 
@@ -2201,20 +2194,16 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	}
 
 	do {
-		pthread_spin_lock(&ctx->lock);
 		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
-			pthread_spin_unlock(&ctx->lock);
 			break;
 		} else if (ret < 0) {
-			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_ecc_setting.pool, idx,
 					   recv_msg.tag);
 			return ret;
 		}
-		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, idx,
 					  recv_msg.tag);

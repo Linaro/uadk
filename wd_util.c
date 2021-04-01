@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <stdlib.h>
-#include <pthread.h>
 #include "wd_alg_common.h"
 #include "wd_util.h"
 
@@ -45,7 +44,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		}
 
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
-		pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 	}
 
 	in->ctxs = ctxs;
@@ -82,11 +80,6 @@ void wd_clear_sched(struct wd_sched *in)
 
 void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
-	int i;
-
-	for (i = 0; i < in->ctx_num; i++)
-		pthread_spin_destroy(&in->ctxs[i].lock);
-
 	in->priv = NULL;
 	in->ctx_num = 0;
 	if (in->ctxs)

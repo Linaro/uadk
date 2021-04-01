@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdlib.h>
-#include <pthread.h>
 #include "wd_digest.h"
 #include "include/drv/wd_digest_drv.h"
 #include "wd_util.h"
@@ -289,7 +288,6 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(&msg, req, dsess);
 	req->state = 0;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("failed to send bd!\n");
@@ -311,12 +309,9 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		}
 	} while (ret < 0);
 
-	pthread_spin_unlock(&ctx->lock);
-
 	return 0;
 
 err_out:
-	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 
