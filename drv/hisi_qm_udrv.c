@@ -445,18 +445,21 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	struct cqe *cqe;
 	__u16 i, j;
 
+	pthread_spin_lock(&q_info->lock);
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
 
 	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
+			pthread_spin_unlock(&q_info->lock);
 			WD_ERR("CQE_SQ_HEAD_INDEX(%d) error\n", j);
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
 			j * q_info->sqe_size), q_info->sqe_size);
 	} else {
+		pthread_spin_unlock(&q_info->lock);
 		return -WD_EAGAIN;
 	}
 
@@ -473,7 +476,6 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	q_info->cq_head_index = i;
 	q_info->sq_head_index = i;
 
-	pthread_spin_lock(&q_info->lock);
 	q_info->used_num--;
 	pthread_spin_unlock(&q_info->lock);
 
