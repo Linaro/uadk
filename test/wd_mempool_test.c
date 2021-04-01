@@ -257,7 +257,7 @@ static int parse_cmd_line(int argc, char *argv[], struct test_option *opt)
 	return 0;
 }
 
-static void dump_mp_bp(struct wd_mempool_stats *mp_s, struct wd_pool_stats *bp_s)
+static void dump_mp_bp(struct wd_mempool_stats *mp_s, struct wd_blockpool_stats *bp_s)
 {
 	printf("---------------------------------------\n");
 	printf("dump mp bp info:\n");
@@ -316,7 +316,7 @@ static int test_blkpool(struct test_option *opt)
 		return -1;
 	}
 
-	bp = wd_pool_create(mp, opt->blk_size[0], opt->blk_num[0]);
+	bp = wd_blockpool_create(mp, opt->blk_size[0], opt->blk_num[0]);
 	if (WD_IS_ERR(bp)) {
 		printf("Fail to create blkpool, err(%lld)!\n", WD_HANDLE_ERR(bp));
 		return -1;
@@ -335,7 +335,7 @@ static int test_blkpool(struct test_option *opt)
 		pthread_join(threads[i], NULL);
 	}
 
-	wd_pool_destory(bp);
+	wd_blockpool_destory(bp);
 	wd_mempool_destory(mp);
 
 	return 0;
@@ -344,7 +344,7 @@ static int test_blkpool(struct test_option *opt)
 void *blk_test_thread(void *data)
 {
 	struct test_opt_per_thread *opt = data;
-	struct wd_pool_stats bp_stats = {0};
+	struct wd_blockpool_stats bp_stats = {0};
 	struct wd_mempool_stats mp_stats = {0};
 	handle_t mp, bp;
 
@@ -354,7 +354,7 @@ void *blk_test_thread(void *data)
 		return (void *)-1;
 	}
 
-	bp = wd_pool_create(mp, opt->blk_size, opt->blk_num);
+	bp = wd_blockpool_create(mp, opt->blk_size, opt->blk_num);
 	if (WD_IS_ERR(bp)) {
 		printf("Fail to create blkpool, err %lld\n", WD_HANDLE_ERR(bp));
 		return (void *)-1;
@@ -379,12 +379,12 @@ void *blk_test_thread(void *data)
 	/* fix me: need a opt? */
 	if (1) {
 		wd_mempool_stats(mp, &mp_stats);
-		wd_pool_stats(bp, &bp_stats);
+		wd_blockpool_stats(bp, &bp_stats);
 		dump_mp_bp(&mp_stats, &bp_stats);
 	}
 
 	wd_block_free(bp, block);
-	wd_pool_destory(bp);
+	wd_blockpool_destory(bp);
 	wd_mempool_destory(mp);
 
 	printf("test mempool successful!\n");
@@ -859,7 +859,7 @@ static int test_sec_perf(struct test_option *opt)
 	}
 
 	for (i = 0; i < bp_thread_num; i++) {
-		datas[i].bp = wd_pool_create(mp, opt->blk_size[i], opt->blk_num[i]);
+		datas[i].bp = wd_blockpool_create(mp, opt->blk_size[i], opt->blk_num[i]);
 		if (WD_IS_ERR(datas[i].bp)) {
 			SEC_TST_PRT("blk_size(%lu) blk_num(%lu), thread(%u) is fail to create blk_pool, err(%lld)\n",
 									opt->blk_size[i], opt->blk_num[i], i, WD_HANDLE_ERR(datas[i].bp));
@@ -925,7 +925,7 @@ dst_fail:
 src_fail:
 		free_bd_pool(&datas[i]);
 init_bd_pool_fail:
-		wd_pool_destory(datas[i].bp);
+		wd_blockpool_destory(datas[i].bp);
 		i--;
 	} while(i >= 0);
 

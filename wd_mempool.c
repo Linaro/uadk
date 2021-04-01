@@ -543,7 +543,7 @@ static int init_blkpool_elem(struct blkpool *bp)
 	return 0;
 }
 
-handle_t wd_pool_create(handle_t mempool, size_t block_size,
+handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 			     size_t block_num)
 {
 	struct mempool *mp = (struct mempool*)mempool;
@@ -591,7 +591,7 @@ err_free_bp:
 	return ret;
 }
 
-void wd_pool_destory(handle_t blkpool)
+void wd_blockpool_destory(handle_t blkpool)
 {
 	struct blkpool *bp = (struct blkpool *)blkpool;
 	struct mempool *mp;
@@ -1033,7 +1033,7 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats)
 	wd_unspinlock(&mp->lock);
 }
 
-void wd_pool_stats(handle_t blkpool, struct wd_pool_stats *stats)
+void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 {
 	struct blkpool *bp = (struct blkpool*)blkpool;
 	unsigned long size = 0;
