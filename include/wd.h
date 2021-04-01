@@ -331,9 +331,9 @@ enum wd_page_type {
  *	      this is size of each block. Currently it is 4KB fixed.
  * @blk_num: Number of blocks in mempool.
  * @free_blk_num: Number of free blocks in mempool.
- * @blk_usage_rate: In wd_pool_create function, it gets memory from
+ * @blk_usage_rate: In wd_blockpool_create function, it gets memory from
  *		    mempool by mempool blocks. As continuous blocks in mempool
- *		    may be needed, wd_pool_create may fail. blk_usage_rate
+ *		    may be needed, wd_blockpool_create may fail. blk_usage_rate
  * 		    helps to show the usage rate of mempool. It will be helpful
  *		    to show the state of memory fragmentation. e.g. 30 is 30%.
  */
@@ -348,7 +348,7 @@ struct wd_mempool_stats {
 };
 
 /*
- * struct wd_pool_stats - Use to dump statistics info about blkpool
+ * struct wd_blockpool_stats - Use to dump statistics info about blkpool
  * @block_size: Block size.
  * @block_num: Number of blocks.
  * @free_block_num: Number of free blocks.
@@ -364,7 +364,7 @@ struct wd_mempool_stats {
  *    |             |                  |     |     |     |     |
  *    +-------------+                  +-----+-----+-----+-----+
  */
-struct wd_pool_stats {
+struct wd_blockpool_stats {
 	unsigned long block_size;
 	unsigned long block_num;
 	unsigned long free_block_num;
@@ -388,7 +388,7 @@ extern void *wd_block_alloc(handle_t blkpool);
 extern void wd_block_free(handle_t blkpool, void *addr);
 
 /**
- * wd_pool_create() - Blkpool allocate memory from mempool.
+ * wd_blockpool_create() - Blkpool allocate memory from mempool.
  * @mempool: The handle of mempool.
  * @block_size: Size of every block in blkpool.
  * @block_num: Number of blocks in blkpool.
@@ -397,14 +397,14 @@ extern void wd_block_free(handle_t blkpool, void *addr);
  * the error. WD_EINVAL: An invalid value was specified for mempool、block_size
  * or block_num. WD_ENOMEM: Insufficient kernel memory was available.
  */
-extern handle_t wd_pool_create(handle_t mempool, size_t block_size,
+extern handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 				  size_t block_num);
 
 /**
- * wd_pool_destory() - Destory blkpool and release memory to the mempool.
+ * wd_blockpool_destory() - Destory blkpool and release memory to the mempool.
  * @blkpool: The handle of blkpool.
  */
-extern void wd_pool_destory(handle_t blkpool);
+extern void wd_blockpool_destory(handle_t blkpool);
 
 /**
  * wd_mempool_create() - Creat mempool.
@@ -432,10 +432,10 @@ extern void wd_mempool_destory(handle_t mempool);
 extern void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
 
 /**
- * wd_pool_stats() - Dump statistics information about blkpool.
+ * wd_blockpool_stats() - Dump statistics information about blkpool.
  * @blkpool: The handle of blkpool.
- * @stats: Pointer of struct wd_pool_stats.
+ * @stats: Pointer of struct wd_blockpool_stats.
  */
-extern void wd_pool_stats(handle_t blkpool, struct wd_pool_stats *stats);
+extern void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
 
 #endif
