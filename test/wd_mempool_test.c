@@ -335,8 +335,8 @@ static int test_blkpool(struct test_option *opt)
 		pthread_join(threads[i], NULL);
 	}
 
-	wd_blockpool_destory(bp);
-	wd_mempool_destory(mp);
+	wd_blockpool_destroy(bp);
+	wd_mempool_destroy(mp);
 
 	return 0;
 }
@@ -384,8 +384,8 @@ void *blk_test_thread(void *data)
 	}
 
 	wd_block_free(bp, block);
-	wd_blockpool_destory(bp);
-	wd_mempool_destory(mp);
+	wd_blockpool_destroy(bp);
+	wd_mempool_destroy(mp);
 
 	printf("test mempool successful!\n");
 	return NULL;
@@ -925,11 +925,11 @@ dst_fail:
 src_fail:
 		free_bd_pool(&datas[i]);
 init_bd_pool_fail:
-		wd_blockpool_destory(datas[i].bp);
+		wd_blockpool_destroy(datas[i].bp);
 		i--;
 	} while(i >= 0);
 
-	wd_mempool_destory(mp);
+	wd_mempool_destroy(mp);
 
 mp_fail:
 	sva_uninit_config();
