@@ -401,10 +401,10 @@ extern handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 				  size_t block_num);
 
 /**
- * wd_blockpool_destory() - Destory blkpool and release memory to the mempool.
+ * wd_blockpool_destroy() - Destory blkpool and release memory to the mempool.
  * @blkpool: The handle of blkpool.
  */
-extern void wd_blockpool_destory(handle_t blkpool);
+extern void wd_blockpool_destroy(handle_t blkpool);
 
 /**
  * wd_mempool_create() - Creat mempool.
@@ -419,10 +419,10 @@ extern void wd_blockpool_destory(handle_t blkpool);
 extern handle_t wd_mempool_create(size_t size, int node);
 
 /**
- * wd_mempool_destory() - Destory mempool.
+ * wd_mempool_destroy() - Destory mempool.
  * @mempool: The handle of mempool.
  */
-extern void wd_mempool_destory(handle_t mempool);
+extern void wd_mempool_destroy(handle_t mempool);
 
 /**
  * wd_mempool_stats() - Dump statistics information about mempool.
