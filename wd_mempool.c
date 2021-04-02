@@ -218,7 +218,7 @@ static struct bitmap *create_bitmap(int bits)
 	return bm;
 }
 
-static void destory_bitmap(struct bitmap *bm)
+static void destroy_bitmap(struct bitmap *bm)
 {
 	free(bm->map);
 	free(bm);
@@ -591,7 +591,7 @@ err_free_bp:
 	return ret;
 }
 
-void wd_blockpool_destory(handle_t blkpool)
+void wd_blockpool_destroy(handle_t blkpool)
 {
 	struct blkpool *bp = (struct blkpool *)blkpool;
 	struct mempool *mp;
@@ -953,7 +953,7 @@ static int init_mempool(struct mempool *mp)
 
 static void uninit_mempool(struct mempool *mp)
 {
-	destory_bitmap(mp->bitmap);
+	destroy_bitmap(mp->bitmap);
 	mp->bitmap = NULL;
 }
 
@@ -994,7 +994,7 @@ free_pool:
 	return ret;
 }
 
-void wd_mempool_destory(handle_t mempool)
+void wd_mempool_destroy(handle_t mempool)
 {
 	struct mempool *mp = (struct mempool *)mempool;
 
