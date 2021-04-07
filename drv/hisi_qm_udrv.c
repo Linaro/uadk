@@ -473,12 +473,7 @@ int hisi_ccrnt_enqueue(struct hisi_qm_queue_info *q_info,
 	 * Make sure the sequence. Can't avoid to use lock.
 	 */
 	while (1) {
-		ret = pthread_spin_trylock(&q_info->lock);
-		if (ret) {
-			pthread_spin_unlock(&q_info->lock);
-			sched_yield();
-			continue;
-		}
+		ret = pthread_spin_lock(&q_info->lock);
 		//pthread_mutex_lock(&q_info->m_lock);
 		/* check whether current tail equals to hw_tail */
 		__atomic_load(&q_info->ccrnt_hw_tail, &hw_tail, __ATOMIC_ACQUIRE);
@@ -555,12 +550,7 @@ int hisi_ccrnt_dequeue(struct hisi_qm_queue_info *q_info, void *resp)
 	 * Make sure the sequence. Can't avoid to use lock.
 	 */
 	while (1) {
-		ret = pthread_spin_trylock(&q_info->lock);
-		if (ret) {
-			pthread_spin_unlock(&q_info->lock);
-			sched_yield();
-			continue;
-		}
+		ret = pthread_spin_lock(&q_info->lock);
 		//pthread_mutex_lock(&q_info->m_lock);
 		/* check whether current head euquals to hw_head */
 		__atomic_load(&q_info->ccrnt_hw_head, &hw_head, __ATOMIC_ACQUIRE);
