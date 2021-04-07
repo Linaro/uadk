@@ -14,6 +14,8 @@
 #define ASIZE		(2 * 512 * 1024)
 #define HW_CTX_SIZE	(64*1024)
 
+#define OPTIMIZE_LOCK
+
 enum alg_type {
 	HW_DEFLATE = 0x1,
 	HW_ZLIB,
@@ -506,7 +508,11 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
+#ifdef OPTIMIZE_LOCK
+	struct hisi_qm_queue_info *q_info;
+#else
 	handle_t h_qp = (handle_t)qp;
+#endif
 	struct hisi_zip_sqe sqe = {0};
 	__u16 count = 0;
 	int ret;
@@ -526,9 +532,16 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 		WD_ERR("failed to fill zip sqe(%d)!\n", ret);
 		return ret;
 	}
+#ifdef OPTIMIZE_LOCK
+	q_info = &qp->q_info;
+	ret = hisi_ccrnt_enqueue(q_info, &sqe, 1, &count);
+	if (ret < 0)
+		WD_ERR("enqueue is wrong (%d)!\n", ret);
+#else
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0)
 		WD_ERR("qm send is err(%d)!\n", ret);
+#endif
 
 	return ret;
 }
@@ -593,14 +606,25 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg,
 			      void *priv)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
-	handle_t h_qp = (handle_t)qp;
 	struct hisi_zip_sqe sqe = {0};
+#ifdef OPTIMIZE_LOCK
+	struct hisi_qm_queue_info *q_info;
+#else
+	handle_t h_qp = (handle_t)qp;
 	__u16 count = 0;
+#endif
 	int ret;
 
+#ifdef OPTIMIZE_LOCK
+	q_info = &qp->q_info;
+	ret = hisi_ccrnt_dequeue(q_info, &sqe);
+	if (ret < 0)
+		return ret;
+#else
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
 		return ret;
+#endif
 
 	return parse_zip_sqe(qp, &sqe, recv_msg);
 }
