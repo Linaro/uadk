@@ -340,7 +340,6 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	void *priv = wd_comp_setting.priv;
 	struct wd_comp_msg msg, resp_msg;
 	struct wd_ctx_internal *ctx;
-	__u64 recv_count = 0;
 	__u32 index;
 	int ret;
 
@@ -381,20 +380,11 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		goto err_out;
 	}
 	resp_msg.ctx_buf = sess->ctx_buf;
-	do {
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
-							priv);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd comp recv hw err!\n");
-			goto err_out;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				WD_ERR("wd comp recv timeout fail!\n");
-				ret = -WD_ETIMEDOUT;
-				goto err_out;
-			}
-		}
-	} while (ret == -WD_EAGAIN);
+	ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg, priv);
+	if (ret < 0) {
+		WD_ERR("wd comp recv err(%d)!\n", ret);
+		goto err_out;
+	}
 
 	req->src_len = resp_msg.in_cons;
 	req->dst_len = resp_msg.produced;
