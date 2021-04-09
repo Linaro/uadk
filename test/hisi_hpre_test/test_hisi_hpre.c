@@ -8571,11 +8571,6 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 
 	asyn_thread_exit = 1;
 
-	ret = pthread_join(system_test_thrds[0], NULL);
-	if (ret) {
-		HPRE_TST_PRT("Join %dth thread fail!\n", i);
-		return ret;
-	}
 
 	if (g_config.perf_test)
 		HPRE_TST_PRT("<< %s %u thread %s %s mode %u key_bits at %0.3f ops!\n",

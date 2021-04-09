@@ -398,6 +398,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	}
 	pthread_spin_unlock(&ctx->lock);
+	sem_post(&ctx->sem);
 
 	return ret;
 
@@ -428,20 +429,34 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	}
 
 	do {
-		pthread_spin_lock(&ctx->lock);
-		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
-		if (ret == -WD_EAGAIN) {
-			pthread_spin_unlock(&ctx->lock);
-			break;
-		} else if (ret < 0) {
-			pthread_spin_unlock(&ctx->lock);
-			WD_ERR("failed to async recv, ret = %d!\n", ret);
-			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
-					   recv_msg.tag);
-			return ret;
+		if (sem_wait(&ctx->sem) != 0) {
+			if (errno == EINTR) {
+				/* sem_wait is interrupted by interrupt, continue */
+				continue;
+			}
 		}
-		pthread_spin_unlock(&ctx->lock);
+
+		/*
+		 * get sem means send rsa_send,
+		 * but need time to receive data and EAGAIN returns
+		 */
+		do {
+			pthread_spin_lock(&ctx->lock);
+			ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
+			pthread_spin_unlock(&ctx->lock);
+
+			if (!ret) {
+				break;
+			} else if (ret != -WD_EAGAIN) {
+				WD_ERR("failed to async recv, ret = %d!\n", ret);
+				*count = rcv_cnt;
+				wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
+						recv_msg.tag);
+				return ret;
+			}
+
+		} while (ret == -EAGAIN);
+
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_rsa_setting.pool, idx,
 					  recv_msg.tag);

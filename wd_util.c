@@ -46,6 +46,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
+		sem_init(&ctxs[i].sem, 0, 0);
 	}
 
 	in->ctxs = ctxs;
@@ -84,8 +85,10 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
 	int i;
 
-	for (i = 0; i < in->ctx_num; i++)
+	for (i = 0; i < in->ctx_num; i++) {
 		pthread_spin_destroy(&in->ctxs[i].lock);
+		sem_destroy(&in->ctxs[i].sem);
+	}
 
 	in->priv = NULL;
 	in->ctx_num = 0;
