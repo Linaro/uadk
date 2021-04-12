@@ -95,7 +95,6 @@ struct hizip_test_info {
 	struct wd_ctx_config ctx_conf;
 	struct wd_comp_req req;
 	int thread_nums;
-	int thread_attached;
 	pthread_t *threads;
 	struct hizip_stats *stats;
 	struct {
