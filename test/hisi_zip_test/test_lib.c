@@ -575,7 +575,6 @@ int create_threads(struct hizip_test_info *info)
 	int ret;
 
 	count = 0;
-	info->thread_attached = 0;
 	info->thread_nums = 2;
 	info->threads = calloc(1, info->thread_nums * sizeof(pthread_t));
 	if (!info->threads)
@@ -601,15 +600,12 @@ int attach_threads(struct hizip_test_info *info)
 	int ret;
 	void *tret;
 
-	if (info->thread_attached)
-		return 0;
 	ret = pthread_join(info->threads[1], &tret);
 	if (ret < 0)
 		WD_ERR("Fail on send thread with %d\n", ret);
 	ret = pthread_join(info->threads[0], NULL);
 	if (ret < 0)
 		WD_ERR("Fail on poll thread with %d\n", ret);
-	info->thread_attached = 1;
 	return (int)(uintptr_t)tret;
 }
 
