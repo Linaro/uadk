@@ -81,6 +81,7 @@ struct test_hpre_pthread_dt {
 	struct timeval start_tval;
 	u32 send_task_num;
 	u32 recv_task_num;
+	int ctx_idx;
 };
 
 struct ec_key_st {
@@ -7845,11 +7846,12 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 static void  *_rsa_async_poll_test_thread(void *data)
 {
 	__u32 count = 0;
-	__u32 expt = 0;
+	__u32 expt = 1;
 	int ret = 0;
+	struct test_hpre_pthread_dt *pdata = data;
 
 	while (1) {
-		ret = wd_rsa_poll(expt, &count);
+		ret = wd_rsa_poll_ctx(pdata->ctx_idx, expt, &count);
 		if (ret < 0) {
 			break;
 		}
@@ -8499,19 +8501,23 @@ gen_fail:
 static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			 __u64 hcore_mask, enum alg_op_type op_type)
 {
-	int ret = 0, cnt = 0, i;
+	int ret = 0, cnt = 0, i, thread_idx = 0;
 	int h_cpuid;
 	float speed = 0.0;
 
 	/* Create poll thread at first */
-	test_thrds_data[0].thread_num = 1;
-	test_thrds_data[0].op_type = op_type;
-	test_thrds_data[0].cpu_id = 0;
-	ret = pthread_create(&system_test_thrds[0], NULL,
-		_rsa_async_poll_test_thread, &test_thrds_data[0]);
-	if (ret) {
-		HPRE_TST_PRT("Create poll thread fail!\n");
-		return ret;
+	for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
+		test_thrds_data[i].thread_num = 1;
+		test_thrds_data[i].op_type = op_type;
+		test_thrds_data[i].cpu_id = 0;
+		test_thrds_data[i].ctx_idx = i;
+		ret = pthread_create(&system_test_thrds[i], NULL,
+				_rsa_async_poll_test_thread, &test_thrds_data[i]);
+		if (ret) {
+			HPRE_TST_PRT("Create poll thread fail!\n");
+			return ret;
+		}
+		thread_idx++;
 	}
 
 	#ifdef WITH_OPENSSL_DIR
@@ -8533,7 +8539,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 	else if (_get_one_bits(lcore_mask) == 0 &&
 		 _get_one_bits(hcore_mask) == 0)
 		cnt = thread_num;
-	for (i = 1; i <= cnt; i++) {
+	for (i = thread_idx; i <= cnt; i++) {
 		test_thrds_data[i].thread_num = thread_num;
 		test_thrds_data[i].op_type = op_type;
 		test_thrds_data[i].cpu_id = _get_cpu_id(i - 1, lcore_mask);
@@ -8545,7 +8551,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			return ret;
 		}
 	}
-	for (i = 1; i <= thread_num - cnt; i++) {
+	for (i = thread_idx; i <= thread_num - cnt; i++) {
 		h_cpuid = _get_cpu_id(i - 1, hcore_mask);
 		if (h_cpuid > 0)
 			h_cpuid += 64;
@@ -8560,7 +8566,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 			return ret;
 		}
 	}
-	for (i = 1; i <= thread_num; i++) {
+	for (i = thread_idx; i <= thread_num; i++) {
 		ret = pthread_join(system_test_thrds[i], NULL);
 		if (ret) {
 			HPRE_TST_PRT("Join %dth thread fail!\n", i);
@@ -9185,7 +9191,7 @@ int main(int argc, char *argv[])
 			ret = hpre_sys_test(g_config.trd_num, g_config.core_mask[0],
 				g_config.core_mask[1], alg_op_type, g_config.dev_path, 0);
 	else if (alg_op_type > MAX_RSA_SYNC_TYPE && alg_op_type < MAX_RSA_ASYNC_TYPE)
-		ret = rsa_async_test(g_config.trd_num, g_config.core_mask[0],
+		ret = rsa_async_test(g_config.trd_num + g_ctx_cfg.ctx_num, g_config.core_mask[0],
 			g_config.core_mask[1], alg_op_type);
 	else if (alg_op_type == DH_ASYNC_GEN || alg_op_type == DH_ASYNC_COMPUTE)
 		ret = dh_async_test(g_config.trd_num, g_config.core_mask[0],
