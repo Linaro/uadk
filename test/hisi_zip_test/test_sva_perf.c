@@ -633,7 +633,6 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 	int i;
 	int ret;
 	int n = opts->run_num;
-	int w = opts->warmup_num;
 	struct hizip_stats avg;
 	struct hizip_stats std;
 	struct hizip_stats variation;
@@ -662,12 +661,6 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 
 	if (opts->display_stats == STATS_CSV)
 		output_csv_header();
-
-	for (i = 0; i < w; i++) {
-		ret = run_one_test(opts, &stats[0]);
-		if (ret < 0)
-			return ret;
-	}
 
 	for (i = 0; i < n; i++) {
 		ret = run_one_test(opts, &stats[i]);
@@ -750,7 +743,6 @@ int main(int argc, char **argv)
 		.is_decomp		= false,
 		.is_stream		= false,
 		.is_file		= false,
-		.warmup_num		= 0,
 		.display_stats		= STATS_PRETTY,
 		.children		= 0,
 		.faults			= 0,
@@ -788,14 +780,6 @@ int main(int argc, char **argv)
 			break;
 		case 'c':
 			opts.option |= TEST_ZLIB;
-			break;
-		case 'w':
-			opts.warmup_num = strtol(optarg, NULL, 0);
-			SYS_ERR_COND(opts.warmup_num > MAX_RUNS,
-				     "No more than %d warmup runs supported\n",
-				     MAX_RUNS);
-			if (opts.warmup_num < 0)
-				show_help = 1;
 			break;
 		case 'r':
 			opts.children = strtol(optarg, NULL, 0);
@@ -838,7 +822,6 @@ int main(int argc, char **argv)
 		     "                  'perf' prefaults the output pages\n"
 		     "                  'thp' try to enable transparent huge pages\n"
 		     "                  'zlib' use zlib instead of the device\n"
-		     "  -w <num>      number of warmup runs\n"
 		     "  -r <children> number of children to create\n"
 		     "  -k <mode>     kill thread\n"
 		     "                  'bind' kills the process after bind\n"
