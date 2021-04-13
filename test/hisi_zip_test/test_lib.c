@@ -462,7 +462,8 @@ void *send_thread_func(void *arg)
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
 	struct test_options *opts = info->opts;
 	size_t src_block_size, dst_block_size;
-	handle_t h_sess = info->h_sess;
+	struct wd_comp_sess_setup setup;
+	handle_t h_sess;
 	int j, ret;
 	size_t left;
 
@@ -482,7 +483,17 @@ void *send_thread_func(void *arg)
 			continue;
 		}
 		/* not TEST_ZLIB */
+		memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+		setup.alg_type = opts->alg_type;
+		setup.mode = opts->sync_mode;
+		setup.op_type = opts->op_type;
+		h_sess = wd_comp_alloc_sess(&setup);
+		if (!h_sess) {
+			return NULL;
+		}
+
 		left = opts->total_len;
+		info->req.op_type = opts->op_type;
 		info->req.src = info->in_buf;
 		info->req.dst = info->out_buf;
 		while (left > 0) {
@@ -517,6 +528,7 @@ void *send_thread_func(void *arg)
 			info->req.dst += dst_block_size;
 			info->total_out += info->req.dst_len;
 		}
+		wd_comp_free_sess(h_sess);
 	}
 	return NULL;
 }
@@ -712,7 +724,6 @@ out:
 int init_ctx_config(struct test_options *opts, void *priv,
 		    struct wd_sched **sched)
 {
-	struct wd_comp_sess_setup setup;
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i, j, ret = -EINVAL;
@@ -778,24 +789,8 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	ret = wd_comp_init(ctx_conf, *sched);
 	if (ret)
 		goto out_ctx;
-
-	/* allocate a wd_comp session */
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	setup.alg_type = opts->alg_type;
-	setup.mode = opts->sync_mode;
-	setup.op_type = opts->op_type;
-	info->h_sess = wd_comp_alloc_sess(&setup);
-	info->req.op_type = opts->op_type;
-	if (!info->h_sess) {
-		ret = -EINVAL;
-		goto out_sess;
-	}
-
 	return ret;
 
-out_sess:
-	wd_comp_uninit();
-	i = ctx_conf->ctx_num;
 out_ctx:
 	for (j = 0; j < i; j++)
 		wd_release_ctx(ctx_conf->ctxs[j].ctx);
@@ -812,7 +807,6 @@ void uninit_config(void *priv, struct wd_sched *sched)
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i;
 
-	wd_comp_free_sess(info->h_sess);
 	wd_comp_uninit();
 	for (i = 0; i < ctx_conf->ctx_num; i++)
 		wd_release_ctx(ctx_conf->ctxs[i].ctx);
