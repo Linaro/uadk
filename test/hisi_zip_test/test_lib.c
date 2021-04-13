@@ -727,7 +727,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
 	int i, j, ret = -EINVAL;
-	int q_num;
+	int q_num = opts->q_num;
 
 
 	*sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
@@ -735,19 +735,42 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		WD_ERR("sample_sched_alloc fail\n");
 		goto out_sched;
 	}
-	q_num = opts->q_num;
 
 	(*sched)->name = SCHED_RR_NAME;
 
+	memset(ctx_conf, 0, sizeof(struct wd_ctx_config));
+	ctx_conf->ctx_num = q_num * 4;
+	ctx_conf->ctxs = calloc(1, q_num * 4 * sizeof(struct wd_ctx));
+	if (!ctx_conf->ctxs) {
+		WD_ERR("Not enough memory to allocate contexts.\n");
+		ret = -ENOMEM;
+		goto out_ctx;
+	}
+	for (i = 0; i < ctx_conf->ctx_num; i++) {
+		ctx_conf->ctxs[i].ctx = wd_request_ctx(info->list->dev);
+		if (!ctx_conf->ctxs[i].ctx) {
+			WD_ERR("Fail to allocate context #%d\n", i);
+			ret = -EINVAL;
+			goto out_req;
+		}
+	}
 	/*
 	 * All contexts for 2 modes & 2 types.
 	 * The test only uses one kind of contexts at the same time.
 	 */
+	for (i = 0; i < q_num; i++) {
+		ctx_conf->ctxs[i].ctx_mode = 0;
+		ctx_conf->ctxs[i].op_type = 0;
+	}
 	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 0, 0,
 				     0, q_num - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
+	}
+	for (i = q_num; i < q_num * 2; i++) {
+		ctx_conf->ctxs[i].ctx_mode = 0;
+		ctx_conf->ctxs[i].op_type = 1;
 	}
 	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 0, 1,
 				     q_num, q_num * 2 - 1);
@@ -755,11 +778,19 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
 	}
+	for (i = q_num * 2; i < q_num * 3; i++) {
+		ctx_conf->ctxs[i].ctx_mode = 1;
+		ctx_conf->ctxs[i].op_type = 0;
+	}
 	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 1, 0,
 				     q_num * 2, q_num * 3 - 1);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
+	}
+	for (i = q_num * 3; i < q_num * 4; i++) {
+		ctx_conf->ctxs[i].ctx_mode = 1;
+		ctx_conf->ctxs[i].op_type = 1;
 	}
 	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 1, 1,
 				     q_num * 3, q_num * 4 - 1);
@@ -768,34 +799,17 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		goto out_fill;
 	}
 
-	memset(ctx_conf, 0, sizeof(struct wd_ctx_config));
-	ctx_conf->ctx_num = q_num * 4;
-	ctx_conf->ctxs = calloc(1, q_num * 4 * sizeof(struct wd_ctx));
-	if (!ctx_conf->ctxs) {
-		WD_ERR("Not enough memory to allocate contexts.\n");
-		ret = -ENOMEM;
-		goto out_fill;
-	}
-	for (i = 0; i < ctx_conf->ctx_num; i++) {
-		ctx_conf->ctxs[i].ctx = wd_request_ctx(info->list->dev);
-		if (!ctx_conf->ctxs[i].ctx) {
-			WD_ERR("Fail to allocate context #%d\n", i);
-			ret = -EINVAL;
-			goto out_ctx;
-		}
-		ctx_conf->ctxs[i].op_type = opts->op_type;
-		ctx_conf->ctxs[i].ctx_mode = opts->sync_mode;
-	}
 	ret = wd_comp_init(ctx_conf, *sched);
 	if (ret)
-		goto out_ctx;
+		goto out_fill;
 	return ret;
 
-out_ctx:
-	for (j = 0; j < i; j++)
-		wd_release_ctx(ctx_conf->ctxs[j].ctx);
-	free(ctx_conf->ctxs);
 out_fill:
+	for (i = 0; i < ctx_conf->ctx_num; j++)
+		wd_release_ctx(ctx_conf->ctxs[i].ctx);
+out_req:
+	free(ctx_conf->ctxs);
+out_ctx:
 	sample_sched_release(*sched);
 out_sched:
 	return ret;
