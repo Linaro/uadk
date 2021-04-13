@@ -11,11 +11,6 @@
 
 #define SCHED_RR_NAME	"sched_rr"
 
-enum alg_type {
-	HW_ZLIB  = 0x02,
-	HW_GZIP,
-};
-
 struct check_rand_ctx {
 	int off;
 	unsigned long global_off;
