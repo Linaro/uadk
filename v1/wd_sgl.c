@@ -41,7 +41,7 @@
 #define SGE_NUM_MAX	60
 #define BUF_SIZE_MAX	2048
 #define ALIGN_SIZE_MIN	0x8
-#define ALIGN_SIZE_MAX	0x1000
+#define ALIGN_SIZE_MAX	0x800
 
 struct wd_sge {
 	/* 'priv' is used by driver, which may be a hardware sgl address */
