@@ -29,54 +29,19 @@
 
 #define MAX_ALG_LEN			32
 #define MAX_RETRY_COUNTS		200000000
-#define WD_COMP_MAX_CTX			256
-#define WD_COMP_CTX_MSGCACHE_NUM	1024
 
-struct wcrypto_comp_cache {
+struct wcrypto_comp_cookie {
 	struct wcrypto_comp_tag tag;
 	struct wcrypto_comp_msg msg;
 };
 
 struct wcrypto_comp_ctx {
-	struct wcrypto_comp_cache caches[WD_COMP_CTX_MSGCACHE_NUM];
-	__u8 cstatus[WD_COMP_CTX_MSGCACHE_NUM];
-	int c_tail; /* start index for every search */
+	struct wd_cookie_pool pool;
 	unsigned long ctx_id;
 	void *ctx_buf; /* extra memory for stream mode */
 	struct wd_queue *q;
 	wcrypto_cb cb;
 };
-
-static struct wcrypto_comp_cache *get_comp_cache(struct wcrypto_comp_ctx *ctx)
-{
-	int idx = ctx->c_tail;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_COMP_CTX_MSGCACHE_NUM)
-			idx = 0;
-		if (cnt == WD_COMP_CTX_MSGCACHE_NUM)
-			return NULL;
-	}
-
-	ctx->c_tail = idx;
-	return &ctx->caches[idx];
-}
-
-static void put_comp_cache(struct wcrypto_comp_ctx *ctx,
-			   struct wcrypto_comp_cache *cache)
-{
-	int idx = ((uintptr_t)cache - (uintptr_t)ctx->caches) /
-		sizeof(struct wcrypto_comp_cache);
-
-	if (idx < 0 || idx >= WD_COMP_CTX_MSGCACHE_NUM) {
-		WD_ERR("comp cache not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
 
 static void fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 			 struct wcrypto_comp_msg *msg,
@@ -116,7 +81,8 @@ static int set_comp_ctx_br(struct q_info *qinfo, struct wd_mm_br *br)
 static int init_comp_ctx(struct wcrypto_comp_ctx *ctx, int ctx_id,
 			 struct wcrypto_comp_ctx_setup *setup)
 {
-	int cache_num = WD_COMP_CTX_MSGCACHE_NUM;
+	int cache_num = ctx->pool.cookies_num;
+	struct wcrypto_comp_cookie *cookie;
 	int i;
 
 	if (setup->stream_mode == WCRYPTO_COMP_STATEFUL) {
@@ -129,16 +95,18 @@ static int init_comp_ctx(struct wcrypto_comp_ctx *ctx, int ctx_id,
 	}
 
 	for (i = 0; i < cache_num; i++) {
-		ctx->caches[i].msg.comp_lv = setup->comp_lv;
-		ctx->caches[i].msg.op_type = setup->op_type;
-		ctx->caches[i].msg.win_size = setup->win_size;
-		ctx->caches[i].msg.alg_type = setup->alg_type;
-		ctx->caches[i].msg.stream_mode = setup->stream_mode;
-		ctx->caches[i].msg.data_fmt = setup->data_fmt;
-		ctx->caches[i].msg.ctx_buf = ctx->ctx_buf;
-		ctx->caches[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->caches[i].tag.wcrypto_tag.ctx_id = ctx_id;
-		ctx->caches[i].msg.udata = (uintptr_t)&ctx->caches[i].tag;
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.comp_lv = setup->comp_lv;
+		cookie->msg.op_type = setup->op_type;
+		cookie->msg.win_size = setup->win_size;
+		cookie->msg.alg_type = setup->alg_type;
+		cookie->msg.stream_mode = setup->stream_mode;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.ctx_buf = ctx->ctx_buf;
+		cookie->tag.wcrypto_tag.ctx = ctx;
+		cookie->tag.wcrypto_tag.ctx_id = ctx_id;
+		cookie->msg.udata = (uintptr_t)&cookie->tag;
 	}
 
 	ctx->cb = setup->cb;
@@ -157,7 +125,8 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 {
 	struct wcrypto_comp_ctx *ctx;
 	struct q_info *qinfo;
-	int ctx_id, ret;
+	__u32 ctx_id = 0;
+	int ret;
 
 	if (!q || !setup) {
 		WD_ERR("err, input parameter invalid!\n");
@@ -179,22 +148,20 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 
 	ret = set_comp_ctx_br(qinfo, &setup->br);
 	if (ret) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("err: fail to set compress ctx br!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (qinfo->ctx_num >= WD_COMP_MAX_CTX) {
-		wd_unspinlock(&qinfo->qlock);
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("err: create too many compress ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	ctx_id = wd_alloc_ctx_id(q, WD_COMP_MAX_CTX);
-	if (ctx_id < 0) {
-		wd_unspinlock(&qinfo->qlock);
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
@@ -205,10 +172,18 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		goto free_ctx_id;
 	}
 
+	ret = wd_init_cookie_pool(&ctx->pool,
+			sizeof(struct wcrypto_comp_cookie), WD_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		goto free_ctx_buf;
+	}
+
 	ctx->q = q;
-	ret = init_comp_ctx(ctx, ctx_id, setup);
+	ret = init_comp_ctx(ctx, ctx_id + 1, setup);
 	if (ret) {
 		WD_ERR("err: fail to init compress ctx!\n");
+		wd_uninit_cookie_pool(&ctx->pool);
 		goto free_ctx_buf;
 	}
 
@@ -217,9 +192,10 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 free_ctx_buf:
 	free(ctx);
 free_ctx_id:
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, ctx_id);
+unlock:
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
 }
@@ -232,9 +208,9 @@ free_ctx_id:
  */
 int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 {
+	struct wcrypto_comp_cookie *cookie = NULL;
 	struct wcrypto_comp_ctx *cctx = ctx;
 	struct wcrypto_comp_msg *msg, *resp;
-	struct wcrypto_comp_cache *cache;
 	__u64 recv_count = 0;
 	int ret;
 
@@ -243,27 +219,27 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 		return -EINVAL;
 	}
 
-	cache = get_comp_cache(cctx);
-	if (!cache)
-		return -WD_EBUSY;
+	ret = wd_get_cookies(&cctx->pool, (void **)&cookie, 1);
+	if (ret)
+		return ret;
 
-	msg = &cache->msg;
+	msg = &cookie->msg;
 	if (tag) {
 		if (!cctx->cb) {
 			WD_ERR("ctx call back is null!\n");
 			ret = -WD_EINVAL;
-			goto err_put_cache;
+			goto err_put_cookie;
 		}
-		cache->tag.wcrypto_tag.tag = tag;
+		cookie->tag.wcrypto_tag.tag = tag;
 	}
 
-	cache->tag.priv = opdata->priv;
+	cookie->tag.priv = opdata->priv;
 
 	fill_comp_msg(cctx, msg, opdata);
 	ret = wd_send(cctx->q, msg);
 	if (ret < 0) {
 		WD_ERR("wd_send err!\n");
-		goto err_put_cache;
+		goto err_put_cookie;
 	}
 
 	if (tag)
@@ -274,12 +250,12 @@ recv_again:
 	ret = wd_recv(cctx->q, (void **)&resp);
 	if (ret == -WD_HW_EACCESS) {
 		WD_ERR("wd_recv hw err!\n");
-		goto err_put_cache;
+		goto err_put_cookie;
 	} else if (ret == 0) {
 		if (++recv_count > MAX_RETRY_COUNTS) {
 			WD_ERR("wd_recv timeout fail!\n");
 			ret = -ETIMEDOUT;
-			goto err_put_cache;
+			goto err_put_cookie;
 		}
 		goto recv_again;
 	}
@@ -292,8 +268,8 @@ recv_again:
 	opdata->checksum = resp->checksum;
 	ret = WD_SUCCESS;
 
-err_put_cache:
-	put_comp_cache(cctx, cache);
+err_put_cookie:
+	wd_put_cookies(&cctx->pool, (void **)&cookie, 1);
 	return ret;
 }
 
@@ -334,7 +310,7 @@ int wcrypto_comp_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->udata;
 		ctx = tag->wcrypto_tag.ctx;
 		ctx->cb(resp, tag->wcrypto_tag.tag);
-		put_comp_cache(ctx, (struct wcrypto_comp_cache *)tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
 	} while (--num);
 
@@ -361,9 +337,11 @@ void wcrypto_del_comp_ctx(void *ctx)
 	if (br && br->free && cctx->ctx_buf)
 		br->free(br->usr, cctx->ctx_buf);
 
+	wd_uninit_cookie_pool(&cctx->pool);
 	wd_spinlock(&qinfo->qlock);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cctx->ctx_id -1,
+		WD_MAX_CTX_NUM);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(cctx->q, cctx->ctx_id);
 	if (!qinfo->ctx_num) {
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	} else if (qinfo->ctx_num < 0) {

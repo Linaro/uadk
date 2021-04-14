@@ -36,6 +36,10 @@
 #include "v1/wd_ecc.h"
 #include "v1/wd_adapter.h"
 
+#define WD_CTX_MSG_NUM		1024
+#define WD_HPRE_CTX_MSG_NUM	64
+#define WD_RNG_CTX_MSG_NUM	256
+#define WD_MAX_CTX_NUM			256
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
@@ -87,7 +91,7 @@
 #define offsetof(t, m) ((size_t)(uintptr_t)&((t *)0)->m)
 
 struct wd_lock {
-	__u32 lock;
+	__u8 lock;
 };
 
 struct wd_ss_region {
@@ -119,8 +123,15 @@ struct q_info {
 	struct wcrypto_hash_mt hash;
 	unsigned long qfrs_offset[WD_UACCE_QFRT_MAX];
 	struct wd_lock qlock;
+	__u8 ctx_id[WD_MAX_CTX_NUM];
+};
 
-	volatile __u8 ctx_id[CTX_ID_MAX_NUM];
+struct wd_cookie_pool {
+	void *cookies;
+	__u8 *cstatus;
+	__u32 cookies_num;
+	__u32 cookies_size;
+	__u32 cid;
 };
 
 struct wd_dif_gen {
@@ -369,8 +380,13 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 		       enum uacce_qfrt qfrt, size_t size);
 void *drv_iova_map(struct wd_queue *q, void *va, size_t sz);
 void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
-int wd_alloc_ctx_id(struct wd_queue *q, int max_num);
-void wd_free_ctx_id(struct wd_queue *q, int ctx_id);
+int wd_init_cookie_pool(struct wd_cookie_pool *pool,
+			__u32 cookies_size, __u32 cookies_num);
+void wd_uninit_cookie_pool(struct wd_cookie_pool *pool);
+int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max);
+void wd_free_id(__u8 *buf, __u32 size, __u32 id, __u32 id_max);
+int wd_get_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num);
+void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num);
 const char *wd_get_drv(struct wd_queue *q);
 int wd_burst_send(struct wd_queue *q, void **req, __u32 num);
 int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num);
