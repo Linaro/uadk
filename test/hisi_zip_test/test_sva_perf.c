@@ -242,8 +242,10 @@ static void stat_end(struct hizip_test_info *info)
 	struct test_options *opts = info->opts;
 	struct hizip_stats *stats = info->stats;
 	double v;
+	size_t total_out;
 	unsigned long total_len;
 
+	total_out = __atomic_load_n(&info->total_out, __ATOMIC_ACQUIRE);
 	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.end_time);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &info->tv.end_cputime);
 	getrusage(RUSAGE_SELF, &info->tv.end_rusage);
@@ -287,7 +289,7 @@ static void stat_end(struct hizip_test_info *info)
 
 	/* check last loop is enough, same as below hizip_verify_output */
 	stats->v[ST_COMPRESSION_RATIO] = (double)opts->total_len /
-					 info->total_out * 100;
+					 total_out * 100;
 
 	total_len = opts->total_len * opts->compact_run_num;
 	/* ST_RUN_TIME records nanoseconds */
@@ -433,7 +435,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		}
 		infl_buf = NULL;
 	} else {
-		ret = hizip_verify_random_output(opts, &info);
+		ret = hizip_verify_random_output(opts, &info, info.out_size);
 	}
 
 	usleep(10);
