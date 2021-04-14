@@ -283,7 +283,7 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	dinfo->node_id = get_int_attr(dinfo, "node_id");
 
 	ret = get_int_attr(dinfo, "flags");
-	if (ret < 0)
+	if (ret < 0 || ret & WD_UACCE_DEV_SVA)
 		return ret;
 	dinfo->flags = ret;
 
