@@ -387,10 +387,8 @@ int hizip_prepare_random_compressed_data(char *buf, size_t out_len, size_t in_le
 	size_t in_block_size = opts->block_size;
 	size_t out_block_size = 2 * in_block_size;
 
-	if (!init_buf) {
-		ret = -ENOMEM;
-		goto out_unmap;
-	}
+	if (!init_buf)
+		return -ENOMEM;
 
 	hizip_prepare_random_input_data(init_buf, in_len, opts->block_size);
 
@@ -403,7 +401,6 @@ int hizip_prepare_random_compressed_data(char *buf, size_t out_len, size_t in_le
 		buf += out_block_size;
 	}
 
-out_unmap:
 	munmap(init_buf, in_len);
 	return ret;
 }
