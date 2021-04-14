@@ -30,8 +30,6 @@
 #include "wd_ecc.h"
 #include "wd_util.h"
 
-#define WD_ECC_CTX_MSG_NUM		64
-#define WD_ECC_MAX_CTX			256
 #define ECC_BALANCE_THRHD		1280
 #define ECC_RECV_MAX_CNT		60000000
 #define ECC_RESEND_CNT			8
@@ -73,9 +71,7 @@ struct wcrypto_ecc_cookie {
 };
 
 struct wcrypto_ecc_ctx {
-	struct wcrypto_ecc_cookie cookies[WD_ECC_CTX_MSG_NUM];
-	__u8 cstatus[WD_ECC_CTX_MSG_NUM];
-	int cidx;
+	struct wd_cookie_pool pool;
 	__u32 key_size;
 	unsigned long ctx_id;
 	struct wd_queue *q;
@@ -1071,17 +1067,20 @@ static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 {
 	__u32 hsz = get_hw_keysize(ctx->key_size);
 	struct q_info *qinfo = ctx->q->qinfo;
+	struct wcrypto_ecc_cookie *cookie;
 	int i;
 
-	for (i = 0; i < WD_ECC_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.curve_id = setup->cv.cfg.id;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].msg.key_bytes = hsz;
-		ctx->cookies[i].msg.hash_type = setup->hash.type;
-		ctx->cookies[i].msg.alg_type = qinfo->atype;
-		ctx->cookies[i].tag.ctx = ctx;
-		ctx->cookies[i].tag.ctx_id = ctx->ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+	for (i = 0; i < ctx->pool.cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.curve_id = setup->cv.cfg.id;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.key_bytes = hsz;
+		cookie->msg.hash_type = setup->hash.type;
+		cookie->msg.alg_type = qinfo->atype;
+		cookie->tag.ctx = ctx;
+		cookie->tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
 }
 
@@ -1091,7 +1090,8 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 {
 	struct wcrypto_ecc_ctx *ctx;
 	struct q_info *qinfo;
-	int ret, cid;
+	__u32 cid = 0;
+	int ret;
 
 	if (param_check(q, setup))
 		return NULL;
@@ -1103,26 +1103,23 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating ecc ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (unlikely(qinfo->ctx_num >= WD_ECC_MAX_CTX)) {
-		wd_unspinlock(&qinfo->qlock);
+	if (unlikely(qinfo->ctx_num >= WD_MAX_CTX_NUM)) {
 		WD_ERR("err:create too many ecc ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	cid = wd_alloc_ctx_id(q, WD_ECC_MAX_CTX);
-	if (unlikely(cid < 0)) {
-		wd_unspinlock(&qinfo->qlock);
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &cid, 0,
+		WD_MAX_CTX_NUM);
+	if (unlikely(ret)) {
 		WD_ERR("failed to alloc ctx id!\n");
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
-
 	ctx = malloc(sizeof(struct wcrypto_ecc_ctx));
 	if (unlikely(!ctx)) {
 		WD_ERR("failed to malloc!\n");
@@ -1133,22 +1130,31 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->key_size = BITS_TO_BYTES(setup->key_bits);
 	ctx->q = q;
-	ctx->ctx_id = cid;
+	ctx->ctx_id = cid + 1;
 	ret = create_ctx_key(setup, ctx);
 	if (unlikely(ret)) {
 		WD_ERR("failed to create ecc ctx keys!\n");
-		free(ctx);
-		goto free_ctx_id;
+		goto free_ctx;
 	}
 
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_ecc_cookie), WD_HPRE_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		goto free_ctx;
+	}
 	init_ctx_cookies(ctx, setup);
 
 	return ctx;
 
+free_ctx:
+	free(ctx);
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, cid);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cid, WD_MAX_CTX_NUM);
+unlock:
+	wd_unspinlock(&qinfo->qlock);
 	return NULL;
 }
 
@@ -1166,6 +1172,7 @@ void wcrypto_del_ecc_ctx(void *ctx)
 	cx = ctx;
 	br = &cx->setup.br;
 	qinfo = cx->q->qinfo;
+	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
 	if (unlikely(qinfo->ctx_num <= 0)) {
 		WD_ERR("error:repeat del ecc ctx ctx!\n");
@@ -1173,7 +1180,8 @@ void wcrypto_del_ecc_ctx(void *ctx)
 		return;
 	}
 
-	wd_free_ctx_id(cx->q, cx->ctx_id);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
 	if (!(--qinfo->ctx_num))
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	wd_unspinlock(&qinfo->qlock);
@@ -1431,37 +1439,6 @@ void wcrypto_del_ecc_out(void *ctx,  struct wcrypto_ecc_out *out)
 	br_free(&cx->setup.br, out);
 }
 
-static struct wcrypto_ecc_cookie *get_ecc_cookie(struct wcrypto_ecc_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_ECC_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WD_ECC_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_ecc_cookie(struct wcrypto_ecc_ctx *ctx,
-			   struct wcrypto_ecc_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_ecc_cookie);
-
-	if (unlikely(idx < 0 || idx >= WD_ECC_CTX_MSG_NUM)) {
-		WD_ERR("ecc cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
-
 static int ecc_request_init(struct wcrypto_ecc_msg *req,
 			    struct wcrypto_ecc_op_data *op,
 			    struct wcrypto_ecc_ctx *c, __u8 need_hash)
@@ -1581,19 +1558,19 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 		  __u8 need_hash)
 {
+	struct wcrypto_ecc_cookie *cookie = NULL;
 	struct wcrypto_ecc_ctx *ctxt = ctx;
-	struct wcrypto_ecc_cookie *cookie;
 	struct wcrypto_ecc_msg *req;
-	int ret = -WD_EINVAL;
+	int ret;
 
 	if (unlikely(!ctx)) {
 		WD_ERR("do ecc parameter null!\n");
 		return -WD_EINVAL;
 	}
 
-	cookie = get_ecc_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
+	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
+	if (ret)
+		return ret;
 
 	if (tag) {
 		if (unlikely(!ctxt->setup.cb)) {
@@ -1618,7 +1595,7 @@ static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 	ret = ecc_sync_recv(ctxt, opdata);
 
 fail_with_cookie:
-	put_ecc_cookie(ctxt, cookie);
+	wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
 	return ret;
 }
 
@@ -1643,7 +1620,7 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
-		put_ecc_cookie(ctx, (struct wcrypto_ecc_cookie *)tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
 	} while (--num);
 

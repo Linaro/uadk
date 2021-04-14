@@ -25,8 +25,6 @@
 extern "C" {
 #endif
 
-#define WD_RNG_CTX_MSG_NUM	256
-
 struct wcrypto_rng_ctx_setup {
 	wcrypto_cb cb;
 	__u16 data_fmt;	/* Data format, denoted by enum wd_buff_type */

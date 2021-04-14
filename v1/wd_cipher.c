@@ -29,8 +29,6 @@
 #include "v1/wd_cipher.h"
 #include "v1/wd_util.h"
 
-#define WCRYPTO_CIPHER_CTX_MSG_NUM	1024
-#define WCRYPTO_CIPHER_MAX_CTX		256
 #define MAX_CIPHER_KEY_SIZE		64
 #define MAX_CIPHER_RETRY_CNT		2000000
 #define CIPHER_SLEEP_INTERVAL		0xf
@@ -52,9 +50,7 @@ struct wcrypto_cipher_cookie {
 };
 
 struct wcrypto_cipher_ctx {
-	struct wcrypto_cipher_cookie cookies[WCRYPTO_CIPHER_CTX_MSG_NUM];
-	__u8 cstatus[WCRYPTO_CIPHER_CTX_MSG_NUM];
-	int cidx;
+	struct wd_cookie_pool pool;
 	unsigned long ctx_id;
 	void *key;
 	__u32 key_bytes;
@@ -62,55 +58,6 @@ struct wcrypto_cipher_ctx {
 	struct wd_queue *q;
 	struct wcrypto_cipher_ctx_setup setup;
 };
-
-static void put_cipher_cookies(struct wcrypto_cipher_ctx *ctx,
-			       struct wcrypto_cipher_cookie **cookies,
-			       __u32 num)
-{
-	__u32 i;
-	int idx;
-
-	for (i = 0; i < num; i++) {
-		idx = ((uintptr_t)cookies[i] - (uintptr_t)ctx->cookies) /
-			sizeof(struct wcrypto_cipher_cookie);
-		if (idx < 0 || idx >= WCRYPTO_CIPHER_CTX_MSG_NUM) {
-			WD_ERR("cipher cookie not exist!\n");
-			continue;
-		}
-
-		__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-	}
-}
-
-static int get_cipher_cookies(struct wcrypto_cipher_ctx *ctx,
-			      struct wcrypto_cipher_cookie **cookies,
-			      __u32 num)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-	__u32 i;
-
-	for (i = 0; i < num; i++) {
-		while (__atomic_test_and_set(&ctx->cstatus[idx],
-					     __ATOMIC_ACQUIRE)) {
-			idx++;
-			cnt++;
-			if (idx == WCRYPTO_CIPHER_CTX_MSG_NUM)
-				idx = 0;
-			if (cnt == WCRYPTO_CIPHER_CTX_MSG_NUM)
-				goto fail_with_cookies;
-		}
-
-		cookies[i] = &ctx->cookies[idx];
-	}
-
-	ctx->cidx = idx;
-	return WD_SUCCESS;
-
-fail_with_cookies:
-	put_cipher_cookies(ctx, cookies, i);
-	return -WD_EBUSY;
-}
 
 static void del_ctx_key(struct wcrypto_cipher_ctx *ctx)
 {
@@ -182,16 +129,19 @@ static int create_ctx_para_check(struct wd_queue *q,
 static void init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 	struct wcrypto_cipher_ctx_setup *setup)
 {
+	struct wcrypto_cipher_cookie *cookie;
 	int i;
 
-	for (i = 0; i < WCRYPTO_CIPHER_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WCRYPTO_CIPHER;
-		ctx->cookies[i].msg.alg = setup->alg;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].msg.mode = setup->mode;
-		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx->ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+	for (i = 0; i < ctx->pool.cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.alg_type = WCRYPTO_CIPHER;
+		cookie->msg.alg = setup->alg;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.mode = setup->mode;
+		cookie->tag.wcrypto_tag.ctx = ctx;
+		cookie->tag.wcrypto_tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
 }
 
@@ -201,7 +151,8 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 {
 	struct q_info *qinfo;
 	struct wcrypto_cipher_ctx *ctx;
-	int ctx_id;
+	__u32 ctx_id = 0;
+	int ret;
 
 	if (create_ctx_para_check(q, setup))
 		return NULL;
@@ -213,22 +164,20 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
 
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating cipher ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (qinfo->ctx_num >= WCRYPTO_CIPHER_MAX_CTX) {
-		wd_unspinlock(&qinfo->qlock);
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("err:create too many cipher ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_CIPHER_MAX_CTX);
-	if (ctx_id < 0) {
-		wd_unspinlock(&qinfo->qlock);
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
@@ -241,23 +190,31 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 	memset(ctx, 0, sizeof(struct wcrypto_cipher_ctx));
 	memcpy(&ctx->setup, setup, sizeof(ctx->setup));
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
+	ctx->ctx_id = ctx_id + 1;
 	ctx->key = setup->br.alloc(setup->br.usr, MAX_CIPHER_KEY_SIZE);
 	if (!ctx->key) {
 		WD_ERR("alloc cipher ctx key fail!\n");
-		free(ctx);
-		goto free_ctx_id;
+		goto free_ctx;
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->alg, setup->mode);
+
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_cipher_cookie), WD_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		goto free_ctx;
+	}
 	init_cipher_cookie(ctx, setup);
 
 	return ctx;
-
+free_ctx:
+	free(ctx);
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, ctx_id);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
+unlock:
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
 }
@@ -465,7 +422,7 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 	if (param_check(ctxt, opdata, tag, num))
 		return -WD_EINVAL;
 
-	ret = get_cipher_cookies(ctxt, cookies, num);
+	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
 	if (unlikely(ret)) {
 		WD_ERR("failed to get cookies %d!\n", ret);
 		return ret;
@@ -494,7 +451,7 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 	ret = cipher_recv_sync(ctxt, opdata, num);
 
 fail_with_cookies:
-	put_cipher_cookies(ctxt, cookies, num);
+	wd_put_cookies(&ctxt->pool, (void **)cookies, num);
 	return ret;
 }
 
@@ -539,7 +496,7 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
 		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
-		put_cipher_cookies(ctx, (struct wcrypto_cipher_cookie **)&tag, 1);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 	} while (--num);
 
 	return count;
@@ -556,9 +513,11 @@ void wcrypto_del_cipher_ctx(void *ctx)
 	}
 	cx = ctx;
 	qinfo = cx->q->qinfo;
+	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (!qinfo->ctx_num)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {

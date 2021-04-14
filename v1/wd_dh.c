@@ -29,9 +29,7 @@
 #include "wd_dh.h"
 #include "wd_util.h"
 
-#define WD_DH_CTX_MSG_NUM	64
 #define WD_DH_G2		2
-#define WD_DH_MAX_CTX		256
 #define DH_BALANCE_THRHD		1280
 #define DH_RESEND_CNT	8
 #define DH_RECV_MAX_CNT	60000000 // 1 min
@@ -44,45 +42,13 @@ struct wcrypto_dh_cookie {
 };
 
 struct wcrypto_dh_ctx {
-	struct wcrypto_dh_cookie cookies[WD_DH_CTX_MSG_NUM];
-	__u8 cstatus[WD_DH_CTX_MSG_NUM];
-	int cidx;
+	struct wd_cookie_pool pool;
 	__u32 key_size;
 	unsigned long ctx_id;
 	struct wd_queue *q;
 	struct wd_dtb g;
 	struct wcrypto_dh_ctx_setup setup;
 };
-
-static struct wcrypto_dh_cookie *get_dh_cookie(struct wcrypto_dh_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_DH_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WD_DH_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_dh_cookie(struct wcrypto_dh_ctx *ctx, struct wcrypto_dh_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_dh_cookie);
-
-	if (unlikely(idx < 0 || idx >= WD_DH_CTX_MSG_NUM)) {
-		WD_ERR("dh cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
 
 static int create_ctx_param_check(struct wd_queue *q,
 				  struct wcrypto_dh_ctx_setup *setup)
@@ -105,12 +71,41 @@ static int create_ctx_param_check(struct wd_queue *q,
 	return 0;
 }
 
+static int wcrypto_init_dh_cookie(struct wcrypto_dh_ctx *ctx)
+{
+	struct wcrypto_dh_ctx_setup *setup = &ctx->setup;
+	struct wcrypto_dh_cookie *cookie;
+	int ret, i;
+
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_dh_cookie), WD_HPRE_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		return ret;
+	}
+
+	for (i = 0; i < ctx->pool.cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.is_g2 = (__u8)setup->is_g2;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.key_bytes = ctx->key_size;
+		cookie->msg.alg_type = WCRYPTO_DH;
+		cookie->tag.ctx = ctx;
+		cookie->tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
+	}
+
+	return 0;
+}
+
 /* Before initiate this context, we should get a queue from WD */
 void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *setup)
 {
 	struct wcrypto_dh_ctx *ctx;
 	struct q_info *qinfo;
-	int i, ctx_id, ret;
+	__u32 ctx_id = 0;
+	int ret;
 
 	ret = create_ctx_param_check(q, setup);
 	if (ret)
@@ -124,22 +119,20 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("err: qinfo and setup mm br.usr mismatch!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (qinfo->ctx_num >= WD_DH_MAX_CTX) {
-		wd_unspinlock(&qinfo->qlock);
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("err: create too many dh ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	ctx_id = wd_alloc_ctx_id(q, WD_DH_MAX_CTX);
-	if (ctx_id < 0) {
-		wd_unspinlock(&qinfo->qlock);
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM,
+			&ctx_id, 0, WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
@@ -153,32 +146,30 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 	memset(ctx, 0, sizeof(struct wcrypto_dh_ctx));
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
+	ctx->ctx_id = ctx_id + 1;
 	ctx->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
-	for (i = 0; i < WD_DH_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.is_g2 = (__u8)setup->is_g2;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].msg.key_bytes = ctx->key_size;
-		ctx->cookies[i].msg.alg_type = WCRYPTO_DH;
-		ctx->cookies[i].tag.ctx = ctx;
-		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
-	}
 
 	if (setup->br.get_bufsize &&
 	    setup->br.get_bufsize(setup->br.usr) < ctx->key_size) {
 		WD_ERR("Blk_size < need_size<0x%x>.\n", ctx->key_size);
-		free(ctx);
-		goto free_ctx_id;
+		goto free_ctx;
 	}
 	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
 	ctx->g.bsize = ctx->key_size;
+
+	ret = wcrypto_init_dh_cookie(ctx);
+	if (ret)
+		goto free_ctx;
+
 	return ctx;
 
+free_ctx:
+	free(ctx);
 free_ctx_id:
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, ctx_id);
+unlock:
 	wd_unspinlock(&qinfo->qlock);
 
 	return NULL;
@@ -282,21 +273,21 @@ static int do_dh_param_check(void *ctx, struct wcrypto_dh_op_data *opdata, void 
 
 int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 {
-	struct wcrypto_dh_ctx *ctxt = ctx;
-	struct wcrypto_dh_cookie *cookie;
+	struct wcrypto_dh_cookie *cookie = NULL;
 	struct wcrypto_dh_msg *resp = NULL;
-	int ret = -WD_EINVAL;
+	struct wcrypto_dh_ctx *ctxt = ctx;
 	struct wcrypto_dh_msg *req;
 	uint32_t rx_cnt = 0;
 	uint32_t tx_cnt = 0;
+	int ret;
 
 	ret = do_dh_param_check(ctx, opdata, tag);
 	if (unlikely(ret))
 		return ret;
 
-	cookie = get_dh_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
+	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
+	if (ret)
+		return ret;
 
 	if (tag)
 		cookie->tag.tag = tag;
@@ -349,7 +340,7 @@ recv_again:
 	ret = GET_NEGATIVE(opdata->status);
 
 fail_with_cookie:
-	put_dh_cookie(ctxt, cookie);
+	wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
 	return ret;
 }
 
@@ -379,7 +370,7 @@ int wcrypto_dh_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
-		put_dh_cookie(ctx, (struct wcrypto_dh_cookie *)tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
 	} while (--num);
 
@@ -401,13 +392,17 @@ void wcrypto_del_dh_ctx(void *ctx)
 	qinfo = cx->q->qinfo;
 	st = &cx->setup;
 
+	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
 	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error: repeat del dh ctx!\n");
 		return;
 	}
-	wd_free_ctx_id(cx->q, cx->ctx_id);
+
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
+
 	if (!(--qinfo->ctx_num))
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	wd_unspinlock(&qinfo->qlock);
