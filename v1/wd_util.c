@@ -54,49 +54,105 @@ void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
 		wd_iova_unmap(q, va, dma, sz);
 }
 
-int wd_alloc_ctx_id(struct wd_queue *q, int max_num)
+int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max)
 {
-	struct q_info *qinfo = q->qinfo;
-	int ctx_id = 0;
-	int i = 0;
-	int j = 0;
+	__u32 idx = last_id;
+	int cnt = 0;
 
-	if (max_num > CTX_ID_MAX_NUM_BYTES) {
-		WD_ERR("err: alloc ctx id max_num overflow!\n");
-		return -WD_EINVAL;
+	while (__atomic_test_and_set(&buf[idx], __ATOMIC_ACQUIRE)) {
+		idx++;
+		cnt++;
+		if (idx == id_max)
+			idx = 0;
+		if (cnt == id_max)
+			return -WD_EBUSY;
 	}
 
-	while (qinfo->ctx_id[i] & 0x1 << j) {
-		ctx_id++;
-
-		if (ctx_id >= max_num)
-			return -WD_ENOMEM;
-
-		if (!(ctx_id % BYTE_TO_BIT))
-			i++;
-
-		j = ctx_id % BYTE_TO_BIT;
-	}
-
-	qinfo->ctx_id[i] |= 0x1u << j;
-
-	return ctx_id + 1;
+	*id = idx;
+	return 0;
 }
 
-void wd_free_ctx_id(struct wd_queue *q, int ctx_id)
+void wd_free_id(__u8 *buf, __u32 size, __u32 id, __u32 id_max)
 {
-	struct q_info *qinfo = q->qinfo;
-	int i, j;
-
-	if (ctx_id < 1 || ctx_id > CTX_ID_MAX_NUM_BYTES) {
-		WD_ERR("err: free ctx id ctx_id %d err!\n", ctx_id);
+	if (unlikely(id >= id_max)) {
+		WD_ERR("id error, id = %u!\n", id);
 		return;
 	}
 
-	ctx_id--;
-	i = ctx_id / BYTE_TO_BIT;
-	j = ctx_id % BYTE_TO_BIT;
-	qinfo->ctx_id[i] &= ~(0x1u << j);
+	__atomic_clear(&buf[id], __ATOMIC_RELEASE);
+}
+
+int wd_init_cookie_pool(struct wd_cookie_pool *pool,
+			__u32 cookies_size, __u32 cookies_num)
+{
+	pool->cookies = calloc(1, cookies_size * cookies_num + cookies_num);
+	if (!pool->cookies)
+		return -WD_ENOMEM;
+
+	pool->cstatus = (void *)((uintptr_t)pool->cookies +
+			cookies_num * cookies_size);
+	pool->cookies_num = cookies_num;
+	pool->cookies_size = cookies_size;
+	pool->cid = 0;
+
+	return 0;
+}
+
+void wd_uninit_cookie_pool(struct wd_cookie_pool *pool)
+{
+	if (pool->cookies) {
+		free(pool->cookies);
+		pool->cookies = NULL;
+	}
+}
+
+static void put_cookie(struct wd_cookie_pool *pool, void *cookie)
+{
+	__u32 idx = ((uintptr_t)cookie - (uintptr_t)pool->cookies) /
+		pool->cookies_size;
+
+	wd_free_id(pool->cstatus, pool->cookies_num, idx, pool->cookies_num);
+}
+
+static void *get_cookie(struct wd_cookie_pool *pool)
+{
+	__u32 last = pool->cid % pool->cookies_num;
+	__u32 id = 0;
+	int ret;
+
+	ret = wd_alloc_id(pool->cstatus, pool->cookies_num, &id, last,
+			pool->cookies_num);
+	if (ret)
+		return NULL;
+
+	pool->cid = id;
+	return (void *)((uintptr_t)pool->cookies + id * pool->cookies_size);
+}
+
+void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)
+{
+	int i;
+
+	for (i = 0; i < num; i++)
+		put_cookie(pool, cookies[i]);
+
+}
+
+int wd_get_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)
+{
+	int i ;
+
+	for (i = 0; i < num; i++) {
+		cookies[i] = get_cookie(pool);
+		if (!cookies[i])
+			goto put_cookies;
+	}
+
+	return 0;
+
+put_cookies:
+	wd_put_cookies(pool, cookies, i);
+	return -WD_EBUSY;
 }
 
 int wd_burst_send(struct wd_queue *q, void **req, __u32 num)

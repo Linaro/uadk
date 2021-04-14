@@ -29,8 +29,6 @@
 #include "wd_rsa.h"
 #include "wd_util.h"
 
-#define WD_RSA_CTX_MSG_NUM		64
-#define WD_RSA_MAX_CTX			256
 #define RSA_BALANCE_THRHD	1280
 #define RSA_RESEND_CNT	8
 #define RSA_MAX_KEY_SIZE	512
@@ -45,9 +43,7 @@ struct wcrypto_rsa_cookie {
 };
 
 struct wcrypto_rsa_ctx {
-	struct wcrypto_rsa_cookie cookies[WD_RSA_CTX_MSG_NUM];
-	__u8 cstatus[WD_RSA_CTX_MSG_NUM];
-	int cidx;
+	struct wd_cookie_pool pool;
 	__u32 key_size;
 	unsigned long ctx_id;
 	struct wd_queue *q;
@@ -393,36 +389,6 @@ void wcrypto_set_rsa_kg_out_psz(struct wcrypto_rsa_kg_out *kout,
 	kout->nbytes = n_sz;
 }
 
-static struct wcrypto_rsa_cookie *get_rsa_cookie(struct wcrypto_rsa_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_RSA_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WD_RSA_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_rsa_cookie(struct wcrypto_rsa_ctx *ctx, struct wcrypto_rsa_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_rsa_cookie);
-
-	if (unlikely(idx < 0 || idx >= WD_RSA_CTX_MSG_NUM)) {
-		WD_ERR("rsa cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
-
 static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, __u32 ksz)
 {
 	int hlf_ksz = CRT_PARAM_SZ(ksz);
@@ -534,27 +500,38 @@ static void del_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 
 struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_id)
 {
+	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_ctx *ctx;
-	int i;
+	int i, ret;
 
 	ctx = calloc(1, sizeof(struct wcrypto_rsa_ctx));
 	if (!ctx)
 		return ctx;
 
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_rsa_cookie), WD_HPRE_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		free(ctx);
+		return NULL;
+	}
+
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->ctx_id = ctx_id;
 	ctx->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
-	for (i = 0; i < WD_RSA_CTX_MSG_NUM; i++) {
+	for (i = 0; i < ctx->pool.cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
 		if (setup->is_crt)
-			ctx->cookies[i].msg.key_type = WCRYPTO_RSA_PRIKEY2;
+			cookie->msg.key_type = WCRYPTO_RSA_PRIKEY2;
 		else
-			ctx->cookies[i].msg.key_type = WCRYPTO_RSA_PRIKEY1;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].msg.key_bytes = ctx->key_size;
-		ctx->cookies[i].msg.alg_type = WCRYPTO_RSA;
-		ctx->cookies[i].tag.ctx = ctx;
-		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+			cookie->msg.key_type = WCRYPTO_RSA_PRIKEY1;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.key_bytes = ctx->key_size;
+		cookie->msg.alg_type = WCRYPTO_RSA;
+		cookie->tag.ctx = ctx;
+		cookie->tag.ctx_id = ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
 
 	return ctx;
@@ -562,8 +539,12 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 
 static void del_ctx(struct wcrypto_rsa_ctx *c)
 {
-	if (c)
-		free(c);
+
+	if (!c)
+		return;
+
+	wd_uninit_cookie_pool(&c->pool);
+	free(c);
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -571,7 +552,8 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 {
 	struct wcrypto_rsa_ctx *ctx;
 	struct q_info *qinfo;
-	int ret, cid;
+	__u32 cid = 0;
+	int ret;
 
 	if (!q || !setup) {
 		WD_ERR("create rsa ctx input parameter err!\n");
@@ -587,32 +569,30 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 	}
 
 	qinfo = q->qinfo;
-	/*lock at ctx  creating/deleting */
+	/* lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating rsa ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (qinfo->ctx_num >= WD_RSA_MAX_CTX) {
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("err:create too many rsa ctx!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
+		goto unlock;
 	}
 
-	cid = wd_alloc_ctx_id(q, WD_RSA_MAX_CTX);
-	if (cid < 0) {
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &cid, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
-	ctx = create_ctx(setup, cid);
+	ctx = create_ctx(setup, cid + 1);
 	if (!ctx) {
 		WD_ERR("create rsa ctx fail!\n");
 		goto free_ctx_id;
@@ -621,16 +601,18 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 	ret = create_ctx_key(setup, ctx);
 	if (ret) {
 		WD_ERR("fail creating rsa ctx keys!\n");
-		del_ctx(ctx);
-		goto free_ctx_id;
+		goto delete_ctx;
 	}
 
 	return ctx;
 
+delete_ctx:
+	del_ctx(ctx);
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cid, WD_MAX_CTX_NUM);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, cid);
+unlock:
 	wd_unspinlock(&qinfo->qlock);
 
 	return NULL;
@@ -972,21 +954,21 @@ static int param_check(void *ctx, void *opdata, void *tag)
 
 int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 {
+	struct wcrypto_rsa_cookie *cookie = NULL;
 	struct wcrypto_rsa_msg *resp = NULL;
 	struct wcrypto_rsa_ctx *ctxt = ctx;
-	struct wcrypto_rsa_cookie *cookie;
-	int ret = -WD_EINVAL;
 	struct wcrypto_rsa_msg *req;
 	uint32_t rx_cnt = 0;
 	uint32_t tx_cnt = 0;
+	int ret;
 
 	ret = param_check(ctx, opdata, tag);
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
-	cookie = get_rsa_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
+	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
+	if (ret)
+		return ret;
 
 	if (tag)
 		cookie->tag.tag = tag;
@@ -1039,7 +1021,7 @@ recv_again:
 	ret = GET_NEGATIVE(opdata->status);
 
 fail_with_cookie:
-	put_rsa_cookie(ctxt, cookie);
+	wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
 	return ret;
 }
 
@@ -1068,7 +1050,7 @@ int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
-		put_rsa_cookie(ctx, (struct wcrypto_rsa_cookie *)tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
 	} while (--num);
 
@@ -1085,9 +1067,12 @@ void wcrypto_del_rsa_ctx(void *ctx)
 		WD_ERR("delete rsa parameter err!\n");
 		return;
 	}
+
 	cx = ctx;
 	st = &cx->setup;
 	qinfo = cx->q->qinfo;
+
+	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
 	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
@@ -1095,7 +1080,8 @@ void wcrypto_del_rsa_ctx(void *ctx)
 		return;
 	}
 
-	wd_free_ctx_id(cx->q, cx->ctx_id);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
 	if (!(--qinfo->ctx_num))
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 
