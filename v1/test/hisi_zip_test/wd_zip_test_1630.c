@@ -419,7 +419,7 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 	if (data_fmt == WD_SGL_BUF) {
 		ctx_setup.data_fmt = WD_SGL_BUF;
 
-		sp.buf_size = MAX(pdata->src_len / 10, 2048);
+		sp.buf_size = MAX(pdata->src_len / 6, 2048);
 		sp.align_size = 64;
 		sp.sge_num_in_sgl = 40;
 		sp.buf_num_in_sgl = sp.sge_num_in_sgl - 1;
@@ -720,7 +720,7 @@ static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
 		pdata->iteration = iteration;
 		pdata->src = file_buf;
 		pdata->src_len = in_len - head_size;
-		pdata->dst_len = pdata->src_len * 4;
+		pdata->dst_len = pdata->src_len * 10;
 		pdata->src = calloc(1, pdata->src_len);
 		if (pdata->src == NULL)
 			goto buf_free;
