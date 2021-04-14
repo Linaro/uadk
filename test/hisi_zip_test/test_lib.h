@@ -114,6 +114,7 @@ struct hizip_test_info {
 typedef struct _thread_data_t {
 	struct hizip_test_info *info;
 	struct wd_comp_req req;
+	size_t sum;
 } thread_data_t;
 
 void *send_thread_func(void *arg);
@@ -141,7 +142,8 @@ int hizip_prepare_random_compressed_data(char *buf, size_t out_len,
 					 struct test_options *opts);
 
 int hizip_verify_random_output(struct test_options *opts,
-			       struct hizip_test_info *info);
+			       struct hizip_test_info *info,
+			       size_t out_sz);
 
 void *mmap_alloc(size_t len);
 int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);

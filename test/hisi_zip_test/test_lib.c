@@ -409,7 +409,8 @@ out_unmap:
 }
 
 int hizip_verify_random_output(struct test_options *opts,
-			       struct hizip_test_info *info)
+			       struct hizip_test_info *info,
+			       size_t out_sz)
 {
 	int ret;
 	int seed = 0;
@@ -425,11 +426,11 @@ int hizip_verify_random_output(struct test_options *opts,
 
 	if (opts->op_type == WD_DIR_DECOMPRESS)
 		/* Check plain output */
-		return hizip_check_rand((void *)info->out_buf, info->total_out,
+		return hizip_check_rand((void *)info->out_buf, out_sz,
 					&rand_ctx);
 
 	do {
-		ret = hizip_check_output(info->out_buf + off, info->total_out,
+		ret = hizip_check_output(info->out_buf + off, out_sz,
 					 &checked, hizip_check_rand, &rand_ctx);
 		if (ret) {
 			WD_ERR("Check output failed with %d\n", ret);
@@ -483,7 +484,7 @@ void *send_thread_func(void *arg)
 		if (opts->option & TEST_ZLIB) {
 			ret = zlib_deflate(info->out_buf, info->out_size,
 					   info->in_buf, info->in_size,
-					   &info->total_out, opts->alg_type);
+					   &tdata->sum, opts->alg_type);
 			continue;
 		}
 		/* not TEST_ZLIB */
@@ -491,6 +492,7 @@ void *send_thread_func(void *arg)
 		tdata->req.op_type = opts->op_type;
 		tdata->req.src = info->in_buf;
 		tdata->req.dst = info->out_buf;
+		tdata->sum = 0;
 		while (left > 0) {
 			tdata->req.src_len = src_block_size;
 			tdata->req.dst_len = dst_block_size;
@@ -521,8 +523,18 @@ void *send_thread_func(void *arg)
 			 * combine output buffer by himself.
 			 */
 			tdata->req.dst += dst_block_size;
-			info->total_out += tdata->req.dst_len;
+			tdata->sum += tdata->req.dst_len;
+			if (tdata->sum > info->out_size) {
+				fprintf(stderr,
+					"%s: exceed OUT limits (%ld > %ld)\n",
+					__func__,
+					tdata->sum, info->out_size);
+				break;
+			}
 		}
+		/* info->total_out are accessed by multiple threads */
+		__atomic_add_fetch(&info->total_out, tdata->sum,
+				   __ATOMIC_RELEASE);
 	}
 	wd_comp_free_sess(h_sess);
 	return NULL;
