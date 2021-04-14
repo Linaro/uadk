@@ -2532,7 +2532,7 @@ int sec_aead_async_func_test(void *data)
 		pdata->send_task_num++;
 		i++;
 #if DEBUG
-		usleep(100);
+		usleep(10);
 		if (pdata->recv_task_num == 1) {
 			SEC_TST_PRT("aead async output!\n");
 			if (pdata->data_fmt == WD_SGL_BUF) {  // use no-sva sgl

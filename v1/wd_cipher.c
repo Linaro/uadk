@@ -325,7 +325,7 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 	}
 
 	if (ctxt->setup.mode == WCRYPTO_CIPHER_XTS)
-		length = key_len / XTS_MODE_KEY_DIVISOR;
+		length = key_len >> XTS_MODE_KEY_SHIFT;
 
 	ret = cipher_key_len_check(ctxt->setup.alg, length);
 	if (ret != WD_SUCCESS) {

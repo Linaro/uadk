@@ -509,6 +509,7 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_comp_msg *msg = smsg;
 	struct wd_queue *q = info->q;
 	__u8 flush_type;
+	__u8 data_fmt;
 	int ret;
 
 	memset(sqe, 0, sizeof(*sqe));
@@ -546,6 +547,10 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 		     (msg->stream_mode << STREAM_MODE_SHIFT) |
 		     (flush_type)) << STREAM_FLUSH_SHIFT |
 		     BD_TYPE3 << BD_TYPE_SHIFT;
+
+	/* data_fmt: 4'b0000 - Pbuffer, 4'b0001 - SGL */
+	data_fmt = (msg->data_fmt == WD_SGL_BUF) ? HISI_SGL_BUF : HISI_FLAT_BUF;
+	sqe->dw9 |= data_fmt << HZ_BUF_TYPE_SHIFT;
 
 	ops[msg->alg_type].fill_sqe_hw_info(sqe, msg);
 	sqe->tag_l = msg->tag;
@@ -677,7 +682,7 @@ static int fill_zip_cipher_alg(struct wcrypto_cipher_msg *msg,
 	if (msg->mode != WCRYPTO_CIPHER_XTS)
 		return -WD_EINVAL;
 
-	len = msg->key_bytes / XTS_MODE_KEY_DIVISOR;
+	len = msg->key_bytes >> XTS_MODE_KEY_SHIFT;
 
 	switch (msg->alg) {
 	case WCRYPTO_CIPHER_SM4:

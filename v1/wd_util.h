@@ -43,11 +43,12 @@
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 #define GET_NEGATIVE(val)	(0 - (val))
-#define XTS_MODE_KEY_DIVISOR	2
+#define XTS_MODE_KEY_SHIFT 	1
 #define AES_KEYSIZE_128		16
 #define AES_KEYSIZE_192		24
 #define AES_KEYSIZE_256		32
 #define CTX_ID_MAX_NUM		64
+#define CTX_ID_MAX_NUM_BYTES	512
 
 /* ECC */
 #define ECDH_IN_PARAM_NUM		2
