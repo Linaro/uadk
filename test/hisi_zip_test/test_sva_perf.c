@@ -290,10 +290,11 @@ static void stat_end(struct hizip_test_info *info)
 					 info->total_out * 100;
 
 	total_len = opts->total_len * opts->compact_run_num;
-	stats->v[ST_SPEED] = (total_len * 1000) /
+	/* ST_RUN_TIME records nanoseconds */
+	stats->v[ST_SPEED] = (total_len * opts->thread_num * 1000) /
 				(1.024 * 1.024 * stats->v[ST_RUN_TIME]);
 
-	stats->v[ST_TOTAL_SPEED] = (total_len * 1000) /
+	stats->v[ST_TOTAL_SPEED] = (total_len * opts->thread_num * 1000) /
 				   ((stats->v[ST_RUN_TIME] +
 				    stats->v[ST_SETUP_TIME]) * 1.024 * 1.024);
 
