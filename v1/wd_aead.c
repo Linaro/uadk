@@ -29,8 +29,6 @@
 #include "wd_aead.h"
 #include "wd_util.h"
 
-#define WCRYPTO_AEAD_CTX_MSG_NUM	1024
-#define WCRYPTO_AEAD_MAX_CTX		256
 #define MAX_AEAD_KEY_SIZE		64
 #define MAX_AEAD_MAC_SIZE		64
 #define MAX_CIPHER_KEY_SIZE		64
@@ -69,9 +67,7 @@ struct wcrypto_aead_cookie {
 };
 
 struct wcrypto_aead_ctx {
-	struct wcrypto_aead_cookie cookies[WCRYPTO_AEAD_CTX_MSG_NUM];
-	__u8 cstatus[WCRYPTO_AEAD_CTX_MSG_NUM];
-	int cidx;
+	struct wd_cookie_pool pool;
 	unsigned long ctx_id;
 	void *ckey;
 	void *akey;
@@ -82,52 +78,6 @@ struct wcrypto_aead_ctx {
 	struct wd_queue *q;
 	struct wcrypto_aead_ctx_setup setup;
 };
-
-static void put_aead_cookies(struct wcrypto_aead_ctx *ctx,
-			     struct wcrypto_aead_cookie **cookies, __u32 num)
-{
-	__u32 i;
-	int idx;
-
-	for (i = 0; i < num; i++) {
-		idx = ((uintptr_t)cookies[i] - (uintptr_t)ctx->cookies) /
-			sizeof(struct wcrypto_aead_cookie);
-		if (idx < 0 || idx >= WCRYPTO_AEAD_CTX_MSG_NUM) {
-			WD_ERR("aead cookie not exist!\n");
-			continue;
-		}
-
-		__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-	}
-}
-
-static int get_aead_cookies(struct wcrypto_aead_ctx *ctx,
-			    struct wcrypto_aead_cookie **cookies, __u32 num)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-	__u32 i;
-
-	for (i = 0; i < num; i++) {
-		while (__atomic_test_and_set(&ctx->cstatus[idx],
-					     __ATOMIC_ACQUIRE)) {
-			idx++;
-			cnt++;
-			if (idx == WCRYPTO_AEAD_CTX_MSG_NUM)
-				idx = 0;
-			if (cnt == WCRYPTO_AEAD_CTX_MSG_NUM)
-				goto fail_with_cookies;
-		}
-
-		cookies[i] = &ctx->cookies[idx];
-	}
-
-	return WD_SUCCESS;
-
-fail_with_cookies:
-	put_aead_cookies(ctx, cookies, i);
-	return -WD_EBUSY;
-}
 
 static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
 {
@@ -209,18 +159,21 @@ static int create_ctx_para_check(struct wd_queue *q,
 static void init_aead_cookie(struct wcrypto_aead_ctx *ctx,
 	struct wcrypto_aead_ctx_setup *setup)
 {
+	struct wcrypto_aead_cookie *cookie;
 	int i;
 
-	for (i = 0; i < WCRYPTO_AEAD_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WCRYPTO_AEAD;
-		ctx->cookies[i].msg.calg = setup->calg;
-		ctx->cookies[i].msg.cmode = setup->cmode;
-		ctx->cookies[i].msg.dalg = setup->dalg;
-		ctx->cookies[i].msg.dmode = setup->dmode;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx->ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+	for (i = 0; i < ctx->pool.cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.alg_type = WCRYPTO_AEAD;
+		cookie->msg.calg = setup->calg;
+		cookie->msg.cmode = setup->cmode;
+		cookie->msg.dalg = setup->dalg;
+		cookie->msg.dmode = setup->dmode;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->tag.wcrypto_tag.ctx = ctx;
+		cookie->tag.wcrypto_tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
 }
 
@@ -230,7 +183,8 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 {
 	struct q_info *qinfo;
 	struct wcrypto_aead_ctx *ctx;
-	int ctx_id;
+	__u32 ctx_id = 0;
+	int ret;
 
 	if (create_ctx_para_check(q, setup))
 		return NULL;
@@ -242,22 +196,20 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 		memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
 
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating aead ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (qinfo->ctx_num >= WCRYPTO_AEAD_MAX_CTX) {
-		wd_unspinlock(&qinfo->qlock);
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("err: create too many aead ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_AEAD_MAX_CTX);
-	if (ctx_id < 0) {
-		wd_unspinlock(&qinfo->qlock);
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("fail to alloc ctx id!\n");
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
@@ -270,7 +222,7 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	memset(ctx, 0, sizeof(struct wcrypto_aead_ctx));
 	memcpy(&ctx->setup, setup, sizeof(ctx->setup));
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
+	ctx->ctx_id = ctx_id + 1;
 	ctx->ckey = setup->br.alloc(setup->br.usr, MAX_CIPHER_KEY_SIZE);
 	if (!ctx->ckey) {
 		WD_ERR("fail to alloc cipher ctx key!\n");
@@ -281,19 +233,26 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	if (!ctx->akey) {
 		WD_ERR("fail to alloc authenticate ctx key!\n");
 		setup->br.free(setup->br.usr, ctx->ckey);
-		free(ctx);
-		goto free_ctx_id;
+		goto free_ctx;
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->cmode);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_aead_cookie), WD_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		goto free_ctx;
+	}
 	init_aead_cookie(ctx, setup);
 
 	return ctx;
-
+free_ctx:
+	free(ctx);
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, ctx_id);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
+unlock:
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
 }
@@ -605,7 +564,7 @@ static int param_check(struct wcrypto_aead_ctx *ctx,
 int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
 		       void **tag, __u32 num)
 {
-	struct wcrypto_aead_cookie *cookies[WCRYPTO_MAX_BURST_NUM];
+	struct wcrypto_aead_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = { NULL };
 	struct wcrypto_aead_msg *req[WCRYPTO_MAX_BURST_NUM];
 	struct wcrypto_aead_ctx *ctxt = ctx;
 	__u32 i;
@@ -614,7 +573,7 @@ int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
 	if (param_check(ctxt, opdata, tag, num))
 		return -WD_EINVAL;
 
-	ret = get_aead_cookies(ctxt, cookies, num);
+	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
 	if (unlikely(ret)) {
 		WD_ERR("failed to get cookies %d!\n", ret);
 		return ret;
@@ -645,7 +604,7 @@ int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
 fail_with_send:
 	aead_requests_uninit(req, ctxt, num);
 fail_with_cookies:
-	put_aead_cookies(ctxt, cookies, num);
+	wd_put_cookies(&ctxt->pool, (void **)cookies, num);
 	return ret;
 }
 
@@ -690,7 +649,7 @@ int wcrypto_aead_poll(struct wd_queue *q, unsigned int num)
 		ctx = tag->wcrypto_tag.ctx;
 		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
 		aead_requests_uninit(&resp, ctx, 1);
-		put_aead_cookies(ctx, (struct wcrypto_aead_cookie **)&tag, 1);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 	} while (--num);
 
 	return count;
@@ -707,9 +666,11 @@ void wcrypto_del_aead_ctx(void *ctx)
 	}
 	ctxt = ctx;
 	qinfo = ctxt->q->qinfo;
+	wd_uninit_cookie_pool(&ctxt->pool);
 	wd_spinlock(&qinfo->qlock);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctxt->ctx_id - 1,
+		WD_MAX_CTX_NUM);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(ctxt->q, ctxt->ctx_id);
 	if (!qinfo->ctx_num)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {

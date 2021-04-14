@@ -30,7 +30,6 @@
 #include "wd_util.h"
 
 #define MAX_NUM		10
-#define WD_RNG_MAX_CTX	256
 #define RNG_RESEND_CNT	8
 #define RNG_RECV_CNT	8
 
@@ -40,51 +39,20 @@ struct wcrypto_rng_cookie {
 };
 
 struct wcrypto_rng_ctx {
-	struct wcrypto_rng_cookie cookies[WD_RNG_CTX_MSG_NUM];
-	__u8 cstatus[WD_RNG_CTX_MSG_NUM];
+	struct wd_cookie_pool pool;
 	unsigned long ctx_id;
-	int cidx;
 	struct wd_queue *q;
 	struct wcrypto_rng_ctx_setup setup;
 };
 
-static struct wcrypto_rng_cookie *get_rng_cookie(struct wcrypto_rng_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_RNG_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WD_RNG_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_rng_cookie(struct wcrypto_rng_ctx *ctx,
-				struct wcrypto_rng_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_rng_cookie);
-
-	if (idx < 0 || idx >= WD_RNG_CTX_MSG_NUM) {
-		WD_ERR("trng cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
-
 void *wcrypto_create_rng_ctx(struct wd_queue *q,
 			struct wcrypto_rng_ctx_setup *setup)
 {
+	struct wcrypto_rng_cookie *cookie;
 	struct wcrypto_rng_ctx *ctx;
 	struct q_info *qinfo;
-	int i, ctx_id;
+	__u32 ctx_id = 0;
+	int i, ret;
 
 	if (!q || !setup) {
 		WD_ERR("input parameter err!\n");
@@ -99,17 +67,16 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 
 	/* lock at ctx creating */
 	wd_spinlock(&qinfo->qlock);
-	if (qinfo->ctx_num >= WD_RNG_MAX_CTX) {
-		wd_unspinlock(&qinfo->qlock);
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("create too many trng ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	ctx_id = wd_alloc_ctx_id(q, WD_RNG_MAX_CTX);
-	if (ctx_id < 0) {
-		wd_unspinlock(&qinfo->qlock);
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
-		return NULL;
+		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
@@ -121,12 +88,22 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	}
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
-	for (i = 0; i < WD_RNG_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WCRYPTO_RNG;
-		ctx->cookies[i].tag.ctx = ctx;
-		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_tag = (uintptr_t)&ctx->cookies[i].tag;
+	ctx->ctx_id = ctx_id + 1;
+
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_rng_cookie), WD_RNG_CTX_MSG_NUM);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		free(ctx);
+		goto free_ctx_id;
+	}
+	for (i = 0; i < ctx->pool.cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.alg_type = WCRYPTO_RNG;
+		cookie->tag.ctx = ctx;
+		cookie->tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_tag = (uintptr_t)&cookie->tag;
 	}
 
 	return ctx;
@@ -134,7 +111,8 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(q, ctx_id);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
+unlock:
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
 }
@@ -152,9 +130,11 @@ void wcrypto_del_rng_ctx(void *ctx)
 	cx = ctx;
 	qinfo = cx->q->qinfo;
 
+	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
 	if (qinfo->ctx_num < 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("repeat delete trng ctx!\n");
@@ -192,7 +172,7 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->usr_tag;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
-		put_rng_cookie(ctx, (struct wcrypto_rng_cookie *)tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
 	} while (--num);
 
@@ -201,8 +181,8 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 
 int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
 {
+	struct wcrypto_rng_cookie *cookie = NULL;
 	struct wcrypto_rng_ctx *ctxt = ctx;
-	struct wcrypto_rng_cookie *cookie;
 	struct wcrypto_rng_msg *resp;
 	struct wcrypto_rng_msg *req;
 	uint32_t tx_cnt = 0;
@@ -214,9 +194,9 @@ int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
 		return -WD_EINVAL;
 	}
 
-	cookie = get_rng_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
+	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
+	if (ret)
+		return ret;
 
 	if (tag) {
 		if (!ctxt->setup.cb) {
@@ -262,6 +242,6 @@ recv_again:
 
 	opdata->out_bytes = resp->out_bytes;
 fail_with_cookie:
-	put_rng_cookie(ctxt, cookie);
+	wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
 	return   ret;
 }
