@@ -470,6 +470,14 @@ void *send_thread_func(void *arg)
 		dst_block_size = opts->block_size;
 	}
 
+	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
+	setup.alg_type = opts->alg_type;
+	setup.mode = opts->sync_mode;
+	setup.op_type = opts->op_type;
+	h_sess = wd_comp_alloc_sess(&setup);
+	if (!h_sess)
+		return NULL;
+
 	for (j = 0; j < opts->compact_run_num; j++) {
 		if (opts->option & TEST_ZLIB) {
 			ret = zlib_deflate(info->out_buf, info->out_size,
@@ -478,15 +486,6 @@ void *send_thread_func(void *arg)
 			continue;
 		}
 		/* not TEST_ZLIB */
-		memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-		setup.alg_type = opts->alg_type;
-		setup.mode = opts->sync_mode;
-		setup.op_type = opts->op_type;
-		h_sess = wd_comp_alloc_sess(&setup);
-		if (!h_sess) {
-			return NULL;
-		}
-
 		left = opts->total_len;
 		info->req.op_type = opts->op_type;
 		info->req.src = info->in_buf;
@@ -523,8 +522,8 @@ void *send_thread_func(void *arg)
 			info->req.dst += dst_block_size;
 			info->total_out += info->req.dst_len;
 		}
-		wd_comp_free_sess(h_sess);
 	}
+	wd_comp_free_sess(h_sess);
 	return NULL;
 }
 
