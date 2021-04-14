@@ -61,7 +61,7 @@ int wd_alloc_ctx_id(struct wd_queue *q, int max_num)
 	int i = 0;
 	int j = 0;
 
-	if (max_num > CTX_ID_MAX_NUM * BYTE_TO_BIT) {
+	if (max_num > CTX_ID_MAX_NUM_BYTES) {
 		WD_ERR("err: alloc ctx id max_num overflow!\n");
 		return -WD_EINVAL;
 	}
@@ -88,7 +88,7 @@ void wd_free_ctx_id(struct wd_queue *q, int ctx_id)
 	struct q_info *qinfo = q->qinfo;
 	int i, j;
 
-	if (ctx_id < 1 || ctx_id > CTX_ID_MAX_NUM * BYTE_TO_BIT) {
+	if (ctx_id < 1 || ctx_id > CTX_ID_MAX_NUM_BYTES) {
 		WD_ERR("err: free ctx id ctx_id %d err!\n", ctx_id);
 		return;
 	}
