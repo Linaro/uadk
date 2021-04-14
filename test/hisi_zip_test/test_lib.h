@@ -93,7 +93,6 @@ struct hizip_test_info {
 	struct uacce_dev_list *list;
 	handle_t h_sess;
 	struct wd_ctx_config ctx_conf;
-	struct wd_comp_req req;
 	pthread_t *send_tds;
 	int send_tnum;
 	pthread_t *poll_tds;
@@ -111,6 +110,11 @@ struct hizip_test_info {
 		struct rusage end_rusage;
 	} tv;
 };
+
+typedef struct _thread_data_t {
+	struct hizip_test_info *info;
+	struct wd_comp_req req;
+} thread_data_t;
 
 void *send_thread_func(void *arg);
 void *poll_thread_func(void *arg);

@@ -454,7 +454,8 @@ static void *async_cb(struct wd_comp_req *req, void *data)
 
 void *send_thread_func(void *arg)
 {
-	struct hizip_test_info *info = (struct hizip_test_info *)arg;
+	thread_data_t *tdata = (thread_data_t *)arg;
+	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	size_t src_block_size, dst_block_size;
 	struct wd_comp_sess_setup setup;
@@ -487,40 +488,40 @@ void *send_thread_func(void *arg)
 		}
 		/* not TEST_ZLIB */
 		left = opts->total_len;
-		info->req.op_type = opts->op_type;
-		info->req.src = info->in_buf;
-		info->req.dst = info->out_buf;
+		tdata->req.op_type = opts->op_type;
+		tdata->req.src = info->in_buf;
+		tdata->req.dst = info->out_buf;
 		while (left > 0) {
-			info->req.src_len = src_block_size;
-			info->req.dst_len = dst_block_size;
-			info->req.cb_param = &info->req;
+			tdata->req.src_len = src_block_size;
+			tdata->req.dst_len = dst_block_size;
+			tdata->req.cb_param = &tdata->req;
 			if (opts->sync_mode) {
-				info->req.cb = async_cb;
+				tdata->req.cb = async_cb;
 				count++;
-				ret = wd_do_comp_async(h_sess, &info->req);
+				ret = wd_do_comp_async(h_sess, &tdata->req);
 			} else {
-				info->req.cb = NULL;
-				ret = wd_do_comp_sync(h_sess, &info->req);
+				tdata->req.cb = NULL;
+				ret = wd_do_comp_sync(h_sess, &tdata->req);
 				if (info->opts->faults & INJECT_SIG_WORK)
 					kill(getpid(), SIGTERM);
 			}
 			if (ret < 0) {
 				WD_ERR("do comp test fail with %d\n", ret);
 				return (void *)(uintptr_t)ret;
-			} else if (info->req.status) {
-				return (void *)(uintptr_t)info->req.status;
+			} else if (tdata->req.status) {
+				return (void *)(uintptr_t)tdata->req.status;
 			}
 			if (opts->op_type == WD_DIR_COMPRESS)
 				left -= src_block_size;
 			else
 				left -= dst_block_size;
-			info->req.src += src_block_size;
+			tdata->req.src += src_block_size;
 			/*
 			 * It's BLOCK (STATELESS) mode, so user needs to
 			 * combine output buffer by himself.
 			 */
-			info->req.dst += dst_block_size;
-			info->total_out += info->req.dst_len;
+			tdata->req.dst += dst_block_size;
+			info->total_out += tdata->req.dst_len;
 		}
 	}
 	wd_comp_free_sess(h_sess);
@@ -580,27 +581,37 @@ int create_send_threads(struct test_options *opts,
 			void *(*send_thread_func)(void *arg))
 {
 	pthread_attr_t attr;
-	int i, num, ret;
+	thread_data_t *tdatas;
+	int i, j, num, ret;
 
 	num = opts->thread_num;
 	info->send_tds = calloc(1, sizeof(pthread_t) * num);
 	if (!info->send_tds)
 		return -ENOMEM;
 	info->send_tnum = num;
+	tdatas = calloc(1, sizeof(thread_data_t) * num);
+	if (!tdatas) {
+		ret = -ENOMEM;
+		goto out;
+	}
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	for (i = 0; i < num; i++) {
+		tdatas[i].info = info;
 		ret = pthread_create(&info->send_tds[i], &attr,
-				     send_thread_func, info);
+				     send_thread_func, &tdatas[i]);
 		if (ret < 0) {
 			fprintf(stderr, "Fail to create send thread %d (%d)\n",
 				i, ret);
-			goto out;
+			goto out_thd;
 		}
 	}
 	pthread_attr_destroy(&attr);
 	g_conf = &info->ctx_conf;
 	return 0;
+out_thd:
+	for (j = 0; j < i; j++)
+		pthread_cancel(info->send_tds[j]);
 out:
 	free(info->send_tds);
 	return ret;
