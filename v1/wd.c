@@ -570,6 +570,11 @@ void wd_release_queue(struct wd_queue *q)
 	if (sqinfo != qinfo) /* q_share */
 		__atomic_sub_fetch(&sqinfo->ref, 1, __ATOMIC_RELAXED);
 
+	if (ioctl(qinfo->fd, WD_UACCE_CMD_PUT_Q))
+		WD_ERR("failed to put queue!\n");
+
+	drv_close(q);
+
 	/* q_reserve */
 	if (qinfo->ss_size)
 		drv_unmap_reserve_mem(q, qinfo->ss_va, qinfo->ss_size);
@@ -581,10 +586,6 @@ void wd_release_queue(struct wd_queue *q)
 		TAILQ_REMOVE(&qinfo->ss_list, rg, next);
 		free(rg);
 	}
-
-	drv_close(q);
-	if (ioctl(qinfo->fd, WD_UACCE_CMD_PUT_Q))
-		WD_ERR("failed to put queue!\n");
 
 	wd_close_queue(q);
 	free((void *)qinfo->dev_info);
