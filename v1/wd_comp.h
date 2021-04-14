@@ -128,6 +128,21 @@ struct wcrypto_comp_ctx_setup {
 };
 
 /**
+ * operational out data when use zstd_lz77 in sgl format
+ * @literal:literals address when use zstd in sgl format
+ * @lit_len:avail literals size for hw when use zstd in sgl format,
+ *	    and avail literals is always <= (src_len + ZSTD_LIT_RSV_SIZE);
+ * @sequence:sequence address when use zstd in sgl format
+ * @seq_len:avail literals size for hw when use zstd in sgl format
+ */
+struct wcrypto_zstd_out {
+	void *literal;
+	__u32 lit_sz;
+	void *sequence;
+	__u32 seq_sz;
+};
+
+/**
  * operational data per I/O operation
  * @alg_type:compressing algorithm type zlib/gzip
  * @flush:input and output, denotes flush type or data status
