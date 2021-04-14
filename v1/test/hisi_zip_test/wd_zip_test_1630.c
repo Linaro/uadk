@@ -22,6 +22,7 @@
 #include <sys/time.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #include "v1/drv/hisi_qm_udrv.h"
 #include "v1/wd.h"
@@ -43,6 +44,7 @@ struct zip_test_pthread_dt {
 	int thread_num;
 	int alg_type;
 	int op_type;
+	int data_fmt;
 	int iteration;
 	void *src;
 	void *dst;
@@ -65,6 +67,19 @@ struct seq_def {
 	__u32 offset;
 	__u16 litlen;
 	__u16 matlen;
+};
+
+
+struct zip_test_config {
+	int window_sz;
+	int block_sz;
+	int thread_num;
+	int cylcls;
+
+	char alg_mode[10];	/* zlib/gzip/deflate/lz77 */
+	char op[10];		/* deflate/inflate */
+	char mode[10];		/* block/stream/async */
+	char data_fmt[10];	/* pbuffer/sgl */
 };
 
 #define HZIP_ZLIB_HEAD_SIZE		2
@@ -128,9 +143,11 @@ static void zip_test_callback(const void *msg, void *tag)
 		memcpy(pdata->dst, head, head_size);
 		pdata->dst_len += head_size;
 	}
-	memcpy(pdata->dst + head_size,
-	       pdata->opdata->out,
-	       respmsg->produced);
+	if (pdata->data_fmt == WD_FLAT_BUF)
+		memcpy(pdata->dst + head_size, pdata->opdata->out, respmsg->produced);
+	else
+		wd_sgl_cp_to_pbuf((struct wd_sgl *)pdata->opdata->out, 0,
+				pdata->dst + head_size, respmsg->produced);
 
 	dbg("%s succeed!\n", __func__);
 }
@@ -183,9 +200,16 @@ static void *zip_test_async_thread(void *args)
 	utag->op_type = pdata->op_type;
 	utag->tag = pdata->thread_id;
 
-	memcpy(pdata->opdata->in, pdata->src, pdata->src_len);
+	if (pdata->data_fmt == WD_FLAT_BUF) {
+		memcpy(pdata->opdata->in, pdata->src, pdata->src_len);
+		pdata->opdata->avail_out = block_size;
+	} else {
+		wd_sgl_cp_from_pbuf((struct wd_sgl *)pdata->opdata->in, 0,
+					pdata->src, pdata->src_len);
+		pdata->opdata->avail_out = pdata->dst_len;
+	}
+
 	pdata->opdata->in_len = pdata->src_len;
-	pdata->opdata->avail_out = block_size;
 
 	do {
 		ret = wcrypto_do_comp(pdata->ctx, pdata->opdata, utag);
@@ -275,9 +299,16 @@ static void *zip_test_block_thread(void *args)
 
 	dbg("%s start!\n", __func__);
 
-	memcpy(pdata->opdata->in, pdata->src, pdata->src_len);
+	if (pdata->data_fmt == WD_FLAT_BUF) {
+		memcpy(pdata->opdata->in, pdata->src, pdata->src_len);
+		pdata->opdata->avail_out = block_size;
+	} else {
+		wd_sgl_cp_from_pbuf((struct wd_sgl *)pdata->opdata->in, 0,
+				pdata->src, pdata->src_len);
+		pdata->opdata->avail_out = pdata->dst_len;
+	}
+
 	pdata->opdata->in_len = pdata->src_len;
-	pdata->opdata->avail_out = block_size;
 
 	do {
 		ret = wcrypto_do_comp(pdata->ctx, pdata->opdata, NULL);
@@ -294,9 +325,11 @@ static void *zip_test_block_thread(void *args)
 			memcpy(pdata->dst, head, head_size);
 			pdata->dst_len += head_size;
 		}
-		memcpy(pdata->dst + head_size,
-		       pdata->opdata->out,
-		       pdata->opdata->produced);
+		if (pdata->data_fmt == WD_FLAT_BUF)
+			memcpy(pdata->dst + head_size, pdata->opdata->out, pdata->opdata->produced);
+		else
+			wd_sgl_cp_to_pbuf((struct wd_sgl *)pdata->opdata->out, 0,
+					pdata->dst + head_size, pdata->opdata->produced);
 
 	} while (--i);
 
@@ -367,40 +400,68 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 {
 	struct wcrypto_comp_ctx_setup ctx_setup = { 0 };
 	struct wd_blkpool_setup blk_setup = { 0 };
-	struct zip_test_pthread_dt *pdata;
-	int i, j, ret;
+	struct wd_sglpool_setup sp = { 0 };
+	struct zip_test_pthread_dt *pdata = &test_thrds_data[0];
+	int i, j, ret, data_fmt;
 
 	dbg("%s start!\n", __func__);
 
-	block_size = MAX(block_size, DMEMSIZE);
-	blk_setup.block_size = block_size;
-	blk_setup.block_num = 3;
-	blk_setup.align_size = 128;
+	data_fmt = pdata->data_fmt;
 
-	ctx_setup.br.alloc = (void *)wd_alloc_blk;
-	ctx_setup.br.free = (void *)wd_free_blk;
-	ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
-	ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
-	ctx_setup.br.get_bufsize = (void *)wd_blksize;
 	ctx_setup.alg_type = alg_type;
 	ctx_setup.op_type = op_type;
 	ctx_setup.stream_mode = (mode == MODE_STREAM) ?
-				 WCRYPTO_COMP_STATEFUL :
-				 WCRYPTO_COMP_STATELESS;
+				WCRYPTO_COMP_STATEFUL :
+				WCRYPTO_COMP_STATELESS;
 	ctx_setup.cb = (mode == MODE_ASYNC) ? zip_test_callback : NULL;
 	ctx_setup.win_size = window_size;
 
+	if (data_fmt == WD_SGL_BUF) {
+		ctx_setup.data_fmt = WD_SGL_BUF;
+
+		sp.buf_size = MAX(pdata->src_len / 10, 2048);
+		sp.align_size = 64;
+		sp.sge_num_in_sgl = 40;
+		sp.buf_num_in_sgl = sp.sge_num_in_sgl - 1;
+		sp.sgl_num = 4;
+		sp.buf_num = sp.buf_num_in_sgl * sp.sgl_num + sp.sgl_num + 2;
+
+		ctx_setup.br.alloc = (void *)wd_alloc_sgl;
+		ctx_setup.br.free = (void *)wd_free_sgl;
+		ctx_setup.br.iova_map = (void *)wd_sgl_iova_map;
+		ctx_setup.br.iova_unmap = (void *)wd_sgl_iova_unmap;
+	} else {
+		ctx_setup.data_fmt = WD_FLAT_BUF;
+
+		block_size = MAX(block_size, DMEMSIZE);
+		blk_setup.block_size = block_size;
+	blk_setup.block_num = 3;
+		blk_setup.align_size = 128;
+
+		ctx_setup.br.alloc = (void *)wd_alloc_blk;
+		ctx_setup.br.free = (void *)wd_free_blk;
+		ctx_setup.br.iova_map = (void *)wd_blk_iova_map;
+		ctx_setup.br.iova_unmap = (void *)wd_blk_iova_unmap;
+		ctx_setup.br.get_bufsize = (void *)wd_blksize;
+	}
+
 	for (i = 0; i < thread_num; i++) {
 		pdata = &test_thrds_data[i];
+		ctx_setup.data_fmt = pdata->data_fmt;
 
-		pdata->pool = wd_blkpool_create(&q[i], &blk_setup);
+		if (pdata->data_fmt == WD_SGL_BUF)  // sgl
+			pdata->pool = wd_sglpool_create(q, &sp);
+		else  // pbuf
+			pdata->pool = wd_blkpool_create(&q[i], &blk_setup);
+
 		if (!pdata->pool) {
 			ret = -ENOMEM;
-			WD_ERR("%s create %dth pool fail!\n", __func__, i);
+			WD_ERR("%s - data_fmt = %d, create %dth pool fail!\n", __func__, data_fmt, i);
 			goto err_pool_destory;
 		}
 
 		ctx_setup.br.usr = pdata->pool;
+		ctx_setup.data_fmt = pdata->data_fmt;
 		pdata->ctx = wcrypto_create_comp_ctx(&q[i], &ctx_setup);
 		if (!pdata->ctx)  {
 			ret = -ENOMEM;
@@ -416,10 +477,15 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 		}
 
 		pdata->opdata->alg_type = alg_type;
-		pdata->opdata->avail_out = block_size;
+		pdata->opdata->avail_out = (pdata->data_fmt == WD_SGL_BUF) ? pdata->dst_len : block_size;
 		pdata->opdata->stream_pos = WCRYPTO_COMP_STREAM_NEW;
-		pdata->opdata->in = wd_alloc_blk(pdata->pool);
-		pdata->opdata->out = wd_alloc_blk(pdata->pool);
+		if (pdata->data_fmt == WD_SGL_BUF) {  // sgl
+			pdata->opdata->in = (void *)wd_alloc_sgl(pdata->pool, test_thrds_data[i].src_len);
+			pdata->opdata->out = (void *)wd_alloc_sgl(pdata->pool, test_thrds_data[i].dst_len);
+		} else {
+			pdata->opdata->in = wd_alloc_blk(pdata->pool);
+			pdata->opdata->out = wd_alloc_blk(pdata->pool);
+		}
 		if (pdata->opdata->in == NULL || pdata->opdata->out == NULL) {
 			ret = -ENOMEM;
 			WD_ERR("%s not enough data memory for cache (bs=%d)\n",
@@ -441,10 +507,17 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 	return 0;
 
 err_format_free:
-	wd_free_blk(test_thrds_data[i].pool,
-		    test_thrds_data[i].opdata->in);
-	wd_free_blk(test_thrds_data[i].pool,
-		    test_thrds_data[i].opdata->out);
+	if (pdata->data_fmt == WD_SGL_BUF) {
+		wd_free_sgl(test_thrds_data[i].pool,
+			(struct wd_sgl *)test_thrds_data[i].opdata->in);
+		wd_free_sgl(test_thrds_data[i].pool,
+			(struct wd_sgl *)test_thrds_data[i].opdata->out);
+	} else {
+		wd_free_blk(test_thrds_data[i].pool,
+			test_thrds_data[i].opdata->in);
+		wd_free_blk(test_thrds_data[i].pool,
+			test_thrds_data[i].opdata->out);
+	}
 
 err_buffer_free:
 	free(test_thrds_data[i].opdata);
@@ -453,17 +526,32 @@ err_opdata_free:
 	wcrypto_del_comp_ctx(test_thrds_data[i].ctx);
 
 err_ctx_delete:
-	wd_blkpool_destroy(test_thrds_data[i].pool);
+	if (pdata->data_fmt == WD_SGL_BUF)
+		wd_sglpool_destroy(test_thrds_data[i].pool);
+	else
+		wd_blkpool_destroy(test_thrds_data[i].pool);
 
 err_pool_destory:
-	for (j = 0; j < i; j++) {
-		wd_free_blk(test_thrds_data[j].pool,
-			    test_thrds_data[j].opdata->in);
-		wd_free_blk(test_thrds_data[j].pool,
-			    test_thrds_data[j].opdata->out);
-		wcrypto_del_comp_ctx(test_thrds_data[j].ctx);
-		wd_blkpool_destroy(test_thrds_data[j].pool);
-		free(test_thrds_data[j].opdata);
+	if (pdata->data_fmt == WD_SGL_BUF) {
+		for (j = 0; j < i; j++) {
+			wd_free_sgl(test_thrds_data[j].pool,
+				(struct wd_sgl *)test_thrds_data[j].opdata->in);
+			wd_free_sgl(test_thrds_data[j].pool,
+				(struct wd_sgl *)test_thrds_data[j].opdata->out);
+			wcrypto_del_comp_ctx(test_thrds_data[j].ctx);
+			wd_sglpool_destroy(test_thrds_data[j].pool);
+			free(test_thrds_data[j].opdata);
+		}
+	} else {
+		for (j = 0; j < i; j++) {
+			wd_free_blk(test_thrds_data[j].pool,
+				test_thrds_data[j].opdata->in);
+			wd_free_blk(test_thrds_data[j].pool,
+				test_thrds_data[j].opdata->out);
+			wcrypto_del_comp_ctx(test_thrds_data[j].ctx);
+			wd_blkpool_destroy(test_thrds_data[j].pool);
+			free(test_thrds_data[j].opdata);
+		}
 	}
 
 	return ret;
@@ -496,16 +584,30 @@ static void zip_test_exit(void)
 {
 	int i;
 
-	for (i = 0; i < thread_num; i++) {
-		wd_free_blk(test_thrds_data[i].pool,
-			    test_thrds_data[i].opdata->in);
-		wd_free_blk(test_thrds_data[i].pool,
-			    test_thrds_data[i].opdata->out);
-		if (test_thrds_data[i].alg_type == WCRYPTO_LZ77_ZSTD)
-			free(test_thrds_data[i].opdata->priv);
-		wcrypto_del_comp_ctx(test_thrds_data[i].ctx);
-		wd_blkpool_destroy(test_thrds_data[i].pool);
-		free(test_thrds_data[i].opdata);
+	if (test_thrds_data[0].data_fmt == WD_SGL_BUF) {
+		for (i = 0; i < thread_num; i++) {
+			wd_free_sgl(test_thrds_data[i].pool,
+				(struct wd_sgl *)test_thrds_data[i].opdata->in);
+			wd_free_sgl(test_thrds_data[i].pool,
+				(struct wd_sgl *)test_thrds_data[i].opdata->out);
+			if (test_thrds_data[i].alg_type == WCRYPTO_LZ77_ZSTD)
+				free(test_thrds_data[i].opdata->priv);
+			wcrypto_del_comp_ctx(test_thrds_data[i].ctx);
+			wd_sglpool_destroy(test_thrds_data[i].pool);
+			free(test_thrds_data[i].opdata);
+		}
+	} else {
+		for (i = 0; i < thread_num; i++) {
+			wd_free_blk(test_thrds_data[i].pool,
+				test_thrds_data[i].opdata->in);
+			wd_free_blk(test_thrds_data[i].pool,
+				test_thrds_data[i].opdata->out);
+			if (test_thrds_data[i].alg_type == WCRYPTO_LZ77_ZSTD)
+				free(test_thrds_data[i].opdata->priv);
+			wcrypto_del_comp_ctx(test_thrds_data[i].ctx);
+			wd_blkpool_destroy(test_thrds_data[i].pool);
+			free(test_thrds_data[i].opdata);
+		}
 	}
 
 	zip_test_release_q(q_num);
@@ -577,7 +679,7 @@ static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format)
 }
 
 static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
-			     int op_type, int window_size, int iteration)
+			     int op_type, int window_size, int data_fmt, int iteration)
 {
 	struct timeval start_tval, end_tval;
 	struct zip_test_pthread_dt *pdata;
@@ -614,10 +716,11 @@ static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
 		pdata->thread_num = thread_num;
 		pdata->alg_type = alg_type;
 		pdata->op_type = op_type;
+		pdata->data_fmt = data_fmt;
 		pdata->iteration = iteration;
 		pdata->src = file_buf;
 		pdata->src_len = in_len - head_size;
-		pdata->dst_len = pdata->src_len * 10;
+		pdata->dst_len = pdata->src_len * 4;
 		pdata->src = calloc(1, pdata->src_len);
 		if (pdata->src == NULL)
 			goto buf_free;
@@ -741,70 +844,186 @@ buf_free:
 	return -ENOMEM;
 }
 
-int main(int argc, char *argv[])
+static void print_help(void)
 {
-	int window_size = WCRYPTO_COMP_WS_8K;
-	int op_type = WCRYPTO_DEFLATE;
-	int alg_type = WCRYPTO_GZIP;
-	int mode = MODE_BLOCK;
-	int iteration = 1;
-	int show_help = 0;
-	int opt;
+	fprintf(stderr, "UPDATE:2021-02-01\n");
+	fprintf(stderr, "NAME\n");
+	fprintf(stderr, "    wd_zip_test_1630: test wd zip function on Kunpeng930, etc\n");
+	fprintf(stderr, "USAGE\n");
+	fprintf(stderr, "    wd_zip_test_1630 [--alg_mode=] [--op=] [--mode=] [--data_fmt=] [--cylcls=]\n");
+	fprintf(stderr, "    wd_zip_test_1630  [--window_sz=] [--block_sz=] [--thread_num=] [--help] \n");
 
-	while ((opt = getopt(argc, argv, "zgflw:dasb:t:i:h")) != -1) {
-		switch (opt) {
-		case 'z':
-			alg_type = WCRYPTO_ZLIB;
+	fprintf(stderr, "\nDESCRIPTION\n");
+	fprintf(stderr, "	[--alg_mode=]:\n");
+	fprintf(stderr, "		zlib/gzip/deflate/lz77\n");
+
+	fprintf(stderr, " 	[--op]: inflate/deflate\n");
+	fprintf(stderr, " 	[--mode=]: block/stream/async\n");
+
+	fprintf(stderr, "	[--data_fmt=]: pbuffer/sgl\n");
+
+	fprintf(stderr, "	[--window_sz=]: window size\n");
+
+	fprintf(stderr, "	[--block_sz=]: block size\n");
+
+	fprintf(stderr, "	[--cycles=]: test cycle set (times)\n");
+
+	fprintf(stderr, "	[--help]  = usage\n");
+}
+
+
+static int parse_cmd_line(int argc, char *argv[], struct zip_test_config *g_config)
+{
+	int option_index = 0;
+	int optind_t;
+	int ret = 0;
+	int c;
+
+	static struct option long_options[] = {
+		{"window_sz",	required_argument, 0,  0 },
+		{"block_sz",	required_argument, 0,  0 },
+		{"thread_num",	required_argument, 0,  0 },
+		{"cylcls",	required_argument, 0,  0 },
+		{"alg_mode",	required_argument, 0, 0},
+		{"op",		required_argument, 0,  0 },
+		{"mode",	required_argument, 0,  0 },
+		{"data_fmt",	required_argument, 0,  0 },
+		{"help",	no_argument, 0,	'h' },
+		{0,	0,			0,  0 }
+        };
+
+
+	while (1) {
+        	optind_t = optind ? optind: 1;
+
+        	c = getopt_long(argc, argv, "t:c:", long_options, &option_index);
+        	if (c == -1) {
+			if (optind_t < argc) {
+				print_help();
+				ret = -1;
+			}
+        		break;
+		}
+		switch (c) {
+		case 0:
+			if (!strncmp(long_options[option_index].name, "window_sz", 9)) {
+				g_config->window_sz = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "block_sz", 8)) {
+				g_config->block_sz = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "thread_num", 9)) {
+				g_config->thread_num = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "cylcls", 6)) {
+				g_config->cylcls = strtoul((char *)optarg, NULL, 10);
+			} else if (!strncmp(long_options[option_index].name, "alg_mode", 8)) {
+				snprintf(g_config->alg_mode, sizeof(g_config->alg_mode), "%s", optarg);
+			} else if (!strncmp(long_options[option_index].name, "op", 2)) {
+				snprintf(g_config->op, sizeof(g_config->op), "%s", optarg);
+			} else if (!strncmp(long_options[option_index].name, "mode", 4)) {
+				snprintf(g_config->mode, sizeof(g_config->mode), "%s", optarg);
+			} else if (!strncmp(long_options[option_index].name, "data_fmt", 8)) {
+				snprintf(g_config->data_fmt, sizeof(g_config->data_fmt), "%s", optarg);
+			}
 			break;
-		case 'g':
-			alg_type = WCRYPTO_GZIP;
+		case '?':
+		case 'h':
+			print_help();
+			ret = -1;
 			break;
-		case 'f':
-			alg_type = WCRYPTO_RAW_DEFLATE;
-			break;
-		case 'l':
-			alg_type = WCRYPTO_LZ77_ZSTD;
-			break;
-		case 'w':
-			window_size = atoi(optarg);
-			break;
-		case 'd':
-			op_type = WCRYPTO_INFLATE;
-			break;
-		case 'a':
-			mode = MODE_ASYNC;
-			break;
-		case 's':
-			mode = MODE_STREAM;
-			break;
-		case 'b':
-			block_size = atoi(optarg);
-			break;
-		case 't':
-			thread_num = atoi(optarg);
-			if (thread_num > TEST_MAX_THRD)
-				SYS_ERR_COND(1, "thread_num > 2048!\n");
-			else if (!thread_num)
-				SYS_ERR_COND(1, "thread_num can't be 0!\n");
-			break;
-		case 'i':
-			iteration = atoi(optarg);
-			if (iteration <= 0)
-				show_help = 1;
-			break;
+
 		default:
-			show_help = 1;
+			printf("?? getopt returned character code 0%o ??\n", c);
 			break;
 		}
 	}
 
-	SYS_ERR_COND(show_help || optind > argc,
-		     "version 3.00:wd_test_zip -[g|z|f|l algorithm] "
-		     "[-w window size] [-d decompress] [-b block size] "
-		     "-[a|s mode] [-t thread num] [-i iteration] < in > out\n");
+	return ret;
+}
 
-	hizip_thread_test(stdin, stdout, alg_type, mode, op_type, window_size,
-			  iteration);
+int main(int argc, char *argv[])
+{
+	int op_type = WCRYPTO_DEFLATE;
+	int alg_type = WCRYPTO_GZIP;
+	int mode = MODE_BLOCK;
+	/* data_fmt: 0 - pbuffer, 1 - sgl. */
+	bool data_fmt = 0;
+	int ret = 0;
+
+	struct zip_test_config g_config = {
+		.window_sz = WCRYPTO_COMP_WS_8K,
+		.block_sz = 1048576, // 1024 * 1024,
+		.thread_num = 1,
+		.cylcls = 1,
+
+		.alg_mode = "gzip",
+		.op = "deflate",
+		.mode = "block",
+		.data_fmt = "pbuffer",
+	};
+
+	ret = parse_cmd_line(argc, argv, &g_config);
+	if (ret)
+		return -1;
+
+	if (!strcmp(g_config.alg_mode, "zlib"))
+		alg_type = WCRYPTO_ZLIB;
+	else if (!strcmp(g_config.alg_mode, "gzip"))
+		alg_type = WCRYPTO_GZIP;
+	else if (!strcmp(g_config.alg_mode, "deflate"))
+		alg_type = WCRYPTO_RAW_DEFLATE;
+	else if (!strcmp(g_config.alg_mode, "lz77"))
+		alg_type = WCRYPTO_LZ77_ZSTD;
+	else {
+		fprintf(stderr, "alg_type error, set alg_type = 'gzip'!\n");
+		alg_type = WCRYPTO_GZIP;
+	}
+
+	if (!strcmp(g_config.op, "inflate")) {
+		op_type = WCRYPTO_INFLATE;
+		fprintf(stderr,"inflate option!\n");
+	} else {
+		op_type = WCRYPTO_DEFLATE;
+		fprintf(stderr, "deflate option!\n");
+	}
+
+	if (!strcmp(g_config.mode, "stream")) {
+		mode = MODE_STREAM;
+		fprintf(stderr, "use stream mode!\n");
+	} else if (!strcmp(g_config.mode, "async")) {
+		mode = MODE_ASYNC;
+		fprintf(stderr, "use async mode!\n");
+	} else if (!strcmp(g_config.mode, "block")) {
+		mode = MODE_BLOCK;
+		fprintf(stderr, "use block mode!\n");
+	} else {
+		mode = MODE_BLOCK;
+		fprintf(stderr, "set mode error, use block mode!\n");
+	}
+
+	if (!strcmp(g_config.data_fmt, "sgl")) {
+		data_fmt = WD_SGL_BUF;
+		fprintf(stderr, "use memmory of sgl!\n");
+	} else {
+		data_fmt = WD_FLAT_BUF;
+		fprintf(stderr, "use memmory of pbuffer!\n");
+	}
+
+	if (g_config.thread_num > TEST_MAX_THRD) {
+		fprintf(stderr, "thread_num > 2048, set thread_num = 1!\n");
+		g_config.thread_num = 1;
+	} else if (!thread_num) {
+		fprintf(stderr, "thread_num can't be 0, set thread_num = 1!\n");
+		g_config.thread_num = 1;
+	}
+
+	if (g_config.cylcls <= 0) {
+		fprintf(stderr, "cylcls should >= 1, set cylcls = 1!\n");
+		g_config.cylcls = 1;
+	}
+
+	thread_num = g_config.thread_num;
+
+	hizip_thread_test(stdin, stdout, alg_type, mode, op_type, g_config.window_sz,
+			  data_fmt, g_config.cylcls);
 
 	return EXIT_SUCCESS;
 }
