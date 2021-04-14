@@ -622,7 +622,7 @@ int wd_sgl_cp_to_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t size
 
 	if (unlikely(!sgl || !pbuf || !sgl->pool || !size || !sgl->buf_num ||
 	    !sgl->pool->setup.buf_size)) {
-		WD_ERR("sgl is null, or sgl is not a legal sgl!\n");
+		WD_ERR("sgl or size is null, or sgl is not a legal sgl!\n");
 		return -WD_EINVAL;
 	}
 
@@ -702,7 +702,7 @@ int wd_sgl_cp_from_pbuf(struct wd_sgl *sgl, size_t offset, void *pbuf, size_t si
 
 	if (unlikely(!sgl || !pbuf || !sgl->pool || !size || !sgl->buf_num ||
 	    !sgl->pool->setup.buf_size)) {
-		WD_ERR("sgl is null, or sgl is not a legal sgl!\n");
+		WD_ERR("sgl or size is null, or sgl is not a legal sgl!\n");
 		return -WD_EINVAL;
 	}
 

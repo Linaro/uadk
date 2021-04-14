@@ -131,6 +131,7 @@ static void zip_test_callback(const void *msg, void *tag)
 	int i = utag->tag;
 	struct zip_test_pthread_dt *pdata = &test_thrds_data[i];
 	const u8 *head = TO_HEAD(pdata->alg_type);
+	struct wcrypto_zstd_out *zstd_out;
 	int head_size = 0;
 
 
@@ -143,11 +144,19 @@ static void zip_test_callback(const void *msg, void *tag)
 		memcpy(pdata->dst, head, head_size);
 		pdata->dst_len += head_size;
 	}
-	if (pdata->data_fmt == WD_FLAT_BUF)
+	if (pdata->data_fmt == WD_FLAT_BUF) {
 		memcpy(pdata->dst + head_size, pdata->opdata->out, respmsg->produced);
-	else
-		wd_sgl_cp_to_pbuf((struct wd_sgl *)pdata->opdata->out, 0,
+	} else {
+		if (pdata->alg_type == WCRYPTO_LZ77_ZSTD) {
+			zstd_out = (void *)pdata->opdata->out;
+
+			wd_sgl_cp_to_pbuf((struct wd_sgl *)zstd_out->sequence, 0,
 				pdata->dst + head_size, respmsg->produced);
+		} else {
+			wd_sgl_cp_to_pbuf((struct wd_sgl *)pdata->opdata->out, 0,
+				pdata->dst + head_size, respmsg->produced);
+		}
+	}
 
 	dbg("%s succeed!\n", __func__);
 }
@@ -293,6 +302,7 @@ static void *zip_test_block_thread(void *args)
 	struct zip_test_pthread_dt *pdata = args;
 	int alg_type = pdata->alg_type;
 	const u8 *head = TO_HEAD(alg_type);
+	struct wcrypto_zstd_out *zstd_out;
 	int i = pdata->iteration;
 	int head_size = 0;
 	int ret;
@@ -325,11 +335,20 @@ static void *zip_test_block_thread(void *args)
 			memcpy(pdata->dst, head, head_size);
 			pdata->dst_len += head_size;
 		}
-		if (pdata->data_fmt == WD_FLAT_BUF)
+		if (pdata->data_fmt == WD_FLAT_BUF) {
 			memcpy(pdata->dst + head_size, pdata->opdata->out, pdata->opdata->produced);
-		else
-			wd_sgl_cp_to_pbuf((struct wd_sgl *)pdata->opdata->out, 0,
+		} else {
+			if (pdata->alg_type == WCRYPTO_LZ77_ZSTD) {
+				zstd_out = (void *)pdata->opdata->out;
+
+				wd_sgl_cp_to_pbuf((struct wd_sgl *)zstd_out->sequence, 0,
 					pdata->dst + head_size, pdata->opdata->produced);
+			} else {
+				wd_sgl_cp_to_pbuf((struct wd_sgl *)pdata->opdata->out, 0,
+					pdata->dst + head_size, pdata->opdata->produced);
+			}
+
+		}
 
 	} while (--i);
 
@@ -395,6 +414,10 @@ static int zip_test_request_q(int alg_type, int op_type)
 	return ret;
 }
 
+#define SGL_BUF_SZ_MIN	2048
+#define SGL_ALIGN_SZ	64
+#define SGE_NUM_IN_SGL	40
+#define SGL_NUM 	6
 static int zip_test_create_ctx(int alg_type, int window_size,
 			       int op_type,  int mode)
 {
@@ -402,6 +425,7 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 	struct wd_blkpool_setup blk_setup = { 0 };
 	struct wd_sglpool_setup sp = { 0 };
 	struct zip_test_pthread_dt *pdata = &test_thrds_data[0];
+	struct wcrypto_zstd_out zstd_out = { 0 };
 	int i, j, ret, data_fmt;
 
 	dbg("%s start!\n", __func__);
@@ -419,11 +443,11 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 	if (data_fmt == WD_SGL_BUF) {
 		ctx_setup.data_fmt = WD_SGL_BUF;
 
-		sp.buf_size = MAX(pdata->src_len / 6, 2048);
-		sp.align_size = 64;
-		sp.sge_num_in_sgl = 40;
+		sp.buf_size = MAX(pdata->src_len / 6, SGL_BUF_SZ_MIN);
+		sp.align_size = SGL_ALIGN_SZ;
+		sp.sge_num_in_sgl = SGE_NUM_IN_SGL;
 		sp.buf_num_in_sgl = sp.sge_num_in_sgl - 1;
-		sp.sgl_num = 4;
+		sp.sgl_num = SGL_NUM;
 		sp.buf_num = sp.buf_num_in_sgl * sp.sgl_num + sp.sgl_num + 2;
 
 		ctx_setup.br.alloc = (void *)wd_alloc_sgl;
@@ -486,7 +510,7 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 			pdata->opdata->in = wd_alloc_blk(pdata->pool);
 			pdata->opdata->out = wd_alloc_blk(pdata->pool);
 		}
-		if (pdata->opdata->in == NULL || pdata->opdata->out == NULL) {
+		if (!pdata->opdata->in || !pdata->opdata->out) {
 			ret = -ENOMEM;
 			WD_ERR("%s not enough data memory for cache (bs=%d)\n",
 			       __func__, block_size);
@@ -495,9 +519,26 @@ static int zip_test_create_ctx(int alg_type, int window_size,
 
 		if (pdata->alg_type == WCRYPTO_LZ77_ZSTD) {
 			pdata->opdata->priv = calloc(1, sizeof(struct wcrypto_lz77_zstd_format));
-			if (pdata->opdata->priv == NULL) {
+			if (!pdata->opdata->priv) {
 				WD_ERR("%s alloc %d format fail!\n", __func__, i);
 				goto err_format_free;
+			}
+
+			/* when use sgl zstd_lz77, we use 'struct wcrypto_zstd_out'
+			 * as out, which include addresses of 'literals' and 'sequence'.
+			 */
+			if (pdata->data_fmt == WD_SGL_BUF) {
+				zstd_out.literal = (void *)wd_alloc_sgl(pdata->pool,
+					test_thrds_data[i].dst_len);
+				if (!zstd_out.literal) {
+					WD_ERR("alloc for literals failed.\n");
+					goto err_format_free;
+				}
+
+				zstd_out.lit_sz = pdata->dst_len;
+				zstd_out.sequence = pdata->opdata->out;
+				zstd_out.seq_sz = pdata->dst_len;
+				pdata->opdata->out = (void *)&zstd_out;
 			}
 		}
 	}
@@ -510,8 +551,15 @@ err_format_free:
 	if (pdata->data_fmt == WD_SGL_BUF) {
 		wd_free_sgl(test_thrds_data[i].pool,
 			(struct wd_sgl *)test_thrds_data[i].opdata->in);
-		wd_free_sgl(test_thrds_data[i].pool,
-			(struct wd_sgl *)test_thrds_data[i].opdata->out);
+		if (pdata->alg_type == WCRYPTO_LZ77_ZSTD) {
+			wd_free_sgl(test_thrds_data[i].pool,
+				(struct wd_sgl *)zstd_out.literal);
+			wd_free_sgl(test_thrds_data[i].pool,
+				(struct wd_sgl *)zstd_out.sequence);
+		} else {
+			wd_free_sgl(test_thrds_data[i].pool,
+				(struct wd_sgl *)test_thrds_data[i].opdata->out);
+		}
 	} else {
 		wd_free_blk(test_thrds_data[i].pool,
 			test_thrds_data[i].opdata->in);
@@ -582,16 +630,25 @@ static int zip_test_init(int alg_type, int window_size, int op_type, int mode)
 
 static void zip_test_exit(void)
 {
+	struct wcrypto_zstd_out *zstd_out;
 	int i;
 
 	if (test_thrds_data[0].data_fmt == WD_SGL_BUF) {
 		for (i = 0; i < thread_num; i++) {
 			wd_free_sgl(test_thrds_data[i].pool,
 				(struct wd_sgl *)test_thrds_data[i].opdata->in);
-			wd_free_sgl(test_thrds_data[i].pool,
-				(struct wd_sgl *)test_thrds_data[i].opdata->out);
-			if (test_thrds_data[i].alg_type == WCRYPTO_LZ77_ZSTD)
+
+			if (test_thrds_data[i].alg_type == WCRYPTO_LZ77_ZSTD) {
+				zstd_out = (void *)test_thrds_data[i].opdata->out;
+				wd_free_sgl(test_thrds_data[i].pool,
+					(struct wd_sgl *)zstd_out->literal);
+				wd_free_sgl(test_thrds_data[i].pool,
+					(struct wd_sgl *)zstd_out->sequence);
 				free(test_thrds_data[i].opdata->priv);
+			} else {
+				wd_free_sgl(test_thrds_data[i].pool,
+					(struct wd_sgl *)test_thrds_data[i].opdata->out);
+			}
 			wcrypto_del_comp_ctx(test_thrds_data[i].ctx);
 			wd_sglpool_destroy(test_thrds_data[i].pool);
 			free(test_thrds_data[i].opdata);
@@ -635,9 +692,11 @@ static void dump_lz77_zstd_format(struct wcrypto_lz77_zstd_format *format)
 #endif
 }
 
-static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format)
+static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format, int data_fmt)
 {
 	struct wcrypto_lz77_zstd_format *format = output_format;
+	__u8 *literal = malloc(format->lit_num * sizeof(__u8));
+	__u64 *sequence = malloc(format->seq_num * sizeof(__u64));
 	int write_size = 0;
 	FILE *fout;
 	int ret;
@@ -660,13 +719,28 @@ static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format)
 	ret = fwrite(&format->lit_num, sizeof(__u32), 1, fout);
 	write_size += ret * sizeof(__u32);
 
-	ret = fwrite(format->literals_start, sizeof(__u8), format->lit_num, fout);
+	if (data_fmt == WD_SGL_BUF) {
+		memset(literal, 0, sizeof(__u8));
+		ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)format->literals_start, 0, literal, format->lit_num);
+		WD_ERR("format->lit_num = %u, ret = %u\n", format->lit_num, ret);
+		ret = fwrite(literal, sizeof(__u8), format->lit_num, fout);
+	} else {
+		ret = fwrite(format->literals_start, sizeof(__u8), format->lit_num, fout);
+	}
+
 	write_size += ret * sizeof(__u8);
 
 	ret = fwrite(&format->seq_num, sizeof(__u32), 1, fout);
 	write_size += ret * sizeof(__u32);
 
-	ret = fwrite(format->sequences_start, sizeof(__u64), format->seq_num, fout);
+	if (data_fmt == WD_SGL_BUF) {
+		memset(sequence, 0, sizeof(__u64));
+		ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)format->sequences_start, 0, sequence, format->seq_num * sizeof(__u64));
+		WD_ERR("format->seq_num = %u, ret = %u\n", format->seq_num, ret);
+		ret = fwrite(sequence, sizeof(__u64), format->seq_num, fout);
+	} else {
+		ret = fwrite(format->sequences_start, sizeof(__u64), format->seq_num, fout);
+	}
 	write_size += ret * sizeof(__u64);
 
 	dbg("write size is %d\n", write_size);
@@ -674,6 +748,9 @@ static int write_zstd_file(struct wcrypto_lz77_zstd_format *output_format)
 	fclose(fout);
 
 	dbg("%s succeed!\n", __func__);
+
+	free(literal);
+	free(sequence);
 
 	return write_size;
 }
@@ -797,7 +874,7 @@ static int hizip_thread_test(FILE *source, FILE *dest, int alg_type, int mode,
 	    __func__, thread_num, test_thrds_data[thread_num-1].dst_len);
 
 	if (alg_type == WCRYPTO_LZ77_ZSTD)
-		sz = write_zstd_file(test_thrds_data[thread_num-1].opdata->priv);
+		sz = write_zstd_file(test_thrds_data[thread_num-1].opdata->priv, data_fmt);
 	else
 		sz = fwrite(test_thrds_data[thread_num-1].dst, 1,
 			    test_thrds_data[thread_num-1].dst_len, dest);
