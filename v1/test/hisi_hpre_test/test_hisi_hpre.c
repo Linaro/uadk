@@ -7746,6 +7746,7 @@ try_format_input:
 	} else {
 		opdata.in = in;
 		opdata.out = out;
+		opdata.out_bytes = key_size;
 	}
 	tag = NULL;
 	ret = wcrypto_do_rsa(c, &opdata, tag);
@@ -7903,6 +7904,7 @@ new_test_again:
 			HPRE_TST_PRT("alloc out buffer fail!\n");
 			goto fail_release;
 		}
+		opdata.out_bytes = key_size;
 	}
 
 	do {
@@ -8492,6 +8494,7 @@ void *_rsa_async_op_test_thread(void *data)
 			goto fail_release;
 		}
 		memset(opdata.out, 0, opdata.in_bytes);
+		opdata.out_bytes = opdata.in_bytes;
 	}
 
 	do {
