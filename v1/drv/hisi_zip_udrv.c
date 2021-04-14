@@ -105,21 +105,25 @@ static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
 
 static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 					struct wcrypto_comp_msg *msg,
-					struct wd_queue *q)
+					struct wd_queue *q, bool is_lz77)
 {
-	uintptr_t phy_in, phy_out;
 	uintptr_t phy_ctxbuf = 0;
+	uintptr_t phy_out = 0;
+	uintptr_t phy_in;
 
 	phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
 	if (!phy_in) {
 		WD_ERR("Get zip in buf dma address fail!\n");
 		return -WD_ENOMEM;
 	}
-	phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
-	if (!phy_out) {
-		WD_ERR("Get zip out buf dma address fail!\n");
-		goto unmap_phy_in;
+	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF)) {
+		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
+		if (!phy_out) {
+			WD_ERR("Get zip out buf dma address fail!\n");
+			goto unmap_phy_in;
+		}
 	}
+
 	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL) {
 		phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf,
 						     MAX_CTX_RSV_SIZE);
@@ -136,8 +140,8 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 	return WD_SUCCESS;
 
 unmap_phy_out:
-	drv_iova_unmap(q, msg->dst, (void *)phy_out, msg->avail_out);
-
+	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF))
+		drv_iova_unmap(q, msg->dst, (void *)phy_out, msg->avail_out);
 unmap_phy_in:
 	drv_iova_unmap(q, msg->src, (void *)phy_in, msg->in_size);
 
@@ -177,7 +181,7 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
 
-	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q, false);
 	if (ret)
 		return ret;
 
@@ -356,17 +360,31 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 {
 	__u32 lit_size = msg->in_size + ZSTD_LIT_RSV_SIZE;
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	struct wcrypto_zstd_out *zstd_out;
 
 	if (unlikely(msg->in_size > MAX_ZSTD_INPUT_SIZE)) {
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->avail_out > MAX_BUFFER_SIZE)) {
-		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-		       msg->avail_out);
-		msg->avail_out = MAX_BUFFER_SIZE;
+	if (msg->data_fmt == WD_SGL_BUF) {
+		zstd_out = (void *)msg->dst;
+
+		if (unlikely(zstd_out->lit_sz < lit_size ||
+			     zstd_out->seq_sz < ZSTD_FREQ_DATA_SIZE )) {
+			WD_ERR("literal(%u) or sequence(%d) of lz77_zstd is not enough.\n",
+				zstd_out->lit_sz, zstd_out->seq_sz);
+			return -WD_EINVAL;
+		}
+		sqe->dw13 = zstd_out->lit_sz;
+		/* fill the sequences output size */
+		sqe->dest_avail_out = zstd_out->seq_sz;
+
+	} else {
+		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
+			WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
+				msg->avail_out);
+			msg->avail_out = MAX_BUFFER_SIZE;
 	}
 
 	/*
@@ -375,17 +393,15 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 	 */
 	if (unlikely(msg->avail_out < ZSTD_FREQ_DATA_SIZE + lit_size)) {
 		WD_ERR("output buffer size of lz77_zstd is not enough(%u)\n",
-		       ZSTD_FREQ_DATA_SIZE + lit_size);
-		return -WD_EINVAL;
+				ZSTD_FREQ_DATA_SIZE + lit_size);
+			return -WD_EINVAL;
+		}
+		/* fill the literals output size */
+		sqe->dw13 = lit_size;
+		/* fill the sequences output size */
+		sqe->dest_avail_out = msg->avail_out - lit_size;
 	}
-
 	sqe->input_data_length = msg->in_size;
-
-	/* fill the literals output size */
-	sqe->dw13 = lit_size;
-
-	/* fill the sequences output size */
-	sqe->dest_avail_out = msg->avail_out - lit_size;
 
 	return WD_SUCCESS;
 }
@@ -420,7 +436,7 @@ static int fill_zip_addr_deflate(void *ssqe,
 	struct hisi_zip_sqe_addr addr = {0};
 	int ret;
 
-	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q, false);
 	if (ret)
 		return ret;
 
@@ -438,24 +454,54 @@ static int fill_zip_addr_lz77_zstd(void *ssqe,
 				   struct wcrypto_comp_msg *msg,
 				   struct wd_queue *q)
 {
-	struct hisi_zip_sqe_v3 *sqe = ssqe;
 	struct hisi_zip_sqe_addr addr = {0};
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	struct wcrypto_zstd_out *zstd_out;
+	uintptr_t phy_lit, phy_seq;
 	int ret;
 
-	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q);
+	ret = qm_fill_zip_sqe_get_phy_addr(&addr, msg, q, true);
 	if (ret)
 		return ret;
 
 	sqe->source_addr_l = lower_32_bits((__u64)addr.source_addr);
 	sqe->source_addr_h = upper_32_bits((__u64)addr.source_addr);
-	sqe->cipher_key_addr_l = lower_32_bits((__u64)addr.dest_addr);
-	sqe->cipher_key_addr_h = upper_32_bits((__u64)addr.dest_addr);
-	sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr + msg->in_size);
-	sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr + msg->in_size);
+	if (msg->data_fmt == WD_SGL_BUF) {
+		zstd_out = (void *)msg->dst;
+		phy_lit = (uintptr_t)drv_iova_map(q, zstd_out->literal, zstd_out->lit_sz);
+		if (!phy_lit) {
+			WD_ERR("Get literal buf dma address fail!\n");
+			goto unmap_phy_lit;
+		}
+
+		phy_seq = (uintptr_t)drv_iova_map(q, zstd_out->sequence, zstd_out->seq_sz);
+		if (!phy_lit) {
+			WD_ERR("Get literal buf dma address fail!\n");
+			goto unmap_phy_seq;
+		}
+
+		sqe->cipher_key_addr_l = lower_32_bits((__u64)phy_lit);
+		sqe->cipher_key_addr_h = upper_32_bits((__u64)phy_lit);
+		sqe->dest_addr_l = lower_32_bits((__u64)phy_seq);
+		sqe->dest_addr_h = upper_32_bits((__u64)phy_seq);
+	} else {
+		sqe->cipher_key_addr_l = lower_32_bits((__u64)addr.dest_addr);
+		sqe->cipher_key_addr_h = upper_32_bits((__u64)addr.dest_addr);
+		sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr + msg->in_size);
+		sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr + msg->in_size);
+	}
+
 	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
 	sqe->stream_ctx_addr_h = upper_32_bits((__u64)addr.ctxbuf_addr);
 
 	return WD_SUCCESS;
+
+unmap_phy_seq:
+	drv_iova_unmap(q, zstd_out->literal, (void *)phy_lit, zstd_out->lit_sz);
+unmap_phy_lit:
+	drv_iova_unmap(q, msg->src, (void *)addr.source_addr, msg->in_size);
+	return -WD_ENOMEM;
+
 }
 
 static void fill_zip_sqe_hw_info(void *ssqe, struct wcrypto_comp_msg *msg)
@@ -560,23 +606,35 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 	return WD_SUCCESS;
 }
 
+/*
+ * Checksum[31:24] equals LitLength_Overflow_Pos;
+ * Checksum[23:0] equals Freq_Literal_Overflow_cnt;
+ */
+#define LILL_OVERFLOW_POS 	0x00ffffff
+#define LILL_OVERFLOW_CNT_OFFSET 24
 static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 {
 	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)recv_msg->udata;
 	struct wcrypto_lz77_zstd_format *format = tag->priv;
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
-	__u32 *overflow_cnt, *overflow_pos;
+	struct wcrypto_zstd_out *zstd_out;
 
-	format->literals_start = recv_msg->dst;
-	format->sequences_start = recv_msg->dst + recv_msg->in_size;
 	format->lit_num = sqe->comp_data_length;
 	format->seq_num = sqe->produced;
-	overflow_cnt = (__u32 *)(uintptr_t)(format->sequences_start +
-			(unsigned long)format->seq_num * SEQUENCE_SZIE);
-	format->lit_length_overflow_cnt = *overflow_cnt;
-	overflow_pos = overflow_cnt + 1;
-	format->lit_length_overflow_pos = *overflow_pos;
-	format->freq = (void *)(uintptr_t)(overflow_pos + 1);
+
+	format->lit_length_overflow_cnt = sqe->checksum & LILL_OVERFLOW_POS;
+	format->lit_length_overflow_pos = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
+					  LILL_OVERFLOW_CNT_OFFSET;
+
+	if (recv_msg->data_fmt == WD_SGL_BUF) {
+		zstd_out = (void *)recv_msg->dst;
+		format->literals_start = zstd_out->literal;
+		format->sequences_start = zstd_out->sequence;
+	} else {
+		format->literals_start = recv_msg->dst;
+		format->sequences_start = recv_msg->dst + recv_msg->in_size;
+		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
+	}
 }
 
 int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
