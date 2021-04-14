@@ -911,6 +911,7 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 	req->in = op->in;
 	req->in_bytes = (__u16)op->in_bytes;
 	req->out = op->out;
+	req->out_bytes = (__u16)op->out_bytes;
 	req->op_type = op->op_type;
 	req->result = WD_EINVAL;
 
@@ -932,6 +933,19 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 	if (unlikely(!key)) {
 		WD_ERR("rsa request key null!\n");
 		return -WD_EINVAL;
+	}
+
+	if (req->op_type == WCRYPTO_RSA_SIGN ||
+		req->op_type == WCRYPTO_RSA_VERIFY) {
+		if (unlikely(req->in_bytes != c->key_size)) {
+			WD_ERR("sign or verf in_bytes != key_size!\n");
+			return -WD_EINVAL;
+		}
+
+		if (unlikely(req->out_bytes < c->key_size)) {
+			WD_ERR("out bytes %u error!\n", req->out_bytes);
+			return -WD_EINVAL;
+		}
 	}
 
 	req->key = key;
