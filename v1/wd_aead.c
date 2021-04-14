@@ -413,7 +413,7 @@ int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len)
 	}
 
 	if (ctxt->setup.cmode == WCRYPTO_CIPHER_XTS)
-		length = key_len / XTS_MODE_KEY_DIVISOR;
+		length = key_len >> XTS_MODE_KEY_SHIFT;
 
 	ret = cipher_key_len_check(ctxt->setup.calg, length);
 	if (ret != WD_SUCCESS) {
