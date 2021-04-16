@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #include <pthread.h>
 #include <signal.h>
+#include <math.h>
 #include <sys/mman.h>
 
 #include "hisi_qm_udrv.h"
@@ -78,18 +80,48 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 	return 0;
 }
 
+static struct wd_datalist *get_datalist(void *addr, __u32 size)
+{
+	int count = (int)ceil((double)size / SGE_SIZE);
+	struct wd_datalist *head, *cur, *tmp;
+	int i;
+
+	head = calloc(1, sizeof(struct wd_datalist));
+	if (!head) {
+		WD_ERR("failed to alloc datalist head\n");
+		return NULL;
+	}
+
+	cur = head;
+
+	for (i = 0; i < count; i++) {
+		cur->data = addr;
+		cur->len = (size > SGE_SIZE) ? SGE_SIZE : size;
+		addr += SGE_SIZE;
+		size -= SGE_SIZE;
+		if (i != count - 1) {
+			tmp = calloc(1, sizeof(struct wd_datalist));
+			cur->next = tmp;
+			cur = tmp;
+		}
+	}
+
+	return head;
+}
+
 /**
  * compress() - compress memory buffer.
  * @alg_type: alg_type.
  *
  * This function compress memory buffer.
  */
-int hw_blk_compress(int alg_type, int blksize,
+int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 		    unsigned char *dst, __u32 *dstlen,
 		    unsigned char *src, __u32 srclen)
 {
 	handle_t h_sess;
 	struct wd_comp_sess_setup setup;
+	struct wd_datalist *list;
 	struct wd_comp_req req;
 	int ret = 0;
 
@@ -101,15 +133,27 @@ int hw_blk_compress(int alg_type, int blksize,
 		fprintf(stderr,"fail to alloc comp sess!\n");
 		return -EINVAL;
 	}
-	req.src = src;
+
+	if (data_fmt) {
+		WD_ERR("now sge size is %u\n", SGE_SIZE);
+		list = get_datalist(src, (__u32)srclen);
+		req.list_src = list;
+		list = get_datalist(dst, (__u32)*dstlen);
+		req.list_dst = list;
+	} else {
+		req.src = src;
+		req.dst = dst;
+	}
+
 	req.src_len = srclen;
-	req.dst = dst;
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_COMPRESS;
 	req.cb = NULL;
+	req.data_fmt = data_fmt;
+	req.priv = priv;
 
-	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
-	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+	dbg("%s:input req: src_len: %d, dst_len:%d, data_fmt:%d\n",
+	    __func__, req.src_len, req.dst_len, req.data_fmt);
 
 	ret = wd_do_comp_sync(h_sess, &req);
 	if (ret < 0) {
@@ -125,23 +169,23 @@ int hw_blk_compress(int alg_type, int blksize,
 	}
 	*dstlen = req.dst_len;
 
-	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
-	    __func__, req.src, req.dst, req.src_len, req.dst_len);
+	dbg("%s:input req: src_len: %d, dst_len:%d, data_fmt:%d\n",
+	    __func__, req.src_len, req.dst_len, req.data_fmt);
 
 	wd_comp_free_sess(h_sess);
 
 	return ret;
 }
 
-int hw_blk_decompress(int alg_type, int blksize,
+int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 		      unsigned char *dst, __u32 *dstlen,
 		      unsigned char *src, __u32 srclen)
 {
 	handle_t h_sess;
 	struct wd_comp_sess_setup setup;
+	struct wd_datalist *list;
 	struct wd_comp_req req;
 	int ret = 0;
-
 
 	setup.alg_type = alg_type;
 	setup.mode = CTX_MODE_SYNC;
@@ -151,12 +195,23 @@ int hw_blk_decompress(int alg_type, int blksize,
 		fprintf(stderr,"fail to alloc comp sess!\n");
 		return -EINVAL;
 	}
-	req.src = src;
+
+	if (data_fmt) {
+		WD_ERR("now sge size is %u\n", SGE_SIZE);
+		list = get_datalist(src, (__u32)srclen);
+		req.list_src = list;
+		list = get_datalist(dst, (__u32)*dstlen);
+		req.list_dst = list;
+	} else {
+		req.src = src;
+		req.dst = dst;
+	}
+
 	req.src_len = srclen;
-	req.dst = dst;
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_DECOMPRESS;
 	req.cb = NULL;
+	req.data_fmt = data_fmt;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -184,7 +239,7 @@ int hw_blk_decompress(int alg_type, int blksize,
 	return ret;
 }
 
-int hw_stream_compress(int alg_type, int blksize,
+int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 		       unsigned char *dst, __u32 *dstlen,
 		       unsigned char *src, __u32 srclen)
 {
@@ -207,6 +262,7 @@ int hw_stream_compress(int alg_type, int blksize,
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_COMPRESS;
 	req.cb = NULL;
+	req.data_fmt = data_fmt;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -234,7 +290,7 @@ int hw_stream_compress(int alg_type, int blksize,
 }
 
 
-int hw_stream_decompress(int alg_type, int blksize,
+int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 		       unsigned char *dst, __u32 *dstlen,
 		       unsigned char *src, __u32 srclen)
 {
@@ -258,6 +314,7 @@ int hw_stream_decompress(int alg_type, int blksize,
 	req.dst_len = *dstlen;
 	req.op_type = WD_DIR_DECOMPRESS;
 	req.cb = NULL;
+	req.data_fmt = data_fmt;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -783,6 +840,12 @@ int parse_common_option(const char opt, const char *optarg,
 		break;
 	case 'z':
 		opts->alg_type = WD_ZLIB;
+		break;
+	case 'L':
+		opts->data_fmt = WD_SGL_BUF;
+		break;
+	case 'Z':
+		opts->alg_type = WD_LZ77_ZSTD;
 		break;
 	default:
 		return 1;

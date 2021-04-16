@@ -34,6 +34,8 @@ enum mode {
  */
 #define EXPANSION_RATIO	2
 
+#define SGE_SIZE	(8 * 1024)
+
 struct test_options {
 	int alg_type;
 	int op_type;
@@ -51,6 +53,9 @@ struct test_options {
 	int thread_num;
 	/* 0: sync mode, 1: async mode */
 	int sync_mode;
+
+	/* 0: pbuffer, 1: sgl */
+	__u8 data_fmt;
 
 	bool verify;
 	bool verbose;
@@ -129,20 +134,20 @@ int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 
 /* for block interface */
-int hw_blk_compress(int alg_type, int blksize,
+int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 		    unsigned char *dst, __u32 *dstlen,
 		    unsigned char *src, __u32 srclen);
 
-int hw_blk_decompress(int alg_type, int blksize,
+int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 		      unsigned char *dst, __u32 *dstlen,
 		      unsigned char *src, __u32 srclen);
 
 /* for stream memory interface */
-int hw_stream_compress(int alg_type, int blksize,
+int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 		       unsigned char *dst, __u32 *dstlen,
 		       unsigned char *src, __u32 srclen);
 
-int hw_stream_decompress(int alg_type, int blksize,
+int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 		         unsigned char *dst, __u32 *dstlen,
 		         unsigned char *src, __u32 srclen);
 
@@ -185,7 +190,7 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:dac"
+#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:dacLZ"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
@@ -203,6 +208,8 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
 	"  -d		 test decompression, default compression\n"	\
 	"  -c		 use cpu to do zlib\n"				\
+	"  -L		 test sgl type buffer, default pbuffer\n"	\
+	"  -Z		 test lz77_zstd algorithm, default gzip\n"	\
 	"\n\n"
 
 int parse_common_option(const char opt, const char *optarg,
