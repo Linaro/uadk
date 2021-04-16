@@ -894,3 +894,17 @@ void hisi_qm_dump_sgl(void *sgl)
 		tmp = (struct hisi_sgl *)tmp->next_dma;
 	}
 }
+
+__u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
+			    struct wd_datalist *end_node)
+{
+	struct wd_datalist *cur = start_node;
+	__u32 lits_size = 0;
+
+	while (cur != end_node) {
+		lits_size += cur->len;
+		cur = cur->next;
+	}
+
+	return lits_size;
+}
