@@ -434,6 +434,8 @@ static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;
+		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
+		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp)
 			goto out;
@@ -462,6 +464,7 @@ static void hisi_zip_exit(void *priv)
 		hisi_qm_free_qp(h_qp);
 	}
 }
+
 static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 			     struct hisi_zip_sqe *sqe)
 {
@@ -533,14 +536,55 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 	return ret;
 }
 
-static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe, 
+static int get_alg_type(__u32 type)
+{
+	int alg_type = -WD_EINVAL;
+
+	switch (type) {
+	case HW_DEFLATE:
+		alg_type = WD_DEFLATE;
+		break;
+	case HW_ZLIB:
+		alg_type = WD_ZLIB;
+		break;
+	case HW_GZIP:
+		alg_type = WD_GZIP;
+		break;
+	default:
+		break;
+	}
+
+	return alg_type;
+}
+
+static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 			 struct wd_comp_msg *recv_msg)
 {
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
-	int alg_type = 0;
+	int alg_type;
+	__u32 tag;
+
+	alg_type = get_alg_type(type);
+	if (alg_type < 0) {
+		WD_ERR("failed to get request algorithm type(%d)\n", type);
+		return -WD_EINVAL;
+	}
+
+	tag = ops[alg_type].get_tag(sqe);
+
+	recv_msg->tag = tag;
+
+	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
+		recv_msg = wd_comp_get_msg(qp->q_info.idx, tag);
+		if (!recv_msg) {
+			WD_ERR("failed to get send msg! idx = %d, tag = %d.\n",
+			       qp->q_info.idx, tag);
+			return -WD_EINVAL;
+		}
+	}
 
 	if (status != 0 && status != HZ_NEGACOMPRESS &&
 	    status != HZ_CRC_ERR && status != HZ_DECOMP_END) {
@@ -552,13 +596,6 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 			return -WD_EAGAIN;
 		recv_msg->req.status = 0;
 	}
-
-	if (type == HW_DEFLATE)
-		alg_type = WD_DEFLATE;
-	else if (type == HW_ZLIB)
-		alg_type = WD_ZLIB;
-	else if (type == HW_GZIP)
-		alg_type = WD_GZIP;
 
 	ops[alg_type].get_data_size(sqe, qp->q_info.qc_type, recv_msg);
 
@@ -584,7 +621,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
-	recv_msg->tag = ops[alg_type].get_tag(sqe);
+	recv_msg->alg_type = alg_type;
 
 	return 0;
 }
