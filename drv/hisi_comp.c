@@ -997,7 +997,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	ops[alg_type].get_data_size(sqe, qp->q_info.qc_type, recv_msg);
 
 	recv_msg->avail_out = sqe->dest_avail_out;
-	if (sqe->stream_ctx_addr_l && sqe->stream_ctx_addr_h) {
+	if (VA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l)) {
 		/*
 		 * In ASYNC mode, recv_msg->ctx_buf is NULL.
 		 * recv_msg->ctx_buf is only valid in SYNC mode.
