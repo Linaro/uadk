@@ -44,13 +44,13 @@ enum cipher_mode {
 };
 
 struct cipher_testvec {
-	char *key;
+	const char *key;
 	int klen;
-	char *iv;
+	const char *iv;
 	int ivlen;
-	char *iv_out;
-	char *ptext;
-	char *ctext;
+	const char *iv_out;
+	const char *ptext;
+	const char *ctext;
 	int len;
 };
 
@@ -62,20 +62,20 @@ enum sec_digest_state {
 };
 
 struct hash_testvec {
-	char *key;
-	char *plaintext;
-	char *digest;
+	const char *key;
+	const char *plaintext;
+	const char *digest;
 	unsigned int psize;
 	unsigned short ksize;
 	unsigned int dsize;
 };
 
 struct aead_testvec {
-	char *key;
-	char *iv;
-	char *ptext;
-	char *assoc;
-	char *ctext;
+	const char *key;
+	const char *iv;
+	const char *ptext;
+	const char *assoc;
+	const char *ctext;
 	unsigned char novrfy;
 	unsigned char wk;
 	unsigned char klen;
@@ -1373,15 +1373,15 @@ struct hash_testvec hmac_sha512_256_tv_template[] = {
 struct hash_testvec long_hash_tv_template[] = {
 	{
 /*
-md5	(stdin)= 2fe0f11dd5d90646e1795b01be0a1134
-sha1	(stdin)= 3C259F3BAB877A173FEC035D7E0D6E2B13E94B94
-sha256	(stdin)= 72715F601C0B5F20B58093CC51C27FCD8200E90819F60351AAB9D63F38FF46D2
-sha224	(stdin)= 8582534696451D8B6A6647D477AFEF3A924AD355B984FF0E39D87FD032B974EF
-sha384	(stdin)= 9B254A6144A36F43D7F4360D438720FFF51B61A9A07870F6AD02E9CE086E731739315DD56FBF1EF3
-		4F2824BB3DEE87B9BCB7EB11F99CD871111468DC55851A4F
+md5	(stdin)= A89D2C8730E3BB304EDA507035928B86
+sha1	(stdin)= D2E8068B6B648B8793B7DA8D575AE57FA208FD66
+sha256	(stdin)= 1CEA48E3960EE3675BD5663C5F423325110000D26DE11C9B11B0293386C030C0
+sha224	(stdin)= ADBEC39512DCA87CCFD155BB635F519E7B46796C722CC650233BF106
+sha384	(stdin)= 18AB6F0018884BBF7CE7015168B691FEC8A2E15892689E4D632099162
+		54A2A6B527D2DFC0144D5CEECC339857B968308
  */
-		.key	= "Huawei",
-		.ksize	= 6,
+		.key	= "Huawei12",
+		.ksize	= 8,
 		.plaintext = "\x09\x9f\x13\xaa\x41\x68\x4c\xe3"
 			"\x5a\x11\x85\xac\xb3\x27\xbe\x55"
 			"\xec\x60\xf7\x8d\x02\x99\x30\xc7"
@@ -1532,8 +1532,8 @@ struct hash_testvec hmac_abnormal1024_tv_template[] = {
 			  "\x97\x9b\x0f\x15\x56\x6a\x8f\x6d"
 			  "\x21\x2f\x2c\x02\xa4\xe0\x78\x65"
 			  "\xbc\x53\xea\x5e\xf5\x8c\x00\xa3"
-			  "\xab\xca\x0f",
-		.ksize	= 131,
+			  "\xab\xca\x0f\x0e",
+		.ksize	= 132,
 		.plaintext = "Test Using Texts"
 			   "r Than BlockSize"
 			   "e aKey Hash Keys"
@@ -1552,8 +1552,8 @@ struct hash_testvec hmac_abnormal512_tv_template[] = {
                           "\x97\x9b\x0f\x15\x56\x6a\x8f\x6d"
                           "\x21\x2f\x2c\x02\xa4\xe0\x78\x65"
                           "\xbc\x53\xea\x5e\xf5\x8c\x00\xa3"
-                          "\xab\xca\x0f",
-                .ksize  = 67,
+                          "\xab\xca\x0f\x68",
+                .ksize  = 68,
                 .plaintext = "Test Using Texts"
                              "r Than BlockSize"
                              "e aKey Hash Keys"
