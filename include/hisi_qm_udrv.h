@@ -166,4 +166,13 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset,
  */
 int hisi_qm_get_free_sqe_num(handle_t h_qp);
 
+/**
+ * hisi_qm_get_list_size - Calculate the total length between two nodes.
+ * Excludes the length of the end_node.
+ * @start_node: The start node.
+ * @end_node: The end node.
+ */
+__u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
+			    struct wd_datalist *end_node);
+
 #endif
