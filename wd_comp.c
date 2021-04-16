@@ -364,6 +364,11 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return -WD_EINVAL;
 	}
 
+	if (req->data_fmt > WD_SGL_BUF) {
+		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
+		return -WD_EINVAL;
+	}
+
 	memset(&msg, 0, sizeof(struct wd_comp_msg));
 
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
@@ -532,6 +537,11 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return ret;
 	}
 
+	if (req->data_fmt > WD_FLAT_BUF) {
+		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
+		return -WD_EINVAL;
+	}
+
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
@@ -612,6 +622,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
+		return -WD_EINVAL;
+	}
+
+	if (req->data_fmt > WD_SGL_BUF) {
+		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
 
