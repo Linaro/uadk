@@ -752,6 +752,7 @@ int main(int argc, char **argv)
 		.display_stats		= STATS_PRETTY,
 		.children		= 0,
 		.faults			= 0,
+		.data_fmt		= 0,
 	};
 	int show_help = 0;
 	int opt;
