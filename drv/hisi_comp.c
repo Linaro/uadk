@@ -263,7 +263,7 @@ static int fill_buf_zlib(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	__u32 out_size = msg->avail_out;
 	void *src = msg->req.src;
 	void *dst = msg->req.dst;
-	void *ctx_buf;
+	void *ctx_buf = NULL;
 	int ret;
 
 	if (msg->stream_pos == WD_COMP_STREAM_NEW) {
@@ -285,8 +285,6 @@ static int fill_buf_zlib(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-	else
-		ctx_buf = NULL;
 
 	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
 
@@ -300,7 +298,7 @@ static int fill_buf_gzip(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	__u32 out_size = msg->avail_out;
 	void *src = msg->req.src;
 	void *dst = msg->req.dst;
-	void *ctx_buf;
+	void *ctx_buf = NULL;
 	int ret;
 
 	if (msg->stream_pos == WD_COMP_STREAM_NEW) {
@@ -322,8 +320,6 @@ static int fill_buf_gzip(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-	else
-		ctx_buf = NULL;
 
 	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
 
@@ -983,15 +979,13 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 		}
 	}
 
+	recv_msg->req.status = 0;
+
 	if (status != 0 && status != HZ_NEGACOMPRESS &&
 	    status != HZ_CRC_ERR && status != HZ_DECOMP_END) {
 		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 		       ctx_st, status, type);
 		recv_msg->req.status = WD_IN_EPARA;
-	} else {
-		if (!sqe->produced)
-			return -WD_EAGAIN;
-		recv_msg->req.status = 0;
 	}
 
 	ops[alg_type].get_data_size(sqe, qp->q_info.qc_type, recv_msg);
