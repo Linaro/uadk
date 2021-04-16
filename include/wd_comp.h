@@ -44,13 +44,20 @@ struct wd_comp_req;
 typedef void *wd_alg_comp_cb_t(struct wd_comp_req *req, void *cb_param);
 
 struct wd_comp_req {
-	void			*src;
+	union {
+		void			*src;
+		struct wd_datalist	*list_src;
+	};
 	__u32			src_len;
-	void			*dst;
+	union {
+		void			*dst;
+		struct wd_datalist	*list_dst;
+	};
 	__u32			dst_len;
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
 	__u8			op_type;     /* denoted by wd_comp_op_type */
+	__u8			data_fmt;    /* denoted by wd_buff_type */
 	__u32			last;
 	__u32			status;
 	void			*priv;
