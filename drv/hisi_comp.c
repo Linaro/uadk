@@ -192,6 +192,22 @@ struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
+static int buf_size_check_deflate(__u32 *in_size, __u32 *out_size)
+{
+	if (unlikely(*in_size > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: out of range in_len(%u)!\n", *in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(*out_size > HZ_MAX_SIZE)) {
+		WD_ERR("warning: out of range avail_out(%u), will set 8MB size max!\n",
+		       *out_size);
+		*out_size = HZ_MAX_SIZE;
+	}
+
+	return 0;
+}
+
 static void fill_buf_size_deflate(struct hisi_zip_sqe *sqe, __u32 in_size,
 				  __u32 out_size)
 {
@@ -213,9 +229,16 @@ static void fill_buf_addr_deflate(struct hisi_zip_sqe *sqe, void *src,
 static int fill_buf_deflate(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 {
 	struct wd_comp_req *req = &msg->req;
+	__u32 out_size = msg->avail_out;
+	__u32 in_size = req->src_len;
 	void *ctx_buf;
+	int ret;
 
-	fill_buf_size_deflate(sqe, req->src_len, msg->avail_out);
+	ret = buf_size_check_deflate(&in_size, &out_size);
+	if (ret)
+		return ret;
+
+	fill_buf_size_deflate(sqe, in_size, out_size);
 
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
@@ -234,6 +257,7 @@ static int fill_buf_zlib(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 	void *src = msg->req.src;
 	void *dst = msg->req.dst;
 	void *ctx_buf;
+	int ret;
 
 	if (msg->stream_pos == WD_COMP_STREAM_NEW) {
 		if (msg->req.op_type == WD_DIR_COMPRESS) {
@@ -245,6 +269,10 @@ static int fill_buf_zlib(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 			in_size -= ZLIB_HEADER_SZ;
 		}
 	}
+
+	ret = buf_size_check_deflate(&in_size, &out_size);
+	if (ret)
+		return ret;
 
 	fill_buf_size_deflate(sqe, in_size, out_size);
 
@@ -265,6 +293,7 @@ static int fill_buf_gzip(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 	void *src = msg->req.src;
 	void *dst = msg->req.dst;
 	void *ctx_buf;
+	int ret;
 
 	if (msg->stream_pos == WD_COMP_STREAM_NEW) {
 		if (msg->req.op_type == WD_DIR_COMPRESS) {
@@ -276,6 +305,10 @@ static int fill_buf_gzip(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 			in_size -= GZIP_HEADER_SZ;
 		}
 	}
+
+	ret = buf_size_check_deflate(&in_size, &out_size);
+	if (ret)
+		return ret;
 
 	fill_buf_size_deflate(sqe, in_size, out_size);
 
@@ -626,16 +659,6 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 	struct hisi_zip_sqe sqe = {0};
 	__u16 count = 0;
 	int ret;
-
-	if (unlikely(msg->req.src_len > HZ_MAX_SIZE)) {
-		WD_ERR("invalid: out of range in_len(%u)!\n", msg->req.src_len);
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(msg->avail_out > HZ_MAX_SIZE)) {
-		WD_ERR("warning: out of range avail_out(%u), will set 8MB size max!\n", msg->avail_out);
-		msg->avail_out = HZ_MAX_SIZE;
-	}
 
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
 	if (ret < 0) {
