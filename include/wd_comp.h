@@ -11,6 +11,7 @@ enum wd_comp_alg_type {
 	WD_DEFLATE,
 	WD_ZLIB,
 	WD_GZIP,
+	WD_LZ77_ZSTD,
 	WD_COMP_ALG_MAX,
 };
 
@@ -52,6 +53,27 @@ struct wd_comp_req {
 	__u8			op_type;     /* denoted by wd_comp_op_type */
 	__u32			last;
 	__u32			status;
+	void			*priv;
+};
+
+/**
+ * The output format defined by hardware and drivers should fill the format
+ * @literals_start:address of the literals data output by the hardware
+ * @sequences_start:address of the sequences data output by the hardware
+ * @lit_num:the size of literals
+ * @seq_num:the size of sequences
+ * @lit_length_overflow_cnt:the count of the literal length overflow
+ * @lit_length_overflow_pos:the position of the literal length overflow
+ * @freq:address of the frequency about sequences members
+ */
+struct wd_lz77_zstd_data {
+	void *literals_start;
+	void *sequences_start;
+	__u32 lit_num;
+	__u32 seq_num;
+	__u32 lit_length_overflow_cnt;
+	__u32 lit_length_overflow_pos;
+	void *freq;
 };
 
 /**
