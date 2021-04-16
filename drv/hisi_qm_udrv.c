@@ -302,6 +302,8 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 		goto err_out;
 	}
 
+	q_info->qp_mode = config->qp_mode;
+	q_info->idx = config->idx;
 	q_info->sqe_size = config->sqe_size;
 	q_info->cqc_phase = 1;
 	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
