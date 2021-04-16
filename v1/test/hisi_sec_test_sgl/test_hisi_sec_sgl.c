@@ -465,10 +465,10 @@ int sec_sync_test_set_iv(struct test_sec_pthread_dt *pdata,
 	tv->ivlen = ivlen;
 
 	if (pdata->data_fmt == WD_SGL_BUF) {  // use no-sva sgl
-		wd_sgl_cp_from_pbuf(opdata->iv, 0, tv->iv, tv->ivlen);
+		wd_sgl_cp_from_pbuf(opdata->iv, 0, (void *)tv->iv, tv->ivlen);
 	} else {   // use no-sva pbuffer
 		memset(opdata->iv, 0, tv->ivlen);
-		memcpy(opdata->iv, tv->iv, tv->ivlen);
+		memcpy(opdata->iv, (void *)tv->iv, tv->ivlen);
 	}
 
 	opdata->iv_bytes = tv->ivlen;
@@ -527,9 +527,9 @@ int sec_sync_cipher_test(struct test_sec_pthread_dt *pdata)
 		return ret;
 	}
 #ifdef DEBUG
-	hexdump(tv->key, tv->klen);
+	hexdump((void *)tv->key, tv->klen);
 #endif
-	ret = wcrypto_set_cipher_key(ctx, (__u8*)tv->key, (__u16)tv->klen);
+	ret = wcrypto_set_cipher_key(ctx, (__u8*)(void *)tv->key, (__u16)tv->klen);
 	if (ret) {
 		SEC_TST_PRT("set key fail!\n");
 		goto fail_release;
@@ -548,14 +548,14 @@ int sec_sync_cipher_test(struct test_sec_pthread_dt *pdata)
 		}
 
 		if (q->capa.priv.direction == 0) {
-			wd_sgl_cp_from_pbuf(opdata->in, 0, tv->ptext, tv->len);
+			wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->ptext, tv->len);
 			if (strlen(tv->ptext) > pktlen) {
 				opdata->in_bytes = tv->len;
 			} else {
 				opdata->in_bytes = pktlen;
 			}
 		} else {
-			wd_sgl_cp_from_pbuf(opdata->in, 0, tv->ctext, tv->len);
+			wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->ctext, tv->len);
 			if (strlen(tv->ctext) > pktlen) {
 				opdata->in_bytes = tv->len;
 			} else {
@@ -585,14 +585,14 @@ int sec_sync_cipher_test(struct test_sec_pthread_dt *pdata)
 
 		memset(opdata->in, 0, tv->len);
 		if (q->capa.priv.direction == 0) {
-			memcpy(opdata->in, tv->ptext, tv->len);
+			memcpy(opdata->in, (void *)tv->ptext, tv->len);
 			if (strlen(tv->ptext) > pktlen) {
 				opdata->in_bytes = tv->len;
 			} else {
 				opdata->in_bytes = pktlen;
 			}
 		} else {
-			memcpy(opdata->in, tv->ctext, tv->len);
+			memcpy(opdata->in, (void *)tv->ctext, tv->len);
 			if (strlen(tv->ctext) > pktlen) {
 				opdata->in_bytes = tv->len;
 			} else {
@@ -975,8 +975,8 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 				pid, thread_id, q->capa.alg);
 	}
 	if (setup.mode == WCRYPTO_DIGEST_HMAC) {
-		hexdump((char *)tv->key, tv->ksize);
-		ret = wcrypto_set_digest_key(ctx, (__u8*)tv->key, (__u16)tv->ksize);
+		hexdump((char *)(void *)tv->key, tv->ksize);
+		ret = wcrypto_set_digest_key(ctx, (__u8*)(void *)tv->key, (__u16)tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("set key fail!\n");
 			goto fail_release;
@@ -988,16 +988,16 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 		goto fail_release;
 #if 0
 	SEC_TST_PRT("digest len:%d\n", opdata->in_bytes);
-	hexdump(tv->plaintext, tv->psize);
+	hexdump((void *)tv->plaintext, tv->psize);
 #endif
 	if (pdata->data_fmt == WD_SGL_BUF) {  // use no-sva sgl
-		wd_sgl_cp_from_pbuf(opdata->in, 0, tv->plaintext, tv->psize);
+		wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->plaintext, tv->psize);
 		opdata->priv = NULL;
 		opdata->out_bytes = tv->dsize;
 		opdata->has_next = 0;
 	} else {  // use no-sva pbuffer
 		memset(opdata->in, 0, tv->psize);
-		memcpy(opdata->in, tv->plaintext, tv->psize);
+		memcpy(opdata->in, (void *)tv->plaintext, tv->psize);
 		//	opdata->in_bytes = tv->psize;
 		opdata->priv = NULL;
 		opdata->out_bytes = tv->dsize;
@@ -1281,9 +1281,9 @@ int sec_async_cipher_test(struct test_sec_pthread_dt *pdata)
 		return ret;
 	}
 
-	hexdump((char *)tv->key, tv->klen);
+	hexdump((char *)(void *)tv->key, tv->klen);
 
-	ret = wcrypto_set_cipher_key(ctx, (__u8*)tv->key, (__u16)tv->klen);
+	ret = wcrypto_set_cipher_key(ctx, (__u8*)(void *)tv->key, (__u16)tv->klen);
 	if (ret) {
 		SEC_TST_PRT("set key fail!\n");
 		goto fail_release;
@@ -1302,8 +1302,8 @@ int sec_async_cipher_test(struct test_sec_pthread_dt *pdata)
 
 		if (q->capa.priv.direction == 0) {
 			printf("ptext:\n");
-			hexdump(tv->ptext, tv->len);
-			ret = wd_sgl_cp_from_pbuf(opdata.in, 0, tv->ptext, tv->len);
+			hexdump((void *)tv->ptext, tv->len);
+			ret = wd_sgl_cp_from_pbuf(opdata.in, 0, (void *)tv->ptext, tv->len);
 			if (ret < 0)
 				goto fail_release;
 			if (tv->len > pktlen)
@@ -1312,8 +1312,8 @@ int sec_async_cipher_test(struct test_sec_pthread_dt *pdata)
 				opdata.in_bytes = pktlen;
 		} else {
 			printf("ctext:\n");
-			hexdump(tv->ctext, tv->len);
-			ret = wd_sgl_cp_from_pbuf(opdata.in, 0, tv->ctext, tv->len);
+			hexdump((void *)tv->ctext, tv->len);
+			ret = wd_sgl_cp_from_pbuf(opdata.in, 0, (void *)tv->ctext, tv->len);
 			if (ret < 0)
 				goto fail_release;
 
@@ -1337,7 +1337,7 @@ int sec_async_cipher_test(struct test_sec_pthread_dt *pdata)
 			goto fail_release;
 		}
 		if (tv->iv)
-			wd_sgl_cp_from_pbuf(opdata.iv, 0, tv->iv, tv->ivlen);
+			wd_sgl_cp_from_pbuf(opdata.iv, 0, (void *)tv->iv, tv->ivlen);
 		opdata.iv_bytes = tv->ivlen;
 	} else {  // use no-sva pbuffer
 		opdata.in = wd_alloc_blk(pdata->pool);
@@ -1346,14 +1346,14 @@ int sec_async_cipher_test(struct test_sec_pthread_dt *pdata)
 			goto fail_release;
 		}
 		if (q->capa.priv.direction == 0) {
-			memcpy(opdata.in, tv->ptext, tv->len);
+			memcpy(opdata.in, (void *)tv->ptext, tv->len);
 			if (tv->len > pktlen) {
 				opdata.in_bytes = tv->len;
 			} else {
 				opdata.in_bytes = pktlen;
 			}
 		} else {
-			memcpy(opdata.in, tv->ctext, tv->len);
+			memcpy(opdata.in, (void *)tv->ctext, tv->len);
 			if (tv->len > pktlen) {
 				opdata.in_bytes = tv->len;
 			} else {
@@ -1378,7 +1378,7 @@ int sec_async_cipher_test(struct test_sec_pthread_dt *pdata)
 		}
 
 		if (tv->iv)
-			memcpy(opdata.iv, tv->iv, tv->ivlen);
+			memcpy(opdata.iv, (void *)tv->iv, tv->ivlen);
 		opdata.iv_bytes = tv->ivlen;
 	}
 
@@ -1512,7 +1512,7 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 		}
 
 		if (setup.mode == WCRYPTO_DIGEST_HMAC) {
-			ret = wcrypto_set_digest_key(ctx, (__u8*)tv->key,
+			ret = wcrypto_set_digest_key(ctx, (__u8*)(void *)tv->key,
 					(__u16)tv->ksize);
 			if (ret) {
 				SEC_TST_PRT("set key fail!\n");
@@ -1521,19 +1521,19 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 		}
 	#ifdef DEBUG
 		SEC_TST_PRT("tv->key len: %d\n", tv->ksize);
-		hexdump(tv->key, tv->ksize);
+		hexdump((void *)tv->key, tv->ksize);
 	#endif
 		opdata.in = wd_alloc_sgl(pdata->pool, MAX_BLOCK_SZ);
 		if (!opdata.in) {
 			SEC_TST_PRT("alloc sgl in buffer fail!\n");
 			goto fail_release;
 		}
-		wd_sgl_cp_from_pbuf(opdata.in, 0, tv->plaintext, tv->psize);
+		wd_sgl_cp_from_pbuf(opdata.in, 0, (void *)tv->plaintext, tv->psize);
 		opdata.in_bytes = tv->psize;
 
 	#if 0 // DEBUG
 		SEC_TST_PRT("digest len: %d\n", opdata.in_bytes);
-		hexdump(tv->plaintext, opdata.in_bytes);
+		hexdump((void *)tv->plaintext, opdata.in_bytes);
 	#endif
 		opdata.priv = NULL;
 		opdata.out = wd_alloc_sgl(pdata->pool, MAX_BLOCK_SZ);
@@ -1558,7 +1558,7 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 		}
 
 		if (setup.mode == WCRYPTO_DIGEST_HMAC) {
-			ret = wcrypto_set_digest_key(ctx, (__u8*)tv->key,
+			ret = wcrypto_set_digest_key(ctx, (__u8*)(void *)tv->key,
 					(__u16)tv->ksize);
 			if (ret) {
 				SEC_TST_PRT("set key fail!\n");
@@ -1568,14 +1568,14 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 
 	#if DEBUG
 		SEC_TST_PRT("tv->key len: %d\n", tv->ksize);
-		hexdump(tv->key, tv->ksize);
+		hexdump((void *)tv->key, tv->ksize);
 	#endif
 		opdata.in = wd_alloc_blk(pdata->pool);
 		if (!opdata.in) {
 			SEC_TST_PRT("alloc in buffer fail!\n");
 			goto fail_release;
 		}
-		memcpy(opdata.in, tv->plaintext, tv->psize);
+		memcpy(opdata.in, (void *)tv->plaintext, tv->psize);
 		opdata.in_bytes = tv->psize;
 	#if 0 //  DEBUG
 		SEC_TST_PRT("digest len:%d\n", opdata.in_bytes);
@@ -1841,10 +1841,10 @@ int sec_aead_sync_func_test(void *data)
 			return ret;
 		}
 
-		hexdump((char *)tv->key, tv->klen);
+		hexdump((char *)(void *)tv->key, tv->klen);
 		if (setup.cmode == WCRYPTO_CIPHER_CCM ||
 			setup.cmode == WCRYPTO_CIPHER_GCM) {
-			ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key, (__u16)tv->klen);
+			ret = wcrypto_set_aead_ckey(ctx, (__u8*)(void *)tv->key, (__u16)tv->klen);
 			if (ret) {
 				SEC_TST_PRT("set key fail!\n");
 				goto fail_release;
@@ -1905,12 +1905,12 @@ int sec_aead_sync_func_test(void *data)
 
 		// copy the assoc data in the front of in data
 		if (q->capa.priv.direction == 0) {
-			wd_sgl_cp_from_pbuf(opdata->in, 0, tv->assoc, tv->alen);
-			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, tv->ptext, tv->plen);
+			wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->assoc, tv->alen);
+			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, (void *)tv->ptext, tv->plen);
 			opdata->in_bytes = tv->plen;
 		} else {
-			wd_sgl_cp_from_pbuf(opdata->in, 0, tv->assoc, tv->alen);
-			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, tv->ctext, tv->clen);
+			wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->assoc, tv->alen);
+			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, (void *)tv->ctext, tv->clen);
 			opdata->in_bytes = tv->clen - auth_size;
 		}
 
@@ -1945,7 +1945,7 @@ int sec_aead_sync_func_test(void *data)
 			iv_len = 16;
 		}
 
-		wd_sgl_cp_from_pbuf(opdata->iv, 0, tv->iv, iv_len);
+		wd_sgl_cp_from_pbuf(opdata->iv, 0, (void *)tv->iv, iv_len);
 		opdata->iv_bytes = iv_len;
 #if DEBUG
 		SEC_TST_PRT("dump set input IV! IV lenght:%d\n", iv_len);
@@ -1995,10 +1995,10 @@ int sec_aead_sync_func_test(void *data)
 			return ret;
 		}
 
-		hexdump((char *)tv->key, tv->klen);
+		hexdump((char *)(void *)tv->key, tv->klen);
 		if (setup.cmode == WCRYPTO_CIPHER_CCM ||
 			setup.cmode == WCRYPTO_CIPHER_GCM) {
-			ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key, (__u16)tv->klen);
+			ret = wcrypto_set_aead_ckey(ctx, (__u8*)(void *)tv->key, (__u16)tv->klen);
 			if (ret) {
 				SEC_TST_PRT("set key fail!\n");
 				goto fail_release;
@@ -2060,12 +2060,12 @@ int sec_aead_sync_func_test(void *data)
 		// copy the assoc data in the front of in data
 		memset(opdata->in, 0, in_size);
 		if (q->capa.priv.direction == 0) {
-			memcpy(opdata->in, tv->assoc, tv->alen);
-			memcpy((opdata->in + tv->alen), tv->ptext, tv->plen);
+			memcpy(opdata->in, (void *)tv->assoc, tv->alen);
+			memcpy((opdata->in + tv->alen), (void *)tv->ptext, tv->plen);
 			opdata->in_bytes = tv->plen;
 		} else {
-			memcpy(opdata->in, tv->assoc, tv->alen);
-			memcpy((opdata->in + tv->alen), tv->ctext, tv->clen);
+			memcpy(opdata->in, (void *)tv->assoc, tv->alen);
+			memcpy((opdata->in + tv->alen), (void *)tv->ctext, tv->clen);
 			opdata->in_bytes = tv->clen - auth_size;
 		}
 
@@ -2098,7 +2098,7 @@ int sec_aead_sync_func_test(void *data)
 			iv_len = 16;
 		}
 		memset(opdata->iv, 0, iv_len);
-		memcpy(opdata->iv, tv->iv, iv_len);
+		memcpy(opdata->iv, (void *)tv->iv, iv_len);
 		opdata->iv_bytes = iv_len;
 		SEC_TST_PRT("dump set input IV! IV lenght:%d\n", iv_len);
 		hexdump(opdata->iv, opdata->iv_bytes);
@@ -2341,10 +2341,10 @@ int sec_aead_async_func_test(void *data)
 		return ret;
 	}
 
-	hexdump((char *)tv->key, tv->klen);
+	hexdump((char *)(void *)tv->key, tv->klen);
 	if (setup.cmode == WCRYPTO_CIPHER_CCM ||
 		setup.cmode == WCRYPTO_CIPHER_GCM) {
-		ret = wcrypto_set_aead_ckey(ctx, (__u8*)tv->key, (__u16)tv->klen);
+		ret = wcrypto_set_aead_ckey(ctx, (__u8*)(void *)tv->key, (__u16)tv->klen);
 		if (ret) {
 			SEC_TST_PRT("set key fail!\n");
 			goto fail_release;
@@ -2407,12 +2407,12 @@ int sec_aead_async_func_test(void *data)
 
 		// copy the assoc data in the front of in data
 		if (q->capa.priv.direction == 0) {
-			wd_sgl_cp_from_pbuf(opdata->in, 0, tv->assoc, tv->alen);
-			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, tv->ptext, tv->plen);
+			wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->assoc, tv->alen);
+			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, (void *)tv->ptext, tv->plen);
 			opdata->in_bytes = tv->plen;
 		} else {
-			wd_sgl_cp_from_pbuf(opdata->in, 0, tv->assoc, tv->alen);
-			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, tv->ctext, tv->clen);
+			wd_sgl_cp_from_pbuf(opdata->in, 0, (void *)tv->assoc, tv->alen);
+			wd_sgl_cp_from_pbuf(opdata->in, tv->alen, (void *)tv->ctext, tv->clen);
 			opdata->in_bytes = tv->clen - auth_size;
 		}
 #if DEBUG
@@ -2448,11 +2448,11 @@ int sec_aead_async_func_test(void *data)
 			iv_len = 16;
 		}
 		//memset(opdata->iv, 0, iv_len);
-		wd_sgl_cp_from_pbuf(opdata->iv, 0, tv->iv, iv_len);
+		wd_sgl_cp_from_pbuf(opdata->iv, 0, (void *)tv->iv, iv_len);
 		opdata->iv_bytes = iv_len;
 		SEC_TST_PRT("dump set input IV! IV lenght:%d\n", iv_len);
 		//hexdump(opdata->iv, opdata->iv_bytes);
-		hexdump(tv->iv, opdata->iv_bytes);
+		hexdump((void *)tv->iv, opdata->iv_bytes);
 	} else {   // use no-sva pbuffer
 		opdata->in = wd_alloc_blk(pdata->pool);
 		if (!opdata->in) {
@@ -2469,12 +2469,12 @@ int sec_aead_async_func_test(void *data)
 		// copy the assoc data in the front of in data
 		memset(opdata->in, 0, in_size);
 		if (q->capa.priv.direction == 0) {
-			memcpy(opdata->in, tv->assoc, tv->alen);
-			memcpy((opdata->in + tv->alen), tv->ptext, tv->plen);
+			memcpy(opdata->in, (void *)tv->assoc, tv->alen);
+			memcpy((opdata->in + tv->alen), (void *)tv->ptext, tv->plen);
 			opdata->in_bytes = tv->plen;
 		} else {
-			memcpy(opdata->in, tv->assoc, tv->alen);
-			memcpy((opdata->in + tv->alen), tv->ctext, tv->clen);
+			memcpy(opdata->in, (void *)tv->assoc, tv->alen);
+			memcpy((opdata->in + tv->alen), (void *)tv->ctext, tv->clen);
 			opdata->in_bytes = tv->clen - auth_size;
 		}
 
@@ -2507,7 +2507,7 @@ int sec_aead_async_func_test(void *data)
 			iv_len = 16;
 		}
 		memset(opdata->iv, 0, iv_len);
-		memcpy(opdata->iv, tv->iv, iv_len);
+		memcpy(opdata->iv, (void *)tv->iv, iv_len);
 		opdata->iv_bytes = iv_len;
 		SEC_TST_PRT("dump set input IV! IV lenght:%d\n", iv_len);
 		hexdump(opdata->iv, opdata->iv_bytes);
