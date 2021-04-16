@@ -425,6 +425,7 @@ err_out:
 
 int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 {
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	struct wd_comp_req strm_req;
 	__u32 total_avail_out = req->dst_len;
 	__u32 chunk = STREAM_CHUNK;
@@ -504,10 +505,12 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			strm_req.src_len = avail_in;
 		} while (strm_req.src_len > 0);
 
-		if (req->op_type == WD_DIR_COMPRESS && strm_req.last == 1)
-			break;
-		if (req->op_type == WD_DIR_DECOMPRESS &&
-		    strm_req.status == WD_STREAM_END)
+		/*
+		 * When a stream request end, 'stream_pos' will be reset as
+		 * 'WD_COMP_STREAM_NEW' in wd_do_comp_strm.
+		 */
+
+		if (sess->stream_pos == WD_COMP_STREAM_NEW)
 			break;
 	}
 
@@ -518,6 +521,17 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	return 0;
 }
 
+static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
+				      struct wd_comp_req *req,
+				      __u32 src_len)
+{
+	if (req->op_type == WD_DIR_COMPRESS && req->last == 1 &&
+	    req->src_len == src_len)
+		sess->stream_pos = WD_COMP_STREAM_NEW;
+	else if (req->op_type == WD_DIR_DECOMPRESS &&
+		 req->status == WD_STREAM_END)
+		sess->stream_pos = WD_COMP_STREAM_NEW;
+}
 
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
@@ -528,6 +542,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg msg;
 	__u64 recv_count = 0;
+	__u32 src_len;
 	__u32 idx;
 	int ret;
 
@@ -564,6 +579,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	msg.req.last = req->last;
 	msg.stream_mode = WD_COMP_STATEFUL;
 
+	src_len = req->src_len;
+
 	pthread_spin_lock(&ctx->lock);
 
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
@@ -595,6 +612,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	sess->checksum = msg.checksum;
 
 	sess->stream_pos = WD_COMP_STREAM_OLD;
+
+	wd_do_comp_strm_end_check(sess, req, src_len);
 
 	return 0;
 
