@@ -18,6 +18,8 @@ enum alg_type {
 	HW_DEFLATE = 0x1,
 	HW_ZLIB,
 	HW_GZIP,
+	HW_LZ77_ZSTD_PRICE = 0x42,
+	HW_LZ77_ZSTD,
 };
 
 enum hw_state {
@@ -39,17 +41,14 @@ struct hisi_zip_sqe {
 	__u32 consumed;
 	__u32 produced;
 	__u32 comp_data_length;
-
 	/*
 	 * status: 0~7 bits
 	 * rsvd: 8~31 bits
 	 */
 	__u32 dw3;
-
 	__u32 input_data_length;
 	__u32 dw5;
 	__u32 dw6;
-
 	/*
 	 * in_sge_data_offset: 0~23 bits
 	 * rsvd: 24 bit
@@ -59,13 +58,11 @@ struct hisi_zip_sqe {
 	 * sqe_type: 28~31 bits
 	 */
 	__u32 dw7;
-
 	/*
 	 * out_sge_data_offset: 0~23 bits
 	 * rsvd: 24~31 bits
 	 */
 	__u32 dw8;
-
 	/*
 	 * request_type: 0~7 bits
 	 * buffer_type: 8~11 bits
@@ -73,14 +70,11 @@ struct hisi_zip_sqe {
 	 * rsvd: 16~31 bits
 	 */
 	__u32 dw9;
-
 	__u32 dw10;
 	__u32 dw11;
 	__u32 dw12;
-
 	/* tag: in sqe type 0 */
 	__u32 dw13;
-
 	__u32 dest_avail_out;
 	__u32 ctx_dw0;
 	__u32 dw16;
@@ -91,22 +85,25 @@ struct hisi_zip_sqe {
 	__u32 dest_addr_h;
 	__u32 stream_ctx_addr_l;
 	__u32 stream_ctx_addr_h;
-	__u32 dw24;
-	__u32 dw25;
-
+	__u32 literals_addr_l;
+	__u32 literals_addr_h;
 	/* tag: in sqe type 3 */
 	__u32 dw26;
-
 	__u32 dw27;
 	__u32 ctx_dw1;
 	__u32 ctx_dw2;
 	__u32 isize;
-	__u32 checksum;
+	/*
+	 * checksum: in alg gzip
+	 * linlength_overflow_pos: 0~23 bits in alg lz77_zstd
+	 * linlength_overflow_cnt: 24~31 bits in alg lz77_zstd
+	 */
+	__u32 dw31;
 };
 
 struct hisi_zip_sqe_ops {
 	const char *alg_name;
-	void (*fill_buf)(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg);
+	int (*fill_buf)(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg);
 	void (*fill_sqe_type)(struct hisi_zip_sqe *sqe);
 	void (*fill_alg)(struct hisi_zip_sqe *sqe);
 	void (*fill_tag)(struct hisi_zip_sqe *sqe, __u32 tag);
@@ -133,6 +130,7 @@ struct hisi_zip_sqe_ops {
 #define GZIP_EXTRA_SZ	10
 #define GZIP_TAIL_SZ	8
 
+#define ZSTD_MAX_SIZE		(1 << 17)
 #define BLOCK_MIN		(1 << 10)
 #define BLOCK_MIN_MASK		0x3FF
 #define BLOCK_MAX		(1 << 20)
@@ -157,6 +155,9 @@ struct hisi_zip_sqe_ops {
 #define MIN_AVAILOUT_SIZE 4096
 #define STREAM_POS_SHIFT 2
 #define STREAM_MODE_SHIFT 1
+#define LITLEN_OVERFLOW_CNT_SHIFT 24
+
+#define LITLEN_OVERFLOW_POS_MASK 0xffffff
 
 #define HZ_NEGACOMPRESS 0x0d
 #define HZ_CRC_ERR 0x10
@@ -183,6 +184,9 @@ struct hisi_zip_sqe_ops {
 #define RSV_OFFSET 64
 #define CTX_DW1_OFFSET 4
 #define CTX_DW2_OFFSET 8
+#define OVERFLOW_DATA_SIZE 2
+#define ZSTD_FREQ_DATA_SIZE 784
+#define ZSTD_LIT_RESV_SIZE 16
 
 struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
@@ -206,7 +210,7 @@ static void fill_buf_addr_deflate(struct hisi_zip_sqe *sqe, void *src,
 	sqe->stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
 }
 
-static void fill_buf_deflate(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
+static int fill_buf_deflate(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 {
 	struct wd_comp_req *req = &msg->req;
 	void *ctx_buf;
@@ -219,9 +223,11 @@ static void fill_buf_deflate(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 		ctx_buf = NULL;
 
 	fill_buf_addr_deflate(sqe, req->src, req->dst, ctx_buf);
+
+	return 0;
 }
 
-static void fill_buf_zlib(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
+static int fill_buf_zlib(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 {
 	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
@@ -248,9 +254,11 @@ static void fill_buf_zlib(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 		ctx_buf = NULL;
 
 	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
+
+	return 0;
 }
 
-static void fill_buf_gzip(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
+static int fill_buf_gzip(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 {
 	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
@@ -277,6 +285,79 @@ static void fill_buf_gzip(struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 		ctx_buf = NULL;
 
 	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
+
+	return 0;
+}
+
+static void fill_buf_size_lz77_zstd(struct hisi_zip_sqe *sqe, __u32 in_size,
+				    __u32 lits_size, __u32 seqs_size)
+{
+	sqe->input_data_length = in_size;
+
+	/* fill the literals output size */
+	sqe->dw13 = lits_size;
+
+	/* fill the sequences output size */
+	sqe->dest_avail_out = seqs_size;
+}
+
+static void fill_buf_addr_lz77_zstd(struct hisi_zip_sqe *sqe,
+				    void *src, void *lits_start,
+				    void *seqs_start, void *ctx_buf)
+{
+	sqe->source_addr_l = lower_32_bits((__u64)src);
+	sqe->source_addr_h = upper_32_bits((__u64)src);
+	sqe->dest_addr_l = lower_32_bits((__u64)seqs_start);
+	sqe->dest_addr_h = upper_32_bits((__u64)seqs_start);
+	sqe->literals_addr_l = lower_32_bits((__u64)lits_start);
+	sqe->literals_addr_h = upper_32_bits((__u64)lits_start);
+	sqe->stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
+	sqe->stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
+}
+
+static int fill_buf_lz77_zstd(struct hisi_zip_sqe *sqe,
+			      struct wd_comp_msg *msg)
+{
+	struct wd_comp_req *req = &msg->req;
+	struct wd_lz77_zstd_data *data = req->priv;
+	__u32 in_size = msg->req.src_len;
+	__u32 lit_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 out_size = msg->avail_out;
+	void *ctx_buf = NULL;
+
+	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
+		WD_ERR("invalid input data size of lz77_zstd(%u)\n", in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(out_size > HZ_MAX_SIZE)) {
+		WD_ERR("warning: out of range avail_out(%u), will set 8MB size max!\n",
+		       out_size);
+		out_size = HZ_MAX_SIZE;
+	}
+
+	/*
+	 * For lz77_zstd, the hardware need 784 Bytes buffer to output
+	 * the frequency information about input data.
+	 */
+	if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lit_size)) {
+		WD_ERR("output buffer size of lz77_zstd is not enough(%u)\n",
+		       ZSTD_FREQ_DATA_SIZE + in_size);
+		return -WD_EINVAL;
+	}
+
+	if (msg->ctx_buf)
+		ctx_buf = msg->ctx_buf + RSV_OFFSET;
+
+	fill_buf_size_lz77_zstd(sqe, in_size, lit_size, out_size - lit_size);
+
+	fill_buf_addr_lz77_zstd(sqe, req->src, req->dst,
+				req->dst + lit_size, ctx_buf);
+
+	data->literals_start = req->dst;
+	data->sequences_start = req->dst + lit_size;
+
+	return 0;
 }
 
 static void fill_sqe_type_v1(struct hisi_zip_sqe *sqe)
@@ -316,6 +397,15 @@ static void fill_alg_gzip(struct hisi_zip_sqe *sqe)
 	__u32 val;
 	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
 	val |= HW_GZIP;
+	sqe->dw9 = val;
+}
+
+static void fill_alg_lz77_zstd(struct hisi_zip_sqe *sqe)
+{
+	__u32 val;
+
+	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+	val |= HW_LZ77_ZSTD;
 	sqe->dw9 = val;
 }
 
@@ -368,6 +458,21 @@ static void get_data_size_gzip(struct hisi_zip_sqe *sqe, int op_type,
 	}
 }
 
+static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, int op_type,
+				    struct wd_comp_msg *recv_msg)
+{
+	struct wd_lz77_zstd_data *data = recv_msg->req.priv;
+
+	if (!data)
+		return;
+
+	data->lit_num = sqe->comp_data_length;
+	data->seq_num = sqe->produced;
+	data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
+	data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
+	data->freq = data->sequences_start + data->seq_num + OVERFLOW_DATA_SIZE;
+}
+
 static int get_tag_v1(struct hisi_zip_sqe *sqe)
 {
 	return sqe->dw13;
@@ -396,7 +501,15 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_buf = fill_buf_gzip,
 		.fill_alg = fill_alg_gzip,
 		.get_data_size = get_data_size_gzip,
-	},
+	}, {
+		.alg_name = "lz77_zstd",
+		.fill_buf = fill_buf_lz77_zstd,
+		.fill_sqe_type = fill_sqe_type_v3,
+		.fill_alg = fill_alg_lz77_zstd,
+		.fill_tag = fill_tag_v3,
+		.get_data_size = get_data_size_lz77_zstd,
+		.get_tag = get_tag_v3,
+	}
 };
 
 static void hisi_zip_sqe_ops_adapt(handle_t h_qp)
@@ -495,7 +608,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
 	sqe->isize = msg->isize;
-	sqe->checksum = msg->checksum;
+	sqe->dw31 = msg->checksum;
 
 	if (msg->ctx_buf) {
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
@@ -549,6 +662,10 @@ static int get_alg_type(__u32 type)
 		break;
 	case HW_GZIP:
 		alg_type = WD_GZIP;
+		break;
+	case HW_LZ77_ZSTD:
+	case HW_LZ77_ZSTD_PRICE:
+		alg_type = WD_LZ77_ZSTD;
 		break;
 	default:
 		break;
@@ -620,7 +737,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 		recv_msg->req.status = WD_STREAM_END;
 
 	recv_msg->isize = sqe->isize;
-	recv_msg->checksum = sqe->checksum;
+	recv_msg->checksum = sqe->dw31;
 	recv_msg->alg_type = alg_type;
 
 	return 0;
@@ -644,7 +761,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg,
 
 struct wd_comp_driver hisi_zip = {
 	.drv_name		= "hisi_zip",
-	.alg_name		= "zlib\ngzip",
+	.alg_name		= "zlib\ngzip\ndeflate\nlz77_zstd",
 	.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
 	.init			= hisi_zip_init,
 	.exit			= hisi_zip_exit,
