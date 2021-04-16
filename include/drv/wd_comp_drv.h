@@ -44,6 +44,7 @@ struct wd_comp_driver {
 };
 
 void wd_comp_set_driver(struct wd_comp_driver *drv);
+struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_COMP_SET_DRIVER(drv)						      \

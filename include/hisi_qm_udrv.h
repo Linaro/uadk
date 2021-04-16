@@ -35,8 +35,12 @@ enum hisi_hw_type {
 };
 
 struct hisi_qm_priv {
+	/* flag for SYNC or ASYNC */
+	__u8 qp_mode;
 	__u16 sqe_size;
 	__u16 op_type;
+	/* index of ctxs */
+	__u32 idx;
 };
 
 struct hisi_qm_queue_info {
@@ -49,6 +53,7 @@ struct hisi_qm_queue_info {
 		  __u16 index, __u8 priority);
 	void *ds_tx_base;
 	void *ds_rx_base;
+	__u8 qp_mode;
 	__u16 sq_tail_index;
 	__u16 sq_head_index;
 	__u16 cq_head_index;
@@ -56,6 +61,7 @@ struct hisi_qm_queue_info {
 	__u16 qc_type;
 	__u16 used_num;
 	__u16 hw_type;
+	__u32 idx;
 	bool cqc_phase;
 	pthread_spinlock_t lock;
 	unsigned long region_size[UACCE_QFRT_MAX];
