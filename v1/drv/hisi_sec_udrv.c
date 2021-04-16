@@ -51,6 +51,7 @@
 #define WCRYPTO_DIGEST_THEN_CIPHER	1
 #define CBC_3DES_BLOCK_SIZE	8
 #define CBC_AES_BLOCK_SIZE	16
+#define AEAD_IV_MAX_BYTES	64
 
 static int g_digest_a_alg[WCRYPTO_MAX_DIGEST_TYPE] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
@@ -1839,7 +1840,6 @@ static int fill_aead_bd3_addr_src(struct wd_queue *q,
 		struct wcrypto_aead_msg *msg, struct hisi_sec_bd3_sqe *sqe)
 {
 	uintptr_t phy1, phy2;
-	void *p;
 
 	phy1 = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy1)) {
@@ -1849,22 +1849,9 @@ static int fill_aead_bd3_addr_src(struct wd_queue *q,
 	sqe->data_src_addr_l = (__u32)(phy1 & QM_L32BITS_MASK);
 	sqe->data_src_addr_h = HI_U32(phy1);
 
-	/* AEAD input MAC address use in address */
-	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
-		if (msg->data_fmt == WD_SGL_BUF) {
-			/* if 'msg->in' uses sgl, we should get its 'buf' address */
-			p = drv_get_sgl_pri((struct wd_sgl *)msg->in);
-			phy2 = ((struct hisi_sgl *)p)->sge_entries[0].buf;
-			if (unlikely(!phy2)) {
-				WD_ERR("fail to get bd3 sgl msg_in dma address!\n");
-				drv_iova_unmap(q, msg->in,
-					(void *)(uintptr_t)phy1, msg->in_bytes);
-				return -WD_ENOMEM;
-			}
-			phy2 = phy2 + msg->assoc_bytes + msg->in_bytes;
-		} else {
-			phy2 = phy1 + msg->assoc_bytes + msg->in_bytes;
-		}
+	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST &&
+	    msg->data_fmt == WD_FLAT_BUF) {
+		phy2 = phy1 + msg->assoc_bytes + msg->in_bytes;
 		sqe->mac_addr_l = (__u32)(phy2 & QM_L32BITS_MASK);
 		sqe->mac_addr_h = HI_U32(phy2);
 	}
@@ -1876,7 +1863,6 @@ static int fill_aead_bd3_addr_dst(struct wd_queue *q,
 		struct wcrypto_aead_msg *msg, struct hisi_sec_bd3_sqe *sqe)
 {
 	uintptr_t phy1, phy2;
-	void *p;
 
 	phy1 = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy1)) {
@@ -1886,22 +1872,9 @@ static int fill_aead_bd3_addr_dst(struct wd_queue *q,
 	sqe->data_dst_addr_l = (__u32)(phy1 & QM_L32BITS_MASK);
 	sqe->data_dst_addr_h = HI_U32(phy1);
 
-	/* AEAD output MAC address use out address */
-	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
-		/* if 'msg->out' uses sgl, we should get its 'buf' address */
-		if (msg->data_fmt == WD_SGL_BUF) {
-			p = drv_get_sgl_pri((struct wd_sgl *)msg->out);
-			phy2 = ((struct hisi_sgl *)p)->sge_entries[0].buf;
-			if (unlikely(!phy2)) {
-				WD_ERR("fail to get bd3 sgl msg_out dma address!\n");
-				drv_iova_unmap(q, msg->out,
-					(void *)(uintptr_t)phy1, msg->out_bytes);
-				return -WD_ENOMEM; /* unmap msg->out */
-			}
-			phy2 = phy2 + msg->out_bytes - msg->auth_bytes;
-		} else {
-			phy2 = phy1 + msg->out_bytes - msg->auth_bytes;
-		}
+	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST &&
+	    msg->data_fmt == WD_FLAT_BUF) {
+		phy2 = phy1 + msg->out_bytes - msg->auth_bytes;
 		sqe->mac_addr_l = (__u32)(phy2 & QM_L32BITS_MASK);
 		sqe->mac_addr_h = HI_U32(phy2);
 	}
@@ -1910,6 +1883,74 @@ static int fill_aead_bd3_addr_dst(struct wd_queue *q,
 }
 
 
+static int aead_bd3_map_iv_mac(struct wd_queue *q, struct wcrypto_aead_msg *msg,
+			       struct hisi_sec_bd3_sqe *sqe)
+{
+	__u8 mac[AEAD_IV_MAX_BYTES] = { 0 };
+	uintptr_t phy, phy_mac;
+	void *p;
+	int ret;
+
+	/*
+	 * 'msg->iv' use pBuffer, so when 'data_fmt' is sgl, we use its
+	 * first buffer as pBuffer, and 'buf_sz > key_sz' is needed.
+	 */
+	if (msg->data_fmt == WD_SGL_BUF) {
+		if (unlikely(!msg->iv))
+			return -WD_ENOMEM;
+		p = drv_get_sgl_pri((struct wd_sgl *)msg->iv);
+		phy = ((struct hisi_sgl *)p)->sge_entries[0].buf;
+	} else {
+		phy = (uintptr_t)drv_iova_map(q, msg->iv, msg->iv_bytes);
+	}
+	if (unlikely(!phy)) {
+		WD_ERR("Get key dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+
+	sqe->ipsec_scene.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->ipsec_scene.c_ivin_addr_h = HI_U32(phy);
+
+	if (msg->data_fmt == WD_SGL_BUF) {
+		if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
+			/*
+			 *'MAC' is at the end of 'in', as it is not easy to get
+			 * 'MAC' dma address, so when we do decrypt, we copy
+			 * 'MAC' to the end of 'IV'.
+			 */
+			ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)msg->in,
+						msg->assoc_bytes + msg->in_bytes,
+						(void *)mac, msg->auth_bytes);
+			if (ret)
+				return ret;
+			ret = wd_sgl_cp_from_pbuf((struct wd_sgl *)msg->iv,
+						AEAD_IV_MAX_BYTES,
+						(void *)mac, msg->auth_bytes);
+			if (ret)
+				return ret;
+		}
+		/*
+		 * When we do decrypt, 'MAC' has been at the end 'IV',
+		 * and when we do encrypt, obtain a memory from IV SGL as a
+		 * temporary address space for MAC.
+		 */
+		phy_mac = phy + AEAD_IV_MAX_BYTES;
+		sqe->mac_addr_l = (__u32)(phy_mac & QM_L32BITS_MASK);
+		sqe->mac_addr_h = HI_U32(phy);
+	}
+
+	return WD_SUCCESS;
+}
+
+/*
+ * As 'MAC' needs an continuous memory,
+ * When do decrypt:
+ * 'MAC' dma is at the tail of 'out' when use pbuffer;
+ * 'MAC' dma is at the tail of 'iv' when use sgl;
+ * When do encrypt:
+ * 'MAC' dma is at the tail of 'in' when use pbuffer;
+ * 'MAC' dma is at the tail of 'iv' when use sgl;
+ */
 static int fill_aead_bd3_addr(struct wd_queue *q,
 		struct wcrypto_aead_msg *msg, struct hisi_sec_bd3_sqe *sqe)
 {
@@ -1941,12 +1982,9 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 		goto map_akey_error;
 	}
 
-	ret = map_addr(q, msg->iv, msg->iv_bytes, &sqe->ipsec_scene.c_ivin_addr_l,
-		       &sqe->ipsec_scene.c_ivin_addr_h, msg->data_fmt);
-	if (unlikely(ret)) {
-		WD_ERR("fail to get iv dma address!\n");
+	ret = aead_bd3_map_iv_mac(q, msg, sqe);
+	if (unlikely(ret))
 		goto map_civ_error;
-	}
 
 	/* CCM/GCM should init a_iv */
 	set_aead_auth_iv(msg);
@@ -2117,9 +2155,11 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 }
 
 static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
-		struct wcrypto_aead_msg *msg)
+			   struct wcrypto_aead_msg *msg)
 {
+	__u8 mac[AEAD_IV_MAX_BYTES] = { 0 };
 	__u64 dma_addr;
+	int ret;
 
 	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type ||
 	    sqe->icv == SEC_HW_ICV_ERR) {
@@ -2128,6 +2168,25 @@ static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		msg->result = WD_IN_EPARA;
 	} else {
 		msg->result = WD_SUCCESS;
+	}
+
+	/*
+	 * We obtain a memory from IV SGL as a temporary address space for MAC，
+	 * After the encryption is completed, copy the data from this temporary
+	 * address space to dst.
+	 */
+	if (msg->data_fmt == WD_SGL_BUF &&
+	    msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
+		ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)msg->iv,
+					AEAD_IV_MAX_BYTES,
+					(void *)mac, msg->auth_bytes);
+		if (ret)
+			return;
+		ret = wd_sgl_cp_from_pbuf((struct wd_sgl *)msg->out,
+					msg->out_bytes - msg->auth_bytes,
+					(void *)mac, msg->auth_bytes);
+		if (ret)
+			return;
 	}
 
 	dma_addr = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
@@ -2330,7 +2389,6 @@ static int fill_aead_bd2_addr_src(struct wd_queue *q,
 		struct wcrypto_aead_msg *msg, struct hisi_sec_sqe *sqe)
 {
 	uintptr_t phy1, phy2;
-	void *p;
 
 	phy1 = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy1)) {
@@ -2340,22 +2398,9 @@ static int fill_aead_bd2_addr_src(struct wd_queue *q,
 	sqe->type2.data_src_addr_l = (__u32)(phy1 & QM_L32BITS_MASK);
 	sqe->type2.data_src_addr_h = HI_U32(phy1);
 
-	/* AEAD input MAC address use in address */
-	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
-		if (msg->data_fmt == WD_SGL_BUF) {
-			/* if 'msg->in' uses sgl, we should get its 'buf' address */
-			p = drv_get_sgl_pri((struct wd_sgl *)msg->in);
-			phy2 = ((struct hisi_sgl *)p)->sge_entries[0].buf;
-			if (unlikely(!phy2)) {
-				WD_ERR("fail to get sgl msg_in dma address!\n");
-				drv_iova_unmap(q, msg->in,
-					(void *)(uintptr_t)phy1, msg->in_bytes);
-				return -WD_ENOMEM;
-			}
-			phy2 = phy2 + msg->assoc_bytes + msg->in_bytes;
-		} else {
-			phy2 = phy1 + msg->assoc_bytes + msg->in_bytes;
-		}
+	if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST &&
+	    msg->data_fmt == WD_FLAT_BUF) {
+		phy2 = phy1 + msg->assoc_bytes + msg->in_bytes;
 		sqe->type2.mac_addr_l = (__u32)(phy2 & QM_L32BITS_MASK);
 		sqe->type2.mac_addr_h = HI_U32(phy2);
 	}
@@ -2367,7 +2412,6 @@ static int fill_aead_bd2_addr_dst(struct wd_queue *q,
 		struct wcrypto_aead_msg *msg, struct hisi_sec_sqe *sqe)
 {
 	uintptr_t phy1, phy2;
-	void *p;
 
 	phy1 = (uintptr_t)drv_iova_map(q, msg->out, msg->out_bytes);
 	if (unlikely(!phy1)) {
@@ -2377,22 +2421,9 @@ static int fill_aead_bd2_addr_dst(struct wd_queue *q,
 	sqe->type2.data_dst_addr_l = (__u32)(phy1 & QM_L32BITS_MASK);
 	sqe->type2.data_dst_addr_h = HI_U32(phy1);
 
-	/* AEAD output MAC address use out address */
-	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
-		/* if 'msg->out' uses sgl, we should get its 'buf' address */
-		if (msg->data_fmt == WD_SGL_BUF) {
-			p = drv_get_sgl_pri((struct wd_sgl *)msg->out);
-			phy2 = ((struct hisi_sgl *)p)->sge_entries[0].buf;
-			if (unlikely(!phy2)) {
-				WD_ERR("fail to get sgl msg_out dma address!\n");
-				drv_iova_unmap(q, msg->out,
-					(void *)(uintptr_t)phy1, msg->out_bytes);
-				return -WD_ENOMEM; /* unmap msg->out */
-			}
-			phy2 = phy2 + msg->out_bytes - msg->auth_bytes;
-		} else {
-			phy2 = phy1 + msg->out_bytes - msg->auth_bytes;
-		}
+	if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST &&
+	    msg->data_fmt == WD_FLAT_BUF) {
+		phy2 = phy1 + msg->out_bytes - msg->auth_bytes;
 		sqe->type2.mac_addr_l = (__u32)(phy2 & QM_L32BITS_MASK);
 		sqe->type2.mac_addr_h = HI_U32(phy2);
 	}
@@ -2400,6 +2431,71 @@ static int fill_aead_bd2_addr_dst(struct wd_queue *q,
 	return WD_SUCCESS;
 }
 
+static int aead_bd2_map_iv_mac(struct wd_queue *q, struct wcrypto_aead_msg *msg,
+			       struct hisi_sec_sqe *sqe)
+{
+	__u8 mac[AEAD_IV_MAX_BYTES] = { 0 };
+	uintptr_t phy, phy_mac;
+	void *p;
+	int ret;
+
+	/*
+	 * 'msg->iv' use pBuffer, so when 'data_fmt' is sgl, we use its
+	 * first buffer as pBuffer, and 'buf_sz > key_sz' is needed.
+	 */
+	if (msg->data_fmt == WD_SGL_BUF) {
+		if (unlikely(!msg->iv))
+			return -WD_ENOMEM;
+		p = drv_get_sgl_pri((struct wd_sgl *)msg->iv);
+		phy = ((struct hisi_sgl *)p)->sge_entries[0].buf;
+	} else {
+		phy = (uintptr_t)drv_iova_map(q, msg->iv, msg->iv_bytes);
+	}
+	if (unlikely(!phy)) {
+		WD_ERR("Get key dma address fail!\n");
+		return -WD_ENOMEM;
+	}
+
+	sqe->type2.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.c_ivin_addr_h = HI_U32(phy);
+
+	if (msg->data_fmt == WD_SGL_BUF) {
+		if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION_DIGEST) {
+			/*
+			 *'MAC' is at the end of 'in', as it is not easy to get
+			 * 'MAC' dma address, so when we do decrypt, we copy
+			 * 'MAC' to the end of 'IV'.
+			 */
+			ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)msg->in,
+						msg->assoc_bytes + msg->in_bytes,
+						(void *)mac, msg->auth_bytes);
+			if (ret)
+				return ret;
+
+			ret = wd_sgl_cp_from_pbuf((struct wd_sgl *)msg->iv,
+						AEAD_IV_MAX_BYTES,
+						(void *)mac, msg->auth_bytes);
+			if (ret)
+				return ret;
+		}
+
+		phy_mac = phy + AEAD_IV_MAX_BYTES;
+		sqe->type2.mac_addr_l = (__u32)(phy_mac & QM_L32BITS_MASK);
+		sqe->type2.mac_addr_h = HI_U32(phy_mac);
+	}
+
+	return WD_SUCCESS;
+}
+
+/*
+ * As 'MAC' needs an continuous memory,
+ * When do decrypt:
+ * 'MAC' dma is at the tail of 'out' when use pbuffer;
+ * 'MAC' dma is at the tail of 'iv' when use sgl;
+ * When do encrypt:
+ * 'MAC' dma is at the tail of 'in' when use pbuffer;
+ * 'MAC' dma is at the tail of 'iv' when use sgl;
+ */
 static int fill_aead_bd2_addr(struct wd_queue *q,
 		struct wcrypto_aead_msg *msg, struct hisi_sec_sqe *sqe)
 {
@@ -2415,17 +2511,16 @@ static int fill_aead_bd2_addr(struct wd_queue *q,
 		goto map_out_error;
 
 	ret = map_addr(q, msg->ckey, msg->ckey_bytes, &sqe->type2.c_key_addr_l,
-			    &sqe->type2.c_key_addr_h, msg->data_fmt);
+			&sqe->type2.c_key_addr_h, msg->data_fmt);
 	if (unlikely(ret))
 		goto map_ckey_error;
 
 	ret = map_addr(q, msg->akey, msg->akey_bytes, &sqe->type2.a_key_addr_l,
-			    &sqe->type2.a_key_addr_h, msg->data_fmt);
+			&sqe->type2.a_key_addr_h, msg->data_fmt);
 	if (unlikely(ret))
 		goto map_akey_error;
 
-	ret = map_addr(q, msg->iv, msg->iv_bytes, &sqe->type2.c_ivin_addr_l,
-			    &sqe->type2.c_ivin_addr_h, msg->data_fmt);
+	ret = aead_bd2_map_iv_mac(q, msg, sqe);
 	if (unlikely(ret))
 		goto map_civ_error;
 
@@ -2433,7 +2528,7 @@ static int fill_aead_bd2_addr(struct wd_queue *q,
 	set_aead_auth_iv(msg);
 
 	ret = map_addr(q, msg->aiv, msg->iv_bytes, &sqe->type2.a_ivin_addr_l,
-			    &sqe->type2.a_ivin_addr_h, msg->data_fmt);
+			&sqe->type2.a_ivin_addr_h, msg->data_fmt);
 	if (unlikely(ret))
 		goto map_aiv_error;
 
@@ -2543,7 +2638,9 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_aead_msg *msg)
 {
+	__u8 mac[64] = { 0 };
 	__u64 dma_addr;
+	int ret;
 
 	if (sqe->type2.done != SEC_HW_TASK_DONE || sqe->type2.error_type ||
 	    sqe->type2.icv == SEC_HW_ICV_ERR) {
@@ -2552,6 +2649,25 @@ static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		msg->result = WD_IN_EPARA;
 	} else {
 		msg->result = WD_SUCCESS;
+	}
+
+	/*
+	 * We obtain a memory from IV SGL as a temporary address space for MAC，
+	 * After the encryption is completed, copy the data from this temporary
+	 * address space to dst.
+	 */
+	if (msg->data_fmt == WD_SGL_BUF &&
+	    msg->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST) {
+		ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)msg->iv,
+					AEAD_IV_MAX_BYTES,
+					(void *)mac, msg->auth_bytes);
+		if (ret)
+			return;
+		ret = wd_sgl_cp_from_pbuf((struct wd_sgl *)msg->out,
+					msg->out_bytes - msg->auth_bytes,
+					(void *)mac, msg->auth_bytes);
+		if (ret)
+			return;
 	}
 
 	dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
