@@ -12,7 +12,7 @@ endif	# WITH_LOG_FILE
 # x = current - age
 # y = age
 # z = revision
-UADK_VERSION = -version-info 5:2:3
+UADK_VERSION = -version-info 5:3:3
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
