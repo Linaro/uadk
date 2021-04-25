@@ -1590,7 +1590,7 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_sm2_enc_in *ein = msg->req.src;
 	struct wd_ecc_msg *msg_dst[2] = {NULL};
-	struct hisi_hpre_sqe hw_msg[2] = {0};
+	struct hisi_hpre_sqe hw_msg[2] = {{0}};
 	struct wd_hash_mt *hash = &msg->hash;
 	__u16 send_cnt = 0;
 	int ret;

@@ -101,7 +101,7 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 
 static void get_dev_info(struct uacce_dev *dev)
 {
-	int value;
+	int value = 0;
 
 	get_int_attr(dev, "flags", &dev->flags);
 	get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);

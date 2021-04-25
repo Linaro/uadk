@@ -305,7 +305,7 @@ void *alloc_free_thread(void *data)
 
 static int test_blkpool(struct test_option *opt)
 {
-	struct test_opt_per_thread per_thread_opt[WD_MEM_MAX_THREAD] = {0};
+	struct test_opt_per_thread per_thread_opt[WD_MEM_MAX_THREAD] = {{0}};
 	pthread_t threads[WD_MEM_MAX_THREAD];
 	int i, bp_thread_num = g_thread_num;
 	handle_t mp, bp;
@@ -393,7 +393,7 @@ void *blk_test_thread(void *data)
 
 static int test_mempool(struct test_option *opt)
 {
-	struct test_opt_per_thread per_thread_opt[WD_MEM_MAX_THREAD] = {0};
+	struct test_opt_per_thread per_thread_opt[WD_MEM_MAX_THREAD] = {{0}};
 	pthread_t threads[WD_MEM_MAX_THREAD];
 	int i, bp_thread_num = g_thread_num;
 
@@ -827,7 +827,7 @@ void free_bd_pool(struct test_opt_per_thread *td)
 
 static int test_sec_perf(struct test_option *opt)
 {
-	struct test_opt_per_thread datas[WD_MEM_MAX_THREAD] = {0};
+	struct test_opt_per_thread datas[WD_MEM_MAX_THREAD] = {{0}};
 	struct wd_cipher_sess_setup setup[WD_MEM_MAX_THREAD];
 	struct wd_cipher_req req[WD_MEM_MAX_THREAD];
 	struct cipher_testvec *tv = &aes_cbc_perf_128[0];
