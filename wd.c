@@ -12,6 +12,8 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
+const char *WD_VERSION = "libwd version: 2.3.4";
+
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
 //wd_log log_out = NULL;
