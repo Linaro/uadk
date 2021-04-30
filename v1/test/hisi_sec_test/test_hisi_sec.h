@@ -23,6 +23,11 @@ enum alg_class {
 	DIGEST_CLASS,
 };
 
+enum times_class {
+	SECONDS_CLASS,
+	CYCLES_CLASS,
+};
+
 enum cipher_op_type {
 	ENCRYPTION,
 	DECRYPTION,
