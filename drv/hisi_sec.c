@@ -348,14 +348,14 @@ struct bd3_no_scene {
 } __attribute__((packed, aligned(4)));
 
 struct bd3_check_sum {
-	__le16 check_sum_i;
-	__u8 tls_pad_len_i;
 	__u8 rsvd0;
+	__u8 hac_sva_status;
+	__le16 check_sum_i;
 };
 
 struct bd3_tls_type_back {
 	__u8 tls_1p3_type_back;
-	__u8 rsvd0;
+	__u8 hac_sva_status;
 	__le16 pad_len_1p3_back;
 };
 
@@ -449,8 +449,13 @@ struct hisi_sec_sqe3 {
 	__le16 done_flag;
 	__u8 error_type;
 	__u8 warning_type;
-	__le32 mac_i;
 	union {
+		__le32 mac_i;
+		__le32 kek_key_addr_l;
+	};
+
+	union {
+		__le32 kek_key_addr_h;
 		struct bd3_check_sum check_sum;
 		struct bd3_tls_type_back tls_type_back;
 	};
