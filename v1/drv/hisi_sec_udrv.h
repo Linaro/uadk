@@ -321,22 +321,14 @@ struct bd3_no_scene {
 };
 
 struct bd3_check_sum {
-	__u32 mac_i3:8;
-	__u32 mac_i2:8;
-	__u32 mac_i1:8;
-	__u32 mac_i0:8;
-	__u32 check_sum_i:16;
-	__u32 tls_pad_len_i:8;
 	__u32 rsvd0:8;
+	__u32 hac_sva_status:8;
+	__u32 check_sum_i:16;
 };
 
 struct bd3_tls_type_back {
-	__u32 mac_i3:8;
-	__u32 mac_i2:8;
-	__u32 mac_i1:8;
-	__u32 mac_i0:8;
 	__u32 tls_1p3_type_back:8;
-	__u32 rsvd0:8;
+	__u32 hac_sva_status:8;
 	__u32 pad_len_1p3_back:16;
 };
 
@@ -420,7 +412,10 @@ struct hisi_sec_bd3_sqe {
 	__u32 error_type:8;
 	__u32 warning_type:8;
 	union {
+		__u32 mac_i;
 		__u32 kek_key_addr_l;
+	};
+	union {
 		__u32 kek_key_addr_h;
 		struct bd3_check_sum check_sum;
 		struct bd3_tls_type_back tls_type_back;
