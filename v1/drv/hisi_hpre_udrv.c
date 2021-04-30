@@ -1307,10 +1307,11 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 	int ret = -WD_EINVAL;
 
 	switch (msg->op_type) {
-	case WCRYPTO_ECXDH_GEN_KEY:
-	case WCRYPTO_SM2_KG:
 	case HPRE_SM2_ENC: /* fall through */
 	case HPRE_SM2_DEC: /* fall through */
+		hw_msg->bd_rsv2 = 1; /* fall through */
+	case WCRYPTO_ECXDH_GEN_KEY: /* fall through */
+	case WCRYPTO_SM2_KG:
 		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in,
 					    data);
 		break;

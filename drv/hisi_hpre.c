@@ -83,7 +83,9 @@ struct hisi_hpre_sqe {
 	__u32 mrttest_num : 8;
 	__u32 uwkey_enb : 1;
 	__u32 sm2_ksel	: 1;
-	__u32 resv1	: 6;
+	__u32 sva_bypass: 1;
+	__u32 sva_status: 4;
+	__u32 bd_rsv2	: 1;
 	__u32 low_key;
 	__u32 hi_key;
 	__u32 low_in;
@@ -1190,7 +1192,8 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 	case HPRE_SM2_ENC: /* fall through */
 	case HPRE_SM2_DEC:
 		/* driver to identify sm2 algorithm when async receive */
-		hw_msg->sm2_mlen = msg->req.op_type; /* fall through */
+		hw_msg->sm2_mlen = msg->req.op_type;
+		hw_msg->bd_rsv2 = 1; /* fall through */
 	case WD_SM2_KG: /* fall through */
 	case WD_ECXDH_GEN_KEY:
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
