@@ -673,6 +673,12 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	tgt_info = tqinfo->dev_info;
 	info = qinfo->dev_info;
 
+	/* Just share DMA memory from 'q' in NO-IOMMU mode */
+	if (qinfo->iommu_type) {
+		WD_ERR("IOMMU opened, not support share mem!\n");
+		return -EINVAL;
+	}
+
 	if (qinfo->iommu_type != tqinfo->iommu_type) {
 		WD_ERR("IOMMU type mismatching as share mem!\n");
 		return -WD_EINVAL;
@@ -686,10 +692,7 @@ int wd_share_reserved_memory(struct wd_queue *q,
 		return ret;
 	}
 
-	/* Just share DMA memory from 'q' in NO-IOMMU mode */
-	if (!qinfo->iommu_type)
-		tqinfo->head = qinfo->head;
-
+	tqinfo->head = qinfo->head;
 	__atomic_add_fetch(&qinfo->ref, 1, __ATOMIC_RELAXED);
 
 	return 0;
