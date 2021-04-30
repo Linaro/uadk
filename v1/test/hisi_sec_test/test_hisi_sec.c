@@ -27,6 +27,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <getopt.h>
 
 #include "test_hisi_sec.h"
 #include "../../wd.h"
@@ -80,11 +81,33 @@ struct digest_async_tag {
 	struct test_sec_pthread_dt *thread_info;
 };
 
+/**
+ * struct test_sec_option - Define the test sec app option list.
+ * @algclass: 0:cipher 1:digest
+ * @algtype: The sub alg type, reference func get_cipher_resource.
+ * @syncmode: 0:sync mode 1:async mode
+ */
+struct test_sec_option {
+	u32 algclass;
+	u32 algtype;
+	u32 t;
+	u32 optype;
+	u32 pktlen;
+	u32 keylen;
+	u32 ivlen;
+	u32 timeclass;
+	u32 times;
+	u32 syncmode;
+	u32 dump;
+};
+
 /* OpenSSL Skcipher APIS */
-static int t_times = 1000;
+static long long t_times = 1000;
 static int t_seconds = 0;
 static int pktlen = 1024;
 static int g_testalg = 0;
+static int g_thread_num = 0;
+static int g_dump = 0;
 
 static pthread_t system_test_thrds[TEST_MAX_THRD];
 static struct  test_sec_pthread_dt test_thrds_data[TEST_MAX_THRD];
@@ -144,12 +167,15 @@ void hexdump(char *buf, int num)
 {
 	int i;
 
-	for (i = 0; i < num; i++) {
+	if (g_dump) {
+		for (i = 0; i < num; i++) {
 		printf("\\%02X", buf[i]);
 		if ((i + 1) % 8 == 0)
 			printf("\n");
+		}
+		printf("\n");
 	}
-	printf("\n");
+
 	return;
 }
 
@@ -509,9 +535,9 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 		ret = -EINVAL;
 		return ret;
 	}
-#ifdef DEBUG
+
 	hexdump(tv->key, tv->klen);
-#endif
+
 	ret = wcrypto_set_cipher_key(ctx, (__u8*)tv->key, (__u16)tv->klen);
 	if (ret) {
 		SEC_TST_PRT("set key fail!\n");
@@ -547,9 +573,9 @@ int sec_sync_func_test(struct test_sec_pthread_dt *pdata)
 	}
 
 	SEC_TST_PRT("cipher len:%d\n", opdata->in_bytes);
-#ifdef DEBUG
+
 	hexdump(opdata->in, opdata->in_bytes);
-#endif
+
 	opdata->priv = NULL;
 	opdata->out = wd_alloc_blk(pdata->pool);
 	if (!opdata->out) {
@@ -890,7 +916,7 @@ int sec_sync_digest_test(struct test_sec_pthread_dt *pdata)
 	memcpy(opdata->in, tv->plaintext, tv->psize);
 	//	opdata->in_bytes = tv->psize;
 	SEC_TST_PRT("digest len:%d\n", opdata->in_bytes);
-	//	hexdump(tv->plaintext, tv->psize);
+	hexdump(tv->plaintext, tv->psize);
 	opdata->priv = NULL;
 	opdata->out_bytes = tv->dsize;
 	memset(opdata->out, 0, opdata->out_bytes);
@@ -968,11 +994,11 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
         __u64 hcore_mask, enum cipher_op_type op_type,
         char *dev_path, unsigned int node_mask)
 {
-	void **pool;
 	struct wd_blkpool_setup setup;
 	int i, ret, cnt = 0, j;
 	int block_num = 128;
 	struct wd_queue *q;
+	void **pool;
 	int qidx;
 
 	pthread_mutex_init(&perf_mutex, NULL);
@@ -985,7 +1011,6 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 	memset(q, 0, q_num * sizeof(struct wd_queue));
 
 	/* create pool for every queue */
-	SEC_TST_PRT("create pool memory: %d\n", block_num * setup.block_size);
 	pool = malloc(q_num * sizeof(pool));
 	if (!pool) {
 		SEC_TST_PRT("malloc pool memory fail!\n");
@@ -1019,7 +1044,7 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 	    setup.block_num = MAX_BLOCK_NM;
 	    setup.align_size = SQE_SIZE;
 
-		SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
+		SEC_TST_PRT("create pool memory: %lld\n", MAX_BLOCK_NM * setup.block_size);
 	    pool[j] = wd_blkpool_create(&q[j], &setup);
 	    if (!pool[j]) {
 			SEC_TST_PRT("%s(): create %dth pool fail!\n", __func__, j);
@@ -1027,7 +1052,6 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 		}
 	}
 
-	//??? ???
 	if (_get_one_bits(lcore_mask) == 0 &&
 		_get_one_bits(hcore_mask) == 0)
 		cnt = thread_num;
@@ -1169,10 +1193,10 @@ int sec_async_func_test(struct test_sec_pthread_dt *pdata)
 	}
 
 	opdata.priv = NULL;
-#if DEBUG
+
 	printf("ptext:\n");
 	hexdump(opdata.in, opdata.in_bytes);
-#endif
+
 	opdata.out = wd_alloc_blk(pdata->pool);
 	opdata.out_bytes = opdata.in_bytes;
 	if (!opdata.out) {
@@ -1301,9 +1325,9 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 			goto fail_release;
 		}
 	}
-#ifdef DEBUG
+
 	hexdump(tv->key, tv->ksize);
-#endif
+
 	opdata.in = wd_alloc_blk(pdata->pool);
 	if (!opdata.in) {
 		SEC_TST_PRT("alloc in buffer fail!\n");
@@ -1312,9 +1336,9 @@ int sec_async_digest_test(struct test_sec_pthread_dt *pdata)
 	memcpy(opdata.in, tv->plaintext, tv->psize);
 	opdata.in_bytes = tv->psize;
 	SEC_TST_PRT("digest len:%d\n", opdata.in_bytes);
-#ifdef DEBUG
+
 	hexdump(opdata.in, opdata.in_bytes);
-#endif
+
 	opdata.priv = NULL;
 	opdata.out = wd_alloc_blk(pdata->pool);
 	opdata.out_bytes = tv->dsize;
@@ -2092,100 +2116,247 @@ static int sec_aead_async_test(int thd_num, __u64 lcore_mask,
 	return 0;
 }
 
-int main(int argc, char *argv[])
+static void print_help(void)
+{
+	SEC_TST_PRT("NAME\n");
+	SEC_TST_PRT("    test_hisi_sec: test wd sec function,etc\n");
+	SEC_TST_PRT("USAGE\n");
+	SEC_TST_PRT("    test_hisi_sec [--cipher] [--digest] [--aead]\n");
+	SEC_TST_PRT("    test_hisi_sec [--optype] [--pktlen] [--keylen] [--times]\n");
+	SEC_TST_PRT("    test_hisi_sec [--sync] [--async] [--help]\n");
+	SEC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./test_hisi_sec xxxx\n");
+	SEC_TST_PRT("DESCRIPTION\n");
+	SEC_TST_PRT("    [--cipher ]:\n");
+	SEC_TST_PRT("        specify symmetric cipher algorithm\n");
+	SEC_TST_PRT("        0 : AES-ECB; 1 : AES-CBC;  2 : AES-XTS;  3 : AES-OFB\n");
+	SEC_TST_PRT("        4 : AES-CFB; 5 : 3DES-ECB; 6 : 3DES-CBC; 7 : SM4-CBC\n");
+	SEC_TST_PRT("        8 : SM4-XTS; 9 : SM4-OFB; 10 : SM4-CFB;\n");
+	SEC_TST_PRT("    [--digest ]:\n");
+	SEC_TST_PRT("        specify symmetric hash algorithm\n");
+	SEC_TST_PRT("        0 : SM3;    1 : MD5;    2 : SHA1;   3 : SHA256\n");
+	SEC_TST_PRT("        4 : SHA224; 5 : SHA384; 6 : SHA512; 7 : SHA512_224\n");
+	SEC_TST_PRT("        8 : SHA512_256\n");
+	SEC_TST_PRT("    [--aead ]:\n");
+	SEC_TST_PRT("        specify symmetric aead algorithm\n");
+	SEC_TST_PRT("        0 : AES-CCM; 1 : AES-GCM;  2 : Hmac(sha256),cbc(aes)\n");
+	SEC_TST_PRT("    [--optype]:\n");
+	SEC_TST_PRT("        0 : encryption operation or normal mode for hash\n");
+	SEC_TST_PRT("        1 : decryption operation or hmac mode for hash\n");
+	SEC_TST_PRT("    [--seconds]:\n");
+	SEC_TST_PRT("        set the time for test\n");
+	SEC_TST_PRT("    [--cycles]:\n");
+	SEC_TST_PRT("        set the number of sent messages\n");
+	SEC_TST_PRT("    [--pktlen]:\n");
+	SEC_TST_PRT("        set the length of BD message in bytes\n");
+	SEC_TST_PRT("    [--keylen]:\n");
+	SEC_TST_PRT("        set the key length in bytes\n");
+	SEC_TST_PRT("    [--sync]: start synchronous mode test\n");
+	SEC_TST_PRT("    [--async]: start asynchronous mode test\n");
+	SEC_TST_PRT("    [--dump]: dump message operation mode test, 0: default, not dump, 1: dump\n");
+	SEC_TST_PRT("    [--help]  = usage\n");
+	SEC_TST_PRT("Example\n");
+	SEC_TST_PRT("    ./test_hisi_sec --cipher 0 --t 1 --optype 0 \n");
+	SEC_TST_PRT("    	--cycles 100  --pktlen 16 --keylen 16 --ivlen 16 --sync\n");
+	SEC_TST_PRT("UPDATE:2021-04-27\n");
+}
+
+static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *option)
+{
+	int option_index = 0;
+	int c;
+
+	static struct option long_options[] = {
+		{"cipher",    required_argument, 0,  1},
+		{"digest",    required_argument, 0,  2},
+		{"aead",      required_argument, 0,  3},
+		{"t",         required_argument, 0,  4},
+		{"optype",    required_argument, 0,  5},
+		{"seconds",   required_argument, 0,  6},
+		{"cycles",    required_argument, 0,  7},
+		{"pktlen",    required_argument, 0,  8},
+		{"keylen",    required_argument, 0,  9},
+		{"ivlen",     required_argument, 0,  10},
+		{"sync",      no_argument,       0,  11},
+		{"async",     no_argument,       0,  12},
+		{"dump",      required_argument, 0,  13},
+		{"help",      no_argument,       0,  14},
+		{0, 0, 0, 0}
+	};
+
+	while (1) {
+		c = getopt_long(argc, argv, "", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 1:
+			option->algclass = CIPHER_CLASS;
+			option->algtype = strtol(optarg, NULL, 0);
+			break;
+		case 2:
+			option->algclass = DIGEST_CLASS;
+			option->algtype = strtol(optarg, NULL, 0);
+			break;
+		case 3:
+			option->algclass = AEAD_CLASS;
+			option->algtype = strtol(optarg, NULL, 0);
+			break;
+		case 4:
+			option->t = strtol(optarg, NULL, 0);
+			break;
+		case 5:
+			option->optype = strtol(optarg, NULL, 0);
+			break;
+		case 6:
+			option->timeclass = SECONDS_CLASS;
+			option->times = strtol(optarg, NULL, 0);
+			break;
+		case 7:
+			option->timeclass = CYCLES_CLASS;
+			option->times = strtol(optarg, NULL, 0);
+			break;
+		case 8:
+			option->pktlen = strtol(optarg, NULL, 0);
+			break;
+		case 9:
+			option->keylen = strtol(optarg, NULL, 0);
+			break;
+		case 10:
+			option->ivlen = strtol(optarg, NULL, 0);
+			break;
+		case 11:
+			option->syncmode = 0;
+			break;
+		case 12:
+			option->syncmode = 1;
+			break;
+		case 13:
+			option->dump = strtol(optarg, NULL, 0);
+			break;
+		case 14:
+			print_help();
+			exit(-1);
+		default:
+			SEC_TST_PRT("bad input parameter, exit\n");
+			print_help();
+			exit(-1);
+		}
+	}
+}
+
+static int test_sec_default_case(void)
+{
+	unsigned int node_msk = 0;
+	int thread_num = 1;
+	int direction = 0;
+
+	pktlen = 16;
+	g_keylen = 16;
+	g_ivlen = 16;
+
+	g_algclass = CIPHER_CLASS;
+	g_testalg = 0;
+	t_times = 10;
+
+	SEC_TST_PRT("Test sec Cipher parameter default, alg:ecb(aes), set_times:10,"
+		"set_pktlen:16 bytes, set_keylen:128 bit.\n");
+	return sec_cipher_sync_test(thread_num, 0, 0, ENCRYPTION, NULL, node_msk);
+}
+
+static int test_sec_option_convert(struct test_sec_option *option)
+{
+	if (option->algclass > DIGEST_CLASS) {
+		print_help();
+		return -EINVAL;
+	}
+
+	if (option->syncmode > 1) {
+		print_help();
+		return -EINVAL;
+	}
+
+	g_testalg = option->algtype;
+	g_thread_num = option->t;
+	if (g_thread_num <= 0 || g_thread_num > TEST_MAX_THRD) {
+			SEC_TST_PRT("Invalid threads num:%d, Now set threads num as 2!\n", g_thread_num);
+			g_thread_num = 2;
+	}
+
+	alg_op_type = option->optype ? DECRYPTION : ENCRYPTION;
+	pktlen = option->pktlen;
+	g_keylen = option->keylen;
+	g_ivlen = option->ivlen;
+	g_algclass = option->algclass;
+	g_dump = option->dump;
+	if (option->timeclass == SECONDS_CLASS) {
+		t_seconds = option->times;
+		SEC_TST_PRT("set test seconds:%d\n", t_seconds);
+	} else {
+		t_times = option->times;
+		SEC_TST_PRT("set test cycles:%lld\n", t_times);
+	}
+	SEC_TST_PRT("test set: pktlen: %d, key len:%d, iv len:%d\n", pktlen, g_keylen, g_ivlen);
+
+	return 0;
+}
+
+static int test_sec_run(u32 sync_mode, u32 alg_class)
 {
 	__u64 lcore_mask = 0;
 	__u64 hcore_mask = 0;
-	int thread_num = 1;
-	unsigned int node_msk = 0;
-	int direction = 0;
-	int value, pktsize, keylen, ivlen;
-
-	if (!strcmp(argv[1], "-cipher")) {
-		printf("cipher %d\n", wd_get_available_dev_num("cipher"));
-		g_testalg = strtoul((char*)argv[2], NULL, 10);
-		g_algclass = CIPHER_CLASS;
-	} else if (!strcmp(argv[1], "-digest")) {
-		printf("digest %d\n", wd_get_available_dev_num("digest"));
-		g_testalg = strtoul((char*)argv[2], NULL, 10);
-		g_algclass = DIGEST_CLASS;
-	} else if (!strcmp(argv[1], "-aead")) {
-		printf("aead %d\n", wd_get_available_dev_num("aead"));
-		g_testalg = strtoul((char*)argv[2], NULL, 10);
-		g_algclass = AEAD_CLASS;
-	}
-
-	if (!strcmp(argv[3], "-t")) {
-		thread_num = strtoul((char*)argv[4], NULL, 10);
-		if (thread_num <= 0 || thread_num > TEST_MAX_THRD) {
-			SEC_TST_PRT("Invalid threads num:%d!\n", thread_num);
-			SEC_TST_PRT("Now set threads num as 2\n");
-			thread_num = 2;
-		}
-	}
-
-	q_num = (thread_num - 1) / ctx_num_per_q + 1;
-	if (!strcmp(argv[5], "-optype")) {
-		direction = strtoul((char*)argv[6], NULL, 10);
-	}
-	printf("dirction is: %d\n", direction);
-	if (direction == 0) {
-		alg_op_type = ENCRYPTION;
-	} else {
-		alg_op_type = DECRYPTION;
-	}
-	/* tools supports time and freq test currently. */
-	if (!strcmp(argv[7], "-seconds") || !strcmp(argv[7], "-cycles")) {
-		value = strtoul((char*)argv[8], NULL, 10);
-		if (!strcmp(argv[7], "-seconds")) {
-			t_seconds = value;
-		} else if (!strcmp(argv[7], "-cycles")) {
-			t_times = value;
-		} else {
-			SEC_TST_PRT("pls use ./test_hisi_sec -help get details!\n");
-			return -EINVAL;
-		}
-	}
-	printf("test seconds:%d\n", t_seconds);
-	if (!strcmp(argv[9], "-pktlen")) {
-		pktsize = strtoul((char*)argv[10], NULL, 10);
-		pktlen = pktsize;
-	}
-	if (!strcmp(argv[11], "-keylen")) {
-		keylen = strtoul((char*)argv[12], NULL, 10);
-		g_keylen = keylen;
-	}
-	if (!strcmp(argv[13], "-ivlen")) {
-		ivlen = strtoul((char*)argv[14], NULL, 10);
-		g_ivlen = ivlen;
-	}
-
-	printf("test set: key len:%d, iv len:%d\n", g_keylen, g_ivlen);
+	u32 node_msk = 0;
+	int thread_num = g_thread_num;
+	int ret = 0;
 
 	q_num = thread_num * ctx_num_per_q;
-	if (!strcmp(argv[15], "-sync")) {
-		printf("test type is sync\n");
-		if (g_algclass == CIPHER_CLASS || g_algclass == DIGEST_CLASS)
-			sec_cipher_sync_test(thread_num, lcore_mask, hcore_mask,
+	SEC_TST_PRT("set alg index: %d, Currently set q number is: %d!\n", alg_class, q_num);
+
+	if (sync_mode == 0) {
+		if (alg_class == CIPHER_CLASS || alg_class == DIGEST_CLASS) {
+			if (alg_class == CIPHER_CLASS)
+				SEC_TST_PRT("currently cipher test is synchronize multi -%d threads!\n", thread_num);
+			else
+				SEC_TST_PRT("currently digest test is synchronize multi -%d threads!\n", thread_num);
+			ret = sec_cipher_sync_test(thread_num, lcore_mask, hcore_mask,
 			alg_op_type, NULL, node_msk);
-		else if (g_algclass == AEAD_CLASS)
-			sec_aead_sync_test(thread_num, lcore_mask, hcore_mask,
+		} else if (alg_class == AEAD_CLASS) {
+			SEC_TST_PRT("currently aead test is synchronize multi -%d threads!\n", thread_num);
+			ret = sec_aead_sync_test(thread_num, lcore_mask, hcore_mask,
 			alg_op_type, NULL, node_msk);
-		else
-			printf("test alg type not supported\n");
-	} else if (!strcmp(argv[15], "-async")) {
-		printf("test type is async\n");
-		if (g_algclass == CIPHER_CLASS || g_algclass == DIGEST_CLASS)
-			sec_cipher_async_test(thread_num, lcore_mask, hcore_mask,
-			alg_op_type, NULL, node_msk);
-		else if (g_algclass == AEAD_CLASS)
-			sec_aead_async_test(thread_num, lcore_mask, hcore_mask,
-			alg_op_type, NULL, node_msk);
-		else
-			printf("test alg type not supported\n");
+		}
+
 	} else {
-		SEC_TST_PRT("Now Please set the cipher test type! -sync or -async.\n");
+		if (alg_class == CIPHER_CLASS || alg_class == DIGEST_CLASS) {
+			if (alg_class == CIPHER_CLASS)
+				SEC_TST_PRT("currently cipher test is asynchronous multi -%d threads!\n", thread_num);
+			else
+				SEC_TST_PRT("currently digest test is asynchronous multi -%d threads!\n", thread_num);
+			ret = sec_cipher_async_test(thread_num, lcore_mask, hcore_mask,
+			alg_op_type, NULL, node_msk);
+		} else if (alg_class == AEAD_CLASS) {
+			SEC_TST_PRT("currently aead test is asynchronous multi -%d threads!\n", thread_num);
+			ret = sec_aead_async_test(thread_num, lcore_mask, hcore_mask,
+			alg_op_type, NULL, node_msk);
+		}
 	}
 
-	return 0;
+	return ret;
+}
+
+int main(int argc, char *argv[])
+{
+	struct test_sec_option option = {0};
+	int ret = 0;
+
+	SEC_TST_PRT("this is a hisi sec test.\n");
+	int thread_num = 1;
+	if (!argv[1])
+		return test_sec_default_case();
+
+	test_sec_cmd_parse(argc, argv, &option);
+	ret = test_sec_option_convert(&option);
+	if (ret)
+		return ret;
+
+	return test_sec_run(option.syncmode, option.algclass);
 }
