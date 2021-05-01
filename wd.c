@@ -14,6 +14,8 @@
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
+const char *WD_VERSION = UADK_VERSION_NUMBER;
+
 //wd_log log_out = NULL;
 
 struct wd_ctx_h {

@@ -18,7 +18,12 @@ endif	# WITH_LOG_FILE
 # x = major
 # y = minor
 # z = revision
-UADK_VERSION = -version-number 2:3:4
+MAJOR = 2
+MINOR = 3
+REVISION = 4
+UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
+
+AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"libwd version: ${MAJOR}.${MINOR}.${REVISION}\""
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
