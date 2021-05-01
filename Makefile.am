@@ -6,13 +6,19 @@ if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif	# WITH_LOG_FILE
 
-# libtool version is {current}:{revision}:{age}
+# libtool version is {current}:{revision}:{age} with -version-info
 # libNAME.so.{x}.{y}.{z}
 # But {current}:{revision}:{age} doesn't equal to {x}.{y}.{z}
 # x = current - age
 # y = age
 # z = revision
-UADK_VERSION = -version-info 5:4:3
+#
+# libtool version is {major}:{minor}:{revision} with -version-number
+# libNAME.so.{x}.{y}.{z}
+# x = major
+# y = minor
+# z = revision
+UADK_VERSION = -version-number 2:3:4
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
