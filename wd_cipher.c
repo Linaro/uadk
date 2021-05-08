@@ -85,11 +85,19 @@ static int aes_key_len_check(__u16 length)
 	}
 }
 
-static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
+static int cipher_key_len_check(struct wd_cipher_sess *sess, __u16 length)
 {
 	int ret = 0;
 
-	switch (alg) {
+	if (sess->mode == WD_CIPHER_XTS) {
+		if (length != AES_KEYSIZE_128 && length != AES_KEYSIZE_256) {
+			WD_ERR("unsupported XTS key length, length = %u.\n",
+				 length);
+			return -WD_EINVAL;
+		}
+	}
+
+	switch (sess->alg) {
 	case WD_CIPHER_SM4:
 		if (length != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
@@ -106,7 +114,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("%s: input alg err!\n", __func__);
+		WD_ERR("cipher input alg err, alg is %d.\n", sess->alg);
 		return -WD_EINVAL;
 	}
 
@@ -127,7 +135,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	if (sess->mode == WD_CIPHER_XTS)
 		length = key_len / XTS_MODE_KEY_DIVISOR;
 
-	ret = cipher_key_len_check(sess->alg, length);
+	ret = cipher_key_len_check(sess, length);
 	if (ret) {
 		WD_ERR("cipher set key input key length err!\n");
 		return -WD_EINVAL;

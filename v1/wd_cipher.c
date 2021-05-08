@@ -242,11 +242,20 @@ static int aes_key_len_check(__u16 length)
 	}
 }
 
-static int cipher_key_len_check(int alg, __u16 length)
+static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
+					__u16 length)
 {
 	int ret = WD_SUCCESS;
 
-	switch (alg) {
+	if (setup->mode == WCRYPTO_CIPHER_XTS) {
+		if (length != AES_KEYSIZE_128 && length != AES_KEYSIZE_256) {
+			WD_ERR("unsupported XTS key length, length = %u.\n",
+				length);
+			return -WD_EINVAL;
+		}
+	}
+
+	switch (setup->alg) {
 	case WCRYPTO_CIPHER_SM4:
 		if (length != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
@@ -263,7 +272,7 @@ static int cipher_key_len_check(int alg, __u16 length)
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("%s: input alg err!\n", __func__);
+		WD_ERR("cipher input alg err, alg is %d.\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
@@ -284,7 +293,7 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 	if (ctxt->setup.mode == WCRYPTO_CIPHER_XTS)
 		length = key_len >> XTS_MODE_KEY_SHIFT;
 
-	ret = cipher_key_len_check(ctxt->setup.alg, length);
+	ret = cipher_key_len_check(&ctxt->setup, length);
 	if (ret != WD_SUCCESS) {
 		WD_ERR("%s: input key length err!\n", __func__);
 		return ret;
