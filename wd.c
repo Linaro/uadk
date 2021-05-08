@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#define _GNU_SOURCE
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -8,6 +9,8 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <numa.h>
+#include <sched.h>
 
 #include "wd.h"
 #include "wd_alg_common.h"
@@ -587,6 +590,34 @@ void wd_free_list_accels(struct uacce_dev_list *list)
 		free(curr);
 		curr = next;
 	}
+}
+
+struct uacce_dev *wd_get_accel_dev(char *alg_name)
+{
+	struct uacce_dev_list *list;
+	struct uacce_dev *dev;
+	int cpu = sched_getcpu();
+	int node = numa_node_of_cpu(cpu);
+	int dis = 1024, tmp;
+
+	list = wd_get_accel_list(alg_name);
+	if (!list)
+		return NULL;
+
+	dev = list->dev;
+
+	while (list) {
+		tmp = numa_distance(node, list->dev->numa_id);
+		if (dis > tmp && tmp > 0) {
+			dev = list->dev;
+			dis = tmp;
+		}
+		list = list->next;
+	}
+
+	wd_free_list_accels(list);
+
+	return dev;
 }
 
 int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
