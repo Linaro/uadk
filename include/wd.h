@@ -291,6 +291,17 @@ extern int wd_get_avail_ctx(struct uacce_dev *dev);
 extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
 
 /**
+ * wd_get_accel_dev() - Get device supporting the algorithm with
+			smallest numa distance to current numa node.
+ * @alg_name: Algorithm name, which could be got from
+ *            /sys/class/uacce/<device>/algorithm.
+ *
+ * Return a device closest to current numa node supporting given algorithm
+ * Otherwise return NULL.
+ */
+extern struct uacce_dev *wd_get_accel_dev(char *alg_name);
+
+/**
  * wd_free_list_accels() - Free device list.
  * @list: Device list which will be free.
  */
