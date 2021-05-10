@@ -595,7 +595,7 @@ void wd_free_list_accels(struct uacce_dev_list *list)
 struct uacce_dev *wd_get_accel_dev(char *alg_name)
 {
 	struct uacce_dev_list *list;
-	struct uacce_dev *dev;
+	struct uacce_dev *dev = NULL;
 	int cpu = sched_getcpu();
 	int node = numa_node_of_cpu(cpu);
 	int dis = 1024, tmp;
@@ -604,13 +604,13 @@ struct uacce_dev *wd_get_accel_dev(char *alg_name)
 	if (!list)
 		return NULL;
 
-	dev = list->dev;
-
 	while (list) {
 		tmp = numa_distance(node, list->dev->numa_id);
 		if (dis > tmp && tmp > 0) {
-			dev = list->dev;
-			dis = tmp;
+			if (wd_get_avail_ctx(list->dev) > 0) {
+				dev = list->dev;
+				dis = tmp;
+			}
 		}
 		list = list->next;
 	}
