@@ -297,6 +297,7 @@ extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
  *            /sys/class/uacce/<device>/algorithm.
  *
  * Return a device closest to current numa node supporting given algorithm
+ * and the device need to be freed after usage.
  * Otherwise return NULL.
  */
 extern struct uacce_dev *wd_get_accel_dev(char *alg_name);
