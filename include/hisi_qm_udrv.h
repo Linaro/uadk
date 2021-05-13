@@ -79,7 +79,8 @@ struct hisi_qm_capa {
 	int throughput;
 	int latency;
 	__u32 flags;
-	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];/* For algorithm parameters */
+	/* For algorithm parameters */
+	__u8 priv[WD_CAPA_PRIV_DATA_SIZE];
 };
 
 /**
