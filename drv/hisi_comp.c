@@ -894,7 +894,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 		return ret;
 	}
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
-	if (ret < 0)
+	if (ret < 0 && ret != -WD_EBUSY)
 		WD_ERR("qm send is err(%d)!\n", ret);
 
 	return ret;
