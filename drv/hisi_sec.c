@@ -862,6 +862,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	struct hisi_sec_sqe sqe;
 	__u8 scene, cipher, de;
 	__u16 count = 0;
+	bool flag;
 	int ret;
 
 	if (!msg) {
@@ -887,7 +888,10 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	ret = cipher_len_check(msg);
 	if (ret)
 		return ret;
-	if (msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_XTS) {
+
+	flag = msg->mode == WD_CIPHER_CBC
+		|| msg->mode == WD_CIPHER_XTS;
+	if (flag) {
 		ret = cipher_iv_check(msg);
 		if (ret)
 			return ret;
@@ -933,7 +937,9 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("hisi qm send is err(%d)!\n", ret);
+
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 			msg->in, msg->out);
 	}
@@ -1043,6 +1049,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	struct hisi_sec_sqe3 sqe;
 	__u16 scene, de;
 	__u16 count = 0;
+	bool flag;
 	int ret;
 
 	if (!msg) {
@@ -1066,7 +1073,10 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	ret = cipher_len_check(msg);
 	if (ret)
 		return ret;
-	if (msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_XTS) {
+
+	flag = msg->mode == WD_CIPHER_CBC
+		|| msg->mode == WD_CIPHER_XTS;
+	if (flag) {
 		ret = cipher_iv_check(msg);
 		if (ret)
 			return ret;
@@ -1112,7 +1122,9 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("hisi qm send is err(%d)!\n", ret);
+
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
@@ -1313,7 +1325,9 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.type2.tag = msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("hisi qm send is err(%d)!\n", ret);
+
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
@@ -1474,7 +1488,9 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("hisi qm send is err(%d)!\n", ret);
+
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
@@ -1805,7 +1821,9 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("hisi qm send is err(%d)!\n", ret);
+
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
@@ -2067,7 +2085,9 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	sqe.tag = msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
-		WD_ERR("hisi qm send is err(%d)!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("hisi qm send is err(%d)!\n", ret);
+
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
