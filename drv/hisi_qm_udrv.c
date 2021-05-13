@@ -6,10 +6,16 @@
 
 #include "hisi_qm_udrv.h"
 
-#define DOORBELL_CMD_SQ		0
-#define DOORBELL_CMD_CQ		1
-#define QM_DOORBELL_OFFSET      0x340
-#define QM_V2_DOORBELL_OFFSET   0x1000
+#define QM_DBELL_CMD_SQ		0
+#define QM_DBELL_CMD_CQ		1
+#define QM_DBELL_OFFSET		0x340
+#define QM_DBELL_OFFSET_V2	0x1000
+#define QM_DBELL_CMD_SHIFT	16
+#define QM_DBELL_CMD_SHIFT_V2	12
+#define QM_DBELL_PRI_SHIFT	16
+#define QM_DBELL_HLF_SHIFT	32
+#define QM_DBELL_SQN_MASK	0x3ff
+#define QM_DBELL_CMD_MASK	0xf
 #define QM_Q_DEPTH		1024
 #define CQE_PHASE(cq)		(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
 #define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
@@ -82,7 +88,7 @@ struct hisi_sgl {
 struct hisi_sgl_pool {
 	/* the addr64 align offset base sgl */
 	void **sgl_align;
-	/* the sgl src address array*/
+	/* the sgl src address array */
 	void **sgl;
 	/* the sgl pool stack depth */
 	__u32 depth;
@@ -99,8 +105,9 @@ static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
 	__u16 sqn = q->sqn;
 	__u64 doorbell;
 
-	doorbell = (__u64)sqn | ((__u64)cmd << 16);
-	doorbell |= ((__u64)idx | ((__u64)priority << 16)) << 32;
+	doorbell = (__u64)sqn | ((__u64)cmd << QM_DBELL_CMD_SHIFT);
+	doorbell |= ((__u64)idx | ((__u64)priority << QM_DBELL_CMD_SHIFT))
+			<< QM_DBELL_HLF_SHIFT;
 	wd_iowrite64(base, doorbell);
 
 	return 0;
@@ -109,12 +116,14 @@ static int hacc_db_v1(struct hisi_qm_queue_info *q, __u8 cmd,
 static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
 		      __u16 idx, __u8 priority)
 {
-	__u16 sqn = q->sqn & 0x3ff;
+	__u16 sqn = q->sqn & QM_DBELL_SQN_MASK;
 	void *base = q->db_base;
 	__u64 doorbell;
 
-	doorbell = (__u64)sqn | ((__u64)(cmd & 0xf) << 12);
-	doorbell |= ((__u64)idx | ((__u64)priority << 16)) << 32;
+	doorbell = (__u64)sqn | ((__u64)(cmd & QM_DBELL_CMD_MASK) <<
+			QM_DBELL_CMD_SHIFT_V2);
+	doorbell |= ((__u64)idx | ((__u64)priority << QM_DBELL_CMD_SHIFT))
+			<< QM_DBELL_HLF_SHIFT;
 	wd_iowrite64(base, doorbell);
 
 	return 0;
@@ -123,11 +132,11 @@ static int hacc_db_v2(struct hisi_qm_queue_info *q, __u8 cmd,
 static struct hisi_qm_type qm_type[] = {
 	{
 		.qm_ver		= HISI_QM_API_VER_BASE,
-		.qm_db_offs	= QM_DOORBELL_OFFSET,
+		.qm_db_offs	= QM_DBELL_OFFSET,
 		.hacc_db	= hacc_db_v1,
 	}, {
 		.qm_ver		= HISI_QM_API_VER2_BASE,
-		.qm_db_offs	= QM_V2_DOORBELL_OFFSET,
+		.qm_db_offs	= QM_DBELL_OFFSET_V2,
 		.hacc_db	= hacc_db_v2,
 	}
 };
@@ -227,7 +236,7 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 
 	if (i == size) {
 		q_info->db = hacc_db_v2;
-		q_info->db_base = q_info->mmio_base + QM_V2_DOORBELL_OFFSET;
+		q_info->db_base = q_info->mmio_base + QM_DBELL_OFFSET_V2;
 	}
 
 	return 0;
@@ -430,7 +439,7 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 	tail = q_info->sq_tail_index;
 	hisi_qm_fill_sqe(req, q_info, tail, send_num);
 	tail = (tail + send_num) % QM_Q_DEPTH;
-	q_info->db(q_info, DOORBELL_CMD_SQ, tail, 0);
+	q_info->db(q_info, QM_DBELL_CMD_SQ, tail, 0);
 	q_info->sq_tail_index = tail;
 	q_info->used_num += send_num;
 	*count = send_num;
@@ -470,7 +479,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		i++;
 	}
 
-	q_info->db(q_info, DOORBELL_CMD_CQ, i, 0);
+	q_info->db(q_info, QM_DBELL_CMD_CQ, i, 0);
 
 	/* only support one thread poll one queue, so no need protect */
 	q_info->cq_head_index = i;
@@ -765,7 +774,7 @@ static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl,
 	int i;
 
 	len = tmp->sge_entries[begin_sge].len - sge_offset;
-	/* the first one is enough for copy size, copy and return*/
+	/* the first one is enough for copy size, copy and return */
 	if (len >= size) {
 		memcpy(dst_buff,
 			(void *)tmp->sge_entries[begin_sge].buff + sge_offset, size);
