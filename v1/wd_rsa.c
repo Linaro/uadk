@@ -923,11 +923,6 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 			WD_ERR("sign or verf in_bytes != key_size!\n");
 			return -WD_EINVAL;
 		}
-
-		if (unlikely(req->out_bytes < c->key_size)) {
-			WD_ERR("out bytes %u error!\n", req->out_bytes);
-			return -WD_EINVAL;
-		}
 	}
 
 	req->key = key;
