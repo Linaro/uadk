@@ -408,11 +408,12 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 
 	/* init ctx related resources in specific driver */
-	priv = malloc(sizeof(wd_aead_setting.driver->drv_ctx_size));
+	priv = malloc(wd_aead_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
+	memset(priv, 0, wd_aead_setting.driver->drv_ctx_size);
 	wd_aead_setting.priv = priv;
 	/* sec init */
 	ret = wd_aead_setting.driver->init(&wd_aead_setting.config, priv);
