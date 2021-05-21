@@ -467,10 +467,17 @@ fail_with_cookies:
 int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 		void *tag)
 {
+	int ret;
+
 	if (!tag)
-		return wcrypto_burst_cipher(ctx, &opdata, NULL, 1);
+		ret = wcrypto_burst_cipher(ctx, &opdata, NULL, 1);
 	else
-		return wcrypto_burst_cipher(ctx, &opdata, &tag, 1);
+		ret = wcrypto_burst_cipher(ctx, &opdata, &tag, 1);
+
+	if (likely(ret == 1))
+		return WD_SUCCESS;
+
+	return ret;
 }
 
 int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
