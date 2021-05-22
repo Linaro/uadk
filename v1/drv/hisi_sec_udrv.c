@@ -1782,11 +1782,12 @@ static int fill_aead_bd3_mode(struct wcrypto_aead_msg *msg,
 #define IV_CL_MASK		0x7
 #define IV_FLAGS_OFFSET	0x6
 #define IV_CM_OFFSET		0x3
-#define IV_LAST_BYTE2_MASK	0xFF00
-#define IV_LAST_BYTE1_MASK	0xFF
+#define IV_LAST_BYTE_MASK	0xFF
+#define IV_BYTE_OFFSET		0x8
 
 static void set_aead_auth_iv(struct wcrypto_aead_msg *msg)
 {
+	__u32 data_size = msg->in_bytes;
 	__u8 flags = 0x00;
 	__u8 *iv, *aiv;
 	__u8 cl, cm;
@@ -1821,10 +1822,11 @@ static void set_aead_auth_iv(struct wcrypto_aead_msg *msg)
 		 * but the nonce uses the first 16bit
 		 * the tail 16bit fill with the cipher length
 		 */
-		aiv[msg->iv_bytes - IV_LAST_BYTE2] =
-			msg->in_bytes & IV_LAST_BYTE2_MASK;
 		aiv[msg->iv_bytes - IV_LAST_BYTE1] =
-			msg->in_bytes & IV_LAST_BYTE1_MASK;
+			data_size & IV_LAST_BYTE_MASK;
+		data_size >>= IV_BYTE_OFFSET;
+		aiv[msg->iv_bytes - IV_LAST_BYTE2] =
+			data_size & IV_LAST_BYTE_MASK;
 	}
 }
 
@@ -1950,11 +1952,9 @@ static int fill_aead_bd3_addr(struct wd_queue *q,
 	int ret;
 
 	/* AEAD algorithms CCM/GCM support 0 in_bytes */
-	if (likely(msg->in_bytes)) {
-		ret = fill_aead_bd3_addr_src(q, msg, sqe);
-		if (unlikely(ret))
-			return ret;
-	}
+	ret = fill_aead_bd3_addr_src(q, msg, sqe);
+	if (unlikely(ret))
+		return ret;
 
 	ret = fill_aead_bd3_addr_dst(q, msg, sqe);
 	if (unlikely(ret))
