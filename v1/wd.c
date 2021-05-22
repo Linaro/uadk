@@ -219,20 +219,30 @@ static bool is_weight_more(unsigned int new, unsigned int old)
 
 static int get_iommu_type(struct dev_info *dinfo, const char *attr)
 {
+	char iommu_path[PATH_STR_SIZE];
 	char buf[PATH_STR_SIZE];
 	int ret;
 
-	ret = snprintf(buf, PATH_STR_SIZE, "%s/%s", dinfo->dev_root, attr);
+	ret = snprintf(iommu_path, PATH_STR_SIZE, "%s/%s/%s",
+		       WD_UACCE_CLASS_DIR, dinfo->name, attr);
 	if (ret <= 0) {
-		WD_ERR("get %s/%s path fail!\n", dinfo->dev_root, attr);
+		WD_ERR("failed to copy %s/%s file path!\n", dinfo->name, attr);
 		return -WD_EINVAL;
 	}
 
-	ret = access(buf, F_OK);
+	/* check if SMMU is turned on */
+	ret = access(iommu_path, F_OK);
 	if (ret < 0)
 		return 0;
 
-	ret = get_raw_attr(dinfo->dev_root, attr, buf, PATH_STR_SIZE);
+	ret = snprintf(iommu_path, PATH_STR_SIZE,
+		       "%s/%s", WD_UACCE_CLASS_DIR, dinfo->name);
+	if (ret < 0) {
+		WD_ERR("failed to copy iommu dev file path!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = get_raw_attr(iommu_path, attr, buf, PATH_STR_SIZE);
 	if (ret <= 0)
 		return -WD_EINVAL;
 
@@ -254,8 +264,10 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	}
 
 	ret = access(buf, F_OK);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to check file path %s, ret: %d\n", buf, ret);
 		return -ENODEV;
+	}
 
 	ret = get_int_attr(dinfo, "isolate");
 	if (ret < 0 || ret == 1)
@@ -348,10 +360,20 @@ static void pre_init_dev(struct dev_info *dinfo, const char *name)
 		return;
 	}
 
+	/* check the "attrs" file directory exists */
 	ret = snprintf(dinfo->dev_root, PATH_STR_SIZE,
-		       "%s/%s", WD_UACCE_CLASS_DIR, name);
+		       "%s/%s/attrs", WD_UACCE_CLASS_DIR, name);
 	if (ret < 0) {
-		WD_ERR("get uacce file path fail!\n");
+		WD_ERR("failed to copy dev attrs file path!\n");
+		return;
+	}
+
+	ret = access(dinfo->dev_root, F_OK);
+	if (ret < 0) {
+		ret = snprintf(dinfo->dev_root, PATH_STR_SIZE,
+			       "%s/%s", WD_UACCE_CLASS_DIR, name);
+		if (ret < 0)
+			WD_ERR("failed to copy dev file path!\n");
 		return;
 	}
 }
@@ -478,6 +500,7 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 
 	return 0;
 }
+
 static int wd_start_queue(struct wd_queue *q)
 {
 	int ret;
@@ -488,6 +511,7 @@ static int wd_start_queue(struct wd_queue *q)
 		WD_ERR("failed to start queue of %s\n", q->dev_path);
 	return ret;
 }
+
 static void wd_close_queue(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
