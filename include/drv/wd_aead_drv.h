@@ -7,31 +7,54 @@
 
 struct wd_aead_msg {
 	struct wd_aead_req req;
-	__u32 tag;		/* Request identifier */
-	__u8 alg_type;		/* Denoted by enum wcrypto_type */
-	__u8 calg;		/* Denoted by enum wcrypto_cipher_type */
-	__u8 cmode;		/* Denoted by enum wcrypto_cipher_mode_type */
-	__u8 dalg;		/* Denoted by enum wcrypto_digest_type */
-	__u8 dmode;		/* Denoted by enum wcrypto_digest_mode_type */
-	__u8 op_type;		/* Denoted by enum wcrypto_aead_op_type */
-	__u8 data_fmt;		/* Data format, include pbuffer and sgl */
-	__u8 result;		/* Operation result, denoted by WD error code */
+	/* Request identifier */
+	__u32 tag;
+	/* Denoted by enum wcrypto_type */
+	__u8 alg_type;
+	/* Denoted by enum wcrypto_cipher_type */
+	__u8 calg;
+	/* Denoted by enum wcrypto_cipher_mode_type */
+	__u8 cmode;
+	/* Denoted by enum wcrypto_digest_type */
+	__u8 dalg;
+	/* Denoted by enum wcrypto_digest_mode_type */
+	__u8 dmode;
+	/* Denoted by enum wcrypto_aead_op_type */
+	__u8 op_type;
+	/* Data format, include pbuffer and sgl */
+	__u8 data_fmt;
+	/* Operation result, denoted by WD error code */
+	__u8 result;
 
-	__u32 in_bytes;		/* in bytes */
-	__u32 out_bytes; 	/* out_bytes */
-	__u16 iv_bytes;		/* iv bytes */
-	__u16 ckey_bytes;	/* cipher key bytes */
-	__u16 akey_bytes;	/* authentication key bytes */
-	__u16 assoc_bytes;	/* Input associated data bytes */
-	__u16 auth_bytes;	/* Outpue authentication bytes */
+	/* in bytes */
+	__u32 in_bytes;
+	/* out_bytes */
+	__u32 out_bytes;
+	/* iv bytes */
+	__u16 iv_bytes;
+	/* cipher key bytes */
+	__u16 ckey_bytes;
+	/* authentication key bytes */
+	__u16 akey_bytes;
+	/* Input associated data bytes */
+	__u16 assoc_bytes;
+	/* Outpue authentication bytes */
+	__u16 auth_bytes;
 
-	__u8 *ckey;		/* input cipher key pointer */
-	__u8 *akey;		/* input authentication key pointer */
-	__u8 *iv;		/* input iv pointer */
-	__u8 *aiv;		/* input auth iv pointer */
-	__u8 *in;		/* input data pointer */
-	__u8 *out;		/* output data pointer  */
-	__u8 *mac;		/* mac */
+	/* input cipher key pointer */
+	__u8 *ckey;
+	/* input authentication key pointer */
+	__u8 *akey;
+	/* input iv pointer */
+	__u8 *iv;
+	/* input auth iv pointer */
+	__u8 *aiv;
+	/* input data pointer */
+	__u8 *in;
+	/* output data pointer */
+	__u8 *out;
+	/* mac */
+	__u8 *mac;
 };
 
 struct wd_aead_driver {
