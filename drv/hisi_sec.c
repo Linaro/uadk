@@ -52,6 +52,8 @@
 #define SEC_PBUFF_MODE_MASK_V3 0x800
 #define SEC_SGL_SDS_MASK 0x80
 #define SEC_SGL_SDM_MASK 0x04
+#define SEC_MAC_LEN_MASK	0x1F
+#define SEC_AUTH_LEN_MASK	0x3F
 
 #define DES_KEY_SIZE		  8
 #define SEC_3DES_2KEY_SIZE	  (2 * DES_KEY_SIZE)
@@ -1075,7 +1077,10 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 
 	flag = msg->mode == WD_CIPHER_CBC
-		|| msg->mode == WD_CIPHER_XTS;
+		|| msg->mode == WD_CIPHER_XTS
+		|| msg->mode == WD_CIPHER_OFB
+		|| msg->mode == WD_CIPHER_CFB
+		|| msg->mode == WD_CIPHER_CTR;
 	if (flag) {
 		ret = cipher_iv_check(msg);
 		if (ret)
@@ -1180,7 +1185,7 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	if (msg->alg < WD_DIGEST_SM3 || msg->alg >= WD_DIGEST_TYPE_MAX) {
+	if (msg->alg >= WD_DIGEST_TYPE_MAX) {
 		WD_ERR("Invalid digest type!\n");
 		return -WD_EINVAL;
 	}
@@ -1367,7 +1372,7 @@ WD_DIGEST_SET_DRIVER(hisi_digest_driver);
 static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
-	if (msg->alg < WD_DIGEST_SM3 || msg->alg >= WD_DIGEST_TYPE_MAX) {
+	if (msg->alg >= WD_DIGEST_TYPE_MAX) {
 		WD_ERR("Invalid digest type!\n");
 		return -WD_EINVAL;
 	}
@@ -1657,9 +1662,10 @@ static void set_aead_auth_iv(struct wd_aead_msg *msg)
 #define IV_CL_MASK		0x7
 #define IV_FLAGS_OFFSET	0x6
 #define IV_CM_OFFSET		0x3
-#define IV_LAST_BYTE2_MASK	0xFF00
-#define IV_LAST_BYTE1_MASK	0xFF
+#define IV_LAST_BYTE_MASK	0xFF
+#define IV_BYTE_OFFSET		0x8
 
+	__u32 data_size = msg->in_bytes;
 	__u8 flags = 0x00;
 	__u8 cl, cm;
 
@@ -1685,10 +1691,11 @@ static void set_aead_auth_iv(struct wd_aead_msg *msg)
 		  * but the nonce uses the first 16bit
 		  * the tail 16bit fill with the cipher length
 		  */
-		msg->aiv[msg->iv_bytes - IV_LAST_BYTE2] =
-			msg->in_bytes & IV_LAST_BYTE2_MASK;
 		msg->aiv[msg->iv_bytes - IV_LAST_BYTE1] =
-			msg->in_bytes & IV_LAST_BYTE1_MASK;
+			data_size & IV_LAST_BYTE_MASK;
+		data_size >>= IV_BYTE_OFFSET;
+		msg->aiv[msg->iv_bytes - IV_LAST_BYTE2] =
+			data_size & IV_LAST_BYTE_MASK;
 	}
 }
 
@@ -1721,7 +1728,6 @@ static void fill_aead_mac_addr_sgl(struct wd_aead_msg *msg, __u64 *mac_addr)
 
 	*mac_addr = (__u64)msg->mac;
 }
-
 
 static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 		struct hisi_sec_sqe *sqe)
@@ -1855,6 +1861,13 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 	recv_msg->out = (__u8 *)sqe->type2.data_dst_addr;
 	recv_msg->alg_type = WD_AEAD;
 	recv_msg->mac = (__u8 *)sqe->type2.mac_addr;
+	recv_msg->auth_bytes = (sqe->type2.mac_key_alg &
+			       SEC_MAC_LEN_MASK) * WORD_BYTES;
+	if (recv_msg->auth_bytes == 0)
+		recv_msg->auth_bytes = sqe->type2.icvw_kmode &
+				       SEC_AUTH_LEN_MASK;
+	recv_msg->out_bytes = sqe->type2.clen_ivhlen + recv_msg->auth_bytes +
+			      sqe->type2.cipher_src_offset;
 
 #ifdef DEBUG
 	WD_ERR("Dump aead recv sqe-->!\n");
@@ -2118,6 +2131,14 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->in = (__u8 *)sqe->data_src_addr;
 	recv_msg->out = (__u8 *)sqe->data_dst_addr;
 	recv_msg->alg_type = WD_AEAD;
+	recv_msg->mac = (__u8 *)sqe->mac_addr;
+	recv_msg->auth_bytes = ((sqe->auth_mac_key >> SEC_MAC_OFFSET_V3) &
+			       SEC_MAC_LEN_MASK) * WORD_BYTES;
+	if (recv_msg->auth_bytes == 0)
+		recv_msg->auth_bytes = (sqe->c_icv_key >> SEC_MAC_OFFSET_V3) &
+				       SEC_MAC_LEN_MASK;
+	recv_msg->out_bytes = sqe->c_len_ivin + recv_msg->auth_bytes +
+			      sqe->cipher_src_offset;
 
 #ifdef DEBUG
 	WD_ERR("Dump aead recv sqe-->!\n");
@@ -2190,6 +2211,7 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.op_type = config->ctxs[i].op_type;
+		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp)
 			goto out;
