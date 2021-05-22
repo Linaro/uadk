@@ -8,23 +8,39 @@
 /* fixme wd_cipher_msg */
 struct wd_cipher_msg {
 	struct wd_cipher_req req;
-	__u32 tag;		/* request identifier */
-	__u8 alg_type;		/* Denoted by enum wcrypto_type */
-	__u8 alg;		/* Denoted by enum wcrypto_cipher_type */
-	__u8 op_type;		/* Denoted by enum wcrypto_cipher_op_type */
-	__u8 mode;		/* Denoted by enum wcrypto_cipher_mode_type */
-	__u8 data_fmt;		/* Data format, include pbuffer and sgl */
-	__u8 result;		/* Operation result, denoted by WD error code */
+	/* request identifier */
+	__u32 tag;
+	/* Denoted by enum wcrypto_type */
+	__u8 alg_type;
+	/* Denoted by enum wcrypto_cipher_type */
+	__u8 alg;
+	/* Denoted by enum wcrypto_cipher_op_type */
+	__u8 op_type;
+	/* Denoted by enum wcrypto_cipher_mode_type */
+	__u8 mode;
+	/* Data format, include pbuffer and sgl */
+	__u8 data_fmt;
+	/* Operation result, denoted by WD error code */
+	__u8 result;
 
-	__u16 key_bytes;	/* Key bytes */
-	__u16 iv_bytes;		/* iv bytes */
-	__u32 in_bytes;		/* in bytes */
-	__u32 out_bytes;	/* out_bytes */
+	/* Key bytes */
+	__u16 key_bytes;
+	/* iv bytes */
+	__u16 iv_bytes;
+	/* in bytes */
+	__u32 in_bytes;
+	/* out_bytes */
+	__u32 out_bytes;
 
-	__u8 *key;		/* input key pointer */
-	__u8 *iv;		/* input iv pointer */
-	__u8 *in;		/* input data pointer */
-	__u8 *out;		/* output data pointer  */
+	/* input key pointer */
+	__u8 *key;
+	/* input iv pointer */
+	__u8 *iv;
+	/* input data pointer */
+	__u8 *in;
+	/* output data pointer */
+	__u8 *out;
+
 };
 
 struct wd_cipher_driver {
