@@ -124,7 +124,7 @@ static unsigned int get_iv_block_size(int mode)
 		ret = GCM_BLOCK_SIZE;
 		break;
 	default:
-		ret = 0;
+		ret = AES_BLOCK_SIZE;
 	}
 
 	return ret;
@@ -484,31 +484,29 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg msg;
 	__u64 recv_cnt = 0;
-	int index;
+	__u32 idx;
 	int ret;
 
 	ret = aead_param_check(sess, req);
 	if (ret)
 		return -WD_EINVAL;
 
-	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
-	if (unlikely(index >= config->ctx_num)) {
+	idx = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
+	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
 	}
-	ctx = config->ctxs + index;
+	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_SYNC) {
 		WD_ERR("failed to check ctx mode!\n");
 		return -WD_EINVAL;
 	}
 
 	memset(&msg, 0, sizeof(struct wd_aead_msg));
-	if (req->iv_bytes != 0) {
-		msg.aiv = malloc(req->iv_bytes);
-		if (!msg.aiv) {
-			WD_ERR("failed to alloc auth iv memory!\n");
-			return -WD_EINVAL;
-		}
+	msg.aiv = malloc(req->iv_bytes);
+	if (!msg.aiv) {
+		WD_ERR("failed to alloc auth iv memory!\n");
+		return -WD_EINVAL;
 	}
 	memset(msg.aiv, 0, req->iv_bytes);
 	fill_request_msg(&msg, req, sess);
@@ -518,7 +516,9 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
 	if (ret < 0) {
 		WD_ERR("failed to send aead bd!\n");
-		goto err_out;
+		pthread_spin_unlock(&ctx->lock);
+		free(msg.aiv);
+		return ret;
 	}
 
 	do {
@@ -552,9 +552,8 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg *msg;
-	int index;
-	int idx;
-	int ret;
+	int msg_id, ret;
+	__u32 idx;
 
 	ret = aead_param_check(sess, req);
 	if (ret)
@@ -565,56 +564,54 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		return -WD_EINVAL;
 	}
 
-	index = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
-	if (unlikely(index >= config->ctx_num)) {
+	idx = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
+	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
 	}
-	ctx = config->ctxs + index;
+	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-                WD_ERR("failed to check ctx mode!\n");
-                return -WD_EINVAL;
-        }
+		WD_ERR("failed to check ctx mode!\n");
+		return -WD_EINVAL;
+    }
 
-	idx = wd_get_msg_from_pool(&wd_aead_setting.pool,
-				     index, (void **)&msg);
-	if (idx < 0) {
+	msg_id = wd_get_msg_from_pool(&wd_aead_setting.pool,
+				     idx, (void **)&msg);
+	if (msg_id < 0) {
 		WD_ERR("failed to get msg from pool!\n");
 		return -WD_EBUSY;
 	}
 
 	fill_request_msg(msg, req, sess);
-	if (req->iv_bytes != 0) {
-		msg->aiv = malloc(req->iv_bytes);
-		if (!msg->aiv) {
-			WD_ERR("failed to alloc auth iv memory!\n");
-			return -WD_EINVAL;
-		}
+	msg->aiv = malloc(req->iv_bytes);
+	if (!msg->aiv) {
+		WD_ERR("failed to alloc auth iv memory!\n");
+		return -WD_EINVAL;
 	}
 	memset(msg->aiv, 0, req->iv_bytes);
-	msg->tag = idx;
+	msg->tag = msg_id;
 
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
-		wd_put_msg_to_pool(&wd_aead_setting.pool, index, msg->tag);
+		wd_put_msg_to_pool(&wd_aead_setting.pool, idx, msg->tag);
 		free(msg->aiv);
 	}
 
 	return ret;
 }
 
-int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
+int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
-	struct wd_ctx_internal *ctx = config->ctxs + index;
+	struct wd_ctx_internal *ctx = config->ctxs + idx;
 	struct wd_aead_msg resp_msg, *msg;
 	struct wd_aead_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
-	if (unlikely(index >= config->ctx_num || !count)) {
+	if (unlikely(idx >= config->ctx_num || !count)) {
 		WD_ERR("aead poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -631,7 +628,7 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		expt--;
 		recv_count++;
 		msg = wd_find_msg_in_pool(&wd_aead_setting.pool,
-					    index, resp_msg.tag);
+					    idx, resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
 			break;
@@ -642,7 +639,7 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32 *count)
 		req = &msg->req;
 		req->cb(req, req->cb_param);
 		wd_put_msg_to_pool(&wd_aead_setting.pool,
-				     index, resp_msg.tag);
+				     idx, resp_msg.tag);
 		free(msg->aiv);
 	} while (expt > 0);
 	*count = recv_count;
