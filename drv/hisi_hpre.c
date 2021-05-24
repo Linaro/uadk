@@ -24,6 +24,8 @@
 #define HPRE_HW_V2_ALG_TYPE	0
 #define HPRE_HW_V3_ECC_ALG_TYPE	1
 
+#define HPRE_HW_SVA_ERROR	(1u << 5)
+
 /* realize with hardware ECC multiplication, avoid conflict with wd_ecc.h */
 #define HPRE_SM2_ENC	0xE
 #define HPRE_SM2_DEC	0xF
@@ -76,7 +78,7 @@ struct hisi_hpre_sqe {
 
 	/* error type */
 	__u32 etype	: 11;
-	__u32 resv0	: 14;
+	__u32 etype1	: 14;
 	__u32 done	: 2;
 	__u32 task_len1	: 8;
 	__u32 task_len2	: 8;
@@ -538,9 +540,13 @@ static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
 	if (ret < 0)
 		return ret;
 
-	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
-		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
-			hw_msg.done, hw_msg.etype);
+	if (hw_msg.done != HPRE_HW_TASK_DONE ||
+			hw_msg.etype || hw_msg.etype1) {
+		WD_ERR("HPRE do rsa fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+			hw_msg.done, hw_msg.etype, hw_msg.etype1);
+		if (hw_msg.etype1 & HPRE_HW_SVA_ERROR)
+			WD_ERR("failed to SVA prefetch: status=%u\n",
+				hw_msg.sva_status);
 		if (hw_msg.done == HPRE_HW_TASK_INIT)
 			msg->result = WD_EINVAL;
 		else
@@ -676,9 +682,13 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 	if (ret < 0)
 		return ret;
 
-	if (hw_msg.done != HPRE_HW_TASK_DONE || hw_msg.etype) {
-		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
-			hw_msg.done, hw_msg.etype);
+	if (hw_msg.done != HPRE_HW_TASK_DONE ||
+			hw_msg.etype || hw_msg.etype1) {
+		WD_ERR("HPRE do dh fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+			hw_msg.done, hw_msg.etype, hw_msg.etype1);
+		if (hw_msg.etype1 & HPRE_HW_SVA_ERROR)
+			WD_ERR("failed to SVA prefetch: status=%u\n",
+				hw_msg.sva_status);
 		if (hw_msg.done == HPRE_HW_TASK_INIT)
 			msg->result = WD_EINVAL;
 		else
@@ -1011,16 +1021,18 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 		return -WD_EINVAL;
 	}
 
+	e = &in->dgst;
+	k = &in->k;
 	if (!in->k_set) {
 		if (msg->req.op_type == WD_ECDSA_SIGN) {
 			WD_ERR("random k not set!\n");
 			return -WD_EINVAL;
 		}
 		hw_msg->sm2_ksel = 1;
+	} else if (is_all_zero(k, msg)) {
+		WD_ERR("ecc sign in k all zero!\n");
+		return -WD_EINVAL;
 	}
-
-	e = &in->dgst;
-	k = &in->k;
 
 	if (is_all_zero(e, msg)) {
 		WD_ERR("ecc sign in e all zero!\n");
@@ -2097,9 +2109,14 @@ static int ecc_sqe_parse(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 {
 	int ret;
 
-	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
-		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "ecc",
-			hw_msg->done, hw_msg->etype);
+	if (hw_msg->done != HPRE_HW_TASK_DONE ||
+			hw_msg->etype || hw_msg->etype1) {
+		WD_ERR("HPRE do ecc fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+		if (hw_msg->etype1 & HPRE_HW_SVA_ERROR)
+			WD_ERR("failed to SVA prefetch: status=%u\n",
+				hw_msg->sva_status);
+
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			ret = -WD_EINVAL;
 		else
