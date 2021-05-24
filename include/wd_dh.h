@@ -26,7 +26,7 @@ struct wd_dh_sess_setup {
 };
 
 struct wd_dh_req {
-	void *x_p; /* x and p*/
+	void *x_p; /* x and p */
 
 	/* it is g, but it is PV at phase 2 */
 	void *pv;
