@@ -1997,9 +1997,10 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 
 	kbytes = ecc_msg->key_bytes;
 	qm_ecc_get_io_len(hw_msg->alg, kbytes, &ilen, &olen);
-	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
-		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "ecc",
-			hw_msg->done, hw_msg->etype);
+	if (hw_msg->done != HPRE_HW_TASK_DONE ||
+			hw_msg->etype || hw_msg->etype1) {
+		WD_ERR("HPRE do ecc fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+			hw_msg->done, hw_msg->etype, hw_msg->etype1);
 
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			ecc_msg->result = WD_EINVAL;
