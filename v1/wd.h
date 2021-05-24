@@ -98,8 +98,8 @@ struct wd_mm_br {
 
 	/* destroy the mapping between the PA of VA and iova */
 	wd_unmap iova_unmap;
-	wd_bufsize get_bufsize; /* optional */
 	void *usr; /* data for the above operations */
+	wd_bufsize get_bufsize; /* optional */
 };
 
 /* Warpdrive data buffer */
