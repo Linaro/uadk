@@ -48,6 +48,13 @@ struct wcrypto_digest_ctx {
 	struct wcrypto_digest_ctx_setup setup;
 };
 
+static int g_digest_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
+	WCRYPTO_DIGEST_SM3_LEN, WCRYPTO_DIGEST_MD5_LEN, WCRYPTO_DIGEST_SHA1_LEN,
+	WCRYPTO_DIGEST_SHA256_LEN, WCRYPTO_DIGEST_SHA224_LEN,
+	WCRYPTO_DIGEST_SHA384_LEN, WCRYPTO_DIGEST_SHA512_LEN,
+	WCRYPTO_DIGEST_SHA512_224_LEN, WCRYPTO_DIGEST_SHA512_256_LEN
+};
+
 static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
@@ -271,12 +278,15 @@ static int param_check(struct wcrypto_digest_ctx *ctx,
 		       struct wcrypto_digest_op_data **opdata,
 		       void **tag, __u32 num)
 {
+	enum wcrypto_digest_alg alg;
 	__u32 i;
 
 	if (unlikely(!ctx || !opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
 		WD_ERR("input param err!\n");
 		return -WD_EINVAL;
 	}
+
+	alg = ctx->setup.alg;
 
 	for (i = 0; i < num; i++) {
 		if (unlikely(!opdata[i])) {
@@ -288,6 +298,12 @@ static int param_check(struct wcrypto_digest_ctx *ctx,
 			WD_ERR("num > 1, wcrypto_burst_digest does not support stream mode!\n");
 			return -WD_EINVAL;
 		}
+
+		if (opdata[i]->out_bytes == 0 ||
+			opdata[i]->out_bytes > g_digest_mac_len[alg]) {
+				WD_ERR("failed to check digest mac length!\n");
+				return -WD_EINVAL;
+			}
 
 		if (unlikely(tag && !tag[i])) {
 			WD_ERR("tag[%u] is NULL!\n", i);
