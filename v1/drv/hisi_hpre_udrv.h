@@ -48,8 +48,8 @@ struct hisi_hpre_sqe {
 	__u32 alg	: 5;
 
 	/* error type */
-	__u32 etype	:11;
-	__u32 resv0	: 14;
+	__u32 etype	: 11;
+	__u32 etype1	: 14;
 	__u32 done	: 2;
 	__u32 task_len1	: 8;
 	__u32 task_len2	: 8;
