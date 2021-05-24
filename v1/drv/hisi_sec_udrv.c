@@ -344,7 +344,7 @@ static int fill_cipher_bd1_mode(struct wcrypto_cipher_msg *msg,
 	return WD_SUCCESS;
 }
 
-static int fill_cipher_bd1_udata(struct hisi_sec_sqe *sqe,
+static void fill_cipher_bd1_udata(struct hisi_sec_sqe *sqe,
 		struct wd_sec_udata *udata)
 {
 	sqe->type1.gran_num = udata->gran_num;
@@ -365,8 +365,6 @@ static int fill_cipher_bd1_udata(struct hisi_sec_sqe *sqe,
 	sqe->type1.chk_ref_ctrl = udata->dif.ctrl.verify.ref_verify_type;
 	sqe->type1.lba_l = udata->dif.lba & QM_L32BITS_MASK;
 	sqe->type1.lba_h = udata->dif.lba >> QM_HADDR_SHIFT;
-
-	return WD_SUCCESS;
 }
 
 static int map_addr(struct wd_queue *q, __u8 *key, __u16 len,
@@ -470,9 +468,7 @@ static int fill_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	if (ret != WD_SUCCESS)
 		return ret;
 
-	ret = fill_cipher_bd1_udata(sqe, udata);
-	if (ret != WD_SUCCESS)
-		return ret;
+	fill_cipher_bd1_udata(sqe, udata);
 
 	ret = fill_cipher_bd1_addr(q, msg, sqe);
 	if (ret != WD_SUCCESS)
@@ -1070,7 +1066,7 @@ static int fill_digest_bd1_addr(struct wd_queue *q,
 	return WD_SUCCESS;
 }
 
-static int fill_digest_bd1_udata(struct hisi_sec_sqe *sqe,
+static void fill_digest_bd1_udata(struct hisi_sec_sqe *sqe,
 		struct wd_sec_udata *udata)
 {
 	sqe->type1.gran_num = udata->gran_num;
@@ -1081,8 +1077,6 @@ static int fill_digest_bd1_udata(struct hisi_sec_sqe *sqe,
 	sqe->type1.chk_ref_ctrl = udata->dif.ctrl.verify.ref_verify_type;
 	sqe->type1.lba_l = udata->dif.lba & QM_L32BITS_MASK;
 	sqe->type1.lba_h = udata->dif.lba >> QM_HADDR_SHIFT;
-
-	return WD_SUCCESS;
 }
 
 static int fill_digest_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
@@ -1102,9 +1096,7 @@ static int fill_digest_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	if (ret != WD_SUCCESS)
 		return ret;
 
-	ret = fill_digest_bd1_udata(sqe, udata);
-	if (ret != WD_SUCCESS)
-		return ret;
+	fill_digest_bd1_udata(sqe, udata);
 
 	ret = fill_digest_bd1_addr(q, msg, sqe);
 	if (ret != WD_SUCCESS)
@@ -2554,6 +2546,23 @@ map_out_error:
 	return -WD_ENOMEM;
 }
 
+static int aead_param_len_check(struct wcrypto_aead_msg *msg)
+{
+	if (unlikely(msg->in_bytes == 0)) {
+		WD_ERR("fail to support input 0 length\n");
+		return -WD_EINVAL;
+	}
+
+	if (msg->cmode == WCRYPTO_CIPHER_CBC &&
+	   (msg->in_bytes & (AES_BLOCK_SIZE - 1) ||
+	    msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+		WD_ERR("failed to check input data length!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
 {
@@ -2571,10 +2580,10 @@ static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		sqe->dst_addr_type = HISI_FLAT_BUF;
 	}
 
-	if (unlikely(msg->in_bytes == 0)) {
-		WD_ERR("fail to support input 0 length\n");
-		return -WD_EINVAL;
-	}
+	ret = aead_param_len_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	sqe->type2.c_len = msg->in_bytes;
 	sqe->type2.cipher_src_offset = msg->assoc_bytes;
 	sqe->type2.a_len = msg->in_bytes + msg->assoc_bytes;
