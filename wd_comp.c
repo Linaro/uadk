@@ -438,10 +438,9 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	struct wd_comp_req strm_req;
-	__u32 total_avail_out = req->dst_len;
 	__u32 chunk = STREAM_CHUNK;
-	__u32 avail_in = 0;
-	__u32 avail_out;
+	__u32 total_avail_in;
+	__u32 total_avail_out;
 	int ret;
 
 	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
@@ -464,65 +463,56 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	dbg("do, op_type = %hhu, in =%u, out_len =%u\n",
 	    req->op_type, req->src_len, req->dst_len);
 
-	avail_out = req->dst_len;
+	total_avail_in = req->src_len;
+	total_avail_out = req->dst_len;
 	/* strm_req and req share the same src and dst buffer */
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
 	req->dst_len = 0;
 
 	strm_req.last = 0;
-	while (1) {
-		if (req->src_len > chunk) {
-			strm_req.src_len = chunk;
-			req->src_len -= chunk;
-		} else {
-			strm_req.src_len = req->src_len;
-			req->src_len = 0;
+	do {
+		strm_req.src_len = total_avail_in > chunk ? chunk :
+				   total_avail_in;
+		strm_req.dst_len = total_avail_out > chunk ? chunk :
+				   total_avail_out;
+		if (req->op_type == WD_DIR_COMPRESS) {
+			/* find the last chunk to compress */
+			if (total_avail_in <= chunk)
+				strm_req.last = 1;
 		}
-		avail_in = strm_req.src_len;
-		if (req->op_type == WD_DIR_COMPRESS)
-			strm_req.last = (strm_req.src_len == chunk) ? 0 : 1;
+		dbg("do, strm start, in =%u, out_len =%u\n",
+		    strm_req.src_len, strm_req.dst_len);
+		ret = wd_do_comp_strm(h_sess, &strm_req);
+		if (ret < 0 || strm_req.status == WD_IN_EPARA) {
+			WD_ERR("wd comp, invalid or incomplete data! "
+			       "ret(%d), req.status(%u)\n",
+			       ret, strm_req.status);
+			return ret;
+		}
+		req->dst_len += strm_req.dst_len;
+		strm_req.dst += strm_req.dst_len;
+		dbg("do, strm end, in =%u, out_len =%u\n",
+		    strm_req.src_len, strm_req.dst_len);
+		total_avail_out -= strm_req.dst_len;
 
-		do {
-			if (req->op_type == WD_DIR_COMPRESS &&
-			    strm_req.src_len == 0 &&
-			    strm_req.last == 1) {
-				dbg("append_store, src_len=%u, dst_len=%u\n",
-				    req->src_len, req->dst_len);
-				ret = append_store_block(h_sess, &strm_req);
-				req->dst_len += strm_req.dst_len;
-				req->status = 0;
-				return 0;
-			}
-			dbg("do, strm start, in =%u, out_len =%u\n",
-			    strm_req.src_len, strm_req.dst_len);
-			if (req->dst_len + strm_req.src_len > total_avail_out)
-				return -WD_ENOMEM;
-			strm_req.dst_len = avail_out > chunk ? chunk : avail_out;
-			ret = wd_do_comp_strm(h_sess, &strm_req);
-			if (ret < 0 || strm_req.status == WD_IN_EPARA) {
-				WD_ERR("wd comp, invalid or incomplete data! "
-				       "ret(%d), req.status(%u)\n",
-				       ret, strm_req.status);
-				return ret;
-			}
-			req->dst_len += strm_req.dst_len;
-			strm_req.dst += strm_req.dst_len;
-			dbg("do, strm end, in =%u, out_len =%u\n",
-			    strm_req.src_len, strm_req.dst_len);
-			avail_out -= strm_req.dst_len;
-
-			strm_req.src += strm_req.src_len;
-			avail_in -= strm_req.src_len;
-			strm_req.src_len = avail_in;
-		} while (strm_req.src_len > 0);
+		strm_req.src += strm_req.src_len;
+		total_avail_in -= strm_req.src_len;
 
 		/*
 		 * When a stream request end, 'stream_pos' will be reset as
 		 * 'WD_COMP_STREAM_NEW' in wd_do_comp_strm.
 		 */
+	} while (sess->stream_pos != WD_COMP_STREAM_NEW);
 
-		if (sess->stream_pos == WD_COMP_STREAM_NEW)
-			break;
+	if (req->op_type == WD_DIR_COMPRESS &&
+	    strm_req.src_len == 0 &&
+	    strm_req.last == 1) {
+		dbg("append_store, src_len=%u, dst_len=%u\n",
+		    req->src_len, req->dst_len);
+		ret = append_store_block(h_sess, &strm_req);
+		req->dst_len += strm_req.dst_len;
+		req->status = 0;
+		return 0;
 	}
 
 	dbg("end, in =%u, out_len =%u\n", req->src_len, req->dst_len);
