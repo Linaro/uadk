@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../include -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../../include -pthread
 
 if WITH_OPENSSL_DIR
 bin_PROGRAMS=bmm_test

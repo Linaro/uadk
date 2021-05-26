@@ -20,10 +20,10 @@
 #include <pthread.h>
 
 #include "bmm_test.h"
-#include "../../wd.h"
-#include "../../wd_bmm.h"
-#include "../../wd_rsa.h"
-#include "../../wd_dh.h"
+#include "v1/wd.h"
+#include "v1/wd_bmm.h"
+#include "v1/wd_rsa.h"
+#include "v1/wd_dh.h"
 
 //#define USERS
 

@@ -17,9 +17,9 @@
 #ifndef __WD_RNG_H
 #define __WD_RNG_H
 
-#include "wd.h"
-#include "wd_digest.h"
-#include "wd_cipher.h"
+#include "v1/wd.h"
+#include "v1/wd_digest.h"
+#include "v1/wd_cipher.h"
 
 #ifdef __cplusplus
 extern "C" {
