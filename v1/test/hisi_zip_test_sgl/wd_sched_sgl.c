@@ -15,10 +15,10 @@
  */
 
 #include "config.h"
-#include "wd_util.h"
+#include "v1/wd_util.h"
+#include "v1/wd_bmm.h"
+#include "v1/wd_sgl.h"
 #include "wd_sched_sgl.h"
-#include "wd_bmm.h"
-#include "wd_sgl.h"
 
 #define EXTRA_SIZE		4096
 #define WD_WAIT_MS		1000

@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <linux/types.h>
-#include "wd.h"
+#include "v1/wd.h"
 
 #ifdef __cplusplus
 extern "C" {

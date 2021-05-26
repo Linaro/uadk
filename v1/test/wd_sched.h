@@ -18,7 +18,7 @@
 #ifndef __WD_SCHED_H__
 #define __WD_SCHED_H__
 
-#include "../wd.h"
+#include "v1/wd.h"
 
 struct wd_msg {
 	void *data_in;

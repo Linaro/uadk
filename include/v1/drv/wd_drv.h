@@ -17,6 +17,6 @@
 #ifndef __WD_DRV_H
 #define __WD_DRV_H
 
-#include "wd.h"
+#include "v1/wd.h"
 
 #endif

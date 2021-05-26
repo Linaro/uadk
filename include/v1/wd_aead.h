@@ -20,9 +20,9 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <linux/types.h>
-#include "wd.h"
-#include "wd_cipher.h"
-#include "wd_digest.h"
+#include "v1/wd.h"
+#include "v1/wd_cipher.h"
+#include "v1/wd_digest.h"
 
 #ifdef __cplusplus
 extern "C" {

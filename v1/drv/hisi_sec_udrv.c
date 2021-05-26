@@ -29,7 +29,7 @@
 #include <sys/eventfd.h>
 #include <sys/types.h>
 
-#include "hisi_sec_udrv.h"
+#include "v1/drv/hisi_sec_udrv.h"
 
 #define DES_KEY_SIZE 8
 #define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
