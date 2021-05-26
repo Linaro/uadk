@@ -24,10 +24,10 @@
 #include <sys/time.h>
 #include <sys/syscall.h>
 
-#include "../../wd.h"
+#include "v1/wd.h"
+#include "v1/wd_comp.h"
+#include "v1/wd_sgl.h"
 #include "zip_alg_sgl.h"
-#include "../../wd_comp.h"
-#include "../../wd_sgl.h"
 #include "../smm.h"
 
 #ifdef DEBUG_LOG

@@ -31,7 +31,7 @@
 #include <unistd.h>
 #include <semaphore.h>
 
-#include "../../wd.h"
+#include "v1/wd.h"
 
 #define MMT_PRT			printf
 #define TEST_MAX_THRD		128

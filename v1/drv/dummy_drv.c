@@ -23,7 +23,7 @@
 #include <sys/ioctl.h>
 
 #include "v1/wd_util.h"
-#include "dummy_drv.h"
+#include "v1/drv/dummy_drv.h"
 
 struct dummy_q_priv {
 	int ver;

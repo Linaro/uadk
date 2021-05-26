@@ -27,12 +27,12 @@
 #include <dirent.h>
 #include <sys/poll.h>
 
-#include "../../wd.h"
-#include "../../wd_util.h" /* It is not API head, to be deleted */
+#include "v1/wd.h"
+#include "v1/wd_util.h" /* It is not API head, to be deleted */
+#include "v1/wd_comp.h"
+#include "v1/wd_bmm.h"
+#include "v1/wd_sgl.h"
 #include "wd_sched_sgl.h"
-#include "../../wd_comp.h"
-#include "../../wd_bmm.h"
-#include "../../wd_sgl.h"
 
 #include "zip_alg_sgl.h"
 #include "../smm.h"

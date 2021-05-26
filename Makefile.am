@@ -1,4 +1,4 @@
-ACLOCAL_AMFLAGS = -I m4 -I./include
+ACLOCAL_AMFLAGS = -I m4 -I./include -I./
 AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I./include
 
@@ -24,11 +24,6 @@ REVISION = 6
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"libwd version: ${MAJOR}.${MINOR}.${REVISION}\""
-
-include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
-		  include/wd_dh.h include/wd_digest.h include/wd_rsa.h \
-		  include/uacce.h include/wd_alg_common.h \
-		  include/wd_common.h include/wd_ecc.h
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
@@ -116,4 +111,4 @@ libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
 
 
-SUBDIRS=. test v1/test
+SUBDIRS=. test v1/test include

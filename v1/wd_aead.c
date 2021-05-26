@@ -25,9 +25,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "wd.h"
-#include "wd_aead.h"
-#include "wd_util.h"
+#include "v1/wd.h"
+#include "v1/wd_aead.h"
+#include "v1/wd_util.h"
 
 #define MAX_AEAD_KEY_SIZE		64
 #define MAX_AEAD_MAC_SIZE		64
