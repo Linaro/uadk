@@ -17,7 +17,7 @@
 #include "test_wd_mem.h"
 
 /* This head file is not API for user, should be deleted in the next */
-#include "wd_util.h"
+#include "v1/wd_util.h"
 
 static int with_log = 0;
 static pthread_t system_test_thrds[TEST_MAX_THRD];

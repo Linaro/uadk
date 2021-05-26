@@ -25,9 +25,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "wd.h"
-#include "wd_dh.h"
-#include "wd_util.h"
+#include "v1/wd.h"
+#include "v1/wd_dh.h"
+#include "v1/wd_util.h"
 
 #define WD_DH_G2		2
 #define DH_BALANCE_THRHD		1280

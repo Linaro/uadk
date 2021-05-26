@@ -28,8 +28,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "wd.h"
-#include "wd_sgl.h"
+#include "v1/wd.h"
+#include "v1/wd_sgl.h"
 
 /* Use to describe hardware SGL, different hardware has different SGL format */
 struct hw_sgl_info {
