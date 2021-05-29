@@ -48,12 +48,6 @@
 
 #define MAX_BURST_NUM	16
 
-#define DES_WEAK_KEY_NUM 4
-static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {
-	0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
-	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E
-};
-
 static int g_aead_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_SM3_LEN, WCRYPTO_MD5_LEN, WCRYPTO_SHA1_LEN,
 	WCRYPTO_SHA256_LEN, WCRYPTO_SHA224_LEN,
@@ -118,10 +112,6 @@ static int get_iv_block_size(int mode)
 	/* AEAD just used AES and SM4 algorithm */
 	switch (mode) {
 	case WCRYPTO_CIPHER_CBC:
-	case WCRYPTO_CIPHER_CTR:
-	case WCRYPTO_CIPHER_XTS:
-	case WCRYPTO_CIPHER_OFB:
-	case WCRYPTO_CIPHER_CFB:
 	case WCRYPTO_CIPHER_CCM:
 		ret = AES_BLOCK_SIZE;
 		break;
@@ -310,17 +300,6 @@ int wcrypto_aead_get_maxauthsize(void *ctx)
 	return g_aead_mac_len[ctxt->setup.dalg];
 }
 
-static int is_des_weak_key(const __u64 *key, __u16 keylen)
-{
-	int i;
-
-	for (i = 0; i < DES_WEAK_KEY_NUM; i++)
-		if (*key == des_weak_key[i])
-			return 1;
-
-	return 0;
-}
-
 static int aes_key_len_check(__u16 length)
 {
 	switch (length) {
@@ -363,7 +342,6 @@ static int cipher_key_len_check(int alg, __u16 length)
 int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_aead_ctx *ctxt = ctx;
-	__u16 length = key_len;
 	int ret;
 
 	if (!ctx || !key) {
@@ -371,19 +349,10 @@ int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (ctxt->setup.cmode == WCRYPTO_CIPHER_XTS)
-		length = key_len >> XTS_MODE_KEY_SHIFT;
-
-	ret = cipher_key_len_check(ctxt->setup.calg, length);
+	ret = cipher_key_len_check(ctxt->setup.calg, key_len);
 	if (ret != WD_SUCCESS) {
 		WD_ERR("fail to check key length, alg = %u\n", ctxt->setup.calg);
 		return ret;
-	}
-
-	if (ctxt->setup.calg == WCRYPTO_CIPHER_DES &&
-		is_des_weak_key((__u64 *)key, length)) {
-		WD_ERR("input des weak key!\n");
-		return -WD_EINVAL;
 	}
 
 	ctxt->ckey_bytes = key_len;

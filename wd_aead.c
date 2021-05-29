@@ -16,13 +16,7 @@
 #define WD_AEAD_CCM_GCM_MAX	16
 #define MAX_HMAC_KEY_SIZE	128U
 #define WD_POOL_MAX_ENTRIES	1024
-#define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
-
-static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {
-	0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
-	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E
-};
 
 static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -60,18 +54,6 @@ static void __attribute__((constructor)) wd_aead_open_driver(void)
 void wd_aead_set_driver(struct wd_aead_driver *drv)
 {
 	wd_aead_setting.driver = drv;
-}
-
-static int is_des_weak_key(const __u64 *key)
-{
-	int i;
-
-	for (i = 0; i < DES_WEAK_KEY_NUM; i++) {
-		if (*key == des_weak_key[i])
-			return 1;
-	}
-
-	return 0;
 }
 
 static int aes_key_len_check(__u16 length)
@@ -113,10 +95,6 @@ static unsigned int get_iv_block_size(int mode)
 	/* AEAD just used AES and SM4 algorithm */
 	switch (mode) {
 	case WD_CIPHER_CBC:
-	case WD_CIPHER_CTR:
-	case WD_CIPHER_XTS:
-	case WD_CIPHER_OFB:
-	case WD_CIPHER_CFB:
 	case WD_CIPHER_CCM:
 		ret = AES_BLOCK_SIZE;
 		break;
@@ -133,7 +111,6 @@ static unsigned int get_iv_block_size(int mode)
 int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 {
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
-	__u16 length = key_len;
 	int ret;
 
 	if (!key || !sess || !sess->ckey) {
@@ -141,16 +118,9 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (sess->cmode == WD_CIPHER_XTS)
-		length = key_len / XTS_MODE_KEY_DIVISOR;
-
-	ret = cipher_key_len_check(sess->calg, length);
+	ret = cipher_key_len_check(sess->calg, key_len);
 	if (ret) {
 		WD_ERR("failed to check cipher key length!\n");
-		return -WD_EINVAL;
-	}
-	if (sess->calg == WD_CIPHER_DES && is_des_weak_key((__u64 *)key)) {
-		WD_ERR("failed to check des key!\n");
 		return -WD_EINVAL;
 	}
 
