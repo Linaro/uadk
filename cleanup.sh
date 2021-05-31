@@ -12,8 +12,7 @@ FILES="aclocal.m4 autom4te.cache compile config.guess config.h.in config.log \
        test/hisi_hpre_test/Makefile test/hisi_sec_test/Makefile              \
        test/hisi_sec_test/Makefile.in test/hisi_zip_test/Makefile            \
        test/hisi_zip_test/Makefile.in					     \
-       include/Makefile include/Makefile.in				     \
-       v1/Makefile v1/Makefile.in v1/test/Makefile v1/test/Makefile.in	     \
+       v1/Makefile.in v1/Makefile.in v1/test/Makefile v1/test/Makefile.in    \
        v1/test/test_mm/Makefile v1/test/test_mm/Makefile.in		     \
        v1/test/bmm_test/Makefile v1/test/bmm_test/Makefile.in"
 

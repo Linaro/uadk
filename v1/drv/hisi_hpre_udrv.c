@@ -29,7 +29,7 @@
 #include <sys/eventfd.h>
 #include <sys/types.h>
 #include "v1/wd_util.h"
-#include "v1/drv/hisi_hpre_udrv.h"
+#include "hisi_hpre_udrv.h"
 
 #define MAX_WAIT_CNT			10000000
 #define SM2_KEY_SIZE			32

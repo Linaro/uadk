@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../../include -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../include -I../../ -pthread
 
 bin_PROGRAMS=test_wd_mem
 
