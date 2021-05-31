@@ -22,15 +22,14 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <getopt.h>
+#include "v1/wd.h"
+#include "v1/wd_util.h"
+#include "v1/test/wd_sched.h"
+#include "v1/drv/hisi_qm_udrv.h"
 #define __USE_GNU
 #include <pthread.h>
 #include <sched.h>
-
-#include "v1/wd.h"
-#include "v1/wd_util.h"
 #include "v1/wd_comp.h"
-#include "v1/drv/hisi_qm_udrv.h"
-#include "v1/test/wd_sched.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \

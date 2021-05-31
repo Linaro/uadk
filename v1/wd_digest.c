@@ -25,9 +25,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "v1/wd.h"
-#include "v1/wd_digest.h"
-#include "v1/wd_util.h"
+#include "wd.h"
+#include "wd_digest.h"
+#include "wd_util.h"
 
 #define MAX_HMAC_KEY_SIZE	128
 #define MAX_DIGEST_RETRY_CNT	2000000

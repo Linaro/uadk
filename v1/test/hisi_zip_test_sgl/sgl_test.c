@@ -8,8 +8,8 @@
 #include <sys/time.h>
 #include <sys/syscall.h>
 
-#include "v1/wd.h"
-#include "v1/wd_sgl.h"
+#include "../../wd.h"
+#include "../../wd_sgl.h"
 #include "sgl_test.h"
 
 void *sgl_addr[4];
