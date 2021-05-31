@@ -464,6 +464,7 @@ static int hpre_init(struct wd_ctx_config_internal *config, void *priv, const ch
 
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
+		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp) {
 			WD_ERR("failed to alloc qp!\n");

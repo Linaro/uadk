@@ -479,7 +479,11 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		i++;
 	}
 
-	q_info->db(q_info, QM_DBELL_CMD_CQ, i, 0);
+	/*  enable write EQ queue flag for sync mode */
+	if (q_info->qp_mode == CTX_MODE_SYNC)
+		q_info->db(q_info, QM_DBELL_CMD_CQ, i, 1);
+	else
+		q_info->db(q_info, QM_DBELL_CMD_CQ, i, 0);
 
 	/* only support one thread poll one queue, so no need protect */
 	q_info->cq_head_index = i;
