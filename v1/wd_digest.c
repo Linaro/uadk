@@ -370,10 +370,19 @@ fail_with_cookies:
 int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 		      void *tag)
 {
-	if (!tag)
-		return wcrypto_burst_digest(ctx, &opdata, NULL, 1);
-	else
-		return wcrypto_burst_digest(ctx, &opdata, &tag, 1);
+	int ret;
+
+	if (!tag) {
+		ret = wcrypto_burst_digest(ctx, &opdata, NULL, 1);
+		if (likely(ret == 1))
+			return GET_NEGATIVE(opdata->status);
+		if (unlikely(ret == 0))
+			return -WD_ETIMEDOUT;
+	} else {
+		ret = wcrypto_burst_digest(ctx, &opdata, &tag, 1);
+	}
+
+	return ret;
 }
 
 int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
