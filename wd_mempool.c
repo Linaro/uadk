@@ -275,24 +275,12 @@ static void clear_bit(struct bitmap *bm, int pos)
 	*p &= ~mask;
 }
 
-/**
- * test_and_set_bit - Set a bit if value in nr in 0.
- * @nr: Bit to set
- * @addr: Address to count from
- *
- * Return true if set, false if not set.
- */
-static int test_and_set_bit(struct bitmap *bm, int nr)
+static int test_bit(struct bitmap *bm, int nr)
 {
 	unsigned long *p = bm->map + BIT_WORD(nr);
 	unsigned long mask = BIT_MASK(nr);
 
-	if (!(*p & mask)) {
-		*p |= mask;
-		return true;
-	}
-
-	return false;
+	return !(*p & mask);
 }
 
 inline static size_t wd_get_page_size(void)
@@ -316,8 +304,8 @@ void *wd_block_alloc(handle_t blkpool)
 	if (bp->top > 0) {
 		bp->top--;
 		bp->free_block_num--;
-		wd_unspinlock(&bp->lock);
 		p = bp->blk_elem[bp->top];
+		wd_unspinlock(&bp->lock);
 		return p;
 	}
 
@@ -405,43 +393,71 @@ static int check_mempool_real_size(struct mempool *mp, struct blkpool *bp)
 	return 0;
 }
 
+static int alloc_block_from_mempool(struct mempool *mp,
+					struct blkpool *bp,
+					int pos,
+					int mem_combined_num,
+					int mem_splited_num)
+{
+	int pos_first = pos;
+	int pos_last = pos;
+	int i, ret;
+
+	do {
+		pos_first = find_next_zero_bit(mp->bitmap, pos_last);
+		if (pos_first == mp->bitmap->bits)
+			return -ENOMEM;
+
+		pos_last = pos_first;
+		for (i = 0; i < mem_combined_num - 1; i++) {
+			if (!test_bit(mp->bitmap, ++pos_last))
+				break;
+		}
+	} while (i != mem_combined_num - 1);
+
+	for (i = pos_last; i >= pos_first; i--)
+		set_bit(mp->bitmap, i);
+
+	ret = alloc_memzone(bp, mp->addr + pos_first * mp->blk_size,
+				mem_splited_num, pos_first, pos_last);
+	if (ret < 0)
+		goto err_clear_bit;
+
+	return pos_last;
+
+err_clear_bit:
+	for (i = pos_last; i >= pos_first; i--)
+		clear_bit(mp->bitmap, i);
+	return -ENOMEM;
+}
+
 /* In this case, multiple blocks are in one mem block */
 static int alloc_mem_multi_in_one(struct mempool *mp, struct blkpool *bp)
 {
-	int blk_num_per_memblk = mp->blk_size / bp->blk_size;
+	int mem_splited_num = mp->blk_size / bp->blk_size;
 	int blk_num = bp->depth;
 	int ret = -ENOMEM;
-	int start = 0;
-	int pos;
+	int pos = 0;
 
 	wd_spinlock(&mp->lock);
 	if (check_mempool_real_size(mp, bp))
 		goto err_check_size;
 
 	while (blk_num > 0) {
-		pos = find_next_zero_bit(mp->bitmap, start);
-		if (pos == mp->bitmap->bits) {
-			ret = -EBUSY;
+		ret = alloc_block_from_mempool(mp, bp, pos, 1,
+						MIN(blk_num, mem_splited_num));
+		if (ret < 0)
 			goto err_free_memzone;
-		}
-		set_bit(mp->bitmap, pos);
-
-		if (alloc_memzone(bp, mp->addr + pos * mp->blk_size,
-				  MIN(blk_num, blk_num_per_memblk),
-				  pos, pos) < 0)
-			goto err_clear_bit;
 
 		mp->free_blk_num--;
 		mp->real_size -= mp->blk_size;
-		blk_num -= blk_num_per_memblk;
-		start = pos++;
+		blk_num -= mem_splited_num;
+		pos = ret;
 	}
 
 	wd_unspinlock(&mp->lock);
 	return 0;
 
-err_clear_bit:
-	clear_bit(mp->bitmap, pos);
 err_free_memzone:
 	free_mem_to_mempool_nolock(bp);
 err_check_size:
@@ -455,12 +471,11 @@ err_check_size:
  */
 static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 {
-	int memblk_num_per_blk = bp->blk_size / mp->blk_size +
+	int mem_combined_num = bp->blk_size / mp->blk_size +
 				 (bp->blk_size % mp->blk_size ? 1 : 0);
-	int pos_first, pos, pos_last, i, j;
 	int blk_num = bp->depth;
-	int ret = -EBUSY;
-	int start = 0;
+	int pos = 0;
+	int ret;
 
 	wd_spinlock(&mp->lock);
 	if (check_mempool_real_size(mp, bp)) {
@@ -469,45 +484,20 @@ static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 	}
 
 	while (blk_num > 0) {
-		pos_first = find_next_zero_bit(mp->bitmap, start);
-		if (pos_first == mp->bitmap->bits) {
+		ret = alloc_block_from_mempool(mp, bp, pos,
+						mem_combined_num, 1);
+		if (ret < 0)
 			goto err_free_memzone;
-		}
-		set_bit(mp->bitmap, pos_first);
-		pos = pos_first + 1;
 
-		for (i = 0; i < memblk_num_per_blk - 1; i++) {
-			if (!test_and_set_bit(mp->bitmap, pos++))
-				break;
-		}
-
-		if (i == memblk_num_per_blk - 1) {
-			/* alloc memzone and insert list */
-			if (alloc_memzone(bp,
-				mp->addr + pos_first * mp->blk_size,
-				1, pos_first, pos - 1) < 0) {
-				pos_last = pos - 1;
-				ret = -ENOMEM;
-				goto err_clear_bit;
-
-			}
-			blk_num--;
-		} else {
-			pos_last = pos - 2;
-			goto err_clear_bit;
-		}
-
-		mp->free_blk_num -= memblk_num_per_blk;
-		mp->real_size -= mp->blk_size * memblk_num_per_blk;
-		start = pos;
+		pos = ret;
+		blk_num--;
+		mp->free_blk_num -= mem_combined_num;
+		mp->real_size -= mp->blk_size * mem_combined_num;
 	}
 
 	wd_unspinlock(&mp->lock);
 	return 0;
 
-err_clear_bit:
-	for (j = pos_last; j >= pos_first; j--)
-		clear_bit(mp->bitmap, j);
 err_free_memzone:
 	free_mem_to_mempool_nolock(bp);
 err_check_size:
