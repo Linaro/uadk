@@ -17,6 +17,9 @@
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
 
+#define POLL_SIZE			500000
+#define POLL_TIME			1000
+
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
 	(((x) & 0x0000ff00) <<  8) | \
@@ -396,6 +399,14 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		goto err_out;
 	}
 
+	if (req->src_len >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait fail(%d)!\n", ret);
+			goto err_out;
+		}
+	}
+
 	do {
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &msg, priv);
 		if (ret == -WD_HW_EACCESS) {
@@ -587,6 +598,14 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	if (ret < 0) {
 		WD_ERR("wd comp send err(%d)!\n", ret);
 		goto err_out;
+	}
+
+	if (req->src_len >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait fail(%d)!\n", ret);
+			goto err_out;
+		}
 	}
 
 	do {
