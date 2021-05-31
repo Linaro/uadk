@@ -172,7 +172,7 @@ out:
 
 char *wd_get_accel_name(char *dev_path, int no_apdx)
 {
-	int i, appendix, len;
+	int i, appendix, dash_len, len;
 	char *dash = NULL;
 	char *name;
 
@@ -202,7 +202,8 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 		appendix = 1;
 		dash = rindex(name, '-');
 		if (dash) {
-			for (i = 1; i < strlen(dash); i++) {
+			dash_len = strlen(dash);
+			for (i = 1; i < dash_len; i++) {
 				if (!isdigit(dash[i])) {
 					appendix = 0;
 					break;
