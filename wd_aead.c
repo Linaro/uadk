@@ -288,8 +288,7 @@ static int aead_param_check(struct wd_aead_sess *sess,
 	}
 
 	if (sess->cmode == WD_CIPHER_CBC &&
-	   (req->in_bytes & (AES_BLOCK_SIZE - 1) ||
-	    req->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+	   (req->in_bytes & (AES_BLOCK_SIZE - 1))) {
 		WD_ERR("failed to check input data length!\n");
 		return -WD_EINVAL;
 	}
