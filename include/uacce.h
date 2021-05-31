@@ -28,20 +28,4 @@ enum uacce_qfrt {
 	UACCE_QFRT_DUS = 1,	/* device user share */
 	UACCE_QFRT_MAX,
 };
-
-/**
- * struct uacce_pin_address - Expected pin user space address and size
- * @addr: Address to pin
- * @size: Size of pin address
- */
-struct uacce_pin_address {
-	unsigned long addr;
-	unsigned long size;
-};
-
-/* UACCE_CMD_PIN: Pin a range of memory */
-#define UACCE_CMD_PIN		_IOW('W', 2, struct uacce_pin_address)
-
-/* UACCE_CMD_UNPIN: Unpin a range of memory */
-#define UACCE_CMD_UNPIN		_IOW('W', 3, struct uacce_pin_address)
 #endif
