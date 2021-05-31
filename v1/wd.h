@@ -30,8 +30,8 @@
 #include <unistd.h>
 #include <limits.h>
 #include <assert.h>
-#include "v1/internal/uacce.h"
-#include "include/wd_common.h"
+#include "internal/uacce.h"
+#include "../include/wd_common.h"
 
 #ifdef __cplusplus
 extern "C" {

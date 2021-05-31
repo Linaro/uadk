@@ -84,7 +84,6 @@ AC_FUNC_MMAP
 AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
 AC_CONFIG_FILES([Makefile
-		 include/Makefile
 		 test/Makefile
 		 test/hisi_hpre_test/Makefile
 		 test/hisi_sec_test/Makefile
