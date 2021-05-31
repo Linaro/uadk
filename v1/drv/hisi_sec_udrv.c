@@ -2073,8 +2073,7 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 	}
 
 	/* CCM/GCM support 0 in_bytes, but others not support */
-	if (unlikely(msg->in_bytes == 0 ||
-		     msg->assoc_bytes & (AES_BLOCK_SIZE - 1))) {
+	if (unlikely(msg->in_bytes == 0)) {
 		WD_ERR("Invalid aead assoc_bytes!\n");
 		return -WD_EINVAL;
 	}
