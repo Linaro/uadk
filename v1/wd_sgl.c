@@ -21,11 +21,11 @@
 #include <stdlib.h>
 #include <sys/queue.h>
 
-#include "v1/wd.h"
-#include "v1/wd_adapter.h"
-#include "v1/wd_bmm.h"
-#include "v1/wd_util.h"
-#include "v1/wd_sgl.h"
+#include "wd.h"
+#include "wd_adapter.h"
+#include "wd_bmm.h"
+#include "wd_util.h"
+#include "wd_sgl.h"
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)

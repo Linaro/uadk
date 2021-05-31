@@ -23,9 +23,9 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include "v1/wd.h"
-#include "v1/wd_util.h"
-#include "v1/wd_comp.h"
+#include "wd.h"
+#include "wd_util.h"
+#include "wd_comp.h"
 
 #define MAX_ALG_LEN			32
 #define MAX_RETRY_COUNTS		200000000

@@ -25,10 +25,10 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "v1/internal/wd_ecc_curve.h"
-#include "v1/wd.h"
-#include "v1/wd_ecc.h"
-#include "v1/wd_util.h"
+#include "wd.h"
+#include "internal/wd_ecc_curve.h"
+#include "wd_ecc.h"
+#include "wd_util.h"
 
 #define ECC_BALANCE_THRHD		1280
 #define ECC_RECV_MAX_CNT		60000000

@@ -29,13 +29,13 @@
 #include <semaphore.h>
 
 #include "test_hisi_sec_sgl.h"
-#include "v1/wd.h"
-#include "v1/wd_cipher.h"
-#include "v1/wd_aead.h"
-#include "v1/wd_digest.h"
-#include "v1/wd_bmm.h"
-#include "v1/wd_sgl.h"
-#include "v1/wd_util.h"
+#include "../../wd.h"
+#include "../../wd_cipher.h"
+#include "../../wd_aead.h"
+#include "../../wd_digest.h"
+#include "../../wd_bmm.h"
+#include "../../wd_sgl.h"
+#include "../../wd_util.h"
 
 #define  SEC_TST_PRT printf
 #define TEST_MAX_THRD 128

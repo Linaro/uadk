@@ -25,9 +25,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "v1/wd.h"
-#include "v1/wd_rsa.h"
-#include "v1/wd_util.h"
+#include "wd.h"
+#include "wd_rsa.h"
+#include "wd_util.h"
 
 #define RSA_BALANCE_THRHD	1280
 #define RSA_RESEND_CNT	8

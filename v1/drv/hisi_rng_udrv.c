@@ -30,7 +30,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "v1/drv/hisi_rng_udrv.h"
+#include "hisi_rng_udrv.h"
 
 #define HISI_RNG_BYTES		4
 #define MAX_RETRY_COUNTS	8

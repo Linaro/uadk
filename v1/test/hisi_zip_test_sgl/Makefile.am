@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../../include -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../ -I./ -pthread
 
 bin_PROGRAMS=wd_zip_test_sgl sgl_test
 
