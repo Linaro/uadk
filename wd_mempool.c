@@ -675,6 +675,16 @@ static int get_hugepage_info_per_type(char *hugepage_path,
 	return 1;
 }
 
+static void put_hugepage_info(struct mempool *mp)
+{
+	struct sys_hugepage_config *tmp;
+
+	while ((tmp = TAILQ_LAST(&mp->hp_list, sys_hugepage_list))) {
+		TAILQ_REMOVE(&mp->hp_list, tmp, node);
+		free(tmp);
+	}
+}
+
 /* This function also sorts hugepage from small to big */
 static int get_hugepage_info(struct mempool *mp)
 {
@@ -732,23 +742,10 @@ static int get_hugepage_info(struct mempool *mp)
 err_free:
 	free(tmp);
 err_free_list:
-	while ((tmp = TAILQ_LAST(&mp->hp_list, sys_hugepage_list))) {
-		TAILQ_REMOVE(&mp->hp_list, tmp, node);
-		free(tmp);
-	}
+	put_hugepage_info(mp);
 
 	closedir(dir);
 	return -WD_EIO;
-}
-
-static void put_hugepage_info(struct mempool *mp)
-{
-	struct sys_hugepage_config *tmp;
-
-	while ((tmp = TAILQ_LAST(&mp->hp_list, sys_hugepage_list))) {
-		TAILQ_REMOVE(&mp->hp_list, tmp, node);
-		free(tmp);
-	}
 }
 
 static int mbind_memory(void *addr, size_t size, int node)
@@ -844,83 +841,13 @@ static void free_hugepage_mem(struct mempool *mp)
 	put_hugepage_info(mp);
 }
 
-static int alloc_mem_and_pin(struct mempool *mp)
-{
-	size_t page_size = wd_get_page_size();
-	size_t page_num = mp->size / page_size + (mp->size % page_size ? 1 : 0);
-	size_t real_size = page_size * page_num;
-	struct uacce_pin_address addr;
-	int fd, ret;
-	void *p;
-
-	p = mmap(NULL, real_size, PROT_READ | PROT_WRITE, MAP_PRIVATE |
-		 MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED) {
-		WD_ERR("WD_MMEPOOL: Failed to do mmap\n");
-		return -1;
-	}
-
-	ret = mbind_memory(p, real_size, mp->node);
-	if (ret < 0)
-		goto err_unmap;
-
-	fd = open(MISC_DVE_UACCE_CTRL, O_RDWR);
-	if (fd < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to open\n");
-		ret = -errno;
-		goto err_unmap;
-	}
-
-	addr.addr = (unsigned long)p;
-	addr.size = real_size;
-	ret = ioctl(fd, UACCE_CMD_PIN, &addr);
-	if (ret < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to pin\n");
-		goto err_close;
-	}
-
-	mp->page_type = WD_NORMAL_PAGE;
-	mp->page_size = page_size;
-	mp->page_num = page_num;
-	mp->fd = fd;
-	mp->addr = p;
-	mp->real_size = real_size;
-
-	return 0;
-
-err_close:
-	close(fd);
-err_unmap:
-	munmap(p, real_size);
-	return ret;
-}
-
-static void free_pin_mem(struct mempool *mp)
-{
-	struct uacce_pin_address addr;
-
-	addr.addr = (unsigned long)mp->addr;
-	addr.size = mp->page_size * mp->page_num;
-	ioctl(mp->fd, UACCE_CMD_UNPIN, &addr);
-
-	close(mp->fd);
-	munmap(mp->addr, mp->page_size * mp->page_num);
-}
-
 static int alloc_mempool_memory(struct mempool *mp)
 {
 	int ret;
 
-	/* try to alloc from hugepage firstly */
 	ret = alloc_mem_from_hugepage(mp);
-	if (!ret) {
-		return 0;
-	}
-
-	ret = alloc_mem_and_pin(mp);
-	if (ret < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to mmap and pin\n");
-		free_hugepage_mem(mp);
+	if (ret) {
+		WD_ERR("WD_MMEPOOL: Failed to alloc memory from hugepage\n");
 		return -ENOMEM;
 	}
 
@@ -929,10 +856,7 @@ static int alloc_mempool_memory(struct mempool *mp)
 
 static void free_mempool_memory(struct mempool *mp)
 {
-	if (mp->page_type == WD_HUGE_PAGE)
-		munmap(mp->addr, mp->page_size * mp->page_num);
-	else
-		free_pin_mem(mp);
+	free_hugepage_mem(mp);
 }
 
 static int init_mempool(struct mempool *mp)
