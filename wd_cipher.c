@@ -19,6 +19,8 @@
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
 
+#define POLL_SIZE		1000000
+#define POLL_TIME		1000
 
 static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {
 	0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
@@ -385,9 +387,16 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
 	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd cipher send err!\n");
-		return ret;
+		goto err_out;
+	}
+
+	if (req->in_bytes >= POLL_SIZE) {
+		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+		if (ret < 0) {
+			WD_ERR("wd ctx wait fail(%d)!\n", ret);
+			goto err_out;
+		}
 	}
 
 	do {
