@@ -199,7 +199,7 @@ int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 	if (!d->next_dma)
 		return -WD_ENOMEM;
 
-	d->entry_sum_in_chain += s->entry_sum_in_chain;
+	d->entry_sum_in_chain = s->entry_sum_in_sgl + d->entry_sum_in_sgl;
 
 	return WD_SUCCESS;
 }
