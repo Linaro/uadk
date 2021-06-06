@@ -30,6 +30,9 @@ include_HEADERS = include/wd.h include/wd_cipher.h include/wd_comp.h \
 		  include/uacce.h include/wd_alg_common.h \
 		  include/wd_common.h include/wd_ecc.h
 
+nobase_include_HEADERS = v1/wd.h v1/wd_cipher.h v1/uacce.h v1/wd_dh.h v1/wd_digest.h \
+			 v1/wd_rsa.h v1/wd_bmm.h
+
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
