@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <errno.h>
+#include "wd.h"
 
 #ifdef __cplusplus
 extern "C" {

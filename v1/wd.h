@@ -30,8 +30,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <assert.h>
-#include "internal/uacce.h"
-#include "../include/wd_common.h"
+#include "uacce.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -79,6 +78,11 @@ struct wcrypto_paras {
 	__u8 is_poll;
 
 	 /* to be extended */
+};
+
+enum wd_buff_type {
+	WD_FLAT_BUF,
+	WD_SGL_BUF,
 };
 
 /* memory APIs for Algorithm Layer */
