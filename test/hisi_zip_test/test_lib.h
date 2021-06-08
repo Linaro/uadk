@@ -94,8 +94,10 @@ struct hizip_test_info {
 	handle_t h_sess;
 	struct wd_ctx_config ctx_conf;
 	struct wd_comp_req req;
-	int thread_nums;
-	pthread_t *threads;
+	pthread_t *send_tds;
+	int send_tnum;
+	pthread_t *poll_tds;
+	int poll_tnum;
 	struct hizip_stats *stats;
 	struct {
 		struct timespec setup_time;
@@ -111,7 +113,14 @@ struct hizip_test_info {
 };
 
 void *send_thread_func(void *arg);
-int create_threads(struct hizip_test_info *info);
+void *poll_thread_func(void *arg);
+int create_send_threads(struct hizip_test_info *info,
+			void *(*send_thread_func)(void *arg),
+			int num);
+int create_poll_threads(struct hizip_test_info *info,
+			void *(*poll_thread_func)(void *arg),
+			int num);
+void free_threads(struct hizip_test_info *info);
 int attach_threads(struct hizip_test_info *info);
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
