@@ -531,7 +531,7 @@ int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 	return 0;
 }
 
-static void *poll_thread_func(void *arg)
+void *poll_thread_func(void *arg)
 {
 	struct hizip_test_info *info = (struct hizip_test_info *)arg;
 	int ret = 0, total = 0;
@@ -569,43 +569,89 @@ static void *poll_thread_func(void *arg)
 	pthread_exit(NULL);
 }
 
-int create_threads(struct hizip_test_info *info)
+int create_send_threads(struct hizip_test_info *info,
+			void *(*send_thread_func)(void *arg),
+			int num)
 {
 	pthread_attr_t attr;
-	int ret;
+	int i, ret;
 
-	count = 0;
-	info->thread_nums = 2;
-	info->threads = calloc(1, info->thread_nums * sizeof(pthread_t));
-	if (!info->threads)
+	info->send_tds = calloc(1, sizeof(pthread_t) * num);
+	if (!info->send_tds)
 		return -ENOMEM;
+	info->send_tnum = num;
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-	/* polling thread is the first one */
-	ret = pthread_create(&info->threads[0], &attr, poll_thread_func, info);
-	if (ret < 0) {
-		WD_ERR("fail to create poll thread (%d)\n", ret);
-		return ret;
+	for (i = 0; i < num; i++) {
+		ret = pthread_create(&info->send_tds[i], &attr,
+				     send_thread_func, info);
+		if (ret < 0) {
+			fprintf(stderr, "Fail to create send thread %d (%d)\n",
+				i, ret);
+			goto out;
+		}
 	}
-	ret = pthread_create(&info->threads[1], &attr, send_thread_func, info);
-	if (ret < 0)
-		return ret;
 	pthread_attr_destroy(&attr);
 	g_conf = &info->ctx_conf;
 	return 0;
+out:
+	free(info->send_tds);
+	return ret;
+}
+
+int create_poll_threads(struct hizip_test_info *info,
+			void *(*poll_thread_func)(void *arg),
+			int num)
+{
+	pthread_attr_t attr;
+	int i, ret;
+
+	info->poll_tds = calloc(1, sizeof(pthread_t) * num);
+	if (!info->poll_tds)
+		return -ENOMEM;
+	info->poll_tnum = num;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	for (i = 0; i < num; i++) {
+		ret = pthread_create(&info->poll_tds[i], &attr,
+				     poll_thread_func, info);
+		if (ret < 0) {
+			fprintf(stderr, "Fail to create send thread %d (%d)\n",
+				i, ret);
+			goto out;
+		}
+	}
+	pthread_attr_destroy(&attr);
+	count = 0;
+	return 0;
+out:
+	free(info->poll_tds);
+	return ret;
+}
+
+void free_threads(struct hizip_test_info *info)
+{
+	if (info->send_tds)
+		free(info->send_tds);
+	if (info->poll_tds)
+		free(info->poll_tds);
 }
 
 int attach_threads(struct hizip_test_info *info)
 {
-	int ret;
+	int i, ret;
 	void *tret;
 
-	ret = pthread_join(info->threads[1], &tret);
-	if (ret < 0)
-		WD_ERR("Fail on send thread with %d\n", ret);
-	ret = pthread_join(info->threads[0], NULL);
-	if (ret < 0)
-		WD_ERR("Fail on poll thread with %d\n", ret);
+	for (i = 0; i < info->poll_tnum; i++) {
+		ret = pthread_join(info->poll_tds[i], NULL);
+		if (ret < 0)
+			fprintf(stderr, "Fail on poll thread with %d\n", ret);
+	}
+	for (i = 0; i < info->send_tnum; i++) {
+		ret = pthread_join(info->send_tds[i], &tret);
+		if (ret < 0)
+			fprintf(stderr, "Fail on send thread with %d\n", ret);
+	}
 	return (int)(uintptr_t)tret;
 }
 
