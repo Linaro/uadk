@@ -114,9 +114,10 @@ struct hizip_test_info {
 
 void *send_thread_func(void *arg);
 void *poll_thread_func(void *arg);
-int create_send_threads(struct hizip_test_info *info,
-			void *(*send_thread_func)(void *arg),
-			int num);
+int create_send_threads(struct test_options *opts,
+			struct hizip_test_info *info,
+			void *(*send_thread_func)(void *arg)
+			);
 int create_poll_threads(struct hizip_test_info *info,
 			void *(*poll_thread_func)(void *arg),
 			int num);
