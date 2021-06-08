@@ -610,9 +610,12 @@ int create_poll_threads(struct hizip_test_info *info,
 			void *(*poll_thread_func)(void *arg),
 			int num)
 {
+	struct test_options *opts = info->opts;
 	pthread_attr_t attr;
 	int i, ret;
 
+	if (!opts->sync_mode)
+		return 0;
 	info->poll_tds = calloc(1, sizeof(pthread_t) * num);
 	if (!info->poll_tds)
 		return -ENOMEM;
@@ -644,15 +647,18 @@ void free_threads(struct hizip_test_info *info)
 		free(info->poll_tds);
 }
 
-int attach_threads(struct hizip_test_info *info)
+int attach_threads(struct test_options *opts, struct hizip_test_info *info)
 {
 	int i, ret;
 	void *tret;
 
-	for (i = 0; i < info->poll_tnum; i++) {
-		ret = pthread_join(info->poll_tds[i], NULL);
-		if (ret < 0)
-			fprintf(stderr, "Fail on poll thread with %d\n", ret);
+	if (opts->sync_mode) {
+		for (i = 0; i < info->poll_tnum; i++) {
+			ret = pthread_join(info->poll_tds[i], NULL);
+			if (ret < 0)
+				fprintf(stderr, "Fail on poll thread with %d\n",
+					ret);
+		}
 	}
 	for (i = 0; i < info->send_tnum; i++) {
 		ret = pthread_join(info->send_tds[i], &tret);

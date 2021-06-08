@@ -396,7 +396,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	stat_start(&info);
 	create_send_threads(&info, send_thread_func, opts->thread_num);
 	create_poll_threads(&info, poll_thread_func, 1);
-	attach_threads(&info);
+	attach_threads(opts, &info);
 
 	stat_end(&info);
 	stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
@@ -420,7 +420,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 
 		create_send_threads(&info, send_thread_func, opts->thread_num);
 		create_poll_threads(&info, poll_thread_func, 1);
-		ret = attach_threads(&info);
+		ret = attach_threads(opts, &info);
 		if (!ret) {
 			WD_ERR("TLB test failed, broken invalidate! "
 			       "VA=%p-%p\n", infl_buf, infl_buf +
