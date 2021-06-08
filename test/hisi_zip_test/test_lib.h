@@ -121,7 +121,8 @@ int create_poll_threads(struct hizip_test_info *info,
 			void *(*poll_thread_func)(void *arg),
 			int num);
 void free_threads(struct hizip_test_info *info);
-int attach_threads(struct hizip_test_info *info);
+int attach_threads(struct test_options *opts,
+		   struct hizip_test_info *info);
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
 		    struct wd_sched **sched
