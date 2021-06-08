@@ -576,13 +576,14 @@ void *poll_thread_func(void *arg)
 	pthread_exit(NULL);
 }
 
-int create_send_threads(struct hizip_test_info *info,
-			void *(*send_thread_func)(void *arg),
-			int num)
+int create_send_threads(struct test_options *opts,
+			struct hizip_test_info *info,
+			void *(*send_thread_func)(void *arg))
 {
 	pthread_attr_t attr;
-	int i, ret;
+	int i, num, ret;
 
+	num = opts->thread_num;
 	info->send_tds = calloc(1, sizeof(pthread_t) * num);
 	if (!info->send_tds)
 		return -ENOMEM;
