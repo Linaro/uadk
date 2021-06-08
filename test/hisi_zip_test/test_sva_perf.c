@@ -394,7 +394,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	}
 
 	stat_start(&info);
-	create_send_threads(&info, send_thread_func, opts->thread_num);
+	create_send_threads(opts, &info, send_thread_func);
 	create_poll_threads(&info, poll_thread_func, 1);
 	attach_threads(opts, &info);
 
@@ -418,7 +418,7 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		if (opts->total_len > 0x54000)
 			fprintf(stderr, "NOTE: test might trash the TLB\n");
 
-		create_send_threads(&info, send_thread_func, opts->thread_num);
+		create_send_threads(opts, &info, send_thread_func);
 		create_poll_threads(&info, poll_thread_func, 1);
 		ret = attach_threads(opts, &info);
 		if (!ret) {
