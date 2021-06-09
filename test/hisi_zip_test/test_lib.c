@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <math.h>
 #include <sys/mman.h>
+#include <zlib.h>
 
 #include "hisi_qm_udrv.h"
 #include "sched_sample.h"
@@ -19,19 +20,34 @@ struct check_rand_ctx {
 };
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_spinlock_t lock;
 static int count = 0;
 
 static struct wd_ctx_config *g_conf;
+
+int sum_pend = 0, sum_thread_end = 0;
+
+__attribute__((constructor))
+void lock_constructor(void)
+{
+	if (pthread_spin_init(&lock, PTHREAD_PROCESS_SHARED) != 0)
+		exit(1);
+}
+
+__attribute__((destructor))
+void lock_destructor(void)
+{
+	if (pthread_spin_destroy(&lock) != 0)
+		exit(1);
+}
 
 void *mmap_alloc(size_t len)
 {
 	void *p;
 	long page_size = sysconf(_SC_PAGESIZE);
 
-	if (len % page_size) {
-		WD_ERR("unaligned allocation must use malloc\n");
-		return NULL;
-	}
+	if (len % page_size)
+		return malloc(len);
 
 	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
 		 -1, 0);
@@ -39,6 +55,18 @@ void *mmap_alloc(size_t len)
 		WD_ERR("Failed to allocate %zu bytes\n", len);
 
 	return p == MAP_FAILED ? NULL : p;
+}
+
+int mmap_free(void *addr, size_t len)
+{
+	long page_size = sysconf(_SC_PAGESIZE);
+
+	if (len % page_size) {
+		free(addr);
+		return 0;
+	}
+
+	return munmap(addr, len);
 }
 
 static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
@@ -621,6 +649,7 @@ int create_send_threads(struct test_options *opts,
 out_thd:
 	for (j = 0; j < i; j++)
 		pthread_cancel(info->send_tds[j]);
+	free(tdatas);
 out:
 	free(info->send_tds);
 	return ret;
@@ -688,6 +717,738 @@ int attach_threads(struct test_options *opts, struct hizip_test_info *info)
 	return (int)(uintptr_t)tret;
 }
 
+void gen_random_data(void *buf, size_t len)
+{
+	int i;
+	uint32_t seed = 0;
+	unsigned short rand_state[3] = {(seed >> 16) & 0xffff,
+					seed & 0xffff,
+					0x330e};
+
+	for (i = 0; i < len >> 3; i++)
+		*((uint64_t *)buf + i) = nrand48(rand_state);
+}
+
+int calculate_md5(comp_md5_t *md5, const void *buf, size_t len)
+{
+	if (!md5 || !buf || !len)
+		return -EINVAL;
+	MD5_Init(&md5->md5_ctx);
+	MD5_Update(&md5->md5_ctx, buf, len);
+	MD5_Final(md5->md, &md5->md5_ctx);
+	return 0;
+}
+
+void dump_md5(comp_md5_t *md5)
+{
+	int i;
+
+	for (i = 0; i < MD5_DIGEST_LENGTH - 1; i++)
+		printf("%02x-", md5->md[i]);
+	printf("%02x\n", md5->md[i]);
+}
+
+int cmp_md5(comp_md5_t *orig, comp_md5_t *final)
+{
+	int i;
+
+	if (!orig || !final)
+		return -EINVAL;
+	for (i = 0; i < MD5_DIGEST_LENGTH; i++) {
+		if (orig->md[i] != final->md[i]) {
+			printf("Original MD5: ");
+			dump_md5(orig);
+			printf("Final MD5: ");
+			dump_md5(final);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+static void *async2_cb(struct wd_comp_req *req, void *data)
+{
+	sem_t *sem = (sem_t *)data;
+
+	if (sem)
+		sem_post(sem);
+	return NULL;
+}
+
+/* used in BATCH mode */
+static void *async5_cb(struct wd_comp_req *req, void *data)
+{
+	thread_data_t *tdata = (thread_data_t *)data;
+
+	pthread_spin_lock(&lock);
+	tdata->pcnt++;
+	if (tdata->batch_flag && (tdata->pcnt == tdata->bcnt)) {
+		tdata->pcnt = 0;
+		tdata->bcnt = 0;
+		tdata->batch_flag = 0;
+		pthread_spin_unlock(&lock);
+		sem_post(&tdata->sem);
+	} else
+		pthread_spin_unlock(&lock);
+	return NULL;
+}
+
+void init_chunk_list(chunk_list_t *list, void *buf, size_t buf_sz,
+		     size_t chunk_sz)
+{
+	chunk_list_t *p = NULL;
+	int i, count;
+	size_t sum;
+
+	count = (buf_sz + chunk_sz - 1) / chunk_sz;
+	for (i = 0, sum = 0, p = list; i < count && sum <= buf_sz; i++, p++) {
+		p->addr = buf + sum;
+		p->size = MIN(buf_sz - sum, chunk_sz);
+		if (i == count - 1)
+			p->next = NULL;
+		else
+			p->next = p + 1;
+		sum += p->size;
+	}
+}
+
+chunk_list_t *create_chunk_list(void *buf, size_t buf_sz, size_t chunk_sz)
+{
+	chunk_list_t *list;
+	int count;
+
+	count = (buf_sz + chunk_sz - 1) / chunk_sz;
+	if (count > HIZIP_CHUNK_LIST_ENTRIES)
+		count = HIZIP_CHUNK_LIST_ENTRIES;
+	if (buf_sz / chunk_sz > count)
+		return NULL;
+	/* allocate entries with additional one */
+	list = malloc(sizeof(chunk_list_t) * (count + 1));
+	if (!list)
+		return NULL;
+	init_chunk_list(list, buf, buf_sz, chunk_sz);
+	return list;
+}
+
+void free_chunk_list(chunk_list_t *list)
+{
+	free(list);
+}
+
+/*
+ * Deflate a data block with compressed header.
+ */
+static int chunk_deflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
+			  struct test_options *opts)
+{
+	int alg_type = opts->alg_type;
+	z_stream strm;
+	int windowBits;
+	int ret;
+
+	switch (alg_type) {
+	case WD_ZLIB:
+		windowBits = 15;
+		break;
+	case WD_DEFLATE:
+		windowBits = -15;
+		break;
+	case WD_GZIP:
+		windowBits = 15 + 16;
+		break;
+	default:
+		printf("algorithm %d unsupported by zlib\n", alg_type);
+		return -EINVAL;
+	}
+	memset(&strm, 0, sizeof(z_stream));
+	strm.next_in = in;
+	strm.avail_in = in_sz;
+	strm.next_out = out;
+	strm.avail_out = *out_sz;
+
+	ret = deflateInit2(&strm, Z_BEST_SPEED, Z_DEFLATED, windowBits,
+			   8, Z_DEFAULT_STRATEGY);
+	if (ret != Z_OK) {
+		printf("deflateInit2: %d\n", ret);
+		return -EINVAL;
+	}
+
+	do {
+		ret = deflate(&strm, Z_FINISH);
+		if ((ret == Z_STREAM_ERROR) || (ret == Z_BUF_ERROR)) {
+			printf("defalte error %d - %s\n", ret, strm.msg);
+			ret = -ENOSR;
+			break;
+		} else if (!strm.avail_in) {
+			if (ret != Z_STREAM_END)
+				printf("deflate unexpected return: %d\n", ret);
+			ret = 0;
+			break;
+		} else if (!strm.avail_out) {
+			printf("deflate out of memory\n");
+			ret = -ENOSPC;
+			break;
+		}
+	} while (ret == Z_OK);
+
+	deflateEnd(&strm);
+	*out_sz = *out_sz - strm.avail_out;
+	return ret;
+}
+
+
+/*
+ * This function is used in BLOCK mode. Each compressing in BLOCK mode
+ * produces compression header.
+ */
+static int chunk_inflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
+			  struct test_options *opts)
+{
+	z_stream strm;
+	int ret;
+
+	memset(&strm, 0, sizeof(z_stream));
+	/* Window size of 15, +32 for auto-decoding gzip/zlib */
+	ret = inflateInit2(&strm, 15 + 32);
+	if (ret != Z_OK) {
+		printf("zlib inflateInit: %d\n", ret);
+		return -EINVAL;
+	}
+
+	strm.next_in = in;
+	strm.avail_in = in_sz;
+	strm.next_out = out;
+	strm.avail_out = *out_sz;
+	do {
+		ret = inflate(&strm, Z_NO_FLUSH);
+		if ((ret < 0) || (ret == Z_NEED_DICT)) {
+			printf("zlib error %d - %s\n", ret, strm.msg);
+			goto out;
+		}
+		if (!strm.avail_out) {
+			if (!strm.avail_in || (ret == Z_STREAM_END))
+				break;
+			printf("%s: avail_out is empty!\n", __func__);
+			goto out;
+		}
+	} while (strm.avail_in && (ret != Z_STREAM_END));
+	inflateEnd(&strm);
+	*out_sz = *out_sz - strm.avail_out;
+	return 0;
+out:
+	inflateEnd(&strm);
+	ret = -EINVAL;
+	return ret;
+}
+
+/*
+ * Compress a list of chunk data and produce a list of chunk data by software.
+ * in_list & out_list should be formated first.
+ */
+int sw_deflate2(chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts)
+{
+	chunk_list_t *p, *q;
+	int ret;
+
+	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
+		ret = chunk_deflate2(p->addr, p->size, q->addr, &q->size,
+				     opts);
+		if (ret)
+			return ret;
+	}
+	return ret;
+}
+
+/*
+ * Compress a list of chunk data and produce a list of chunk data by software.
+ * in_list & out_list should be formated first.
+ */
+int sw_inflate2(chunk_list_t *in_list, chunk_list_t *out_list,
+		struct test_options *opts)
+{
+	chunk_list_t *p, *q;
+	int ret;
+
+	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
+		ret = chunk_inflate2(p->addr, p->size, q->addr, &q->size,
+				     opts);
+		if (ret)
+			return ret;
+	}
+	return ret;
+}
+
+int hw_deflate4(handle_t h_dfl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts,
+		sem_t *sem)
+{
+	struct wd_comp_req *reqs;
+	chunk_list_t *p = in_list, *q = out_list;
+	int i, ret;
+
+	if (!in_list || !out_list || !opts || !sem)
+		return -EINVAL;
+	/* reqs array could make async operations in parallel */
+	reqs = calloc(1, sizeof(struct wd_comp_req) * HIZIP_CHUNK_LIST_ENTRIES);
+	if (!reqs)
+		return -ENOMEM;
+	for (i = 0; p && q; p = p->next, q = q->next, i++) {
+		reqs[i].src = p->addr;
+		reqs[i].src_len = p->size;
+		reqs[i].dst = q->addr;
+		reqs[i].dst_len = q->size;
+		reqs[i].op_type = WD_DIR_COMPRESS;
+		if (opts->sync_mode) {
+			reqs[i].cb = async2_cb;
+			reqs[i].cb_param = sem;
+		}
+		do {
+			if (opts->sync_mode) {
+				ret = wd_do_comp_async(h_dfl, &reqs[i]);
+				if (!ret) {
+					__atomic_add_fetch(&sum_pend, 1,
+							   __ATOMIC_ACQ_REL);
+					sem_wait(sem);
+				}
+			} else
+				ret = wd_do_comp_sync(h_dfl, &reqs[i]);
+		} while (ret == -WD_EBUSY);
+		if (ret)
+			goto out;
+		q->size = reqs[i].dst_len;
+		/* make sure olist has the same length with ilist */
+		if (!p->next)
+			q->next = NULL;
+		i++;
+	}
+	free(reqs);
+	return 0;
+out:
+	free(reqs);
+	return ret;
+}
+
+int hw_inflate4(handle_t h_ifl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts,
+		sem_t *sem)
+{
+	struct wd_comp_req *reqs;
+	chunk_list_t *p, *q;
+	int i = 0, ret;
+
+	/* reqs array could make async operations in parallel */
+	reqs = calloc(1, sizeof(struct wd_comp_req) * HIZIP_CHUNK_LIST_ENTRIES);
+	if (!reqs)
+		return -ENOMEM;
+	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
+		reqs[i].src = p->addr;
+		reqs[i].src_len = p->size;
+		reqs[i].dst = q->addr;
+		reqs[i].dst_len = q->size;
+		reqs[i].op_type = WD_DIR_DECOMPRESS;
+		if (opts->sync_mode) {
+			reqs[i].cb = async2_cb;
+			reqs[i].cb_param = sem;
+		}
+		do {
+			if (opts->sync_mode) {
+				ret = wd_do_comp_async(h_ifl, &reqs[i]);
+				if (!ret) {
+					__atomic_add_fetch(&sum_pend, 1,
+							   __ATOMIC_ACQ_REL);
+					sem_wait(sem);
+				}
+			} else
+				ret = wd_do_comp_sync(h_ifl, &reqs[i]);
+		} while (ret == -WD_EBUSY);
+		if (ret)
+			goto out;
+		q->size = reqs[i].dst_len;
+		/* make sure olist has the same length with ilist */
+		if (!p->next)
+			q->next = NULL;
+		i++;
+	}
+	free(reqs);
+	return 0;
+out:
+	free(reqs);
+	return ret;
+}
+
+/* used in BATCH mode */
+int hw_deflate5(handle_t h_dfl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		thread_data_t *tdata)
+{
+	struct hizip_test_info *info = tdata->info;
+	struct test_options *opts = info->opts;
+	struct wd_comp_req *reqs = tdata->reqs;
+	chunk_list_t *p = in_list, *q = out_list;
+	int i = 0, ret = 0;
+
+	if (!in_list || !out_list || !opts)
+		return -EINVAL;
+	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
+		reqs[i].src = p->addr;
+		reqs[i].src_len = p->size;
+		reqs[i].dst = q->addr;
+		reqs[i].dst_len = q->size;
+		reqs[i].op_type = WD_DIR_COMPRESS;
+		reqs[i].data_fmt = opts->data_fmt;
+		if (opts->sync_mode) {
+			reqs[i].cb = async5_cb;
+			reqs[i].cb_param = tdata;
+		} else {
+			reqs[i].cb = NULL;
+			reqs[i].cb_param = NULL;
+		}
+		if (opts->sync_mode) {
+			do {
+				ret = wd_do_comp_async(h_dfl, &reqs[i]);
+			} while (ret == -WD_EBUSY);
+			if (ret < 0)
+				goto out;
+			__atomic_add_fetch(&sum_pend, 1, __ATOMIC_ACQ_REL);
+			pthread_spin_lock(&lock);
+			tdata->bcnt++;
+			if (((i + 1) == opts->batch_num) || !p->next) {
+				tdata->batch_flag = 1;
+				pthread_spin_unlock(&lock);
+				sem_wait(&tdata->sem);
+			} else
+				pthread_spin_unlock(&lock);
+		} else {
+			do {
+				ret = wd_do_comp_sync(h_dfl, &reqs[i]);
+			} while (ret == -WD_EBUSY);
+			if (ret)
+				goto out;
+		}
+		q->size = reqs[i].dst_len;
+		i = (i + 1) % opts->batch_num;
+		/* make sure olist has the same length with ilist */
+		if (!p->next)
+			q->next = NULL;
+	}
+	return 0;
+out:
+	return ret;
+}
+
+/* used in BATCH mode */
+int hw_inflate5(handle_t h_ifl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+	        thread_data_t *tdata)
+{
+	struct hizip_test_info *info = tdata->info;
+	struct test_options *opts = info->opts;
+	struct wd_comp_req *reqs = tdata->reqs;
+	chunk_list_t *p = in_list, *q = out_list;
+	int ret = 0, i = 0;
+
+	if (!in_list || !out_list || !opts)
+		return -EINVAL;
+	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
+		reqs[i].src = p->addr;
+		reqs[i].src_len = p->size;
+		reqs[i].dst = q->addr;
+		reqs[i].dst_len = q->size;
+		reqs[i].op_type = WD_DIR_DECOMPRESS;
+		reqs[i].data_fmt = opts->data_fmt;
+		if (opts->sync_mode) {
+			reqs[i].cb = async5_cb;
+			reqs[i].cb_param = tdata;
+		} else {
+			reqs[i].cb = NULL;
+			reqs[i].cb_param = NULL;
+		}
+		if (opts->sync_mode) {
+			do {
+				ret = wd_do_comp_async(h_ifl, &reqs[i]);
+			} while (ret == -WD_EBUSY);
+			if (ret < 0)
+				goto out;
+			__atomic_add_fetch(&sum_pend, 1, __ATOMIC_ACQ_REL);
+			pthread_spin_lock(&lock);
+			tdata->bcnt++;
+			if (((i + 1) == opts->batch_num) || !p->next) {
+				tdata->batch_flag = 1;
+				pthread_spin_unlock(&lock);
+				sem_wait(&tdata->sem);
+			} else
+				pthread_spin_unlock(&lock);
+		} else {
+			do {
+				ret = wd_do_comp_sync(h_ifl, &reqs[i]);
+			} while (ret == -WD_EBUSY);
+			if (ret)
+				goto out;
+		}
+		q->size = reqs[i].dst_len;
+		i = (i + 1) % opts->batch_num;
+		/* make sure olist has the same length with ilist */
+		if (!p->next)
+			q->next = NULL;
+	}
+	return 0;
+out:
+	return ret;
+}
+
+/*
+ * info->in_buf & info->out_buf should be allocated first.
+ * Thread 0 shares info->out_buf. Other threads need to create its own
+ * dst buffer.
+ */
+int create_send_tdata(struct test_options *opts,
+		      struct hizip_test_info *info)
+{
+	thread_data_t *tdata;
+	chunk_list_t *in_list, *out_list;
+	int i, j, num, ret;
+
+	if (!opts || !info || !info->in_chunk_sz || !info->out_chunk_sz)
+		return -EINVAL;
+	num = opts->thread_num;
+	info->send_tds = calloc(1, sizeof(pthread_t) * num);
+	if (!info->send_tds)
+		return -ENOMEM;
+	info->send_tnum = num;
+	info->tdatas = calloc(1, sizeof(thread_data_t) * num);
+	if (!info->tdatas) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	if (!opts->batch_num)
+		opts->batch_num = 1;
+	else if (opts->batch_num > HIZIP_CHUNK_LIST_ENTRIES)
+		opts->batch_num = HIZIP_CHUNK_LIST_ENTRIES;
+	if (opts->is_stream) {
+		in_list = create_chunk_list(info->in_buf, info->in_size,
+					    info->in_size);
+	} else {
+		in_list = create_chunk_list(info->in_buf, info->in_size,
+					    info->in_chunk_sz);
+	}
+	if (!in_list) {
+		ret = -EINVAL;
+		goto out_in;
+	}
+	for (i = 0; i < num; i++) {
+		tdata = &info->tdatas[i];
+		/* src address is shared among threads */
+		tdata->tid = i;
+		tdata->src_sz = info->in_size;
+		tdata->src = info->in_buf;
+		tdata->in_list = in_list;
+		tdata->dst_sz = info->out_size;
+		tdata->dst = mmap_alloc(tdata->dst_sz);
+		if (!tdata->dst) {
+			ret = -ENOMEM;
+			goto out_dst;
+		}
+		/*
+		 * Without memset, valgrind reports uninitialized buf
+		 * for writing to file.
+		 */
+		memset(tdata->dst, 0, tdata->dst_sz);
+		if (opts->is_stream) {
+			out_list = create_chunk_list(tdata->dst,
+						     tdata->dst_sz,
+						     tdata->dst_sz);
+		} else {
+			out_list = create_chunk_list(tdata->dst,
+						     tdata->dst_sz,
+						     info->out_chunk_sz);
+		}
+		tdata->out_list = out_list;
+		if (!tdata->out_list) {
+			ret = -EINVAL;
+			goto out_list;
+		}
+		calculate_md5(&tdata->md5, tdata->src, tdata->src_sz);
+		tdata->reqs = malloc(sizeof(struct wd_comp_req) *
+				     opts->batch_num);
+		if (!tdata->reqs)
+			goto out_list;
+		tdata->info = info;
+	}
+	return 0;
+out_list:
+	mmap_free(tdata->dst, tdata->dst_sz);
+out_dst:
+	for (j = 0; j < i; j++) {
+		pthread_cancel(info->send_tds[j]);
+		free_chunk_list(info->tdatas[j].out_list);
+		mmap_free(info->tdatas[j].dst, info->tdatas[j].dst_sz);
+	}
+	free_chunk_list(in_list);
+out_in:
+	free(info->tdatas);
+out:
+	free(info->send_tds);
+	return ret;
+}
+
+int create_poll_tdata(struct test_options *opts,
+		      struct hizip_test_info *info,
+		      int poll_num)
+{
+	thread_data_t *tdatas;
+	int i, j, ret;
+
+	if (opts->sync_mode == 0)
+		return 0;
+	else if (poll_num <= 0)
+		return -EINVAL;
+	info->poll_tnum = poll_num;
+	info->poll_tds = calloc(1, sizeof(pthread_t) * poll_num);
+	if (!info->poll_tds)
+		return -ENOMEM;
+	tdatas = calloc(1, sizeof(thread_data_t) * poll_num);
+	if (!tdatas) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	for (i = 0; i < poll_num; i++) {
+		tdatas[i].tid = i;
+		tdatas[i].info = info;
+		ret = sem_init(&tdatas[i].sem, 0, 0);
+		if (ret < 0)
+			goto out_sem;
+	}
+	return 0;
+out_sem:
+	for (j = 0; j < i; j++)
+		sem_destroy(&tdatas[i].sem);
+	free(tdatas);
+out:
+	free(info->poll_tds);
+	return ret;
+}
+
+/*
+ * Free source and destination buffer contained in sending threads.
+ * Free sending threads and polling threads.
+ */
+void free2_threads(struct hizip_test_info *info)
+{
+	thread_data_t *tdatas = info->tdatas;
+	int i;
+
+	if (info->send_tds)
+		free(info->send_tds);
+	if (info->poll_tds)
+		free(info->poll_tds);
+	free_chunk_list(tdatas[0].in_list);
+	for (i = 0; i < info->send_tnum; i++) {
+		free_chunk_list(tdatas[i].out_list);
+		free(tdatas[i].reqs);
+	}
+	/* info->out_buf is bound to tdatas[0].dst */
+	for (i = 0; i < info->send_tnum; i++)
+		mmap_free(tdatas[i].dst, tdatas[i].dst_sz);
+	free(info->tdatas);
+	mmap_free(info->in_buf, info->in_size);
+}
+
+int attach2_threads(struct test_options *opts,
+		    struct hizip_test_info *info,
+		    void *(*send_thread_func)(void *arg),
+		    void *(*poll_thread_func)(void *arg))
+{
+	int i, j, ret, num;
+	void *tret;
+	pthread_attr_t attr;
+
+	num = opts->thread_num;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	for (i = 0; i < num; i++) {
+		ret = pthread_create(&info->send_tds[i], &attr,
+				     send_thread_func, &info->tdatas[i]);
+		if (ret < 0) {
+			printf("Fail to create send thread %d (%d)\n", i, ret);
+			goto out;
+		}
+	}
+	if (opts->sync_mode) {
+		for (i = 0; i < opts->poll_num; i++) {
+			ret = pthread_create(&info->poll_tds[i], &attr,
+					     poll_thread_func,
+					     &info->tdatas[i]);
+			if (ret < 0) {
+				printf("Fail to create poll thread %d (%d)\n",
+					i, ret);
+				goto out_poll;
+			}
+		}
+		for (i = 0; i < info->poll_tnum; i++) {
+			ret = pthread_join(info->poll_tds[i], NULL);
+			if (ret < 0)
+				fprintf(stderr, "Fail on poll thread with %d\n",
+					ret);
+		}
+	}
+	for (i = 0; i < info->send_tnum; i++) {
+		ret = pthread_join(info->send_tds[i], &tret);
+		if (ret < 0)
+			fprintf(stderr, "Fail on send thread with %d\n", ret);
+	}
+	pthread_attr_destroy(&attr);
+	return (int)(uintptr_t)tret;
+out_poll:
+	for (j = 0; j < i; j++)
+		pthread_cancel(info->poll_tds[j]);
+	i = opts->thread_num;
+out:
+	for (j = 0; j < i; j++)
+		pthread_cancel(info->send_tds[j]);
+	pthread_attr_destroy(&attr);
+	return ret;
+}
+
+void *poll2_thread_func(void *arg)
+{
+	thread_data_t *tdata = (thread_data_t *)arg;
+	struct hizip_test_info *info = tdata->info;
+	__u32 received;
+	int ret = 0;
+	struct timeval start_tvl, end_tvl;
+	int pending;
+	int end_threads;
+
+	gettimeofday(&start_tvl, NULL);
+	while (1) {
+		end_threads = __atomic_load_n(&sum_thread_end,
+					      __ATOMIC_ACQUIRE);
+		pending = __atomic_load_n(&sum_pend, __ATOMIC_ACQUIRE);
+		if ((end_threads == info->send_tnum) && (pending == 0))
+			break;
+		else if (pending == 0)
+			continue;
+		received = 0;
+		ret = wd_comp_poll(pending, &received);
+		if (ret == 0) {
+			__atomic_sub_fetch(&sum_pend,
+					   received,
+					   __ATOMIC_ACQ_REL);
+		}
+	}
+	gettimeofday(&end_tvl, NULL);
+	timersub(&end_tvl, &start_tvl, &start_tvl);
+	pthread_exit(NULL);
+}
+
 /*
  * Choose a device and check whether it can afford the requested contexts.
  * Return a list whose the first device is chosen.
@@ -751,6 +1512,8 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	int q_num = opts->q_num;
 
 
+	__atomic_store_n(&sum_pend, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&sum_thread_end, 0, __ATOMIC_RELEASE);
 	*sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!*sched) {
 		WD_ERR("sample_sched_alloc fail\n");

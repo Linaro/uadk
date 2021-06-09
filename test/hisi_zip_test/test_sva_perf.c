@@ -4,6 +4,7 @@
  */
 #include <asm/unistd.h>	/* For __NR_perf_event_open */
 #include <fenv.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <math.h>
 #include <signal.h>
@@ -751,11 +752,113 @@ int main(int argc, char **argv)
 		.faults			= 0,
 		.data_fmt		= 0,
 	};
+	struct option long_options[] = {
+		{"self",	no_argument,	0, 0 },
+		{"in",		required_argument,	0, 0 },
+		{"out",		required_argument,	0, 0 },
+		{"ilist",	required_argument,	0, 0 },
+		{"olist",	required_argument,	0, 0 },
+		{0,		0,		0, 0 },
+	};
 	int show_help = 0;
-	int opt;
+	int opt, option_idx;
 
-	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:o:w:k:r:")) != -1) {
+	opts.fd_in = -1;
+	opts.fd_out = -1;
+	opts.fd_ilist = -1;
+	opts.fd_olist = -1;
+	opts.alg_type = WD_COMP_ALG_MAX;
+	while ((opt = getopt_long(argc, argv, COMMON_OPTSTRING "f:o:w:k:r:",
+				  long_options, &option_idx)) != -1) {
 		switch (opt) {
+		case 0:
+			switch (option_idx) {
+			case 0:
+				return run_self_test();
+			case 1:
+				if (optarg) {
+					opts.fd_in = open(optarg, O_RDONLY);
+					if (opts.fd_in < 0) {
+						printf("Fail to open %s\n",
+							optarg);
+						show_help = 1;
+					} else
+						opts.is_file = true;
+				} else {
+					printf("Input file is missing!\n");
+					show_help = 1;
+				}
+				if (lseek(opts.fd_in, 0, SEEK_SET) < 0) {
+					printf("Fail on lseek()!\n");
+					show_help = 1;
+				}
+				break;
+			case 2:
+				if (optarg) {
+					opts.fd_out = open(optarg,
+							   O_CREAT | O_WRONLY,
+							   S_IWUSR | S_IRGRP |
+							   S_IROTH);
+					if (opts.fd_out < 0) {
+						printf("Fail to open %s\n",
+							optarg);
+						show_help = 1;
+					} else
+						opts.is_file = true;
+				} else {
+					printf("Output file is missing!\n");
+					show_help = 1;
+				}
+				if (lseek(opts.fd_out, 0, SEEK_SET) < 0) {
+					printf("Fail on lseek()!\n");
+					show_help = 1;
+				}
+				break;
+			case 3:
+				if (!optarg) {
+					printf("IN list file is missing!\n");
+					show_help = 1;
+					break;
+				}
+				opts.fd_ilist = open(optarg, O_RDONLY);
+				if (opts.fd_ilist < 0) {
+					printf("Fail to open %s\n", optarg);
+					show_help = 1;
+					break;
+				}
+				opts.is_file = true;
+				if (lseek(opts.fd_ilist, 0, SEEK_SET) < 0) {
+					printf("Fail on lseek()!\n");
+					show_help = 1;
+					break;
+				}
+				break;
+			case 4:
+				if (!optarg) {
+					printf("OUT list file is missing!\n");
+					show_help = 1;
+					break;
+				}
+				opts.fd_olist = open(optarg,
+						     O_CREAT | O_WRONLY,
+						     S_IWUSR | S_IRGRP |
+						     S_IROTH);
+				if (opts.fd_olist < 0) {
+					printf("Fail to open %s\n", optarg);
+					show_help = 1;
+					break;
+				}
+				opts.is_file = true;
+				if (lseek(opts.fd_olist, 0, SEEK_SET) < 0) {
+					printf("Fail on lseek()!\n");
+					show_help = 1;
+					break;
+				}
+			default:
+				show_help = 1;
+				break;
+			}
+			break;
 		case 'f':
 			if (strcmp(optarg, "none") == 0) {
 				opts.display_stats = STATS_NONE;
@@ -812,6 +915,9 @@ int main(int argc, char **argv)
 	}
 
 	signal(SIGBUS, handle_sigbus);
+
+	if (!show_help)
+		return run_cmd(&opts);
 
 	hizip_test_adjust_len(&opts);
 
