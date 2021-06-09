@@ -536,7 +536,7 @@ out:
 }
 
 /* BATCH mode is used */
-static void *hw_dfl_perf3(void *arg)
+void *hw_dfl_perf3(void *arg)
 {
 	thread_data_t *tdata = (thread_data_t *)arg;
 	struct hizip_test_info *info = tdata->info;
@@ -596,7 +596,7 @@ out:
 }
 
 /* BATCH mode is used */
-static void *hw_ifl_perf3(void *arg)
+void *hw_ifl_perf3(void *arg)
 {
 	thread_data_t *tdata = (thread_data_t *)arg;
 	struct hizip_test_info *info = tdata->info;
@@ -1091,141 +1091,6 @@ int run_self_test(void)
 		f_ret |= test_hw(&opts, "hw_dfl_perf");
 		f_ret |= test_hw(&opts, "hw_ifl_perf");
 	}
-	printf("Start BATCH mode test especially for ASYNC...\n");
-	for (i = 0; i < 28; i++) {
-		opts.sync_mode = 1;	opts.q_num = 16;
-		opts.block_size = 8192; opts.total_len = 8192 * 80;
-		switch (i) {
-		case 0:
-			opts.batch_num = 8; 	opts.poll_num = 1;
-			opts.thread_num = 1;
-			break;
-		case 1:
-			opts.batch_num = 16;	opts.poll_num = 1;
-			opts.thread_num = 1;
-			break;
-		case 2:
-			opts.batch_num = 32; 	opts.poll_num = 1;
-			opts.thread_num = 1;
-			break;
-		case 3:
-			opts.batch_num = 64;	opts.poll_num = 1;
-			opts.thread_num = 1;
-			break;
-		case 4:
-			opts.batch_num = 8; 	opts.poll_num = 1;
-			opts.thread_num = 2;
-			break;
-		case 5:
-			opts.batch_num = 16;	opts.poll_num = 1;
-			opts.thread_num = 2;
-			break;
-		case 6:
-			opts.batch_num = 32; 	opts.poll_num = 1;
-			opts.thread_num = 2;
-			break;
-		case 7:
-			opts.batch_num = 64;	opts.poll_num = 1;
-			opts.thread_num = 2;
-			break;
-		case 8:
-			opts.batch_num = 8; 	opts.poll_num = 1;
-			opts.thread_num = 4;
-			break;
-		case 9:
-			opts.batch_num = 16;	opts.poll_num = 1;
-			opts.thread_num = 4;
-			break;
-		case 10:
-			opts.sync_mode = 0;	opts.batch_num = 8;
-			opts.thread_num = 1;	opts.poll_num = 0;
-			break;
-		case 11:
-			opts.sync_mode = 0;	opts.batch_num = 16;
-			opts.thread_num = 1;	opts.poll_num = 0;
-			break;
-		case 12:
-			opts.sync_mode = 0;	opts.batch_num = 32;
-			opts.thread_num = 1;	opts.poll_num = 0;
-			break;
-		case 13:
-			opts.sync_mode = 0;	opts.batch_num = 8;
-			opts.thread_num = 2;	opts.poll_num = 0;
-			break;
-		case 14:
-			opts.sync_mode = 0;	opts.batch_num = 16;
-			opts.thread_num = 2;	opts.poll_num = 0;
-			break;
-		case 15:
-			opts.sync_mode = 0;	opts.batch_num = 32;
-			opts.thread_num = 2;	opts.poll_num = 0;
-			break;
-		case 16:
-			opts.sync_mode = 0;	opts.batch_num = 8;
-			opts.thread_num = 4;	opts.poll_num = 0;
-			break;
-		case 17:
-			opts.sync_mode = 0;	opts.batch_num = 16;
-			opts.thread_num = 4;	opts.poll_num = 0;
-			break;
-		case 18:
-			opts.sync_mode = 0;	opts.batch_num = 32;
-			opts.thread_num = 4;	opts.poll_num = 0;
-			break;
-		case 19:
-			opts.sync_mode = 0;	opts.batch_num = 8;
-			opts.thread_num = 1;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 20:
-			opts.sync_mode = 0;	opts.batch_num = 16;
-			opts.thread_num = 1;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 21:
-			opts.sync_mode = 0;	opts.batch_num = 32;
-			opts.thread_num = 1;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 22:
-			opts.sync_mode = 0;	opts.batch_num = 8;
-			opts.thread_num = 2;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 23:
-			opts.sync_mode = 0;	opts.batch_num = 16;
-			opts.thread_num = 2;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 24:
-			opts.sync_mode = 0;	opts.batch_num = 32;
-			opts.thread_num = 2;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 25:
-			opts.sync_mode = 0;	opts.batch_num = 8;
-			opts.thread_num = 4;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 26:
-			opts.sync_mode = 0;	opts.batch_num = 16;
-			opts.thread_num = 4;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		case 27:
-			opts.sync_mode = 0;	opts.batch_num = 32;
-			opts.thread_num = 4;	opts.poll_num = 0;
-			opts.is_stream = 1;
-			break;
-		default:
-			return -EINVAL;
-		}
-		f_ret |= test_hw(&opts, "hw_dfl_perf3");
-		usleep(10000);
-		f_ret |= test_hw(&opts, "hw_ifl_perf3");
-		usleep(10000);
-	}
-	printf("End BATCH mode test!\n");
 	if (!f_ret)
 		printf("Run self test successfully!\n");
 	return f_ret;
