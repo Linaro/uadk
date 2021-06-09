@@ -3,13 +3,15 @@
 #define TEST_LIB_H_
 
 #include <errno.h>
+#include <openssl/md5.h>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <sys/stat.h>
 #include "wd_comp.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
@@ -28,13 +30,21 @@ enum mode {
 	MODE_STREAM,
 };
 
+#define __ALIGN_MASK(x, mask)	(((x) + (mask)) & ~(mask))
+#define ALIGN(x, a)		__ALIGN_MASK(x, (typeof(x))(a)-1)
+#define MIN(a, b)		((a < b) ? a : b)
+
 /*
  * I observed a worst case of 1.041x expansion with random data, but let's say 2
  * just in case. TODO: reduce this
  */
 #define EXPANSION_RATIO	2
+/* The INFLATION_RATIO is high for text file. */
+#define INFLATION_RATIO	24
 
 #define SGE_SIZE	(8 * 1024)
+
+#define HIZIP_CHUNK_LIST_ENTRIES	32768
 
 struct test_options {
 	int alg_type;
@@ -50,9 +60,26 @@ struct test_options {
 	/* tasks running in parallel */
 	int compact_run_num;
 
+	/* send thread number */
 	int thread_num;
+	/* poll thread number -- ASYNC */
+	int poll_num;
 	/* 0: sync mode, 1: async mode */
 	int sync_mode;
+	/*
+	 * positive value: the number of messages are sent at a time.
+	 * 0: batch mode is disabled.
+	 * batch mode is only valid for ASYNC operations.
+	 */
+	int batch_num;
+	/* input file */
+	int fd_in;
+	/* output file */
+	int fd_out;
+	/* inlist file */
+	int fd_ilist;
+	/* outlist file */
+	int fd_olist;
 
 	/* 0: pbuffer, 1: sgl */
 	__u8 data_fmt;
@@ -85,10 +112,48 @@ struct test_options {
 
 };
 
+typedef struct _comp_md5_t {
+	MD5_CTX		md5_ctx;
+	unsigned char	md[MD5_DIGEST_LENGTH];
+} comp_md5_t;
+
+typedef struct hizip_chunk_list {
+	void *addr;
+	size_t size;
+	struct hizip_chunk_list *next;
+} chunk_list_t;
+
+typedef struct _thread_data_t {
+	struct hizip_test_info *info;
+	struct wd_comp_req req;
+	comp_md5_t md5;
+	void *src;
+	void *dst;
+	size_t src_sz;
+	size_t dst_sz;
+	size_t sum;	/* produced bytes for OUT */
+	int tid;	/* thread ID */
+	int bcnt;	/* batch mode: count */
+	int pcnt;	/* batch mode: poll count */
+	int flush_bcnt;	/* batch mode: flush count that is less batch_num */
+	/*
+	 * batch mode: set flag and wait batch end in sending thread.
+	 * Clear batch flag if pcnt == bcnt in polling thread.
+	 * batch_flag could replace flush_bcnt.
+	 */
+	int batch_flag;
+	sem_t sem;
+	chunk_list_t *in_list;
+	chunk_list_t *out_list;
+	struct wd_comp_req *reqs;
+} thread_data_t;
+
 struct hizip_test_info {
 	struct test_options *opts;
 	char *in_buf, *out_buf;
 	size_t in_size, out_size;
+	/* in_chunk_sz & out_chunk_sz are used to format entries in list */
+	size_t in_chunk_sz, out_chunk_sz;
 	size_t total_out;
 	struct uacce_dev_list *list;
 	handle_t h_sess;
@@ -97,6 +162,7 @@ struct hizip_test_info {
 	int send_tnum;
 	pthread_t *poll_tds;
 	int poll_tnum;
+	thread_data_t *tdatas;
 	struct hizip_stats *stats;
 	struct {
 		struct timespec setup_time;
@@ -111,24 +177,66 @@ struct hizip_test_info {
 	} tv;
 };
 
-typedef struct _thread_data_t {
-	struct hizip_test_info *info;
-	struct wd_comp_req req;
-	size_t sum;
-} thread_data_t;
+extern int sum_pend, sum_thread_end;
 
 void *send_thread_func(void *arg);
 void *poll_thread_func(void *arg);
+void *sw_dfl_sw_ifl(void *arg);
 int create_send_threads(struct test_options *opts,
 			struct hizip_test_info *info,
-			void *(*send_thread_func)(void *arg)
-			);
+			void *(*send_thread_func)(void *arg));
 int create_poll_threads(struct hizip_test_info *info,
 			void *(*poll_thread_func)(void *arg),
 			int num);
 void free_threads(struct hizip_test_info *info);
 int attach_threads(struct test_options *opts,
 		   struct hizip_test_info *info);
+
+void gen_random_data(void *buf, size_t len);
+int calculate_md5(comp_md5_t *md5, const void *buf, size_t len);
+void dump_md5(comp_md5_t *md5);
+int cmp_md5(comp_md5_t *orig, comp_md5_t *final);
+void init_chunk_list(chunk_list_t *list, void *buf, size_t buf_sz,
+		     size_t chunk_sz);
+chunk_list_t *create_chunk_list(void *buf, size_t buf_sz, size_t chunk_sz);
+void free_chunk_list(chunk_list_t *list);
+int sw_deflate2(chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts);
+int sw_inflate2(chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts);
+int hw_deflate4(handle_t h_dfl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts,
+		sem_t *sem);
+int hw_inflate4(handle_t h_ifl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		struct test_options *opts,
+		sem_t *sem);
+int hw_deflate5(handle_t h_dfl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		thread_data_t *tdata);
+int hw_inflate5(handle_t h_ifl,
+		chunk_list_t *in_list,
+		chunk_list_t *out_list,
+		thread_data_t *tdata);
+int create_send_tdata(struct test_options *opts,
+		      struct hizip_test_info *info);
+int create_poll_tdata(struct test_options *opts,
+		      struct hizip_test_info *info,
+		      int poll_num);
+void free2_threads(struct hizip_test_info *info);
+int attach2_threads(struct test_options *opts,
+		    struct hizip_test_info *info,
+		    void *(*send_thread_func)(void *arg),
+		    void *(*poll_thread_func)(void *arg));
+void *poll2_thread_func(void *arg);
+int run_self_test(void);
+int run_cmd(struct test_options *opts);
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
 		    struct wd_sched **sched
@@ -146,6 +254,8 @@ int hizip_verify_random_output(struct test_options *opts,
 			       size_t out_sz);
 
 void *mmap_alloc(size_t len);
+int mmap_free(void *addr, size_t len);
+
 int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 
