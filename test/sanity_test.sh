@@ -22,6 +22,10 @@ zip_result=-1
 sec_result=-1
 hpre_result=-1
 
+RM="rm"
+CP="cp"
+CHMOD="chmod"
+
 # arg1: zip/sec/hpre
 # Return UACCE mode. Return -1 if UACCE module is invalid.
 check_uacce_mode()
@@ -77,50 +81,280 @@ run_zip_test_v1()
 	run_cmd test_hisi_zip -g < origin > hw.gz
 }
 
+# arg1: source file, arg2: destination file, arg3: algorithm type
+hw_blk_deflate()
+{
+	case $3 in
+	"gzip")
+		${RM} -f /tmp/gzip_list.bin
+		zip_sva_perf --in $1 --out $2 --olist /tmp/gzip_list.bin $@
+		;;
+	"zlib")
+		zip_sva_perf -z --in $1 --out $2 --olist /tmp/zlib_list.bin $@
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type
+hw_blk_inflate()
+{
+	case $3 in
+	"gzip")
+		zip_sva_perf -d --in $1 --out $2 --ilist /tmp/gzip_list.bin $@
+		;;
+	"zlib")
+		zip_sva_perf -z -d --in $1 --out $2 --ilist /tmp/zlib_list.bin $@
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type
+hw_strm_deflate()
+{
+	case $3 in
+	"gzip")
+		zip_sva_perf -S --in $1 --out $2 $@
+		;;
+	"zlib")
+		zip_sva_perf -z -S --in $1 --out $2 $@
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type
+hw_strm_inflate()
+{
+	case $3 in
+	"gzip")
+		zip_sva_perf -S -d --in $1 --out $2 $@
+		;;
+	"zlib")
+		zip_sva_perf -z -S -d --in $1 --out $2 $@
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type,
+# arg4: block size
+sw_blk_deflate()
+{
+	case $3 in
+	"gzip")
+		${RM} -f /tmp/gzip_list.bin
+		python test/list_loader.py --in $1 --out $2 --olist /tmp/gzip_list.bin -b $4
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type
+sw_blk_inflate()
+{
+	case $3 in
+	"gzip")
+		python test/list_loader.py --in $1 --out $2 --ilist /tmp/gzip_list.bin
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type
+sw_strm_deflate()
+{
+	case $3 in
+	"gzip")
+		gzip -c --fast < $1 > $2 || exit_code=$?
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: source file, arg2: destination file, arg3: algorithm type
+sw_strm_inflate()
+{
+	case $3 in
+	"gzip")
+		gunzip < $1 > $2 || exit_code=$?
+		;;
+	*)
+		echo "Unsupported algorithm type: $3"
+		return -1
+		;;
+	esac
+}
+
+# arg1: random, arg2: indicates X MB of random file
+# arg1: existed file name
+prepare_src_file()
+{
+	case $1 in
+	"random")
+		dd if=/dev/urandom of=origin bs=1M count=$2 &> /dev/null
+		;;
+	*)
+		${CP} $1 origin
+		${CHMOD} 777 origin
+		;;
+	esac
+}
+
+# arg1: existed text file
+hw_dfl_sw_ifl()
+{
+	${RM} -f origin /tmp/ori.gz ori.md5
+	echo "hardware compress with gzip format and software decompress:"
+	# Generate random data with 1MB size
+	echo "with 1MB random data"
+	prepare_src_file random 1
+	md5sum origin > ori.md5
+
+	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	sw_blk_inflate /tmp/ori.gz origin gzip
+	md5sum -c ori.md5
+
+	${RM} -f /tmp/ori.gz
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	sw_strm_inflate /tmp/ori.gz origin gzip
+	md5sum -c ori.md5
+
+	# Generate random data with 500MB size
+	echo "with 500MB random data"
+	prepare_src_file random 500
+	md5sum origin > ori.md5
+
+	${RM} -f /tmp/ori.gz
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	sw_strm_inflate /tmp/ori.gz origin gzip
+	md5sum -c ori.md5
+
+	# Use existed text file. It's not in alignment.
+	echo "with text file $1"
+	${RM} -f origin /tmp/ori.gz ori.md5
+	prepare_src_file $1
+	md5sum origin > ori.md5
+
+	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	sw_blk_inflate /tmp/ori.gz origin gzip
+	md5sum -c ori.md5
+
+	# This case fails.
+	${RM} -f /tmp/ori.gz
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	sw_strm_inflate /tmp/ori.gz origin gzip
+	md5sum -c ori.md5
+}
+
+# arg1: existed text file
+sw_dfl_hw_ifl()
+{
+	${RM} -f origin /tmp/ori.gz ori.md5
+	echo "gzip compress and hardware decompress:"
+	# Generate random data with 1MB size
+	echo "with 1MB random data"
+	prepare_src_file random 1
+	md5sum origin > ori.md5
+
+	# Only gzip compress and hardware decompress
+	sw_blk_deflate origin /tmp/ori.gz gzip 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	sw_strm_deflate origin /tmp/ori.gz gzip 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	# Generate random data with 500MB size
+	echo "with 500MB random data"
+	prepare_src_file random 500
+	md5sum origin > ori.md5
+
+	${RM} -f /tmp/ori.gz
+	sw_strm_deflate origin /tmp/ori.gz gzip 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	# Use existed text file. It's not in alignment.
+	echo "with text file $1"
+	${RM} -f origin /tmp/ori.gz ori.md5
+	prepare_src_file $1
+	md5sum origin > ori.md5
+
+	sw_blk_deflate origin /tmp/ori.gz gzip 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	sw_strm_deflate origin /tmp/ori.gz gzip 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+}
+
+# arg1: existed text file
+hw_dfl_hw_ifl()
+{
+	${RM} -f origin /tmp/ori.gz ori.md5
+	echo "hardware compress and hardware decompress:"
+	# Generate random data with 1MB size
+	echo "with 1MB random data"
+	prepare_src_file random 1
+	md5sum origin > ori.md5
+
+	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	${RM} -f /tmp/ori.gz
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	# Use existed text file. It's not in alignment.
+	echo "with text file $1"
+	${RM} -f origin /tmp/ori.gz ori.md5
+	prepare_src_file $1
+	md5sum origin > ori.md5
+
+	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+
+	${RM} -f /tmp/ori.gz
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	md5sum -c ori.md5
+}
+
 # failed: return 1; success: return 0
 run_zip_test_v2()
 {
-	run_cmd zip_sva_perf -b 8192 -l 1000 -v -m 0
-
-	run_cmd zip_sva_perf -b 8192 -l 1 -v -m 1
-
-	dd if=/dev/urandom of=origin bs=1M count=1 &> /dev/null
-	md5sum origin > ori.md5
-	zip_sva_perf -F < origin > hw.gz
-	zip_sva_perf -F -d < hw.gz > origin
-	md5sum -c ori.md5
-
-	dd if=/dev/urandom of=origin bs=1M count=1 &> /dev/null
-	md5sum origin > ori.md5
-	zip_sva_perf -F -z -t 64 < origin > hw.zlib
-	zip_sva_perf -F -z -d -t 64 < hw.zlib > origin
-	md5sum -c ori.md5
-
-	dd if=/dev/urandom of=origin bs=1M count=1 &> /dev/null
-	md5sum origin > ori.md5
-	zip_sva_perf -F -m 1 < origin > hw.gz
-	zip_sva_perf -F -d -m 1 < hw.gz > origin
-	md5sum -c ori.md5 || exit_code=$?
-
-
-	dd if=/dev/urandom of=origin bs=10M count=50 &> /dev/null
-	md5sum origin > ori.md5
-	zip_sva_perf -S -F < origin > hw.gz
-	zip_sva_perf -S -F -d < hw.gz > origin
-	md5sum -c ori.md5
-
-
-	dd if=/dev/urandom of=origin bs=1M count=1 &> /dev/null
-	md5sum origin > ori.md5
-	zip_sva_perf -F < origin > hw.gz
-	gunzip < hw.gz > origin
-	md5sum -c ori.md5
-
-	dd if=/dev/urandom of=origin bs=10M count=1 &> /dev/null
-	md5sum origin > ori.md5
-	zip_sva_perf -S -F < origin > hw.gz
-	gunzip < hw.gz > origin
-	md5sum -c ori.md5
+	sw_dfl_hw_ifl /var/log/syslog
+	hw_dfl_sw_ifl /var/log/syslog
+	hw_dfl_hw_ifl /var/log/syslog
+	zip_sva_perf --self
 }
 
 # Accept more paraterms
