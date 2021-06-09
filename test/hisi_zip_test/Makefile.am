@@ -3,8 +3,7 @@ AUTOMAKE_OPTIONS = subdir-objects
 
 bin_PROGRAMS=zip_sva_perf
 
-zip_sva_perf_SOURCES=test_sva_perf.c sva_file_test.c test_lib.c	\
-			testsuit.c ../sched_sample.c
+zip_sva_perf_SOURCES=test_sva_perf.c test_lib.c	testsuit.c ../sched_sample.c
 
 if WD_STATIC_DRV
 zip_sva_perf_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
