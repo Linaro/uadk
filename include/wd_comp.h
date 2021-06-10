@@ -88,12 +88,12 @@ struct wd_lz77_zstd_data {
  * @ config:	    User defined ctx configuration.
  * @ sched:	    User defined scheduler.
  */
-extern int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
+int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
 
 /**
  * wd_comp_uninit() - Un-initialise ctx configuration and scheduler.
  */
-extern void wd_comp_uninit(void);
+void wd_comp_uninit(void);
 
 struct wd_comp_sess_setup {
 	enum wd_comp_alg_type alg_type; /* Denoted by enum wd_comp_alg_type */
@@ -107,22 +107,22 @@ struct wd_comp_sess_setup {
  * wd_comp_alloc_sess() - Allocate a wd comp session.
  * @setup:	Parameters to setup this session.
  */
-extern handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
+handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
 
 /**
  * wd_comp_free_sess() - Free  a wd comp session.
  * @h_sess: The sess to be freed.
  */
-extern void wd_comp_free_sess(handle_t h_sess);
+void wd_comp_free_sess(handle_t h_sess);
 
 /**
  * wd_do_comp_sync() - Send a sync compression request.
  * @h_sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req);
+int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req);
 
-extern int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req);
+int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req);
 
 
 /**
@@ -130,7 +130,7 @@ extern int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req);
  * @h_sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
+int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
 
 /**
  * wd_comp_poll_ctx() - Poll a ctx.
@@ -143,16 +143,16 @@ extern int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count);
+int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count);
 
-extern int wd_comp_poll(__u32 expt, __u32 *count);
+int wd_comp_poll(__u32 expt, __u32 *count);
 
 /**
  * wd_do_comp_sync2() - advanced sync compression interface, can do u32 size input.
  * @h_sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req);
+int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req);
 
 
 #endif /* __WD_COMP_H */
