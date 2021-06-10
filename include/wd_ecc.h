@@ -133,14 +133,14 @@ struct wd_ecc_req {
  * @sess: Session handler.
  * Return key bit width, 0 otherwise.
  */
-extern int wd_ecc_get_key_bits(handle_t sess);
+int wd_ecc_get_key_bits(handle_t sess);
 
 /**
  * wd_ecc_get_ecc_key() - Get ecc key param handle.
  * @sess: Session handler.
  * Return key param handle, NULL otherwise.
  */
-extern struct wd_ecc_key *wd_ecc_get_key(handle_t sess);
+struct wd_ecc_key *wd_ecc_get_key(handle_t sess);
 
 /**
  * wd_ecc_set_ecc_prikey() - Set ecc private key param.
@@ -148,7 +148,7 @@ extern struct wd_ecc_key *wd_ecc_get_key(handle_t sess);
  * @prikey: Private key param.
  * Return 0, less than 0 otherwise.
  */
-extern int wd_ecc_set_prikey(struct wd_ecc_key *ecc_key,
+int wd_ecc_set_prikey(struct wd_ecc_key *ecc_key,
 			     struct wd_dtb *prikey);
 
 
@@ -158,7 +158,7 @@ extern int wd_ecc_set_prikey(struct wd_ecc_key *ecc_key,
  * @prikey: Output private key param pointer.
  * Return 0, less than 0 otherwise.
  */
-extern int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
+int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
 			     struct wd_dtb **prikey);
 
 /**
@@ -167,7 +167,7 @@ extern int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
  * @pubkey: Public key param.
  * Return 0, less than 0 otherwise.
  */
-extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
+int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
 			     struct wd_ecc_point *pubkey);
 
 /**
@@ -176,7 +176,7 @@ extern int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key,
  * @pubkey: Output public key param pointer.
  * Return 0, less than 0 otherwise.
  */
-extern int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
+int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 			     struct wd_ecc_point **pubkey);
 
 /**
@@ -184,14 +184,14 @@ extern int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
  * @sess: Session handler.
  * @in: input param handle.
  */
-extern void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in);
+void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in);
 
 /**
  * wd_ecc_del_out() - Delete ecc output param handle.
  * @sess: Session handler.
  * @out: output param handle.
  */
-extern void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out);
+void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out);
 
 /**
  * wd_ecc_get_prikey_params() - Get private key params.
@@ -203,7 +203,7 @@ extern void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out);
  * @g: curve param g pointer.
  * @d: private pointer.
  */
-extern void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
+void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
 				     struct wd_dtb **p, struct wd_dtb **a,
 				     struct wd_dtb **b, struct wd_dtb **n,
 				     struct wd_ecc_point **g,
@@ -219,7 +219,7 @@ extern void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
  * @g: curve param g pointer.
  * @pub: public key  pointer.
  */
-extern void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
+void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
 				     struct wd_dtb **p, struct wd_dtb **a,
 				     struct wd_dtb **b, struct wd_dtb **n,
 				     struct wd_ecc_point **g,
@@ -233,21 +233,21 @@ extern void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
  * @in: input param used for compute shared key.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in);
+struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in);
 
 /**
  * wd_ecxdh_new_out() - Create ECXDH output params handle.
  * @sess: Session handler.
  * Return output params handle, NULL otherwise.
  */
-extern struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess);
+struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess);
 
 /**
  * wd_ecxdh_get_out_params() - Get ECXDH output params.
  * @out: Output param handle.
  * @pbk: ECXDH ouput param.
  */
-extern void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
+void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk);
 
 
 /* APIs For SM2 sign/verf/enc/dec/kg */
@@ -260,7 +260,7 @@ extern void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point 
  * @id: sign input param user identity ID.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_sm2_new_sign_in(handle_t sess,
+struct wd_ecc_in *wd_sm2_new_sign_in(handle_t sess,
 					    struct wd_dtb *e,
 					    struct wd_dtb *k,
 					    struct wd_dtb *id,
@@ -274,7 +274,7 @@ extern struct wd_ecc_in *wd_sm2_new_sign_in(handle_t sess,
  * @s: sign input param s.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
+struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
 					    struct wd_dtb *e,
 					    struct wd_dtb *r,
 					    struct wd_dtb *s,
@@ -288,7 +288,7 @@ extern struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
  * @plaintext: encrypt input param plaintext.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
+struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
 					   struct wd_dtb *k,
 					   struct wd_dtb *plaintext);
 /**
@@ -299,7 +299,7 @@ extern struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
  * @c3: decrypt input param C3.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
+struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
 					   struct wd_ecc_point *c1,
 					   struct wd_dtb *c2,
 					   struct wd_dtb *c3);
@@ -309,7 +309,7 @@ extern struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
  * @sess: Session handler.
  * Return output params handle, NULL otherwise.
  */
-extern struct wd_ecc_out *wd_sm2_new_sign_out(handle_t sess);
+struct wd_ecc_out *wd_sm2_new_sign_out(handle_t sess);
 
 /**
  * wd_sm2_new_enc_out() - Create sm2 encrypt output params handle.
@@ -317,7 +317,7 @@ extern struct wd_ecc_out *wd_sm2_new_sign_out(handle_t sess);
  * @plaintext_len: plaintext bytes.
  * Return output params handle, NULL otherwise.
  */
-extern struct wd_ecc_out *wd_sm2_new_enc_out(handle_t sess,
+struct wd_ecc_out *wd_sm2_new_enc_out(handle_t sess,
 					     __u32 plaintext_len);
 
 /**
@@ -326,7 +326,7 @@ extern struct wd_ecc_out *wd_sm2_new_enc_out(handle_t sess,
  * @plaintext_len: plaintext bytes.
  * Return output params handle, NULL otherwise.
  */
-extern struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess,
+struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess,
 					     __u32 plaintext_len);
 
 /**
@@ -334,7 +334,7 @@ extern struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess,
  * @sess: Session handler.
  * Return output params handle.
  */
-extern struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess);
+struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess);
 
 /**
  * wd_sm2_get_sign_out_params() - Get sm2 sign output params.
@@ -342,7 +342,7 @@ extern struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess);
  * @r: sm2 sign ouput param r.
  * @s: sm2 sign ouput param s.
  */
-extern void wd_sm2_get_sign_out_params(struct wd_ecc_out *out,
+void wd_sm2_get_sign_out_params(struct wd_ecc_out *out,
 				       struct wd_dtb **r,
 				       struct wd_dtb **s);
 /**
@@ -351,7 +351,7 @@ extern void wd_sm2_get_sign_out_params(struct wd_ecc_out *out,
  * @privkey: output private key.
  * @pubkey: output public key.
  */
-extern void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
+void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
 				     struct wd_dtb **privkey,
 				     struct wd_ecc_point **pubkey);
 
@@ -362,7 +362,7 @@ extern void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
  * @c2: encrypt output C2.
  * @c3: encrypt output C3.
  */
-extern void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
+void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
 				      struct wd_ecc_point **c1,
 				      struct wd_dtb **c2,
 				      struct wd_dtb **c3);
@@ -372,7 +372,7 @@ extern void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
  * @out: output param handle.
  * @plaintext: decrypt output plaintext.
  */
-extern void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
+void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 				      struct wd_dtb **plaintext);
 
 /* APIs For ECDSA sign/verf */
@@ -384,7 +384,7 @@ extern void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
  * @k: sign input param random.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
+struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
 				struct wd_dtb *dgst,
 				struct wd_dtb *k);
 
@@ -396,7 +396,7 @@ extern struct wd_ecc_in *wd_ecdsa_new_sign_in(handle_t sess,
  * @s: sign input param s.
  * Return input params handle, NULL otherwise.
  */
-extern struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
+struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
 				struct wd_dtb *dgst,
 				struct wd_dtb *r,
 				struct wd_dtb *s);
@@ -406,7 +406,7 @@ extern struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
  * @sess: Session handler.
  * Return output params handle, NULL otherwise.
  */
-extern struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess);
+struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess);
 
 /**
  * wd_ecdsa_get_sign_out_params() - Get ecdsa sign output params.
@@ -414,7 +414,7 @@ extern struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess);
  * @r: sign ouput param r.
  * @s: sign ouput param s.
  */
-extern void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
+void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
 				struct wd_dtb **r,
 				struct wd_dtb **s);
 
@@ -423,25 +423,25 @@ extern void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
  * @ config:	    User defined ctx configuration.
  * @ sched:	    User defined scheduler.
  */
-extern int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched);
+int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched);
 
 /**
  * wd_ecc_uninit() - Un-initialise ctx configuration and scheduler.
  */
-extern void wd_ecc_uninit(void);
+void wd_ecc_uninit(void);
 
 
 /**
  * wd_ecc_alloc_sess() - Allocate a wd ecc session.
  * @setup:	Parameters to setup this session.
  */
-extern handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup);
+handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup);
 
 /**
  * wd_ecc_free_sess() - Free  a wd ecc session.
  * @ sess: The sess to be freed.
  */
-extern void wd_ecc_free_sess(handle_t sess);
+void wd_ecc_free_sess(handle_t sess);
 
 /**
  * wd_ecc_poll() - Poll finished request.
@@ -449,21 +449,21 @@ extern void wd_ecc_free_sess(handle_t sess);
  * This function will call poll_policy function which is registered to wd ecc
  * by user.
  */
-extern int wd_ecc_poll(__u32 expt, __u32 *count);
+int wd_ecc_poll(__u32 expt, __u32 *count);
 
 /**
  * wd_do_ecc() - Send a sync eccression request.
  * @sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_ecc_sync(handle_t sess, struct wd_ecc_req *req);
+int wd_do_ecc_sync(handle_t sess, struct wd_ecc_req *req);
 
 /**
  * wd_do_ecc_async() - Send an async eccression request.
  * @sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
+int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
 
 
 /**
@@ -478,7 +478,7 @@ extern int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
 #ifdef __cplusplus
 }
