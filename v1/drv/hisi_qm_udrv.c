@@ -277,41 +277,41 @@ static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_found = true;
 
-	if (!strncmp(alg, "rsa", strlen("rsa"))) {
+	if (!strcmp(alg, "rsa")) {
 		qinfo->atype = WCRYPTO_RSA;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_RSA] = qm_fill_rsa_sqe;
 		info->sqe_parse[WCRYPTO_RSA] = qm_parse_rsa_sqe;
-	} else if (!strncmp(alg, "dh", strlen("dh"))) {
+	} else if (!strcmp(alg, "dh")) {
 		qinfo->atype = WCRYPTO_DH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
 		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
-	} else if (!strncmp(alg, "ecdh", strlen("ecdh"))) {
+	} else if (!strcmp(alg, "ecdh")) {
 		qinfo->atype = WCRYPTO_ECDH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_ECDH] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_ECDH] = qm_parse_ecc_sqe;
 		priv->direction = 1;
-	} else if (!strncmp(alg, "x448", strlen("x448"))) {
+	} else if (!strcmp(alg, "x448")) {
 		qinfo->atype = WCRYPTO_X448;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_X448] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_X448] = qm_parse_ecc_sqe;
 		priv->direction = 1;
-	} else if (!strncmp(alg, "x25519", strlen("x25519"))) {
+	} else if (!strcmp(alg, "x25519")) {
 		qinfo->atype = WCRYPTO_X25519;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_X25519] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_X25519] = qm_parse_ecc_sqe;
 		priv->direction = 1;
-	} else if (!strncmp(alg, "ecdsa", strlen("ecdsa"))) {
+	} else if (!strcmp(alg, "ecdsa")) {
 		qinfo->atype = WCRYPTO_ECDSA;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_ECDSA] = qm_fill_ecc_sqe;
 		info->sqe_parse[WCRYPTO_ECDSA] = qm_parse_ecc_sqe;
 		priv->direction = 1;
-	} else if (!strncmp(alg, "sm2", strlen("sm2"))) {
+	} else if (!strcmp(alg, "sm2")) {
 		qinfo->atype = WCRYPTO_SM2;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_SM2] = qm_fill_ecc_sqe;
@@ -329,7 +329,7 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_found = true;
 
-	if (!strncmp(alg, "cipher", strlen("cipher"))) {
+	if (!strcmp(alg, "cipher")) {
 		qinfo->atype = WCRYPTO_CIPHER;
 		info->sqe_size = QM_SEC_BD_SIZE;
 		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
@@ -339,7 +339,7 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_bd3_sqe;
 			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_bd3_sqe;
 		}
-	} else if (!strncmp(alg, "digest", strlen("digest"))) {
+	} else if (!strcmp(alg, "digest")) {
 		qinfo->atype = WCRYPTO_DIGEST;
 		info->sqe_size = QM_SEC_BD_SIZE;
 		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
@@ -349,7 +349,7 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 			info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_bd3_sqe;
 			info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_bd3_sqe;
 		}
-	} else if (!strncmp(alg, "aead", strlen("aead"))) {
+	} else if (!strcmp(alg, "aead")) {
 		qinfo->atype = WCRYPTO_AEAD;
 		info->sqe_size = QM_SEC_BD_SIZE;
 		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
@@ -378,10 +378,10 @@ static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_found = false;
 
-	if (!strncmp(alg, "zlib", strlen("zlib")) ||
-	    !strncmp(alg, "gzip", strlen("gzip")) ||
-	    !strncmp(alg, "deflate", strlen("deflate")) ||
-	    !strncmp(alg, "lz77_zstd", strlen("lz77_zstd"))) {
+	if (!strcmp(alg, "zlib") ||
+	    !strcmp(alg, "gzip") ||
+	    !strcmp(alg, "deflate") ||
+	    !strcmp(alg, "lz77_zstd")) {
 		qinfo->atype = WCRYPTO_COMP;
 		info->sqe_size = QM_ZIP_BD_SIZE;
 		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
@@ -415,8 +415,8 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 		ret = WD_SUCCESS;
 	} else if (sec_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
-	} else if (!strncmp(alg, "xts(aes)", strlen("xts(aes)")) ||
-		!strncmp(alg, "xts(sm4)", strlen("xts(sm4)"))) {
+	} else if (!strcmp(alg, "xts(aes)") ||
+		!strcmp(alg, "xts(sm4)")) {
 		qinfo->atype = WCRYPTO_CIPHER;
 		if (strstr(q->dev_path, "zip")) {
 			info->sqe_size = QM_ZIP_BD_SIZE;
