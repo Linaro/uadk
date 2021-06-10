@@ -20,6 +20,8 @@
 #define POLL_SIZE			2500000
 #define POLL_TIME			1000
 
+#define WD_ARRAY_SIZE(array)           (sizeof(array) / sizeof(array[0]))
+
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
 	(((x) & 0x0000ff00) <<  8) | \
@@ -266,46 +268,6 @@ void wd_comp_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-static unsigned int bit_reverse(register unsigned int x)
-{
-	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
-	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
-	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
-	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
-
-	return((x >> 16) | (x << 16));
-}
-
-/* output an empty store block */
-static int append_store_block(handle_t h_sess, struct wd_comp_req *req)
-{
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
-	__u32 checksum = sess->checksum;
-	__u32 isize = sess->isize;
-
-	memcpy(req->dst, store_block, 5);
-	req->dst_len = 5;
-
-	if (sess->alg_type == WD_ZLIB) { /*if zlib, ADLER32*/
-		checksum = (__u32) cpu_to_be32(checksum);
-		memcpy(req->dst + 5, &checksum, 4);
-		req->dst_len += 4;
-	} else if (sess->alg_type == WD_GZIP) {
-		checksum = ~checksum;
-		checksum = bit_reverse(checksum);
-		/* if gzip, CRC32 and ISIZE */
-		memcpy(req->dst + 5, &checksum, 4);
-		memcpy(req->dst + 9, &isize, 4);
-		req->dst_len += 8;
-	} else if (sess->alg_type >= WD_COMP_ALG_MAX) {
-		WD_ERR("in append store block, wrong alg type %d.\n", sess->alg_type);
-		return -WD_EINVAL;
-	}
-
-	return 0;
-}
-
 static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 			  struct wd_comp_req *req)
 {
@@ -504,20 +466,59 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		 */
 	} while (sess->stream_pos != WD_COMP_STREAM_NEW);
 
-	if (req->op_type == WD_DIR_COMPRESS &&
-	    strm_req.src_len == 0 &&
-	    strm_req.last == 1) {
-		dbg("append_store, src_len=%u, dst_len=%u\n",
-		    req->src_len, req->dst_len);
-		ret = append_store_block(h_sess, &strm_req);
-		req->dst_len += strm_req.dst_len;
-		req->status = 0;
-		return 0;
-	}
-
 	dbg("end, in =%u, out_len =%u\n", req->src_len, req->dst_len);
 
 	req->status = 0;
+
+	return 0;
+}
+
+static unsigned int bit_reverse(register unsigned int x)
+{
+	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
+	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
+	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
+	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
+
+	return((x >> 16) | (x << 16));
+}
+
+/**
+ * append_store_block() - output an fixed store block when input
+ * a empty block as last stream block. And supplement the packet
+ * tail according to the protocol.
+ * @sess:	The session which request will be sent to.
+ * @req:	The last request which is empty.
+ */
+static int append_store_block(struct wd_comp_sess *sess,
+			      struct wd_comp_req *req)
+{
+	char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
+	int blocksize = WD_ARRAY_SIZE(store_block);
+	__u32 checksum = sess->checksum;
+	__u32 isize = sess->isize;
+
+	memcpy(req->dst, store_block, blocksize);
+	req->dst_len = blocksize;
+
+	if (sess->alg_type == WD_ZLIB) {
+		checksum = (__u32) cpu_to_be32(checksum);
+		 /*if zlib, ADLER32*/
+		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
+		req->dst_len += sizeof(checksum);
+	} else if (sess->alg_type == WD_GZIP) {
+		checksum = ~checksum;
+		checksum = bit_reverse(checksum);
+		/* if gzip, CRC32 and ISIZE */
+		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
+		memcpy(req->dst + blocksize + sizeof(checksum),
+		       &isize, sizeof(isize));
+		req->dst_len += sizeof(checksum);
+		req->dst_len += sizeof(isize);
+	}
+
+	req->status = 0;
+	sess->stream_pos = WD_COMP_STREAM_NEW;
 
 	return 0;
 }
@@ -557,6 +558,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
+
+	if (sess->alg_type <= WD_GZIP && req->op_type == WD_DIR_COMPRESS &&
+	    req->last == 1 && req->src_len == 0)
+		return append_store_block(sess, req);
 
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
