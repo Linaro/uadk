@@ -288,6 +288,12 @@ static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 		return -WD_EINVAL;
 	}
 
+	if (req->op_type != WD_DIR_COMPRESS &&
+	    req->op_type != WD_DIR_DECOMPRESS) {
+		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
+		return -WD_EINVAL;
+	}
+
 	if (mode == CTX_MODE_ASYNC && !req->cb) {
 		WD_ERR("async comp input cb is NULL!\n");
 		return -WD_EINVAL;
@@ -408,12 +414,6 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	if (ret) {
 		WD_ERR("fail to check params!\n");
 		return ret;
-	}
-
-	if (req->op_type != WD_DIR_COMPRESS &&
-	    req->op_type != WD_DIR_DECOMPRESS) {
-		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
-		return -WD_EINVAL;
 	}
 
 	if (!req->src_len) {
