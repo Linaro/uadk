@@ -64,17 +64,19 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 
 static int get_int_attr(struct uacce_dev *dev, char *attr, int *val)
 {
-	char buf[MAX_ATTR_STR_SIZE];
+	char buf[MAX_ATTR_STR_SIZE] = {0};
 	int ret;
 
-	if (!dev || !attr || !val)
+	if (!dev || !val)
 		return -WD_EINVAL;
 
-	ret = get_raw_attr(dev->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
+	ret = get_raw_attr(dev->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
 	if (ret < 0)
 		return ret;
 
 	*val = strtol(buf, NULL, 10);
+	if (errno == ERANGE)
+		return -errno;
 
 	return 0;
 }
@@ -84,7 +86,7 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 {
 	int ret;
 
-	if (!dev || !attr || !buf || (buf_sz == 0))
+	if (!dev)
 		return -WD_EINVAL;
 
 	ret = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
@@ -141,20 +143,21 @@ static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 
 	while ((dev_dir = readdir(class)) != NULL) {
 		name = dev_dir->d_name;
-		if (!strncmp(dev_name, name, strlen(dev_name))) {
-			ret = snprintf(dev->dev_root, MAX_DEV_NAME_LEN, "%s/%s",
-				       SYS_CLASS_DIR, dev_name);
-			if (ret < 0)
-				goto out_dir;
+		if (strncmp(dev_name, name, strlen(dev_name)))
+			continue;
 
-			ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
-				       "/dev/%s", dev_name);
-			if (ret < 0)
-				goto out_dir;
+		ret = snprintf(dev->dev_root, MAX_DEV_NAME_LEN, "%s/%s",
+			       SYS_CLASS_DIR, dev_name);
+		if (ret < 0)
+			goto out_dir;
 
-			get_dev_info(dev);
-			break;
-		}
+		ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
+			       "/dev/%s", dev_name);
+		if (ret < 0)
+			goto out_dir;
+
+		get_dev_info(dev);
+		break;
 	}
 	if (!dev_dir)
 		goto out_dir;
@@ -545,24 +548,23 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 			goto free_list;
 		}
 
-		if (dev_has_alg(dev_alg_name, alg_name)) {
-			node = calloc(1, sizeof(*node));
-			if (!node)
-				goto free_list;
+		if (!dev_has_alg(dev_alg_name, alg_name))
+			continue;
 
-			node->dev = read_uacce_sysfs(dev_dir->d_name);
-			if (!node->dev) {
-				free(node);
-				continue;
-			}
+		node = calloc(1, sizeof(*node));
+		if (!node)
+			goto free_list;
 
-			if (!head)
-				head = node;
-			else
-				add_uacce_dev_to_list(head, node);
-		} else {
+		node->dev = read_uacce_sysfs(dev_dir->d_name);
+		if (!node->dev) {
+			free(node);
 			continue;
 		}
+
+		if (!head)
+			head = node;
+		else
+			add_uacce_dev_to_list(head, node);
 
 	}
 
