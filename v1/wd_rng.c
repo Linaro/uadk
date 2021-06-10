@@ -60,7 +60,7 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	}
 
 	qinfo = q->qinfo;
-	if (strncmp(q->capa.alg, "trng", strlen("trng"))) {
+	if (strcmp(q->capa.alg, "trng")) {
 		WD_ERR("algorithm mismatch!\n");
 		return NULL;
 	}

@@ -133,10 +133,10 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		return NULL;
 	}
 
-	if (strncmp(q->capa.alg, "zlib", strlen("zlib")) &&
-	    strncmp(q->capa.alg, "gzip", strlen("gzip")) &&
-	    strncmp(q->capa.alg, "deflate", strlen("deflate")) &&
-	    strncmp(q->capa.alg, "lz77_zstd", strlen("lz77_zstd"))) {
+	if (strcmp(q->capa.alg, "zlib") &&
+	    strcmp(q->capa.alg, "gzip") &&
+	    strcmp(q->capa.alg, "deflate") &&
+	    strcmp(q->capa.alg, "lz77_zstd")) {
 		WD_ERR("algorithm mismatch!\n");
 		return NULL;
 	}
