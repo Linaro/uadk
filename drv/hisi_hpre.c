@@ -457,7 +457,7 @@ static int hpre_init(struct wd_ctx_config_internal *config, void *priv, const ch
 	qm_priv.sqe_size = sizeof(struct hisi_hpre_sqe);
 
 	/* DH/RSA: qm sqc_type = 0, ECC: qm sqc_type = 1; */
-	if (!strncmp(alg_name, "ecc", sizeof("ecc")))
+	if (!strcmp(alg_name, "ecc"))
 		qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
 	else
 		qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
