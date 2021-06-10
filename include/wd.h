@@ -158,7 +158,7 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
  * must be got before doing any task. This function can be used among multiple
  * threads. dev should be got from wd_get_accel_list() firstly.
  */
-extern handle_t wd_request_ctx(struct uacce_dev *dev);
+handle_t wd_request_ctx(struct uacce_dev *dev);
 
 /**
  * wd_release_ctx() - Release a context.
@@ -167,7 +167,7 @@ extern handle_t wd_request_ctx(struct uacce_dev *dev);
  * The function is the wrapper of close fd. So the release of context maybe
  * delay.
  */
-extern void wd_release_ctx(handle_t h_ctx);
+void wd_release_ctx(handle_t h_ctx);
 
 /**
  * wd_ctx_start() - Start a context.
@@ -178,7 +178,7 @@ extern void wd_release_ctx(handle_t h_ctx);
  * Context will be started after calling this function. If necessary resource
  * (e.g. MMIO and DUS) already got, tasks can be received by context.
  */
-extern int wd_ctx_start(handle_t h_ctx);
+int wd_ctx_start(handle_t h_ctx);
 
 /**
  * wd_release_ctx_force() - Release a context forcely.
@@ -192,7 +192,7 @@ extern int wd_ctx_start(handle_t h_ctx);
  * wd_release_ctx mush be used to release context finally, other APIs about
  * context can not work with this context after calling wd_release_ctx_force.
  */
-extern int wd_release_ctx_force(handle_t h_ctx);
+int wd_release_ctx_force(handle_t h_ctx);
 
 /**
  * wd_ctx_set_priv() - Store some information in context.
@@ -201,7 +201,7 @@ extern int wd_release_ctx_force(handle_t h_ctx);
  *
  * Return 0 if successful or less than 0 otherwise.
  */
-extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
+int wd_ctx_set_priv(handle_t h_ctx, void *priv);
 
 /**
  * wd_ctx_get_priv() - Get stored information in context.
@@ -210,7 +210,7 @@ extern int wd_ctx_set_priv(handle_t h_ctx, void *priv);
  * Return pointer of memory of stored information if successful or NULL
  * otherwise.
  */
-extern void *wd_ctx_get_priv(handle_t h_ctx);
+void *wd_ctx_get_priv(handle_t h_ctx);
 
 /**
  * wd_ctx_get_api() - Get api string of context.
@@ -221,7 +221,7 @@ extern void *wd_ctx_get_priv(handle_t h_ctx);
  * This function is a wrapper of reading /sys/class/uacce/<dev>/api, which is
  * used to define api version between user space and kernel driver.
  */
-extern char *wd_ctx_get_api(handle_t h_ctx);
+char *wd_ctx_get_api(handle_t h_ctx);
 
 /**
  * wd_ctx_mmap_qfr() - Map and get the base address of one context region.
@@ -234,7 +234,7 @@ extern char *wd_ctx_get_api(handle_t h_ctx);
  * Normally, UACCE_QFRT_MMIO is for MMIO registers of one context,
  * UACCE_QFRT_DUS is for task communication memory of one context.
  */
-extern void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 
 /**
  * wd_ctx_unmap_qfr() - Unmap one context region.
@@ -242,7 +242,7 @@ extern void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
  * @qfrt: Name of context region, which could be got in kernel head file
  *        include/uapi/misc/uacce/uacce.h.
  */
-extern void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
 
 /**
  * wd_ctx_wait() - Wait task in context finished.
@@ -253,7 +253,7 @@ extern void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
  *
  * This function is a wrapper of Linux poll interface.
  */
-extern int wd_ctx_wait(handle_t h_ctx, __u16 ms);
+int wd_ctx_wait(handle_t h_ctx, __u16 ms);
 
 /**
  * wd_is_sva() - Check if the system supports SVA.
@@ -261,7 +261,7 @@ extern int wd_ctx_wait(handle_t h_ctx, __u16 ms);
  *
  * Return 1 if SVA, 0 for no SVA, less than 0 otherwise.
  */
-extern int wd_is_sva(handle_t h_ctx);
+int wd_is_sva(handle_t h_ctx);
 
 /**
  * wd_get_accel_name() - Get device name or driver name.
@@ -270,7 +270,7 @@ extern int wd_is_sva(handle_t h_ctx);
  *
  * Return device name, e.g. hisi_zip-0; driver name, e.g. hisi_zip.
  */
-extern char *wd_get_accel_name(char *dev_path, int no_apdx);
+char *wd_get_accel_name(char *dev_path, int no_apdx);
 
 /**
  * wd_get_numa_id() - Get the NUMA id of one context.
@@ -278,7 +278,7 @@ extern char *wd_get_accel_name(char *dev_path, int no_apdx);
  *
  * Return NUMA id of related context.
  */
-extern int wd_get_numa_id(handle_t h_ctx);
+int wd_get_numa_id(handle_t h_ctx);
 
 /**
  * wd_get_avail_ctx() - Get available context in one device.
@@ -286,7 +286,7 @@ extern int wd_get_numa_id(handle_t h_ctx);
  *
  * Return number of available context in dev or less than 0 otherwise.
  */
-extern int wd_get_avail_ctx(struct uacce_dev *dev);
+int wd_get_avail_ctx(struct uacce_dev *dev);
 
 /**
  * wd_get_accel_list() - Get device list for one algorithm.
@@ -296,7 +296,7 @@ extern int wd_get_avail_ctx(struct uacce_dev *dev);
  * Return device list in which devices support given algorithm or NULL
  * otherwise.
  */
-extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
+struct uacce_dev_list *wd_get_accel_list(char *alg_name);
 
 /**
  * wd_get_accel_dev() - Get device supporting the algorithm with
@@ -308,13 +308,13 @@ extern struct uacce_dev_list *wd_get_accel_list(char *alg_name);
  * and the device need to be freed after usage.
  * Otherwise return NULL.
  */
-extern struct uacce_dev *wd_get_accel_dev(char *alg_name);
+struct uacce_dev *wd_get_accel_dev(char *alg_name);
 
 /**
  * wd_free_list_accels() - Free device list.
  * @list: Device list which will be free.
  */
-extern void wd_free_list_accels(struct uacce_dev_list *list);
+void wd_free_list_accels(struct uacce_dev_list *list);
 
 /**
  * wd_ctx_set_io_cmd() - Send ioctl command to context.
@@ -326,7 +326,7 @@ extern void wd_free_list_accels(struct uacce_dev_list *list);
  *
  * This function is a wrapper of ioctl.
  */
-extern int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
+int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
 
 /**
  * wd_ctx_get_region_size() - Get region offset size
@@ -335,7 +335,7 @@ extern int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
  *        include/uapi/misc/uacce/uacce.h
  * Return device region size.
  */
-extern unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt);
+unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt);
 
 enum wd_page_type {
 	WD_HUGE_PAGE = 0,
@@ -398,14 +398,14 @@ struct wd_blockpool_stats {
  *
  * Return addr of block memory.
  */
-extern void *wd_block_alloc(handle_t blkpool);
+void *wd_block_alloc(handle_t blkpool);
 
 /**
  * wd_block_free() - Free block memory.
  * @blkpool: The handle of blkpool.
  * @addr: The addr of block memory.
  */
-extern void wd_block_free(handle_t blkpool, void *addr);
+void wd_block_free(handle_t blkpool, void *addr);
 
 /**
  * wd_blockpool_create() - Blkpool allocate memory from mempool.
@@ -417,14 +417,14 @@ extern void wd_block_free(handle_t blkpool, void *addr);
  * the error. WD_EINVAL: An invalid value was specified for mempool、block_size
  * or block_num. WD_ENOMEM: Insufficient kernel memory was available.
  */
-extern handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
+handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 				  size_t block_num);
 
 /**
  * wd_blockpool_destroy() - Destory blkpool and release memory to the mempool.
  * @blkpool: The handle of blkpool.
  */
-extern void wd_blockpool_destroy(handle_t blkpool);
+void wd_blockpool_destroy(handle_t blkpool);
 
 /**
  * wd_mempool_create() - Creat mempool.
@@ -436,26 +436,26 @@ extern void wd_blockpool_destroy(handle_t blkpool);
  * the error. WD_EINVAL: An invalid value was specified for size or node.
  * WD_ENOMEM: Insufficient kernel memory was available.
  */
-extern handle_t wd_mempool_create(size_t size, int node);
+handle_t wd_mempool_create(size_t size, int node);
 
 /**
  * wd_mempool_destroy() - Destory mempool.
  * @mempool: The handle of mempool.
  */
-extern void wd_mempool_destroy(handle_t mempool);
+void wd_mempool_destroy(handle_t mempool);
 
 /**
  * wd_mempool_stats() - Dump statistics information about mempool.
  * @mempool: The handle of mempool.
  * @stats: Pointer of struct wd_mempool_stats.
  */
-extern void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
+void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
 
 /**
  * wd_blockpool_stats() - Dump statistics information about blkpool.
  * @blkpool: The handle of blkpool.
  * @stats: Pointer of struct wd_blockpool_stats.
  */
-extern void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
+void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
 
 #endif
