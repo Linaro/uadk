@@ -140,7 +140,7 @@ enum wcrypto_type {
 
 #ifndef WD_ERR
 #ifndef WITH_LOG_FILE
-extern wd_log log_out;
+wd_log log_out;
 
 #define __WD_FILENAME__ (strrchr(__FILE__, '/') ?	\
 		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)) : __FILE__)
@@ -150,7 +150,7 @@ extern wd_log log_out;
 	__WD_FILENAME__, __LINE__, __func__, ##args) : 	\
 	fprintf(stderr, format, ##args))
 #else
-extern FILE *flog_fd;
+FILE *flog_fd;
 #define WD_ERR(format, args...)				\
 	if (!flog_fd)					\
 		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
@@ -189,21 +189,21 @@ struct wd_queue {
 	void *qinfo;
 };
 
-extern int wd_request_queue(struct wd_queue *q);
-extern void wd_release_queue(struct wd_queue *q);
-extern int wd_send(struct wd_queue *q, void *req);
-extern int wd_recv(struct wd_queue *q, void **resp);
-extern int wd_wait(struct wd_queue *q, __u16 ms);
-extern int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
-extern void *wd_reserve_memory(struct wd_queue *q, size_t size);
-extern int wd_share_reserved_memory(struct wd_queue *q,
+int wd_request_queue(struct wd_queue *q);
+void wd_release_queue(struct wd_queue *q);
+int wd_send(struct wd_queue *q, void *req);
+int wd_recv(struct wd_queue *q, void **resp);
+int wd_wait(struct wd_queue *q, __u16 ms);
+int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
+void *wd_reserve_memory(struct wd_queue *q, size_t size);
+int wd_share_reserved_memory(struct wd_queue *q,
 				    struct wd_queue *target_q);
-extern int wd_get_available_dev_num(const char *algorithm);
-extern int wd_get_node_id(struct wd_queue *q);
-extern void *wd_iova_map(struct wd_queue *q, void *va, size_t sz);
-extern void wd_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
-extern void *wd_dma_to_va(struct wd_queue *q, void *dma);
-extern int wd_register_log(wd_log log);
+int wd_get_available_dev_num(const char *algorithm);
+int wd_get_node_id(struct wd_queue *q);
+void *wd_iova_map(struct wd_queue *q, void *va, size_t sz);
+void wd_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz);
+void *wd_dma_to_va(struct wd_queue *q, void *dma);
+int wd_register_log(wd_log log);
 
 #ifdef __cplusplus
 }

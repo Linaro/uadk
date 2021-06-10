@@ -108,43 +108,43 @@ void wd_rsa_set_kg_out_psz(struct wd_rsa_kg_out *kout,
  * @ config:	    User defined ctx configuration.
  * @ sched:	    User defined scheduler.
  */
-extern int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched);
+int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched);
 
 /**
  * wd_rsa_uninit() - Un-initialise ctx configuration and scheduler.
  */
-extern void wd_rsa_uninit(void);
+void wd_rsa_uninit(void);
 
 
 /**
  * wd_rsa_alloc_sess() - Allocate a wd rsa session.
  * @setup:	Parameters to setup this session.
  */
-extern handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup);
+handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup);
 
 /**
  * wd_rsa_free_sess() - Free  a wd rsa session.
  * @ sess: The sess to be freed.
  */
-extern void wd_rsa_free_sess(handle_t sess);
+void wd_rsa_free_sess(handle_t sess);
 
-extern int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
+int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
 
-extern int wd_rsa_poll(__u32 expt, __u32 *count);
+int wd_rsa_poll(__u32 expt, __u32 *count);
 
 /**
  * wd_do_rsa() - Send a sync rsaression request.
  * @sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_rsa_sync(handle_t sess, struct wd_rsa_req *req);
+int wd_do_rsa_sync(handle_t sess, struct wd_rsa_req *req);
 
 /**
  * wd_do_rsa_async() - Send an async rsaression request.
  * @sess:	The session which request will be sent to.
  * @req:	Request.
  */
-extern int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
+int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
 
 /**
  * wd_rsa_poll() - Poll finished request.
@@ -152,7 +152,7 @@ extern int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
  * This function will call poll_policy function which is registered to wd rsa
  * by user.
 
-extern __u32 wd_rsa_poll(void);
+__u32 wd_rsa_poll(void);
 */
 
 
@@ -168,6 +168,6 @@ extern __u32 wd_rsa_poll(void);
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-extern int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
 #endif /* __WD_RSA_H */
