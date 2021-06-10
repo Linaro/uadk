@@ -16,8 +16,8 @@ enum wd_comp_alg_type {
 };
 
 enum wd_comp_op_type {
-	WD_DIR_COMPRESS,	/* session for compression */
-	WD_DIR_DECOMPRESS,	/* session for decompression */
+	WD_DIR_COMPRESS,   /* session for compression */
+	WD_DIR_DECOMPRESS, /* session for decompression */
 };
 
 enum wd_comp_level {

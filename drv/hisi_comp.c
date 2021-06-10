@@ -122,8 +122,8 @@ struct hisi_zip_sqe_ops {
 /*
  * We use a extra field for gzip block length. So the fourth byte is \x04.
  * This is necessary because our software don't know the size of block when
- * using an hardware decompresser (It is known by hardware). This help our
- * decompresser to work and helpfully, compatible with gzip.
+ * using an hardware decompressor (It is known by hardware). This help our
+ * decompressor to work and helpfully, compatible with gzip.
  */
 #define GZIP_HEADER	"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03"
 #define GZIP_HEADER_SZ	10
