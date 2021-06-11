@@ -1026,8 +1026,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
-	sess->s_key.mode = setup->mode;
-	sess->s_key.numa_id = 0;
+	sess->s_key.numa_id = setup->numa;
 
 	ret = create_sess_key(setup, sess);
 	if (ret) {
@@ -1453,6 +1452,7 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 		return -WD_EINVAL;
 	}
 
+	sess->s_key.mode = CTX_MODE_SYNC;
 	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->s_key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
@@ -2143,6 +2143,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		return -WD_EINVAL;
 	}
 
+	sess_t->s_key.mode = CTX_MODE_ASYNC;
 	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						   &sess_t->s_key);
 	if (unlikely(idx >= config->ctx_num)) {
