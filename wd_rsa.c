@@ -829,7 +829,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	}
 
 	sess->key.mode = setup->mode;
-	sess->key.numa_id = 0;
+	sess->key.numa_id = setup->numa;
 
 	return (handle_t)(uintptr_t)sess;
 }

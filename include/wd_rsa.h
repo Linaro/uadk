@@ -55,6 +55,7 @@ struct wd_rsa_sess_setup {
 	__u16 key_bits; /* RSA key bits */
 	bool is_crt; /* CRT mode or not */
 	__u8 mode; /* rsa sync or async mode, denoted by enum wd_ctx_mode */
+	int numa;
 };
 
 bool wd_rsa_is_crt(handle_t sess);

@@ -107,6 +107,8 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	}
 	memset(sess->key, 0, MAX_HMAC_KEY_SIZE);
 
+	sess->numa = setup->numa;
+
 	return (handle_t)sess;
 }
 
@@ -270,6 +272,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg msg;
+	struct sched_key key;
 	__u64 recv_cnt = 0;
 	__u32 idx;
 	int ret;
@@ -278,8 +281,11 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	if (ret)
 		return -WD_EINVAL;
 
-	/* fix me: maybe wrong */
-	idx = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
+	key.mode = dsess->mode;
+	key.type = 0;
+	key.numa_id = dsess->numa;
+
+	idx = wd_digest_setting.sched.pick_next_ctx(0, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -339,6 +345,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg *msg;
+	struct sched_key key;
 	int msg_id, ret;
 	__u32 idx;
 
@@ -351,7 +358,11 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_digest_setting.sched.pick_next_ctx(0, req, NULL);
+	key.mode = dsess->mode;
+	key.type = 0;
+	key.numa_id = dsess->numa;
+
+	idx = wd_digest_setting.sched.pick_next_ctx(0, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;

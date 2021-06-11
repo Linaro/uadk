@@ -1027,7 +1027,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
 	sess->s_key.mode = setup->mode;
-	sess->s_key.numa_id = 0;
+	sess->s_key.numa_id = setup->numa;
 
 	ret = create_sess_key(setup, sess);
 	if (ret) {

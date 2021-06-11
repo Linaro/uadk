@@ -151,6 +151,7 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 	setup.alg_type = alg_type;
 	setup.mode = CTX_MODE_SYNC;
 	setup.op_type = WD_DIR_COMPRESS;
+	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -213,6 +214,7 @@ int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 	setup.alg_type = alg_type;
 	setup.mode = CTX_MODE_SYNC;
 	setup.op_type = WD_DIR_DECOMPRESS;
+	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -274,6 +276,7 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 	setup.alg_type = alg_type;
 	setup.mode = CTX_MODE_SYNC;
 	setup.op_type = WD_DIR_COMPRESS;
+	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -326,6 +329,7 @@ int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 	setup.alg_type = alg_type;
 	setup.mode = CTX_MODE_SYNC;
 	setup.op_type = WD_DIR_DECOMPRESS;
+	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -499,8 +503,9 @@ void *send_thread_func(void *arg)
 
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
 	setup.alg_type = opts->alg_type;
-	setup.mode = opts->sync_mode;
+	setup.mode = opts->sync_mode ? CTX_MODE_ASYNC: CTX_MODE_SYNC;
 	setup.op_type = opts->op_type;
+	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess)
 		return NULL;

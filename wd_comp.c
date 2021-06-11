@@ -240,12 +240,10 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	if (!sess)
 		return (handle_t)0;
 
-	if (setup->mode == CTX_MODE_SYNC) {
-		sess->ctx_buf = calloc(1, HW_CTX_SIZE);
-		if (!sess->ctx_buf) {
-			free(sess);
-			return (handle_t)0;
-		}
+	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
+	if (!sess->ctx_buf) {
+		free(sess);
+		return (handle_t)0;
 	}
 
 	sess->alg_type = setup->alg_type;
@@ -253,7 +251,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 
 	sess->key.mode = setup->mode;
 	sess->key.type = setup->op_type;
-	sess->key.numa_id = 0;
+	sess->key.numa_id = setup->numa;
 
 	return (handle_t)sess;
 }
