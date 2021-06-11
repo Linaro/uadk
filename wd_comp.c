@@ -237,20 +237,17 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	if (!sess)
 		return (handle_t)0;
 
-	if (setup->mode == CTX_MODE_SYNC) {
-		sess->ctx_buf = calloc(1, HW_CTX_SIZE);
-		if (!sess->ctx_buf) {
-			free(sess);
-			return (handle_t)0;
-		}
+	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
+	if (!sess->ctx_buf) {
+		free(sess);
+		return (handle_t)0;
 	}
 
 	sess->alg_type = setup->alg_type;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
 
-	sess->key.mode = setup->mode;
 	sess->key.type = setup->op_type;
-	sess->key.numa_id = 0;
+	sess->key.numa_id = setup->numa;
 
 	return (handle_t)sess;
 }
@@ -342,6 +339,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	memset(&msg, 0, sizeof(struct wd_comp_msg));
 
+	sess->key.mode = CTX_MODE_SYNC;
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
@@ -562,6 +560,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	    req->last == 1 && req->src_len == 0)
 		return append_store_block(sess, req);
 
+	sess->key.mode = CTX_MODE_SYNC;
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
@@ -661,6 +660,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -WD_EINVAL;
 	}
 
+	sess->key.mode = CTX_MODE_ASYNC;
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
