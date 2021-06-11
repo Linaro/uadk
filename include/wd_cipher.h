@@ -59,6 +59,7 @@ enum wd_cipher_mode {
 struct wd_cipher_sess_setup {
 	enum wd_cipher_alg alg;
 	enum wd_cipher_mode mode;
+	int numa;
 };
 
 struct wd_cipher_req;
@@ -73,7 +74,7 @@ struct wd_cipher_sess {
 	void			*priv;
 	void			*key;
 	__u32			key_bytes;
-	int				numa;
+	int			numa;
 };
 
 struct wd_cipher_req {

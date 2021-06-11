@@ -113,7 +113,7 @@ struct wd_ecc_sess_setup {
 	struct wd_ecc_curve_cfg cv; /* curve config denoted by user */
 	struct wd_rand_mt rand; /* rand method from user */
 	struct wd_hash_mt hash; /* hash method from user */
-	__u8 mode; /* ecc sync or async mode, denoted by enum wd_ctx_mode */
+	int numa;
 };
 
 struct wd_ecc_req {
