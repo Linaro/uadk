@@ -55,6 +55,7 @@ enum wd_digest_mode {
 struct wd_digest_sess_setup {
 	enum wd_digest_type alg;
 	enum wd_digest_mode mode;
+	int numa;
 };
 
 typedef void *wd_digest_cb_t(void *cb_param);
@@ -66,6 +67,7 @@ struct wd_digest_sess {
 	void			*priv;
 	void			*key;
 	__u32			key_bytes;
+	int			numa;
 };
 
 /**

@@ -87,8 +87,8 @@ static void *sw_dfl_hw_ifl(void *arg)
 
 	/* BLOCK mode */
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_DECOMPRESS;
+	setup.numa = 0;
 
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl) {
@@ -222,8 +222,8 @@ static void *hw_dfl_sw_ifl(void *arg)
 
 	/* BLOCK mode */
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_COMPRESS;
+	setup.numa = 0;
 
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl) {
@@ -355,8 +355,8 @@ static void *hw_dfl_hw_ifl(void *arg)
 		goto out;
 	}
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_COMPRESS;
+	setup.numa = 0;
 
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl) {
@@ -456,8 +456,8 @@ static void *hw_dfl_perf(void *arg)
 	}
 
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_COMPRESS;
+	setup.numa = 0;
 
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl)
@@ -515,8 +515,8 @@ static void *hw_ifl_perf(void *arg)
 	}
 
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_DECOMPRESS;
+	setup.numa = 0;
 
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl)
@@ -575,8 +575,8 @@ void *hw_dfl_perf3(void *arg)
 	}
 
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_COMPRESS;
+	setup.numa = 0;
 
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl)
@@ -635,8 +635,8 @@ void *hw_ifl_perf3(void *arg)
 	}
 
         setup.alg_type = opts->alg_type;
-        setup.mode = opts->sync_mode ? CTX_MODE_ASYNC : CTX_MODE_SYNC;
         setup.op_type = WD_DIR_DECOMPRESS;
+	setup.numa = 0;
 
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl)
