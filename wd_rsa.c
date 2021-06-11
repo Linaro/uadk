@@ -326,6 +326,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
+	sess->key.mode = CTX_MODE_SYNC;
 	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
@@ -367,6 +368,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
+	sess_t->key.mode = CTX_MODE_ASYNC;
 	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						   &sess_t->key);
 	if (unlikely(idx >= config->ctx_num)) {
@@ -828,8 +830,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 		return (handle_t)0;
 	}
 
-	sess->key.mode = setup->mode;
-	sess->key.numa_id = 0;
+	sess->key.numa_id = setup->numa;
 
 	return (handle_t)(uintptr_t)sess;
 }

@@ -159,8 +159,6 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
-	int cpu;
-	int node;
 
 	if (!setup) {
 		WD_ERR("cipher input setup is NULL!\n");
@@ -184,10 +182,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 
 	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
 
-	cpu = sched_getcpu();
-	node = numa_node_of_cpu(cpu);
-
-	sess->numa = node;
+	sess->numa = setup->numa;
 
 	return (handle_t)sess;
 }
@@ -370,6 +365,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	key.mode = CTX_MODE_SYNC;
 	key.type = 0;
 	key.numa_id = sess->numa;
+
 	idx = wd_cipher_setting.sched.pick_next_ctx(
 		     wd_cipher_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
