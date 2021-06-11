@@ -32,6 +32,7 @@ struct wd_aead_sess_setup {
 	enum wd_cipher_mode cmode;
 	enum wd_digest_type dalg;
 	enum wd_digest_mode dmode;
+	int numa;
 };
 
 struct wd_aead_req;
@@ -49,6 +50,7 @@ struct wd_aead_sess {
 	__u16			akey_bytes;
 	__u16			auth_bytes;
 	void			*priv;
+	int			numa;
 };
 
 /**
