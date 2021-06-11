@@ -950,7 +950,7 @@ int sw_deflate2(chunk_list_t *in_list,
 		struct test_options *opts)
 {
 	chunk_list_t *p, *q;
-	int ret;
+	int ret = -EINVAL;
 
 	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
 		ret = chunk_deflate2(p->addr, p->size, q->addr, &q->size,
@@ -969,7 +969,7 @@ int sw_inflate2(chunk_list_t *in_list, chunk_list_t *out_list,
 		struct test_options *opts)
 {
 	chunk_list_t *p, *q;
-	int ret;
+	int ret = -EINVAL;
 
 	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
 		ret = chunk_inflate2(p->addr, p->size, q->addr, &q->size,

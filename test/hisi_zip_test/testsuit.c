@@ -15,7 +15,7 @@ static void *sw_dfl_hw_ifl(void *arg)
 	void *tbuf;
 	size_t tbuf_sz;
 	chunk_list_t *tlist;
-	comp_md5_t final_md5 = {0};
+	comp_md5_t final_md5 = {{0}};
 	int i, ret;
 	__u32 tout_sz;
 
@@ -149,7 +149,7 @@ static void *hw_dfl_sw_ifl(void *arg)
 	void *tbuf;
 	size_t tbuf_sz;
 	chunk_list_t *tlist;
-	comp_md5_t final_md5 = {0};
+	comp_md5_t final_md5 = {{0}};
 	int i, ret;
 	__u32 tmp_sz;
 
@@ -284,7 +284,7 @@ static void *hw_dfl_hw_ifl(void *arg)
 	void *tbuf;
 	size_t tbuf_sz;
 	chunk_list_t *tlist;
-	comp_md5_t final_md5 = {0};
+	comp_md5_t final_md5 = {{0}};
 	int i, ret;
 	__u32 tmp_sz, tout_sz;
 
