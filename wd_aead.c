@@ -255,6 +255,8 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 	}
 	memset(sess->akey, 0, MAX_HMAC_KEY_SIZE);
 
+	sess->numa = setup->numa;
+
 	return (handle_t)sess;
 }
 
@@ -455,6 +457,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg msg;
+	struct sched_key key;
 	__u64 recv_cnt = 0;
 	__u32 idx;
 	int ret;
@@ -463,7 +466,11 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	if (ret)
 		return -WD_EINVAL;
 
-	idx = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+
+	idx = wd_aead_setting.sched.pick_next_ctx(0, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
@@ -530,6 +537,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg *msg;
+	struct sched_key key;
 	int msg_id, ret;
 	__u32 idx;
 
@@ -542,7 +550,11 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_aead_setting.sched.pick_next_ctx(0, req, NULL);
+	key.mode = CTX_MODE_ASYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+
+	idx = wd_aead_setting.sched.pick_next_ctx(0, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
