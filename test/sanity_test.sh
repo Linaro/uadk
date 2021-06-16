@@ -138,6 +138,7 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
+		echo "zip_sva_perf -S -d --in $1 --out $2 $@"
 		zip_sva_perf -S -d --in $1 --out $2 $@
 		;;
 	"zlib")
