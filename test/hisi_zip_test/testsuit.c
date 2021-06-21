@@ -781,6 +781,16 @@ static void nonenv_resource_uninit(struct test_options *opts,
 	wd_free_list_accels(info->list);
 }
 
+static size_t count_chunk_list_sz(chunk_list_t *list)
+{
+	size_t sum = 0;
+	chunk_list_t *p;
+
+	for (p = list; p; p = p->next)
+		sum += p->size;
+	return sum;
+}
+
 int test_hw(struct test_options *opts, char *model)
 {
 	struct hizip_test_info info = {0};
@@ -967,7 +977,11 @@ int test_hw(struct test_options *opts, char *model)
 		store_olist(&info, model);
 
 	usec = (double)(start_tvl.tv_sec * 1000000 + start_tvl.tv_usec);
-	ilen = opts->total_len * opts->thread_num * opts->compact_run_num;
+	if (opts->op_type == WD_DIR_DECOMPRESS)
+		ilen = (float)count_chunk_list_sz(info.tdatas[0].out_list);
+	else
+		ilen = opts->total_len;
+	ilen *= opts->thread_num * opts->compact_run_num;
 	speed = ilen * 1000 * 1000 / 1024 / 1024 / usec;
 	if (opts->sync_mode) {
 		zbuf_idx += sprintf(zbuf + zbuf_idx,
@@ -979,8 +993,14 @@ int test_hw(struct test_options *opts, char *model)
 				    " with %d send threads",
 				    opts->thread_num);
 	}
-	printf("%s at %.2fMB/s in %f usec (BLK:%d, Bnum:%d).\n",
-	       zbuf, speed, usec, opts->block_size, opts->batch_num);
+	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf") ||
+	    !strcmp(model, "hw_dfl_perf3") || !strcmp(model, "hw_ifl_perf3")) {
+		printf("%s at %.2fMB/s in %f usec (BLK:%d, Bnum:%d).\n",
+		       zbuf, speed, usec, opts->block_size, opts->batch_num);
+	} else {
+		printf("%s in %f usec (BLK:%d, Bnum:%d).\n",
+		       zbuf, usec, opts->block_size, opts->batch_num);
+	}
 	free_threads(&info);
 	if (opts->use_env)
 		wd_comp_env_uninit();
