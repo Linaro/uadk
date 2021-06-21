@@ -2,9 +2,6 @@
 
 #include "test_lib.h"
 
-/* PADDING could avoid blocking in HW inflation */
-#define HIZIP_PADDING	16
-
 static void *sw_dfl_hw_ifl(void *arg)
 {
 	thread_data_t *tdata = (thread_data_t *)arg;
@@ -494,8 +491,8 @@ static void *hw_ifl_perf(void *arg)
 						   opts->data_fmt,
 						   tdata->dst,
 						   &tout_sz,
-						   tdata->src,
-						   tdata->src_sz);
+						   tdata->in_list->addr,
+						   tdata->in_list->size);
 			if (ret) {
 				printf("Fail to inflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;
@@ -809,7 +806,7 @@ int test_hw(struct test_options *opts, char *model)
 		func = sw_dfl_hw_ifl;
 		info.in_size = opts->total_len;
 		if (opts->is_stream)
-			info.out_size = opts->total_len + HIZIP_PADDING;
+			info.out_size = opts->total_len;
 		else
 			info.out_size = opts->total_len;
 		info.in_chunk_sz = opts->block_size;
@@ -830,7 +827,7 @@ int test_hw(struct test_options *opts, char *model)
 		func = hw_dfl_hw_ifl;
 		info.in_size = opts->total_len;
 		if (opts->is_stream)
-			info.out_size = opts->total_len + HIZIP_PADDING;
+			info.out_size = opts->total_len;
 		else
 			info.out_size = opts->total_len;
 		info.in_chunk_sz = opts->block_size;
