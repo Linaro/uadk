@@ -424,11 +424,6 @@ struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_nu
 		return NULL;
 	}
 
-	if (!func) {
-		WD_ERR("Error: %s poll_func is null!\n", __FUNCTION__);
-		return NULL;
-	}
-
 	if (!numa_num) {
 		WD_ERR("Warning: %s set numa number as %d!\n", __FUNCTION__,
 		       MAX_NUMA_NUM);
