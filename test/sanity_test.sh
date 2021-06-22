@@ -65,7 +65,7 @@ run_cmd()
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
 		# It could prevent bash to stop scripts when error occurs.
-		$@ &> /dev/null || exit_code=$?
+		$@ > /dev/null 2>&1 || exit_code=$?
 	else
 		${VALGRIND} $@
 	fi
@@ -214,7 +214,7 @@ prepare_src_file()
 {
 	case $1 in
 	"random")
-		dd if=/dev/urandom of=origin bs=1M count=$2 &> /dev/null
+		dd if=/dev/urandom of=origin bs=1M count=$2 > /dev/null 2>&1
 		;;
 	*)
 		${CP} $1 origin
@@ -419,7 +419,7 @@ output_result()
 }
 
 # start to test
-find /dev -name hisi_zip-* &> /dev/null
+find /dev -name hisi_zip-* > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_zip-*
 	have_hisi_zip=1
@@ -433,7 +433,7 @@ if [ $? -eq 0 ]; then
 	fi
 fi
 
-find /dev -name hisi_sec2-* &> /dev/null
+find /dev -name hisi_sec2-* > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_sec2-*
 	have_hisi_sec=1
@@ -451,7 +451,7 @@ if [ $? -eq 0 ]; then
 	fi
 fi
 
-find /dev -name hisi_hpre-* &> /dev/null
+find /dev -name hisi_hpre-* > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	chmod 666 /dev/hisi_hpre-*
 	have_hisi_hpre=1
