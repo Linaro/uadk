@@ -61,15 +61,11 @@ check_uacce_mode()
 
 run_cmd()
 {
-	exit_code=0
 	if [ -z ${VALGRIND} ]; then
-		# "|| exit_code=$?" is used to capature the return value.
-		# It could prevent bash to stop scripts when error occurs.
-		$@ &> /dev/null || exit_code=$?
+		$@ &> /dev/null
 	else
 		${VALGRIND} $@
 	fi
-	return $exit_code
 }
 
 run_zip_test_v1()
