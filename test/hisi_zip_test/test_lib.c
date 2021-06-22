@@ -1280,6 +1280,7 @@ int create_send_tdata(struct test_options *opts,
 				     opts->batch_num);
 		if (!tdata->reqs)
 			goto out_list;
+		sem_init(&tdata->sem, 0, 0);
 		tdata->info = info;
 	}
 	return 0;
@@ -1304,7 +1305,7 @@ int create_poll_tdata(struct test_options *opts,
 		      int poll_num)
 {
 	thread_data_t *tdatas;
-	int i, j, ret;
+	int i, ret;
 
 	if (opts->sync_mode == 0)
 		return 0;
@@ -1314,23 +1315,16 @@ int create_poll_tdata(struct test_options *opts,
 	info->poll_tds = calloc(1, sizeof(pthread_t) * poll_num);
 	if (!info->poll_tds)
 		return -ENOMEM;
-	tdatas = calloc(1, sizeof(thread_data_t) * poll_num);
-	if (!tdatas) {
+	info->p_tdatas = calloc(1, sizeof(thread_data_t) * poll_num);
+	if (!info->p_tdatas) {
 		ret = -ENOMEM;
 		goto out;
 	}
 	for (i = 0; i < poll_num; i++) {
 		tdatas[i].tid = i;
 		tdatas[i].info = info;
-		ret = sem_init(&tdatas[i].sem, 0, 0);
-		if (ret < 0)
-			goto out_sem;
 	}
 	return 0;
-out_sem:
-	for (j = 0; j < i; j++)
-		sem_destroy(&tdatas[i].sem);
-	free(tdatas);
 out:
 	free(info->poll_tds);
 	return ret;
@@ -1347,8 +1341,10 @@ void free2_threads(struct hizip_test_info *info)
 
 	if (info->send_tds)
 		free(info->send_tds);
-	if (info->poll_tds)
+	if (info->poll_tds) {
 		free(info->poll_tds);
+		free(info->p_tdatas);
+	}
 	free_chunk_list(tdatas[0].in_list);
 	for (i = 0; i < info->send_tnum; i++) {
 		free_chunk_list(tdatas[i].out_list);
