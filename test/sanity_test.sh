@@ -65,7 +65,8 @@ run_cmd()
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
 		# It could prevent bash to stop scripts when error occurs.
-		$@ &> /dev/null || exit_code=$?
+		#$@ &> /dev/null || exit_code=$?
+		$@ || exit_code=$?
 	else
 		${VALGRIND} $@
 	fi
