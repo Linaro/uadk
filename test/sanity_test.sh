@@ -361,16 +361,16 @@ run_zip_test_v2()
 # failed: return 1; success: return 0
 run_sec_test_v2()
 {
-	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 
-	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 }
 
