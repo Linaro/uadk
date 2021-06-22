@@ -2,6 +2,16 @@
 
 #include "test_lib.h"
 
+static size_t count_chunk_list_sz(chunk_list_t *list)
+{
+	size_t sum = 0;
+	chunk_list_t *p;
+
+	for (p = list; p; p = p->next)
+		sum += p->size;
+	return sum;
+}
+
 static void *sw_dfl_hw_ifl(void *arg)
 {
 	thread_data_t *tdata = (thread_data_t *)arg;
@@ -781,16 +791,6 @@ static void nonenv_resource_uninit(struct test_options *opts,
 	wd_free_list_accels(info->list);
 }
 
-static size_t count_chunk_list_sz(chunk_list_t *list)
-{
-	size_t sum = 0;
-	chunk_list_t *p;
-
-	for (p = list; p; p = p->next)
-		sum += p->size;
-	return sum;
-}
-
 int test_hw(struct test_options *opts, char *model)
 {
 	struct hizip_test_info info = {0};
@@ -901,18 +901,14 @@ int test_hw(struct test_options *opts, char *model)
 
 	if (opts->is_file) {
 		ret = fstat(opts->fd_in, &statbuf);
-		if (!ret) {
-			opts->total_len = statbuf.st_size;
-			info.in_size = opts->total_len;
-			if (ifl_flag) {
-				info.out_size = ALIGN(opts->total_len,
-						      opts->block_size);
-				info.out_size *= INFLATION_RATIO;
-			} else {
-				info.out_size = opts->total_len *
-						EXPANSION_RATIO;
-			}
-		}
+		if (ret < 0)
+			goto out_src;
+		opts->total_len = statbuf.st_size;
+		info.in_size = opts->total_len;
+		if (ifl_flag)
+			info.out_size = opts->total_len * INFLATION_RATIO;
+		else
+			info.out_size = opts->total_len * EXPANSION_RATIO;
 		/*
 		 * If fd_ilist exists, it's inflation.
 		 * Make sure block inflation has enough room.
@@ -923,6 +919,8 @@ int test_hw(struct test_options *opts, char *model)
 				div = statbuf.st_size / sizeof(chunk_list_t);
 				info.in_chunk_sz = (info.in_size + div - 1) /
 						   div;
+				info.out_chunk_sz = (info.out_size + div - 1) /
+						    div;
 			}
 		}
 	}
