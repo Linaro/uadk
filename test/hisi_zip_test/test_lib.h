@@ -163,7 +163,9 @@ struct hizip_test_info {
 	int send_tnum;
 	pthread_t *poll_tds;
 	int poll_tnum;
+	/* tdatas: send thread data array, p_tdatas: poll thread data array */
 	thread_data_t *tdatas;
+	thread_data_t *p_tdatas;
 	struct hizip_stats *stats;
 	struct {
 		struct timespec setup_time;
