@@ -803,7 +803,7 @@ int test_hw(struct test_options *opts, char *model)
 	size_t tbuf_sz = 0;
 	void *tbuf = NULL;
 	struct stat statbuf;
-	chunk_list_t *tlist;
+	chunk_list_t *tlist = NULL;
 	int div;
 
 	if (!opts || !model) {
@@ -959,8 +959,12 @@ int test_hw(struct test_options *opts, char *model)
 					opts->block_size / EXPANSION_RATIO);
 			gen_random_data(tbuf, tbuf_sz);
 			ret = sw_deflate2(tlist, tdata[0].in_list, opts);
-			if (ret)
-				goto out_dfl;
+			if (ret) {
+				free_chunk_list(tlist);
+				mmap_free(tbuf, tbuf_sz);
+				goto out_buf;
+			}
+			free_chunk_list(tlist);
 			mmap_free(tbuf, tbuf_sz);
 		} else
 			gen_random_data(info.in_buf, info.in_size);
@@ -968,7 +972,7 @@ int test_hw(struct test_options *opts, char *model)
 	gettimeofday(&start_tvl, NULL);
 	ret = attach2_threads(opts, &info, func, poll2_thread_func);
 	if (ret)
-		goto out_poll;
+		goto out_buf;
 	gettimeofday(&end_tvl, NULL);
 	timersub(&end_tvl, &start_tvl, &start_tvl);
 	if (opts->is_file)
@@ -999,7 +1003,7 @@ int test_hw(struct test_options *opts, char *model)
 		printf("%s in %f usec (BLK:%d, Bnum:%d).\n",
 		       zbuf, usec, opts->block_size, opts->batch_num);
 	}
-	free_threads(&info);
+	free2_threads(&info);
 	if (opts->use_env)
 		wd_comp_env_uninit();
 	else
@@ -1008,11 +1012,15 @@ int test_hw(struct test_options *opts, char *model)
 	return 0;
 out_buf:
 out_poll:
-	free_threads(&info);
+	free2_threads(&info);
+	if (opts->use_env)
+		wd_comp_env_uninit();
+	else
+		nonenv_resource_uninit(opts, &info, sched);
+	printf("Fail to run %s() (%d)!\n", model, ret);
+	return ret;
 out_send:
-out_dfl:
-	if (ifl_flag && tbuf && tbuf_sz)
-		mmap_free(tbuf, tbuf_sz);
+	mmap_free(info.in_buf, info.in_size);
 out_src:
 	if (opts->use_env)
 		wd_comp_env_uninit();
