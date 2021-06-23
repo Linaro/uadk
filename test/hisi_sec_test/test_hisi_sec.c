@@ -542,7 +542,7 @@ static int test_sec_cipher_sync_once(void)
 {
 	struct cipher_testvec *tv = NULL;
 	handle_t	h_sess = 0;
-	struct wd_cipher_sess_setup	setup;
+	struct wd_cipher_sess_setup	setup = {0};
 	struct wd_cipher_req req;
 	struct timeval bg_tval, cur_tval;
 	int thread_id = (int)syscall(__NR_gettid);
@@ -665,7 +665,7 @@ static void *async_cb(struct wd_cipher_req *req, void *data)
 static int test_sec_cipher_async_once(void)
 {
 	struct cipher_testvec *tv = NULL;
-	struct wd_cipher_sess_setup setup;
+	struct wd_cipher_sess_setup setup = {0};
 	thread_data_t data;
 	handle_t h_sess = 0;
 	struct wd_cipher_req req;
@@ -1154,7 +1154,7 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 static int sec_cipher_async_test(void)
 {
 	struct wd_cipher_req	req[THREADS_NUM];
-	struct wd_cipher_sess_setup setup[THREADS_NUM];
+	struct wd_cipher_sess_setup setup[THREADS_NUM] = {0};
 	void *iv = NULL;
 	struct cipher_testvec *tv = NULL;
 	thread_data_t datas[THREADS_NUM];
@@ -1480,7 +1480,7 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 
 static int sec_digest_sync_once(void)
 {
-	struct wd_digest_sess_setup setup;
+	struct wd_digest_sess_setup setup = {0};
 	struct hash_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_digest_req req;
@@ -1689,7 +1689,7 @@ void *digest_sync_send_thread(void *data)
 static int sec_digest_async_once(void)
 {
 	struct hash_testvec *tv = 0;
-	struct wd_digest_sess_setup setup;
+	struct wd_digest_sess_setup setup = {0};
 	static pthread_t send_td;
 	static pthread_t poll_td;
 	struct wd_digest_req req;
@@ -1803,7 +1803,7 @@ out_src:
 
 static int sec_digest_sync_multi(void)
 {
-	struct wd_digest_sess_setup setup;
+	struct wd_digest_sess_setup setup = {0};
 	struct hash_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_digest_req req;
@@ -1909,7 +1909,7 @@ out_src:
 static int sec_digest_async_multi(void)
 {
 	struct hash_testvec *tv = 0;
-	struct wd_digest_sess_setup	setup;
+	struct wd_digest_sess_setup	setup = {0};
 	handle_t h_sess = 0;
 	struct wd_digest_req req;
 	static pthread_t sendtd[64];
@@ -2155,7 +2155,7 @@ int get_aead_resource(struct aead_testvec **alg_tv,
 
 static int sec_aead_sync_once(void)
 {
-	struct wd_aead_sess_setup setup;
+	struct wd_aead_sess_setup setup = {0};
 	struct aead_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_aead_req req;
@@ -2461,7 +2461,7 @@ send_num);
 
 static int sec_aead_async_once(void)
 {
-	struct wd_aead_sess_setup setup;
+	struct wd_aead_sess_setup setup = {0};
 	struct aead_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_aead_req req;
@@ -2661,7 +2661,7 @@ out:
 
 static int sec_aead_sync_multi(void)
 {
-	struct wd_aead_sess_setup setup;
+	struct wd_aead_sess_setup setup = {0};
 	struct aead_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_aead_req req;
@@ -2851,7 +2851,7 @@ out:
 
 static int sec_aead_async_multi(void)
 {
-	struct wd_aead_sess_setup setup;
+	struct wd_aead_sess_setup setup = {0};
 	struct aead_testvec *tv = NULL;
 	handle_t h_sess = 0;
 	struct wd_aead_req req;
