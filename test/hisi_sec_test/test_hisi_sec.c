@@ -45,6 +45,7 @@ static unsigned int g_direction;
 static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 static unsigned int g_syncmode;
+static unsigned int g_use_env;
 static unsigned int g_ctxnum;
 static unsigned int g_data_fmt = WD_FLAT_BUF;
 static unsigned int g_sgl_num = 0;
@@ -104,6 +105,7 @@ struct test_sec_option {
 	__u32 block;
 	__u32 blknum;
 	__u32 sgl_num;
+	__u32 use_env;
 };
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -554,7 +556,11 @@ static int test_sec_cipher_sync_once(void)
 	size_t unit_sz;
 
 	/* config setup */
-	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	if (g_use_env)
+		ret = wd_cipher_env_init();
+	else
+		ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+
 	if (ret) {
 		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
@@ -649,7 +655,10 @@ out_iv:
 out_dst:
 	free_buf(g_data_fmt, req.src);
 out:
-	uninit_config();
+	if (g_use_env)
+		wd_cipher_env_uninit();
+	else
+		uninit_config();
 
 	return ret;
 }
@@ -3495,6 +3504,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"blknum",    required_argument, 0,  14},
 		{"help",      no_argument,       0,  15},
 		{"sglnum",    required_argument, 0,  16},
+		{"use_env",   no_argument,       0,  17},
 		{0, 0, 0, 0}
 	};
 
@@ -3555,6 +3565,9 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		case 16:
 			option->sgl_num = strtol(optarg, NULL, 0);
 			break;
+		case 17:
+			option->use_env = 1;
+			break;
 		default:
 			SEC_TST_PRT("bad input parameter, exit\n");
 			print_help();
@@ -3598,6 +3611,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_testalg = option->algtype;
 	g_pktlen = option->pktlen;
 	g_keylen = option->keylen;
+	g_use_env = option->use_env;
 	g_times = option->times ? option->times : 1;
 	g_ctxnum = option->ctxnum ? option->ctxnum : 1;
 	g_data_fmt = option->sgl_num ? WD_SGL_BUF : WD_FLAT_BUF;
