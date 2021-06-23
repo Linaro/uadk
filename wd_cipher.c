@@ -18,6 +18,7 @@
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
+#define WD_CIPHER_ENV_NUM	4
 
 #define POLL_SIZE		1000000
 #define POLL_TIME		1000
@@ -35,6 +36,8 @@ struct wd_cipher_setting {
 	void *priv;
 	struct wd_async_msg_pool pool;
 }wd_cipher_setting;
+
+struct wd_env_config wd_cipher_env_config;
 
 #ifdef WD_STATIC_DRV
 extern struct wd_cipher_driver wd_cipher_hisi_cipher_driver;
@@ -370,7 +373,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	idx = wd_cipher_setting.sched.pick_next_ctx(
 		     wd_cipher_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("fail to pick a proper ctx!\n");
+		WD_ERR("fail to pick a proper ctx: idx: %d!\n", idx);
 		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
@@ -470,6 +473,9 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
 	}
 
+	if (wd_cipher_env_config.enable_internal_poll)
+		wd_add_task_to_async_queue(&wd_cipher_env_config, idx);
+
 	return ret;
 }
 
@@ -528,4 +534,41 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 	}
 
 	return sched->poll_policy(h_ctx, expt, count);
+}
+static const struct wd_config_variable table[WD_CIPHER_ENV_NUM] = {
+	{ .name = "WD_CIPHER_NUMA",
+	  .def_val = "0",
+	  .parse_fn = wd_parse_numa
+	},
+	{ .name = "WD_CIPHER_SYNC_CTX_NUM",
+	  .def_val = "6@0",
+	  .parse_fn = wd_parse_sync_ctx_num
+	},
+	{ .name = "WD_CIPHER_ASYNC_CTX_NUM",
+	  .def_val = "6@0",
+	  .parse_fn = wd_parse_async_ctx_num
+	},
+	{ .name = "WD_CIPHER_ASYNC_POLL_EN",
+	  .def_val = "1",
+	  .parse_fn = wd_parse_async_poll_en
+	}
+};
+
+static const struct wd_alg_ops wd_cipher_ops = {
+	.alg_name = "cipher",
+	.op_type_num = 1,
+	.alg_init = wd_cipher_init,
+	.alg_uninit = wd_cipher_uninit,
+	.alg_poll_ctx = wd_cipher_poll_ctx
+};
+
+int wd_cipher_env_init(void)
+{
+	return wd_alg_env_init(&wd_cipher_env_config, table, WD_CIPHER_ENV_NUM,
+				&wd_cipher_ops);
+}
+
+void wd_cipher_env_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_cipher_env_config);
 }

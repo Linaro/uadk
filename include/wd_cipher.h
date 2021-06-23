@@ -146,4 +146,16 @@ int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count);
  * by user.
  */
 int wd_cipher_poll(__u32 expt, __u32 *count);
+/**
+ * wd_cipher_env_init() - Init ctx and schedule resources according to wd cipher
+ * environment variables.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_cipher_env_init(void);
+
+/**
+ * wd_cipher_env_uninit() - UnInit ctx and schedule resources set by above init.
+ */
+void wd_cipher_env_uninit(void);
 #endif /* __WD_CIPHER_H */
