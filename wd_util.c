@@ -10,6 +10,7 @@
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024
+#define MAX_NUMA_NUM			4
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -271,6 +272,9 @@ void dump_env_info(struct wd_env_config *config)
 	int i, j, k;
 
 	for (i = 0; i < config->numa_num; config_numa++, i++) {
+		if (!config_numa->ctx_table)
+			continue;
+
 		ctx_table = config_numa->ctx_table;
 		printf("-> dump_env_info: %d: sync num: %lu\n", i,
 		       config_numa->sync_ctx_num);
@@ -428,18 +432,19 @@ static int comp_fill_ctx_table(struct wd_env_config *config)
 	int start, size, i, j, k;
 
 	for (i = 0; i < config->numa_num; config_numa++, i++) {
+		if (!config_numa->ctx_table)
+			continue;
+
 		start = get_start_ctx_index(config, config_numa);
 		ctx_table = config_numa->ctx_table;
 
 		if (ctx_table[0][0].size + ctx_table[0][1].size !=
-		    config_numa->sync_ctx_num){
+		    config_numa->sync_ctx_num)
 			return -EINVAL;
-		}
 
 		if (ctx_table[1][0].size + ctx_table[1][1].size !=
-		    config_numa->async_ctx_num) {
+		    config_numa->async_ctx_num)
 			return -EINVAL;
-		}
 
 		for (j = 0; j < 2; j++)
 			for (k = 0; k < 2; k++) {
@@ -571,6 +576,9 @@ static void wd_free_env(struct wd_env_config *config)
 	int i, j;
 
 	for (i = 0; i < config->numa_num; config_numa++, i++) {
+		if (!config_numa->ctx_table)
+			continue;
+
 		/* hack: here */
 		for (j = 0; j < 2; j++)
 			free(config_numa->ctx_table[j]);
@@ -609,7 +617,15 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 
 		ctx_config->ctxs[i].ctx = h_ctx;
 		/* put sync ctx in front of async ctx */
-		ctx_config->ctxs[i].ctx_mode = get_ctx_mode(config, i);
+		if (config->ctx_table) {
+			ctx_config->ctxs[i].ctx_mode = get_ctx_mode(config, i);
+			continue;
+		}
+
+		if (i < start + ctx_num - config->async_ctx_num)
+			ctx_config->ctxs[i].ctx_mode = CTX_MODE_SYNC;
+		else
+			ctx_config->ctxs[i].ctx_mode = CTX_MODE_ASYNC;
 
 		/* fix me: currently does not fill op_type */
 	}
@@ -659,14 +675,15 @@ static struct wd_ctx_config *wd_alloc_ctx(struct wd_env_config *config,
 	ctx_config->ctx_num = ctx_num;
 
 	/* get uacce_dev */
-	head = list = wd_get_accel_list(ops->alg_name);
-	if (!list) {
+	head = wd_get_accel_list(ops->alg_name);
+	if (!head) {
 		ret = -EINVAL;
 		WD_ERR("no device to support %s\n", ops->alg_name);
 		goto err_free_ctxs;
 	}
 
 	for (i = 0; i < config->numa_num; config_numa++, i++) {
+		list = head;
 		while (list) {
 			if (config_numa->node == list->dev->numa_id)
 				break;
@@ -675,12 +692,10 @@ static struct wd_ctx_config *wd_alloc_ctx(struct wd_env_config *config,
 		if (!list) {
 			WD_ERR("no match device in node %lu\n",
 			       config_numa->node);
-			ret = -EINVAL;
-			goto err_free_list;
+			continue;
 		}
 
 		memcpy(&config_numa->dev, list->dev, sizeof(*list->dev));
-		list = head;
 
 		/* already sort numa node from small to big in wd_parse_numa */
 		ret = wd_get_wd_ctx(config_numa, ctx_config, start);
@@ -715,15 +730,36 @@ static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
 	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
 	struct wd_ctx_range **ctx_table;
 	struct wd_sched *sched;
-	int i, j, ret;
+	int i, j, ret, start, end;
 
 	sched = sample_sched_alloc(SCHED_POLICY_RR, ops->op_type_num,
-				   config->numa_num, NULL);
+				   MAX_NUMA_NUM, NULL);
 	if (!sched)
 		return NULL;
+
 	sched->name = "SCHED_RR";
 
 	for (i = 0; i < config->numa_num; config_numa++, i++) {
+		if (!config_numa->ctx_table) {
+			start = get_start_ctx_index(config, config_numa);
+			end = start + config_numa->sync_ctx_num - 1;
+			ret = sample_sched_fill_data(sched, config_numa->node,
+						     CTX_MODE_SYNC, 0,
+						     start, end);
+			if (ret)
+				goto err_release_sched;
+
+			start = end + 1;
+			end = start + config_numa->async_ctx_num - 1;
+			ret = sample_sched_fill_data(sched, config_numa->node,
+						     CTX_MODE_ASYNC, 0,
+						     start, end);
+			if (ret)
+				goto err_release_sched;
+
+			continue;
+		}
+
 		ctx_table = config_numa->ctx_table;
 		/* hack: here */
 		for (j = 0; j < 2; j++) {
