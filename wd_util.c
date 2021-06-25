@@ -616,6 +616,20 @@ static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int index)
 	return CTX_MODE_ASYNC;
 }
 
+static int get_op_type(struct wd_env_config_per_numa *config, int index,
+		       __u8 ctx_mode)
+{
+	struct wd_ctx_range **ctx_table = config->ctx_table;
+	int i;
+
+	for (i = 0; i < config->op_type_num; i++) {
+		if ((index >= ctx_table[ctx_mode][i].begin) &&
+		    (index <= ctx_table[ctx_mode][i].end))
+			return i;
+	}
+	return -EINVAL;
+}
+
 static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 			 struct wd_ctx_config *ctx_config, int start)
 {
@@ -633,8 +647,12 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 
 		ctx_config->ctxs[i].ctx = h_ctx;
 		/* put sync ctx in front of async ctx */
-		if (config->ctx_table)
+		if (config->ctx_table) {
 			ctx_config->ctxs[i].ctx_mode = get_ctx_mode(config, i);
+			ctx_config->ctxs[i].op_type = get_op_type(
+					config, i,
+					ctx_config->ctxs[i].ctx_mode);
+		}
 
 		/* fix me: currently does not fill op_type */
 	}
