@@ -233,12 +233,12 @@ hw_dfl_sw_ifl()
 	prepare_src_file random 1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192 --env
 	sw_blk_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
@@ -248,7 +248,7 @@ hw_dfl_sw_ifl()
 	md5sum origin > ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
@@ -258,13 +258,13 @@ hw_dfl_sw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192 --env
 	sw_blk_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
 	# This case fails.
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
+	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 }
@@ -283,9 +283,11 @@ sw_dfl_hw_ifl()
 	sw_blk_deflate origin /tmp/ori.gz gzip 8192
 	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
 	md5sum -c ori.md5
+	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
 	md5sum -c ori.md5
 
 	# Generate random data with 500MB size
@@ -295,7 +297,7 @@ sw_dfl_hw_ifl()
 
 	${RM} -f /tmp/ori.gz
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
 	md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
@@ -305,11 +307,11 @@ sw_dfl_hw_ifl()
 	md5sum origin > ori.md5
 
 	sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
 	md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
 	md5sum -c ori.md5
 }
 
@@ -351,6 +353,11 @@ hw_dfl_hw_ifl()
 # failed: return 1; success: return 0
 run_zip_test_v2()
 {
+	export WD_COMP_NUMA=0
+	export WD_COMP_SYNC_CTX_NUM="8@0"
+	export WD_COMP_ASYNC_CTX_NUM="8@0"
+	export WD_COMP_CTX_TYPE="sync-comp:4@0,sync-decomp:4@0,async-comp:4@0,async-decomp:4@0"
+	export WD_COMP_ASYNC_POLL_EN=1
 	sw_dfl_hw_ifl /var/log/syslog
 	hw_dfl_sw_ifl /var/log/syslog
 	hw_dfl_hw_ifl /var/log/syslog
