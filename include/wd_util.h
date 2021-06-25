@@ -53,6 +53,7 @@ struct wd_env_config {
 	struct wd_env_config_per_numa *config_per_numa;
 	/* Let's make it as a gobal config, not per numa */
 	bool enable_internal_poll;
+	__u8 op_type_num;
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
 	void (*alg_uninit)(void);
 

@@ -16,7 +16,6 @@
 #define MAX_RETRY_COUNTS		200000000
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
-#define WD_COMP_ENV_NUM			5
 
 #define POLL_SIZE			2500000
 #define POLL_TIME			1000
@@ -713,7 +712,7 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 	return sched->poll_policy(h_sched_ctx, expt, count);
 }
 
-static const struct wd_config_variable table[WD_COMP_ENV_NUM] = {
+static const struct wd_config_variable table[] = {
 	{ .name = "WD_COMP_NUMA",
 	  .def_val = "0",
 	  .parse_fn = wd_parse_numa
@@ -746,7 +745,7 @@ static const struct wd_alg_ops wd_comp_ops = {
 
 int wd_comp_env_init(void)
 {
-	return wd_alg_env_init(&wd_comp_env_config, table, WD_COMP_ENV_NUM,
+	return wd_alg_env_init(&wd_comp_env_config, table, ARRAY_SIZE(table),
 			       &wd_comp_ops);
 }
 

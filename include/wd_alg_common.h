@@ -14,9 +14,12 @@
 #define BITS_TO_BYTES(bits)	(((bits) + 7) >> 3)
 #define BYTES_TO_BITS(bytes)	((bytes) << 3)
 
+#define ARRAY_SIZE(x)	(sizeof(x) / sizeof((x)[0]))
+
 enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
 	CTX_MODE_ASYNC,
+	CTX_MODE_MAX,
 };
 
 /**
