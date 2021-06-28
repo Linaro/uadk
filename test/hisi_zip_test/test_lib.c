@@ -1320,6 +1320,7 @@ int create_poll_tdata(struct test_options *opts,
 		ret = -ENOMEM;
 		goto out;
 	}
+	tdatas = info->p_tdatas;
 	for (i = 0; i < poll_num; i++) {
 		tdatas[i].tid = i;
 		tdatas[i].info = info;
