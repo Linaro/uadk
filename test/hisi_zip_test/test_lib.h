@@ -280,8 +280,6 @@ int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 		         unsigned char *dst, __u32 *dstlen,
 		         unsigned char *src, __u32 srclen);
 
-int comp_file_test(FILE *source, FILE *dest, struct test_options *opts);
-
 #ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
 		       check_output_fn check_output, void *opaque);

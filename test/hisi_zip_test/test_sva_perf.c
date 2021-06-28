@@ -642,9 +642,6 @@ static int run_test(struct test_options *opts, FILE *source, FILE *dest)
 	struct hizip_stats variation;
 	struct hizip_stats stats[n];
 
-	if(opts->is_file) {
-		return comp_file_test(source, dest, opts);
-	}
 	memset(&avg , 0, sizeof(avg));
 	memset(&std , 0, sizeof(std));
 	memset(&variation , 0, sizeof(variation));
