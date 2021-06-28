@@ -94,9 +94,8 @@ The library version likes libNAME.so.{x}.{y}.{z}
 ```
 {x} stand for primary version, should change when APIs are changed which
     making things incompatible.
-{y} stand for sub version, should change when new APIs are added. It still
-    keeps things compatible.
-{z} stand for mirror version, should change by fixing bug or optimizing.
+{y} stand for sub version, accumulated for three monthes.
+{z} stand for mirror version, accumulated for each work week.
 ```
 
 
