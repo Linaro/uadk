@@ -169,4 +169,16 @@ int wd_digest_poll_ctx(__u32 index, __u32 expt, __u32 *count);
  */
 int wd_digest_poll(__u32 expt, __u32 *count);
 
+/**
+ * wd_digest_env_init() - Init ctx and schedule resources according to wd digest
+ * environment variables.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_digest_env_init(void);
+
+/**
+ * wd_digest_env_uninit() - UnInit ctx and schedule resources set by above init.
+ */
+void wd_digest_env_uninit(void);
 #endif /* __WD_DIGEST_H */
