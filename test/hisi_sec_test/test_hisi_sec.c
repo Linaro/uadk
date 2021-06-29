@@ -468,6 +468,9 @@ static int init_ctx_config(int type, int mode)
 	int ret = 0;
 	int i;
 
+	if (g_use_env)
+		return wd_cipher_env_init();
+
 	list = wd_get_accel_list("cipher");
 	if (!list) {
 		printf("Fail to get cipher device\n");
@@ -523,6 +526,11 @@ static void uninit_config(void)
 {
 	int i;
 
+	if (g_use_env) {
+		wd_cipher_env_uninit();
+		return;
+	}
+
 	wd_cipher_uninit();
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
@@ -533,6 +541,11 @@ static void uninit_config(void)
 static void digest_uninit_config(void)
 {
 	int i;
+
+	if (g_use_env) {
+		wd_digest_env_uninit();
+		return;
+	}
 
 	wd_digest_uninit();
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
@@ -556,10 +569,7 @@ static int test_sec_cipher_sync_once(void)
 	size_t unit_sz;
 
 	/* config setup */
-	if (g_use_env)
-		ret = wd_cipher_env_init();
-	else
-		ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
 
 	if (ret) {
 		SEC_TST_PRT("Fail to init sigle ctx config!\n");
@@ -655,10 +665,7 @@ out_iv:
 out_dst:
 	free_buf(g_data_fmt, req.src);
 out:
-	if (g_use_env)
-		wd_cipher_env_uninit();
-	else
-		uninit_config();
+	uninit_config();
 
 	return ret;
 }
@@ -693,6 +700,7 @@ static int test_sec_cipher_async_once(void)
 	data.req = &req;
 	/* config setup */
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_ASYNC);
+
 	if (ret) {
 		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
@@ -769,6 +777,11 @@ static int test_sec_cipher_async_once(void)
 		ret = wd_do_cipher_async(h_sess, &req);
 		if (ret < 0)
 			goto out;
+
+		if (g_use_env) {
+			cnt--;
+			continue;
+		}
 		/* poll thread */
 try_again:
 		num = 0;
@@ -1163,7 +1176,7 @@ static int test_async_create_threads(int thread_num, struct wd_cipher_req *reqs,
 static int sec_cipher_async_test(void)
 {
 	struct wd_cipher_req	req[THREADS_NUM];
-	struct wd_cipher_sess_setup setup[THREADS_NUM] = {0};
+	struct wd_cipher_sess_setup setup[THREADS_NUM] = {{0}};
 	void *iv = NULL;
 	struct cipher_testvec *tv = NULL;
 	thread_data_t datas[THREADS_NUM];
@@ -1269,6 +1282,9 @@ static int init_digest_ctx_config(int type, int mode)
 	struct uacce_dev_list *list;
 	struct wd_sched sched;
 	int ret;
+
+	if (g_use_env)
+		return wd_digest_env_init();
 
 	list = wd_get_accel_list("digest");
 	if (!list)
@@ -2043,6 +2059,9 @@ static int init_aead_ctx_config(int type, int mode)
 	struct wd_sched sched;
 	int ret;
 
+	if (g_use_env)
+		return wd_aead_env_init();
+
 	list = wd_get_accel_list("aead");
 	if (!list)
 		return -ENODEV;
@@ -2086,6 +2105,11 @@ out:
 static void aead_uninit_config(void)
 {
 	int i;
+
+	if (g_use_env) {
+		wd_aead_env_uninit();
+		return;
+	}
 
 	wd_aead_uninit();
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)

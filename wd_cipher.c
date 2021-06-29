@@ -18,7 +18,6 @@
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
-#define WD_CIPHER_ENV_NUM	4
 
 #define POLL_SIZE		1000000
 #define POLL_TIME		1000
@@ -450,7 +449,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("failed to check ctx mode!\n");
 		return -WD_EINVAL;
-    }
+	}
 
 	msg_id = wd_get_msg_from_pool(&wd_cipher_setting.pool, idx,
 				   (void **)&msg);
@@ -531,21 +530,18 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 
 	return sched->poll_policy(h_ctx, expt, count);
 }
-static const struct wd_config_variable table[WD_CIPHER_ENV_NUM] = {
-	{ .name = "WD_CIPHER_NUMA",
-	  .def_val = "0",
-	  .parse_fn = wd_parse_numa
-	},
+
+static const struct wd_config_variable table[] = {
 	{ .name = "WD_CIPHER_SYNC_CTX_NUM",
-	  .def_val = "6@0",
+	  .def_val = "6@0,6@2",
 	  .parse_fn = wd_parse_sync_ctx_num
 	},
 	{ .name = "WD_CIPHER_ASYNC_CTX_NUM",
-	  .def_val = "6@0",
+	  .def_val = "6@0,6@2",
 	  .parse_fn = wd_parse_async_ctx_num
 	},
 	{ .name = "WD_CIPHER_ASYNC_POLL_EN",
-	  .def_val = "1",
+	  .def_val = "0",
 	  .parse_fn = wd_parse_async_poll_en
 	}
 };
@@ -560,8 +556,8 @@ static const struct wd_alg_ops wd_cipher_ops = {
 
 int wd_cipher_env_init(void)
 {
-	return wd_alg_env_init(&wd_cipher_env_config, table, WD_CIPHER_ENV_NUM,
-				&wd_cipher_ops);
+	return wd_alg_env_init(&wd_cipher_env_config, table,
+				&wd_cipher_ops, ARRAY_SIZE(table));
 }
 
 void wd_cipher_env_uninit(void)
