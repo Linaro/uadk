@@ -179,4 +179,17 @@ int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32* count);
  * @count: how many respondences this poll has to get.
  */
 int wd_aead_poll(__u32 expt, __u32 *count);
+
+/**
+ * wd_aead_env_init() - Init ctx and schedule resources according to wd aead
+ * environment variables.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_aead_env_init(void);
+
+/**
+ *   wd_aead_env_uninit() - UnInit ctx and schedule resources set by above init.
+ */
+void wd_aead_env_uninit(void);
 #endif /* __WD_AEAD_H */

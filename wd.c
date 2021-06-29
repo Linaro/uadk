@@ -350,8 +350,7 @@ void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 	size_t size;
 	void *addr;
 
-	if (!ctx || !ctx->qfrs_offs[qfrt] ||
-	    qfrt >= UACCE_QFRT_MAX)
+	if (!ctx || qfrt >= UACCE_QFRT_MAX || !ctx->qfrs_offs[qfrt])
 		return NULL;
 
 	size = ctx->qfrs_offs[qfrt];
