@@ -9,7 +9,6 @@
 #define SM4_KEY_SIZE		16
 #define DES_KEY_SIZE		8
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
-#define MAX_CIPHER_KEY_SIZE	64
 
 #define MAX_HMAC_KEY_SIZE	128
 #define WD_POOL_MAX_ENTRIES	1024
@@ -33,6 +32,8 @@ struct wd_digest_setting {
 	void *sched_ctx;
 	void *priv;
 }wd_digest_setting;
+
+struct wd_env_config wd_digest_env_config;
 
 #ifdef WD_STATIC_DRV
 extern struct wd_digest_driver wd_digest_hisi_digest_driver;
@@ -284,7 +285,8 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	key.type = 0;
 	key.numa_id = dsess->numa;
 
-	idx = wd_digest_setting.sched.pick_next_ctx(0, req, &key);
+	idx = wd_digest_setting.sched.pick_next_ctx(
+		wd_digest_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -357,11 +359,12 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	key.mode = CTX_MODE_SYNC;
+	key.mode = CTX_MODE_ASYNC;
 	key.type = 0;
 	key.numa_id = dsess->numa;
 
-	idx = wd_digest_setting.sched.pick_next_ctx(0, req, &key);
+	idx = wd_digest_setting.sched.pick_next_ctx(
+		wd_digest_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("fail to pick next ctx!\n");
 		return -WD_EINVAL;
@@ -370,7 +373,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
 		WD_ERR("failed to check ctx mode!\n");
 		return -WD_EINVAL;
-    }
+	}
 
 	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, idx,
 				   (void **)&msg);
@@ -450,4 +453,38 @@ int wd_digest_poll(__u32 expt, __u32 *count)
 	}
 
 	return sched->poll_policy(h_ctx, expt, count);
+}
+
+static const struct wd_config_variable table[] = {
+	{ .name = "WD_DIGEST_SYNC_CTX_NUM",
+	  .def_val = "6@0,6@2",
+	  .parse_fn = wd_parse_sync_ctx_num
+	},
+	{ .name = "WD_DIGEST_ASYNC_CTX_NUM",
+	  .def_val = "6@0,6@2",
+	  .parse_fn = wd_parse_async_ctx_num
+	},
+	{ .name = "WD_DIGEST_ASYNC_POLL_EN",
+	  .def_val = "0",
+	  .parse_fn = wd_parse_async_poll_en
+	}
+};
+
+static const struct wd_alg_ops wd_digest_ops = {
+	.alg_name = "digest",
+	.op_type_num = 1,
+	.alg_init = wd_digest_init,
+	.alg_uninit = wd_digest_uninit,
+	.alg_poll_ctx = wd_digest_poll_ctx
+};
+
+int wd_digest_env_init(void)
+{
+	return wd_alg_env_init(&wd_digest_env_config, table,
+			       &wd_digest_ops, ARRAY_SIZE(table));
+}
+
+void wd_digest_env_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_digest_env_config);
 }

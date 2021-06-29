@@ -713,16 +713,12 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 }
 
 static const struct wd_config_variable table[] = {
-	{ .name = "WD_COMP_NUMA",
-	  .def_val = "0",
-	  .parse_fn = wd_parse_numa
-	},
 	{ .name = "WD_COMP_SYNC_CTX_NUM",
-	  .def_val = "6@0",
+	  .def_val = "6@0,6@2",
 	  .parse_fn = wd_parse_sync_ctx_num
 	},
 	{ .name = "WD_COMP_ASYNC_CTX_NUM",
-	  .def_val = "6@0",
+	  .def_val = "6@0,6@2",
 	  .parse_fn = wd_parse_async_ctx_num
 	},
 	{ .name = "WD_COMP_CTX_TYPE",
@@ -730,7 +726,7 @@ static const struct wd_config_variable table[] = {
 	  .parse_fn = wd_parse_comp_ctx_type
 	},
 	{ .name = "WD_COMP_ASYNC_POLL_EN",
-	  .def_val = "1",
+	  .def_val = "0",
 	  .parse_fn = wd_parse_async_poll_en
 	}
 };
@@ -745,8 +741,8 @@ static const struct wd_alg_ops wd_comp_ops = {
 
 int wd_comp_env_init(void)
 {
-	return wd_alg_env_init(&wd_comp_env_config, table, ARRAY_SIZE(table),
-			       &wd_comp_ops);
+	return wd_alg_env_init(&wd_comp_env_config, table,
+			       &wd_comp_ops, ARRAY_SIZE(table));
 }
 
 void wd_comp_env_uninit(void)

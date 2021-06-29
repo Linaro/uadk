@@ -37,6 +37,8 @@ struct wd_aead_setting {
 	void *priv;
 }wd_aead_setting;
 
+struct wd_env_config wd_aead_env_config;
+
 #ifdef WD_STATIC_DRV
 extern struct wd_aead_driver wd_aead_hisi_aead_driver;
 static void wd_aead_set_static_drv(void)
@@ -470,7 +472,8 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	key.type = 0;
 	key.numa_id = sess->numa;
 
-	idx = wd_aead_setting.sched.pick_next_ctx(0, req, &key);
+	idx = wd_aead_setting.sched.pick_next_ctx(
+		wd_aead_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
@@ -554,7 +557,8 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	key.type = 0;
 	key.numa_id = sess->numa;
 
-	idx = wd_aead_setting.sched.pick_next_ctx(0, req, &key);
+	idx = wd_aead_setting.sched.pick_next_ctx(
+		wd_aead_setting.sched.h_sched_ctx, req, &key);
 	if (unlikely(idx >= config->ctx_num)) {
 		WD_ERR("failed to pick a proper ctx!\n");
 		return -WD_EINVAL;
@@ -648,4 +652,38 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 	}
 
 	return sched->poll_policy(h_ctx, expt, count);
+}
+
+static const struct wd_config_variable table[] = {
+	{ .name = "WD_AEAD_SYNC_CTX_NUM",
+	  .def_val = "6@0,6@2",
+	  .parse_fn = wd_parse_sync_ctx_num
+	},
+	{ .name = "WD_AEAD_ASYNC_CTX_NUM",
+	  .def_val = "6@0,6@2",
+	  .parse_fn = wd_parse_async_ctx_num
+	},
+	{ .name = "WD_AEAD_ASYNC_POLL_EN",
+	  .def_val = "0",
+	  .parse_fn = wd_parse_async_poll_en
+	}
+};
+
+static const struct wd_alg_ops wd_aead_ops = {
+        .alg_name = "aead",
+        .op_type_num = 1,
+        .alg_init = wd_aead_init,
+        .alg_uninit = wd_aead_uninit,
+        .alg_poll_ctx = wd_aead_poll_ctx
+};
+
+int wd_aead_env_init(void)
+{
+	return wd_alg_env_init(&wd_aead_env_config, table,
+			       &wd_aead_ops, ARRAY_SIZE(table));
+}
+
+void wd_aead_env_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_aead_env_config);
 }
