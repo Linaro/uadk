@@ -19,6 +19,7 @@ struct wd_ctx_range {
 struct wd_env_config_per_numa {
 	/* Config begin */
 	unsigned long node;
+	__u8 numa_disable;
 	unsigned long sync_ctx_num;
 	unsigned long async_ctx_num;
 	/*
@@ -60,6 +61,8 @@ struct wd_env_config {
 	/* resource config */
 	struct wd_sched *sched;
 	struct wd_ctx_config *ctx_config;
+	const struct wd_config_variable *table;
+	__u32 table_size;
 };
 
 struct wd_config_variable {
@@ -184,15 +187,6 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag);
  */
 int wd_check_datalist(struct wd_datalist *head, __u32 size);
 
-/*
- * wd_parse_numa() - Parse NUMA environment variable and store it.
- * @config: Pointer of wd_env_config which is used to store environment
- *          variable information.
- * @s: Related environment variable string.
- *
- * More information, please see docs/wd_environment_variable.
- */
-int wd_parse_numa(struct wd_env_config *config, const char *s);
 
 /*
  * wd_parse_sync_ctx_num() - Parse sync ctx related environment variables and
@@ -247,13 +241,14 @@ int wd_parse_async_poll_en(struct wd_env_config *config, const char *s);
  *          variable information.
  * @table: Table which is used to define specific environment variable、its
  * 	   default value and related parsing operations.
- * @table_size: Size of above table.
  * @ops: Define functions which will be used by specific wd algorithm
  * 	 environment init.
+ * @table_size: Size of above table.
  */
 int wd_alg_env_init(struct wd_env_config *config,
-		    const struct wd_config_variable *table, __u32 table_size,
-		    const struct wd_alg_ops *ops);
+		    const struct wd_config_variable *table,
+		    const struct wd_alg_ops *ops,
+		    __u32 table_size);
 
 /*
  * wd_alg_env_uninit() - uninit specific wd algorithm environment configuration.
@@ -271,4 +266,10 @@ void wd_alg_env_uninit(struct wd_env_config *env_config);
  */
 int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index);
 
+/*
+ * dump_env_var() - dump wd algorithm environment from system.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ */
+void dump_env_var(struct wd_env_config *config);
 #endif /* __WD_UTIL_H */
