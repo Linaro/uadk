@@ -849,13 +849,15 @@ static void hisi_zip_exit(void *priv)
 static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 			     struct hisi_zip_sqe *sqe)
 {
+	__u8 hw_type = qp->q_info.hw_type;
 	__u8 alg_type = msg->alg_type;
 	__u8 flush_type;
 	__u8 stream_pos;
 	__u8 state;
 	int ret;
 
-	if (alg_type >= WD_COMP_ALG_MAX) {
+	if ((hw_type <= HISI_QM_API_VER2_BASE && alg_type > WD_GZIP) ||
+	    (hw_type >= HISI_QM_API_VER3_BASE && alg_type >= WD_COMP_ALG_MAX)) {
 		WD_ERR("invalid algorithm type(%d)\n", alg_type);
 		return -WD_EINVAL;
 	}
