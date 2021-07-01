@@ -2230,7 +2230,7 @@ static int sm2_hash(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 {
 
 	struct wcrypto_hash_mt *hash = &q_info->hash;
-	__u64 lens = msg->dsize + 2 * x2y2->x.dsize;
+	__u64 lens = (__u64)msg->dsize + 2 * (__u64)x2y2->x.dsize;
 	char hash_out[MAX_HASH_LENS] = {0};
 	__u64 in_len = 0;
 	__u32 h_bytes;

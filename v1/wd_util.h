@@ -317,13 +317,13 @@ typedef union {
 
 struct wcrypto_ecc_in {
 	wcrypto_ecc_in_param param;
-	__u32 size;
+	__u64 size;
 	char data[];
 };
 
 struct wcrypto_ecc_out {
 	wcrypto_ecc_out_param param;
-	__u32 size;
+	__u64 size;
 	char data[];
 };
 

@@ -530,7 +530,8 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 		return NULL;
 	}
 
-	*len = st_sz + ECC_POINT_PARAM_NUM * sess->key_size + m_len + h_byts;
+	*len = (__u64)st_sz + ECC_POINT_PARAM_NUM * (__u64)sess->key_size +
+		(__u64)m_len + (__u64)h_byts;
 	start = malloc(*len);
 	if (unlikely(!start)) {
 		WD_ERR("failed to alloc, sz = %llu!\n", *len);

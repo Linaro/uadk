@@ -511,7 +511,8 @@ static void *create_sm2_ciphertext(struct wcrypto_ecc_ctx *ctx, __u32 m_len,
 		return NULL;
 	}
 
-	*len = st_sz + ECC_POINT_PARAM_NUM * ctx->key_size + m_len + h_byts;
+	*len = (__u64)st_sz + ECC_POINT_PARAM_NUM * (__u64)ctx->key_size +
+		(__u64)m_len + (__u64)h_byts;
 	start = br_alloc(&ctx->setup.br, *len);
 	if (unlikely(!start)) {
 		WD_ERR("failed to br alloc, sz = %llu!\n", *len);
