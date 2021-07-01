@@ -34,6 +34,8 @@
 #define SEC_CKEY_OFFSET		  9
 #define SEC_CIPHER_OFFSET	  4
 #define XTS_MODE_KEY_DIVISOR	  2
+#define SEC_CTR_CNT_OFFSET	  25
+#define SEC_CTR_CNT_ROLLOVER	  2
 
 #define SEC_DE_OFFSET_V3	9
 #define SEC_SCENE_OFFSET_V3	5
@@ -415,8 +417,10 @@ struct hisi_sec_sqe3 {
 	 * akey_len: 9~14 bits
 	 * a_alg: 15~20 bits
 	 * key_sel: 21~24 bits
-	 * updata_key: 25 bits
-	 * reserved: 26~31 bits
+	 * ctr_count_mode/sm4_xts: 25~26 bits
+	 * sva_prefetch: 27 bits
+	 * key_wrap_num:28~30 bits
+	 * update_key: 31 bits
 	 */
 	__le32 auth_mac_key;
 	__le32 salt;
@@ -1029,6 +1033,9 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 		break;
 	case WD_CIPHER_CTR:
 		c_mode = C_MODE_CTR;
+		/* Set the CTR counter mode is 128bit rollover */
+		sqe->auth_mac_key = (__u32)(SEC_CTR_CNT_ROLLOVER <<
+						SEC_CTR_CNT_OFFSET);
 		break;
 	case WD_CIPHER_XTS:
 		c_mode = C_MODE_XTS;
