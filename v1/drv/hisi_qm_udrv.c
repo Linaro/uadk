@@ -636,8 +636,8 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	__u16 cq_head, sq_head;
 	struct cqe *cqe;
+	__u16 sq_head;
 	int i, ret;
 	void *sqe;
 
@@ -650,9 +650,8 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 	}
 
 	wd_spinlock(&info->rc_lock);
-	cq_head = info->cq_head_index;
 	for (i = 0; i < num; i++) {
-		cqe = info->cq_base + cq_head * sizeof(struct cqe);
+		cqe = info->cq_base + info->cq_head_index * sizeof(struct cqe);
 		if (info->cqc_phase != CQE_PHASE(cqe))
 			break;
 
