@@ -497,6 +497,11 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	__u32 out_size = msg->avail_out;
 	void *ctx_buf = NULL;
 
+	if (unlikely(!data)) {
+		WD_ERR("wd_lz77_zstd_data address is NULL\n");
+		return -WD_EINVAL;
+	}
+
 	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
 		WD_ERR("invalid input data size of lz77_zstd(%u)\n", in_size);
 		return -WD_EINVAL;
@@ -562,6 +567,11 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
 		WD_ERR("invalid input data size of lz77_zstd(%u)\n", in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(!data)) {
+		WD_ERR("wd_lz77_zstd_data address is NULL\n");
 		return -WD_EINVAL;
 	}
 
