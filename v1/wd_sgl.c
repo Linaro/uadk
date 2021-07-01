@@ -100,6 +100,7 @@ static void sgl_init(struct wd_sgl *sgl, struct wd_sglpool *pool)
 	sgl->buf_sum = sp->buf_num_in_sgl;
 	sgl->sum_data_bytes = 0;
 	sgl->next = NULL;
+	sgl->priv = NULL;
 	sgl->pool = pool;
 }
 
@@ -609,7 +610,7 @@ static void sgl_cp_to_pbuf(struct wd_sgl *sgl, int strtsg, int strtad,
 }
 
 /*
- * Copy the ‘size’ bytes in ‘pbuf’ from the SGL at the start address of ‘offset’
+ * Copy the 'size' bytes in 'pbuf' from the SGL at the start address of 'offset'
  * Return:
  *  = 0：copy size bytes from SGL to pbuf successfully；
  *  > 0：copy the return value bytes from SGL to pbuf successfully；
