@@ -362,7 +362,8 @@ static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
 		resp[i] = (void *)(uintptr_t)ctx->ctx_id;
 
 	while (true) {
-		ret = wd_burst_recv(ctx->q, (void **)resp, num - recv_count);
+		ret = wd_burst_recv(ctx->q, (void **)(resp + recv_count),
+				    num - recv_count);
 		if (ret >= 0) {
 			recv_count += ret;
 			if (recv_count == num)
