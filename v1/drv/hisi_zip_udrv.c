@@ -372,7 +372,7 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 
 		if (unlikely(zstd_out->lit_sz < lit_size ||
 			     zstd_out->seq_sz < ZSTD_FREQ_DATA_SIZE )) {
-			WD_ERR("literal(%u) or sequence(%d) of lz77_zstd is not enough.\n",
+			WD_ERR("literal(%u) or sequence(%u) of lz77_zstd is not enough.\n",
 				zstd_out->lit_sz, zstd_out->seq_sz);
 			return -WD_EINVAL;
 		}
