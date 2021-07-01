@@ -475,8 +475,8 @@ static int fill_zip_addr_lz77_zstd(void *ssqe,
 		}
 
 		phy_seq = (uintptr_t)drv_iova_map(q, zstd_out->sequence, zstd_out->seq_sz);
-		if (!phy_lit) {
-			WD_ERR("Get literal buf dma address fail!\n");
+		if (!phy_seq) {
+			WD_ERR("Get sequence buf dma address fail!\n");
 			goto unmap_phy_seq;
 		}
 
