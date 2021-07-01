@@ -158,14 +158,13 @@ typedef union {
 
 struct wd_ecc_in {
 	wd_ecc_in_param param;
-	__u32 size;
+	__u64 size;
 	char data[];
 };
 
 struct wd_ecc_out {
 	wd_ecc_out_param param;
-	__u32 size;
-	__u8 rsv[4]; // 64bytes align, do not delete
+	__u64 size;
 	char data[];
 };
 
