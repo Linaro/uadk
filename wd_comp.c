@@ -279,13 +279,46 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->req.last = 1;
 }
 
+static int wd_comp_check_buffer(struct wd_comp_req *req)
+{
+	if (req->data_fmt == WD_FLAT_BUF) {
+		if (!req->src || !req->dst) {
+			WD_ERR("invalid: src or dst is NULL!\n");
+			return -WD_EINVAL;
+		}
+	} else if (req->data_fmt == WD_SGL_BUF) {
+		if (!req->list_src || !req->list_dst) {
+			WD_ERR("invalid: src or dst is NULL!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	if (!req->dst_len) {
+		WD_ERR("invalid: dst_len is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 				__u8 mode)
 {
+	int ret;
+
 	if (!h_sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	if (req->data_fmt > WD_SGL_BUF) {
+		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
+		return -WD_EINVAL;
+	}
+
+	ret = wd_comp_check_buffer(req);
+	if (ret)
+		return ret;
 
 	if (req->op_type != WD_DIR_COMPRESS &&
 	    req->op_type != WD_DIR_DECOMPRESS) {
@@ -331,11 +364,6 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
-		return -WD_EINVAL;
-	}
-
-	if (req->data_fmt > WD_SGL_BUF) {
-		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
 
@@ -654,11 +682,6 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
-		return -WD_EINVAL;
-	}
-
-	if (req->data_fmt > WD_SGL_BUF) {
-		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
 
