@@ -1010,11 +1010,6 @@ static int rsa_prikey2_param_set(struct wd_rsa_prikey2 *pkey2,
 	case WD_CRT_PRIKEY_Q:
 		ret = rsa_set_param(&pkey2->q, param);
 		break;
-
-	default:
-		WD_ERR("%s: err type %d!\n", __func__, type);
-		ret = -WD_EINVAL;
-		break;
 	}
 
 	return ret;
