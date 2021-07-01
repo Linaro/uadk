@@ -159,6 +159,7 @@ struct hisi_zip_sqe_ops {
 #define STREAM_MODE_SHIFT 1
 #define LITLEN_OVERFLOW_CNT_SHIFT 24
 #define BUF_TYPE_SHIFT 8
+#define WINDOW_SIZE_SHIFT 12
 
 #define LITLEN_OVERFLOW_POS_MASK 0xffffff
 
@@ -880,6 +881,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	sqe->dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
+	sqe->dw9 |= msg->req.win_sz << WINDOW_SIZE_SHIFT;
 	sqe->isize = msg->isize;
 	sqe->dw31 = msg->checksum;
 
