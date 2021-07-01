@@ -109,6 +109,7 @@ struct hisi_zip_sqe_ops {
 	void (*fill_sqe_type)(struct hisi_zip_sqe *sqe);
 	void (*fill_alg)(struct hisi_zip_sqe *sqe);
 	void (*fill_tag)(struct hisi_zip_sqe *sqe, __u32 tag);
+	int (*fill_comp_level)(struct hisi_zip_sqe *sqe, __u8 comp_lv);
 	void (*get_data_size)(struct hisi_zip_sqe *sqe, int op_type,
 			      struct wd_comp_msg *recv_msg);
 	int (*get_tag)(struct hisi_zip_sqe *sqe);
@@ -684,6 +685,31 @@ static void fill_tag_v3(struct hisi_zip_sqe *sqe, __u32 tag)
 	sqe->dw26 = tag;
 }
 
+static int fill_comp_level_deflate(struct hisi_zip_sqe *sqe, __u8 comp_lv)
+{
+	return 0;
+}
+
+static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, __u8 comp_lv)
+{
+	__u32 val;
+
+	switch (comp_lv) {
+	case WD_COMP_L8:
+		break;
+	case WD_COMP_L9:
+		val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+		val |= HW_LZ77_ZSTD_PRICE;
+		sqe->dw9 = val;
+		break;
+	default:
+		WD_ERR("invalid: comp_lv in unsupported (%d)", comp_lv);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static void get_data_size_deflate(struct hisi_zip_sqe *sqe, int op_type,
 				  struct wd_comp_msg *recv_msg)
 {
@@ -755,6 +781,7 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_sqe_type = fill_sqe_type_v3,
 		.fill_alg = fill_alg_deflate,
 		.fill_tag = fill_tag_v3,
+		.fill_comp_level = fill_comp_level_deflate,
 		.get_data_size = get_data_size_deflate,
 		.get_tag = get_tag_v3,
 	}, {
@@ -762,12 +789,14 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_buf[WD_FLAT_BUF] = fill_buf_zlib,
 		.fill_buf[WD_SGL_BUF] = fill_buf_zlib_sgl,
 		.fill_alg = fill_alg_zlib,
+		.fill_comp_level = fill_comp_level_deflate,
 		.get_data_size = get_data_size_zlib,
 	}, {
 		.alg_name = "gzip",
 		.fill_buf[WD_FLAT_BUF] = fill_buf_gzip,
 		.fill_buf[WD_SGL_BUF] = fill_buf_gzip_sgl,
 		.fill_alg = fill_alg_gzip,
+		.fill_comp_level = fill_comp_level_deflate,
 		.get_data_size = get_data_size_gzip,
 	}, {
 		.alg_name = "lz77_zstd",
@@ -776,6 +805,7 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_sqe_type = fill_sqe_type_v3,
 		.fill_alg = fill_alg_lz77_zstd,
 		.fill_tag = fill_tag_v3,
+		.fill_comp_level = fill_comp_level_lz77_zstd,
 		.get_data_size = get_data_size_lz77_zstd,
 		.get_tag = get_tag_v3,
 	}
@@ -872,6 +902,10 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	ops[alg_type].fill_alg(sqe);
 
 	ops[alg_type].fill_tag(sqe, msg->tag);
+
+	ret = ops[alg_type].fill_comp_level(sqe, msg->req.comp_lv);
+	if (ret)
+		return ret;
 
 	state = (msg->stream_mode == WD_COMP_STATEFUL) ? HZ_STATEFUL :
 		HZ_STATELESS;
