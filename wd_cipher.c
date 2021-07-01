@@ -207,6 +207,11 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
+	if (wd_cipher_setting.config.ctx_num) {
+		WD_ERR("cipher have initialized.\n");
+		return 0;
+	}
+
 	if (!config || !sched) {
 		WD_ERR("wd cipher config or sched is NULL!\n");
 		return -WD_EINVAL;
@@ -357,7 +362,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	int ret;
 
 	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_SYNC);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to check cipher params!\n");
 		return ret;
 	}
@@ -373,10 +378,10 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_SYNC) {
+	if (unlikely(ctx->ctx_mode != CTX_MODE_SYNC)) {
 		WD_ERR("failed to check ctx mode!\n");
 		return -WD_EINVAL;
-    }
+	}
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
@@ -385,14 +390,14 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	pthread_spin_lock(&ctx->lock);
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		WD_ERR("wd cipher send err!\n");
 		goto err_out;
 	}
 
 	if (req->in_bytes >= POLL_SIZE) {
 		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-		if (ret < 0) {
+		if (unlikely(ret < 0)) {
 			WD_ERR("wd ctx wait fail(%d)!\n", ret);
 			goto err_out;
 		}
@@ -431,7 +436,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	__u32 idx;
 
 	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_ASYNC);
-	if (ret) {
+	if (unlikely(ret)) {
 		WD_ERR("failed to check cipher params!\n");
 		return ret;
 	}
@@ -447,14 +452,14 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return -WD_EINVAL;
 	}
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
+	if (unlikely(ctx->ctx_mode != CTX_MODE_ASYNC)) {
 		WD_ERR("failed to check ctx mode!\n");
 		return -WD_EINVAL;
-    }
+	}
 
 	msg_id = wd_get_msg_from_pool(&wd_cipher_setting.pool, idx,
 				   (void **)&msg);
-	if (msg_id < 0) {
+	if (unlikely(msg_id < 0)) {
 		WD_ERR("busy, failed to get msg from pool!\n");
 		return -WD_EBUSY;
 	}
@@ -463,7 +468,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	msg->tag = msg_id;
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, msg);
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
