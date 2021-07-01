@@ -373,7 +373,7 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 		if (unlikely(zstd_out->lit_sz < lit_size ||
 			     zstd_out->seq_sz < ZSTD_FREQ_DATA_SIZE )) {
 			WD_ERR("literal(%u) or sequence(%u) of lz77_zstd is not enough.\n",
-				zstd_out->lit_sz, zstd_out->seq_sz);
+			       zstd_out->lit_sz, zstd_out->seq_sz);
 			return -WD_EINVAL;
 		}
 		sqe->dw13 = zstd_out->lit_sz;
@@ -383,17 +383,17 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 	} else {
 		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
 			WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-				msg->avail_out);
+			       msg->avail_out);
 			msg->avail_out = MAX_BUFFER_SIZE;
-	}
+		}
 
-	/*
-	 * For lz77_zstd, the hardware need 784 Bytes buffer to output
-	 * the frequence information about input data.
-	 */
-	if (unlikely(msg->avail_out < ZSTD_FREQ_DATA_SIZE + lit_size)) {
-		WD_ERR("output buffer size of lz77_zstd is not enough(%u)\n",
-				ZSTD_FREQ_DATA_SIZE + lit_size);
+		/*
+		 * For lz77_zstd, the hardware need 784 Bytes buffer to output
+		 * the frequency information about input data.
+		 */
+		if (unlikely(msg->avail_out < ZSTD_FREQ_DATA_SIZE + lit_size)) {
+			WD_ERR("output buffer size of lz77_zstd is not enough(%u)\n",
+			       ZSTD_FREQ_DATA_SIZE + lit_size);
 			return -WD_EINVAL;
 		}
 		/* fill the literals output size */
