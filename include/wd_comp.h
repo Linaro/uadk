@@ -36,6 +36,7 @@ enum wd_comp_winsz_type {
 	WD_COMP_WS_4K,  /* 4k bytes window size */
 	WD_COMP_WS_8K,  /* 8k bytes window size */
 	WD_COMP_WS_16K, /* 16k bytes window size */
+	WD_COMP_WS_24K, /* 24k bytes window size */
 	WD_COMP_WS_32K, /* 32k bytes window size */
 };
 
@@ -58,6 +59,7 @@ struct wd_comp_req {
 	void			*cb_param;
 	__u8			op_type;     /* denoted by wd_comp_op_type */
 	__u8			data_fmt;    /* denoted by wd_buff_type */
+	__u16			win_sz;      /* denoted by wd_comp_winsz_type */
 	__u32			last;
 	__u32			status;
 	void			*priv;
@@ -161,7 +163,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req);
  * More information, please see docs/wd_environment_variable.
  */
 int wd_comp_env_init(void);
- 
+
 /**
  * wd_comp_env_uninit() - UnInit ctx and schedule resources set by above init.
  */

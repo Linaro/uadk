@@ -326,6 +326,12 @@ static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 		return -WD_EINVAL;
 	}
 
+	if (req->op_type == WD_DIR_COMPRESS &&
+	    req->win_sz > WD_COMP_WS_32K) {
+		WD_ERR("invalid: win_sz is %hu!\n", req->win_sz);
+		return -WD_EINVAL;
+	}
+
 	if (mode == CTX_MODE_ASYNC && !req->cb) {
 		WD_ERR("async comp input cb is NULL!\n");
 		return -WD_EINVAL;
