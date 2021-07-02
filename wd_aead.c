@@ -656,11 +656,11 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 
 static const struct wd_config_variable table[] = {
 	{ .name = "WD_AEAD_SYNC_CTX_NUM",
-	  .def_val = "6@0,6@2",
+	  .def_val = "2@0,2@2",
 	  .parse_fn = wd_parse_sync_ctx_num
 	},
 	{ .name = "WD_AEAD_ASYNC_CTX_NUM",
-	  .def_val = "6@0,6@2",
+	  .def_val = "2@0,2@2",
 	  .parse_fn = wd_parse_async_ctx_num
 	},
 	{ .name = "WD_AEAD_ASYNC_POLL_EN",
