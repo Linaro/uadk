@@ -759,15 +759,15 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 
 static const struct wd_config_variable table[] = {
 	{ .name = "WD_COMP_SYNC_CTX_NUM",
-	  .def_val = "6@0,6@2",
+	  .def_val = "2@0,2@2",
 	  .parse_fn = wd_parse_sync_ctx_num
 	},
 	{ .name = "WD_COMP_ASYNC_CTX_NUM",
-	  .def_val = "6@0,6@2",
+	  .def_val = "2@0,2@2",
 	  .parse_fn = wd_parse_async_ctx_num
 	},
 	{ .name = "WD_COMP_CTX_TYPE",
-	  .def_val = "sync-comp:3@0,sync-decomp:3@0,async-comp:3@0,async-decomp:3@0",
+	  .def_val = "sync-comp:1@0,sync-decomp:1@0,async-comp:1@0,async-decomp:1@0",
 	  .parse_fn = wd_parse_comp_ctx_type
 	},
 	{ .name = "WD_COMP_ASYNC_POLL_EN",

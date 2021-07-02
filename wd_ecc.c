@@ -70,6 +70,8 @@ static struct wd_ecc_setting {
 	struct wd_async_msg_pool pool;
 } wd_ecc_setting;
 
+struct wd_env_config wd_ecc_env_config;
+
 static const struct wd_ecc_curve_list curve_list[] = {
 	/* parameter 3 is key width */
 	{ WD_X25519, "x25519", 256, X25519_256_PARAM },
@@ -2242,4 +2244,38 @@ int wd_ecc_poll(__u32 expt, __u32 *count)
 	handle_t h_sched_sess = wd_ecc_setting.sched.h_sched_ctx;
 
 	return wd_ecc_setting.sched.poll_policy(h_sched_sess, expt, count);
+}
+
+static const struct wd_config_variable table[] = {
+	{ .name = "WD_ECC_SYNC_CTX_NUM",
+	  .def_val = "2@0,2@2",
+	  .parse_fn = wd_parse_sync_ctx_num
+	},
+	{ .name = "WD_ECC_ASYNC_CTX_NUM",
+	  .def_val = "2@0,2@2",
+	  .parse_fn = wd_parse_async_ctx_num
+	},
+	{ .name = "WD_ECC_ASYNC_POLL_EN",
+	  .def_val = "0",
+	  .parse_fn = wd_parse_async_poll_en
+	}
+};
+
+static const struct wd_alg_ops wd_ecc_ops = {
+	.alg_name = "sm2",
+	.op_type_num = 1,
+	.alg_init = wd_ecc_init,
+	.alg_uninit = wd_ecc_uninit,
+	.alg_poll_ctx = wd_ecc_poll_ctx
+};
+
+int wd_ecc_env_init(void)
+{
+	return wd_alg_env_init(&wd_ecc_env_config, table,
+			       &wd_ecc_ops, ARRAY_SIZE(table));
+}
+
+void wd_ecc_env_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_ecc_env_config);
 }

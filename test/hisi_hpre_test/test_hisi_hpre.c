@@ -216,6 +216,7 @@ struct hpre_test_config {
 	__u8 check;
 	__u8 perf_test;
 	__u8 soft_test;
+	__u8 use_env;
 	__u8 with_log;
 	__u8 data_from; // 0 - openssl generate 1 - sample data
 	__u8 trd_num;
@@ -238,6 +239,7 @@ static struct hpre_test_config g_config = {
 	.times = 100,
 	.seconds = 0,
 	.trd_num = 2,
+	.use_env = 0,
 	.msg_type = MSG_PLAINTEXT,
 	.msg_len = INVALID_LEN,
 	.id_len = INVALID_LEN,
@@ -1890,6 +1892,24 @@ static struct uacce_dev_list *get_uacce_dev_by_alg(struct uacce_dev_list *list,
 
 }
 
+static int env_init(__u32 op_type)
+{
+	if (op_type > HPRE_ALG_INVLD_TYPE && op_type < MAX_RSA_ASYNC_TYPE)
+		return wd_rsa_env_init();
+	else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE)
+		return wd_dh_env_init();
+	else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE)
+		return wd_ecc_env_init();
+	else if (op_type > MAX_ECDH_TYPE && op_type < MAX_ECDSA_TYPE)
+		return wd_ecc_env_init();
+	else if (op_type >= SM2_SIGN && op_type <= SM2_ASYNC_KG)
+		return wd_ecc_env_init();
+	else {
+		HPRE_TST_PRT("op_type = %u error\n", op_type);
+		return -ENODEV;
+	}
+}
+
 static int init_hpre_global_config(__u32 op_type)
 {
 	struct uacce_dev_list *list = NULL;
@@ -1899,6 +1919,9 @@ static int init_hpre_global_config(__u32 op_type)
 	int ctx_num = g_config.trd_num;
 	int ret = 0;
 	int j;
+
+	if (g_config.use_env)
+		return env_init(op_type);
 
 #ifdef DEBUG
 	HPRE_TST_PRT("request ctx[%d] from %s!\n", ctx_num, g_config.dev_path);
@@ -8850,6 +8873,7 @@ static int parse_cmd_line(int argc, char *argv[])
             {"data_from",    required_argument, 0,  0 },
             {"soft",    no_argument, 0,  0 },
             {"perf",    no_argument, 0,  0 },
+            {"use_env",    no_argument, 0,  0 },
             {"trd_mode",    required_argument, 0,  0 },
             {"curve",    required_argument, 0,  0 },
             {"msg_type",    required_argument, 0,  0 },
@@ -8909,6 +8933,8 @@ static int parse_cmd_line(int argc, char *argv[])
 				g_config.soft_test = 1;
 			} else if (!strncmp(long_options[option_index].name, "perf", 4)) {
 				g_config.perf_test = 1;
+			} else if (!strncmp(long_options[option_index].name, "use_env", 7)) {
+				g_config.use_env = 1;
 			} else if (!strncmp(long_options[option_index].name, "trd_mode", 8)) {
 				snprintf(g_config.trd_mode, sizeof(g_config.trd_mode), "%s", optarg);
 			} else if (!strncmp(long_options[option_index].name, "op", 2)) {

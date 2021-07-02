@@ -170,4 +170,17 @@ __u32 wd_rsa_poll(void);
  */
 int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
+/**
+ * wd_rsa_env_init() - Init ctx and schedule resources according to wd rsa
+ * environment variables.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_rsa_env_init(void);
+
+/**
+ * wd_rsa_env_uninit() - UnInit ctx and schedule resources set by above init.
+ */
+void wd_rsa_env_uninit(void);
+
 #endif /* __WD_RSA_H */
