@@ -301,6 +301,24 @@ static int wd_comp_check_buffer(struct wd_comp_req *req)
 	return 0;
 }
 
+static int wd_comp_check_comp_param(struct wd_comp_req *req)
+{
+	if (req->op_type == WD_DIR_DECOMPRESS)
+		return 0;
+
+	if (req->comp_lv > WD_COMP_L15) {
+		WD_ERR("invalid: comp_lv is %hhu!\n", req->comp_lv);
+		return -WD_EINVAL;
+	}
+
+	if (req->win_sz > WD_COMP_WS_32K) {
+		WD_ERR("invalid: win_sz is %hu!\n", req->win_sz);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 				__u8 mode)
 {
@@ -326,11 +344,9 @@ static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 		return -WD_EINVAL;
 	}
 
-	if (req->op_type == WD_DIR_COMPRESS &&
-	    req->win_sz > WD_COMP_WS_32K) {
-		WD_ERR("invalid: win_sz is %hu!\n", req->win_sz);
-		return -WD_EINVAL;
-	}
+	ret = wd_comp_check_comp_param(req);
+	if (ret)
+		return ret;
 
 	if (mode == CTX_MODE_ASYNC && !req->cb) {
 		WD_ERR("async comp input cb is NULL!\n");
