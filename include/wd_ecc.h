@@ -480,6 +480,19 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req);
  */
 int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
+/**
+ * wd_ecc_env_init() - Init ctx and schedule resources according to wd ecc
+ * environment variables.
+ *
+ * More information, please see docs/wd_environment_variable.
+ */
+int wd_ecc_env_init(void);
+
+/**
+ * wd_ecc_env_uninit() - UnInit ctx and schedule resources set by above init.
+ */
+void wd_ecc_env_uninit(void);
+
 #ifdef __cplusplus
 }
 #endif
