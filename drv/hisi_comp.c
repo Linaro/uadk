@@ -703,7 +703,7 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, __u8 comp_lv)
 		sqe->dw9 = val;
 		break;
 	default:
-		WD_ERR("invalid: comp_lv in unsupported (%d)", comp_lv);
+		WD_ERR("invalid: comp_lv in unsupported (%d)\n", comp_lv);
 		return -WD_EINVAL;
 	}
 
