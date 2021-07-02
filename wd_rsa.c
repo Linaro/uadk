@@ -77,6 +77,8 @@ static struct wd_rsa_setting {
 	struct wd_async_msg_pool pool;
 } wd_rsa_setting;
 
+struct wd_env_config wd_rsa_env_config;
+
 #ifdef WD_STATIC_DRV
 extern const struct wd_rsa_driver wd_rsa_hisi_hpre;
 static void wd_rsa_set_static_drv(void)
@@ -1111,4 +1113,38 @@ void wd_rsa_get_prikey(handle_t sess, struct wd_rsa_prikey **prikey)
 	}
 
 	*prikey = ((struct wd_rsa_sess *)sess)->prikey;
+}
+
+static const struct wd_config_variable table[] = {
+	{ .name = "WD_RSA_SYNC_CTX_NUM",
+	  .def_val = "2@0,2@2",
+	  .parse_fn = wd_parse_sync_ctx_num
+	},
+	{ .name = "WD_RSA_ASYNC_CTX_NUM",
+	  .def_val = "2@0,2@2",
+	  .parse_fn = wd_parse_async_ctx_num
+	},
+	{ .name = "WD_RSA_ASYNC_POLL_EN",
+	  .def_val = "0",
+	  .parse_fn = wd_parse_async_poll_en
+	}
+};
+
+static const struct wd_alg_ops wd_rsa_ops = {
+	.alg_name = "rsa",
+	.op_type_num = 1,
+	.alg_init = wd_rsa_init,
+	.alg_uninit = wd_rsa_uninit,
+	.alg_poll_ctx = wd_rsa_poll_ctx
+};
+
+int wd_rsa_env_init(void)
+{
+	return wd_alg_env_init(&wd_rsa_env_config, table,
+			       &wd_rsa_ops, ARRAY_SIZE(table));
+}
+
+void wd_rsa_env_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_rsa_env_config);
 }

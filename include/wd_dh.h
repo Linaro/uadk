@@ -57,5 +57,7 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 int wd_dh_poll(__u32 expt, __u32 *count);
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched);
 void wd_dh_uninit(void);
+int wd_dh_env_init(void);
+void wd_dh_env_uninit(void);
 
 #endif /* __WD_DH_H */
