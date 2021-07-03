@@ -81,6 +81,8 @@ struct wd_comp_req {
  * @lit_length_overflow_cnt:the count of the literal length overflow
  * @lit_length_overflow_pos:the position of the literal length overflow
  * @freq:address of the frequency about sequences members
+ * @blk_type:the previous block status, 0 means an uncompressed block,
+ * 1 means a RLE block and 2 means a compressed block.
  */
 struct wd_lz77_zstd_data {
 	void *literals_start;
@@ -90,6 +92,7 @@ struct wd_lz77_zstd_data {
 	__u32 lit_length_overflow_cnt;
 	__u32 lit_length_overflow_pos;
 	void *freq;
+	__u32 blk_type;
 };
 
 /**
