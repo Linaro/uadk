@@ -191,6 +191,9 @@ struct hisi_zip_sqe_ops {
 #define RSV_OFFSET 64
 #define CTX_DW1_OFFSET 4
 #define CTX_DW2_OFFSET 8
+#define CTX_REPCODE1_OFFSET 12
+#define CTX_REPCODE2_OFFSET 24
+#define CTX_HW_REPCODE_OFFSET 784
 #define OVERFLOW_DATA_SIZE 2
 #define ZSTD_FREQ_DATA_SIZE 784
 #define ZSTD_LIT_RESV_SIZE 16
@@ -525,8 +528,12 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 		return -WD_EINVAL;
 	}
 
-	if (msg->ctx_buf)
+	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
+		if (data->blk_type != 2)
+			memcpy(ctx_buf + CTX_HW_REPCODE_OFFSET,
+			       msg->ctx_buf + CTX_REPCODE2_OFFSET, 12);
+	}
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lit_size, out_size - lit_size);
 
@@ -753,6 +760,7 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, int op_type,
 				    struct wd_comp_msg *recv_msg)
 {
 	struct wd_lz77_zstd_data *data = recv_msg->req.priv;
+	void *ctx_buf = recv_msg->ctx_buf;
 
 	if (!data)
 		return;
@@ -762,6 +770,13 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, int op_type,
 	data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
 	data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
 	data->freq = data->sequences_start + data->seq_num + OVERFLOW_DATA_SIZE;
+
+	if (ctx_buf) {
+		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
+		       ctx_buf + CTX_REPCODE1_OFFSET, 12);
+		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
+		       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, 12);
+	}
 }
 
 static int get_tag_v1(struct hisi_zip_sqe *sqe)
