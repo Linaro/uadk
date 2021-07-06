@@ -106,18 +106,26 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 	return ret;
 }
 
-static void get_dev_info(struct uacce_dev *dev)
+static int get_dev_info(struct uacce_dev *dev)
 {
 	int value = 0;
 
 	get_int_attr(dev, "flags", &dev->flags);
 	get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
+
+	/* hardware err isolate flag */
+	get_int_attr(dev, "isolate", &value);
+	if (value == 1)
+		return -ENODEV;
+
 	get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
 	get_int_attr(dev, "region_mmio_size", &value);
 	dev->qfrs_offs[UACCE_QFRT_MMIO] = value;
 	get_int_attr(dev, "region_dus_size", &value);
 	dev->qfrs_offs[UACCE_QFRT_DUS] = value;
 	get_int_attr(dev, "device/numa_node", &dev->numa_id);
+
+	return 0;
 }
 
 static struct uacce_dev *read_uacce_sysfs(char *dev_name)
@@ -156,7 +164,9 @@ static struct uacce_dev *read_uacce_sysfs(char *dev_name)
 		if (ret < 0)
 			goto out_dir;
 
-		get_dev_info(dev);
+		ret = get_dev_info(dev);
+		if (ret)
+			goto out_dir;
 		break;
 	}
 	if (!dev_dir)
