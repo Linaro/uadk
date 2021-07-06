@@ -49,7 +49,7 @@ struct wd_env_config_per_numa {
 	struct uacce_dev dev;
 	/* This can be made statically currently */
 	unsigned long async_poll_num;
-	struct async_task_queue *async_task_queue_array;
+	void *async_task_queue_array;
 };
 
 struct wd_env_config {
