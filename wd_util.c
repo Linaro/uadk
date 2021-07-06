@@ -659,6 +659,7 @@ static int wd_parse_env(struct wd_env_config *config)
 static void wd_free_env(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
+	struct async_task_queue *async_queue;
 	int i, j;
 
 	FOREACH_NUMA(i, config, config_numa) {
@@ -668,7 +669,9 @@ static void wd_free_env(struct wd_env_config *config)
 		for (j = 0; j < CTX_MODE_MAX; j++)
 			free(config_numa->ctx_table[j]);
 		free(config_numa->ctx_table);
-		free(config_numa->async_task_queue_array);
+		async_queue = (struct async_task_queue *)
+				config_numa->async_task_queue_array;
+		free(async_queue);
 	}
 }
 
@@ -875,7 +878,7 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 			break;
 	}
 
-	return config_numa->async_task_queue_array;
+	return (struct async_task_queue *)config_numa->async_task_queue_array;
 }
 
 /* fix me: all return value here, and no config input */
@@ -1030,7 +1033,8 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	task_queue = calloc(config_numa->async_ctx_num, sizeof(*head));
 	if (!task_queue)
 		return -ENOMEM;
-	config_numa->async_task_queue_array = head = task_queue;
+	head = task_queue;
+	config_numa->async_task_queue_array = (void *)head;
 
 	for (i = 0; i < config_numa->async_poll_num; task_queue++, i++) {
 		ret = wd_init_one_task_queue(task_queue, config->alg_poll_ctx);
