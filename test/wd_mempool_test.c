@@ -23,7 +23,7 @@
 #include "hisi_sec_test/test_hisi_sec.h"
 #include "wd.h"
 #include "wd_cipher.h"
-#include "sched_sample.h"
+#include "wd_sched.h"
 
 #define WD_MEM_MAX_THREAD	20
 #define WD_MEM_MAX_BUF_SIZE	256
