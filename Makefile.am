@@ -38,8 +38,6 @@ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h		\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
-		 v1/test/smm.c v1/test/smm.h v1/test/bmm.c v1/test/bmm.h \
-		 v1/test/wd_sched.c v1/test/wd_sched.h	\
 		 v1/wd_rng.c v1/wd_rng.h	\
 		 v1/wd_rsa.c v1/wd_rsa.h	\
 		 v1/wd_aead.c v1/wd_aead.h	\
