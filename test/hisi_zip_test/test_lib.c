@@ -7,7 +7,7 @@
 #include <zlib.h>
 
 #include "hisi_qm_udrv.h"
-#include "sched_sample.h"
+#include "wd_sched.h"
 #include "test_lib.h"
 
 #define SCHED_RR_NAME	"sched_rr"
