@@ -12,7 +12,7 @@
 #include "wd_cipher.h"
 #include "wd_digest.h"
 #include "wd_aead.h"
-#include "sched_sample.h"
+#include "wd_sched.h"
 
 #define SEC_TST_PRT printf
 #define HW_CTX_SIZE (24 * 1024)

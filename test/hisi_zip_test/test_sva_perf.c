@@ -18,7 +18,7 @@
 #include <linux/perf_event.h>
 
 #include "test_lib.h"
-#include "sched_sample.h"
+#include "wd_sched.h"
 
 enum hizip_stats_variable {
 	ST_SETUP_TIME,
