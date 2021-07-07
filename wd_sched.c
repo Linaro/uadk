@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "sched_sample.h"
+#include "wd_sched.h"
 
 #define MAX_POLL_TIMES 1000
 

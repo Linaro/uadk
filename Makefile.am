@@ -59,7 +59,7 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h		\
 		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h \
-		      test/sched_sample.c sched_sample.h
+		      wd_sched.c wd_sched.h
 
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h
@@ -71,7 +71,7 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_ecc.c wd_ecc.h wd_ecc_drv.h \
 			wd_digest.c wd_digest.h wd_digest_drv.h \
 			wd_util.c wd_util.h \
-			test/sched_sample.c sched_sample.h
+			wd_sched.c wd_sched.h
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h
