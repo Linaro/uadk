@@ -1,7 +1,7 @@
 AM_CFLAGS=-Wall -O0 -Werror -fno-strict-aliasing -I../include -lpthread
 
 bin_PROGRAMS=wd_mempool_test
-wd_mempool_test_SOURCES=wd_mempool_test.c sched_sample.c
+wd_mempool_test_SOURCES=wd_mempool_test.c
 
 if WD_STATIC_DRV
 AM_CFLAGS+=-Bstatic
