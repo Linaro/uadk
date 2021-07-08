@@ -59,7 +59,10 @@
 
 #define CTX_PRIV1_OFFSET		4
 #define CTX_PRIV2_OFFSET		8
-#define CTX_BUFFER_OFFSET		12
+#define CTX_REPCODE1_OFFSET		12
+#define CTX_REPCODE2_OFFSET		24
+#define CTX_BUFFER_OFFSET		64
+#define CTX_HW_REPCODE_OFFSET		784
 
 #define get_arrsize(arr)		(sizeof(arr) / sizeof(arr[0]))
 #define lower_32_bits(phy)		((__u32)((__u64)(phy)))
@@ -518,6 +521,25 @@ static void fill_zip_sqe_hw_info(void *ssqe, struct wcrypto_comp_msg *msg)
 	sqe->checksum = msg->checksum;
 }
 
+static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
+{
+	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)msg->udata;
+	struct wcrypto_lz77_zstd_format *format = tag->priv;
+	struct hisi_zip_sqe_v3 *sqe = ssqe;
+
+	if (msg->ctx_buf) {
+		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
+		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
+		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
+		if (format->blk_type != 2)
+			memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
+			       msg->ctx_buf + CTX_REPCODE2_OFFSET, 12);
+	}
+
+	sqe->isize = msg->isize;
+	sqe->checksum = msg->checksum;
+}
+
 static struct zip_fill_sqe_ops ops[] = { {
 		.alg_type = "zlib",
 		.fill_sqe_alg = fill_zip_comp_alg_deflate,
@@ -545,7 +567,7 @@ static struct zip_fill_sqe_ops ops[] = { {
 		.fill_sqe_buffer_size = fill_zip_buffer_size_zstd,
 		.fill_sqe_window_size = fill_zip_window_size,
 		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
-		.fill_sqe_hw_info = fill_zip_sqe_hw_info,
+		.fill_sqe_hw_info = fill_zip_sqe_hw_info_lz77_zstd,
 	},
 };
 
@@ -618,6 +640,7 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 	struct wcrypto_lz77_zstd_format *format = tag->priv;
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
 	struct wcrypto_zstd_out *zstd_out;
+	void *ctx_buf = recv_msg->ctx_buf;
 
 	format->lit_num = sqe->comp_data_length;
 	format->seq_num = sqe->produced;
@@ -634,6 +657,13 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 		format->literals_start = recv_msg->dst;
 		format->sequences_start = recv_msg->dst + recv_msg->in_size;
 		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
+	}
+
+	if (ctx_buf) {
+		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
+		       ctx_buf + CTX_REPCODE1_OFFSET, 12);
+		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
+		       ctx_buf + CTX_BUFFER_OFFSET + CTX_HW_REPCODE_OFFSET, 12);
 	}
 }
 
