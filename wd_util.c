@@ -763,7 +763,7 @@ static void wd_free_ctx(struct wd_ctx_config *ctx_config)
 static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
 					     const struct wd_alg_ops *ops)
 {
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
+	struct wd_env_config_per_numa *config_numa;
 	struct wd_ctx_range **ctx_table;
 	struct wd_sched *sched;
 	int i, j, ret, type_num = ops->op_type_num;
@@ -780,12 +780,13 @@ static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
 
 	sched->name = "SCHED_RR";
 
-	if (!config_numa->ctx_table) {
-		for (i = 0; i < config->numa_num; config_numa++, i++) {
-			if (config_numa->numa_disable)
-				continue;
+	config_numa = config->config_per_numa;
+	for (i = 0; i < config->numa_num; config_numa++, i++) {
+		if (config_numa->numa_disable || config_numa->ctx_table)
+			continue;
 
-			start = get_start_ctx_index(config, config_numa);
+		start = get_start_ctx_index(config, config_numa);
+		if (config_numa->sync_ctx_num) {
 			end = start + config_numa->sync_ctx_num - 1;
 			ret = sample_sched_fill_data(sched, config_numa->node,
 						     CTX_MODE_SYNC, 0,
@@ -793,7 +794,10 @@ static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
 			if (ret)
 				goto err_release_sched;
 
-			start = end + 1;;
+			start = end + 1;
+		}
+
+		if (config_numa->async_ctx_num) {
 			end = start + config_numa->async_ctx_num - 1;
 			ret = sample_sched_fill_data(sched, config_numa->node,
 						     CTX_MODE_ASYNC, 0,
@@ -801,15 +805,15 @@ static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
 			if (ret)
 				goto err_release_sched;
 		}
-
-		return sched;
 	}
 
-	ctx_table = config_numa->ctx_table;
+	/* reset config_numa head */
+	config_numa = config->config_per_numa;
 	for (i = 0; i < config->numa_num; config_numa++, i++) {
-		if (config_numa->numa_disable)
+		if (config_numa->numa_disable || !config_numa->ctx_table)
 			continue;
 
+		ctx_table = config_numa->ctx_table;
 		for (j = 0; j < type_num && config_numa->sync_ctx_num; j++) {
 			ret = sample_sched_fill_data(
 					sched, config_numa->node,
