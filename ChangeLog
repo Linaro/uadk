@@ -1,1 +1,35 @@
-init
+UADK 2.3.11, Released Jul 9th, 2021
+
+	Feature list:
+
+	Support SVA on ZIP/SEC/HPRE accelerator on kunpeng930.
+
+	Support of user space algorithm API layer of Warpdrive.
+
+	Offload Warpdrive WCRYPTO asymmetric algorithms with HPRE DH/RSA
+	on kunpeng920/930.
+
+	Offload elliptic curve EC algorithms SM2/ECDH/ECDSA/X25519/X448 on
+	kunpeng930 HPRE in user space.
+
+	Offload Warpdrive WCRYPTO symmetric algorithms AES/SM4/SM3/AEAD .etc
+	algorithms.
+
+	Offload Warpdrive WCRYPTO COMP by ZIP's zlib/gzib/zstd/deflate
+	algorithms.
+
+	Offload Warpdrive WCRYPTO TRNG's DRBG/TRNG algorithms.
+
+	Support of poll in user space process as using warpdrive queues.
+
+	Support container such as Docker with Warpdrive.
+
+	WD supports burst APIs such as cipher/digest/aead algorithms.
+
+	Support DMA memory management in Warpdrive in user space.
+
+	Support of SGL in user space Warpdrive.
+
+	Isolation of (bad) accelerator device.
+
+	Support of RAS recovery
