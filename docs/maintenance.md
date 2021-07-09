@@ -126,6 +126,5 @@ Clone kernel from [Github](https://github.com/Linaro/linux-kernel-warpdrive).
 ## Main maintainers
 
 Haojian Zhuang <haojian.zhuang@linaro.org>
-Wei Xu <xuwei5@hisilicon.com>
 Zhou Wang <wangzhou1@hisilicon.com>
 Longfang Liu <liulongfang@huawei.com>
