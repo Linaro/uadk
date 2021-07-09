@@ -32,6 +32,8 @@
 #define MAX_HMAC_KEY_SIZE	128
 #define MAX_DIGEST_RETRY_CNT	2000000
 #define DIGEST_SLEEP_INTERVAL	0xf
+#define SEC_SHA1_ALIGN_SZ	64
+#define SEC_SHA512_ALIGN_SZ	128
 
 struct wcrypto_digest_cookie {
 	struct wcrypto_digest_tag tag;
@@ -44,6 +46,7 @@ struct wcrypto_digest_ctx {
 	void *key;
 	__u32 key_bytes;
 	__u64 io_bytes;
+	__u8 align_sz;
 	struct wd_queue *q;
 	struct wcrypto_digest_ctx_setup setup;
 };
@@ -173,6 +176,11 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		}
 	}
 
+	if (setup->alg >= WCRYPTO_SHA512)
+		ctx->align_sz = SEC_SHA512_ALIGN_SZ;
+	else
+		ctx->align_sz = SEC_SHA1_ALIGN_SZ;
+
 	ret = wd_init_cookie_pool(&ctx->pool,
 		sizeof(struct wcrypto_digest_cookie), WD_CTX_MSG_NUM);
 	if (ret) {
@@ -300,6 +308,10 @@ static int param_check(struct wcrypto_digest_ctx *ctx,
 			return -WD_EINVAL;
 		}
 
+		if (unlikely(opdata[0]->has_next && opdata[0]->in_bytes % ctx->align_sz)) {
+			WD_ERR("digest stream mode must be %d-byte aligned!\n", ctx->align_sz);
+			return -WD_EINVAL;
+		}
 		if (opdata[i]->out_bytes == 0 ||
 			opdata[i]->out_bytes > g_digest_mac_len[alg]) {
 				WD_ERR("failed to check digest mac length!\n");
