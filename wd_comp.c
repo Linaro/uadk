@@ -17,7 +17,7 @@
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
 
-#define POLL_SIZE			2500000
+#define POLL_SIZE			250000
 #define POLL_TIME			1000
 
 #define WD_ARRAY_SIZE(array)           (sizeof(array) / sizeof(array[0]))
@@ -418,16 +418,12 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 		return ret;
 	}
 
-	if (req->src_len >= POLL_SIZE) {
-		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-		if (ret < 0) {
-			pthread_spin_unlock(&ctx->lock);
-			WD_ERR("wd ctx wait fail(%d)!\n", ret);
-			return ret;
-		}
-	}
-
 	do {
+		if (req->src_len >= POLL_SIZE) {
+			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+			if (ret < 0)
+				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+		}
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &msg, priv);
 		if (ret == -WD_HW_EACCESS) {
 			pthread_spin_unlock(&ctx->lock);
@@ -646,16 +642,12 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return ret;
 	}
 
-	if (req->src_len >= POLL_SIZE) {
-		ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-		if (ret < 0) {
-			pthread_spin_unlock(&ctx->lock);
-			WD_ERR("wd ctx wait fail(%d)!\n", ret);
-			return ret;
-		}
-	}
-
 	do {
+		if (req->src_len >= POLL_SIZE) {
+			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+			if (ret < 0)
+				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+		}
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &msg, priv);
 		if (ret == -WD_HW_EACCESS) {
 			pthread_spin_unlock(&ctx->lock);
