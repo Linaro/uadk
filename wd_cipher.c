@@ -566,3 +566,50 @@ void wd_cipher_env_uninit(void)
 {
 	return wd_alg_env_uninit(&wd_cipher_env_config);
 }
+
+int wd_cipher_ctx_num(__u32 node, __u32 type, __u32 num, __u8 mode)
+{
+	struct wd_config_variable *alg_table;
+	struct wd_ctx_attr ctx_attr;
+	__u32 table_size = ARRAY_SIZE(table);
+	int ret;
+
+	ret = wd_set_ctx_attr(&ctx_attr, node, CTX_TYPE_INVALID, mode);
+	if (ret)
+		return ret;
+
+	ret = wd_alg_table_init(&alg_table, table, table_size, num, ctx_attr);
+	if (ret)
+		return ret;
+
+	wd_cipher_env_config.disable_env = 1;
+
+	return wd_alg_env_init(&wd_cipher_env_config, alg_table,
+			      &wd_cipher_ops, table_size);
+}
+
+void wd_cipher_ctx_num_uninit(void)
+{
+	return wd_alg_env_uninit(&wd_cipher_env_config);
+}
+
+int wd_cipher_get_evn_param(__u32 node, __u32 type, __u32 mode,
+			    __u32 *num, __u8 *is_enable)
+{
+	struct wd_ctx_attr ctx_attr;
+	int ret;
+
+	if (!num || !is_enable) {
+		WD_ERR("input parameter num or is_enable is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = wd_set_ctx_attr(&ctx_attr, node, CTX_TYPE_INVALID, mode);
+	if (ret)
+		return ret;
+
+	*is_enable = wd_cipher_env_config.enable_internal_poll;
+
+	return wd_alg_get_evn_param(&wd_cipher_env_config,
+				    ctx_attr, num);
+}
