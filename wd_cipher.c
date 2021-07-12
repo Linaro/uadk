@@ -558,6 +558,7 @@ static const struct wd_alg_ops wd_cipher_ops = {
 
 int wd_cipher_env_init(void)
 {
+	wd_cipher_env_config.disable_env = 0;
 	return wd_alg_env_init(&wd_cipher_env_config, table,
 				&wd_cipher_ops, ARRAY_SIZE(table));
 }

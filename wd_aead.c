@@ -676,6 +676,7 @@ static const struct wd_alg_ops wd_aead_ops = {
 
 int wd_aead_env_init(void)
 {
+	wd_aead_env_config.disable_env = 0;
 	return wd_alg_env_init(&wd_aead_env_config, table,
 			       &wd_aead_ops, ARRAY_SIZE(table));
 }
