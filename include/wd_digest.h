@@ -70,6 +70,14 @@ struct wd_digest_sess {
 	int			numa;
 };
 
+enum sec_digest_state {
+    SEC_DIGEST_INIT = 0,
+    SEC_DIGEST_FIRST_UPDATING,
+    SEC_DIGEST_DOING,
+    SEC_DIGEST_FINAL,
+    SEC_DIGEST_NO_STREAM
+};
+
 /**
  * struct wd_digest_arg - Parameters for per digest operation
  * @in: input data address
@@ -96,8 +104,9 @@ struct wd_digest_req {
 	__u32		out_bytes;
 	__u32		out_buf_bytes;
 	__u16		state;
-	__u16		has_next;
-	__u8        data_fmt;
+	enum sec_digest_state op_state;
+	__u8		data_fmt;
+	__u64		long_data_len;
 	wd_digest_cb_t	*cb;
 	void		*cb_param;
 };

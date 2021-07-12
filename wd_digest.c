@@ -267,8 +267,12 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->out;
 	msg->out_bytes = req->out_bytes;
-	msg->has_next = req->has_next;
 	msg->data_fmt = req->data_fmt;
+	msg->op_state = req->op_state;
+	req->long_data_len += req->in_bytes;
+	msg->long_data_len = req->long_data_len;
+	if (req->op_state == SEC_DIGEST_FINAL)
+		req->long_data_len = 0;
 }
 
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)

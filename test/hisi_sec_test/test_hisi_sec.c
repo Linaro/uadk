@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <pthread.h>
 #include <sys/syscall.h>
@@ -1552,7 +1553,6 @@ static int sec_digest_sync_once(void)
 	req.out_bytes = tv->dsize;
 	printf("req.data_fmtaaaa = %u\n", g_data_fmt);
 	req.data_fmt = g_data_fmt;
-	req.has_next = 0;
 
 	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
@@ -1596,6 +1596,140 @@ out_sess:
 out_dst:
 	free_buf(g_data_fmt, req.in);
 out_src:
+	digest_uninit_config();
+
+	return ret;
+}
+
+static int sec_digest_sync_stream_mode(void)
+{
+	struct wd_digest_sess_setup setup;
+	struct hash_testvec *tv = NULL;
+	handle_t h_sess = 0;
+	struct wd_digest_req req;
+	struct timeval start_tval;
+	struct timeval cur_tval;
+	unsigned long Perf = 0;
+	float speed, time_used;
+	unsigned long cnt = g_times;
+	int ret, data_len;
+	void *bak_in = NULL;
+
+	/* config setup */
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	if (ret) {
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
+		return ret;
+	}
+
+	/* config arg */
+	memset(&req, 0, sizeof(struct wd_digest_req));
+	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
+
+	req.in = malloc(BUFF_SIZE);
+	if (!req.in) {
+		SEC_TST_PRT("req src in mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+	bak_in = req.in;
+
+	memcpy(req.in, tv->plaintext, tv->psize);
+	req.in_bytes = tv->psize;
+
+	SEC_TST_PRT("req src in--------->:\n");
+//	hexdump(bak_in, tv->psize);
+
+	req.out = malloc(BUFF_SIZE);
+	if (!req.out) {
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+
+	req.out_buf_bytes = BUFF_SIZE;
+	req.out_bytes = tv->dsize;
+	req.data_fmt = g_data_fmt;
+	req.long_data_len = 0;
+	req.op_state = SEC_DIGEST_INIT;
+
+	h_sess = wd_digest_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -1;
+		goto out;
+	}
+
+	data_len = tv->psize;
+
+	/* if mode is HMAC, should set key */
+	if (setup.mode == WD_DIGEST_HMAC) {
+		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		if (ret) {
+			SEC_TST_PRT("sess set key failed!\n");
+			goto out;
+		}
+		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+		SEC_TST_PRT("------->tv key:%s\n", tv->key);
+		SEC_TST_PRT("digest sess key--------->:\n");
+		dump_mem(g_data_fmt, sess->key, sess->key_bytes);
+	}
+
+	gettimeofday(&start_tval, NULL);
+	while (cnt) {
+		do {
+			if (req.op_state == SEC_DIGEST_INIT)
+				req.op_state = SEC_DIGEST_FIRST_UPDATING;
+			else if (req.op_state == SEC_DIGEST_FIRST_UPDATING)
+				req.op_state = SEC_DIGEST_DOING;
+			if (data_len > 256) { // soft block size
+				req.in_bytes = 256;
+				data_len -= 256;
+			} else if (data_len <= 0) {
+				break;
+			} else {
+				req.op_state = SEC_DIGEST_FINAL;
+				req.in_bytes = data_len;
+			}
+
+			ret = wd_do_digest_sync(h_sess, &req);
+
+			if (ret)
+				goto out;
+
+			printf("after task ------>req.in_bytes:%d\n", req.in_bytes);
+			// hexdump(req.in, req.in_bytes);
+
+			if (req.op_state == SEC_DIGEST_FINAL)
+				break;
+			else
+				req.in += 256;
+		} while (true);
+		data_len = tv->psize;
+		printf("result is: ------>:%lu\n", cnt);
+		dump_mem(g_data_fmt, req.out, req.out_bytes);
+		req.op_state = SEC_DIGEST_INIT;
+		req.in = bak_in;
+		memcpy(req.in, tv->plaintext, tv->psize);
+		cnt--;
+	}
+	gettimeofday(&cur_tval, NULL);
+
+	time_used = (float)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
+		cur_tval.tv_usec - start_tval.tv_usec);
+	speed = g_times / time_used * 1000000;
+	Perf = speed * tv->psize / 1024;
+	SEC_TST_PRT("time_used:%0.0f us, send task num:%lld\n", time_used, g_times);
+	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
+			(int)syscall(__NR_gettid), speed, Perf);
+	dump_mem(g_data_fmt, req.out, req.out_bytes);
+
+out:
+	if (bak_in)
+		free(bak_in);
+	if (req.out)
+		free(req.out);
+	if (h_sess)
+		wd_digest_free_sess(h_sess);
 	digest_uninit_config();
 
 	return ret;
@@ -1759,7 +1893,6 @@ static int sec_digest_async_once(void)
 	}
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
-	req.has_next = 0;
 	req.data_fmt = g_data_fmt;
 
 	h_sess = wd_digest_alloc_sess(&setup);
@@ -1868,7 +2001,6 @@ static int sec_digest_sync_multi(void)
 	}
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
-	req.has_next = 0;
 
 	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
@@ -1976,8 +2108,6 @@ static int sec_digest_async_multi(void)
 
 	req.out_buf_bytes = BUFF_SIZE;
 	req.out_bytes = tv->dsize;
-	req.has_next = 0;
-	h_sess = wd_digest_alloc_sess(&setup);
 	if (!h_sess) {
 		ret = -1;
 		goto out;
@@ -3688,6 +3818,10 @@ static int test_sec_run(__u32 sync_mode, __u32 alg_class)
 				ret = sec_digest_sync_multi();
 			} else {
 				ret = sec_digest_sync_once();
+				if (g_ivlen == 1) {
+					SEC_TST_PRT("currently digest test long hash mode, one thread!\n");
+					ret = sec_digest_sync_stream_mode();
+				}
 				SEC_TST_PRT("currently digest test is synchronize once, one thread!\n");
 			}
 		} else if (alg_class == AEAD_CLASS) {
