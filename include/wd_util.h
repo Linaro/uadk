@@ -54,6 +54,7 @@ struct wd_env_config {
 	struct wd_env_config_per_numa *config_per_numa;
 	/* Let's make it as a gobal config, not per numa */
 	bool enable_internal_poll;
+	__u8 disable_env;
 	__u8 op_type_num;
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
 	void (*alg_uninit)(void);
@@ -67,7 +68,7 @@ struct wd_env_config {
 
 struct wd_config_variable {
 	const char *name;
-	const char *def_val;
+	char *def_val;
 	int (*parse_fn)(struct wd_env_config *, const char *);
 };
 
@@ -77,6 +78,12 @@ struct wd_alg_ops {
 	int (*alg_init)(struct wd_ctx_config *, struct wd_sched *);
 	void (*alg_uninit)(void);
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
+};
+
+struct wd_ctx_attr {
+	__u32 node;
+	__u32 type;
+	__u8 mode;
 };
 
 /*
@@ -267,9 +274,44 @@ void wd_alg_env_uninit(struct wd_env_config *env_config);
 int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index);
 
 /*
- * dump_env_var() - dump wd algorithm environment from system.
+ * dump_env_info() - dump wd algorithm ctx info.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
  */
-void dump_env_var(struct wd_env_config *config);
+void dump_env_info(struct wd_env_config *config);
+
+/*
+ * wd_alg_table_init() - Init wd algorithm environment variable table.
+ *
+ * @alg_table: Table which is used to define specific environment variable.
+ * @table: Default table which is used to define specific environment variable.
+ * @table_size: Size of above table.
+ * @num: ctx number;
+ * @ctx_attr: ctx attributes.
+ */
+int wd_alg_table_init(struct wd_config_variable **alg_table,
+		      const struct wd_config_variable *table,
+		      __u32 table_size, __u32 num,
+		      struct wd_ctx_attr ctx_attr);
+
+/*
+ * wd_alg_get_evn_param() - get specific ctx number.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @ctx_attr: ctx attributes.
+ * @number: save ctx number.
+ */
+int wd_alg_get_evn_param(struct wd_env_config *env_config,
+			 struct wd_ctx_attr ctx_attr, __u32 *num);
+
+/*
+ * wd_set_ctx_attr() - set node type and mode for ctx
+ * @ctx_attr: ctx attributes pointer.
+ * @node: numa id.
+ * @type: operation type.
+ * @mode: synchronous or asynchronous mode.
+ */
+int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
+		    __u32 node, __u32 type, __u8 mode);
+
 #endif /* __WD_UTIL_H */

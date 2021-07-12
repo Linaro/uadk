@@ -13,12 +13,6 @@ offer process level WD configures.
 1. WD environment variables define
 ==================================
 
-WD_<alg>_NUMA
--------------
-
- Define which uacce device to be used. The NUMA nodes are separated by commas.
- For example: WD_<alg>_NUMA=0, WD_<alg>_NUMA=1,2,3
-
 WD_<alg>_SYNC_CTX_NUM
 ---------------------
 
