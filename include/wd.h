@@ -317,6 +317,16 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name);
 struct uacce_dev *wd_get_accel_dev(char *alg_name);
 
 /**
+ * wd_get_accel_api() - Get device supporting the chip version
+ * @alg_name: Algorithm name, which could be got from
+ *            /sys/class/uacce/<device>/algorithm.
+ *
+ * Return a chip number e.g. 920 or 930.
+ * Otherwise return -EINVAL.
+ */
+int wd_get_accel_api(char *alg_name);
+
+/**
  * wd_free_list_accels() - Free device list.
  * @list: Device list which will be free.
  */

@@ -16,6 +16,9 @@
 #include "wd_alg_common.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
+#define HW_API_LEN			10
+#define UADK_HW_V2			920
+#define UADK_HW_V3			930
 
 const char *WD_VERSION = UADK_VERSION_NUMBER;
 
@@ -631,6 +634,27 @@ struct uacce_dev *wd_get_accel_dev(char *alg_name)
 	wd_free_list_accels(list);
 
 	return target;
+}
+
+int wd_get_accel_api(char *alg_name)
+{
+	struct uacce_dev *dev = NULL;
+	int ret;
+
+	dev = wd_get_accel_dev(alg_name);
+	if (!dev)
+		return -WD_EINVAL;
+
+	if (!strncmp(dev->api, "hisi_qm_v2", HW_API_LEN))
+		ret = UADK_HW_V2;
+	else if (!strncmp(dev->api, "hisi_qm_v3", HW_API_LEN))
+		ret = UADK_HW_V3;
+	else
+		ret = -WD_EINVAL;
+
+	free(dev);
+
+	return ret;
 }
 
 int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
