@@ -9,6 +9,6 @@ if WD_STATIC_DRV
 wd_zip_test_sgl_LDADD=../../../.libs/libwd.a
 sgl_test_LDADD=../../../.libs/libwd.a
 else
-wd_zip_test_sgl_LDADD=../../../.libs/libwd.so
-sgl_test_LDADD=../../../.libs/libwd.so
+wd_zip_test_sgl_LDADD=../../../.libs/libwd.so -lnuma
+sgl_test_LDADD=../../../.libs/libwd.so -lnuma
 endif
