@@ -10,7 +10,7 @@ zip_sva_perf_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
 		    ../../.libs/libhisi_zip.a -lpthread -lnuma -lcrypto
 else
 zip_sva_perf_LDADD=-L../../.libs -l:libwd.so.2 -l:libwd_comp.so.2 \
-		   -lpthread -lcrypto
+		   -lpthread -lnuma -lcrypto
 endif
 zip_sva_perf_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
 

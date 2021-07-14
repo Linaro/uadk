@@ -34,7 +34,7 @@ Make sure all these above kernel configurations are selected.
 Build kernel and install the kernel image on Hisilicon platform.
 
 
-3. Build UADK
+3. Build UADK in native environment
 
 Configure UADK
 
@@ -91,3 +91,89 @@ Test on hpre hardware accelerator
     $ test_hisi_hpre --trd_mode=sync
     Asynchronous mode
     $ test_hisi_hpre --trd_mode=async
+
+
+6. (Optional) Build UADK by cross compiler
+
+  Since some libraries are used in UADK library and test cases, these
+  libraries should be built first and installed into the path of cross
+  compiler.
+
+  ${LIBROOT} and ${CROSSTOOLCHAIN} is a directory that should be defined
+  by user. linaro-gcc-7.2.1 is used for reference at here.
+
+  a) Build NUMA library
+
+    $git clone https://github.com/numactl/numactl.git
+    $cd numactl
+    $./autogen.sh
+    $autoconf -i
+    $CC=aarch64-linux-gnu-gcc ./configure --host=i386-linux-gnu --target=aarch64-linux-gnu --prefix=${LIBROOT}/usr/local
+    $make
+    $make install
+
+    Install head files and libraries into the path of cross compiler by manual.
+    $sudo cp ${LIBROOT}/usr/local/include/numa*.h  ${CROSSTOOLCHAIN}/aarch64-linux-gnu/libc/usr/include/
+    $sudo cp ${LIBROOT}/usr/local/lib/libnuma.a ${CROSSTOOLCHAIN}/lib/gcc/aarch64-linux-gnu/7.2.1/
+    $sudo cp ${LIBROOT}/usr/local/lib/libnuma.so.1.0.0 ${CROSSTOOLCHAIN}/lib/gcc/aarch64-linux-gnu/7.2.1/
+    $cd ${CROSSTOOLCHAIN}/lib/gcc/aarch64-linux-gnu/7.2.1
+    $sudo ln -sf libnuma.so.1.0.0 libnuma.so.1
+    $sudo ln -sf libnuma.so.1 libnuma.so
+
+  b) Build OpenSSL library
+
+    $git clone https://github.com/openssl/openssl.git
+    $cd openssl
+    $git checkout OpenSSL_1_1_1a
+    $./Configure linux-aarch64 --cross-compile-prefix=aarch64-linux-gnu- -D__ARCH_MAX_ARCH__=8 --prefix=${LIBROOT}/usr/local --shared
+    $make
+    $make install
+
+    $sudo cp -a ${LIBROOT}/usr/local/include/openssl ${CROSSTOOLCHAIN}/aarch64-linux-gnu/libc/usr/include/
+    $cd ${CROSSTOOLCHAIN}/lib/gcc/aarch64-linux-gnu/7.2.1
+    $sudo cp ${LIBROOT}/usr/local/lib/libcrypto.a .
+    $sudo cp ${LIBROOT}/usr/local/lib/libcrypto.so.3 .
+    $sudo cp ${LIBROOT}/usr/local/lib/libssl.a .
+    $sudo cp ${LIBROOT}/usr/local/lib/libssl.so.3 .
+    $sudo ln -sf libcrypto.so.3 libcrypto.so
+    $sudo ln -sf libssl.so.3 libssl.so
+
+  c) Build zlib library
+
+    $git clone https://github.com/madler/zlib
+    $cd zlib
+    $CC=aarch64-linux-gnu-gcc \
+       AR=aarch64-linux-gnu-ar \
+       RANLIB=aarch64-linux-gnu-ranlib \
+       ./configure --prefix=${LIBROOT}/usr/local
+    $CC=aarch64-linux-gnu-gcc \
+       AR=aarch64-linux-gnu-ar \
+       RANLIB=aarch64-linux-gnu-ranlib \
+       make
+    $make install
+
+    $sudo cp ${LIBROOT}/usr/local/include/zconf.h ${CROSSTOOLCHAIN}/aarch64-linux-gnu/libc/usr/include/
+    $sudo cp ${LIBROOT}/usr/local/include/zlib.h ${CROSSTOOLCHAIN}/aarch64-linux-gnu/libc/usr/include/
+    $cd ${CROSSTOOLCHAIN}/lib/gcc/aarch64-linux-gnu/7.2.1
+    $sudo cp ${LIBROOT}/usr/local/lib/libz.a .
+    $sudo cp ${LIBROOT}/usr/local/lib/libz.so.1.2.11 .
+    $sudo ln -sf libz.so.1.2.11 libz.so.1
+    $sudo ln -sf libz.so.1 libz.so
+
+
+  d) Build UADK and install it into user specified directory
+
+    $cd ${UADK}
+    $./cleanup.sh
+    $./autogen.sh
+    $CC=aarch64-linux-gnu-gcc \
+       ac_cv_func_malloc_0_nonnull=yes \
+       ac_cv_func_realloc_0_nonnull=yes \
+       ./configure \
+         --host=i386-linux-gnu \
+         --target=aarch64-linux-gnu \
+         --prefix=${LIB_ROOT}/usr/local \
+         --includedir=${LIB_ROOT}/usr/local/include/uadk \
+         --disable-static --enable-shared
+    $make
+    $make install
