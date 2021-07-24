@@ -238,7 +238,7 @@ int attach2_threads(struct test_options *opts,
 		    void *(*send_thread_func)(void *arg),
 		    void *(*poll_thread_func)(void *arg));
 void *poll2_thread_func(void *arg);
-int run_self_test(void);
+int run_self_test(struct test_options *opts);
 int run_cmd(struct test_options *opts);
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
