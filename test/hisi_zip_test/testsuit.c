@@ -1041,115 +1041,84 @@ out:
 	return ret;
 }
 
-int run_self_test(void)
+int run_self_test(struct test_options *opts)
 {
-	struct test_options opts = {
-		.alg_type		= WD_ZLIB,
-		.data_fmt		= WD_FLAT_BUF,
-		.sync_mode		= 0,
-		.thread_num		= 16,
-		.q_num			= 16,
-		.block_size		= 8192,
-		.total_len		= 8192 * 10,
-		.compact_run_num	= 1000,
-	};
 	int i, f_ret = 0;
 
 	printf("Start to run self test!\n");
+	opts->alg_type = WD_ZLIB;
+	opts->data_fmt = WD_FLAT_BUF;
+	opts->sync_mode = 0;
+	opts->q_num = 16;
 	for (i = 0; i < 10; i++) {
-		opts.sync_mode = 0;
+		opts->sync_mode = 0;
 		switch (i) {
 		case 0:
-			opts.thread_num = 1;
+			opts->thread_num = 1;
 			break;
 		case 1:
-			opts.thread_num = 2;
+			opts->thread_num = 2;
 			break;
 		case 2:
-			opts.thread_num = 4;
+			opts->thread_num = 4;
 			break;
 		case 3:
-			opts.thread_num = 8;
+			opts->thread_num = 8;
 			break;
 		case 4:
-			opts.thread_num = 16;
+			opts->thread_num = 16;
 			break;
 		case 5:
-			opts.thread_num = 1;
-			opts.is_stream = 1;
+			opts->thread_num = 1;
+			opts->is_stream = 1;
 			break;
 		case 6:
-			opts.thread_num = 2;
-			opts.is_stream = 1;
+			opts->thread_num = 2;
+			opts->is_stream = 1;
 			break;
 		case 7:
-			opts.thread_num = 4;
-			opts.is_stream = 1;
+			opts->thread_num = 4;
+			opts->is_stream = 1;
 			break;
 		case 8:
-			opts.thread_num = 8;
-			opts.is_stream = 1;
+			opts->thread_num = 8;
+			opts->is_stream = 1;
 			break;
 		case 9:
-			opts.thread_num = 16;
-			opts.is_stream = 1;
+			opts->thread_num = 16;
+			opts->is_stream = 1;
 			break;
 		}
-		f_ret |= test_hw(&opts, "hw_dfl_perf");
-		f_ret |= test_hw(&opts, "hw_ifl_perf");
+		f_ret |= test_hw(opts, "hw_dfl_perf");
+		f_ret |= test_hw(opts, "hw_ifl_perf");
 	}
-	opts.is_stream = 0;	/* restore to BLOCK mode */
-	for (i = 0; i < 10; i++) {
-		opts.thread_num = 8;
+	opts->is_stream = 0;	/* restore to BLOCK mode */
+	for (i = 0; i < 5; i++) {
+		opts->thread_num = 8;
 		switch (i) {
 		case 0:
-			opts.sync_mode = 0;
-			opts.block_size = 8192; opts.total_len = 8192 * 10;
+			opts->sync_mode = 0;
 			break;
 		case 1:
-			opts.sync_mode = 1; 	opts.poll_num = 1;
-			opts.block_size = 8192; opts.total_len = 8192 * 10;
+			opts->sync_mode = 1;	opts->poll_num = 1;
 			break;
 		case 2:
-			opts.sync_mode = 1; 	opts.poll_num = 2;
-			opts.block_size = 8192; opts.total_len = 8192 * 10;
+			opts->sync_mode = 1;	opts->poll_num = 2;
 			break;
 		case 3:
-			opts.sync_mode = 1;	opts.poll_num = 4;
-			opts.block_size = 8192;	opts.total_len = 8192 * 10;
+			opts->sync_mode = 1;	opts->poll_num = 4;
 			break;
 		case 4:
-			opts.sync_mode = 1; 	opts.poll_num = 8;
-			opts.block_size = 8192; opts.total_len = 8192 * 10;
-			break;
-		case 5:
-			opts.sync_mode = 0;
-			opts.block_size = 1024; opts.total_len = 8192 * 10;
-			break;
-		case 6:
-			opts.sync_mode = 1; 	opts.poll_num = 1;
-			opts.block_size = 1024; opts.total_len = 8192 * 10;
-			break;
-		case 7:
-			opts.sync_mode = 1; 	opts.poll_num = 2;
-			opts.block_size = 1024; opts.total_len = 8192 * 10;
-			break;
-		case 8:
-			opts.sync_mode = 1;	opts.poll_num = 4;
-			opts.block_size = 1024;	opts.total_len = 8192 * 10;
-			break;
-		case 9:
-			opts.sync_mode = 1; 	opts.poll_num = 8;
-			opts.block_size = 1024; opts.total_len = 8192 * 10;
+			opts->sync_mode = 1;	opts->poll_num = 8;
 			break;
 		default:
 			return -EINVAL;
 		}
-		f_ret |= test_hw(&opts, "sw_dfl_hw_ifl");
-		f_ret |= test_hw(&opts, "hw_dfl_sw_ifl");
-		f_ret |= test_hw(&opts, "hw_dfl_hw_ifl");
-		f_ret |= test_hw(&opts, "hw_dfl_perf");
-		f_ret |= test_hw(&opts, "hw_ifl_perf");
+		f_ret |= test_hw(opts, "sw_dfl_hw_ifl");
+		f_ret |= test_hw(opts, "hw_dfl_sw_ifl");
+		f_ret |= test_hw(opts, "hw_dfl_hw_ifl");
+		f_ret |= test_hw(opts, "hw_dfl_perf");
+		f_ret |= test_hw(opts, "hw_ifl_perf");
 	}
 	if (!f_ret)
 		printf("Run self test successfully!\n");
