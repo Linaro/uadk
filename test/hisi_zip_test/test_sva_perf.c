@@ -760,6 +760,7 @@ int main(int argc, char **argv)
 	};
 	int show_help = 0;
 	int opt, option_idx;
+	int self = 0;
 
 	opts.fd_in = -1;
 	opts.fd_out = -1;
@@ -772,7 +773,8 @@ int main(int argc, char **argv)
 		case 0:
 			switch (option_idx) {
 			case 0:		/* self */
-				return run_self_test();
+				self = 1;
+				break;
 			case 1:		/* in */
 				if (optarg) {
 					opts.fd_in = open(optarg, O_RDONLY);
@@ -918,8 +920,11 @@ int main(int argc, char **argv)
 
 	signal(SIGBUS, handle_sigbus);
 
-	if (!show_help)
+	if (!show_help) {
+		if (self)
+			return run_self_test(&opts);
 		return run_cmd(&opts);
+	}
 
 	hizip_test_adjust_len(&opts);
 
