@@ -1389,7 +1389,7 @@ int attach2_threads(struct test_options *opts,
 			goto out;
 		}
 	}
-	if (opts->sync_mode) {
+	if (opts->sync_mode && !opts->use_env) {
 		for (i = 0; i < opts->poll_num; i++) {
 			ret = pthread_create(&info->poll_tds[i], &attr,
 					     poll_thread_func,
