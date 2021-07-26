@@ -924,7 +924,7 @@ static void *async_poll_process_func(void *args)
 	struct async_task_queue *task_queue = args;
 	struct async_task *head, *task;
 	__u32 count;
-	int cons;
+	int cons, ret;
 
 	while (1) {
 		if (sem_wait(&task_queue->full_sem)) {
@@ -948,7 +948,20 @@ static void *async_poll_process_func(void *args)
 			return NULL;
 
 		/* fix me: poll a group of ctxs */
-		task_queue->alg_poll_ctx(task->index, 1, &count);
+		ret = task_queue->alg_poll_ctx(task->index, 1, &count);
+		if (ret < 0) {
+			if (pthread_mutex_lock(&task_queue->lock))
+				return NULL;
+			task_queue->cons = cons;
+			task_queue->cur_task++;
+			task_queue->left_task--;
+			if (pthread_mutex_unlock(&task_queue->lock))
+				return NULL;
+			if (ret == -WD_EAGAIN)
+				continue;
+			else
+				return NULL;
+		}
 
 		if (sem_post(&task_queue->empty_sem))
 			return NULL;
