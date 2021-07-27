@@ -659,7 +659,6 @@ static int wd_parse_env(struct wd_env_config *config)
 static void wd_free_env(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
-	struct async_task_queue *async_queue;
 	int i, j;
 
 	FOREACH_NUMA(i, config, config_numa) {
@@ -669,9 +668,6 @@ static void wd_free_env(struct wd_env_config *config)
 		for (j = 0; j < CTX_MODE_MAX; j++)
 			free(config_numa->ctx_table[j]);
 		free(config_numa->ctx_table);
-		async_queue = (struct async_task_queue *)
-				config_numa->async_task_queue_array;
-		free(async_queue);
 	}
 }
 
@@ -1063,6 +1059,21 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	return 0;
 }
 
+static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
+				struct wd_env_config_per_numa *config_numa)
+{
+	struct async_task_queue *task_queue, *head;
+	int i;
+
+	head = config_numa->async_task_queue_array;
+	task_queue = head;
+	for (i = 0; i < config_numa->async_poll_num; task_queue++, i++) {
+		wd_uninit_one_task_queue(task_queue);
+	}
+	free(head);
+	config_numa->async_task_queue_array = NULL;
+}
+
 static int wd_init_async_polling_thread(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
@@ -1079,6 +1090,14 @@ static int wd_init_async_polling_thread(struct wd_env_config *config)
 
 static void wd_uninit_async_polling_thread(struct wd_env_config *config)
 {
+	struct wd_env_config_per_numa *config_numa;
+	int i;
+
+	if (!config->enable_internal_poll)
+		return;
+
+	FOREACH_NUMA(i, config, config_numa)
+		wd_uninit_async_polling_thread_per_numa(config, config_numa);
 }
 
 static int wd_init_resource(struct wd_env_config *config,
