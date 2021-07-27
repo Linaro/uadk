@@ -361,7 +361,7 @@ run_zip_test_v2()
 	sw_dfl_hw_ifl /var/log/syslog
 	hw_dfl_sw_ifl /var/log/syslog
 	hw_dfl_hw_ifl /var/log/syslog
-	zip_sva_perf --self
+	zip_sva_perf -b 8192 -s 81920 -l 1000 --self
 }
 
 # Accept more paraterms
