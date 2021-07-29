@@ -357,11 +357,15 @@ run_zip_test_v2()
 	export WD_COMP_SYNC_CTX_NUM="8@0"
 	export WD_COMP_ASYNC_CTX_NUM="8@0"
 	export WD_COMP_CTX_TYPE="sync-comp:4@0,sync-decomp:4@0,async-comp:4@0,async-decomp:4@0"
-	export WD_COMP_ASYNC_POLL_EN=0
+	export WD_COMP_ASYNC_POLL_EN=1
+	# test without environment variables
 	sw_dfl_hw_ifl /var/log/syslog
 	hw_dfl_sw_ifl /var/log/syslog
 	hw_dfl_hw_ifl /var/log/syslog
+	# test without environment variables
 	zip_sva_perf -b 8192 -s 81920 -l 1000 --self
+	# test with environment variables
+	zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
 }
 
 # Accept more paraterms
