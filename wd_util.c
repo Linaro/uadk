@@ -44,6 +44,7 @@ struct async_task_queue {
 	int cons;
 	int cur_task;
 	int left_task;
+	int end;
 	sem_t empty_sem;
 	sem_t full_sem;
 	pthread_mutex_t lock;
@@ -928,9 +929,13 @@ static void *async_poll_process_func(void *args)
 				continue;
 			}
 		}
+		if (__atomic_load_n(&task_queue->end, __ATOMIC_ACQUIRE)) {
+			__atomic_store_n(&task_queue->end, 0, __ATOMIC_RELEASE);
+			goto out;
+		}
 
 		if (pthread_mutex_lock(&task_queue->lock))
-			return NULL;
+			goto out;
 
 		cons = task_queue->cons;
 		head = task_queue->head;
@@ -941,27 +946,29 @@ static void *async_poll_process_func(void *args)
 		task_queue->left_task++;
 
 		if (pthread_mutex_unlock(&task_queue->lock))
-			return NULL;
+			goto out;
 
 		/* fix me: poll a group of ctxs */
 		ret = task_queue->alg_poll_ctx(task->index, 1, &count);
 		if (ret < 0) {
 			if (pthread_mutex_lock(&task_queue->lock))
-				return NULL;
+				goto out;
 			task_queue->cons = cons;
 			task_queue->cur_task++;
 			task_queue->left_task--;
 			if (pthread_mutex_unlock(&task_queue->lock))
-				return NULL;
+				goto out;
 			if (ret == -WD_EAGAIN)
 				continue;
 			else
-				return NULL;
+				goto out;
 		}
 
 		if (sem_post(&task_queue->empty_sem))
-			return NULL;
+			goto out;
 	}
+out:
+	pthread_exit(NULL);
 }
 
 static int wd_init_one_task_queue(struct async_task_queue *task_queue,
@@ -997,7 +1004,6 @@ static int wd_init_one_task_queue(struct async_task_queue *task_queue,
 		goto err_uninit_full_sem;
 	}
 
-	/* fix me: make pthread joined? */
 	if (pthread_create(&thread_id, NULL, async_poll_process_func,
 			   task_queue)) {
 		ret = -4;
@@ -1020,7 +1026,16 @@ err_free_head:
 
 static void wd_uninit_one_task_queue(struct async_task_queue *task_queue)
 {
-	pthread_cancel(task_queue->tid);
+	/*
+	 * If there's no async task, async_poll_process_func() is sleeping
+	 * on task_queue->full_sem. It'll cause that threads could not
+	 * be end and memory leak.
+	 */
+	sem_post(&task_queue->full_sem);
+	__atomic_store_n(&task_queue->end, 1, __ATOMIC_RELEASE);
+	while (__atomic_load_n(&task_queue->end, __ATOMIC_ACQUIRE)) {
+		sched_yield();
+	}
 	pthread_mutex_destroy(&task_queue->lock);
 	sem_destroy(&task_queue->full_sem);
 	sem_destroy(&task_queue->empty_sem);
