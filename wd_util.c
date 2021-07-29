@@ -977,6 +977,7 @@ static int wd_init_one_task_queue(struct async_task_queue *task_queue,
 {
 	struct async_task *head;
 	pthread_t thread_id;
+	pthread_attr_t attr;
 	int depth, ret;
 
 	task_queue->depth = depth = WD_ASYNC_DEF_QUEUE_DEPTH;
@@ -1004,16 +1005,20 @@ static int wd_init_one_task_queue(struct async_task_queue *task_queue,
 		goto err_uninit_full_sem;
 	}
 
-	if (pthread_create(&thread_id, NULL, async_poll_process_func,
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	if (pthread_create(&thread_id, &attr, async_poll_process_func,
 			   task_queue)) {
 		ret = -4;
 		goto err_destory_mutex;
 	}
 	task_queue->tid = thread_id;
+	pthread_attr_destroy(&attr);
 
 	return 0;
 
 err_destory_mutex:
+	pthread_attr_destroy(&attr);
 	pthread_mutex_destroy(&task_queue->lock);
 err_uninit_full_sem:
 	sem_destroy(&task_queue->full_sem);
