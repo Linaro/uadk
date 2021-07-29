@@ -958,9 +958,10 @@ static void *async_poll_process_func(void *args)
 			task_queue->left_task--;
 			if (pthread_mutex_unlock(&task_queue->lock))
 				goto out;
-			if (ret == -WD_EAGAIN)
+			if (ret == -WD_EAGAIN) {
+				sem_post(&task_queue->full_sem);
 				continue;
-			else
+			} else
 				goto out;
 		}
 
