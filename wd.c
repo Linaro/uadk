@@ -606,19 +606,20 @@ void wd_free_list_accels(struct uacce_dev_list *list)
 
 struct uacce_dev *wd_get_accel_dev(char *alg_name)
 {
-	struct uacce_dev_list *list;
+	struct uacce_dev_list *list, *head;
 	struct uacce_dev *dev = NULL, *target = NULL;
 	int cpu = sched_getcpu();
 	int node = numa_node_of_cpu(cpu);
 	int dis = 1024, tmp;
 
-	list = wd_get_accel_list(alg_name);
-	if (!list)
+	head = wd_get_accel_list(alg_name);
+	if (!head)
 		return NULL;
 
+	list = head;
 	while (list) {
 		tmp = numa_distance(node, list->dev->numa_id);
-		if (dis > tmp && tmp > 0) {
+		if (dis > tmp && tmp >= 0) {
 			dev = list->dev;
 			dis = tmp;
 		}
@@ -628,7 +629,7 @@ struct uacce_dev *wd_get_accel_dev(char *alg_name)
 	if (dev)
 		target = clone_uacce_dev(dev);
 
-	wd_free_list_accels(list);
+	wd_free_list_accels(head);
 
 	return target;
 }
