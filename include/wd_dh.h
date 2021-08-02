@@ -59,5 +59,9 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched);
 void wd_dh_uninit(void);
 int wd_dh_env_init(void);
 void wd_dh_env_uninit(void);
+int wd_dh_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode);
+void wd_dh_ctx_num_uninit(void);
+int wd_dh_get_env_param(__u32 node, __u32 type, __u32 mode,
+			__u32 *num, __u8 *is_enable);
 
 #endif /* __WD_DH_H */
