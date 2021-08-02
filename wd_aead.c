@@ -474,16 +474,11 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 
 	idx = wd_aead_setting.sched.pick_next_ctx(
 		wd_aead_setting.sched.h_sched_ctx, req, &key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick a proper ctx!\n");
-		return -WD_EINVAL;
-	}
-	ctx = config->ctxs + idx;
-	if (unlikely(ctx->ctx_mode != CTX_MODE_SYNC)) {
-		WD_ERR("failed to check ctx mode!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
 
+	ctx = config->ctxs + idx;
 	memset(&msg, 0, sizeof(struct wd_aead_msg));
 	msg.aiv = malloc(req->iv_bytes);
 	if (unlikely(!msg.aiv)) {
@@ -556,15 +551,11 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 
 	idx = wd_aead_setting.sched.pick_next_ctx(
 		wd_aead_setting.sched.h_sched_ctx, req, &key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick a proper ctx!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (unlikely(ctx->ctx_mode != CTX_MODE_ASYNC)) {
-		WD_ERR("failed to check ctx mode!\n");
-		return -WD_EINVAL;
-	}
 
 	msg_id = wd_get_msg_from_pool(&wd_aead_setting.pool,
 				     idx, (void **)&msg);
@@ -586,6 +577,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
+
 		wd_put_msg_to_pool(&wd_aead_setting.pool, idx, msg->tag);
 		free(msg->aiv);
 	}
@@ -596,33 +588,38 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
-	struct wd_ctx_internal *ctx = config->ctxs + idx;
+	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg resp_msg, *msg;
 	struct wd_aead_req *req;
 	__u64 recv_count = 0;
 	int ret;
 
-	if (unlikely(idx >= config->ctx_num || !count)) {
+	if (!count) {
 		WD_ERR("aead poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
+	ctx = config->ctxs + idx;
+
 	do {
 		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
-			break;
+			return ret;
 		} else if (ret < 0) {
 			WD_ERR("wd aead recv hw err!\n");
-			break;
+			return ret;
 		}
 
-		expt--;
 		recv_count++;
 		msg = wd_find_msg_in_pool(&wd_aead_setting.pool,
 					    idx, resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
-			break;
+			return -WD_EINVAL;
 		}
 
 		msg->tag = resp_msg.tag;
@@ -632,8 +629,8 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		wd_put_msg_to_pool(&wd_aead_setting.pool,
 				     idx, resp_msg.tag);
 		free(msg->aiv);
-	} while (expt > 0);
-	*count = recv_count;
+		*count = recv_count;
+	} while (--expt);
 
 	return ret;
 }

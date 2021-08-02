@@ -330,15 +330,11 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 
 	sess->key.mode = CTX_MODE_SYNC;
 	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
 	ret = fill_rsa_msg(&msg, req, sess);
@@ -351,7 +347,6 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 
 	ret = rsa_recv_sync(ctx->ctx, &msg);
 fail:
-
 	return ret;
 }
 
@@ -373,15 +368,11 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	sess_t->key.mode = CTX_MODE_ASYNC;
 	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						   &sess_t->key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	mid = wd_get_msg_from_pool(&wd_rsa_setting.pool, idx, (void **)&msg);
 	if (mid < 0)
@@ -393,9 +384,8 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	msg->tag = mid;
 
 	ret = rsa_send(ctx->ctx, msg);
-	if (ret) {
+	if (ret)
 		goto fail_with_msg;
-	}
 
 	return ret;
 
@@ -413,25 +403,23 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 rcv_cnt = 0;
 	int ret;
 
-	if (unlikely(!count || idx >= config->ctx_num)) {
-		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
-			idx, config->ctx_num);
+	if (unlikely(!count)) {
+		WD_ERR("param count is NULL!");
 		return -WD_EINVAL;
 	}
 
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	do {
 		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
-			break;
+			return ret;
 		} else if (ret < 0) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
-			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
 					   recv_msg.tag);
 			return ret;
@@ -441,7 +429,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 					  recv_msg.tag);
 		if (!msg) {
 			WD_ERR("get msg from pool is NULL!\n");
-			break;
+			return -WD_EINVAL;
 		}
 
 		msg->req.dst_bytes = recv_msg.req.dst_bytes;
@@ -449,9 +437,8 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		req = &msg->req;
 		req->cb(req);
 		wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, recv_msg.tag);
+		*count = rcv_cnt;
 	} while (--expt);
-
-	*count = rcv_cnt;
 
 	return ret;
 }

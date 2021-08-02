@@ -1131,3 +1131,21 @@ void wd_alg_env_uninit(struct wd_env_config *env_config)
 	wd_uninit_resource(env_config);
 	wd_free_env(env_config);
 }
+
+int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx)
+{
+	struct wd_ctx_internal *ctx;
+
+	if (unlikely(idx >= config->ctx_num)) {
+		WD_ERR("failed to pick a proper ctx: idx %u!\n", idx);
+		return -WD_EINVAL;
+	}
+
+	ctx = config->ctxs + idx;
+	if (ctx->ctx_mode != mode) {
+		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
