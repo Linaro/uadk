@@ -192,4 +192,36 @@ int wd_aead_env_init(void);
  *   wd_aead_env_uninit() - UnInit ctx and schedule resources set by above init.
  */
 void wd_aead_env_uninit(void);
+
+/**
+ * wd_aead_ctx_num_init() - request ctx for aead.
+ * @node:       numa node id.
+ * @type:       operation type.
+ * @num:        ctx number.
+ * @mode:       0: sync mode, 1: async mode
+ */
+int wd_aead_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode);
+
+/**
+ * wd_aead_ctx_num_uninit() - UnInit ctx and schedule resources
+ * set by above init.
+ */
+void wd_aead_ctx_num_uninit(void);
+
+/**
+ * wd_aead_get_env_param() - query the number of CTXs
+ * that meet input attributes.
+ * @node:       numa node id.
+ * @type:       operation type.
+ * @mode:       0: sync mode, 1: async mode
+ * @num:        return ctx num.
+ * @is_enable   return enable inner poll flag.
+ *
+ * If the current algorithm library does not require the type parameter,
+ * the type parameter is invalid. The function returns 0 to indicate that
+ * the value read is valid; otherwise, it returns a negative number.
+ */
+int wd_aead_get_env_param(__u32 node, __u32 type, __u32 mode,
+			  __u32 *num, __u8 *is_enable);
+
 #endif /* __WD_AEAD_H */

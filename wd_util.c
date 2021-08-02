@@ -4,13 +4,13 @@
 #include <semaphore.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "wd_alg_common.h"
 #include "wd_util.h"
 #include "wd_sched.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024
-#define MAX_NUMA_NUM			4
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -23,6 +23,16 @@ struct msg_pool {
 };
 
 /* parse wd env begin */
+
+/* define comp's combination of two operation type and two mode here */
+static const char *comp_ctx_type[2][2] = {
+	{"sync-comp:", "sync-decomp:"},
+	{"async-comp:", "async-decomp:"}
+};
+
+/* define two ctx mode here for cipher and other alg*/
+static const char *ctx_type[2][1] = { {"sync:"}, {"async:"} };
+
 struct async_task {
 	__u32 index;
 };
@@ -163,12 +173,13 @@ int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
 {
 	int i, j, ret;
 
-	pool->pools = calloc(1, pool_num * sizeof(struct msg_pool));
+	pool->pool_num = pool_num;
+
+	pool->pools = calloc(1, pool->pool_num * sizeof(struct msg_pool));
 	if (!pool->pools)
 		return -WD_ENOMEM;
 
-	pool->pool_num = pool_num;
-	for (i = 0; i < pool_num; i++) {
+	for (i = 0; i < pool->pool_num; i++) {
 		ret = init_msg_pool(&pool->pools[i], msg_num, msg_size);
 		if (ret < 0)
 			goto err;
@@ -197,12 +208,12 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 /* fix me: this is old wd_get_req_from_pool */
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag)
 {
-	__u32 msg_num = pool->pools[index].msg_num;
 	struct msg_pool *p;
+	__u32 msg_num = pool->pools[index].msg_num;
 
 	/* tag value start from 1 */
 	if (tag == 0 || tag > msg_num) {
-		WD_ERR("invalid message cache tag(%d)\n", tag);
+		WD_ERR("invalid message cache tag(%u)\n", tag);
 		return NULL;
 	}
 
@@ -213,8 +224,8 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag)
 
 int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int index, void **msg)
 {
-	__u32 msg_num = pool->pools[index].msg_num;
 	struct msg_pool *p;
+	__u32 msg_num = pool->pools[index].msg_num;
 	__u32 msg_size;
 	int cnt = 0;
 	int idx = 0;
@@ -236,12 +247,12 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int index, void **msg)
 
 void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int index, __u32 tag)
 {
-	__u32 msg_num = pool->pools[index].msg_num;
 	struct msg_pool *p;
+	__u32 msg_num = pool->pools[index].msg_num;
 
 	/* tag value start from 1 */
 	if (!tag || tag > msg_num) {
-		WD_ERR("invalid message cache idx(%d)\n", tag);
+		WD_ERR("invalid message cache idx(%u)\n", tag);
 		return;
 	}
 
@@ -265,69 +276,77 @@ int wd_check_datalist(struct wd_datalist *head, __u32 size)
 	return list_size >= size ? 0 : -WD_EINVAL;
 }
 
-void dump_env_var(struct wd_env_config *config)
-{
-	const struct wd_config_variable *var;
-	const char *var_s;
-	int i;
-
-	if (!config || !config->table || !config->table_size) {
-		WD_ERR("wd env config or table not set,dump failed\n");
-		return;
-	}
-
-	for (i = 0; i < config->table_size; i++) {
-		var = config->table + i;
-		var_s = getenv(var->name);
-		if (var_s)
-			WD_ERR("%s=%s\n", var->name, var_s);
-		else
-			WD_ERR("%s is NULL\n", var->name);
-	}
-}
-
 void dump_env_info(struct wd_env_config *config)
 {
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
+	struct wd_env_config_per_numa *config_numa;
 	struct wd_ctx_range **ctx_table;
 	int i, j, k;
 
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
+	FOREACH_NUMA(i, config, config_numa) {
 		if (!config_numa->ctx_table)
 			continue;
 
 		ctx_table = config_numa->ctx_table;
-		WD_ERR("-> dump_env_info: %d: sync num: %lu\n", i,
+		WD_ERR("-> %s: %d: sync num: %lu\n", __func__, i,
 		       config_numa->sync_ctx_num);
-		WD_ERR("-> dump_env_info: %d: async num: %lu\n", i,
+		WD_ERR("-> %s: %d: async num: %lu\n", __func__, i,
 		       config_numa->async_ctx_num);
-		if (ctx_table) {
-			for (j = 0; j < CTX_MODE_MAX; j++)
-				for (k = 0; k < config_numa->op_type_num; k++) {
-			WD_ERR("-> dump_env_info: %d: [%d][%d].begin: %u\n", i,
-			       j, k, ctx_table[j][k].begin);
-			WD_ERR("-> dump_env_info: %d: [%d][%d].end: %u\n", i,
-			       j, k, ctx_table[j][k].end);
-			WD_ERR("-> dump_env_info: %d: [%d][%d].size: %u\n", i,
-			       j, k, ctx_table[j][k].size);
+		for (j = 0; j < CTX_MODE_MAX; j++)
+			for (k = 0; k < config_numa->op_type_num; k++) {
+				WD_ERR("-> %s: %d: [%d][%d].begin: %u\n",
+				       __func__,
+				       i, j, k, ctx_table[j][k].begin);
+				WD_ERR("-> %s: %d: [%d][%d].end: %u\n",
+				       __func__,
+				       i, j, k, ctx_table[j][k].end);
+				WD_ERR("-> %s: %d: [%d][%d].size: %u\n",
+				       __func__,
+				       i, j, k, ctx_table[j][k].size);
 			}
-		}
 	}
 }
 
-static int wd_alloc_numa(struct wd_env_config *config)
+static int wd_alloc_numa(struct wd_env_config *config,
+			 const struct wd_alg_ops *ops)
 {
 	struct wd_env_config_per_numa *config_numa;
-	int i;
+	struct uacce_dev_list *list, *head;
+	int numa_id[MAX_NUMA_NUM] = {0};
+	int i, numa_num = 0;
 
-	config->numa_num = numa_max_node() + 1;
-	config_numa = calloc(config->numa_num, sizeof(*config_numa));
-	if (!config_numa)
+	/* get uacce_dev */
+	head = wd_get_accel_list(ops->alg_name);
+	if (!head) {
+		WD_ERR("no device to support %s\n", ops->alg_name);
+		return 0;
+	}
+
+	list = head;
+	while (list) {
+		if (list->dev->numa_id < 0) {
+			numa_id[numa_num++] = 0;
+			break;
+		}
+
+		numa_id[numa_num++] = list->dev->numa_id;
+		list = list->next;
+	}
+
+	config->numa_num = numa_num;
+	config->config_per_numa = calloc(numa_num, sizeof(*config_numa));
+	if (!config->config_per_numa) {
+		wd_free_list_accels(head);
 		return -ENOMEM;
+	}
 
-	config->config_per_numa = config_numa;
-	for (i = 0; i < config->numa_num; config_numa++, i++)
-		config_numa->node = i;
+	list = head;
+	FOREACH_NUMA(i, config, config_numa) {
+		config_numa->node = numa_id[i];
+		memcpy(&config_numa->dev, list->dev, sizeof(*list->dev));
+		list = list->next;
+	}
+
+	wd_free_list_accels(head);
 
 	return 0;
 }
@@ -337,84 +356,170 @@ static void wd_free_numa(struct wd_env_config *config)
 	free(config->config_per_numa);
 }
 
+static int is_number(const char *str)
+{
+	int len = strlen(str);
+	int i;
+
+	if (len == 0)
+		return 0;
+
+	if (len != 1 && str[0] == '0')
+		return 0;
+
+	for (i = 0; i < len; i++)
+		if (!(isdigit(str[i])))
+			return 0;
+
+	return 1;
+}
+
 /* 1 enable, 0 disable, others error */
 int wd_parse_async_poll_en(struct wd_env_config *config, const char *s)
 {
 	int tmp;
 
-	tmp = strtol(s, NULL, 10);
-	if (tmp != 0 && tmp != 1)
+	if (!is_number(s)) {
+		WD_ERR("invalid async poll en flag: %s!\n", s);
 		return -WD_EINVAL;
+	}
+
+	tmp = strtol(s, NULL, 10);
+	if (tmp != 0 && tmp != 1) {
+		WD_ERR("async poll en flag is not 0 or 1!\n");
+		return -WD_EINVAL;
+	}
 
 	config->enable_internal_poll = tmp;
 
 	return 0;
 }
 
-/* fix me */
 static int parse_ctx_num_on_numa(const char *s, int *ctx_num, int *node)
 {
-	char *n;
+	char *sep, *start, *left;
 
-	*ctx_num = strtol(s, NULL, 10);
-	n = index(s, '@');
-	n++;
-	*node = strtol(n, NULL, 10);
-
-	return 0;
-}
-
-static int wd_parse_ctx_num(struct wd_env_config *config, const char *s,
-			    bool is_sync)
-{
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
-	int ctx_num, node, i, ret;
-	char *n, *p;
-
-	n = strdup(s);
-	if (!n)
-		return -ENOMEM;
-
-	while ((p = strsep(&n, ","))) {
-		ret = parse_ctx_num_on_numa(p, &ctx_num, &node);
-		if (ret) {
-			free(n);
-			return -WD_EINVAL;
-		}
-
-		for (i = 0; i < config->numa_num; config_numa++, i++)
-			if (config_numa->node == node)
-				break;
-
-		/**
-		 * if numa num is 1, it is a no-numa
-		 * structure and we need to skip here.
-		 */
-		if (i == config->numa_num && i != 1) {
-			WD_ERR("wrong numa node value: %s!\n", p);
-			free(n);
-			return -WD_EINVAL;
-		}
-
-		if (is_sync)
-			config_numa->sync_ctx_num = ctx_num;
-		else
-			config_numa->async_ctx_num = ctx_num;
+	if (!strlen(s)) {
+		WD_ERR("input string length is zero!\n");
+		return -WD_EINVAL;
 	}
 
-	free(n);
+	start = strdup(s);
+	if (!start)
+		return -WD_ENOMEM;
+
+	left = start;
+	sep = strsep(&left, "@");
+	if (is_number(sep) && is_number(left)) {
+		*ctx_num = strtol(sep, NULL, 10);
+		*node = strtol(left, NULL, 10);
+		free(start);
+		return 0;
+	}
+
+	WD_ERR("input env format is invaild:%s\n", s);
+	free(start);
+	return -WD_EINVAL;
+}
+
+static void *wd_get_config_numa(struct wd_env_config *config, int node)
+{
+	struct wd_env_config_per_numa *config_numa;
+	int i;
+
+	FOREACH_NUMA(i, config, config_numa)
+		if (config_numa->node == node)
+			break;
+
+	if (i == config->numa_num)
+		return NULL;
+
+	return config_numa;
+}
+
+static int wd_alloc_ctx_table(struct wd_env_config_per_numa *config_numa)
+{
+	struct wd_ctx_range **ctx_table;
+	int i;
+
+	if (config_numa->ctx_table)
+		return 0;
+
+	ctx_table = calloc(1, sizeof(struct wd_ctx_range *) * CTX_MODE_MAX);
+	if (!ctx_table)
+		return -ENOMEM;
+
+	for (i = 0; i < CTX_MODE_MAX; i++)
+		ctx_table[i] = calloc(1,
+				sizeof(struct wd_ctx_range) *
+				config_numa->op_type_num);
+
+	config_numa->ctx_table = ctx_table;
 
 	return 0;
 }
 
-int wd_parse_sync_ctx_num(struct wd_env_config *config, const char *s)
+static int get_and_fill_ctx_num(struct wd_env_config_per_numa *config_numa,
+				     const char *p, int ctx_num)
 {
-	return wd_parse_ctx_num(config, s, 1);
+	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
+	const char *type;
+	int i, j;
+
+	/**
+	 * There're two types of environment variables, mode:num@node and
+	 * mode-type:num@node, parse ctx num with comp_ctx_type and ctx_type.
+	 */
+
+	for (i = 0; i < CTX_MODE_MAX; i++)
+		for (j = 0; j < config_numa->op_type_num; j++) {
+			if (config_numa->op_type_num == 1)
+				type = ctx_type[i][j];
+			else
+				type = comp_ctx_type[i][j];
+
+			if (!strncmp(p, type, strlen(type))) {
+				ctx_table[i][j].size = ctx_num;
+				return 0;
+			}
+		}
+
+	return -WD_EINVAL;
 }
 
-int wd_parse_async_ctx_num(struct wd_env_config *config, const char *s)
+static int wd_parse_section(struct wd_env_config *config, char *section)
 {
-	return wd_parse_ctx_num(config, s, 0);
+	struct wd_env_config_per_numa *config_numa;
+	int ctx_num, node, ret;
+	char *ctx_section;
+
+	ctx_section = index(section, ':');
+	if (!ctx_section)
+		return -WD_EINVAL;
+
+	ctx_section++;
+
+	ret = parse_ctx_num_on_numa(ctx_section, &ctx_num, &node);
+	if (ret)
+		return ret;
+
+	config_numa = wd_get_config_numa(config, node);
+	if (!config_numa) {
+		WD_ERR("%s got wrong numa node: %s!\n", __func__, section);
+		ret = -WD_EINVAL;
+		return ret;
+	}
+
+	config_numa->op_type_num = config->op_type_num;
+	ret = wd_alloc_ctx_table(config_numa);
+	if (ret)
+		return ret;
+
+	ret = get_and_fill_ctx_num(config_numa, section, ctx_num);
+	if (ret)
+		WD_ERR("wrong comp ctx type: %s!\n", section);
+
+	return ret;
 }
 
 static int get_start_ctx_index(struct wd_env_config *config,
@@ -429,138 +534,96 @@ static int get_start_ctx_index(struct wd_env_config *config,
 	return start;
 }
 
-static int comp_fill_ctx_table(struct wd_env_config *config)
+static int set_ctx_index(struct wd_env_config_per_numa *config_numa,
+			      __u8 mode, int *start)
 {
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
-	struct wd_ctx_range **ctx_table;
-	int start, size, i, j, k, sum;
+	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
+	int size, j, k, sum = 0;
 
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
+	for (j = 0; j < config_numa->op_type_num; j++)
+		sum += ctx_table[mode][j].size;
+
+	if (mode)
+		config_numa->async_ctx_num = sum;
+	else
+		config_numa->sync_ctx_num = sum;
+
+	if (sum) {
+		for (k = 0; k < config_numa->op_type_num; k++) {
+			size = ctx_table[mode][k].size;
+			if (!size)
+				continue;
+			ctx_table[mode][k].begin = *start;
+			ctx_table[mode][k].end = *start + size - 1;
+			*start += size;
+		}
+	}
+
+	return 0;
+}
+
+static int wd_fill_ctx_table(struct wd_env_config *config)
+{
+	struct wd_env_config_per_numa *config_numa;
+	int start, i, ret;
+
+	FOREACH_NUMA(i, config, config_numa) {
 		if (!config_numa->ctx_table)
 			continue;
 
 		start = get_start_ctx_index(config, config_numa);
-		ctx_table = config_numa->ctx_table;
 
-		for (sum = 0, j = 0; j < config_numa->op_type_num; j++)
-			sum += ctx_table[CTX_MODE_SYNC][j].size;
-		if (sum != config_numa->sync_ctx_num)
-			return -WD_EINVAL;
-		if (config_numa->sync_ctx_num) {
-			for (k = 0; k < config_numa->op_type_num; k++) {
-				size = ctx_table[CTX_MODE_SYNC][k].size;
-				ctx_table[CTX_MODE_SYNC][k].begin = start;
-				ctx_table[CTX_MODE_SYNC][k].end = start +
-								  size - 1;
-				start += size;
-			}
-		}
+		ret = set_ctx_index(config_numa, CTX_MODE_SYNC, &start);
+		if (ret)
+			return ret;
 
-		for (sum = 0, j = 0; j < config_numa->op_type_num; j++)
-			sum += ctx_table[CTX_MODE_ASYNC][j].size;
-		if (sum != config_numa->async_ctx_num)
-			return -WD_EINVAL;
-		if (config_numa->async_ctx_num) {
-			for (k = 0; k < config_numa->op_type_num; k++) {
-				size = ctx_table[CTX_MODE_ASYNC][k].size;
-				ctx_table[CTX_MODE_ASYNC][k].begin = start;
-				ctx_table[CTX_MODE_ASYNC][k].end = start +
-								   size - 1;
-				start += size;
-			}
-		}
+		ret = set_ctx_index(config_numa, CTX_MODE_ASYNC, &start);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
 }
 
-static int comp_get_and_fill_ctx_num(struct wd_env_config_per_numa *config_numa,
-				     const char *p, int ctx_num)
+static int parse_ctx_num(struct wd_env_config *config, const char *s)
 {
-	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
+	struct wd_env_config_per_numa *config_numa;
+	char *left, *section, *start;
+	int i, ret;
 
-	if (!strncmp(p, "sync-comp", 9))
-		ctx_table[0][0].size = ctx_num;
-	else if (!strncmp(p, "sync-decomp", 11))
-		ctx_table[0][1].size = ctx_num;
-	else if (!strncmp(p, "async-comp", 10))
-		ctx_table[1][0].size = ctx_num;
-	else if (!strncmp(p, "async-decomp", 12))
-		ctx_table[1][1].size = ctx_num;
-	else
-		return -WD_EINVAL;
-
-	return 0;
-}
-
-/* just pust this function in wd_util.c to avoid export more functions */
-int wd_parse_comp_ctx_type(struct wd_env_config *config, const char *s)
-{
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
-	struct wd_ctx_range **ctx_table;
-	int ctx_num, node, i, ret;
-	char *n, *p, *c;
-
-	n = strdup(s);
-	if (!n)
+	start = strdup(s);
+	if (!start)
 		return -ENOMEM;
 
-	while ((p = strsep(&n, ","))) {
-		config_numa = config->config_per_numa;
-		c = index(p, ':');
-		c++;
-		ret = parse_ctx_num_on_numa(c, &ctx_num, &node);
+	left = start;
+
+	while ((section = strsep(&left, ","))) {
+		ret = wd_parse_section(config, section);
 		if (ret)
 			goto err_free_ctx_table;
-
-		for (i = 0; i < config->numa_num; config_numa++, i++)
-			if (config_numa->node == node)
-				break;
-		if (i == config->numa_num) {
-			WD_ERR("wrong numa node value in ctx type: %s!\n", p);
-			ret = -WD_EINVAL;
-			goto err_free_ctx_table;
-		}
-
-		if (!config_numa->ctx_table) {
-			ctx_table = calloc(1, sizeof(struct wd_ctx_range *) *
-					   CTX_MODE_MAX);
-			if (!ctx_table) {
-				ret = -ENOMEM;
-				goto err_free_ctx_table;
-			}
-			config_numa->op_type_num = config->op_type_num;
-			for (i = 0; i < config_numa->op_type_num; i++) {
-				ctx_table[i] = calloc(1,
-						sizeof(struct wd_ctx_range) *
-						config_numa->op_type_num);
-			}
-			config_numa->ctx_table = ctx_table;
-		}
-
-		ret = comp_get_and_fill_ctx_num(config_numa, p, ctx_num);
-		if (ret) {
-			WD_ERR("wrong comp ctx type: %s!\n", p);
-			goto err_free_ctx_table;
-		}
 	}
 
-	ret = comp_fill_ctx_table(config);
+	ret = wd_fill_ctx_table(config);
 	if (ret) {
 		WD_ERR("check uadk comp ctx failed!\n");
 		goto err_free_ctx_table;
 	}
 
-	free(n);
+	free(start);
 
 	return 0;
 
 err_free_ctx_table:
-	for (i = 0; i < config->numa_num; config_numa++, i++)
+	FOREACH_NUMA(i, config, config_numa)
 		if (config_numa->ctx_table)
 			free(config_numa->ctx_table);
-	free(n);
+	free(start);
 	return ret;
+}
+
+int wd_parse_ctx_num(struct wd_env_config *config, const char *s)
+{
+	return parse_ctx_num(config, s);
 }
 
 static int wd_parse_env(struct wd_env_config *config)
@@ -571,10 +634,14 @@ static int wd_parse_env(struct wd_env_config *config)
 
 	for (i = 0; i < config->table_size; i++) {
 		var = config->table + i;
-		var_s = getenv(var->name);
+		if (config->disable_env)
+			var_s = var->def_val;
+		else
+			var_s = getenv(var->name);
+
 		if (!var_s || !strlen(var_s)) {
 			var_s = var->def_val;
-			WD_ERR("No %s environment variable! Use default: %s\n",
+			WD_ERR("no %s environment variable! Use default: %s\n",
 			       var->name, var->def_val);
 		}
 
@@ -591,10 +658,10 @@ static int wd_parse_env(struct wd_env_config *config)
 
 static void wd_free_env(struct wd_env_config *config)
 {
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
+	struct wd_env_config_per_numa *config_numa;
 	int i, j;
 
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
+	FOREACH_NUMA(i, config, config_numa) {
 		if (!config_numa->ctx_table)
 			continue;
 
@@ -603,7 +670,6 @@ static void wd_free_env(struct wd_env_config *config)
 		free(config_numa->ctx_table);
 		free(config_numa->async_task_queue_array);
 	}
-	free(config->config_per_numa);
 }
 
 static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int index)
@@ -613,23 +679,29 @@ static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int index)
 
 	for (i = 0; i < config->op_type_num; i++) {
 		if ((index >= ctx_table[CTX_MODE_SYNC][i].begin) &&
-		    (index <= ctx_table[CTX_MODE_SYNC][i].end))
+		    (index <= ctx_table[CTX_MODE_SYNC][i].end) &&
+		    ctx_table[CTX_MODE_SYNC][i].size)
 			return CTX_MODE_SYNC;
 	}
 	return CTX_MODE_ASYNC;
 }
 
-static int get_op_type(struct wd_env_config_per_numa *config, int index,
-		       __u8 ctx_mode)
+static int get_op_type(struct wd_env_config_per_numa *config,
+		       int index, __u8 ctx_mode)
 {
 	struct wd_ctx_range **ctx_table = config->ctx_table;
 	int i;
 
+	if (config->op_type_num == 1)
+		return 0;
+
 	for (i = 0; i < config->op_type_num; i++) {
 		if ((index >= ctx_table[ctx_mode][i].begin) &&
-		    (index <= ctx_table[ctx_mode][i].end))
+		    (index <= ctx_table[ctx_mode][i].end) &&
+		    ctx_table[ctx_mode][i].size)
 			return i;
 	}
+
 	return -WD_EINVAL;
 }
 
@@ -638,50 +710,49 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 {
 	int ctx_num = config->sync_ctx_num + config->async_ctx_num;
 	handle_t h_ctx;
-	int i, j;
+	int i, j, ret;
+
+	if (!ctx_num)
+		return 0;
 
 	for (i = start; i < start + ctx_num; i++) {
 		h_ctx = wd_request_ctx(&config->dev);
 		if (!h_ctx) {
-			for (j = 0; j < i; j++)
-				wd_release_ctx(ctx_config->ctxs[j].ctx);
-			return -WD_EBUSY;
+			ret = -WD_EBUSY;
+			goto free_ctx;
 		}
 
 		ctx_config->ctxs[i].ctx = h_ctx;
 		/* put sync ctx in front of async ctx */
-		if (config->ctx_table) {
-			ctx_config->ctxs[i].ctx_mode = get_ctx_mode(config, i);
-			ctx_config->ctxs[i].op_type = get_op_type(
-					config, i,
-					ctx_config->ctxs[i].ctx_mode);
-			continue;
-		}
+		ctx_config->ctxs[i].ctx_mode = get_ctx_mode(config, i);
+		ret = get_op_type(config, i, ctx_config->ctxs[i].ctx_mode);
+		if (ret < 0)
+			goto free_ctx;
 
-		if (i < start + ctx_num - config->async_ctx_num)
-			ctx_config->ctxs[i].ctx_mode = CTX_MODE_SYNC;
-		else
-			ctx_config->ctxs[i].ctx_mode = CTX_MODE_ASYNC;
+		ctx_config->ctxs[i].op_type = ret;
 	}
 
 	return 0;
+
+free_ctx:
+	for (j = 0; j < i; j++)
+		wd_release_ctx(ctx_config->ctxs[j].ctx);
+	return ret;
 }
 
-static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config)
+static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, int ctx_num)
 {
 	__u32 i;
 
-	for (i = 0; i < ctx_config->ctx_num; i++)
+	for (i = 0; i < ctx_num; i++)
 		wd_release_ctx(ctx_config->ctxs[i].ctx);
 
 	free(ctx_config->ctxs);
 }
 
-static struct wd_ctx_config *wd_alloc_ctx(struct wd_env_config *config,
-					  const struct wd_alg_ops *ops)
+static struct wd_ctx_config *wd_alloc_ctx(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
-	struct uacce_dev_list *list, *head;
 	struct wd_ctx_config *ctx_config;
 	int i, ctx_num = 0, start = 0, ret = 0;
 
@@ -689,51 +760,17 @@ static struct wd_ctx_config *wd_alloc_ctx(struct wd_env_config *config,
 	if (!ctx_config)
 		return WD_ERR_PTR(-ENOMEM);
 
-	/* get uacce_dev */
-	head = wd_get_accel_list(ops->alg_name);
-	if (!head) {
-		ret = -WD_EINVAL;
-		WD_ERR("no device to support %s\n", ops->alg_name);
-		goto err_free_ctx_config;
-	}
-
-	config_numa = config->config_per_numa;
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
-		list = head;
-		while (list) {
-			if (list->dev->numa_id < 0)
-				list->dev->numa_id = 0;
-
-			if (config_numa->node == list->dev->numa_id) {
-				config_numa->numa_disable = 0;
-				break;
-			}
-
-			list = list->next;
-		}
-		if (!list) {
-			config_numa->numa_disable = 1;
-			continue;
-		}
-
-		memcpy(&config_numa->dev, list->dev, sizeof(*list->dev));
+	FOREACH_NUMA(i, config, config_numa)
 		ctx_num += config_numa->sync_ctx_num + config_numa->async_ctx_num;
-	}
-
-	wd_free_list_accels(head);
 
 	ctx_config->ctxs = calloc(ctx_num, sizeof(struct wd_ctx));
 	if (!ctx_config->ctxs) {
 		ret = -ENOMEM;
-		goto err_free_list;
+		goto err_free_ctx_config;
 	}
 	ctx_config->ctx_num = ctx_num;
 
-	config_numa = config->config_per_numa;
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
-		if (config_numa->numa_disable)
-			continue;
-
+	FOREACH_NUMA(i, config, config_numa) {
 		ret = wd_get_wd_ctx(config_numa, ctx_config, start);
 		if (ret) {
 			ret = -WD_EBUSY;
@@ -745,9 +782,8 @@ static struct wd_ctx_config *wd_alloc_ctx(struct wd_env_config *config,
 	return ctx_config;
 
 err_free_ctxs:
+	wd_put_wd_ctx(ctx_config, start);
 	free(ctx_config->ctxs);
-err_free_list:
-	wd_free_list_accels(head);
 err_free_ctx_config:
 	free(ctx_config);
 	return WD_ERR_PTR(ret);
@@ -756,18 +792,43 @@ err_free_ctx_config:
 static void wd_free_ctx(struct wd_ctx_config *ctx_config)
 {
 
-	 wd_put_wd_ctx(ctx_config);
+	 wd_put_wd_ctx(ctx_config, ctx_config->ctx_num);
 	 free(ctx_config);
 }
 
-static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
-					     const struct wd_alg_ops *ops)
+static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
+			       struct wd_sched *sched, __u8 mode, int type_num)
+{
+	struct wd_ctx_range **ctx_table;
+	int i, ret, ctx_num;
+
+	if (mode)
+		ctx_num = config_numa->async_ctx_num;
+	else
+		ctx_num = config_numa->sync_ctx_num;
+
+	ctx_table = config_numa->ctx_table;
+	for (i = 0; i < type_num && ctx_num; i++) {
+		if (!ctx_table[mode][i].size)
+			continue;
+
+		ret = sample_sched_fill_data(
+				sched, config_numa->node,
+				mode, i,
+				ctx_table[mode][i].begin,
+				ctx_table[mode][i].end);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static struct wd_sched *wd_init_sched_config(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
-	struct wd_ctx_range **ctx_table;
 	struct wd_sched *sched;
-	int i, j, ret, type_num = ops->op_type_num;
-	int start, end;
+	int i, j, ret, type_num = config->op_type_num;
 	void *func = NULL;
 
 	if (!config->enable_internal_poll)
@@ -780,55 +841,11 @@ static struct wd_sched *wd_init_sched_config(struct wd_env_config *config,
 
 	sched->name = "SCHED_RR";
 
-	config_numa = config->config_per_numa;
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
-		if (config_numa->numa_disable || config_numa->ctx_table)
-			continue;
-
-		start = get_start_ctx_index(config, config_numa);
-		if (config_numa->sync_ctx_num) {
-			end = start + config_numa->sync_ctx_num - 1;
-			ret = sample_sched_fill_data(sched, config_numa->node,
-						     CTX_MODE_SYNC, 0,
-						     start, end);
-			if (ret)
-				goto err_release_sched;
-
-			start = end + 1;
-		}
-
-		if (config_numa->async_ctx_num) {
-			end = start + config_numa->async_ctx_num - 1;
-			ret = sample_sched_fill_data(sched, config_numa->node,
-						     CTX_MODE_ASYNC, 0,
-						     start, end);
-			if (ret)
-				goto err_release_sched;
-		}
-	}
-
-	/* reset config_numa head */
-	config_numa = config->config_per_numa;
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
-		if (config_numa->numa_disable || !config_numa->ctx_table)
-			continue;
-
-		ctx_table = config_numa->ctx_table;
-		for (j = 0; j < type_num && config_numa->sync_ctx_num; j++) {
-			ret = sample_sched_fill_data(
-					sched, config_numa->node,
-					CTX_MODE_SYNC, j,
-					ctx_table[CTX_MODE_SYNC][j].begin,
-					ctx_table[CTX_MODE_SYNC][j].end);
-			if (ret)
-				goto err_release_sched;
-		}
-
-		for (j = 0; j < type_num && config_numa->async_ctx_num; j++) {
-			ret = sample_sched_fill_data(sched, config_numa->node,
-					CTX_MODE_ASYNC, j,
-					ctx_table[CTX_MODE_ASYNC][j].begin,
-					ctx_table[CTX_MODE_ASYNC][j].end);
+	FOREACH_NUMA(i, config, config_numa) {
+		for (j = 0; j < CTX_MODE_MAX; j++) {
+			ret = wd_sched_fill_table(config_numa,
+						  sched, j,
+						  type_num);
 			if (ret)
 				goto err_release_sched;
 		}
@@ -849,10 +866,10 @@ static void wd_uninit_sched_config(struct wd_sched *sched_config)
 static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 						 __u32 index)
 {
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
+	struct wd_env_config_per_numa *config_numa;
 	int i, num = 0;
 
-	for (i = 0; i < config->numa_num; config_numa++, i++) {
+	FOREACH_NUMA(i, config, config_numa) {
 		num += config_numa->sync_ctx_num + config_numa->async_ctx_num;
 		if (index < num)
 			break;
@@ -864,10 +881,14 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 /* fix me: all return value here, and no config input */
 int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index)
 {
-	struct async_task_queue *task_queue = find_async_queue(config, index);
+	struct async_task_queue *task_queue;
 	struct async_task *head, *task;
 	int prod;
 
+	if (!config->enable_internal_poll)
+		return 0;
+
+	task_queue = find_async_queue(config, index);
 	if (sem_wait(&task_queue->empty_sem))
 		return 0;
 
@@ -1000,6 +1021,9 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	struct async_task_queue *task_queue, *head;
 	int i, j, ret;
 
+	if (!config_numa->async_ctx_num)
+		return 0;
+
 	config_numa->async_poll_num = WD_ASYNC_DEF_POLL_NUM;
 
 	/* make max task queues as the number of async ctxs */
@@ -1022,18 +1046,16 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	return 0;
 }
 
-static int wd_init_async_polling_thread(struct wd_env_config *config,
-					struct wd_ctx_config *ctx_config)
+static int wd_init_async_polling_thread(struct wd_env_config *config)
 {
-	struct wd_env_config_per_numa *config_numa = config->config_per_numa;
+	struct wd_env_config_per_numa *config_numa;
 	int i;
 
 	if (!config->enable_internal_poll)
 		return 0;
 
-	for (i = 0; i < config->numa_num; config_numa++, i++)
-		if (!config_numa->numa_disable)
-			wd_init_async_polling_thread_per_numa(config, config_numa);
+	FOREACH_NUMA(i, config, config_numa)
+		wd_init_async_polling_thread_per_numa(config, config_numa);
 
 	return 0;
 }
@@ -1047,19 +1069,15 @@ static int wd_init_resource(struct wd_env_config *config,
 {
 	struct wd_ctx_config *ctx_config;
 	struct wd_sched *sched_config;
-	int ret;
+	int ret = 0;
 
-	if (!ops->alg_init || !ops->alg_uninit || !ops->alg_poll_ctx) {
-		WD_ERR("Missing alg_init or alg_uninit!\n");
-		return -WD_EINVAL;
-	}
-	ctx_config = wd_alloc_ctx(config, ops);
+	ctx_config = wd_alloc_ctx(config);
 	if (WD_IS_ERR(ctx_config))
 		return -WD_EBUSY;
 	config->ctx_config = ctx_config;
 
 	config->alg_poll_ctx = ops->alg_poll_ctx;
-	sched_config = wd_init_sched_config(config, ops);
+	sched_config = wd_init_sched_config(config);
 	if (WD_IS_ERR(sched_config))
 		goto err_uninit_ctx;
 	config->sched = sched_config;
@@ -1068,8 +1086,7 @@ static int wd_init_resource(struct wd_env_config *config,
 	if (ret)
 		goto err_uninit_sched;
 
-	config->alg_uninit = ops->alg_uninit;
-	ret = wd_init_async_polling_thread(config, ctx_config);
+	ret = wd_init_async_polling_thread(config);
 	if (ret)
 		goto err_uninit_alg;
 
@@ -1092,44 +1109,183 @@ static void wd_uninit_resource(struct wd_env_config *config)
 	wd_free_ctx(config->ctx_config);
 }
 
-int wd_alg_env_init(struct wd_env_config *env_config,
-		    const struct wd_config_variable *table,
-		    const struct wd_alg_ops *ops,
-		    __u32 table_size)
+static void *wd_alloc_table(const struct wd_config_variable *table,
+				 __u32 table_size)
 {
-	int ret;
+	struct wd_config_variable *alg_table;
+	int i;
 
-	if (!env_config || !table || !table_size || !ops)
-		return -WD_EINVAL;
+	alg_table = malloc(table_size * sizeof(struct wd_config_variable));
+	if (!alg_table)
+		return NULL;
 
-	ret = wd_alloc_numa(env_config);
-	if (ret)
-		return ret;
-
-	env_config->op_type_num = ops->op_type_num;
-	env_config->table = table;
-	env_config->table_size = table_size;
-
-	ret = wd_parse_env(env_config);
-	if (ret) {
-		wd_free_numa(env_config);
-		return ret;
+	memcpy(alg_table, table,
+			table_size * sizeof(struct wd_config_variable));
+	for (i = 0; i < table_size - 1; i++) {
+		alg_table[i].def_val = malloc(MAX_STR_LEN);
+		if (!alg_table[i].def_val) {
+			WD_ERR("%s malloc fail\n", __func__);
+			goto free_mem;
+		}
 	}
 
-	ret = wd_init_resource(env_config, ops);
-	if (ret) {
-		wd_free_env(env_config);
-		wd_free_numa(env_config);
-		return ret;
+	return alg_table;
+
+free_mem:
+	for (i = i - 1; i >= 0; i--)
+		free(alg_table[i].def_val);
+
+	free(alg_table);
+	return NULL;
+}
+
+static int wd_alg_table_init(const struct wd_config_variable *table,
+			     __u32 table_size,
+			     struct wd_ctx_attr *attr,
+			     struct wd_env_config *env_config)
+{
+	struct wd_config_variable *var_tbl;
+	const char *type_tbl;
+
+	if (!attr) {
+		env_config->disable_env = 0;
+		env_config->table = table;
+		return 0;
 	}
+
+	env_config->disable_env = 1;
+
+	var_tbl = wd_alloc_table(table, table_size);
+	if (!var_tbl)
+		return -WD_ENOMEM;
+
+	env_config->table = var_tbl;
+
+	/**
+	 * Below def_val's memory is allocated from wd_alloc_table,
+	 * the length of memory allocated to def_val is MAX_STR_LEN.
+	 *
+	 * We use mode and type as index of a string two-dimensional
+	 * array to init def_val.
+	 */
+	if (env_config->op_type_num == 1)
+		type_tbl = ctx_type[attr->mode][attr->type];
+	else
+		type_tbl = comp_ctx_type[attr->mode][attr->type];
+
+	snprintf(var_tbl[0].def_val, MAX_STR_LEN, "%s%u%c%u",
+		 type_tbl, attr->num, '@', attr->node);
 
 	return 0;
 }
 
+static void wd_alg_table_uninit(struct wd_env_config *config)
+{
+	int i;
+
+	if (!config->disable_env)
+		return;
+
+	for (i = 0; i < config->table_size - 1; i++)
+		free(config->table[i].def_val);
+
+	free((struct wd_config_variable *)config->table);
+}
+
+int wd_alg_env_init(struct wd_env_config *env_config,
+		    const struct wd_config_variable *table,
+		    const struct wd_alg_ops *ops,
+		    __u32 table_size,
+		    struct wd_ctx_attr *ctx_attr)
+{
+	int ret;
+
+	env_config->op_type_num = ops->op_type_num;
+	env_config->table_size = table_size;
+
+	ret = wd_alg_table_init(table, table_size,
+				ctx_attr, env_config);
+	if (ret)
+		return ret;
+
+	ret = wd_alloc_numa(env_config, ops);
+	if (ret)
+		goto table_uninit;
+
+	ret = wd_parse_env(env_config);
+	if (ret)
+		goto free_numa;
+
+	ret = wd_init_resource(env_config, ops);
+	if (ret)
+		goto free_env;
+
+	/* Use alg_uninit as a sign of initialization complete */
+	env_config->alg_uninit = ops->alg_uninit;
+
+	return 0;
+
+free_env:
+	wd_free_env(env_config);
+free_numa:
+	wd_free_numa(env_config);
+table_uninit:
+	wd_alg_table_uninit(env_config);
+	return ret;
+}
+
 void wd_alg_env_uninit(struct wd_env_config *env_config)
 {
+	/* Check whether the initialization is complete */
+	if (!env_config->alg_uninit)
+		return;
+
 	wd_uninit_resource(env_config);
 	wd_free_env(env_config);
+	wd_free_numa(env_config);
+	wd_alg_table_uninit(env_config);
+}
+
+int wd_alg_get_env_param(struct wd_env_config *env_config,
+			 struct wd_ctx_attr attr,
+			 __u32 *num, __u8 *is_enable)
+{
+	struct wd_env_config_per_numa *config_numa;
+
+	if (!num || !is_enable) {
+		WD_ERR("input parameter num or is_enable is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	*is_enable = env_config->enable_internal_poll;
+
+	config_numa = wd_get_config_numa(env_config, attr.node);
+	if (!config_numa) {
+		WD_ERR("%s got wrong numa node: %u!\n",
+				__func__, attr.node);
+		return -WD_EINVAL;
+	}
+
+	*num = config_numa->ctx_table[attr.mode][attr.type].size;
+
+	return 0;
+}
+
+int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
+		     __u32 node, __u32 type, __u8 mode, __u32 num)
+{
+	if (mode >= CTX_MODE_MAX) {
+		WD_ERR("wrong ctx mode(%u))!\n", mode);
+		return -WD_EINVAL;
+	}
+
+	ctx_attr->node = node;
+	ctx_attr->mode = mode;
+	ctx_attr->num = num;
+	/* If type is CTX_TYPE_INVALID, we need update it to 0. */
+	ctx_attr->type = (type == CTX_TYPE_INVALID) ? 0 : type;
+
+	return 0;
 }
 
 int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx)
