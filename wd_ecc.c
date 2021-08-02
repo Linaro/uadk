@@ -24,7 +24,6 @@
 #define ECC_MAX_OUT_NUM			4
 #define CURVE_PARAM_NUM			6
 #define ECC_POINT_NUM			2
-#define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof(array[0]))
 #define MAX_CURVE_SIZE			(ECC_MAX_KEY_SIZE * CURVE_PARAM_NUM)
 #define MAX_HASH_LENS			ECC_MAX_KEY_SIZE
 #define SM2_KEY_SIZE			32
@@ -772,7 +771,7 @@ static int set_curve_param(struct wd_ecc_key *key,
 
 static const struct wd_ecc_curve_list *find_curve_list(__u32 id)
 {
-	int len = WD_ARRAY_SIZE(curve_list);
+	int len = ARRAY_SIZE(curve_list);
 	int i = 0;
 
 	while (i < len) {
@@ -1457,15 +1456,11 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 
 	sess->s_key.mode = CTX_MODE_SYNC;
 	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->s_key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	memset(&msg, 0, sizeof(struct wd_ecc_msg));
 	ret = fill_ecc_msg(&msg, req, sess);
@@ -2149,15 +2144,11 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	sess_t->s_key.mode = CTX_MODE_ASYNC;
 	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						   &sess_t->s_key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);
 	if (mid < 0)
@@ -2192,39 +2183,34 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 rcv_cnt = 0;
 	int ret;
 
-	if (unlikely(!count || idx >= config->ctx_num)) {
-		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
-			idx, config->ctx_num);
+	if (unlikely(!count)) {
+		WD_ERR("param count is NULL!");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
 
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	do {
-		pthread_spin_lock(&ctx->lock);
 		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
-			pthread_spin_unlock(&ctx->lock);
-			break;
+			return ret;
 		} else if (ret < 0) {
-			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_ecc_setting.pool, idx,
 					   recv_msg.tag);
 			return ret;
 		}
-		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, idx,
 					  recv_msg.tag);
 		if (!msg) {
 			WD_ERR("get msg from pool is NULL!\n");
-			break;
+			return -WD_EINVAL;
 		}
 
 		msg->req.dst_bytes = recv_msg.req.dst_bytes;
@@ -2232,9 +2218,8 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		req = &msg->req;
 		req->cb(req);
 		wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, recv_msg.tag);
+		*count = rcv_cnt;
 	} while (--expt);
-
-	*count = rcv_cnt;
 
 	return ret;
 }
