@@ -270,15 +270,11 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 
 	sess_t->key.mode = CTX_MODE_SYNC;
 	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess_t->key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	memset(&msg, 0, sizeof(struct wd_dh_msg));
 	ret = fill_dh_msg(&msg, req, sess_t);
@@ -316,15 +312,11 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	sess_t->key.mode = CTX_MODE_ASYNC;
 	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req,
 						  &sess_t->key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("failed to pick ctx, idx = %u!\n", idx);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	mid = wd_get_msg_from_pool(&wd_dh_setting.pool, idx, (void **)&msg);
 	if (mid < 0)
@@ -361,39 +353,34 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 rcv_cnt = 0;
 	int ret;
 
-	if (unlikely(!count || idx >= config->ctx_num)) {
-		WD_ERR("param error, idx = %u, ctx_num = %u!\n",
-			idx, config->ctx_num);
+	if (unlikely(!count)) {
+		WD_ERR("count is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
 
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode= %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	do {
-		pthread_spin_lock(&ctx->lock);
 		ret = wd_dh_setting.driver->recv(ctx->ctx, &rcv_msg);
 		if (ret == -WD_EAGAIN) {
-			pthread_spin_unlock(&ctx->lock);
-			break;
+			return ret;
 		} else if (unlikely(ret)) {
-			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
 			wd_put_msg_to_pool(&wd_dh_setting.pool, idx,
 					   rcv_msg.tag);
 			return ret;
 		}
-		pthread_spin_unlock(&ctx->lock);
 		rcv_cnt++;
 		msg = wd_find_msg_in_pool(&wd_dh_setting.pool,
 			idx, rcv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to find msg!\n");
-			break;
+			return -WD_EINVAL;
 		}
 
 		msg->req.pri_bytes = rcv_msg.req.pri_bytes;
@@ -401,9 +388,8 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		req = &msg->req;
 		req->cb(req);
 		wd_put_msg_to_pool(&wd_dh_setting.pool, idx, rcv_msg.tag);
+		*count = rcv_cnt;
 	} while (--expt);
-
-	*count = rcv_cnt;
 
 	return ret;
 }
