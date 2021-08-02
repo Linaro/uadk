@@ -843,7 +843,7 @@ static void hisi_qm_pbuff_copy_inner(void *buff, struct hisi_sgl *hw_sgl,
 void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
 			__u8 direct)
 {
-	struct hisi_sgl *tmp = (struct hisi_sgl *)hw_sgl;
+	struct hisi_sgl *tmp;
 	__u32 len = 0;
 	__u32 sge_offset = 0;
 	int begin_sge = 0;
@@ -852,6 +852,7 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
 	if (!dst_buff || !hw_sgl || !size)
 		return;
 
+	tmp = (struct hisi_sgl *)hw_sgl;
 	/* find the sgl chain position */
 	while (tmp) {
 		/* the sgl chain is find */
