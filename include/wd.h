@@ -56,6 +56,7 @@ extern FILE *flog_fd;
 #define	WD_ENOMEM			ENOMEM
 #define	WD_EACCESS			EACCESS
 #define	WD_EBUSY			EBUSY
+#define	WD_EEXIST			EEXIST
 #define	WD_ENODEV			ENODEV
 #define	WD_EINVAL			EINVAL
 #define	WD_ETIMEDOUT			ETIMEDOUT

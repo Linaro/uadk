@@ -208,7 +208,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	if (wd_cipher_setting.config.ctx_num) {
 		WD_ERR("cipher have initialized.\n");
-		return 0;
+		return -WD_EEXIST;
 	}
 
 	if (!config || !sched) {
