@@ -82,8 +82,8 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	/* wd_comp_init() could only be invoked once for one process. */
 	if (wd_comp_setting.config.ctx_num) {
-		WD_ERR("invalid, comp init() should only be invokoed once!\n");
-		return 0;
+		WD_ERR("comp have initialized.!\n");
+		return -WD_EEXIST;
 	}
 
 	if (!config || !sched) {

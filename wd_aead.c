@@ -344,7 +344,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	if (wd_aead_setting.config.ctx_num) {
 		WD_ERR("aead have initialized.\n");
-		return 0;
+		return -WD_EEXIST;
 	}
 
 	if (!config || !sched) {
