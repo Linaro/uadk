@@ -969,6 +969,13 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 	TAILQ_FOREACH(iter, &bp->mz_list, node) {
 		size += (iter->end - iter->begin + 1) * bp->mp->blk_size;
 	}
+
+	if (!size) {
+		WD_ERR("WD_MMEPOOL: Blkpool size is zero\n");
+		wd_unspinlock(&bp->lock);
+		return;
+	}
+
 	stats->mem_waste_rate = (size - bp->blk_size * bp->depth) * WD_HUNDRED / size;
 
 	wd_unspinlock(&bp->lock);
