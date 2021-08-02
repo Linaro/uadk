@@ -272,4 +272,13 @@ int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index);
  *          variable information.
  */
 void dump_env_var(struct wd_env_config *config);
+
+/*
+ * wd_check_ctx() - check ctx mode and index
+ * @config: ctx config pointer.
+ * @mode: synchronous or asynchronous mode.
+ * @idx: ctx index.
+ */
+int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx);
+
 #endif /* __WD_UTIL_H */
