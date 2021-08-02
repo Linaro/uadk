@@ -3,8 +3,8 @@
 #define SCHED_SAMPLE_h
 #include "wd_alg_common.h"
 
-#define MAX_NUMA_NUM 4
-#define INVALID_POS 0xFFFFFFFF
+#define MAX_NUMA_NUM	4
+#define INVALID_POS	0xFFFFFFFF
 
 
 /* The global policy type */
