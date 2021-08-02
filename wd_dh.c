@@ -71,8 +71,8 @@ static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_dh_init() could only be invoked once for one process. */
 	if (wd_dh_setting.config.ctx_num) {
-		WD_ERR("init dh error: repeat initialize dh\n");
-		return -WD_EINVAL;
+		WD_ERR("dh have initialized.\n");
+		return -WD_EEXIST;
 	}
 
 	if (!config || !config->ctxs[0].ctx || !sched) {
@@ -155,7 +155,7 @@ out:
 void wd_dh_uninit(void)
 {
 	if (!wd_dh_setting.priv) {
-		WD_ERR("uninit dh error: repeat uninit dh\n");
+		WD_ERR("repeat uninit dh\n");
 		return;
 	}
 
