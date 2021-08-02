@@ -5,6 +5,10 @@
 #include <stdbool.h>
 #include "wd_alg_common.h"
 
+#define FOREACH_NUMA(i, config, config_numa) \
+	for (i = 0, config_numa = config->config_per_numa; \
+	     i < config->numa_num; config_numa++, i++)
+
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
 	__u32 pool_num;
@@ -19,7 +23,6 @@ struct wd_ctx_range {
 struct wd_env_config_per_numa {
 	/* Config begin */
 	unsigned long node;
-	__u8 numa_disable;
 	unsigned long sync_ctx_num;
 	unsigned long async_ctx_num;
 	/*
@@ -54,6 +57,7 @@ struct wd_env_config {
 	struct wd_env_config_per_numa *config_per_numa;
 	/* Let's make it as a gobal config, not per numa */
 	bool enable_internal_poll;
+	__u8 disable_env;
 	__u8 op_type_num;
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
 	void (*alg_uninit)(void);
@@ -67,7 +71,7 @@ struct wd_env_config {
 
 struct wd_config_variable {
 	const char *name;
-	const char *def_val;
+	char *def_val;
 	int (*parse_fn)(struct wd_env_config *, const char *);
 };
 
@@ -77,6 +81,13 @@ struct wd_alg_ops {
 	int (*alg_init)(struct wd_ctx_config *, struct wd_sched *);
 	void (*alg_uninit)(void);
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
+};
+
+struct wd_ctx_attr {
+	__u32 node;
+	__u32 type;
+	__u32 num;
+	__u8 mode;
 };
 
 /*
@@ -189,38 +200,14 @@ int wd_check_datalist(struct wd_datalist *head, __u32 size);
 
 
 /*
- * wd_parse_sync_ctx_num() - Parse sync ctx related environment variables and
- * 			     store it.
+ * wd_parse_ctx_num() - Parse wd ctx type environment variable and store it.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
  * @s: Related environment variable string.
  *
  * More information, please see docs/wd_environment_variable.
  */
-int wd_parse_sync_ctx_num(struct wd_env_config *config, const char *s);
-
-/*
- * wd_parse_async_ctx_num() - Parse async ctx related environment variables and
- * 			      store it.
- * @config: Pointer of wd_env_config which is used to store environment
- *          variable information.
- * @s: Related environment variable string.
- *
- * More information, please see docs/wd_environment_variable.
- */
-int wd_parse_async_ctx_num(struct wd_env_config *config, const char *s);
-
-/*
- * wd_parse_comp_ctx_type() - Parse wd compress ctx type environment variable
- * 			      and store it.
- * @config: Pointer of wd_env_config which is used to store environment
- *          variable information.
- * @s: Related environment variable string.
- *
- * Currently only wd comp need this environment variable.
- * More information, please see docs/wd_environment_variable.
- */
-int wd_parse_comp_ctx_type(struct wd_env_config *config, const char *s);
+int wd_parse_ctx_num(struct wd_env_config *config, const char *s);
 
 /*
  * wd_parse_async_poll_en() - Parse async polling thread related environment
@@ -248,7 +235,8 @@ int wd_parse_async_poll_en(struct wd_env_config *config, const char *s);
 int wd_alg_env_init(struct wd_env_config *config,
 		    const struct wd_config_variable *table,
 		    const struct wd_alg_ops *ops,
-		    __u32 table_size);
+		    __u32 table_size,
+		    struct wd_ctx_attr *ctx_attr);
 
 /*
  * wd_alg_env_uninit() - uninit specific wd algorithm environment configuration.
@@ -267,11 +255,34 @@ void wd_alg_env_uninit(struct wd_env_config *env_config);
 int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index);
 
 /*
- * dump_env_var() - dump wd algorithm environment from system.
+ * dump_env_info() - dump wd algorithm ctx info.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
  */
-void dump_env_var(struct wd_env_config *config);
+void dump_env_info(struct wd_env_config *config);
+
+/*
+ * wd_alg_get_env_param() - get specific ctx number.
+ * @config: Pointer of wd_env_config which is used to store environment
+ *          variable information.
+ * @ctx_attr: ctx attributes.
+ * @num: save ctx number.
+ * @is_enable: save enable inner poll flag.
+ */
+int wd_alg_get_env_param(struct wd_env_config *env_config,
+			 struct wd_ctx_attr ctx_attr,
+			 __u32 *num, __u8 *is_enable);
+
+/*
+ * wd_set_ctx_attr() - set node type and mode for ctx
+ * @ctx_attr: ctx attributes pointer.
+ * @node: numa id.
+ * @type: operation type.
+ * @mode: synchronous or asynchronous mode.
+ * @num: ctx number.
+ */
+int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
+		    __u32 node, __u32 type, __u8 mode, __u32 num);
 
 /*
  * wd_check_ctx() - check ctx mode and index
