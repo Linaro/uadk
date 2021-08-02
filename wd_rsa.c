@@ -110,8 +110,8 @@ static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_rsa_init() could only be invoked once for one process. */
 	if (wd_rsa_setting.config.ctx_num) {
-		WD_ERR("init rsa error: repeat initialize rsa\n");
-		return -WD_EINVAL;
+		WD_ERR("rsa have initialized.\n");
+		return -WD_EEXIST;
 	}
 
 	if (!config || !config->ctxs[0].ctx || !sched) {
@@ -193,7 +193,7 @@ out:
 void wd_rsa_uninit(void)
 {
 	if (!wd_rsa_setting.priv) {
-		WD_ERR("uninit rsa error: repeat uninit rsa\n");
+		WD_ERR("repeat uninit rsa\n");
 		return;
 	}
 

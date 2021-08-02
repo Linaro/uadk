@@ -126,8 +126,8 @@ static int init_param_check(struct wd_ctx_config *config, struct wd_sched *sched
 {
 	/* wd_ecc_init() could only be invoked once for one process. */
 	if (wd_ecc_setting.config.ctx_num) {
-		WD_ERR("init ecc error: repeat initialize ecc\n");
-		return -WD_EINVAL;
+		WD_ERR("ecc have initialized.\n");
+		return -WD_EEXIST;
 	}
 
 	if (!config || !config->ctxs[0].ctx || !sched) {
@@ -209,7 +209,7 @@ out:
 void wd_ecc_uninit(void)
 {
 	if (!wd_ecc_setting.priv) {
-		WD_ERR("uninit ecc error: repeat uninit ecc\n");
+		WD_ERR("repeat uninit ecc\n");
 		return;
 	}
 
