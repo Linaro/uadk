@@ -292,15 +292,11 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	idx = wd_digest_setting.sched.pick_next_ctx(
 		wd_digest_setting.sched.h_sched_ctx, req, &key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("fail to pick next ctx!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (unlikely(ctx->ctx_mode != CTX_MODE_SYNC)) {
-		WD_ERR("failed to check ctx mode!\n");
-		return -WD_EINVAL;
-	}
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
@@ -367,15 +363,11 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	idx = wd_digest_setting.sched.pick_next_ctx(
 		wd_digest_setting.sched.h_sched_ctx, req, &key);
-	if (unlikely(idx >= config->ctx_num)) {
-		WD_ERR("fail to pick next ctx!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (unlikely(ctx->ctx_mode != CTX_MODE_ASYNC)) {
-		WD_ERR("failed to check ctx mode!\n");
-		return -WD_EINVAL;
-	}
 
 	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, idx,
 				   (void **)&msg);
@@ -389,7 +381,9 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
-		WD_ERR("failed to send BD, hw is err!\n");
+		if (ret != -WD_EBUSY)
+			WD_ERR("failed to send BD, hw is err!\n");
+
 		wd_put_msg_to_pool(&wd_digest_setting.pool, idx, msg->tag);
 		return ret;
 	}
@@ -400,35 +394,40 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
-	struct wd_ctx_internal *ctx = config->ctxs + idx;
+	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg recv_msg, *msg;
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
 	int ret;
 
-	if (unlikely(idx >= config->ctx_num || !count)) {
-		WD_ERR("digest input poll ctx or count is NULL.\n");
+	if (unlikely(!count)) {
+		WD_ERR("digest count is NULL.\n");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
+	ctx = config->ctxs + idx;
 
 	do {
 		ret = wd_digest_setting.driver->digest_recv(ctx->ctx,
 							    &recv_msg);
 		if (ret == -WD_EAGAIN) {
-			break;
+			return ret;
 		} else if (ret < 0) {
 			WD_ERR("wd recv err!\n");
-			break;
+			return ret;
 		}
 
-		expt--;
 		recv_cnt++;
 
 		msg = wd_find_msg_in_pool(&wd_digest_setting.pool, idx,
 					  recv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
-			break;
+			return -WD_EINVAL;
 		}
 
 		msg->req.state = recv_msg.result;
@@ -438,8 +437,8 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 		wd_put_msg_to_pool(&wd_digest_setting.pool, idx,
 				   recv_msg.tag);
-	} while (expt > 0);
-	*count = recv_cnt;
+		*count = recv_cnt;
+	} while (--expt);
 
 	return ret;
 }

@@ -20,8 +20,6 @@
 #define POLL_SIZE			250000
 #define POLL_TIME			1000
 
-#define WD_ARRAY_SIZE(array)           (sizeof(array) / sizeof(array[0]))
-
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
 	(((x) & 0x0000ff00) <<  8) | \
@@ -188,10 +186,15 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u64 recv_count = 0;
 	int ret;
 
-	if (unlikely(idx >= config->ctx_num || !count)) {
-		WD_ERR("comp poll input index is error or count is NULL\n");
+	if (unlikely(!count)) {
+		WD_ERR("comp poll input count is NULL\n");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
 
 	do {
@@ -200,7 +203,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		if (ret < 0) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw err!\n");
-			break;
+			return ret;
 		}
 
 		recv_count++;
@@ -209,7 +212,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 					  resp_msg.tag);
 		if (!msg) {
 			WD_ERR("get msg from pool is NULL!\n");
-			break;
+			return -WD_EINVAL;
 		}
 
 		req = &msg->req;
@@ -220,10 +223,9 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, resp_msg.tag);
+		*count = recv_count;
 
 	} while (--expt);
-
-	*count = recv_count;
 
 	return ret;
 }
@@ -395,16 +397,11 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
-	if (idx >= config->ctx_num) {
-		WD_ERR("fail to pick a proper ctx: index: %d\n", idx);
-		return -WD_EINVAL;
-	}
-	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
 
+	ctx = config->ctxs + idx;
 	fill_comp_msg(sess, &msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.stream_mode = WD_COMP_STATELESS;
@@ -539,7 +536,7 @@ static int append_store_block(struct wd_comp_sess *sess,
 			      struct wd_comp_req *req)
 {
 	char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
-	int blocksize = WD_ARRAY_SIZE(store_block);
+	int blocksize = ARRAY_SIZE(store_block);
 	__u32 checksum = sess->checksum;
 	__u32 isize = sess->isize;
 
@@ -612,15 +609,11 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
-	if (idx >= config->ctx_num) {
-		WD_ERR("fail to pick a proper ctx!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_SYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	fill_comp_msg(sess, &msg, req);
 	msg.stream_pos = sess->stream_pos;
@@ -703,15 +696,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
 						  req,
 						  &sess->key);
-	if (idx >= config->ctx_num) {
-		WD_ERR("fail to pick a proper ctx!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	if (ret)
+		return ret;
+
 	ctx = config->ctxs + idx;
-	if (ctx->ctx_mode != CTX_MODE_ASYNC) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
-		return -WD_EINVAL;
-	}
 
 	tag = wd_get_msg_from_pool(&wd_comp_setting.pool, idx, (void **)&msg);
 	if (tag < 0) {
