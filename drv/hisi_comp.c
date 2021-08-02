@@ -855,7 +855,7 @@ static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 	handle_t h_ctx;
 	int i;
 
-	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config));
+	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
