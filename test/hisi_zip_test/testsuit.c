@@ -805,6 +805,8 @@ int test_hw(struct test_options *opts, char *model)
 	struct stat statbuf;
 	chunk_list_t *tlist = NULL;
 	int div;
+	__u32 num;
+	__u8 enable;
 
 	if (!opts || !model) {
 		ret = -EINVAL;
@@ -898,6 +900,14 @@ int test_hw(struct test_options *opts, char *model)
 		ret = nonenv_resource_init(opts, &info, &sched);
 	if (ret < 0)
 		goto out;
+
+	if (opts->use_env) {
+		ret = wd_comp_get_env_param(0, opts->op_type, opts->sync_mode, &num, &enable);
+		printf("get_env_param ret:%d, ctx num:%u, enable poll:%u",
+		       ret, num, enable);
+		if (ret < 0)
+			goto out;
+	}
 
 	if (opts->is_file) {
 		ret = fstat(opts->fd_in, &statbuf);
