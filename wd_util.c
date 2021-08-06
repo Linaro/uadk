@@ -394,7 +394,7 @@ int wd_parse_async_poll_en(struct wd_env_config *config, const char *s)
 	return 0;
 }
 
-static int parse_ctx_num_on_numa(const char *s, int *ctx_num, int *node)
+static int parse_num_on_numa(const char *s, int *num, int *node)
 {
 	char *sep, *start, *left;
 
@@ -410,7 +410,7 @@ static int parse_ctx_num_on_numa(const char *s, int *ctx_num, int *node)
 	left = start;
 	sep = strsep(&left, "@");
 	if (is_number(sep) && is_number(left)) {
-		*ctx_num = strtol(sep, NULL, 10);
+		*num = strtol(sep, NULL, 10);
 		*node = strtol(left, NULL, 10);
 		free(start);
 		return 0;
@@ -500,7 +500,7 @@ static int wd_parse_section(struct wd_env_config *config, char *section)
 
 	ctx_section++;
 
-	ret = parse_ctx_num_on_numa(ctx_section, &ctx_num, &node);
+	ret = parse_num_on_numa(ctx_section, &ctx_num, &node);
 	if (ret)
 		return ret;
 
@@ -612,6 +612,38 @@ err_free_ctx_table:
 int wd_parse_ctx_num(struct wd_env_config *config, const char *s)
 {
 	return parse_ctx_num(config, s);
+}
+
+int wd_parse_async_poll_num(struct wd_env_config *config, const char *s)
+{
+	struct wd_env_config_per_numa *config_numa;
+	char *left, *section, *start;
+	int node, poll_num, ret;
+
+	start = strdup(s);
+	if (!start)
+		return -ENOMEM;
+
+	left = start;
+	while ((section = strsep(&left, ","))) {
+		ret = parse_num_on_numa(section, &poll_num, &node);
+		if (ret)
+			goto out;
+		config_numa = wd_get_config_numa(config, node);
+		if (!config_numa) {
+			WD_ERR("%s got wrong numa node: %s!\n",
+				__func__, section);
+			ret = -WD_EINVAL;
+			goto out;
+		}
+		config_numa->async_poll_num = poll_num;
+	}
+
+	free(start);
+	return 0;
+out:
+	free(start);
+	return ret;
 }
 
 static int wd_parse_env(struct wd_env_config *config)
@@ -922,6 +954,14 @@ static void *async_poll_process_func(void *args)
 		if (pthread_mutex_lock(&task_queue->lock))
 			goto out;
 
+		/* async sending message isn't submitted yet */
+		if (task_queue->cons == task_queue->prod) {
+			if (pthread_mutex_unlock(&task_queue->lock))
+				goto out;
+			sem_post(&task_queue->full_sem);
+			continue;
+		}
+
 		cons = task_queue->cons;
 		head = task_queue->head;
 		task = head + cons;
@@ -1037,12 +1077,17 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 				struct wd_env_config_per_numa *config_numa)
 {
 	struct async_task_queue *task_queue, *head;
-	int i, j, ret;
+	int i, j, n, ret;
 
 	if (!config_numa->async_ctx_num)
 		return 0;
 
-	config_numa->async_poll_num = WD_ASYNC_DEF_POLL_NUM;
+	if (config_numa->async_poll_num <= 0) {
+		WD_ERR("Invalid async poll number (%ld) is set.\n",
+		       config_numa->async_poll_num);
+		WD_ERR("Change to default value: %d\n", WD_ASYNC_DEF_POLL_NUM);
+		config_numa->async_poll_num = WD_ASYNC_DEF_POLL_NUM;
+	}
 
 	/* make max task queues as the number of async ctxs */
 	task_queue = calloc(config_numa->async_ctx_num, sizeof(*head));
@@ -1051,7 +1096,13 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	head = task_queue;
 	config_numa->async_task_queue_array = (void *)head;
 
-	for (i = 0; i < config_numa->async_poll_num; task_queue++, i++) {
+	if (config_numa->async_poll_num > config_numa->async_ctx_num) {
+		n = config_numa->async_ctx_num;
+		WD_ERR("Create %ld async polling threads since ctx number is "
+		       "limited.\n", config_numa->async_poll_num);
+	} else
+		n = config_numa->async_poll_num;
+	for (i = 0; i < n; task_queue++, i++) {
 		ret = wd_init_one_task_queue(task_queue, config->alg_poll_ctx);
 		if (ret) {
 			task_queue = head;
@@ -1069,13 +1120,16 @@ static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
 				struct wd_env_config_per_numa *config_numa)
 {
 	struct async_task_queue *task_queue, *head;
-	int i;
+	int i, n;
 
 	head = config_numa->async_task_queue_array;
 	task_queue = head;
-	for (i = 0; i < config_numa->async_poll_num; task_queue++, i++) {
+	if (config_numa->async_poll_num > config_numa->async_ctx_num)
+		n = config_numa->async_ctx_num;
+	else
+		n = config_numa->async_poll_num;
+	for (i = 0; i < n; task_queue++, i++)
 		wd_uninit_one_task_queue(task_queue);
-	}
 	free(head);
 	config_numa->async_task_queue_array = NULL;
 }
