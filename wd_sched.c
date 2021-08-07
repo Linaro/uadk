@@ -223,7 +223,8 @@ sample_sched_get_ctx_range(struct sample_sched_ctx *ctx,
 	int numa_id;
 
 	sched_info = ctx->sched_info;
-	if (sched_info[key->numa_id].ctx_region[key->mode][key->type].valid)
+	if (key->numa_id >= 0 &&
+	    sched_info[key->numa_id].ctx_region[key->mode][key->type].valid)
 		return &sched_info[key->numa_id].ctx_region[key->mode][key->type];
 
 	/* If the key->numa_id is not exist, we should scan for a region */
