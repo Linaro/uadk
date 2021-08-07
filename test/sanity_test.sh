@@ -353,10 +353,7 @@ hw_dfl_hw_ifl()
 # failed: return 1; success: return 0
 run_zip_test_v2()
 {
-	export WD_COMP_NUMA=0
-	export WD_COMP_SYNC_CTX_NUM="8@0"
-	export WD_COMP_ASYNC_CTX_NUM="8@0"
-	export WD_COMP_CTX_TYPE="sync-comp:4@0,sync-decomp:4@0,async-comp:4@0,async-decomp:4@0"
+	export WD_COMP_CTX_NUM="sync-comp:4@0,sync-decomp:4@0,async-comp:4@0,async-decomp:4@0"
 	export WD_COMP_ASYNC_POLL_EN=1
 	# test without environment variables
 	sw_dfl_hw_ifl /var/log/syslog
