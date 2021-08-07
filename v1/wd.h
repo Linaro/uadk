@@ -140,7 +140,7 @@ enum wcrypto_type {
 
 #ifndef WD_ERR
 #ifndef WITH_LOG_FILE
-wd_log log_out;
+extern wd_log log_out;
 
 #define __WD_FILENAME__ (strrchr(__FILE__, '/') ?	\
 		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)) : __FILE__)
@@ -150,7 +150,7 @@ wd_log log_out;
 	__WD_FILENAME__, __LINE__, __func__, ##args) : 	\
 	fprintf(stderr, format, ##args))
 #else
-FILE *flog_fd;
+extern FILE *flog_fd;
 #define WD_ERR(format, args...)				\
 	if (!flog_fd)					\
 		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
