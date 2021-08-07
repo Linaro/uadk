@@ -19,8 +19,6 @@
 
 const char *WD_VERSION = UADK_VERSION_NUMBER;
 
-//wd_log log_out = NULL;
-
 struct wd_ctx_h {
 	int fd;
 	char dev_path[MAX_DEV_NAME_LEN];
@@ -646,23 +644,3 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 
 	return ioctl(ctx->fd, cmd, arg);
 }
-
-#if 0
-int wd_register_log(wd_log log)
-{
-	if (!log) {
-		WD_ERR("param null!\n");
-		return -WD_EINVAL;
-	}
-
-	if (log_out) {
-		WD_ERR("can not duplicate register!\n");
-		return -WD_EINVAL;
-	}
-
-	log_out = log;
-	dbg("log register\n");
-
-	return 0;
-}
-#endif
