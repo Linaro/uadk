@@ -738,7 +738,7 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 }
 
 static const struct wd_config_variable table[] = {
-	{ .name = "WD_COMP_CTX_TYPE",
+	{ .name = "WD_COMP_CTX_NUM",
 	  .def_val = "sync-comp:1@0,sync-decomp:1@0,async-comp:1@0,async-decomp:1@0",
 	  .parse_fn = wd_parse_ctx_num
 	},
