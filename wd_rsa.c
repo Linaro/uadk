@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <dirent.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -341,12 +342,14 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	pthread_spin_lock(&ctx->lock);
 	ret = rsa_send(ctx->ctx, &msg);
 	if (unlikely(ret))
 		goto fail;
 
 	ret = rsa_recv_sync(ctx->ctx, &msg);
 fail:
+	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
 
