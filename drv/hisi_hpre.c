@@ -2194,27 +2194,26 @@ static int sm2_enc_parse(handle_t h_qp,
 	ret = ecc_sqe_parse(first, hw_msg);
 	if (ret) {
 		WD_ERR("failed to parse first BD, ret = %d\n", ret);
-		goto fail;
+		goto free_first;
 	}
 
 	/* parse second sqe */
 	ret = parse_second_sqe(h_qp, msg, &second);
 	if (unlikely(ret)) {
 		WD_ERR("failed to parse second BD, ret = %d!\n", ret);
-		goto fail;
+		goto free_first;
 	}
 
 	ret = sm2_convert_enc_out(&src, first, second);
 	if (unlikely(ret)) {
 		WD_ERR("failed to convert sm2 std format, ret = %d!\n", ret);
-		goto fail;
+		goto free_second;
 	}
-
-fail:
-	msg->tag = tag;
-	free_req(first);
+free_second:
 	free_req(second);
-
+free_first:
+	free_req(first);
+	msg->tag = tag;
 	return ret;
 }
 
