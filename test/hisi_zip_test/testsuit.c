@@ -6,6 +6,8 @@
 
 #include "test_lib.h"
 
+#define POLL_STRING_LEN		128
+
 static size_t count_chunk_list_sz(chunk_list_t *list)
 {
 	size_t sum = 0;
@@ -1046,6 +1048,7 @@ out:
 int run_self_test(struct test_options *opts)
 {
 	int i, f_ret = 0;
+	char poll_str[POLL_STRING_LEN];
 
 	printf("Start to run self test!\n");
 	opts->alg_type = WD_ZLIB;
@@ -1115,6 +1118,16 @@ int run_self_test(struct test_options *opts)
 			break;
 		default:
 			return -EINVAL;
+		}
+		if (opts->use_env && opts->poll_num) {
+			memset(poll_str, 0, POLL_STRING_LEN);
+			sprintf(poll_str,
+				"sync-comp:8@0,sync-decomp:8@0,"
+				"async-comp:8@0,async-decomp:8@0");
+			setenv("WD_COMP_CTX_NUM", poll_str, 1);
+			memset(poll_str, 0, POLL_STRING_LEN);
+			sprintf(poll_str, "%d@0", opts->poll_num),
+			setenv("WD_COMP_ASYNC_POLL_NUM", poll_str, 1);
 		}
 		f_ret |= test_hw(opts, "sw_dfl_hw_ifl");
 		f_ret |= test_hw(opts, "hw_dfl_sw_ifl");
