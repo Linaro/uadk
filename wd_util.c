@@ -1098,8 +1098,10 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 
 	if (config_numa->async_poll_num > config_numa->async_ctx_num) {
 		n = config_numa->async_ctx_num;
-		WD_ERR("Create %ld async polling threads since ctx number is "
-		       "limited.\n", config_numa->async_poll_num);
+		WD_ERR("Can't create more async polling threads than the "
+		       "number of ctx number. Downgrade it from %ld to %ld.\n",
+		       config_numa->async_poll_num,
+		       config_numa->async_ctx_num);
 	} else
 		n = config_numa->async_poll_num;
 	for (i = 0; i < n; task_queue++, i++) {
