@@ -1063,6 +1063,7 @@ try_do_again:
 			goto try_do_again;
 		} else if (ret) {
 			SEC_TST_PRT("test sec cipher send req is error!\n");
+			pthread_mutex_unlock(&test_sec_mutex);
 			goto out;
 		}
 		cnt--;
