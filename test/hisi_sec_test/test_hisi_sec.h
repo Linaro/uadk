@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
+
 #ifndef TEST_HISI_SEC_H_
 #define TEST_HISI_SEC_H
 
