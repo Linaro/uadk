@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
+
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
