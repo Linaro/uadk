@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+/*
+ * Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved.
+ * Copyright 2020-2021 Linaro ltd.
+ */
+
 #ifndef WD_ALG_COMMON_H
 #define WD_ALG_COMMON_H
 
