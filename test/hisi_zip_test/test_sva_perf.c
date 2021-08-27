@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
+ * Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved.
+ * Copyright 2020-2021 Linaro ltd.
+ */
+
+/*
  * Test performance of the SVA API
  */
 #include <asm/unistd.h>	/* For __NR_perf_event_open */

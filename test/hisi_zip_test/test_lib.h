@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+/*
+ * Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved.
+ * Copyright 2020-2021 Linaro ltd.
+ */
+
 #ifndef TEST_LIB_H_
 #define TEST_LIB_H_
 
