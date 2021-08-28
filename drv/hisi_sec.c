@@ -70,6 +70,7 @@
 
 /* The max BD data length is 16M-512B */
 #define MAX_INPUT_DATA_LEN	0xFFFE00
+#define MAX_CCM_AAD_LEN		65279
 
 #define AUTHPAD_OFFSET		2
 #define AUTHTYPE_OFFSET		6
@@ -1758,6 +1759,22 @@ static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 	sqe->type2.a_ivin_addr = (__u64)msg->aiv;
 }
 
+static int aead_len_check(struct wd_aead_msg *msg)
+{
+	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
+		WD_ERR("failed to check aead input data length!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->cmode == WD_CIPHER_CCM &&
+	    msg->assoc_bytes > MAX_CCM_AAD_LEN)) {
+		WD_ERR("failed to check ccm aad len, input is too long!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -1770,6 +1787,10 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 		WD_ERR("failed to check input aead msg!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = aead_len_check(msg);
+	if (unlikely(ret))
+		return ret;
 
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
 	/* config BD type */
@@ -1795,11 +1816,12 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type_auth_cipher |= cipher;
 
-	if (unlikely(msg->in_bytes == 0 ||
-		msg->in_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("failed to check aead input data length!\n");
+	/* Hardware V2 not supports 0 packet size */
+	if (unlikely(msg->in_bytes == 0)) {
+		WD_ERR("aead input packet size is 0!\n");
 		return -WD_EINVAL;
 	}
+
 	sqe.type2.clen_ivhlen = msg->in_bytes;
 	sqe.type2.cipher_src_offset = msg->assoc_bytes;
 	sqe.type2.alen_ivllen = msg->in_bytes + msg->assoc_bytes;
@@ -2047,6 +2069,10 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 		return -WD_EINVAL;
 	}
 
+	ret = aead_len_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
 	/* config BD type */
 	sqe.bd_param = BD_TYPE3;
@@ -2068,10 +2094,6 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	}
 	sqe.bd_param |= (__u16)(de | scene);
 
-	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("failed to check aead input data length!\n");
-		return -WD_EINVAL;
-	}
 	sqe.c_len_ivin = msg->in_bytes;
 	sqe.cipher_src_offset = msg->assoc_bytes;
 	sqe.a_len_key = msg->in_bytes + msg->assoc_bytes;
