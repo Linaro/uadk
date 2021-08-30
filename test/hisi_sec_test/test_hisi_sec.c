@@ -26,7 +26,7 @@
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
 #define TEST_WORD_LEN	4096
-#define MAX_ALGO_PER_TYPE 12
+#define MAX_ALGO_PER_TYPE 13
 #define MIN_SVA_BD_NUM	1
 
 #define SGL_ALIGNED_BYTES	64
@@ -53,7 +53,7 @@ static pthread_spinlock_t lock = 0;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
-	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", NULL,};
+	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", "ecb(sm4)", NULL,};
 struct sva_bd {
 	char *src;
 	char *dst;
@@ -436,7 +436,16 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_cfb_tv_template_128[0];
 			break;
-	case 16:
+		case 11:
+			alg_type = WD_CIPHER_SM4;
+			mode_type = WD_CIPHER_ECB;
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_ecb_tv_template_128[0];
+			break;
+		case 16:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_CBC;
 			if (g_keylen != 16) {
@@ -588,7 +597,7 @@ static int test_sec_cipher_sync_once(void)
 	/* get resource */
 	ret = get_cipher_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
 
-	req.in_bytes = g_pktlen;
+	req.in_bytes = tv->len;
 	unit_sz = cal_unit_sz(req.in_bytes, g_sgl_num);
 	req.src = create_buf(g_data_fmt, req.in_bytes, unit_sz);
 	if (!req.src) {
@@ -3470,7 +3479,7 @@ static void print_help(void)
 	SEC_TST_PRT("        specify symmetric cipher algorithm\n");
 	SEC_TST_PRT("        0 : AES-ECB; 1 : AES-CBC;  2 : AES-XTS;  3 : AES-OFB\n");
 	SEC_TST_PRT("        4 : AES-CFB; 5 : 3DES-ECB; 6 : 3DES-CBC; 7 : SM4-CBC\n");
-	SEC_TST_PRT("        8 : SM4-XTS; 9 : SM4-OFB; 10 : SM4-CFB;\n");
+	SEC_TST_PRT("        8 : SM4-XTS; 9 : SM4-OFB; 10 : SM4-CFB; 11 : SM4-ECB\n");
 	SEC_TST_PRT("    [--digest ]:\n");
 	SEC_TST_PRT("        specify symmetric hash algorithm\n");
 	SEC_TST_PRT("        0 : SM3;    1 : MD5;    2 : SHA1;   3 : SHA256\n");
