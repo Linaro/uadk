@@ -646,6 +646,10 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 	switch (msg->mode) {
 	case WD_CIPHER_ECB:
 		c_mode = C_MODE_ECB;
+		if (msg->alg == WD_CIPHER_SM4) {
+			WD_ERR("Kunpeng 920 not supports ECB(SM4)!\n");
+			return -WD_EINVAL;
+		}
 		break;
 	case WD_CIPHER_CBC:
 		c_mode = C_MODE_CBC;

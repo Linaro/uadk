@@ -42,7 +42,7 @@
 #define SQE_SIZE 128
 #define MAX_BLOCK_SZ	1024 * 8
 #define MAX_BLOCK_NM	128
-#define MAX_ALGO_PER_TYPE 12
+#define MAX_ALGO_PER_TYPE 13
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -117,7 +117,7 @@ static u32 g_ivlen = 16;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
-	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", NULL,};
+	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", "ecb(sm4)", NULL,};
 static inline int _get_cpu_id(int thr, __u64 core_mask)
 {
 	__u64 i;
@@ -372,6 +372,16 @@ int get_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 				return -EINVAL;
 			}
 			tv = &sm4_ctr_tv_template_128[0];
+			break;
+		case 13:
+			alg_type = WCRYPTO_CIPHER_SM4;
+			mode_type = WCRYPTO_CIPHER_ECB;
+			SEC_TST_PRT("test alg: %s\n", "ecb(sm4)");
+			if (g_keylen != 16) {
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			tv = &sm4_ecb_tv_template_128[0];
 			break;
 		default:
 			SEC_TST_PRT("keylenth error, default test alg: %s\n", "ecb(aes)");
@@ -2130,7 +2140,7 @@ static void print_help(void)
 	SEC_TST_PRT("        specify symmetric cipher algorithm\n");
 	SEC_TST_PRT("        0 : AES-ECB; 1 : AES-CBC;  2 : AES-XTS;  3 : AES-OFB\n");
 	SEC_TST_PRT("        4 : AES-CFB; 5 : 3DES-ECB; 6 : 3DES-CBC; 7 : SM4-CBC\n");
-	SEC_TST_PRT("        8 : SM4-XTS; 9 : SM4-OFB; 10 : SM4-CFB;\n");
+	SEC_TST_PRT("        8 : SM4-XTS; 9 : SM4-OFB; 10 : SM4-CFB; 11 : SM4-ECB\n");
 	SEC_TST_PRT("    [--digest ]:\n");
 	SEC_TST_PRT("        specify symmetric hash algorithm\n");
 	SEC_TST_PRT("        0 : SM3;    1 : MD5;    2 : SHA1;   3 : SHA256\n");
