@@ -221,17 +221,6 @@ int wd_parse_ctx_num(struct wd_env_config *config, const char *s);
 int wd_parse_async_poll_en(struct wd_env_config *config, const char *s);
 
 /*
- * wd_parse_async_poll_num() - Parse async polling thread related environment
- *                            variable and store it.
- * @config: Pointer of wd_env_config which is used to store environment
- *          variable information.
- * @s: Related environment variable string.
- *
- * More information, please see docs/wd_environment_variable.
- */
-int wd_parse_async_poll_num(struct wd_env_config *config, const char *s);
-
-/*
  * wd_alg_env_init() - Init wd algorithm environment variable configurations.
  * 		       This is a help function which can be used by specific
  * 		       wd algorithm APIs.
