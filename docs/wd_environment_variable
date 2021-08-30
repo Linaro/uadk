@@ -40,14 +40,6 @@ WD_<alg>_CTX_NUM
 
 alg above could be CIPHER, AEAD, DIGEST, DH, RSA, ECC.
 
-WD_<alg>_ASYNC_POLL_NUM
------------------------
-
- Define the async polling thread numbers in NUMA node. For example:
- WD_<alg>_ASYNC_POLL_NUM=2@0,4@2 means to configure 2 async polling threads in
- node0, and 4 polling threads in node2.
-
-
 2. User model
 =============
 

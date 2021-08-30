@@ -745,10 +745,6 @@ static const struct wd_config_variable table[] = {
 	{ .name = "WD_COMP_ASYNC_POLL_EN",
 	  .def_val = "0",
 	  .parse_fn = wd_parse_async_poll_en
-	},
-	{ .name = "WD_COMP_ASYNC_POLL_NUM",
-	  .def_val = "1@0",
-	  .parse_fn = wd_parse_async_poll_num
 	}
 };
 
