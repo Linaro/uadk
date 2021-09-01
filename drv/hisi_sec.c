@@ -634,7 +634,7 @@ static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *s
 		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
 		break;
 	default:
-		WD_ERR("Invalid cipher type!\n");
+		WD_ERR("Invalid cipher type:%u!\n", msg->alg);
 		return -WD_EINVAL;
 	}
 
@@ -660,7 +660,7 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 		c_mode = C_MODE_XTS;
 		break;
 	default:
-		WD_ERR("Invalid cipher mode type!\n");
+		WD_ERR("Invalid cipher mode type:%u!\n", msg->mode);
 		return -WD_EINVAL;
 	}
 	sqe->type2.icvw_kmode |= (__u16)(c_mode) << SEC_CMODE_OFFSET;
@@ -727,23 +727,6 @@ static int cipher_len_check(struct wd_cipher_msg *msg)
 			return -WD_EINVAL;
 		}
 		return 0;
-	}
-
-	return 0;
-}
-
-static int cipher_iv_check(struct wd_cipher_msg *msg)
-{
-	if (msg->alg == WD_CIPHER_AES || msg->alg == WD_CIPHER_SM4) {
-		if (msg->iv_bytes < AES_BLOCK_SIZE) {
-			WD_ERR("AES or SM4 input iv bytes is err!\n");
-			return -WD_EINVAL;
-		}
-	} else if (msg->alg == WD_CIPHER_3DES || msg->alg == WD_CIPHER_DES) {
-		if (msg->iv_bytes < DES3_BLOCK_SIZE) {
-			WD_ERR("3DES or DES input iv bytes is err!\n");
-			return -WD_EINVAL;
-		}
 	}
 
 	return 0;
@@ -875,7 +858,6 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	struct hisi_sec_sqe sqe;
 	__u8 scene, cipher, de;
 	__u16 count = 0;
-	bool flag;
 	int ret;
 
 	if (!msg) {
@@ -901,14 +883,6 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	ret = cipher_len_check(msg);
 	if (ret)
 		return ret;
-
-	flag = msg->mode == WD_CIPHER_CBC
-		|| msg->mode == WD_CIPHER_XTS;
-	if (flag) {
-		ret = cipher_iv_check(msg);
-		if (ret)
-			return ret;
-	}
 
 	ret = fill_cipher_bd2_alg(msg, &sqe);
 	if (ret) {
@@ -1016,7 +990,7 @@ static int fill_cipher_bd3_alg(struct wd_cipher_msg *msg,
 		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
-		WD_ERR("Invalid cipher type!\n");
+		WD_ERR("Invalid cipher type:%u!\n", msg->alg);
 		return -WD_EINVAL;
 	}
 
@@ -1051,7 +1025,7 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 		c_mode = C_MODE_CFB;
 		break;
 	default:
-		WD_ERR("Invalid cipher mode type!\n");
+		WD_ERR("Invalid cipher mode type:%u!\n", msg->mode);
 		return -WD_EINVAL;
 	}
 	sqe->c_mode_alg |= (__u16)c_mode;
@@ -1065,7 +1039,6 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	struct hisi_sec_sqe3 sqe;
 	__u16 scene, de;
 	__u16 count = 0;
-	bool flag;
 	int ret;
 
 	if (!msg) {
@@ -1089,17 +1062,6 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	ret = cipher_len_check(msg);
 	if (ret)
 		return ret;
-
-	flag = msg->mode == WD_CIPHER_CBC
-		|| msg->mode == WD_CIPHER_XTS
-		|| msg->mode == WD_CIPHER_OFB
-		|| msg->mode == WD_CIPHER_CFB
-		|| msg->mode == WD_CIPHER_CTR;
-	if (flag) {
-		ret = cipher_iv_check(msg);
-		if (ret)
-			return ret;
-	}
 
 	ret = fill_cipher_bd3_alg(msg, &sqe);
 	if (ret) {
@@ -1204,11 +1166,6 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	if (msg->out_bytes & WORD_ALIGNMENT_MASK) {
-		WD_ERR("Invalid digest out_bytes!\n");
-		return -WD_EINVAL;
-	}
-
 	sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WD_DIGEST_NORMAL)
 		sqe->type2.mac_key_alg |=
@@ -1288,6 +1245,22 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 #endif
 }
 
+static int digest_len_check(struct wd_digest_msg *msg)
+{
+	if (msg->in_bytes == 0 ||
+		msg->in_bytes > MAX_INPUT_DATA_LEN) {
+		WD_ERR("failed to check digest input data length!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->out_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("failed to check digest out length!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -1301,6 +1274,11 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		WD_ERR("input digest msg is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = digest_len_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
 	/* config BD type */
 	sqe.type_auth_cipher = BD_TYPE2;
@@ -1309,12 +1287,6 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	/* config scene */
 	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
 	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET;
-
-	if (msg->in_bytes == 0 ||
-		msg->in_bytes > MAX_INPUT_DATA_LEN) {
-		WD_ERR("failed to check input data length!\n");
-		return -WD_EINVAL;
-	}
 
 	ret = hisi_sec_fill_sgl(h_qp, msg->data_fmt, &msg->in, &msg->out,
 				&sqe, msg->alg_type);
@@ -1391,11 +1363,6 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	if (msg->out_bytes & WORD_ALIGNMENT_MASK) {
-		WD_ERR("Invalid digest out_bytes!\n");
-		return -WD_EINVAL;
-	}
-
 	sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
 				SEC_MAC_OFFSET_V3;
 	if (msg->mode == WD_DIGEST_NORMAL) {
@@ -1463,6 +1430,11 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 		WD_ERR("input digest msg is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = digest_len_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
 	/* config BD type */
 	sqe.bd_param = BD_TYPE3;
@@ -1471,12 +1443,6 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	/* config scene */
 	scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET_V3;
 	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET_V3;
-
-	if (msg->in_bytes == 0 ||
-		msg->in_bytes > MAX_INPUT_DATA_LEN) {
-		WD_ERR("failed to check input data length!\n");
-		return -WD_EINVAL;
-	}
 
 	ret = hisi_sec_fill_sgl_v3(h_qp, msg->data_fmt, &msg->in, &msg->out,
 				&sqe, msg->alg_type);
