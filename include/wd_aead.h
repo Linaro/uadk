@@ -49,8 +49,8 @@ struct wd_aead_sess {
 	enum wd_cipher_mode	cmode;
 	enum wd_digest_type	dalg;
 	enum wd_digest_mode	dmode;
-	void			*ckey;
-	void			*akey;
+	unsigned char	ckey[MAX_CIPHER_KEY_SIZE];
+	unsigned char	akey[MAX_CIPHER_KEY_SIZE];
 	__u16			ckey_bytes;
 	__u16			akey_bytes;
 	__u16			auth_bytes;

@@ -50,7 +50,7 @@ struct wd_aead_msg {
 	/* input iv pointer */
 	__u8 *iv;
 	/* input auth iv pointer */
-	__u8 *aiv;
+	__u8 aiv[MAX_IV_SIZE];
 	/* input data pointer */
 	__u8 *in;
 	/* output data pointer */

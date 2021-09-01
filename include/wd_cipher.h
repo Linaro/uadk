@@ -11,12 +11,14 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
-#define AES_KEYSIZE_128 16
-#define AES_KEYSIZE_192 24
-#define AES_KEYSIZE_256 32
-#define AES_BLOCK_SIZE 16
-#define GCM_BLOCK_SIZE 12
-#define DES3_BLOCK_SIZE 8
+#define AES_KEYSIZE_128	16
+#define AES_KEYSIZE_192	24
+#define AES_KEYSIZE_256	32
+#define AES_BLOCK_SIZE	16
+#define GCM_BLOCK_SIZE	12
+#define DES3_BLOCK_SIZE	8
+#define MAX_CIPHER_KEY_SIZE	64
+#define MAX_IV_SIZE	AES_BLOCK_SIZE
 
 /**
  * config ctx operation type and task mode.
@@ -77,7 +79,7 @@ struct wd_cipher_sess {
 	wd_dev_mask_t		*dev_mask;
 	struct wd_alg_cipher	*drv;
 	void			*priv;
-	void			*key;
+	unsigned char	key[MAX_CIPHER_KEY_SIZE];
 	__u32			key_bytes;
 	int			numa;
 };

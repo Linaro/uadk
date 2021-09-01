@@ -242,7 +242,7 @@ static inline void copy_mem(int dst_sgl, void *dst, int src_sgl, void *src,
 		SEC_TST_PRT("Not supported memory type for copy.\n");
 }
 
-static void dump_mem(int sgl, char *buf, size_t len)
+static void dump_mem(int sgl, unsigned char *buf, size_t len)
 {
 	struct wd_datalist *p;
 	size_t i, tmp;
