@@ -316,6 +316,37 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 	msg->data_fmt = req->data_fmt;
 }
 
+static int cipher_iv_len_check(struct wd_cipher_req *req,
+			       struct wd_cipher_sess *sess)
+{
+	int ret = 0;
+
+	if (sess->mode == WD_CIPHER_ECB)
+		return 0;
+
+	switch (sess->alg) {
+	case WD_CIPHER_AES:
+	case WD_CIPHER_SM4:
+		if (req->iv_bytes != AES_BLOCK_SIZE) {
+			WD_ERR("AES or SM4 input iv bytes is err!\n");
+			ret = -WD_EINVAL;
+		}
+		break;
+	case WD_CIPHER_3DES:
+	case WD_CIPHER_DES:
+		if (req->iv_bytes != DES3_BLOCK_SIZE) {
+			WD_ERR("3DES or DES input iv bytes is err!\n");
+			ret = -WD_EINVAL;
+		}
+		break;
+	default:
+		ret = -WD_EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
 static int wd_cipher_check_params(handle_t h_sess,
 				struct wd_cipher_req *req, __u8 mode)
 {
@@ -370,6 +401,10 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		WD_ERR("failed to check cipher params!\n");
 		return ret;
 	}
+
+	ret = cipher_iv_len_check(req, sess);
+	if (unlikely(ret))
+		return ret;
 
 	key.mode = CTX_MODE_SYNC;
 	key.type = 0;
