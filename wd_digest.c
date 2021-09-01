@@ -15,7 +15,6 @@
 #define DES_KEY_SIZE		8
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
 
-#define MAX_HMAC_KEY_SIZE	128
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
@@ -93,7 +92,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 {
 	struct wd_digest_sess *sess = NULL;
 
-	if (!setup) {
+	if (unlikely(!setup)) {
 		WD_ERR("failed to check alloc sess param!\n");
 		return (handle_t)0;
 	}
@@ -106,13 +105,6 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
 	sess->numa = setup->numa;
-	sess->key = malloc(MAX_HMAC_KEY_SIZE);
-	if (!sess->key) {
-		free(sess);
-		WD_ERR("failed to alloc sess key!\n");
-		return (handle_t)0;
-	}
-	memset(sess->key, 0, MAX_HMAC_KEY_SIZE);
 
 	return (handle_t)sess;
 }
@@ -121,15 +113,12 @@ void wd_digest_free_sess(handle_t h_sess)
 {
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 
-	if (!sess) {
+	if (unlikely(!sess)) {
 		WD_ERR("failed to check free sess param!\n");
 		return;
 	}
 
-	if (sess->key) {
-		wd_memset_zero(sess->key, MAX_HMAC_KEY_SIZE);
-		free(sess->key);
-	}
+	wd_memset_zero(sess->key, MAX_HMAC_KEY_SIZE);
 	free(sess);
 }
 

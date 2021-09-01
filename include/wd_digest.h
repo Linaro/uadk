@@ -11,6 +11,8 @@
 #include "wd_alg_common.h"
 #include "wd.h"
 
+#define MAX_HMAC_KEY_SIZE	128U
+
 /**
  * wd_digest_type - Algorithm type of digest
  * algorithm should be offered by struct wd_digest_arg
@@ -70,7 +72,7 @@ struct wd_digest_sess {
 	enum wd_digest_type	alg;
 	enum wd_digest_mode	mode;
 	void			*priv;
-	void			*key;
+	unsigned char	key[MAX_HMAC_KEY_SIZE];
 	__u32			key_bytes;
 	int			numa;
 };
