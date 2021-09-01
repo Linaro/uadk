@@ -18,7 +18,6 @@
 #define DES_KEY_SIZE		8
 #define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
-#define MAX_CIPHER_KEY_SIZE	64
 
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
@@ -164,7 +163,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
 
-	if (!setup) {
+	if (unlikely(!setup)) {
 		WD_ERR("cipher input setup is NULL!\n");
 		return (handle_t)0;
 	}
@@ -177,15 +176,6 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	memset(sess, 0, sizeof(struct wd_cipher_sess));
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
-	sess->key = malloc(MAX_CIPHER_KEY_SIZE);
-	if (!sess->key) {
-		WD_ERR("fail to alloc key memory!\n");
-		free(sess);
-		return (handle_t)0;
-	}
-
-	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
-
 	sess->numa = setup->numa;
 
 	return (handle_t)sess;
@@ -193,16 +183,14 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 
 void wd_cipher_free_sess(handle_t h_sess)
 {
-	if (!h_sess) {
+	if (unlikely(!h_sess)) {
 		WD_ERR("cipher input h_sess is NULL!\n");
 		return;
 	}
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
-	if (sess->key) {
-		wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
-		free(sess->key);
-	}
+	wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
+
 	free(sess);
 }
 

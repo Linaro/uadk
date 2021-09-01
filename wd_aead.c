@@ -15,11 +15,9 @@
 #define DES_KEY_SIZE		8
 #define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
-#define MAX_CIPHER_KEY_SIZE	64
 
 #define WD_AEAD_CCM_GCM_MIN	4U
 #define WD_AEAD_CCM_GCM_MAX	16
-#define MAX_HMAC_KEY_SIZE	128U
 #define WD_POOL_MAX_ENTRIES	1024
 #define MAX_RETRY_COUNTS	200000000
 
@@ -123,7 +121,7 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	int ret;
 
-	if (!key || !sess || !sess->ckey) {
+	if (!key || !sess) {
 		WD_ERR("failed to check cipher key inpupt param!\n");
 		return -WD_EINVAL;
 	}
@@ -144,7 +142,7 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 {
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
-	if (!key || !sess || !sess->akey) {
+	if (!key || !sess) {
 		WD_ERR("failed to check authenticate key param!\n");
 		return -WD_EINVAL;
 	}
@@ -229,7 +227,7 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 {
 	struct wd_aead_sess *sess = NULL;
 
-	if (!setup) {
+	if (unlikely(!setup)) {
 		WD_ERR("failed to check session input parameter!\n");
 		return (handle_t)0;
 	}
@@ -243,24 +241,8 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 
 	sess->calg = setup->calg;
 	sess->cmode = setup->cmode;
-	sess->ckey = malloc(MAX_CIPHER_KEY_SIZE);
-	if (!sess->ckey) {
-		WD_ERR("failed to alloc cipher key memory!\n");
-		free(sess);
-		return (handle_t)0;
-	}
-	memset(sess->ckey, 0, MAX_CIPHER_KEY_SIZE);
-
 	sess->dalg = setup->dalg;
 	sess->dmode = setup->dmode;
-	sess->akey = malloc(MAX_HMAC_KEY_SIZE);
-	if (!sess->akey) {
-		WD_ERR("failed to alloc digest key memory!\n");
-		free(sess->ckey);
-		free(sess);
-		return (handle_t)0;
-	}
-	memset(sess->akey, 0, MAX_HMAC_KEY_SIZE);
 
 	sess->numa = setup->numa;
 
@@ -271,20 +253,14 @@ void wd_aead_free_sess(handle_t h_sess)
 {
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
-	if (!sess) {
+	if (unlikely(!sess)) {
 		WD_ERR("failed to check session parameter!\n");
 		return;
 	}
 
-	if (sess->ckey) {
-		wd_memset_zero(sess->ckey, MAX_CIPHER_KEY_SIZE);
-		free(sess->ckey);
-	}
+	wd_memset_zero(sess->ckey, MAX_CIPHER_KEY_SIZE);
+	wd_memset_zero(sess->akey, MAX_HMAC_KEY_SIZE);
 
-	if (sess->akey) {
-		wd_memset_zero(sess->akey, MAX_HMAC_KEY_SIZE);
-		free(sess->akey);
-	}
 	free(sess);
 }
 
@@ -301,7 +277,7 @@ static int aead_param_check(struct wd_aead_sess *sess,
 
 	if (unlikely(sess->cmode == WD_CIPHER_CBC &&
 	   (req->in_bytes & (AES_BLOCK_SIZE - 1)))) {
-		WD_ERR("failed to check input data length!\n");
+		WD_ERR("failed to check aead input data length!\n");
 		return -WD_EINVAL;
 	}
 
@@ -485,12 +461,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 
 	ctx = config->ctxs + idx;
 	memset(&msg, 0, sizeof(struct wd_aead_msg));
-	msg.aiv = malloc(req->iv_bytes);
-	if (unlikely(!msg.aiv)) {
-		WD_ERR("failed to alloc auth iv memory!\n");
-		return -WD_EINVAL;
-	}
-	memset(msg.aiv, 0, req->iv_bytes);
+
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
@@ -521,13 +492,11 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		}
 	} while (ret < 0);
 	pthread_spin_unlock(&ctx->lock);
-	free(msg.aiv);
 
 	return 0;
 
 err_out:
 	pthread_spin_unlock(&ctx->lock);
-	free(msg.aiv);
 	return ret;
 }
 
@@ -570,12 +539,6 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	}
 
 	fill_request_msg(msg, req, sess);
-	msg->aiv = malloc(req->iv_bytes);
-	if (unlikely(!msg->aiv)) {
-		WD_ERR("failed to alloc auth iv memory!\n");
-		return -WD_EINVAL;
-	}
-	memset(msg->aiv, 0, req->iv_bytes);
 	msg->tag = msg_id;
 
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
@@ -584,7 +547,6 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 			WD_ERR("failed to send BD, hw is err!\n");
 
 		wd_put_msg_to_pool(&wd_aead_setting.pool, idx, msg->tag);
-		free(msg->aiv);
 	}
 
 	wd_add_task_to_async_queue(&wd_aead_env_config, idx);
@@ -634,8 +596,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		req = &msg->req;
 		req->cb(req, req->cb_param);
 		wd_put_msg_to_pool(&wd_aead_setting.pool,
-				     idx, resp_msg.tag);
-		free(msg->aiv);
+					       idx, resp_msg.tag);
 		*count = recv_count;
 	} while (--expt);
 

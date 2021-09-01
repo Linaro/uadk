@@ -1854,7 +1854,6 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->type2.a_ivin_addr;
 	recv_msg->tag = sqe->type2.tag;
 
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
@@ -2125,7 +2124,6 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	recv_msg->aiv = (__u8 *)(uintptr_t)sqe->auth_ivin.a_ivin_addr;
 	recv_msg->tag = sqe->tag;
 
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
