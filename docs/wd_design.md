@@ -77,6 +77,10 @@
 |         |                |   to *wd_mmap_qfr()/wd_unmap_qfr()*. |
 |  1.2    |                |1) Rename *wd_mmap_qfr()/wd_unmap_qfr()* to |
 |         |                |   *wd_ctx_mmap_qfr()/wd_ctx_unmap_qfr()*. |
+|  1.3    |                |1) Add environment variable. |
+|         |                |2) Change *user* layer to *sched* layer since |
+|         |                |   sample_sched is moved from user space into UADK |
+|         |                |   framework. |
 
 
 ## Terminology
@@ -511,13 +515,13 @@ __u8 numa_num, user_poll_func func)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| user | *sched_type* | Input | The scheduler policy type that is supported |
-|      |              |       | in current scheduler. |
-|      | *type_num*   | Input | The service type number of user's service |
-|      |              |       | that is defined by user. |
-|      | *numa_num*   | Input | The NUMA number is used by user. |
-|      | *func*       | Input | User provided polling function to poll events |
-|      |              |       | on contexts. |
+| sched | *sched_type* | Input | The scheduler policy type that is supported |
+|       |              |       | in current scheduler. |
+|       | *type_num*   | Input | The service type number of user's service |
+|       |              |       | that is defined by user. |
+|       | *numa_num*   | Input | The NUMA number is used by user. |
+|       | *func*       | Input | User provided polling function to poll events |
+|       |              |       | on contexts. |
 
 Return a scheduler instance if it succeeds. And return NULL if it fails.
 
@@ -526,7 +530,7 @@ Return a scheduler instance if it succeeds. And return NULL if it fails.
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| user | *sched* | Input | The user defined scheduler. |
+| sched | *sched* | Input | The user defined scheduler. |
 
 *sample_sched_release()* is used to release a scheduler instance.
 
@@ -536,17 +540,75 @@ __u8 mode, __u8 type, __u32 begin, __u32 end)***
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| user | *sched*   | Input | The user defined scheduler |
-|      | *numa_id* | Input | The ID of NUMA node |
-|      | *mode*    | Input | Specify operation mode. |
-|      |           |       | 0 -- sync mode, 1 -- async mode. |
-|      | *type*    | Input | Service type that is defined by user. |
-|      | *begin*   | Input | The index of first context in the region. |
-|      | *end*     | Input | The index of last context in the region. |
+| sched | *sched*   | Input | The user defined scheduler |
+|       | *numa_id* | Input | The ID of NUMA node |
+|       | *mode*    | Input | Specify operation mode. |
+|       |           |       | 0 -- sync mode, 1 -- async mode. |
+|       | *type*    | Input | Service type that is defined by user. |
+|       | *begin*   | Input | The index of first context in the region. |
+|       | *end*     | Input | The index of last context in the region. |
 
 After context resources allocated by *wd_request_ctx()*, user could specify 
 which context resources are working in the specified mode or type by 
 *sample_sched_fill_data()*.
+
+
+### Environment Variable
+
+According to above document, user need to care NUMA node and context number 
+to make use of UADK. The configuration process is a little boring. The idea 
+of Environment Variable is to make those parameters configured in user's 
+environment variable. It could help user to configure those parameters.
+
+
+***wd_comp_env_init(void)***
+
+Create a registered table for algorithm that could parse different environment 
+variables. With those parameters from user environment variables, allocate 
+related hardware resources.
+
+
+***wd_comp_env_uninit(void)***
+
+Free allocated hardware resources.
+
+
+***wd_comp_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *node* | Input | The ID of NUMA node. |
+| algorithm | *type* | Input | Service type that is defined by user. |
+|           | *num*  | Input | Context number. |
+|           | *mode* | Input | Specify operation mode. |
+|           |        |       | 0 -- sync mode, 1 -- async mode. |
+
+Specify the parameters and create a pseudo environment variable. By this 
+pseduo environment table, allocate related hardware resource.
+
+
+***wd_comp_ctx_num_uninit(void)***
+
+Free allocated hardware resources like ***wd_comp_env_uninit()***.
+
+
+***wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode, 
+                         __u32 \*num, __u8 \*is_enable)***
+
+| Layer | Parameter | Direction | Comments |
+| :-- | :-- | :-- | :-- |
+| compress  | *node*      | Input  | The ID of NUMA node. |
+| algorithm | *type*      | Input  | Service type that is defined by user. |
+|           | *mode*      | Input  | Specify operation mode. |
+|           |             |        | 0 -- sync mode, 1 -- async mode. |
+|           | *num*       | Output | Context number. |
+|           | *is_enable* | Output | Indicate whether asynchronous polling |
+|           |             |        | mode is enabled or not. |
+
+Query context number that is defined in environment variable by specified 
+NUMA node, type and operation mode. At the same time, asynchronous polling 
+mode is queried.
+
 
 
 ## Vendor Driver
@@ -611,4 +673,3 @@ interface that is defined by vendor driver.
 
 When application doesn't want to access hardware accelerator, vendor driver 
 could invokes *wd_release_ctx()* to release the hardware.
-
