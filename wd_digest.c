@@ -11,6 +11,7 @@
 #include "wd_util.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
+#define DIGEST_OUT_BUFF_RATE	2
 #define SM4_KEY_SIZE		16
 #define DES_KEY_SIZE		8
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
@@ -224,7 +225,8 @@ static int digest_param_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(req->out_buf_bytes < req->out_bytes)) {
+	if (unlikely(req->out_buf_bytes <
+			req->out_bytes * DIGEST_OUT_BUFF_RATE)) {
 		WD_ERR("failed to check digest out buffer length!\n");
 		return -WD_EINVAL;
 	}
@@ -263,6 +265,11 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->out_bytes = req->out_bytes;
 	msg->has_next = req->has_next;
 	msg->data_fmt = req->data_fmt;
+
+	/* Using the digest dst memory to store the total of packet */
+	msg->long_data_len = (__u64 *)(req->out + req->out_bytes);
+
+	(*msg->long_data_len) += req->in_bytes;
 }
 
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
