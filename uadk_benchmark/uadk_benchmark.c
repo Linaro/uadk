@@ -154,12 +154,12 @@ void init_recv_data(void)
 
 int get_run_state(void)
 {
-	return g_run_state;
+	return __atomic_load_n(&g_run_state, __ATOMIC_RELAXED);
 }
 
 void set_run_state(int state)
 {
-	g_run_state = state;
+	__atomic_store_n(&g_run_state, state, __ATOMIC_RELAXED);
 }
 
 static int get_alg_type(const char *alg_name)
