@@ -75,6 +75,10 @@ struct wd_digest_sess {
 	unsigned char	key[MAX_HMAC_KEY_SIZE];
 	__u32			key_bytes;
 	int			numa;
+	/* Notify the BD state */
+	int				state;
+	/* Total of data for stream mode */
+	__u64			 long_data_len;
 };
 
 /**

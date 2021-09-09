@@ -261,8 +261,12 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->out;
 	msg->out_bytes = req->out_bytes;
-	msg->has_next = req->has_next;
 	msg->data_fmt = req->data_fmt;
+	msg->has_next = req->has_next;
+	sess->long_data_len += req->in_bytes;
+	msg->long_data_len = sess->long_data_len;
+	/* To store the stream bd state */
+	msg->iv_bytes = sess->state;
 }
 
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
@@ -321,6 +325,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 				goto err_out;
 			}
 		}
+		dsess->state = msg.out_bytes;
 	} while (ret < 0);
 
 	pthread_spin_unlock(&ctx->lock);
