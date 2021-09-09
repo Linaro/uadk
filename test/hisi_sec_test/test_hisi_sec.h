@@ -41,8 +41,8 @@ struct cipher_testvec {
 };
 
 struct hash_testvec {
-	const char *key;
-	const char *plaintext;
+	char *key;
+	char *plaintext;
 	const char *digest;
 	unsigned int psize;
 	unsigned short ksize;
