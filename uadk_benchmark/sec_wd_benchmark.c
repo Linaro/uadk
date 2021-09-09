@@ -505,8 +505,8 @@ void *sec_wd_poll(void *data)
 	typedef int (*poll_ctx)(struct wd_queue *q, unsigned int num);
 	thread_data *pdata = (thread_data *)data;
 	poll_ctx uadk_poll_ctx = NULL;
-	u32 send_time, send_num;
-	u32 expt = 0;
+	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	u32 last_time = 2; /* poll need one more recv time */
 	u32 count = 0;
 	u32 recv = 0;
 	u32 i = 0;
@@ -526,17 +526,7 @@ void *sec_wd_poll(void *data)
 		return NULL;
 	}
 
-	while (1) {
-		send_num = get_send_data();
-		send_time = get_send_time();
-		if (send_time == g_thread_num &&
-		     send_num == count)
-			break;
-
-		expt = send_num - count;
-		if (!expt || expt <= 0)
-			continue;
-
+	while (last_time) {
 		for (i = 0; i < g_thread_num; i++) {
 			recv = uadk_poll_ctx(g_thread_queue.bd_res[i].queue, expt);
 			/*
@@ -550,6 +540,9 @@ void *sec_wd_poll(void *data)
 			count += recv;
 			recv = 0;
 		}
+
+		if (get_run_state() == 0)
+			last_time--;
 	}
 
 recv_error:
@@ -656,7 +649,6 @@ static void *sec_wd_async_run(void *arg)
 			}
 
 			count++;
-			add_send_data(1);
 			i = count % MAX_BLOCK_NM;
 			tag->cnt = i;
 			try_cnt = 0;
@@ -735,7 +727,6 @@ static void *sec_wd_async_run(void *arg)
 			}
 
 			count++;
-			add_send_data(1);
 			i = count % MAX_BLOCK_NM;
 			tag->cnt = i;
 			try_cnt = 0;
@@ -798,7 +789,6 @@ static void *sec_wd_async_run(void *arg)
 			}
 
 			count++;
-			add_send_data(1);
 			i = count % MAX_BLOCK_NM;
 			tag->cnt = i;
 			try_cnt = 0;
@@ -812,7 +802,7 @@ static void *sec_wd_async_run(void *arg)
 	add_send_complete();
 
 	while (1) {
-		if (get_recv_time() > 0) // Asnc mode recv one times
+		if (get_recv_time() > 0) // wait Async mode finish recv
 			break;
 		usleep(SEND_USLEEP);
 	}
