@@ -27,6 +27,7 @@
 #define MAX_OPT_TYPE	5
 #define MAX_DATA_SIZE	(15 * 1024 * 1024)
 #define MAX_ALG_NAME 64
+#define ACC_QUEUE_SIZE	1024
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -166,10 +167,7 @@ extern void set_run_state(int state);
 extern int get_rand_int(int range);
 extern void get_rand_data(u8 *addr, int size);
 extern void add_recv_data(u32 cnt);
-extern void add_send_data(u32 cnt);
 extern void add_send_complete(void);
-extern u64 get_send_data(void);
-extern u32 get_send_time(void);
 extern u32 get_recv_time(void);
 
 #endif /* UADK_BENCHMARK_H */
