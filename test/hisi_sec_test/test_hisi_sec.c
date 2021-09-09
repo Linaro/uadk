@@ -6,6 +6,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <sys/syscall.h>
+#include <stdbool.h>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <getopt.h>
@@ -52,6 +53,8 @@ static unsigned int g_ctxnum;
 static unsigned int g_data_fmt = WD_FLAT_BUF;
 static unsigned int g_sgl_num = 0;
 static pthread_spinlock_t lock = 0;
+
+static struct hash_testvec g_long_hash_tv;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
@@ -1496,7 +1499,8 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 	}
 	if (g_ivlen == 1) {
 		tmp_tv = tv;
-		tv = &long_hash_tv_template[0];
+		// tv = &long_hash_tv_template[0];
+		tv = &g_long_hash_tv;
 		tv->dsize = tmp_tv->dsize;
 	} else if (g_ivlen == 2) {
 		tmp_tv = tv;
@@ -1574,7 +1578,7 @@ static int sec_digest_sync_once(void)
 
 	/* if mode is HMAC, should set key */
 	if (setup.mode == WD_DIGEST_HMAC) {
-		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
@@ -1610,6 +1614,312 @@ out_dst:
 out_src:
 	digest_uninit_config();
 
+	return ret;
+}
+
+static int sec_digest_sync_stream_cmp(void)
+{
+	struct wd_digest_sess_setup setup = {0};
+	struct hash_testvec *tv = NULL;
+	handle_t h_sess = 0;
+	struct wd_digest_req req;
+	unsigned long cnt = g_times;
+	int ret;
+	size_t unit_sz;
+
+	/* config setup */
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	if (ret) {
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
+		return ret;
+	}
+
+	/* config arg */
+	memset(&req, 0, sizeof(struct wd_digest_req));
+	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
+
+	unit_sz = cal_unit_sz(BUFF_SIZE * 8, g_sgl_num);
+	req.in = create_buf(g_data_fmt, BUFF_SIZE * 8, unit_sz);
+	if (!req.in) {
+		ret = -ENOMEM;
+		goto out_src;
+	}
+
+	req.in_bytes = tv->psize;
+	copy_mem(g_data_fmt, req.in, WD_FLAT_BUF,
+		 (void *)tv->plaintext, tv->psize);
+
+	req.out = create_buf(WD_FLAT_BUF, BUFF_SIZE, unit_sz);
+	if (!req.out) {
+		ret = -ENOMEM;
+		goto out_dst;
+	}
+
+	req.out_buf_bytes = BUFF_SIZE;
+	req.out_bytes = tv->dsize;
+	req.data_fmt = g_data_fmt;
+	req.has_next = 0;
+
+	h_sess = wd_digest_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		goto out_sess;
+	}
+
+	/* if mode is HMAC, should set key */
+	ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
+	if (ret) {
+		SEC_TST_PRT("sess set key failed!\n");
+		goto out_key;
+	}
+
+	while (cnt) {
+		ret = wd_do_digest_sync(h_sess, &req);
+		cnt--;
+	}
+
+	SEC_TST_PRT("one hash BD dump the out memory, cmp the stream mode:\n");
+	dump_mem(WD_FLAT_BUF, req.out, 16);
+
+out_key:
+	wd_digest_free_sess(h_sess);
+out_sess:
+	free_buf(WD_FLAT_BUF, req.out);
+out_dst:
+	free_buf(g_data_fmt, req.in);
+out_src:
+	digest_uninit_config();
+
+	return ret;
+}
+
+static int sec_digest_sync_stream_mode(void)
+{
+	struct wd_digest_sess_setup setup;
+	struct hash_testvec *tv = NULL;
+	handle_t h_sess = 0;
+	struct wd_digest_req req;
+	unsigned long cnt = g_times;
+	int ret, data_len;
+	void *bak_in = NULL;
+
+	/* config setup */
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	if (ret) {
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
+		return ret;
+	}
+
+	/* config arg */
+	memset(&req, 0, sizeof(struct wd_digest_req));
+	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
+
+	req.in = malloc(BUFF_SIZE * 8);
+	if (!req.in) {
+		SEC_TST_PRT("req src in mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+	bak_in = req.in;
+
+	memcpy(req.in, tv->plaintext, tv->psize);
+	req.in_bytes = tv->psize;
+
+	req.out = malloc(BUFF_SIZE);
+	if (!req.out) {
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+
+	req.out_buf_bytes = BUFF_SIZE;
+	req.out_bytes = tv->dsize;
+	req.data_fmt = g_data_fmt;
+	req.has_next = 0;
+
+	h_sess = wd_digest_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -1;
+		goto out;
+	}
+	data_len = tv->psize;
+
+	/* if mode is HMAC, should set key */
+	ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
+	if (ret) {
+		SEC_TST_PRT("sess set key failed!\n");
+		goto out;
+	}
+
+
+	while (cnt) {
+		do {
+			if (data_len > 256) { // soft block size
+				req.in_bytes = 256;
+				data_len -= 256;
+				req.has_next = 1;
+			} else {
+				req.has_next = 0;
+				req.in_bytes = data_len;
+			}
+			ret = wd_do_digest_sync(h_sess, &req);
+
+			if (ret)
+				goto out;
+
+
+			if (req.has_next == 0)
+				break;
+			else
+				req.in += 256;
+		} while (true);
+		data_len = tv->psize;
+		req.has_next = 0;
+		req.in = bak_in;
+		memcpy(req.in, tv->plaintext, tv->psize);
+		cnt--;
+	}
+	SEC_TST_PRT("long hash BD dump the out memory:--------->:\n");
+	dump_mem(g_data_fmt, req.out, 16);
+
+out:
+	free(req.out);
+	free(req.in);
+	if (h_sess)
+		wd_digest_free_sess(h_sess);
+
+	digest_uninit_config();
+	return ret;
+}
+
+void *digest_sync_stream_mode_send_td(void *data)
+{
+	int thread_id = (int)syscall(__NR_gettid);
+	struct wd_digest_sess_setup setup = {0};
+	struct hash_testvec *tv = NULL;
+	unsigned long cnt = g_times;
+	struct wd_digest_req req;
+	int ret, data_len;
+	void *bak_in = NULL;
+	handle_t h_sess = 0;
+
+	get_digest_resource(&tv, (int *)&setup.alg, (int *)&setup.mode);
+
+	h_sess = wd_digest_alloc_sess(&setup);
+	if (!h_sess) {
+		ret = -EINVAL;
+		return NULL;
+	}
+
+	/* if mode is HMAC, should set key */
+	ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
+	if (ret) {
+		SEC_TST_PRT("sess set key failed!\n");
+		goto out_key;
+	}
+
+	/* config arg */
+	memset(&req, 0, sizeof(struct wd_digest_req));
+
+	req.in = malloc(BUFF_SIZE * 8);
+	if (!req.in) {
+		SEC_TST_PRT("req src in mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+	bak_in = req.in;
+
+	memcpy(req.in, tv->plaintext, tv->psize);
+	req.in_bytes = tv->psize;
+
+	req.out = malloc(BUFF_SIZE);
+	if (!req.out) {
+		SEC_TST_PRT("req dst out mem malloc failed!\n");
+		ret = -1;
+		goto out;
+	}
+
+	req.out_buf_bytes = BUFF_SIZE;
+	req.out_bytes = tv->dsize;
+	req.data_fmt = g_data_fmt;
+	req.has_next = 0;
+
+	data_len = tv->psize;
+
+	while (cnt) {
+		do {
+			if (data_len > 256) { // soft block size
+				req.in_bytes = 256;
+				data_len -= 256;
+				req.has_next = 1;
+			} else {
+				req.has_next = 0;
+				req.in_bytes = data_len;
+			}
+			ret = wd_do_digest_sync(h_sess, &req);
+
+			if (ret)
+				goto out;
+
+			if (req.has_next == 0)
+				break;
+			else
+				req.in += 256;
+
+		} while (true);
+		data_len = tv->psize;
+		req.has_next = 0;
+		req.in = bak_in;
+		memcpy(req.in, tv->plaintext, tv->psize);
+		cnt--;
+	}
+	SEC_TST_PRT("Pid - %d, thread-id - %d, long hash BD dump the out memory:\n",  getpid(), thread_id);
+	dump_mem(g_data_fmt, req.out, 16);
+out_key:
+	wd_digest_free_sess(h_sess);
+out:
+	if (req.out)
+		free(req.out);
+	if (bak_in)
+		free(bak_in);
+	return NULL;
+}
+
+static int sec_digest_sync_stream_mode_multi(void)
+{
+	static pthread_t sendtd[64];
+	thread_data_d td_data;
+	int i, ret;
+
+	/* config setup */
+	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
+	if (ret) {
+		SEC_TST_PRT("Fail to init sigle ctx config!\n");
+		return ret;
+	}
+
+	/* send thread */
+	td_data.send_num = g_times;
+	td_data.recv_num = g_times;
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_create(&sendtd[i], NULL, digest_sync_stream_mode_send_td, &td_data);
+		if (ret) {
+			SEC_TST_PRT("Create send thread fail!\n");
+			goto out_thr;
+		}
+	}
+
+	/* join thread */
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_join(sendtd[i], NULL);
+		if (ret) {
+			SEC_TST_PRT("Join sendtd thread fail!\n");
+			goto out_thr;
+		}
+	}
+
+out_thr:
+	digest_uninit_config();
 	return ret;
 }
 
@@ -1782,7 +2092,7 @@ static int sec_digest_async_once(void)
 
 	/* if mode is HMAC, should set key */
 	if (setup.mode == WD_DIGEST_HMAC) {
-		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
@@ -1890,7 +2200,7 @@ static int sec_digest_sync_multi(void)
 
 	/* if mode is HMAC, should set key */
 	if (setup.mode == WD_DIGEST_HMAC) {
-		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
@@ -1997,7 +2307,7 @@ static int sec_digest_async_multi(void)
 
 	/* if mode is HMAC, should set key */
 	if (setup.mode == WD_DIGEST_HMAC) {
-		ret = wd_digest_set_key(h_sess, (const __u8*)tv->key, tv->ksize);
+		ret = wd_digest_set_key(h_sess, (const __u8 *)tv->key, tv->ksize);
 		if (ret) {
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out;
@@ -3495,6 +3805,7 @@ static void print_help(void)
 	SEC_TST_PRT("    [--optype]:\n");
 	SEC_TST_PRT("        0 : encryption operation or normal mode for hash\n");
 	SEC_TST_PRT("        1 : decryption operation or hmac mode for hash\n");
+	SEC_TST_PRT("        3 : hmac mode for stream hash mode \n");
 	SEC_TST_PRT("    [--pktlen]:\n");
 	SEC_TST_PRT("        set the length of BD message in bytes\n");
 	SEC_TST_PRT("    [--keylen]:\n");
@@ -3513,6 +3824,8 @@ static void print_help(void)
 	SEC_TST_PRT("Example\n");
 	SEC_TST_PRT("    ./test_hisi_sec --cipher 0 --sync --optype 0 \n");
 	SEC_TST_PRT("    	     --pktlen 16 --keylen 16 --times 1 --multi 1\n");
+	SEC_TST_PRT("    ./test_hisi_sec --digest 0 --sync --optype 3 \n");
+	SEC_TST_PRT("    	     --pktlen 16 --keylen 16 --times 1 --multi 2\n");
 	SEC_TST_PRT("    ./test_hisi_sec --perf --sync --pktlen 1024 --block 1024 \n");
 	SEC_TST_PRT("    	     --blknum 100000 --times 10000 --multi 1 --ctxnum 1\n");
 	SEC_TST_PRT("UPDATE:2020-11-06\n");
@@ -3681,6 +3994,28 @@ static int test_sec_default_case()
 	return	test_sec_cipher_sync_once();
 }
 
+static void long_hash_data_init(void)
+{
+	g_long_hash_tv.plaintext = malloc(g_pktlen);
+	if (g_long_hash_tv.plaintext == NULL)
+		return;
+
+	g_long_hash_tv.psize = g_pktlen;
+
+	g_long_hash_tv.key = malloc(16);
+	if (g_long_hash_tv.key == NULL) {
+		free(g_long_hash_tv.plaintext);
+		return;
+	}
+	g_long_hash_tv.ksize = 16;
+}
+
+static void long_hash_data_uninit(void)
+{
+	free(g_long_hash_tv.plaintext);
+	free(g_long_hash_tv.key);
+}
+
 static int test_sec_run(__u32 sync_mode, __u32 alg_class)
 {
 	int ret = 0;
@@ -3695,13 +4030,26 @@ static int test_sec_run(__u32 sync_mode, __u32 alg_class)
 				SEC_TST_PRT("currently cipher test is synchronize once, one thread!\n");
 			}
 		} else if (alg_class == DIGEST_CLASS) {
-			if (g_thread_num > 1) {
-				SEC_TST_PRT("currently digest test is synchronize multi -%d threads!\n", g_thread_num);
+			SEC_TST_PRT("hisi_sec HMAC-digest mode.\n");
+			long_hash_data_init();
+			if (g_thread_num > 1 && g_direction != 3) {
+				SEC_TST_PRT("currently digest test is synchronize psize:%u, multi -%d threads!\n", g_pktlen, g_thread_num);
 				ret = sec_digest_sync_multi();
+			} else if (g_thread_num > 1 && g_direction == 3) {
+					ret = sec_digest_sync_stream_mode_multi();
+					(void)sec_digest_sync_stream_cmp();
+					SEC_TST_PRT("currently digest long hash mode, psize:%u, multi thread!\n", g_pktlen);
+			} else if (g_thread_num == 1 && g_direction == 3) {
+				if (g_ivlen == 1) {
+					ret = sec_digest_sync_stream_mode();
+					(void)sec_digest_sync_stream_cmp();
+					SEC_TST_PRT("currently digest long hash mode, psize:%u, one thread!\n", g_pktlen);
+				}
 			} else {
 				ret = sec_digest_sync_once();
 				SEC_TST_PRT("currently digest test is synchronize once, one thread!\n");
 			}
+			long_hash_data_uninit();
 		} else if (alg_class == AEAD_CLASS) {
 			if (g_thread_num > 1) {
 				SEC_TST_PRT("currently aead test is synchronize multi -%d threads!\n", g_thread_num);
