@@ -14,7 +14,6 @@
 
 /*----------------------------------------head struct--------------------------------------------------------*/
 static unsigned int g_run_state = 1;
-static pthread_mutex_t acc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct _recv_data {
 	u64 send_cnt;
 	u64 recv_cnt;
@@ -133,15 +132,13 @@ void add_send_complete(void)
 
 void add_recv_data(u32 cnt)
 {
-	pthread_mutex_lock(&acc_mutex);
-	g_recv_data.recv_cnt += cnt;
-	g_recv_data.recv_times++;
-	pthread_mutex_unlock(&acc_mutex);
+	__atomic_add_fetch(&g_recv_data.recv_cnt, cnt, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&g_recv_data.recv_times, 1, __ATOMIC_RELAXED);
 }
 
 u32 get_recv_time(void)
 {
-	return g_recv_data.recv_times;
+	return __atomic_load_n(&g_recv_data.recv_times, __ATOMIC_RELAXED);
 }
 
 void init_recv_data(void)
@@ -458,7 +455,6 @@ static int acc_benchmark_run(struct acc_option *option)
 	parse_alg_param(option);
 	dump_param(option);
 
-	pthread_mutex_init(&acc_mutex, NULL);
 	if (option->multis <= 1) {
 		ret = benchmark_run(option);
 		return ret;
