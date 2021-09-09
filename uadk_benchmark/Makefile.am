@@ -16,7 +16,7 @@ uadk_benchmark_LDADD=$(libwd_la_OBJECTS) \
 			../.libs/libhisi_sec.a \
 			../.libs/libhisi_hpre.a \
 			../.libs/libhisi_zip.a \
-			include/libcrypto.so.1.1 -lnuma
+			include/libcrypto.a -ldl -lnuma
 else
 uadk_benchmark_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 			-L$(top_srcdir)/uadk_benchmark/include -l:libcrypto.so.1.1 -lnuma

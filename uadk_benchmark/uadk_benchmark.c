@@ -131,27 +131,12 @@ void add_send_complete(void)
 	__atomic_add_fetch(&g_recv_data.send_times, 1, __ATOMIC_RELAXED);
 }
 
-void add_send_data(u32 cnt)
-{
-	__atomic_add_fetch(&g_recv_data.send_cnt, cnt, __ATOMIC_RELAXED);
-}
-
 void add_recv_data(u32 cnt)
 {
 	pthread_mutex_lock(&acc_mutex);
 	g_recv_data.recv_cnt += cnt;
 	g_recv_data.recv_times++;
 	pthread_mutex_unlock(&acc_mutex);
-}
-
-u64 get_send_data(void)
-{
-	return g_recv_data.send_cnt;
-}
-
-u32 get_send_time(void)
-{
-	return g_recv_data.send_times;
 }
 
 u32 get_recv_time(void)
@@ -233,7 +218,7 @@ int get_pid_cpu_time(u32 *ptime)
 	}
 	close(fd);
 
-	bgidx = 13; // process time data begin with index 14
+	bgidx = 13; // process time data begin with index 13
 	for (i = 0; i < ret; i++) {
 		if (buf[i] == ' ') {
 			bgidx--;
@@ -244,7 +229,6 @@ int get_pid_cpu_time(u32 *ptime)
 	ret = sscanf(&buf[i], "%llu %llu %llu %llu", &caltime[0], &caltime[1],
 		&caltime[2], &caltime[3]);
 	*ptime = caltime[0] + caltime[1] + caltime[2] + caltime[3];
-	// printf("read process time: %u\n", *ptime);
 
 	return 0;
 }

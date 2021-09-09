@@ -546,8 +546,8 @@ void *sec_uadk_poll(void *data)
 	typedef int (*poll_ctx)(__u32 idx, __u32 expt, __u32 *count);
 	poll_ctx uadk_poll_ctx = NULL;
 	thread_data *pdata = (thread_data *)data;
-	u32 send_time, send_num;
-	u32 expt = 0;
+	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	u32 last_time = 2; /* poll need one more recv time */
 	u32 count = 0;
 	u32 recv = 0;
 	u32 i = 0;
@@ -568,17 +568,7 @@ void *sec_uadk_poll(void *data)
 		return NULL;
 	}
 
-	while (1) {
-		send_num = get_send_data();
-		send_time = get_send_time();
-		if (send_time == g_thread_num &&
-		     send_num == count)
-			break;
-
-		expt = send_num - count;
-		if (!expt || expt <= 0)
-			continue;
-
+	while (last_time) {
 		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
 			ret = uadk_poll_ctx(i, expt, &recv);
 			// SEC_TST_PRT("expt %u, poll %d recv: %u!\n", expt, i, recv);
@@ -589,6 +579,9 @@ void *sec_uadk_poll(void *data)
 				goto recv_error;
 			}
 		}
+
+		if (get_run_state() == 0)
+			last_time--;
 	}
 
 recv_error:
@@ -666,7 +659,6 @@ static void *sec_uadk_async_run(void *arg)
 				continue;
 			}
 			count++;
-			add_send_data(1);
 		}
 		wd_cipher_free_sess(h_sess);
 		break;
@@ -725,7 +717,6 @@ static void *sec_uadk_async_run(void *arg)
 				continue;
 			}
 			count++;
-			add_send_data(1);
 		}
 		wd_aead_free_sess(h_sess);
 		break;
@@ -770,7 +761,6 @@ static void *sec_uadk_async_run(void *arg)
 				continue;
 			}
 			count++;
-			add_send_data(1);
 		}
 		wd_digest_free_sess(h_sess);
 		break;
