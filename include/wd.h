@@ -130,12 +130,23 @@ struct wd_dev_mask {
 typedef unsigned long long int handle_t;
 typedef struct wd_dev_mask wd_dev_mask_t;
 
+#if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
+#define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }
+#define rmb() dsb(ld) /* read fence */
+#define wmb() dsb(st) /* write fence */
+#define mb() dsb(sy) /* rw fence */
+#else
+#define rmb() __sync_synchronize() /* read fence */
+#define wmb() __sync_synchronize() /* write fence */
+#define mb() __sync_synchronize() /* rw fence */
+#endif
+
 static inline uint32_t wd_ioread32(void *addr)
 {
 	uint32_t ret;
 
 	ret = *((volatile uint32_t *)addr);
-	__sync_synchronize();
+	rmb();
 	return ret;
 }
 
@@ -144,19 +155,19 @@ static inline uint64_t wd_ioread64(void *addr)
 	uint64_t ret;
 
 	ret = *((volatile uint64_t *)addr);
-	__sync_synchronize();
+	rmb();
 	return ret;
 }
 
 static inline void wd_iowrite32(void *addr, uint32_t value)
 {
-	__sync_synchronize();
+	wmb();
 	*((volatile uint32_t *)addr) = value;
 }
 
 static inline void wd_iowrite64(void *addr, uint64_t value)
 {
-	__sync_synchronize();
+	wmb();
 	*((volatile uint64_t *)addr) = value;
 }
 
