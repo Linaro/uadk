@@ -28,7 +28,6 @@ struct sched_ctx_region {
 	__u32 end;
 	__u32 last;
 	bool valid;
-	pthread_mutex_t lock;
 };
 
 /**
@@ -144,20 +143,57 @@ static void sample_get_para_rr(const void *req, void *para)
 static __u32 sample_get_next_pos_rr(struct sched_ctx_region *region,
 				    void *para)
 {
-	__u32 pos;
+	bool ret;
+	__u32 tmp, pos;
 
-	pthread_mutex_lock(&region->lock);
-
-	pos = region->last;
-
-	if (pos < region->end)
-		region->last++;
-	else if (pos >= region->end)
-		region->last = region->begin;
-
-	pthread_mutex_unlock(&region->lock);
-
-	return pos;
+	/* There's only a single ctx in the region. */
+	if (region->end == region->begin)
+		return region->begin;
+	else if (region->end - region->begin == 1) {
+		/* There're two ctxs in the region. */
+		while (1) {
+			tmp = region->end;
+			ret = __atomic_compare_exchange_n(&region->last, &tmp,
+							  region->begin, false,
+							  __ATOMIC_RELEASE,
+							  __ATOMIC_ACQUIRE);
+			if (ret)
+				return region->begin;
+			tmp = region->begin;
+			/*
+			 * If another thread has just updated region->last to
+			 * region->begin before the second CSW, it causes the
+			 * second CSW failure.
+			 * Then do the loop until one case could be matched.
+			 */
+			ret = __atomic_compare_exchange_n(&region->last, &tmp,
+							  region->end, false,
+							  __ATOMIC_RELEASE,
+							  __ATOMIC_ACQUIRE);
+			if (ret)
+				return region->end;
+		}
+	}
+	/* There're at least three ctxs in the region. */
+	pos = region->end + 1;
+	while (pos > region->end) {
+		tmp = region->end;
+		ret = __atomic_compare_exchange_n(&region->last, &tmp,
+						  region->begin, false,
+						  __ATOMIC_RELEASE,
+						  __ATOMIC_ACQUIRE);
+		if (ret)
+			return region->begin;
+		pos = __atomic_add_fetch(&region->last, 1, __ATOMIC_RELEASE);
+		if (pos <= region->end)
+			return pos;
+		/* Failure case: region->last is greater than region->end. */
+		__atomic_store_n(&region->last, region->begin,
+				 __ATOMIC_RELEASE);
+	}
+	/* It should never reach here. */
+	WD_ERR("Can't find right ctx. Just return region->begin instead.\n");
+	return region->begin;
 }
 
 static int sample_poll_region(struct sample_sched_ctx *ctx, __u32 begin,
@@ -387,9 +423,6 @@ int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
 	sched_info[numa_id].ctx_region[mode][type].last = begin;
 	sched_info[numa_id].ctx_region[mode][type].valid = true;
 	sched_info[numa_id].valid = true;
-
-	pthread_mutex_init(&sched_info[numa_id].ctx_region[mode][type].lock,
-			   NULL);
 
 	return 0;
 }
