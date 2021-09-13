@@ -89,19 +89,15 @@ static int openssl_check;
 
 char* s2b(char* s) {
         int i;
-        //for(i=0;s[i]!=0;i++) {
-        for(i=0;i<128;i++) {
-        //printf("%d => %x \n",i, s[i]);
-        printf("%x ", s[i]);
+        for(i = 0; i < 128; i++) {
+		printf("%x ", s[i]);
         }
         printf("\n");
 }
 
 char* s2c(char* a, char* b) {
         int i;
-        //for(i=0;s[i]!=0;i++) {
-        for(i=0;i<128;i++) {
-        //printf("%d => %x \n",i, s[i]);
+        for(i = 0; i < 128; i++) {
         printf("%d %x %x\n", i, a[i], b[i]);
         if(a[i] != b[i])
         printf("error: No. %d failed\n", i);
@@ -621,7 +617,7 @@ int hpre_dev_queue_req(char *dev, char *alg_type, unsigned long m_size)
 ***/
 int application_release_multiple_queue(char *dev, char *alg_type, unsigned int q_num)
 {
-	int ret = 0;
+	int i, ret = 0;
 	struct wd_queue *q;
 
 	q = malloc(q_num * sizeof(struct wd_queue));
@@ -629,9 +625,9 @@ int application_release_multiple_queue(char *dev, char *alg_type, unsigned int q
                 return 1;
         memset((void *)q, 0, q_num * sizeof(struct wd_queue));
 
-	for (int i = 0; i < q_num; i++) {
+	for (i = 0; i < q_num; i++) {
 		q[i].capa.alg = alg_type;
-       	snprintf(q[i].dev_path, sizeof(q[i].dev_path), "%s", dev);
+		snprintf(q[i].dev_path, sizeof(q[i].dev_path), "%s", dev);
 		ret = wd_request_queue(&q[i]);
 		if (ret) {
 			printf("error: fail q => %d\n", i);
@@ -640,7 +636,7 @@ int application_release_multiple_queue(char *dev, char *alg_type, unsigned int q
 		wd_get_node_id(&q[i]);
 	}
 
-	for (int i = 0; i < q_num; i++) {
+	for (i = 0; i < q_num; i++) {
                 wd_release_queue(&q[i]);
 	}
 
@@ -1008,7 +1004,7 @@ int hpre_mult_thread_request_queue(char *dev, char *alg_type, int p_num, time_t 
 			return 1;
 		}
 	}
-	for(i=0; i<p_num; i++)
+	for(i = 0; i < p_num; i++)
 	{
 		if(pthread_join(tinfo[i].thread_id, &ret) != 0)
 		{
@@ -1032,7 +1028,7 @@ int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num,
         int ret = 0;
 	 void *tmap = NULL;
         void *blk[65536];
-        unsigned int blk_count = 0, end_count = 0, blk_fail_count = 0;
+        unsigned int i, blk_count = 0, end_count = 0, blk_fail_count = 0;
         struct wd_queue q;
         struct wd_blkpool_setup wsetup;
         struct wd_blkpool *pool;
@@ -1075,7 +1071,7 @@ int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num,
                 goto release_q;
         }
 
-        for(unsigned int i=0; i < blk_count; i++)
+        for(i = 0; i < blk_count; i++)
         {
                 blk[i] = wd_alloc_blk(pool);
                 if(!blk[i])
@@ -1095,7 +1091,7 @@ int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num,
                        goto release_q;
 		  }
         }
-        for(unsigned int i=0; i < blk_count; i++)
+        for(i = 0; i < blk_count; i++)
         {
                 wd_free_blk(pool, blk[i]);
         }
@@ -1389,14 +1385,14 @@ void *wd_alloc_free_test(void *blkpool)
 {
         void *blk=NULL;
 	 void *tmap=NULL;
-        unsigned int blk_count = 0;
+        unsigned int i, blk_count = 0;
         struct wd_blkpool *pool = (struct wd_blkpool *)blkpool;
 
         if (wd_get_free_blk_num(pool, &blk_count) != WD_SUCCESS) {
 	         printf("wd_get_free_blk_num fail, blk_count:%u\n", blk_count);
 		  return NULL;
 	 }
-        for(unsigned int i=0; i<blk_count; i++)
+        for(i = 0; i < blk_count; i++)
         {
             blk = wd_alloc_blk(pool);
             if(!blk)
@@ -1424,7 +1420,7 @@ void *wd_alloc_free_test(void *blkpool)
 ***/
 int hpre_blkpool_thread(char *dev, unsigned int blk_sz, unsigned int blk_num, unsigned int align_sz)
 {
-        int ret = 0;
+        int i, ret = 0;
         pthread_t pid[65535];
 	 unsigned int blk_count = 0;
         struct wd_queue q;
@@ -1456,7 +1452,7 @@ int hpre_blkpool_thread(char *dev, unsigned int blk_sz, unsigned int blk_num, un
                 wd_release_queue(&q);
                 return 1;
         }
-        for(int i=0; i<blk_num; i++)
+        for(i = 0; i < blk_num; i++)
         {
                 ret = pthread_create(&pid[i], NULL, wd_alloc_free_test, (void *)pool);
 	         if (ret != 0)
@@ -1465,7 +1461,7 @@ int hpre_blkpool_thread(char *dev, unsigned int blk_sz, unsigned int blk_num, un
                 }
         }
 
-        for(int i=0; i<blk_num; i++)
+        for(i = 0; i < blk_num; i++)
         {
 		pthread_join(pid[i], NULL);
         }
