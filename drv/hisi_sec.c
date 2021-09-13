@@ -931,6 +931,8 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 			msg->in, msg->out);
 	}
 
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
+
 	return ret;
 }
 
@@ -1109,6 +1111,8 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
+
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return ret;
 }
@@ -1323,6 +1327,8 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 				msg->in, msg->out);
 	}
 
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
+
 	return ret;
 }
 
@@ -1479,6 +1485,8 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
+
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return ret;
 }
@@ -1835,6 +1843,8 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 				msg->in, msg->out);
 	}
 
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
+
 	return ret;
 }
 
@@ -2104,6 +2114,8 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 		hisi_sec_put_sgl(h_qp, msg->data_fmt, msg->alg_type,
 				msg->in, msg->out);
 	}
+
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return ret;
 }

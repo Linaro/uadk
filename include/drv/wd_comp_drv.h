@@ -46,6 +46,8 @@ struct wd_comp_msg {
 	__u32 checksum;
 	/* Denoted HW ctx cache, for stream mode */
 	void *ctx_buf;
+	/* Epoll flag */
+	__u8 is_polled;
 };
 
 struct wd_comp_driver {

@@ -24,6 +24,8 @@ struct wd_cipher_msg {
 	__u8 data_fmt;
 	/* Operation result, denoted by WD error code */
 	__u8 result;
+	/* epoll flag */
+	__u8 is_polled;
 
 	/* Key bytes */
 	__u16 key_bytes;

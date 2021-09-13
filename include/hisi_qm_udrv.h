@@ -178,4 +178,6 @@ int hisi_qm_get_free_sqe_num(handle_t h_qp);
 __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 			    struct wd_datalist *end_node);
 
+void hisi_qm_enable_interrupt(handle_t ctx, __u8 enable);
+
 #endif
