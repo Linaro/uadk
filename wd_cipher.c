@@ -409,6 +409,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
+	msg.is_polled = (req->in_bytes >= POLL_SIZE);
 
 	pthread_spin_lock(&ctx->lock);
 
@@ -419,7 +420,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	}
 
 	do {
-		if (req->in_bytes >= POLL_SIZE) {
+		if (msg.is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
@@ -482,6 +483,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
+	msg->is_polled = 0;
 
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {

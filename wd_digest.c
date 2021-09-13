@@ -295,6 +295,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
 	req->state = 0;
+	msg.is_polled = (req->in_bytes >= POLL_SIZE);
 
 	pthread_spin_lock(&ctx->lock);
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
@@ -304,7 +305,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	}
 
 	do {
-		if (req->in_bytes >= POLL_SIZE) {
+		if (msg.is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
@@ -372,6 +373,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
+	msg->is_polled = 0;
 
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {

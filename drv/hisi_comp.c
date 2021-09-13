@@ -961,6 +961,8 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 	if (ret < 0 && ret != -WD_EBUSY)
 		WD_ERR("qm send is err(%d)!\n", ret);
 
+	hisi_qm_enable_interrupt(ctx, msg->is_polled);
+
 	return ret;
 }
 
