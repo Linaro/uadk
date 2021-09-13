@@ -166,13 +166,13 @@ static int hisi_qm_setup_region(handle_t h_ctx,
 				struct hisi_qm_queue_info *q_info)
 {
 	q_info->sq_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
-	if (q_info->sq_base == MAP_FAILED) {
+	if (!q_info->sq_base) {
 		WD_ERR("mmap dus fail\n");
 		goto err_out;
 	}
 
 	q_info->mmio_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
-	if (q_info->mmio_base == MAP_FAILED) {
+	if (!q_info->mmio_base) {
 		wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
 		WD_ERR("mmap mmio fail\n");
 		goto err_out;
