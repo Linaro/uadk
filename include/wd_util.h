@@ -51,7 +51,9 @@ struct wd_env_config_per_numa {
 	struct wd_ctx_range **ctx_table;
 
 	/* Resource begin */
-	struct uacce_dev dev;
+	struct uacce_dev *dev;
+	struct uacce_dev *last_dev;
+	int dev_num;
 	/* This can be made statically currently */
 	unsigned long async_poll_num;
 	void *async_task_queue_array;
