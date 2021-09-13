@@ -21,7 +21,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include "zip_alg.h"
-#include "../wd_comp.h"
+#include "v1/wd_comp.h"
 
 int main(int argc, char *argv[])
 {

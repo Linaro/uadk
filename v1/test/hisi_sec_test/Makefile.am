@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir)/include -I$(srcdir) -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/include -I$(srcdir) -pthread
 
 if WITH_OPENSSL_DIR
 bin_PROGRAMS=test_hisi_sec

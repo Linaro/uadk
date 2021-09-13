@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../ -I../ -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir)/v1 -I$(srcdir)/v1/test -I$(top_srcdir) -pthread
 
 bin_PROGRAMS=test_hisi_zip test_hisi_zlib wd_zip_test wd_zip_test_1630 test_hisi_zip_perf
 

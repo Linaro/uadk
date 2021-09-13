@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I../../internal -pthread
+AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/v1/internal -pthread
 
 if WITH_OPENSSL_DIR
 bin_PROGRAMS=test_hisi_hpre hpre_test_tools test_hisi_hpre_times
