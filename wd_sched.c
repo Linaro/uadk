@@ -48,6 +48,7 @@ struct sample_sched_ctx {
 	__u32 policy;
 	__u32 type_num;
 	__u8  numa_num;
+	__u8  numa_id;
 	user_poll_func poll_func;
 	struct sample_sched_info sched_info[0];
 };
@@ -308,7 +309,7 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
 	struct sample_sched_info *sched_info;
-	int numa_id;
+	__u8 i;
 	int ret;
 
 	if (!sched_ctx || !count || !ctx) {
@@ -318,12 +319,16 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 
 	sched_info = ctx->sched_info;
 
-	for (numa_id = 0; numa_id < ctx->numa_num; numa_id++) {
-		if (sched_info[numa_id].valid) {
-			ret = sample_poll_policy_rr(ctx, numa_id, expect,
-						    count);
+	for (i = 0; i < ctx->numa_num; i++) {
+		ctx->numa_id = (ctx->numa_id + i) % ctx->numa_num;
+		if (sched_info[ctx->numa_id].valid) {
+			ret = sample_poll_policy_rr(ctx, ctx->numa_id,
+						    expect, count);
 			if (ret)
 				return ret;
+
+			if (expect == *count)
+				return 0;
 		}
 	}
 
@@ -464,6 +469,7 @@ struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_nu
 	sched_ctx->policy = sched_type;
 	sched_ctx->type_num = type_num;
 	sched_ctx->numa_num = numa_num;
+	sched_ctx->numa_id = 0;
 
 	sched->pick_next_ctx = sched_table[sched_type].pick_next_ctx;
 	sched->poll_policy = sched_table[sched_type].poll_policy;
