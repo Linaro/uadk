@@ -410,6 +410,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	fill_comp_msg(sess, &msg, req);
 	msg.ctx_buf = sess->ctx_buf;
 	msg.stream_mode = WD_COMP_STATELESS;
+	msg.is_polled = (req->src_len >= POLL_SIZE);
 
 	pthread_spin_lock(&ctx->lock);
 
@@ -421,7 +422,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	}
 
 	do {
-		if (req->src_len >= POLL_SIZE) {
+		if (msg.is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (ret < 0)
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
@@ -628,6 +629,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	/* fill true flag */
 	msg.req.last = req->last;
 	msg.stream_mode = WD_COMP_STATEFUL;
+	msg.is_polled = (req->src_len >= POLL_SIZE);
 
 	src_len = req->src_len;
 
@@ -641,7 +643,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	}
 
 	do {
-		if (req->src_len >= POLL_SIZE) {
+		if (msg.is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (ret < 0)
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
@@ -715,6 +717,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	fill_comp_msg(sess, msg, req);
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
+	msg->is_polled = 0;
 
 	pthread_spin_lock(&ctx->lock);
 
