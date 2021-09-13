@@ -481,11 +481,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		i++;
 	}
 
-	/*  enable write EQ queue flag for sync mode */
-	if (q_info->qp_mode == CTX_MODE_SYNC)
-		q_info->db(q_info, QM_DBELL_CMD_CQ, i, 1);
-	else
-		q_info->db(q_info, QM_DBELL_CMD_CQ, i, 0);
+	q_info->db(q_info, QM_DBELL_CMD_CQ, i, 0);
 
 	/* only support one thread poll one queue, so no need protect */
 	q_info->cq_head_index = i;
@@ -925,4 +921,22 @@ __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 	}
 
 	return lits_size;
+}
+
+void hisi_qm_enable_interrupt(handle_t ctx, __u8 enable)
+{
+	struct hisi_qm_queue_info *q_info;
+	struct hisi_qp *qp;
+	handle_t h_qp;
+
+	if (!enable)
+		return;
+
+	h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	qp = (struct hisi_qp *)h_qp;
+	q_info =  &qp->q_info;
+
+	pthread_spin_lock(&q_info->lock);
+	q_info->db(q_info, QM_DBELL_CMD_CQ, q_info->cq_head_index, 1);
+	pthread_spin_unlock(&q_info->lock);
 }

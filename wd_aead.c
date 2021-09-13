@@ -464,6 +464,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
+	msg.is_polled = (req->in_bytes >= POLL_SIZE);
 
 	pthread_spin_lock(&ctx->lock);
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
@@ -473,7 +474,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	}
 
 	do {
-		if (req->in_bytes >= POLL_SIZE) {
+		if (msg.is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
@@ -540,6 +541,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
+	msg->is_polled = 0;
 
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
