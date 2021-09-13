@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I../../include
+AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I$(top_srcdir)/include
 AUTOMAKE_OPTIONS = subdir-objects
 
 bin_PROGRAMS=zip_sva_perf
