@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -O0 -Werror -fno-strict-aliasing -I../include -lpthread
+AM_CFLAGS=-Wall -O0 -Werror -fno-strict-aliasing -I$(top_srcdir)/include -I$(top_srcdir) -lpthread
 
 bin_PROGRAMS=wd_mempool_test
 wd_mempool_test_SOURCES=wd_mempool_test.c

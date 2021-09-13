@@ -1,4 +1,4 @@
-AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I../../include -pthread
+AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I$(top_srcdir)/include -pthread
 AUTOMAKE_OPTIONS = subdir-objects
 
 bin_PROGRAMS=test_hisi_sec
