@@ -16,6 +16,8 @@ int operation(int op_type, void *src, int src_sz, void *dst, int *dst_sz)
                 goto out;
 
         setup.alg_type = WD_ZLIB;
+        setup.win_sz = WD_COMP_WS_32K;
+        setup.comp_lv = WD_COMP_L8;
         setup.op_type = op_type;
         setup.numa = 0;
         h_dfl = wd_comp_alloc_sess(&setup);
@@ -29,8 +31,6 @@ int operation(int op_type, void *src, int src_sz, void *dst, int *dst_sz)
         req.dst_len = *dst_sz;
         req.op_type = op_type;
         req.data_fmt = WD_FLAT_BUF;
-        req.win_sz = WD_COMP_WS_32K;
-        req.comp_lv = WD_COMP_L8;
         do {
                 ret = wd_do_comp_sync(h_dfl, &req);
         } while (ret == -WD_EBUSY);
