@@ -547,15 +547,20 @@ static int append_store_block(struct wd_comp_sess *sess,
 	__u32 checksum = sess->checksum;
 	__u32 isize = sess->isize;
 
-	memcpy(req->dst, store_block, blocksize);
-	req->dst_len = blocksize;
-
 	if (sess->alg_type == WD_ZLIB) {
+		if (req->dst_len < blocksize + sizeof(checksum))
+			return -WD_EINVAL;
+		memcpy(req->dst, store_block, blocksize);
+		req->dst_len = blocksize;
 		checksum = (__u32) cpu_to_be32(checksum);
 		 /*if zlib, ADLER32*/
 		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
 		req->dst_len += sizeof(checksum);
 	} else if (sess->alg_type == WD_GZIP) {
+		if (req->dst_len < blocksize + sizeof(checksum) + sizeof(isize))
+			return -WD_EINVAL;
+		memcpy(req->dst, store_block, blocksize);
+		req->dst_len = blocksize;
 		checksum = ~checksum;
 		checksum = bit_reverse(checksum);
 		/* if gzip, CRC32 and ISIZE */
