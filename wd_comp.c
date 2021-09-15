@@ -37,6 +37,8 @@ struct wd_comp_sess {
 	struct sched_key key;
 	__u8 *ctx_buf;
 	enum wd_comp_alg_type alg_type;
+	enum wd_comp_level comp_lv;
+	enum wd_comp_winsz_type win_sz;
 	enum wd_comp_strm_pos stream_pos;
 	__u32 isize;
 	__u32 checksum;
@@ -235,11 +237,44 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	return ret;
 }
 
+static int wd_comp_check_sess_params(struct wd_comp_sess_setup *setup)
+{
+	if (setup->alg_type >= WD_COMP_ALG_MAX)  {
+		WD_ERR("invalid: alg_type is %d!\n", setup->alg_type);
+		return -WD_EINVAL;
+	}
+
+	if (setup->op_type >= WD_DIR_MAX)  {
+		WD_ERR("invalid: op_type is %d!\n", setup->op_type);
+		return -WD_EINVAL;
+	}
+
+	if (setup->op_type == WD_DIR_DECOMPRESS)
+		return WD_SUCCESS;
+
+	if (setup->comp_lv > WD_COMP_L15) {
+		WD_ERR("invalid: comp_lv is %d!\n", setup->comp_lv);
+		return -WD_EINVAL;
+	}
+
+	if (setup->win_sz > WD_COMP_WS_32K) {
+		WD_ERR("invalid: win_sz is %d!\n", setup->win_sz);
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
 	struct wd_comp_sess *sess;
+	int ret;
 
 	if (!setup)
+		return (handle_t)0;
+
+	ret = wd_comp_check_sess_params(setup);
+	if (ret)
 		return (handle_t)0;
 
 	sess = calloc(1, sizeof(struct wd_comp_sess));
@@ -253,6 +288,8 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	}
 
 	sess->alg_type = setup->alg_type;
+	sess->comp_lv = setup->comp_lv;
+	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
 
 	sess->key.type = setup->op_type;
@@ -280,6 +317,8 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 
 	msg->alg_type = sess->alg_type;
+	msg->comp_lv = sess->comp_lv;
+	msg->win_sz = sess->win_sz;
 	msg->avail_out = req->dst_len;
 
 	/* if is last 1: flush end; other: sync flush */
@@ -302,24 +341,6 @@ static int wd_comp_check_buffer(struct wd_comp_req *req)
 
 	if (!req->dst_len) {
 		WD_ERR("invalid: dst_len is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	return 0;
-}
-
-static int wd_comp_check_comp_param(struct wd_comp_req *req)
-{
-	if (req->op_type == WD_DIR_DECOMPRESS)
-		return 0;
-
-	if (req->comp_lv > WD_COMP_L15) {
-		WD_ERR("invalid: comp_lv is %hhu!\n", req->comp_lv);
-		return -WD_EINVAL;
-	}
-
-	if (req->win_sz > WD_COMP_WS_32K) {
-		WD_ERR("invalid: win_sz is %hu!\n", req->win_sz);
 		return -WD_EINVAL;
 	}
 
@@ -350,10 +371,6 @@ static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
 		return -WD_EINVAL;
 	}
-
-	ret = wd_comp_check_comp_param(req);
-	if (ret)
-		return ret;
 
 	if (mode == CTX_MODE_ASYNC && !req->cb) {
 		WD_ERR("async comp input cb is NULL!\n");
