@@ -154,6 +154,8 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 
 	setup.alg_type = alg_type;
 	setup.op_type = WD_DIR_COMPRESS;
+	setup.comp_lv = WD_COMP_L8;
+	setup.win_sz = WD_COMP_WS_8K;
 	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
@@ -178,8 +180,6 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 	req.cb = NULL;
 	req.data_fmt = data_fmt;
 	req.priv = priv;
-	req.win_sz = WD_COMP_WS_32K;
-	req.comp_lv = WD_COMP_L8;
 
 	dbg("%s:input req: src_len: %d, dst_len:%d, data_fmt:%d\n",
 	    __func__, req.src_len, req.dst_len, req.data_fmt);
@@ -279,6 +279,8 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 
 	setup.alg_type = alg_type;
 	setup.op_type = WD_DIR_COMPRESS;
+	setup.comp_lv = WD_COMP_L8;
+	setup.win_sz = WD_COMP_WS_8K;
 	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
@@ -292,8 +294,6 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 	req.op_type = WD_DIR_COMPRESS;
 	req.cb = NULL;
 	req.data_fmt = data_fmt;
-	req.win_sz = WD_COMP_WS_32K;
-	req.comp_lv = WD_COMP_L8;
 
 	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
@@ -509,6 +509,8 @@ void *send_thread_func(void *arg)
 	setup.alg_type = opts->alg_type;
 	setup.op_type = opts->op_type;
 	setup.numa = 0;
+	setup.comp_lv = WD_COMP_L8;
+	setup.win_sz = WD_COMP_WS_8K;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess)
 		return NULL;
@@ -526,8 +528,6 @@ void *send_thread_func(void *arg)
 		tdata->req.src = info->in_buf;
 		tdata->req.dst = info->out_buf;
 		tdata->sum = 0;
-		tdata->req.win_sz = WD_COMP_WS_32K;
-		tdata->req.comp_lv = WD_COMP_L8;
 		while (left > 0) {
 			tdata->req.src_len = src_block_size;
 			tdata->req.dst_len = dst_block_size;
@@ -1012,8 +1012,6 @@ int hw_deflate4(handle_t h_dfl,
 		reqs[i].dst = q->addr;
 		reqs[i].dst_len = q->size;
 		reqs[i].op_type = WD_DIR_COMPRESS;
-		reqs[i].win_sz = WD_COMP_WS_32K;
-		reqs[i].comp_lv = WD_COMP_L8;
 
 		if (opts->sync_mode) {
 			reqs[i].cb = async2_cb;
@@ -1116,8 +1114,6 @@ int hw_deflate5(handle_t h_dfl,
 		reqs[i].dst_len = q->size;
 		reqs[i].op_type = WD_DIR_COMPRESS;
 		reqs[i].data_fmt = opts->data_fmt;
-		reqs[i].win_sz = WD_COMP_WS_32K;
-		reqs[i].comp_lv = WD_COMP_L8;
 		if (opts->sync_mode) {
 			reqs[i].cb = async5_cb;
 			reqs[i].cb_param = tdata;

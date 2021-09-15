@@ -71,8 +71,6 @@ struct wd_comp_req {
 	void			*cb_param;
 	enum wd_comp_op_type 	op_type;  /* Denoted by wd_comp_op_type */
 	enum wd_buff_type 	data_fmt; /* Denoted by wd_buff_type */
-	enum wd_comp_level 	comp_lv;  /* Denoted by wd_comp_level */
-	enum wd_comp_winsz_type	win_sz;   /* Denoted by wd_comp_winsz_type */
 	__u32			last;
 	__u32			status;
 	void			*priv;
@@ -115,7 +113,7 @@ void wd_comp_uninit(void);
 
 struct wd_comp_sess_setup {
 	enum wd_comp_alg_type alg_type; /* Denoted by enum wd_comp_alg_type */
-	enum wd_comp_level comp_lv; /* Denoted by enum wd_comp_level */
+	enum wd_comp_level comp_lv;     /* Denoted by enum wd_comp_level */
 	enum wd_comp_winsz_type win_sz; /* Denoted by enum wd_comp_winsz_type */
 	enum wd_comp_op_type op_type;
 	int numa;

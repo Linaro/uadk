@@ -919,7 +919,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 
 	ops[alg_type].fill_tag(sqe, msg->tag);
 
-	ret = ops[alg_type].fill_comp_level(sqe, msg->req.comp_lv);
+	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
 	if (ret)
 		return ret;
 
@@ -931,7 +931,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	sqe->dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
-	sqe->dw9 |= msg->req.win_sz << WINDOW_SIZE_SHIFT;
+	sqe->dw9 |= msg->win_sz << WINDOW_SIZE_SHIFT;
 	sqe->isize = msg->isize;
 	sqe->dw31 = msg->checksum;
 
