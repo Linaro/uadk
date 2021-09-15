@@ -109,17 +109,36 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 	return ret;
 }
 
+static int access_attr(char *dev_root, char *attr, int mode)
+{
+	char attr_file[PATH_STR_SIZE];
+	ssize_t size;
+
+	if (!dev_root || !attr)
+		return -WD_EINVAL;
+
+	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s", dev_root, attr);
+	if (size < 0)
+		return -WD_EINVAL;
+
+	return access(attr_file, mode);
+}
+
 static int get_dev_info(struct uacce_dev *dev)
 {
 	int value = 0;
+	int ret;
 
 	get_int_attr(dev, "flags", &dev->flags);
 	get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
 
 	/* hardware err isolate flag */
-	get_int_attr(dev, "isolate", &value);
-	if (value == 1)
-		return -ENODEV;
+	ret = access_attr(dev->dev_root, "isolate", F_OK);
+	if (!ret) {
+		get_int_attr(dev, "isolate", &value);
+		if (value == 1)
+			return -ENODEV;
+	}
 
 	get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
 	get_int_attr(dev, "region_mmio_size", &value);
