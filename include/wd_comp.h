@@ -69,10 +69,10 @@ struct wd_comp_req {
 	__u32			dst_len;
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
-	__u8			op_type;     /* denoted by wd_comp_op_type */
-	__u8			data_fmt;    /* denoted by wd_buff_type */
-	__u8			comp_lv;     /* denoted by wd_comp_level */
-	__u16			win_sz;      /* denoted by wd_comp_winsz_type */
+	enum wd_comp_op_type 	op_type;  /* Denoted by wd_comp_op_type */
+	enum wd_buff_type 	data_fmt; /* Denoted by wd_buff_type */
+	enum wd_comp_level 	comp_lv;  /* Denoted by wd_comp_level */
+	enum wd_comp_winsz_type	win_sz;   /* Denoted by wd_comp_winsz_type */
 	__u32			last;
 	__u32			status;
 	void			*priv;
