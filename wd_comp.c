@@ -34,12 +34,12 @@
 #define cpu_to_be32(x) swap_byte(x)
 
 struct wd_comp_sess {
-	int	alg_type;
-	struct sched_key	key;
-	__u8	*ctx_buf;
-	__u8	stream_pos;
-	__u32	isize;
-	__u32	checksum;
+	struct sched_key key;
+	__u8 *ctx_buf;
+	enum wd_comp_alg_type alg_type;
+	enum wd_comp_strm_pos stream_pos;
+	__u32 isize;
+	__u32 checksum;
 };
 
 struct wd_comp_setting {
