@@ -196,6 +196,8 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	*count = 0;
+
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -229,7 +231,6 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, resp_msg.tag);
 		*count = recv_count;
-
 	} while (--expt);
 
 	return ret;
