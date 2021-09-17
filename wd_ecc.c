@@ -2195,6 +2195,8 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	*count = 0;
+
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
