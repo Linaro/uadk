@@ -309,7 +309,7 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 {
 	int ret = 0;
 
-	if (sess->mode == WD_CIPHER_ECB)
+	if (sess->mode == WD_CIPHER_ECB || sess->mode == WD_CIPHER_XTS)
 		return 0;
 
 	switch (sess->alg) {
