@@ -36,9 +36,6 @@ nobase_include_HEADERS = v1/wd.h v1/wd_cipher.h v1/uacce.h v1/wd_dh.h v1/wd_dige
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
-install-exec-hook:
-	@(cd $(DESTDIR)$(libdir) && $(RM) $(lib_LTLIBRARIES))
-
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h		\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
 		 v1/wd_rng.c v1/wd_rng.h	\
