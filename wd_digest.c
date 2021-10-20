@@ -127,7 +127,8 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (wd_digest_setting.config.ctx_num) {
+	if (wd_digest_setting.config.ctx_num &&
+	    wd_digest_setting.config.pid == getpid()) {
 		WD_ERR("digest have initialized.\n");
 		return -WD_EEXIST;
 	}
@@ -147,6 +148,8 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("failed to set config, ret = %d!\n", ret);
 		return ret;
 	}
+
+	wd_digest_setting.config.pid = getpid();
 
 	ret = wd_init_sched(&wd_digest_setting.sched, sched);
 	if (ret < 0) {

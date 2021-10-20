@@ -199,7 +199,8 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (wd_cipher_setting.config.ctx_num) {
+	if (wd_cipher_setting.config.ctx_num &&
+	    wd_cipher_setting.config.pid == getpid()) {
 		WD_ERR("cipher have initialized.\n");
 		return -WD_EEXIST;
 	}
@@ -219,6 +220,8 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("failed to set config, ret = %d!\n", ret);
 		return ret;
 	}
+
+	wd_cipher_setting.config.pid = getpid();
 
 	ret = wd_init_sched(&wd_cipher_setting.sched, sched);
 	if (ret < 0) {
