@@ -38,7 +38,7 @@ struct wd_cipher_setting {
 	struct wd_cipher_driver *driver;
 	void *priv;
 	struct wd_async_msg_pool pool;
-}wd_cipher_setting;
+} wd_cipher_setting;
 
 struct wd_env_config wd_cipher_env_config;
 
@@ -199,7 +199,9 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (wd_cipher_setting.config.ctx_num) {
+	/* wd_cipher_init() could only be invoked once for one process. */
+	if (wd_cipher_setting.config.ctx_num &&
+	    wd_cipher_setting.config.pid == getpid()) {
 		WD_ERR("cipher have initialized.\n");
 		return -WD_EEXIST;
 	}

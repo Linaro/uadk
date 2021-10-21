@@ -129,7 +129,8 @@ void wd_ecc_set_driver(struct wd_ecc_driver *drv)
 static int init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_ecc_init() could only be invoked once for one process. */
-	if (wd_ecc_setting.config.ctx_num) {
+	if (wd_ecc_setting.config.ctx_num &&
+	    wd_ecc_setting.config.pid == getpid()) {
 		WD_ERR("ecc have initialized.\n");
 		return -WD_EEXIST;
 	}

@@ -75,7 +75,8 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_dh_init() could only be invoked once for one process. */
-	if (wd_dh_setting.config.ctx_num) {
+	if (wd_dh_setting.config.ctx_num &&
+	    wd_dh_setting.config.pid == getpid()) {
 		WD_ERR("dh have initialized.\n");
 		return -WD_EEXIST;
 	}

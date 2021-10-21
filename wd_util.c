@@ -91,6 +91,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	in->ctxs = ctxs;
+	in->pid = getpid();
 	in->priv = cfg->priv;
 	in->ctx_num = cfg->ctx_num;
 
@@ -131,6 +132,7 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 
 	in->priv = NULL;
 	in->ctx_num = 0;
+	in->pid = 0;
 	if (in->ctxs)
 		free(in->ctxs);
 }
