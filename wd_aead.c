@@ -38,7 +38,7 @@ struct wd_aead_setting {
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
 	void *priv;
-}wd_aead_setting;
+} wd_aead_setting;
 
 struct wd_env_config wd_aead_env_config;
 
@@ -322,11 +322,6 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	int ret;
-
-	if (wd_aead_setting.config.ctx_num) {
-		WD_ERR("aead have initialized.\n");
-		return -WD_EEXIST;
-	}
 
 	if (!config || !sched) {
 		WD_ERR("failed to check aead init input param!\n");

@@ -75,6 +75,12 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		return -WD_EINVAL;
 	}
 
+	/* wd_xxx_init() could only be invoked once for one process. */
+	if (in->ctx_num && in->pid == getpid()) {
+		WD_ERR("ctx have initialized.\n");
+		return -WD_EEXIST;
+	}
+
 	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx_internal));
 	if (!ctxs)
 		return -WD_ENOMEM;
@@ -91,6 +97,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	in->ctxs = ctxs;
+	in->pid = getpid();
 	in->priv = cfg->priv;
 	in->ctx_num = cfg->ctx_num;
 
@@ -131,6 +138,7 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 
 	in->priv = NULL;
 	in->ctx_num = 0;
+	in->pid = 0;
 	if (in->ctxs)
 		free(in->ctxs);
 }
