@@ -35,7 +35,7 @@ struct wd_digest_setting {
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
 	void *priv;
-}wd_digest_setting;
+} wd_digest_setting;
 
 struct wd_env_config wd_digest_env_config;
 
@@ -126,11 +126,6 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	int ret;
-
-	if (wd_digest_setting.config.ctx_num) {
-		WD_ERR("digest have initialized.\n");
-		return -WD_EEXIST;
-	}
 
 	if (!config || !sched) {
 		WD_ERR("failed to check input param!\n");
