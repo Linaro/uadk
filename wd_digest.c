@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "wd_digest.h"
-#include "include/drv/wd_digest_drv.h"
 #include "wd_util.h"
+#include "include/drv/wd_digest_drv.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
@@ -296,7 +296,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send bd!\n");
-		goto err_out;
+		goto out;
 	}
 
 	do {
@@ -309,21 +309,17 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
-			goto err_out;
+			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
 				ret = -WD_ETIMEDOUT;
-				goto err_out;
+				goto out;
 			}
 		}
 	} while (ret < 0);
 
-	pthread_spin_unlock(&ctx->lock);
-
-	return 0;
-
-err_out:
+out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
