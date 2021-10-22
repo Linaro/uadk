@@ -6,9 +6,9 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include "include/drv/wd_aead_drv.h"
 #include "wd_aead.h"
 #include "wd_util.h"
+#include "include/drv/wd_aead_drv.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
@@ -121,7 +121,7 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	int ret;
 
-	if (!key || !sess) {
+	if (unlikely(!key || !sess)) {
 		WD_ERR("failed to check cipher key inpupt param!\n");
 		return -WD_EINVAL;
 	}
@@ -142,7 +142,7 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 {
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
-	if (!key || !sess) {
+	if (unlikely(!key || !sess)) {
 		WD_ERR("failed to check authenticate key param!\n");
 		return -WD_EINVAL;
 	}
@@ -372,7 +372,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 	memset(priv, 0, wd_aead_setting.driver->drv_ctx_size);
 	wd_aead_setting.priv = priv;
-	/* sec init */
+
 	ret = wd_aead_setting.driver->init(&wd_aead_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to init aead dirver!\n");
@@ -470,7 +470,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send aead bd!\n");
-		goto err_out;
+		goto out;
 	}
 
 	do {
@@ -483,20 +483,17 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("failed to recv bd!\n");
-			goto err_out;
+			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("failed to recv bd and timeout!\n");
 				ret = -WD_ETIMEDOUT;
-				goto err_out;
+				goto out;
 			}
 		}
 	} while (ret < 0);
-	pthread_spin_unlock(&ctx->lock);
 
-	return 0;
-
-err_out:
+out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
