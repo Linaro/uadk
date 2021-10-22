@@ -10,8 +10,8 @@
 #include <sched.h>
 #include <numa.h>
 #include "wd_cipher.h"
-#include "include/drv/wd_cipher_drv.h"
 #include "wd_util.h"
+#include "include/drv/wd_cipher_drv.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
@@ -69,40 +69,37 @@ void wd_cipher_set_driver(struct wd_cipher_driver *drv)
 	wd_cipher_setting.driver = drv;
 }
 
-static int is_des_weak_key(const __u64 *key)
+static bool is_des_weak_key(const __u64 *key)
 {
 	int i;
 
 	for (i = 0; i < DES_WEAK_KEY_NUM; i++) {
 		if (*key == des_weak_key[i])
-			return 1;
+			return true;
 	}
 
-	return 0;
+	return false;
 }
 
-static int aes_key_len_check(__u16 length)
+static int aes_key_len_check(__u32 length)
 {
 	switch (length) {
-		case AES_KEYSIZE_128:
-		case AES_KEYSIZE_192:
-		case AES_KEYSIZE_256:
-			return 0;
-		default:
-			return -WD_EINVAL;
+	case AES_KEYSIZE_128:
+	case AES_KEYSIZE_192:
+	case AES_KEYSIZE_256:
+		return 0;
+	default:
+		return -WD_EINVAL;
 	}
 }
 
-static int cipher_key_len_check(struct wd_cipher_sess *sess, __u16 length)
+static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 {
 	int ret = 0;
 
-	if (sess->mode == WD_CIPHER_XTS) {
-		if (length != AES_KEYSIZE_128 && length != AES_KEYSIZE_256) {
-			WD_ERR("unsupported XTS key length, length = %u.\n",
-				 length);
-			return -WD_EINVAL;
-		}
+	if (sess->mode == WD_CIPHER_XTS && length == AES_KEYSIZE_192) {
+		WD_ERR("unsupported XTS key length, length = %u.\n", length);
+		return -WD_EINVAL;
 	}
 
 	switch (sess->alg) {
@@ -132,7 +129,7 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u16 length)
 int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-	__u16 length = key_len;
+	__u32 length = key_len;
 	int ret;
 
 	if (!key || !sess || !sess->key) {
@@ -183,11 +180,12 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 
 void wd_cipher_free_sess(handle_t h_sess)
 {
-	if (unlikely(!h_sess)) {
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+
+	if (unlikely(!sess)) {
 		WD_ERR("cipher input h_sess is NULL!\n");
 		return;
 	}
-	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
 	wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
 
@@ -226,7 +224,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_cipher_set_static_drv();
 #endif
 
-	/* sadly find we allocate async pool for every ctx */
+	/* allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_cipher_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_cipher_msg));
@@ -242,7 +240,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out_priv;
 	}
 	wd_cipher_setting.priv = priv;
-	/* sec init */
+
 	ret = wd_cipher_setting.driver->init(&wd_cipher_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("hisi sec init failed.\n");
@@ -411,7 +409,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd cipher send err!\n");
-		goto err_out;
+		goto out;
 	}
 
 	do {
@@ -424,19 +422,17 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		req->state = msg.result;
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd cipher recv err!\n");
-			goto err_out;
+			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
 				WD_ERR("wd cipher recv timeout fail!\n");
 				ret = -WD_ETIMEDOUT;
-				goto err_out;
+				goto out;
 			}
 		}
 	} while (ret < 0);
-	pthread_spin_unlock(&ctx->lock);
 
-	return 0;
-err_out:
+out:
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
@@ -456,6 +452,10 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		WD_ERR("failed to check cipher params!\n");
 		return ret;
 	}
+
+	ret = cipher_iv_len_check(req, sess);
+	if (unlikely(ret))
+		return ret;
 
 	key.mode = CTX_MODE_ASYNC;
 	key.type = 0;
