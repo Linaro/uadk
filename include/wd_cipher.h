@@ -72,18 +72,6 @@ struct wd_cipher_sess_setup {
 struct wd_cipher_req;
 typedef void *wd_alg_cipher_cb_t(struct wd_cipher_req *req, void *cb_param);
 
-struct wd_cipher_sess {
-	char			*alg_name;
-  	enum wd_cipher_alg alg;
-	enum wd_cipher_mode mode;
-	wd_dev_mask_t		*dev_mask;
-	struct wd_alg_cipher	*drv;
-	void			*priv;
-	unsigned char	key[MAX_CIPHER_KEY_SIZE];
-	__u32			key_bytes;
-	int			numa;
-};
-
 struct wd_cipher_req {
 	enum wd_cipher_op_type op_type;
 	union {

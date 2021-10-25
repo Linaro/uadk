@@ -67,16 +67,6 @@ struct wd_digest_sess_setup {
 
 typedef void *wd_digest_cb_t(void *cb_param);
 
-struct wd_digest_sess {
-	char			*alg_name;
-	enum wd_digest_type	alg;
-	enum wd_digest_mode	mode;
-	void			*priv;
-	unsigned char	key[MAX_HMAC_KEY_SIZE];
-	__u32			key_bytes;
-	int			numa;
-};
-
 /**
  * struct wd_digest_arg - Parameters for per digest operation
  * @in: input data address
