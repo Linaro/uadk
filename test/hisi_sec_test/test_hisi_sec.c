@@ -1579,10 +1579,6 @@ static int sec_digest_sync_once(void)
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
 		}
-		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
-		SEC_TST_PRT("------->tv key:%s\n", tv->key);
-		SEC_TST_PRT("digest sess key--------->:\n");
-		dump_mem(WD_FLAT_BUF, sess->key, sess->key_bytes);
 	}
 
 	gettimeofday(&start_tval, NULL);
@@ -1787,10 +1783,6 @@ static int sec_digest_async_once(void)
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
 		}
-		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
-		SEC_TST_PRT("------->tv key:%s\n", tv->key);
-		SEC_TST_PRT("digest sess key--------->:\n");
-		dump_mem(g_data_fmt, sess->key, sess->key_bytes);
 	}
 
 	/* send thread */
@@ -1895,10 +1887,6 @@ static int sec_digest_sync_multi(void)
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
 		}
-		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
-		SEC_TST_PRT("------->tv key:%s\n", tv->key);
-		SEC_TST_PRT("digest sess key--------->:\n");
-		dump_mem(g_data_fmt, sess->key, sess->key_bytes);
 	}
 
 	td_data.h_sess = h_sess;
@@ -2002,10 +1990,6 @@ static int sec_digest_async_multi(void)
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out;
 		}
-		struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
-		SEC_TST_PRT("------->tv key:%s\n", tv->key);
-		SEC_TST_PRT("digest sess key--------->:\n");
-		dump_mem(WD_FLAT_BUF, sess->key, sess->key_bytes);
 	}
 
 	td_data.h_sess = h_sess;
