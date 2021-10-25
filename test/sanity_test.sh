@@ -357,9 +357,12 @@ run_zip_test_v2()
 	export WD_COMP_ASYNC_POLL_EN=1
 	export WD_COMP_ASYNC_POLL_NUM="4@0"
 	# test without environment variables
-	sw_dfl_hw_ifl /var/log/syslog
-	hw_dfl_sw_ifl /var/log/syslog
-	hw_dfl_hw_ifl /var/log/syslog
+	# limit test file in 64MB
+	rm -fr /tmp/syslog
+	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=64 >& /dev/null
+	sw_dfl_hw_ifl /tmp/syslog
+	hw_dfl_sw_ifl /tmp/syslog
+	hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
 	zip_sva_perf -b 8192 -s 81920 -l 1000 --self
 	# test with environment variables
