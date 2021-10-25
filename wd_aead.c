@@ -40,6 +40,21 @@ struct wd_aead_setting {
 	void *priv;
 } wd_aead_setting;
 
+struct wd_aead_sess {
+	char			*alg_name;
+	enum wd_cipher_alg	calg;
+	enum wd_cipher_mode	cmode;
+	enum wd_digest_type	dalg;
+	enum wd_digest_mode	dmode;
+	unsigned char		ckey[MAX_CIPHER_KEY_SIZE];
+	unsigned char		akey[MAX_HMAC_KEY_SIZE];
+	__u16			ckey_bytes;
+	__u16			akey_bytes;
+	__u16			auth_bytes;
+	void			*priv;
+	int			numa;
+};
+
 struct wd_env_config wd_aead_env_config;
 
 #ifdef WD_STATIC_DRV
