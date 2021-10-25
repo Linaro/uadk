@@ -1198,6 +1198,39 @@ static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 	return 0;
 }
 
+static int u_is_in_p(struct wd_ecc_msg *msg)
+{
+	struct wd_ecc_in *ecc_in = (struct wd_ecc_in *)msg->req.src;
+	struct wd_ecc_dh_in *in = &ecc_in->param.dh_in;
+	struct wd_ecc_point *pbk = &in->pbk;
+	struct wd_dtb *p = NULL;
+
+	wd_ecc_get_prikey_params((void *)msg->key, &p, NULL, NULL, NULL,
+				  NULL, NULL);
+	if (unlikely(!p)) {
+		WD_ERR("failed to get param p!\n");
+		return -WD_EINVAL;
+	}
+	/*
+	 * In big-endian order, when receiving u-array, implementations
+	 * of X25519 (but not X448) should mask the most significant bit
+	 * in the 1st byte.
+	 * See RFC7748 for details.
+	 */
+	if (msg->curve_id == WD_X25519)
+		pbk->x.data[0] &= 0x7f;
+	if (!less_than_latter(&pbk->x, p)) {
+		WD_ERR("ux is out of p!\n");
+		return -WD_EINVAL;
+	}
+	if (is_all_zero(&pbk->x, msg)) {
+		WD_ERR("ux is zero!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int ecc_prepare_in(struct wd_ecc_msg *msg,
 			  struct hisi_hpre_sqe *hw_msg, void **data)
 {
@@ -1215,6 +1248,9 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 		break;
 	case WD_ECXDH_COMPUTE_KEY:
 		ret = ecc_prepare_dh_compute_in(msg, hw_msg, data);
+		if (!ret && (msg->curve_id == WD_X25519 ||
+		    msg->curve_id == WD_X448))
+			ret = u_is_in_p(msg);
 		break;
 	case WD_ECDSA_SIGN: /* fall through */
 	case WD_SM2_SIGN:
