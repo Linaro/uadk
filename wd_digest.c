@@ -37,6 +37,16 @@ struct wd_digest_setting {
 	void *priv;
 } wd_digest_setting;
 
+struct wd_digest_sess {
+	char			*alg_name;
+	enum wd_digest_type	alg;
+	enum wd_digest_mode	mode;
+	void			*priv;
+	unsigned char		key[MAX_HMAC_KEY_SIZE];
+	__u32			key_bytes;
+	int			numa;
+};
+
 struct wd_env_config wd_digest_env_config;
 
 #ifdef WD_STATIC_DRV

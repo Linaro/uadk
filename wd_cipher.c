@@ -40,6 +40,18 @@ struct wd_cipher_setting {
 	struct wd_async_msg_pool pool;
 } wd_cipher_setting;
 
+struct wd_cipher_sess {
+	char			*alg_name;
+	enum wd_cipher_alg	alg;
+	enum wd_cipher_mode	mode;
+	wd_dev_mask_t		*dev_mask;
+	struct wd_alg_cipher	*drv;
+	void			*priv;
+	unsigned char		key[MAX_CIPHER_KEY_SIZE];
+	__u32			key_bytes;
+	int			numa;
+};
+
 struct wd_env_config wd_cipher_env_config;
 
 #ifdef WD_STATIC_DRV
