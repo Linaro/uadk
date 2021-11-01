@@ -658,12 +658,32 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 		c_mode = C_MODE_XTS;
 		break;
 	default:
-		WD_ERR("Invalid cipher mode type:%u!\n", msg->mode);
+		WD_ERR("invalid cipher mode type:%u!\n", msg->mode);
 		return -WD_EINVAL;
 	}
 	sqe->type2.icvw_kmode |= (__u16)(c_mode) << SEC_CMODE_OFFSET;
 
 	return 0;
+}
+
+static void fill_cipher_bd2_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	sqe->type2.data_src_addr = (__u64)msg->in;
+	sqe->type2.data_dst_addr = (__u64)msg->out;
+	sqe->type2.c_ivin_addr = (__u64)msg->iv;
+	sqe->type2.c_key_addr = (__u64)msg->key;
+
+	/*
+	 * Because some special algorithms need to update IV
+	 * after receiving the BD, and the relevant information
+	 * is in the send message, so the BD field segment is
+	 * needed to return the message pointer.
+	 * The Cipher algorithm does not use the mac_addr segment
+	 * in the BD domain and the hardware will copy all the
+	 * field values of the send BD when returning, so we use
+	 * mac_addr to carry the message pointer here.
+	 */
+	sqe->type2.mac_addr = (__u64)msg;
 }
 
 static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *recv_msg)
@@ -711,6 +731,7 @@ static int cipher_len_check(struct wd_cipher_msg *msg)
 			WD_ERR("input cipher length is too small!\n");
 			return -WD_EINVAL;
 		}
+		return 0;
 	}
 
 	if (msg->alg == WD_CIPHER_3DES || msg->alg == WD_CIPHER_DES) {
@@ -898,28 +919,13 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	}
 
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
-	sqe.type2.data_src_addr = (__u64)msg->in;
-	sqe.type2.data_dst_addr = (__u64)msg->out;
-	sqe.type2.c_ivin_addr = (__u64)msg->iv;
-	sqe.type2.c_key_addr = (__u64)msg->key;
 	sqe.type2.tag = (__u16)msg->tag;
-
-	/*
-	 * Because some special algorithms need to update IV
-	 * after receiving the BD, and the relevant information
-	 * is in the send message, so the BD field segment is
-	 * needed to return the message pointer.
-	 * The Cipher algorithm does not use the mac_addr segment
-	 * in the BD domain and the hardware will copy all the
-	 * field values of the send BD when returning, so we use
-	 * mac_addr to carry the message pointer here.
-	 */
-	sqe.type2.mac_addr = (__u64)msg;
+	fill_cipher_bd2_addr(msg, &sqe);
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
-			WD_ERR("hisi qm send is err(%d)!\n", ret);
+			WD_ERR("cipher send sqe is err(%d)!\n", ret);
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
@@ -987,7 +993,7 @@ static int fill_cipher_bd3_alg(struct wd_cipher_msg *msg,
 		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
-		WD_ERR("Invalid cipher type:%u!\n", msg->alg);
+		WD_ERR("invalid cipher type:%u!\n", msg->alg);
 		return -WD_EINVAL;
 	}
 
@@ -1022,12 +1028,33 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 		c_mode = C_MODE_CFB;
 		break;
 	default:
-		WD_ERR("Invalid cipher mode type:%u!\n", msg->mode);
+		WD_ERR("invalid cipher mode type:%u!\n", msg->mode);
 		return -WD_EINVAL;
 	}
 	sqe->c_mode_alg |= (__u16)c_mode;
 
 	return 0;
+}
+
+static void fill_cipher_bd3_addr(struct wd_cipher_msg *msg,
+		struct hisi_sec_sqe3 *sqe)
+{
+	sqe->data_src_addr = (__u64)msg->in;
+	sqe->data_dst_addr = (__u64)msg->out;
+	sqe->no_scene.c_ivin_addr = (__u64)msg->iv;
+	sqe->c_key_addr = (__u64)msg->key;
+
+	/*
+	 * Because some special algorithms need to update IV
+	 * after receiving the BD, and the relevant information
+	 * is in the send message, so the BD field segment is
+	 * needed to return the message pointer.
+	 * The Cipher algorithm does not use the mac_addr segment
+	 * in the BD domain and the hardware will copy all the
+	 * field values of the send BD when returning, so we use
+	 * mac_addr to carry the message pointer here.
+	 */
+	sqe->mac_addr = (__u64)msg;
 }
 
 int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
@@ -1082,28 +1109,13 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	}
 
 	sqe.c_len_ivin = (__u32)msg->in_bytes;
-	sqe.data_src_addr = (__u64)msg->in;
-	sqe.data_dst_addr = (__u64)msg->out;
-	sqe.no_scene.c_ivin_addr = (__u64)msg->iv;
-	sqe.c_key_addr = (__u64)msg->key;
 	sqe.tag = (__u64)msg->tag;
-
-	/*
-	 * Because some special algorithms need to update IV
-	 * after receiving the BD, and the relevant information
-	 * is in the send message, so the BD field segment is
-	 * needed to return the message pointer.
-	 * The Cipher algorithm does not use the mac_addr segment
-	 * in the BD domain and the hardware will copy all the
-	 * field values of the send BD when returning, so we use
-	 * mac_addr to carry the message pointer here.
-	 */
-	sqe.mac_addr = (__u64)msg;
+	fill_cipher_bd3_addr(msg, &sqe);
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
-			WD_ERR("hisi qm send is err(%d)!\n", ret);
+			WD_ERR("cipher send sqe is err(%d)!\n", ret);
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
@@ -1165,7 +1177,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
 	if (msg->alg >= WD_DIGEST_TYPE_MAX) {
-		WD_ERR("Invalid digest type!\n");
+		WD_ERR("invalid digest type!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1175,7 +1187,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
 	else if (msg->mode == WD_DIGEST_HMAC) {
 		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
-			WD_ERR("Invalid digest key_bytes!\n");
+			WD_ERR("invalid digest key_bytes!\n");
 			return -WD_EINVAL;
 		}
 		sqe->type2.mac_key_alg |= (__u32)(msg->key_bytes /
@@ -1185,7 +1197,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		sqe->type2.mac_key_alg |=
 		(__u32)(g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET);
 	} else {
-		WD_ERR("Invalid digest mode!\n");
+		WD_ERR("invalid digest mode!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1322,7 +1334,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
-			WD_ERR("hisi qm send is err(%d)!\n", ret);
+			WD_ERR("digest send sqe is err(%d)!\n", ret);
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
@@ -1484,7 +1496,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
-			WD_ERR("hisi qm send is err(%d)!\n", ret);
+			WD_ERR("digest send sqe is err(%d)!\n", ret);
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
@@ -1746,8 +1758,8 @@ static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 
 static int aead_len_check(struct wd_aead_msg *msg)
 {
-	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("failed to check aead input data length!\n");
+	if (msg->in_bytes > MAX_INPUT_DATA_LEN) {
+		WD_ERR("aead input data length is too long!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1768,8 +1780,13 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	__u16 count = 0;
 	int ret;
 
-	if (!msg) {
+	if (unlikely(!msg)) {
 		WD_ERR("failed to check input aead msg!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->cmode != WD_CIPHER_CBC && msg->in_bytes == 0)) {
+		WD_ERR("ccm or gcm not supports 0 packet size at hw_v2!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1800,12 +1817,6 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	}
 	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type_auth_cipher |= cipher;
-
-	/* Hardware V2 not supports 0 packet size */
-	if (unlikely(msg->in_bytes == 0)) {
-		WD_ERR("aead input packet size is 0!\n");
-		return -WD_EINVAL;
-	}
 
 	sqe.type2.clen_ivhlen = msg->in_bytes;
 	sqe.type2.cipher_src_offset = msg->assoc_bytes;
@@ -1843,7 +1854,7 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
-			WD_ERR("hisi qm send is err(%d)!\n", ret);
+			WD_ERR("aead send sqe is err(%d)!\n", ret);
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
@@ -1927,6 +1938,26 @@ static struct wd_aead_driver hisi_aead_driver = {
 
 WD_AEAD_SET_DRIVER(hisi_aead_driver);
 
+static int aead_bd3_msg_check(struct wd_aead_msg *msg)
+{
+	if (unlikely(!msg->in_bytes)) {
+		WD_ERR("failed to check aead in_bytes 0 length!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("failed to check aead auth_bytes!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("failed to check aead auth key bytes!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	struct hisi_sec_sqe3 *sqe)
 {
@@ -1950,26 +1981,16 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	}
 
 	/* CCM/GCM this region is set to 0 */
-	if (msg->cmode == WD_CIPHER_CCM ||
-	    msg->cmode == WD_CIPHER_GCM)
+	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	if (unlikely(!msg->in_bytes)) {
-		WD_ERR("failed to check aead in_bytes 0 length!\n");
-		return -WD_EINVAL;
-	}
+	ret = aead_bd3_msg_check(msg);
+	if (ret)
+		return ret;
 
-	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check aead auth_bytes!\n");
-		return -WD_EINVAL;
-	}
 	sqe->auth_mac_key |= (msg->auth_bytes /
 		WORD_BYTES) << SEC_MAC_OFFSET_V3;
 
-	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check aead auth key bytes!\n");
-		return -WD_EINVAL;
-	}
 	sqe->auth_mac_key |= (msg->akey_bytes /
 		WORD_BYTES) << SEC_AKEY_OFFSET_V3;
 
@@ -2118,7 +2139,7 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
-			WD_ERR("hisi qm send is err(%d)!\n", ret);
+			WD_ERR("aead send sqe is err(%d)!\n", ret);
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
