@@ -4,9 +4,58 @@
  * Copyright 2020-2021 Linaro ltd.
  */
 
+#include <linux/perf_event.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include "test_lib.h"
 
 #define POLL_STRING_LEN		128
+
+enum hizip_stats_variable {
+	ST_SETUP_TIME,
+	ST_RUN_TIME,
+	ST_CPU_TIME,
+
+	/* CPU usage */
+	ST_USER_TIME,
+	ST_SYSTEM_TIME,
+
+	/* Faults */
+	ST_MINFLT,
+	ST_MAJFLT,
+
+	/* Context switches */
+	ST_INVCTX,
+	ST_VCTX,
+
+	/* Signals */
+	ST_SIGNALS,
+
+	/* Aggregated */
+	ST_SPEED,
+	ST_TOTAL_SPEED,
+	ST_CPU_IDLE,
+	ST_FAULTS,
+	ST_IOPF,
+
+	ST_COMPRESSION_RATIO,
+
+	NUM_STATS
+};
+
+struct hizip_stats {
+	double v[NUM_STATS];
+};
+
+extern int perf_event_open(struct perf_event_attr *attr,
+			   pid_t pid, int cpu, int group_fd,
+			   unsigned long flags);
+extern int perf_event_get(const char *event_name, int **perf_fds, int *nr_fds);
+extern unsigned long long perf_event_put(int *perf_fds, int nr_fds);
+extern void stat_setup(struct hizip_test_info *info);
+extern void stat_start(struct hizip_test_info *info);
+extern void stat_end(struct hizip_test_info *info);
 
 static size_t count_chunk_list_sz(chunk_list_t *list)
 {
@@ -41,6 +90,15 @@ static void *sw_dfl_hw_ifl(void *arg)
 	if (!tlist) {
 		ret = -ENOMEM;
 		goto out;
+	}
+	if (opts->option & PERFORMANCE) {
+		/* hack:
+		 * memset buffer and trigger page fault early in the cpu
+		 * instead of later in the SMMU
+		 * Enhance performance in sva case
+		 * no impact to non-sva case
+		 */
+		memset(tbuf, 5, tbuf_sz);
 	}
 	if (opts->is_stream) {
 		/* STREAM mode: only one entry in the list */
@@ -176,6 +234,15 @@ static void *hw_dfl_sw_ifl(void *arg)
 		ret = -ENOMEM;
 		goto out;
 	}
+	if (opts->option & PERFORMANCE) {
+		/* hack:
+		 * memset buffer and trigger page fault early in the cpu
+		 * instead of later in the SMMU
+		 * Enhance performance in sva case
+		 * no impact to non-sva case
+		 */
+		memset(tbuf, 5, tbuf_sz);
+	}
 	if (opts->is_stream) {
 		/* STREAM mode: only one entry in the list */
 		init_chunk_list(tdata->in_list, tdata->src,
@@ -305,6 +372,15 @@ static void *hw_dfl_hw_ifl(void *arg)
 	tbuf = mmap_alloc(tbuf_sz);
 	if (!tbuf)
 		return (void *)(uintptr_t)(-ENOMEM);
+	if (opts->option & PERFORMANCE) {
+		/* hack:
+		 * memset buffer and trigger page fault early in the cpu
+		 * instead of later in the SMMU
+		 * Enhance performance in sva case
+		 * no impact to non-sva case
+		 */
+		memset(tbuf, 5, tbuf_sz);
+	}
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tmp_sz = tbuf_sz;
@@ -797,10 +873,11 @@ static void nonenv_resource_uninit(struct test_options *opts,
 	wd_free_list_accels(info->list);
 }
 
+static bool event_unavailable = false;
+
 int test_hw(struct test_options *opts, char *model)
 {
 	struct hizip_test_info info = {0};
-	struct timeval start_tvl, end_tvl;
 	struct wd_sched *sched = NULL;
 	double ilen, usec, speed;
 	char zbuf[120];
@@ -813,12 +890,25 @@ int test_hw(struct test_options *opts, char *model)
 	int div;
 	__u32 num;
 	__u8 enable;
+	int nr_fds = 0;
+	int *perf_fds = NULL;
+	struct hizip_stats stats;
 
 	if (!opts || !model) {
 		ret = -EINVAL;
 		goto out;
 	}
 	info.opts = opts;
+	info.stats = &stats;
+
+	if (!event_unavailable &&
+	    perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
+		printf("IOPF statistic unavailable\n");
+		/* No need to retry and print an error on every run */
+		event_unavailable = true;
+	}
+	stat_setup(&info);
+
 	memset(zbuf, 0, 120);
 	if (!strcmp(model, "sw_dfl_hw_ifl")) {
 		func = sw_dfl_hw_ifl;
@@ -907,6 +997,9 @@ int test_hw(struct test_options *opts, char *model)
 	if (ret < 0)
 		goto out;
 
+	if (opts->faults & INJECT_SIG_BIND)
+		kill(getpid(), SIGTERM);
+
 	if (opts->use_env) {
 		ret = wd_comp_get_env_param(0, opts->op_type, opts->sync_mode, &num, &enable);
 		if (ret < 0)
@@ -983,16 +1076,34 @@ int test_hw(struct test_options *opts, char *model)
 		} else
 			gen_random_data(info.in_buf, info.in_size);
 	}
-	gettimeofday(&start_tvl, NULL);
+	if (opts->faults & INJECT_TLB_FAULT) {
+		/*
+		 * Now unmap the buffers and retry the access. Normally we
+		 * should get an access fault, but if the TLB wasn't properly
+		 * invalidated, the access succeeds and corrupts memory!
+		 * This test requires small jobs, to make sure that we reuse
+		 * the same TLB entry between the tests. Run for example with
+		 * "-s 0x1000 -b 0x1000".
+		 */
+		ret = munmap(info.in_buf, info.in_size);
+		if (ret) {
+			printf("Failed to unmap.");
+			goto out_buf;
+		}
+		/* A warning if the parameters might produce false positives */
+		if (opts->total_len > 0x54000)
+			fprintf(stderr, "NOTE: test might trash the TLB\n");
+	}
+	stat_start(&info);
 	ret = attach2_threads(opts, &info, func, poll2_thread_func);
 	if (ret)
 		goto out_buf;
-	gettimeofday(&end_tvl, NULL);
-	timersub(&end_tvl, &start_tvl, &start_tvl);
+	stat_end(&info);
+	info.stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
 	if (opts->is_file)
 		store_olist(&info, model);
 
-	usec = (double)(start_tvl.tv_sec * 1000000 + start_tvl.tv_usec);
+	usec = info.stats->v[ST_RUN_TIME] / 1000;
 	if (opts->op_type == WD_DIR_DECOMPRESS)
 		ilen = (float)count_chunk_list_sz(info.tdatas[0].out_list);
 	else
@@ -1163,11 +1274,10 @@ static int set_default_opts(struct test_options *opts)
 	return 0;
 }
 
-int run_cmd(struct test_options *opts)
+static int run_one_cmd(struct test_options *opts)
 {
 	int ret;
 
-	set_default_opts(opts);
 	if (opts->op_type == WD_DIR_COMPRESS) {
 		if (opts->verify)
 			ret = test_hw(opts, "hw_dfl_sw_ifl");
@@ -1179,5 +1289,66 @@ int run_cmd(struct test_options *opts)
 		else
 			ret = test_hw(opts, "hw_ifl_perf");
 	}
+	return ret;
+}
+
+int run_cmd(struct test_options *opts)
+{
+	int ret = 0, i;
+	int nr_children = 0, status;
+	pid_t pid, *pids = NULL;
+	bool success = true;
+
+	set_default_opts(opts);
+	if (opts->children) {
+		pids = calloc(opts->children, sizeof(pid_t));
+		if (!pids)
+			return -ENOMEM;
+		for (i = 0; i < opts->children; i++) {
+			pid = fork();
+			if (pid < 0) {
+				printf("cannot fork: %d\n", errno);
+				success = false;
+				break;
+			} else if (pid > 0) {
+				/* Parent */
+				pids[nr_children++] = pid;
+				continue;
+			}
+			/* Child */
+			ret = run_one_cmd(opts);
+			return ret;
+		}
+		for (i = 0; i < nr_children; i++) {
+			pid = pids[i];
+			ret = waitpid(pid, &status, 0);
+			if (ret < 0) {
+				printf("wait(pid=%d) error %d\n", pid, errno);
+				success = false;
+				continue;
+			}
+			if (WIFEXITED(status)) {
+				ret = WEXITSTATUS(status);
+				if (ret) {
+					printf("child %d returned with %d\n",
+					       pid, ret);
+					success = false;
+				}
+			} else if (WIFSIGNALED(status)) {
+				ret = WTERMSIG(status);
+				printf("child %d killed by sig %d\n", pid, ret);
+				success = false;
+			} else {
+				printf("unexpected status for child %d\n", pid);
+				success = false;
+			}
+		}
+		if (success == false) {
+			printf("Failed to run spawn test!\n");
+			if (!ret)
+				ret = -EINVAL;
+		}
+	} else
+		ret = run_one_cmd(opts);
 	return ret;
 }
