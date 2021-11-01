@@ -1254,6 +1254,13 @@ int create_send_tdata(struct test_options *opts,
 		ret = -EINVAL;
 		goto out_in;
 	}
+	if (opts->option & TEST_THP) {
+		ret = madvise(info->in_buf, info->in_size, MADV_HUGEPAGE);
+		if (ret) {
+			printf("madvise(MADV_HUGEPAGE)");
+			goto out_in;
+		}
+	}
 	for (i = 0; i < num; i++) {
 		tdata = &info->tdatas[i];
 		/* src address is shared among threads */
@@ -1266,6 +1273,13 @@ int create_send_tdata(struct test_options *opts,
 		if (!tdata->dst) {
 			ret = -ENOMEM;
 			goto out_dst;
+		}
+		if (opts->option & TEST_THP) {
+			ret = madvise(tdata->dst, tdata->dst_sz, MADV_HUGEPAGE);
+			if (ret) {
+				printf("madvise(MADV_HUGEPAGE)");
+				goto out_dst;
+			}
 		}
 		/*
 		 * Without memset, valgrind reports uninitialized buf
@@ -1401,16 +1415,20 @@ int attach2_threads(struct test_options *opts,
 			}
 		}
 		for (i = 0; i < info->poll_tnum; i++) {
-			ret = pthread_join(info->poll_tds[i], NULL);
-			if (ret < 0)
+			ret = pthread_join(info->poll_tds[i], &tret);
+			if (ret < 0) {
 				fprintf(stderr, "Fail on poll thread with %d\n",
 					ret);
+				goto out_poll;
+			}
 		}
 	}
 	for (i = 0; i < info->send_tnum; i++) {
 		ret = pthread_join(info->send_tds[i], &tret);
-		if (ret < 0)
+		if (ret < 0) {
 			fprintf(stderr, "Fail on send thread with %d\n", ret);
+			goto out_poll;
+		}
 	}
 	pthread_attr_destroy(&attr);
 	return (int)(uintptr_t)tret;
