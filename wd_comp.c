@@ -290,7 +290,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->key.type = setup->op_type;
 	sess->key.numa_id = setup->numa;
 
-	return (handle_t)sess;
+	return (handle_t)(uintptr_t)sess;
 }
 
 void wd_comp_free_sess(handle_t h_sess)
@@ -497,16 +497,13 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		return -WD_EINVAL;
 	}
 
-	dbg("do, op_type = %hhu, in =%u, out_len =%u\n",
-	    req->op_type, req->src_len, req->dst_len);
-
 	total_avail_in = req->src_len;
 	total_avail_out = req->dst_len;
 	/* strm_req and req share the same src and dst buffer */
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
 	req->dst_len = 0;
-
 	strm_req.last = 0;
+
 	do {
 		strm_req.src_len = total_avail_in > chunk ? chunk :
 				   total_avail_in;
@@ -517,8 +514,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			if (total_avail_in <= chunk)
 				strm_req.last = 1;
 		}
-		dbg("do, strm start, in =%u, out_len =%u\n",
-		    strm_req.src_len, strm_req.dst_len);
+
 		ret = wd_do_comp_strm(h_sess, &strm_req);
 		if (ret < 0 || strm_req.status == WD_IN_EPARA) {
 			WD_ERR("wd comp, invalid or incomplete data! "
@@ -526,10 +522,9 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 			       ret, strm_req.status);
 			return ret;
 		}
+
 		req->dst_len += strm_req.dst_len;
 		strm_req.dst += strm_req.dst_len;
-		dbg("do, strm end, in =%u, out_len =%u\n",
-		    strm_req.src_len, strm_req.dst_len);
 		total_avail_out -= strm_req.dst_len;
 
 		strm_req.src += strm_req.src_len;
@@ -540,8 +535,6 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		 * 'WD_COMP_STREAM_NEW' in wd_do_comp_strm.
 		 */
 	} while (sess->stream_pos != WD_COMP_STREAM_NEW);
-
-	dbg("end, in =%u, out_len =%u\n", req->src_len, req->dst_len);
 
 	req->status = 0;
 
