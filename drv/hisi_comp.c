@@ -6,15 +6,78 @@
 #include "hisi_qm_udrv.h"
 #include "wd.h"
 
-#define	ZLIB		0
-#define	GZIP		1
+#define	ZLIB				0
+#define	GZIP				1
 
-#define DEFLATE		0
-#define INFLATE		1
+#define DEFLATE				0
+#define INFLATE				1
 
-#define ASIZE		(2 * 512 * 1024)
-#define HW_CTX_SIZE	(64*1024)
-#define BUF_TYPE	2
+#define ZLIB_HEADER			"\x78\x9c"
+#define ZLIB_HEADER_SZ			2
+
+/*
+ * We use a extra field for gzip block length. So the fourth byte is \x04.
+ * This is necessary because our software don't know the size of block when
+ * using an hardware decompressor (It is known by hardware). This help our
+ * decompressor to work and helpfully, compatible with gzip.
+ */
+#define GZIP_HEADER			"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03"
+#define GZIP_HEADER_SZ			10
+
+#define GZIP_HEADER_EX			"\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\x03"
+#define GZIP_EXTRA_SZ			10
+#define GZIP_TAIL_SZ			8
+
+#define ZSTD_MAX_SIZE			(1 << 17)
+
+#define swab32(x) \
+	((((x) & 0x000000ff) << 24) | \
+	(((x) & 0x0000ff00) <<  8) | \
+	(((x) & 0x00ff0000) >>  8) | \
+	(((x) & 0xff000000) >> 24))
+
+#define STREAM_FLUSH_SHIFT		25
+#define STREAM_POS_SHIFT		2
+#define STREAM_MODE_SHIFT		1
+#define LITLEN_OVERFLOW_CNT_SHIFT	24
+#define BUF_TYPE_SHIFT			8
+#define WINDOW_SIZE_SHIFT		12
+
+#define LITLEN_OVERFLOW_POS_MASK	0xffffff
+
+#define HZ_DECOMP_NO_SPACE		0x01
+#define HZ_NEGACOMPRESS			0x0d
+#define HZ_CRC_ERR			0x10
+#define HZ_DECOMP_END			0x13
+
+#define HZ_CTX_ST_MASK			0x000f
+#define HZ_LSTBLK_MASK			0x0100
+#define HZ_STATUS_MASK			0xff
+#define HZ_REQ_TYPE_MASK		0xff
+#define HZ_SGL_OFFSET_MASK		0xffffff
+#define HZ_STREAM_POS_MASK		0x08000000
+#define HZ_BUF_TYPE_MASK		0xf00
+#define HZ_HADDR_SHIFT			32
+#define HZ_SQE_TYPE_V1			0x0
+#define HZ_SQE_TYPE_V3			0x30000000
+
+#define lower_32_bits(addr)		((__u32)((__u64)(addr)))
+#define upper_32_bits(addr)		((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
+
+#define HZ_MAX_SIZE			(8 * 1024 * 1024)
+
+#define RSV_OFFSET			64
+#define CTX_DW1_OFFSET			4
+#define CTX_DW2_OFFSET			8
+#define CTX_REPCODE1_OFFSET		12
+#define CTX_REPCODE2_OFFSET		24
+#define CTX_HW_REPCODE_OFFSET		784
+#define OVERFLOW_DATA_SIZE		2
+#define ZSTD_FREQ_DATA_SIZE		784
+#define ZSTD_LIT_RESV_SIZE		16
+#define REPCODE_SIZE			12
+
+#define BUF_TYPE			2
 
 enum alg_type {
 	HW_DEFLATE = 0x1,
@@ -37,6 +100,12 @@ enum hw_flush {
 enum hw_stream_status {
 	HZ_STREAM_OLD,
 	HZ_STREAM_NEW,
+};
+
+enum lz77_compress_status {
+	UNCOMP_BLK,
+	RLE_BLK,
+	COMP_BLK,
 };
 
 struct hisi_zip_sqe {
@@ -115,89 +184,6 @@ struct hisi_zip_sqe_ops {
 			      struct wd_comp_msg *recv_msg);
 	int (*get_tag)(struct hisi_zip_sqe *sqe);
 };
-
-#define BLOCK_SIZE	(1 << 19)
-
-#define ZLIB_HEADER	"\x78\x9c"
-#define ZLIB_HEADER_SZ	2
-
-/*
- * We use a extra field for gzip block length. So the fourth byte is \x04.
- * This is necessary because our software don't know the size of block when
- * using an hardware decompressor (It is known by hardware). This help our
- * decompressor to work and helpfully, compatible with gzip.
- */
-#define GZIP_HEADER	"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03"
-#define GZIP_HEADER_SZ	10
-
-#define GZIP_HEADER_EX	"\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\x03"
-#define GZIP_EXTRA_SZ	10
-#define GZIP_TAIL_SZ	8
-
-#define ZSTD_MAX_SIZE		(1 << 17)
-#define BLOCK_MIN		(1 << 10)
-#define BLOCK_MIN_MASK		0x3FF
-#define BLOCK_MAX		(1 << 20)
-#define BLOCK_MAX_MASK		0xFFFFF
-#define STREAM_MIN		(1 << 10)
-#define STREAM_MIN_MASK		0x3FF
-#define STREAM_MAX		(1 << 20)
-#define STREAM_MAX_MASK		0xFFFFF
-
-#define HISI_SCHED_INPUT	0
-#define HISI_SCHED_OUTPUT	1
-
-#define swab32(x) \
-	((((x) & 0x000000ff) << 24) | \
-	(((x) & 0x0000ff00) <<  8) | \
-	(((x) & 0x00ff0000) >>  8) | \
-	(((x) & 0xff000000) >> 24))
-
-#define cpu_to_be32(x) swab32(x)
-
-#define STREAM_FLUSH_SHIFT 25
-#define MIN_AVAILOUT_SIZE 4096
-#define STREAM_POS_SHIFT 2
-#define STREAM_MODE_SHIFT 1
-#define LITLEN_OVERFLOW_CNT_SHIFT 24
-#define BUF_TYPE_SHIFT 8
-#define WINDOW_SIZE_SHIFT 12
-
-#define LITLEN_OVERFLOW_POS_MASK 0xffffff
-
-#define HZ_NEGACOMPRESS 0x0d
-#define HZ_CRC_ERR 0x10
-#define HZ_DECOMP_END 0x13
-
-#define HZ_DECOMP_NO_SPACE 0x01
-#define HZ_DECOMP_BLK_NOSTART 0x03
-
-#define HZ_CTX_ST_MASK 0x000f
-#define HZ_LSTBLK_MASK 0x0100
-#define HZ_STATUS_MASK 0xff
-#define HZ_REQ_TYPE_MASK 0xff
-#define HZ_SGL_OFFSET_MASK 0xffffff
-#define HZ_STREAM_POS_MASK 0x08000000
-#define HZ_BUF_TYPE_MASK 0xf00
-
-#define HZ_HADDR_SHIFT		32
-#define HZ_SQE_TYPE_V1		0x0
-#define HZ_SQE_TYPE_V3		0x30000000
-
-#define lower_32_bits(addr) ((__u32)((__u64)(addr)))
-#define upper_32_bits(addr) ((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
-
-#define HZ_MAX_SIZE (8 * 1024 * 1024)
-
-#define RSV_OFFSET 64
-#define CTX_DW1_OFFSET 4
-#define CTX_DW2_OFFSET 8
-#define CTX_REPCODE1_OFFSET 12
-#define CTX_REPCODE2_OFFSET 24
-#define CTX_HW_REPCODE_OFFSET 784
-#define OVERFLOW_DATA_SIZE 2
-#define ZSTD_FREQ_DATA_SIZE 784
-#define ZSTD_LIT_RESV_SIZE 16
 
 struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
@@ -531,9 +517,9 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-		if (data->blk_type != 2)
+		if (data->blk_type != COMP_BLK)
 			memcpy(ctx_buf + CTX_HW_REPCODE_OFFSET,
-			       msg->ctx_buf + CTX_REPCODE2_OFFSET, 12);
+			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
 	}
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lit_size, out_size - lit_size);
@@ -774,9 +760,9 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, int op_type,
 
 	if (ctx_buf) {
 		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, 12);
+		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
 		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
-		       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, 12);
+		       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, REPCODE_SIZE);
 	}
 }
 
