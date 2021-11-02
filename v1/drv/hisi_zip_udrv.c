@@ -56,6 +56,7 @@
 #define MAX_ZSTD_INPUT_SIZE		0x20000
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
+#define REPCODE_SIZE			12
 
 #define CTX_PRIV1_OFFSET		4
 #define CTX_PRIV2_OFFSET		8
@@ -71,6 +72,12 @@
 enum {
 	BD_TYPE,
 	BD_TYPE3 = 3,
+};
+
+enum lz77_compress_status {
+	UNCOMP_BLK,
+	RLE_BLK,
+	COMP_BLK,
 };
 
 struct hisi_zip_sqe_addr {
@@ -382,7 +389,6 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 		sqe->dw13 = zstd_out->lit_sz;
 		/* fill the sequences output size */
 		sqe->dest_avail_out = zstd_out->seq_sz;
-
 	} else {
 		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
 			WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
@@ -504,7 +510,6 @@ unmap_phy_seq:
 unmap_phy_lit:
 	drv_iova_unmap(q, msg->src, (void *)addr.source_addr, msg->in_size);
 	return -WD_ENOMEM;
-
 }
 
 static void fill_zip_sqe_hw_info(void *ssqe, struct wcrypto_comp_msg *msg)
@@ -531,9 +536,9 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
 		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
 		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
-		if (format->blk_type != 2)
+		if (format->blk_type != COMP_BLK)
 			memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
-			       msg->ctx_buf + CTX_REPCODE2_OFFSET, 12);
+			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
 	}
 
 	sqe->isize = msg->isize;
@@ -661,9 +666,10 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 
 	if (ctx_buf) {
 		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, 12);
+		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
 		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
-		       ctx_buf + CTX_BUFFER_OFFSET + CTX_HW_REPCODE_OFFSET, 12);
+		       ctx_buf + CTX_BUFFER_OFFSET + CTX_HW_REPCODE_OFFSET,
+		       REPCODE_SIZE);
 	}
 }
 
@@ -699,8 +705,8 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	recv_msg->produced = sqe->produced;
 	if (recv_msg->ctx_buf) {
 		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
-		*(__u32 *)(recv_msg->ctx_buf + 4) = sqe->ctx_dw1;
-		*(__u32 *)(recv_msg->ctx_buf + 8) = sqe->ctx_dw2;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_PRIV1_OFFSET) = sqe->ctx_dw1;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_PRIV2_OFFSET) = sqe->ctx_dw2;
 	}
 	recv_msg->isize = sqe->isize;
 	recv_msg->checksum = sqe->checksum;
@@ -879,4 +885,3 @@ int qm_parse_zip_cipher_sqe(void *hw_msg, const struct qm_queue_info *info,
 
 	return 1;
 }
-
