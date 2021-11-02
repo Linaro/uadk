@@ -342,12 +342,13 @@ static int wd_comp_check_buffer(struct wd_comp_req *req)
 	return 0;
 }
 
-static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
+static int wd_comp_check_params(struct wd_comp_sess *sess,
+				struct wd_comp_req *req,
 				__u8 mode)
 {
 	int ret;
 
-	if (!h_sess || !req) {
+	if (!sess || !req) {
 		WD_ERR("invalid: sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -363,7 +364,13 @@ static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 
 	if (req->op_type != WD_DIR_COMPRESS &&
 	    req->op_type != WD_DIR_DECOMPRESS) {
-		WD_ERR("invalid: op_type is %hhu!\n", req->op_type);
+		WD_ERR("invalid: op_type is %d!\n", req->op_type);
+		return -WD_EINVAL;
+	}
+
+	if (sess->key.type != req->op_type) {
+		WD_ERR("invalid: sess op_type(%hhu) don't match req op_type(%d)!\n",
+		       sess->key.type, req->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -446,7 +453,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	struct wd_comp_msg msg;
 	int ret;
 
-	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
+	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
 	if (ret) {
 		WD_ERR("fail to check params!\n");
 		return ret;
@@ -486,7 +493,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	__u32 total_avail_out;
 	int ret;
 
-	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
+	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
 	if (ret) {
 		WD_ERR("fail to check params!\n");
 		return ret;
@@ -615,7 +622,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	__u32 src_len;
 	int ret;
 
-	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
+	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
 	if (ret) {
 		WD_ERR("fail to check params!\n");
 		return ret;
@@ -672,7 +679,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	int tag, ret;
 	__u32 idx;
 
-	ret = wd_comp_check_params(h_sess, req, CTX_MODE_ASYNC);
+	ret = wd_comp_check_params(sess, req, CTX_MODE_ASYNC);
 	if (ret) {
 		WD_ERR("fail to check params!\n");
 		return ret;
