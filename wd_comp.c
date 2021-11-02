@@ -385,16 +385,65 @@ static int wd_comp_check_params(handle_t h_sess, struct wd_comp_req *req,
 	return 0;
 }
 
-int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
+static int wd_comp_sync_job(struct wd_comp_sess *sess,
+			    struct wd_comp_req *req,
+			    struct wd_comp_msg *msg)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
-	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	void *priv = wd_comp_setting.priv;
 	struct wd_ctx_internal *ctx;
-	struct wd_comp_msg msg;
 	__u64 recv_count = 0;
 	__u32 idx;
+	int ret;
+
+	sess->key.mode = CTX_MODE_SYNC;
+	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
+						  req, &sess->key);
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (ret)
+		return ret;
+
+	ctx = config->ctxs + idx;
+
+	pthread_spin_lock(&ctx->lock);
+
+	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg, priv);
+	if (ret < 0) {
+		pthread_spin_unlock(&ctx->lock);
+		WD_ERR("wd comp send err(%d)!\n", ret);
+		return ret;
+	}
+
+	do {
+		if (msg->is_polled) {
+			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
+			if (ret < 0)
+				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+		}
+		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, msg, priv);
+		if (ret == -WD_HW_EACCESS) {
+			pthread_spin_unlock(&ctx->lock);
+			WD_ERR("wd comp recv hw err!\n");
+			return ret;
+		} else if (ret == -WD_EAGAIN) {
+			if (++recv_count > MAX_RETRY_COUNTS) {
+				pthread_spin_unlock(&ctx->lock);
+				WD_ERR("wd comp recv timeout fail!\n");
+				return -WD_ETIMEDOUT;
+			}
+		}
+	} while (ret == -WD_EAGAIN);
+
+	pthread_spin_unlock(&ctx->lock);
+
+	return ret;
+}
+
+int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
+{
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
+	struct wd_comp_msg msg;
 	int ret;
 
 	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
@@ -410,50 +459,16 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	memset(&msg, 0, sizeof(struct wd_comp_msg));
 
-	sess->key.mode = CTX_MODE_SYNC;
-	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
-						  req,
-						  &sess->key);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (ret)
-		return ret;
-
-	ctx = config->ctxs + idx;
 	fill_comp_msg(sess, &msg, req);
 	msg.ctx_buf = sess->ctx_buf;
-	msg.stream_mode = WD_COMP_STATELESS;
 	msg.is_polled = (req->src_len >= POLL_SIZE);
+	msg.stream_mode = WD_COMP_STATELESS;
 
-	pthread_spin_lock(&ctx->lock);
-
-	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
-	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
-		WD_ERR("wd comp send err(%d)!\n", ret);
+	ret = wd_comp_sync_job(sess, req, &msg);
+	if (ret) {
+		WD_ERR("fail to check params!\n");
 		return ret;
 	}
-
-	do {
-		if (msg.is_polled) {
-			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (ret < 0)
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
-		}
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &msg, priv);
-		if (ret == -WD_HW_EACCESS) {
-			pthread_spin_unlock(&ctx->lock);
-			WD_ERR("wd comp recv hw err!\n");
-			return ret;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				pthread_spin_unlock(&ctx->lock);
-				WD_ERR("wd comp recv timeout fail!\n");
-				return -WD_ETIMEDOUT;
-			}
-		}
-	} while (ret == -WD_EAGAIN);
-
-	pthread_spin_unlock(&ctx->lock);
 
 	req->src_len = msg.in_cons;
 	req->dst_len = msg.produced;
@@ -602,15 +617,9 @@ static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
 
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
-	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
-	void *priv = wd_comp_setting.priv;
-	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg msg;
-	__u64 recv_count = 0;
 	__u32 src_len;
-	__u32 idx;
 	int ret;
 
 	ret = wd_comp_check_params(h_sess, req, CTX_MODE_SYNC);
@@ -628,16 +637,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	    req->last == 1 && req->src_len == 0)
 		return append_store_block(sess, req);
 
-	sess->key.mode = CTX_MODE_SYNC;
-	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
-						  req,
-						  &sess->key);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (ret)
-		return ret;
-
-	ctx = config->ctxs + idx;
-
 	fill_comp_msg(sess, &msg, req);
 	msg.stream_pos = sess->stream_pos;
 	msg.ctx_buf = sess->ctx_buf;
@@ -650,36 +649,11 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 
 	src_len = req->src_len;
 
-	pthread_spin_lock(&ctx->lock);
-
-	ret = wd_comp_setting.driver->comp_send(ctx->ctx, &msg, priv);
-	if (ret < 0) {
-		pthread_spin_unlock(&ctx->lock);
-		WD_ERR("wd comp send err(%d)!\n", ret);
+	ret = wd_comp_sync_job(sess, req, &msg);
+	if (ret) {
+		WD_ERR("fail to check params!\n");
 		return ret;
 	}
-
-	do {
-		if (msg.is_polled) {
-			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (ret < 0)
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
-		}
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &msg, priv);
-		if (ret == -WD_HW_EACCESS) {
-			pthread_spin_unlock(&ctx->lock);
-			WD_ERR("wd comp recv hw err!\n");
-			return ret;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				pthread_spin_unlock(&ctx->lock);
-				WD_ERR("wd comp recv timeout fail!\n");
-				return -WD_ETIMEDOUT;
-			}
-		}
-	} while (ret == -WD_EAGAIN);
-
-	pthread_spin_unlock(&ctx->lock);
 
 	req->src_len = msg.in_cons;
 	req->dst_len = msg.produced;
