@@ -568,7 +568,7 @@ static unsigned int bit_reverse(register unsigned int x)
 static int append_store_block(struct wd_comp_sess *sess,
 			      struct wd_comp_req *req)
 {
-	char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
+	unsigned char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
 	int blocksize = ARRAY_SIZE(store_block);
 	__u32 checksum = sess->checksum;
 	__u32 isize = sess->isize;
@@ -776,7 +776,7 @@ int wd_comp_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 	int ret;
 
 	if (type >= WD_DIR_MAX) {
-		WD_ERR("wrong type(%d))!\n", type);
+		WD_ERR("wrong type(%u))!\n", type);
 		return -WD_EINVAL;
 	}
 
@@ -800,7 +800,7 @@ int wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode,
 	int ret;
 
 	if (type >= WD_DIR_MAX) {
-		WD_ERR("wrong type(%d))!\n", type);
+		WD_ERR("wrong type(%u))!\n", type);
 		return -WD_EINVAL;
 	}
 
