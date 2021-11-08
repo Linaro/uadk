@@ -61,8 +61,8 @@
 #define HZ_SQE_TYPE_V1			0x0
 #define HZ_SQE_TYPE_V3			0x30000000
 
-#define lower_32_bits(addr)		((__u32)((__u64)(addr)))
-#define upper_32_bits(addr)		((__u32)((__u64)(addr) >> HZ_HADDR_SHIFT))
+#define lower_32_bits(addr)		((__u32)((uintptr_t)(addr)))
+#define upper_32_bits(addr)		((__u32)((uintptr_t)(addr) >> HZ_HADDR_SHIFT))
 
 #define HZ_MAX_SIZE			(8 * 1024 * 1024)
 
@@ -179,8 +179,8 @@ struct hisi_zip_sqe_ops {
 	void (*fill_sqe_type)(struct hisi_zip_sqe *sqe);
 	void (*fill_alg)(struct hisi_zip_sqe *sqe);
 	void (*fill_tag)(struct hisi_zip_sqe *sqe, __u32 tag);
-	int (*fill_comp_level)(struct hisi_zip_sqe *sqe, __u8 comp_lv);
-	void (*get_data_size)(struct hisi_zip_sqe *sqe, int op_type,
+	int (*fill_comp_level)(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv);
+	void (*get_data_size)(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 			      struct wd_comp_msg *recv_msg);
 	int (*get_tag)(struct hisi_zip_sqe *sqe);
 };
@@ -215,12 +215,12 @@ static void fill_buf_size_deflate(struct hisi_zip_sqe *sqe, __u32 in_size,
 static void fill_buf_addr_deflate(struct hisi_zip_sqe *sqe, void *src,
 				  void *dst, void *ctx_buf)
 {
-	sqe->source_addr_l = lower_32_bits((__u64)src);
-	sqe->source_addr_h = upper_32_bits((__u64)src);
-	sqe->dest_addr_l = lower_32_bits((__u64)dst);
-	sqe->dest_addr_h = upper_32_bits((__u64)dst);
-	sqe->stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
-	sqe->stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
+	sqe->source_addr_l = lower_32_bits(src);
+	sqe->source_addr_h = upper_32_bits(src);
+	sqe->dest_addr_l = lower_32_bits(dst);
+	sqe->dest_addr_h = upper_32_bits(dst);
+	sqe->stream_ctx_addr_l = lower_32_bits(ctx_buf);
+	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
 }
 
 static int fill_buf_deflate(handle_t h_qp, struct hisi_zip_sqe *sqe,
@@ -469,14 +469,14 @@ static void fill_buf_addr_lz77_zstd(struct hisi_zip_sqe *sqe,
 				    void *src, void *lits_start,
 				    void *seqs_start, void *ctx_buf)
 {
-	sqe->source_addr_l = lower_32_bits((__u64)src);
-	sqe->source_addr_h = upper_32_bits((__u64)src);
-	sqe->dest_addr_l = lower_32_bits((__u64)seqs_start);
-	sqe->dest_addr_h = upper_32_bits((__u64)seqs_start);
-	sqe->literals_addr_l = lower_32_bits((__u64)lits_start);
-	sqe->literals_addr_h = upper_32_bits((__u64)lits_start);
-	sqe->stream_ctx_addr_l = lower_32_bits((__u64)ctx_buf);
-	sqe->stream_ctx_addr_h = upper_32_bits((__u64)ctx_buf);
+	sqe->source_addr_l = lower_32_bits(src);
+	sqe->source_addr_h = upper_32_bits(src);
+	sqe->dest_addr_l = lower_32_bits(seqs_start);
+	sqe->dest_addr_h = upper_32_bits(seqs_start);
+	sqe->literals_addr_l = lower_32_bits(lits_start);
+	sqe->literals_addr_h = upper_32_bits(lits_start);
+	sqe->stream_ctx_addr_l = lower_32_bits(ctx_buf);
+	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
 }
 
 static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
@@ -679,12 +679,12 @@ static void fill_tag_v3(struct hisi_zip_sqe *sqe, __u32 tag)
 	sqe->dw26 = tag;
 }
 
-static int fill_comp_level_deflate(struct hisi_zip_sqe *sqe, __u8 comp_lv)
+static int fill_comp_level_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
 {
 	return 0;
 }
 
-static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, __u8 comp_lv)
+static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
 {
 	__u32 val;
 
@@ -704,14 +704,14 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, __u8 comp_lv)
 	return 0;
 }
 
-static void get_data_size_deflate(struct hisi_zip_sqe *sqe, int op_type,
+static void get_data_size_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 				  struct wd_comp_msg *recv_msg)
 {
 	recv_msg->in_cons = sqe->consumed;
 	recv_msg->produced = sqe->produced;
 }
 
-static void get_data_size_zlib(struct hisi_zip_sqe *sqe, int op_type,
+static void get_data_size_zlib(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 			       struct wd_comp_msg *recv_msg)
 {
 	__u32 stream_pos = sqe->dw7 & HZ_STREAM_POS_MASK;
@@ -727,7 +727,7 @@ static void get_data_size_zlib(struct hisi_zip_sqe *sqe, int op_type,
 	}
 }
 
-static void get_data_size_gzip(struct hisi_zip_sqe *sqe, int op_type,
+static void get_data_size_gzip(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 			       struct wd_comp_msg *recv_msg)
 {
 	__u32 stream_pos = sqe->dw7 & HZ_STREAM_POS_MASK;
@@ -743,7 +743,7 @@ static void get_data_size_gzip(struct hisi_zip_sqe *sqe, int op_type,
 	}
 }
 
-static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, int op_type,
+static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 				    struct wd_comp_msg *recv_msg)
 {
 	struct wd_lz77_zstd_data *data = recv_msg->req.priv;
@@ -882,8 +882,9 @@ static void hisi_zip_exit(void *priv)
 static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 			     struct hisi_zip_sqe *sqe)
 {
-	__u8 hw_type = qp->q_info.hw_type;
-	__u8 alg_type = msg->alg_type;
+	enum hisi_hw_type hw_type = qp->q_info.hw_type;
+	enum wd_comp_alg_type alg_type = msg->alg_type;
+	__u32 win_sz = msg->win_sz;
 	__u8 flush_type;
 	__u8 stream_pos;
 	__u8 state;
@@ -917,7 +918,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	sqe->dw7 |= ((stream_pos << STREAM_POS_SHIFT) |
 		    (state << STREAM_MODE_SHIFT) |
 		    (flush_type)) << STREAM_FLUSH_SHIFT;
-	sqe->dw9 |= msg->win_sz << WINDOW_SIZE_SHIFT;
+	sqe->dw9 |= win_sz << WINDOW_SIZE_SHIFT;
 	sqe->isize = msg->isize;
 	sqe->dw31 = msg->checksum;
 
@@ -977,7 +978,8 @@ static int get_alg_type(__u32 type)
 	return alg_type;
 }
 
-static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe, __u8 alg_type)
+static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			enum wd_comp_alg_type alg_type)
 {
 	void *hw_sgl_in, *hw_sgl_out;
 	handle_t h_sgl_pool;
@@ -1014,7 +1016,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	alg_type = get_alg_type(type);
 	if (alg_type < 0) {
-		WD_ERR("failed to get request algorithm type(%d)\n", type);
+		WD_ERR("failed to get request algorithm type(%u)\n", type);
 		return -WD_EINVAL;
 	}
 
@@ -1025,7 +1027,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg = wd_comp_get_msg(qp->q_info.idx, tag);
 		if (!recv_msg) {
-			WD_ERR("failed to get send msg! idx = %d, tag = %d.\n",
+			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
 			       qp->q_info.idx, tag);
 			return -WD_EINVAL;
 		}
