@@ -35,6 +35,7 @@ struct wd_digest_setting {
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
 	void *priv;
+	void *dlhandle;
 } wd_digest_setting;
 
 struct wd_digest_sess {
@@ -50,24 +51,25 @@ struct wd_digest_sess {
 struct wd_env_config wd_digest_env_config;
 
 #ifdef WD_STATIC_DRV
-extern struct wd_digest_driver wd_digest_hisi_digest_driver;
 static void wd_digest_set_static_drv(void)
 {
-	/*
-	 * Fix me: a parameter can be introduced to decide to choose
-	 * specific driver. Same as dynamic case.
-	 */
-	wd_digest_setting.driver = &wd_digest_hisi_digest_driver;
+	wd_digest_setting.driver = wd_digest_get_driver();
+	if (!wd_digest_setting.driver)
+		WD_ERR("fail to get driver\n");
 }
 #else
 static void __attribute__((constructor)) wd_digest_open_driver(void)
 {
-	void *driver;
-
 	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
-	driver = dlopen("libhisi_sec.so", RTLD_NOW);
-	if (!driver)
+	wd_digest_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
+	if (!wd_digest_setting.dlhandle)
 		WD_ERR("fail to open libhisi_sec.so\n");
+}
+
+static void __attribute__((destructor)) wd_digest_close_driver(void)
+{
+	if (wd_digest_setting.dlhandle)
+		dlclose(wd_digest_setting.dlhandle);
 }
 #endif
 
@@ -132,11 +134,8 @@ void wd_digest_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int digest_init_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	int ret;
-
 	if (!config || !sched) {
 		WD_ERR("failed to check input param!\n");
 		return -WD_EINVAL;
@@ -146,6 +145,18 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("err, non sva, please check system!\n");
 		return -WD_EINVAL;
 	}
+
+	return 0;
+}
+
+int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	void *priv;
+	int ret;
+
+	ret = digest_init_check(config, sched);
+	if (ret)
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
 	if (ret < 0) {
@@ -164,7 +175,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_digest_set_static_drv();
 #endif
 
-	/* sadly find we allocate async pool for every ctx */
+	/* allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_digest_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_digest_msg));
@@ -182,7 +193,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 	memset(priv, 0, wd_digest_setting.driver->drv_ctx_size);
 	wd_digest_setting.priv = priv;
-	/* sec init */
+
 	ret = wd_digest_setting.driver->init(&wd_digest_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to init digest dirver!\n");
@@ -270,59 +281,32 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->data_fmt = req->data_fmt;
 }
 
-int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
+static int send_recv_sync(struct wd_ctx_internal *ctx,
+			  struct wd_digest_msg *msg)
 {
-	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
-	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
-	struct wd_ctx_internal *ctx;
-	struct wd_digest_msg msg;
-	struct sched_key key;
 	__u64 recv_cnt = 0;
-	__u32 idx;
 	int ret;
 
-	ret = digest_param_check(dsess, req);
-	if (unlikely(ret))
-		return -WD_EINVAL;
-
-	key.mode = CTX_MODE_SYNC;
-	key.type = 0;
-	key.numa_id = dsess->numa;
-
-	idx = wd_digest_setting.sched.pick_next_ctx(
-		wd_digest_setting.sched.h_sched_ctx, req, &key);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (ret)
-		return ret;
-
-	ctx = config->ctxs + idx;
-
-	memset(&msg, 0, sizeof(struct wd_digest_msg));
-	fill_request_msg(&msg, req, dsess);
-	req->state = 0;
-	msg.is_polled = (req->in_bytes >= POLL_SIZE);
-
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_digest_setting.driver->digest_send(ctx->ctx, &msg);
+	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send bd!\n");
 		goto out;
 	}
 
 	do {
-		if (msg.is_polled) {
+		if (msg->is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+				WD_ERR("wd digest ctx wait timeout(%d)!\n", ret);
 		}
-		ret = wd_digest_setting.driver->digest_recv(ctx->ctx, &msg);
-		req->state = msg.result;
+		ret = wd_digest_setting.driver->digest_recv(ctx->ctx, msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("failed to recv bd!\n");
+			WD_ERR("wd digest recv err!\n");
 			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("failed to recv bd and timeout!\n");
+				WD_ERR("wd digest recv timeout fail!\n");
 				ret = -WD_ETIMEDOUT;
 				goto out;
 			}
@@ -331,6 +315,41 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 out:
 	pthread_spin_unlock(&ctx->lock);
+	return ret;
+}
+
+int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
+{
+	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
+	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
+	struct wd_ctx_internal *ctx;
+	struct wd_digest_msg msg;
+	struct sched_key key;
+	__u32 idx;
+	int ret;
+
+	ret = digest_param_check(dsess, req);
+	if (unlikely(ret))
+		return -WD_EINVAL;
+
+	memset(&msg, 0, sizeof(struct wd_digest_msg));
+	fill_request_msg(&msg, req, dsess);
+	msg.is_polled = (req->in_bytes >= POLL_SIZE);
+	req->state = 0;
+
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = dsess->numa;
+	idx = wd_digest_setting.sched.pick_next_ctx(
+		wd_digest_setting.sched.h_sched_ctx, req, &key);
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (unlikely(ret))
+		return ret;
+
+	ctx = config->ctxs + idx;
+	ret = send_recv_sync(ctx, &msg);
+	req->state = msg.result;
+
 	return ret;
 }
 
@@ -495,7 +514,6 @@ int wd_digest_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 	ret = wd_set_ctx_attr(&ctx_attr, node, CTX_TYPE_INVALID, mode, num);
 	if (ret)
 		return ret;
-
 
 	return wd_alg_env_init(&wd_digest_env_config, table,
 			      &wd_digest_ops, ARRAY_SIZE(table), &ctx_attr);

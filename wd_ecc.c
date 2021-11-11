@@ -71,6 +71,7 @@ static struct wd_ecc_setting {
 	void *sched_ctx;
 	const struct wd_ecc_driver *driver;
 	void *priv;
+	void *dlhandle;
 	struct wd_async_msg_pool pool;
 } wd_ecc_setting;
 
@@ -100,19 +101,24 @@ static const struct curve_param_desc curve_pram_list[] = {
 };
 
 #ifdef WD_STATIC_DRV
-extern const struct wd_ecc_driver wd_ecc_hisi_hpre;
 static void wd_ecc_set_static_drv(void)
 {
-	wd_ecc_setting.driver = &wd_ecc_hisi_hpre;
+	wd_ecc_setting.driver = wd_ecc_get_driver();
+	if (!wd_ecc_setting.driver)
+		WD_ERR("fail to get driver\n");
 }
 #else
 static void __attribute__((constructor)) wd_ecc_open_driver(void)
 {
-	void *driver;
-
-	driver = dlopen("libhisi_hpre.so", RTLD_NOW);
-	if (!driver)
+	wd_ecc_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
+	if (!wd_ecc_setting.dlhandle)
 		WD_ERR("failed to open libhisi_hpre.so\n");
+}
+
+static void __attribute__((destructor)) wd_ecc_close_driver(void)
+{
+	if (wd_ecc_setting.dlhandle)
+		dlclose(wd_ecc_setting.dlhandle);
 }
 #endif
 
