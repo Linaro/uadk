@@ -404,18 +404,20 @@ void sample_sched_release(struct wd_sched *sched)
 		return;
 
 	sched_ctx = (struct sample_sched_ctx*)sched->h_sched_ctx;
-	if (sched_ctx) {
-		sched_info = sched_ctx->sched_info;
-		for (i = 0; i < sched_ctx->numa_num; i++) {
-			for (j = 0; j < SCHED_MODE_BUTT; j++) {
-				if (sched_info[i].ctx_region[j])
-					free(sched_info[i].ctx_region[j]);
-			}
+	if (!sched_ctx)
+		goto out;
+
+	sched_info = sched_ctx->sched_info;
+	for (i = 0; i < sched_ctx->numa_num; i++) {
+		for (j = 0; j < SCHED_MODE_BUTT; j++) {
+			if (sched_info[i].ctx_region[j])
+				free(sched_info[i].ctx_region[j]);
 		}
-	
-		free(sched_ctx);
 	}
 
+	free(sched_ctx);
+
+out:
 	free(sched);
 
 	return;
