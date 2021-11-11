@@ -106,7 +106,7 @@ void wd_uninit_cookie_pool(struct wd_cookie_pool *pool)
 	}
 }
 
-static void put_cookie(struct wd_cookie_pool *pool, void *cookie)
+static void put_cookie(struct wd_cookie_pool *pool, const void *cookie)
 {
 	__u32 idx = ((uintptr_t)cookie - (uintptr_t)pool->cookies) /
 		pool->cookies_size;
@@ -135,7 +135,6 @@ void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)
 
 	for (i = 0; i < num; i++)
 		put_cookie(pool, cookies[i]);
-
 }
 
 int wd_get_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)

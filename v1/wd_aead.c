@@ -167,19 +167,11 @@ static void init_aead_cookie(struct wcrypto_aead_ctx *ctx,
 	}
 }
 
-/* Before initiate this context, we should get a queue from WD */
-void *wcrypto_create_aead_ctx(struct wd_queue *q,
-	struct wcrypto_aead_ctx_setup *setup)
+static int wcrypto_setup_qinfo(struct wcrypto_aead_ctx_setup *setup,
+			       struct q_info *qinfo, __u32 *ctx_id)
 {
-	struct q_info *qinfo;
-	struct wcrypto_aead_ctx *ctx;
-	__u32 ctx_id = 0;
-	int ret;
+	int ret = -WD_EINVAL;
 
-	if (create_ctx_para_check(q, setup))
-		return NULL;
-
-	qinfo = q->qinfo;
 	/* lock at ctx creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
@@ -195,14 +187,36 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 		goto unlock;
 	}
 
-	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0,
 		WD_MAX_CTX_NUM);
 	if (ret) {
 		WD_ERR("fail to alloc ctx id!\n");
 		goto unlock;
 	}
 	qinfo->ctx_num++;
+	ret = WD_SUCCESS;
+
+unlock:
 	wd_unspinlock(&qinfo->qlock);
+	return ret;
+}
+
+/* Before initiate this context, we should get a queue from WD */
+void *wcrypto_create_aead_ctx(struct wd_queue *q,
+	struct wcrypto_aead_ctx_setup *setup)
+{
+	struct q_info *qinfo;
+	struct wcrypto_aead_ctx *ctx;
+	__u32 ctx_id = 0;
+	int ret;
+
+	if (create_ctx_para_check(q, setup))
+		return NULL;
+
+	qinfo = q->qinfo;
+	/* lock at ctx creating/deleting */
+	if (wcrypto_setup_qinfo(setup, qinfo, &ctx_id))
+		return NULL;
 
 	ctx = malloc(sizeof(struct wcrypto_aead_ctx));
 	if (!ctx) {
@@ -242,8 +256,8 @@ free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
-unlock:
 	wd_unspinlock(&qinfo->qlock);
+
 	return NULL;
 }
 
@@ -300,9 +314,9 @@ int wcrypto_aead_get_maxauthsize(void *ctx)
 	return g_aead_mac_len[ctxt->setup.dalg];
 }
 
-static int aes_key_len_check(__u16 length)
+static int aes_key_len_check(__u16 ckey_len)
 {
-	switch (length) {
+	switch (ckey_len) {
 	case AES_KEYSIZE_128:
 	case AES_KEYSIZE_192:
 	case AES_KEYSIZE_256:
@@ -312,25 +326,17 @@ static int aes_key_len_check(__u16 length)
 	}
 }
 
-static int cipher_key_len_check(int alg, __u16 length)
+static int cipher_key_len_check(int alg, __u16 ckey_len)
 {
 	int ret = WD_SUCCESS;
 
 	switch (alg) {
 	case WCRYPTO_CIPHER_SM4:
-		if (length != SM4_KEY_SIZE)
+		if (ckey_len != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_AES:
-		ret = aes_key_len_check(length);
-		break;
-	case WCRYPTO_CIPHER_DES:
-		if (length != DES_KEY_SIZE)
-			ret = -WD_EINVAL;
-		break;
-	case WCRYPTO_CIPHER_3DES:
-		if (length != SEC_3DES_2KEY_SIZE && length != SEC_3DES_3KEY_SIZE)
-			ret = -WD_EINVAL;
+		ret = aes_key_len_check(ckey_len);
 		break;
 	default:
 		return -WD_EINVAL;
@@ -460,8 +466,8 @@ err_uninit_requests:
 	return ret;
 }
 
-static int aead_recv_sync(struct wcrypto_aead_ctx *ctx,
-			  struct wcrypto_aead_op_data **opdata, __u32 num)
+static int aead_recv_sync(struct wcrypto_aead_ctx *a_ctx,
+			  struct wcrypto_aead_op_data **a_opdata, __u32 num)
 {
 	struct wcrypto_aead_msg *resp[WCRYPTO_MAX_BURST_NUM];
 	__u32 recv_count = 0;
@@ -470,10 +476,10 @@ static int aead_recv_sync(struct wcrypto_aead_ctx *ctx,
 	int ret;
 
 	for (i = 0; i < num; i++)
-		resp[i] = (void *)(uintptr_t)ctx->ctx_id;
+		resp[i] = (void *)(uintptr_t)a_ctx->ctx_id;
 
 	while (true) {
-		ret = wd_burst_recv(ctx->q, (void **)(resp + recv_count),
+		ret = wd_burst_recv(a_ctx->q, (void **)(resp + recv_count),
 				    num - recv_count);
 		if (ret >= 0) {
 			recv_count += ret;
@@ -486,34 +492,34 @@ static int aead_recv_sync(struct wcrypto_aead_ctx *ctx,
 			if (!(rx_cnt & AEAD_SLEEP_INTERVAL))
 				usleep(1);
 		} else {
-			WD_ERR("fail to do aead wcrypto_recv!\n");
+			WD_ERR("do aead wcrypto_recv error!\n");
 			return ret;
 		}
 	}
 
 	for (i = 0; i < recv_count; i++) {
-		opdata[i]->out = (void *)resp[i]->out;
-		opdata[i]->out_bytes = resp[i]->out_bytes;
-		opdata[i]->status = resp[i]->result;
+		a_opdata[i]->out = (void *)resp[i]->out;
+		a_opdata[i]->out_bytes = resp[i]->out_bytes;
+		a_opdata[i]->status = resp[i]->result;
 	}
 
 	return recv_count;
 }
 
-static int param_check(struct wcrypto_aead_ctx *ctx,
-		       struct wcrypto_aead_op_data **opdata,
+static int param_check(struct wcrypto_aead_ctx *a_ctx,
+		       struct wcrypto_aead_op_data **a_opdata,
 		       void **tag, __u32 num)
 {
 	__u32 i;
 
-	if (unlikely(!ctx || !opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
+	if (unlikely(!a_ctx || !a_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
 		WD_ERR("input param err!\n");
 		return -WD_EINVAL;
 	}
 
 	for (i = 0; i < num; i++) {
-		if (unlikely(!opdata[i])) {
-			WD_ERR("opdata[%u] is NULL!\n", i);
+		if (unlikely(!a_opdata[i])) {
+			WD_ERR("aead opdata[%u] is NULL!\n", i);
 			return -WD_EINVAL;
 		}
 
@@ -523,24 +529,24 @@ static int param_check(struct wcrypto_aead_ctx *ctx,
 		}
 	}
 
-	if (unlikely(tag && !ctx->setup.cb)) {
-		WD_ERR("ctx call back is NULL!\n");
+	if (unlikely(tag && !a_ctx->setup.cb)) {
+		WD_ERR("aead ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
 }
 
-int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
+int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **a_opdata,
 		       void **tag, __u32 num)
 {
 	struct wcrypto_aead_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = { NULL };
 	struct wcrypto_aead_msg *req[WCRYPTO_MAX_BURST_NUM];
-	struct wcrypto_aead_ctx *ctxt = ctx;
+	struct wcrypto_aead_ctx *ctxt = a_ctx;
 	__u32 i;
 	int ret;
 
-	if (param_check(ctxt, opdata, tag, num))
+	if (param_check(ctxt, a_opdata, tag, num))
 		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
@@ -550,13 +556,13 @@ int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
 	}
 
 	for (i = 0; i < num; i++) {
-		cookies[i]->tag.priv = opdata[i]->priv;
+		cookies[i]->tag.priv = a_opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
 		if (tag)
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
 
-	ret = aead_requests_init(req, opdata, ctxt, num);
+	ret = aead_requests_init(req, a_opdata, ctxt, num);
 	if (unlikely(ret))
 		goto fail_with_cookies;
 
@@ -569,7 +575,7 @@ int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
 	if (tag)
 		return ret;
 
-	ret = aead_recv_sync(ctxt, opdata, num);
+	ret = aead_recv_sync(ctxt, a_opdata, num);
 
 fail_with_send:
 	aead_requests_uninit(req, ctxt, num);
@@ -597,8 +603,8 @@ int wcrypto_do_aead(void *ctx, struct wcrypto_aead_op_data *opdata, void *tag)
 
 int wcrypto_aead_poll(struct wd_queue *q, unsigned int num)
 {
+	struct wcrypto_aead_msg *aead_resp = NULL;
 	struct wcrypto_aead_ctx *ctx;
-	struct wcrypto_aead_msg *resp = NULL;
 	struct wcrypto_aead_tag *tag;
 	int count = 0;
 	int ret;
@@ -609,25 +615,25 @@ int wcrypto_aead_poll(struct wd_queue *q, unsigned int num)
 	}
 
 	do {
-		resp = NULL;
-		ret = wd_recv(q, (void **)&resp);
+		aead_resp = NULL;
+		ret = wd_recv(q, (void **)&aead_resp);
 		if (ret == 0)
 			break;
 		else if (ret == -WD_HW_EACCESS) {
-			if (!resp) {
-				WD_ERR("fail to recv req_cache!\n");
+			if (!aead_resp) {
+				WD_ERR("the aead recv err from req_cache!\n");
 				return ret;
 			}
-			resp->result = WD_HW_EACCESS;
+			aead_resp->result = WD_HW_EACCESS;
 		} else if (ret < 0) {
-			WD_ERR("fail to poll aead!\n");
+			WD_ERR("recv err at aead poll!\n");
 			return ret;
 		}
 		count++;
-		tag = (void *)(uintptr_t)resp->usr_data;
+		tag = (void *)(uintptr_t)aead_resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
-		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
-		aead_requests_uninit(&resp, ctx, 1);
+		ctx->setup.cb(aead_resp, tag->wcrypto_tag.tag);
+		aead_requests_uninit(&aead_resp, ctx, 1);
 		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 	} while (--num);
 
