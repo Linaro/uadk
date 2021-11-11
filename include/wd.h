@@ -18,6 +18,8 @@
 #define MAX_ATTR_STR_SIZE		384
 #define WD_NAME_SIZE			64
 #define MAX_DEV_NAME_LEN		256
+#define LINUX_CRTDIR_SIZE		1
+#define LINUX_PRTDIR_SIZE		2
 
 typedef void (*wd_log)(const char *format, ...);
 
@@ -77,7 +79,7 @@ extern FILE *flog_fd;
 #define WD_IS_ERR(h)			((unsigned long long)(h) > \
 					(unsigned long long)(-1000))
 
-static inline void *WD_ERR_PTR(long error)
+static inline void *WD_ERR_PTR(uintptr_t error)
 {
 	return (void *)error;
 }
@@ -127,7 +129,7 @@ struct wd_dev_mask {
 	unsigned int magic;
 };
 
-typedef unsigned long long int handle_t;
+#define handle_t uintptr_t
 typedef struct wd_dev_mask wd_dev_mask_t;
 
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
@@ -319,7 +321,7 @@ int wd_get_avail_ctx(struct uacce_dev *dev);
  * Return device list in which devices support given algorithm or NULL
  * otherwise.
  */
-struct uacce_dev_list *wd_get_accel_list(char *alg_name);
+struct uacce_dev_list *wd_get_accel_list(const char *alg_name);
 
 /**
  * wd_get_accel_dev() - Get device supporting the algorithm with
@@ -331,7 +333,7 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name);
  * and the device need to be freed after usage.
  * Otherwise return NULL.
  */
-struct uacce_dev *wd_get_accel_dev(char *alg_name);
+struct uacce_dev *wd_get_accel_dev(const char *alg_name);
 
 /**
  * wd_free_list_accels() - Free device list.
