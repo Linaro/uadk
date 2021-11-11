@@ -574,7 +574,7 @@ static int get_3des_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 	} else if (msg->key_bytes == SEC_3DES_3KEY_SIZE) {
 		*c_key_len = CKEY_LEN_3DES_3KEY;
 	} else {
-		WD_ERR("Invalid 3des key size!\n");
+		WD_ERR("invalid 3des key size!\n");
 		return -WD_EINVAL;
 	}
 
@@ -600,7 +600,7 @@ static int get_aes_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 		*c_key_len = CKEY_LEN_256BIT;
 		break;
 	default:
-		WD_ERR("Invalid AES key size!\n");
+		WD_ERR("invalid AES key size!\n");
 		return -WD_EINVAL;
 	}
 
@@ -632,7 +632,7 @@ static int fill_cipher_bd2_alg(struct wd_cipher_msg *msg, struct hisi_sec_sqe *s
 		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
 		break;
 	default:
-		WD_ERR("Invalid cipher type:%u!\n", msg->alg);
+		WD_ERR("invalid cipher type!\n");
 		return -WD_EINVAL;
 	}
 
@@ -645,11 +645,11 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 
 	switch (msg->mode) {
 	case WD_CIPHER_ECB:
-		c_mode = C_MODE_ECB;
 		if (msg->alg == WD_CIPHER_SM4) {
-			WD_ERR("Kunpeng 920 not supports ECB(SM4)!\n");
+			WD_ERR("kunpeng 920 not support ECB(SM4)!\n");
 			return -WD_EINVAL;
 		}
+		c_mode = C_MODE_ECB;
 		break;
 	case WD_CIPHER_CBC:
 		c_mode = C_MODE_CBC;
@@ -658,7 +658,7 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 		c_mode = C_MODE_XTS;
 		break;
 	default:
-		WD_ERR("invalid cipher mode type:%u!\n", msg->mode);
+		WD_ERR("invalid cipher mode type!\n");
 		return -WD_EINVAL;
 	}
 	sqe->type2.icvw_kmode |= (__u16)(c_mode) << SEC_CMODE_OFFSET;
@@ -668,10 +668,10 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg, struct hisi_sec_sqe *
 
 static void fill_cipher_bd2_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
-	sqe->type2.data_src_addr = (__u64)msg->in;
-	sqe->type2.data_dst_addr = (__u64)msg->out;
-	sqe->type2.c_ivin_addr = (__u64)msg->iv;
-	sqe->type2.c_key_addr = (__u64)msg->key;
+	sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+	sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
+	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->key;
 
 	/*
 	 * Because some special algorithms need to update IV
@@ -683,7 +683,7 @@ static void fill_cipher_bd2_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe 
 	 * field values of the send BD when returning, so we use
 	 * mac_addr to carry the message pointer here.
 	 */
-	sqe->type2.mac_addr = (__u64)msg;
+	sqe->type2.mac_addr = (__u64)(uintptr_t)msg;
 }
 
 static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *recv_msg)
@@ -700,7 +700,7 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe, struct wd_cipher_msg *rec
 		recv_msg->result = WD_SUCCESS;
 	}
 
-	rmsg = (struct wd_cipher_msg *)sqe->type2.mac_addr;
+	rmsg = (struct wd_cipher_msg *)(uintptr_t)sqe->type2.mac_addr;
 
 	if (rmsg->data_fmt != WD_SGL_BUF)
 		update_iv(rmsg);
@@ -865,11 +865,48 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 **in, __u8 **out,
 	return 0;
 }
 
+static int fill_cipher_bd2(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	__u8 scene, cipher, de;
+	int ret;
+
+	/* config BD type */
+	sqe->type_auth_cipher = BD_TYPE2;
+	/* config scene */
+	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
+	sqe->sds_sa_type = (__u8)(de | scene);
+
+	if (msg->op_type == WD_CIPHER_ENCRYPTION)
+		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
+	else
+		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
+
+	sqe->type_auth_cipher |= cipher;
+
+	ret = cipher_len_check(msg);
+	if (ret)
+		return ret;
+
+	ret = fill_cipher_bd2_alg(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill bd alg!\n");
+		return ret;
+	}
+
+	ret = fill_cipher_bd2_mode(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill bd mode!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe sqe;
-	__u8 scene, cipher, de;
 	__u16 count = 0;
 	int ret;
 
@@ -879,35 +916,9 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	}
 
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
-	/* config BD type */
-	sqe.type_auth_cipher = BD_TYPE2;
-	/* config scene */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
-	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
-	sqe.sds_sa_type = (__u8)(de | scene);
-
-	if (msg->op_type == WD_CIPHER_ENCRYPTION)
-		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
-	else
-		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
-
-	sqe.type_auth_cipher |= cipher;
-
-	ret = cipher_len_check(msg);
+	ret = fill_cipher_bd2(msg, &sqe);
 	if (ret)
 		return ret;
-
-	ret = fill_cipher_bd2_alg(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill bd alg!\n");
-		return ret;
-	}
-
-	ret = fill_cipher_bd2_mode(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill bd mode!\n");
-		return ret;
-	}
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe,
@@ -993,7 +1004,7 @@ static int fill_cipher_bd3_alg(struct wd_cipher_msg *msg,
 		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
-		WD_ERR("invalid cipher type:%u!\n", msg->alg);
+		WD_ERR("invalid cipher type!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1028,7 +1039,7 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 		c_mode = C_MODE_CFB;
 		break;
 	default:
-		WD_ERR("invalid cipher mode type:%u!\n", msg->mode);
+		WD_ERR("invalid cipher mode type!\n");
 		return -WD_EINVAL;
 	}
 	sqe->c_mode_alg |= (__u16)c_mode;
@@ -1039,10 +1050,10 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 static void fill_cipher_bd3_addr(struct wd_cipher_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
-	sqe->data_src_addr = (__u64)msg->in;
-	sqe->data_dst_addr = (__u64)msg->out;
-	sqe->no_scene.c_ivin_addr = (__u64)msg->iv;
-	sqe->c_key_addr = (__u64)msg->key;
+	sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
+	sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
+	sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->c_key_addr = (__u64)(uintptr_t)msg->key;
 
 	/*
 	 * Because some special algorithms need to update IV
@@ -1054,14 +1065,49 @@ static void fill_cipher_bd3_addr(struct wd_cipher_msg *msg,
 	 * field values of the send BD when returning, so we use
 	 * mac_addr to carry the message pointer here.
 	 */
-	sqe->mac_addr = (__u64)msg;
+	sqe->mac_addr = (__u64)(uintptr_t)msg;
+}
+
+static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	__u16 scene, de;
+	int ret;
+
+	/* config BD type */
+	sqe->bd_param = BD_TYPE3;
+	/* config scene */
+	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
+	sqe->bd_param |= (__u16)(de | scene);
+
+	if (msg->op_type == WD_CIPHER_ENCRYPTION)
+		sqe->c_icv_key = SEC_CIPHER_ENC;
+	else
+		sqe->c_icv_key = SEC_CIPHER_DEC;
+
+	ret = cipher_len_check(msg);
+	if (ret)
+		return ret;
+
+	ret = fill_cipher_bd3_alg(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill bd alg!\n");
+		return ret;
+	}
+
+	ret = fill_cipher_bd3_mode(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill bd mode!\n");
+		return ret;
+	}
+
+	return 0;
 }
 
 int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe3 sqe;
-	__u16 scene, de;
 	__u16 count = 0;
 	int ret;
 
@@ -1071,33 +1117,9 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	}
 
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
-	/* config BD type */
-	sqe.bd_param = BD_TYPE3;
-	/* config scene */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
-	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
-	sqe.bd_param |= (__u16)(de | scene);
-
-	if (msg->op_type == WD_CIPHER_ENCRYPTION)
-		sqe.c_icv_key = SEC_CIPHER_ENC;
-	else
-		sqe.c_icv_key = SEC_CIPHER_DEC;
-
-	ret = cipher_len_check(msg);
+	ret = fill_cipher_bd3(msg, &sqe);
 	if (ret)
 		return ret;
-
-	ret = fill_cipher_bd3_alg(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill bd alg!\n");
-		return ret;
-	}
-
-	ret = fill_cipher_bd3_mode(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill bd mode!\n");
-		return ret;
-	}
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
@@ -1109,7 +1131,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	}
 
 	sqe.c_len_ivin = (__u32)msg->in_bytes;
-	sqe.tag = (__u64)msg->tag;
+	sqe.tag = (__u64)(uintptr_t)msg->tag;
 	fill_cipher_bd3_addr(msg, &sqe);
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1184,7 +1206,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WD_DIGEST_NORMAL)
 		sqe->type2.mac_key_alg |=
-		g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
+		(__u32)g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
 	else if (msg->mode == WD_DIGEST_HMAC) {
 		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
 			WD_ERR("invalid digest key_bytes!\n");
@@ -1192,10 +1214,10 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		}
 		sqe->type2.mac_key_alg |= (__u32)(msg->key_bytes /
 			WORD_BYTES) << MAC_LEN_OFFSET;
-		sqe->type2.a_key_addr = (__u64)msg->key;
+		sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->key;
 
 		sqe->type2.mac_key_alg |=
-		(__u32)(g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET);
+		(__u32)g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET;
 	} else {
 		WD_ERR("invalid digest mode!\n");
 		return -WD_EINVAL;
@@ -1260,10 +1282,14 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 #endif
 }
 
-static int digest_len_check(struct wd_digest_msg *msg)
+static int digest_len_check(struct wd_digest_msg *msg, enum sec_bd_type type)
 {
-	if (msg->in_bytes == 0 ||
-		msg->in_bytes > MAX_INPUT_DATA_LEN) {
+	if (type == BD_TYPE2 && msg->in_bytes == 0) {
+		WD_ERR("digest bd2 not supports 0 packet!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
 		WD_ERR("failed to check digest input data length!\n");
 		return -WD_EINVAL;
 	}
@@ -1290,7 +1316,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	ret = digest_len_check(msg);
+	ret = digest_len_check(msg, BD_TYPE2);
 	if (unlikely(ret))
 		return ret;
 
@@ -1314,8 +1340,8 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 
 	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
-	sqe.type2.data_src_addr = (__u64)msg->in;
-	sqe.type2.mac_addr = (__u64)msg->out;
+	sqe.type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+	sqe.type2.mac_addr = (__u64)(uintptr_t)msg->out;
 
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret) {
@@ -1387,7 +1413,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 				SEC_MAC_OFFSET_V3;
 	if (msg->mode == WD_DIGEST_NORMAL) {
 		sqe->auth_mac_key |=
-		(__u32)(g_digest_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3);
+		(__u32)g_digest_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
 	} else if (msg->mode == WD_DIGEST_HMAC) {
 		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
 			WD_ERR("Invalid digest key_bytes!\n");
@@ -1395,9 +1421,9 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		}
 		sqe->auth_mac_key |= (__u32)(msg->key_bytes /
 			WORD_BYTES) << SEC_AKEY_OFFSET_V3;
-		sqe->a_key_addr = (__u64)msg->key;
+		sqe->a_key_addr = (__u64)(uintptr_t)msg->key;
 		sqe->auth_mac_key |=
-		(__u32)(g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3);
+		(__u32)g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
 	} else {
 		WD_ERR("Invalid digest mode!\n");
 		return -WD_EINVAL;
@@ -1451,7 +1477,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	ret = digest_len_check(msg);
+	ret = digest_len_check(msg, BD_TYPE3);
 	if (unlikely(ret))
 		return ret;
 
@@ -1475,8 +1501,8 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 
 	sqe.bd_param |= (__u16)(de | scene);
 	sqe.a_len_key = (__u32)msg->in_bytes;
-	sqe.data_src_addr = (__u64)msg->in;
-	sqe.mac_addr = (__u64)msg->out;
+	sqe.data_src_addr = (__u64)(uintptr_t)msg->in;
+	sqe.mac_addr = (__u64)(uintptr_t)msg->out;
 
 	ret = fill_digest_bd3_alg(msg, &sqe);
 	if (ret) {
@@ -1491,7 +1517,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
 #endif
 
-	sqe.tag = (__u64)msg->tag;
+	sqe.tag = (__u64)(uintptr_t)msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -1524,7 +1550,7 @@ static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->tag = sqe->tag;
 
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
-	recv_msg->in = (__u8 *)sqe->data_src_addr;
+	recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
 	recv_msg->alg_type = WD_DIGEST;
 
 #ifdef DEBUG
@@ -1709,11 +1735,11 @@ static void fill_aead_mac_addr_pbuff(struct wd_aead_msg *msg, __u64 *mac_addr)
 	__u64 addr = 0;
 
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
-		addr = (__u64)msg->in + msg->in_bytes + msg->assoc_bytes;
+		addr = (__u64)(uintptr_t)msg->in + msg->in_bytes + msg->assoc_bytes;
 
 	/* AEAD output MAC addr use out addr */
 	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST)
-		addr = (__u64)msg->out + msg->out_bytes - msg->auth_bytes;
+		addr = (__u64)(uintptr_t)msg->out + msg->out_bytes - msg->auth_bytes;
 
 	*mac_addr = addr;
 }
@@ -1731,14 +1757,14 @@ static void fill_aead_mac_addr_sgl(struct wd_aead_msg *msg, __u64 *mac_addr)
 				msg->in_bytes + msg->assoc_bytes,
 				msg->auth_bytes, COPY_SGL_TO_PBUFF);
 
-	*mac_addr = (__u64)msg->mac;
+	*mac_addr = (__u64)(uintptr_t)msg->mac;
 }
 
 static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	sqe->type2.data_src_addr = (__u64)msg->in;
-	sqe->type2.data_dst_addr = (__u64)msg->out;
+	sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+	sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
 
 	/* AEAD input MAC addr use in addr */
 	if (msg->data_fmt == WD_FLAT_BUF)
@@ -1746,14 +1772,14 @@ static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 	else
 		fill_aead_mac_addr_sgl(msg, &sqe->type2.mac_addr);
 
-	sqe->type2.c_key_addr = (__u64)msg->ckey;
-	sqe->type2.a_key_addr = (__u64)msg->akey;
-	sqe->type2.c_ivin_addr = (__u64)msg->iv;
+	sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->ckey;
+	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->akey;
+	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
 
 	/* CCM/GCM should init a_iv */
 	set_aead_auth_iv(msg);
 
-	sqe->type2.a_ivin_addr = (__u64)msg->aiv;
+	sqe->type2.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
 }
 
 static int aead_len_check(struct wd_aead_msg *msg)
@@ -1772,11 +1798,57 @@ static int aead_len_check(struct wd_aead_msg *msg)
 	return 0;
 }
 
+static int fill_aead_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	__u8 scene, cipher, de;
+	int ret;
+
+	/* config BD type */
+	sqe->type_auth_cipher = BD_TYPE2;
+	/* config scene */
+	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
+
+	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
+		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
+		sqe->sds_sa_type = WD_CIPHER_THEN_DIGEST;
+		sqe->type_auth_cipher |= AUTH_HMAC_CALCULATE <<
+					 SEC_AUTH_OFFSET;
+	} else if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
+		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
+		sqe->sds_sa_type = WD_DIGEST_THEN_CIPHER;
+		sqe->type_auth_cipher |= AUTH_MAC_VERIFY <<
+					 SEC_AUTH_OFFSET;
+	} else {
+		WD_ERR("failed to check aead op type!\n");
+		return -WD_EINVAL;
+	}
+	sqe->sds_sa_type |= (__u8)(de | scene);
+	sqe->type_auth_cipher |= cipher;
+
+	sqe->type2.clen_ivhlen = msg->in_bytes;
+	sqe->type2.cipher_src_offset = msg->assoc_bytes;
+	sqe->type2.alen_ivllen = msg->in_bytes + msg->assoc_bytes;
+
+	ret = fill_aead_bd2_alg(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill aead bd alg!\n");
+		return ret;
+	}
+
+	ret = fill_aead_bd2_mode(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill aead bd mode!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe sqe;
-	__u8 scene, cipher, de;
 	__u16 count = 0;
 	int ret;
 
@@ -1795,44 +1867,9 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 		return ret;
 
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe));
-	/* config BD type */
-	sqe.type_auth_cipher = BD_TYPE2;
-	/* config scene */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
-	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
-
-	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
-		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
-		sqe.sds_sa_type = WD_CIPHER_THEN_DIGEST;
-		sqe.type_auth_cipher |= AUTH_HMAC_CALCULATE <<
-					SEC_AUTH_OFFSET;
-	} else if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
-		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
-		sqe.sds_sa_type = WD_DIGEST_THEN_CIPHER;
-		sqe.type_auth_cipher |= AUTH_MAC_VERIFY <<
-					SEC_AUTH_OFFSET;
-	} else {
-		WD_ERR("failed to check aead op type!\n");
-		return -WD_EINVAL;
-	}
-	sqe.sds_sa_type |= (__u8)(de | scene);
-	sqe.type_auth_cipher |= cipher;
-
-	sqe.type2.clen_ivhlen = msg->in_bytes;
-	sqe.type2.cipher_src_offset = msg->assoc_bytes;
-	sqe.type2.alen_ivllen = msg->in_bytes + msg->assoc_bytes;
-
-	ret = fill_aead_bd2_alg(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill aead bd alg!\n");
+	ret = fill_aead_bd2(msg, &sqe);
+	if (unlikely(ret))
 		return ret;
-	}
-
-	ret = fill_aead_bd2_mode(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill aead bd mode!\n");
-		return ret;
-	}
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe, msg->alg_type);
@@ -1884,10 +1921,10 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 	recv_msg->tag = sqe->type2.tag;
 
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
-	recv_msg->in = (__u8 *)sqe->type2.data_src_addr;
-	recv_msg->out = (__u8 *)sqe->type2.data_dst_addr;
+	recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
+	recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
 	recv_msg->alg_type = WD_AEAD;
-	recv_msg->mac = (__u8 *)sqe->type2.mac_addr;
+	recv_msg->mac = (__u8 *)(uintptr_t)sqe->type2.mac_addr;
 	recv_msg->auth_bytes = (sqe->type2.mac_key_alg &
 			       SEC_MAC_LEN_MASK) * WORD_BYTES;
 	if (recv_msg->auth_bytes == 0)
@@ -2045,8 +2082,8 @@ static void fill_aead_bd3_addr(struct wd_aead_msg *msg,
 {
 	__u64 mac_addr;
 
-	sqe->data_src_addr = (__u64)msg->in;
-	sqe->data_dst_addr = (__u64)msg->out;
+	sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
+	sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
 
 	/* AEAD input MAC addr use in and out addr */
 	if (msg->data_fmt == WD_FLAT_BUF)
@@ -2055,21 +2092,66 @@ static void fill_aead_bd3_addr(struct wd_aead_msg *msg,
 		fill_aead_mac_addr_sgl(msg, &mac_addr);
 
 	sqe->mac_addr = mac_addr;
-	sqe->c_key_addr = (__u64)msg->ckey;
-	sqe->a_key_addr = (__u64)msg->akey;
-	sqe->no_scene.c_ivin_addr = (__u64)msg->iv;
+	sqe->c_key_addr = (__u64)(uintptr_t)msg->ckey;
+	sqe->a_key_addr = (__u64)(uintptr_t)msg->akey;
+	sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
 
 	/* CCM/GCM should init a_iv */
 	set_aead_auth_iv(msg);
 
-	sqe->auth_ivin.a_ivin_addr = (__u64)msg->aiv;
+	sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
 }
+
+
+static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	__u16 scene, de;
+	int ret;
+
+	/* config BD type */
+	sqe->bd_param = BD_TYPE3;
+	/* config scene */
+	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
+
+	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
+		sqe->c_icv_key = SEC_CIPHER_ENC;
+		sqe->auth_mac_key = AUTH_HMAC_CALCULATE;
+		sqe->huk_iv_seq = WD_CIPHER_THEN_DIGEST << SEC_SEQ_OFFSET_V3;
+	} else if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
+		sqe->c_icv_key = SEC_CIPHER_DEC;
+		sqe->auth_mac_key = AUTH_MAC_VERIFY;
+		sqe->huk_iv_seq = WD_DIGEST_THEN_CIPHER << SEC_SEQ_OFFSET_V3;
+	} else {
+		WD_ERR("failed to check aead op type!\n");
+		return -WD_EINVAL;
+	}
+	sqe->bd_param |= (__u16)(de | scene);
+
+	sqe->c_len_ivin = msg->in_bytes;
+	sqe->cipher_src_offset = msg->assoc_bytes;
+	sqe->a_len_key = msg->in_bytes + msg->assoc_bytes;
+
+	ret = fill_aead_bd3_alg(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill aead bd alg!\n");
+		return ret;
+	}
+
+	ret = fill_aead_bd3_mode(msg, sqe);
+	if (ret) {
+		WD_ERR("failed to fill aead bd mode!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 
 int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_sec_sqe3 sqe;
-	__u16 scene, de;
 	__u16 count = 0;
 	int ret;
 
@@ -2083,41 +2165,9 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 		return ret;
 
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
-	/* config BD type */
-	sqe.bd_param = BD_TYPE3;
-	/* config scene */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
-	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
-
-	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
-		sqe.c_icv_key = SEC_CIPHER_ENC;
-		sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
-		sqe.huk_iv_seq = WD_CIPHER_THEN_DIGEST << SEC_SEQ_OFFSET_V3;
-	} else if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
-		sqe.c_icv_key = SEC_CIPHER_DEC;
-		sqe.auth_mac_key = AUTH_MAC_VERIFY;
-		sqe.huk_iv_seq = WD_DIGEST_THEN_CIPHER << SEC_SEQ_OFFSET_V3;
-	} else {
-		WD_ERR("failed to check aead op type!\n");
-		return -WD_EINVAL;
-	}
-	sqe.bd_param |= (__u16)(de | scene);
-
-	sqe.c_len_ivin = msg->in_bytes;
-	sqe.cipher_src_offset = msg->assoc_bytes;
-	sqe.a_len_key = msg->in_bytes + msg->assoc_bytes;
-
-	ret = fill_aead_bd3_alg(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill aead bd alg!\n");
+	ret = fill_aead_bd3(msg, &sqe);
+	if (unlikely(ret))
 		return ret;
-	}
-
-	ret = fill_aead_bd3_mode(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill aead bd mode!\n");
-		return ret;
-	}
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
@@ -2169,10 +2219,10 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->tag = sqe->tag;
 
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
-	recv_msg->in = (__u8 *)sqe->data_src_addr;
-	recv_msg->out = (__u8 *)sqe->data_dst_addr;
+	recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
+	recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
 	recv_msg->alg_type = WD_AEAD;
-	recv_msg->mac = (__u8 *)sqe->mac_addr;
+	recv_msg->mac = (__u8 *)(uintptr_t)sqe->mac_addr;
 	recv_msg->auth_bytes = ((sqe->auth_mac_key >> SEC_MAC_OFFSET_V3) &
 			       SEC_MAC_LEN_MASK) * WORD_BYTES;
 	if (recv_msg->auth_bytes == 0)
@@ -2254,6 +2304,7 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.op_type = config->ctxs[i].op_type;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
+		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp)
 			goto out;
