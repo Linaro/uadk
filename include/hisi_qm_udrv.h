@@ -19,7 +19,7 @@
 #define QM_HADDR_SHIFT		32
 #define LW_U32(pa)	((__u32)((pa) & QM_L32BITS_MASK))
 #define HI_U32(pa)	((__u32)(((pa) >> QM_HADDR_SHIFT) & QM_L32BITS_MASK))
-#define VA_ADDR(hi, lo)	((void *)(((__u64)(hi) << 32) | (__u64)(lo)))
+#define VA_ADDR(hi, lo)	((void *)(((uintptr_t)(hi) << 32) | (uintptr_t)(lo)))
 #define LW_U16(val)	((__u16)((val) & QM_L16BITS_MASK))
 
 #define BYTE_BITS			8
@@ -96,7 +96,7 @@ struct hisi_qm_capa {
  * ensure resource non-reentrant.
  * If the free queue num is zero, the return value is -WD_EBUSY
  */
-int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count);
+int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count);
 
 /**
  * hisi_qm_recv - Recieve msg from qm of the device.
