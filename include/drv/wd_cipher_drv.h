@@ -44,7 +44,6 @@ struct wd_cipher_msg {
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
-
 };
 
 struct wd_cipher_driver {
@@ -58,11 +57,14 @@ struct wd_cipher_driver {
 };
 
 void wd_cipher_set_driver(struct wd_cipher_driver *drv);
+struct wd_cipher_driver *wd_cipher_get_driver(void);
 
 #ifdef WD_STATIC_DRV
 #define WD_CIPHER_SET_DRIVER(drv)					      \
-extern const struct wd_cipher_driver wd_cipher_##drv __attribute__((alias(#drv)));
-
+struct wd_cipher_driver *wd_cipher_get_driver(void)			      \
+{									      \
+	return &drv;							      \
+}
 #else
 #define WD_CIPHER_SET_DRIVER(drv)				              \
 static void __attribute__((constructor)) set_driver(void)		      \

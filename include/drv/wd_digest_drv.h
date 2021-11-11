@@ -58,11 +58,14 @@ struct wd_digest_driver {
 };
 
 void wd_digest_set_driver(struct wd_digest_driver *drv);
+struct wd_digest_driver *wd_digest_get_driver(void);
 
 #ifdef WD_STATIC_DRV
 #define WD_DIGEST_SET_DRIVER(drv)					      \
-extern const struct wd_digest_driver wd_digest_##drv __attribute__((alias(#drv)));
-
+struct wd_digest_driver *wd_digest_get_driver(void)			      \
+{									      \
+	return &drv;							      \
+}
 #else
 #define WD_DIGEST_SET_DRIVER(drv)					      \
 static void __attribute__((constructor)) set_drivers(void)		      \
