@@ -21,7 +21,7 @@
 #define MISC_DVE_UACCE_CTRL		"/dev/uacce_ctrl"
 #define HUGETLB_FLAG_ENCODE_SHIFT	26
 
-#define BITS_PER_LONG			((int)sizeof(unsigned long) * 8)
+#define BITS_PER_LONG			((unsigned int)sizeof(unsigned long) * 8)
 #define BITS_TO_LONGS(bits) \
 	(((bits) + BITS_PER_LONG - 1) / BITS_PER_LONG)
 #define BIT_MASK(nr)			((unsigned long)(1) << ((nr) % BITS_PER_LONG))
@@ -29,13 +29,13 @@
 #define BITMAP_FIRST_WORD_MASK(start) \
 	(~0UL << ((start) & (BITS_PER_LONG - 1)))
 
-#define __round_mask(x, y)		((__typeof__(x))((y)-1))
-#define round_down(x, y)		((x) & ~__round_mask(x, y))
-#define __maybe_unused			__attribute__((__unused__))
+#define wd_round_mask(x, y)		((__typeof__(x))((y)-1))
+#define round_down(x, y)		((x) & ~wd_round_mask(x, y))
 #define WD_MEMPOOL_BLOCK_SIZE		((unsigned long)1 << 12)
 #define WD_MEMPOOL_SIZE_MASK		(WD_MEMPOOL_BLOCK_SIZE - 1)
 #define WD_MEMPOOL_NO_NUMA		-1
 #define WD_HUNDRED			100
+#define PAGE_SIZE_OFFSET		10
 
 struct wd_lock {
 	__u32 lock;
@@ -262,7 +262,7 @@ static unsigned long find_next_zero_bit(struct bitmap *bm, unsigned long start)
 	return _find_next_bit(bm->map, bm->bits, start, ~0UL);
 }
 
-static void set_bit(struct bitmap *bm, int pos)
+static void set_bit(struct bitmap *bm, unsigned int pos)
 {
 	unsigned long *map = bm->map;
 	unsigned long mask = BIT_MASK(pos);
@@ -271,7 +271,7 @@ static void set_bit(struct bitmap *bm, int pos)
 	*p |= mask;
 }
 
-static void clear_bit(struct bitmap *bm, int pos)
+static void clear_bit(struct bitmap *bm, unsigned int pos)
 {
 	unsigned long *map = bm->map;
 	unsigned long mask = BIT_MASK(pos);
@@ -280,7 +280,7 @@ static void clear_bit(struct bitmap *bm, int pos)
 	*p &= ~mask;
 }
 
-static int test_bit(struct bitmap *bm, int nr)
+static int test_bit(struct bitmap *bm, unsigned int nr)
 {
 	unsigned long *p = bm->map + BIT_WORD(nr);
 	unsigned long mask = BIT_MASK(nr);
@@ -390,8 +390,7 @@ static void free_mem_to_mempool(struct blkpool *bp)
 static int check_mempool_real_size(struct mempool *mp, struct blkpool *bp)
 {
 	if (bp->blk_size * bp->depth > mp->real_size) {
-		WD_ERR("WD_MMEPOOL: Failed to create blkpool as mempool too small: %lu\n",
-		       mp->real_size);
+		WD_ERR("wd_mempool: mempool too small: %lu\n", mp->real_size);
 		return -ENOMEM;
 	}
 
@@ -546,7 +545,7 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 	int ret;
 
 	if (!mp || !block_size || !block_num) {
-		WD_ERR("WD_MMEPOOL: Input parameter is invalid value\n");
+		WD_ERR("wd_mempool: input parameter is invalid value\n");
 		return (handle_t)(-WD_EINVAL);
 	}
 
@@ -565,13 +564,13 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 
 	ret = alloc_mem_from_mempool(mp, bp);
 	if (ret < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to allocate memory from mempool\n");
+		WD_ERR("wd_mempool: failed to allocate memory from mempool\n");
 		goto err_free_bp;
 	}
 
 	ret = init_blkpool_elem(bp);
 	if (ret < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to init blkpool\n");
+		WD_ERR("wd_mempool: failed to init blkpool\n");
 		goto err_free_mem;
 	}
 
@@ -583,7 +582,7 @@ err_free_mem:
 err_free_bp:
 	free(bp);
 	wd_atomic_sub(&mp->ref, 1);
-	return ret;
+	return (handle_t)(-WD_ENOMEM);
 }
 
 void wd_blockpool_destroy(handle_t blkpool)
@@ -592,7 +591,7 @@ void wd_blockpool_destroy(handle_t blkpool)
 	struct mempool *mp;
 
 	if (!bp) {
-		WD_ERR("WD_MMEPOOL: Blkpool is NULL\n");
+		WD_ERR("wd_mempool: blkpool is NULL\n");
 		return;
 	}
 
@@ -605,26 +604,35 @@ void wd_blockpool_destroy(handle_t blkpool)
 	wd_atomic_sub(&mp->ref, 1);
 }
 
-static int get_value_from_sysfs(char *path)
+static int get_value_from_sysfs(const char *path, ssize_t path_size)
 {
+	char dev_path[PATH_MAX];
 	char buf[MAX_ATTR_STR_SIZE];
+	char *ptrRet = NULL;
 	ssize_t size;
 	int fd;
 
-	fd = open(path, O_RDONLY, 0);
+	if (!path || !path_size)
+		return -WD_ENODEV;
+
+	ptrRet = realpath(path, dev_path);
+	if (ptrRet == NULL)
+		return -WD_ENODEV;
+
+	fd = open(dev_path, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to open %s\n", path);
+		WD_ERR("wd_mempool: failed to open %s\n", dev_path);
 		goto err_open;
 	}
 
 	size = read(fd, buf, sizeof(buf));
 	if (size <= 0) {
-		WD_ERR("WD_MMEPOOL: Failed to read %s\n", path);
+		WD_ERR("wd_mempool: failed to read %s\n", dev_path);
 		goto err_read;
 	}
 
 	close(fd);
-	return strtol(buf, NULL, 10);
+	return (int)strtol(buf, NULL, 10);
 
 err_read:
 	close(fd);
@@ -633,7 +641,7 @@ err_open:
 }
 
 /* hp_dir is e.g. /sys/devices/system/node/nodex/hugepages/hugepages-64kB */
-static int get_hugepage_info_per_type(char *hugepage_path,
+static int get_hugepage_info_per_type(const char *hugepage_path, int path_size,
 	struct dirent *hp_dir, struct sys_hugepage_config *cfg)
 {
 	char path[MAX_ATTR_STR_SIZE];
@@ -641,6 +649,9 @@ static int get_hugepage_info_per_type(char *hugepage_path,
 	unsigned long size;
 	char *size_pos;
 	int ret;
+
+	if (!hugepage_path || !path_size)
+		return -WD_ENODEV;
 
 	size_pos = index(name, '-');
 	if (!size_pos)
@@ -651,18 +662,25 @@ static int get_hugepage_info_per_type(char *hugepage_path,
 	size = strtol(size_pos, NULL, 10);
 	if (errno)
 		return -errno;
-	cfg->page_size = size << 10;
+	cfg->page_size = size << PAGE_SIZE_OFFSET;
 
-	snprintf(path, sizeof(path), "%s/%s/nr_hugepages", hugepage_path,
-		 name);
-	ret = get_value_from_sysfs(path);
+	ret = snprintf(path, sizeof(path), "%s/%s/nr_hugepages", hugepage_path,
+		       name);
+	if (ret < 0)
+		return -EINVAL;
+
+	ret = get_value_from_sysfs(path, MAX_ATTR_STR_SIZE);
 	if (ret < 0)
 		return ret;
+
 	cfg->total_num = ret;
 
-	snprintf(path, sizeof(path), "%s/%s/free_hugepages", hugepage_path,
-		 name);
-	ret = get_value_from_sysfs(path);
+	ret = snprintf(path, sizeof(path), "%s/%s/free_hugepages",
+		       hugepage_path, name);
+	if (ret < 0)
+		return -EINVAL;
+
+	ret = get_value_from_sysfs(path, MAX_ATTR_STR_SIZE);
 	if (ret < 0)
 		return ret;
 	cfg->free_num = ret;
@@ -692,29 +710,32 @@ static int get_hugepage_info(struct mempool *mp)
 	if (mp->node == -1)
 		return -EINVAL;
 
-	snprintf(hugepage_path, sizeof(hugepage_path), "%s%d/hugepages",
-		 SYSFS_NODE_PATH, mp->node);
+	ret = snprintf(hugepage_path, sizeof(hugepage_path), "%s%d/hugepages",
+		       SYSFS_NODE_PATH, mp->node);
+	if (ret < 0)
+		return -EINVAL;
+
 	dir = opendir(hugepage_path);
 	if (!dir) {
-		WD_ERR("WD_MMEPOOL: WD_MMEPOOL: Failed to open %s\n",
-			hugepage_path);
+		WD_ERR("wd_mempool: failed to open %s\n", hugepage_path);
 		return -errno;
 	}
 
 	TAILQ_INIT(&mp->hp_list);
 	for (hp_dir = readdir(dir); hp_dir != NULL; hp_dir = readdir(dir)) {
-		if (!strncmp(hp_dir->d_name, ".", 1) ||
-		    !strncmp(hp_dir->d_name, "..", 2))
+		if (!strncmp(hp_dir->d_name, ".", LINUX_CRTDIR_SIZE) ||
+		    !strncmp(hp_dir->d_name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 
 		tmp = calloc(1, sizeof(*tmp));
 		if (!tmp) {
-			WD_ERR("WD_MMEPOOL: WD_MMEPOOL: Failed to allocate memory\n");
+			WD_ERR("wd_mempool: failed to calloc\n");
 			goto err_free_list;
 		}
-		ret = get_hugepage_info_per_type(hugepage_path, hp_dir, tmp);
+		ret = get_hugepage_info_per_type(hugepage_path, MAX_HP_STR_SIZE,
+						 hp_dir, tmp);
 		if (ret < 0) {
-			WD_ERR("WD_MMEPOOL: Failed to get hugepage info\n");
+			WD_ERR("wd_mempool: failed to get hugepage info\n");
 			goto err_free;
 		}
 
@@ -756,10 +777,10 @@ static int mbind_memory(void *addr, size_t size, int node)
 	if (node == -1)
 		return ret;
 
-	node_mask = 1 << node;
+	node_mask = 1U << (unsigned int)node;
 	ret = mbind(addr, size, MPOL_BIND, &node_mask, max_node, 0);
 	if (ret < 0) {
-		WD_ERR("WD_MMEPOOL: Failed to mbind memory, %d\n", ret);
+		WD_ERR("wd_mempool: failed to mbind memory, %d\n", ret);
 		return ret;
 	}
 
@@ -771,7 +792,7 @@ static int alloc_mem_from_hugepage(struct mempool *mp)
 	struct sys_hugepage_config *iter;
 	unsigned long bits = sizeof(iter->page_size) * 8;
 	size_t page_num, real_size;
-	int flags = 0;
+	unsigned long flags = 0;
 	void *p;
 	int ret;
 
@@ -785,7 +806,7 @@ static int alloc_mem_from_hugepage(struct mempool *mp)
 			break;
 	}
 	if (!iter) {
-		WD_ERR("WD_MMEPOOL: Failed to find proper hugepage\n");
+		WD_ERR("wd_mempool: failed to find proper hugepage\n");
 		ret = -ENOMEM;
 		goto err_put_info;
 	}
@@ -806,7 +827,7 @@ static int alloc_mem_from_hugepage(struct mempool *mp)
 	p = mmap(NULL, real_size, PROT_READ | PROT_WRITE, MAP_PRIVATE |
 		 MAP_ANONYMOUS | MAP_HUGETLB | flags, -1, 0);
 	if (p == MAP_FAILED) {
-		WD_ERR("WD_MMEPOOL: Failed to allocate huge page\n");
+		WD_ERR("wd_mempool: failed to allocate huge page\n");
 		ret = -ENOMEM;
 		goto err_put_info;
 	}
@@ -842,7 +863,7 @@ static int alloc_mempool_memory(struct mempool *mp)
 
 	ret = alloc_mem_from_hugepage(mp);
 	if (ret) {
-		WD_ERR("WD_MMEPOOL: Failed to alloc memory from hugepage\n");
+		WD_ERR("wd_mempool: failed to alloc memory from hugepage\n");
 		return -ENOMEM;
 	}
 
@@ -910,7 +931,7 @@ free_pool_memory:
 	free_mempool_memory(mp);
 free_pool:
 	free(mp);
-	return ret;
+	return (handle_t)(-WD_ENOMEM);
 }
 
 void wd_mempool_destroy(handle_t mempool)
@@ -918,7 +939,7 @@ void wd_mempool_destroy(handle_t mempool)
 	struct mempool *mp = (struct mempool *)mempool;
 
 	if (!mp) {
-		WD_ERR("WD_MMEPOOL: Mempool is NULL\n");
+		WD_ERR("wd_mempool: mempool is NULL\n");
 		return;
 	}
 
@@ -934,7 +955,7 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats)
 	struct mempool *mp = (struct mempool *)mempool;
 
 	if (!mp) {
-		WD_ERR("WD_MMEPOOL: Mempool is NULL\n");
+		WD_ERR("wd_mempool: mempool is NULL\n");
 		return;
 	}
 
@@ -959,7 +980,7 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 	struct memzone *iter;
 
 	if (!bp || !stats) {
-		WD_ERR("WD_MMEPOOL: Blkpool or Stats is NULL\n");
+		WD_ERR("wd_mempool: blkpool or stats is NULL\n");
 		return;
 	}
 
@@ -976,7 +997,7 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 	}
 
 	if (!size) {
-		WD_ERR("WD_MMEPOOL: Blkpool size is zero\n");
+		WD_ERR("wd_mempool: blkpool size is zero\n");
 		wd_unspinlock(&bp->lock);
 		return;
 	}
