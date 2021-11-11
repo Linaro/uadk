@@ -35,13 +35,15 @@
 
 #define FLAG_SGE_CHAIN  0x01UL
 #define FLAG_SGE_END    0x02UL
-#define FLAG_MERGED_SGL    0x01UL
+#define FLAG_MERGED_SGL    (uintptr_t)1
 
 #define SGL_NUM_MAX	2048
 #define SGE_NUM_MAX	60
+#define SGL_NUM		2
 #define BUF_SIZE_MAX	2048
 #define ALIGN_SIZE_MIN	0x8
 #define ALIGN_SIZE_MAX	0x800
+#define ALIGN_SIZE	64
 
 struct wd_sge {
 	/* 'priv' is used by driver, which may be a hardware sgl address */
@@ -240,7 +242,7 @@ static void *sgl_blk_pool_init(struct wd_queue *q, struct wd_sglpool *pool)
 	sp.br.free = sgl_mem_free;
 	sp.br.iova_map = sgl_mem_iova_map;
 	sp.br.iova_unmap = sgl_mem_iova_unmap;
-	sp.align_size = 64;
+	sp.align_size = ALIGN_SIZE;
 	sp.block_num = sgl_sp->sgl_num;
 	sp.block_size = ALIGN(sizeof(struct wd_sgl), asz) +
 		sgl_sp->sge_num_in_sgl * ALIGN(sizeof(struct wd_sge), asz);
@@ -289,7 +291,13 @@ static int sgl_pool_init(struct wd_queue *q, struct wd_sglpool *pool)
 	wd_get_free_blk_num(buf_pool, &pool->free_buf_num);
 	pool->free_buf_num = MIN(pool->free_buf_num,
 		sp.buf_num - sp.sgl_num * sp.buf_num_in_sgl);
-	wd_blk_alloc_failures(sgl_pool, &pool->alloc_failures);
+
+	ret = wd_blk_alloc_failures(sgl_pool, &pool->alloc_failures);
+	if (ret != WD_SUCCESS) {
+		WD_ERR("wd blk alloc failures failed, ret = %d.\n", ret);
+		goto err;
+	}
+
 	pool->free_sgl_num = pool->setup.sgl_num;
 	pool->sgl_mem_sz = sp.buf_num_in_sgl * sp.buf_size;
 
@@ -468,7 +476,7 @@ struct wd_sgl *wd_alloc_sgl(void *pool, __u32 size)
 		return NULL;
 	}
 
-	if (size > p->sgl_mem_sz * 2) {
+	if (size > p->sgl_mem_sz * SGL_NUM) {
 		WD_ERR("Size you need is bigger than a 2 * SGL!\n");
 		return NULL;
 	}
@@ -807,7 +815,7 @@ int wd_get_sgl_buf_num(struct wd_sgl *sgl)
 void *wd_get_sge_buf(struct wd_sgl *sgl, __u32 num)
 {
 	if (unlikely(!sgl || !num || num > sgl->sge_num)) {
-		WD_ERR("sgl is null, or num is valid, num = %d!\n", num);
+		WD_ERR("sgl is null, or num is valid, num = %u!\n", num);
 		return NULL;
 	}
 
