@@ -435,7 +435,6 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 	if (setup->is_crt) {
 		len = sizeof(struct wcrypto_rsa_prikey) +
 			CRT_PARAMS_SZ(ctx->key_size);
-
 		if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
 			WD_ERR("Blk_size < need_size<0x%x>.\n", len);
 			return -WD_ENOMEM;
@@ -451,7 +450,6 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 	} else {
 		len = sizeof(struct wcrypto_rsa_prikey) +
 			GEN_PARAMS_SZ(ctx->key_size);
-
 		if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
 			WD_ERR("Blk_size < need_size<0x%x>.\n", len);
 			return -WD_ENOMEM;
@@ -539,12 +537,31 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 
 static void del_ctx(struct wcrypto_rsa_ctx *c)
 {
-
 	if (!c)
 		return;
 
 	wd_uninit_cookie_pool(&c->pool);
 	free(c);
+}
+
+static int check_q_setup(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup)
+{
+	if (!q || !setup) {
+		WD_ERR("create rsa ctx input parameter err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!setup->br.alloc || !setup->br.free) {
+		WD_ERR("create rsa ctx user mm br err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (strcmp(q->capa.alg, "rsa")) {
+		WD_ERR("create rsa ctx algorithm mismatching!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -555,18 +572,9 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 	__u32 cid = 0;
 	int ret;
 
-	if (!q || !setup) {
-		WD_ERR("create rsa ctx input parameter err!\n");
+	ret = check_q_setup(q, setup);
+	if (ret)
 		return NULL;
-	}
-	if (!setup->br.alloc || !setup->br.free) {
-		WD_ERR("create rsa ctx user mm br err!\n");
-		return NULL;
-	}
-	if (strcmp(q->capa.alg, "rsa")) {
-		WD_ERR("create rsa ctx algorithm mismatching!\n");
-		return NULL;
-	}
 
 	qinfo = q->qinfo;
 	/* lock at ctx  creating/deleting */
@@ -925,11 +933,17 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 	return WD_SUCCESS;
 }
 
-static int param_check(void *ctx, void *opdata, void *tag)
+static int do_rsa_prepare(struct wcrypto_rsa_ctx *ctxt,
+			  struct wcrypto_rsa_op_data *opdata,
+			  struct wcrypto_rsa_cookie **cookie_addr,
+			  struct wcrypto_rsa_msg **req_addr,
+			  void *tag)
 {
-	struct wcrypto_rsa_ctx *ctxt = ctx;
+	struct wcrypto_rsa_cookie *cookie;
+	struct wcrypto_rsa_msg *req;
+	int ret;
 
-	if (unlikely(!ctx || !opdata)) {
+	if (unlikely(!ctxt || !opdata)) {
 		WD_ERR("input parameter err!\n");
 		return -WD_EINVAL;
 	}
@@ -938,23 +952,6 @@ static int param_check(void *ctx, void *opdata, void *tag)
 		WD_ERR("ctx call back is null!\n");
 		return -WD_EINVAL;
 	}
-
-	return 0;
-}
-
-int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
-{
-	struct wcrypto_rsa_cookie *cookie = NULL;
-	struct wcrypto_rsa_msg *resp = NULL;
-	struct wcrypto_rsa_ctx *ctxt = ctx;
-	struct wcrypto_rsa_msg *req;
-	uint32_t rx_cnt = 0;
-	uint32_t tx_cnt = 0;
-	int ret;
-
-	ret = param_check(ctx, opdata, tag);
-	if (unlikely(ret))
-		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
 	if (ret)
@@ -965,15 +962,36 @@ int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 
 	req = &cookie->msg;
 	ret = rsa_request_init(req, opdata, ctxt);
+	if (unlikely(ret)) {
+		wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
+		return ret;
+	}
+
+	*cookie_addr = cookie;
+	*req_addr = req;
+
+	return 0;
+}
+
+int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
+{
+	struct wcrypto_rsa_msg *resp = NULL;
+	struct wcrypto_rsa_ctx *ctxt = ctx;
+	struct wcrypto_rsa_cookie *cookie;
+	struct wcrypto_rsa_msg *req;
+	uint32_t rx_cnt = 0;
+	uint32_t tx_cnt = 0;
+	int ret;
+
+	ret = do_rsa_prepare(ctxt, opdata, &cookie, &req, tag);
 	if (unlikely(ret))
-		goto fail_with_cookie;
+		return ret;
 
 send_again:
 	ret = wd_send(ctxt->q, req);
 	if (ret == -WD_EBUSY) {
-		tx_cnt++;
 		usleep(1);
-		if (tx_cnt < RSA_RESEND_CNT)
+		if (tx_cnt++ < RSA_RESEND_CNT)
 			goto send_again;
 		else {
 			WD_ERR("do rsa send cnt %u, exit!\n", tx_cnt);
@@ -991,8 +1009,7 @@ send_again:
 recv_again:
 	ret = wd_recv(ctxt->q, (void **)&resp);
 	if (!ret) {
-		rx_cnt++;
-		if (unlikely(rx_cnt >= RSA_RECV_MAX_CNT)) {
+		if (unlikely(rx_cnt++ >= RSA_RECV_MAX_CNT)) {
 			WD_ERR("failed to recv: timeout!\n");
 			return -WD_ETIMEDOUT;
 		} else if (balance > RSA_BALANCE_THRHD) {
