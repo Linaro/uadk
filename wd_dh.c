@@ -40,25 +40,31 @@ static struct wd_dh_setting {
 	void *sched_ctx;
 	const struct wd_dh_driver *driver;
 	void *priv;
+	void *dlhandle;
 	struct wd_async_msg_pool pool;
 } wd_dh_setting;
 
 struct wd_env_config wd_dh_env_config;
 
 #ifdef WD_STATIC_DRV
-extern const struct wd_dh_driver wd_dh_hisi_hpre;
 static void wd_dh_set_static_drv(void)
 {
-	wd_dh_setting.driver = &wd_dh_hisi_hpre;
+	wd_dh_setting.driver = wd_dh_get_driver();
+	if (!wd_dh_setting.driver)
+		WD_ERR("fail to get driver\n");
 }
 #else
 static void __attribute__((constructor)) wd_dh_open_driver(void)
 {
-	void *driver;
-
-	driver = dlopen("libhisi_hpre.so", RTLD_NOW);
-	if (!driver)
+	wd_dh_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
+	if (!wd_dh_setting.dlhandle)
 		WD_ERR("Fail to open libhisi_hpre.so\n");
+}
+
+static void __attribute__((destructor)) wd_dh_close_driver(void)
+{
+	if (wd_dh_setting.dlhandle)
+		dlclose(wd_dh_setting.dlhandle);
 }
 #endif
 

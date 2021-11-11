@@ -5,6 +5,7 @@
 #define __WD_ECC_DRV_H
 
 #include "../wd_ecc.h"
+#include "../wd_alg_common.h"
 
 /* ECC */
 #define ECDH_IN_PARAM_NUM		2
@@ -28,7 +29,6 @@
 
 #define X_DH_OUT_PARAMS_SZ(hsz)		((hsz) * X_DH_OUT_PARAM_NUM)
 #define X_DH_HW_KEY_SZ(hsz)		((hsz) * X_DH_HW_KEY_PARAM_NUM)
-#define BITS_TO_BYTES(bits)		(((bits) + 7) >> 3)
 #define ECC_SIGN_IN_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_IN_PARAM_NUM)
 #define ECC_SIGN_OUT_PARAMS_SZ(hsz)	((hsz) * ECC_SIGN_OUT_PARAM_NUM)
 #define ECC_VERF_IN_PARAMS_SZ(hsz)	((hsz) * ECC_VERF_IN_PARAM_NUM)
@@ -182,10 +182,14 @@ struct wd_ecc_driver {
 };
 
 void wd_ecc_set_driver(struct wd_ecc_driver *drv);
+struct wd_ecc_driver *wd_ecc_get_driver(void);
 
 #ifdef WD_STATIC_DRV
 #define WD_ECC_SET_DRIVER(drv)						\
-extern const struct wd_ecc_driver wd_##drv __attribute__((alias(#drv)))
+struct wd_ecc_driver *wd_ecc_get_driver(void)				\
+{									\
+	return &drv;							\
+}
 #else
 #define WD_ECC_SET_DRIVER(drv)						\
 static void __attribute__((constructor)) set_driver_ecc(void)		\

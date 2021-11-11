@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
-
 #ifndef __WD_RSA_DRV_H
 #define __WD_RSA_DRV_H
 
@@ -55,10 +54,14 @@ struct wd_rsa_driver {
 };
 
 void wd_rsa_set_driver(struct wd_rsa_driver *drv);
+struct wd_rsa_driver *wd_rsa_get_driver(void);
 
 #ifdef WD_STATIC_DRV
 #define WD_RSA_SET_DRIVER(drv)						      \
-extern const struct wd_rsa_driver wd_##drv __attribute__((alias(#drv)))
+struct wd_rsa_driver *wd_rsa_get_driver(void)				      \
+{									      \
+	return &drv;							      \
+}
 #else
 #define WD_RSA_SET_DRIVER(drv)						      \
 static void __attribute__((constructor)) set_driver_rsa(void)		      \
