@@ -35,9 +35,12 @@ struct wd_ctx_h {
 	void *priv;
 };
 
-static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
+static int get_raw_attr(const char *dev_root, const char *attr, char *buf,
+			size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
+	char attr_path[PATH_MAX];
+	char *ptrRet = NULL;
 	ssize_t size;
 	int fd;
 
@@ -48,15 +51,20 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	if (size < 0)
 		return -WD_EINVAL;
 
-	fd = open(attr_file, O_RDONLY, 0);
+	ptrRet = realpath(attr_file, attr_path);
+	if (ptrRet == NULL)
+		return -WD_ENODEV;
+
+	fd = open(attr_path, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("open %s fail (%d)!\n", attr_file, -errno);
+		WD_ERR("open %s fail (%d)!\n", attr_path, -errno);
 		return -WD_ENODEV;
 	}
 
+	memset(buf, 0, sz);
 	size = read(fd, buf, sz);
 	if (size <= 0) {
-		WD_ERR("read nothing at %s!\n", attr_file);
+		WD_ERR("read nothing at %s!\n", attr_path);
 		size = -WD_EIO;
 	}
 
@@ -65,7 +73,7 @@ static int get_raw_attr(char *dev_root, char *attr, char *buf, size_t sz)
 	return size;
 }
 
-static int get_int_attr(struct uacce_dev *dev, char *attr, int *val)
+static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 {
 	char buf[MAX_ATTR_STR_SIZE] = {0};
 	int ret;
@@ -84,7 +92,7 @@ static int get_int_attr(struct uacce_dev *dev, char *attr, int *val)
 	return 0;
 }
 
-static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
+static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
 	int ret;
@@ -109,7 +117,7 @@ static int get_str_attr(struct uacce_dev *dev, char *attr, char *buf,
 	return ret;
 }
 
-static int access_attr(char *dev_root, char *attr, int mode)
+static int access_attr(const char *dev_root, const char *attr, int mode)
 {
 	char attr_file[PATH_STR_SIZE];
 	ssize_t size;
@@ -150,7 +158,7 @@ static int get_dev_info(struct uacce_dev *dev)
 	return 0;
 }
 
-static struct uacce_dev *read_uacce_sysfs(char *dev_name)
+static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 {
 	struct uacce_dev *dev = NULL;
 	struct dirent *dev_dir = NULL;
@@ -236,22 +244,24 @@ char *wd_get_accel_name(char *dev_path, int no_apdx)
 		/* find '-' index in the name string */
 		appendix = 1;
 		dash = rindex(name, '-');
-		if (dash) {
-			dash_len = strlen(dash);
-			for (i = 1; i < dash_len; i++) {
-				if (!isdigit(dash[i])) {
-					appendix = 0;
-					break;
-				}
-			}
-			/* treat dash as a part of name if there's no digit */
-			if (i == 1)
+		if (!dash)
+			goto out;
+
+		dash_len = strlen(dash);
+		for (i = 1; i < dash_len; i++) {
+			if (!isdigit(dash[i])) {
 				appendix = 0;
+				break;
+			}
 		}
+		/* treat dash as a part of name if there's no digit */
+		if (i == 1)
+			appendix = 0;
 	} else {
 		appendix = 0;
 	}
 
+out:
 	/* remove '-' and digits */
 	len = (dash && appendix) ? strlen(name) - strlen(dash) : strlen(name);
 
@@ -285,16 +295,20 @@ static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 handle_t wd_request_ctx(struct uacce_dev *dev)
 {
 	struct wd_ctx_h	*ctx;
-	char *char_dev_path;
+	char char_dev_path[PATH_MAX];
+	char *ptrRet = NULL;
 
 	if (!dev || !strlen(dev->dev_root))
+		return 0;
+
+	ptrRet = realpath(dev->char_dev_path, char_dev_path);
+	if (ptrRet == NULL)
 		return 0;
 
 	ctx = calloc(1, sizeof(struct wd_ctx_h));
 	if (!ctx)
 		return 0;
 
-	char_dev_path = dev->char_dev_path;
 	ctx->dev_name = wd_get_accel_name(char_dev_path, 0);
 	if (!ctx->dev_name)
 		goto free_ctx;
@@ -314,7 +328,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 
 	ctx->fd = open(char_dev_path, O_RDWR | O_CLOEXEC);
 	if (ctx->fd < 0) {
-		WD_ERR("Failed to open %s (%d).\n", char_dev_path, -errno);
+		WD_ERR("failed to open %s (%d).\n", char_dev_path, -errno);
 		goto free_dev;
 	}
 
@@ -472,7 +486,7 @@ int wd_is_sva(handle_t h_ctx)
 	if (!ctx)
 		return -WD_EINVAL;
 
-	if (ctx->dev->flags & UACCE_DEV_SVA)
+	if ((unsigned int)ctx->dev->flags & UACCE_DEV_SVA)
 		return 1;
 
 	return 0;
@@ -499,18 +513,28 @@ int wd_get_avail_ctx(struct uacce_dev *dev)
 	return avail_ctx;
 }
 
-static int get_dev_alg_name(char *dev_path, char *buf, size_t sz)
+static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 {
+	char dev_path[MAX_DEV_NAME_LEN] = {0};
 	int ret;
 
-	ret = get_raw_attr(dev_path, "algorithms", buf, sz);
+	ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
+		       SYS_CLASS_DIR, d_name);
+	if (ret < 0)
+		return ret;
+	else if (ret > MAX_DEV_NAME_LEN)
+		return -WD_EINVAL;
+
+	ret = get_raw_attr(dev_path, "algorithms", dev_alg_name, sz);
 	if (ret < 0) {
-		buf[0] = '\0';
+		dev_alg_name[0] = '\0';
+		WD_ERR("failed to get alg for %s, ret = %d\n",
+		       dev_path, ret);
 		return ret;
 	}
 
 	if (ret == sz)
-		buf[sz - 1] = '\0';
+		dev_alg_name[sz - 1] = '\0';
 
 	return 0;
 }
@@ -541,16 +565,33 @@ static void add_uacce_dev_to_list(struct uacce_dev_list *head,
 	tmp->next = node;
 }
 
-struct uacce_dev_list *wd_get_accel_list(char *alg_name)
+static int check_alg_name(const char *alg_name)
+{
+	int i = 0;
+
+	if (!alg_name)
+		return -WD_EINVAL;
+
+	while (alg_name[i] != '\0') {
+		i++;
+		if (i >= MAX_ATTR_STR_SIZE) {
+			WD_ERR("get list failed, alg name is too long!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+struct uacce_dev_list *wd_get_accel_list(const char *alg_name)
 {
 	struct uacce_dev_list *node, *head = NULL;
 	char dev_alg_name[MAX_ATTR_STR_SIZE];
-	char dev_path[MAX_DEV_NAME_LEN];
 	struct dirent *dev_dir;
 	DIR *wd_class;
 	int ret;
 
-	if (!alg_name)
+	if (check_alg_name(alg_name))
 		return NULL;
 
 	wd_class = opendir(SYS_CLASS_DIR);
@@ -560,24 +601,14 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 	}
 
 	while ((dev_dir = readdir(wd_class)) != NULL) {
-		if (!strncmp(dev_dir->d_name, ".", 1) ||
-		    !strncmp(dev_dir->d_name, "..", 2))
+		if (!strncmp(dev_dir->d_name, ".", LINUX_CRTDIR_SIZE) ||
+		    !strncmp(dev_dir->d_name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 
-		memset(dev_path, 0, sizeof(dev_path));
-		ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
-			       SYS_CLASS_DIR, dev_dir->d_name);
-		if (ret > MAX_DEV_NAME_LEN || ret < 0)
-			goto free_list;
-
-		memset(dev_alg_name, 0, sizeof(dev_alg_name));
-		ret = get_dev_alg_name(dev_path, dev_alg_name,
+		ret = get_dev_alg_name(dev_dir->d_name, dev_alg_name,
 				       sizeof(dev_alg_name));
-		if (ret < 0) {
-			WD_ERR("Failed to get alg for %s, ret = %d\n",
-			       dev_path, ret);
+		if (ret < 0)
 			goto free_list;
-		}
 
 		if (!dev_has_alg(dev_alg_name, alg_name))
 			continue;
@@ -589,6 +620,7 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 		node->dev = read_uacce_sysfs(dev_dir->d_name);
 		if (!node->dev) {
 			free(node);
+			node = NULL;
 			continue;
 		}
 
@@ -596,7 +628,6 @@ struct uacce_dev_list *wd_get_accel_list(char *alg_name)
 			head = node;
 		else
 			add_uacce_dev_to_list(head, node);
-
 	}
 
 	closedir(wd_class);
@@ -626,13 +657,15 @@ void wd_free_list_accels(struct uacce_dev_list *list)
 	}
 }
 
-struct uacce_dev *wd_get_accel_dev(char *alg_name)
+struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 {
 	struct uacce_dev_list *list, *head;
 	struct uacce_dev *dev = NULL, *target = NULL;
 	int cpu = sched_getcpu();
 	int node = numa_node_of_cpu(cpu);
-	int dis = 1024, tmp;
+	int ctx_num, tmp;
+	int dis = 1024;
+	int max = 0;
 
 	head = wd_get_accel_list(alg_name);
 	if (!head)
@@ -641,10 +674,13 @@ struct uacce_dev *wd_get_accel_dev(char *alg_name)
 	list = head;
 	while (list) {
 		tmp = numa_distance(node, list->dev->numa_id);
-		if (dis > tmp && tmp >= 0) {
+		ctx_num = wd_get_avail_ctx(list->dev);
+		if ((dis > tmp && ctx_num) || (dis == tmp && ctx_num > max)) {
 			dev = list->dev;
 			dis = tmp;
+			max = ctx_num;
 		}
+
 		list = list->next;
 	}
 
