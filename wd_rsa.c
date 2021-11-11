@@ -80,25 +80,31 @@ static struct wd_rsa_setting {
 	void *sched_ctx;
 	const struct wd_rsa_driver *driver;
 	void *priv;
+	void *dlhandle;
 	struct wd_async_msg_pool pool;
 } wd_rsa_setting;
 
 struct wd_env_config wd_rsa_env_config;
 
 #ifdef WD_STATIC_DRV
-extern const struct wd_rsa_driver wd_rsa_hisi_hpre;
 static void wd_rsa_set_static_drv(void)
 {
-	wd_rsa_setting.driver = &wd_rsa_hisi_hpre;
+	wd_rsa_setting.driver = wd_rsa_get_driver();
+	if (!wd_rsa_setting.driver)
+		WD_ERR("fail to get driver\n");
 }
 #else
 static void __attribute__((constructor)) wd_rsa_open_driver(void)
 {
-	void *driver;
-
-	driver = dlopen("libhisi_hpre.so", RTLD_NOW);
-	if (!driver)
+	wd_rsa_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
+	if (!wd_rsa_setting.dlhandle)
 		WD_ERR("Fail to open libhisi_hpre.so\n");
+}
+
+static void __attribute__((destructor)) wd_rsa_close_driver(void)
+{
+	if (wd_rsa_setting.dlhandle)
+		dlclose(wd_rsa_setting.dlhandle);
 }
 #endif
 
@@ -827,7 +833,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 
 	sess->key.numa_id = setup->numa;
 
-	return (handle_t)(uintptr_t)sess;
+	return (handle_t)sess;
 }
 
 void wd_rsa_free_sess(handle_t sess)

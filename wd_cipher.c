@@ -4,7 +4,6 @@
  * Copyright 2020-2021 Linaro ltd.
  */
 
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <pthread.h>
 #include <sched.h>
@@ -37,6 +36,7 @@ struct wd_cipher_setting {
 	void *sched_ctx;
 	struct wd_cipher_driver *driver;
 	void *priv;
+	void *dlhandle;
 	struct wd_async_msg_pool pool;
 } wd_cipher_setting;
 
@@ -55,24 +55,24 @@ struct wd_cipher_sess {
 struct wd_env_config wd_cipher_env_config;
 
 #ifdef WD_STATIC_DRV
-extern struct wd_cipher_driver wd_cipher_hisi_cipher_driver;
 static void wd_cipher_set_static_drv(void)
 {
-	/*
-	 * a parameter can be introduced to decide to choose
-	 * specific driver. Same as dynamic case.
-	 */
-	wd_cipher_setting.driver = &wd_cipher_hisi_cipher_driver;
+	wd_cipher_setting.driver = wd_cipher_get_driver();
+	if (!wd_cipher_setting.driver)
+		WD_ERR("fail to get driver\n");
 }
 #else
 static void __attribute__((constructor)) wd_cipher_open_driver(void)
 {
-	void *driver;
-
-	/* vendor driver should be put in /usr/lib/wd/ */
-	driver = dlopen("libhisi_sec.so", RTLD_NOW);
-	if (!driver)
+	wd_cipher_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
+	if (!wd_cipher_setting.dlhandle)
 		WD_ERR("fail to open libhisi_sec.so\n");
+}
+
+static void __attribute__((destructor)) wd_cipher_close_driver(void)
+{
+	if (wd_cipher_setting.dlhandle)
+		dlclose(wd_cipher_setting.dlhandle);
 }
 #endif
 
@@ -138,6 +138,22 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 	return ret;
 }
 
+static int cipher_init_check(struct wd_ctx_config *config,
+			     struct wd_sched *sched)
+{
+	if (!config || !sched) {
+		WD_ERR("wd cipher config or sched is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!wd_is_sva(config->ctxs[0].ctx)) {
+		WD_ERR("err, non sva, please check system!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
@@ -183,6 +199,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		return (handle_t)0;
 	}
 	memset(sess, 0, sizeof(struct wd_cipher_sess));
+
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
 	sess->numa = setup->numa;
@@ -209,15 +226,9 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (!config || !sched) {
-		WD_ERR("wd cipher config or sched is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("err, non sva, please check system!\n");
-		return -WD_EINVAL;
-	}
+	ret = cipher_init_check(config, sched);
+	if (ret)
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_cipher_setting.config, config);
 	if (ret < 0) {
@@ -343,6 +354,7 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 static int wd_cipher_check_params(handle_t h_sess,
 				struct wd_cipher_req *req, __u8 mode)
 {
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	int ret = 0;
 
 	if (unlikely(!h_sess || !req)) {
@@ -375,63 +387,33 @@ static int wd_cipher_check_params(handle_t h_sess,
 		}
 	}
 
-	return 0;
-}
-
-int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
-{
-	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
-	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-	struct wd_ctx_internal *ctx;
-	struct wd_cipher_msg msg;
-	struct sched_key key;
-	__u64 recv_cnt = 0;
-	__u32 idx;
-	int ret;
-
-	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_SYNC);
-	if (unlikely(ret)) {
-		WD_ERR("failed to check cipher params!\n");
-		return ret;
-	}
-
 	ret = cipher_iv_len_check(req, sess);
 	if (unlikely(ret))
 		return ret;
 
-	key.mode = CTX_MODE_SYNC;
-	key.type = 0;
-	key.numa_id = sess->numa;
+	return 0;
+}
 
-	idx = wd_cipher_setting.sched.pick_next_ctx(
-		     wd_cipher_setting.sched.h_sched_ctx, req, &key);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (ret)
-		return ret;
-
-	ctx = config->ctxs + idx;
-
-	memset(&msg, 0, sizeof(struct wd_cipher_msg));
-	fill_request_msg(&msg, req, sess);
-	req->state = 0;
-	msg.is_polled = (req->in_bytes >= POLL_SIZE);
+static int send_recv_sync(struct wd_ctx_internal *ctx,
+			  struct wd_cipher_msg *msg)
+{
+	__u64 recv_cnt = 0;
+	int ret;
 
 	pthread_spin_lock(&ctx->lock);
-
-	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, &msg);
+	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd cipher send err!\n");
 		goto out;
 	}
 
 	do {
-		if (msg.is_polled) {
+		if (msg->is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+				WD_ERR("wd cipher ctx wait timeout(%d)!\n", ret);
 		}
-		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx, &msg);
-		req->state = msg.result;
+		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx, msg);
 		if (ret == -WD_HW_EACCESS) {
 			WD_ERR("wd cipher recv err!\n");
 			goto out;
@@ -446,6 +428,43 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 out:
 	pthread_spin_unlock(&ctx->lock);
+	return ret;
+}
+
+int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
+{
+	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+	struct wd_ctx_internal *ctx;
+	struct wd_cipher_msg msg;
+	struct sched_key key;
+	__u32 idx;
+	int ret;
+
+	ret = wd_cipher_check_params(h_sess, req, CTX_MODE_SYNC);
+	if (unlikely(ret)) {
+		WD_ERR("failed to check cipher params!\n");
+		return ret;
+	}
+
+	memset(&msg, 0, sizeof(struct wd_cipher_msg));
+	fill_request_msg(&msg, req, sess);
+	msg.is_polled = (req->in_bytes >= POLL_SIZE);
+	req->state = 0;
+
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+	idx = wd_cipher_setting.sched.pick_next_ctx(
+		     wd_cipher_setting.sched.h_sched_ctx, req, &key);
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (unlikely(ret))
+		return ret;
+
+	ctx = config->ctxs + idx;
+	ret = send_recv_sync(ctx, &msg);
+	req->state = msg.result;
+
 	return ret;
 }
 
@@ -464,10 +483,6 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		WD_ERR("failed to check cipher params!\n");
 		return ret;
 	}
-
-	ret = cipher_iv_len_check(req, sess);
-	if (unlikely(ret))
-		return ret;
 
 	key.mode = CTX_MODE_ASYNC;
 	key.type = 0;

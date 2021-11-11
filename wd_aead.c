@@ -38,6 +38,7 @@ struct wd_aead_setting {
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
 	void *priv;
+	void *dlhandle;
 } wd_aead_setting;
 
 struct wd_aead_sess {
@@ -58,19 +59,24 @@ struct wd_aead_sess {
 struct wd_env_config wd_aead_env_config;
 
 #ifdef WD_STATIC_DRV
-extern struct wd_aead_driver wd_aead_hisi_aead_driver;
 static void wd_aead_set_static_drv(void)
 {
-	wd_aead_setting.driver = &wd_aead_hisi_aead_driver;
+	wd_aead_setting.driver = wd_aead_get_driver();
+	if (!wd_aead_setting.driver)
+		WD_ERR("fail to get driver\n");
 }
 #else
 static void __attribute__((constructor)) wd_aead_open_driver(void)
 {
-	void *driver;
-
-	driver = dlopen("libhisi_sec.so", RTLD_NOW);
-	if (!driver)
+	wd_aead_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
+	if (!wd_aead_setting.dlhandle)
 		WD_ERR("failed to open libhisi_sec.so\n");
+}
+
+static void __attribute__((destructor)) wd_aead_close_driver(void)
+{
+	if (wd_aead_setting.dlhandle)
+		dlclose(wd_aead_setting.dlhandle);
 }
 #endif
 
@@ -290,6 +296,11 @@ static int aead_param_check(struct wd_aead_sess *sess,
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(sess->cmode == WD_CIPHER_CBC && req->in_bytes == 0)) {
+		WD_ERR("aead input data length is zero!\n");
+		return -WD_EINVAL;
+	}
+
 	if (unlikely(sess->cmode == WD_CIPHER_CBC &&
 	   (req->in_bytes & (AES_BLOCK_SIZE - 1)))) {
 		WD_ERR("failed to check aead input data length!\n");
@@ -333,11 +344,8 @@ static int aead_param_check(struct wd_aead_sess *sess,
 	return 0;
 }
 
-int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int aead_init_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	int ret;
-
 	if (!config || !sched) {
 		WD_ERR("failed to check aead init input param!\n");
 		return -WD_EINVAL;
@@ -347,6 +355,18 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		WD_ERR("failed to system is SVA mode!\n");
 		return -WD_EINVAL;
 	}
+
+	return 0;
+}
+
+int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	void *priv;
+	int ret;
+
+	ret = aead_init_check(config, sched);
+	if (ret)
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_aead_setting.config, config);
 	if (ret) {
@@ -444,59 +464,32 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 	msg->data_fmt = req->data_fmt;
 }
 
-int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
+static int send_recv_sync(struct wd_ctx_internal *ctx,
+			  struct wd_aead_msg *msg)
 {
-	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
-	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
-	struct wd_ctx_internal *ctx;
-	struct wd_aead_msg msg;
-	struct sched_key key;
 	__u64 recv_cnt = 0;
-	__u32 idx;
 	int ret;
 
-	ret = aead_param_check(sess, req);
-	if (unlikely(ret))
-		return -WD_EINVAL;
-
-	key.mode = CTX_MODE_SYNC;
-	key.type = 0;
-	key.numa_id = sess->numa;
-
-	idx = wd_aead_setting.sched.pick_next_ctx(
-		wd_aead_setting.sched.h_sched_ctx, req, &key);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (ret)
-		return ret;
-
-	ctx = config->ctxs + idx;
-	memset(&msg, 0, sizeof(struct wd_aead_msg));
-
-	fill_request_msg(&msg, req, sess);
-	req->state = 0;
-	msg.is_polled = (req->in_bytes >= POLL_SIZE);
-
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_aead_setting.driver->aead_send(ctx->ctx, &msg);
+	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send aead bd!\n");
 		goto out;
 	}
 
 	do {
-		if (msg.is_polled) {
+		if (msg->is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+				WD_ERR("wd aead ctx wait timeout(%d)!\n", ret);
 		}
-		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &msg);
-		req->state = msg.result;
+		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, msg);
 		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("failed to recv bd!\n");
+			WD_ERR("wd aead recv err!\n");
 			goto out;
 		} else if (ret == -WD_EAGAIN) {
 			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("failed to recv bd and timeout!\n");
+				WD_ERR("wd aead recv timeout fail!\n");
 				ret = -WD_ETIMEDOUT;
 				goto out;
 			}
@@ -505,6 +498,41 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 
 out:
 	pthread_spin_unlock(&ctx->lock);
+	return ret;
+}
+
+int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
+{
+	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
+	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
+	struct wd_ctx_internal *ctx;
+	struct wd_aead_msg msg;
+	struct sched_key key;
+	__u32 idx;
+	int ret;
+
+	ret = aead_param_check(sess, req);
+	if (unlikely(ret))
+		return -WD_EINVAL;
+
+	memset(&msg, 0, sizeof(struct wd_aead_msg));
+	fill_request_msg(&msg, req, sess);
+	msg.is_polled = (req->in_bytes >= POLL_SIZE);
+	req->state = 0;
+
+	key.mode = CTX_MODE_SYNC;
+	key.type = 0;
+	key.numa_id = sess->numa;
+	idx = wd_aead_setting.sched.pick_next_ctx(
+		wd_aead_setting.sched.h_sched_ctx, req, &key);
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	if (unlikely(ret))
+		return ret;
+
+	ctx = config->ctxs + idx;
+	ret = send_recv_sync(ctx, &msg);
+	req->state = msg.result;
+
 	return ret;
 }
 
