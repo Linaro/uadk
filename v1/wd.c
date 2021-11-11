@@ -75,8 +75,9 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 							char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
-	int fd;
-	int size;
+	char attr_path[PATH_MAX];
+	char *ptrRet = NULL;
+	int fd, size;
 
 	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s",
 			dev_root, attr);
@@ -85,17 +86,21 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 		return size;
 	}
 
+	ptrRet = realpath(attr_file, attr_path);
+	if (ptrRet == NULL)
+		return -WD_ENODEV;
+
 	/* The attr_file = "/sys/class/uacce/xxx"
 	 * It's the Internal Definition File Node
 	 */
-	fd = open(attr_file, O_RDONLY, 0);
+	fd = open(attr_path, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("open %s fail!\n", attr_file);
-		return fd;
+		WD_ERR("open %s fail, errno = %d!\n", attr_path, errno);
+		return -ENODEV;
 	}
 	size = read(fd, buf, sz);
 	if (size <= 0) {
-		WD_ERR("read nothing at %s!\n", attr_file);
+		WD_ERR("read nothing at %s!\n", attr_path);
 		size = -ENODEV;
 	}
 
@@ -217,38 +222,85 @@ static bool is_weight_more(unsigned int new, unsigned int old)
 		return ins_new * INSTANCE_RATIO_FOR_DEV_SCHED >= ins_old;
 }
 
-static int get_iommu_type(struct dev_info *dinfo, const char *attr)
+static void get_iommu_type(struct dev_info *dinfo)
 {
-	char iommu_path[PATH_STR_SIZE];
-	char buf[PATH_STR_SIZE];
+	if ((unsigned int)dinfo->flags & WD_UACCE_DEV_IOMMU)
+		dinfo->iommu_type = 1;
+	else
+		dinfo->iommu_type = 0;
+}
+
+static int get_int_attr_all(struct dev_info *dinfo)
+{
 	int ret;
 
-	ret = snprintf(iommu_path, PATH_STR_SIZE, "%s/%s/%s",
-		       WD_UACCE_CLASS_DIR, dinfo->name, attr);
-	if (ret <= 0) {
-		WD_ERR("failed to copy %s/%s file path!\n", dinfo->name, attr);
-		return -WD_EINVAL;
-	}
-
-	/* check if SMMU is turned on */
-	ret = access(iommu_path, F_OK);
+	/* ret == 1 means device has been isolated */
+	ret = get_int_attr(dinfo, "isolate");
 	if (ret < 0)
-		return 0;
+		return -ENODEV;
+	else if (ret == 1)
+		return -EBUSY;
 
-	ret = snprintf(iommu_path, PATH_STR_SIZE,
-		       "%s/%s", WD_UACCE_CLASS_DIR, dinfo->name);
-	if (ret < 0) {
-		WD_ERR("failed to copy iommu dev file path!\n");
-		return -WD_EINVAL;
-	}
+	/* ret == 0 means device has no available queues */
+	ret = get_int_attr(dinfo, "available_instances");
+	if (ret < 0)
+		return -ENODEV;
+	else if (ret == 0)
+		return -EBUSY;
 
-	ret = get_raw_attr(iommu_path, attr, buf, PATH_STR_SIZE);
-	if (ret <= 0)
-		return -WD_EINVAL;
+	dinfo->available_instances = ret;
 
-	/* Handing the read string's end tails '\n' to '\0' */
-	buf[ret - 1] = '\0';
-	return !strcmp(buf, "DMA");
+	ret = get_int_attr(dinfo, "numa_distance");
+	if (ret < 0)
+		return ret;
+	dinfo->numa_dis = ret;
+
+	dinfo->node_id = get_int_attr(dinfo, "node_id");
+
+	ret = get_int_attr(dinfo, "flags");
+	if (ret < 0 || (unsigned int)ret & WD_UACCE_DEV_SVA)
+		return ret;
+	dinfo->flags = ret;
+
+	return 0;
+}
+
+static int get_str_attr_all(struct dev_info *dinfo, const char *alg)
+{
+	int ret;
+
+	ret = get_str_attr(dinfo, "algorithms",
+			    dinfo->algs, MAX_ATTR_STR_SIZE);
+	if (ret < 0)
+		return ret;
+
+	/* Add algorithm check to cut later pointless logic */
+	ret = is_alg_support(dinfo, alg);
+	if (ret == 0)
+		return -EPFNOSUPPORT;
+
+	ret = get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int get_ul_vec_attr_all(struct dev_info *dinfo)
+{
+	int ret;
+
+	ret = get_ul_vec_attr(dinfo, "region_mmio_size",
+		&dinfo->qfrs_offset[WD_UACCE_QFRT_MMIO], 1);
+	if (ret < 0)
+		return ret;
+
+	ret = get_ul_vec_attr(dinfo, "region_dus_size",
+		&dinfo->qfrs_offset[WD_UACCE_QFRT_DUS], 1);
+	if (ret < 0)
+		return ret;
+
+	return 0;
 }
 
 static int get_dev_info(struct dev_info *dinfo, const char *alg)
@@ -269,55 +321,19 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 		return -ENODEV;
 	}
 
-	ret = get_int_attr(dinfo, "isolate");
-	if (ret < 0 || ret == 1)
-		return -ENODEV;
-
-	ret = get_str_attr(dinfo, "algorithms",
-			    dinfo->algs, MAX_ATTR_STR_SIZE);
-	if (ret < 0)
+	ret = get_str_attr_all(dinfo, alg);
+	if (ret)
 		return ret;
 
-	/* Add algorithm check to cut later pointless logic */
-	ret = is_alg_support(dinfo, alg);
-	if (ret == 0)
-		return -ENODEV;
-	ret = get_int_attr(dinfo, "available_instances");
-	if (ret <= 0)
-		return -ENODEV;
-	dinfo->available_instances = ret;
-
-	ret = get_int_attr(dinfo, "numa_distance");
-	if (ret < 0)
-		return ret;
-	dinfo->numa_dis = ret;
-
-	dinfo->node_id = get_int_attr(dinfo, "node_id");
-
-	ret = get_int_attr(dinfo, "flags");
-	if (ret < 0 || ret & WD_UACCE_DEV_SVA)
-		return ret;
-	dinfo->flags = ret;
-
-	ret = get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
-	if (ret < 0)
+	ret = get_int_attr_all(dinfo);
+	if (ret)
 		return ret;
 
-	ret = get_ul_vec_attr(dinfo, "region_mmio_size",
-		&dinfo->qfrs_offset[WD_UACCE_QFRT_MMIO], 1);
-	if (ret < 0)
+	ret = get_ul_vec_attr_all(dinfo);
+	if (ret)
 		return ret;
 
-	ret = get_ul_vec_attr(dinfo, "region_dus_size",
-		&dinfo->qfrs_offset[WD_UACCE_QFRT_DUS], 1);
-	if (ret < 0)
-		return ret;
-
-	ret = get_iommu_type(dinfo, "device/iommu_group/type");
-	if (ret < 0)
-		return ret;
-	dinfo->iommu_type = ret;
-
+	get_iommu_type(dinfo);
 	/*
 	 * Use available_instances and numa_distance combine weight.
 	 * |	2 bytes	|	2bytes	|.
@@ -398,10 +414,11 @@ static int find_available_dev(struct dev_info *dinfop,
 	struct dev_info dinfo;
 	char *name;
 	int cnt = 0;
+	int ret;
 
 	wd_class = opendir(WD_UACCE_CLASS_DIR);
 	if (!wd_class) {
-		WD_ERR("WD framework is not enabled on the system!\n");
+		WD_ERR("WD framework is not enabled on the system, errno = %d!\n", errno);
 		return -ENODEV;
 	}
 
@@ -414,12 +431,18 @@ static int find_available_dev(struct dev_info *dinfop,
 			!strncmp(name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 		pre_init_dev(&dinfo, name);
-		if (!get_dev_info(&dinfo, capa->alg)) {
+		ret = get_dev_info(&dinfo, capa->alg);
+		if (!ret) {
 			cnt++;
 			if (copy_if_better(dinfop, &dinfo, capa, node_mask)) {
 				find_node = true;
 				break;
 			}
+		} else if (ret == -EPFNOSUPPORT || ret == -EBUSY) {
+			continue;
+		} else {
+			closedir(wd_class);
+			return ret;
 		}
 	}
 
@@ -481,12 +504,20 @@ dev_path:
 
 static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 {
+	char q_path[PATH_MAX];
+	char *ptrRet = NULL;
 	struct q_info *qinfo;
 
 	qinfo = q->qinfo;
-	qinfo->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
-	if (qinfo->fd == -1)
+	ptrRet = realpath(q->dev_path, q_path);
+	if (ptrRet == NULL)
+		return -WD_ENODEV;
+
+	qinfo->fd = open(q_path, O_RDWR | O_CLOEXEC);
+	if (qinfo->fd == -1) {
+		WD_ERR("open %s failed, errno = %d!\n", q_path, errno);
 		return -ENODEV;
+	}
 
 	qinfo->hw_type = dev->api;
 	qinfo->dev_flags = dev->flags;
@@ -835,7 +866,6 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 
 	munmap(addr, size);
 }
-
 int wd_register_log(wd_log log)
 {
 	if (!log) {
