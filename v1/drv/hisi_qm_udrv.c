@@ -632,6 +632,24 @@ void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
 	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
+static int check_ds_rx_base(struct qm_queue_info *info,
+			    void **resp, __u32 num, __u8 before)
+{
+	if (wd_reg_read(info->ds_rx_base) != 1)
+		return 0;
+
+	if (before) {
+		wd_spinlock(&info->rc_lock);
+		qm_rx_from_cache(info, resp, num);
+		wd_unspinlock(&info->rc_lock);
+		WD_ERR("wd queue hw error happened before qm receive!\n");
+	} else {
+		WD_ERR("wd queue hw error happened after qm receive!\n");
+	}
+
+	return -WD_HW_EACCESS;
+}
+
 int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
@@ -641,13 +659,9 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 	int i, ret;
 	void *sqe;
 
-	if (unlikely(wd_reg_read(info->ds_rx_base) == 1)) {
-		wd_spinlock(&info->rc_lock);
-		qm_rx_from_cache(info, resp, num);
-		wd_unspinlock(&info->rc_lock);
-		WD_ERR("wd queue hw error happened before qm receive!\n");
-		return -WD_HW_EACCESS;
-	}
+	ret = check_ds_rx_base(info, resp, num, 1);
+	if (unlikely(ret))
+		return ret;
 
 	wd_spinlock(&info->rc_lock);
 	for (i = 0; i < num; i++) {
@@ -689,10 +703,9 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		qm_rx_update(info, i);
 
 	wd_unspinlock(&info->rc_lock);
-	if (wd_reg_read(info->ds_rx_base) == 1) {
-		WD_ERR("wd queue hw error happened after qm receive!\n");
-		return -WD_HW_EACCESS;
-	}
+	ret = check_ds_rx_base(info, resp, num, 0);
+	if (unlikely(ret))
+		return ret;
 
 	return i;
 }

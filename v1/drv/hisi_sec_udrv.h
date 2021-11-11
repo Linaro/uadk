@@ -24,13 +24,7 @@
 #include "v1/wd_cipher.h"
 #include "v1/wd_digest.h"
 #include "v1/wd_aead.h"
-
 #include "v1/drv/hisi_qm_udrv.h"
-
-typedef unsigned int __u32;
-typedef unsigned char __u8;
-typedef unsigned short __u16;
-typedef unsigned long long __u64;
 
 /* The max BD cipher length is 16M-512B */
 #define MAX_CIPHER_LENGTH		16776704

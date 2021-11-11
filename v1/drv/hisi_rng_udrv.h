@@ -25,8 +25,6 @@
 
 #define TRNG_Q_DEPTH	256
 
-typedef unsigned char __u8;
-
 struct rng_queue_info {
 	void *mmio_base;
 	void *req_cache[TRNG_Q_DEPTH];
