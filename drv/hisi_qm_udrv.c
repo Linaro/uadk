@@ -37,7 +37,7 @@
 
 #define HISI_MAX_SIZE_IN_SGE (1024 * 1024 * 8)
 
-#define ADDR_ALIGN_64(addr) ((((__u64)(addr) >> 6) + 1) << 6)
+#define ADDR_ALIGN_64(addr) ((((uintptr_t)(addr) >> 6) + 1) << 6)
 
 struct hisi_qm_type {
 	__u16	qm_ver;
@@ -143,7 +143,7 @@ static struct hisi_qm_type qm_type[] = {
 	}
 };
 
-static void hisi_qm_fill_sqe(void *sqe, struct hisi_qm_queue_info *info,
+static void hisi_qm_fill_sqe(const void *sqe, struct hisi_qm_queue_info *info,
 			     __u16 tail, __u16 num)
 {
 	int sqe_size = info->sqe_size;
@@ -201,7 +201,7 @@ static __u32 get_version_id(handle_t h_ctx)
 	unsigned long ver;
 
 	api_name = wd_ctx_get_api(h_ctx);
-	if (strlen(api_name) <= VERSION_ID_SHIFT) {
+	if (!api_name || strlen(api_name) <= VERSION_ID_SHIFT) {
 		WD_ERR("api name error = %s\n", api_name);
 		return 0;
 	}
@@ -354,7 +354,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 		goto out;
 
 	if (config->sqe_size <= 0) {
-		WD_ERR("invalid sqe size (%d)\n", config->sqe_size);
+		WD_ERR("invalid sqe size (%u)\n", config->sqe_size);
 		goto out;
 	}
 
@@ -410,7 +410,7 @@ void hisi_qm_free_qp(handle_t h_qp)
 	free(qp);
 }
 
-int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
+int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_qm_queue_info *q_info;
@@ -462,7 +462,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
 			pthread_spin_unlock(&q_info->lock);
-			WD_ERR("CQE_SQ_HEAD_INDEX(%d) error\n", j);
+			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", j);
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
@@ -535,11 +535,15 @@ static void *hisi_qm_create_sgl(__u32 sge_num)
 	size = sizeof(struct hisi_sgl) +
 			sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
 	sgl = calloc(1, size);
+	if (!sgl) {
+		WD_ERR("failed to create sgl\n");
+		return NULL;
+	}
 
 	return sgl;
 }
 
-static struct hisi_sgl *hisi_qm_align_sgl(void *sgl, __u32 sge_num)
+static struct hisi_sgl *hisi_qm_align_sgl(const void *sgl, __u32 sge_num)
 {
 	struct hisi_sgl *sgl_align;
 
@@ -802,7 +806,7 @@ static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl,
 	}
 }
 
-static void hisi_qm_pbuff_copy_inner(void *buff, struct hisi_sgl *hw_sgl,
+static void hisi_qm_pbuff_copy_inner(const void *buff, struct hisi_sgl *hw_sgl,
 				int begin_sge, __u32 sge_offset, __u32 size)
 {
 	struct hisi_sgl *tmp = hw_sgl;
@@ -839,32 +843,22 @@ static void hisi_qm_pbuff_copy_inner(void *buff, struct hisi_sgl *hw_sgl,
 void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
 			__u8 direct)
 {
-	struct hisi_sgl *tmp;
+	struct hisi_sgl *tmp = hw_sgl;
 	__u32 len = 0;
 	__u32 sge_offset = 0;
 	int begin_sge = 0;
 	int i;
 
-	if (!dst_buff || !hw_sgl || !size)
+	if (!dst_buff || !size || !tmp)
 		return;
 
-	tmp = (struct hisi_sgl *)hw_sgl;
-	/* find the sgl chain position */
-	while (tmp) {
-		/* the sgl chain is find */
-		if (len + tmp->entry_size_in_sgl > offset)
-			break;
-
-		/* the offset is over the sgl */
-		if (!tmp->next_dma)
+	while (len + tmp->entry_size_in_sgl <= offset) {
+		tmp = (struct hisi_sgl *)tmp->next_dma;
+		if (!tmp)
 			return;
 
-		tmp = (struct hisi_sgl *)tmp->next_dma;
 		len += tmp->entry_size_in_sgl;
 	}
-
-	if (!tmp)
-		return;
 
 	/* find the start sge position and start offset */
 	for (i = 0; i < tmp->entry_sum_in_sgl; i++) {
@@ -894,14 +888,19 @@ void hisi_qm_dump_sgl(void *sgl)
 	int i;
 
 	while (tmp) {
-		printf("sgl = %p\n", tmp);
-		printf("sgl->next_dma : 0x%lx\n", tmp->next_dma);
-		printf("sgl->entry_sum_in_chain : %u\n", tmp->entry_sum_in_chain);
-		printf("sgl->entry_sum_in_sgl : %u\n", tmp->entry_sum_in_sgl);
-		printf("sgl->entry_length_in_sgl : %d\n", tmp->entry_length_in_sgl);
+		WD_ERR("sgl = %p\n", tmp);
+		WD_ERR("sgl->next_dma : 0x%lx\n", tmp->next_dma);
+		WD_ERR("sgl->entry_sum_in_chain : %u\n",
+		       tmp->entry_sum_in_chain);
+		WD_ERR("sgl->entry_sum_in_sgl : %u\n",
+		       tmp->entry_sum_in_sgl);
+		WD_ERR("sgl->entry_length_in_sgl : %u\n",
+		       tmp->entry_length_in_sgl);
 		for (i = 0; i < tmp->entry_sum_in_sgl; i++) {
-			printf("sgl->sge_entries[%d].buff : 0x%lx\n", i, tmp->sge_entries[i].buff);
-			printf("sgl->sge_entries[%d].len : %u\n", i, tmp->sge_entries[i].len);
+			WD_ERR("sgl->sge_entries[%d].buff : 0x%lx\n", i,
+			       tmp->sge_entries[i].buff);
+			WD_ERR("sgl->sge_entries[%d].len : %u\n", i,
+			       tmp->sge_entries[i].len);
 		}
 		tmp = (struct hisi_sgl *)tmp->next_dma;
 	}
