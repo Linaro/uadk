@@ -25,6 +25,9 @@
 #include "v1/wd_util.h"
 #include "dummy_drv.h"
 
+#define QM_VERSION_V1 1
+#define QM_VERSION_V2 2
+
 struct dummy_q_priv {
 	int ver;
 	int head;		/* queue head */
@@ -49,58 +52,52 @@ int dummy_set_queue_dio(struct wd_queue *q)
 		ret = -ENOMEM;
 		goto out;
 	}
-	qinfo->priv = priv;
-	priv->head = 0;
-	priv->resp_tail = 0;
-	priv->ver = qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] == WD_UACCE_QFRT_INVALID ?
-			1 : 2;
 
-	printf("dummy_set_queue_dio ver=%d\n", priv->ver);
-	if (priv->ver == 2) {
+	qinfo->priv = priv;
+	priv->ver = qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] ==
+			WD_UACCE_QFRT_INVALID ?
+			QM_VERSION_V1 : QM_VERSION_V2;
+
+	if (priv->ver == QM_VERSION_V2) {
 		priv->db = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_MMIO, 0);
 		if (priv->db == MAP_FAILED) {
 			DUMMY_ERR("mmap db fail (%d)\n", errno);
-			if (errno)
-				ret = errno;
-			else
-				ret = -EIO;
 			goto out_with_priv;
 		}
 	}
 
-	priv->reg = wd_drv_mmap_qfr(q,
-			priv->ver == 1 ? WD_UACCE_QFRT_MMIO : WD_UACCE_QFRT_DUS, 0);
+	priv->reg = wd_drv_mmap_qfr(q, priv->ver == QM_VERSION_V1 ?
+				    WD_UACCE_QFRT_MMIO : WD_UACCE_QFRT_DUS, 0);
 	if (priv->reg == MAP_FAILED) {
 		DUMMY_ERR("mmap bd fail (%d)\n", errno);
-		if (errno)
-			ret = errno;
-		else
-			ret = -EIO;
 		goto out_with_db_map;
 	}
 
 	/* detect hardware for v1 (v2 can be detected only after start) */
-	if (priv->ver == 1 &&
+	if (priv->ver == QM_VERSION_V1 &&
 	    memcmp(priv->reg->hw_tag, DUMMY_HW_TAG, DUMMY_HW_TAG_SZ)) {
 		DUMMY_ERR("hw detection fail\n");
-		ret = -EIO;
 		goto out_with_bd_map;
 	}
 
 	return 0;
 
 out_with_bd_map:
-	if (priv->ver == 1)
+	if (priv->ver == QM_VERSION_V1)
 		wd_drv_unmmap_qfr(q, priv->reg, WD_UACCE_QFRT_MMIO, 0);
 	else
 		wd_drv_unmmap_qfr(q, priv->reg, WD_UACCE_QFRT_DUS, 0);
 out_with_db_map:
-	if (priv->ver == 2)
+	if (priv->ver == QM_VERSION_V2)
 		wd_drv_unmmap_qfr(q, priv->db, WD_UACCE_QFRT_MMIO, 0);
 out_with_priv:
 	free(priv);
 	qinfo->priv = NULL;
 out:
+	if (errno)
+		ret = errno;
+	else
+		ret = -EIO;
 	return ret;
 }
 
@@ -135,7 +132,7 @@ int dummy_add_to_dio_q(struct wd_queue *q, void **req, __u32 num)
 		wd_reg_write(&priv->reg->head, priv->head);
 		printf("add to queue, new head=%d, %d\n", priv->head, priv->reg->head);
 
-		if (priv->ver == 2)
+		if (priv->ver == QM_VERSION_V2)
 			wd_reg_write(priv->db, 1);
 	}
 
@@ -170,7 +167,7 @@ void dummy_flush(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct dummy_q_priv *priv = (struct dummy_q_priv *)qinfo->priv;
 
-	if (priv->ver == 1)
+	if (priv->ver == QM_VERSION_V1)
 		ioctl(qinfo->fd, DUMMY_CMD_FLUSH);
 	else
 		wd_reg_write(priv->db, 1);
