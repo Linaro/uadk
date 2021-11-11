@@ -145,19 +145,11 @@ static void init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 	}
 }
 
-/* Before initiate this context, we should get a queue from WD */
-void *wcrypto_create_cipher_ctx(struct wd_queue *q,
-	struct wcrypto_cipher_ctx_setup *setup)
+static int setup_qinfo(struct wcrypto_cipher_ctx_setup *setup,
+		       struct q_info *qinfo, __u32 *ctx_id)
 {
-	struct q_info *qinfo;
-	struct wcrypto_cipher_ctx *ctx;
-	__u32 ctx_id = 0;
 	int ret;
 
-	if (create_ctx_para_check(q, setup))
-		return NULL;
-
-	qinfo = q->qinfo;
 	/* lock at ctx creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
@@ -173,7 +165,7 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		goto unlock;
 	}
 
-	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0,
 		WD_MAX_CTX_NUM);
 	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
@@ -181,6 +173,29 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
+
+	return 0;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+	return -WD_EINVAL;
+}
+
+/* Before initiate this context, we should get a queue from WD */
+void *wcrypto_create_cipher_ctx(struct wd_queue *q,
+	struct wcrypto_cipher_ctx_setup *setup)
+{
+	struct q_info *qinfo;
+	struct wcrypto_cipher_ctx *ctx;
+	__u32 ctx_id = 0;
+	int ret;
+
+	if (create_ctx_para_check(q, setup))
+		return NULL;
+
+	qinfo = q->qinfo;
+	ret = setup_qinfo(setup, qinfo, &ctx_id);
+	if (ret)
+		return NULL;
 
 	ctx = malloc(sizeof(struct wcrypto_cipher_ctx));
 	if (!ctx) {
@@ -214,8 +229,8 @@ free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
-unlock:
 	wd_unspinlock(&qinfo->qlock);
+
 	return NULL;
 }
 
@@ -349,8 +364,8 @@ static int cipher_requests_init(struct wcrypto_cipher_msg **req,
 	return WD_SUCCESS;
 }
 
-static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
-		struct wcrypto_cipher_op_data **opdata, __u32 num)
+static int cipher_recv_sync(struct wcrypto_cipher_ctx *c_ctx,
+		struct wcrypto_cipher_op_data **c_opdata, __u32 num)
 {
 	struct wcrypto_cipher_msg *resp[WCRYPTO_MAX_BURST_NUM];
 	__u32 recv_count = 0;
@@ -359,10 +374,10 @@ static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
 	int ret;
 
 	for (i = 0; i < num; i++)
-		resp[i] = (void *)(uintptr_t)ctx->ctx_id;
+		resp[i] = (void *)(uintptr_t)c_ctx->ctx_id;
 
 	while (true) {
-		ret = wd_burst_recv(ctx->q, (void **)(resp + recv_count),
+		ret = wd_burst_recv(c_ctx->q, (void **)(resp + recv_count),
 				    num - recv_count);
 		if (ret >= 0) {
 			recv_count += ret;
@@ -381,28 +396,28 @@ static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
 	}
 
 	for (i = 0; i < recv_count; i++) {
-		opdata[i]->out = (void *)resp[i]->out;
-		opdata[i]->out_bytes = resp[i]->out_bytes;
-		opdata[i]->status = resp[i]->result;
+		c_opdata[i]->out = (void *)resp[i]->out;
+		c_opdata[i]->out_bytes = resp[i]->out_bytes;
+		c_opdata[i]->status = resp[i]->result;
 	}
 
 	return recv_count;
 }
 
-static int param_check(struct wcrypto_cipher_ctx *ctx,
-		       struct wcrypto_cipher_op_data **opdata,
+static int param_check(struct wcrypto_cipher_ctx *c_ctx,
+		       struct wcrypto_cipher_op_data **c_opdata,
 		       void **tag, __u32 num)
 {
 	__u32 i;
 
-	if (unlikely(!ctx || !opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
+	if (unlikely(!c_ctx || !c_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
 		WD_ERR("input param err!\n");
 		return -WD_EINVAL;
 	}
 
 	for (i = 0; i < num; i++) {
-		if (unlikely(!opdata[i])) {
-			WD_ERR("opdata[%u] is NULL!\n", i);
+		if (unlikely(!c_opdata[i])) {
+			WD_ERR("cipher opdata[%u] is NULL!\n", i);
 			return -WD_EINVAL;
 		}
 
@@ -412,15 +427,15 @@ static int param_check(struct wcrypto_cipher_ctx *ctx,
 		}
 	}
 
-	if (unlikely(tag && !ctx->setup.cb)) {
-		WD_ERR("ctx call back is NULL!\n");
+	if (unlikely(tag && !c_ctx->setup.cb)) {
+		WD_ERR("cipher ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
 }
 
-int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
+int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **c_opdata,
 			 void **tag, __u32 num)
 {
 	struct wcrypto_cipher_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
@@ -429,7 +444,7 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 	__u32 i;
 	int ret;
 
-	if (param_check(ctxt, opdata, tag, num))
+	if (param_check(ctxt, c_opdata, tag, num))
 		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
@@ -439,13 +454,13 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 	}
 
 	for (i = 0; i < num; i++) {
-		cookies[i]->tag.priv = opdata[i]->priv;
+		cookies[i]->tag.priv = c_opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
 		if (tag)
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
 
-	ret = cipher_requests_init(req, opdata, ctxt, num);
+	ret = cipher_requests_init(req, c_opdata, ctxt, num);
 	if (unlikely(ret))
 		goto fail_with_cookies;
 
@@ -458,7 +473,7 @@ int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
 	if (tag)
 		return ret;
 
-	ret = cipher_recv_sync(ctxt, opdata, num);
+	ret = cipher_recv_sync(ctxt, c_opdata, num);
 
 fail_with_cookies:
 	wd_put_cookies(&ctxt->pool, (void **)cookies, num);
@@ -485,7 +500,7 @@ int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 
 int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 {
-	struct wcrypto_cipher_msg *resp = NULL;
+	struct wcrypto_cipher_msg *cipher_resp = NULL;
 	struct wcrypto_cipher_ctx *ctx;
 	struct wcrypto_cipher_tag *tag;
 	int count = 0;
@@ -497,24 +512,24 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 	}
 
 	do {
-		resp = NULL;
-		ret = wd_recv(q, (void **)&resp);
+		cipher_resp = NULL;
+		ret = wd_recv(q, (void **)&cipher_resp);
 		if (ret == 0)
 			break;
 		else if (ret == -WD_HW_EACCESS) {
-			if (!resp) {
-				WD_ERR("recv err from req_cache!\n");
+			if (!cipher_resp) {
+				WD_ERR("the cipher recv err from req_cache!\n");
 				return ret;
 			}
-			resp->result = WD_HW_EACCESS;
+			cipher_resp->result = WD_HW_EACCESS;
 		} else if (ret < 0) {
 			WD_ERR("recv err at cipher poll!\n");
 			return ret;
 		}
 		count++;
-		tag = (void *)(uintptr_t)resp->usr_data;
+		tag = (void *)(uintptr_t)cipher_resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
-		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
+		ctx->setup.cb(cipher_resp, tag->wcrypto_tag.tag);
 		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 	} while (--num);
 
@@ -524,17 +539,17 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 void wcrypto_del_cipher_ctx(void *ctx)
 {
 	struct q_info *qinfo;
-	struct wcrypto_cipher_ctx *cx;
+	struct wcrypto_cipher_ctx *c_ctx;
 
 	if (!ctx) {
 		WD_ERR("Delete cipher ctx is NULL!\n");
 		return;
 	}
-	cx = ctx;
-	qinfo = cx->q->qinfo;
-	wd_uninit_cookie_pool(&cx->pool);
+	c_ctx = ctx;
+	qinfo = c_ctx->q->qinfo;
+	wd_uninit_cookie_pool(&c_ctx->pool);
 	wd_spinlock(&qinfo->qlock);
-	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, c_ctx->ctx_id - 1,
 		WD_MAX_CTX_NUM);
 	qinfo->ctx_num--;
 	if (!qinfo->ctx_num)
@@ -545,6 +560,6 @@ void wcrypto_del_cipher_ctx(void *ctx)
 		return;
 	}
 	wd_unspinlock(&qinfo->qlock);
-	del_ctx_key(cx);
+	del_ctx_key(c_ctx);
 	free(ctx);
 }

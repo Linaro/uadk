@@ -45,6 +45,42 @@ struct wcrypto_rng_ctx {
 	struct wcrypto_rng_ctx_setup setup;
 };
 
+static int wcrypto_setup_qinfo(struct wcrypto_rng_ctx_setup *setup,
+			       struct wd_queue *q, __u32 *ctx_id)
+{
+	struct q_info *qinfo;
+	int ret = -WD_EINVAL;
+
+	if (!q || !setup) {
+		WD_ERR("input parameter err!\n");
+		return ret;
+	}
+
+	if (strcmp(q->capa.alg, "trng")) {
+		WD_ERR("algorithm mismatch!\n");
+		return ret;
+	}
+        qinfo = q->qinfo;
+	/* lock at ctx creating */
+	wd_spinlock(&qinfo->qlock);
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
+		WD_ERR("create too many trng ctx!\n");
+		goto unlock;
+	}
+
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		goto unlock;
+	}
+	qinfo->ctx_num++;
+	ret = WD_SUCCESS;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+	return ret;
+}
+
 void *wcrypto_create_rng_ctx(struct wd_queue *q,
 			struct wcrypto_rng_ctx_setup *setup)
 {
@@ -54,32 +90,8 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	__u32 ctx_id = 0;
 	int i, ret;
 
-	if (!q || !setup) {
-		WD_ERR("input parameter err!\n");
+	if (wcrypto_setup_qinfo(setup, q, &ctx_id))
 		return NULL;
-	}
-
-	qinfo = q->qinfo;
-	if (strcmp(q->capa.alg, "trng")) {
-		WD_ERR("algorithm mismatch!\n");
-		return NULL;
-	}
-
-	/* lock at ctx creating */
-	wd_spinlock(&qinfo->qlock);
-	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
-		WD_ERR("create too many trng ctx!\n");
-		goto unlock;
-	}
-
-	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &ctx_id, 0,
-		WD_MAX_CTX_NUM);
-	if (ret) {
-		WD_ERR("err: alloc ctx id fail!\n");
-		goto unlock;
-	}
-	qinfo->ctx_num++;
-	wd_unspinlock(&qinfo->qlock);
 
 	ctx = calloc(1, sizeof(struct wcrypto_rng_ctx));
 	if (!ctx) {
@@ -109,11 +121,12 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	return ctx;
 
 free_ctx_id:
+        qinfo = q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
-unlock:
 	wd_unspinlock(&qinfo->qlock);
+
 	return NULL;
 }
 
@@ -179,17 +192,17 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 	return count;
 }
 
-int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
+static int wcrypto_do_prepare(struct wcrypto_rng_cookie **cookie_addr,
+			      struct wcrypto_rng_op_data *opdata,
+			      struct wcrypto_rng_msg **req_addr,
+			      struct wcrypto_rng_ctx *ctxt,
+			      void *tag)
 {
-	struct wcrypto_rng_cookie *cookie = NULL;
-	struct wcrypto_rng_ctx *ctxt = ctx;
-	struct wcrypto_rng_msg *resp;
+	struct wcrypto_rng_cookie *cookie;
 	struct wcrypto_rng_msg *req;
-	uint32_t tx_cnt = 0;
-	uint32_t rx_cnt = 0;
-	int ret = 0;
+	int ret;
 
-	if (!ctx || !opdata) {
+	if (!ctxt || !opdata) {
 		WD_ERR("input parameter err!\n");
 		return -WD_EINVAL;
 	}
@@ -201,7 +214,8 @@ int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
 	if (tag) {
 		if (!ctxt->setup.cb) {
 			WD_ERR("ctx call back is null!\n");
-			goto fail_with_cookie;
+			wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
+			return -WD_EINVAL;
 		}
 		cookie->tag.tag = tag;
 	}
@@ -209,6 +223,26 @@ int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
 	req = &cookie->msg;
 	req->in_bytes = opdata->in_bytes;
 	req->out = opdata->out;
+	*cookie_addr = cookie;
+	*req_addr = req;
+
+	return 0;
+}
+
+int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
+{
+	struct wcrypto_rng_ctx *ctxt = ctx;
+	struct wcrypto_rng_cookie *cookie;
+	struct wcrypto_rng_msg *req;
+	struct wcrypto_rng_msg *resp;
+	uint32_t tx_cnt = 0;
+	uint32_t rx_cnt = 0;
+	int ret = 0;
+
+	ret = wcrypto_do_prepare(&cookie, opdata, &req, ctxt, tag);
+	if (ret)
+		return ret;
+
 send_again:
 	ret = wd_send(ctxt->q, req);
 	if (ret) {
@@ -229,6 +263,7 @@ recv_again:
 	if (!ret) {
 		if (++rx_cnt > RNG_RECV_CNT) {
 			WD_ERR("do trng recv cnt %u, exit!\n", rx_cnt);
+			ret = -WD_ETIMEDOUT;
 			goto fail_with_cookie;
 		}
 		usleep(1);
@@ -241,7 +276,8 @@ recv_again:
 	}
 
 	opdata->out_bytes = resp->out_bytes;
+	ret = WD_SUCCESS;
 fail_with_cookie:
 	wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
-	return   ret;
+	return ret;
 }

@@ -99,20 +99,11 @@ static int wcrypto_init_dh_cookie(struct wcrypto_dh_ctx *ctx)
 	return 0;
 }
 
-/* Before initiate this context, we should get a queue from WD */
-void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *setup)
+static int setup_qinfo(struct wcrypto_dh_ctx_setup *setup,
+		       struct q_info *qinfo, __u32 *ctx_id)
 {
-	struct wcrypto_dh_ctx *ctx;
-	struct q_info *qinfo;
-	__u32 ctx_id = 0;
 	int ret;
 
-	ret = create_ctx_param_check(q, setup);
-	if (ret)
-		return NULL;
-
-	qinfo = q->qinfo;
-	/* lock at ctx creating */
 	wd_spinlock(&qinfo->qlock);
 
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
@@ -129,13 +120,37 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 	}
 
 	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM,
-			&ctx_id, 0, WD_MAX_CTX_NUM);
+			ctx_id, 0, WD_MAX_CTX_NUM);
 	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
 		goto unlock;
 	}
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
+
+	return 0;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+
+	return -WD_EINVAL;
+}
+
+/* Before initiate this context, we should get a queue from WD */
+void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *setup)
+{
+	struct wcrypto_dh_ctx *ctx;
+	struct q_info *qinfo;
+	__u32 ctx_id = 0;
+	int ret;
+
+	ret = create_ctx_param_check(q, setup);
+	if (ret)
+		return NULL;
+
+	qinfo = q->qinfo;
+	ret = setup_qinfo(setup, qinfo, &ctx_id);
+	if (ret)
+		return NULL;
 
 	ctx = malloc(sizeof(struct wcrypto_dh_ctx));
 	if (!ctx) {
@@ -169,7 +184,6 @@ free_ctx_id:
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-unlock:
 	wd_unspinlock(&qinfo->qlock);
 
 	return NULL;
@@ -254,11 +268,17 @@ static int dh_request_init(struct wcrypto_dh_msg *req, struct wcrypto_dh_op_data
 	return WD_SUCCESS;
 }
 
-static int do_dh_param_check(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
+static int do_dh_prepare(struct wcrypto_dh_op_data *opdata,
+			 struct wcrypto_dh_cookie **cookie_addr,
+			 struct wcrypto_dh_ctx *ctxt,
+			 struct wcrypto_dh_msg **req_addr,
+			 void *tag)
 {
-	struct wcrypto_dh_ctx *ctxt = ctx;
+	struct wcrypto_dh_cookie *cookie;
+	struct wcrypto_dh_msg *req;
+	int ret;
 
-	if (unlikely(!ctx || !opdata)) {
+	if (unlikely(!ctxt || !opdata)) {
 		WD_ERR("input parameter err!\n");
 		return -WD_EINVAL;
 	}
@@ -267,23 +287,6 @@ static int do_dh_param_check(void *ctx, struct wcrypto_dh_op_data *opdata, void 
 		WD_ERR("ctx call back is null!\n");
 		return -WD_EINVAL;
 	}
-
-	return 0;
-}
-
-int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
-{
-	struct wcrypto_dh_cookie *cookie = NULL;
-	struct wcrypto_dh_msg *resp = NULL;
-	struct wcrypto_dh_ctx *ctxt = ctx;
-	struct wcrypto_dh_msg *req;
-	uint32_t rx_cnt = 0;
-	uint32_t tx_cnt = 0;
-	int ret;
-
-	ret = do_dh_param_check(ctx, opdata, tag);
-	if (unlikely(ret))
-		return ret;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
 	if (ret)
@@ -294,15 +297,36 @@ int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 
 	req = &cookie->msg;
 	ret = dh_request_init(req, opdata, ctxt);
+	if (unlikely(ret)) {
+		wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
+		return ret;
+	}
+
+	*cookie_addr = cookie;
+	*req_addr = req;
+
+	return 0;
+}
+
+int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
+{
+	struct wcrypto_dh_msg *resp = NULL;
+	struct wcrypto_dh_ctx *ctxt = ctx;
+	struct wcrypto_dh_cookie *cookie;
+	struct wcrypto_dh_msg *req;
+	uint32_t rx_cnt = 0;
+	uint32_t tx_cnt = 0;
+	int ret;
+
+	ret = do_dh_prepare(opdata, &cookie, ctxt, &req, tag);
 	if (unlikely(ret))
-		goto fail_with_cookie;
+		return ret;
 
 send_again:
 	ret = wd_send(ctxt->q, req);
 	if (ret == -WD_EBUSY) {
-		tx_cnt++;
 		usleep(1);
-		if (tx_cnt < DH_RESEND_CNT)
+		if (tx_cnt++ < DH_RESEND_CNT)
 			goto send_again;
 		else {
 			WD_ERR("do dh send cnt %u, exit!\n", tx_cnt);
@@ -320,8 +344,7 @@ send_again:
 recv_again:
 	ret = wd_recv(ctxt->q, (void **)&resp);
 	if (!ret) {
-		rx_cnt++;
-		if (unlikely(rx_cnt >= DH_RECV_MAX_CNT)) {
+		if (unlikely(rx_cnt++ >= DH_RECV_MAX_CNT)) {
 			WD_ERR("failed to receive: timeout!\n");
 			return -WD_ETIMEDOUT;
 		} else if (balance > DH_BALANCE_THRHD) {

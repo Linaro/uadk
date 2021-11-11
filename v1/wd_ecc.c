@@ -545,8 +545,7 @@ static struct wcrypto_ecc_in *create_ecc_sign_in(struct wcrypto_ecc_ctx *ctx,
 {
 	if (is_dgst)
 		return create_ecc_in(ctx, ECC_SIGN_IN_PARAM_NUM);
-	else
-		return create_sm2_sign_in(ctx, m_len);
+	return create_sm2_sign_in(ctx, m_len);
 }
 
 static struct wcrypto_ecc_out *create_ecc_out(struct wcrypto_ecc_ctx *ctx,
@@ -1085,6 +1084,39 @@ static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 	}
 }
 
+static int setup_qinfo(struct wcrypto_ecc_ctx_setup *setup,
+		       struct q_info *qinfo, __u32 *ctx_id)
+{
+	int ret;
+
+	wd_spinlock(&qinfo->qlock);
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
+	if (qinfo->br.usr != setup->br.usr) {
+		WD_ERR("Err mm br in creating ecc ctx!\n");
+		goto unlock;
+	}
+
+	if (unlikely(qinfo->ctx_num >= WD_MAX_CTX_NUM)) {
+		WD_ERR("err:create too many ecc ctx!\n");
+		goto unlock;
+	}
+
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (unlikely(ret)) {
+		WD_ERR("failed to alloc ctx id!\n");
+		goto unlock;
+	}
+	qinfo->ctx_num++;
+	wd_unspinlock(&qinfo->qlock);
+
+	return 0;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+	return -WD_EINVAL;
+}
+
 /* Before initiate this context, we should get a queue from WD */
 void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 			     struct wcrypto_ecc_ctx_setup *setup)
@@ -1099,28 +1131,11 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 
 	qinfo = q->qinfo;
 	qinfo->hash = setup->hash;
-	/* lock at ctx  creating/deleting */
-	wd_spinlock(&qinfo->qlock);
-	if (!qinfo->br.alloc && !qinfo->br.iova_map)
-		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
-	if (qinfo->br.usr != setup->br.usr) {
-		WD_ERR("Err mm br in creating ecc ctx!\n");
-		goto unlock;
-	}
 
-	if (unlikely(qinfo->ctx_num >= WD_MAX_CTX_NUM)) {
-		WD_ERR("err:create too many ecc ctx!\n");
-		goto unlock;
-	}
+	ret = setup_qinfo(setup, qinfo, &cid);
+	if (ret)
+		return NULL;
 
-	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &cid, 0,
-		WD_MAX_CTX_NUM);
-	if (unlikely(ret)) {
-		WD_ERR("failed to alloc ctx id!\n");
-		goto unlock;
-	}
-	qinfo->ctx_num++;
-	wd_unspinlock(&qinfo->qlock);
 	ctx = malloc(sizeof(struct wcrypto_ecc_ctx));
 	if (unlikely(!ctx)) {
 		WD_ERR("failed to malloc!\n");
@@ -1132,12 +1147,6 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	ctx->key_size = BITS_TO_BYTES(setup->key_bits);
 	ctx->q = q;
 	ctx->ctx_id = cid + 1;
-	ret = create_ctx_key(setup, ctx);
-	if (unlikely(ret)) {
-		WD_ERR("failed to create ecc ctx keys!\n");
-		goto free_ctx;
-	}
-
 	ret = wd_init_cookie_pool(&ctx->pool,
 		sizeof(struct wcrypto_ecc_cookie), WD_HPRE_CTX_MSG_NUM);
 	if (ret) {
@@ -1146,16 +1155,24 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	}
 	init_ctx_cookies(ctx, setup);
 
+	ret = create_ctx_key(setup, ctx);
+	if (unlikely(ret)) {
+		WD_ERR("failed to create ecc ctx keys!\n");
+		goto uninit_cookie;
+	}
+
 	return ctx;
 
+uninit_cookie:
+	wd_uninit_cookie_pool(&ctx->pool);
 free_ctx:
 	free(ctx);
 free_ctx_id:
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cid, WD_MAX_CTX_NUM);
-unlock:
 	wd_unspinlock(&qinfo->qlock);
+
 	return NULL;
 }
 
@@ -1576,6 +1593,7 @@ static int do_ecc(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag,
 	if (tag) {
 		if (unlikely(!ctxt->setup.cb)) {
 			WD_ERR("ctx call back is null!\n");
+			ret = -WD_EINVAL;
 			goto fail_with_cookie;
 		}
 		cookie->tag.tag = tag;
