@@ -359,7 +359,7 @@ run_zip_test_v2()
 	# test without environment variables
 	# limit test file in 64MB
 	rm -fr /tmp/syslog
-	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=64 >& /dev/null
+	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=16 >& /dev/null
 	sw_dfl_hw_ifl /tmp/syslog
 	hw_dfl_sw_ifl /tmp/syslog
 	hw_dfl_hw_ifl /tmp/syslog
