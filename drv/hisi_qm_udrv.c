@@ -322,6 +322,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->ds_tx_base = q_info->sq_base +
 		q_info->region_size[UACCE_QFRT_DUS] - sizeof(uint32_t);
 	q_info->ds_rx_base = q_info->ds_tx_base - sizeof(uint32_t);
+	q_info->pid = getpid();
 
 	pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
 
@@ -421,6 +422,28 @@ int hisi_qm_send(handle_t h_qp, void *req, __u16 expect, __u16 *count)
 		return -WD_EINVAL;
 
 	q_info = &qp->q_info;
+
+	if (q_info->pid != getpid()) {
+		struct hisi_qp_ctx qp_ctx;
+		int ret;
+
+		q_info->pid = getpid();
+		/* also works if not cleared */
+		q_info->sq_tail_index = 0;
+		q_info->sq_head_index = 0;
+		q_info->cq_head_index = 0;
+		q_info->cqc_phase = 1;
+		q_info->used_num = 0;
+		//*/
+
+		qp_ctx.qc_type = q_info->qc_type;
+		ret = wd_ctx_set_io_cmd(qp->h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
+		if (ret < 0) {
+			WD_ERR("HISI QM fail to set qc_type, use default value\n");
+			return ret;
+		}
+		q_info->sqn = qp_ctx.id;
+	}
 
 	if (wd_ioread32(q_info->ds_tx_base) == 1) {
 		WD_ERR("wd queue hw error happened before qm send!\n");

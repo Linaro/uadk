@@ -67,6 +67,7 @@ struct hisi_qm_queue_info {
 	bool cqc_phase;
 	pthread_spinlock_t lock;
 	unsigned long region_size[UACCE_QFRT_MAX];
+	int pid;
 };
 
 struct hisi_qp {
