@@ -48,7 +48,6 @@ struct sample_sched_ctx {
 	__u32 policy;
 	__u32 type_num;
 	__u8  numa_num;
-	__u8  numa_id;
 	user_poll_func poll_func;
 	struct sample_sched_info sched_info[0];
 };
@@ -169,14 +168,16 @@ static int sample_poll_region(struct sample_sched_ctx *ctx, __u32 begin,
 
 	/* i is the pos of ctxs, the max is end */
 	for (i = begin; i <= end; i++) {
-		/* RR schedule, one time poll one */
+		/* RR schedule, one time poll one package,
+		 * poll_num is always not more than one here.
+		 */
 		ret = ctx->poll_func(i, 1, &poll_num);
 		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
 		else if (ret == -EAGAIN)
 			continue;
 		*count += poll_num;
-		if (*count >= expect)
+		if (*count == expect)
 			break;
 	}
 
@@ -188,31 +189,20 @@ static int sample_poll_policy_rr(struct sample_sched_ctx *ctx, int numa_id,
 {
 	struct sched_ctx_region **region =
 					ctx->sched_info[numa_id].ctx_region;
-	__u32 loop_time = 0;
 	__u32 begin, end;
 	__u32 i;
 	int ret;
 
-	/* Traverse the async ctx */
-	/* But if poll_num always be zero by unknow reason. This will be endless loop,
-	 * we must add the escape way by recording the loop count, if it is bigger
-	 * than MAX_POLL_TIMES, must stop and return the pool num */
-	while (loop_time < MAX_POLL_TIMES) {
-		loop_time++;
-		for (i = 0; i < ctx->type_num; i++) {
-			if (!region[SCHED_MODE_ASYNC][i].valid)
-				continue;
+	for (i = 0; i < ctx->type_num; i++) {
+		if (!region[SCHED_MODE_ASYNC][i].valid)
+			continue;
 
-			begin = region[SCHED_MODE_ASYNC][i].begin;
-			end = region[SCHED_MODE_ASYNC][i].end;
-			ret = sample_poll_region(ctx, begin, end, expect,
-						 count);
-			if (ret)
-				return ret;
-
-			if (*count >= expect)
-				return 0;
-		}
+		begin = region[SCHED_MODE_ASYNC][i].begin;
+		end = region[SCHED_MODE_ASYNC][i].end;
+		ret = sample_poll_region(ctx, begin, end, expect,
+					 count);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -309,6 +299,10 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 {
 	struct sample_sched_ctx *ctx = (struct sample_sched_ctx*)sched_ctx;
 	struct sample_sched_info *sched_info;
+	int numa[MAX_NUMA_NUM];
+	__u32 loop_time = 0;
+	__u32 last_count = 0;
+	__u8 tail = 0;
 	__u8 i;
 	int ret;
 
@@ -318,17 +312,28 @@ static int sample_sched_poll_policy(handle_t sched_ctx,
 	}
 
 	sched_info = ctx->sched_info;
+	for (i = 0; i < ctx->numa_num; i++)
+		if (sched_info[i].valid)
+			numa[tail++]= i;
 
-	for (i = 0; i < ctx->numa_num; i++) {
-		ctx->numa_id = (ctx->numa_id + i) % ctx->numa_num;
-		if (sched_info[ctx->numa_id].valid) {
-			ret = sample_poll_policy_rr(ctx, ctx->numa_id,
-						    expect, count);
+	/*
+	 * Try different numa's ctx if we can't receive any
+	 * package last time, it is more efficient. In most
+	 * bad situation, poll ends after MAX_POLL_TIMES loop.
+	 */
+	while (loop_time < MAX_POLL_TIMES) {
+		loop_time++;
+		for (i = 0; i < tail;) {
+			last_count = *count;
+			ret = sample_poll_policy_rr(ctx, numa[i], expect, count);
 			if (ret)
 				return ret;
 
 			if (expect == *count)
 				return 0;
+
+			if (last_count == *count)
+				i++;
 		}
 	}
 
@@ -471,7 +476,6 @@ struct wd_sched *sample_sched_alloc(__u8 sched_type, __u8 type_num, __u8 numa_nu
 	sched_ctx->policy = sched_type;
 	sched_ctx->type_num = type_num;
 	sched_ctx->numa_num = numa_num;
-	sched_ctx->numa_id = 0;
 
 	sched->pick_next_ctx = sched_table[sched_type].pick_next_ctx;
 	sched->poll_policy = sched_table[sched_type].poll_policy;
