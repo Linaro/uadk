@@ -364,9 +364,9 @@ run_zip_test_v2()
 	hw_dfl_sw_ifl /tmp/syslog
 	hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
-	zip_sva_perf -b 8192 -s 81920 -l 1000 --self
+	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self
 	# test with environment variables
-	zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
+	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
 }
 
 # Accept more paraterms
