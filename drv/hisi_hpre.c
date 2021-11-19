@@ -467,6 +467,7 @@ static int hpre_init(struct wd_ctx_config_internal *config, void *priv, const ch
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
+		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp) {
 			WD_ERR("failed to alloc qp!\n");
@@ -803,7 +804,7 @@ static int trans_d_to_hpre_bin(struct wd_dtb *d)
 				      d->bsize, d->dsize, "ecc d");
 }
 
-static bool big_than_one(char *data, __u32 data_sz)
+static bool big_than_one(const char *data, __u32 data_sz)
 {
 	int i;
 
@@ -1206,7 +1207,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 	struct wd_dtb *p = NULL;
 
 	wd_ecc_get_prikey_params((void *)msg->key, &p, NULL, NULL, NULL,
-				  NULL, NULL);
+				 NULL, NULL);
 	if (unlikely(!p)) {
 		WD_ERR("failed to get param p!\n");
 		return -WD_EINVAL;
@@ -1223,6 +1224,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 		WD_ERR("ux is out of p!\n");
 		return -WD_EINVAL;
 	}
+
 	if (is_all_zero(&pbk->x, msg)) {
 		WD_ERR("ux is zero!\n");
 		return -WD_EINVAL;
@@ -1948,6 +1950,10 @@ static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 	if (unlikely(!p_in))
 		return -WD_ENOMEM;
 
+	/*
+	 * Use big-endian mode to store the value of counter i in ctr,
+	 * i >> 8/16/24 for intercepts 8-bits whole-byte data.
+	 */
 	out->dsize = m_len;
 	while (1) {
 		in_len = 0;

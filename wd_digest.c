@@ -82,7 +82,7 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 
-	if (!key || !sess || !sess->key) {
+	if (!key || !sess) {
 		WD_ERR("failed to check key param!\n");
 		return -WD_EINVAL;
 	}

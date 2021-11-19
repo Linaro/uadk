@@ -160,7 +160,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	__u32 length = key_len;
 	int ret;
 
-	if (!key || !sess || !sess->key) {
+	if (!key || !sess) {
 		WD_ERR("cipher set key input param err!\n");
 		return -WD_EINVAL;
 	}
