@@ -52,7 +52,6 @@ struct wd_env_config_per_numa {
 
 	/* Resource begin */
 	struct uacce_dev *dev;
-	struct uacce_dev *last_dev;
 	int dev_num;
 	/* This can be made statically currently */
 	unsigned long async_poll_num;
