@@ -355,6 +355,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	ret = rsa_recv_sync(ctx->ctx, &msg);
 fail:
 	pthread_spin_unlock(&ctx->lock);
+
 	return ret;
 }
 
@@ -577,7 +578,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 	struct wd_rsa_kg_out *kg_out;
 	int kg_out_size;
-	int kz;
+	__u32 kz;
 
 	if (!c) {
 		WD_ERR("sess null at new rsa key gen out!\n");
@@ -617,7 +618,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 
 void wd_rsa_del_kg_out(handle_t sess, struct wd_rsa_kg_out *kout)
 {
-	if (!kout || !kout->data) {
+	if (!kout) {
 		WD_ERR("param null at del kg out!\n");
 		return;
 	}
@@ -693,9 +694,9 @@ void wd_rsa_set_kg_out_psz(struct wd_rsa_kg_out *kout,
 	kout->nbytes = n_sz;
 }
 
-static void init_pkey2(struct wd_rsa_prikey2 *pkey2, int ksz)
+static void init_pkey2(struct wd_rsa_prikey2 *pkey2, __u32 ksz)
 {
-	int hlf_ksz = CRT_PARAM_SZ(ksz);
+	__u32 hlf_ksz = CRT_PARAM_SZ(ksz);
 
 	pkey2->dq.data = (char *)pkey2->data;
 	pkey2->dp.data = pkey2->dq.data + hlf_ksz;
