@@ -168,17 +168,29 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if ((sess->dalg <= WD_DIGEST_SHA224 && key_len >
-	    MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
-	    key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("failed to check authenticate key length!\n");
-		return -WD_EINVAL;
+	if (key_len == 0)
+		goto err_key_len;
+
+	/*
+	 * Here dalg only supports sha1, sha256, sha512,
+	 * and should check key length with different max length.
+	 */
+	if (sess->dalg > WD_DIGEST_SHA256) {
+		if (key_len > MAX_HMAC_KEY_SIZE)
+			goto err_key_len;
+	} else {
+		if (key_len > MAX_HMAC_KEY_SIZE >> 1)
+			goto err_key_len;
 	}
 
 	sess->akey_bytes = key_len;
 	memcpy(sess->akey, key, key_len);
 
 	return 0;
+
+err_key_len:
+	WD_ERR("failed to check authenticate key length!\n");
+	return -WD_EINVAL;
 }
 
 int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
