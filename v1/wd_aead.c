@@ -380,9 +380,15 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("fail to check key length!\n");
-		return -WD_EINVAL;
+	if (key_len == 0)
+		goto err_key_len;
+
+	if (ctxt->setup.dalg > WCRYPTO_SHA256) {
+		if (key_len > MAX_HMAC_KEY_SIZE)
+			goto err_key_len;
+	} else {
+		if (key_len > MAX_HMAC_KEY_SIZE >> 1)
+			goto err_key_len;
 	}
 
 	ctxt->akey_bytes = key_len;
@@ -393,6 +399,10 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 		memcpy(ctxt->akey, key, key_len);
 
 	return WD_SUCCESS;
+
+err_key_len:
+	WD_ERR("fail to check key length!\n");
+	return -WD_EINVAL;
 }
 
 static void aead_requests_uninit(struct wcrypto_aead_msg **req,
@@ -406,15 +416,43 @@ static void aead_requests_uninit(struct wcrypto_aead_msg **req,
 	}
 }
 
+static int check_op_data(struct wcrypto_aead_op_data **op,
+			 struct wcrypto_aead_ctx *ctx, __u32 idx)
+{
+	if (unlikely(op[idx]->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST &&
+	    op[idx]->out_buf_bytes < op[idx]->out_bytes + ctx->auth_size)) {
+		WD_ERR("fail to check out buffer length %u!\n", idx);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(op[idx]->iv_bytes != ctx->iv_blk_size ||
+	    op[idx]->iv_bytes == 0)) {
+		WD_ERR("fail to check IV length %u!\n", idx);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(ctx->setup.cmode == WCRYPTO_CIPHER_CBC &&
+	    (op[idx]->in_bytes & (AES_BLOCK_SIZE - 1)))) {
+		WD_ERR("failed to check aead input data length!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int aead_requests_init(struct wcrypto_aead_msg **req,
 			     struct wcrypto_aead_op_data **op,
 			     struct wcrypto_aead_ctx *ctx, __u32 num)
 {
 	struct wd_sec_udata *udata;
-	int ret = -WD_EINVAL;
+	int ret;
 	__u32 i;
 
 	for (i = 0; i < num; i++) {
+		ret = check_op_data(op, ctx, i);
+		if (ret)
+			goto err_uninit_requests;
+
 		req[i]->calg = ctx->setup.calg;
 		req[i]->cmode = ctx->setup.cmode;
 		req[i]->dalg = ctx->setup.dalg;
@@ -436,18 +474,6 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 		if (udata && udata->key) {
 			req[i]->ckey = udata->key;
 			req[i]->ckey_bytes = udata->key_bytes;
-		}
-
-		if (unlikely(op[i]->op_type == WCRYPTO_CIPHER_ENCRYPTION_DIGEST &&
-		   op[i]->out_buf_bytes < op[i]->out_bytes + ctx->auth_size)) {
-			WD_ERR("fail to check out buffer length %u!\n", i);
-			goto err_uninit_requests;
-		}
-
-		if (unlikely(op[i]->iv_bytes != ctx->iv_blk_size ||
-		    op[i]->iv_bytes == 0)) {
-			WD_ERR("fail to check IV length %u!\n", i);
-			goto err_uninit_requests;
 		}
 
 		req[i]->aiv = ctx->setup.br.alloc(ctx->setup.br.usr,
