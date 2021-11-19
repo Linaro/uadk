@@ -587,7 +587,6 @@ static void dh_g_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
 		       struct hisi_hpre_sqe *hw_msg)
 {
 	uintptr_t phy = DMA_ADDR(hw_msg->low_in, hw_msg->hi_in);
-
 	if (phy)
 		drv_iova_unmap(q, msg->g, (void *)phy, msg->key_bytes);
 }
@@ -895,13 +894,22 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	if (unlikely(ret))
 		return ret;
 
-	/*
-	 * This is a pretreatment of x25519/x448, as described in RFC 7748
-	 * hpre is big-endian, so the byte is opposite.
-	 */
 	dat = d->data;
 	bsize = d->bsize;
 	dsize = d->dsize;
+
+	/*
+	 * This is a pretreatment of X25519/X448, as described in RFC 7748:
+	 * For X25519, in order to decode 32 random bytes as an integer
+	 * scaler, set the three LSB of the first byte and MSB of the last
+	 * to zero, set the second MSB of the last byte to 1.
+	 * For X448, set the two LSB of the first byte to 0, and MSB of the
+	 * last byte to 1. Decode in little-endian mode.
+	 * HPRE hardware module uses big-endian mode, so the bytes to be
+	 * set are reversed compared to RFC 7748:
+	 * For example, dat[0] of X25519 in RFC 7748 is reversed to dat[31]
+	 * in HPRE specification, so does X448.
+	 */
 	if (id == WCRYPTO_X25519) {
 		dat[31] &= 248;
 		dat[0] &= 127;
@@ -2172,6 +2180,11 @@ static int sm2_kdf(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 		return -WD_ENOMEM;
 
 	out->dsize = m_len;
+
+	/*
+	 * Use big-endian mode to store the value of counter i in ctr,
+	 * i >> 8/16/24 for intercepts 8-bits whole-byte data.
+	 */
 	while (1) {
 		ctr[3] = i & 0xFF;
 		ctr[2] = (i >> 8) & 0xFF;
@@ -2228,7 +2241,6 @@ static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 static int sm2_hash(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 		    struct wd_dtb *msg, struct q_info *q_info)
 {
-
 	struct wcrypto_hash_mt *hash = &q_info->hash;
 	__u64 lens = (__u64)msg->dsize + 2 * (__u64)x2y2->x.dsize;
 	char hash_out[MAX_HASH_LENS] = {0};
