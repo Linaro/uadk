@@ -431,10 +431,12 @@ static int check_op_data(struct wcrypto_aead_op_data **op,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(ctx->setup.cmode == WCRYPTO_CIPHER_CBC &&
+	if (unlikely(op[idx]->in_bytes == 0 ||
 	    (op[idx]->in_bytes & (AES_BLOCK_SIZE - 1)))) {
-		WD_ERR("failed to check aead input data length!\n");
-		return -WD_EINVAL;
+		if (ctx->setup.cmode == WCRYPTO_CIPHER_CBC) {
+			WD_ERR("failed to check aead input data length!\n");
+			return -WD_EINVAL;
+		}
 	}
 
 	return 0;
