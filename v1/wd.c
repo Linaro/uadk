@@ -258,8 +258,11 @@ static int get_int_attr_all(struct dev_info *dinfo)
 	dinfo->node_id = get_int_attr(dinfo, "node_id");
 
 	ret = get_int_attr(dinfo, "flags");
-	if (ret < 0 || (unsigned int)ret & WD_UACCE_DEV_SVA)
+	if (ret < 0)
 		return ret;
+	else if ((unsigned int)ret & WD_UACCE_DEV_SVA)
+		return -ENODEV;
+
 	dinfo->flags = ret;
 
 	return 0;
