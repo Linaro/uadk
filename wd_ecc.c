@@ -55,7 +55,7 @@ struct wd_ecc_sess {
 	__u32 key_size;
 	struct wd_ecc_key key;
 	struct wd_ecc_sess_setup setup;
-	struct sched_key s_key;
+	void *sched_key;
 };
 
 struct wd_ecc_curve_list {
@@ -1033,7 +1033,6 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
-	sess->s_key.numa_id = setup->numa;
 
 	ret = create_sess_key(setup, sess);
 	if (ret) {
@@ -1041,6 +1040,10 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 		free(sess);
 		return (handle_t)0;
 	}
+
+	/* Some simple scheduler don't need scheduling parameters */
+	sess->sched_key = (void *)wd_ecc_setting.sched.sched_init(
+		     wd_ecc_setting.sched.h_sched_ctx, setup->sched_param);
 
 	return (handle_t)sess;
 }
@@ -1054,6 +1057,8 @@ void wd_ecc_free_sess(handle_t sess)
 		return;
 	}
 
+	if (sess_t->sched_key)
+		free(sess_t->sched_key);
 	del_sess_key(sess_t);
 	free(sess_t);
 }
@@ -1459,8 +1464,9 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess->s_key.mode = CTX_MODE_SYNC;
-	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->s_key);
+	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx,
+							    sess->sched_key,
+							    CTX_MODE_SYNC);
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (ret)
 		return ret;
@@ -2146,9 +2152,9 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess_t->s_key.mode = CTX_MODE_ASYNC;
-	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx, req,
-						   &sess_t->s_key);
+	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx,
+							    sess_t->sched_key,
+							    CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -2259,8 +2265,10 @@ static const struct wd_alg_ops wd_ecc_ops = {
 	.alg_poll_ctx = wd_ecc_poll_ctx
 };
 
-int wd_ecc_env_init(void)
+int wd_ecc_env_init(struct wd_sched *sched)
 {
+	wd_ecc_env_config.sched = sched;
+
 	return wd_alg_env_init(&wd_ecc_env_config, table,
 			       &wd_ecc_ops, ARRAY_SIZE(table), NULL);
 }

@@ -70,6 +70,7 @@ struct wd_env_config {
 
 	/* resource config */
 	struct wd_sched *sched;
+	bool internal_sched;
 	struct wd_ctx_config *ctx_config;
 	const struct wd_config_variable *table;
 	__u32 table_size;
