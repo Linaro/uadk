@@ -417,8 +417,8 @@ static int test_mempool(struct test_option *opt)
 	return 0;
 }
 
-static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-                                        const struct sched_key *key)
+static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx,
+	void *sched_key, const int sched_mode)
 {
         __u32 index;
 

@@ -31,7 +31,7 @@ struct wd_dh_sess {
 	__u32 key_size;
 	struct wd_dtb g;
 	struct wd_dh_sess_setup setup;
-	struct sched_key key;
+	void  *sched_key;
 };
 
 static struct wd_dh_setting {
@@ -273,8 +273,9 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess_t->key.mode = CTX_MODE_SYNC;
-	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess_t->key);
+	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx,
+							   sess_t->sched_key,
+							   CTX_MODE_SYNC);
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (ret)
 		return ret;
@@ -314,9 +315,9 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess_t->key.mode = CTX_MODE_ASYNC;
-	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx, req,
-						  &sess_t->key);
+	idx = wd_dh_setting.sched.pick_next_ctx(h_sched_ctx,
+							   sess_t->sched_key,
+							   CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -498,9 +499,11 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 		free(sess);
 		return (handle_t)0;
 	}
-	sess->g.bsize = sess->key_size;
 
-	sess->key.numa_id = setup->numa;
+	sess->g.bsize = sess->key_size;
+	/* Some simple scheduler don't need scheduling parameters */
+	sess->sched_key = (void *)wd_dh_setting.sched.sched_init(
+		     wd_dh_setting.sched.h_sched_ctx, setup->sched_param);
 
 	return (handle_t)sess;
 }
@@ -517,6 +520,8 @@ void wd_dh_free_sess(handle_t sess)
 	if (sess_t->g.data)
 		free(sess_t->g.data);
 
+	if (sess_t->sched_key)
+		free(sess_t->sched_key);
 	free(sess_t);
 }
 
@@ -539,8 +544,10 @@ static const struct wd_alg_ops wd_dh_ops = {
 	.alg_poll_ctx = wd_dh_poll_ctx
 };
 
-int wd_dh_env_init(void)
+int wd_dh_env_init(struct wd_sched *sched)
 {
+	wd_dh_env_config.sched = sched;
+
 	return wd_alg_env_init(&wd_dh_env_config, table,
 			       &wd_dh_ops, ARRAY_SIZE(table), NULL);
 }

@@ -27,7 +27,7 @@ enum wd_dh_op_type {
 struct wd_dh_sess_setup {
 	__u16 key_bits; /* DH key bites */
 	bool is_g2; /* is g2 mode or not */
-	int numa;
+	void *sched_param;
 };
 
 struct wd_dh_req {
@@ -62,7 +62,7 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 int wd_dh_poll(__u32 expt, __u32 *count);
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched);
 void wd_dh_uninit(void);
-int wd_dh_env_init(void);
+int wd_dh_env_init(struct wd_sched *sched);
 void wd_dh_env_uninit(void);
 int wd_dh_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode);
 void wd_dh_ctx_num_uninit(void);

@@ -34,14 +34,14 @@
 #define cpu_to_be32(x) swap_byte(x)
 
 struct wd_comp_sess {
-	struct sched_key key;
-	__u8 *ctx_buf;
 	enum wd_comp_alg_type alg_type;
 	enum wd_comp_level comp_lv;
 	enum wd_comp_winsz_type win_sz;
 	enum wd_comp_strm_pos stream_pos;
 	__u32 isize;
 	__u32 checksum;
+	__u8 *ctx_buf;
+	void *sched_key;
 };
 
 struct wd_comp_setting {
@@ -288,9 +288,9 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->comp_lv = setup->comp_lv;
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
-
-	sess->key.type = setup->op_type;
-	sess->key.numa_id = setup->numa;
+	/* Some simple scheduler don't need scheduling parameters */
+	sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
+		     wd_comp_setting.sched.h_sched_ctx, setup->sched_param);
 
 	return (handle_t)sess;
 }
@@ -305,6 +305,8 @@ void wd_comp_free_sess(handle_t h_sess)
 	if (sess->ctx_buf)
 		free(sess->ctx_buf);
 
+	if (sess->sched_key)
+		free(sess->sched_key);
 	free(sess);
 }
 
@@ -370,12 +372,6 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	if (sess->key.type != req->op_type) {
-		WD_ERR("invalid: sess op_type(%hhu) don't match req op_type(%d)!\n",
-		       sess->key.type, req->op_type);
-		return -WD_EINVAL;
-	}
-
 	if (mode == CTX_MODE_ASYNC && !req->cb) {
 		WD_ERR("async comp input cb is NULL!\n");
 		return -WD_EINVAL;
@@ -405,10 +401,9 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	__u64 recv_count = 0;
 	__u32 idx;
 	int ret;
-
-	sess->key.mode = CTX_MODE_SYNC;
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
-						  req, &sess->key);
+						  sess->sched_key,
+						  CTX_MODE_SYNC);
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (ret)
 		return ret;
@@ -692,10 +687,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess->key.mode = CTX_MODE_ASYNC;
 	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
-						  req,
-						  &sess->key);
+						  sess->sched_key,
+						  CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -761,8 +755,10 @@ static const struct wd_alg_ops wd_comp_ops = {
 	.alg_poll_ctx = wd_comp_poll_ctx
 };
 
-int wd_comp_env_init(void)
+int wd_comp_env_init(struct wd_sched *sched)
 {
+	wd_comp_env_config.sched = sched;
+
 	return wd_alg_env_init(&wd_comp_env_config, table,
 			       &wd_comp_ops, ARRAY_SIZE(table), NULL);
 }
