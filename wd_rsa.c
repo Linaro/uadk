@@ -71,7 +71,7 @@ struct wd_rsa_sess {
 	struct wd_rsa_pubkey *pubkey;
 	struct wd_rsa_prikey *prikey;
 	struct wd_rsa_sess_setup setup;
-	struct sched_key key;
+	void *sched_key;
 };
 
 static struct wd_rsa_setting {
@@ -334,8 +334,9 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess->key.mode = CTX_MODE_SYNC;
-	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req, &sess->key);
+	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx,
+							    sess->sched_key,
+							    CTX_MODE_SYNC);
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (ret)
 		return ret;
@@ -374,9 +375,9 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		return -WD_EINVAL;
 	}
 
-	sess_t->key.mode = CTX_MODE_ASYNC;
-	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx, req,
-						   &sess_t->key);
+	idx = wd_rsa_setting.sched.pick_next_ctx(h_sched_ctx,
+							    sess_t->sched_key,
+							    CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -832,7 +833,9 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 		return (handle_t)0;
 	}
 
-	sess->key.numa_id = setup->numa;
+	/* Some simple scheduler don't need scheduling parameters */
+	sess->sched_key = (void *)wd_rsa_setting.sched.sched_init(
+		     wd_rsa_setting.sched.h_sched_ctx, setup->sched_param);
 
 	return (handle_t)sess;
 }
@@ -846,6 +849,8 @@ void wd_rsa_free_sess(handle_t sess)
 		return;
 	}
 
+	if (sess_t->sched_key)
+		free(sess_t->sched_key);
 	del_sess_key(sess_t);
 	del_sess(sess_t);
 }
@@ -1134,8 +1139,10 @@ static const struct wd_alg_ops wd_rsa_ops = {
 	.alg_poll_ctx = wd_rsa_poll_ctx
 };
 
-int wd_rsa_env_init(void)
+int wd_rsa_env_init(struct wd_sched *sched)
 {
+	wd_rsa_env_config.sched = sched;
+
 	return wd_alg_env_init(&wd_rsa_env_config, table,
 			       &wd_rsa_ops, ARRAY_SIZE(table), NULL);
 }

@@ -37,7 +37,7 @@ struct wd_aead_sess_setup {
 	enum wd_cipher_mode cmode;
 	enum wd_digest_type dalg;
 	enum wd_digest_mode dmode;
-	int numa;
+	void *sched_param;
 };
 
 struct wd_aead_req;
@@ -173,10 +173,10 @@ int wd_aead_poll(__u32 expt, __u32 *count);
 /**
  * wd_aead_env_init() - Init ctx and schedule resources according to wd aead
  * environment variables.
- *
+ * @sched: user's custom scheduler.
  * More information, please see docs/wd_environment_variable.
  */
-int wd_aead_env_init(void);
+int wd_aead_env_init(struct wd_sched *sched);
 
 /**
  *   wd_aead_env_uninit() - UnInit ctx and schedule resources set by above init.

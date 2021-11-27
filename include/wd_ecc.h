@@ -118,7 +118,7 @@ struct wd_ecc_sess_setup {
 	struct wd_ecc_curve_cfg cv; /* curve config denoted by user */
 	struct wd_rand_mt rand; /* rand method from user */
 	struct wd_hash_mt hash; /* hash method from user */
-	int numa;
+	void *sched_param;
 };
 
 struct wd_ecc_req {
@@ -489,9 +489,10 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
  * wd_ecc_env_init() - Init ctx and schedule resources according to wd ecc
  * environment variables.
  *
+ * @sched:       user's custom scheduler.
  * More information, please see docs/wd_environment_variable.
  */
-int wd_ecc_env_init(void);
+int wd_ecc_env_init(struct wd_sched *sched);
 
 /**
  * wd_ecc_env_uninit() - UnInit ctx and schedule resources set by above init.

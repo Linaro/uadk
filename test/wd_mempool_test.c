@@ -417,8 +417,13 @@ static int test_mempool(struct test_option *opt)
 	return 0;
 }
 
-static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-                                        const struct sched_key *key)
+static handle_t sva_sched_init(handle_t h_sched_ctx, void *sched_param)
+{
+	return (handle_t)0;
+}
+
+static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx,
+	void *sched_key, const int sched_mode)
 {
         __u32 index;
 
@@ -500,6 +505,7 @@ static int sva_init_ctx_config(int type, int mode)
 	sched.name = "sched_multi";
 	sched.pick_next_ctx = sva_sched_pick_next_ctx;
 	sched.poll_policy = sva_sched_poll_policy;
+	sched.sched_init = sva_sched_init;
 	/*cipher init*/
 	ret = wd_cipher_init(&g_ctx_cfg, &sched);
 	if (ret) {
