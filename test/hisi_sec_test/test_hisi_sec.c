@@ -476,17 +476,41 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 static int init_ctx_config(int type, int mode)
 {
 	struct uacce_dev_list *list;
+	struct sched_params param;
 	int ret = 0;
 	int i;
-
-	if (g_use_env)
-		return wd_cipher_env_init();
 
 	list = wd_get_accel_list("cipher");
 	if (!list) {
 		printf("Fail to get cipher device\n");
 		return -ENODEV;
 	}
+
+	/* If there is no numa, we default config to zero */
+	if (list->dev->numa_id < 0)
+		list->dev->numa_id = 0;
+
+	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
+	if (!g_sched) {
+		printf("Fail to alloc sched!\n");
+		goto out;
+	}
+
+	g_sched->name = SCHED_SINGLE;
+	param.numa_id = list->dev->numa_id;
+	param.mode = mode;
+	param.type = 0;
+	param.begin = 0;
+	param.end = g_ctxnum - 1;
+	ret = wd_sched_rr_instance(g_sched, &param);
+	if (ret) {
+		printf("Fail to fill sched data!\n");
+		goto out;
+	}
+
+	if (g_use_env)
+		return wd_cipher_env_init(g_sched);
+
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = g_ctxnum;
 	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
@@ -497,23 +521,6 @@ static int init_ctx_config(int type, int mode)
 		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
 		g_ctx_cfg.ctxs[i].op_type = type;
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
-	}
-
-	g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
-	if (!g_sched) {
-		printf("Fail to alloc sched!\n");
-		goto out;
-	}
-
-	/* If there is no numa, we defualt config to zero */
-	if (list->dev->numa_id < 0)
-		list->dev->numa_id = 0;
-
-	g_sched->name = SCHED_SINGLE;
-	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, g_ctxnum - 1);
-	if (ret) {
-		printf("Fail to fill sched data!\n");
-		goto out;
 	}
 
 	/*cipher init*/
@@ -528,7 +535,7 @@ static int init_ctx_config(int type, int mode)
 	return 0;
 out:
 	free(g_ctx_cfg.ctxs);
-	sample_sched_release(g_sched);
+	wd_sched_rr_release(g_sched);
 
 	return ret;
 }
@@ -546,7 +553,7 @@ static void uninit_config(void)
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
-	sample_sched_release(g_sched);
+	wd_sched_rr_release(g_sched);
 }
 
 static void digest_uninit_config(void)
@@ -1282,8 +1289,8 @@ out_iv:
 }
 
 /* ------------------digest alg, nomal mode and hmac mode------------------ */
-static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-					const struct sched_key *key)
+static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx,
+	void *sched_key, const int sched_mode)
 {
 	/* alway return first ctx */
 	return 0;
@@ -1296,7 +1303,7 @@ static int init_digest_ctx_config(int type, int mode)
 	int ret;
 
 	if (g_use_env)
-		return wd_digest_env_init();
+		return wd_digest_env_init(NULL);
 
 	list = wd_get_accel_list("digest");
 	if (!list)
@@ -2043,8 +2050,8 @@ out:
 }
 
 /* ------------------------------aead alg, ccm mode and gcm mode------------------ */
-static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx, const void *req,
-	const struct sched_key *key)
+static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx,
+	void *sched_key, const int sched_mode)
 {
 	return 0;
 }
@@ -2056,7 +2063,7 @@ static int init_aead_ctx_config(int type, int mode)
 	int ret;
 
 	if (g_use_env)
-		return wd_aead_env_init();
+		return wd_aead_env_init(NULL);
 
 	list = wd_get_accel_list("aead");
 	if (!list)

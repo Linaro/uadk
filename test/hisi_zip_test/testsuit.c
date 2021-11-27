@@ -73,6 +73,7 @@ static void *sw_dfl_hw_ifl(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_ifl;
 	void *tbuf;
 	size_t tbuf_sz;
@@ -152,8 +153,10 @@ static void *sw_dfl_hw_ifl(void *arg)
 	/* BLOCK mode */
         setup.alg_type = opts->alg_type;
         setup.op_type = WD_DIR_DECOMPRESS;
-	setup.numa = 0;
 
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl) {
 		ret = -EINVAL;
@@ -216,6 +219,7 @@ static void *hw_dfl_sw_ifl(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_dfl;
 	void *tbuf;
 	size_t tbuf_sz;
@@ -294,10 +298,11 @@ static void *hw_dfl_sw_ifl(void *arg)
 	}
 
 	/* BLOCK mode */
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
-	setup.numa = 0;
-
+    setup.alg_type = opts->alg_type;
+    setup.op_type = WD_DIR_COMPRESS;
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl) {
 		ret = -EINVAL;
@@ -360,6 +365,7 @@ static void *hw_dfl_hw_ifl(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_dfl, h_ifl;
 	void *tbuf;
 	size_t tbuf_sz;
@@ -436,10 +442,12 @@ static void *hw_dfl_hw_ifl(void *arg)
 		ret = -ENOMEM;
 		goto out;
 	}
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
-	setup.numa = 0;
 
+    setup.alg_type = opts->alg_type;
+    setup.op_type = WD_DIR_COMPRESS;
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl) {
 		ret = -EINVAL;
@@ -447,6 +455,8 @@ static void *hw_dfl_hw_ifl(void *arg)
 	}
 
 	setup.op_type = WD_DIR_DECOMPRESS;
+	param.type = setup.op_type;
+	setup.sched_param = &param;
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl) {
 		ret = -EINVAL;
@@ -512,6 +522,7 @@ static void *hw_dfl_perf(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_dfl;
 	int i, ret;
 	uint32_t tout_sz;
@@ -537,10 +548,11 @@ static void *hw_dfl_perf(void *arg)
 		return NULL;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
-	setup.numa = 0;
-
+    setup.alg_type = opts->alg_type;
+    setup.op_type = WD_DIR_COMPRESS;
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl)
 		return (void *)(uintptr_t)(-EINVAL);
@@ -571,6 +583,7 @@ static void *hw_ifl_perf(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_ifl;
 	int i, ret;
 	uint32_t tout_sz;
@@ -596,10 +609,11 @@ static void *hw_ifl_perf(void *arg)
 		return NULL;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_DECOMPRESS;
-	setup.numa = 0;
-
+    setup.alg_type = opts->alg_type;
+    setup.op_type = WD_DIR_DECOMPRESS;
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl)
 		return (void *)(uintptr_t)(-EINVAL);
@@ -631,6 +645,7 @@ void *hw_dfl_perf3(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_dfl;
 	int i, ret;
 	uint32_t tout_sz;
@@ -656,10 +671,11 @@ void *hw_dfl_perf3(void *arg)
 		return NULL;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
-	setup.numa = 0;
-
+    setup.alg_type = opts->alg_type;
+    setup.op_type = WD_DIR_COMPRESS;
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_dfl = wd_comp_alloc_sess(&setup);
 	if (!h_dfl)
 		return (void *)(uintptr_t)(-EINVAL);
@@ -691,6 +707,7 @@ void *hw_ifl_perf3(void *arg)
 	struct hizip_test_info *info = tdata->info;
 	struct test_options *opts = info->opts;
 	struct wd_comp_sess_setup setup = {0};
+	struct sched_params param = {0};
 	handle_t h_ifl;
 	int i, ret;
 	uint32_t tout_sz;
@@ -716,10 +733,11 @@ void *hw_ifl_perf3(void *arg)
 		return NULL;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_DECOMPRESS;
-	setup.numa = 0;
-
+    setup.alg_type = opts->alg_type;
+    setup.op_type = WD_DIR_DECOMPRESS;
+	param.type = setup.op_type;
+	param.numa_id = 0;
+	setup.sched_param = &param;
 	h_ifl = wd_comp_alloc_sess(&setup);
 	if (!h_ifl)
 		return (void *)(uintptr_t)(-EINVAL);
@@ -991,7 +1009,7 @@ int test_hw(struct test_options *opts, char *model)
 	}
 
 	if (opts->use_env)
-		ret = wd_comp_env_init();
+		ret = wd_comp_env_init(NULL);
 	else
 		ret = nonenv_resource_init(opts, &info, &sched);
 	if (ret < 0)

@@ -58,18 +58,6 @@ struct wd_ctx_config {
 	void *priv;
 };
 
-/**
- * sched_key - The key if schedule region.
- * @numa_id: The numa_id map the hardware.
- * @mode: Sync mode:0, async_mode:1
- * @type: Service type , the value must smaller than type_num.
- */
-struct sched_key {
-	int numa_id;
-	__u8 mode;
-	__u8 type;
-};
-
 struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
@@ -87,6 +75,8 @@ struct wd_ctx_config_internal {
 /**
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
+ * @sched_policy:	Method for scheduler to perform scheduling
+ * @sched_init:		inited the scheduler input parameters.
  * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
  *			config points to the ctx config; sched_ctx points to
  *			scheduler context; req points to the request. Return
@@ -98,9 +88,11 @@ struct wd_ctx_config_internal {
  */
 struct wd_sched {
 	const char *name;
+	int sched_policy;
+	handle_t (*sched_init)(handle_t h_sched_ctx, void *sched_param);
 	__u32 (*pick_next_ctx)(handle_t h_sched_ctx,
-				  const void *req,
-				  const struct sched_key *key);
+				  void *sched_key,
+				  const int sched_mode);
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
 };

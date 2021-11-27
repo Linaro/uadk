@@ -53,7 +53,7 @@ struct wd_aead_sess {
 	__u16			akey_bytes;
 	__u16			auth_bytes;
 	void			*priv;
-	int			numa;
+	void			*sched_key;
 };
 
 struct wd_env_config wd_aead_env_config;
@@ -276,8 +276,9 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 	sess->cmode = setup->cmode;
 	sess->dalg = setup->dalg;
 	sess->dmode = setup->dmode;
-
-	sess->numa = setup->numa;
+	/* Some simple scheduler don't need scheduling parameters */
+	sess->sched_key = (void *)wd_aead_setting.sched.sched_init(
+			wd_aead_setting.sched.h_sched_ctx, setup->sched_param);
 
 	return (handle_t)sess;
 }
@@ -294,6 +295,8 @@ void wd_aead_free_sess(handle_t h_sess)
 	wd_memset_zero(sess->ckey, MAX_CIPHER_KEY_SIZE);
 	wd_memset_zero(sess->akey, MAX_HMAC_KEY_SIZE);
 
+	if (sess->sched_key)
+		free(sess->sched_key);
 	free(sess);
 }
 
@@ -519,7 +522,6 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg msg;
-	struct sched_key key;
 	__u32 idx;
 	int ret;
 
@@ -532,11 +534,9 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	msg.is_polled = (req->in_bytes >= POLL_SIZE);
 	req->state = 0;
 
-	key.mode = CTX_MODE_SYNC;
-	key.type = 0;
-	key.numa_id = sess->numa;
 	idx = wd_aead_setting.sched.pick_next_ctx(
-		wd_aead_setting.sched.h_sched_ctx, req, &key);
+		wd_aead_setting.sched.h_sched_ctx,
+		sess->sched_key, CTX_MODE_SYNC);
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
@@ -554,7 +554,6 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_aead_msg *msg;
-	struct sched_key key;
 	int msg_id, ret;
 	__u32 idx;
 
@@ -567,12 +566,9 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		return -WD_EINVAL;
 	}
 
-	key.mode = CTX_MODE_ASYNC;
-	key.type = 0;
-	key.numa_id = sess->numa;
-
 	idx = wd_aead_setting.sched.pick_next_ctx(
-		wd_aead_setting.sched.h_sched_ctx, req, &key);
+		wd_aead_setting.sched.h_sched_ctx,
+		sess->sched_key, CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -686,8 +682,10 @@ static const struct wd_alg_ops wd_aead_ops = {
         .alg_poll_ctx = wd_aead_poll_ctx
 };
 
-int wd_aead_env_init(void)
+int wd_aead_env_init(struct wd_sched *sched)
 {
+	wd_aead_env_config.sched = sched;
+
 	return wd_alg_env_init(&wd_aead_env_config, table,
 			       &wd_aead_ops, ARRAY_SIZE(table), NULL);
 }

@@ -1770,8 +1770,7 @@ static int evp_to_wd_crypto(char *evp, size_t *evp_size, __u32 ksz, __u8 op_type
 }
 
 __u32 hpre_pick_next_ctx(handle_t sched_ctx,
-				const void *req,
-				const struct sched_key *key)
+	void *sched_key, const int sched_mode)
 {
 	static int last_ctx = 0;
 
@@ -1897,15 +1896,15 @@ static struct uacce_dev_list *get_uacce_dev_by_alg(struct uacce_dev_list *list,
 static int env_init(__u32 op_type)
 {
 	if (op_type > HPRE_ALG_INVLD_TYPE && op_type < MAX_RSA_ASYNC_TYPE)
-		return wd_rsa_env_init();
+		return wd_rsa_env_init(NULL);
 	else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE)
-		return wd_dh_env_init();
+		return wd_dh_env_init(NULL);
 	else if (op_type > MAX_DH_TYPE && op_type < MAX_ECDH_TYPE)
-		return wd_ecc_env_init();
+		return wd_ecc_env_init(NULL);
 	else if (op_type > MAX_ECDH_TYPE && op_type < MAX_ECDSA_TYPE)
-		return wd_ecc_env_init();
+		return wd_ecc_env_init(NULL);
 	else if (op_type >= SM2_SIGN && op_type <= SM2_ASYNC_KG)
-		return wd_ecc_env_init();
+		return wd_ecc_env_init(NULL);
 	else {
 		HPRE_TST_PRT("op_type = %u error\n", op_type);
 		return -ENODEV;
