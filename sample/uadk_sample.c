@@ -11,7 +11,7 @@ int operation(int op_type, void *src, int src_sz, void *dst, int *dst_sz)
 
         if (!src || !dst || !dst_sz || (*dst_sz <= 0))
                 return -EINVAL;
-        ret = wd_comp_env_init();
+        ret = wd_comp_env_init(NULL);
         if (ret < 0)
                 goto out;
 
@@ -19,8 +19,7 @@ int operation(int op_type, void *src, int src_sz, void *dst, int *dst_sz)
         setup.win_sz = WD_COMP_WS_32K;
         setup.comp_lv = WD_COMP_L8;
         setup.op_type = op_type;
-        setup.numa = 0;
-        h_dfl = wd_comp_alloc_sess(&setup);
+	h_dfl = wd_comp_alloc_sess(&setup);
         if (!h_dfl) {
                 ret = -EINVAL;
                 goto out_sess;
