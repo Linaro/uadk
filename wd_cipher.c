@@ -49,7 +49,7 @@ struct wd_cipher_sess {
 	void			*priv;
 	unsigned char		key[MAX_CIPHER_KEY_SIZE];
 	__u32			key_bytes;
-	int			numa;
+	void			*sched_key;
 };
 
 struct wd_env_config wd_cipher_env_config;
@@ -202,7 +202,9 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
-	sess->numa = setup->numa;
+	/* Some simple scheduler don't need scheduling parameters */
+	sess->sched_key = (void *)wd_cipher_setting.sched.sched_init(
+		wd_cipher_setting.sched.h_sched_ctx, setup->sched_param);
 
 	return (handle_t)sess;
 }
@@ -218,6 +220,8 @@ void wd_cipher_free_sess(handle_t h_sess)
 
 	wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
 
+	if (sess->sched_key)
+		free(sess->sched_key);
 	free(sess);
 }
 
@@ -437,7 +441,6 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg msg;
-	struct sched_key key;
 	__u32 idx;
 	int ret;
 
@@ -452,12 +455,9 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	msg.is_polled = (req->in_bytes >= POLL_SIZE);
 	req->state = 0;
 
-	key.mode = CTX_MODE_SYNC;
-	key.type = 0;
-	key.numa_id = sess->numa;
 	idx = wd_cipher_setting.sched.pick_next_ctx(
-		     wd_cipher_setting.sched.h_sched_ctx, req, &key);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+		     wd_cipher_setting.sched.h_sched_ctx,
+		     sess->sched_key, CTX_MODE_SYNC);
 	if (unlikely(ret))
 		return ret;
 
@@ -474,7 +474,6 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg *msg;
-	struct sched_key key;
 	int msg_id, ret;
 	__u32 idx;
 
@@ -484,12 +483,9 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
-	key.mode = CTX_MODE_ASYNC;
-	key.type = 0;
-	key.numa_id = sess->numa;
-
 	idx = wd_cipher_setting.sched.pick_next_ctx(
-		     wd_cipher_setting.sched.h_sched_ctx, req, &key);
+		     wd_cipher_setting.sched.h_sched_ctx,
+		     sess->sched_key, CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -604,8 +600,10 @@ static const struct wd_alg_ops wd_cipher_ops = {
 	.alg_poll_ctx = wd_cipher_poll_ctx
 };
 
-int wd_cipher_env_init(void)
+int wd_cipher_env_init(struct wd_sched *sched)
 {
+	wd_cipher_env_config.sched = sched;
+
 	return wd_alg_env_init(&wd_cipher_env_config, table,
 				&wd_cipher_ops, ARRAY_SIZE(table), NULL);
 }

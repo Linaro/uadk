@@ -66,7 +66,7 @@ enum wd_cipher_mode {
 struct wd_cipher_sess_setup {
 	enum wd_cipher_alg alg;
 	enum wd_cipher_mode mode;
-	int numa;
+	void *sched_param;
 };
 
 struct wd_cipher_req;
@@ -146,9 +146,10 @@ int wd_cipher_poll(__u32 expt, __u32 *count);
  * wd_cipher_env_init() - Init ctx and schedule resources according to wd cipher
  * environment variables.
  *
+ * @sched: user's custom scheduler.
  * More information, please see docs/wd_environment_variable.
  */
-int wd_cipher_env_init(void);
+int wd_cipher_env_init(struct wd_sched *sched);
 
 /**
  * wd_cipher_env_uninit() - UnInit ctx and schedule resources set by above init.

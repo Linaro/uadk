@@ -62,7 +62,7 @@ enum wd_digest_mode {
 struct wd_digest_sess_setup {
 	enum wd_digest_type alg;
 	enum wd_digest_mode mode;
-	int numa;
+	void *sched_param;
 };
 
 typedef void *wd_digest_cb_t(void *cb_param);
@@ -170,9 +170,10 @@ int wd_digest_poll(__u32 expt, __u32 *count);
  * wd_digest_env_init() - Init ctx and schedule resources according to wd digest
  * environment variables.
  *
+ * @sched: user's custom scheduler.
  * More information, please see docs/wd_environment_variable.
  */
-int wd_digest_env_init(void);
+int wd_digest_env_init(struct wd_sched *sched);
 
 /**
  * wd_digest_env_uninit() - UnInit ctx and schedule resources set by above init.

@@ -46,6 +46,7 @@ static struct wd_sched *g_sched;
 static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
 static unsigned int g_pktlen;
+static struct sched_params g_param;
 
 static void *cipher_async_cb(struct wd_cipher_req *req, void *data)
 {
@@ -368,13 +369,13 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 
 	switch(subtype) {
 	case CIPHER_TYPE:
-		g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
 		break;
 	case AEAD_TYPE:
-		g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_aead_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_aead_poll_ctx);
 		break;
 	case DIGEST_TYPE:
-		g_sched = sample_sched_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_digest_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_digest_poll_ctx);
 		break;
 	default:
 		SEC_TST_PRT("Fail to parse alg subtype!\n");
@@ -390,7 +391,12 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		list->dev->numa_id = 0;
 
 	g_sched->name = SCHED_SINGLE;
-	ret = sample_sched_fill_data(g_sched, list->dev->numa_id, mode, 0, 0, g_ctxnum - 1);
+	g_param.numa_id = list->dev->numa_id;
+	g_param.type = 0;
+	g_param.mode = mode;
+	g_param.begin = 0;
+	g_param.end = g_ctxnum - 1;
+	ret = wd_sched_rr_instance(g_sched, &g_param);
 	if (ret) {
 		SEC_TST_PRT("Fail to fill sched data!\n");
 		goto out;
@@ -418,7 +424,7 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 	return 0;
 out:
 	free(g_ctx_cfg.ctxs);
-	sample_sched_release(g_sched);
+	wd_sched_rr_release(g_sched);
 
 	return ret;
 }
@@ -446,7 +452,7 @@ static void uninit_ctx_config(int subtype)
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
-	sample_sched_release(g_sched);
+	wd_sched_rr_release(g_sched);
 }
 
 int init_uadk_bd_pool(void)
@@ -620,6 +626,7 @@ static void *sec_uadk_async_run(void *arg)
 	case CIPHER_TYPE:
 		cipher_setup.alg = pdata->alg;
 		cipher_setup.mode = pdata->mode;
+		cipher_setup.sched_param = (void *)&g_param;
 		h_sess = wd_cipher_alloc_sess(&cipher_setup);
 		if (!h_sess)
 			return NULL;
@@ -665,6 +672,7 @@ static void *sec_uadk_async_run(void *arg)
 	case AEAD_TYPE: // just ccm and gcm
 		aead_setup.calg = pdata->alg;
 		aead_setup.cmode = pdata->mode;
+		aead_setup.sched_param = (void *)&g_param;
 		h_sess = wd_aead_alloc_sess(&aead_setup);
 		if (!h_sess)
 			return NULL;
@@ -723,6 +731,7 @@ static void *sec_uadk_async_run(void *arg)
 	case DIGEST_TYPE:
 		digest_setup.alg = pdata->alg;
 		digest_setup.mode = pdata->mode; // digest mode is optype
+		digest_setup.sched_param = (void *)&g_param;
 		h_sess = wd_digest_alloc_sess(&digest_setup);
 		if (!h_sess)
 			return NULL;
@@ -800,6 +809,7 @@ static void *sec_uadk_sync_run(void *arg)
 	case CIPHER_TYPE:
 		cipher_setup.alg = pdata->alg;
 		cipher_setup.mode = pdata->mode;
+		cipher_setup.sched_param = (void *)&g_param;
 		h_sess = wd_cipher_alloc_sess(&cipher_setup);
 		if (!h_sess)
 			return NULL;
@@ -835,6 +845,7 @@ static void *sec_uadk_sync_run(void *arg)
 	case AEAD_TYPE: // just ccm and gcm
 		aead_setup.calg = pdata->alg;
 		aead_setup.cmode = pdata->mode;
+		aead_setup.sched_param = (void *)&g_param;
 		h_sess = wd_aead_alloc_sess(&aead_setup);
 		if (!h_sess)
 			return NULL;
@@ -883,6 +894,7 @@ static void *sec_uadk_sync_run(void *arg)
 	case DIGEST_TYPE:
 		digest_setup.alg = pdata->alg;
 		digest_setup.mode = pdata->mode; // digest mode is optype
+		digest_setup.sched_param = (void *)&g_param;
 		h_sess = wd_digest_alloc_sess(&digest_setup);
 		if (!h_sess)
 			return NULL;

@@ -116,7 +116,7 @@ struct wd_comp_sess_setup {
 	enum wd_comp_level comp_lv;     /* Denoted by enum wd_comp_level */
 	enum wd_comp_winsz_type win_sz; /* Denoted by enum wd_comp_winsz_type */
 	enum wd_comp_op_type op_type;   /* Denoted by enum wd_comp_op_type */
-	int numa;
+	void *sched_param;
 };
 
 /**
@@ -172,11 +172,12 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req);
 
 /**
  * wd_comp_env_init() - Init ctx and schedule resources according to wd comp
- * 			environment variables.
+ * environment variables.
  *
+ * @sched: user's custom scheduler.
  * More information, please see docs/wd_environment_variable.
  */
-int wd_comp_env_init(void);
+int wd_comp_env_init(struct wd_sched *sched);
 
 /**
  * wd_comp_env_uninit() - UnInit ctx and schedule resources set by above init.

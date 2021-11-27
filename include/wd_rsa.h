@@ -59,7 +59,7 @@ enum wd_rsa_key_type {
 struct wd_rsa_sess_setup {
 	__u16 key_bits; /* RSA key bits */
 	bool is_crt; /* CRT mode or not */
-	int numa;
+	void *sched_param;
 };
 
 bool wd_rsa_is_crt(handle_t sess);
@@ -179,9 +179,10 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
  * wd_rsa_env_init() - Init ctx and schedule resources according to wd rsa
  * environment variables.
  *
+ * @sched:       user's custom scheduler.
  * More information, please see docs/wd_environment_variable.
  */
-int wd_rsa_env_init(void);
+int wd_rsa_env_init(struct wd_sched *sched);
 
 /**
  * wd_rsa_env_uninit() - UnInit ctx and schedule resources set by above init.

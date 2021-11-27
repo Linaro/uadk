@@ -19,6 +19,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include "wd_comp.h"
+#include "wd_sched.h"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
