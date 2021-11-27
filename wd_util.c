@@ -106,11 +106,13 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 
 int wd_init_sched(struct wd_sched *in, struct wd_sched *from)
 {
-	if (!from->name)
+	if (!from->name || !from->sched_init ||
+	    !from->pick_next_ctx || !from->poll_policy)
 		return -WD_EINVAL;
 
 	in->h_sched_ctx = from->h_sched_ctx;
 	in->name = strdup(from->name);
+	in->sched_init = from->sched_init;
 	in->pick_next_ctx = from->pick_next_ctx;
 	in->poll_policy = from->poll_policy;
 
@@ -125,6 +127,7 @@ void wd_clear_sched(struct wd_sched *in)
 		free(name);
 	in->h_sched_ctx = 0;
 	in->name = NULL;
+	in->sched_init = NULL;
 	in->pick_next_ctx = NULL;
 	in->poll_policy = NULL;
 }
@@ -949,6 +952,7 @@ static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
 			       struct wd_sched *sched, __u8 mode, int type_num)
 {
 	struct wd_ctx_range **ctx_table;
+	struct sched_params param;
 	int i, ret, ctx_num;
 
 	if (mode)
@@ -957,15 +961,16 @@ static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
 		ctx_num = config_numa->sync_ctx_num;
 
 	ctx_table = config_numa->ctx_table;
+	param.numa_id = config_numa->node;
+	param.mode = mode;
 	for (i = 0; i < type_num && ctx_num; i++) {
 		if (!ctx_table[mode][i].size)
 			continue;
 
-		ret = sample_sched_fill_data(
-				sched, config_numa->node,
-				mode, i,
-				ctx_table[mode][i].begin,
-				ctx_table[mode][i].end);
+		param.type = i;
+		param.begin = ctx_table[mode][i].begin;
+		param.end = ctx_table[mode][i].end;
+		ret = wd_sched_rr_instance(sched, &param);
 		if (ret)
 			return ret;
 	}
@@ -984,10 +989,15 @@ static int wd_init_sched_config(struct wd_env_config *config)
 	if (!config->enable_internal_poll)
 		func = config->alg_poll_ctx;
 
-	config->sched = sample_sched_alloc(SCHED_POLICY_RR, type_num,
-				   MAX_NUMA_NUM, func);
-	if (!config->sched)
-		return -WD_ENOMEM;
+	config->internal_sched = false;
+	if (!config->sched) {
+		config->sched = wd_sched_rr_alloc(SCHED_POLICY_RR, type_num,
+					   MAX_NUMA_NUM, func);
+		if (!config->sched)
+			return -WD_ENOMEM;
+
+		config->internal_sched = true;
+	}
 
 	sched = config->sched;
 	sched->name = "SCHED_RR";
@@ -1005,13 +1015,13 @@ static int wd_init_sched_config(struct wd_env_config *config)
 	return 0;
 
 err_release_sched:
-	sample_sched_release(sched);
+	wd_sched_rr_release(sched);
 	return ret;
 }
 
 static void wd_uninit_sched_config(struct wd_sched *sched_config)
 {
-	return sample_sched_release(sched_config);
+	return wd_sched_rr_release(sched_config);
 }
 
 static struct async_task_queue *find_async_queue(struct wd_env_config *config,
@@ -1357,7 +1367,8 @@ static void wd_uninit_resource(struct wd_env_config *config)
 {
 	wd_uninit_async_polling_thread(config);
 	config->alg_uninit();
-	wd_uninit_sched_config(config->sched);
+	if (config->internal_sched)
+		wd_uninit_sched_config(config->sched);
 	wd_free_ctx(config->ctx_config);
 }
 

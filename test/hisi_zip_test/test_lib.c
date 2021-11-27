@@ -156,7 +156,6 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 	setup.op_type = WD_DIR_COMPRESS;
 	setup.comp_lv = WD_COMP_L8;
 	setup.win_sz = WD_COMP_WS_8K;
-	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -218,7 +217,6 @@ int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 
 	setup.alg_type = alg_type;
 	setup.op_type = WD_DIR_DECOMPRESS;
-	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -281,7 +279,6 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 	setup.op_type = WD_DIR_COMPRESS;
 	setup.comp_lv = WD_COMP_L8;
 	setup.win_sz = WD_COMP_WS_8K;
-	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -333,7 +330,6 @@ int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 
 	setup.alg_type = alg_type;
 	setup.op_type = WD_DIR_DECOMPRESS;
-	setup.numa = 0;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
 		fprintf(stderr,"fail to alloc comp sess!\n");
@@ -508,7 +504,6 @@ void *send_thread_func(void *arg)
 	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
 	setup.alg_type = opts->alg_type;
 	setup.op_type = opts->op_type;
-	setup.numa = 0;
 	setup.comp_lv = WD_COMP_L8;
 	setup.win_sz = WD_COMP_WS_8K;
 	h_sess = wd_comp_alloc_sess(&setup);
@@ -1534,15 +1529,16 @@ int init_ctx_config(struct test_options *opts, void *priv,
 {
 	struct hizip_test_info *info = priv;
 	struct wd_ctx_config *ctx_conf = &info->ctx_conf;
+	struct sched_params param;
 	int i, j, ret = -EINVAL;
 	int q_num = opts->q_num;
 
 
 	__atomic_store_n(&sum_pend, 0, __ATOMIC_RELEASE);
 	__atomic_store_n(&sum_thread_end, 0, __ATOMIC_RELEASE);
-	*sched = sample_sched_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
+	*sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!*sched) {
-		WD_ERR("sample_sched_alloc fail\n");
+		WD_ERR("wd_sched_rr_alloc fail\n");
 		goto out_sched;
 	}
 
@@ -1572,8 +1568,12 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		ctx_conf->ctxs[i].ctx_mode = 0;
 		ctx_conf->ctxs[i].op_type = 0;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 0, 0,
-				     0, q_num - 1);
+	param.numa_id = 0;
+	param.mode = 0;
+	param.type = 0;
+	param.begin = 0;
+	param.end = q_num - 1;
+	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
@@ -1582,8 +1582,11 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		ctx_conf->ctxs[i].ctx_mode = 0;
 		ctx_conf->ctxs[i].op_type = 1;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 0, 1,
-				     q_num, q_num * 2 - 1);
+	param.mode = 0;
+	param.type = 1;
+	param.begin = q_num;
+	param.end = q_num * 2 - 1;
+	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
@@ -1592,8 +1595,11 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		ctx_conf->ctxs[i].ctx_mode = 1;
 		ctx_conf->ctxs[i].op_type = 0;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 1, 0,
-				     q_num * 2, q_num * 3 - 1);
+	param.mode = 1;
+	param.type = 0;
+	param.begin = q_num * 2;
+	param.end = q_num * 3 - 1;
+	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
@@ -1602,8 +1608,11 @@ int init_ctx_config(struct test_options *opts, void *priv,
 		ctx_conf->ctxs[i].ctx_mode = 1;
 		ctx_conf->ctxs[i].op_type = 1;
 	}
-	ret = sample_sched_fill_data((const struct wd_sched*)*sched, 0, 1, 1,
-				     q_num * 3, q_num * 4 - 1);
+	param.mode = 1;
+	param.type = 1;
+	param.begin = q_num * 3;
+	param.end = q_num * 4 - 1;
+	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
 		WD_ERR("Fail to fill sched region.\n");
 		goto out_fill;
@@ -1620,7 +1629,7 @@ out_fill:
 out_req:
 	free(ctx_conf->ctxs);
 out_ctx:
-	sample_sched_release(*sched);
+	wd_sched_rr_release(*sched);
 out_sched:
 	return ret;
 }
@@ -1635,7 +1644,7 @@ void uninit_config(void *priv, struct wd_sched *sched)
 	for (i = 0; i < ctx_conf->ctx_num; i++)
 		wd_release_ctx(ctx_conf->ctxs[i].ctx);
 	free(ctx_conf->ctxs);
-	sample_sched_release(sched);
+	wd_sched_rr_release(sched);
 }
 
 
