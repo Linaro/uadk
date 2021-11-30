@@ -279,6 +279,11 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_aead_setting.sched.sched_init(
 			wd_aead_setting.sched.h_sched_ctx, setup->sched_param);
+	if (WD_IS_ERR(sess->sched_key)) {
+		WD_ERR("failed to init session schedule key!\n");
+		free(sess);
+		return (handle_t)0;
+	}
 
 	return (handle_t)sess;
 }

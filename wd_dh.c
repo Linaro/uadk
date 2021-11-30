@@ -495,17 +495,25 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	sess->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
 
 	sess->g.data = malloc(sess->key_size);
-	if (!sess->g.data) {
-		free(sess);
-		return (handle_t)0;
-	}
+	if (!sess->g.data)
+		goto sess_err;
 
 	sess->g.bsize = sess->key_size;
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_dh_setting.sched.sched_init(
 		     wd_dh_setting.sched.h_sched_ctx, setup->sched_param);
+	if (WD_IS_ERR(sess->sched_key)) {
+		WD_ERR("failed to init session schedule key!\n");
+		goto sched_err;
+	}
 
 	return (handle_t)sess;
+
+sched_err:
+	free(sess->g.data);
+sess_err:
+	free(sess);
+	return (handle_t)0;
 }
 
 void wd_dh_free_sess(handle_t sess)

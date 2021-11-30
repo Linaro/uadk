@@ -279,10 +279,8 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 		return (handle_t)0;
 
 	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
-	if (!sess->ctx_buf) {
-		free(sess);
-		return (handle_t)0;
-	}
+	if (!sess->ctx_buf)
+		goto sess_err;
 
 	sess->alg_type = setup->alg_type;
 	sess->comp_lv = setup->comp_lv;
@@ -291,8 +289,18 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
 		     wd_comp_setting.sched.h_sched_ctx, setup->sched_param);
+	if (WD_IS_ERR(sess->sched_key)) {
+		WD_ERR("failed to init session schedule key!\n");
+		goto sched_err;
+	}
 
 	return (handle_t)sess;
+
+sched_err:
+	free(sess->ctx_buf);
+sess_err:
+	free(sess);
+	return (handle_t)0;
 }
 
 void wd_comp_free_sess(handle_t h_sess)
