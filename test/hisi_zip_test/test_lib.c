@@ -1017,9 +1017,10 @@ int hw_deflate4(handle_t h_dfl,
 	if (!in_list || !out_list || !opts || !sem)
 		return -EINVAL;
 	/* reqs array could make async operations in parallel */
-	reqs = calloc(1, sizeof(struct wd_comp_req) * HIZIP_CHUNK_LIST_ENTRIES);
+	reqs = malloc(sizeof(struct wd_comp_req) * HIZIP_CHUNK_LIST_ENTRIES);
 	if (!reqs)
 		return -ENOMEM;
+
 	for (i = 0; p && q; p = p->next, q = q->next, i++) {
 		reqs[i].src = p->addr;
 		reqs[i].src_len = p->size;
