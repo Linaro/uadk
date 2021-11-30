@@ -37,7 +37,6 @@ AC_ARG_ENABLE([perf],
 		perf=true
 	],
 	[perf=false])
-  ],
   [perf=false]
 )
 
