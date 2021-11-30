@@ -829,15 +829,24 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	ret = create_sess_key(setup, sess);
 	if (ret) {
 		WD_ERR("fail creating rsa sess keys!\n");
-		del_sess(sess);
-		return (handle_t)0;
+		goto sess_err;
 	}
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_rsa_setting.sched.sched_init(
 		     wd_rsa_setting.sched.h_sched_ctx, setup->sched_param);
+	if (WD_IS_ERR(sess->sched_key)) {
+		WD_ERR("failed to init session schedule key!\n");
+		goto sched_err;
+	}
 
 	return (handle_t)sess;
+
+sched_err:
+	del_sess_key(sess);
+sess_err:
+	free(sess);
+	return (handle_t)0;
 }
 
 void wd_rsa_free_sess(handle_t sess)
