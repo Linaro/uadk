@@ -12,3 +12,7 @@ test_hisi_hpre_LDADD=-L../../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 			-lnuma
 endif
 test_hisi_hpre_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
+if WITH_OPENSSL_DIR
+AM_CFLAGS+= -DWITH_OPENSSL_DIR
+test_hisi_hpre_LDADD+= $(with_openssl_dir)/libcrypto_wd.so
+endif
