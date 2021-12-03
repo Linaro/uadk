@@ -2075,8 +2075,8 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 {
 	int ret;
 
-	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH)) {
-		WD_ERR("fail to check input data length\n");
+	if (unlikely(msg->in_bytes + msg->assoc_bytes > MAX_CIPHER_LENGTH)) {
+		WD_ERR("fail to check input data length!\n");
 		return -WD_EINVAL;
 	}
 
