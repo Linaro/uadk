@@ -1784,7 +1784,7 @@ static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 
 static int aead_len_check(struct wd_aead_msg *msg)
 {
-	if (msg->in_bytes > MAX_INPUT_DATA_LEN) {
+	if (unlikely(msg->in_bytes + msg->assoc_bytes > MAX_INPUT_DATA_LEN)) {
 		WD_ERR("aead input data length is too long!\n");
 		return -WD_EINVAL;
 	}
