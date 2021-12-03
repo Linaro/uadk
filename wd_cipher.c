@@ -463,6 +463,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	idx = wd_cipher_setting.sched.pick_next_ctx(
 		     wd_cipher_setting.sched.h_sched_ctx,
 		     sess->sched_key, CTX_MODE_SYNC);
+	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
 
