@@ -334,7 +334,8 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 {
 	int ret = 0;
 
-	if (sess->mode == WD_CIPHER_ECB || sess->mode == WD_CIPHER_XTS)
+	/* Only the ECB mode does not need iv. */
+	if (sess->mode == WD_CIPHER_ECB)
 		return 0;
 
 	switch (sess->alg) {
