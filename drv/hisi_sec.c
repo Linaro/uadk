@@ -73,6 +73,8 @@
 /* The max BD data length is 16M-512B */
 #define MAX_INPUT_DATA_LEN	0xFFFE00
 #define MAX_CCM_AAD_LEN		65279
+#define SHA1_ALIGN_SZ		64
+#define SHA512_ALIGN_SZ		128
 
 #define AUTHPAD_OFFSET		2
 #define AUTHTYPE_OFFSET		6
@@ -1229,31 +1231,24 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 static void qm_fill_digest_long_bd(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	struct wd_digest_tag *digest_tag = (void *)(uintptr_t)msg->usr_data;
 	__u64 total_bits;
 
 	if (msg->has_next && (msg->iv_bytes == 0)) {
 		/* LONG BD FIRST */
 		sqe->ai_apd_cs = AI_GEN_INNER;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
-		msg->iv_bytes = msg->out_bytes;
 	} else if (msg->has_next && (msg->iv_bytes != 0)) {
 		/* LONG BD MIDDLE */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
-		msg->iv_bytes = msg->out_bytes;
 	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
 		/* LONG BD END */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_PAD << AUTHPAD_OFFSET;
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
-		total_bits = digest_tag->long_data_len * BYTE_BITS;
+		total_bits = msg->long_data_len * BYTE_BITS;
 		sqe->type2.long_a_data_len = total_bits;
-		msg->iv_bytes = 0;
-	} else {
-		/* SHORT BD */
-		msg->iv_bytes = 0;
 	}
 }
 
@@ -1282,21 +1277,37 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 #endif
 }
 
-static int digest_len_check(struct wd_digest_msg *msg, enum sec_bd_type type)
+static int digest_long_bd_check(struct wd_digest_msg *msg)
 {
-	if (type == BD_TYPE2 && msg->in_bytes == 0) {
-		WD_ERR("digest bd2 not supports 0 packet!\n");
+	if (msg->alg >= WD_DIGEST_SHA512 && msg->in_bytes % SHA512_ALIGN_SZ)
+		return -WD_EINVAL;
+	else if (msg->in_bytes % SHA1_ALIGN_SZ)
+		return -WD_EINVAL;
+
+	return 0;
+}
+
+static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
+{
+	int ret;
+
+	/*  End BD not need to check the input zero bytes */
+	if (unlikely(type == BD_TYPE2 && (!msg->has_next && msg->in_bytes == 0))) {
+		WD_ERR("kunpeng 920, digest mode not support 0 size!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("failed to check digest input data length!\n");
+		WD_ERR("input data length is too long, size:%u!\n", msg->in_bytes);
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->out_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check digest out length!\n");
-		return -WD_EINVAL;
+	if (msg->has_next) {
+		ret = digest_long_bd_check(msg);
+		if (ret) {
+			WD_ERR("input data isn't aligned, size:%u!\n", msg->in_bytes);
+			return -WD_EINVAL;
+		}
 	}
 
 	return 0;
@@ -1435,31 +1446,24 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 static void qm_fill_digest_long_bd3(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
-	struct wd_digest_tag *digest_tag = (void *)(uintptr_t)msg->usr_data;
 	__u64 total_bits;
 
 	if (msg->has_next && (msg->iv_bytes == 0)) {
 		/* LONG BD FIRST */
 		sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
-		msg->iv_bytes = msg->out_bytes;
 	} else if (msg->has_next && (msg->iv_bytes != 0)) {
 		/* LONG BD MIDDLE */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
-		msg->iv_bytes = msg->out_bytes;
 	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
 		/* LONG BD END */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_PAD;
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
-		total_bits = digest_tag->long_data_len * BYTE_BITS;
+		total_bits = msg->long_data_len * BYTE_BITS;
 		sqe->stream_scene.long_a_data_len = total_bits;
-		msg->iv_bytes = 0;
-	} else {
-		/* SHORT BD */
-		msg->iv_bytes = 0;
 	}
 }
 
