@@ -45,6 +45,8 @@ struct wd_digest_msg {
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
+	/* total of data for stream mode */
+	__u64 long_data_len;
 };
 
 struct wd_digest_driver {
