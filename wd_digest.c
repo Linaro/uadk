@@ -46,6 +46,10 @@ struct wd_digest_sess {
 	unsigned char		key[MAX_HMAC_KEY_SIZE];
 	__u32			key_bytes;
 	void			*sched_key;
+	/* Notify the BD state */
+	int				state;
+	/* Total of data for stream mode */
+	__u64			 long_data_len;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -286,11 +290,19 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->out;
 	msg->out_bytes = req->out_bytes;
-	msg->has_next = req->has_next;
 	msg->data_fmt = req->data_fmt;
+	msg->has_next = req->has_next;
+	sess->long_data_len += req->in_bytes;
+	msg->long_data_len = sess->long_data_len;
+	/* To store the stream bd state */
+	msg->iv_bytes = sess->state;
+	if (req->has_next == 0) {
+		sess->long_data_len = 0;
+		sess->state = 0;
+	}
 }
 
-static int send_recv_sync(struct wd_ctx_internal *ctx,
+static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *dsess,
 			  struct wd_digest_msg *msg)
 {
 	__u64 recv_cnt = 0;
@@ -320,6 +332,8 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 				goto out;
 			}
 		}
+		if (msg->has_next)
+			dsess->state = msg->out_bytes;
 	} while (ret < 0);
 
 out:
@@ -353,7 +367,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 		return ret;
 
 	ctx = config->ctxs + idx;
-	ret = send_recv_sync(ctx, &msg);
+	ret = send_recv_sync(ctx, dsess, &msg);
 	req->state = msg.result;
 
 	return ret;
