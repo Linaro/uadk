@@ -367,12 +367,12 @@ static int aead_param_check(struct wd_aead_sess *sess,
 static int aead_init_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	if (!config || !sched) {
-		WD_ERR("failed to check aead init input param!\n");
+		WD_ERR("wd aead config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("failed to system is SVA mode!\n");
+		WD_ERR("err, non sva, please check system!\n");
 		return -WD_EINVAL;
 	}
 
@@ -659,11 +659,6 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_ctx = wd_aead_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_aead_setting.sched;
-
-	if (unlikely(!sched->poll_policy)) {
-		WD_ERR("failed to check aead poll_policy!\n");
-		return -WD_EINVAL;
-	}
 
 	return sched->poll_policy(h_ctx, expt, count);
 }

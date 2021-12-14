@@ -580,11 +580,6 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 	handle_t h_ctx = wd_cipher_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_cipher_setting.sched;
 
-	if (unlikely(!sched->poll_policy)) {
-		WD_ERR("failed to check cipher poll_policy!\n");
-		return -WD_EINVAL;
-	}
-
 	return sched->poll_policy(h_ctx, expt, count);
 }
 
