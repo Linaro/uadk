@@ -243,7 +243,9 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (key_len == 0 || key_len > MAX_HMAC_KEY_SIZE) {
+	if ((ctxt->setup.alg <= WCRYPTO_SHA224 && key_len >
+		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
+		key_len > MAX_HMAC_KEY_SIZE) {
 		WD_ERR("%s: input key length err!\n", __func__);
 		return -WD_EINVAL;
 	}
