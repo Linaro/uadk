@@ -2306,7 +2306,8 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
-		qm_priv.op_type = config->ctxs[i].op_type;
+		/* setting the type is 0 for sqc_type */
+		qm_priv.op_type = 0;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
 		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
