@@ -73,7 +73,10 @@ struct wcrypto_cb_tag {
 };
 
 struct wcrypto_paras {
-	 /* 0--encipher/compress .etc, 1 ---decipher/decomp .etc */
+	/*
+	 * 0--encipher/compress .etc, 1 ---decipher/decomp .etc
+	 * it not been used for HiSilicon SEC currently.
+	 */
 	__u8 direction;
 	__u8 is_poll;
 

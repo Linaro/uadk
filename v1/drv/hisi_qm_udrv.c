@@ -277,16 +277,19 @@ static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_found = true;
 
+	/* DH/RSA: qm sqc_type = 0, ECC: qm sqc_type = 1 */
 	if (!strcmp(alg, "rsa")) {
 		qinfo->atype = WCRYPTO_RSA;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_RSA] = qm_fill_rsa_sqe;
 		info->sqe_parse[WCRYPTO_RSA] = qm_parse_rsa_sqe;
+		priv->direction = 0;
 	} else if (!strcmp(alg, "dh")) {
 		qinfo->atype = WCRYPTO_DH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
 		info->sqe_fill[WCRYPTO_DH] = qm_fill_dh_sqe;
 		info->sqe_parse[WCRYPTO_DH] = qm_parse_dh_sqe;
+		priv->direction = 0;
 	} else if (!strcmp(alg, "ecdh")) {
 		qinfo->atype = WCRYPTO_ECDH;
 		info->sqe_size = QM_HPRE_BD_SIZE;
@@ -414,6 +417,8 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	} else if (zip_alg_info_init(qinfo, alg)) {
 		ret = WD_SUCCESS;
 	} else if (sec_alg_info_init(qinfo, alg)) {
+		/* setting the type is 0 for sqc_type */
+		priv->direction = 0;
 		ret = WD_SUCCESS;
 	} else if (!strcmp(alg, "xts(aes)") ||
 		!strcmp(alg, "xts(sm4)")) {
