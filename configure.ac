@@ -87,7 +87,7 @@ AC_CONFIG_FILES([Makefile
 		 test/hisi_hpre_test/Makefile
 		 test/hisi_sec_test/Makefile
 		 test/hisi_zip_test/Makefile
-		 uadk_benchmark/Makefile
+		 uadk_tool/Makefile
 		 sample/Makefile
 		 v1/test/Makefile
 		 v1/test/bmm_test/Makefile

@@ -448,7 +448,7 @@ static void dump_param(struct acc_option *option)
 	ACC_TST_PRT("    [--engine]:  %s\n", option->engine);
 }
 
-static int acc_benchmark_run(struct acc_option *option)
+int acc_benchmark_run(struct acc_option *option)
 {
 	int nr_children = 0;
 	pid_t *pids, pid;
@@ -510,7 +510,7 @@ static int acc_benchmark_run(struct acc_option *option)
 	return ret;
 }
 
-static int acc_default_case(struct acc_option *option)
+int acc_default_case(struct acc_option *option)
 {
 	ACC_TST_PRT("Test sec Cipher parameter default, alg: aes-128-cbc, set_times:3,"
 			"set_pktlen:1024 bytes, sync mode, one process, one thread.\n");
@@ -532,12 +532,12 @@ static int acc_default_case(struct acc_option *option)
 static void print_help(void)
 {
 	ACC_TST_PRT("NAME\n");
-	ACC_TST_PRT("    uadk_benchmark: test UADK acc performance,etc\n");
+	ACC_TST_PRT("    uadk_tool benchmark: test UADK acc performance,etc\n");
 	ACC_TST_PRT("USAGE\n");
-	ACC_TST_PRT("    uadk_benchmark [--alg aes-128-cbc] [--alg rsa-2048]\n");
-	ACC_TST_PRT("    uadk_benchmark [--mode] [--pktlen] [--keylen] [--seconds]\n");
-	ACC_TST_PRT("    uadk_benchmark [--multi] [--sync] [--async] [--help]\n");
-	ACC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_benchmark xxxx\n");
+	ACC_TST_PRT("    uadk_tool benchmark [--alg aes-128-cbc] [--alg rsa-2048]\n");
+	ACC_TST_PRT("    uadk_tool benchmark [--mode] [--pktlen] [--keylen] [--seconds]\n");
+	ACC_TST_PRT("    uadk_tool benchmark [--multi] [--sync] [--async] [--help]\n");
+	ACC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_tool benchmark xxxx\n");
 	ACC_TST_PRT("        specify numa nodes for cpu and memory\n");
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
@@ -560,29 +560,29 @@ static void print_help(void)
 	ACC_TST_PRT("        set the test openssl engine\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
-	ACC_TST_PRT("    ./uadk_benchmark --alg aes-128-cbc --mode sva --optype 0 --sync\n");
+	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
 	ACC_TST_PRT("    	     --pktlen 1024 --seconds 1 --multi 1 --thread 1 --ctxnum 4\n");
 	ACC_TST_PRT("UPDATE:2021-7-28\n");
 }
 
-static void acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
+void benchmark_cmd_parse(int argc, char *argv[], struct acc_option *option)
 {
 	int option_index = 0;
 	int c;
 
 	static struct option long_options[] = {
-		{"alg",    required_argument, 0,  1},
-		{"mode",    required_argument, 0,  2},
-		{"opt",    required_argument, 0,  3},
-		{"sync",      no_argument,       0,4},
-		{"async",     no_argument,       0,5},
-		{"pktlen",    required_argument, 0,  6},
-		{"seconds",    required_argument, 0,  7},
-		{"thread",     required_argument, 0,  8},
-		{"multi",     required_argument, 0,  9},
-		{"ctxnum",    required_argument, 0,  10},
-		{"engine",    required_argument,    0,11},
-		{"help",      no_argument,       0,  12},
+		{"alg",       required_argument, 0, 2},
+		{"mode",      required_argument, 0, 3},
+		{"opt",       required_argument, 0, 4},
+		{"sync",      no_argument,       0, 5},
+		{"async",     no_argument,       0, 6},
+		{"pktlen",    required_argument, 0, 7},
+		{"seconds",   required_argument, 0, 8},
+		{"thread",    required_argument, 0, 9},
+		{"multi",     required_argument, 0, 10},
+		{"ctxnum",    required_argument, 0, 11},
+		{"engine",    required_argument, 0, 12},
+		{"help",      no_argument,       0, 13},
 		{0, 0, 0, 0}
 	};
 
@@ -593,41 +593,41 @@ static void acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 
 		// ACC_TST_PRT("index:%d , optarg name:%s\n", c, optarg);
 		switch (c) {
-		case 1:
+		case 2:
 			option->algtype = get_alg_type(optarg);
 			strcpy(option->algname, optarg);
 			break;
-		case 2:
+		case 3:
 			option->modetype = get_mode_type(optarg);
 			break;
-		case 3:
+		case 4:
 			option->optype = strtol(optarg, NULL, 0);
 			break;
-		case 4:
+		case 5:
 			option->syncmode = SYNC_MODE;
 			break;
-		case 5:
+		case 6:
 			option->syncmode = ASYNC_MODE;
 			break;
-		case 6:
+		case 7:
 			option->pktlen = strtol(optarg, NULL, 0);
 			break;
-		case 7:
+		case 8:
 			option->times = strtol(optarg, NULL, 0);
 			break;
-		case 8:
+		case 9:
 			option->threads = strtol(optarg, NULL, 0);
 			break;
-		case 9:
+		case 10:
 			option->multis = strtol(optarg, NULL, 0);
 			break;
-		case 10:
+		case 11:
 			option->ctxnums = strtol(optarg, NULL, 0);
 			break;
-		case 11:
+		case 12:
 			strcpy(option->engine, optarg);
 			break;
-		case 12:
+		case 13:
 			print_help();
 			break;
 		default:
@@ -638,7 +638,7 @@ static void acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 	}
 }
 
-static int acc_option_convert(struct acc_option *option)
+int acc_option_convert(struct acc_option *option)
 {
 	if (option->algtype >= ALG_MAX)
 		goto param_err;
@@ -696,22 +696,4 @@ static int acc_option_convert(struct acc_option *option)
 param_err:
 	ACC_TST_PRT("input parameter error, please input --help\n");
 	return -EINVAL;
-}
-
-int main(int argc, char *argv[])
-{
-	struct acc_option option = {0};
-	int ret = 0;
-
-	ACC_TST_PRT("start UADK benchmark test.\n");
-
-	if (!argv[1])
-		return acc_default_case(&option);
-
-	acc_cmd_parse(argc, argv, &option);
-	ret = acc_option_convert(&option);
-	if (ret)
-		return ret;
-
-	return acc_benchmark_run(&option);
 }
