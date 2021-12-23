@@ -119,4 +119,4 @@ libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
 
 
-SUBDIRS=. test v1/test uadk_benchmark sample
+SUBDIRS=. test v1/test uadk_tool sample
