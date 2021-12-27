@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include <numa.h>
 #include "wd_sched.h"
 
 #define MAX_POLL_TIMES 1000
@@ -37,6 +38,8 @@ struct sched_key {
  * @begin: the start pos in ctxs of config.
  * @end: the end pos in ctxx of config.
  * @last: the last one which be distributed.
+ * @valid: the region used flag.
+ * @lock: lock the currentscheduling region.
  */
 struct sched_ctx_region {
 	__u32 begin;
@@ -64,14 +67,13 @@ struct wd_sched_info {
  * @policy: define the policy of the scheduler.
  * @numa_num: the max numa numbers of the scheduler.
  * @type_num: the max operation types of the scheduler.
- * @numa_id: current task's numa id
  * @poll_func: the task's poll operation function.
  * @sched_info: the context of the scheduler
  */
 struct wd_sched_ctx {
 	__u32 policy;
 	__u32 type_num;
-	__u8  numa_num;
+	__u16  numa_num;
 	user_poll_func poll_func;
 	struct wd_sched_info sched_info[0];
 };
@@ -200,15 +202,20 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 {
 	struct wd_sched_ctx *ctx = (struct wd_sched_ctx *)sched_ctx;
 	struct wd_sched_info *sched_info;
-	int numa[MAX_NUMA_NUM];
+	__u16 numa[NUMA_NUM_NODES];
 	__u32 loop_time = 0;
 	__u32 last_count = 0;
-	__u8 tail = 0;
-	__u8 i;
+	__u16 tail = 0;
+	__u16 i;
 	int ret;
 
 	if (!sched_ctx || !count || !ctx) {
 		WD_ERR("ERROR: %s the para is NULL!\n", __FUNCTION__);
+		return -EINVAL;
+	}
+
+	if (ctx->numa_num > NUMA_NUM_NODES) {
+		WD_ERR("ERROR: %s ctx numa num is invalid!\n", __FUNCTION__);
 		return -EINVAL;
 	}
 
@@ -412,24 +419,28 @@ out:
 	return;
 }
 
-struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num, __u8 numa_num,
-				    user_poll_func func)
+struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
+				   __u16 numa_num, user_poll_func func)
 {
 	struct wd_sched_info *sched_info;
 	struct wd_sched_ctx *sched_ctx;
 	struct wd_sched *sched;
-	int i, j;
+	int i, j, max_node;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0)
+		return NULL;
+
+	if (!numa_num || numa_num > max_node) {
+		WD_ERR("Error: %s numa number = %u!\n", __FUNCTION__,
+		       numa_num);
+		return NULL;
+	}
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
 		WD_ERR("Error: %s sched_type = %u or type_num = %u is invalid!\n",
 		       __FUNCTION__, sched_type, type_num);
 		return NULL;
-	}
-
-	if (!numa_num) {
-		WD_ERR("Warning: %s set numa number as %d!\n", __FUNCTION__,
-		       MAX_NUMA_NUM);
-		numa_num = MAX_NUMA_NUM;
 	}
 
 	sched = calloc(1, sizeof(struct wd_sched));

@@ -8,7 +8,6 @@
 #define SCHED_SAMPLE_h
 #include "wd_alg_common.h"
 
-#define MAX_NUMA_NUM	4
 #define INVALID_POS	0xFFFFFFFF
 
 /* The global policy type */
@@ -48,8 +47,8 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
  * @func: The ctx poll function of user underlying operating.
  *
  */
-struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num, __u8 numa_num,
-				    user_poll_func func);
+struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
+				   __u16 numa_num, user_poll_func func);
 
 /**
  * wd_sched_rr_release - Release schedule memory.
