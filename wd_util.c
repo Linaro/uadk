@@ -846,7 +846,7 @@ static handle_t request_ctx_on_numa(struct wd_env_config_per_numa *config)
 	for (i = 0; i < config->dev_num; i++) {
 		dev = config->dev + i;
 		ctx_num = wd_get_avail_ctx(dev);
-		if (!ctx_num)
+		if (ctx_num <= 0)
 			continue;
 
 		h_ctx = wd_request_ctx(dev);

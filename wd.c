@@ -675,7 +675,8 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 	while (list) {
 		tmp = numa_distance(node, list->dev->numa_id);
 		ctx_num = wd_get_avail_ctx(list->dev);
-		if ((dis > tmp && ctx_num) || (dis == tmp && ctx_num > max)) {
+		if ((dis > tmp && ctx_num > 0) ||
+		    (dis == tmp && ctx_num > max)) {
 			dev = list->dev;
 			dis = tmp;
 			max = ctx_num;
