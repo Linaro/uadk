@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <getopt.h>
+#include <numa.h>
 
 #include "test_hisi_sec.h"
 #include "wd_cipher.h"
@@ -493,7 +494,9 @@ static int init_ctx_config(int type, int mode)
 	if (list->dev->numa_id < 0)
 		list->dev->numa_id = 0;
 
-	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
+	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1,
+				    numa_max_node() + 1,
+				    wd_cipher_poll_ctx);
 	if (!g_sched) {
 		printf("Fail to alloc sched!\n");
 		goto out;
