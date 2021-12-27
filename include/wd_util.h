@@ -59,12 +59,9 @@ struct wd_env_config_per_numa {
 };
 
 struct wd_env_config {
-	unsigned long numa_num;
 	struct wd_env_config_per_numa *config_per_numa;
 	/* Let's make it as a gobal config, not per numa */
 	bool enable_internal_poll;
-	__u8 disable_env;
-	__u8 op_type_num;
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
 	void (*alg_uninit)(void);
 
@@ -74,6 +71,9 @@ struct wd_env_config {
 	struct wd_ctx_config *ctx_config;
 	const struct wd_config_variable *table;
 	__u32 table_size;
+	__u16 numa_num;
+	__u8 disable_env;
+	__u8 op_type_num;
 };
 
 struct wd_config_variable {

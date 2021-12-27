@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <numa.h>
 #include "uadk_benchmark.h"
 
 #include "sec_uadk_benchmark.h"
@@ -347,8 +348,12 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 static int init_ctx_config(char *alg, int subtype, int mode)
 {
 	struct uacce_dev_list *list;
+	int i, max_node;
 	int ret = 0;
-	int i;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0)
+		return -EINVAL;
 
 	list = wd_get_accel_list(alg);
 	if (!list) {
@@ -369,13 +374,13 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 
 	switch(subtype) {
 	case CIPHER_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_cipher_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_cipher_poll_ctx);
 		break;
 	case AEAD_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_aead_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_aead_poll_ctx);
 		break;
 	case DIGEST_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, MAX_NUMA_NUM, wd_digest_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_digest_poll_ctx);
 		break;
 	default:
 		SEC_TST_PRT("Fail to parse alg subtype!\n");
