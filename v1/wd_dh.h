@@ -64,7 +64,7 @@ struct wcrypto_dh_msg {
 	__u8 result; /* Data format, denoted by WD error code */
 	__u16 key_bytes; /* Key size */
 	__u8 *x_p; /* This is Xa and p data in order. Should be DMA buffer */
-	__u8 *g; /* This is PV also at phase 2. Should be DMA buffer*/
+	__u8 *g; /* This is PV also at phase 2. Should be DMA buffer */
 	__u8 *out; /* Result address, should be DMA buffer */
 	__u16 xbytes; /* parameter Xa size */
 	__u16 pbytes; /* parameter p size */
