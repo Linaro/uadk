@@ -34,7 +34,7 @@ static const char *comp_ctx_type[2][2] = {
 	{"async-comp:", "async-decomp:"}
 };
 
-/* define two ctx mode here for cipher and other alg*/
+/* define two ctx mode here for cipher and other alg */
 static const char *ctx_type[2][1] = { {"sync:"}, {"async:"} };
 
 struct async_task {

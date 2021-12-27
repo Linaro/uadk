@@ -92,7 +92,7 @@ struct wcrypto_cipher_op_data {
 /* Cipher message format of Warpdrive */
 struct wcrypto_cipher_msg {
 	__u8 alg_type:4;	/* Denoted by enum wcrypto_type */
-	__u8 alg:4;		/* Denoted by enum wcrypto_cipher_alg*/
+	__u8 alg:4;		/* Denoted by enum wcrypto_cipher_alg */
 	__u8 op_type:4;		/* Denoted by enum wcrypto_cipher_op_type */
 	__u8 mode:4;		/* Denoted by enum wcrypto_cipher_mode */
 	__u8 data_fmt;		/* Data format, denoted by enum wcrypto_buff_type */
