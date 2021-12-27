@@ -357,26 +357,28 @@ static void wd_free_numa(struct wd_env_config *config)
  * @numa_dev_num: number of devices of the same type (like sec2) on each numa.
  * @numa_num: number of numa node that has this type of device.
  */
-static void wd_get_dev_numa(struct uacce_dev_list *head,
-			    int *numa_dev_num, __u8 *numa_num, __u8 size)
+static __u16 wd_get_dev_numa(struct uacce_dev_list *head,
+			     int *numa_dev_num, __u16 size)
 {
 	struct uacce_dev_list *list = head;
+	__u16 numa_num = 0;
 
 	while (list) {
 		if (list->dev->numa_id < 0) {
 			list->dev->numa_id = 0;
 		} else if (list->dev->numa_id >= size) {
 			WD_ERR("numa id is wrong(%d)\n", list->dev->numa_id);
-			*numa_num = 0;
-			return;
+			return 0;
 		}
 
 		if (!numa_dev_num[list->dev->numa_id])
-			(*numa_num)++;
+			numa_num++;
 
 		numa_dev_num[list->dev->numa_id]++;
 		list = list->next;
 	}
+
+	return numa_num;
 }
 
 static void wd_set_numa_dev(struct uacce_dev_list *head,
@@ -400,39 +402,18 @@ static void wd_set_numa_dev(struct uacce_dev_list *head,
 	}
 }
 
-static int wd_alloc_numa(struct wd_env_config *config,
-			 const struct wd_alg_ops *ops)
+static int wd_set_config_numa(struct wd_env_config *config,
+			      int *numa_dev_num, int max_node)
 {
 	struct wd_env_config_per_numa *config_numa;
-	struct uacce_dev_list *head;
-	int numa_dev_num[MAX_NUMA_NUM] = {0};
-	__u8 numa_num = 0;
-	int i, ret;
+	int i;
 
-	/* get uacce_dev */
-	head = wd_get_accel_list(ops->alg_name);
-	if (!head) {
-		WD_ERR("no device to support %s\n", ops->alg_name);
-		return -WD_ENODEV;
-	}
-
-	/* get numa num and device num of each numa from uacce_dev list */
-	wd_get_dev_numa(head, numa_dev_num, &numa_num, MAX_NUMA_NUM);
-	if (numa_num == 0 || numa_num > MAX_NUMA_NUM) {
-		WD_ERR("numa num err(%u)!\n", numa_num);
-		wd_free_list_accels(head);
-		return -WD_ENODEV;
-	}
-
-	config->numa_num = numa_num;
-	config->config_per_numa = calloc(numa_num, sizeof(*config_numa));
-	if (!config->config_per_numa) {
-		ret = -WD_ENOMEM;
-		goto free_list;
-	}
+	config->config_per_numa = calloc(config->numa_num, sizeof(*config_numa));
+	if (!config->config_per_numa)
+		return -WD_ENOMEM;
 
 	config_numa = config->config_per_numa;
-	for (i = 0; i < MAX_NUMA_NUM; i++) {
+	for (i = 0; i < max_node; i++) {
 		if (!numa_dev_num[i])
 			continue;
 
@@ -440,24 +421,65 @@ static int wd_alloc_numa(struct wd_env_config *config,
 		config_numa->dev = calloc(numa_dev_num[i],
 					  sizeof(struct uacce_dev));
 		if (!config_numa->dev) {
-			ret = -WD_ENOMEM;
-			goto free_mem;
+			/* free config_per_numa and all uacce dev */
+			wd_free_numa(config);
+			return -WD_ENOMEM;
 		}
 
 		config_numa->dev_num = 0;
 		config_numa++;
 	}
 
+	return 0;
+}
+
+static int wd_alloc_numa(struct wd_env_config *config,
+			 const struct wd_alg_ops *ops)
+{
+	struct uacce_dev_list *head;
+	int *numa_dev_num;
+	int ret, max_node;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0)
+		return -WD_EINVAL;
+
+	numa_dev_num = calloc(max_node, sizeof(int));
+	if (!numa_dev_num)
+		return -WD_ENOMEM;
+
+	/* get uacce_dev */
+	head = wd_get_accel_list(ops->alg_name);
+	if (!head) {
+		WD_ERR("no device to support %s\n", ops->alg_name);
+		ret = -WD_ENODEV;
+		goto free_numa_dev_num;
+	}
+
+	/* get numa num and device num of each numa from uacce_dev list */
+	config->numa_num = wd_get_dev_numa(head, numa_dev_num, max_node);
+	if (config->numa_num == 0 || config->numa_num > max_node) {
+		WD_ERR("numa num err(%u)!\n", config->numa_num);
+		ret = -WD_ENODEV;
+		goto free_list;
+	}
+
+	/* alloc and init config_per_numa and all uacce dev */
+	ret = wd_set_config_numa(config, numa_dev_num, max_node);
+	if (ret)
+		goto free_list;
+
 	/* set device and device num for config numa from uacce_dev list */
 	wd_set_numa_dev(head, config);
 	wd_free_list_accels(head);
+	free(numa_dev_num);
 
 	return 0;
 
-free_mem:
-	wd_free_numa(config);
 free_list:
 	wd_free_list_accels(head);
+free_numa_dev_num:
+	free(numa_dev_num);
 	return ret;
 }
 
@@ -981,18 +1003,22 @@ static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
 static int wd_init_sched_config(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
+	int i, j, ret, max_node, type_num;
 	struct wd_sched *sched;
-	int type_num = config->op_type_num;
-	int i, j, ret;
 	void *func = NULL;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0)
+		return -WD_EINVAL;
 
 	if (!config->enable_internal_poll)
 		func = config->alg_poll_ctx;
 
 	config->internal_sched = false;
+	type_num = config->op_type_num;
 	if (!config->sched) {
 		config->sched = wd_sched_rr_alloc(SCHED_POLICY_RR, type_num,
-					   MAX_NUMA_NUM, func);
+						  max_node, func);
 		if (!config->sched)
 			return -WD_ENOMEM;
 
