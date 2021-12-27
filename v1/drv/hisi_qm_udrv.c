@@ -77,7 +77,7 @@ static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 	return WD_SUCCESS;
 }
 
-/* 'num' starts from 1*/
+/* 'num' starts from 1 */
 void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 			  int num, struct wd_mm_br *br, __u32 buf_sz)
 {
