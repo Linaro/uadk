@@ -1279,9 +1279,9 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe, struct wd_digest_msg *rec
 
 static int digest_long_bd_check(struct wd_digest_msg *msg)
 {
-	if (msg->alg >= WD_DIGEST_SHA512 && msg->in_bytes % SHA512_ALIGN_SZ)
+	if (msg->alg >= WD_DIGEST_SHA512 && msg->in_bytes & (SHA512_ALIGN_SZ - 1))
 		return -WD_EINVAL;
-	else if (msg->in_bytes % SHA1_ALIGN_SZ)
+	else if (msg->in_bytes & (SHA1_ALIGN_SZ - 1))
 		return -WD_EINVAL;
 
 	return 0;
@@ -1298,7 +1298,12 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 	}
 
 	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("input data length is too long, size:%u!\n", msg->in_bytes);
+		WD_ERR("digest input length is too long, size:%u!\n", msg->in_bytes);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->out_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("digest out length is error, size:%u!\n", msg->out_bytes);
 		return -WD_EINVAL;
 	}
 
