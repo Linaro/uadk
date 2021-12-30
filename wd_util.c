@@ -403,7 +403,7 @@ static void wd_set_numa_dev(struct uacce_dev_list *head,
 }
 
 static int wd_set_config_numa(struct wd_env_config *config,
-			      int *numa_dev_num, int max_node)
+			      const int *numa_dev_num, int max_node)
 {
 	struct wd_env_config_per_numa *config_numa;
 	int i;
