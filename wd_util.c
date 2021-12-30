@@ -391,7 +391,7 @@ static void wd_set_numa_dev(struct uacce_dev_list *head,
 	while (list) {
 		config_numa = wd_get_config_numa(config, list->dev->numa_id);
 		if (!config_numa) {
-			WD_ERR("set numa dev err!\n");
+			WD_ERR("%s got wrong numa node!\n", __func__);
 			break;
 		}
 
