@@ -724,7 +724,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	pthread_spin_unlock(&ctx->lock);
 
-	wd_add_task_to_async_queue(&wd_comp_env_config, idx);
+	ret = wd_add_task_to_async_queue(&wd_comp_env_config, idx);
+	if (ret)
+		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, msg->tag);
 
 	return ret;
 }
