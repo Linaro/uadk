@@ -18,7 +18,6 @@
 
 #define SYSFS_NODE_PATH			"/sys/devices/system/node/node"
 #define MAX_HP_STR_SIZE			64
-#define MISC_DVE_UACCE_CTRL		"/dev/uacce_ctrl"
 #define HUGETLB_FLAG_ENCODE_SHIFT	26
 
 #define BITS_PER_LONG			((unsigned int)sizeof(unsigned long) * 8)
