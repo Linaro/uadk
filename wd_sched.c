@@ -202,10 +202,8 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 {
 	struct wd_sched_ctx *ctx = (struct wd_sched_ctx *)sched_ctx;
 	struct wd_sched_info *sched_info;
-	__u16 numa[NUMA_NUM_NODES];
 	__u32 loop_time = 0;
 	__u32 last_count = 0;
-	__u16 tail = 0;
 	__u16 i;
 	int ret;
 
@@ -220,9 +218,6 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 	}
 
 	sched_info = ctx->sched_info;
-	for (i = 0; i < ctx->numa_num; i++)
-		if (sched_info[i].valid)
-			numa[tail++]= i;
 
 	/*
 	 * Try different numa's ctx if we can't receive any
@@ -231,15 +226,25 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 	 */
 	while (loop_time < MAX_POLL_TIMES) {
 		loop_time++;
-		for (i = 0; i < tail;) {
+		for (i = 0; i < ctx->numa_num;) {
+			/* If current numa is not valid, find next. */
+			if (!sched_info[i].valid) {
+				i++;
+				continue;
+			}
+
 			last_count = *count;
-			ret = session_poll_policy_rr(ctx, numa[i], expect, count);
+			ret = session_poll_policy_rr(ctx, i, expect, count);
 			if (ret)
 				return ret;
 
 			if (expect == *count)
 				return 0;
 
+			/*
+			 * If no package is received, find next numa,
+			 * otherwise, keep receiving packets at this node.
+			 */
 			if (last_count == *count)
 				i++;
 		}
