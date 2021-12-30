@@ -958,6 +958,11 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats)
 		return;
 	}
 
+	if (!stats) {
+		WD_ERR("wd_mempool: mempool stats is NULL\n");
+		return;
+	}
+
 	wd_spinlock(&mp->lock);
 
 	stats->page_type = mp->page_type;
