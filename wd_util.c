@@ -1061,7 +1061,9 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	struct wd_env_config_per_numa *config_numa;
 	struct wd_ctx_range **ctx_table;
 	struct async_task_queue *head;
-	int i, j, n = -1, num = 0;
+	int offset = -1;
+	int num = 0;
+	int i;
 
 	FOREACH_NUMA(i, config, config_numa) {
 		num += config_numa->sync_ctx_num + config_numa->async_ctx_num;
@@ -1074,23 +1076,20 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 
 	ctx_table = config_numa->ctx_table;
 	for (i = 0; i < config_numa->op_type_num; i++) {
-		for (j = ctx_table[CTX_MODE_ASYNC][i].begin;
-		     j <= ctx_table[CTX_MODE_ASYNC][i].end;
-		     j++) {
-			if (j == idx) {
-				n = j - ctx_table[CTX_MODE_ASYNC][i].begin;
-				if (n >= config_numa->async_poll_num)
-					n = n % config_numa->async_poll_num;
-				break;
-			}
+		if (idx <= ctx_table[CTX_MODE_ASYNC][i].end &&
+		    idx >= ctx_table[CTX_MODE_ASYNC][i].begin) {
+			offset = idx - ctx_table[CTX_MODE_ASYNC][i].begin;
+			if (offset >= config_numa->async_poll_num)
+				offset = offset % config_numa->async_poll_num;
 		}
 	}
+
+	if (offset < 0)
+		return NULL;
+
 	head = (struct async_task_queue *)config_numa->async_task_queue_array;
-	if (n >= 0) {
-		head += n;
-		return head;
-	}
-	return head;
+
+	return head + offset;
 }
 
 /* fix me: all return value here, and no config input */
