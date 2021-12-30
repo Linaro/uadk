@@ -137,23 +137,43 @@ static int get_dev_info(struct uacce_dev *dev)
 	int value = 0;
 	int ret;
 
-	get_int_attr(dev, "flags", &dev->flags);
-	get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
-
 	/* hardware err isolate flag */
 	ret = access_attr(dev->dev_root, "isolate", F_OK);
 	if (!ret) {
-		get_int_attr(dev, "isolate", &value);
-		if (value == 1)
+		ret = get_int_attr(dev, "isolate", &value);
+		if (ret < 0)
+			return ret;
+		else if (value == 1)
 			return -ENODEV;
 	}
 
-	get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
-	get_int_attr(dev, "region_mmio_size", &value);
+	ret = get_int_attr(dev, "flags", &dev->flags);
+	if (ret < 0)
+		return ret;
+
+	ret = get_int_attr(dev, "region_mmio_size", &value);
+	if (ret < 0)
+		return ret;
+
 	dev->qfrs_offs[UACCE_QFRT_MMIO] = value;
-	get_int_attr(dev, "region_dus_size", &value);
+
+	ret = get_int_attr(dev, "region_dus_size", &value);
+	if (ret < 0)
+		return ret;
+
 	dev->qfrs_offs[UACCE_QFRT_DUS] = value;
-	get_int_attr(dev, "device/numa_node", &dev->numa_id);
+
+	ret = get_int_attr(dev, "device/numa_node", &dev->numa_id);
+	if (ret < 0)
+		return ret;
+
+	ret = get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
+	if (ret < 0)
+		return ret;
+
+	ret = get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }
@@ -195,8 +215,11 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 			goto out_dir;
 
 		ret = get_dev_info(dev);
-		if (ret)
+		if (ret) {
+			WD_ERR("failed to get dev info: ret = %d!\n", ret);
 			goto out_dir;
+		}
+
 		break;
 	}
 	if (!dev_dir)
