@@ -68,7 +68,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		       struct wd_ctx_config *cfg)
 {
 	struct wd_ctx_internal *ctxs;
-	int i;
+	int i, ret;
 
 	if (!cfg->ctx_num) {
 		WD_ERR("invalid parameters, ctx_num is 0!\n");
@@ -93,7 +93,12 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		}
 
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
-		pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
+		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
+		if (ret) {
+			WD_ERR("init ctxs lock failed!\n");
+			free(ctxs);
+			return ret;
+		}
 	}
 
 	in->ctxs = ctxs;

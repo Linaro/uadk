@@ -298,7 +298,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	ret = hisi_qm_get_qfrs_offs(qp->h_ctx, q_info);
 	if (ret) {
 		WD_ERR("get dev qfrs offset fail.\n");
-		return ret;
+		goto err_out;
 	}
 
 	ret = hisi_qm_setup_db(qp->h_ctx, q_info);
@@ -323,7 +323,11 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 		q_info->region_size[UACCE_QFRT_DUS] - sizeof(uint32_t);
 	q_info->ds_rx_base = q_info->ds_tx_base - sizeof(uint32_t);
 
-	pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
+	ret = pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
+	if (ret) {
+		WD_ERR("init qinfo lock fail\n");
+		goto err_out;
+	}
 
 	return 0;
 
@@ -560,7 +564,7 @@ static struct hisi_sgl *hisi_qm_align_sgl(const void *sgl, __u32 sge_num)
 handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 {
 	struct hisi_sgl_pool *sgl_pool;
-	int i;
+	int i, ret;
 
 	if (!sgl_num || !sge_num || sge_num > HISI_SGE_NUM_IN_SGL) {
 		WD_ERR("create sgl_pool failed, sgl_num=%u, sge_num=%u\n",
@@ -601,7 +605,11 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	sgl_pool->sge_num = sge_num;
 	sgl_pool->depth = sgl_num;
 	sgl_pool->top = sgl_num;
-	pthread_spin_init(&sgl_pool->lock, PTHREAD_PROCESS_SHARED);
+	ret = pthread_spin_init(&sgl_pool->lock, PTHREAD_PROCESS_SHARED);
+	if (ret) {
+		WD_ERR("init sgl pool lock failed.\n");
+		goto err_out;
+	}
 
 	return (handle_t)sgl_pool;
 
