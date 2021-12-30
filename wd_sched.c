@@ -463,6 +463,7 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 		goto err_out;
 	}
 
+	sched->h_sched_ctx = (handle_t)sched_ctx;
 	sched_info = sched_ctx->sched_info;
 
 	for (i = 0; i < numa_num; i++) {
@@ -482,7 +483,6 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 	sched->sched_init = sched_table[sched_type].sched_init;
 	sched->pick_next_ctx = sched_table[sched_type].pick_next_ctx;
 	sched->poll_policy = sched_table[sched_type].poll_policy;
-	sched->h_sched_ctx = (handle_t)sched_ctx;
 
 	return sched;
 
