@@ -515,11 +515,17 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
 
-		wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
+		goto fail_with_msg;
 	}
 
-	wd_add_task_to_async_queue(&wd_cipher_env_config, idx);
+	ret = wd_add_task_to_async_queue(&wd_cipher_env_config, idx);
+	if (ret)
+		goto fail_with_msg;
 
+	return 0;
+
+fail_with_msg:
+	wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
 	return ret;
 }
 

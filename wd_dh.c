@@ -341,9 +341,11 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	}
 	pthread_spin_unlock(&ctx->lock);
 
-	wd_add_task_to_async_queue(&wd_dh_env_config, idx);
+	ret = wd_add_task_to_async_queue(&wd_dh_env_config, idx);
+	if (ret)
+		goto fail_with_msg;
 
-	return ret;
+	return 0;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_dh_setting.pool, idx, mid);

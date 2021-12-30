@@ -397,9 +397,11 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	wd_add_task_to_async_queue(&wd_rsa_env_config, idx);
+	ret = wd_add_task_to_async_queue(&wd_rsa_env_config, idx);
+	if (ret)
+		goto fail_with_msg;
 
-	return ret;
+	return 0;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, mid);

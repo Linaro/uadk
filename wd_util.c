@@ -1108,17 +1108,20 @@ int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 idx)
 {
 	struct async_task_queue *task_queue;
 	struct async_task *head, *task;
-	int prod;
+	int prod, ret;
 
 	if (!config->enable_internal_poll)
 		return 0;
 
 	task_queue = find_async_queue(config, idx);
 	if (!task_queue)
-		return 0;
+		return -WD_EINVAL;
 
-	if (sem_wait(&task_queue->empty_sem))
-		return 0;
+	ret = sem_wait(&task_queue->empty_sem);
+	if (ret) {
+		WD_ERR("failed to wait empty_sem!\n");
+		return ret;
+	}
 
 	pthread_mutex_lock(&task_queue->lock);
 
@@ -1135,10 +1138,13 @@ int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 idx)
 
 	pthread_mutex_unlock(&task_queue->lock);
 
-	if (sem_post(&task_queue->full_sem))
-		return 0;
+	ret = sem_post(&task_queue->full_sem);
+	if (ret) {
+		WD_ERR("failed to post full_sem!\n");
+		return ret;
+	}
 
-	return 1;
+	return 0;
 }
 
 static void *async_poll_process_func(void *args)
