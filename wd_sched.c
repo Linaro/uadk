@@ -406,8 +406,10 @@ void wd_sched_rr_release(struct wd_sched *sched)
 	sched_info = sched_ctx->sched_info;
 	for (i = 0; i < sched_ctx->numa_num; i++) {
 		for (j = 0; j < SCHED_MODE_BUTT; j++) {
-			if (sched_info[i].ctx_region[j])
+			if (sched_info[i].ctx_region[j]) {
 				free(sched_info[i].ctx_region[j]);
+				sched_info[i].ctx_region[j] = NULL;
+			}
 		}
 	}
 
