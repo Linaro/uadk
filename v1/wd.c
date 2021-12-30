@@ -349,7 +349,7 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 }
 
 static bool copy_if_better(struct dev_info *old, struct dev_info *new,
-			    struct wd_capa *capa, unsigned int node_mask)
+			   unsigned int node_mask)
 {
 	bool find_node = false;
 
@@ -437,7 +437,7 @@ static int find_available_dev(struct dev_info *dinfop,
 		ret = get_dev_info(&dinfo, capa->alg);
 		if (!ret) {
 			cnt++;
-			if (copy_if_better(dinfop, &dinfo, capa, node_mask)) {
+			if (copy_if_better(dinfop, &dinfo, node_mask)) {
 				find_node = true;
 				break;
 			}
