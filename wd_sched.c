@@ -93,7 +93,7 @@ static __u32 sched_get_next_pos_rr(struct sched_ctx_region *region,
 
 	if (pos < region->end)
 		region->last++;
-	else if (pos >= region->end)
+	else
 		region->last = region->begin;
 
 	pthread_mutex_unlock(&region->lock);
@@ -209,12 +209,12 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 
 	if (!sched_ctx || !count || !ctx) {
 		WD_ERR("ERROR: %s the para is NULL!\n", __FUNCTION__);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (ctx->numa_num > NUMA_NUM_NODES) {
 		WD_ERR("ERROR: %s ctx numa num is invalid!\n", __FUNCTION__);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	sched_info = ctx->sched_info;
@@ -359,7 +359,12 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
 	if (!sched || !sched->h_sched_ctx || !param) {
 		WD_ERR("ERROR: %s para err: sched of h_sched_ctx is NULL!\n",
 		       __FUNCTION__);
-		return -EINVAL;
+		return -WD_EINVAL;
+	}
+
+	if (param->begin > param->end) {
+		WD_ERR("ERROR: sched_params's begin is larger than end!\n");
+		return -WD_EINVAL;
 	}
 
 	numa_id = param->numa_id;
@@ -372,7 +377,7 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
 	    (type >= sched_ctx->type_num)) {
 		WD_ERR("ERROR: %s para err: numa_id=%d, mode=%u, type=%u!\n",
 		       __FUNCTION__, numa_id, mode, type);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	sched_info = sched_ctx->sched_info;
@@ -380,7 +385,7 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
 	if (!sched_info[numa_id].ctx_region[mode]) {
 		WD_ERR("ERROR: %s para err: ctx_region:numa_id=%d, mode=%u is NULL!\n",
 		       __FUNCTION__, numa_id, mode);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	sched_info[numa_id].ctx_region[mode][type].begin = param->begin;
