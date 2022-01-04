@@ -328,11 +328,11 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 	if (!ctx)
 		return 0;
 
-	ctx->dev_name = wd_get_accel_name(char_dev_path, 0);
+	ctx->dev_name = wd_get_accel_name(dev->char_dev_path, 0);
 	if (!ctx->dev_name)
 		goto free_ctx;
 
-	ctx->drv_name = wd_get_accel_name(char_dev_path, 1);
+	ctx->drv_name = wd_get_accel_name(dev->char_dev_path, 1);
 	if (!ctx->drv_name)
 		goto free_dev_name;
 
@@ -342,7 +342,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 
 	wd_ctx_init_qfrs_offs(ctx);
 
-	strncpy(ctx->dev_path, char_dev_path, MAX_DEV_NAME_LEN);
+	strncpy(ctx->dev_path, dev->char_dev_path, MAX_DEV_NAME_LEN);
 	ctx->dev_path[MAX_DEV_NAME_LEN - 1] = '\0';
 
 	ctx->fd = open(char_dev_path, O_RDWR | O_CLOEXEC);
