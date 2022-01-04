@@ -1069,7 +1069,7 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	struct wd_env_config_per_numa *config_numa;
 	struct wd_ctx_range **ctx_table;
 	struct async_task_queue *head;
-	unsigned long offset;
+	unsigned long offset = 0;
 	int num = 0;
 	int i;
 
@@ -1093,10 +1093,8 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	for (i = 0; i < config_numa->op_type_num; i++) {
 		if (idx <= ctx_table[CTX_MODE_ASYNC][i].end &&
 		    idx >= ctx_table[CTX_MODE_ASYNC][i].begin) {
-			offset = idx - ctx_table[CTX_MODE_ASYNC][i].begin;
-			if (offset >= config_numa->async_poll_num)
-				offset = offset % config_numa->async_poll_num;
-
+			offset = (idx - ctx_table[CTX_MODE_ASYNC][i].begin) %
+				 config_numa->async_poll_num;
 			break;
 		}
 	}
