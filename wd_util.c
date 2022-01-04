@@ -10,6 +10,7 @@
 #include <semaphore.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include "wd_alg_common.h"
 #include "wd_util.h"
 #include "wd_sched.h"
@@ -1295,7 +1296,8 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 				struct wd_env_config_per_numa *config_numa)
 {
 	struct async_task_queue *task_queue, *queue_head;
-	int i, j, poll_thread_num, ret;
+	int i, j, ret;
+	double num;
 
 	if (!config_numa->async_ctx_num)
 		return 0;
@@ -1307,13 +1309,7 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 		config_numa->async_poll_num = WD_ASYNC_DEF_POLL_NUM;
 	}
 
-	poll_thread_num = config_numa->async_poll_num;
-	if (poll_thread_num > config_numa->async_ctx_num) {
-		poll_thread_num = config_numa->async_ctx_num;
-		WD_ERR("downgrade poll thread num from %lu to %lu.\n",
-		       config_numa->async_poll_num,
-		       config_numa->async_ctx_num);
-	}
+	num = fmin(config_numa->async_poll_num, config_numa->async_ctx_num);
 
 	/* make max task queues as the number of async ctxs */
 	queue_head = calloc(config_numa->async_ctx_num, sizeof(*queue_head));
@@ -1321,7 +1317,7 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 		return -WD_ENOMEM;
 
 	task_queue = queue_head;
-	for (i = 0; i < poll_thread_num; task_queue++, i++) {
+	for (i = 0; i < num; task_queue++, i++) {
 		ret = wd_init_one_task_queue(task_queue, config->alg_poll_ctx);
 		if (ret) {
 			for (j = 0; j < i; task_queue++, j++)
@@ -1340,15 +1336,14 @@ static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
 				struct wd_env_config_per_numa *config_numa)
 {
 	struct async_task_queue *task_queue, *head;
-	int i, n;
+	double num;
+	int i;
 
 	head = config_numa->async_task_queue_array;
 	task_queue = head;
-	n = config_numa->async_poll_num;
-	if (config_numa->async_poll_num > config_numa->async_ctx_num)
-		n = config_numa->async_ctx_num;
+	num = fmin(config_numa->async_poll_num, config_numa->async_ctx_num);
 
-	for (i = 0; i < n; task_queue++, i++)
+	for (i = 0; i < num; task_queue++, i++)
 		wd_uninit_one_task_queue(task_queue);
 	free(head);
 	config_numa->async_task_queue_array = NULL;
