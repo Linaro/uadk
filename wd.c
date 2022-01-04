@@ -171,11 +171,7 @@ static int get_dev_info(struct uacce_dev *dev)
 	if (ret < 0)
 		return ret;
 
-	ret = get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
-	if (ret < 0)
-		return ret;
-
-	return 0;
+	return get_str_attr(dev, "algorithms", dev->algs, MAX_ATTR_STR_SIZE);
 }
 
 static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
@@ -215,7 +211,7 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 			goto out_dir;
 
 		ret = get_dev_info(dev);
-		if (ret) {
+		if (ret < 0) {
 			WD_ERR("failed to get dev info: ret = %d!\n", ret);
 			goto out_dir;
 		}
