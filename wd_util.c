@@ -759,6 +759,11 @@ int wd_parse_async_poll_num(struct wd_env_config *config, const char *s)
 	char *left, *section, *start;
 	int node, poll_num, ret;
 
+	if (!config->enable_internal_poll) {
+		WD_ERR("internal poll not enabled, skip parse poll number!\n");
+		return 0;
+	}
+
 	start = strdup(s);
 	if (!start)
 		return -ENOMEM;
