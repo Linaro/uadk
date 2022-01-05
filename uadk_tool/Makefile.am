@@ -16,7 +16,7 @@ uadk_tool_LDADD=$(libwd_la_OBJECTS) \
 			../.libs/libhisi_sec.a \
 			../.libs/libhisi_hpre.a \
 			../.libs/libhisi_zip.a \
-			include/libcrypto.a -ldl -lnuma
+			$(top_srcdir)/uadk_tool/include/libcrypto.a -ldl -lnuma
 else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 			-L$(top_srcdir)/uadk_tool/include -l:libcrypto.so.1.1 -lnuma

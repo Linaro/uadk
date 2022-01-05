@@ -551,7 +551,7 @@ static void print_help(void)
 	ACC_TST_PRT("    [--seconds]:\n");
 	ACC_TST_PRT("        set the test times\n");
 	ACC_TST_PRT("    [--multi]:\n");
-	ACC_TST_PRT("        set the number of threads\n");
+	ACC_TST_PRT("        set the number of process\n");
 	ACC_TST_PRT("    [--thread]:\n");
 	ACC_TST_PRT("        set the number of threads\n");
 	ACC_TST_PRT("    [--ctxnum]:\n");
