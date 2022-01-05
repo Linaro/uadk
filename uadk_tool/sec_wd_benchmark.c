@@ -36,6 +36,7 @@ struct thread_queue_res {
 
 struct wcrypto_async_tag {
 	void *ctx;
+	char *out_buf;
 	int thread_id;
 	int cnt;
 };
@@ -54,17 +55,34 @@ static unsigned int g_pktlen;
 
 static void *cipher_async_cb(void *message, void *cipher_tag)
 {
+	struct wcrypto_async_tag *async_tag = (struct wcrypto_async_tag *)cipher_tag;
+	struct wcrypto_cipher_msg *req = (struct wcrypto_cipher_msg *)message;
+
+	// no-sva data copy from uadk to user
+	memcpy(async_tag->out_buf, req->out, g_pktlen);
+
 	return NULL;
 }
 
-static void *aead_async_cb(void *message, void *cipher_tag)
+static void *aead_async_cb(void *message, void *aead_tag)
 {
+	struct wcrypto_async_tag *async_tag = (struct wcrypto_async_tag *)aead_tag;
+	struct wcrypto_aead_msg *req = (struct wcrypto_aead_msg *)message;
+
+	// no-sva data copy from uadk to user
+	memcpy(async_tag->out_buf, req->out, g_pktlen);
+
 	return NULL;
 }
 
 static void *digest_async_cb(void *message, void *digest_tag)
 {
-	// struct WCRYPTO_req *req = (struct WCRYPTO_req *)data;
+	struct wcrypto_async_tag *async_tag = (struct wcrypto_async_tag *)digest_tag;
+	struct wcrypto_digest_msg *req = (struct wcrypto_digest_msg *)message;
+
+	// no-sva data copy from uadk to user
+	memcpy(async_tag->out_buf, req->out, 16);
+
 	return NULL;
 }
 
@@ -563,6 +581,8 @@ static void *sec_wd_async_run(void *arg)
 	struct wcrypto_async_tag *tag = NULL;
 	char priv_key[MAX_IVK_LENTH];
 	struct thread_bd_res *bd_res;
+	char *src_data_buf = NULL;
+	char *out_data_buf = NULL;
 	struct wd_queue *queue;
 	void *ctx = NULL;
 	void **res_in;
@@ -584,13 +604,27 @@ static void *sec_wd_async_run(void *arg)
 	res_out = bd_res->out;
 	res_iv = bd_res->iv;
 
+	/* create user data buffer */
+	src_data_buf = malloc(g_pktlen * sizeof(char));
+	if (!src_data_buf)
+		return NULL;
+
+	get_rand_data(src_data_buf, g_pktlen);
+	out_data_buf = malloc(g_pktlen * sizeof(char));
+	if (!out_data_buf) {
+		free(src_data_buf);
+		return NULL;
+	}
+
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
 	tag = malloc(sizeof(struct wcrypto_async_tag)); // set the user tag
 	if (!tag) {
 		SEC_TST_PRT("wcrypto async alloc tag fail!\n");
+		free(src_data_buf);
+		free(out_data_buf);
 		return NULL;
 	}
-	tag->thread_id = pdata->td_id;
+	tag->out_buf = out_data_buf;
 
 	switch(pdata->subtype) {
 	case CIPHER_TYPE:
@@ -607,7 +641,7 @@ static void *sec_wd_async_run(void *arg)
 		ctx = wcrypto_create_cipher_ctx(queue, &cipher_setup);
 		if (!ctx) {
 			SEC_TST_PRT("wd create cipher ctx fail!\n");
-			return NULL;
+			goto async_err;
 		}
 		tag->ctx = ctx;
 
@@ -615,7 +649,7 @@ static void *sec_wd_async_run(void *arg)
 		if (ret) {
 			SEC_TST_PRT("wd cipher set key fail!\n");
 			wcrypto_del_cipher_ctx(ctx);
-			return NULL;
+			goto async_err;
 		}
 
 		if (queue->capa.priv.direction == 0)
@@ -636,6 +670,9 @@ static void *sec_wd_async_run(void *arg)
 		while(1) {
 			if (get_run_state() == 0)
 				break;
+
+			// no-sva data copy to uadk
+			memcpy(copdata.in, src_data_buf, g_pktlen);
 
 			ret = wcrypto_do_cipher(ctx, &copdata, (void *)tag);
 			if (ret == -WD_EBUSY) {
@@ -672,7 +709,7 @@ static void *sec_wd_async_run(void *arg)
 		ctx = wcrypto_create_aead_ctx(queue, &aead_setup);
 		if (!ctx) {
 			SEC_TST_PRT("wd create aead ctx fail!\n");
-			return NULL;
+			goto async_err;
 		}
 		tag->ctx = ctx;
 
@@ -680,7 +717,7 @@ static void *sec_wd_async_run(void *arg)
 		if (ret) {
 			SEC_TST_PRT("wd aead set key fail!\n");
 			wcrypto_del_aead_ctx(ctx);
-			return NULL;
+			goto async_err;
 		}
 
 		authsize = 16; //set defaut size
@@ -688,7 +725,7 @@ static void *sec_wd_async_run(void *arg)
 		if (ret) {
 			SEC_TST_PRT("set authsize fail!\n");
 			wcrypto_del_aead_ctx(ctx);
-			return NULL;
+			goto async_err;
 		}
 
 		if (queue->capa.priv.direction == 0) {
@@ -714,6 +751,9 @@ static void *sec_wd_async_run(void *arg)
 		while(1) {
 			if (get_run_state() == 0)
 				break;
+
+			// no-sva data copy to uadk
+			memcpy(aopdata.in, src_data_buf, g_pktlen);
 
 			ret = wcrypto_do_aead(ctx, &aopdata, (void *)tag);
 			if (ret == -WD_EBUSY) {
@@ -750,7 +790,7 @@ static void *sec_wd_async_run(void *arg)
 		ctx = wcrypto_create_digest_ctx(queue, &digest_setup);
 		if (!ctx) {
 			SEC_TST_PRT("wd create digest ctx fail!\n");
-			return NULL;
+			goto async_err;
 		}
 		tag->ctx = ctx;
 
@@ -760,7 +800,7 @@ static void *sec_wd_async_run(void *arg)
 			if (ret) {
 				SEC_TST_PRT("wd digest set key fail!\n");
 				wcrypto_del_digest_ctx(ctx);
-				return NULL;
+				goto async_err;
 			}
 		}
 
@@ -776,6 +816,9 @@ static void *sec_wd_async_run(void *arg)
 		while(1) {
 			if (get_run_state() == 0)
 				break;
+
+			// no-sva data copy to uadk
+			memcpy(dopdata.in, src_data_buf, g_pktlen);
 
 			ret = wcrypto_do_digest(ctx, &dopdata, (void *)tag);
 			if (ret == -WD_EBUSY) {
@@ -802,7 +845,7 @@ static void *sec_wd_async_run(void *arg)
 	add_send_complete();
 
 	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
+		if (get_recv_time() == g_thread_num) // wait Async mode finish recv
 			break;
 		usleep(SEND_USLEEP);
 	}
@@ -819,6 +862,10 @@ static void *sec_wd_async_run(void *arg)
 		break;
 	}
 
+async_err:
+	free(tag);
+	free(src_data_buf);
+	free(out_data_buf);
 	return NULL;
 }
 
@@ -834,6 +881,8 @@ static void *sec_wd_sync_run(void *arg)
 	char priv_key[MAX_IVK_LENTH];
 	struct thread_bd_res *bd_res;
 	struct wd_queue *queue;
+	char *src_data_buf = NULL;
+	char *out_data_buf = NULL;
 	void *ctx = NULL;
 	void *tag = NULL;
 	void **res_in;
@@ -855,6 +904,18 @@ static void *sec_wd_sync_run(void *arg)
 	res_out = bd_res->out;
 	res_iv = bd_res->iv;
 
+	/* create user data buffer */
+	src_data_buf = malloc(g_pktlen * sizeof(char));
+	if (!src_data_buf)
+		return NULL;
+
+	get_rand_data(src_data_buf, g_pktlen);
+	out_data_buf = malloc(g_pktlen * sizeof(char));
+	if (!out_data_buf) {
+		free(src_data_buf);
+		return NULL;
+	}
+
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
 
 	switch(pdata->subtype) {
@@ -871,14 +932,14 @@ static void *sec_wd_sync_run(void *arg)
 		ctx = wcrypto_create_cipher_ctx(queue, &cipher_setup);
 		if (!ctx) {
 			SEC_TST_PRT("wd create cipher ctx fail!\n");
-			return NULL;
+			goto sync_err;
 		}
 
 		ret = wcrypto_set_cipher_key(ctx, (__u8*)priv_key, (__u16)pdata->keysize);
 		if (ret) {
 			SEC_TST_PRT("wd cipher set key fail!\n");
 			wcrypto_del_cipher_ctx(ctx);
-			return NULL;
+			goto sync_err;
 		}
 
 		if (queue->capa.priv.direction == 0)
@@ -899,6 +960,9 @@ static void *sec_wd_sync_run(void *arg)
 			if (get_run_state() == 0)
 				break;
 
+			// no-sva data copy to uadk
+			memcpy(copdata.in, src_data_buf, g_pktlen);
+
 			ret = wcrypto_do_cipher(ctx, &copdata, tag);
 			if (ret == -WD_EBUSY) {
 				usleep(SEND_USLEEP * try_cnt);
@@ -916,6 +980,9 @@ static void *sec_wd_sync_run(void *arg)
 			copdata.in = res_in[i];
 			copdata.out   = res_out[i];
 			copdata.iv = res_iv[i];
+
+			// no-sva data copy from uadk to user
+			memcpy(out_data_buf, copdata.out, g_pktlen);
 		}
 		wcrypto_del_cipher_ctx(ctx);
 
@@ -933,14 +1000,14 @@ static void *sec_wd_sync_run(void *arg)
 		ctx = wcrypto_create_aead_ctx(queue, &aead_setup);
 		if (!ctx) {
 			SEC_TST_PRT("wd create aead ctx fail!\n");
-			return NULL;
+			goto sync_err;
 		}
 
 		ret = wcrypto_set_aead_ckey(ctx, (__u8*)priv_key, (__u16)pdata->keysize);
 		if (ret) {
 			SEC_TST_PRT("wd aead set key fail!\n");
 			wcrypto_del_aead_ctx(ctx);
-			return NULL;
+			goto sync_err;
 		}
 
 		authsize = 16; //set defaut size
@@ -948,7 +1015,7 @@ static void *sec_wd_sync_run(void *arg)
 		if (ret) {
 			SEC_TST_PRT("set authsize fail!\n");
 			wcrypto_del_aead_ctx(ctx);
-			return NULL;
+			goto sync_err;
 		}
 
 		if (queue->capa.priv.direction == 0) {
@@ -974,6 +1041,9 @@ static void *sec_wd_sync_run(void *arg)
 			if (get_run_state() == 0)
 				break;
 
+			// no-sva data copy to uadk
+			memcpy(aopdata.in, src_data_buf, g_pktlen);
+
 			ret = wcrypto_do_aead(ctx, &aopdata, tag);
 			if (ret == -WD_EBUSY) {
 				usleep(SEND_USLEEP * try_cnt);
@@ -991,6 +1061,9 @@ static void *sec_wd_sync_run(void *arg)
 			aopdata.in = res_in[i];
 			aopdata.out   = res_out[i];
 			aopdata.iv = res_iv[i];
+
+			// no-sva data copy from uadk to user
+			memcpy(out_data_buf, aopdata.out, g_pktlen);
 		}
 		wcrypto_del_aead_ctx(ctx);
 
@@ -1008,7 +1081,7 @@ static void *sec_wd_sync_run(void *arg)
 		ctx = wcrypto_create_digest_ctx(queue, &digest_setup);
 		if (!ctx) {
 			SEC_TST_PRT("wd create digest ctx fail!\n");
-			return NULL;
+			goto sync_err;
 		}
 
 		if (digest_setup.mode == WCRYPTO_DIGEST_HMAC) {
@@ -1017,7 +1090,7 @@ static void *sec_wd_sync_run(void *arg)
 			if (ret) {
 				SEC_TST_PRT("wd digest set key fail!\n");
 				wcrypto_del_digest_ctx(ctx);
-				return NULL;
+				goto sync_err;
 			}
 		}
 
@@ -1032,6 +1105,9 @@ static void *sec_wd_sync_run(void *arg)
 		while(1) {
 			if (get_run_state() == 0)
 				break;
+
+			// no-sva data copy to uadk
+			memcpy(dopdata.in, src_data_buf, g_pktlen);
 
 			ret = wcrypto_do_digest(ctx, &dopdata, (void *)tag);
 			if (ret == -WD_EBUSY) {
@@ -1048,7 +1124,10 @@ static void *sec_wd_sync_run(void *arg)
 			try_cnt = 0;
 			i = count % MAX_BLOCK_NM;
 			dopdata.in = res_in[i];
-			dopdata.out   = res_out[i];
+			dopdata.out = res_out[i];
+
+			// no-sva data copy from uadk to user
+			memcpy(out_data_buf, dopdata.out, 16);
 		}
 		wcrypto_del_digest_ctx(ctx);
 		break;
@@ -1056,6 +1135,9 @@ static void *sec_wd_sync_run(void *arg)
 
 	add_recv_data(count);
 
+sync_err:
+	free(src_data_buf);
+	free(out_data_buf);
 	return NULL;
 }
 
@@ -1097,7 +1179,6 @@ int sec_wd_sync_threads(struct acc_option *options)
 
 sync_error:
 	return ret;
-
 }
 
 int sec_wd_async_threads(struct acc_option *options)
@@ -1185,4 +1266,3 @@ int sec_wd_benchmark(struct acc_option *options)
 
 	return 0;
 }
-
