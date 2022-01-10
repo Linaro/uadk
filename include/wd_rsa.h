@@ -12,6 +12,10 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT			3
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
@@ -215,5 +219,9 @@ void wd_rsa_ctx_num_uninit(void);
  */
 int wd_rsa_get_env_param(__u32 node, __u32 type, __u32 mode,
 			 __u32 *num, __u8 *is_enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __WD_RSA_H */

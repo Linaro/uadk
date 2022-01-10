@@ -14,6 +14,10 @@
 #include <unistd.h>
 #include "uacce.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define PATH_STR_SIZE			256
 #define MAX_ATTR_STR_SIZE		384
 #define WD_NAME_SIZE			64
@@ -482,5 +486,9 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
  * @stats: Pointer of struct wd_blockpool_stats.
  */
 void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

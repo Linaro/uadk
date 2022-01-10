@@ -11,6 +11,10 @@
 #include "wd_alg_common.h"
 #include "wd.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MAX_HMAC_KEY_SIZE	128U
 
 /**
@@ -208,5 +212,9 @@ void wd_digest_ctx_num_uninit(void);
  */
 int wd_digest_get_env_param(__u32 node, __u32 type, __u32 mode,
 			    __u32 *num, __u8 *is_enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __WD_DIGEST_H */

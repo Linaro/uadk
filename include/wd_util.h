@@ -10,6 +10,10 @@
 #include <stdbool.h>
 #include "wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FOREACH_NUMA(i, config, config_numa) \
 	for (i = 0, config_numa = config->config_per_numa; \
 	     i < config->numa_num; config_numa++, i++)
@@ -308,5 +312,9 @@ int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
  * @idx: ctx index.
  */
 int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __WD_UTIL_H */
