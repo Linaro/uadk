@@ -7,6 +7,10 @@
 #include "../wd_cipher.h"
 #include "../wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* fixme wd_cipher_msg */
 struct wd_cipher_msg {
 	struct wd_cipher_req req;
@@ -72,4 +76,9 @@ static void __attribute__((constructor)) set_driver(void)		      \
 	wd_cipher_set_driver(&drv);					      \
 }
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* __WD_CIPHER_DRV_H */

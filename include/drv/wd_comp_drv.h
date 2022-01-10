@@ -7,6 +7,10 @@
 #include <pthread.h>
 #include "../wd_comp.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum wd_comp_strm_pos {
 	WD_COMP_STREAM_NEW,
 	WD_COMP_STREAM_OLD,
@@ -76,6 +80,10 @@ struct wd_comp_driver *wd_comp_get_driver(void)				      \
 static void __attribute__((constructor)) set_driver(void)		      \
 {									      \
 	wd_comp_set_driver(&drv);					      \
+}
+#endif
+
+#ifdef __cplusplus
 }
 #endif
 

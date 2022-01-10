@@ -8,6 +8,10 @@
 #define SCHED_SAMPLE_h
 #include "wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define INVALID_POS	0xFFFFFFFF
 
 /* The global policy type */
@@ -55,5 +59,9 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
  * @sched: The schedule which will be released.
  */
 void wd_sched_rr_release(struct wd_sched *sched);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -10,6 +10,10 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define UACCE_CMD_START         _IO('W', 0)
 #define UACCE_CMD_PUT_Q         _IO('W', 1)
 #define UACCE_CMD_GET_SS_DMA    _IOR('W', 100, unsigned long)
@@ -33,4 +37,9 @@ enum uacce_qfrt {
 	UACCE_QFRT_DUS = 1,	/* device user share */
 	UACCE_QFRT_MAX,
 };
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

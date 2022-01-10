@@ -6,6 +6,10 @@
 #include "include/wd_digest.h"
 #include "include/wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* fixme wd_digest_msg */
 struct wd_digest_msg {
 	struct wd_digest_req req;
@@ -75,4 +79,9 @@ static void __attribute__((constructor)) set_drivers(void)		      \
 	wd_digest_set_driver(&drv);					      \
 }
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* __WD_DIGEST_DRV_H */
