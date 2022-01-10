@@ -474,8 +474,10 @@ static int wd_alloc_numa(struct wd_env_config *config,
 
 	/* alloc and init config_per_numa and all uacce dev */
 	ret = wd_set_config_numa(config, numa_dev_num, max_node);
-	if (ret)
+	if (ret) {
+		WD_ERR("failed to set numa config, ret = %d!\n", ret);
 		goto free_list;
+	}
 
 	/* set device and device num for config numa from uacce_dev list */
 	wd_set_numa_dev(head, config);
@@ -801,11 +803,8 @@ static int wd_parse_env(struct wd_env_config *config)
 
 	for (i = 0; i < config->table_size; i++) {
 		var = config->table + i;
-		if (config->disable_env)
-			var_s = var->def_val;
-		else
-			var_s = secure_getenv(var->name);
 
+		var_s = secure_getenv(var->name);
 		if (!var_s || !strlen(var_s)) {
 			var_s = var->def_val;
 			WD_ERR("no %s environment variable! Use default: %s\n",
@@ -839,6 +838,40 @@ static void wd_free_env(struct wd_env_config *config)
 	}
 }
 
+static int wd_parse_ctx_attr(struct wd_env_config *env_config,
+			     struct wd_ctx_attr *attr)
+{
+	struct wd_env_config_per_numa *config_numa;
+	int ret;
+
+	config_numa = wd_get_config_numa(env_config, attr->node);
+	if (!config_numa) {
+		WD_ERR("%s got wrong numa node!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	config_numa->op_type_num = env_config->op_type_num;
+	ret = wd_alloc_ctx_table(config_numa);
+	if (ret)
+		return ret;
+
+	config_numa->ctx_table[attr->mode][attr->type].size = attr->num;
+	wd_fill_ctx_table(env_config);
+
+	/* Use default sched and disable internal poll */
+	env_config->sched = NULL;
+	env_config->enable_internal_poll = 0;
+	config_numa->async_poll_num = 0;
+
+	return 0;
+}
+
+static int wd_init_env_config(struct wd_env_config *config,
+			      struct wd_ctx_attr *attr)
+{
+	return attr ? wd_parse_ctx_attr(config, attr) : wd_parse_env(config);
+}
+
 static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
 {
 	struct wd_ctx_range **ctx_table = config->ctx_table;
@@ -869,6 +902,7 @@ static int get_op_type(struct wd_env_config_per_numa *config,
 			return i;
 	}
 
+	WD_ERR("failed to get op type!\n");
 	return -WD_EINVAL;
 }
 
@@ -1030,6 +1064,7 @@ static int wd_init_sched_config(struct wd_env_config *config)
 	config->internal_sched = false;
 	type_num = config->op_type_num;
 	if (!config->sched) {
+		WD_ERR("no sched is specified, alloc a default sched!\n");
 		config->sched = wd_sched_rr_alloc(SCHED_POLICY_RR, type_num,
 						  max_node, func);
 		if (!config->sched)
@@ -1430,100 +1465,6 @@ static void wd_uninit_resource(struct wd_env_config *config)
 	wd_free_ctx(config->ctx_config);
 }
 
-static void *wd_alloc_table(const struct wd_config_variable *table,
-				 __u32 table_size)
-{
-	struct wd_config_variable *alg_table;
-	int i, j;
-
-	alg_table = malloc(table_size * sizeof(struct wd_config_variable));
-	if (!alg_table)
-		return NULL;
-
-	memcpy(alg_table, table,
-			table_size * sizeof(struct wd_config_variable));
-	for (i = 0; i < table_size - 1; i++) {
-		alg_table[i].def_val = malloc(MAX_STR_LEN);
-		if (!alg_table[i].def_val) {
-			WD_ERR("%s malloc fail\n", __func__);
-			goto free_mem;
-		}
-	}
-
-	return alg_table;
-
-free_mem:
-	for (j = 0; j < i; j++)
-		free(alg_table[j].def_val);
-
-	free(alg_table);
-	return NULL;
-}
-
-static int wd_alg_table_init(const struct wd_config_variable *table,
-			     __u32 table_size,
-			     struct wd_ctx_attr *attr,
-			     struct wd_env_config *env_config)
-{
-	struct wd_config_variable *var_tbl;
-	const char *type_tbl;
-	int ret;
-
-	if (!attr) {
-		env_config->disable_env = 0;
-		env_config->table = table;
-		return 0;
-	}
-
-	env_config->disable_env = 1;
-
-	var_tbl = wd_alloc_table(table, table_size);
-	if (!var_tbl)
-		return -WD_ENOMEM;
-
-	env_config->table = var_tbl;
-
-	/**
-	 * Below def_val's memory is allocated from wd_alloc_table,
-	 * the length of memory allocated to def_val is MAX_STR_LEN.
-	 *
-	 * We use mode and type as index of a string two-dimensional
-	 * array to init def_val.
-	 */
-	if (env_config->op_type_num == 1)
-		type_tbl = ctx_type[attr->mode][attr->type];
-	else
-		type_tbl = comp_ctx_type[attr->mode][attr->type];
-
-	ret = snprintf(var_tbl[0].def_val, MAX_STR_LEN, "%s%u%c%u",
-		       type_tbl, attr->num, '@', attr->node);
-	if (ret < 0)
-		return -errno;
-
-	return 0;
-}
-
-static void wd_alg_table_uninit(struct wd_env_config *config)
-{
-	struct wd_config_variable *table;
-	int i;
-
-	if (!config->disable_env)
-		return;
-
-	table = (struct wd_config_variable *)config->table;
-	if (!table)
-		return;
-
-	for (i = 0; i < config->table_size - 1; i++) {
-		free(table[i].def_val);
-		table[i].def_val = NULL;
-	}
-
-	free(table);
-	table = NULL;
-}
-
 int wd_alg_env_init(struct wd_env_config *env_config,
 		    const struct wd_config_variable *table,
 		    const struct wd_alg_ops *ops,
@@ -1534,18 +1475,14 @@ int wd_alg_env_init(struct wd_env_config *env_config,
 
 	env_config->op_type_num = ops->op_type_num;
 	env_config->alg_poll_ctx = ops->alg_poll_ctx;
+	env_config->table = table;
 	env_config->table_size = table_size;
-
-	ret = wd_alg_table_init(table, table_size,
-				ctx_attr, env_config);
-	if (ret)
-		return ret;
 
 	ret = wd_alloc_numa(env_config, ops);
 	if (ret)
-		goto table_uninit;
+		return ret;
 
-	ret = wd_parse_env(env_config);
+	ret = wd_init_env_config(env_config, ctx_attr);
 	if (ret)
 		goto free_numa;
 
@@ -1562,8 +1499,6 @@ free_env:
 	wd_free_env(env_config);
 free_numa:
 	wd_free_numa(env_config);
-table_uninit:
-	wd_alg_table_uninit(env_config);
 	return ret;
 }
 
@@ -1576,7 +1511,6 @@ void wd_alg_env_uninit(struct wd_env_config *env_config)
 	wd_uninit_resource(env_config);
 	wd_free_env(env_config);
 	wd_free_numa(env_config);
-	wd_alg_table_uninit(env_config);
 }
 
 int wd_alg_get_env_param(struct wd_env_config *env_config,
