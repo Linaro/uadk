@@ -12,6 +12,10 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define WD_CAPA_PRIV_DATA_SIZE		64
 
 #define QM_L32BITS_MASK		0xffffffff
@@ -179,5 +183,9 @@ __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 			    struct wd_datalist *end_node);
 
 void hisi_qm_enable_interrupt(handle_t ctx, __u8 enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

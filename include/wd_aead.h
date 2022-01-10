@@ -14,6 +14,10 @@
 #include "wd_digest.h"
 #include "wd.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * wd_aead_op_type - Algorithm type of option
  */
@@ -213,5 +217,9 @@ void wd_aead_ctx_num_uninit(void);
  */
 int wd_aead_get_env_param(__u32 node, __u32 type, __u32 mode,
 			  __u32 *num, __u8 *is_enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __WD_AEAD_H */

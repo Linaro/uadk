@@ -11,6 +11,10 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define AES_KEYSIZE_128	16
 #define AES_KEYSIZE_192	24
 #define AES_KEYSIZE_256	32
@@ -184,5 +188,9 @@ void wd_cipher_ctx_num_uninit(void);
  */
 int wd_cipher_get_env_param(__u32 node, __u32 type, __u32 mode,
 			    __u32 *num, __u8 *is_enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __WD_CIPHER_H */

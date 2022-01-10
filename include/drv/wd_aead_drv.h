@@ -7,6 +7,10 @@
 #include "include/wd_alg_common.h"
 #include "include/wd_aead.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct wd_aead_msg {
 	struct wd_aead_req req;
 	/* Request identifier */
@@ -87,4 +91,9 @@ static void __attribute__((constructor)) set_aead_driver(void)		      \
 	wd_aead_set_driver(&drv);					      \
 }
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* __WD_AEAD_DRV_H */

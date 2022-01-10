@@ -12,6 +12,10 @@
 #include "wd.h"
 #include "wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT			3
 #define GET_NEGATIVE(val)		(0 - (val))
@@ -68,5 +72,9 @@ int wd_dh_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode);
 void wd_dh_ctx_num_uninit(void);
 int wd_dh_get_env_param(__u32 node, __u32 type, __u32 mode,
 			__u32 *num, __u8 *is_enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __WD_DH_H */

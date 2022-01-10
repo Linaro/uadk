@@ -5,6 +5,10 @@
 
 #include "../wd_rsa.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct wd_rsa_kg_in {
 	__u8 *e;
 	__u8 *p;
@@ -67,6 +71,10 @@ struct wd_rsa_driver *wd_rsa_get_driver(void)				      \
 static void __attribute__((constructor)) set_driver_rsa(void)		      \
 {									      \
 	wd_rsa_set_driver(&drv);					      \
+}
+#endif
+
+#ifdef __cplusplus
 }
 #endif
 

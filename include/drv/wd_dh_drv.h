@@ -6,6 +6,10 @@
 
 #include "../wd_dh.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* DH message format */
 struct wd_dh_msg {
 	struct wd_dh_req req;
@@ -42,6 +46,10 @@ struct wd_dh_driver *wd_dh_get_driver(void)				\
 static void __attribute__((constructor)) set_driver_dh(void)		\
 {									\
 	wd_dh_set_driver(&drv);						\
+}
+#endif
+
+#ifdef __cplusplus
 }
 #endif
 

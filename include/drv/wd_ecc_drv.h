@@ -7,6 +7,10 @@
 #include "../wd_ecc.h"
 #include "../wd_alg_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ECC */
 #define ECDH_IN_PARAM_NUM		2
 #define ECDH_OUT_PARAM_NUM		2
@@ -195,6 +199,10 @@ struct wd_ecc_driver *wd_ecc_get_driver(void)				\
 static void __attribute__((constructor)) set_driver_ecc(void)		\
 {									\
 	wd_ecc_set_driver(&drv);					\
+}
+#endif
+
+#ifdef __cplusplus
 }
 #endif
 

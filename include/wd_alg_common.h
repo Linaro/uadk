@@ -12,6 +12,10 @@
 #include "wd.h"
 #include "wd_common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
@@ -102,5 +106,9 @@ struct wd_datalist {
 	__u32 len;
 	struct wd_datalist *next;
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
