@@ -1412,7 +1412,10 @@ static int wd_init_resource(struct wd_env_config *config,
 err_uninit_alg:
 	ops->alg_uninit();
 err_uninit_sched:
-	wd_uninit_sched_config(config->sched);
+	if (config->internal_sched) {
+		wd_uninit_sched_config(config->sched);
+		config->sched = NULL;
+	}
 err_uninit_ctx:
 	wd_free_ctx(config->ctx_config);
 	return ret;
