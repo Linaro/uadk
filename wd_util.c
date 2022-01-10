@@ -599,7 +599,6 @@ free_mem:
 	}
 
 	free(ctx_table);
-	ctx_table = NULL;
 	return ret;
 }
 
@@ -652,8 +651,7 @@ static int wd_parse_section(struct wd_env_config *config, char *section)
 	config_numa = wd_get_config_numa(config, node);
 	if (!config_numa) {
 		WD_ERR("%s got wrong numa node: %s!\n", __func__, section);
-		ret = -WD_EINVAL;
-		return ret;
+		return -WD_EINVAL;
 	}
 
 	config_numa->op_type_num = config->op_type_num;
