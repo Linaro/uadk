@@ -72,7 +72,6 @@ struct wd_env_config {
 	const struct wd_config_variable *table;
 	__u32 table_size;
 	__u16 numa_num;
-	__u8 disable_env;
 	__u8 op_type_num;
 };
 
