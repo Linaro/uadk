@@ -825,6 +825,9 @@ static void wd_free_env(struct wd_env_config *config)
 	struct wd_env_config_per_numa *config_numa;
 	int i, j;
 
+	if (!config->config_per_numa)
+		return;
+
 	FOREACH_NUMA(i, config, config_numa) {
 		if (!config_numa->ctx_table)
 			continue;
@@ -1010,6 +1013,9 @@ err_free_ctx_config:
 
 static void wd_free_ctx(struct wd_ctx_config *ctx_config)
 {
+	if (!ctx_config)
+		return;
+
 	wd_put_wd_ctx(ctx_config, ctx_config->ctx_num);
 	free(ctx_config->ctxs);
 	free(ctx_config);
@@ -1451,6 +1457,7 @@ err_uninit_sched:
 	}
 err_uninit_ctx:
 	wd_free_ctx(config->ctx_config);
+	config->ctx_config = NULL;
 	return ret;
 }
 
