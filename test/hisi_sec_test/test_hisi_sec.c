@@ -279,6 +279,7 @@ static void dump_mem(int sgl, unsigned char *buf, size_t len)
 			if ((i + 1) % 8 == 0)
 				SEC_TST_PRT("\n");
 		}
+		SEC_TST_PRT("\n");
 	}
 }
 
@@ -2523,6 +2524,7 @@ static int sec_aead_sync_once(void)
 	unsigned long Perf = 0;
 	float speed, time_used;
 	unsigned long cnt = g_times;
+	__u16 mac_bytes;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -2553,8 +2555,7 @@ static int sec_aead_sync_once(void)
 
 	/* should set key */
 	dump_mem(WD_FLAT_BUF, (void *)tv->key, tv->klen);
-	if (setup.cmode == WD_CIPHER_CCM ||
-		setup.cmode == WD_CIPHER_GCM) {
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM) {
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
@@ -2576,6 +2577,7 @@ static int sec_aead_sync_once(void)
 	}
 
 	auth_size = (__u16)(tv->clen - tv->plen);
+	mac_bytes = auth_size;
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
@@ -2596,6 +2598,18 @@ static int sec_aead_sync_once(void)
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
 
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM)
+		mac_bytes = 16;
+
+	req.mac = malloc(mac_bytes);
+	if (!req.mac) {
+		SEC_TST_PRT("req iv mem malloc failed!\n");
+		ret = -ENOMEM;
+		goto out_key;
+	}
+	memset(req.mac, 0, mac_bytes);
+	req.mac_bytes = mac_bytes;
+
 	if (g_direction == 0)
 		req.op_type = WD_CIPHER_ENCRYPTION_DIGEST;
 	else
@@ -2609,7 +2623,7 @@ static int sec_aead_sync_once(void)
 	}
 	if (in_size > BUFF_SIZE) {
 		SEC_TST_PRT("alloc in buffer block size too small!\n");
-		goto out_key;
+		goto out_mac;
 	}
 	unit_sz = cal_unit_sz(in_size, g_sgl_num);
 	void *src  = create_buf(WD_FLAT_BUF, in_size, unit_sz);
@@ -2627,9 +2641,13 @@ static int sec_aead_sync_once(void)
 		req.in_bytes = tv->plen;
 	} else {
 		memcpy(src, tv->assoc, tv->alen);
-		memcpy((src + req.assoc_bytes), tv->ctext, tv->clen);
+		memcpy(src + req.assoc_bytes, tv->ctext, tv->clen - auth_size);
 		req.in_bytes = tv->clen - auth_size;
+		memcpy(req.mac, tv->ctext + tv->clen - auth_size, auth_size);
 	}
+
+	SEC_TST_PRT("mac addr src is:\n");
+	dump_mem(0, req.mac, auth_size);
 
 	req.src = create_buf(g_data_fmt, in_size, unit_sz);
 	if (!req.src) {
@@ -2643,21 +2661,19 @@ static int sec_aead_sync_once(void)
 	dump_mem(g_data_fmt, req.src, tv->alen + req.in_bytes);
 
 	if (g_direction == 0) {
-		req.out_bytes = req.assoc_bytes + tv->clen;
+		req.out_bytes = req.assoc_bytes + tv->clen - auth_size;
 	} else {
 		req.out_bytes = req.assoc_bytes + tv->plen;
 	}
 
-	req.out_buf_bytes = req.out_bytes + auth_size;
 	// alloc out buffer memory
-	unit_sz = cal_unit_sz(req.out_buf_bytes, g_sgl_num);
-	req.dst = create_buf(g_data_fmt, req.out_buf_bytes, unit_sz);
+	unit_sz = cal_unit_sz(req.out_bytes, g_sgl_num);
+	req.dst = create_buf(g_data_fmt, req.out_bytes, unit_sz);
 	if (!req.dst) {
 		ret = -ENOMEM;
 		goto out_dst;
 	}
 
-	// set iv
 	req.iv = malloc(AES_BLOCK_SIZE);
 	if (!req.iv) {
 		SEC_TST_PRT("req iv mem malloc failed!\n");
@@ -2688,7 +2704,10 @@ static int sec_aead_sync_once(void)
 	SEC_TST_PRT("Pro-%d, thread_id-%d, speed:%0.3f ops, Perf: %ld KB/s\n", getpid(),
 			(int)syscall(__NR_gettid), speed, Perf);
 
+	SEC_TST_PRT("aead dump out addr is:\n");
 	dump_mem(g_data_fmt, req.dst, req.out_bytes);
+	SEC_TST_PRT("aead dump mac addr is:\n");
+	dump_mem(0, req.mac, auth_size);
 
 	free(req.iv);
 out_iv:
@@ -2696,6 +2715,8 @@ out_iv:
 out_dst:
 	free_buf(g_data_fmt, req.src);
 out_src:
+out_mac:
+	free(req.mac);
 out_key:
 	wd_aead_free_sess(h_sess);
 out:
@@ -2827,6 +2848,7 @@ static int sec_aead_async_once(void)
 	static pthread_t send_td;
 	static pthread_t poll_td;
 	thread_data_d td_data;
+	__u16 mac_bytes;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -2857,8 +2879,7 @@ static int sec_aead_async_once(void)
 
 	/* should set key */
 	dump_mem(WD_FLAT_BUF, (void *)tv->key, tv->klen);
-	if (setup.cmode == WD_CIPHER_CCM ||
-		setup.cmode == WD_CIPHER_GCM) {
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM) {
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
@@ -2880,6 +2901,7 @@ static int sec_aead_async_once(void)
 	}
 
 	auth_size = (__u16)(tv->clen - tv->plen);
+	mac_bytes = auth_size;
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
@@ -2898,6 +2920,17 @@ static int sec_aead_async_once(void)
 		goto out_key;
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM)
+		mac_bytes = 16;
+
+	req.mac = malloc(mac_bytes);
+	if (!req.mac) {
+		SEC_TST_PRT("req iv mem malloc failed!\n");
+		ret = -ENOMEM;
+		goto out_key;
+	}
+	memset(req.mac, 0, mac_bytes);
+	req.mac_bytes = mac_bytes;
 
 	if (g_direction == 0)
 		req.op_type = WD_CIPHER_ENCRYPTION_DIGEST;
@@ -2908,7 +2941,7 @@ static int sec_aead_async_once(void)
 	in_size = tv->alen + tv->plen + auth_size;
 	if (in_size > BUFF_SIZE) {
 		SEC_TST_PRT("alloc in buffer block size too small!\n");
-		goto out_key;
+		goto out_mac;
 	}
 	req.assoc_bytes = tv->alen;
 	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
@@ -2931,15 +2964,15 @@ static int sec_aead_async_once(void)
 		req.in_bytes = tv->plen;
 	} else {
 		memcpy(src, tv->assoc, tv->alen);
-		memcpy((src + tv->alen), tv->ctext, tv->clen);
+		memcpy(src + tv->alen, tv->ctext, tv->clen - auth_size);
 		req.in_bytes = tv->clen - auth_size;
+		memcpy(req.mac, tv->ctext + tv->clen - auth_size, auth_size);
 	}
-
 
 	copy_mem(g_data_fmt, req.src, WD_FLAT_BUF, src,
 			(size_t)(req.in_bytes + tv->alen));
 	free(src);
-	SEC_TST_PRT("aead req src in--------->: %u\n", tv->alen + req.in_bytes);
+	SEC_TST_PRT("aead req alen---->: %u. in_bytes--->:%u\n", tv->alen, req.in_bytes);
 	dump_mem(g_data_fmt, req.src, tv->alen + req.in_bytes);
 
 	// alloc out buffer memory
@@ -2949,7 +2982,6 @@ static int sec_aead_async_once(void)
 		goto out_dst;
 	}
 
-	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
 		req.out_bytes = tv->alen + tv->clen;
 	else
@@ -3010,6 +3042,8 @@ out_iv:
 out_dst:
 	free_buf(g_data_fmt, req.src);
 out_src:
+out_mac:
+	free(req.mac);
 out_key:
 	wd_aead_free_sess(h_sess);
 out:
@@ -3026,6 +3060,7 @@ static int sec_aead_sync_multi(void)
 	struct wd_aead_req req;
 	static pthread_t sendtd[64];
 	thread_data_d td_data;
+	__u16 mac_bytes;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -3056,8 +3091,7 @@ static int sec_aead_sync_multi(void)
 
 	/* should set key */
 	dump_mem(WD_FLAT_BUF, (void *)tv->key, tv->klen);
-	if (setup.cmode == WD_CIPHER_CCM ||
-		setup.cmode == WD_CIPHER_GCM) {
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM) {
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
@@ -3079,6 +3113,7 @@ static int sec_aead_sync_multi(void)
 	}
 
 	auth_size = (__u16)(tv->clen - tv->plen);
+	mac_bytes = auth_size;
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
@@ -3098,6 +3133,18 @@ static int sec_aead_sync_multi(void)
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
 
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM)
+		mac_bytes = 16;
+
+	req.mac = malloc(mac_bytes);
+	if (!req.mac) {
+		SEC_TST_PRT("req iv mem malloc failed!\n");
+		ret = -ENOMEM;
+		goto out_key;
+	}
+	memset(req.mac, 0, mac_bytes);
+	req.mac_bytes = mac_bytes;
+
 	if (g_direction == 0)
 		req.op_type = WD_CIPHER_ENCRYPTION_DIGEST;
 	else
@@ -3108,7 +3155,7 @@ static int sec_aead_sync_multi(void)
 	in_size = tv->alen + tv->plen + auth_size;
 	if (in_size > BUFF_SIZE) {
 		SEC_TST_PRT("alloc in buffer block size too small!\n");
-		goto out_key;
+		goto out_mac;
 	}
 	unit_sz = cal_unit_sz(BUFF_SIZE, g_sgl_num);
 	void *src  = create_buf(WD_FLAT_BUF, BUFF_SIZE, unit_sz);
@@ -3123,8 +3170,9 @@ static int sec_aead_sync_multi(void)
 		req.in_bytes = tv->plen;
 	} else {
 		memcpy(src, tv->assoc, tv->alen);
-		memcpy((src + tv->alen), tv->ctext, tv->clen);
+		memcpy(src + tv->alen, tv->ctext, tv->clen - auth_size);
 		req.in_bytes = tv->clen - auth_size;
+		memcpy(req.mac, tv->ctext + tv->clen - auth_size, auth_size);
 	}
 
 	req.src = create_buf(g_data_fmt, in_size, unit_sz);
@@ -3137,7 +3185,7 @@ static int sec_aead_sync_multi(void)
 			(size_t)(req.in_bytes + tv->alen));
 	free(src);
 
-	SEC_TST_PRT("aead req src in--------->: %u\n", tv->alen + req.in_bytes);
+	SEC_TST_PRT("aead req src in>: alen:%u, input len:%d\n", tv->alen, req.in_bytes);
 	dump_mem(g_data_fmt, req.src, tv->alen + req.in_bytes);
 
 	// alloc out buffer memory
@@ -3147,7 +3195,6 @@ static int sec_aead_sync_multi(void)
 		goto out_dst;
 	}
 
-	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
 		req.out_bytes = tv->alen + tv->clen;
 	else
@@ -3175,6 +3222,7 @@ static int sec_aead_sync_multi(void)
 	td_data.recv_num = g_times;
 	td_data.sum_perf = 0;
 
+	printf("%s, req->in_bytes:%d\n", __func__, req.in_bytes);
 	for (i = 0; i < g_thread_num; i++) {
 		ret = pthread_create(&sendtd[i], NULL, aead_sync_send_thread, &td_data);
 		if (ret) {
@@ -3200,6 +3248,8 @@ out_iv:
 out_dst:
 	free_buf(g_data_fmt, req.src);
 out_src:
+out_mac:
+	free(req.mac);
 out_key:
 	wd_aead_free_sess(h_sess);
 out:
@@ -3217,6 +3267,7 @@ static int sec_aead_async_multi(void)
 	static pthread_t send_td[64];
 	static pthread_t poll_td;
 	thread_data_d td_data;
+	__u16 mac_bytes;
 	__u16 auth_size;
 	__u16 in_size;
 	__u16 iv_len;
@@ -3247,8 +3298,7 @@ static int sec_aead_async_multi(void)
 
 	/* should set key */
 	dump_mem(WD_FLAT_BUF, (void *)tv->key, tv->klen);
-	if (setup.cmode == WD_CIPHER_CCM ||
-		setup.cmode == WD_CIPHER_GCM) {
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM) {
 		ret = wd_aead_set_ckey(h_sess, (const __u8*)tv->key, tv->klen);
 		if (ret) {
 			SEC_TST_PRT("aead sess set key failed!\n");
@@ -3270,6 +3320,7 @@ static int sec_aead_async_multi(void)
 	}
 
 	auth_size = (__u16)(tv->clen - tv->plen);
+	mac_bytes = auth_size;
 	ret = wd_aead_set_authsize(h_sess, auth_size);
 	if (ret) {
 		SEC_TST_PRT("set auth size fail, authsize: %u\n", auth_size);
@@ -3288,6 +3339,15 @@ static int sec_aead_async_multi(void)
 		goto out;
 	}
 	SEC_TST_PRT("aead get max auth size: %u\n", ret);
+
+	if (setup.cmode == WD_CIPHER_CCM || setup.cmode == WD_CIPHER_GCM)
+		mac_bytes = 16;
+
+	req.mac = malloc(mac_bytes);
+	if (req.mac == NULL)
+		goto out;
+	memset(req.mac, 0, mac_bytes);
+	req.mac_bytes = mac_bytes;
 
 	if (g_direction == 0)
 		req.op_type = WD_CIPHER_ENCRYPTION_DIGEST;
@@ -3321,8 +3381,9 @@ static int sec_aead_async_multi(void)
 		req.in_bytes = tv->plen;
 	} else {
 		memcpy(src, tv->assoc, tv->alen);
-		memcpy((src + tv->alen), tv->ctext, tv->clen);
+		memcpy(src + tv->alen, tv->ctext, tv->clen - auth_size);
 		req.in_bytes = tv->clen - auth_size;
+		memcpy(req.mac, tv->ctext + (tv->clen - auth_size), auth_size);
 	}
 
 	copy_mem(g_data_fmt, req.src, WD_FLAT_BUF, src,
@@ -3338,9 +3399,8 @@ static int sec_aead_async_multi(void)
 		ret = -1;
 		goto out;
 	}
-	req.out_buf_bytes = BUFF_SIZE;
 	if (g_direction == 0)
-		req.out_bytes = tv->alen + tv->clen;
+		req.out_bytes = tv->alen + tv->clen - auth_size;
 	else
 		req.out_bytes = tv->alen + tv->plen;
 
@@ -3396,6 +3456,8 @@ static int sec_aead_async_multi(void)
 
 	dump_mem(g_data_fmt, req.dst, req.out_bytes);
 out:
+	if (req.mac)
+		free(req.mac);
 	if (req.src)
 		free_buf(g_data_fmt, req.src);
 	if (req.dst)

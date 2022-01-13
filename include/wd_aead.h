@@ -48,11 +48,12 @@ typedef void *wd_alg_aead_cb_t(struct wd_aead_req *req, void *cb_param);
  * @ op_type: denoted by enum wd_aead_op_type
  * @ src: input data pointer
  * @ dst: output data pointer
+ * @ mac: mac data pointer
  * @ iv: input iv pointer
  * @ in_bytes: input data length
  * @ out_bytes: output data length
- * @ out_buf_bytes: output data buffer length
  * @ iv_bytes: input iv length
+ * @ mac_bytes: mac data buffer length
  * @ assoc_bytes: input associated data length
  * @ state: operation result, denoted by WD error code
  * @ cb: callback function pointer
@@ -68,11 +69,12 @@ struct wd_aead_req {
 		struct wd_datalist *list_dst;
 		void *dst;
 	};
+	void			*mac;
 	void			*iv;
 	__u32			in_bytes;
 	__u32			out_bytes;
-	__u32			out_buf_bytes;
 	__u16			iv_bytes;
+	__u16			mac_bytes;
 	__u16			assoc_bytes;
 	__u16			state;
 	__u8		    data_fmt;
