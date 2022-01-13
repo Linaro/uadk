@@ -305,6 +305,33 @@ void wd_aead_free_sess(handle_t h_sess)
 	free(sess);
 }
 
+static int aead_mac_param_check(struct wd_aead_sess *sess,
+	struct wd_aead_req *req)
+{
+	int ret = 0;
+
+	switch (sess->cmode) {
+	case WD_CIPHER_CBC:
+		if (req->mac_bytes < g_aead_mac_len[sess->dalg]) {
+			WD_ERR("failed to check cbc-hmac mac buffer length!\n");
+			ret = -WD_EINVAL;
+		}
+		break;
+	case WD_CIPHER_CCM:
+	case WD_CIPHER_GCM:
+		if (req->mac_bytes < WD_AEAD_CCM_GCM_MAX) {
+			WD_ERR("failed to check CCM or GCM mac buffer length!\n");
+			ret = -WD_EINVAL;
+		}
+		break;
+	default:
+		ret = -WD_EINVAL;
+		WD_ERR("set the aead cmode is error!\n");
+	}
+
+	return ret;
+}
+
 static int aead_param_check(struct wd_aead_sess *sess,
 	struct wd_aead_req *req)
 {
@@ -328,33 +355,23 @@ static int aead_param_check(struct wd_aead_sess *sess,
 	}
 
 	if (unlikely(req->iv_bytes != get_iv_block_size(sess->cmode))) {
-		WD_ERR("failed to check aead IV length!\n");
+		WD_ERR("failed to check aead IV length, size:%u\n", req->iv_bytes);
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(req->out_buf_bytes < req->out_bytes)) {
-		WD_ERR("failed to check aead out buffer length!\n");
+	ret = aead_mac_param_check(sess, req);
+	if (unlikely(ret))
 		return -WD_EINVAL;
-	}
-
-	if (unlikely(req->op_type == WD_CIPHER_ENCRYPTION_DIGEST &&
-	    req->out_buf_bytes < (req->out_bytes + sess->auth_bytes))) {
-		WD_ERR("failed to check aead type or mac length!\n");
-		return -WD_EINVAL;
-	}
 
 	if (req->data_fmt == WD_SGL_BUF) {
 		len = req->in_bytes + req->assoc_bytes;
-		if (req->op_type == WD_CIPHER_DECRYPTION_DIGEST)
-			len += sess->auth_bytes;
-
 		ret = wd_check_datalist(req->list_src, len);
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the src datalist!\n");
 			return -WD_EINVAL;
 		}
 
-		ret = wd_check_datalist(req->list_dst, req->out_buf_bytes);
+		ret = wd_check_datalist(req->list_dst, req->out_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the dst datalist!\n");
 			return -WD_EINVAL;
@@ -480,6 +497,7 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
 	msg->assoc_bytes = req->assoc_bytes;
+	msg->mac = req->mac;
 	msg->auth_bytes = sess->auth_bytes;
 	msg->data_fmt = req->data_fmt;
 }

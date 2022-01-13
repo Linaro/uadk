@@ -24,6 +24,7 @@ struct thread_pool {
 	struct bd_pool *pool;
 	u8 *iv;
 	u8 *key;
+	u8 *mac;
 } g_uadk_pool;
 
 typedef struct uadk_thread_res {
@@ -475,6 +476,7 @@ int init_uadk_bd_pool(void)
 
 	g_uadk_pool.iv = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
 	g_uadk_pool.key = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
+	g_uadk_pool.mac = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
 
 	g_uadk_pool.pool = malloc(g_thread_num * sizeof(struct bd_pool));
 	if (!g_uadk_pool.pool) {
@@ -611,9 +613,10 @@ static void *sec_uadk_async_run(void *arg)
 	struct wd_aead_req areq;
 	struct wd_digest_req dreq;
 	struct bd_pool *uadk_pool;
-	u8 *priv_iv, *priv_key;
+	u8 *priv_iv, *priv_key, *priv_mac;
 	int try_cnt = 0;
 	handle_t h_sess;
+	u32 auth_size = 16;
 	u32 count = 0;
 	int ret, i = 0;
 
@@ -623,6 +626,7 @@ static void *sec_uadk_async_run(void *arg)
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
 	priv_iv = &g_uadk_pool.iv[pdata->td_id];
 	priv_key = &g_uadk_pool.key[pdata->td_id];
+	priv_mac = &g_uadk_pool.mac[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -687,7 +691,7 @@ static void *sec_uadk_async_run(void *arg)
 			wd_aead_free_sess(h_sess);
 			return NULL;
 		}
-		ret = wd_aead_set_authsize(h_sess, 16);
+		ret = wd_aead_set_authsize(h_sess, auth_size);
 		if (ret) {
 			SEC_TST_PRT("set auth size fail, authsize: 16\n");
 			wd_aead_free_sess(h_sess);
@@ -696,16 +700,15 @@ static void *sec_uadk_async_run(void *arg)
 
 		areq.op_type = pdata->optype;
 		areq.iv = priv_iv; // aead IV need update with param
+		areq.mac = priv_mac;
 		areq.iv_bytes = pdata->ivsize;
+		areq.mac_bytes = auth_size;
 		areq.assoc_bytes = 16;
 		areq.in_bytes = g_pktlen;
-		if (areq.op_type) {// decrypto
+		if (areq.op_type)// decrypto
 			areq.out_bytes = g_pktlen + 16; // aadsize = 16;
-			areq.out_buf_bytes = areq.out_bytes + 16; // authsize = 16
-		} else {
+		else
 			areq.out_bytes = g_pktlen + 32; // aadsize + authsize = 32;
-			areq.out_buf_bytes = areq.out_bytes + 32;
-		}
 
 		areq.data_fmt = 0;
 		areq.state = 0;
@@ -795,8 +798,9 @@ static void *sec_uadk_sync_run(void *arg)
 	struct wd_aead_req areq;
 	struct wd_digest_req dreq;
 	struct bd_pool *uadk_pool;
-	u8 *priv_iv, *priv_key;
+	u8 *priv_iv, *priv_key, *priv_mac;
 	handle_t h_sess;
+	u32 auth_size = 16;
 	u32 count = 0;
 	int ret, i = 0;
 
@@ -806,6 +810,7 @@ static void *sec_uadk_sync_run(void *arg)
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
 	priv_iv = &g_uadk_pool.iv[pdata->td_id];
 	priv_key = &g_uadk_pool.key[pdata->td_id];
+	priv_mac = &g_uadk_pool.mac[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -860,7 +865,7 @@ static void *sec_uadk_sync_run(void *arg)
 			wd_aead_free_sess(h_sess);
 			return NULL;
 		}
-		ret = wd_aead_set_authsize(h_sess, 16);
+		ret = wd_aead_set_authsize(h_sess, auth_size);
 		if (ret) {
 			SEC_TST_PRT("set auth size fail, authsize: 16\n");
 			wd_aead_free_sess(h_sess);
@@ -869,16 +874,16 @@ static void *sec_uadk_sync_run(void *arg)
 
 		areq.op_type = pdata->optype;
 		areq.iv = priv_iv; // aead IV need update with param
+		areq.mac = priv_mac;
+		areq.mac_bytes = 16;
 		areq.iv_bytes = pdata->ivsize;
 		areq.assoc_bytes = 16;
 		areq.in_bytes = g_pktlen;
-		if (areq.op_type) {// decrypto
+		areq.mac_bytes = auth_size;
+		if (areq.op_type)// decrypto
 			areq.out_bytes = g_pktlen + 16; // aadsize = 16;
-			areq.out_buf_bytes = areq.out_bytes + 16; // authsize = 16
-		} else {
+		else
 			areq.out_bytes = g_pktlen + 32; // aadsize + authsize = 32;
-			areq.out_buf_bytes = areq.out_bytes + 32;
-		}
 
 		areq.data_fmt = 0;
 		areq.state = 0;
