@@ -1027,14 +1027,18 @@ err_free_ctx_config:
 	return ret;
 }
 
-static void wd_free_ctx(struct wd_ctx_config *ctx_config)
+static void wd_free_ctx(struct wd_env_config *config)
 {
-	if (!ctx_config)
+	struct wd_ctx_config *ctx_config;
+
+	if (!config->ctx_config)
 		return;
 
+	ctx_config = config->ctx_config;
 	wd_put_wd_ctx(ctx_config, ctx_config->ctx_num);
 	free(ctx_config->ctxs);
 	free(ctx_config);
+	config->ctx_config = NULL;
 }
 
 static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
@@ -1067,14 +1071,23 @@ static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
 	return 0;
 }
 
+static void wd_uninit_sched_config(struct wd_env_config *config)
+{
+	if (!config->sched || !config->internal_sched)
+		return;
+
+	wd_sched_rr_release(config->sched);
+	config->sched = NULL;
+}
+
 static int wd_init_sched_config(struct wd_env_config *config,
 				void *alg_poll_ctx)
 {
 	struct wd_env_config_per_numa *config_numa;
 	int i, j, ret, max_node, type_num;
-	struct wd_sched *sched;
 	void *func = NULL;
 
+	type_num = config->op_type_num;
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
 		return -WD_EINVAL;
@@ -1083,7 +1096,6 @@ static int wd_init_sched_config(struct wd_env_config *config,
 		func = alg_poll_ctx;
 
 	config->internal_sched = false;
-	type_num = config->op_type_num;
 	if (!config->sched) {
 		WD_ERR("no sched is specified, alloc a default sched!\n");
 		config->sched = wd_sched_rr_alloc(SCHED_POLICY_RR, type_num,
@@ -1094,13 +1106,12 @@ static int wd_init_sched_config(struct wd_env_config *config,
 		config->internal_sched = true;
 	}
 
-	sched = config->sched;
-	sched->name = "SCHED_RR";
+	config->sched->name = "SCHED_RR";
 
 	FOREACH_NUMA(i, config, config_numa) {
 		for (j = 0; j < CTX_MODE_MAX; j++) {
 			ret = wd_sched_fill_table(config_numa,
-						  sched, j,
+						  config->sched, j,
 						  type_num);
 			if (ret)
 				goto err_release_sched;
@@ -1110,13 +1121,9 @@ static int wd_init_sched_config(struct wd_env_config *config,
 	return 0;
 
 err_release_sched:
-	wd_sched_rr_release(sched);
-	return ret;
-}
+	wd_uninit_sched_config(config);
 
-static void wd_uninit_sched_config(struct wd_sched *sched_config)
-{
-	return wd_sched_rr_release(sched_config);
+	return ret;
 }
 
 static struct async_task_queue *find_async_queue(struct wd_env_config *config,
@@ -1480,13 +1487,9 @@ static int wd_init_resource(struct wd_env_config *config,
 err_uninit_alg:
 	ops->alg_uninit();
 err_uninit_sched:
-	if (config->internal_sched) {
-		wd_uninit_sched_config(config->sched);
-		config->sched = NULL;
-	}
+	wd_uninit_sched_config(config);
 err_uninit_ctx:
-	wd_free_ctx(config->ctx_config);
-	config->ctx_config = NULL;
+	wd_free_ctx(config);
 	return ret;
 }
 
@@ -1495,14 +1498,8 @@ static void wd_uninit_resource(struct wd_env_config *config,
 {
 	wd_uninit_async_polling_thread(config);
 	ops->alg_uninit();
-
-	if (config->internal_sched) {
-		wd_uninit_sched_config(config->sched);
-		config->sched = NULL;
-	}
-
-	wd_free_ctx(config->ctx_config);
-	config->ctx_config = NULL;
+	wd_uninit_sched_config(config);
+	wd_free_ctx(config);
 }
 
 int wd_alg_env_init(struct wd_env_config *env_config,
