@@ -351,9 +351,6 @@ static void wd_free_numa(struct wd_env_config *config)
 	struct wd_env_config_per_numa *config_numa;
 	int i;
 
-	if (!config->config_per_numa)
-		return;
-
 	FOREACH_NUMA(i, config, config_numa)
 		free(config_numa->dev);
 
@@ -566,12 +563,12 @@ out:
 	return -WD_EINVAL;
 }
 
-static int wd_alloc_ctx_table(struct wd_env_config_per_numa *config_numa)
+static int wd_alloc_ctx_table_per_numa(struct wd_env_config_per_numa *config)
 {
 	struct wd_ctx_range **ctx_table;
 	int i, j, ret;
 
-	if (config_numa->ctx_table)
+	if (config->ctx_table)
 		return 0;
 
 	ctx_table = calloc(1, sizeof(struct wd_ctx_range *) * CTX_MODE_MAX);
@@ -581,25 +578,46 @@ static int wd_alloc_ctx_table(struct wd_env_config_per_numa *config_numa)
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		ctx_table[i] = calloc(1,
 				sizeof(struct wd_ctx_range) *
-				config_numa->op_type_num);
+				config->op_type_num);
 		if (!ctx_table[i]) {
 			ret = -WD_ENOMEM;
 			goto free_mem;
 		}
 	}
 
-	config_numa->ctx_table = ctx_table;
+	config->ctx_table = ctx_table;
 
 	return 0;
 
 free_mem:
-	for (j = 0; j < i; j++) {
+	for (j = 0; j < i; j++)
 		free(ctx_table[j]);
-		ctx_table[j] = NULL;
-	}
 
 	free(ctx_table);
 	return ret;
+}
+
+static void wd_free_ctx_table_per_numa(struct wd_env_config_per_numa *config)
+{
+	int i;
+
+	if (!config->ctx_table)
+		return;
+
+	for (i = 0; i < CTX_MODE_MAX; i++)
+		free(config->ctx_table[i]);
+
+	free(config->ctx_table);
+	config->ctx_table = NULL;
+}
+
+static void wd_free_ctx_table(struct wd_env_config *config)
+{
+	struct wd_env_config_per_numa *config_numa;
+	int i;
+
+	FOREACH_NUMA(i, config, config_numa)
+		wd_free_ctx_table_per_numa(config_numa);
 }
 
 static int get_and_fill_ctx_num(struct wd_env_config_per_numa *config_numa,
@@ -655,15 +673,18 @@ static int wd_parse_section(struct wd_env_config *config, char *section)
 	}
 
 	config_numa->op_type_num = config->op_type_num;
-	ret = wd_alloc_ctx_table(config_numa);
+	ret = wd_alloc_ctx_table_per_numa(config_numa);
 	if (ret)
 		return ret;
 
 	ret = get_and_fill_ctx_num(config_numa, section, ctx_num);
-	if (ret)
+	if (ret) {
 		WD_ERR("%s got wrong ctx type: %s!\n", __func__, section);
+		wd_free_ctx_table_per_numa(config_numa);
+		return ret;
+	}
 
-	return ret;
+	return 0;
 }
 
 static int get_start_ctx_index(struct wd_env_config *config,
@@ -722,9 +743,8 @@ static void wd_fill_ctx_table(struct wd_env_config *config)
 
 static int parse_ctx_num(struct wd_env_config *config, const char *s)
 {
-	struct wd_env_config_per_numa *config_numa;
 	char *left, *section, *start;
-	int i, ret;
+	int ret;
 
 	start = strdup(s);
 	if (!start)
@@ -744,9 +764,7 @@ static int parse_ctx_num(struct wd_env_config *config, const char *s)
 	return 0;
 
 err_free_ctx_table:
-	FOREACH_NUMA(i, config, config_numa)
-		free(config_numa->ctx_table);
-
+	wd_free_ctx_table(config);
 	free(start);
 	return ret;
 }
@@ -820,25 +838,6 @@ static int wd_parse_env(struct wd_env_config *config)
 	return 0;
 }
 
-static void wd_free_env(struct wd_env_config *config)
-{
-	struct wd_env_config_per_numa *config_numa;
-	int i, j;
-
-	if (!config->config_per_numa)
-		return;
-
-	FOREACH_NUMA(i, config, config_numa) {
-		if (!config_numa->ctx_table)
-			continue;
-
-		for (j = 0; j < CTX_MODE_MAX; j++)
-			free(config_numa->ctx_table[j]);
-
-		free(config_numa->ctx_table);
-	}
-}
-
 static int wd_parse_ctx_attr(struct wd_env_config *env_config,
 			     struct wd_ctx_attr *attr)
 {
@@ -852,7 +851,7 @@ static int wd_parse_ctx_attr(struct wd_env_config *env_config,
 	}
 
 	config_numa->op_type_num = env_config->op_type_num;
-	ret = wd_alloc_ctx_table(config_numa);
+	ret = wd_alloc_ctx_table_per_numa(config_numa);
 	if (ret)
 		return ret;
 
@@ -882,11 +881,11 @@ static int wd_init_env_config(struct wd_env_config *config,
 
 static void wd_uninit_env_config(struct wd_env_config *config)
 {
+	wd_free_ctx_table(config);
+
 	config->op_type_num = 0;
 	config->table_size = 0;
 	config->table = NULL;
-
-	wd_free_env(config);
 }
 
 static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
