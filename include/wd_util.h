@@ -66,8 +66,6 @@ struct wd_env_config {
 	struct wd_env_config_per_numa *config_per_numa;
 	/* Let's make it as a gobal config, not per numa */
 	bool enable_internal_poll;
-	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
-	void (*alg_uninit)(void);
 
 	/* resource config */
 	struct wd_sched *sched;
@@ -263,8 +261,11 @@ int wd_alg_env_init(struct wd_env_config *config,
  * wd_alg_env_uninit() - uninit specific wd algorithm environment configuration.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
+ * @ops: Define functions which will be used by specific wd algorithm
+ *	 environment init.
  */
-void wd_alg_env_uninit(struct wd_env_config *env_config);
+void wd_alg_env_uninit(struct wd_env_config *env_config,
+		       const struct wd_alg_ops *ops);
 
 /*
  * wd_add_task_to_async_queue() - Add an async request to its related async
