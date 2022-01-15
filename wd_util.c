@@ -868,9 +868,25 @@ static int wd_parse_ctx_attr(struct wd_env_config *env_config,
 }
 
 static int wd_init_env_config(struct wd_env_config *config,
-			      struct wd_ctx_attr *attr)
+			      struct wd_ctx_attr *attr,
+			      const struct wd_alg_ops *ops,
+			      const struct wd_config_variable *table,
+			      __u32 table_size)
 {
+	config->op_type_num = ops->op_type_num;
+	config->table_size = table_size;
+	config->table = table;
+
 	return attr ? wd_parse_ctx_attr(config, attr) : wd_parse_env(config);
+}
+
+static void wd_uninit_env_config(struct wd_env_config *config)
+{
+	config->op_type_num = 0;
+	config->table_size = 0;
+	config->table = NULL;
+
+	wd_free_env(config);
 }
 
 static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
@@ -1051,7 +1067,8 @@ static int wd_sched_fill_table(struct wd_env_config_per_numa *config_numa,
 	return 0;
 }
 
-static int wd_init_sched_config(struct wd_env_config *config)
+static int wd_init_sched_config(struct wd_env_config *config,
+				void *alg_poll_ctx)
 {
 	struct wd_env_config_per_numa *config_numa;
 	int i, j, ret, max_node, type_num;
@@ -1063,7 +1080,7 @@ static int wd_init_sched_config(struct wd_env_config *config)
 		return -WD_EINVAL;
 
 	if (!config->enable_internal_poll)
-		func = config->alg_poll_ctx;
+		func = alg_poll_ctx;
 
 	config->internal_sched = false;
 	type_num = config->op_type_num;
@@ -1340,7 +1357,8 @@ static void wd_uninit_one_task_queue(struct async_task_queue *task_queue)
 }
 
 static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
-				struct wd_env_config_per_numa *config_numa)
+				struct wd_env_config_per_numa *config_numa,
+				void *alg_poll_ctx)
 {
 	struct async_task_queue *task_queue, *queue_head;
 	int i, j, ret;
@@ -1365,7 +1383,7 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 
 	task_queue = queue_head;
 	for (i = 0; i < num; task_queue++, i++) {
-		ret = wd_init_one_task_queue(task_queue, config->alg_poll_ctx);
+		ret = wd_init_one_task_queue(task_queue, alg_poll_ctx);
 		if (ret) {
 			for (j = 0; j < i; task_queue++, j++)
 				wd_uninit_one_task_queue(task_queue);
@@ -1386,6 +1404,9 @@ static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
 	double num;
 	int i;
 
+	if (!config_numa || !config_numa->async_task_queue_array)
+		return;
+
 	head = config_numa->async_task_queue_array;
 	task_queue = head;
 	num = fmin(config_numa->async_poll_num, config_numa->async_ctx_num);
@@ -1396,7 +1417,8 @@ static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
 	config_numa->async_task_queue_array = NULL;
 }
 
-static int wd_init_async_polling_thread(struct wd_env_config *config)
+static int wd_init_async_polling_thread(struct wd_env_config *config,
+					void *alg_poll_ctx)
 {
 	struct wd_env_config_per_numa *config_numa;
 	int i, ret;
@@ -1405,12 +1427,19 @@ static int wd_init_async_polling_thread(struct wd_env_config *config)
 		return 0;
 
 	FOREACH_NUMA(i, config, config_numa) {
-		ret = wd_init_async_polling_thread_per_numa(config, config_numa);
+		ret = wd_init_async_polling_thread_per_numa(config, config_numa,
+							    alg_poll_ctx);
 		if (ret)
-			return ret;
+			goto out;
 	}
 
 	return 0;
+
+out:
+	FOREACH_NUMA(i, config, config_numa)
+		wd_uninit_async_polling_thread_per_numa(config, config_numa);
+
+	return ret;
 }
 
 static void wd_uninit_async_polling_thread(struct wd_env_config *config)
@@ -1434,7 +1463,7 @@ static int wd_init_resource(struct wd_env_config *config,
 	if (ret)
 		return ret;
 
-	ret = wd_init_sched_config(config);
+	ret = wd_init_sched_config(config, ops->alg_poll_ctx);
 	if (ret)
 		goto err_uninit_ctx;
 
@@ -1442,7 +1471,7 @@ static int wd_init_resource(struct wd_env_config *config,
 	if (ret)
 		goto err_uninit_sched;
 
-	ret = wd_init_async_polling_thread(config);
+	ret = wd_init_async_polling_thread(config, ops->alg_poll_ctx);
 	if (ret)
 		goto err_uninit_alg;
 
@@ -1461,13 +1490,19 @@ err_uninit_ctx:
 	return ret;
 }
 
-static void wd_uninit_resource(struct wd_env_config *config)
+static void wd_uninit_resource(struct wd_env_config *config,
+			       const struct wd_alg_ops *ops)
 {
 	wd_uninit_async_polling_thread(config);
-	config->alg_uninit();
-	if (config->internal_sched)
+	ops->alg_uninit();
+
+	if (config->internal_sched) {
 		wd_uninit_sched_config(config->sched);
+		config->sched = NULL;
+	}
+
 	wd_free_ctx(config->ctx_config);
+	config->ctx_config = NULL;
 }
 
 int wd_alg_env_init(struct wd_env_config *env_config,
@@ -1478,43 +1513,32 @@ int wd_alg_env_init(struct wd_env_config *env_config,
 {
 	int ret;
 
-	env_config->op_type_num = ops->op_type_num;
-	env_config->alg_poll_ctx = ops->alg_poll_ctx;
-	env_config->table = table;
-	env_config->table_size = table_size;
-
 	ret = wd_alloc_numa(env_config, ops);
 	if (ret)
 		return ret;
 
-	ret = wd_init_env_config(env_config, ctx_attr);
+	ret = wd_init_env_config(env_config, ctx_attr, ops, table, table_size);
 	if (ret)
 		goto free_numa;
 
 	ret = wd_init_resource(env_config, ops);
 	if (ret)
-		goto free_env;
-
-	/* Use alg_uninit as a sign of initialization complete */
-	env_config->alg_uninit = ops->alg_uninit;
+		goto uninit_env_config;
 
 	return 0;
 
-free_env:
-	wd_free_env(env_config);
+uninit_env_config:
+	wd_uninit_env_config(env_config);
 free_numa:
 	wd_free_numa(env_config);
 	return ret;
 }
 
-void wd_alg_env_uninit(struct wd_env_config *env_config)
+void wd_alg_env_uninit(struct wd_env_config *env_config,
+		       const struct wd_alg_ops *ops)
 {
-	/* Check whether the initialization is complete */
-	if (!env_config->alg_uninit)
-		return;
-
-	wd_uninit_resource(env_config);
-	wd_free_env(env_config);
+	wd_uninit_resource(env_config, ops);
+	wd_uninit_env_config(env_config);
 	wd_free_numa(env_config);
 }
 

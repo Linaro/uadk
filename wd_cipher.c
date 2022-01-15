@@ -634,7 +634,7 @@ int wd_cipher_env_init(struct wd_sched *sched)
 
 void wd_cipher_env_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_cipher_env_config);
+	return wd_alg_env_uninit(&wd_cipher_env_config, &wd_cipher_ops);
 }
 
 int wd_cipher_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
@@ -652,7 +652,7 @@ int wd_cipher_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 
 void wd_cipher_ctx_num_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_cipher_env_config);
+	return wd_alg_env_uninit(&wd_cipher_env_config, &wd_cipher_ops);
 }
 
 int wd_cipher_get_env_param(__u32 node, __u32 type, __u32 mode,
