@@ -386,7 +386,8 @@ int wd_ctx_start(handle_t h_ctx)
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
 	if (ret)
-		WD_ERR("Fail to start on %s (%d).\n", ctx->dev_path, -errno);
+		WD_ERR("Fail to start on %s (%d), ret = %d!\n",
+		       ctx->dev_path, -errno, ret);
 
 	return ret;
 }
@@ -401,7 +402,8 @@ int wd_release_ctx_force(handle_t h_ctx)
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
 	if (ret)
-		WD_ERR("Fail to stop on %s (%d).\n", ctx->dev_path, -errno);
+		WD_ERR("Fail to stop on %s (%d), ret = %d!\n",
+		       ctx->dev_path, -errno, ret);
 
 	return ret;
 }
