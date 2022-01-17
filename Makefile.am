@@ -20,7 +20,7 @@ endif	# WITH_LOG_FILE
 # z = revision
 MAJOR = 2
 MINOR = 3
-REVISION = 24
+REVISION = 25
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"libwd version: ${MAJOR}.${MINOR}.${REVISION}\""
