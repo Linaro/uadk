@@ -419,9 +419,11 @@ static int benchmark_run(struct acc_option *option)
 			ret = sec_wd_benchmark(option);
 		}
 		usleep(20000);
+		#ifdef WITH_OPENSSL_DIR
 		if (option->modetype & SOFT_MODE) {
 			ret = sec_soft_benchmark(option);
 		}
+		#endif
 		break;
 	case HPRE_TYPE:
 		break;
