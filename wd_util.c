@@ -356,6 +356,7 @@ static void wd_free_numa(struct wd_env_config *config)
 
 	free(config->config_per_numa);
 	config->config_per_numa = NULL;
+	config->numa_num = 0;
 }
 
 /**
@@ -484,6 +485,7 @@ static int wd_alloc_numa(struct wd_env_config *config,
 	return 0;
 
 free_list:
+	config->numa_num = 0;
 	wd_free_list_accels(head);
 free_numa_dev_num:
 	free(numa_dev_num);
