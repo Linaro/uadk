@@ -98,7 +98,8 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	if ((sess->alg <= WD_DIGEST_SHA224 && key_len >
 		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
 		key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("failed to check digest key length!\n");
+		WD_ERR("failed to check digest key length, size = %u\n",
+			key_len);
 		return -WD_EINVAL;
 	}
 
@@ -258,20 +259,23 @@ static int digest_param_check(struct wd_digest_sess *sess,
 	}
 
 	if (unlikely(req->out_buf_bytes < req->out_bytes)) {
-		WD_ERR("failed to check digest out buffer length!\n");
+		WD_ERR("failed to check digest out buffer length, size = %u\n",
+			req->out_buf_bytes);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(sess->alg >= WD_DIGEST_TYPE_MAX || req->out_bytes == 0 ||
 	    req->out_bytes > g_digest_mac_len[sess->alg])) {
-		WD_ERR("failed to check digest type or mac length!\n");
+		WD_ERR("failed to check digest type or mac length, alg = %d, out_bytes = %u\n",
+			sess->alg, req->out_bytes);
 		return -WD_EINVAL;
 	}
 
 	if (req->data_fmt == WD_SGL_BUF) {
 		ret = wd_check_datalist(req->list_in, req->in_bytes);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the src datalist!\n");
+			WD_ERR("failed to check the src datalist, size = %u\n",
+				req->in_bytes);
 			return -WD_EINVAL;
 		}
 	}
