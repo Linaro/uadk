@@ -126,7 +126,7 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 	int ret = 0;
 
 	if (sess->mode == WD_CIPHER_XTS && length == AES_KEYSIZE_192) {
-		WD_ERR("unsupported XTS key length, length = %u.\n", length);
+		WD_ERR("unsupported XTS key length, length = %u\n", length);
 		return -WD_EINVAL;
 	}
 
@@ -147,7 +147,7 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("cipher input alg err, alg is %d.\n", sess->alg);
+		WD_ERR("cipher input alg err, alg = %d\n", sess->alg);
 		return -WD_EINVAL;
 	}
 
@@ -358,14 +358,16 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 	case WD_CIPHER_AES:
 	case WD_CIPHER_SM4:
 		if (req->iv_bytes != AES_BLOCK_SIZE) {
-			WD_ERR("AES or SM4 input iv bytes is err!\n");
+			WD_ERR("AES or SM4 input iv bytes is err, size = %u\n",
+				req->iv_bytes);
 			ret = -WD_EINVAL;
 		}
 		break;
 	case WD_CIPHER_3DES:
 	case WD_CIPHER_DES:
 		if (req->iv_bytes != DES3_BLOCK_SIZE) {
-			WD_ERR("3DES or DES input iv bytes is err!\n");
+			WD_ERR("3DES or DES input iv bytes is err, size = %u\n",
+				req->iv_bytes);
 			ret = -WD_EINVAL;
 		}
 		break;
@@ -384,7 +386,7 @@ static int wd_cipher_check_params(handle_t h_sess,
 	int ret = 0;
 
 	if (unlikely(!h_sess || !req)) {
-		WD_ERR("cipher input sess or req is NULL.\n");
+		WD_ERR("cipher input sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -394,21 +396,24 @@ static int wd_cipher_check_params(handle_t h_sess,
 	}
 
 	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
-		WD_ERR("cipher set out_buf_bytes is error!\n");
+		WD_ERR("cipher set out_buf_bytes is error, size = %u\n",
+			req->out_buf_bytes);
 		return -WD_EINVAL;
 	}
 
 	if (req->data_fmt == WD_SGL_BUF) {
 		ret = wd_check_datalist(req->list_src, req->in_bytes);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the src datalist!\n");
+			WD_ERR("failed to check the src datalist, len = %u\n",
+				req->in_bytes);
 			return -WD_EINVAL;
 		}
 
 		/* cipher dst len is equal to src len */
 		ret = wd_check_datalist(req->list_dst, req->in_bytes);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the dst datalist!\n");
+			WD_ERR("failed to check the dst datalist, len = %u\n",
+				req->in_bytes);
 			return -WD_EINVAL;
 		}
 	}
