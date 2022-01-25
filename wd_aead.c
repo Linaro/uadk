@@ -110,7 +110,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 		ret = aes_key_len_check(length);
 		break;
 	default:
-		WD_ERR("failed to check cipher key!\n");
+		WD_ERR("failed to set the cipher alg, alg = %d\n", alg);
 		return -WD_EINVAL;
 	}
 
@@ -143,7 +143,7 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	int ret;
 
 	if (unlikely(!key || !sess)) {
-		WD_ERR("failed to check cipher key inpupt param!\n");
+		WD_ERR("failed to check cipher key input param!\n");
 		return -WD_EINVAL;
 	}
 
@@ -189,7 +189,7 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	return 0;
 
 err_key_len:
-	WD_ERR("failed to check authenticate key length!\n");
+	WD_ERR("failed to check authenticate key length, size = %u\n", key_len);
 	return -WD_EINVAL;
 }
 
@@ -206,20 +206,23 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 		if (authsize < WD_AEAD_CCM_GCM_MIN ||
 		    authsize > WD_AEAD_CCM_GCM_MAX ||
 		    authsize % (WD_AEAD_CCM_GCM_MIN >> 1)) {
-			WD_ERR("failed to check aead CCM authsize!\n");
+			WD_ERR("failed to check aead CCM authsize, size = %u\n",
+				authsize);
 			return -WD_EINVAL;
 		}
 	} else if (sess->cmode == WD_CIPHER_GCM) {
 		if (authsize < WD_AEAD_CCM_GCM_MIN << 1 ||
 		    authsize > WD_AEAD_CCM_GCM_MAX) {
-			WD_ERR("failed to check aead GCM authsize!\n");
+			WD_ERR("failed to check aead GCM authsize, size = %u\n",
+				authsize);
 			return -WD_EINVAL;
 		}
 	} else {
 		if (sess->dalg >= WD_DIGEST_TYPE_MAX ||
 		    authsize & (WD_AEAD_CCM_GCM_MAX - 1) ||
 		    authsize > g_aead_mac_len[sess->dalg]) {
-			WD_ERR("failed to check aead mac authsize!\n");
+			WD_ERR("failed to check aead mac authsize, size = %u\n",
+				authsize);
 			return -WD_EINVAL;
 		}
 	}
@@ -313,20 +316,22 @@ static int aead_mac_param_check(struct wd_aead_sess *sess,
 	switch (sess->cmode) {
 	case WD_CIPHER_CBC:
 		if (req->mac_bytes < g_aead_mac_len[sess->dalg]) {
-			WD_ERR("failed to check cbc-hmac mac buffer length!\n");
+			WD_ERR("failed to check cbc-hmac mac buffer length, size = %u\n",
+				req->mac_bytes);
 			ret = -WD_EINVAL;
 		}
 		break;
 	case WD_CIPHER_CCM:
 	case WD_CIPHER_GCM:
 		if (req->mac_bytes < WD_AEAD_CCM_GCM_MAX) {
-			WD_ERR("failed to check CCM or GCM mac buffer length!\n");
+			WD_ERR("failed to check CCM or GCM mac buffer length, size = %u\n",
+				req->mac_bytes);
 			ret = -WD_EINVAL;
 		}
 		break;
 	default:
 		ret = -WD_EINVAL;
-		WD_ERR("set the aead cmode is error!\n");
+		WD_ERR("set the aead cmode is error, cmode = %d\n", sess->cmode);
 	}
 
 	return ret;
@@ -350,12 +355,14 @@ static int aead_param_check(struct wd_aead_sess *sess,
 
 	if (unlikely(sess->cmode == WD_CIPHER_CBC &&
 	   (req->in_bytes & (AES_BLOCK_SIZE - 1)))) {
-		WD_ERR("failed to check aead input data length!\n");
+		WD_ERR("failed to check aead input data length, size = %u\n",
+			req->in_bytes);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(req->iv_bytes != get_iv_block_size(sess->cmode))) {
-		WD_ERR("failed to check aead IV length, size:%u\n", req->iv_bytes);
+		WD_ERR("failed to check aead IV length, size = %u\n",
+			req->iv_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -367,13 +374,15 @@ static int aead_param_check(struct wd_aead_sess *sess,
 		len = req->in_bytes + req->assoc_bytes;
 		ret = wd_check_datalist(req->list_src, len);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the src datalist!\n");
+			WD_ERR("failed to check the src datalist, size = %u\n",
+				len);
 			return -WD_EINVAL;
 		}
 
 		ret = wd_check_datalist(req->list_dst, req->out_bytes);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the dst datalist!\n");
+			WD_ERR("failed to check the dst datalist, size = %u\n",
+				req->out_bytes);
 			return -WD_EINVAL;
 		}
 	}
@@ -407,13 +416,13 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	ret = wd_init_ctx_config(&wd_aead_setting.config, config);
 	if (ret) {
-		WD_ERR("failed to set config, ret = %d!\n", ret);
+		WD_ERR("failed to set config, ret = %d\n", ret);
 		return ret;
 	}
 
 	ret = wd_init_sched(&wd_aead_setting.sched, sched);
 	if (ret < 0) {
-		WD_ERR("failed to set sched, ret = %d!\n", ret);
+		WD_ERR("failed to set sched, ret = %d\n", ret);
 		goto out;
 	}
 
