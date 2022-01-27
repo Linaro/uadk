@@ -1618,6 +1618,17 @@ static int aead_get_aes_key_len(struct wd_aead_msg *msg, __u8 *key_len)
 	return 0;
 }
 
+static int aead_bd_msg_check(struct wd_aead_msg *msg)
+{
+	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("failed to check aead auth key bytes, size = %u\n",
+			msg->akey_bytes);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 	struct hisi_sec_sqe *sqe)
 {
@@ -1633,26 +1644,19 @@ static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 		break;
 	default:
 		WD_ERR("failed to check aead calg type, calg = %u\n", msg->calg);
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	/* CCM/GCM this region is set to 0 */
-	if (msg->cmode == WD_CIPHER_CCM ||
-	    msg->cmode == WD_CIPHER_GCM)
+	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check aead auth_bytes, size = %u\n",
-			msg->auth_bytes);
-		return -WD_EINVAL;
-	}
 	sqe->type2.mac_key_alg = msg->auth_bytes / WORD_BYTES;
 
-	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check aead auth key bytes, size = %u\n",
-			msg->akey_bytes);
-		return -WD_EINVAL;
-	}
+	ret = aead_bd_msg_check(msg);
+	if (ret)
+		return ret;
+
 	sqe->type2.mac_key_alg |= (__u32)(msg->akey_bytes /
 		WORD_BYTES) << MAC_LEN_OFFSET;
 
@@ -1957,28 +1961,6 @@ static struct wd_aead_driver hisi_aead_driver = {
 
 WD_AEAD_SET_DRIVER(hisi_aead_driver);
 
-static int aead_bd3_msg_check(struct wd_aead_msg *msg)
-{
-	if (unlikely(!msg->in_bytes)) {
-		WD_ERR("failed to check aead in_bytes 0 length!\n");
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check aead auth_bytes, size = %u\n",
-			msg->auth_bytes);
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
-		WD_ERR("failed to check aead auth key bytes, size = %u\n",
-			msg->akey_bytes);
-		return -WD_EINVAL;
-	}
-
-	return 0;
-}
-
 static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	struct hisi_sec_sqe3 *sqe)
 {
@@ -1998,14 +1980,14 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 		break;
 	default:
 		WD_ERR("failed to check aead calg type, calg = %u\n", msg->calg);
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	/* CCM/GCM this region is set to 0 */
 	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	ret = aead_bd3_msg_check(msg);
+	ret = aead_bd_msg_check(msg);
 	if (ret)
 		return ret;
 
