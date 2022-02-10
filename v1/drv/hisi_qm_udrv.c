@@ -423,20 +423,10 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	} else if (!strcmp(alg, "xts(aes)") ||
 		!strcmp(alg, "xts(sm4)")) {
 		qinfo->atype = WCRYPTO_CIPHER;
-		if (strstr(q->dev_path, "zip")) {
-			info->sqe_size = QM_ZIP_BD_SIZE;
-			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_zip_cipher_sqe;
-			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_zip_cipher_sqe;
-			ret = WD_SUCCESS;
-		} else if (strstr(q->dev_path, "sec")) {
-			priv->direction = 0;
-			info->sqe_size = QM_SEC_BD_SIZE;
-			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
-			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
-			ret = WD_SUCCESS;
-		} else { /* To be extended */
-			WD_ERR("queue xts alg engine err!\n");
-		}
+		info->sqe_size = QM_ZIP_BD_SIZE;
+		info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_zip_cipher_sqe;
+		info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_zip_cipher_sqe;
+		ret = WD_SUCCESS;
 	} else { /* To be extended */
 		WD_ERR("queue alg err!\n");
 	}
