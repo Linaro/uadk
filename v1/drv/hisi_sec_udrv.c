@@ -298,10 +298,11 @@ static int fill_cipher_bd1_type(struct wcrypto_cipher_msg *msg,
 
 	fill_bd_addr_type(msg->data_fmt, sqe);
 
-	if (msg->mode == WCRYPTO_CIPHER_XTS)
-		sqe->type1.ci_gen = CI_GEN_BY_LBA;
-	else
-		sqe->type1.ci_gen = CI_GEN_BY_ADDR;
+	/*
+	 * BD1 cipher only provides ci_gen=0 for compatibility, so user
+	 * should prepare iv[gran_num] and iv_bytes is sum of all grans
+	 */
+	sqe->type1.ci_gen = CI_GEN_BY_ADDR;
 
 	return WD_SUCCESS;
 }
@@ -1453,6 +1454,12 @@ static void parse_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 			sqe->type1.c_key_addr_l);
 	drv_iova_unmap(q, cipher_msg->key, (void *)(uintptr_t)dma_addr,
 			cipher_msg->key_bytes);
+	if (cipher_msg->iv) {
+		dma_addr = DMA_ADDR(sqe->type1.c_ivin_addr_h,
+				sqe->type1.c_ivin_addr_l);
+		drv_iova_unmap(q, cipher_msg->iv, (void *)(uintptr_t)dma_addr,
+				cipher_msg->iv_bytes);
+	}
 }
 
 static void cipher_ofb_data_handle(struct wcrypto_cipher_msg *msg)
