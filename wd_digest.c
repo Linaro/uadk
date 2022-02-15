@@ -203,13 +203,11 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 
 	/* init ctx related resources in specific driver */
-	priv = malloc(wd_digest_setting.driver->drv_ctx_size);
+	priv = calloc(1, wd_digest_setting.driver->drv_ctx_size);
 	if (!priv) {
-		WD_ERR("failed to alloc digest driver ctx!\n");
 		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
-	memset(priv, 0, wd_digest_setting.driver->drv_ctx_size);
 	wd_digest_setting.priv = priv;
 
 	ret = wd_digest_setting.driver->init(&wd_digest_setting.config, priv);
