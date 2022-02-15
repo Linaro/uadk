@@ -929,10 +929,8 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
-		if (ret) {
-			WD_ERR("failed to get sgl!\n");
+		if (ret)
 			return ret;
-		}
 	}
 
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
@@ -1132,10 +1130,8 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
-		if (ret) {
-			WD_ERR("failed to get sgl!\n");
+		if (ret)
 			return ret;
-		}
 	}
 
 	sqe.c_len_ivin = (__u32)msg->in_bytes;
@@ -1360,10 +1356,8 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
-		if (ret) {
-			WD_ERR("failed to get sgl!\n");
+		if (ret)
 			return ret;
-		}
 	}
 
 	sqe.sds_sa_type |= (__u8)(de | scene);
@@ -1372,10 +1366,8 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.type2.mac_addr = (__u64)(uintptr_t)msg->out;
 
 	ret = fill_digest_bd2_alg(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill digest bd alg!\n");
-		return ret;
-	}
+	if (ret)
+		goto put_sgl;
 
 	qm_fill_digest_long_bd(msg, &sqe);
 
@@ -1390,15 +1382,18 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		if (ret != -WD_EBUSY)
 			WD_ERR("digest send sqe is err(%d)!\n", ret);
 
-		if (msg->data_fmt == WD_SGL_BUF)
-			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
-		return ret;
+		goto put_sgl;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return 0;
+
+put_sgl:
+	if (msg->data_fmt == WD_SGL_BUF)
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+	return ret;
 }
 
 int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
@@ -1517,10 +1512,8 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
-		if (ret) {
-			WD_ERR("failed to get sgl!\n");
+		if (ret)
 			return ret;
-		}
 	}
 
 	sqe.bd_param |= (__u16)(de | scene);
@@ -1529,10 +1522,8 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	sqe.mac_addr = (__u64)(uintptr_t)msg->out;
 
 	ret = fill_digest_bd3_alg(msg, &sqe);
-	if (ret) {
-		WD_ERR("failed to fill digest bd alg!\n");
-		return ret;
-	}
+	if (ret)
+		goto put_sgl;
 
 	qm_fill_digest_long_bd3(msg, &sqe);
 
@@ -1548,15 +1539,18 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 		if (ret != -WD_EBUSY)
 			WD_ERR("digest send sqe is err(%d)!\n", ret);
 
-		if (msg->data_fmt == WD_SGL_BUF)
-			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
-		return ret;
+		goto put_sgl;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return 0;
+
+put_sgl:
+	if (msg->data_fmt == WD_SGL_BUF)
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+	return ret;
 }
 
 static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
@@ -1873,10 +1867,8 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe, msg->alg_type);
-		if (ret) {
-			WD_ERR("failed to get sgl!\n");
+		if (ret)
 			return ret;
-		}
 	}
 
 	fill_aead_bd2_addr(msg, &sqe);
@@ -2141,10 +2133,8 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
-		if (ret) {
-			WD_ERR("failed to get sgl!\n");
+		if (ret)
 			return ret;
-		}
 	}
 
 	fill_aead_bd3_addr(msg, &sqe);
