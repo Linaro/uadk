@@ -946,11 +946,13 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+		return ret;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
@@ -1147,11 +1149,13 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+		return ret;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *recv_msg)
@@ -1388,11 +1392,13 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+		return ret;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
@@ -1544,11 +1550,13 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+		return ret;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
@@ -1887,11 +1895,13 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+		return ret;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
@@ -2152,11 +2162,13 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
+
+		return ret;
 	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,

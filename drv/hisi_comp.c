@@ -945,12 +945,16 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 		return ret;
 	}
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
-	if (ret < 0 && ret != -WD_EBUSY)
-		WD_ERR("qm send is err(%d)!\n", ret);
+	if (ret < 0) {
+		if (ret != -WD_EBUSY)
+			WD_ERR("qm send is err(%d)!\n", ret);
+
+		return ret;
+	}
 
 	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
-	return ret;
+	return 0;
 }
 
 static int get_alg_type(__u32 type)
