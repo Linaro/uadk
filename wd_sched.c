@@ -129,7 +129,7 @@ static bool sched_key_valid(struct wd_sched_ctx *ctx,
 {
 	if (key->numa_id >= ctx->numa_num || key->mode >= SCHED_MODE_BUTT ||
 	    key->type >= ctx->type_num) {
-		WD_ERR("ERROR: %s key error - numa:%d, mode:%u, type%u!\n",
+		WD_ERR("ERROR: %s key error - numa: %d, mode: %u, type: %u!\n",
 		       __FUNCTION__, key->numa_id, key->mode, key->type);
 		return false;
 	}
@@ -372,18 +372,28 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
 	mode = param->mode;
 	sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 
-	if ((numa_id >= sched_ctx->numa_num) || (numa_id < 0) ||
-		(mode >= SCHED_MODE_BUTT) ||
-	    (type >= sched_ctx->type_num)) {
-		WD_ERR("ERROR: %s para err: numa_id=%d, mode=%u, type=%u!\n",
-		       __FUNCTION__, numa_id, mode, type);
+	if (numa_id >= sched_ctx->numa_num || numa_id < 0) {
+		WD_ERR("ERROR: %s para err: numa_id = %d, numa_num = %u\n",
+		       __FUNCTION__, numa_id, sched_ctx->numa_num);
+		return -WD_EINVAL;
+	}
+
+	if (type >= sched_ctx->type_num) {
+		WD_ERR("ERROR: %s para err: type = %u, type_num = %u\n",
+		       __FUNCTION__, type, sched_ctx->type_num);
+		return -WD_EINVAL;
+	}
+
+	if (mode >= SCHED_MODE_BUTT) {
+		WD_ERR("ERROR: %s para err: mode = %u, mode_num = %d!\n",
+		       __FUNCTION__, mode, SCHED_MODE_BUTT);
 		return -WD_EINVAL;
 	}
 
 	sched_info = sched_ctx->sched_info;
 
 	if (!sched_info[numa_id].ctx_region[mode]) {
-		WD_ERR("ERROR: %s para err: ctx_region:numa_id=%d, mode=%u is NULL!\n",
+		WD_ERR("ERROR: %s ctx_region of numa_id = %d, mode = %u is NULL!\n",
 		       __FUNCTION__, numa_id, mode);
 		return -WD_EINVAL;
 	}
