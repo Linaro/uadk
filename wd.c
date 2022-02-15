@@ -77,7 +77,7 @@ static int get_raw_attr(const char *dev_root, const char *attr, char *buf,
 
 static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 {
-	char buf[MAX_ATTR_STR_SIZE] = {0};
+	char buf[MAX_ATTR_STR_SIZE] = {'\0'};
 	int ret;
 
 	ret = get_raw_attr(dev->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
@@ -150,7 +150,7 @@ static int get_dev_info(struct uacce_dev *dev)
 	ret = get_int_attr(dev, "flags", &dev->flags);
 	if (ret < 0)
 		return ret;
-	else if (!(dev->flags & UACCE_DEV_SVA)) {
+	else if (!((unsigned int)dev->flags & UACCE_DEV_SVA)) {
 		WD_ERR("skip none sva uacce device!\n");
 		return -ENODEV;
 	}
