@@ -386,7 +386,7 @@ int wd_ctx_start(handle_t h_ctx)
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
 	if (ret)
-		WD_ERR("Fail to start on %s (%d), ret = %d!\n",
+		WD_ERR("failed to start on %s (%d), ret = %d!\n",
 		       ctx->dev_path, -errno, ret);
 
 	return ret;
@@ -402,7 +402,7 @@ int wd_release_ctx_force(handle_t h_ctx)
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
 	if (ret)
-		WD_ERR("Fail to stop on %s (%d), ret = %d!\n",
+		WD_ERR("failed to stop on %s (%d), ret = %d!\n",
 		       ctx->dev_path, -errno, ret);
 
 	return ret;
@@ -415,14 +415,18 @@ void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 	size_t size;
 	void *addr;
 
-	if (!ctx || qfrt >= UACCE_QFRT_MAX || !ctx->qfrs_offs[qfrt])
+	if (!ctx || qfrt >= UACCE_QFRT_MAX || !ctx->qfrs_offs[qfrt]) {
+		WD_ERR("failed to check input ctx or qfrt!\n");
 		return NULL;
+	}
 
 	size = ctx->qfrs_offs[qfrt];
 
 	addr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
-	if (addr == MAP_FAILED)
+	if (addr == MAP_FAILED) {
+		WD_ERR("failed to mmap, qfrt = %d, err = %d!\n", qfrt, -errno);
 		return NULL;
+	}
 
 	ctx->qfrs_base[qfrt] = addr;
 
