@@ -127,14 +127,12 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 
 	/* initialize ctx related resources in specific driver */
-	priv = malloc(wd_dh_setting.driver->drv_ctx_size);
+	priv = calloc(1, wd_dh_setting.driver->drv_ctx_size);
 	if (!priv) {
-		WD_ERR("failed to calloc drv ctx\n");
 		ret = -WD_ENOMEM;
 		goto out_priv;
 	}
 
-	memset(priv, 0, wd_dh_setting.driver->drv_ctx_size);
 	wd_dh_setting.priv = priv;
 	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv,
 					 wd_dh_setting.driver->alg_name);
