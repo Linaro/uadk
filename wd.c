@@ -44,16 +44,18 @@ static int get_raw_attr(const char *dev_root, const char *attr, char *buf,
 	ssize_t size;
 	int fd;
 
-	if (!dev_root || !attr || !buf || !sz)
-		return -WD_EINVAL;
-
 	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s", dev_root, attr);
-	if (size < 0)
+	if (size < 0) {
+		WD_ERR("failed to snprintf, dev_root: %s, attr: %s!\n",
+		       dev_root, attr);
 		return -WD_EINVAL;
+	}
 
 	ptrRet = realpath(attr_file, attr_path);
-	if (ptrRet == NULL)
+	if (ptrRet == NULL) {
+		WD_ERR("failed to resolve path, attr_file: %s!\n", attr_file);
 		return -WD_ENODEV;
+	}
 
 	fd = open(attr_path, O_RDONLY, 0);
 	if (fd < 0) {
@@ -78,16 +80,15 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 	char buf[MAX_ATTR_STR_SIZE] = {0};
 	int ret;
 
-	if (!dev || !val)
-		return -WD_EINVAL;
-
 	ret = get_raw_attr(dev->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
 	if (ret < 0)
 		return ret;
 
 	*val = strtol(buf, NULL, 10);
-	if (errno == ERANGE)
+	if (errno == ERANGE) {
+		WD_ERR("failed to strtol %s, out of range!\n", buf);
 		return -errno;
+	}
 
 	return 0;
 }
@@ -96,9 +97,6 @@ static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
 	int ret;
-
-	if (!dev)
-		return -WD_EINVAL;
 
 	ret = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
 	if (ret < 0) {
@@ -143,13 +141,19 @@ static int get_dev_info(struct uacce_dev *dev)
 		ret = get_int_attr(dev, "isolate", &value);
 		if (ret < 0)
 			return ret;
-		else if (value == 1)
+		else if (value == 1) {
+			WD_ERR("skip isolated uacce device!\n");
 			return -ENODEV;
+		}
 	}
 
 	ret = get_int_attr(dev, "flags", &dev->flags);
 	if (ret < 0)
 		return ret;
+	else if (!(dev->flags & UACCE_DEV_SVA)) {
+		WD_ERR("skip none sva uacce device!\n");
+		return -ENODEV;
+	}
 
 	ret = get_int_attr(dev, "region_mmio_size", &value);
 	if (ret < 0)
@@ -211,10 +215,8 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 			goto out_dir;
 
 		ret = get_dev_info(dev);
-		if (ret < 0) {
-			WD_ERR("failed to get dev info: ret = %d!\n", ret);
+		if (ret < 0)
 			goto out_dir;
-		}
 
 		break;
 	}
@@ -529,6 +531,9 @@ int wd_get_avail_ctx(struct uacce_dev *dev)
 {
 	int avail_ctx, ret;
 
+	if (!dev)
+		return -WD_EINVAL;
+
 	ret = get_int_attr(dev, "available_instances", &avail_ctx);
 	if (ret < 0)
 		return ret;
@@ -551,8 +556,6 @@ static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 	ret = get_raw_attr(dev_path, "algorithms", dev_alg_name, sz);
 	if (ret < 0) {
 		dev_alg_name[0] = '\0';
-		WD_ERR("failed to get alg for %s, ret = %d\n",
-		       dev_path, ret);
 		return ret;
 	}
 
