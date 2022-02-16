@@ -223,14 +223,27 @@ static void fill_buf_addr_deflate(struct hisi_zip_sqe *sqe, void *src,
 	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
 }
 
-static int fill_buf_deflate(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			    struct wd_comp_msg *msg)
+static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
+				    struct wd_comp_msg *msg,
+				    const char *head, int head_size)
 {
-	struct wd_comp_req *req = &msg->req;
+	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
-	__u32 in_size = req->src_len;
-	void *ctx_buf;
+	void *src = msg->req.src;
+	void *dst = msg->req.dst;
+	void *ctx_buf = NULL;
 	int ret;
+
+	if (msg->stream_pos == WD_COMP_STREAM_NEW && head != NULL) {
+		if (msg->req.op_type == WD_DIR_COMPRESS) {
+			memcpy(dst, head, head_size);
+			dst += head_size;
+			out_size -= head_size;
+		} else {
+			src += head_size;
+			in_size -= head_size;
+		}
+	}
 
 	ret = buf_size_check_deflate(&in_size, &out_size);
 	if (ret)
@@ -240,82 +253,28 @@ static int fill_buf_deflate(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-	else
-		ctx_buf = NULL;
 
-	fill_buf_addr_deflate(sqe, req->src, req->dst, ctx_buf);
+	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
 
 	return 0;
+}
+
+static int fill_buf_deflate(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			    struct wd_comp_msg *msg)
+{
+	return fill_buf_deflate_generic(sqe, msg, NULL, 0);
 }
 
 static int fill_buf_zlib(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			 struct wd_comp_msg *msg)
 {
-	__u32 in_size = msg->req.src_len;
-	__u32 out_size = msg->avail_out;
-	void *src = msg->req.src;
-	void *dst = msg->req.dst;
-	void *ctx_buf = NULL;
-	int ret;
-
-	if (msg->stream_pos == WD_COMP_STREAM_NEW) {
-		if (msg->req.op_type == WD_DIR_COMPRESS) {
-			memcpy(dst, ZLIB_HEADER, ZLIB_HEADER_SZ);
-			dst += ZLIB_HEADER_SZ;
-			out_size -= ZLIB_HEADER_SZ;
-		} else {
-			src += ZLIB_HEADER_SZ;
-			in_size -= ZLIB_HEADER_SZ;
-		}
-	}
-
-	ret = buf_size_check_deflate(&in_size, &out_size);
-	if (ret)
-		return ret;
-
-	fill_buf_size_deflate(sqe, in_size, out_size);
-
-	if (msg->ctx_buf)
-		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-
-	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
-
-	return 0;
+	return fill_buf_deflate_generic(sqe, msg, ZLIB_HEADER, ZLIB_HEADER_SZ);
 }
 
 static int fill_buf_gzip(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			 struct wd_comp_msg *msg)
 {
-	__u32 in_size = msg->req.src_len;
-	__u32 out_size = msg->avail_out;
-	void *src = msg->req.src;
-	void *dst = msg->req.dst;
-	void *ctx_buf = NULL;
-	int ret;
-
-	if (msg->stream_pos == WD_COMP_STREAM_NEW) {
-		if (msg->req.op_type == WD_DIR_COMPRESS) {
-			memcpy(dst, GZIP_HEADER, GZIP_HEADER_SZ);
-			dst += GZIP_HEADER_SZ;
-			out_size -= GZIP_HEADER_SZ;
-		} else {
-			src += GZIP_HEADER_SZ;
-			in_size -= GZIP_HEADER_SZ;
-		}
-	}
-
-	ret = buf_size_check_deflate(&in_size, &out_size);
-	if (ret)
-		return ret;
-
-	fill_buf_size_deflate(sqe, in_size, out_size);
-
-	if (msg->ctx_buf)
-		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-
-	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
-
-	return 0;
+	return fill_buf_deflate_generic(sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
 }
 
 static void fill_buf_type_sgl(struct hisi_zip_sqe *sqe)
@@ -358,23 +317,6 @@ static int fill_buf_addr_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	return 0;
 }
 
-static int fill_buf_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-				struct wd_comp_msg *msg)
-{
-	struct wd_comp_req *req = &msg->req;
-	int ret;
-
-	fill_buf_type_sgl(sqe);
-
-	ret = fill_buf_addr_deflate_sgl(h_qp, sqe, msg);
-	if (ret)
-		return ret;
-
-	fill_buf_size_deflate(sqe, req->src_len, msg->avail_out);
-
-	return 0;
-}
-
 static void fill_buf_sgl_skip(struct hisi_zip_sqe *sqe, __u32 src_skip,
 			      __u32 dst_skip)
 {
@@ -389,8 +331,9 @@ static void fill_buf_sgl_skip(struct hisi_zip_sqe *sqe, __u32 src_skip,
 	sqe->dw8 = val;
 }
 
-static int fill_buf_zlib_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			     struct wd_comp_msg *msg)
+static int fill_buf_deflate_slg_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
+					struct wd_comp_msg *msg, const char *head,
+					int head_size)
 {
 	struct wd_comp_req *req = &msg->req;
 	__u32 out_size = msg->avail_out;
@@ -405,13 +348,13 @@ static int fill_buf_zlib_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (ret)
 		return ret;
 
-	if (msg->req.op_type == WD_DIR_COMPRESS) {
-		memcpy(req->list_dst->data, ZLIB_HEADER, ZLIB_HEADER_SZ);
-		dst_skip = ZLIB_HEADER_SZ;
-		out_size -= ZLIB_HEADER_SZ;
-	} else {
-		src_skip = ZLIB_HEADER_SZ;
-		in_size -= ZLIB_HEADER_SZ;
+	if (head != NULL && msg->req.op_type == WD_DIR_COMPRESS) {
+		memcpy(req->list_dst->data, head, head_size);
+		dst_skip = head_size;
+		out_size -= head_size;
+	} else if (head != NULL && msg->req.op_type == WD_DIR_DECOMPRESS) {
+		src_skip = head_size;
+		in_size -= head_size;
 	}
 
 	fill_buf_sgl_skip(sqe, src_skip, dst_skip);
@@ -421,36 +364,22 @@ static int fill_buf_zlib_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	return 0;
 }
 
+static int fill_buf_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+				struct wd_comp_msg *msg)
+{
+	return fill_buf_deflate_slg_generic(h_qp, sqe, msg, NULL, 0);
+}
+
+static int fill_buf_zlib_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			     struct wd_comp_msg *msg)
+{
+	return fill_buf_deflate_slg_generic(h_qp, sqe, msg, ZLIB_HEADER, ZLIB_HEADER_SZ);
+}
+
 static int fill_buf_gzip_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			     struct wd_comp_msg *msg)
 {
-	struct wd_comp_req *req = &msg->req;
-	__u32 out_size = msg->avail_out;
-	__u32 in_size = req->src_len;
-	__u32 src_skip = 0;
-	__u32 dst_skip = 0;
-	int ret;
-
-	fill_buf_type_sgl(sqe);
-
-	ret = fill_buf_addr_deflate_sgl(h_qp, sqe, msg);
-	if (ret)
-		return ret;
-
-	if (msg->req.op_type == WD_DIR_COMPRESS) {
-		memcpy(req->list_dst->data, GZIP_HEADER, GZIP_HEADER_SZ);
-		dst_skip = GZIP_HEADER_SZ;
-		out_size -= GZIP_HEADER_SZ;
-	} else {
-		src_skip = GZIP_HEADER_SZ;
-		in_size -= GZIP_HEADER_SZ;
-	}
-
-	fill_buf_sgl_skip(sqe, src_skip, dst_skip);
-
-	fill_buf_size_deflate(sqe, in_size, out_size);
-
-	return 0;
+	return fill_buf_deflate_slg_generic(h_qp, sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
 }
 
 static void fill_buf_size_lz77_zstd(struct hisi_zip_sqe *sqe, __u32 in_size,
