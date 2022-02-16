@@ -158,7 +158,7 @@ libwd.la
 ltmain.sh
 m4/
 missing
-sample/uadk_sample
+sample/uadk_comp
 stamp-h1
 test/test_dummy
 test/test_hisi_zip
