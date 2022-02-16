@@ -459,10 +459,8 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	int ret;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
-	if (ret) {
-		WD_ERR("fail to check params!\n");
+	if (ret)
 		return ret;
-	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
@@ -477,10 +475,8 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	msg.stream_mode = WD_COMP_STATELESS;
 
 	ret = wd_comp_sync_job(sess, req, &msg);
-	if (ret) {
-		WD_ERR("fail to check params!\n");
+	if (ret)
 		return ret;
-	}
 
 	req->src_len = msg.in_cons;
 	req->dst_len = msg.produced;
@@ -499,10 +495,8 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	int ret;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
-	if (ret) {
-		WD_ERR("fail to check params!\n");
+	if (ret)
 		return ret;
-	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
@@ -655,10 +649,8 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	src_len = req->src_len;
 
 	ret = wd_comp_sync_job(sess, req, &msg);
-	if (ret) {
-		WD_ERR("fail to check params!\n");
+	if (ret)
 		return ret;
-	}
 
 	req->src_len = msg.in_cons;
 	req->dst_len = msg.produced;
@@ -685,10 +677,8 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	__u32 idx;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_ASYNC);
-	if (ret) {
-		WD_ERR("fail to check params!\n");
+	if (ret)
 		return ret;
-	}
 
 	if (!req->src_len) {
 		WD_ERR("invalid: req src_len is 0!\n");
