@@ -718,15 +718,21 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg, priv);
 	if (ret < 0) {
+		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd comp send err(%d)!\n", ret);
-		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, msg->tag);
+		goto fail_with_msg;
 	}
 
 	pthread_spin_unlock(&ctx->lock);
 
 	ret = wd_add_task_to_async_queue(&wd_comp_env_config, idx);
 	if (ret)
-		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, msg->tag);
+		goto fail_with_msg;
+
+	return 0;
+
+fail_with_msg:
+	wd_put_msg_to_pool(&wd_comp_setting.pool, idx, msg->tag);
 
 	return ret;
 }
