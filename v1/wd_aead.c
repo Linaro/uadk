@@ -35,8 +35,7 @@
 #define MAX_AEAD_AUTH_SIZE		64
 #define MAX_AEAD_ASSOC_SIZE		65536
 #define MAX_HMAC_KEY_SIZE		128
-#define MAX_AEAD_RETRY_CNT		2000000
-#define AEAD_SLEEP_INTERVAL		0xf
+#define MAX_AEAD_RETRY_CNT		20000000
 
 #define DES_KEY_SIZE 8
 #define SM4_KEY_SIZE 16
@@ -509,16 +508,18 @@ static int aead_recv_sync(struct wcrypto_aead_ctx *a_ctx,
 	while (true) {
 		ret = wd_burst_recv(a_ctx->q, (void **)(resp + recv_count),
 				    num - recv_count);
-		if (ret >= 0) {
+		if (ret > 0) {
 			recv_count += ret;
 			if (recv_count == num)
 				break;
 
-			if (++rx_cnt > MAX_AEAD_RETRY_CNT)
+			rx_cnt = 0;
+		} else if (ret == 0) {
+			if (++rx_cnt > MAX_AEAD_RETRY_CNT) {
+				WD_ERR("%s:wcrypto_recv timeout, num = %u, recv_count = %u!\n",
+					__func__, num, recv_count);
 				break;
-
-			if (!(rx_cnt & AEAD_SLEEP_INTERVAL))
-				usleep(1);
+			}
 		} else {
 			WD_ERR("do aead wcrypto_recv error!\n");
 			return ret;

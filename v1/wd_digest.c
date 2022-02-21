@@ -30,8 +30,7 @@
 #include "wd_util.h"
 
 #define MAX_HMAC_KEY_SIZE	128
-#define MAX_DIGEST_RETRY_CNT	2000000
-#define DIGEST_SLEEP_INTERVAL	0xf
+#define MAX_DIGEST_RETRY_CNT	20000000
 #define SEC_SHA1_ALIGN_SZ	64
 #define SEC_SHA512_ALIGN_SZ	128
 
@@ -275,16 +274,18 @@ static int digest_recv_sync(struct wcrypto_digest_ctx *d_ctx,
 	while (true) {
 		ret = wd_burst_recv(d_ctx->q, (void **)(resp + recv_count),
 				    num - recv_count);
-		if (ret >= 0) {
+		if (ret > 0) {
 			recv_count += ret;
 			if (recv_count == num)
 				break;
 
-			if (++rx_cnt > MAX_DIGEST_RETRY_CNT)
+			rx_cnt = 0;
+		} else if (ret == 0) {
+			if (++rx_cnt > MAX_DIGEST_RETRY_CNT) {
+				WD_ERR("%s:wcrypto_recv timeout, num = %u, recv_count = %u!\n",
+					__func__, num, recv_count);
 				break;
-
-			if (!(rx_cnt & DIGEST_SLEEP_INTERVAL))
-				usleep(1);
+			}
 		} else {
 			WD_ERR("do digest wcrypto_recv error!\n");
 			return ret;
