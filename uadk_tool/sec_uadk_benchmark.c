@@ -180,13 +180,13 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		break;
 	case DES3_128_ECB:
 		keysize = 16;
-		ivsize = 8;
+		ivsize = 0;
 		mode = WD_CIPHER_ECB;
 		alg = WD_CIPHER_3DES;
 		break;
 	case DES3_192_ECB:
 		keysize = 24;
-		ivsize = 8;
+		ivsize = 0;
 		mode = WD_CIPHER_ECB;
 		alg = WD_CIPHER_3DES;
 		break;
@@ -204,7 +204,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		break;
 	case SM4_128_ECB:
 		keysize = 16;
-		ivsize = 16;
+		ivsize = 0;
 		mode = WD_CIPHER_ECB;
 		alg = WD_CIPHER_SM4;
 		break;
@@ -233,7 +233,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		alg = WD_CIPHER_SM4;
 		break;
 	case SM4_128_XTS:
-		keysize = 16;
+		keysize = 32;
 		ivsize = 16;
 		mode = WD_CIPHER_XTS;
 		alg = WD_CIPHER_SM4;
@@ -560,11 +560,14 @@ void *sec_uadk_poll(void *data)
 	poll_ctx uadk_poll_ctx = NULL;
 	thread_data *pdata = (thread_data *)data;
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	u32 id = pdata->td_id;
 	u32 last_time = 2; /* poll need one more recv time */
 	u32 count = 0;
 	u32 recv = 0;
-	u32 i = 0;
-	int  ret;
+	int ret;
+
+	if (id > g_ctxnum)
+		return NULL;
 
 	switch(pdata->subtype) {
 	case CIPHER_TYPE:
@@ -582,15 +585,13 @@ void *sec_uadk_poll(void *data)
 	}
 
 	while (last_time) {
-		for (i = 0; i < g_ctx_cfg.ctx_num; i++) {
-			ret = uadk_poll_ctx(i, expt, &recv);
-			// SEC_TST_PRT("expt %u, poll %d recv: %u!\n", expt, i, recv);
-			count += recv;
-			recv = 0;
-			if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
-				SEC_TST_PRT("poll ret: %u!\n", ret);
-				goto recv_error;
-			}
+		ret = uadk_poll_ctx(id, expt, &recv);
+		// SEC_TST_PRT("expt %u, poll %d recv: %u!\n", expt, i, recv);
+		count += recv;
+		recv = 0;
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			SEC_TST_PRT("poll ret: %u!\n", ret);
+			goto recv_error;
 		}
 
 		if (get_run_state() == 0)
@@ -989,7 +990,7 @@ int sec_uadk_async_threads(struct acc_option *options)
 	thread_data threads_args[THREADS_NUM];
 	thread_data threads_option;
 	pthread_t tdid[THREADS_NUM];
-	pthread_t pollid;
+	pthread_t pollid[THREADS_NUM];
 	int i, ret;
 
 	/* alg param parse and set to thread data */
@@ -998,10 +999,14 @@ int sec_uadk_async_threads(struct acc_option *options)
 		return ret;
 
 	/* poll thread */
-	ret = pthread_create(&pollid, NULL, sec_uadk_poll, &threads_option);
-	if (ret) {
-		SEC_TST_PRT("Create poll thread fail!\n");
-		goto async_error;
+	for (i = 0; i < g_ctxnum; i++) {
+		threads_args[i].subtype = threads_option.subtype;
+		threads_args[i].td_id = i;
+		ret = pthread_create(&pollid, NULL, sec_uadk_poll, &threads_args[i]);
+		if (ret) {
+			SEC_TST_PRT("Create poll thread fail!\n");
+			goto async_error;
+		}
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
@@ -1028,10 +1033,12 @@ int sec_uadk_async_threads(struct acc_option *options)
 		}
 	}
 
-	ret = pthread_join(pollid, NULL);
-	if (ret) {
-		SEC_TST_PRT("Join poll thread fail!\n");
-		goto async_error;
+	for (i = 0; i < g_ctxnum; i++) {
+		ret = pthread_join(pollid[i], NULL);
+		if (ret) {
+			SEC_TST_PRT("Join poll thread fail!\n");
+			goto async_error;
+		}
 	}
 
 async_error:
