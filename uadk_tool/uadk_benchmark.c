@@ -271,7 +271,7 @@ int get_rand_int(int range)
 		ACC_TST_PRT("rand range error!\n");
 		return 1;
 	}
-	srand((unsigned) time(NULL) * getpid());
+	srand((unsigned)time(NULL) * getpid());
 	randnum = rand() % range;
 
 	return randnum;
@@ -281,7 +281,7 @@ void get_rand_data(u8 *addr, int size)
 {
 	int i;
 
-	srand((unsigned) time(NULL) * getpid());
+	srand((unsigned)time(NULL) * getpid());
 	for (i = 0; i < size; i++) {
 		addr[i] = rand() % 0xFF;
 	}
