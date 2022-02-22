@@ -200,13 +200,13 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		break;
 	case DES3_128_ECB:
 		keysize = 16;
-		ivsize = 8;
+		ivsize = 0;
 		mode = WCRYPTO_CIPHER_ECB;
 		alg = WCRYPTO_CIPHER_3DES;
 		break;
 	case DES3_192_ECB:
 		keysize = 24;
-		ivsize = 8;
+		ivsize = 0;
 		mode = WCRYPTO_CIPHER_ECB;
 		alg = WCRYPTO_CIPHER_3DES;
 		break;
@@ -224,7 +224,7 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		break;
 	case SM4_128_ECB:
 		keysize = 16;
-		ivsize = 16;
+		ivsize = 0;
 		mode = WCRYPTO_CIPHER_ECB;
 		alg = WCRYPTO_CIPHER_SM4;
 		break;
@@ -253,7 +253,7 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		alg = WCRYPTO_CIPHER_SM4;
 		break;
 	case SM4_128_XTS:
-		keysize = 16;
+		keysize = 32;
 		ivsize = 16;
 		mode = WCRYPTO_CIPHER_XTS;
 		alg = WCRYPTO_CIPHER_SM4;
@@ -525,9 +525,9 @@ void *sec_wd_poll(void *data)
 	poll_ctx uadk_poll_ctx = NULL;
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
 	u32 last_time = 2; /* poll need one more recv time */
+	u32 id = pdata->td_id;
 	u32 count = 0;
 	u32 recv = 0;
-	u32 i = 0;
 
 	switch(pdata->subtype) {
 	case CIPHER_TYPE:
@@ -544,20 +544,21 @@ void *sec_wd_poll(void *data)
 		return NULL;
 	}
 
+	if (id > g_thread_num)
+		return NULL;
+
 	while (last_time) {
-		for (i = 0; i < g_thread_num; i++) {
-			recv = uadk_poll_ctx(g_thread_queue.bd_res[i].queue, expt);
-			/*
-			 * warpdrive async mode poll easy to 100% with small package.
-			 * SEC_TST_PRT("warpdrive poll %d recv: %u!\n", i, recv);
-			 */
-			if (unlikely(recv < 0)) {
-				SEC_TST_PRT("poll ret: %u!\n", recv);
-				goto recv_error;
-			}
-			count += recv;
-			recv = 0;
+		recv = uadk_poll_ctx(g_thread_queue.bd_res[id].queue, expt);
+		/*
+		 * warpdrive async mode poll easy to 100% with small package.
+		 * SEC_TST_PRT("warpdrive poll %d recv: %u!\n", i, recv);
+		 */
+		if (unlikely(recv < 0)) {
+			SEC_TST_PRT("poll ret: %u!\n", recv);
+			goto recv_error;
 		}
+		count += recv;
+		recv = 0;
 
 		if (get_run_state() == 0)
 			last_time--;
@@ -1186,7 +1187,7 @@ int sec_wd_async_threads(struct acc_option *options)
 	thread_data threads_args[THREADS_NUM];
 	thread_data threads_option;
 	pthread_t tdid[THREADS_NUM];
-	pthread_t pollid;
+	pthread_t pollid[THREADS_NUM];
 	int i, ret;
 
 	/* alg param parse and set to thread data */
@@ -1195,10 +1196,14 @@ int sec_wd_async_threads(struct acc_option *options)
 		return ret;
 
 	/* poll thread */
-	ret = pthread_create(&pollid, NULL, sec_wd_poll, &threads_option);
-	if (ret) {
-		SEC_TST_PRT("Create poll thread fail!\n");
-		goto async_error;
+	for (i = 0; i < g_thread_num; i++) {
+		threads_args[i].subtype = threads_option.subtype;
+		threads_args[i].td_id = i;
+		ret = pthread_create(&pollid[i], NULL, sec_wd_poll, &threads_args[i]);
+		if (ret) {
+			SEC_TST_PRT("Create poll thread fail!\n");
+			goto async_error;
+		}
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
@@ -1225,10 +1230,12 @@ int sec_wd_async_threads(struct acc_option *options)
 		}
 	}
 
-	ret = pthread_join(pollid, NULL);
-	if (ret) {
-		SEC_TST_PRT("Join poll thread fail!\n");
-		goto async_error;
+	for (i = 0; i < g_thread_num; i++) {
+		ret = pthread_join(pollid[i], NULL);
+		if (ret) {
+			SEC_TST_PRT("Join poll thread fail!\n");
+			goto async_error;
+		}
 	}
 
 async_error:
