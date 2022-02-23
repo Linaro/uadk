@@ -1002,7 +1002,7 @@ int sec_uadk_async_threads(struct acc_option *options)
 	for (i = 0; i < g_ctxnum; i++) {
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].td_id = i;
-		ret = pthread_create(&pollid, NULL, sec_uadk_poll, &threads_args[i]);
+		ret = pthread_create(&pollid[i], NULL, sec_uadk_poll, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create poll thread fail!\n");
 			goto async_error;
