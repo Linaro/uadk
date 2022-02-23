@@ -610,7 +610,7 @@ static void *sec_wd_async_run(void *arg)
 	if (!src_data_buf)
 		return NULL;
 
-	get_rand_data(src_data_buf, g_pktlen);
+	get_rand_data((u8 *)src_data_buf, g_pktlen);
 	out_data_buf = malloc(g_pktlen * sizeof(char));
 	if (!out_data_buf) {
 		free(src_data_buf);
@@ -910,7 +910,7 @@ static void *sec_wd_sync_run(void *arg)
 	if (!src_data_buf)
 		return NULL;
 
-	get_rand_data(src_data_buf, g_pktlen);
+	get_rand_data((u8 *)src_data_buf, g_pktlen);
 	out_data_buf = malloc(g_pktlen * sizeof(char));
 	if (!out_data_buf) {
 		free(src_data_buf);
