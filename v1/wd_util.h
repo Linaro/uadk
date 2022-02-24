@@ -36,7 +36,7 @@
 #include "v1/wd_ecc.h"
 #include "v1/wd_adapter.h"
 
-#define WD_CTX_MSG_NUM		1024
+#define WD_CTX_MSG_NUM		64
 #define WD_HPRE_CTX_MSG_NUM	64
 #define WD_RNG_CTX_MSG_NUM	256
 #define WD_MAX_CTX_NUM			256
