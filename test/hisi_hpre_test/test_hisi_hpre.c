@@ -6793,7 +6793,7 @@ static int get_rsa_key_from_test_sample(handle_t sess, char *pubkey_file,
 	memset(&wd_q, 0, sizeof(wd_q));
 	memset(&wd_p, 0, sizeof(wd_p));
 
-	bits = wd_rsa_key_bits(sess);
+	bits = wd_rsa_get_key_bits(sess);
 	if (bits == 1024) {
 		e = rsa_e_1024;
 		p = rsa_p_1024;
@@ -7348,7 +7348,7 @@ int hpre_test_result_check(handle_t sess,  struct wd_rsa_req *req, void *key)
 	}
 
 	wd_rsa_get_prikey(sess, &prikey);
-	keybits = wd_rsa_key_bits(sess);
+	keybits = wd_rsa_get_key_bits(sess);
 	key_size = keybits >> 3;
 	if (req->op_type == WD_RSA_GENKEY) {
 		if (wd_rsa_is_crt(sess)) {
@@ -7907,7 +7907,7 @@ static void _rsa_cb(void *req_t)
 	struct test_hpre_pthread_dt *thread_info = tag->thread_info;
 
 	wd_rsa_get_prikey(sess, &prikey);
-	keybits = wd_rsa_key_bits(sess);
+	keybits = wd_rsa_get_key_bits(sess);
 	key_size = keybits >> 3;
 
 	thread_info->recv_task_num++;
