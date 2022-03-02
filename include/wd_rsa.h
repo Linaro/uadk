@@ -67,7 +67,7 @@ struct wd_rsa_sess_setup {
 };
 
 bool wd_rsa_is_crt(handle_t sess);
-__u32 wd_rsa_key_bits(handle_t sess);
+__u32 wd_rsa_get_key_bits(handle_t sess);
 void wd_rsa_get_pubkey(handle_t sess, struct wd_rsa_pubkey **pubkey);
 void wd_rsa_get_prikey(handle_t sess, struct wd_rsa_prikey **prikey);
 int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n);
