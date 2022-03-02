@@ -392,7 +392,7 @@ static int aead_param_check(struct wd_aead_sess *sess,
 
 static int aead_init_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	if (!config || !sched) {
+	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("wd aead config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}

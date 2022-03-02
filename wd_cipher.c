@@ -157,7 +157,7 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 static int cipher_init_check(struct wd_ctx_config *config,
 			     struct wd_sched *sched)
 {
-	if (!config || !sched) {
+	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("wd cipher config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}

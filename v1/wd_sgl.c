@@ -516,8 +516,8 @@ void wd_free_sgl(void *pool, struct wd_sgl *sgl)
 	struct wd_sgl *next;
 	int i;
 
-	if (unlikely(!p || !sgl)) {
-		WD_ERR("pool or sgl is null!\n");
+	if (unlikely(!p || !sgl || !p->sgl_pool)) {
+		WD_ERR("pool or sgl or p->sgl_pool is null!\n");
 		return;
 	}
 

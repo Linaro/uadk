@@ -80,7 +80,7 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 
 static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	if (!config || !config->ctxs[0].ctx || !sched) {
+	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("config or sched NULL\n");
 		return -WD_EINVAL;
 	}
