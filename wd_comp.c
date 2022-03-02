@@ -87,7 +87,7 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (!config || !sched) {
+	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("invalid params, config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -223,8 +223,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		req = &msg->req;
 		req->src_len = msg->in_cons;
 		req->dst_len = msg->produced;
-		if (req->cb)
-			req->cb(req, req->cb_param);
+		req->cb(req, req->cb_param);
 
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, resp_msg.tag);
