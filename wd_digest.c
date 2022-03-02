@@ -154,7 +154,7 @@ void wd_digest_free_sess(handle_t h_sess)
 
 static int digest_init_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	if (!config || !sched) {
+	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("failed to check input param!\n");
 		return -WD_EINVAL;
 	}
