@@ -599,7 +599,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 
 	kg_out = malloc(kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
-		WD_ERR("sess malloc kg_in memory fail!\n");
+		WD_ERR("sess malloc kg_out memory fail!\n");
 		return NULL;
 	}
 
@@ -875,7 +875,7 @@ bool wd_rsa_is_crt(handle_t sess)
 	return ((struct wd_rsa_sess *)sess)->setup.is_crt;
 }
 
-__u32 wd_rsa_key_bits(handle_t sess)
+__u32 wd_rsa_get_key_bits(handle_t sess)
 {
 	if (!sess) {
 		WD_ERR("get rsa key bits, sess NULL!\n");
