@@ -92,6 +92,8 @@ int wd_init_cookie_pool(struct wd_cookie_pool *pool,
 		return -WD_ENOMEM;
 
 	pool->cstatus = (void *)((uintptr_t)pool->cookies + total_size);
+	memset(pool->cstatus, 0, cookies_num);
+
 	pool->cookies_num = cookies_num;
 	pool->cookies_size = cookies_size;
 	pool->cid = 0;
