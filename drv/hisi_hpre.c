@@ -127,7 +127,7 @@ static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 }
 
 static int crypto_bin_to_hpre_bin(char *dst, const char *src,
-				  int b_size, int d_size, const char *p_name)
+				  __u32 b_size, __u32 d_size, const char *p_name)
 {
 	int i = d_size - 1;
 	bool is_hpre_bin;
@@ -1469,6 +1469,11 @@ static struct wd_ecc_out *create_ecdh_out(struct wd_ecc_msg *msg)
 	struct wd_ecc_dh_out *dh_out;
 	struct wd_ecc_out *out;
 
+	if (!hsz) {
+		WD_ERR("get msg key size error!\n");
+		return NULL;
+	}
+
 	out = malloc(len);
 	if (!out) {
 		WD_ERR("failed to alloc, sz = %u!\n", len);
@@ -1601,6 +1606,11 @@ static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 		return -WD_EINVAL;
 	}
 
+	if (!hw_sz) {
+		WD_ERR("get msg key size error!\n");
+		return -WD_EINVAL;
+	}
+
 	memset(hw_msg, 0, sizeof(*hw_msg));
 
 	/* prepare algorithm */
@@ -1646,7 +1656,7 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_sm2_enc_in *ein = msg->req.src;
 	struct wd_ecc_msg *msg_dst[2] = {NULL};
-	struct hisi_hpre_sqe hw_msg[2] = {{0}};
+	struct hisi_hpre_sqe hw_msg[2] = {0};
 	struct wd_hash_mt *hash = &msg->hash;
 	__u16 send_cnt = 0;
 	int ret;
@@ -1918,7 +1928,7 @@ static __u32 get_hash_bytes(__u8 type)
 	return val;
 }
 
-static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
+static void msg_pack(char *dst, __u64 *out_len,
 		     const void *src, __u32 src_len)
 {
 	if (unlikely(!src || !src_len))
@@ -1961,8 +1971,8 @@ static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 		ctr[2] = (i >> 8) & 0xFF;
 		ctr[1] = (i >> 16) & 0xFF;
 		ctr[0] = (i >> 24) & 0xFF;
-		msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2_len);
-		msg_pack(p_in, lens, &in_len, ctr, sizeof(ctr));
+		msg_pack(p_in, &in_len, x2y2->x.data, x2y2_len);
+		msg_pack(p_in, &in_len, ctr, sizeof(ctr));
 
 		t_out = m_len >= h_bytes ? tmp : p_out;
 		ret = hash->cb(p_in, in_len, t_out, h_bytes, hash->usr);
@@ -2026,9 +2036,9 @@ static int sm2_hash(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 	if (unlikely(!p_in))
 		return -WD_ENOMEM;
 
-	msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2->x.dsize);
-	msg_pack(p_in, lens, &in_len, msg->data, msg->dsize);
-	msg_pack(p_in, lens, &in_len, x2y2->y.data, x2y2->y.dsize);
+	msg_pack(p_in, &in_len, x2y2->x.data, x2y2->x.dsize);
+	msg_pack(p_in, &in_len, msg->data, msg->dsize);
+	msg_pack(p_in, &in_len, x2y2->y.data, x2y2->y.dsize);
 	ret = hash->cb(p_in, in_len, hash_out, h_bytes, hash->usr);
 	if (unlikely(ret)) {
 		WD_ERR("failed to hash cb, ret = %d!\n", ret);
