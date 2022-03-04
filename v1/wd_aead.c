@@ -263,7 +263,6 @@ free_ctx_id:
 int wcrypto_aead_setauthsize(void *ctx, __u16 authsize)
 {
 	struct wcrypto_aead_ctx *ctxt = ctx;
-	int ret = WD_SUCCESS;
 
 	if (!ctx) {
 		WD_ERR("input param is NULL!\n");
@@ -277,7 +276,7 @@ int wcrypto_aead_setauthsize(void *ctx, __u16 authsize)
 
 	ctxt->auth_size = authsize;
 
-	return ret;
+	return WD_SUCCESS;
 }
 
 int wcrypto_aead_getauthsize(void *ctx)
