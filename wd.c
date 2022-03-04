@@ -480,7 +480,7 @@ char *wd_ctx_get_api(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	if (!ctx)
+	if (!ctx || !ctx->dev)
 		return NULL;
 
 	return ctx->dev->api;
@@ -508,7 +508,7 @@ int wd_is_sva(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	if (!ctx)
+	if (!ctx || !ctx->dev)
 		return -WD_EINVAL;
 
 	if ((unsigned int)ctx->dev->flags & UACCE_DEV_SVA)
@@ -521,7 +521,7 @@ int wd_get_numa_id(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	if (!ctx)
+	if (!ctx || !ctx->dev)
 		return -WD_EINVAL;
 
 	return ctx->dev->numa_id;
