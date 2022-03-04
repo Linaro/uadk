@@ -896,8 +896,6 @@ void hisi_qm_dump_sgl(void *sgl)
 	int i;
 
 	while (tmp) {
-		WD_ERR("sgl = %p\n", tmp);
-		WD_ERR("sgl->next_dma : 0x%lx\n", tmp->next_dma);
 		WD_ERR("sgl->entry_sum_in_chain : %u\n",
 		       tmp->entry_sum_in_chain);
 		WD_ERR("sgl->entry_sum_in_sgl : %u\n",

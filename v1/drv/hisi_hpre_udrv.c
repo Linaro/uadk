@@ -499,7 +499,6 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		hw_msg->low_tag = tag->ctx_id;
 	hw_msg->done = 0x1;
 	hw_msg->etype = 0x0;
-	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
 
 	return WD_SUCCESS;
@@ -517,7 +516,10 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	__u16 kbytes;
 	int ret;
 
-	ASSERT(rsa_msg);
+	if (unlikely(!rsa_msg)) {
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
+		return 0;
+	}
 
 	/* if this hardware message not belong to me, then try again */
 	if (usr && LOW_U16(hw_msg->low_tag) != usr)
@@ -700,7 +702,6 @@ int qm_fill_dh_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		if (unlikely(ret))
 			goto map_xp_fail;
 	}
-	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
 
 	ret = qm_final_fill_dh_sqe(q, msg, hw_msg);
@@ -726,7 +727,11 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 	struct wd_queue *q = info->q;
 	int ret;
 
-	ASSERT(dh_msg);
+	if (unlikely(!dh_msg)) {
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
+		return 0;
+	}
+
 	if (usr && LOW_U16(hw_msg->low_tag) != usr)
 		return 0;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
@@ -1668,7 +1673,6 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 		hw_msg->low_tag = tag->ctx_id;
 	hw_msg->done = 0x1;
 	hw_msg->etype = 0x0;
-	ASSERT(!info->req_cache[i]);
 	info->req_cache[i] = msg;
 
 	return WD_SUCCESS;
@@ -1942,6 +1946,7 @@ static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wd_mm_br *br = &qinfo->br;
 	__u32 ksz = req_src->key_bytes;
 	struct wcrypto_ecc_msg *dst;
+	int ret;
 
 	/* c2 data lens <= 4096 bit */
 	if (din->c2.dsize <= BITS_TO_BYTES(4096) &&
@@ -1966,11 +1971,21 @@ static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	dst->in = (void *)&din->c1;
 	dst->out = br->alloc(br->usr, ECDH_OUT_PARAMS_SZ(ksz));
 	if (unlikely(!dst->out)) {
-		free(dst);
-		return -WD_ENOMEM;
+		ret = -WD_ENOMEM;
+		goto free_dst;
 	}
 
-	return qm_fill_ecc_sqe_general(dst, info, i);
+	ret = qm_fill_ecc_sqe_general(dst, info, i);
+	if (ret)
+		goto free_out;
+
+	return ret;
+
+free_out:
+	br->free(br->usr, dst->out);
+free_dst:
+	free(dst);
+	return ret;
 }
 
 int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i)
@@ -1997,7 +2012,10 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 	__u16 kbytes;
 	int ret;
 
-	ASSERT(ecc_msg);
+	if (unlikely(!ecc_msg)) {
+		WD_ERR("info->req_cache is null at index:%hu\n", i);
+		return 0;
+	}
 
 	/* if this hw msg not belong to me, then try again */
 	if (usr && LOW_U16(hw_msg->low_tag) != usr)
@@ -2146,7 +2164,7 @@ static __u32 get_hash_bytes(__u8 type)
 	return val;
 }
 
-static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
+static void msg_pack(char *dst, __u64 *out_len,
 		     const void *src, __u32 src_len)
 {
 	if (unlikely(!src || !src_len))
@@ -2191,8 +2209,8 @@ static int sm2_kdf(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 		ctr[1] = (i >> 16) & 0xFF;
 		ctr[0] = (i >> 24) & 0xFF;
 		in_len = 0;
-		msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2_len);
-		msg_pack(p_in, lens, &in_len, ctr, sizeof(ctr));
+		msg_pack(p_in, &in_len, x2y2->x.data, x2y2_len);
+		msg_pack(p_in, &in_len, ctr, sizeof(ctr));
 
 		t_out = m_len >= h_bytes ? tmp : p_out;
 		ret = hash->cb(p_in, in_len, t_out, h_bytes, hash->usr);
@@ -2257,9 +2275,9 @@ static int sm2_hash(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 	if (unlikely(!p_in))
 		return -WD_ENOMEM;
 
-	msg_pack(p_in, lens, &in_len, x2y2->x.data, x2y2->x.dsize);
-	msg_pack(p_in, lens, &in_len, msg->data, msg->dsize);
-	msg_pack(p_in, lens, &in_len, x2y2->y.data, x2y2->y.dsize);
+	msg_pack(p_in, &in_len, x2y2->x.data, x2y2->x.dsize);
+	msg_pack(p_in, &in_len, msg->data, msg->dsize);
+	msg_pack(p_in, &in_len, x2y2->y.data, x2y2->y.dsize);
 	ret = hash->cb(p_in, in_len, hash_out, h_bytes, hash->usr);
 	if (unlikely(ret)) {
 		WD_ERR("failed to hash cb, ret = %d!\n", ret);
