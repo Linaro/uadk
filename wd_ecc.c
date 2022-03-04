@@ -1396,7 +1396,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 	return WD_SUCCESS;
 }
 
-static void msg_pack(char *dst, __u64 dst_len, __u64 *out_len,
+static void msg_pack(char *dst, __u64 *out_len,
 		     const void *src, __u32 src_len)
 {
 	if (!src || !src_len)
@@ -1596,17 +1596,17 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 
 	memset(p_in, 0, lens);
 	temp = id_bits >> 8;
-	msg_pack(p_in, lens, &in_len, &temp, sizeof(__u8));
+	msg_pack(p_in, &in_len, &temp, sizeof(__u8));
 	temp = id_bits & 0xFF;
-	msg_pack(p_in, lens, &in_len, &temp, sizeof(__u8));
+	msg_pack(p_in, &in_len, &temp, sizeof(__u8));
 	if (id)
-		msg_pack(p_in, lens, &in_len, id->data, id_bytes);
-	msg_pack(p_in, lens, &in_len, cv->a.data, key_size);
-	msg_pack(p_in, lens, &in_len, cv->b.data, key_size);
-	msg_pack(p_in, lens, &in_len, cv->g.x.data, key_size);
-	msg_pack(p_in, lens, &in_len, cv->g.y.data, key_size);
-	msg_pack(p_in, lens, &in_len, pub->x.data, key_size);
-	msg_pack(p_in, lens, &in_len, pub->y.data, key_size);
+		msg_pack(p_in, &in_len, id->data, id_bytes);
+	msg_pack(p_in, &in_len, cv->a.data, key_size);
+	msg_pack(p_in, &in_len, cv->b.data, key_size);
+	msg_pack(p_in, &in_len, cv->g.x.data, key_size);
+	msg_pack(p_in, &in_len, cv->g.y.data, key_size);
+	msg_pack(p_in, &in_len, pub->x.data, key_size);
+	msg_pack(p_in, &in_len, pub->y.data, key_size);
 	hash_bytes = get_hash_bytes(hash->type);
 	*len = hash_bytes;
 	ret = hash->cb((const char *)p_in, in_len,
@@ -1649,8 +1649,8 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 
 	/* e = h(ZA || M) */
 	memset(p_in, 0, lens);
-	msg_pack(p_in, lens, &in_len, za, za_len);
-	msg_pack(p_in, lens, &in_len, plaintext->data, plaintext->dsize);
+	msg_pack(p_in, &in_len, za, za_len);
+	msg_pack(p_in, &in_len, plaintext->data, plaintext->dsize);
 	hash_msg->dsize = hash_bytes;
 	ret = hash->cb((const char *)p_in, in_len, hash_msg->data,
 			hash_bytes, hash->usr);
