@@ -165,10 +165,6 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
 
 	switch (msg->mode) {
 	case WCRYPTO_CIPHER_ECB:
-		if (msg->alg == WCRYPTO_CIPHER_SM4) {
-			WD_ERR("kunpeng 920 not support ECB(SM4)!\n");
-			return -WD_EINVAL;
-		}
 		sqe->type2.c_mode = C_MODE_ECB;
 		break;
 	case WCRYPTO_CIPHER_CBC:
