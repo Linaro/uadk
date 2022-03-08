@@ -21,7 +21,6 @@
 
 #define POLL_SIZE		100000
 #define POLL_TIME		1000
-#define STREAM_MODE_STATE	1
 
 static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -48,10 +47,10 @@ struct wd_digest_sess {
 	__u32			key_bytes;
 	void			*sched_key;
 	/*
-	 * Notify the BD state, 1 is final BD or middle BD,
-	 * 0 is normal mode or first BD, one session only supports one stream.
+	 * Notify the BD state, zero is frist BD, non-zero
+	 * is middle or final BD.
 	 */
-	int			state;
+	int			bd_state;
 	/* Total of data for stream mode */
 	__u64			 long_data_len;
 };
@@ -300,11 +299,11 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->has_next = req->has_next;
 	sess->long_data_len += req->in_bytes;
 	msg->long_data_len = sess->long_data_len;
-	/* To store the stream bd state, iv_bytes also means bd state */
-	msg->iv_bytes = sess->state;
+	/* To store the stream BD state, iv_bytes also means BD state */
+	msg->iv_bytes = sess->bd_state;
 	if (req->has_next == 0) {
 		sess->long_data_len = 0;
-		sess->state = 0;
+		sess->bd_state = 0;
 	}
 }
 
@@ -338,8 +337,13 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 				goto out;
 			}
 		}
-		if (msg->has_next && msg->result == WD_SUCCESS)
-			dsess->state = STREAM_MODE_STATE;
+
+		/*
+		 * 'out_bytes' can be expressed BD state, non-zero is final BD or
+		 * middle BD as stream mode.
+		 */
+		if (msg->has_next)
+			dsess->bd_state = msg->out_bytes;
 	} while (ret < 0);
 
 out:
