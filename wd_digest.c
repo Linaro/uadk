@@ -220,6 +220,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 out_init:
 	free(priv);
+	wd_digest_setting.priv = NULL;
 out_priv:
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 out_sched:
