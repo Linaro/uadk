@@ -105,14 +105,14 @@ static void wd_ecc_set_static_drv(void)
 {
 	wd_ecc_setting.driver = wd_ecc_get_driver();
 	if (!wd_ecc_setting.driver)
-		WD_ERR("fail to get driver\n");
+		WD_ERR("failed to get ecc driver!\n");
 }
 #else
 static void __attribute__((constructor)) wd_ecc_open_driver(void)
 {
 	wd_ecc_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_ecc_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so\n");
+		WD_ERR("failed to open libhisi_hpre.so!\n");
 }
 
 static void __attribute__((destructor)) wd_ecc_close_driver(void)
@@ -125,7 +125,7 @@ static void __attribute__((destructor)) wd_ecc_close_driver(void)
 void wd_ecc_set_driver(struct wd_ecc_driver *drv)
 {
 	if (!drv) {
-		WD_ERR("drv NULL\n");
+		WD_ERR("invalid: ecc drv is NULL!\n");
 		return;
 	}
 
@@ -135,12 +135,12 @@ void wd_ecc_set_driver(struct wd_ecc_driver *drv)
 static int init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("config or sched NULL\n");
+		WD_ERR("invalid: config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("no sva, not do ecc init\n");
+		WD_ERR("invalid: the mode is non sva, please check system!\n");
 		return -WD_EINVAL;
 	}
 
@@ -191,7 +191,7 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_ecc_setting.driver->init(&wd_ecc_setting.config, priv,
 					  wd_ecc_setting.driver->alg_name);
 	if (ret < 0) {
-		WD_ERR("failed to drv init, ret = %d\n", ret);
+		WD_ERR("failed to init ecc driver, ret = %d!\n", ret);
 		goto out_init;
 	}
 
@@ -212,7 +212,7 @@ out:
 void wd_ecc_uninit(void)
 {
 	if (!wd_ecc_setting.priv) {
-		WD_ERR("repeat uninit ecc\n");
+		WD_ERR("invalid: repeat uninit ecc!\n");
 		return;
 	}
 
@@ -236,7 +236,7 @@ static int trans_to_binpad(char *dst, const char *src,
 	int j;
 
 	if (unlikely(!dst || !src || !b_size || !d_size || b_size < d_size)) {
-		WD_ERR("%s: trans to hpre bin params err!\n", p_name);
+		WD_ERR("invalid: %s trans to hpre bin params err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
@@ -265,7 +265,7 @@ static __u32 get_key_bsz(__u32 ksz)
 	else if (ksz <= BITS_TO_BYTES(576))
 		size = BITS_TO_BYTES(576);
 	else
-		WD_ERR("failed to get key buffer size : key size = %u.\n", ksz);
+		WD_ERR("invalid: get key size %u is error!\n", ksz);
 
 	return size;
 }
@@ -386,7 +386,7 @@ static struct wd_ecc_pubkey *create_ecc_pubkey(struct wd_ecc_sess *sess)
 	hsz = get_key_bsz(sess->key_size);
 	pubkey = malloc(sizeof(struct wd_ecc_pubkey));
 	if (!pubkey) {
-		WD_ERR("failed to malloc!\n");
+		WD_ERR("failed to malloc pubkey!\n");
 		return NULL;
 	}
 
@@ -419,7 +419,7 @@ static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess, __u32 num)
 	__u32 hsz, len;
 
 	if (!sess->key_size || sess->key_size > ECC_MAX_KEY_SIZE) {
-		WD_ERR("sess key size %u error!\n", sess->key_size);
+		WD_ERR("invalid: sess key size %u is error!\n", sess->key_size);
 		return NULL;
 	}
 
@@ -447,7 +447,7 @@ static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
 	__u64 len;
 
 	if (ksz != SM2_KEY_SIZE) {
-		WD_ERR("sess key size %u error!\n", ksz);
+		WD_ERR("invalid: sess key size %u is error!\n", ksz);
 		return NULL;
 	}
 
@@ -488,7 +488,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 	__u64 len;
 
 	if (ksz != SM2_KEY_SIZE) {
-		WD_ERR("sess key size %u error!\n", sess->key_size);
+		WD_ERR("invalid: sess key size %u is error!\n", sess->key_size);
 		return NULL;
 	}
 
@@ -525,7 +525,7 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 	void *start;
 
 	if (unlikely(ksz != SM2_KEY_SIZE)) {
-		WD_ERR("sess key size %u error!\n", ksz);
+		WD_ERR("invalid: sess key size %u is error!\n", ksz);
 		return NULL;
 	}
 
@@ -539,7 +539,7 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 		(__u64)m_len + (__u64)h_byts;
 	start = malloc(*len);
 	if (unlikely(!start)) {
-		WD_ERR("failed to alloc, sz = %llu!\n", *len);
+		WD_ERR("failed to alloc start, sz = %llu!\n", *len);
 		return NULL;
 	}
 
@@ -579,7 +579,7 @@ static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess, __u32 num)
 	__u32 hsz, len;
 
 	if (!sess->key_size || sess->key_size > ECC_MAX_KEY_SIZE) {
-		WD_ERR("sess key size %u error!\n", sess->key_size);
+		WD_ERR("invalid: sess key size %u is error!\n", sess->key_size);
 		return NULL;
 	}
 
@@ -678,12 +678,12 @@ static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src,
 			    const char *p_name)
 {
 	if (unlikely(!src || !src->data)) {
-		WD_ERR("%s: src or data NULL!\n", p_name);
+		WD_ERR("invalid: %s src or data NULL!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (!src->dsize || src->dsize > dst->dsize) {
-		WD_ERR("%s: src dsz = %u error, dst dsz = %u!\n",
+		WD_ERR("invalid: %s src dsz %u or dst dsz %u is error!\n",
 			p_name, src->dsize, dst->dsize);
 		return -WD_EINVAL;
 	}
@@ -698,7 +698,7 @@ static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src,
 int wd_ecc_get_key_bits(handle_t sess)
 {
 	if (!sess) {
-		WD_ERR("get ecc key bits, sess NULL!\n");
+		WD_ERR("invalid: get ecc key bits, sess NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -800,7 +800,7 @@ static int fill_param_by_id(struct wd_ecc_curve *c,
 	}
 
 	if (item->key_bits != key_bits) {
-		WD_ERR("curve %u and key bits %u not match!\n", id, key_bits);
+		WD_ERR("invalid: curve %u and key bits %u not match!\n", id, key_bits);
 		return -WD_EINVAL;
 	}
 
@@ -833,7 +833,7 @@ static int set_key_cv(struct wd_ecc_curve *dst,
 	int ret;
 
 	if (unlikely(!src)) {
-		WD_ERR("set key cv: praram NULL!\n");
+		WD_ERR("invalid: set key cv, praram NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -870,22 +870,22 @@ static int fill_user_curve_cfg(struct wd_ecc_curve *param,
 	if (setup->cv.type == WD_CV_CFG_ID) {
 		curve_id = setup->cv.cfg.id;
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
-		dbg("set curve id %u\n", curve_id);
+		dbg("set curve id %u!\n", curve_id);
 	} else if (setup->cv.type == WD_CV_CFG_PARAM) {
 		ret = set_key_cv(param, src_param);
 		if (ret) {
 			WD_ERR("failed to set key cv!\n");
 			return ret;
 		}
-		dbg("set curve by user param\n");
+		dbg("set curve by user param!\n");
 	} else {
-		WD_ERR("fill curve cfg:type %u error!\n", setup->cv.type);
+		WD_ERR("invalid: fill curve cfg type %u is error!\n", setup->cv.type);
 		return -WD_EINVAL;
 	}
 
 	if (!param->p.dsize ||
 	     param->p.dsize > BITS_TO_BYTES(setup->key_bits)) {
-		WD_ERR("fill curve cfg:dsize %u error!\n", param->p.dsize);
+		WD_ERR("invalid: fill curve cfg dsize %u is error!\n", param->p.dsize);
 		return -WD_EINVAL;
 	}
 
@@ -974,19 +974,19 @@ static bool is_alg_support(const char *alg)
 static int setup_param_check(struct wd_ecc_sess_setup *setup)
 {
 	if (unlikely(!setup || !setup->alg)) {
-		WD_ERR("input parameter error!\n");
+		WD_ERR("invalid: input parameter error!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(!is_alg_support(setup->alg))) {
-		WD_ERR("algorithms %s not supported!\n", setup->alg);
+		WD_ERR("invalid: algorithms %s not supported!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
 	setup_curve_cfg(setup);
 
 	if (unlikely(!is_key_width_support(setup->key_bits))) {
-		WD_ERR("key_bits %u error!\n", setup->key_bits);
+		WD_ERR("invalid: key_bits %u is error!\n", setup->key_bits);
 		return -WD_EINVAL;
 	}
 
@@ -1035,7 +1035,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 	ret = create_sess_key(setup, sess);
 	if (ret) {
-		WD_ERR("failed creat ecc sess keys!\n");
+		WD_ERR("failed to creat ecc sess keys!\n");
 		goto sess_err;
 	}
 
@@ -1061,7 +1061,7 @@ void wd_ecc_free_sess(handle_t sess)
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 
 	if (!sess_t) {
-		WD_ERR("free ecc sess parameter err!\n");
+		WD_ERR("invalid: free ecc sess parameter err!\n");
 		return;
 	}
 
@@ -1076,7 +1076,7 @@ struct wd_ecc_key *wd_ecc_get_key(handle_t sess)
 	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 
 	if (!sess_t) {
-		WD_ERR("get ecc key sess NULL!\n");
+		WD_ERR("invalid: get ecc key sess NULL!\n");
 		return NULL;
 	}
 
@@ -1091,14 +1091,14 @@ int wd_ecc_set_prikey(struct wd_ecc_key *ecc_key,
 	int ret;
 
 	if (!ecc_key || !prikey) {
-		WD_ERR("set ecc prikey parameter NULL!\n");
+		WD_ERR("invalid: set ecc prikey parameter NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	ecc_prikey = ecc_key->prikey;
 	d = ecc_key->d;
 	if (!ecc_prikey || !d) {
-		WD_ERR("ecc_prikey or d NULL!\n");
+		WD_ERR("invalid: ecc_prikey or d NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1113,7 +1113,7 @@ int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
 			   struct wd_dtb **prikey)
 {
 	if (!ecc_key || !prikey) {
-		WD_ERR("get ecc prikey parameter err!\n");
+		WD_ERR("invalid:  get ecc prikey parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1129,14 +1129,14 @@ int wd_ecc_set_pubkey(struct wd_ecc_key *ecc_key, struct wd_ecc_point *pubkey)
 	int ret;
 
 	if (!ecc_key || !pubkey) {
-		WD_ERR("set ecc pubkey parameter err!\n");
+		WD_ERR("invalid: set ecc pubkey parameter err!\n");
 		return -WD_EINVAL;
 	}
 
 	pub = ecc_key->pub;
 	ecc_pubkey = ecc_key->pubkey;
 	if (!ecc_pubkey || !pub) {
-		WD_ERR("ecc_pubkey or pub NULL!\n");
+		WD_ERR("invalid: ecc_pubkey or pub NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1161,7 +1161,7 @@ int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 		      struct wd_ecc_point **pubkey)
 {
 	if (!ecc_key || !pubkey) {
-		WD_ERR("get ecc pubkey parameter err!\n");
+		WD_ERR("invalid: get ecc pubkey parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1174,7 +1174,7 @@ int wd_ecc_get_curve(struct wd_ecc_key *ecc_key,
 		     struct wd_ecc_curve **cv)
 {
 	if (!ecc_key || !cv) {
-		WD_ERR("get ecc pubkey parameter err!\n");
+		WD_ERR("invalid: get ecc pubkey parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1192,7 +1192,7 @@ void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
 	struct wd_ecc_prikey *prk;
 
 	if (!key || !key->prikey) {
-		WD_ERR("input NULL in get ecc prikey param!\n");
+		WD_ERR("invalid: input NULL in get ecc prikey param!\n");
 		return;
 	}
 
@@ -1226,7 +1226,7 @@ void wd_ecc_get_pubkey_params(struct wd_ecc_key *key,
 	struct wd_ecc_pubkey *pbk;
 
 	if (!key || !key->pubkey) {
-		WD_ERR("input NULL in get ecc pubkey param!\n");
+		WD_ERR("invalid: input NULL in get ecc pubkey param!\n");
 		return;
 	}
 
@@ -1259,7 +1259,7 @@ struct wd_ecc_in *wd_ecxdh_new_in(handle_t sess, struct wd_ecc_point *in)
 	int ret;
 
 	if (!s || !in) {
-		WD_ERR("new ecc dh in parameter error!\n");
+		WD_ERR("invalid: new ecc dh in parameter error!\n");
 		return NULL;
 	}
 
@@ -1288,7 +1288,7 @@ struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 	struct wd_ecc_out *ecc_out;
 
 	if (!sess) {
-		WD_ERR("new ecc dh out sess NULL!\n");
+		WD_ERR("invalid: new ecc dh out sess NULL!\n");
 		return NULL;
 	}
 
@@ -1304,7 +1304,7 @@ void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
 	struct wd_ecc_dh_out *dh_out = (void *)out;
 
 	if (!dh_out) {
-		WD_ERR("input NULL in get ecdh out!\n");
+		WD_ERR("invalid: input NULL in get ecdh out!\n");
 		return;
 	}
 
@@ -1317,13 +1317,13 @@ void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
 	__u32 bsz;
 
 	if (!in) {
-		WD_ERR("del ecc in parameter error!\n");
+		WD_ERR("invalid: del ecc in parameter error!\n");
 		return;
 	}
 
 	bsz = in->size;
 	if (!bsz) {
-		WD_ERR("del ecc in: bsz 0!\n");
+		WD_ERR("invalid: del ecc in, bsz 0!\n");
 		return;
 	}
 
@@ -1336,13 +1336,13 @@ void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out)
 	__u32 bsz;
 
 	if (!out) {
-		WD_ERR("del ecc out parameter error!\n");
+		WD_ERR("invalid: del ecc out parameter error!\n");
 		return;
 	}
 
 	bsz = out->size;
 	if (!bsz) {
-		WD_ERR("del ecc out: bsz 0!\n");
+		WD_ERR("invalid: del ecc out, bsz 0!\n");
 		return;
 	}
 
@@ -1374,7 +1374,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 		key = &sess->key;
 		break;
 	default:
-		WD_ERR("ecc request op type = %u error!\n", req->op_type);
+		WD_ERR("invalid: ecc request op type %u is error!\n", req->op_type);
 		return -WD_EINVAL;
 	}
 	msg->key = key;
@@ -1390,7 +1390,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 
 	if (!msg->req.src || (!req->dst && (req->op_type != WD_ECDSA_VERIFY &&
 		req->op_type != WD_SM2_VERIFY))) {
-		WD_ERR("req in/out NULL!\n");
+		WD_ERR("invalid: req in/out NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1468,7 +1468,7 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	int ret;
 
 	if (unlikely(!h_sess || !req)) {
-		WD_ERR("input parameter NULL!\n");
+		WD_ERR("invalid: input parameter NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1504,7 +1504,7 @@ static void get_sign_out_params(struct wd_ecc_out *out,
 	struct wd_ecc_sign_out *sout = (void *)out;
 
 	if (!sout) {
-		WD_ERR("input NULL in get ecc sign out!\n");
+		WD_ERR("invalid: input NULL in get ecc sign out!\n");
 		return;
 	}
 
@@ -1556,7 +1556,7 @@ static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 
 	ret = rand_t.cb(k->data, k->dsize, rand_t.usr);
 	if (ret)
-		WD_ERR("failed to rand cb: ret = %d!\n", ret);
+		WD_ERR("failed to do rand cb, ret = %d!\n", ret);
 
 	return ret;
 }
@@ -1580,7 +1580,7 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 
 	if (id && (!BYTES_TO_BITS(id->dsize) || !id->data ||
 		   BYTES_TO_BITS(id->dsize) > UINT16_MAX)) {
-		WD_ERR("id error: lens = %u!\n", id->dsize);
+		WD_ERR("invalid: id error, lens = %u!\n", id->dsize);
 		return -WD_EINVAL;
 	}
 
@@ -1633,7 +1633,7 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 
 	hash_bytes = get_hash_bytes(hash->type);
 	if (unlikely(!hash_bytes || hash_bytes > SM2_KEY_SIZE)) {
-		WD_ERR("hash type = %hhu error!\n", hash->type);
+		WD_ERR("invalid: hash type %hhu is error!\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -1675,7 +1675,7 @@ static struct wd_ecc_in *new_sign_in(struct wd_ecc_sess *sess,
 	int ret;
 
 	if (!sess || !e) {
-		WD_ERR("failed to new ecc sign in: sess or e NULL!\n");
+		WD_ERR("invalid: new ecc sign in, sess or e NULL!\n");
 		return NULL;
 	}
 
@@ -1758,7 +1758,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 	__u32 hsz;
 
 	if (sess->key_size != SM2_KEY_SIZE) {
-		WD_ERR("sess key size %u error!\n", sess->key_size);
+		WD_ERR("invalid: sess key size %u is error!\n", sess->key_size);
 		return NULL;
 	}
 
@@ -1820,7 +1820,7 @@ static struct wd_ecc_in *new_verf_in(handle_t sess,
 	int ret;
 
 	if (!sess_t || !r || !e || !s) {
-		WD_ERR("new ecc verf in parameter error!\n");
+		WD_ERR("invalid: new ecc verf in parameter error!\n");
 		return NULL;
 	}
 
@@ -1879,7 +1879,7 @@ static struct wd_ecc_out *wd_ecc_new_sign_out(struct wd_ecc_sess *sess)
 	struct wd_ecc_out *ecc_out;
 
 	if (!sess) {
-		WD_ERR("new ecc sout ctx NULL!\n");
+		WD_ERR("invalid: new ecc sout ctx NULL!\n");
 		return NULL;
 	}
 
@@ -1900,7 +1900,7 @@ struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess)
 	struct wd_ecc_out *ecc_out;
 
 	if (!sess) {
-		WD_ERR("new sm2 kg out sess NULL!\n");
+		WD_ERR("invalid: new sm2 kg out sess NULL!\n");
 		return NULL;
 	}
 
@@ -1919,7 +1919,7 @@ void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
 	struct wd_sm2_kg_out *kout = (void *)out;
 
 	if (!kout) {
-		WD_ERR("input NULL in get sm2 kg out!\n");
+		WD_ERR("invalid: input NULL in get sm2 kg out!\n");
 		return;
 	}
 
@@ -1940,7 +1940,7 @@ struct wd_ecc_in *wd_sm2_new_enc_in(handle_t sess,
 	int ret;
 
 	if (!sess_t || !plaintext) {
-		WD_ERR("new sm2 enc in parameter error!\n");
+		WD_ERR("invalid: new sm2 enc in parameter error!\n");
 		return NULL;
 	}
 
@@ -1991,7 +1991,7 @@ struct wd_ecc_in *wd_sm2_new_dec_in(handle_t sess,
 	int ret;
 
 	if (!sess_t || !c1 || !c2 || !c3) {
-		WD_ERR("new sm2 dec in parameter error!\n");
+		WD_ERR("invalid: new sm2 dec in parameter error!\n");
 		return NULL;
 	}
 
@@ -2035,7 +2035,7 @@ struct wd_ecc_out *wd_sm2_new_enc_out(handle_t sess, __u32 plaintext_len)
 	__u64 len = 0;
 
 	if (!sess_t) {
-		WD_ERR("new ecc sout sess NULL!\n");
+		WD_ERR("invalid: new ecc sout sess NULL!\n");
 		return NULL;
 	}
 
@@ -2090,7 +2090,7 @@ void wd_sm2_get_enc_out_params(struct wd_ecc_out *out,
 	struct wd_sm2_enc_out *eout = (void *)out;
 
 	if (!eout) {
-		WD_ERR("input NULL in get sm2 enc out!\n");
+		WD_ERR("invalid: input NULL in get sm2 enc out!\n");
 		return;
 	}
 
@@ -2110,7 +2110,7 @@ void wd_sm2_get_dec_out_params(struct wd_ecc_out *out,
 	struct wd_sm2_dec_out *dout = (void *)out;
 
 	if (!dout) {
-		WD_ERR("input NULL in get sm2 dec out!\n");
+		WD_ERR("invalid: input NULL in get sm2 dec out!\n");
 		return;
 	}
 
@@ -2156,7 +2156,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	int idx;
 
 	if (unlikely(!req || !sess || !req->cb)) {
-		WD_ERR("input parameter NULL!\n");
+		WD_ERR("invalid: input parameter NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2207,7 +2207,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count)) {
-		WD_ERR("param count is NULL!");
+		WD_ERR("invalid: param count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2234,7 +2234,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, idx,
 					  recv_msg.tag);
 		if (!msg) {
-			WD_ERR("get msg from pool is NULL!\n");
+			WD_ERR("failed to get msg from pool!\n");
 			return -WD_EINVAL;
 		}
 
