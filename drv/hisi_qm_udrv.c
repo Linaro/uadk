@@ -168,22 +168,17 @@ static int hisi_qm_setup_region(handle_t h_ctx,
 	q_info->sq_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
 	if (!q_info->sq_base) {
 		WD_ERR("mmap dus fail\n");
-		goto err_out;
+		return -WD_ENOMEM;
 	}
 
 	q_info->mmio_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
 	if (!q_info->mmio_base) {
 		wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
 		WD_ERR("mmap mmio fail\n");
-		goto err_out;
+		return -WD_ENOMEM;
 	}
 
 	return 0;
-
-err_out:
-	q_info->sq_base = NULL;
-	q_info->mmio_base = NULL;
-	return -WD_ENOMEM;
 }
 
 static void hisi_qm_unset_region(handle_t h_ctx,
