@@ -67,6 +67,7 @@ void drv_close(struct wd_queue *q);
 int drv_send(struct wd_queue *q, void **req, __u32 num);
 int drv_recv(struct wd_queue *q, void **req, __u32 num);
 void drv_flush(struct wd_queue *q);
+void drv_free_slice(struct wd_queue *q);
 void *drv_reserve_mem(struct wd_queue *q, size_t size);
 void drv_unmap_reserve_mem(struct wd_queue *q, void *addr, size_t size);
 int drv_get_sgl_info(struct wd_queue *q, struct hw_sgl_info *info);

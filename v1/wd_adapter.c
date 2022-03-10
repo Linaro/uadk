@@ -150,6 +150,20 @@ int drv_recv(struct wd_queue *q, void **req, __u32 num)
 	return hw_dio_tbl[qinfo->hw_type_id].recv(q, req, num);
 }
 
+void drv_free_slice(struct wd_queue *q)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct wd_ss_region *rgn;
+
+        while (true) {
+                rgn = TAILQ_FIRST(&qinfo->ss_list);
+                if (!rgn)
+                        break;
+                TAILQ_REMOVE(&qinfo->ss_list, rgn, next);
+                free(rgn);
+        }
+}
+
 void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 {
 	struct q_info *qinfo = q->qinfo;
@@ -209,12 +223,12 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 		if (ret < 0) {
 			drv_show_ss_slices(q);
 			WD_ERR("get DMA fail!\n");
-			return NULL;
+			goto err_out;
 		}
 		rgn = malloc(sizeof(*rgn));
 		if (!rgn) {
 			WD_ERR("alloc ss region fail!\n");
-			return NULL;
+			goto err_out;
 		}
 		memset(rgn, 0, sizeof(*rgn));
 
@@ -231,6 +245,12 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	}
 
 	return ptr;
+
+err_out:
+	drv_free_slice(q);
+	drv_unmap_reserve_mem(q, ptr, size);
+
+	return NULL;
 }
 
 void drv_unmap_reserve_mem(struct wd_queue *q, void *addr, size_t size)
