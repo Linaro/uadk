@@ -198,7 +198,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	*count = 0;
 
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	ctx = config->ctxs + idx;
@@ -206,7 +206,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	do {
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, &resp_msg,
 							priv);
-		if (ret < 0) {
+		if (unlikely(ret < 0)) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw error!\n");
 			return ret;
@@ -216,7 +216,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 		msg = wd_find_msg_in_pool(&wd_comp_setting.pool, idx,
 					  resp_msg.tag);
-		if (!msg) {
+		if (unlikely(!msg)) {
 			WD_ERR("failed to get msg from pool!\n");
 			return -WD_EINVAL;
 		}
@@ -335,12 +335,12 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 static int wd_comp_check_buffer(struct wd_comp_req *req)
 {
 	if (req->data_fmt == WD_FLAT_BUF) {
-		if (!req->src || !req->dst) {
+		if (unlikely(!req->src || !req->dst)) {
 			WD_ERR("invalid: src or dst is NULL!\n");
 			return -WD_EINVAL;
 		}
 	} else if (req->data_fmt == WD_SGL_BUF) {
-		if (!req->list_src || !req->list_dst) {
+		if (unlikely(!req->list_src || !req->list_dst)) {
 			WD_ERR("invalid: list_src or list_dst is NULL!\n");
 			return -WD_EINVAL;
 		}
@@ -360,37 +360,37 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 {
 	int ret;
 
-	if (!sess || !req) {
+	if (unlikely(!sess || !req)) {
 		WD_ERR("invalid: sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	if (req->data_fmt > WD_SGL_BUF) {
+	if (unlikely(req->data_fmt > WD_SGL_BUF)) {
 		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
 
 	ret = wd_comp_check_buffer(req);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
-	if (req->op_type != WD_DIR_COMPRESS &&
-	    req->op_type != WD_DIR_DECOMPRESS) {
+	if (unlikely(req->op_type != WD_DIR_COMPRESS &&
+		     req->op_type != WD_DIR_DECOMPRESS)) {
 		WD_ERR("invalid: op_type is %d!\n", req->op_type);
 		return -WD_EINVAL;
 	}
 
-	if (mode == CTX_MODE_ASYNC && !req->cb) {
+	if (unlikely(mode == CTX_MODE_ASYNC && !req->cb)) {
 		WD_ERR("invalid: async comp cb is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	if (mode == CTX_MODE_ASYNC && !req->cb_param) {
+	if (unlikely(mode == CTX_MODE_ASYNC && !req->cb_param)) {
 		WD_ERR("invalid: async comp cb param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	if (mode == CTX_MODE_SYNC && req->cb) {
+	if (unlikely(mode == CTX_MODE_SYNC && req->cb)) {
 		WD_ERR("invalid: sync comp cb should be NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -414,7 +414,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 						  sess->sched_key,
 						  CTX_MODE_SYNC);
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	ctx = config->ctxs + idx;
@@ -422,7 +422,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	pthread_spin_lock(&ctx->lock);
 
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg, priv);
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		return ret;
@@ -431,11 +431,11 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	do {
 		if (msg->is_polled) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (ret < 0)
+			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout, ret = %d!\n", ret);
 		}
 		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, msg, priv);
-		if (ret == -WD_HW_EACCESS) {
+		if (unlikely(ret == -WD_HW_EACCESS)) {
 			pthread_spin_unlock(&ctx->lock);
 			WD_ERR("wd comp recv hw error!\n");
 			return ret;
@@ -460,10 +460,10 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	int ret;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
-	if (!req->src_len) {
+	if (unlikely(!req->src_len)) {
 		WD_ERR("invalid: req src_len is 0!\n");
 		return -WD_EINVAL;
 	}
@@ -476,7 +476,7 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 	msg.stream_mode = WD_COMP_STATELESS;
 
 	ret = wd_comp_sync_job(sess, req, &msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	req->src_len = msg.in_cons;
@@ -496,10 +496,10 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	int ret;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
-	if (!req->src_len) {
+	if (unlikely(!req->src_len)) {
 		WD_ERR("invalid: req src_len is 0!\n");
 		return -WD_EINVAL;
 	}
@@ -523,7 +523,7 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 		}
 
 		ret = wd_do_comp_strm(h_sess, &strm_req);
-		if (ret < 0 || strm_req.status == WD_IN_EPARA) {
+		if (unlikely(ret < 0 || strm_req.status == WD_IN_EPARA)) {
 			WD_ERR("wd comp, invalid or incomplete data! ret = %d, status = %u!\n",
 			       ret, strm_req.status);
 			return ret;
@@ -573,7 +573,7 @@ static int append_store_block(struct wd_comp_sess *sess,
 	__u32 isize = sess->isize;
 
 	if (sess->alg_type == WD_ZLIB) {
-		if (req->dst_len < blocksize + sizeof(checksum))
+		if (unlikely(req->dst_len < blocksize + sizeof(checksum)))
 			return -WD_EINVAL;
 		memcpy(req->dst, store_block, blocksize);
 		req->dst_len = blocksize;
@@ -582,7 +582,8 @@ static int append_store_block(struct wd_comp_sess *sess,
 		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
 		req->dst_len += sizeof(checksum);
 	} else if (sess->alg_type == WD_GZIP) {
-		if (req->dst_len < blocksize + sizeof(checksum) + sizeof(isize))
+		if (unlikely(req->dst_len < blocksize +
+		    sizeof(checksum) + sizeof(isize)))
 			return -WD_EINVAL;
 		memcpy(req->dst, store_block, blocksize);
 		req->dst_len = blocksize;
@@ -622,10 +623,10 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	int ret;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_SYNC);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
-	if (req->data_fmt > WD_FLAT_BUF) {
+	if (unlikely(req->data_fmt > WD_FLAT_BUF)) {
 		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
@@ -647,7 +648,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	src_len = req->src_len;
 
 	ret = wd_comp_sync_job(sess, req, &msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	req->src_len = msg.in_cons;
@@ -675,10 +676,10 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	__u32 idx;
 
 	ret = wd_comp_check_params(sess, req, CTX_MODE_ASYNC);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
-	if (!req->src_len) {
+	if (unlikely(!req->src_len)) {
 		WD_ERR("invalid: req src_len is 0!\n");
 		return -WD_EINVAL;
 	}
@@ -687,13 +688,13 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 						  sess->sched_key,
 						  CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	ctx = config->ctxs + idx;
 
 	tag = wd_get_msg_from_pool(&wd_comp_setting.pool, idx, (void **)&msg);
-	if (tag < 0) {
+	if (unlikely(tag < 0)) {
 		WD_ERR("failed to get msg from pool!\n");
 		return -WD_EBUSY;
 	}
@@ -705,7 +706,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	pthread_spin_lock(&ctx->lock);
 
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg, priv);
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;
@@ -714,7 +715,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	pthread_spin_unlock(&ctx->lock);
 
 	ret = wd_add_task_to_async_queue(&wd_comp_env_config, idx);
-	if (ret)
+	if (unlikely(ret))
 		goto fail_with_msg;
 
 	return 0;
