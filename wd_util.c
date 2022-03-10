@@ -74,7 +74,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	int i, ret;
 
 	if (!cfg->ctx_num) {
-		WD_ERR("invalid parameters, ctx_num is 0!\n");
+		WD_ERR("invalid: ctx_num is 0!\n");
 		return -WD_EINVAL;
 	}
 
@@ -90,7 +90,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
-			WD_ERR("invalid parameters, ctx is NULL!\n");
+			WD_ERR("invalid: ctx is NULL!\n");
 			free(ctxs);
 			return -WD_EINVAL;
 		}
@@ -98,7 +98,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 		if (ret) {
-			WD_ERR("init ctxs lock failed!\n");
+			WD_ERR("failed to init ctxs lock!\n");
 			free(ctxs);
 			return ret;
 		}
@@ -243,7 +243,7 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 
 	/* tag value start from 1 */
 	if (tag == 0 || tag > msg_num) {
-		WD_ERR("invalid message cache tag(%u)\n", tag);
+		WD_ERR("invalid: message cache tag is %u!\n", tag);
 		return NULL;
 	}
 
@@ -279,7 +279,7 @@ void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int ctx_idx, __u32 tag)
 
 	/* tag value start from 1 */
 	if (!tag || tag > msg_num) {
-		WD_ERR("invalid message cache idx(%u)\n", tag);
+		WD_ERR("invalid: message cache idx is %u!\n", tag);
 		return;
 	}
 
@@ -318,14 +318,11 @@ void dump_env_info(struct wd_env_config *config)
 		       config_numa->async_ctx_num);
 		for (j = 0; j < CTX_MODE_MAX; j++)
 			for (k = 0; k < config_numa->op_type_num; k++) {
-				WD_ERR("-> %s: %d: [%d][%d].begin: %u\n",
-				       __func__,
+				WD_ERR("-> %d: [%d][%d].begin: %u\n",
 				       i, j, k, ctx_table[j][k].begin);
-				WD_ERR("-> %s: %d: [%d][%d].end: %u\n",
-				       __func__,
+				WD_ERR("-> %d: [%d][%d].end: %u\n",
 				       i, j, k, ctx_table[j][k].end);
-				WD_ERR("-> %s: %d: [%d][%d].size: %u\n",
-				       __func__,
+				WD_ERR("-> %d: [%d][%d].size: %u\n",
 				       i, j, k, ctx_table[j][k].size);
 			}
 	}
@@ -340,8 +337,10 @@ static void *wd_get_config_numa(struct wd_env_config *config, int node)
 		if (config_numa->node == node)
 			break;
 
-	if (i == config->numa_num)
+	if (i == config->numa_num) {
+		WD_ERR("invalid: missing numa node is %d!\n", node);
 		return NULL;
+	}
 
 	return config_numa;
 }
@@ -373,7 +372,7 @@ static __u16 wd_get_dev_numa(struct uacce_dev_list *head,
 		if (list->dev->numa_id < 0) {
 			list->dev->numa_id = 0;
 		} else if (list->dev->numa_id >= size) {
-			WD_ERR("numa id is wrong(%d)\n", list->dev->numa_id);
+			WD_ERR("invalid: numa id is %d!\n", list->dev->numa_id);
 			return 0;
 		}
 
@@ -396,10 +395,8 @@ static void wd_set_numa_dev(struct uacce_dev_list *head,
 
 	while (list) {
 		config_numa = wd_get_config_numa(config, list->dev->numa_id);
-		if (!config_numa) {
-			WD_ERR("%s got wrong numa node!\n", __func__);
+		if (!config_numa)
 			break;
-		}
 
 		dev = config_numa->dev + config_numa->dev_num;
 		memcpy(dev, list->dev, sizeof(*list->dev));
@@ -457,7 +454,7 @@ static int wd_alloc_numa(struct wd_env_config *config,
 	/* get uacce_dev */
 	head = wd_get_accel_list(ops->alg_name);
 	if (!head) {
-		WD_ERR("no device to support %s\n", ops->alg_name);
+		WD_ERR("invalid: no device to support %s\n", ops->alg_name);
 		ret = -WD_ENODEV;
 		goto free_numa_dev_num;
 	}
@@ -465,7 +462,7 @@ static int wd_alloc_numa(struct wd_env_config *config,
 	/* get numa num and device num of each numa from uacce_dev list */
 	config->numa_num = wd_get_dev_numa(head, numa_dev_num, max_node);
 	if (config->numa_num == 0 || config->numa_num > max_node) {
-		WD_ERR("numa num err(%u)!\n", config->numa_num);
+		WD_ERR("invalid: numa number is %u!\n", config->numa_num);
 		ret = -WD_ENODEV;
 		goto free_list;
 	}
@@ -519,13 +516,13 @@ int wd_parse_async_poll_en(struct wd_env_config *config, const char *s)
 	int tmp;
 
 	if (!is_number(s)) {
-		WD_ERR("invalid async poll en flag: %s!\n", s);
+		WD_ERR("invalid: async poll en flag is %s!\n", s);
 		return -WD_EINVAL;
 	}
 
 	tmp = strtol(s, NULL, 10);
 	if (tmp != 0 && tmp != 1) {
-		WD_ERR("async poll en flag is not 0 or 1!\n");
+		WD_ERR("invalid: async poll en flag is not 0 or 1!\n");
 		return -WD_EINVAL;
 	}
 
@@ -539,7 +536,7 @@ static int parse_num_on_numa(const char *s, int *num, int *node)
 	char *sep, *start, *left;
 
 	if (!strlen(s)) {
-		WD_ERR("input string length is zero!\n");
+		WD_ERR("invalid: input string length is zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -560,7 +557,7 @@ static int parse_num_on_numa(const char *s, int *num, int *node)
 	}
 
 out:
-	WD_ERR("input env format is invalid:%s\n", s);
+	WD_ERR("invalid: input env format is %s!\n", s);
 	free(start);
 	return -WD_EINVAL;
 }
@@ -658,7 +655,7 @@ static int wd_parse_section(struct wd_env_config *config, char *section)
 
 	ctx_section = index(section, ':');
 	if (!ctx_section) {
-		WD_ERR("%s got wrong format: %s!\n", __func__, section);
+		WD_ERR("invalid: ctx section got wrong format: %s!\n", section);
 		return -WD_EINVAL;
 	}
 
@@ -669,10 +666,8 @@ static int wd_parse_section(struct wd_env_config *config, char *section)
 		return ret;
 
 	config_numa = wd_get_config_numa(config, node);
-	if (!config_numa) {
-		WD_ERR("%s got wrong numa node: %s!\n", __func__, section);
+	if (!config_numa)
 		return -WD_EINVAL;
-	}
 
 	config_numa->op_type_num = config->op_type_num;
 	ret = wd_alloc_ctx_table_per_numa(config_numa);
@@ -681,7 +676,8 @@ static int wd_parse_section(struct wd_env_config *config, char *section)
 
 	ret = get_and_fill_ctx_num(config_numa, section, ctx_num);
 	if (ret) {
-		WD_ERR("%s got wrong ctx type: %s!\n", __func__, section);
+		WD_ERR("invalid: ctx section got wrong ctx type: %s!\n",
+		       section);
 		wd_free_ctx_table_per_numa(config_numa);
 		return ret;
 	}
@@ -798,8 +794,6 @@ int wd_parse_async_poll_num(struct wd_env_config *config, const char *s)
 			goto out;
 		config_numa = wd_get_config_numa(config, node);
 		if (!config_numa) {
-			WD_ERR("%s got wrong numa node: %s!\n",
-				__func__, section);
 			ret = -WD_EINVAL;
 			goto out;
 		}
@@ -831,7 +825,7 @@ static int wd_parse_env(struct wd_env_config *config)
 
 		ret = var->parse_fn(config, var_s);
 		if (ret) {
-			WD_ERR("fail to parse %s environment variable!\n",
+			WD_ERR("failed to parse %s environment variable!\n",
 			       var->name);
 			return -WD_EINVAL;
 		}
@@ -847,10 +841,8 @@ static int wd_parse_ctx_attr(struct wd_env_config *env_config,
 	int ret;
 
 	config_numa = wd_get_config_numa(env_config, attr->node);
-	if (!config_numa) {
-		WD_ERR("%s got wrong numa node!\n", __func__);
+	if (!config_numa)
 		return -WD_EINVAL;
-	}
 
 	config_numa->op_type_num = env_config->op_type_num;
 	ret = wd_alloc_ctx_table_per_numa(config_numa);
@@ -958,7 +950,7 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 		h_ctx = request_ctx_on_numa(config);
 		if (!h_ctx) {
 			ret = -WD_EBUSY;
-			WD_ERR("err: request too many ctxs\n");
+			WD_ERR("failed to request more ctxs!\n");
 			goto free_ctx;
 		}
 
@@ -1149,7 +1141,7 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	}
 
 	if (!config_numa->async_poll_num) {
-		WD_ERR("invalid parameter, async_poll_num of numa is zero!\n");
+		WD_ERR("invalid: async_poll_num of numa is zero!\n");
 		return NULL;
 	}
 
@@ -1304,17 +1296,17 @@ static int wd_init_one_task_queue(struct async_task_queue *task_queue,
 	task_queue->alg_poll_ctx = alg_poll_ctx;
 
 	if (sem_init(&task_queue->empty_sem, 0, depth)) {
-		WD_ERR("empty_sem init failed.\n");
+		WD_ERR("failed to init empty_sem!\n");
 		goto err_free_head;
 	}
 
 	if (sem_init(&task_queue->full_sem, 0, 0)) {
-		WD_ERR("full_sem init failed.\n");
+		WD_ERR("failed to init full_sem!\n");
 		goto err_uninit_empty_sem;
 	}
 
 	if (pthread_mutex_init(&task_queue->lock, NULL)) {
-		WD_ERR("mutex init failed.\n");
+		WD_ERR("failed to init task queue's mutex lock!\n");
 		goto err_uninit_full_sem;
 	}
 
@@ -1323,7 +1315,7 @@ static int wd_init_one_task_queue(struct async_task_queue *task_queue,
 	task_queue->tid = 0;
 	if (pthread_create(&thread_id, &attr, async_poll_process_func,
 			   task_queue)) {
-		WD_ERR("create poll thread failed.\n");
+		WD_ERR("failed to create poll thread!\n");
 		goto err_destory_mutex;
 	}
 
@@ -1547,18 +1539,15 @@ int wd_alg_get_env_param(struct wd_env_config *env_config,
 	struct wd_env_config_per_numa *config_numa;
 
 	if (!num || !is_enable) {
-		WD_ERR("input parameter num or is_enable is NULL!\n");
+		WD_ERR("invalid: input pointer num or is_enable is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	*is_enable = env_config->enable_internal_poll;
 
 	config_numa = wd_get_config_numa(env_config, attr.node);
-	if (!config_numa) {
-		WD_ERR("%s got wrong numa node: %u!\n",
-				__func__, attr.node);
+	if (!config_numa)
 		return -WD_EINVAL;
-	}
 
 	*num = (config_numa->ctx_table) ?
 	       config_numa->ctx_table[attr.mode][attr.type].size : 0;
@@ -1570,7 +1559,7 @@ int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
 		     __u32 node, __u32 type, __u8 mode, __u32 num)
 {
 	if (mode >= CTX_MODE_MAX) {
-		WD_ERR("wrong ctx mode(%u))!\n", mode);
+		WD_ERR("invalid: ctx mode is %u!\n", mode);
 		return -WD_EINVAL;
 	}
 
@@ -1594,7 +1583,7 @@ int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx)
 
 	ctx = config->ctxs + idx;
 	if (ctx->ctx_mode != mode) {
-		WD_ERR("ctx %u mode = %hhu error!\n", idx, ctx->ctx_mode);
+		WD_ERR("invalid: ctx(%u) mode is %hhu!\n", idx, ctx->ctx_mode);
 		return -WD_EINVAL;
 	}
 

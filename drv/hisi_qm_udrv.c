@@ -167,14 +167,14 @@ static int hisi_qm_setup_region(handle_t h_ctx,
 {
 	q_info->sq_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
 	if (!q_info->sq_base) {
-		WD_ERR("mmap dus fail\n");
+		WD_ERR("failed to mmap dus!\n");
 		return -WD_ENOMEM;
 	}
 
 	q_info->mmio_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
 	if (!q_info->mmio_base) {
 		wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
-		WD_ERR("mmap mmio fail\n");
+		WD_ERR("failed to mmap mmio!\n");
 		return -WD_ENOMEM;
 	}
 
@@ -197,14 +197,14 @@ static __u32 get_version_id(handle_t h_ctx)
 
 	api_name = wd_ctx_get_api(h_ctx);
 	if (!api_name || strlen(api_name) <= VERSION_ID_SHIFT) {
-		WD_ERR("api name error = %s\n", api_name);
+		WD_ERR("invalid: api name is %s!\n", api_name);
 		return 0;
 	}
 
 	id = api_name + VERSION_ID_SHIFT;
 	ver = strtoul(id, NULL, 10);
 	if (!ver || ver == ULONG_MAX) {
-		WD_ERR("fail to strtoul, ver = %lu\n", ver);
+		WD_ERR("failed to strtoul, ver = %lu!\n", ver);
 		return 0;
 	}
 
@@ -250,7 +250,7 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 	q_info->qc_type = qp_ctx.qc_type;
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
-		WD_ERR("HISI QM fail to set qc_type, use default value\n");
+		WD_ERR("failed to set qc_type, use default value!\n");
 		return ret;
 	}
 
@@ -265,13 +265,13 @@ static int hisi_qm_get_qfrs_offs(handle_t h_ctx,
 	q_info->region_size[UACCE_QFRT_DUS] = wd_ctx_get_region_size(h_ctx,
 								UACCE_QFRT_DUS);
 	if (!q_info->region_size[UACCE_QFRT_DUS]) {
-		WD_ERR("fail to get DUS qfrs offset.\n");
+		WD_ERR("failed to get DUS qfrs offset!\n");
 		return -WD_EINVAL;
 	}
 	q_info->region_size[UACCE_QFRT_MMIO] = wd_ctx_get_region_size(h_ctx,
 								UACCE_QFRT_MMIO);
 	if (!q_info->region_size[UACCE_QFRT_MMIO]) {
-		WD_ERR("fail to get MMIO qfrs offset.\n");
+		WD_ERR("failed to get MMIO qfrs offset!\n");
 		return -WD_EINVAL;
 	}
 
@@ -286,25 +286,25 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info = &qp->q_info;
 	ret = hisi_qm_setup_region(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("setup region fail\n");
+		WD_ERR("failed to setup region!\n");
 		return ret;
 	}
 
 	ret = hisi_qm_get_qfrs_offs(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("get dev qfrs offset fail.\n");
+		WD_ERR("failed to get dev qfrs offset!\n");
 		goto err_out;
 	}
 
 	ret = hisi_qm_setup_db(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("setup db fail\n");
+		WD_ERR("failed to setup db!\n");
 		goto err_out;
 	}
 
 	ret = his_qm_set_qp_ctx(qp->h_ctx, config, q_info);
 	if (ret) {
-		WD_ERR("setup io cmd fail\n");
+		WD_ERR("failed to setup io cmd!\n");
 		goto err_out;
 	}
 
@@ -320,7 +320,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 
 	ret = pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
 	if (ret) {
-		WD_ERR("init qinfo lock fail\n");
+		WD_ERR("failed to init qinfo lock!\n");
 		goto err_out;
 	}
 
@@ -352,8 +352,8 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	if (!config)
 		goto out;
 
-	if (config->sqe_size <= 0) {
-		WD_ERR("invalid sqe size (%u)\n", config->sqe_size);
+	if (!config->sqe_size) {
+		WD_ERR("invalid: sqe size is zero!\n");
 		goto out;
 	}
 
@@ -367,7 +367,8 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	if (ret)
 		goto out_qp;
 
-	qp->h_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD, HISI_SGE_NUM_IN_SGL);
+	qp->h_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD,
+						HISI_SGE_NUM_IN_SGL);
 	if (!qp->h_sgl_pool)
 		goto out_qp;
 
@@ -396,7 +397,7 @@ void hisi_qm_free_qp(handle_t h_qp)
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 
 	if (!qp) {
-		WD_ERR("h_qp is NULL.\n");
+		WD_ERR("invalid: h_qp is NULL!\n");
 		return;
 	}
 
@@ -461,7 +462,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
 			pthread_spin_unlock(&q_info->lock);
-			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", j);
+			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error!\n", j);
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
@@ -535,7 +536,7 @@ static void *hisi_qm_create_sgl(__u32 sge_num)
 			sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
 	sgl = calloc(1, size);
 	if (!sgl) {
-		WD_ERR("failed to create sgl\n");
+		WD_ERR("failed to create sgl!\n");
 		return NULL;
 	}
 
@@ -562,36 +563,34 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	int i, ret;
 
 	if (!sgl_num || !sge_num || sge_num > HISI_SGE_NUM_IN_SGL) {
-		WD_ERR("create sgl_pool failed, sgl_num=%u, sge_num=%u\n",
+		WD_ERR("failed to create sgl_pool, sgl_num=%u, sge_num=%u!\n",
 			sgl_num, sge_num);
 		return 0;
 	}
 
 	sgl_pool = calloc(1, sizeof(struct hisi_sgl_pool));
 	if (!sgl_pool) {
-		WD_ERR("sgl pool alloc memory failed.\n");
+		WD_ERR("failed to alloc memory for sgl_pool!\n");
 		return 0;
 	}
 
 	sgl_pool->sgl = calloc(sgl_num, sizeof(void *));
 	if (!sgl_pool->sgl) {
-		WD_ERR("sgl array alloc memory failed.\n");
+		WD_ERR("failed to alloc memory for sgl!\n");
 		goto err_out;
 	}
 
 	sgl_pool->sgl_align = calloc(sgl_num, sizeof(void *));
 	if (!sgl_pool->sgl_align) {
-		WD_ERR("sgl align array alloc memory failed.\n");
+		WD_ERR("failed to alloc memory for sgl align!\n");
 		goto err_out;
 	}
 
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
 		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
-		if (!sgl_pool->sgl[i]) {
-			WD_ERR("sgl create failed.\n");
+		if (!sgl_pool->sgl[i])
 			goto err_out;
-		}
 
 		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i], sge_num);
 	}
@@ -602,7 +601,7 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	sgl_pool->top = sgl_num;
 	ret = pthread_spin_init(&sgl_pool->lock, PTHREAD_PROCESS_SHARED);
 	if (ret) {
-		WD_ERR("init sgl pool lock failed.\n");
+		WD_ERR("failed to init sgl pool lock!\n");
 		goto err_out;
 	}
 
@@ -619,7 +618,7 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 	int i;
 
 	if (!pool) {
-		WD_ERR("sgl_pool is NULL\n");
+		WD_ERR("invalid: sgl_pool is NULL!\n");
 		return;
 	}
 	if (pool->sgl) {
@@ -642,7 +641,7 @@ static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
 	pthread_spin_lock(&pool->lock);
 
 	if (pool->top == 0) {
-		WD_ERR("The sgl pool is empty\n");
+		WD_ERR("invalid: the sgl pool is empty!\n");
 		pthread_spin_unlock(&pool->lock);
 		return NULL;
 	}
@@ -657,7 +656,7 @@ static int hisi_qm_sgl_push(struct hisi_sgl_pool *pool, struct hisi_sgl *hw_sgl)
 {
 	pthread_spin_lock(&pool->lock);
 	if (pool->top >= pool->depth) {
-		WD_ERR("The sgl pool is full\n");
+		WD_ERR("invalid: the sgl pool is full!\n");
 		pthread_spin_unlock(&pool->lock);
 		return -WD_EINVAL;
 	}
@@ -705,7 +704,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	int i = 0;
 
 	if (!pool || !sgl) {
-		WD_ERR("get hw sgl pool or sgl is NULL\n");
+		WD_ERR("invalid: hw sgl pool or sgl is NULL!\n");
 		return NULL;
 	}
 
@@ -723,7 +722,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 		}
 
 		if (tmp->len > HISI_MAX_SIZE_IN_SGE) {
-			WD_ERR("the data len is invalid: %u\n", tmp->len);
+			WD_ERR("invalid: the data len is %u!\n", tmp->len);
 			goto err_out;
 		}
 
@@ -742,7 +741,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 		if (i == pool->sge_num && tmp->next) {
 			next = hisi_qm_sgl_pop(pool);
 			if (!next) {
-				WD_ERR("the sgl pool is not enough\n");
+				WD_ERR("invalid: the sgl pool is not enough!\n");
 				goto err_out;
 			}
 			cur->next_dma = (uintptr_t)next;

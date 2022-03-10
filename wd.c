@@ -59,14 +59,14 @@ static int get_raw_attr(const char *dev_root, const char *attr, char *buf,
 
 	fd = open(attr_path, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("open %s fail (%d)!\n", attr_path, -errno);
+		WD_ERR("failed to open %s(%d)!\n", attr_path, -errno);
 		return -WD_ENODEV;
 	}
 
 	memset(buf, 0, sz);
 	size = read(fd, buf, sz);
 	if (size <= 0) {
-		WD_ERR("read nothing at %s!\n", attr_path);
+		WD_ERR("failed to read anything at %s!\n", attr_path);
 		size = -WD_EIO;
 	}
 
@@ -601,7 +601,7 @@ static int check_alg_name(const char *alg_name)
 	while (alg_name[i] != '\0') {
 		i++;
 		if (i >= MAX_ATTR_STR_SIZE) {
-			WD_ERR("get list failed, alg name is too long!\n");
+			WD_ERR("failed to get list, alg name is too long!\n");
 			return -WD_EINVAL;
 		}
 	}

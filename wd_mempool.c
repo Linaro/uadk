@@ -206,12 +206,17 @@ static __always_inline unsigned long wd_ffs(unsigned long word)
 
 static struct bitmap *create_bitmap(int bits)
 {
-	struct bitmap *bm = calloc(1, sizeof(*bm));
-	if (!bm)
+	struct bitmap *bm;
+
+	bm = calloc(1, sizeof(*bm));
+	if (!bm) {
+		WD_ERR("failed to alloc memory for bitmap!\n");
 		return NULL;
+	}
 
 	bm->map = calloc(BITS_TO_LONGS(bits), sizeof(unsigned long));
 	if (!bm->map) {
+		WD_ERR("failed to alloc memory for bitmap map!\n");
 		free(bm);
 		return NULL;
 	}
@@ -346,6 +351,7 @@ static int alloc_memzone(struct blkpool *bp, void *addr, size_t blk_num,
 
 	zone = calloc(1, sizeof(struct memzone));
 	if (!zone) {
+		WD_ERR("failed to alloc memory for memzone!\n");
 		return -ENOMEM;
 	}
 
@@ -389,7 +395,8 @@ static void free_mem_to_mempool(struct blkpool *bp)
 static int check_mempool_real_size(struct mempool *mp, struct blkpool *bp)
 {
 	if (bp->blk_size * bp->depth > mp->real_size) {
-		WD_ERR("wd_mempool: mempool too small: %lu\n", mp->real_size);
+		WD_ERR("invalid: mempool size is too small: %lu!\n",
+		       mp->real_size);
 		return -ENOMEM;
 	}
 
@@ -525,8 +532,10 @@ static int init_blkpool_elem(struct blkpool *bp)
 	int i;
 
 	bp->blk_elem = calloc(bp->depth, sizeof(void *));
-	if (!bp->blk_elem)
+	if (!bp->blk_elem) {
+		WD_ERR("failed to alloc memory for blk_elem!\n");
 		return -ENOMEM;
+	}
 
 	TAILQ_FOREACH(iter, &bp->mz_list, node) {
 		for (i = 0; i < iter->blk_num; i++)
@@ -544,7 +553,7 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 	int ret;
 
 	if (!mp || !block_size || !block_num) {
-		WD_ERR("wd_mempool: input parameter is invalid value\n");
+		WD_ERR("invalid: mempool is NULL or block param is 0!\n");
 		return (handle_t)(-WD_EINVAL);
 	}
 
@@ -552,8 +561,10 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 		return (handle_t)(-WD_EBUSY);
 
 	bp = calloc(1, sizeof(struct blkpool));
-	if (!bp)
+	if (!bp) {
+		WD_ERR("failed to alloc memory for blkpool!\n");
 		return (handle_t)(-WD_ENOMEM);
+	}
 
 	bp->top = block_num;
 	bp->depth = block_num;
@@ -563,13 +574,13 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 
 	ret = alloc_mem_from_mempool(mp, bp);
 	if (ret < 0) {
-		WD_ERR("wd_mempool: failed to allocate memory from mempool\n");
+		WD_ERR("failed to allocate memory from mempool!\n");
 		goto err_free_bp;
 	}
 
 	ret = init_blkpool_elem(bp);
 	if (ret < 0) {
-		WD_ERR("wd_mempool: failed to init blkpool\n");
+		WD_ERR("failed to init blkpool!\n");
 		goto err_free_mem;
 	}
 
@@ -590,7 +601,7 @@ void wd_blockpool_destroy(handle_t blkpool)
 	struct mempool *mp;
 
 	if (!bp) {
-		WD_ERR("wd_mempool: blkpool is NULL\n");
+		WD_ERR("invalid: blkpool is NULL!\n");
 		return;
 	}
 
@@ -620,13 +631,13 @@ static int get_value_from_sysfs(const char *path, ssize_t path_size)
 
 	fd = open(dev_path, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("wd_mempool: failed to open %s\n", dev_path);
+		WD_ERR("failed to open %s!\n", dev_path);
 		goto err_open;
 	}
 
 	size = read(fd, buf, sizeof(buf));
 	if (size <= 0) {
-		WD_ERR("wd_mempool: failed to read %s\n", dev_path);
+		WD_ERR("failed to read %s!\n", dev_path);
 		goto err_read;
 	}
 
@@ -716,7 +727,7 @@ static int get_hugepage_info(struct mempool *mp)
 
 	dir = opendir(hugepage_path);
 	if (!dir) {
-		WD_ERR("wd_mempool: failed to open %s\n", hugepage_path);
+		WD_ERR("failed to open %s\n!", hugepage_path);
 		return -errno;
 	}
 
@@ -728,13 +739,13 @@ static int get_hugepage_info(struct mempool *mp)
 
 		tmp = calloc(1, sizeof(*tmp));
 		if (!tmp) {
-			WD_ERR("wd_mempool: failed to calloc\n");
+			WD_ERR("failed to calloc for sys_hugepage_config!\n");
 			goto err_free_list;
 		}
 		ret = get_hugepage_info_per_type(hugepage_path, MAX_HP_STR_SIZE,
 						 hp_dir, tmp);
 		if (ret < 0) {
-			WD_ERR("wd_mempool: failed to get hugepage info\n");
+			WD_ERR("failed to get hugepage info!\n");
 			goto err_free;
 		}
 
@@ -779,7 +790,7 @@ static int mbind_memory(void *addr, size_t size, int node)
 	node_mask = 1U << (unsigned int)node;
 	ret = mbind(addr, size, MPOL_BIND, &node_mask, max_node, 0);
 	if (ret < 0) {
-		WD_ERR("wd_mempool: failed to mbind memory, %d\n", ret);
+		WD_ERR("failed to mbind memory, ret is %d!\n", ret);
 		return ret;
 	}
 
@@ -805,7 +816,7 @@ static int alloc_mem_from_hugepage(struct mempool *mp)
 			break;
 	}
 	if (!iter) {
-		WD_ERR("wd_mempool: failed to find proper hugepage\n");
+		WD_ERR("failed to find proper hugepage!\n");
 		ret = -ENOMEM;
 		goto err_put_info;
 	}
@@ -826,7 +837,7 @@ static int alloc_mem_from_hugepage(struct mempool *mp)
 	p = mmap(NULL, real_size, PROT_READ | PROT_WRITE, MAP_PRIVATE |
 		 MAP_ANONYMOUS | MAP_HUGETLB | flags, -1, 0);
 	if (p == MAP_FAILED) {
-		WD_ERR("wd_mempool: failed to allocate huge page\n");
+		WD_ERR("failed to allocate huge page!\n");
 		ret = -ENOMEM;
 		goto err_put_info;
 	}
@@ -862,7 +873,7 @@ static int alloc_mempool_memory(struct mempool *mp)
 
 	ret = alloc_mem_from_hugepage(mp);
 	if (ret) {
-		WD_ERR("wd_mempool: failed to alloc memory from hugepage\n");
+		WD_ERR("failed to alloc memory from hugepage!\n");
 		return -ENOMEM;
 	}
 
@@ -908,8 +919,10 @@ handle_t wd_mempool_create(size_t size, int node)
 		size += WD_MEMPOOL_BLOCK_SIZE - (WD_MEMPOOL_SIZE_MASK & size);
 
 	mp = calloc(1, sizeof(*mp));
-	if (!mp)
+	if (!mp) {
+		WD_ERR("failed to alloc memory for mempool!\n");
 		return (handle_t)(-WD_ENOMEM);
+	}
 
 	mp->node = node;
 	mp->size = size;
@@ -938,7 +951,7 @@ void wd_mempool_destroy(handle_t mempool)
 	struct mempool *mp = (struct mempool *)mempool;
 
 	if (!mp) {
-		WD_ERR("wd_mempool: mempool is NULL\n");
+		WD_ERR("invalid: mempool is NULL!\n");
 		return;
 	}
 
@@ -954,12 +967,12 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats)
 	struct mempool *mp = (struct mempool *)mempool;
 
 	if (!mp) {
-		WD_ERR("wd_mempool: mempool is NULL\n");
+		WD_ERR("invalid: mempool is NULL!\n");
 		return;
 	}
 
 	if (!stats) {
-		WD_ERR("wd_mempool: mempool stats is NULL\n");
+		WD_ERR("invalid: mempool stats is NULL!\n");
 		return;
 	}
 
@@ -984,7 +997,7 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 	struct memzone *iter;
 
 	if (!bp || !stats) {
-		WD_ERR("wd_mempool: blkpool or stats is NULL\n");
+		WD_ERR("invalid: blkpool or stats is NULL!\n");
 		return;
 	}
 
@@ -1001,7 +1014,7 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 	}
 
 	if (!size) {
-		WD_ERR("wd_mempool: blkpool size is zero\n");
+		WD_ERR("invalid: blkpool size is zero!\n");
 		wd_unspinlock(&bp->lock);
 		return;
 	}
