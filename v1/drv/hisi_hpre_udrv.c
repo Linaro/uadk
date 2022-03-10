@@ -1976,7 +1976,7 @@ static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	ret = qm_fill_ecc_sqe_general(dst, info, i);
-	if (ret)
+	if (unlikely(ret))
 		goto free_out;
 
 	return ret;
