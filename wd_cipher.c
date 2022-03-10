@@ -384,7 +384,7 @@ static int wd_cipher_check_params(handle_t h_sess,
 				struct wd_cipher_req *req, __u8 mode)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-	int ret = 0;
+	int ret;
 
 	if (unlikely(!h_sess || !req)) {
 		WD_ERR("cipher input sess or req is NULL!\n");
@@ -419,11 +419,7 @@ static int wd_cipher_check_params(handle_t h_sess,
 		}
 	}
 
-	ret = cipher_iv_len_check(req, sess);
-	if (unlikely(ret))
-		return ret;
-
-	return 0;
+	return cipher_iv_len_check(req, sess);
 }
 
 static int send_recv_sync(struct wd_ctx_internal *ctx,
