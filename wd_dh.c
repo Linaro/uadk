@@ -51,14 +51,14 @@ static void wd_dh_set_static_drv(void)
 {
 	wd_dh_setting.driver = wd_dh_get_driver();
 	if (!wd_dh_setting.driver)
-		WD_ERR("fail to get driver\n");
+		WD_ERR("failed to get dh driver!\n");
 }
 #else
 static void __attribute__((constructor)) wd_dh_open_driver(void)
 {
 	wd_dh_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_dh_setting.dlhandle)
-		WD_ERR("Fail to open libhisi_hpre.so\n");
+		WD_ERR("failed to open libhisi_hpre.so!\n");
 }
 
 static void __attribute__((destructor)) wd_dh_close_driver(void)
@@ -71,7 +71,7 @@ static void __attribute__((destructor)) wd_dh_close_driver(void)
 void wd_dh_set_driver(struct wd_dh_driver *drv)
 {
 	if (!drv) {
-		WD_ERR("drv NULL\n");
+		WD_ERR("invalid: dh drv is NULL!\n");
 		return;
 	}
 
@@ -81,12 +81,12 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("config or sched NULL\n");
+		WD_ERR("invalid: config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("no sva, do not dh init\n");
+		WD_ERR("invalid: the mode is non sva, please check system!\n");
 		return -WD_EINVAL;
 	}
 
@@ -103,13 +103,13 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret) {
-		WD_ERR("failed to wd initialize ctx config, ret = %d\n", ret);
+		WD_ERR("failed to initialize ctx config, ret = %d!\n", ret);
 		return ret;
 	}
 
 	ret = wd_init_sched(&wd_dh_setting.sched, sched);
 	if (ret) {
-		WD_ERR("failed to wd initialize sched, ret = %d\n", ret);
+		WD_ERR("failed to initialize sched, ret = %d!\n", ret);
 		goto out;
 	}
 
@@ -137,7 +137,7 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv,
 					 wd_dh_setting.driver->alg_name);
 	if (ret < 0) {
-		WD_ERR("failed to drv init, ret= %d\n", ret);
+		WD_ERR("failed to init dh driver, ret= %d!\n", ret);
 		goto out_init;
 	}
 
@@ -159,7 +159,7 @@ out:
 void wd_dh_uninit(void)
 {
 	if (!wd_dh_setting.priv) {
-		WD_ERR("repeat uninit dh\n");
+		WD_ERR("invalid: repeat uninit dh!\n");
 		return;
 	}
 
@@ -184,7 +184,7 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 	msg->key_bytes = sess->key_size;
 
 	if (unlikely(req->pri_bytes < sess->key_size)) {
-		WD_ERR("req pri bytes = %hu error!\n", req->pri_bytes);
+		WD_ERR("invalid: req pri bytes %hu is error!\n", req->pri_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -195,12 +195,12 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 		msg->g = (__u8 *)req->pv;
 		msg->gbytes = req->pvbytes;
 	} else {
-		WD_ERR("op_type = %hhu error!\n", req->op_type);
+		WD_ERR("invalid: op_type %hhu is error!\n", req->op_type);
 		return -WD_EINVAL;
 	}
 
 	if (!msg->g) {
-		WD_ERR("request dh g is NULL!\n");
+		WD_ERR("invalid: request dh g is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -268,7 +268,7 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	int ret;
 
 	if (unlikely(!sess || !req)) {
-		WD_ERR("input param NULL!\n");
+		WD_ERR("invalid: input param NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -310,7 +310,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	__u32 idx;
 
 	if (unlikely(!req || !sess || !req->cb)) {
-		WD_ERR("input param NULL!\n");
+		WD_ERR("invalid: input param NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -363,7 +363,7 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count)) {
-		WD_ERR("count is NULL!\n");
+		WD_ERR("invalid: count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -415,7 +415,7 @@ int wd_dh_poll(__u32 expt, __u32 *count)
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)
 {
 	if (!sess || !alg_mode) {
-		WD_ERR("dh get mode: param NULL!\n");
+		WD_ERR("invalid: dh get mode, param NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -427,7 +427,7 @@ int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)
 __u32 wd_dh_key_bits(handle_t sess)
 {
 	if (!sess) {
-		WD_ERR("get dh key bits, sess NULL!\n");
+		WD_ERR("invalid: get dh key bits, sess NULL!\n");
 		return 0;
 	}
 
@@ -439,7 +439,7 @@ int wd_dh_set_g(handle_t sess, struct wd_dtb *g)
 	struct wd_dh_sess *sess_t = (struct wd_dh_sess *)sess;
 
 	if (!sess_t || !g) {
-		WD_ERR("param NULL!\n");
+		WD_ERR("invalid: dh set g, param NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -460,7 +460,7 @@ int wd_dh_set_g(handle_t sess, struct wd_dtb *g)
 void wd_dh_get_g(handle_t sess, struct wd_dtb **g)
 {
 	if (!sess || !g) {
-		WD_ERR("param NULL!\n");
+		WD_ERR("invalid: dh get g, param NULL!\n");
 		return;
 	}
 
@@ -472,7 +472,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	struct wd_dh_sess *sess;
 
 	if (!setup) {
-		WD_ERR("alloc dh sess setup NULL!\n");
+		WD_ERR("invalid: alloc dh sess setup NULL!\n");
 		return (handle_t)0;
 	}
 
@@ -483,7 +483,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 		setup->key_bits != 2048 &&
 		setup->key_bits != 3072 &&
 		setup->key_bits != 4096) {
-		WD_ERR("alloc dh sess key_bit %u err!\n", setup->key_bits);
+		WD_ERR("invalid: alloc dh sess key_bit %u is err!\n", setup->key_bits);
 		return (handle_t)0;
 	}
 
@@ -522,7 +522,7 @@ void wd_dh_free_sess(handle_t sess)
 	struct wd_dh_sess *sess_t = (struct wd_dh_sess *)sess;
 
 	if (!sess_t) {
-		WD_ERR("free rsa sess param NULL!\n");
+		WD_ERR("invalid: free dh sess param NULL!\n");
 		return;
 	}
 

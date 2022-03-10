@@ -91,14 +91,14 @@ static void wd_rsa_set_static_drv(void)
 {
 	wd_rsa_setting.driver = wd_rsa_get_driver();
 	if (!wd_rsa_setting.driver)
-		WD_ERR("fail to get driver\n");
+		WD_ERR("failed to get rsa driver!\n");
 }
 #else
 static void __attribute__((constructor)) wd_rsa_open_driver(void)
 {
 	wd_rsa_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_rsa_setting.dlhandle)
-		WD_ERR("Fail to open libhisi_hpre.so\n");
+		WD_ERR("failed to open libhisi_hpre.so!\n");
 }
 
 static void __attribute__((destructor)) wd_rsa_close_driver(void)
@@ -111,7 +111,7 @@ static void __attribute__((destructor)) wd_rsa_close_driver(void)
 void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 {
 	if (!drv) {
-		WD_ERR("drv NULL\n");
+		WD_ERR("invalid: rsa drv is NULL!\n");
 		return;
 	}
 
@@ -121,12 +121,12 @@ void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	if (!config || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("config or sched NULL\n");
+		WD_ERR("invalid: config or sched NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("no sva, do not rsa init\n");
+		WD_ERR("invalid: the mode is non sva, please check system!\n");
 		return -WD_EINVAL;
 	}
 
@@ -177,7 +177,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_rsa_setting.driver->init(&wd_rsa_setting.config, priv,
 					  wd_rsa_setting.driver->alg_name);
 	if (ret < 0) {
-		WD_ERR("failed to drv init, ret = %d\n", ret);
+		WD_ERR("failed to init rsa driver, ret = %d!\n", ret);
 		goto out_init;
 	}
 
@@ -198,7 +198,7 @@ out:
 void wd_rsa_uninit(void)
 {
 	if (!wd_rsa_setting.priv) {
-		WD_ERR("repeat uninit rsa\n");
+		WD_ERR("invalid: repeat uninit rsa!\n");
 		return;
 	}
 
@@ -240,24 +240,24 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 		key = (__u8 *)req->src;
 		break;
 	default:
-		WD_ERR("rsa msguest op type err!\n");
+		WD_ERR("invalid: rsa msg req op type %u is err!\n", msg->req.op_type);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(!key)) {
-		WD_ERR("rsa msguest key null!\n");
+		WD_ERR("invalid: rsa msg key null!\n");
 		return -WD_EINVAL;
 	}
 
 	if (msg->req.op_type == WD_RSA_SIGN ||
 		msg->req.op_type == WD_RSA_VERIFY) {
 		if (unlikely(msg->req.src_bytes != sess->key_size)) {
-			WD_ERR("sign or verf src_bytes != key_size!\n");
+			WD_ERR("invalid: sign or verf src_bytes != key_size!\n");
 			return -WD_EINVAL;
 		}
 
 		if (unlikely(req->dst_bytes != sess->key_size)) {
-			WD_ERR("req dst bytes = %hu error!\n", req->dst_bytes);
+			WD_ERR("invalid: req dst bytes %hu is error!\n", req->dst_bytes);
 			return -WD_EINVAL;
 		}
 	}
@@ -329,7 +329,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	int ret;
 
 	if (unlikely(!h_sess || !req)) {
-		WD_ERR("input param NULL!\n");
+		WD_ERR("invalid: input param NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -370,7 +370,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	__u32 idx;
 
 	if (unlikely(!req || !sess || !req->cb)) {
-		WD_ERR("input param NULL!\n");
+		WD_ERR("invalid: input param NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -417,7 +417,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count)) {
-		WD_ERR("param count is NULL!");
+		WD_ERR("invalid: param count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -443,7 +443,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		msg = wd_find_msg_in_pool(&wd_rsa_setting.pool, idx,
 					  recv_msg.tag);
 		if (!msg) {
-			WD_ERR("get msg from pool is NULL!\n");
+			WD_ERR("failed to get msg from pool!\n");
 			return -WD_EINVAL;
 		}
 
@@ -468,7 +468,7 @@ int wd_rsa_poll(__u32 expt, __u32 *count)
 int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)
 {
 	if (!ki || !data) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("invalid: param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -479,7 +479,7 @@ int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)
 int wd_rsa_kg_out_data(struct wd_rsa_kg_out *ko, char **data)
 {
 	if (!ko || !data) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("invalid: param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -497,32 +497,32 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 	int kg_in_size;
 
 	if (!c || !e || !p || !q) {
-		WD_ERR("sess malloc kg_in memory fail!\n");
+		WD_ERR("invalid: sess malloc kg_in memory params err!\n");
 		return NULL;
 	}
 
 	if (!c->key_size || c->key_size > RSA_MAX_KEY_SIZE) {
-		WD_ERR("key size err at create kg in!\n");
+		WD_ERR("invalid: key size err at create kg in!\n");
 		return NULL;
 	}
 
 	if (!e->dsize || e->dsize > c->key_size) {
-		WD_ERR("e para err at create kg in!\n");
+		WD_ERR("invalid: e para err at create kg in!\n");
 		return NULL;
 	}
 	if (!p->dsize || p->dsize > CRT_PARAM_SZ(c->key_size)) {
-		WD_ERR("p para err at create kg in!\n");
+		WD_ERR("invalid: p para err at create kg in!\n");
 		return NULL;
 	}
 	if (!q->dsize || q->dsize > CRT_PARAM_SZ(c->key_size)) {
-		WD_ERR("q para err at create kg in!\n");
+		WD_ERR("invalid: q para err at create kg in!\n");
 		return NULL;
 	}
 
 	kg_in_size = GEN_PARAMS_SZ(c->key_size);
 	kg_in = malloc(kg_in_size + sizeof(*kg_in));
 	if (!kg_in) {
-		WD_ERR("sess malloc kg_in memory fail!\n");
+		WD_ERR("failed to malloc kg_in memory!\n");
 		return NULL;
 	}
 	memset(kg_in, 0, kg_in_size + sizeof(*kg_in));
@@ -545,7 +545,7 @@ void wd_rsa_get_kg_in_params(struct wd_rsa_kg_in *kin, struct wd_dtb *e,
 			     struct wd_dtb *q, struct wd_dtb *p)
 {
 	if (!kin || !e || !q || !p) {
-		WD_ERR("para err at get input parameters key generate !\n");
+		WD_ERR("invalid: para err at get input parameters key generate!\n");
 		return;
 	}
 
@@ -563,7 +563,7 @@ void wd_rsa_get_kg_in_params(struct wd_rsa_kg_in *kin, struct wd_dtb *e,
 static void del_kg(void *k)
 {
 	if (!k) {
-		WD_ERR("del key generate params err!\n");
+		WD_ERR("invalid: del key generate params err!\n");
 		return;
 	}
 
@@ -583,13 +583,13 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	__u32 kz;
 
 	if (!c) {
-		WD_ERR("sess null at new rsa key gen out!\n");
+		WD_ERR("invalid: sess null at new rsa key gen out!\n");
 		return NULL;
 	}
 
 	kz = c->key_size;
 	if (!kz || kz > RSA_MAX_KEY_SIZE) {
-		WD_ERR("new kg out key size error!\n");
+		WD_ERR("invalid: new kg out key size error!\n");
 		return NULL;
 	}
 
@@ -600,7 +600,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 
 	kg_out = malloc(kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
-		WD_ERR("sess malloc kg_out memory fail!\n");
+		WD_ERR("failed to malloc kg_out memory!\n");
 		return NULL;
 	}
 
@@ -621,7 +621,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 void wd_rsa_del_kg_out(handle_t sess, struct wd_rsa_kg_out *kout)
 {
 	if (!kout) {
-		WD_ERR("param null at del kg out!\n");
+		WD_ERR("invalid: param null at del kg out!\n");
 		return;
 	}
 
@@ -633,7 +633,7 @@ void wd_rsa_get_kg_out_params(struct wd_rsa_kg_out *kout, struct wd_dtb *d,
 					struct wd_dtb *n)
 {
 	if (!kout) {
-		WD_ERR("input null at get key gen params!\n");
+		WD_ERR("invalid: input null at get key gen params!\n");
 		return;
 	}
 
@@ -655,7 +655,7 @@ void wd_rsa_get_kg_out_crt_params(struct wd_rsa_kg_out *kout,
 					struct wd_dtb *dq, struct wd_dtb *dp)
 {
 	if (!kout || !qinv || !dq || !dp) {
-		WD_ERR("input null at get key gen crt para!\n");
+		WD_ERR("invalid: input null at get key gen crt para!\n");
 		return;
 	}
 
@@ -743,7 +743,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 			CRT_PARAMS_SZ(sess->key_size);
 		sess->prikey = malloc(len);
 		if (!sess->prikey) {
-			WD_ERR("alloc prikey2 fail!\n");
+			WD_ERR("failed to alloc sess prikey2!\n");
 			return -WD_ENOMEM;
 		}
 		pkey2 = &sess->prikey->pkey2;
@@ -754,7 +754,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 			GEN_PARAMS_SZ(sess->key_size);
 		sess->prikey = malloc(len);
 		if (!sess->prikey) {
-			WD_ERR("alloc prikey1 fail!\n");
+			WD_ERR("failed to alloc sess prikey1!\n");
 			return -WD_ENOMEM;
 		}
 		pkey1 = &sess->prikey->pkey1;
@@ -767,7 +767,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 	sess->pubkey = malloc(len);
 	if (!sess->pubkey) {
 		free(sess->prikey);
-		WD_ERR("alloc pubkey fail!\n");
+		WD_ERR("failed to alloc sess pubkey!\n");
 		return -WD_ENOMEM;
 	}
 
@@ -783,7 +783,7 @@ static void del_sess_key(struct wd_rsa_sess *sess)
 	struct wd_rsa_pubkey *pub = sess->pubkey;
 
 	if (!prk || !pub) {
-		WD_ERR("del sess key error: prk or pub NULL\n");
+		WD_ERR("invalid: del sess key error, prk or pub NULL!\n");
 		return;
 	}
 
@@ -808,7 +808,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	int ret;
 
 	if (!setup) {
-		WD_ERR("alloc rsa sess setup NULL!\n");
+		WD_ERR("invalid: alloc rsa sess setup NULL!\n");
 		return(handle_t)0;
 	}
 
@@ -816,7 +816,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 		setup->key_bits != 2048 &&
 		setup->key_bits != 3072 &&
 		setup->key_bits != 4096) {
-		WD_ERR("alloc rsa sess key_bit %u err!\n", setup->key_bits);
+		WD_ERR("invalid: alloc rsa sess key_bit %u err!\n", setup->key_bits);
 		return (handle_t)0;
 	}
 
@@ -829,7 +829,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 
 	ret = create_sess_key(setup, sess);
 	if (ret) {
-		WD_ERR("fail creating rsa sess keys!\n");
+		WD_ERR("failed to create rsa sess keys!\n");
 		goto sess_err;
 	}
 
@@ -855,7 +855,7 @@ void wd_rsa_free_sess(handle_t sess)
 	struct wd_rsa_sess *sess_t = (struct wd_rsa_sess *)sess;
 
 	if (!sess_t) {
-		WD_ERR("free rsa sess param err!\n");
+		WD_ERR("invalid: free rsa sess param err!\n");
 		return;
 	}
 
@@ -869,7 +869,7 @@ void wd_rsa_free_sess(handle_t sess)
 bool wd_rsa_is_crt(handle_t sess)
 {
 	if (!sess) {
-		WD_ERR("rsa is crt judge, sess NULL, return false!\n");
+		WD_ERR("invalid: rsa is crt judge, sess NULL, return false!\n");
 		return false;
 	}
 
@@ -879,7 +879,7 @@ bool wd_rsa_is_crt(handle_t sess)
 __u32 wd_rsa_get_key_bits(handle_t sess)
 {
 	if (!sess) {
-		WD_ERR("get rsa key bits, sess NULL!\n");
+		WD_ERR("invalid: get rsa key bits, sess NULL!\n");
 		return 0;
 	}
 
@@ -891,13 +891,13 @@ int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 
 	if (!c || !c->pubkey || !c->pubkey->key_size) {
-		WD_ERR("sess NULL in set rsa public key!\n");
+		WD_ERR("invalid: sess NULL in set rsa public key!\n");
 		return -WD_EINVAL;
 	}
 
 	if (e) {
 		if (!e->dsize || !e->data || e->dsize > c->pubkey->key_size) {
-			WD_ERR("e err in set rsa public key!\n");
+			WD_ERR("invalid: e err in set rsa public key!\n");
 			return -WD_EINVAL;
 		}
 
@@ -908,7 +908,7 @@ int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 
 	if (n) {
 		if (!n->dsize || !n->data || n->dsize > c->pubkey->key_size) {
-			WD_ERR("n err in set rsa public key!\n");
+			WD_ERR("invalid: n err in set rsa public key!\n");
 			return -WD_EINVAL;
 		}
 
@@ -924,7 +924,7 @@ void wd_rsa_get_pubkey_params(struct wd_rsa_pubkey *pbk, struct wd_dtb **e,
 					struct wd_dtb **n)
 {
 	if (!pbk) {
-		WD_ERR("input NULL in get rsa public key!\n");
+		WD_ERR("invalid: input NULL in get rsa public key!\n");
 		return;
 	}
 	if (e)
@@ -940,13 +940,13 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 
 	if (!c || wd_rsa_is_crt(sess) || !c->prikey) {
-		WD_ERR("sess err in set rsa private key1!\n");
+		WD_ERR("invalid: sess err in set rsa private key1!\n");
 		return -WD_EINVAL;
 	}
 	pkey1 = &c->prikey->pkey1;
 	if (d) {
 		if (!d->dsize || !d->data || d->dsize > pkey1->key_size) {
-			WD_ERR("d err in set rsa private key1!\n");
+			WD_ERR("invalid: d err in set rsa private key1!\n");
 			return -WD_EINVAL;
 		}
 
@@ -956,7 +956,7 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 	}
 	if (n) {
 		if (!n->dsize || !n->data || n->dsize > pkey1->key_size) {
-			WD_ERR("en err in set rsa private key1!\n");
+			WD_ERR("invalid: en err in set rsa private key1!\n");
 			return -WD_EINVAL;
 		}
 
@@ -974,7 +974,7 @@ void wd_rsa_get_prikey_params(struct wd_rsa_prikey *pvk, struct wd_dtb **d,
 	struct wd_rsa_prikey1 *pkey1;
 
 	if (!pvk) {
-		WD_ERR("pvk is NULL!\n");
+		WD_ERR("invalid: pvk is NULL!\n");
 		return;
 	}
 
@@ -1041,43 +1041,43 @@ int wd_rsa_set_crt_prikey_params(handle_t sess, struct wd_dtb *dq,
 	int ret = -WD_EINVAL;
 
 	if (!sess || !wd_rsa_is_crt(sess)) {
-		WD_ERR("sess err in set rsa crt private key2!\n");
+		WD_ERR("invalid: sess err in set rsa crt private key2!\n");
 		return ret;
 	}
 
 	if (!dq || !dp || !qinv || !q || !p) {
-		WD_ERR("para err in set rsa crt private key2!\n");
+		WD_ERR("invalid: para err in set rsa crt private key2!\n");
 		return ret;
 	}
 
 	pkey2 = &c->prikey->pkey2;
 	ret = rsa_prikey2_param_set(pkey2, dq, WD_CRT_PRIKEY_DQ);
 	if (ret) {
-		WD_ERR("dq err in set rsa private key2!\n");
+		WD_ERR("failed to set dq for rsa private key2!\n");
 		return ret;
 	}
 
 	ret = rsa_prikey2_param_set(pkey2, dp, WD_CRT_PRIKEY_DP);
 	if (ret) {
-		WD_ERR("dp err in set rsa private key2!\n");
+		WD_ERR("failed to set dp for rsa private key2!\n");
 		return ret;
 	}
 
 	ret = rsa_prikey2_param_set(pkey2, qinv, WD_CRT_PRIKEY_QINV);
 	if (ret) {
-		WD_ERR("qinv err in set rsa private key2!\n");
+		WD_ERR("failed to set qinv for rsa private key2!\n");
 		return ret;
 	}
 
 	ret = rsa_prikey2_param_set(pkey2, q, WD_CRT_PRIKEY_Q);
 	if (ret) {
-		WD_ERR("q err in set rsa private key2!\n");
+		WD_ERR("failed to set q for rsa private key2!\n");
 		return ret;
 	}
 
 	ret = rsa_prikey2_param_set(pkey2, p, WD_CRT_PRIKEY_P);
 	if (ret) {
-		WD_ERR("p err in set rsa private key2!\n");
+		WD_ERR("failed to set p for rsa private key2!\n");
 		return ret;
 	}
 
@@ -1092,7 +1092,7 @@ void wd_rsa_get_crt_prikey_params(struct wd_rsa_prikey *pvk,
 	struct wd_rsa_prikey2 *pkey2;
 
 	if (!pvk) {
-		WD_ERR("pvk is NULL!\n");
+		WD_ERR("invalid: pvk is NULL!\n");
 		return;
 	}
 
@@ -1113,7 +1113,7 @@ void wd_rsa_get_crt_prikey_params(struct wd_rsa_prikey *pvk,
 void wd_rsa_get_pubkey(handle_t sess, struct wd_rsa_pubkey **pubkey)
 {
 	if (!sess || !pubkey) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("invalid: param is NULL!\n");
 		return;
 	}
 
@@ -1123,7 +1123,7 @@ void wd_rsa_get_pubkey(handle_t sess, struct wd_rsa_pubkey **pubkey)
 void wd_rsa_get_prikey(handle_t sess, struct wd_rsa_prikey **prikey)
 {
 	if (!sess || !prikey) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("invalid: param is NULL!\n");
 		return;
 	}
 
