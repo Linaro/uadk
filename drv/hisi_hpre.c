@@ -1699,7 +1699,11 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 		goto fail_fill_sqe;
 	}
 
-	return hisi_qm_send(h_qp, &hw_msg, SM2_SQE_NUM, &send_cnt);
+	ret = hisi_qm_send(h_qp, &hw_msg, SM2_SQE_NUM, &send_cnt);
+	if (unlikely(ret))
+		goto fail_fill_sqe;
+
+	return ret;
 
 fail_fill_sqe:
 	free_req(msg_dst[0]);
@@ -1713,6 +1717,7 @@ static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
 	struct wd_sm2_dec_in *din = (void *)msg->req.src;
 	struct wd_hash_mt *hash = &msg->hash;
 	struct wd_ecc_msg *dst;
+	int ret;
 
 	/* c2 data lens <= 4096 bit */
 	if (din->c2.dsize <= BITS_TO_BYTES(4096) &&
@@ -1739,11 +1744,21 @@ static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
 	/* dst->req.dst last store point "struct wd_ecc_msg *" */
 	dst->req.dst = create_ecdh_out(dst);
 	if (unlikely(!dst->req.dst)) {
-		free(dst);
-		return -WD_ENOMEM;
+		ret = -WD_ENOMEM;
+		goto free_dst;
 	}
 
-	return ecc_general_send(ctx, dst);
+	ret = ecc_general_send(ctx, dst);
+	if (unlikely(ret))
+		goto free_req_dst;
+
+	return ret;
+
+free_req_dst:
+	free(dst->req.dst);
+free_dst:
+	free(dst);
+	return ret;
 }
 
 static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
