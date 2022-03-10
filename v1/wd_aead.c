@@ -229,14 +229,13 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	ctx->ckey = setup->br.alloc(setup->br.usr, MAX_CIPHER_KEY_SIZE);
 	if (!ctx->ckey) {
 		WD_ERR("fail to alloc cipher ctx key!\n");
-		free(ctx);
-		goto free_ctx_id;
+		goto free_ctx;
 	}
 	ctx->akey = setup->br.alloc(setup->br.usr, MAX_AEAD_KEY_SIZE);
 	if (!ctx->akey) {
 		WD_ERR("fail to alloc authenticate ctx key!\n");
 		setup->br.free(setup->br.usr, ctx->ckey);
-		goto free_ctx;
+		goto free_ctx_ckey;
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->cmode);
@@ -244,11 +243,16 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 		sizeof(struct wcrypto_aead_cookie), WD_CTX_MSG_NUM);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
-		goto free_ctx;
+		goto free_ctx_akey;
 	}
 	init_aead_cookie(ctx, setup);
 
 	return ctx;
+
+free_ctx_akey:
+	setup->br.free(setup->br.usr, ctx->akey);
+free_ctx_ckey:
+	setup->br.free(setup->br.usr, ctx->ckey);
 free_ctx:
 	free(ctx);
 free_ctx_id:
