@@ -129,8 +129,8 @@ static bool sched_key_valid(struct wd_sched_ctx *ctx,
 {
 	if (key->numa_id >= ctx->numa_num || key->mode >= SCHED_MODE_BUTT ||
 	    key->type >= ctx->type_num) {
-		WD_ERR("ERROR: %s key error - numa: %d, mode: %u, type: %u!\n",
-		       __FUNCTION__, key->numa_id, key->mode, key->type);
+		WD_ERR("invalid: sched key's numa: %d, mode: %u, type: %u!\n",
+		       key->numa_id, key->mode, key->type);
 		return false;
 	}
 
@@ -207,13 +207,13 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 	__u16 i;
 	int ret;
 
-	if (!sched_ctx || !count || !ctx) {
-		WD_ERR("ERROR: %s the para is NULL!\n", __FUNCTION__);
+	if (!count || !ctx) {
+		WD_ERR("invalid: sched ctx is NULL or count is zero!\n");
 		return -WD_EINVAL;
 	}
 
 	if (ctx->numa_num > NUMA_NUM_NODES) {
-		WD_ERR("ERROR: %s ctx numa num is invalid!\n", __FUNCTION__);
+		WD_ERR("invalid: ctx's numa number is %d!\n", ctx->numa_num);
 		return -WD_EINVAL;
 	}
 
@@ -270,16 +270,14 @@ static __u32 session_sched_init_ctx(handle_t sched_ctx,
 	bool ret;
 
 	if (!ctx || !key) {
-		WD_ERR("ERROR: %s the pointer para is NULL!\n", __FUNCTION__);
+		WD_ERR("invalid: sched ctx or key is NULL!\n");
 		return INVALID_POS;
 	}
 
 	key->mode = sched_mode;
 	ret = sched_key_valid(ctx, key);
-	if (!ret) {
-		WD_ERR("ERROR: %s the key is invalid!\n", __FUNCTION__);
+	if (!ret)
 		return INVALID_POS;
-	}
 
 	region = sched_get_ctx_range(ctx, key);
 	if (!region)
@@ -295,7 +293,7 @@ handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 
 	skey = malloc(sizeof(struct sched_key));
 	if (!skey) {
-		WD_ERR("fail to alloc session sched key!\n");
+		WD_ERR("failed to alloc memory for session sched key!\n");
 		return (handle_t)(-WD_ENOMEM);
 	}
 
@@ -328,7 +326,7 @@ static __u32 session_sched_pick_next_ctx(handle_t sched_ctx,
 	struct sched_key *key = (struct sched_key *)sched_key;
 
 	if (unlikely(!sched_ctx || !key)) {
-		WD_ERR("ERROR: %s the pointer para is NULL!\n", __FUNCTION__);
+		WD_ERR("invalid: sched ctx or key is NULL!\n");
 		return INVALID_POS;
 	}
 
@@ -357,13 +355,12 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
 	int  numa_id;
 
 	if (!sched || !sched->h_sched_ctx || !param) {
-		WD_ERR("ERROR: %s para err: sched of h_sched_ctx is NULL!\n",
-		       __FUNCTION__);
+		WD_ERR("invalid: sched or sched_params is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (param->begin > param->end) {
-		WD_ERR("ERROR: sched_params's begin is larger than end!\n");
+		WD_ERR("invalid: sched_params's begin is larger than end!\n");
 		return -WD_EINVAL;
 	}
 
@@ -373,28 +370,28 @@ int wd_sched_rr_instance(const struct wd_sched *sched,
 	sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 
 	if (numa_id >= sched_ctx->numa_num || numa_id < 0) {
-		WD_ERR("ERROR: %s para err: numa_id = %d, numa_num = %u\n",
-		       __FUNCTION__, numa_id, sched_ctx->numa_num);
+		WD_ERR("invalid: sched_ctx's numa_id is %d, numa_num is %u!\n",
+		       numa_id, sched_ctx->numa_num);
 		return -WD_EINVAL;
 	}
 
 	if (type >= sched_ctx->type_num) {
-		WD_ERR("ERROR: %s para err: type = %u, type_num = %u\n",
-		       __FUNCTION__, type, sched_ctx->type_num);
+		WD_ERR("invalid: sched_ctx's type is %u, type_num is %u!\n",
+		       type, sched_ctx->type_num);
 		return -WD_EINVAL;
 	}
 
 	if (mode >= SCHED_MODE_BUTT) {
-		WD_ERR("ERROR: %s para err: mode = %u, mode_num = %d!\n",
-		       __FUNCTION__, mode, SCHED_MODE_BUTT);
+		WD_ERR("invalid: sched_ctx's mode is %u, mode_num is %d!\n",
+		       mode, SCHED_MODE_BUTT);
 		return -WD_EINVAL;
 	}
 
 	sched_info = sched_ctx->sched_info;
 
 	if (!sched_info[numa_id].ctx_region[mode]) {
-		WD_ERR("ERROR: %s ctx_region of numa_id = %d, mode = %u is NULL!\n",
-		       __FUNCTION__, numa_id, mode);
+		WD_ERR("invalid: ctx_region is NULL, numa: %d, mode: %u!\n",
+		       numa_id, mode);
 		return -WD_EINVAL;
 	}
 
@@ -454,27 +451,26 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 		return NULL;
 
 	if (!numa_num || numa_num > max_node) {
-		WD_ERR("Error: %s numa number = %u!\n", __FUNCTION__,
-		       numa_num);
+		WD_ERR("invalid: numa number is %u!\n", numa_num);
 		return NULL;
 	}
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
-		WD_ERR("Error: %s sched_type = %u or type_num = %u is invalid!\n",
-		       __FUNCTION__, sched_type, type_num);
+		WD_ERR("invalid: sched_type is %u or type_num is %u!\n",
+		       sched_type, type_num);
 		return NULL;
 	}
 
 	sched = calloc(1, sizeof(struct wd_sched));
 	if (!sched) {
-		WD_ERR("Error: %s wd_sched alloc error!\n", __FUNCTION__);
+		WD_ERR("failed to alloc memory for wd_sched!\n");
 		return NULL;
 	}
 
 	sched_ctx = calloc(1, sizeof(struct wd_sched_ctx) +
 			   sizeof(struct wd_sched_info) * numa_num);
 	if (!sched_ctx) {
-		WD_ERR("Error: %s sched_ctx alloc error!\n", __FUNCTION__);
+		WD_ERR("failed to alloc memory for sched_ctx!\n");
 		goto err_out;
 	}
 
