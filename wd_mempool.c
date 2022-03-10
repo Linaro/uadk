@@ -14,6 +14,7 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/queue.h>
+#include <pthread.h>
 #include "wd.h"
 
 #define SYSFS_NODE_PATH			"/sys/devices/system/node/node"
@@ -409,8 +410,8 @@ static int alloc_block_from_mempool(struct mempool *mp,
 					int mem_combined_num,
 					int mem_splited_num)
 {
-	int pos_first = pos;
 	int pos_last = pos;
+	int pos_first;
 	int i, ret;
 
 	do {
@@ -607,7 +608,9 @@ void wd_blockpool_destroy(handle_t blkpool)
 
 	mp = bp->mp;
 	wd_atomic_sub(&bp->ref, 1);
-	while(wd_atomic_load(&bp->ref));
+	while (wd_atomic_load(&bp->ref))
+		sched_yield();
+
 	free_mem_to_mempool(bp);
 	free(bp->blk_elem);
 	free(bp);
