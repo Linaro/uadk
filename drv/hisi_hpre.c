@@ -134,12 +134,12 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 	int j;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
-		WD_ERR("%s: trans to hpre bin parameters err!\n", p_name);
+		WD_ERR("invalid: %s trans to hpre bin parameters err!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (b_size < d_size) {
-		WD_ERR("%s: trans to hpre bin data too long!\n", p_name);
+		WD_ERR("invalid: %s trans to hpre bin data too long!\n", p_name);
 		return  -WD_EINVAL;
 	}
 
@@ -165,7 +165,7 @@ static int hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
 	int k = 0;
 
 	if (!dst || !src || b_size <= 0) {
-		WD_ERR("%s trans to crypto bin: parameters err!\n", p_name);
+		WD_ERR("invalid: %s trans to crypto bin parameters err!\n", p_name);
 		return 0;
 	}
 
@@ -254,10 +254,9 @@ static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 	wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
 	ret = crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
 				wd_e->bsize, wd_e->dsize, "rsa e");
-	if (ret) {
-		WD_ERR("rsa pubkey e format fail!\n");
+	if (ret)
 		return ret;
-	}
+
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa n");
 	if (ret)
@@ -349,7 +348,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 		wd_rsa_get_kg_out_crt_params(key, &qinv, &dq, &dp);
 		ret = hpre_tri_bin_transfer(&qinv, &dq, &dp);
 		if (ret) {
-			WD_ERR("parse rsa genkey qinv&&dq&&dp format fail!\n");
+			WD_ERR("failed to parse rsa genkey qinv&&dq&&dp format!\n");
 			return ret;
 		}
 
@@ -361,7 +360,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 		wd_rsa_get_kg_out_params(key, &d, &n);
 		ret = hpre_tri_bin_transfer(&d, &n, NULL);
 		if (ret) {
-			WD_ERR("parse rsa genkey1 d&&n format fail!\n");
+			WD_ERR("failed to parse rsa genkey1 d&&n format!\n");
 			return ret;
 		}
 
@@ -402,7 +401,7 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 			return ret;
 		ret = wd_rsa_kg_in_data((void *)msg->key, (char **)&data);
 		if (ret < 0) {
-			WD_ERR("Get rsa gen key data in fail!\n");
+			WD_ERR("failed to get rsa gen key data!\n");
 			return ret;
 		}
 		if (hw_msg->alg == HPRE_ALG_NC_CRT)
@@ -410,7 +409,7 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 		else
 			hw_msg->alg = HPRE_ALG_KG_STD;
 	} else {
-		WD_ERR("Invalid rsa operatin type!\n");
+		WD_ERR("invalid: rsa operatin type %u is error!\n", req->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -546,10 +545,10 @@ static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
 
 	if (hw_msg.done != HPRE_HW_TASK_DONE ||
 			hw_msg.etype || hw_msg.etype1) {
-		WD_ERR("HPRE do rsa fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+		WD_ERR("failed to do rsa task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
 			hw_msg.done, hw_msg.etype, hw_msg.etype1);
 		if (hw_msg.etype1 & HPRE_HW_SVA_ERROR)
-			WD_ERR("failed to SVA prefetch: status=%u\n",
+			WD_ERR("failed to SVA prefetch: status=%u!\n",
 				hw_msg.sva_status);
 		if (hw_msg.done == HPRE_HW_TASK_INIT)
 			msg->result = WD_EINVAL;
@@ -559,7 +558,7 @@ static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
 		msg->tag = LW_U16(hw_msg.low_tag);
 		ret = rsa_out_transfer(msg, &hw_msg);
 		if (ret) {
-			WD_ERR("qm rsa out transfer fail!\n");
+			WD_ERR("failed to transfer out rsa BD!\n");
 			msg->result = WD_OUT_EPARA;
 		} else {
 			msg->result = WD_SUCCESS;
@@ -591,14 +590,14 @@ static int fill_dh_xp_params(struct wd_dh_msg *msg,
 	ret = crypto_bin_to_hpre_bin(x, (const char *)x,
 				msg->key_bytes, req->xbytes, "dh x");
 	if (ret) {
-		WD_ERR("dh x para format fail!\n");
+		WD_ERR("failed to transfer dh x para format to hpre bin!\n");
 		return ret;
 	}
 
 	ret = crypto_bin_to_hpre_bin(p, (const char *)p,
 				msg->key_bytes, req->pbytes, "dh p");
 	if (ret) {
-		WD_ERR("dh p para format fail!\n");
+		WD_ERR("failed to transfer dh p para format to hpre bin!\n");
 		return ret;
 	}
 
@@ -654,7 +653,7 @@ static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
 			(const char *)msg->g, msg->key_bytes,
 			msg->gbytes, "dh g");
 		if (ret) {
-			WD_ERR("dh g para format fail!\n");
+			WD_ERR("failed to transfer dh g para format to hpre bin!\n");
 			return ret;
 		}
 
@@ -688,10 +687,10 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 
 	if (hw_msg.done != HPRE_HW_TASK_DONE ||
 			hw_msg.etype || hw_msg.etype1) {
-		WD_ERR("HPRE do dh fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+		WD_ERR("failed to do dh task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
 			hw_msg.done, hw_msg.etype, hw_msg.etype1);
 		if (hw_msg.etype1 & HPRE_HW_SVA_ERROR)
-			WD_ERR("failed to SVA prefetch: status=%u\n",
+			WD_ERR("failed to SVA prefetch: status=%u!\n",
 				hw_msg.sva_status);
 		if (hw_msg.done == HPRE_HW_TASK_INIT)
 			msg->result = WD_EINVAL;
@@ -701,7 +700,7 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 		msg->tag = LW_U16(hw_msg.low_tag);
 		ret = dh_out_transfer(msg, &hw_msg);
 		if (ret) {
-			WD_ERR("dh out transfer fail!\n");
+			WD_ERR("failed to transfer out dh BD!\n");
 			msg->result = WD_OUT_EPARA;
 		} else {
 			msg->result = WD_SUCCESS;
@@ -1021,7 +1020,7 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	if (!in->dgst_set) {
-		WD_ERR("prepare sign_in, hash not set!\n");
+		WD_ERR("invalid: prepare sign_in, hash not set!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1029,17 +1028,17 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 	k = &in->k;
 	if (!in->k_set) {
 		if (msg->req.op_type == WD_ECDSA_SIGN) {
-			WD_ERR("random k not set!\n");
+			WD_ERR("invalid: random k not set!\n");
 			return -WD_EINVAL;
 		}
 		hw_msg->sm2_ksel = 1;
 	} else if (is_all_zero(k, msg)) {
-		WD_ERR("ecc sign in k all zero!\n");
+		WD_ERR("invalid: ecc sign in k all zero!\n");
 		return -WD_EINVAL;
 	}
 
 	if (is_all_zero(e, msg)) {
-		WD_ERR("ecc sign in e all zero!\n");
+		WD_ERR("invalid: ecc sign in e all zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1072,7 +1071,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 	int ret;
 
 	if (!vin->dgst_set) {
-		WD_ERR("prepare verf_in, hash not set!\n");
+		WD_ERR("invalid: prepare verf_in, hash not set!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1081,7 +1080,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 	r = &vin->r;
 
 	if (is_all_zero(e, msg)) {
-		WD_ERR("ecc verf in e all zero!\n");
+		WD_ERR("invalid: ecc verf in e all zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1182,17 +1181,13 @@ static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 
 	ret = crypto_bin_to_hpre_bin(pbk->x.data, (const char *)pbk->x.data,
 				     pbk->x.bsize, pbk->x.dsize, "ecdh compute x");
-	if (ret) {
-		WD_ERR("ecc dh compute in x format fail!\n");
+	if (ret)
 		return ret;
-	}
 
 	ret = crypto_bin_to_hpre_bin(pbk->y.data, (const char *)pbk->y.data,
 				     pbk->y.bsize, pbk->y.dsize, "ecdh compute y");
-	if (ret) {
-		WD_ERR("ecc dh compute in y format fail!\n");
+	if (ret)
 		return ret;
-	}
 
 	*data = pbk->x.data;
 
@@ -1221,12 +1216,12 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 	if (msg->curve_id == WD_X25519)
 		pbk->x.data[0] &= 0x7f;
 	if (!less_than_latter(&pbk->x, p)) {
-		WD_ERR("ux is out of p!\n");
+		WD_ERR("invalid: ux is out of p!\n");
 		return -WD_EINVAL;
 	}
 
 	if (is_all_zero(&pbk->x, msg)) {
-		WD_ERR("ux is zero!\n");
+		WD_ERR("invalid: ux is zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1342,7 +1337,7 @@ static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 	ecc_get_io_len(hw_msg->alg, kbytes, &i_sz, &o_sz);
 	ret = ecc_prepare_in(msg, hw_msg, &data);
 	if (ret) {
-		WD_ERR("ecc_prepare_in fail!\n");
+		WD_ERR("failed to prepare ecc in!\n");
 		return ret;
 	}
 	hw_msg->low_in = LW_U32((uintptr_t)data);
@@ -1350,7 +1345,7 @@ static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 
 	ret = ecc_prepare_out(msg, &data);
 	if (ret) {
-		WD_ERR("ecc_prepare_out fail!\n");
+		WD_ERR("failed to prepare ecc out!\n");
 		return ret;
 	}
 
@@ -1374,7 +1369,7 @@ static __u32 get_hw_keysz(__u32 ksz)
 	else if (ksz <= BITS_TO_BYTES(576))
 		size = BITS_TO_BYTES(576);
 	else
-		WD_ERR("failed to get hw keysize : ksz = %u.\n", ksz);
+		WD_ERR("invalid: keysize %u is error!\n", ksz);
 
 	return size;
 }
@@ -1408,12 +1403,12 @@ static int set_param(struct wd_dtb *dst, const struct wd_dtb *src,
 		     const char *p_name)
 {
 	if (unlikely(!src || !src->data)) {
-		WD_ERR("%s: src or data NULL!\n", p_name);
+		WD_ERR("invalid: %s src or data NULL!\n", p_name);
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(!src->dsize || src->dsize > dst->bsize)) {
-		WD_ERR("%s: src dsz = %u error, dst bsz = %u!\n",
+		WD_ERR("invalid: %s src dsz %u, dst bsz %u is error!\n",
 			p_name, src->dsize, dst->bsize);
 		return -WD_EINVAL;
 	}
@@ -1470,13 +1465,13 @@ static struct wd_ecc_out *create_ecdh_out(struct wd_ecc_msg *msg)
 	struct wd_ecc_out *out;
 
 	if (!hsz) {
-		WD_ERR("get msg key size error!\n");
+		WD_ERR("failed to get msg key size!\n");
 		return NULL;
 	}
 
 	out = malloc(len);
 	if (!out) {
-		WD_ERR("failed to alloc, sz = %u!\n", len);
+		WD_ERR("failed to alloc out memory, sz = %u!\n", len);
 		return NULL;
 	}
 
@@ -1527,13 +1522,13 @@ static struct wd_ecc_msg *create_req(struct wd_ecc_msg *src, __u8 req_idx)
 
 	dst = malloc(sizeof(*dst) + sizeof(*src));
 	if (unlikely(!dst)) {
-		WD_ERR("failed to alloc dst\n");
+		WD_ERR("failed to alloc dst!\n");
 		return NULL;
 	}
 
 	ecc_key = malloc(sizeof(*ecc_key) + sizeof(*prikey));
 	if (unlikely(!ecc_key)) {
-		WD_ERR("failed to alloc ecc_key\n");
+		WD_ERR("failed to alloc ecc_key!\n");
 		goto fail_alloc_key;
 	}
 
@@ -1541,7 +1536,7 @@ static struct wd_ecc_msg *create_req(struct wd_ecc_msg *src, __u8 req_idx)
 	ecc_key->prikey = prikey;
 	prikey->data = malloc(ECC_PRIKEY_SZ(src->key_bytes));
 	if (unlikely(!prikey->data)) {
-		WD_ERR("failed to alloc prikey data\n");
+		WD_ERR("failed to alloc prikey data!\n");
 		goto fail_alloc_key_data;
 	}
 	init_prikey(prikey, src->key_bytes);
@@ -1551,7 +1546,7 @@ static struct wd_ecc_msg *create_req(struct wd_ecc_msg *src, __u8 req_idx)
 
 	ret = init_req(dst, src, ecc_key, req_idx);
 	if (unlikely(ret)) {
-		WD_ERR("failed to init req, ret = %d\n", ret);
+		WD_ERR("failed to init req, ret = %d!\n", ret);
 		goto fail_set_prikey;
 	}
 
@@ -1602,12 +1597,12 @@ static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 
 	if (unlikely(!op_type || (op_type >= WD_EC_OP_MAX &&
 		op_type != HPRE_SM2_ENC && op_type != HPRE_SM2_DEC))) {
-		WD_ERR("op_type = %u error!\n", op_type);
+		WD_ERR("invalid: input op_type %u is error!\n", op_type);
 		return -WD_EINVAL;
 	}
 
 	if (!hw_sz) {
-		WD_ERR("get msg key size error!\n");
+		WD_ERR("failed to get msg key size!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1666,12 +1661,12 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 		return ecc_general_send(ctx, msg);
 
 	if (unlikely(!ein->k_set)) {
-		WD_ERR("error: k not set\n");
+		WD_ERR("invalid: k not set!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(!hash->cb || hash->type >= WD_HASH_MAX)) {
-		WD_ERR("hash parameter error, type = %u\n", hash->type);
+		WD_ERR("invalid: input hash type %u is error!\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -1682,19 +1677,19 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 	 */
 	ret = split_req(msg, msg_dst);
 	if (unlikely(ret)) {
-		WD_ERR("failed to split req, ret = %d\n", ret);
+		WD_ERR("failed to split req, ret = %d!\n", ret);
 		return ret;
 	}
 
 	ret = ecc_fill(msg_dst[0], &hw_msg[0]);
 	if (unlikely(ret)) {
-		WD_ERR("failed to fill 1th sqe, ret = %d\n", ret);
+		WD_ERR("failed to fill 1th sqe, ret = %d!\n", ret);
 		goto fail_fill_sqe;
 	}
 
 	ret = ecc_fill(msg_dst[1], &hw_msg[1]);
 	if (unlikely(ret)) {
-		WD_ERR("failed to fill 2th sqe, ret = %d\n", ret);
+		WD_ERR("failed to fill 2th sqe, ret = %d!\n", ret);
 		goto fail_fill_sqe;
 	}
 
@@ -1725,7 +1720,7 @@ static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
 		return ecc_general_send(ctx, msg);
 
 	if (unlikely(!hash->cb || hash->type >= WD_HASH_MAX)) {
-		WD_ERR("hash parameter error, type = %u\n", hash->type);
+		WD_ERR("invalid: input hash type %u is error!\n", hash->type);
 		return -WD_EINVAL;
 	}
 
@@ -1779,7 +1774,7 @@ static int ecdh_out_transfer(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_ms
 
 	ret = hpre_tri_bin_transfer(&key->x, y, NULL);
 	if (ret) {
-		WD_ERR("parse ecdh out format fail!\n");
+		WD_ERR("failed to transfer ecdh format to crypto bin!\n");
 		return ret;
 	}
 
@@ -1889,7 +1884,7 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 		 hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("ecc out trans fail algorithm %u error!\n", hw_msg->alg);
+		WD_ERR("invalid: algorithm type %u is error!\n", hw_msg->alg);
 
 	return ret;
 }
@@ -1921,7 +1916,7 @@ static __u32 get_hash_bytes(__u8 type)
 		val = BITS_TO_BYTES(512);
 		break;
 	default:
-		WD_ERR("get hash bytes: type %u error!\n", type);
+		WD_ERR("invalid: hash type %u is error!\n", type);
 		break;
 	}
 
@@ -1977,7 +1972,7 @@ static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 		t_out = m_len >= h_bytes ? tmp : p_out;
 		ret = hash->cb(p_in, in_len, t_out, h_bytes, hash->usr);
 		if (ret) {
-			WD_ERR("failed to hash cb, ret = %d!\n", ret);
+			WD_ERR("%s failed to do hash cb, ret = %d!\n", __func__, ret);
 			break;
 		}
 
@@ -2041,7 +2036,7 @@ static int sm2_hash(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 	msg_pack(p_in, &in_len, x2y2->y.data, x2y2->y.dsize);
 	ret = hash->cb(p_in, in_len, hash_out, h_bytes, hash->usr);
 	if (unlikely(ret)) {
-		WD_ERR("failed to hash cb, ret = %d!\n", ret);
+		WD_ERR("%s failed to do hash cb, ret = %d!\n", __func__, ret);
 		goto fail;
 	}
 
@@ -2088,7 +2083,7 @@ static int sm2_convert_enc_out(struct wd_ecc_msg *src,
 	/* C3 = hash(x2 || M || y2) */
 	ret = sm2_hash(&eout->c3, &x2y2, &ein->plaintext, hash);
 	if (unlikely(ret)) {
-		WD_ERR("failed to sm2 hash, ret = %d!\n", ret);
+		WD_ERR("failed to do sm2 hash, ret = %d!\n", ret);
 		return ret;
 	}
 
@@ -2096,7 +2091,7 @@ static int sm2_convert_enc_out(struct wd_ecc_msg *src,
 	kdf_out = &eout->c2;
 	ret = sm2_kdf(kdf_out, &x2y2, ein->plaintext.dsize, hash);
 	if (unlikely(ret)) {
-		WD_ERR("failed to sm2 kdf, ret = %d!\n", ret);
+		WD_ERR("%s failed to do sm2 kdf, ret = %d!\n", __func__, ret);
 		return ret;
 	}
 
@@ -2138,7 +2133,7 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	/* t = KDF(x2 || y2, klen) */
 	ret = sm2_kdf(&dout->plaintext, &x2y2, din->c2.dsize, &src->hash);
 	if (unlikely(ret)) {
-		WD_ERR("failed to sm2 kdf, ret = %d!\n", ret);
+		WD_ERR("%s failed to do sm2 kdf, ret = %d!\n", __func__, ret);
 		return ret;
 	}
 
@@ -2166,10 +2161,10 @@ static int ecc_sqe_parse(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 
 	if (hw_msg->done != HPRE_HW_TASK_DONE ||
 			hw_msg->etype || hw_msg->etype1) {
-		WD_ERR("HPRE do ecc fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
+		WD_ERR("failed to do ecc task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
 			hw_msg->done, hw_msg->etype, hw_msg->etype1);
 		if (hw_msg->etype1 & HPRE_HW_SVA_ERROR)
-			WD_ERR("failed to SVA prefetch: status=%u\n",
+			WD_ERR("failed to SVA prefetch: status=%u!\n",
 				hw_msg->sva_status);
 
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
@@ -2181,7 +2176,7 @@ static int ecc_sqe_parse(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 		ret = ecc_out_transfer(msg, hw_msg);
 		if (ret) {
 			msg->result = WD_OUT_EPARA;
-			WD_ERR("ecc out transfer fail!\n");
+			WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
 		}
 		msg->tag = LW_U16(hw_msg->low_tag);
 	}
@@ -2247,7 +2242,7 @@ static int sm2_enc_parse(handle_t h_qp,
 	hw_msg->low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse(first, hw_msg);
 	if (ret) {
-		WD_ERR("failed to parse first BD, ret = %d\n", ret);
+		WD_ERR("failed to parse first BD, ret = %d!\n", ret);
 		goto free_first;
 	}
 
@@ -2291,7 +2286,7 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 	hw_msg->low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse(dst, hw_msg);
 	if (ret) {
-		WD_ERR("failed to parse decode BD, ret = %d\n", ret);
+		WD_ERR("failed to parse decode BD, ret = %d!\n", ret);
 		goto fail;
 	}
 	msg->result = dst->result;
