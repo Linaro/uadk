@@ -246,7 +246,7 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 	}
 
 	ret = buf_size_check_deflate(&in_size, &out_size);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	fill_buf_size_deflate(sqe, in_size, out_size);
@@ -294,19 +294,19 @@ static int fill_buf_addr_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	handle_t h_sgl_pool;
 
 	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (!h_sgl_pool) {
+	if (unlikely(!h_sgl_pool)) {
 		WD_ERR("failed to get sglpool!\n");
 		return -WD_EINVAL;
 	}
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_src);
-	if (!hw_sgl_in) {
+	if (unlikely(!hw_sgl_in)) {
 		WD_ERR("failed to get hw sgl in!\n");
 		return -WD_ENOMEM;
 	}
 
 	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_dst);
-	if (!hw_sgl_out) {
+	if (unlikely(!hw_sgl_out)) {
 		WD_ERR("failed to get hw sgl out!\n");
 		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
 		return -WD_ENOMEM;
@@ -345,7 +345,7 @@ static int fill_buf_deflate_slg_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	fill_buf_type_sgl(sqe);
 
 	ret = fill_buf_addr_deflate_sgl(h_qp, sqe, msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	if (head != NULL && msg->req.op_type == WD_DIR_COMPRESS) {
@@ -514,26 +514,26 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
 	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (!h_sgl_pool) {
+	if (unlikely(!h_sgl_pool)) {
 		WD_ERR("failed to get sglpool!\n");
 		return -WD_EINVAL;
 	}
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_src);
-	if (!hw_sgl_in) {
+	if (unlikely(!hw_sgl_in)) {
 		WD_ERR("failed to get hw sgl in!\n");
 		return -WD_ENOMEM;
 	}
 
 	hw_sgl_out_lit = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_dst);
-	if (!hw_sgl_out_lit) {
+	if (unlikely(!hw_sgl_out_lit)) {
 		WD_ERR("failed to get hw sgl out for literals!\n");
 		ret = -WD_ENOMEM;
 		goto err_free_sgl_in;
 	}
 
 	hw_sgl_out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, seq_start);
-	if (!hw_sgl_out_seq) {
+	if (unlikely(!hw_sgl_out_seq)) {
 		WD_ERR("failed to get hw sgl out for sequences!\n");
 		ret = -WD_ENOMEM;
 		goto err_free_sgl_out_lit;
@@ -680,7 +680,7 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
 	struct wd_lz77_zstd_data *data = recv_msg->req.priv;
 	void *ctx_buf = recv_msg->ctx_buf;
 
-	if (!data)
+	if (unlikely(!data))
 		return;
 
 	data->lit_num = sqe->comp_data_length;
@@ -782,7 +782,7 @@ static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
 		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
-		if (!h_qp)
+		if (unlikely(!h_qp))
 			goto out;
 	}
 
@@ -821,14 +821,14 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	__u8 state;
 	int ret;
 
-	if ((hw_type <= HISI_QM_API_VER2_BASE && alg_type > WD_GZIP) ||
-	    (hw_type >= HISI_QM_API_VER3_BASE && alg_type >= WD_COMP_ALG_MAX)) {
+	if (unlikely((hw_type <= HISI_QM_API_VER2_BASE && alg_type > WD_GZIP) ||
+		     (hw_type >= HISI_QM_API_VER3_BASE && alg_type >= WD_COMP_ALG_MAX))) {
 		WD_ERR("invalid: algorithm type is %d!\n", alg_type);
 		return -WD_EINVAL;
 	}
 
 	ret = ops[alg_type].fill_buf[msg->req.data_fmt]((handle_t)qp, sqe, msg);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	ops[alg_type].fill_sqe_type(sqe);
@@ -838,7 +838,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	ops[alg_type].fill_tag(sqe, msg->tag);
 
 	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	state = (msg->stream_mode == WD_COMP_STATEFUL) ? HZ_STATEFUL :
@@ -871,12 +871,12 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 	int ret;
 
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		WD_ERR("failed to fill zip sqe, ret = %d!\n", ret);
 		return ret;
 	}
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send to hardware, ret = %d!\n", ret);
 
@@ -920,7 +920,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	handle_t h_sgl_pool;
 
 	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (!h_sgl_pool) {
+	if (unlikely(!h_sgl_pool)) {
 		WD_ERR("failed to get sglpool to free hw sgl!\n");
 		return;
 	}
@@ -950,7 +950,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	__u32 tag;
 
 	alg_type = get_alg_type(type);
-	if (alg_type < 0) {
+	if (unlikely(alg_type < 0)) {
 		WD_ERR("invalid: hardware type is %u!\n", type);
 		return -WD_EINVAL;
 	}
@@ -961,7 +961,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg = wd_comp_get_msg(qp->q_info.idx, tag);
-		if (!recv_msg) {
+		if (unlikely(!recv_msg)) {
 			WD_ERR("failed to get send msg! idx = %u, tag = %u!\n",
 			       qp->q_info.idx, tag);
 			return -WD_EINVAL;
@@ -970,8 +970,8 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	recv_msg->req.status = 0;
 
-	if (status != 0 && status != HZ_NEGACOMPRESS &&
-	    status != HZ_CRC_ERR && status != HZ_DECOMP_END) {
+	if (unlikely(status != 0 && status != HZ_NEGACOMPRESS &&
+		     status != HZ_CRC_ERR && status != HZ_DECOMP_END)) {
 		WD_ERR("bad request(ctx_st = 0x%x, status = 0x%x, algorithm type = %u)!\n",
 		       ctx_st, status, type);
 		recv_msg->req.status = WD_IN_EPARA;
@@ -1019,7 +1019,7 @@ static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg,
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
-	if (ret < 0)
+	if (unlikely(ret < 0))
 		return ret;
 
 	return parse_zip_sqe(qp, &sqe, recv_msg);
