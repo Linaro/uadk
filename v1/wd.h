@@ -28,7 +28,6 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <limits.h>
 #include <assert.h>
 #include "uacce.h"
 
