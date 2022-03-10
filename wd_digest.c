@@ -62,7 +62,7 @@ static void wd_digest_set_static_drv(void)
 {
 	wd_digest_setting.driver = wd_digest_get_driver();
 	if (!wd_digest_setting.driver)
-		WD_ERR("fail to get driver\n");
+		WD_ERR("failed to get driver!\n");
 }
 #else
 static void __attribute__((constructor)) wd_digest_open_driver(void)
@@ -70,7 +70,7 @@ static void __attribute__((constructor)) wd_digest_open_driver(void)
 	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
 	wd_digest_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_digest_setting.dlhandle)
-		WD_ERR("fail to open libhisi_sec.so\n");
+		WD_ERR("failed to open libhisi_sec.so!\n");
 }
 
 static void __attribute__((destructor)) wd_digest_close_driver(void)
@@ -252,7 +252,7 @@ static int digest_param_check(struct wd_digest_sess *sess,
 	int ret;
 
 	if (unlikely(!sess || !req)) {
-		WD_ERR("digest input sess or req is NULL.\n");
+		WD_ERR("invalid: digest input sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -398,7 +398,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 
 	if (unlikely(!req->cb)) {
-		WD_ERR("digest input req cb is NULL.\n");
+		WD_ERR("invalid: digest input req cb is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -451,7 +451,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count)) {
-		WD_ERR("digest count is NULL.\n");
+		WD_ERR("invalid: digest poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
