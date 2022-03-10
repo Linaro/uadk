@@ -703,7 +703,7 @@ static void parse_cipher_bd2(struct hisi_sec_sqe *sqe,
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
 	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
-		WD_ERR("SEC BD %s fail! done=0x%x, etype=0x%x\n", "cipher",
+		WD_ERR("failed to parse cipher BD2! done=0x%x, etype=0x%x\n",
 		       done, sqe->type2.error_type);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
@@ -927,7 +927,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	int ret;
 
 	if (!msg) {
-		WD_ERR("input cipher msg is NULL!\n");
+		WD_ERR("invalid: input cipher msg is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1130,7 +1130,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 	int ret;
 
 	if (!msg) {
-		WD_ERR("input cipher msg is NULL!\n");
+		WD_ERR("invalid: input cipher msg is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1175,7 +1175,7 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe,
 
 	done = sqe->done_flag & SEC_DONE_MASK;
 	if (done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("SEC BD3 %s fail! done=0x%x, etype=0x%x\n", "cipher",
+		WD_ERR("failed to parse cipher BD3! done=0x%x, etype=0x%x\n",
 		       done, sqe->error_type);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
@@ -1278,7 +1278,7 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe,
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
 	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
-		WD_ERR("SEC BD %s fail! done=0x%x, etype=0x%x\n", "digest",
+		WD_ERR("failed to parse digest BD2! done=0x%x, etype=0x%x\n",
 		       done, sqe->type2.error_type);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
@@ -1354,7 +1354,7 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 	int ret;
 
 	if (!msg) {
-		WD_ERR("input digest msg is NULL!\n");
+		WD_ERR("invalid: input digest msg is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1510,7 +1510,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 	int ret;
 
 	if (!msg) {
-		WD_ERR("input digest msg is NULL!\n");
+		WD_ERR("invalid: input digest msg is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1578,7 +1578,7 @@ static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
 
 	done = sqe->done_flag & SEC_DONE_MASK;
 	if (done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("SEC BD3 %s fail! done=0x%x, etype=0x%x\n", "digest",
+		WD_ERR("failed to parse digest BD3! done=0x%x, etype=0x%x\n",
 		       done, sqe->error_type);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
@@ -1927,7 +1927,7 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 	icv = (sqe->type2.done_flag & SEC_ICV_MASK) >> 1;
 	if (done != SEC_HW_TASK_DONE || sqe->type2.error_type ||
 	    icv == SEC_HW_ICV_ERR) {
-		WD_ERR("SEC BD aead fail! done=0x%x, etype=0x%x, icv=0x%x\n",
+		WD_ERR("failed to parse aead BD2! done=0x%x, etype=0x%x, icv=0x%x\n",
 		       done, sqe->type2.error_type, icv);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
@@ -2195,7 +2195,7 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 	icv = (sqe->done_flag & SEC_ICV_MASK) >> 1;
 	if (done != SEC_HW_TASK_DONE || sqe->error_type ||
 	    icv == SEC_HW_ICV_ERR) {
-		WD_ERR("SEC BD3 aead fail! done=0x%x, etype=0x%x, icv=0x%x\n",
+		WD_ERR("failed to parse aead BD3! done=0x%x, etype=0x%x, icv=0x%x\n",
 		       done, sqe->error_type, icv);
 		recv_msg->result = WD_IN_EPARA;
 	} else {

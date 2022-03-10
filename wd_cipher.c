@@ -75,14 +75,14 @@ static void wd_cipher_set_static_drv(void)
 {
 	wd_cipher_setting.driver = wd_cipher_get_driver();
 	if (!wd_cipher_setting.driver)
-		WD_ERR("fail to get driver\n");
+		WD_ERR("failed to get driver!\n");
 }
 #else
 static void __attribute__((constructor)) wd_cipher_open_driver(void)
 {
 	wd_cipher_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_cipher_setting.dlhandle)
-		WD_ERR("fail to open libhisi_sec.so\n");
+		WD_ERR("failed to open libhisi_sec.so!\n");
 }
 
 static void __attribute__((destructor)) wd_cipher_close_driver(void)
@@ -158,7 +158,7 @@ static int cipher_init_check(struct wd_ctx_config *config,
 			     struct wd_sched *sched)
 {
 	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("wd cipher config or sched is NULL!\n");
+		WD_ERR("invalid: wd cipher config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -177,7 +177,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	int ret;
 
 	if (!key || !sess) {
-		WD_ERR("cipher set key input param err!\n");
+		WD_ERR("invalid: cipher set key input param err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -205,13 +205,13 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	struct wd_cipher_sess *sess = NULL;
 
 	if (unlikely(!setup)) {
-		WD_ERR("cipher input setup is NULL!\n");
+		WD_ERR("invalid: cipher input setup is NULL!\n");
 		return (handle_t)0;
 	}
 
 	sess = malloc(sizeof(struct wd_cipher_sess));
 	if (!sess) {
-		WD_ERR("fail to alloc session memory!\n");
+		WD_ERR("failed to alloc session memory!\n");
 		return (handle_t)0;
 	}
 	memset(sess, 0, sizeof(struct wd_cipher_sess));
@@ -235,7 +235,7 @@ void wd_cipher_free_sess(handle_t h_sess)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 
 	if (unlikely(!sess)) {
-		WD_ERR("cipher input h_sess is NULL!\n");
+		WD_ERR("invalid: cipher input h_sess is NULL!\n");
 		return;
 	}
 
@@ -387,12 +387,12 @@ static int wd_cipher_check_params(handle_t h_sess,
 	int ret;
 
 	if (unlikely(!h_sess || !req)) {
-		WD_ERR("cipher input sess or req is NULL!\n");
+		WD_ERR("invalid: cipher input sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(mode == CTX_MODE_ASYNC && !req->cb)) {
-		WD_ERR("cipher req cb is NULL!\n");
+		WD_ERR("invalid: cipher req cb is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -557,7 +557,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	int ret;
 
 	if (unlikely(!count)) {
-		WD_ERR("wd cipher poll ctx input param is NULL!\n");
+		WD_ERR("invalid: cipher poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 

@@ -63,14 +63,14 @@ static void wd_aead_set_static_drv(void)
 {
 	wd_aead_setting.driver = wd_aead_get_driver();
 	if (!wd_aead_setting.driver)
-		WD_ERR("fail to get driver\n");
+		WD_ERR("failed to get driver!\n");
 }
 #else
 static void __attribute__((constructor)) wd_aead_open_driver(void)
 {
 	wd_aead_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_aead_setting.dlhandle)
-		WD_ERR("failed to open libhisi_sec.so\n");
+		WD_ERR("failed to open libhisi_sec.so!\n");
 }
 
 static void __attribute__((destructor)) wd_aead_close_driver(void)
@@ -344,7 +344,7 @@ static int aead_param_check(struct wd_aead_sess *sess,
 	int ret;
 
 	if (unlikely(!sess || !req)) {
-		WD_ERR("aead input sess or req is NULL.\n");
+		WD_ERR("invalid: aead input sess or req is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -393,7 +393,7 @@ static int aead_param_check(struct wd_aead_sess *sess,
 static int aead_init_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("wd aead config or sched is NULL!\n");
+		WD_ERR("invalid: wd aead config or sched is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -594,7 +594,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		return -WD_EINVAL;
 
 	if (unlikely(!req->cb)) {
-		WD_ERR("aead input req cb is NULL.\n");
+		WD_ERR("invalid: aead input req cb is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -647,7 +647,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	int ret;
 
 	if (!count) {
-		WD_ERR("aead poll ctx input param is NULL!\n");
+		WD_ERR("invalid: aead poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
