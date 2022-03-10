@@ -27,6 +27,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <sys/poll.h>
+#include <limits.h>
 
 #include "v1/wd.h"
 #include "v1/wd_util.h"
@@ -118,8 +119,10 @@ static int get_int_attr(struct dev_info *dinfo, const char *attr)
 	 * When the value is bigger than INT_MAX, it returns INT_MAX
 	 */
 	size = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
-	if (size < 0 || size >= INT_MAX_SIZE)
+	if (size < 0)
 		return size;
+	else if (size >= INT_MAX_SIZE)
+		return INT_MAX;
 	/* Handing the read string's end tails '\n' to '\0' */
 	buf[size] = '\0';
 	return atoi((char *)buf);
@@ -186,19 +189,23 @@ static int get_ul_vec_attr(struct dev_info *dinfo, const char *attr,
 	return 0;
 }
 
-static int is_alg_support(struct dev_info *dinfo, const char *alg)
+static bool is_alg_support(struct dev_info *dinfo, const char *alg)
 {
-	int alg_support_flag = 0;
 	char *alg_save = NULL;
 	char *alg_tmp;
 
+	if (!alg)
+		return false;
+
 	alg_tmp = strtok_r(dinfo->algs, "\n", &alg_save);
 	while (alg_tmp != NULL) {
-		if (alg && !strcmp(alg_tmp, alg))
-			alg_support_flag++;
+		if (!strcmp(alg_tmp, alg))
+			return true;
+
 		alg_tmp = strtok_r(NULL, "\n", &alg_save);
 	}
-	return  alg_support_flag;
+
+	return false;
 }
 
 static bool is_weight_more(unsigned int new, unsigned int old)
@@ -279,7 +286,7 @@ static int get_str_attr_all(struct dev_info *dinfo, const char *alg)
 
 	/* Add algorithm check to cut later pointless logic */
 	ret = is_alg_support(dinfo, alg);
-	if (ret == 0)
+	if (!ret)
 		return -EPFNOSUPPORT;
 
 	ret = get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
@@ -605,6 +612,7 @@ err_with_fd:
 	wd_close_queue(q);
 err_with_dev:
 	free(dinfop);
+	q->qinfo = NULL;
 	return ret;
 }
 
@@ -647,6 +655,7 @@ void wd_release_queue(struct wd_queue *q)
 
 	wd_close_queue(q);
 	free((void *)qinfo->dev_info);
+	q->qinfo = NULL;
 }
 
 int wd_send(struct wd_queue *q, void *req)
