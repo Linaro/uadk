@@ -216,7 +216,7 @@ static void *pool_init(struct wd_queue *q, struct wd_blkpool *pool,
 	void *addr = NULL;
 
 	/* use user's memory, and its br alloc function */
-	if (setup->br.alloc) {
+	if (setup->br.alloc && setup->br.free) {
 		addr = setup->br.alloc(setup->br.usr, pool->act_mem_sz);
 		if (!addr) {
 			WD_ERR("failed to allocate memory in user pool.\n");
@@ -226,14 +226,15 @@ static void *pool_init(struct wd_queue *q, struct wd_blkpool *pool,
 		pool->usr_mem_start = addr;
 		if (usr_pool_init(pool)) {
 			WD_ERR("failed to initialize user pool.\n");
-			goto err_pool_init;
+			setup->br.free(setup->br.usr, addr);
+			return NULL;
 		}
 	} else {
 		/* use wd to reserve memory */
 		addr = wd_reserve_memory(q, pool->act_mem_sz);
 		if (!addr) {
 			WD_ERR("wd pool failed to reserve memory.\n");
-			goto err_pool_init;
+			return NULL;
 		}
 
 		pool->usr_mem_start = addr;
@@ -241,19 +242,13 @@ static void *pool_init(struct wd_queue *q, struct wd_blkpool *pool,
 			WD_ERR("failed to initialize wd pool.\n");
 
 			/* release q will free memory */
-			goto err_pool_init;
+			return NULL;
 		}
 		setup->block_num = pool->setup.block_num;
 		pool->q = q;
 	}
 
 	return pool;
-
-err_pool_init:
-	if (setup->br.alloc && setup->br.free)
-		setup->br.free(setup->br.usr, addr);
-
-	return NULL;
 }
 
 void *wd_blkpool_create(struct wd_queue *q, struct wd_blkpool_setup *setup)
