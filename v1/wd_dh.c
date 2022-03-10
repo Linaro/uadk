@@ -174,10 +174,12 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 
 	ret = wcrypto_init_dh_cookie(ctx);
 	if (ret)
-		goto free_ctx;
+		goto free_ctx_gdata;
 
 	return ctx;
 
+free_ctx_gdata:
+	setup->br.free(setup->br.usr, ctx->g.data);
 free_ctx:
 	free(ctx);
 free_ctx_id:
