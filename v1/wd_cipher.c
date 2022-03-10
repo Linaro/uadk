@@ -217,11 +217,14 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 		sizeof(struct wcrypto_cipher_cookie), WD_CTX_MSG_NUM);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
-		goto free_ctx;
+		goto free_ctx_key;
 	}
 	init_cipher_cookie(ctx, setup);
 
 	return ctx;
+
+free_ctx_key:
+	setup->br.free(setup->br.usr, ctx->key);
 free_ctx:
 	free(ctx);
 free_ctx_id:

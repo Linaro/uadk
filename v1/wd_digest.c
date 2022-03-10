@@ -199,11 +199,15 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		sizeof(struct wcrypto_digest_cookie), WD_CTX_MSG_NUM);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
-		goto free_ctx;
+		goto free_ctx_key;
 	}
 	init_digest_cookie(ctx, setup);
 
 	return ctx;
+
+free_ctx_key:
+	if (setup->mode == WCRYPTO_DIGEST_HMAC)
+		setup->br.free(setup->br.usr, ctx->key);
 free_ctx:
 	free(ctx);
 free_ctx_id:
