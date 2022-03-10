@@ -339,16 +339,17 @@ void wcrypto_del_comp_ctx(void *ctx)
 
 	wd_uninit_cookie_pool(&cctx->pool);
 	wd_spinlock(&qinfo->qlock);
-	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cctx->ctx_id -1,
-		WD_MAX_CTX_NUM);
-	qinfo->ctx_num--;
-	if (!qinfo->ctx_num) {
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	} else if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error: repeat delete compress ctx!\n");
 		return;
 	}
+
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cctx->ctx_id -1,
+		WD_MAX_CTX_NUM);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
+
 	wd_unspinlock(&qinfo->qlock);
 
 	free(cctx);
