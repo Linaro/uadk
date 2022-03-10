@@ -553,16 +553,16 @@ void wcrypto_del_cipher_ctx(void *ctx)
 	qinfo = c_ctx->q->qinfo;
 	wd_uninit_cookie_pool(&c_ctx->pool);
 	wd_spinlock(&qinfo->qlock);
-	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, c_ctx->ctx_id - 1,
-		WD_MAX_CTX_NUM);
-	qinfo->ctx_num--;
-	if (!qinfo->ctx_num)
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("error:repeat del cipher ctx!\n");
 		return;
 	}
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, c_ctx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
+
 	wd_unspinlock(&qinfo->qlock);
 	del_ctx_key(c_ctx);
 	free(ctx);
