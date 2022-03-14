@@ -221,8 +221,7 @@ static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 
 	*data = wd_dq->data;
 
-	return (int)(wd_dq->bsize + wd_qinv->bsize + wd_p->bsize +
-			wd_q->bsize + wd_dp->bsize);
+	return WD_SUCCESS;
 }
 
 static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
@@ -243,7 +242,7 @@ static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 
 	*data = wd_d->data;
 
-	return (int)(wd_n->bsize + wd_d->bsize);
+	return WD_SUCCESS;
 }
 
 static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
@@ -263,7 +262,8 @@ static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 		return ret;
 
 	*data = wd_e->data;
-	return (int)(wd_n->bsize + wd_e->bsize);
+
+	return WD_SUCCESS;
 }
 
 static int fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
@@ -382,17 +382,17 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 	if (req->op_type == WD_RSA_SIGN) {
 		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
 			ret = fill_rsa_crt_prikey2((void *)msg->key, &data);
-			if (ret <= 0)
+			if (ret)
 				return ret;
 		} else {
 			ret = fill_rsa_prikey1((void *)msg->key, &data);
-			if (ret < 0)
+			if (ret)
 				return ret;
 			hw_msg->alg = HPRE_ALG_NC_NCRT;
 		}
 	} else if (req->op_type == WD_RSA_VERIFY) {
 		ret = fill_rsa_pubkey((void *)msg->key, &data);
-		if (ret < 0)
+		if (ret)
 			return ret;
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	} else if (req->op_type == WD_RSA_GENKEY) {
