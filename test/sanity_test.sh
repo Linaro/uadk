@@ -362,7 +362,8 @@ run_zip_test_v2()
 	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=16 >& /dev/null
 	sw_dfl_hw_ifl /tmp/syslog
 	hw_dfl_sw_ifl /tmp/syslog
-	hw_dfl_hw_ifl /tmp/syslog
+	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
+	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
 	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self
 	# test with environment variables
