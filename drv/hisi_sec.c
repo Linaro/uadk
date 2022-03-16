@@ -959,8 +959,6 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 		return ret;
 	}
 
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
-
 	return 0;
 }
 
@@ -1161,8 +1159,6 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 
 		return ret;
 	}
-
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return 0;
 }
@@ -1403,8 +1399,6 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		goto put_sgl;
 	}
 
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
-
 	return 0;
 
 put_sgl:
@@ -1559,8 +1553,6 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 
 		goto put_sgl;
 	}
-
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return 0;
 
@@ -1913,8 +1905,6 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 		return ret;
 	}
 
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
-
 	return 0;
 }
 
@@ -2181,8 +2171,6 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 		return ret;
 	}
 
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
-
 	return 0;
 }
 
@@ -2285,6 +2273,9 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 		/* setting the type is 0 for sqc_type */
 		qm_priv.op_type = 0;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
+		/* Setting the epoll en to 0 for ASYNC ctx */
+		qm_priv.epoll_en = (qm_priv.qp_mode == CTX_MODE_SYNC) ?
+				   config->epoll_en : 0;
 		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp)

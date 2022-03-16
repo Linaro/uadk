@@ -9,6 +9,7 @@
 
 #include <asm/types.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include "wd.h"
 #include "wd_common.h"
 
@@ -27,6 +28,7 @@ extern "C" {
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 #define MAX_STR_LEN		256
 #define CTX_TYPE_INVALID	9999
+#define POLL_TIME		1000
 
 enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
@@ -74,6 +76,7 @@ struct wd_ctx_config_internal {
 	struct wd_ctx_internal *ctxs;
 	void *priv;
 	int pid;
+	bool epoll_en;
 };
 
 /**

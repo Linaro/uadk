@@ -31,8 +31,6 @@ struct wd_aead_msg {
 	__u8 data_fmt;
 	/* Operation result, denoted by WD error code */
 	__u8 result;
-	/* epoll flag */
-	__u8 is_polled;
 
 	/* in bytes */
 	__u32 in_bytes;

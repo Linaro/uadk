@@ -309,6 +309,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	}
 
 	q_info->qp_mode = config->qp_mode;
+	q_info->epoll_en = config->epoll_en;
 	q_info->idx = config->idx;
 	q_info->sqe_size = config->sqe_size;
 	q_info->cqc_phase = 1;
@@ -479,7 +480,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		i++;
 	}
 
-	q_info->db(q_info, QM_DBELL_CMD_CQ, i, 0);
+	q_info->db(q_info, QM_DBELL_CMD_CQ, i, q_info->epoll_en);
 
 	/* only support one thread poll one queue, so no need protect */
 	q_info->cq_head_index = i;
@@ -918,22 +919,4 @@ __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 	}
 
 	return lits_size;
-}
-
-void hisi_qm_enable_interrupt(handle_t ctx, __u8 enable)
-{
-	struct hisi_qm_queue_info *q_info;
-	struct hisi_qp *qp;
-	handle_t h_qp;
-
-	if (!enable)
-		return;
-
-	h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	qp = (struct hisi_qp *)h_qp;
-	q_info =  &qp->q_info;
-
-	pthread_spin_lock(&q_info->lock);
-	q_info->db(q_info, QM_DBELL_CMD_CQ, q_info->cq_head_index, 1);
-	pthread_spin_unlock(&q_info->lock);
 }
