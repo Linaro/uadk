@@ -213,7 +213,7 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 	}
 
 	if (ctx->numa_num > NUMA_NUM_NODES) {
-		WD_ERR("invalid: ctx's numa number is %d!\n", ctx->numa_num);
+		WD_ERR("invalid: ctx's numa number is %u!\n", ctx->numa_num);
 		return -WD_EINVAL;
 	}
 

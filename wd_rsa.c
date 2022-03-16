@@ -141,17 +141,18 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (param_check(config, sched))
 		return -WD_EINVAL;
 
-	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
-	if (ret < 0) {
-		WD_ERR("failed to set config, ret = %d!\n", ret);
+	ret = wd_set_epoll_en("WD_RSA_EPOLL_EN",
+			      &wd_rsa_setting.config.epoll_en);
+	if (ret < 0)
 		return ret;
-	}
+
+	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
+	if (ret < 0)
+		return ret;
 
 	ret = wd_init_sched(&wd_rsa_setting.sched, sched);
-	if (ret < 0) {
-		WD_ERR("failed to set sched, ret = %d!\n", ret);
+	if (ret < 0)
 		goto out;
-	}
 
 #ifdef WD_STATIC_DRV
 	wd_rsa_set_static_drv();
@@ -161,10 +162,8 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_init_async_request_pool(&wd_rsa_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_rsa_msg));
-	if (ret < 0) {
-		WD_ERR("failed to initialize async req pool, ret = %d!\n", ret);
+	if (ret < 0)
 		goto out_sched;
-	}
 
 	/* initialize ctx related resources in specific driver */
 	priv = calloc(1, wd_rsa_setting.driver->drv_ctx_size);
@@ -296,6 +295,12 @@ static int rsa_recv_sync(handle_t ctx, struct wd_rsa_msg *msg)
 	int ret;
 
 	do {
+		if (wd_rsa_setting.config.epoll_en) {
+			ret = wd_ctx_wait(ctx, POLL_TIME);
+			if (ret < 0)
+				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+		}
+
 		ret = wd_rsa_setting.driver->recv(ctx, msg);
 		if (ret == -WD_EAGAIN) {
 			if (rx_cnt++ >= RSA_RECV_MAX_CNT) {

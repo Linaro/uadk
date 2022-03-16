@@ -101,17 +101,18 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (param_check(config, sched))
 		return -WD_EINVAL;
 
-	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
-	if (ret) {
-		WD_ERR("failed to initialize ctx config, ret = %d!\n", ret);
+	ret = wd_set_epoll_en("WD_DH_EPOLL_EN",
+			      &wd_dh_setting.config.epoll_en);
+	if (ret < 0)
 		return ret;
-	}
+
+	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
+	if (ret)
+		return ret;
 
 	ret = wd_init_sched(&wd_dh_setting.sched, sched);
-	if (ret) {
-		WD_ERR("failed to initialize sched, ret = %d!\n", ret);
+	if (ret)
 		goto out;
-	}
 
 #ifdef WD_STATIC_DRV
 	wd_dh_set_static_drv();
@@ -121,10 +122,8 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_init_async_request_pool(&wd_dh_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_dh_msg));
-	if (ret) {
-		WD_ERR("failed to initialize async req pool, ret = %d!\n", ret);
+	if (ret)
 		goto out_sched;
-	}
 
 	/* initialize ctx related resources in specific driver */
 	priv = calloc(1, wd_dh_setting.driver->drv_ctx_size);
@@ -236,6 +235,12 @@ static int dh_recv_sync(handle_t ctx, struct wd_dh_msg *msg)
 	int ret;
 
 	do {
+		if (wd_dh_setting.config.epoll_en) {
+			ret = wd_ctx_wait(ctx, POLL_TIME);
+			if (ret < 0)
+				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+		}
+
 		ret = wd_dh_setting.driver->recv(ctx, msg);
 		if (ret == -WD_EAGAIN) {
 			if (rx_cnt++ >= DH_RECV_MAX_CNT) {

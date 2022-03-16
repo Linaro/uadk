@@ -47,6 +47,7 @@ struct hisi_qm_priv {
 	__u16 op_type;
 	/* index of ctxs */
 	__u32 idx;
+	bool epoll_en;
 };
 
 struct hisi_qm_queue_info {
@@ -71,6 +72,7 @@ struct hisi_qm_queue_info {
 	bool cqc_phase;
 	pthread_spinlock_t lock;
 	unsigned long region_size[UACCE_QFRT_MAX];
+	bool epoll_en;
 };
 
 struct hisi_qp {
@@ -181,8 +183,6 @@ int hisi_qm_get_free_sqe_num(handle_t h_qp);
  */
 __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 			    struct wd_datalist *end_node);
-
-void hisi_qm_enable_interrupt(handle_t ctx, __u8 enable);
 
 #ifdef __cplusplus
 }

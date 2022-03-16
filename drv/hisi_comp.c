@@ -780,6 +780,9 @@ static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
+		/* Setting the epoll en to 0 for ASYNC ctx */
+		qm_priv.epoll_en = (qm_priv.qp_mode == CTX_MODE_SYNC) ?
+				   config->epoll_en : 0;
 		qm_priv.idx = i;
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (unlikely(!h_qp))
@@ -882,8 +885,6 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 
 		return ret;
 	}
-
-	hisi_qm_enable_interrupt(ctx, msg->is_polled);
 
 	return 0;
 }
