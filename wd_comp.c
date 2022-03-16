@@ -22,8 +22,6 @@
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
 
-#define POLL_SIZE			250000
-#define POLL_TIME			1000
 
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
@@ -97,16 +95,18 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		return -WD_EINVAL;
 	}
 
-	ret = wd_init_ctx_config(&wd_comp_setting.config, config);
-	if (ret < 0) {
-		WD_ERR("failed to set config, ret = %d!\n", ret);
+	ret = wd_set_epoll_en("WD_COMP_EPOLL_EN",
+			      &wd_comp_setting.config.epoll_en);
+	if (ret < 0)
 		return ret;
-	}
+
+	ret = wd_init_ctx_config(&wd_comp_setting.config, config);
+	if (ret < 0)
+		return ret;
+
 	ret = wd_init_sched(&wd_comp_setting.sched, sched);
-	if (ret < 0) {
-		WD_ERR("failed to set sched, ret = %d!\n", ret);
+	if (ret < 0)
 		goto out;
-	}
 	/*
 	 * Fix me: ctx could be passed into wd_comp_set_static_drv to help to
 	 * choose static compiled vendor driver. For dynamic vendor driver,
@@ -125,10 +125,9 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_init_async_request_pool(&wd_comp_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_comp_msg));
-	if (ret < 0) {
-		WD_ERR("failed to init req pool, ret = %d!\n", ret);
+	if (ret < 0)
 		goto out_sched;
-	}
+
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
 	if (!priv) {
@@ -429,7 +428,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	}
 
 	do {
-		if (msg->is_polled) {
+		if (config->epoll_en) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout, ret = %d!\n", ret);
@@ -472,7 +471,6 @@ int wd_do_comp_sync(handle_t h_sess, struct wd_comp_req *req)
 
 	fill_comp_msg(sess, &msg, req);
 	msg.ctx_buf = sess->ctx_buf;
-	msg.is_polled = (req->src_len >= POLL_SIZE);
 	msg.stream_mode = WD_COMP_STATELESS;
 
 	ret = wd_comp_sync_job(sess, req, &msg);
@@ -643,7 +641,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 	/* fill true flag */
 	msg.req.last = req->last;
 	msg.stream_mode = WD_COMP_STATEFUL;
-	msg.is_polled = (req->src_len >= POLL_SIZE);
 
 	src_len = req->src_len;
 
@@ -701,7 +698,6 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	fill_comp_msg(sess, msg, req);
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
-	msg->is_polled = 0;
 
 	pthread_spin_lock(&ctx->lock);
 

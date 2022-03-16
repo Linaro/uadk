@@ -19,8 +19,6 @@
 #define DES_WEAK_KEY_NUM	4
 #define MAX_RETRY_COUNTS	200000000
 
-#define POLL_SIZE		100000
-#define POLL_TIME		1000
 
 static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -28,6 +26,7 @@ static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SHA384_LEN, WD_DIGEST_SHA512_LEN,
 	WD_DIGEST_SHA512_224_LEN, WD_DIGEST_SHA512_256_LEN
 };
+
 struct wd_digest_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched	sched;
@@ -175,17 +174,18 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		return ret;
 
-	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
-	if (ret < 0) {
-		WD_ERR("failed to set config, ret = %d!\n", ret);
+	ret = wd_set_epoll_en("WD_DIGEST_EPOLL_EN",
+			      &wd_digest_setting.config.epoll_en);
+	if (ret < 0)
 		return ret;
-	}
+
+	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
+	if (ret < 0)
+		return ret;
 
 	ret = wd_init_sched(&wd_digest_setting.sched, sched);
-	if (ret < 0) {
-		WD_ERR("failed to set sched, ret = %d!\n", ret);
+	if (ret < 0)
 		goto out;
-	}
 
 	/* set driver */
 #ifdef WD_STATIC_DRV
@@ -196,10 +196,8 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	ret = wd_init_async_request_pool(&wd_digest_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_digest_msg));
-	if (ret < 0) {
-		WD_ERR("failed to init req pool, ret = %d!\n", ret);
+	if (ret < 0)
 		goto out_sched;
-	}
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_digest_setting.driver->drv_ctx_size);
@@ -322,7 +320,7 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	}
 
 	do {
-		if (msg->is_polled) {
+		if (wd_digest_setting.config.epoll_en) {
 			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
 			if (unlikely(ret < 0))
 				WD_ERR("wd digest ctx wait timeout(%d)!\n", ret);
@@ -367,7 +365,6 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
-	msg.is_polled = (req->in_bytes >= POLL_SIZE);
 	req->state = 0;
 
 	idx = wd_digest_setting.sched.pick_next_ctx(
@@ -420,7 +417,6 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
-	msg->is_polled = 0;
 
 	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {

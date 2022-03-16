@@ -47,6 +47,11 @@ WD_<alg>_ASYNC_POLL_NUM
  WD_<alg>_ASYNC_POLL_NUM=2@0,4@2 means to configure 2 async polling threads in
  node0, and 4 polling threads in node2.
 
+WD_<alg>_EPOLL_EN
+ Define if wd_do_<alg>_sync enable wd_ctx_wait in WD. WD_<alg>_EPOLL_EN=1
+ means enable wd_ctx_wait in WD, driver will wait to receive the package until
+ hardware is done with package, otherwise driver will try to receive the package
+ directly after the package is sent.
 
 2. User model
 =============

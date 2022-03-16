@@ -85,8 +85,10 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx_internal));
-	if (!ctxs)
+	if (!ctxs) {
+		WD_ERR("failed to alloc memory for internal ctxs!\n");
 		return -WD_ENOMEM;
+	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
@@ -115,8 +117,10 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 int wd_init_sched(struct wd_sched *in, struct wd_sched *from)
 {
 	if (!from->name || !from->sched_init ||
-	    !from->pick_next_ctx || !from->poll_policy)
+	    !from->pick_next_ctx || !from->poll_policy) {
+		WD_ERR("invalid: member of wd_sched is NULL!\n");
 		return -WD_EINVAL;
+	}
 
 	in->h_sched_ctx = from->h_sched_ctx;
 	in->name = strdup(from->name);
@@ -170,13 +174,16 @@ void wd_memset_zero(void *data, __u32 size)
 static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 {
 	pool->msgs = calloc(1, msg_num * msg_size);
-	if (!pool->msgs)
+	if (!pool->msgs) {
+		WD_ERR("failed to alloc memory for msgs arrary of msg pool!\n");
 		return -WD_ENOMEM;
+	}
 
 	pool->used = calloc(1, msg_num * sizeof(int));
 	if (!pool->used) {
 		free(pool->msgs);
 		pool->msgs = NULL;
+		WD_ERR("failed to alloc memory for used arrary of msg pool!\n");
 		return -WD_ENOMEM;
 	}
 
@@ -204,8 +211,10 @@ int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
 	pool->pool_num = pool_num;
 
 	pool->pools = calloc(1, pool->pool_num * sizeof(struct msg_pool));
-	if (!pool->pools)
+	if (!pool->pools) {
+		WD_ERR("failed to alloc memory for async msg pools!\n");
 		return -WD_ENOMEM;
+	}
 
 	for (i = 0; i < pool->pool_num; i++) {
 		ret = init_msg_pool(&pool->pools[i], msg_num, msg_size);
@@ -510,25 +519,31 @@ static int is_number(const char *str)
 	return 1;
 }
 
-/* 1 enable, 0 disable, others error */
-int wd_parse_async_poll_en(struct wd_env_config *config, const char *s)
+static int str_to_bool(const char *s, bool *target)
 {
 	int tmp;
 
-	if (!is_number(s)) {
-		WD_ERR("invalid: async poll en flag is %s!\n", s);
+	if (!is_number(s))
 		return -WD_EINVAL;
-	}
 
 	tmp = strtol(s, NULL, 10);
-	if (tmp != 0 && tmp != 1) {
-		WD_ERR("invalid: async poll en flag is not 0 or 1!\n");
+	if (tmp != 0 && tmp != 1)
 		return -WD_EINVAL;
-	}
 
-	config->enable_internal_poll = tmp;
+	*target = tmp;
 
 	return 0;
+}
+
+int wd_parse_async_poll_en(struct wd_env_config *config, const char *s)
+{
+	int ret;
+
+	ret = str_to_bool(s, &config->enable_internal_poll);
+	if (ret)
+		WD_ERR("failed to parse async poll enable flag(%s)!\n", s);
+
+	return ret;
 }
 
 static int parse_num_on_numa(const char *s, int *num, int *node)
@@ -1586,6 +1601,29 @@ int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx)
 		WD_ERR("invalid: ctx(%u) mode is %hhu!\n", idx, ctx->ctx_mode);
 		return -WD_EINVAL;
 	}
+
+	return 0;
+}
+
+int wd_set_epoll_en(const char *var_name, bool *epoll_en)
+{
+	const char *s;
+	int ret;
+
+	s = secure_getenv(var_name);
+	if (!s || !strlen(s)) {
+		*epoll_en = 0;
+		return 0;
+	}
+
+	ret = str_to_bool(s, epoll_en);
+	if (ret) {
+		WD_ERR("failed to parse %s!\n", var_name);
+		return ret;
+	}
+
+	if (*epoll_en)
+		WD_ERR("epoll wait is enabled!\n");
 
 	return 0;
 }

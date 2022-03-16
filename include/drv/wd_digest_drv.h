@@ -27,8 +27,6 @@ struct wd_digest_msg {
 	__u8 data_fmt;
 	/* Operation result, denoted by WD error code */
 	__u8 result;
-	/* epoll flag */
-	__u8 is_polled;
 	/* user identifier: struct wcrypto_cb_tag */
 	__u64 usr_data;
 

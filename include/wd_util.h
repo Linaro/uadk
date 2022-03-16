@@ -314,6 +314,15 @@ int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
  */
 int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx);
 
+/**
+ * wd_set_epoll_en() - set epoll enable flag from environment variable value.
+ * @var_name: Environment variable name string.
+ * @epoll_en: epoll enable flag.
+ *
+ * Return 0 if the value is 0 or 1, otherwise return -WD_EINVAL.
+ */
+int wd_set_epoll_en(const char *var_name, bool *epoll_en);
+
 #ifdef __cplusplus
 }
 #endif

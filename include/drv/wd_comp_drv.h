@@ -50,8 +50,6 @@ struct wd_comp_msg {
 	__u32 checksum;
 	/* Request identifier */
 	__u32 tag;
-	/* Epoll flag */
-	__u8 is_polled;
 };
 
 struct wd_comp_driver {
