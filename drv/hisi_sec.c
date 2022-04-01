@@ -486,20 +486,6 @@ static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv);
 void hisi_sec_exit(void *priv);
 
-#ifdef DEBUG
-static void sec_dump_bd(unsigned char *bd, unsigned int len)
-{
-	unsigned int i;
-
-	for (i = 0; i < len; i++) {
-		WD_ERR("\\0x%02x", bd[i]);
-		if ((i + 1) % WORD_BYTES == 0)
-			WD_ERR("\n");
-	}
-	WD_ERR("\n");
-}
-#endif
-
 /* increment counter (128-bit int) by software */
 static void ctr_iv_inc(__u8 *counter, __u32 c)
 {
@@ -1286,11 +1272,6 @@ static void parse_digest_bd2(struct hisi_sec_sqe *sqe,
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v2(sqe->sds_sa_type);
 	recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
 	recv_msg->alg_type = WD_DIGEST;
-
-#ifdef DEBUG
-	WD_ERR("Dump digest recv sqe-->!\n");
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
-#endif
 }
 
 static int digest_long_bd_check(struct wd_digest_msg *msg)
@@ -1384,11 +1365,6 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 		goto put_sgl;
 
 	qm_fill_digest_long_bd(msg, &sqe);
-
-#ifdef DEBUG
-	WD_ERR("Dump digest send sqe-->!\n");
-	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
-#endif
 
 	sqe.type2.tag = msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1539,11 +1515,6 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 
 	qm_fill_digest_long_bd3(msg, &sqe);
 
-#ifdef DEBUG
-	WD_ERR("Dump digest send sqe-->!\n");
-	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
-#endif
-
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1582,11 +1553,6 @@ static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->data_fmt = hisi_sec_get_data_fmt_v3(sqe->bd_param);
 	recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
 	recv_msg->alg_type = WD_DIGEST;
-
-#ifdef DEBUG
-	WD_ERR("Dump digest recv sqe-->!\n");
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
-#endif
 }
 
 int hisi_sec_digest_recv_v3(handle_t ctx, struct wd_digest_msg *recv_msg)
@@ -1886,11 +1852,6 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 
 	fill_aead_bd2_addr(msg, &sqe);
 
-#ifdef DEBUG
-	WD_ERR("Dump aead send sqe-->!\n");
-	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
-#endif
-
 	sqe.type2.tag = (__u16)msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1938,11 +1899,6 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 				       SEC_AUTH_LEN_MASK;
 	recv_msg->out_bytes = sqe->type2.clen_ivhlen +
 			      sqe->type2.cipher_src_offset;
-
-#ifdef DEBUG
-	WD_ERR("Dump aead recv sqe-->!\n");
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
-#endif
 }
 
 int hisi_sec_aead_recv(handle_t ctx, struct wd_aead_msg *recv_msg)
@@ -2153,11 +2109,6 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 
 	fill_aead_bd3_addr(msg, &sqe);
 
-#ifdef DEBUG
-	WD_ERR("Dump aead send sqe-->!\n");
-	sec_dump_bd((unsigned char *)&sqe, SQE_BYTES_NUMS);
-#endif
-
 	sqe.tag = msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -2204,11 +2155,6 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 				       SEC_MAC_LEN_MASK;
 	recv_msg->out_bytes = sqe->c_len_ivin +
 			      sqe->cipher_src_offset;
-
-#ifdef DEBUG
-	WD_ERR("Dump aead recv sqe-->!\n");
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
-#endif
 }
 
 int hisi_sec_aead_recv_v3(handle_t ctx, struct wd_aead_msg *recv_msg)
@@ -2296,16 +2242,17 @@ out:
 
 void hisi_sec_exit(void *priv)
 {
-	if (!priv) {
+	struct hisi_sec_ctx *sec_ctx = priv;
+	struct wd_ctx_config_internal *config;
+	handle_t h_qp;
+	int i;
+
+	if (!sec_ctx) {
 		WD_ERR("hisi sec exit input parameter is err!\n");
 		return;
 	}
 
-	struct hisi_sec_ctx *sec_ctx = priv;
-	struct wd_ctx_config_internal *config = &sec_ctx->config;
-	handle_t h_qp;
-	int i;
-
+	config = &sec_ctx->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
