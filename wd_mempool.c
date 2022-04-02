@@ -488,14 +488,12 @@ static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 	int mem_combined_num = bp->blk_size / mp->blk_size +
 				 (bp->blk_size % mp->blk_size ? 1 : 0);
 	int blk_num = bp->depth;
+	int ret = -WD_ENOMEM;
 	int pos = 0;
-	int ret;
 
 	wd_spinlock(&mp->lock);
-	if (check_mempool_real_size(mp, bp)) {
-		ret = -WD_ENOMEM;
+	if (check_mempool_real_size(mp, bp))
 		goto err_check_size;
-	}
 
 	while (blk_num > 0) {
 		ret = alloc_block_from_mempool(mp, bp, pos,
