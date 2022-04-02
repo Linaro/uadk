@@ -180,7 +180,7 @@ static int session_poll_policy_rr(struct wd_sched_ctx *ctx, int numa_id,
 		end = region[SCHED_MODE_ASYNC][i].end;
 		ret = session_poll_region(ctx, begin, end, expect,
 					 count);
-		if (ret)
+		if (unlikely(ret))
 			return ret;
 	}
 
@@ -207,12 +207,12 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 	__u16 i;
 	int ret;
 
-	if (!count || !ctx) {
+	if (unlikely(!count || !ctx)) {
 		WD_ERR("invalid: sched ctx is NULL or count is zero!\n");
 		return -WD_EINVAL;
 	}
 
-	if (ctx->numa_num > NUMA_NUM_NODES) {
+	if (unlikely(ctx->numa_num > NUMA_NUM_NODES)) {
 		WD_ERR("invalid: ctx's numa number is %u!\n", ctx->numa_num);
 		return -WD_EINVAL;
 	}
@@ -224,8 +224,7 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 	 * package last time, it is more efficient. In most
 	 * bad situation, poll ends after MAX_POLL_TIMES loop.
 	 */
-	while (loop_time < MAX_POLL_TIMES) {
-		loop_time++;
+	while (++loop_time < MAX_POLL_TIMES) {
 		for (i = 0; i < ctx->numa_num;) {
 			/* If current numa is not valid, find next. */
 			if (!sched_info[i].valid) {
@@ -235,7 +234,7 @@ static int session_sched_poll_policy(handle_t sched_ctx,
 
 			last_count = *count;
 			ret = session_poll_policy_rr(ctx, i, expect, count);
-			if (ret)
+			if (unlikely(ret))
 				return ret;
 
 			if (expect == *count)
@@ -438,22 +437,34 @@ out:
 	return;
 }
 
+static int numa_num_check(__u16 numa_num)
+{
+	int max_node;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0) {
+		WD_ERR("invalid: numa max node is %d!\n", max_node);
+		return -WD_EINVAL;
+	}
+
+	if (!numa_num || numa_num > max_node) {
+		WD_ERR("invalid: numa number is %u!\n", numa_num);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 				   __u16 numa_num, user_poll_func func)
 {
 	struct wd_sched_info *sched_info;
 	struct wd_sched_ctx *sched_ctx;
 	struct wd_sched *sched;
-	int i, j, max_node;
+	int i, j;
 
-	max_node = numa_max_node() + 1;
-	if (max_node <= 0)
+	if (numa_num_check(numa_num))
 		return NULL;
-
-	if (!numa_num || numa_num > max_node) {
-		WD_ERR("invalid: numa number is %u!\n", numa_num);
-		return NULL;
-	}
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
 		WD_ERR("invalid: sched_type is %u or type_num is %u!\n",
