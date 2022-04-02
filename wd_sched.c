@@ -4,8 +4,10 @@
  * Copyright 2020-2021 Linaro ltd.
  */
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdbool.h>
+#include <sched.h>
 #include <numa.h>
 #include "wd_sched.h"
 
@@ -19,7 +21,7 @@ enum sched_region_mode {
 
 /**
  * sched_key - The key if schedule region.
- * @numa_id: The numa_id map the hardware.
+ * @numa_id: The schedule numa region id.
  * @mode: Sync mode:0, async_mode:1
  * @type: Service type , the value must smaller than type_num.
  * @sync_ctxid: alloc ctx id for sync mode
@@ -109,6 +111,7 @@ static struct sched_ctx_region *sched_get_ctx_range(struct wd_sched_ctx *ctx,
 {
 	struct wd_sched_info *sched_info;
 	int numa_id;
+	int type;
 
 	sched_info = ctx->sched_info;
 	if (key->numa_id >= 0 &&
@@ -117,8 +120,10 @@ static struct sched_ctx_region *sched_get_ctx_range(struct wd_sched_ctx *ctx,
 
 	/* If the key->numa_id is not exist, we should scan for a region */
 	for (numa_id = 0; numa_id < ctx->numa_num; numa_id++) {
-		if (sched_info[numa_id].ctx_region[key->mode][key->type].valid)
-			return &sched_info[numa_id].ctx_region[key->mode][key->type];
+		for (type = 0; type < ctx->type_num; type++) {
+			if (sched_info[numa_id].ctx_region[key->mode][type].valid)
+				return &sched_info[numa_id].ctx_region[key->mode][type];
+		}
 	}
 
 	return NULL;
@@ -285,6 +290,29 @@ static __u32 session_sched_init_ctx(handle_t sched_ctx,
 	return sched_get_next_pos_rr(region, NULL);
 }
 
+static int get_nearby_numa_id(handle_t sched_ctx)
+{
+#define MAX_NUMA_DISTANCE		1024
+	struct wd_sched_ctx *ctx = (struct wd_sched_ctx *)sched_ctx;
+	struct wd_sched_info *sched_info = ctx->sched_info;
+	int cpu = sched_getcpu();
+	int node = numa_node_of_cpu(cpu);
+	int dis = MAX_NUMA_DISTANCE;
+	int i, tmp, valid_id = -1;
+
+	for (i = 0; i < ctx->numa_num; i++) {
+		if (sched_info[i].valid) {
+			tmp = numa_distance(node, i);
+			if (dis > tmp) {
+				valid_id = i;
+				dis = tmp;
+			}
+		}
+	}
+
+	return valid_id;
+}
+
 handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 {
 	struct sched_params *param = (struct sched_params *)sched_param;
@@ -296,8 +324,14 @@ handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 		return (handle_t)(-WD_ENOMEM);
 	}
 
-	if (!param) {
+	if (!param || param->numa_id < 0) {
 		memset(skey, 0, sizeof(struct sched_key));
+		skey->numa_id = get_nearby_numa_id(h_sched_ctx);
+		if (skey->numa_id < 0) {
+			WD_ERR("failed to get valid sched numa region!\n");
+			free(skey);
+			return (handle_t)(-WD_ENOMEM);
+		}
 	} else {
 		skey->type = param->type;
 		skey->numa_id = param->numa_id;
