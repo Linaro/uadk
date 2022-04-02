@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <sched.h>
-#include <numa.h>
 #include "wd_cipher.h"
 #include "wd_util.h"
 #include "include/drv/wd_cipher_drv.h"
