@@ -1284,18 +1284,12 @@ set_param_error:
 
 struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 {
-	struct wd_ecc_out *ecc_out;
-
 	if (!sess) {
 		WD_ERR("invalid: new ecc dh out sess NULL!\n");
 		return NULL;
 	}
 
-	ecc_out = create_ecc_out((struct wd_ecc_sess *)sess, ECDH_OUT_PARAM_NUM);
-	if (!ecc_out)
-		return NULL;
-
-	return ecc_out;
+	return create_ecc_out((struct wd_ecc_sess *)sess, ECDH_OUT_PARAM_NUM);
 }
 
 void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
@@ -1881,18 +1875,12 @@ struct wd_ecc_in *wd_sm2_new_verf_in(handle_t sess,
 
 static struct wd_ecc_out *wd_ecc_new_sign_out(struct wd_ecc_sess *sess)
 {
-	struct wd_ecc_out *ecc_out;
-
 	if (!sess) {
 		WD_ERR("invalid: new ecc sout ctx NULL!\n");
 		return NULL;
 	}
 
-	ecc_out = create_ecc_out(sess, ECC_SIGN_OUT_PARAM_NUM);
-	if (!ecc_out)
-		return NULL;
-
-	return ecc_out;
+	return create_ecc_out(sess, ECC_SIGN_OUT_PARAM_NUM);
 }
 
 struct wd_ecc_out *wd_sm2_new_sign_out(handle_t sess)
@@ -1902,19 +1890,12 @@ struct wd_ecc_out *wd_sm2_new_sign_out(handle_t sess)
 
 struct wd_ecc_out *wd_sm2_new_kg_out(handle_t sess)
 {
-	struct wd_ecc_out *ecc_out;
-
 	if (!sess) {
 		WD_ERR("invalid: new sm2 kg out sess NULL!\n");
 		return NULL;
 	}
 
-	ecc_out = create_ecc_out((struct wd_ecc_sess *)sess,
-				 SM2_KG_OUT_PARAM_NUM);
-	if (!ecc_out)
-		return NULL;
-
-	return ecc_out;
+	return create_ecc_out((struct wd_ecc_sess *)sess, SM2_KG_OUT_PARAM_NUM);
 }
 
 void wd_sm2_get_kg_out_params(struct wd_ecc_out *out,
