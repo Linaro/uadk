@@ -142,7 +142,7 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
  * @key: cipher key addr
  * @key_len: cipher key length
  */
-int wcrypto_set_aead_ckey(void *ctx, __u8 *ckey, __u16 key_len);
+int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len);
 
 /**
  * wcrypto_set_aead_akey() - set authenticate key to aead context.
@@ -150,7 +150,7 @@ int wcrypto_set_aead_ckey(void *ctx, __u8 *ckey, __u16 key_len);
  * @key: authenticate key addr
  * @key_len: authenticate key length
  */
-int wcrypto_set_aead_akey(void *ctx, __u8 *akey, __u16 key_len);
+int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len);
 
 /**
  * wcrypto_aead_setauthsize() - set aead authsize to aead context.
@@ -184,13 +184,13 @@ int wcrypto_do_aead(void *ctx, struct wcrypto_aead_op_data *opdata,
 
 /**
  * wcrypto_burst_aead() - (a)synchronous multiple aead operations
- * @ctx: context of user, created by wcrypto_create_aead_ctx.
+ * @a_ctx: context of user, created by wcrypto_create_aead_ctx.
  * @opdata: operational data
  * @tag: asynchronous:user_tag; synchronous:NULL.
  * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
  */
-int wcrypto_burst_aead(void *ctx, struct wcrypto_aead_op_data **opdata,
-		void **tag, __u32 num);
+int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **opdata,
+		       void **tag, __u32 num);
 
 /**
  * wcrypto_aead_poll() - poll operation for asynchronous operation

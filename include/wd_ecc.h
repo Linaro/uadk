@@ -458,10 +458,10 @@ int wd_ecc_poll(__u32 expt, __u32 *count);
 
 /**
  * wd_do_ecc() - Send a sync eccression request.
- * @sess:	The session which request will be sent to.
+ * @h_sess:	The session which request will be sent to.
  * @req:	Request.
  */
-int wd_do_ecc_sync(handle_t sess, struct wd_ecc_req *req);
+int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req);
 
 /**
  * wd_do_ecc_async() - Send an async eccression request.

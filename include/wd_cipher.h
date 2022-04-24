@@ -135,11 +135,11 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req);
 int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req);
 /**
  * wd_cipher_poll_ctx() poll operation for asynchronous operation
- * @index: index of ctx which will be polled.
+ * @idx: index of ctx which will be polled.
  * @expt: user expected num respondences
  * @count: how many respondences this poll has to get.
  */
-int wd_cipher_poll_ctx(__u32 index, __u32 expt, __u32* count);
+int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 /**
  * wd_cipher_poll() Poll finished request.
  * this function will call poll_policy function which is registered to wd cipher

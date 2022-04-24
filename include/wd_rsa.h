@@ -143,10 +143,10 @@ int wd_rsa_poll(__u32 expt, __u32 *count);
 
 /**
  * wd_do_rsa() - Send a sync rsaression request.
- * @sess:	The session which request will be sent to.
+ * @h_sess:	The session which request will be sent to.
  * @req:	Request.
  */
-int wd_do_rsa_sync(handle_t sess, struct wd_rsa_req *req);
+int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req);
 
 /**
  * wd_do_rsa_async() - Send an async rsaression request.

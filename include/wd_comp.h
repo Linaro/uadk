@@ -154,7 +154,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
 
 /**
  * wd_comp_poll_ctx() - Poll a ctx.
- * @index:	The index of ctx which will be polled.
+ * @idx:	The index of ctx which will be polled.
  * @expt:	Max number of requests to poll. If 0, polled all finished
  * 		requests in this ctx.
  * @count:	Return the number of polled requests finally.
@@ -163,7 +163,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
  * User defines polling policy in poll_policiy, when it needs to poll a
  * specific ctx, this function should be used.
  */
-int wd_comp_poll_ctx(__u32 index, __u32 expt, __u32 *count);
+int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
 int wd_comp_poll(__u32 expt, __u32 *count);
 
