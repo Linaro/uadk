@@ -17,17 +17,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #include "v1/wd.h"
-#include "v1/wd_cipher.h"
 #include "v1/wd_util.h"
+#include "v1/wd_cipher.h"
 
 #define MAX_CIPHER_KEY_SIZE		64
 #define MAX_CIPHER_RETRY_CNT		20000000

@@ -4,9 +4,9 @@
 #ifndef __HZIP_DRV_H__
 #define __HZIP_DRV_H__
 
-#include <linux/types.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <linux/types.h>
 
 #include "config.h"
 #include "wd.h"

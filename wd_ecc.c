@@ -12,10 +12,10 @@
 #include <time.h>
 #include <dlfcn.h>
 
-#include "wd_ecc.h"
 #include "wd_util.h"
 #include "include/drv/wd_ecc_drv.h"
 #include "include/wd_ecc_curve.h"
+#include "wd_ecc.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_ECC_CTX_MSG_NUM		64

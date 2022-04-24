@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-#include "config.h"
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
 
+#include "config.h"
 #include "v1/wd_util.h"
-#include "v1/wd_adapter.h"
 #include "v1/drv/dummy_drv.h"
 #include "v1/drv/hisi_qm_udrv.h"
 #include "v1/drv/hisi_rng_udrv.h"
+#include "v1/wd_adapter.h"
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)

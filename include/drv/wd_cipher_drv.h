@@ -4,8 +4,10 @@
 #ifndef __WD_CIPHER_DRV_H
 #define __WD_CIPHER_DRV_H
 
-#include "../wd_cipher.h"
+#include <asm/types.h>
+#include "../wd_common.h"
 #include "../wd_alg_common.h"
+#include "../wd_cipher.h"
 
 #ifdef __cplusplus
 extern "C" {

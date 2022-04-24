@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <asm/types.h>
 #include "uacce.h"
 
 #ifdef __cplusplus

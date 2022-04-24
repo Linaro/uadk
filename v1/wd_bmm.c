@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <errno.h>
 #include <sys/queue.h>
 

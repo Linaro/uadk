@@ -4,8 +4,9 @@
 #ifndef __WD_AEAD_DRV_H
 #define __WD_AEAD_DRV_H
 
-#include "include/wd_alg_common.h"
-#include "include/wd_aead.h"
+#include "../wd_common.h"
+#include "../wd_alg_common.h"
+#include "../wd_aead.h"
 
 #ifdef __cplusplus
 extern "C" {

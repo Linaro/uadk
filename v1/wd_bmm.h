@@ -17,6 +17,9 @@
 #ifndef _WD_BMM_H
 #define _WD_BMM_H
 
+#include <asm/types.h>
+#include "wd.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

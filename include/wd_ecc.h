@@ -7,10 +7,8 @@
 #ifndef __WD_ECC_H
 #define __WD_ECC_H
 
-#include <stdbool.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <linux/types.h>
 
 #include "wd.h"
 #include "wd_alg_common.h"

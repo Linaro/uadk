@@ -12,8 +12,8 @@
 #include <ctype.h>
 #include <math.h>
 #include "wd_alg_common.h"
-#include "wd_util.h"
 #include "wd_sched.h"
+#include "wd_util.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024

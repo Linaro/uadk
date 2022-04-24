@@ -7,7 +7,6 @@
 #ifndef _UAPIUUACCE_H
 #define _UAPIUUACCE_H
 
-#include <linux/types.h>
 #include <linux/ioctl.h>
 
 #ifdef __cplusplus
