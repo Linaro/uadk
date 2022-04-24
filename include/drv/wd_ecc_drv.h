@@ -4,8 +4,11 @@
 #ifndef __WD_ECC_DRV_H
 #define __WD_ECC_DRV_H
 
+#include <stdint.h>
+#include <asm/types.h>
+
+#include "../wd.h"
 #include "../wd_ecc.h"
-#include "../wd_alg_common.h"
 
 #ifdef __cplusplus
 extern "C" {

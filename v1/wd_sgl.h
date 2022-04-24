@@ -17,6 +17,10 @@
 #ifndef _WD_SGL_H
 #define _WD_SGL_H
 
+#include <stddef.h>
+#include <asm/types.h>
+#include "wd.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

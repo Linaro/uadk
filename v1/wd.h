@@ -24,7 +24,6 @@
 #include <sys/types.h>
 #include <stdbool.h>
 #include <sys/stat.h>
-#include <sys/queue.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <unistd.h>

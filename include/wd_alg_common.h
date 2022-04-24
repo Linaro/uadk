@@ -7,7 +7,6 @@
 #ifndef WD_ALG_COMMON_H
 #define WD_ALG_COMMON_H
 
-#include <asm/types.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include "wd.h"

@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include "config.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -28,6 +27,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
+#include "config.h"
 #include "v1/wd_util.h"
 #include "v1/wd_comp.h"
 #include "v1/wd_cipher.h"

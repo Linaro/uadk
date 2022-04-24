@@ -14,8 +14,8 @@
 
 #include "config.h"
 #include "drv/wd_comp_drv.h"
-#include "wd_comp.h"
 #include "wd_util.h"
+#include "wd_comp.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define MAX_RETRY_COUNTS		200000000

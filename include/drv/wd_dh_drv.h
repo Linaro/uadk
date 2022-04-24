@@ -4,6 +4,8 @@
 #ifndef __WD_DH_DRV_H
 #define __WD_DH_DRV_H
 
+#include <asm/types.h>
+#include "../wd_alg_common.h"
 #include "../wd_dh.h"
 
 #ifdef __cplusplus

@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include "config.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -30,6 +29,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "config.h"
 #include "hisi_rng_udrv.h"
 
 #define HISI_RNG_BYTES		4
