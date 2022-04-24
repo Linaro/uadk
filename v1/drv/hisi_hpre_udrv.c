@@ -1873,13 +1873,14 @@ static int split_req(struct qm_queue_info *info,
 	return 0;
 }
 
-static int fill_sm2_enc_sqe(void *message, struct qm_queue_info *info, __u16 i)
+static int fill_sm2_enc_sqe(void *msg, struct qm_queue_info *info, __u16 idx)
 {
 	struct wcrypto_hash_mt *hash = &((struct q_info *)info->q->qinfo)->hash;
-	struct wcrypto_ecc_msg *req_src = message;
+	struct wcrypto_ecc_msg *req_src = msg;
 	struct wcrypto_sm2_enc_in *ein = (void *)req_src->in;
 	struct wcrypto_ecc_msg *req_dst[2] = {NULL};
 	struct wd_dtb *plaintext = &ein->plaintext;
+	__u16 i = idx;
 	int ret;
 
 	if (plaintext->dsize <= HW_PLAINTEXT_BYTES_MAX &&
@@ -2053,11 +2054,12 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 	return 1;
 }
 
-static int parse_first_sqe(void *hw_msg, struct qm_queue_info *info, __u16 i,
+static int parse_first_sqe(void *hw_msg, struct qm_queue_info *info, __u16 idx,
 			   __u16 usr)
 {
-	struct wcrypto_ecc_msg *msg = info->req_cache[i];
+	struct wcrypto_ecc_msg *msg = info->req_cache[idx];
 	struct wcrypto_ecc_msg *msg_src;
+	__u16 i = idx;
 	int ret;
 
 	ret = qm_parse_ecc_sqe_general(hw_msg, info, i, usr);
@@ -2177,10 +2179,11 @@ static void msg_pack(char *dst, __u64 *out_len,
 }
 
 static int sm2_kdf(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
-		   __u64 m_len, struct q_info *q_info)
+		   __u64 hash_mt_len, struct q_info *q_info)
 {
 	struct wcrypto_hash_mt *hash = &q_info->hash;
 	char p_out[MAX_HASH_LENS] = {0};
+	__u64 m_len = hash_mt_len;
 	__u32 h_bytes, x2y2_len;
 	char *tmp = out->data;
 	__u64 in_len, lens;

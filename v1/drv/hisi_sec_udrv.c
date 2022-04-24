@@ -206,10 +206,11 @@ static void fill_bd3_addr_type(__u8 data_fmt, struct hisi_sec_bd3_sqe *sqe3)
 }
 
 /* increment counter (128-bit int) by c */
-static void ctr_iv_inc(__u8 *counter, __u32 c, __u8 data_fmt)
+static void ctr_iv_inc(__u8 *counter, __u32 shift_len, __u8 data_fmt)
 {
 	__u32 n = CTR_128BIT_COUNTER;
 	__u8 *counter1 = counter;
+	__u32 c = shift_len;
 
 	if (data_fmt == WD_SGL_BUF) {
 		counter1 = wd_get_first_sge_buf((struct wd_sgl *)counter);

@@ -548,6 +548,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_cipher_msg resp_msg, *msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
+	__u32 tmp = expt;
 	int ret;
 
 	if (unlikely(!count)) {
@@ -588,7 +589,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		wd_put_msg_to_pool(&wd_cipher_setting.pool, idx,
 				   resp_msg.tag);
 		*count = recv_count;
-	} while (--expt);
+	} while (--tmp);
 
 	return ret;
 }

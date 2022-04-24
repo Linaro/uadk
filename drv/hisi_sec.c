@@ -487,9 +487,10 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv);
 void hisi_sec_exit(void *priv);
 
 /* increment counter (128-bit int) by software */
-static void ctr_iv_inc(__u8 *counter, __u32 c)
+static void ctr_iv_inc(__u8 *counter, __u32 len)
 {
 	__u32 n = CTR_128BIT_COUNTER;
+	__u32 c = len;
 
 	do {
 		--n;

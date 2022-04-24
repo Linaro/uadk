@@ -180,8 +180,9 @@ static int trans_to_binpad(char *dst, const char *src,
 	return WD_SUCCESS;
 }
 
-static void wd_memset_zero(void *data, __u32 size)
+static void wd_memset_zero(void *data, __u32 mem_size)
 {
+	__u32 size = mem_size;
 	char *s = data;
 
 	if (unlikely(!s))
@@ -1620,6 +1621,7 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_ecc_msg *resp = NULL;
 	struct wcrypto_ecc_ctx *ctx;
 	struct wcrypto_cb_tag *tag;
+	unsigned int tmp = num;
 	int count = 0;
 	int ret;
 
@@ -1638,7 +1640,7 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 		ctx->setup.cb(resp, tag->tag);
 		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
-	} while (--num);
+	} while (--tmp);
 
 	return count;
 }
