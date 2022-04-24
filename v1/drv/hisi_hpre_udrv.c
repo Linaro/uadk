@@ -1466,6 +1466,8 @@ static int qm_ecc_prepare_out(struct wcrypto_ecc_msg *msg, void **data)
 	case WCRYPTO_SM2_KG:
 		ret = ecc_prepare_sm2_kg_out(out, data);
 		break;
+	default:
+		break;
 	}
 
 	return ret;
