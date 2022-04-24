@@ -17,17 +17,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_rng.h"
 #include "wd_util.h"
+#include "wd_rng.h"
 
 #define MAX_NUM		10
 #define RNG_RESEND_CNT	8

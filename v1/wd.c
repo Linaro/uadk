@@ -18,20 +18,18 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <errno.h>
 #include <sys/mman.h>
 #include <string.h>
-#include <assert.h>
 #include <dirent.h>
 #include <sys/poll.h>
 #include <limits.h>
 
-#include "v1/wd.h"
 #include "v1/wd_util.h"
 #include "v1/wd_adapter.h"
+#include "v1/wd.h"
 
 #define SYS_CLASS_DIR	"/sys/class"
 #define LINUX_DEV_DIR	"/dev"

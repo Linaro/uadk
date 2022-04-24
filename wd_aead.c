@@ -6,9 +6,9 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include "wd_aead.h"
 #include "wd_util.h"
 #include "include/drv/wd_aead_drv.h"
+#include "wd_aead.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16

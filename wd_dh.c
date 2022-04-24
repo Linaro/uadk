@@ -14,8 +14,8 @@
 
 #include "config.h"
 #include "include/drv/wd_dh_drv.h"
-#include "wd_dh.h"
 #include "wd_util.h"
+#include "wd_dh.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define DH_BALANCE_THRHD		1280

@@ -6,9 +6,9 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include "wd_digest.h"
 #include "wd_util.h"
 #include "include/drv/wd_digest_drv.h"
+#include "wd_digest.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16

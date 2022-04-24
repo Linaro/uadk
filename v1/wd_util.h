@@ -24,13 +24,13 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <linux/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/queue.h>
+#include <linux/types.h>
 
 #include "v1/wd.h"
 #include "v1/wd_ecc.h"
@@ -88,7 +88,6 @@
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define MIN(a, b)	(((a) < (b)) ? (a) : (b))
-#define offsetof(t, m) ((size_t)(uintptr_t)&((t *)0)->m)
 
 struct wd_lock {
 	__u8 lock;

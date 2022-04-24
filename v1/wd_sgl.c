@@ -19,7 +19,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <sys/queue.h>
 
 #include "wd.h"
 #include "wd_adapter.h"

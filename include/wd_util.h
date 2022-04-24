@@ -8,6 +8,7 @@
 #define __WD_UTIL_H
 
 #include <stdbool.h>
+#include <asm/types.h>
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus
