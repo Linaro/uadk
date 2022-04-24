@@ -70,7 +70,7 @@ struct wd_rsa_driver *wd_rsa_get_driver(void)				      \
 #define WD_RSA_SET_DRIVER(drv)						      \
 static void __attribute__((constructor)) set_driver_rsa(void)		      \
 {									      \
-	wd_rsa_set_driver(&drv);					      \
+	wd_rsa_set_driver(&(drv));					      \
 }
 #endif
 
