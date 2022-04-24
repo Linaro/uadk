@@ -170,7 +170,7 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp);
 
 /**
  * hisi_qm_sgl_copy: Buffer copying from hw sgl to pbuff or pbuff to sgl
- * @dst_buff: Dst pbuff point
+ * @pbuff: pbuff point
  * @hw_sgl: Src hw sgl point
  * @offset: Offset in hw sgl chain
  * @size: Copy size
@@ -179,7 +179,7 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp);
  * If the len of sgl is not enough, will copy much as soon as
  * possible before the offset to end of the sgl.
  */
-void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset,
+void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset,
 	__u32 size, __u8 direct);
 
 /**

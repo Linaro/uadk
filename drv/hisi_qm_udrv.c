@@ -262,15 +262,18 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 static int hisi_qm_get_qfrs_offs(handle_t h_ctx,
 				 struct hisi_qm_queue_info *q_info)
 {
-	q_info->region_size[UACCE_QFRT_DUS] = wd_ctx_get_region_size(h_ctx,
-								UACCE_QFRT_DUS);
-	if (!q_info->region_size[UACCE_QFRT_DUS]) {
+	enum uacce_qfrt type;
+
+	type = UACCE_QFRT_DUS;
+	q_info->region_size[type] = wd_ctx_get_region_size(h_ctx, type);
+	if (!q_info->region_size[type]) {
 		WD_ERR("failed to get DUS qfrs offset!\n");
 		return -WD_EINVAL;
 	}
-	q_info->region_size[UACCE_QFRT_MMIO] = wd_ctx_get_region_size(h_ctx,
-								UACCE_QFRT_MMIO);
-	if (!q_info->region_size[UACCE_QFRT_MMIO]) {
+
+	type = UACCE_QFRT_MMIO;
+	q_info->region_size[type] = wd_ctx_get_region_size(h_ctx, type);
+	if (!q_info->region_size[type]) {
 		WD_ERR("failed to get MMIO qfrs offset!\n");
 		return -WD_EINVAL;
 	}
@@ -629,7 +632,8 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 		if (!sgl_pool->sgl[i])
 			goto err_out;
 
-		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i], sge_num);
+		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i],
+							   sge_num);
 	}
 
 	sgl_pool->sgl_num = sgl_num;
@@ -808,35 +812,33 @@ handle_t hisi_qm_get_sglpool(handle_t h_qp)
 	return qp->h_sgl_pool;
 }
 
-static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl,
+static void hisi_qm_sgl_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
 				   int begin_sge, __u32 sge_offset, __u32 size)
 {
 	struct hisi_sgl *tmp = hw_sgl;
-	__u32 offset = 0;
-	__u32 len;
-	int i;
+	int i = begin_sge + 1;
+	__u32 offset;
+	void *src;
 
-	len = tmp->sge_entries[begin_sge].len - sge_offset;
+	src = (void *)tmp->sge_entries[begin_sge].buff + sge_offset;
+	offset = tmp->sge_entries[begin_sge].len - sge_offset;
 	/* the first one is enough for copy size, copy and return */
-	if (len >= size) {
-		memcpy(dst_buff,
-			(void *)tmp->sge_entries[begin_sge].buff + sge_offset, size);
+	if (offset >= size) {
+		memcpy(pbuff, src, size);
 		return;
 	}
 
-	memcpy(dst_buff, (void *)tmp->sge_entries[begin_sge].buff + sge_offset, len);
-	offset += len;
-
-	i = begin_sge + 1;
+	memcpy(pbuff, src, offset);
 
 	while (tmp) {
 		for (; i < tmp->entry_sum_in_sgl; i++) {
+			src = (void *)tmp->sge_entries[i].buff;
 			if (offset + tmp->sge_entries[i].len >= size) {
-				memcpy(dst_buff + offset, (void *)tmp->sge_entries[i].buff, size - offset);
+				memcpy(pbuff + offset, src, size - offset);
 				return;
 			}
 
-			memcpy(dst_buff + offset, (void *)tmp->sge_entries[i].buff, tmp->sge_entries[i].len);
+			memcpy(pbuff + offset, src, tmp->sge_entries[i].len);
 			offset += tmp->sge_entries[i].len;
 		}
 
@@ -845,32 +847,30 @@ static void hisi_qm_sgl_copy_inner(void *dst_buff, struct hisi_sgl *hw_sgl,
 	}
 }
 
-static void hisi_qm_pbuff_copy_inner(const void *buff, struct hisi_sgl *hw_sgl,
-				int begin_sge, __u32 sge_offset, __u32 size)
+static void hisi_qm_pbuff_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
+				     int begin_sge, __u32 sge_offset,
+				     __u32 size)
 {
 	struct hisi_sgl *tmp = hw_sgl;
+	int i = begin_sge + 1;
 	__u32 offset = 0;
-	__u32 len;
-	int i;
+	void *dst;
 
-	len = tmp->sge_entries[begin_sge].len - sge_offset;
-	if (len >= size) {
-		memcpy((void *)tmp->sge_entries[begin_sge].buff + sge_offset,
-			buff, size);
+	if (tmp->sge_entries[begin_sge].len - sge_offset >= size) {
+		dst = (void *)tmp->sge_entries[begin_sge].buff + sge_offset;
+		memcpy(dst, pbuff, size);
 		return;
 	}
 
-	i = begin_sge + 1;
 	while (tmp) {
 		for (; i < tmp->entry_sum_in_sgl; i++) {
+			dst = (void *)tmp->sge_entries[i].buff;
 			if (offset + tmp->sge_entries[i].len >= size) {
-				memcpy((void *)tmp->sge_entries[i].buff,
-					buff + offset, size - offset);
+				memcpy(dst, pbuff + offset, size - offset);
 				return;
 			}
 
-			memcpy((void *)tmp->sge_entries[i].buff,
-				buff + offset, tmp->sge_entries[i].len);
+			memcpy(dst, pbuff + offset, tmp->sge_entries[i].len);
 			offset += tmp->sge_entries[i].len;
 		}
 
@@ -879,16 +879,16 @@ static void hisi_qm_pbuff_copy_inner(const void *buff, struct hisi_sgl *hw_sgl,
 	}
 }
 
-void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
-			__u8 direct)
+void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset, __u32 size,
+		      __u8 direct)
 {
 	struct hisi_sgl *tmp = hw_sgl;
-	__u32 len = 0;
 	__u32 sge_offset = 0;
+	__u32 len = 0;
 	int begin_sge = 0;
 	int i;
 
-	if (!dst_buff || !size || !tmp)
+	if (!pbuff || !size || !tmp)
 		return;
 
 	while (len + tmp->entry_size_in_sgl <= offset) {
@@ -916,9 +916,10 @@ void hisi_qm_sgl_copy(void *dst_buff, void *hw_sgl, __u32 offset, __u32 size,
 	}
 
 	if (direct == COPY_SGL_TO_PBUFF)
-		hisi_qm_sgl_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+		hisi_qm_sgl_copy_inner(pbuff, tmp, begin_sge, sge_offset, size);
 	else
-		hisi_qm_pbuff_copy_inner(dst_buff, tmp, begin_sge, sge_offset, size);
+		hisi_qm_pbuff_copy_inner(pbuff, tmp, begin_sge, sge_offset,
+					 size);
 }
 
 void hisi_qm_dump_sgl(void *sgl)
