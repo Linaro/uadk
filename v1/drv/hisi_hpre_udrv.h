@@ -83,6 +83,6 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i);
 int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 				__u16 i, __u16 usr);
 int qm_fill_ecc_sqe(void *message, struct qm_queue_info *info, __u16 i);
-int qm_parse_ecc_sqe(void *msg, const struct qm_queue_info *info,
+int qm_parse_ecc_sqe(void *message, const struct qm_queue_info *info,
 		     __u16 i, __u16 usr);
 #endif

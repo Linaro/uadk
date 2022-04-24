@@ -152,12 +152,12 @@ void wcrypto_del_digest_ctx(void *ctx);
 
 /**
  * wcrypto_burst_digest() - (a)synchronous multiple digest operations
- * @ctx: context of user, created by wcrypto_create_digest_ctx.
+ * @d_ctx: context of user, created by wcrypto_create_digest_ctx.
  * @opdata: operational data
  * @tag: asynchronous:user_tag; synchronous:NULL.
  * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
  */
-int wcrypto_burst_digest(void *ctx, struct wcrypto_digest_op_data **opdata,
+int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
 			 void **tag, __u32 num);
 
 #ifdef __cplusplus

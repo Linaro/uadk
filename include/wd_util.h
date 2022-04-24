@@ -168,7 +168,7 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool);
 /*
  * wd_get_msg_from_pool() - Get a free message from pool.
  * @pool: Pointer of global pools.
- * @index: Index of pool. Should be 0 ~ (pool_num - 1).
+ * @ctx_idx: Index of pool. Should be 0 ~ (pool_num - 1).
  * @msg: Put pointer of got message into *msg.
  *
  * Return tag of got message. This tag can be used to put a message and
@@ -177,25 +177,28 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool);
  * be used to avoid possible error; -WD_EBUSY will return if related message pool
  * is full.
  */
-int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int index, void **msg);
+int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int ctx_idx,
+			 void **msg);
 
 /*
  * wd_put_msg_to_pool() - Put a message to pool.
  * @pool: Pointer of global pools.
- * @index: Index of pool. Should be 0 ~ (pool_num - 1).
+ * @ctx_idx: Index of pool. Should be 0 ~ (pool_num - 1).
  * @tag: Tag of put message.
  */
-void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int index, __u32 tag);
+void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int ctx_idx,
+			__u32 tag);
 
 /*
  * wd_find_msg_in_pool() - Find a message in pool.
  * @pool: Pointer of global pools.
- * @index: Index of pool. Should be 0 ~ (pool_num - 1).
+ * @ctx_idx: Index of pool. Should be 0 ~ (pool_num - 1).
  * @tag: Tag of expected message.
  *
  * Return pointer of message whose tag is input tag.
  */
-void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int index, __u32 tag);
+void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int ctx_idx,
+			  __u32 tag);
 
 /*
  * wd_check_datalist() - Check the data list length
@@ -243,7 +246,7 @@ int wd_parse_async_poll_num(struct wd_env_config *config, const char *s);
  * wd_alg_env_init() - Init wd algorithm environment variable configurations.
  * 		       This is a help function which can be used by specific
  * 		       wd algorithm APIs.
- * @config: Pointer of wd_env_config which is used to store environment
+ * @env_config: Pointer of wd_env_config which is used to store environment
  *          variable information.
  * @table: Table which is used to define specific environment variable、its
  * 	   default value and related parsing operations.
@@ -251,7 +254,7 @@ int wd_parse_async_poll_num(struct wd_env_config *config, const char *s);
  * 	 environment init.
  * @table_size: Size of above table.
  */
-int wd_alg_env_init(struct wd_env_config *config,
+int wd_alg_env_init(struct wd_env_config *env_config,
 		    const struct wd_config_variable *table,
 		    const struct wd_alg_ops *ops,
 		    __u32 table_size,
@@ -272,9 +275,9 @@ void wd_alg_env_uninit(struct wd_env_config *env_config,
  * 				  task queue.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
- * @index: Index of ctx in config.
+ * @idx: Index of ctx in config.
  */
-int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 index);
+int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 idx);
 
 /*
  * dump_env_info() - dump wd algorithm ctx info.
@@ -287,12 +290,12 @@ void dump_env_info(struct wd_env_config *config);
  * wd_alg_get_env_param() - get specific ctx number.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
- * @ctx_attr: ctx attributes.
+ * @attr: ctx attributes.
  * @num: save ctx number.
  * @is_enable: save enable inner poll flag.
  */
 int wd_alg_get_env_param(struct wd_env_config *env_config,
-			 struct wd_ctx_attr ctx_attr,
+			 struct wd_ctx_attr attr,
 			 __u32 *num, __u8 *is_enable);
 
 /*
