@@ -161,11 +161,11 @@ int wd_aead_get_maxauthsize(handle_t h_sess);
 
 /**
  * wd_aead_poll_ctx() poll operation for asynchronous operation
- * @index: index of ctx which will be polled.
+ * @idx: index of ctx which will be polled.
  * @expt: user expected num respondences
  * @count: how many respondences this poll has to get.
  */
-int wd_aead_poll_ctx(__u32 index, __u32 expt, __u32* count);
+int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
 /**
  * wd_aead_poll() Poll finished request.

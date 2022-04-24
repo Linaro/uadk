@@ -125,7 +125,7 @@ struct hisi_zip_sqe_v3 {
 #define HZ_REQ_TYPE_MASK 0xff
 
 int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i);
-int qm_parse_zip_sqe(void *msg, const struct qm_queue_info *info,
+int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		     __u16 i, __u16 usr);
 int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i);
 int qm_parse_zip_sqe_v3(void *msg, const struct qm_queue_info *info,

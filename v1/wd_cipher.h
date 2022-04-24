@@ -151,11 +151,11 @@ void wcrypto_del_cipher_ctx(void *ctx);
 /**
  * wcrypto_burst_cipher() - (a)synchronous multiple cipher operations
  * @ctx: context of user, created by wcrypto_create_cipher_ctx.
- * @opdata: operational data
+ * @c_opdata: operational data
  * @tag: asynchronous:user_tag; synchronous:NULL.
  * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
  */
-int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **opdata,
+int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **c_opdata,
 			 void **tag, __u32 num);
 
 #ifdef __cplusplus
