@@ -187,6 +187,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_comp_msg *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
+	__u32 tmp = expt;
 	int ret;
 
 	if (unlikely(!count)) {
@@ -228,7 +229,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		/* free msg cache to msg_pool */
 		wd_put_msg_to_pool(&wd_comp_setting.pool, idx, resp_msg.tag);
 		*count = recv_count;
-	} while (--expt);
+	} while (--tmp);
 
 	return ret;
 }
@@ -545,14 +546,16 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	return 0;
 }
 
-static unsigned int bit_reverse(register unsigned int x)
+static unsigned int bit_reverse(register unsigned int target)
 {
+	register unsigned int x = target;
+
 	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
 	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
 	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
 	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
 
-	return((x >> 16) | (x << 16));
+	return ((x >> 16) | (x << 16));
 }
 
 /**

@@ -444,6 +444,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_digest_msg recv_msg, *msg;
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
+	__u32 tmp = expt;
 	int ret;
 
 	if (unlikely(!count)) {
@@ -486,7 +487,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		wd_put_msg_to_pool(&wd_digest_setting.pool, idx,
 				   recv_msg.tag);
 		*count = recv_cnt;
-	} while (--expt);
+	} while (--tmp);
 
 	return ret;
 }

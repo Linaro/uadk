@@ -198,15 +198,16 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	struct wd_ss_region *rgn = NULL;
 	struct q_info *qinfo = q->qinfo;
 	unsigned long info = 0;
+	size_t tmp = size;
 	unsigned long i = 0;
 	void *ptr = NULL;
 	int ret = 1;
 
 	/* Make sure memory map granularity size align */
 	if (!qinfo->iommu_type)
-		size = ALIGN(size, WD_UACCE_GRAN_SIZE);
+		tmp = ALIGN(tmp, WD_UACCE_GRAN_SIZE);
 
-	ptr = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_SS, size);
+	ptr = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_SS, tmp);
 	if (ptr == MAP_FAILED) {
 		int value = errno;
 
@@ -215,8 +216,8 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	}
 
 	qinfo->ss_va = ptr;
-	qinfo->ss_size = size;
-	size = 0;
+	qinfo->ss_size = tmp;
+	tmp = 0;
 	while (ret > 0) {
 		info = (unsigned long)i;
 		ret = ioctl(qinfo->fd, WD_UACCE_CMD_GET_SS_DMA, &info);
@@ -238,8 +239,8 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 			rgn->size = (info & WD_UACCE_GRAN_NUM_MASK) <<
 				WD_UACCE_GRAN_SHIFT;
 		rgn->pa = info & (~WD_UACCE_GRAN_NUM_MASK);
-		rgn->va = ptr + size;
-		size += rgn->size;
+		rgn->va = ptr + tmp;
+		tmp += rgn->size;
 		drv_add_slice(q, rgn);
 		i++;
 	}
@@ -248,7 +249,7 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 
 err_out:
 	drv_free_slice(q);
-	drv_unmap_reserve_mem(q, ptr, size);
+	drv_unmap_reserve_mem(q, ptr, tmp);
 
 	return NULL;
 }

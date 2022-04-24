@@ -422,6 +422,7 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_digest_msg *digest_resp = NULL;
 	struct wcrypto_digest_ctx *ctx;
 	struct wcrypto_digest_tag *tag;
+	unsigned int tmp = num;
 	int count = 0;
 	int ret;
 
@@ -451,7 +452,7 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 		ctx = tag->wcrypto_tag.ctx;
 		ctx->setup.cb(digest_resp, tag->wcrypto_tag.tag);
 		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
-	} while (--num);
+	} while (--tmp);
 
 	return count;
 }

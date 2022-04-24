@@ -174,8 +174,9 @@ struct mempool {
  *
  * Undefined if no bit exists, so code should check against 0 first.
  */
-static __always_inline unsigned long wd_ffs(unsigned long word)
+static __always_inline unsigned long wd_ffs(unsigned long target_word)
 {
+	unsigned long word = target_word;
 	int num = 0;
 
 	if ((word & 0xffffffff) == 0) {
@@ -234,9 +235,11 @@ static void destroy_bitmap(struct bitmap *bm)
 }
 
 static unsigned long _find_next_bit(unsigned long *map, unsigned long bits,
-				    unsigned long start, unsigned long invert)
+				    unsigned long begin_position,
+				    unsigned long invert)
 {
 	unsigned long tmp, mask, next_bit;
+	unsigned long start = begin_position;
 
 	if (start >= bits)
 		return bits;
@@ -888,15 +891,16 @@ static void uninit_mempool(struct mempool *mp)
 handle_t wd_mempool_create(size_t size, int node)
 {
 	struct mempool *mp;
+	size_t tmp = size;
 	int ret;
 
-	if (!size || node < 0 || node > numa_max_node()) {
-		WD_ERR("invalid: numa node is %d, size is %ld!\n", node, size);
+	if (!tmp || node < 0 || node > numa_max_node()) {
+		WD_ERR("invalid: numa node is %d, size is %ld!\n", node, tmp);
 		return (handle_t)(-WD_EINVAL);
 	}
 
-	if (WD_MEMPOOL_SIZE_MASK & size)
-		size += WD_MEMPOOL_BLOCK_SIZE - (WD_MEMPOOL_SIZE_MASK & size);
+	if (WD_MEMPOOL_SIZE_MASK & tmp)
+		tmp += WD_MEMPOOL_BLOCK_SIZE - (WD_MEMPOOL_SIZE_MASK & tmp);
 
 	mp = calloc(1, sizeof(*mp));
 	if (!mp) {
@@ -905,7 +909,7 @@ handle_t wd_mempool_create(size_t size, int node)
 	}
 
 	mp->node = node;
-	mp->size = size;
+	mp->size = tmp;
 	mp->blk_size = WD_MEMPOOL_BLOCK_SIZE;
 
 	ret = alloc_mem_from_hugepage(mp);
