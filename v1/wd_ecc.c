@@ -1822,9 +1822,8 @@ static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 		id_bytes = id->dsize;
 	}
 
-#define REGULAR_LENS	(6 * key_size) /* a b xG yG xA yA */
 	/* ZA = h(ENTL || ID || a || b || xG || yG || xA || yA) */
-	lens = sizeof(__u16) + id_bytes + REGULAR_LENS;
+	lens = sizeof(__u16) + id_bytes + CURVE_PARAM_NUM * key_size;
 	p_in = malloc(lens);
 	if (unlikely(!p_in))
 		return -WD_ENOMEM;
