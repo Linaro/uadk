@@ -1007,7 +1007,7 @@ static int rsa_prikey2_param_set(struct wd_rsa_prikey2 *pkey2,
 				 struct wd_dtb *param,
 				 enum wd_rsa_crt_prikey_para type)
 {
-	int ret;
+	int ret = -WD_EINVAL;
 
 	if (param->dsize > pkey2->key_size || !param->data)
 		return -WD_EINVAL;
