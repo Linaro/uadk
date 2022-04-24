@@ -1330,7 +1330,8 @@ static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
 	case WD_SM2_KG:
 		*data = kout->pub.x.data;
 		break;
-	/* fall-through */
+	default:
+		break;
 	}
 
 	return ret;
