@@ -845,19 +845,20 @@ void *wd_dma_to_va(struct wd_queue *q, void *dma)
 void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
+	size_t tmp = size;
 	off_t off;
 
 	off = qfrt * getpagesize();
 
 	if (qfrt != WD_UACCE_QFRT_SS)
-		size = qinfo->qfrs_offset[qfrt];
+		tmp = qinfo->qfrs_offset[qfrt];
 
-	return mmap(0, size, PROT_READ | PROT_WRITE,
+	return mmap(0, tmp, PROT_READ | PROT_WRITE,
 		    MAP_SHARED, qinfo->fd, off);
 }
 
 void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
-				     enum uacce_qfrt qfrt, size_t size)
+		       enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
 
@@ -865,9 +866,9 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 		return;
 
 	if (qfrt != WD_UACCE_QFRT_SS)
-		size = qinfo->qfrs_offset[qfrt];
-
-	munmap(addr, size);
+		munmap(addr, qinfo->qfrs_offset[qfrt]);
+	else
+		munmap(addr, size);
 }
 int wd_register_log(wd_log log)
 {

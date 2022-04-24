@@ -162,12 +162,13 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 
 void wd_memset_zero(void *data, __u32 size)
 {
+	__u32 tmp = size;
 	char *s = data;
 
 	if (!s)
 		return;
 
-	while (size--)
+	while (tmp--)
 		*s++ = 0;
 }
 

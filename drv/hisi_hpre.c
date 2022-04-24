@@ -1965,11 +1965,12 @@ static void msg_pack(char *dst, __u64 *out_len,
 }
 
 static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
-		   __u64 m_len, struct wd_hash_mt *hash)
+		   __u64 mt_len, struct wd_hash_mt *hash)
 {
 	char p_out[MAX_HASH_LENS] = {0};
 	__u32 h_bytes, x2y2_len;
 	char *tmp = out->data;
+	__u64 m_len = mt_len;
 	__u64 in_len, lens;
 	char *p_in, *t_out;
 	__u8 ctr[4];
