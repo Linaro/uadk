@@ -31,6 +31,24 @@ include/*
 docs/*
 	Documentations.
 
+Build UADK in native environment
+
+    $ ./cleanup.sh
+
+    Make sure that all generated files could be removed.
+
+    $ ./autogen.sh
+    $ ./conf.sh
+
+    UADK could be configured as either static or dynamic library by conf.sh.
+    By default, it's configured as dynamic library.
+
+    $ make
+    $ sudo make install
+
+    Both dynamic and static libraries would be installed in /usr/local/lib
+    directory. And all head files would be installed in /usr/local/include/uadk
+    directory.
 
 ======================================
 
