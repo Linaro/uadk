@@ -528,6 +528,42 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	return ret;
 }
 
+int hisi_check_bd_id(handle_t h_qp, __u32 mid, __u32 bid)
+{
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	__u8 mode = qp->q_info.qp_mode;
+
+	if (mode == CTX_MODE_SYNC && mid != bid) {
+		WD_ERR("failed to recv self bd, send id: %u, recv id: %u\n",
+			    mid, bid);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+void hisi_set_msg_id(handle_t h_qp, __u32 *tag)
+{
+	static __thread __u64 rand_seed = 0x330eabcd;
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	__u8 mode = qp->q_info.qp_mode;
+	__u16 seeds[3] = {0};
+	__u64 id;
+
+	/*
+	 * The random message id on a single queue is obtained through the
+	 * system's pseudo-random number generation algorithm to ensure
+	 * that 1024 packets on a queue will not have duplicate id
+	 */
+	if (mode == CTX_MODE_SYNC) {
+		seeds[0] = LW_U16(rand_seed);
+		seeds[1] = LW_U16(rand_seed >> 16);
+		id = nrand48(seeds);
+		*tag = LW_U32(id);
+		rand_seed = id;
+	}
+}
+
 static void *hisi_qm_create_sgl(__u32 sge_num)
 {
 	void *sgl;

@@ -117,6 +117,21 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx);
 void hisi_qm_free_qp(handle_t h_qp);
 
 /**
+ * hisi_check_bd_id - Check the SQE BD's id and send msg id.
+ * @h_qp: Handle of the qp.
+ * @mid: send message id.
+ * @bid: recv BD id.
+ */
+int hisi_check_bd_id(handle_t h_qp, __u32 mid, __u32 bid);
+
+/**
+ * hisi_set_msg_id - set the message tag id.
+ * @h_qp: Handle of the qp.
+ * @tag: the message tag id.
+ */
+void hisi_set_msg_id(handle_t h_qp, __u32 *tag);
+
+/**
  * hisi_qm_create_sglpool - Create sgl pool in qm.
  * @sgl_num: the sgl number.
  * @sge_num: the sge num in every sgl num.
