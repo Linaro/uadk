@@ -39,7 +39,7 @@ struct wd_rsa_kg_out {
 /* RSA message format */
 struct wd_rsa_msg {
 	struct wd_rsa_req req;
-	__u64 tag; /* User-defined request identifier */
+	__u32 tag; /* User-defined request identifier */
 	__u16 key_bytes; /* Input key bytes */
 	__u8 key_type; /* Denoted by enum wd_rsa_key_type */
 	__u8 result; /* Data format, denoted by WD error code */

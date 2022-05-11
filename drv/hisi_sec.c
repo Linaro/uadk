@@ -929,6 +929,7 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 			return ret;
 	}
 
+	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
 	sqe.type2.tag = (__u16)msg->tag;
 	fill_cipher_bd2_addr(msg, &sqe);
@@ -957,6 +958,10 @@ int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, (__u16)recv_msg->tag, sqe.type2.tag);
+	if (ret)
 		return ret;
 
 	parse_cipher_bd2(&sqe, recv_msg);
@@ -1130,6 +1135,7 @@ int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
 			return ret;
 	}
 
+	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.c_len_ivin = (__u32)msg->in_bytes;
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
 	fill_cipher_bd3_addr(msg, &sqe);
@@ -1185,6 +1191,10 @@ int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, recv_msg->tag, sqe.tag);
+	if (ret)
 		return ret;
 
 	parse_cipher_bd3(&sqe, recv_msg);
@@ -1366,7 +1376,8 @@ int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
 
 	qm_fill_digest_long_bd(msg, &sqe);
 
-	sqe.type2.tag = msg->tag;
+	hisi_set_msg_id(h_qp, &msg->tag);
+	sqe.type2.tag = (__u16)msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
@@ -1393,6 +1404,10 @@ int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, (__u16)recv_msg->tag, sqe.type2.tag);
+	if (ret)
 		return ret;
 
 	parse_digest_bd2(&sqe, recv_msg);
@@ -1515,6 +1530,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
 
 	qm_fill_digest_long_bd3(msg, &sqe);
 
+	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1564,6 +1580,10 @@ int hisi_sec_digest_recv_v3(handle_t ctx, struct wd_digest_msg *recv_msg)
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, recv_msg->tag, sqe.tag);
+	if (ret)
 		return ret;
 
 	parse_digest_bd3(&sqe, recv_msg);
@@ -1851,7 +1871,7 @@ int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
 	}
 
 	fill_aead_bd2_addr(msg, &sqe);
-
+	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1910,6 +1930,10 @@ int hisi_sec_aead_recv(handle_t ctx, struct wd_aead_msg *recv_msg)
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, (__u16)recv_msg->tag, sqe.type2.tag);
+	if (ret)
 		return ret;
 
 	parse_aead_bd2(&sqe, recv_msg);
@@ -2078,7 +2102,6 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	return 0;
 }
 
-
 int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -2108,7 +2131,7 @@ int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
 	}
 
 	fill_aead_bd3_addr(msg, &sqe);
-
+	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -2166,6 +2189,10 @@ int hisi_sec_aead_recv_v3(handle_t ctx, struct wd_aead_msg *recv_msg)
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, recv_msg->tag, sqe.tag);
+	if (ret)
 		return ret;
 
 	parse_aead_bd3(&sqe, recv_msg);

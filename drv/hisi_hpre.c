@@ -528,6 +528,7 @@ static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
 	if (ret < 0)
 		return ret;
 
+	hisi_set_msg_id(h_qp, &msg->tag);
 	hw_msg.done = 0x1;
 	hw_msg.etype = 0x0;
 	hw_msg.low_tag = msg->tag;
@@ -544,6 +545,10 @@ static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, msg->tag, hw_msg.low_tag);
+	if (ret)
 		return ret;
 
 	if (hw_msg.done != HPRE_HW_TASK_DONE ||
@@ -668,6 +673,7 @@ static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
 	if (ret)
 		return ret;
 
+	hisi_set_msg_id(h_qp, &msg->tag);
 	hw_msg.low_out = LW_U32((uintptr_t)req->pri);
 	hw_msg.hi_out = HI_U32((uintptr_t)req->pri);
 	hw_msg.done = 0x1;
@@ -686,6 +692,10 @@ static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
 	if (ret < 0)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, msg->tag, hw_msg.low_tag);
+	if (ret)
 		return ret;
 
 	if (hw_msg.done != HPRE_HW_TASK_DONE ||
@@ -1766,6 +1776,9 @@ free_dst:
 
 static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
 {
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+
+	hisi_set_msg_id(h_qp, &msg->tag);
 	if (msg->req.op_type == WD_SM2_ENCRYPT)
 		return sm2_enc_send(ctx, msg);
 	else if (msg->req.op_type == WD_SM2_DECRYPT)
@@ -2330,6 +2343,10 @@ static int ecc_recv(handle_t ctx, struct wd_ecc_msg *msg)
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
+	if (ret)
+		return ret;
+
+	ret = hisi_check_bd_id(h_qp, msg->tag, hw_msg.low_tag);
 	if (ret)
 		return ret;
 
