@@ -873,6 +873,7 @@ static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
 	__u16 count = 0;
 	int ret;
 
+	hisi_set_msg_id(h_qp, &msg->tag);
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to fill zip sqe, ret = %d!\n", ret);
@@ -939,6 +940,22 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	}
 }
 
+static void get_ctx_buf(struct hisi_zip_sqe *sqe,
+			 struct wd_comp_msg *recv_msg)
+{
+	recv_msg->avail_out = sqe->dest_avail_out;
+	if (VA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l)) {
+		/*
+		 * In ASYNC mode, recv_msg->ctx_buf is NULL.
+		 * recv_msg->ctx_buf is only valid in SYNC mode.
+		 * ctx_dwx uses 4 BYTES
+		 */
+		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_DW1_OFFSET) = sqe->ctx_dw1;
+		*(__u32 *)(recv_msg->ctx_buf + CTX_DW2_OFFSET) = sqe->ctx_dw2;
+	}
+}
+
 static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 			 struct wd_comp_msg *recv_msg)
 {
@@ -947,7 +964,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
-	int alg_type;
+	int alg_type, ret;
 	__u32 tag;
 
 	alg_type = get_alg_type(type);
@@ -957,6 +974,9 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	}
 
 	tag = ops[alg_type].get_tag(sqe);
+	ret = hisi_check_bd_id((handle_t)qp, recv_msg->tag, tag);
+	if (ret)
+		return ret;
 
 	recv_msg->tag = tag;
 
@@ -980,17 +1000,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	ops[alg_type].get_data_size(sqe, qp->q_info.qc_type, recv_msg);
 
-	recv_msg->avail_out = sqe->dest_avail_out;
-	if (VA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l)) {
-		/*
-		 * In ASYNC mode, recv_msg->ctx_buf is NULL.
-		 * recv_msg->ctx_buf is only valid in SYNC mode.
-		 * ctx_dwx uses 4 BYTES
-		 */
-		*(__u32 *)recv_msg->ctx_buf = sqe->ctx_dw0;
-		*(__u32 *)(recv_msg->ctx_buf + CTX_DW1_OFFSET) = sqe->ctx_dw1;
-		*(__u32 *)(recv_msg->ctx_buf + CTX_DW2_OFFSET) = sqe->ctx_dw2;
-	}
+	get_ctx_buf(sqe, recv_msg);
 
 	/* last block no space, need resend null size req */
 	if (ctx_st == HZ_DECOMP_NO_SPACE)

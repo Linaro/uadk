@@ -13,7 +13,7 @@ extern "C" {
 /* DH message format */
 struct wd_dh_msg {
 	struct wd_dh_req req;
-	__u64 tag; /* User-defined request identifier */
+	__u32 tag; /* User-defined request identifier */
 	void *g;
 	__u16 gbytes;
 	__u16 key_bytes; /* Input key bytes */
