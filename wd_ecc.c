@@ -2151,13 +2151,9 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = ecc_send(ctx->ctx, msg);
-	if (ret) {
-		pthread_spin_unlock(&ctx->lock);
+	if (ret)
 		goto fail_with_msg;
-	}
-	pthread_spin_unlock(&ctx->lock);
 
 	ret = wd_add_task_to_async_queue(&wd_ecc_env_config, idx);
 	if (ret)
