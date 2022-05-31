@@ -692,16 +692,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
 
-	pthread_spin_lock(&ctx->lock);
-
 	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
-		pthread_spin_unlock(&ctx->lock);
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;
 	}
-
-	pthread_spin_unlock(&ctx->lock);
 
 	ret = wd_add_task_to_async_queue(&wd_comp_env_config, idx);
 	if (unlikely(ret))
