@@ -151,22 +151,6 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 	return ret;
 }
 
-static int cipher_init_check(struct wd_ctx_config *config,
-			     struct wd_sched *sched)
-{
-	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("invalid: wd cipher config or sched is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("err, non sva, please check system!\n");
-		return -WD_EINVAL;
-	}
-
-	return 0;
-}
-
 int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
@@ -248,7 +232,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	ret = cipher_init_check(config, sched);
+	ret = wd_init_param_check(config, sched);
 	if (ret)
 		return ret;
 
