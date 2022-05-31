@@ -323,13 +323,9 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	pthread_spin_lock(&ctx->lock);
 	ret = dh_send(ctx->ctx, msg);
-	if (ret) {
-		pthread_spin_unlock(&ctx->lock);
+	if (ret)
 		goto fail_with_msg;
-	}
-	pthread_spin_unlock(&ctx->lock);
 
 	ret = wd_add_task_to_async_queue(&wd_dh_env_config, idx);
 	if (ret)
