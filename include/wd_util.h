@@ -327,6 +327,15 @@ int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx);
  */
 int wd_set_epoll_en(const char *var_name, bool *epoll_en);
 
+/**
+ * wd_init_check() - Check input parameters for wd_<alg>_init.
+ * @config: Ctx configuration input by user.
+ * @sched: Scheduler configuration input by user.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ */
+int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched);
+
 #ifdef __cplusplus
 }
 #endif

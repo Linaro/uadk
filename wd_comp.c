@@ -85,15 +85,9 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	void *priv;
 	int ret;
 
-	if (!config || !config->ctxs || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("invalid: config or sched is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("failed to find sva device, please check system!\n");
-		return -WD_EINVAL;
-	}
+	ret = wd_init_param_check(config, sched);
+	if (ret)
+		return ret;
 
 	ret = wd_set_epoll_en("WD_COMP_EPOLL_EN",
 			      &wd_comp_setting.config.epoll_en);

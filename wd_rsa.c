@@ -118,28 +118,14 @@ void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 	wd_rsa_setting.driver = drv;
 }
 
-static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
-{
-	if (!config || !config->ctxs[0].ctx || !sched) {
-		WD_ERR("invalid: config or sched NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("invalid: the mode is non sva, please check system!\n");
-		return -WD_EINVAL;
-	}
-
-	return 0;
-}
-
 int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	int ret;
 
-	if (param_check(config, sched))
-		return -WD_EINVAL;
+	ret = wd_init_param_check(config, sched);
+	if (ret)
+		return ret;
 
 	ret = wd_set_epoll_en("WD_RSA_EPOLL_EN",
 			      &wd_rsa_setting.config.epoll_en);
