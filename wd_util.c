@@ -1628,3 +1628,23 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 
 	return 0;
 }
+
+int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	if (!config || !config->ctxs || !config->ctxs[0].ctx) {
+		WD_ERR("invalid: config or config->ctxs is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!sched) {
+		WD_ERR("invalid: sched is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!wd_is_sva(config->ctxs[0].ctx)) {
+		WD_ERR("invalid: the mode is non sva, please check system!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
