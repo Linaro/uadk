@@ -20,7 +20,6 @@
 #define WD_HW_EACCESS			62
 
 #define RSA_BALANCE_THRHD		1280
-#define RSA_RESEND_CNT	8
 #define RSA_MAX_KEY_SIZE		512
 #define RSA_RECV_MAX_CNT		60000000 // 1 min
 
@@ -252,28 +251,6 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 	return 0;
 }
 
-static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
-{
-	__u32 tx_cnt = 0;
-	int ret;
-
-	do {
-		ret = wd_rsa_setting.driver->send(ctx, msg);
-		if (ret == -WD_EBUSY) {
-			if (tx_cnt++ >= RSA_RESEND_CNT) {
-				WD_ERR("failed to send: retry exit!\n");
-				break;
-			}
-			usleep(1);
-		} else if (ret < 0) {
-			WD_ERR("failed to send: send error = %d!\n", ret);
-			break;
-		}
-	} while (ret);
-
-	return ret;
-}
-
 static int rsa_recv_sync(handle_t ctx, struct wd_rsa_msg *msg)
 {
 	struct wd_rsa_req *req = &msg->req;
@@ -339,9 +316,11 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 		return ret;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = rsa_send(ctx->ctx, &msg);
-	if (unlikely(ret))
+	ret = wd_rsa_setting.driver->send(ctx->ctx, &msg);
+	if (unlikely(ret < 0)) {
+		WD_ERR("failed to send rsa BD, ret = %d!\n", ret);
 		goto fail;
+	}
 
 	ret = rsa_recv_sync(ctx->ctx, &msg);
 fail:
@@ -383,9 +362,13 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = rsa_send(ctx->ctx, msg);
-	if (ret)
+	ret = wd_rsa_setting.driver->send(ctx->ctx, msg);
+	if (unlikely(ret)) {
+		if (ret != -WD_EBUSY)
+			WD_ERR("failed to send rsa BD, hw is err!\n");
+
 		goto fail_with_msg;
+	}
 
 	ret = wd_add_task_to_async_queue(&wd_rsa_env_config, idx);
 	if (ret)
