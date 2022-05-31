@@ -19,7 +19,6 @@
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define DH_BALANCE_THRHD		1280
-#define DH_RESEND_CNT			8
 #define DH_MAX_KEY_SIZE			512
 #define DH_RECV_MAX_CNT			60000000 // 1 min
 #define WD_DH_G2			2
@@ -192,28 +191,6 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 	return 0;
 }
 
-static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
-{
-	__u32 tx_cnt = 0;
-	int ret;
-
-	do {
-		ret = wd_dh_setting.driver->send(ctx, msg);
-		if (ret == -WD_EBUSY) {
-			if (tx_cnt++ >= DH_RESEND_CNT) {
-				WD_ERR("failed to send: retry exit!\n");
-				break;
-			}
-			usleep(1);
-		} else if (ret < 0) {
-			WD_ERR("failed to send: send error = %d!\n", ret);
-			break;
-		}
-	} while (ret);
-
-	return ret;
-}
-
 static int dh_recv_sync(handle_t ctx, struct wd_dh_msg *msg)
 {
 	struct wd_dh_req *req = &msg->req;
@@ -278,9 +255,11 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 		return ret;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = dh_send(ctx->ctx, &msg);
-	if (unlikely(ret))
+	ret = wd_dh_setting.driver->send(ctx->ctx, &msg);
+	if (unlikely(ret < 0)) {
+		WD_ERR("failed to send dh BD, ret = %d!\n", ret);
 		goto fail;
+	}
 
 	ret = dh_recv_sync(ctx->ctx, &msg);
 	req->pri_bytes = msg.req.pri_bytes;
@@ -323,9 +302,13 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = dh_send(ctx->ctx, msg);
-	if (ret)
+	ret = wd_dh_setting.driver->send(ctx->ctx, msg);
+	if (unlikely(ret)) {
+		if (ret != -WD_EBUSY)
+			WD_ERR("failed to send dh BD, hw is err!\n");
+
 		goto fail_with_msg;
+	}
 
 	ret = wd_add_task_to_async_queue(&wd_dh_env_config, idx);
 	if (ret)
