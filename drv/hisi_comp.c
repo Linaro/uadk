@@ -865,7 +865,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	return 0;
 }
 
-static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg, void *priv)
+static int hisi_zip_comp_send(handle_t ctx, struct wd_comp_msg *msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	handle_t h_qp = (handle_t)qp;
@@ -1020,8 +1020,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	return 0;
 }
 
-static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg,
-			      void *priv)
+static int hisi_zip_comp_recv(handle_t ctx, struct wd_comp_msg *recv_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	handle_t h_qp = (handle_t)qp;
