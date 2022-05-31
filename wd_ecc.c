@@ -22,7 +22,6 @@
 #define WD_ECC_MAX_CTX			256
 #define ECC_BALANCE_THRHD		1280
 #define ECC_RECV_MAX_CNT		60000000
-#define ECC_RESEND_CNT			8
 #define ECC_MAX_HW_BITS			521
 #define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(ECC_MAX_HW_BITS)
 #define ECC_MAX_IN_NUM			4
@@ -1387,27 +1386,6 @@ static void msg_pack(char *dst, __u64 *out_len,
 	*out_len += src_len;
 }
 
-static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
-{
-	__u32 tx_cnt = 0;
-	int ret;
-
-	do {
-		ret = wd_ecc_setting.driver->send(ctx, msg);
-		if (ret == -WD_EBUSY) {
-			if (tx_cnt++ >= ECC_RESEND_CNT) {
-				WD_ERR("failed to send: retry exit!\n");
-				break;
-			}
-			usleep(1);
-		} else if (ret < 0) {
-			WD_ERR("failed to send: send error = %d!\n", ret);
-			break;
-		}
-	} while (ret);
-
-	return ret;
-}
 static int ecc_recv_sync(handle_t ctx, struct wd_ecc_msg *msg)
 {
 	struct wd_ecc_req *req = &msg->req;
@@ -1473,9 +1451,11 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 		return ret;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = ecc_send(ctx->ctx, &msg);
-	if (unlikely(ret))
+	ret = wd_ecc_setting.driver->send(ctx->ctx, &msg);
+	if (unlikely(ret < 0)) {
+		WD_ERR("failed to send ecc BD, hw is err!\n");
 		goto fail;
+	}
 
 	ret = ecc_recv_sync(ctx->ctx, &msg);
 fail:
@@ -2151,9 +2131,13 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = ecc_send(ctx->ctx, msg);
-	if (ret)
+	ret = wd_ecc_setting.driver->send(ctx->ctx, msg);
+	if (unlikely(ret)) {
+		if (ret != -WD_EBUSY)
+			WD_ERR("failed to send ecc BD, hw is err!\n");
+
 		goto fail_with_msg;
+	}
 
 	ret = wd_add_task_to_async_queue(&wd_ecc_env_config, idx);
 	if (ret)
