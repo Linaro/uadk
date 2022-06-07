@@ -61,8 +61,8 @@ struct wd_comp_driver {
 	__u32 drv_ctx_size;
 	int (*init)(struct wd_ctx_config_internal *config, void *priv);
 	void (*exit)(void *priv);
-	int (*comp_send)(handle_t ctx, struct wd_comp_msg *msg);
-	int (*comp_recv)(handle_t ctx, struct wd_comp_msg *msg);
+	int (*comp_send)(handle_t ctx, void *comp_msg);
+	int (*comp_recv)(handle_t ctx, void *comp_msg);
 };
 
 void wd_comp_set_driver(struct wd_comp_driver *drv);

@@ -19,8 +19,6 @@
 #define WD_AEAD_CCM_GCM_MIN	4U
 #define WD_AEAD_CCM_GCM_MAX	16
 #define WD_POOL_MAX_ENTRIES	1024
-#define MAX_RETRY_COUNTS	200000000
-
 
 static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -496,36 +494,15 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 static int send_recv_sync(struct wd_ctx_internal *ctx,
 			  struct wd_aead_msg *msg)
 {
-	__u64 recv_cnt = 0;
+	struct wd_msg_handle msg_handle;
 	int ret;
 
+	msg_handle.send = wd_aead_setting.driver->aead_send;
+	msg_handle.recv = wd_aead_setting.driver->aead_recv;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
-	if (unlikely(ret < 0)) {
-		WD_ERR("failed to send aead bd!\n");
-		goto out;
-	}
-
-	do {
-		if (wd_aead_setting.config.epoll_en) {
-			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (unlikely(ret < 0))
-				WD_ERR("wd aead ctx wait timeout(%d)!\n", ret);
-		}
-		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd aead recv err!\n");
-			goto out;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("wd aead recv timeout fail!\n");
-				ret = -WD_ETIMEDOUT;
-				goto out;
-			}
-		}
-	} while (ret < 0);
-
-out:
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
+			  wd_aead_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }

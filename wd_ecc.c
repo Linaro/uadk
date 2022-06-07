@@ -20,8 +20,6 @@
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_ECC_CTX_MSG_NUM		64
 #define WD_ECC_MAX_CTX			256
-#define ECC_BALANCE_THRHD		1280
-#define ECC_RECV_MAX_CNT		60000000
 #define ECC_MAX_HW_BITS			521
 #define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(ECC_MAX_HW_BITS)
 #define ECC_MAX_IN_NUM			4
@@ -34,7 +32,7 @@
 #define GET_NEGATIVE(val)		(0 - (val))
 #define ZA_PARAM_NUM  			6
 
-static __thread int balance;
+static __thread __u64 balance;
 
 struct curve_param_desc {
 	__u32 type;
@@ -1386,46 +1384,12 @@ static void msg_pack(char *dst, __u64 *out_len,
 	*out_len += src_len;
 }
 
-static int ecc_recv_sync(handle_t ctx, struct wd_ecc_msg *msg)
-{
-	struct wd_ecc_req *req = &msg->req;
-	__u32 rx_cnt = 0;
-	int ret;
-
-	do {
-		if (wd_ecc_setting.config.epoll_en) {
-			ret = wd_ctx_wait(ctx, POLL_TIME);
-			if (ret < 0)
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
-		}
-
-		ret = wd_ecc_setting.driver->recv(ctx, msg);
-		if (ret == -WD_EAGAIN) {
-			if (rx_cnt++ >= ECC_RECV_MAX_CNT) {
-				WD_ERR("failed to recv: timeout!\n");
-				return -WD_ETIMEDOUT;
-			}
-
-			if (balance > ECC_BALANCE_THRHD)
-				usleep(1);
-		} else if (ret < 0) {
-			WD_ERR("failed to recv: error = %d!\n", ret);
-			return ret;
-		}
-	} while (ret < 0);
-
-	balance = rx_cnt;
-	req->status = msg->result;
-	req->dst_bytes = msg->req.dst_bytes;
-
-	return GET_NEGATIVE(req->status);
-}
-
 int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
 	handle_t h_sched_ctx = wd_ecc_setting.sched.h_sched_ctx;
 	struct wd_ecc_sess *sess = (struct wd_ecc_sess *)h_sess;
+	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
 	struct wd_ecc_msg msg;
 	__u32 idx;
@@ -1450,18 +1414,20 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	msg_handle.send = wd_ecc_setting.driver->send;
+	msg_handle.recv = wd_ecc_setting.driver->recv;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_ecc_setting.driver->send(ctx->ctx, &msg);
-	if (unlikely(ret < 0)) {
-		WD_ERR("failed to send ecc BD, hw is err!\n");
-		goto fail;
-	}
-
-	ret = ecc_recv_sync(ctx->ctx, &msg);
-fail:
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_ecc_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
+	if (unlikely(ret))
+		return ret;
 
-	return ret;
+	req->dst_bytes = msg.req.dst_bytes;
+	req->status = msg.result;
+
+	return GET_NEGATIVE(msg.result);
 }
 
 static void get_sign_out_params(struct wd_ecc_out *out,

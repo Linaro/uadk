@@ -906,9 +906,10 @@ static int fill_cipher_bd2(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 	return 0;
 }
 
-int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
+int hisi_sec_cipher_send(handle_t ctx, void *cipher_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_cipher_msg *msg = cipher_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -950,10 +951,11 @@ int hisi_sec_cipher_send(handle_t ctx, struct wd_cipher_msg *msg)
 	return 0;
 }
 
-int hisi_sec_cipher_recv(handle_t ctx, struct wd_cipher_msg *recv_msg)
+int hisi_sec_cipher_recv(handle_t ctx, void *cipher_msg)
 {
-	struct hisi_sec_sqe sqe;
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_cipher_msg *recv_msg = cipher_msg;
+	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
 
@@ -1112,9 +1114,10 @@ static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 	return 0;
 }
 
-int hisi_sec_cipher_send_v3(handle_t ctx, struct wd_cipher_msg *msg)
+int hisi_sec_cipher_send_v3(handle_t ctx, void *cipher_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_cipher_msg *msg = cipher_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -1183,10 +1186,11 @@ static void parse_cipher_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->out = rmsg->out;
 }
 
-int hisi_sec_cipher_recv_v3(handle_t ctx, struct wd_cipher_msg *recv_msg)
+int hisi_sec_cipher_recv_v3(handle_t ctx, void *cipher_msg)
 {
-	struct hisi_sec_sqe3 sqe;
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_cipher_msg *recv_msg = cipher_msg;
+	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
 
@@ -1332,9 +1336,10 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 	return 0;
 }
 
-int hisi_sec_digest_send(handle_t ctx, struct wd_digest_msg *msg)
+int hisi_sec_digest_send(handle_t ctx, void *digest_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_digest_msg *msg = digest_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	__u8 scene;
@@ -1396,9 +1401,10 @@ put_sgl:
 	return ret;
 }
 
-int hisi_sec_digest_recv(handle_t ctx, struct wd_digest_msg *recv_msg)
+int hisi_sec_digest_recv(handle_t ctx, void *digest_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_digest_msg *recv_msg = digest_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -1486,9 +1492,10 @@ static void qm_fill_digest_long_bd3(struct wd_digest_msg *msg,
 	}
 }
 
-int hisi_sec_digest_send_v3(handle_t ctx, struct wd_digest_msg *msg)
+int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_digest_msg *msg = digest_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	__u16 scene;
@@ -1572,9 +1579,10 @@ static void parse_digest_bd3(struct hisi_sec_sqe3 *sqe,
 	recv_msg->alg_type = WD_DIGEST;
 }
 
-int hisi_sec_digest_recv_v3(handle_t ctx, struct wd_digest_msg *recv_msg)
+int hisi_sec_digest_recv_v3(handle_t ctx, void *digest_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_digest_msg *recv_msg = digest_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -1838,9 +1846,10 @@ static int fill_aead_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 	return 0;
 }
 
-int hisi_sec_aead_send(handle_t ctx, struct wd_aead_msg *msg)
+int hisi_sec_aead_send(handle_t ctx, void *aead_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_aead_msg *msg = aead_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -1922,10 +1931,11 @@ static void parse_aead_bd2(struct hisi_sec_sqe *sqe,
 			      sqe->type2.cipher_src_offset;
 }
 
-int hisi_sec_aead_recv(handle_t ctx, struct wd_aead_msg *recv_msg)
+int hisi_sec_aead_recv(handle_t ctx, void *aead_msg)
 {
-	struct hisi_sec_sqe sqe;
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_aead_msg *recv_msg = aead_msg;
+	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
 
@@ -2103,9 +2113,10 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	return 0;
 }
 
-int hisi_sec_aead_send_v3(handle_t ctx, struct wd_aead_msg *msg)
+int hisi_sec_aead_send_v3(handle_t ctx, void *aead_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_aead_msg *msg = aead_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -2181,10 +2192,11 @@ static void parse_aead_bd3(struct hisi_sec_sqe3 *sqe,
 			      sqe->cipher_src_offset;
 }
 
-int hisi_sec_aead_recv_v3(handle_t ctx, struct wd_aead_msg *recv_msg)
+int hisi_sec_aead_recv_v3(handle_t ctx, void *aead_msg)
 {
-	struct hisi_sec_sqe3 sqe;
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_aead_msg *recv_msg = aead_msg;
+	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
 
