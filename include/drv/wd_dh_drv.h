@@ -30,8 +30,8 @@ struct wd_dh_driver {
 	int (*init)(struct wd_ctx_config_internal *config, void *priv,
 		    const char *alg_name);
 	void (*exit)(void *priv);
-	int (*send)(handle_t sess, struct wd_dh_msg *msg);
-	int (*recv)(handle_t sess, struct wd_dh_msg *msg);
+	int (*send)(handle_t sess, void *dh_msg);
+	int (*recv)(handle_t sess, void *dh_msg);
 };
 
 void wd_dh_set_driver(struct wd_dh_driver *drv);

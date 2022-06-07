@@ -99,6 +99,11 @@ struct wd_ctx_attr {
 	__u8 mode;
 };
 
+struct wd_msg_handle {
+	int (*send)(handle_t sess, void *msg);
+	int (*recv)(handle_t sess, void *msg);
+};
+
 /*
  * wd_init_ctx_config() - Init internal ctx configuration.
  * @in:	ctx configuration in global setting.
@@ -326,6 +331,19 @@ int wd_check_ctx(struct wd_ctx_config_internal *config, __u8 mode, __u32 idx);
  * Return 0 if the value is 0 or 1, otherwise return -WD_EINVAL.
  */
 int wd_set_epoll_en(const char *var_name, bool *epoll_en);
+
+/**
+ * wd_handle_msg_sync() - recv msg from hardware
+ * @msg_handle: callback of msg handle ops.
+ * @ctx: the handle of context.
+ * @msg: the msg of task.
+ * @balance: estimated number of receiving msg.
+ * @epoll_en: whether to enable epoll.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ */
+int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+		void *msg, __u64 *balance, bool epoll_en);
 
 /**
  * wd_init_check() - Check input parameters for wd_<alg>_init.

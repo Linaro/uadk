@@ -19,11 +19,9 @@
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_HW_EACCESS			62
 
-#define RSA_BALANCE_THRHD		1280
 #define RSA_MAX_KEY_SIZE		512
-#define RSA_RECV_MAX_CNT		60000000 // 1 min
 
-static __thread int balance;
+static __thread __u64 balance;
 
 struct wd_rsa_pubkey {
 	struct wd_dtb n;
@@ -251,46 +249,12 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 	return 0;
 }
 
-static int rsa_recv_sync(handle_t ctx, struct wd_rsa_msg *msg)
-{
-	struct wd_rsa_req *req = &msg->req;
-	__u32 rx_cnt = 0;
-	int ret;
-
-	do {
-		if (wd_rsa_setting.config.epoll_en) {
-			ret = wd_ctx_wait(ctx, POLL_TIME);
-			if (ret < 0)
-				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
-		}
-
-		ret = wd_rsa_setting.driver->recv(ctx, msg);
-		if (ret == -WD_EAGAIN) {
-			if (rx_cnt++ >= RSA_RECV_MAX_CNT) {
-				WD_ERR("failed to recv: timeout!\n");
-				return -WD_ETIMEDOUT;
-			}
-
-			if (balance > RSA_BALANCE_THRHD)
-				usleep(1);
-		} else if (ret < 0) {
-			WD_ERR("failed to recv: error = %d!\n", ret);
-			return ret;
-		}
-	} while (ret < 0);
-
-	balance = rx_cnt;
-	req->status = msg->result;
-	req->dst_bytes = msg->req.dst_bytes;
-
-	return GET_NEGATIVE(req->status);
-}
-
 int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
 	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
 	struct wd_rsa_sess *sess = (struct wd_rsa_sess *)h_sess;
+	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
 	struct wd_rsa_msg msg;
 	__u32 idx;
@@ -315,18 +279,20 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	msg_handle.send = wd_rsa_setting.driver->send;
+	msg_handle.recv = wd_rsa_setting.driver->recv;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_rsa_setting.driver->send(ctx->ctx, &msg);
-	if (unlikely(ret < 0)) {
-		WD_ERR("failed to send rsa BD, ret = %d!\n", ret);
-		goto fail;
-	}
-
-	ret = rsa_recv_sync(ctx->ctx, &msg);
-fail:
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_rsa_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
+	if (unlikely(ret))
+		return ret;
 
-	return ret;
+	req->dst_bytes = msg.req.dst_bytes;
+	req->status = msg.result;
+
+	return GET_NEGATIVE(msg.result);
 }
 
 int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)

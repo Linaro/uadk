@@ -18,10 +18,8 @@
 #include "wd_comp.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
-#define MAX_RETRY_COUNTS		200000000
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
-
 
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
@@ -396,8 +394,8 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
+	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
-	__u64 recv_count = 0;
 	__u32 idx;
 	int ret;
 
@@ -410,35 +408,12 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 
 	ctx = config->ctxs + idx;
 
+	msg_handle.send = wd_comp_setting.driver->comp_send;
+	msg_handle.recv = wd_comp_setting.driver->comp_recv;
+
 	pthread_spin_lock(&ctx->lock);
-
-	ret = wd_comp_setting.driver->comp_send(ctx->ctx, msg);
-	if (unlikely(ret < 0)) {
-		pthread_spin_unlock(&ctx->lock);
-		WD_ERR("wd comp send error, ret = %d!\n", ret);
-		return ret;
-	}
-
-	do {
-		if (config->epoll_en) {
-			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (unlikely(ret < 0))
-				WD_ERR("wd ctx wait timeout, ret = %d!\n", ret);
-		}
-		ret = wd_comp_setting.driver->comp_recv(ctx->ctx, msg);
-		if (unlikely(ret == -WD_HW_EACCESS)) {
-			pthread_spin_unlock(&ctx->lock);
-			WD_ERR("wd comp recv hw error!\n");
-			return ret;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_count > MAX_RETRY_COUNTS) {
-				pthread_spin_unlock(&ctx->lock);
-				WD_ERR("wd comp recv timeout!\n");
-				return -WD_ETIMEDOUT;
-			}
-		}
-	} while (ret == -WD_EAGAIN);
-
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+				 NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;

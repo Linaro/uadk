@@ -17,8 +17,6 @@
 
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
-#define MAX_RETRY_COUNTS	200000000
-
 
 static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -294,41 +292,24 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *dsess,
 			  struct wd_digest_msg *msg)
 {
-	__u64 recv_cnt = 0;
+	struct wd_msg_handle msg_handle;
 	int ret;
 
+	msg_handle.send = wd_digest_setting.driver->digest_send;
+	msg_handle.recv = wd_digest_setting.driver->digest_recv;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
-	if (unlikely(ret < 0)) {
-		WD_ERR("failed to send bd!\n");
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+				 NULL, wd_digest_setting.config.epoll_en);
+	if (unlikely(ret))
 		goto out;
-	}
 
-	do {
-		if (wd_digest_setting.config.epoll_en) {
-			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (unlikely(ret < 0))
-				WD_ERR("wd digest ctx wait timeout(%d)!\n", ret);
-		}
-		ret = wd_digest_setting.driver->digest_recv(ctx->ctx, msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd digest recv err!\n");
-			goto out;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("wd digest recv timeout fail!\n");
-				ret = -WD_ETIMEDOUT;
-				goto out;
-			}
-		}
-
-		/*
-		 * 'out_bytes' can be expressed BD state, non-zero is final BD or
-		 * middle BD as stream mode.
-		 */
-		if (msg->has_next)
-			dsess->bd_state = msg->out_bytes;
-	} while (ret < 0);
+	/*
+	 * 'out_bytes' can be expressed BD state, non-zero is final BD or
+	 * middle BD as stream mode.
+	 */
+	if (msg->has_next)
+		dsess->bd_state = msg->out_bytes;
 
 out:
 	pthread_spin_unlock(&ctx->lock);

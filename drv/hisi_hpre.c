@@ -499,9 +499,10 @@ static void hpre_exit(void *priv)
 	}
 }
 
-static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
+static int rsa_send(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_rsa_msg *msg = rsa_msg;
 	struct hisi_hpre_sqe hw_msg;
 	__u16 send_cnt = 0;
 	int ret;
@@ -535,10 +536,11 @@ static int rsa_send(handle_t ctx, struct wd_rsa_msg *msg)
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
-static int rsa_recv(handle_t ctx, struct wd_rsa_msg *msg)
+static int rsa_recv(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg = {0};
+	struct wd_rsa_msg *msg = rsa_msg;
 	__u16 recv_cnt = 0;
 	int ret;
 
@@ -638,9 +640,10 @@ static int dh_out_transfer(struct wd_dh_msg *msg,
 	return WD_SUCCESS;
 }
 
-static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
+static int dh_send(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_dh_msg *msg = dh_msg;
 	struct wd_dh_req *req = &msg->req;
 	struct hisi_hpre_sqe hw_msg;
 	__u16 send_cnt = 0;
@@ -682,9 +685,10 @@ static int dh_send(handle_t ctx, struct wd_dh_msg *msg)
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
-static int dh_recv(handle_t ctx, struct wd_dh_msg *msg)
+static int dh_recv(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_dh_msg *msg = dh_msg;
 	struct hisi_hpre_sqe hw_msg = {0};
 	__u16 recv_cnt = 0;
 	int ret;
@@ -1774,9 +1778,10 @@ free_dst:
 	return ret;
 }
 
-static int ecc_send(handle_t ctx, struct wd_ecc_msg *msg)
+static int ecc_send(handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_ecc_msg *msg = ecc_msg;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	if (msg->req.op_type == WD_SM2_ENCRYPT)
@@ -2336,9 +2341,10 @@ fail:
 	return ret;
 }
 
-static int ecc_recv(handle_t ctx, struct wd_ecc_msg *msg)
+static int ecc_recv(handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct wd_ecc_msg *msg = ecc_msg;
 	struct hisi_hpre_sqe hw_msg;
 	__u16 recv_cnt = 0;
 	int ret;

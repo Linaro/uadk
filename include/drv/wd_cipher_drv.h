@@ -56,8 +56,8 @@ struct wd_cipher_driver {
 	__u32	drv_ctx_size;
 	int	(*init)(struct wd_ctx_config_internal *config, void *priv);
 	void	(*exit)(void *priv);
-	int	(*cipher_send)(handle_t ctx, struct wd_cipher_msg *msg);
-	int	(*cipher_recv)(handle_t ctx, struct wd_cipher_msg *msg);
+	int	(*cipher_send)(handle_t ctx, void *cipher_msg);
+	int	(*cipher_recv)(handle_t ctx, void *cipher_msg);
 };
 
 void wd_cipher_set_driver(struct wd_cipher_driver *drv);

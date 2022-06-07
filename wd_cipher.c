@@ -19,8 +19,6 @@
 
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	16
-#define MAX_RETRY_COUNTS	200000000
-
 
 static const unsigned char des_weak_keys[DES_WEAK_KEY_NUM][DES_KEY_SIZE] = {
 	/* weak keys */
@@ -405,36 +403,15 @@ static int wd_cipher_check_params(handle_t h_sess,
 static int send_recv_sync(struct wd_ctx_internal *ctx,
 			  struct wd_cipher_msg *msg)
 {
-	__u64 recv_cnt = 0;
+	struct wd_msg_handle msg_handle;
 	int ret;
 
+	msg_handle.send = wd_cipher_setting.driver->cipher_send;
+	msg_handle.recv = wd_cipher_setting.driver->cipher_recv;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_cipher_setting.driver->cipher_send(ctx->ctx, msg);
-	if (unlikely(ret < 0)) {
-		WD_ERR("wd cipher send err!\n");
-		goto out;
-	}
-
-	do {
-		if (wd_cipher_setting.config.epoll_en) {
-			ret = wd_ctx_wait(ctx->ctx, POLL_TIME);
-			if (unlikely(ret < 0))
-				WD_ERR("wd cipher ctx wait timeout(%d)!\n", ret);
-		}
-		ret = wd_cipher_setting.driver->cipher_recv(ctx->ctx, msg);
-		if (ret == -WD_HW_EACCESS) {
-			WD_ERR("wd cipher recv err!\n");
-			goto out;
-		} else if (ret == -WD_EAGAIN) {
-			if (++recv_cnt > MAX_RETRY_COUNTS) {
-				WD_ERR("wd cipher recv timeout fail!\n");
-				ret = -WD_ETIMEDOUT;
-				goto out;
-			}
-		}
-	} while (ret < 0);
-
-out:
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
+			  wd_cipher_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
 }
