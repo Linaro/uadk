@@ -53,8 +53,8 @@ struct wd_rsa_driver {
 	int (*init)(struct wd_ctx_config_internal *config, void *priv,
 		    const char *alg_name);
 	void (*exit)(void *priv);
-	int (*send)(handle_t sess, struct wd_rsa_msg *msg);
-	int (*recv)(handle_t sess, struct wd_rsa_msg *msg);
+	int (*send)(handle_t sess, void *rsa_msg);
+	int (*recv)(handle_t sess, void *rsa_msg);
 };
 
 void wd_rsa_set_driver(struct wd_rsa_driver *drv);

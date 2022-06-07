@@ -17,6 +17,9 @@
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024
+#define WD_BALANCE_THRHD		1280
+#define WD_RECV_MAX_CNT_SLEEP		60000000
+#define WD_RECV_MAX_CNT_NOSLEEP		200000000
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -1627,6 +1630,50 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 		WD_ERR("epoll wait is enabled!\n");
 
 	return 0;
+}
+
+int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+		       void *msg, __u64 *balance, bool epoll_en)
+{
+	__u64 timeout = WD_RECV_MAX_CNT_NOSLEEP;
+	__u64 rx_cnt = 0;
+	int ret;
+
+	if (balance)
+		timeout = WD_RECV_MAX_CNT_SLEEP;
+
+	ret = msg_handle->send(ctx, msg);
+	if (unlikely(ret < 0)) {
+		WD_ERR("failed to send msg to hw, ret = %d!\n", ret);
+		return ret;
+	}
+
+	do {
+		if (epoll_en) {
+			ret = wd_ctx_wait(ctx, POLL_TIME);
+			if (ret < 0)
+				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
+		}
+
+		ret = msg_handle->recv(ctx, msg);
+		if (ret == -WD_EAGAIN) {
+			if (unlikely(rx_cnt++ >= timeout)) {
+				WD_ERR("failed to recv msg: timeout!\n");
+				return -WD_ETIMEDOUT;
+			}
+
+			if (balance && *balance > WD_BALANCE_THRHD)
+				usleep(1);
+		} else if (unlikely(ret < 0)) {
+			WD_ERR("failed to recv msg: error = %d!\n", ret);
+			return ret;
+		}
+	} while (ret < 0);
+
+	if (balance)
+		*balance = rx_cnt;
+
+	return ret;
 }
 
 int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
