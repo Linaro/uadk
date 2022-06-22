@@ -826,3 +826,13 @@ bool wd_need_info(void)
 {
 	return uadk_log_level >= WD_LOG_INFO;
 }
+
+char *wd_ctx_get_dev_name(handle_t h_ctx)
+{
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+
+	if (!ctx)
+		return NULL;
+
+	return ctx->dev_name;
+}
