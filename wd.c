@@ -186,6 +186,24 @@ static int access_attr(const char *dev_root, const char *attr, int mode)
 	return access(attr_file, mode);
 }
 
+int wd_is_isolate(struct uacce_dev *dev)
+{
+	int value = 0;
+	int ret;
+
+	if (!dev || !dev->dev_root)
+		return -WD_EINVAL;
+
+	ret = access_attr(dev->dev_root, "isolate", F_OK);
+	if (!ret) {
+		ret = get_int_attr(dev, "isolate", &value);
+		if (ret < 0)
+			return ret;
+	}
+
+	return value == 1 ? 1 : 0;
+}
+
 static int get_dev_info(struct uacce_dev *dev)
 {
 	int value = 0;
