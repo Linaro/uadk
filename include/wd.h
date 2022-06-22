@@ -57,6 +57,13 @@ typedef void (*wd_log)(const char *format, ...);
 #define WD_ERR(fmt, args...)     fprintf(stderr, fmt, ##args)
 #endif
 
+/* @h_ctx: The handle of context. */
+#define WD_DEV_ERR(h_ctx, format, args...)\
+	do {							\
+		char *dev_name = wd_ctx_get_dev_name(h_ctx);	\
+		WD_ERR("%s: "format"\n", dev_name, ##args);	\
+	} while (0)
+
 #define WD_CONSOLE printf
 
 /* WD error code */
@@ -495,6 +502,13 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
  * @stats: Pointer of struct wd_blockpool_stats.
  */
 void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
+
+/**
+ * wd_ctx_get_dev_name() - Get the device name about task.
+ * @h_ctx: The handle of context.
+ * Return device name.
+ */
+char *wd_ctx_get_dev_name(handle_t h_ctx);
 
 /**
  * wd_get_version() - Get the libwd version number and released time.

@@ -44,10 +44,6 @@
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 
-#define container_of(ptr, type, member) ({ \
-		typeof(((type *)0)->member)(*__mptr) = (ptr); \
-		(type *)((char *)__mptr - offsetof(type, member)); })
-
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,
 	HPRE_ALG_NC_CRT = 0x1,
