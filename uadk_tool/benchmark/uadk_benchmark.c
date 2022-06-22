@@ -567,7 +567,7 @@ static void print_help(void)
 	ACC_TST_PRT("UPDATE:2021-7-28\n");
 }
 
-void benchmark_cmd_parse(int argc, char *argv[], struct acc_option *option)
+int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 {
 	int option_index = 0;
 	int c;
@@ -638,6 +638,7 @@ void benchmark_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			exit(-1);
 		}
 	}
+	return 0;
 }
 
 int acc_option_convert(struct acc_option *option)

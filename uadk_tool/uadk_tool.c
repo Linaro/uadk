@@ -1,12 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <limits.h>
-#include "uadk_dfx.h"
-#include "uadk_benchmark.h"
+#include "dfx/uadk_dfx.h"
+#include "benchmark/uadk_benchmark.h"
 
 static void print_tool_help(void)
 {
@@ -18,17 +15,21 @@ static void print_tool_help(void)
 int main(int argc, char **argv)
 {
 	struct acc_option option = {0};
+	int index = 1;
 	int ret;
 
-	if (argc > 1) {
-		if (!strcmp("dfx", argv[1])) {
+	if (argc > index) {
+		if (!strcmp("dfx", argv[index])) {
 			dfx_cmd_parse(argc, argv);
-		} else if (!strcmp("benchmark", argv[1])) {
+		} else if (!strcmp("benchmark", argv[index])) {
 			printf("start UADK benchmark test.\n");
-			if (!argv[2])
+			if (!argv[++index])
 				acc_default_case(&option);
 
-			benchmark_cmd_parse(argc, argv, &option);
+			ret = acc_cmd_parse(argc, argv, &option);
+			if (ret)
+				return ret;
+
 			ret = acc_option_convert(&option);
 			if (ret)
 				return ret;

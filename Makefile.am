@@ -23,7 +23,11 @@ MINOR = 3
 REVISION = 34
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
-AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"libwd version: ${MAJOR}.${MINOR}.${REVISION}\""
+DAY = 11
+MONTH = Jun
+YEAR = 2022
+AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"UADK version: ${MAJOR}.${MINOR}.${REVISION}\""
+AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 
 include_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
@@ -78,6 +82,7 @@ libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
 if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV
+AM_CFLAGS += -DWD_NO_LOG
 
 libwd_la_LIBADD = $(libwd_la_OBJECTS) -lnuma
 

@@ -170,7 +170,7 @@ extern void add_recv_data(u32 cnt);
 extern void add_send_complete(void);
 extern u32 get_recv_time(void);
 
-void benchmark_cmd_parse(int argc, char *argv[], struct acc_option *option);
+int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);
 int acc_option_convert(struct acc_option *option);
 int acc_benchmark_run(struct acc_option *option);

@@ -853,14 +853,14 @@ static int fill_user_curve_cfg(struct wd_ecc_curve *param,
 	if (setup->cv.type == WD_CV_CFG_ID) {
 		curve_id = setup->cv.cfg.id;
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
-		dbg("set curve id %u!\n", curve_id);
+		WD_DEBUG("set curve id %u!\n", curve_id);
 	} else if (setup->cv.type == WD_CV_CFG_PARAM) {
 		ret = set_key_cv(param, src_param);
 		if (ret) {
 			WD_ERR("failed to set key cv!\n");
 			return ret;
 		}
-		dbg("set curve by user param!\n");
+		WD_DEBUG("set curve by user param!\n");
 	} else {
 		WD_ERR("invalid: fill curve cfg type %u is error!\n", setup->cv.type);
 		return -WD_EINVAL;
@@ -1407,6 +1407,7 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	if (ret)
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	memset(&msg, 0, sizeof(struct wd_ecc_msg));
@@ -2086,6 +2087,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	if (ret)
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);

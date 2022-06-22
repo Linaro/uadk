@@ -413,7 +413,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	wd_aead_set_static_drv();
 #endif
 
-	/* init sync request pool */
+	/* init async request pool */
 	ret = wd_init_async_request_pool(&wd_aead_setting.pool,
 				config->ctx_num, WD_POOL_MAX_ENTRIES,
 				sizeof(struct wd_aead_msg));
@@ -531,6 +531,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 	ret = send_recv_sync(ctx, &msg);
 	req->state = msg.result;
@@ -563,6 +564,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	if (ret)
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	msg_id = wd_get_msg_from_pool(&wd_aead_setting.pool,
