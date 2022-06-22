@@ -189,6 +189,13 @@ struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
+static void dump_zip_msg(struct wd_comp_msg *msg)
+{
+	WD_ERR("dump zip message after a task error occurs.\n");
+	WD_ERR("avali_out:%u in_cons:%u produced:%u data_fmt:%d.\n",
+		msg->avail_out, msg->in_cons, msg->produced, msg->data_fmt);
+}
+
 static int buf_size_check_deflate(__u32 *in_size, __u32 *out_size)
 {
 	if (unlikely(*in_size > HZ_MAX_SIZE)) {
@@ -958,13 +965,15 @@ static void get_ctx_buf(struct hisi_zip_sqe *sqe,
 }
 
 static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
-			 struct wd_comp_msg *recv_msg)
+			 struct wd_comp_msg *msg)
 {
 	__u32 buf_type = (sqe->dw9 & HZ_BUF_TYPE_MASK) >> BUF_TYPE_SHIFT;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
+	struct wd_comp_msg *recv_msg = msg;
+	bool need_debug = wd_need_debug();
 	int alg_type, ret;
 	__u32 tag;
 
@@ -1007,7 +1016,9 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	if (ctx_st == HZ_DECOMP_NO_SPACE)
 		recv_msg->req.status = WD_EAGAIN;
 
-	dbg("zip recv lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u!\n", lstblk, ctx_st, status, type);
+	if (need_debug)
+		WD_DEBUG("zip recv lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u!\n",
+		 lstblk, ctx_st, status, type);
 	if (lstblk && (status == HZ_DECOMP_END))
 		recv_msg->req.status = WD_STREAM_END;
 
@@ -1017,6 +1028,9 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	if (buf_type == WD_SGL_BUF)
 		free_hw_sgl((handle_t)qp, sqe, alg_type);
+
+	if (unlikely(recv_msg->req.status == WD_IN_EPARA))
+		dump_zip_msg(recv_msg);
 
 	return 0;
 }
