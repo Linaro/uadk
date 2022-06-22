@@ -737,6 +737,37 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 	return;
 }
 
+static void hisi_qm_dump_sgl(void *sgl)
+{
+	struct hisi_sgl *tmp = (struct hisi_sgl *)sgl;
+	bool need_debug = wd_need_debug();
+	int k = 0;
+	int i;
+
+	if (!need_debug)
+		return;
+
+	while (tmp) {
+		WD_DEBUG("[sgl-%d]->entry_sum_in_chain: %u\n", k,
+		       tmp->entry_sum_in_chain);
+		WD_DEBUG("[sgl-%d]->entry_sum_in_sgl: %u\n", k,
+		       tmp->entry_sum_in_sgl);
+		WD_DEBUG("[sgl-%d]->entry_length_in_sgl: %u\n", k,
+		       tmp->entry_length_in_sgl);
+		for (i = 0; i < tmp->entry_sum_in_sgl; i++)
+			WD_DEBUG("[sgl-%d]->sge_entries[%d].len: %u\n", k, i,
+			       tmp->sge_entries[i].len);
+
+		tmp = (struct hisi_sgl *)tmp->next_dma;
+		k++;
+
+		if (!tmp) {
+			WD_DEBUG("debug: sgl num size:%d\n", k);
+			return;
+		}
+	}
+}
+
 void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 {
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool *)sgl_pool;
@@ -798,6 +829,8 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	/* There is no data, recycle the hardware sgl head to pool */
 	if (!head->entry_sum_in_chain)
 		goto err_out;
+
+	hisi_qm_dump_sgl(head);
 
 	return head;
 err_out:
@@ -920,28 +953,6 @@ void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset, __u32 size,
 	else
 		hisi_qm_pbuff_copy_inner(pbuff, tmp, begin_sge, sge_offset,
 					 size);
-}
-
-void hisi_qm_dump_sgl(void *sgl)
-{
-	struct hisi_sgl *tmp = (struct hisi_sgl *)sgl;
-	int i;
-
-	while (tmp) {
-		WD_ERR("sgl->entry_sum_in_chain : %u\n",
-		       tmp->entry_sum_in_chain);
-		WD_ERR("sgl->entry_sum_in_sgl : %u\n",
-		       tmp->entry_sum_in_sgl);
-		WD_ERR("sgl->entry_length_in_sgl : %u\n",
-		       tmp->entry_length_in_sgl);
-		for (i = 0; i < tmp->entry_sum_in_sgl; i++) {
-			WD_ERR("sgl->sge_entries[%d].buff : 0x%lx\n", i,
-			       tmp->sge_entries[i].buff);
-			WD_ERR("sgl->sge_entries[%d].len : %u\n", i,
-			       tmp->sge_entries[i].len);
-		}
-		tmp = (struct hisi_sgl *)tmp->next_dma;
-	}
 }
 
 __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
