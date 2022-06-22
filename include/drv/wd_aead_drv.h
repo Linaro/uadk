@@ -76,6 +76,7 @@ struct wd_aead_driver {
 
 void wd_aead_set_driver(struct wd_aead_driver *drv);
 struct wd_aead_driver *wd_aead_get_driver(void);
+struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_AEAD_SET_DRIVER(drv)					      \

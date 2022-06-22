@@ -64,6 +64,7 @@ struct wd_digest_driver {
 
 void wd_digest_set_driver(struct wd_digest_driver *drv);
 struct wd_digest_driver *wd_digest_get_driver(void);
+struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_DIGEST_SET_DRIVER(drv)					      \
