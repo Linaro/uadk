@@ -22,6 +22,8 @@ struct check_rand_ctx {
 	unsigned short state[3];
 };
 
+#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
+
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_spinlock_t lock;
 static int count = 0;

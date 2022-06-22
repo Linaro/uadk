@@ -340,6 +340,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 	ret = send_recv_sync(ctx, dsess, &msg);
 	req->state = msg.result;
@@ -372,6 +373,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	if (ret)
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, idx,

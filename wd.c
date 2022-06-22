@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <numa.h>
 #include <sched.h>
 
@@ -22,7 +23,14 @@
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
-const char *WD_VERSION = UADK_VERSION_NUMBER;
+enum UADK_LOG_LEVEL {
+	LOG_NONE = 0,
+	WD_LOG_ERROR,
+	WD_LOG_INFO,
+	WD_LOG_DEBUG,
+};
+
+static int uadk_log_level;
 
 struct wd_ctx_h {
 	int fd;
@@ -34,6 +42,54 @@ struct wd_ctx_h {
 	struct uacce_dev *dev;
 	void *priv;
 };
+
+static void wd_parse_log_level(void)
+{
+	const char *syslog_file = "/etc/rsyslog.conf";
+	const char *log_dir = "/var/log/uadk.log";
+	bool log_debug = false;
+	bool log_info = false;
+	struct stat file_info;
+	char *file_contents;
+	FILE *in_file;
+
+	in_file = fopen(syslog_file, "r");
+	if (!in_file) {
+		WD_ERR("failed to open the rsyslog.conf file.\n");
+		return;
+	}
+
+	if (stat(syslog_file, &file_info) == -1) {
+		WD_ERR("failed to get file information.\n");
+		goto close_file;
+	}
+
+	file_contents = malloc(file_info.st_size);
+	if (!file_contents) {
+		WD_ERR("failed to get file contents memory.\n");
+		goto close_file;
+	}
+
+	while (fscanf(in_file, "%[^\n ] ", file_contents) != EOF) {
+		if (!strcmp("local5.debug", file_contents))
+			log_debug = true;
+		else if (!strcmp("local5.info", file_contents))
+			log_info = true;
+
+		if (log_debug && !strcmp(log_dir, file_contents)) {
+			uadk_log_level = WD_LOG_DEBUG;
+			break;
+		} else if (log_info && !strcmp(log_dir, file_contents)) {
+			uadk_log_level = WD_LOG_INFO;
+			break;
+		}
+	}
+
+	free(file_contents);
+
+close_file:
+	fclose(in_file);
+}
 
 static int get_raw_attr(const char *dev_root, const char *attr, char *buf,
 			size_t sz)
@@ -188,6 +244,8 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 
 	if (!dev_name)
 		return NULL;
+
+	wd_parse_log_level();
 
 	dev = calloc(1, sizeof(struct uacce_dev));
 	if (!dev)
@@ -730,4 +788,23 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 		return ioctl(ctx->fd, cmd);
 
 	return ioctl(ctx->fd, cmd, arg);
+}
+
+void wd_get_version(void)
+{
+	const char *wd_released_time = UADK_RELEASED_TIME;
+	const char *wd_version = UADK_VERSION_NUMBER;
+
+	WD_CONSOLE("%s\n", wd_version);
+	WD_CONSOLE("%s\n", wd_released_time);
+}
+
+bool wd_need_debug(void)
+{
+	return uadk_log_level >= WD_LOG_DEBUG;
+}
+
+bool wd_need_info(void)
+{
+	return uadk_log_level >= WD_LOG_INFO;
 }

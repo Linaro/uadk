@@ -20,6 +20,7 @@
 #define WD_BALANCE_THRHD		1280
 #define WD_RECV_MAX_CNT_SLEEP		60000000
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
+#define PRIVILEGE_FLAG			600
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -70,11 +71,76 @@ static void clone_ctx_to_internal(struct wd_ctx *ctx,
 	ctx_in->ctx_mode = ctx->ctx_mode;
 }
 
+static int get_shared_memory_id(__u32 numsize)
+{
+	int shm;
+
+	shm = shmget(WD_IPC_KEY, sizeof(unsigned long) * numsize,
+		IPC_CREAT | PRIVILEGE_FLAG);
+	if (shm < 0) {
+		WD_ERR("failed to get shared memory id.\n");
+		return -WD_EINVAL;
+	}
+
+	return shm;
+}
+
+static unsigned long *wd_shared_create(__u32 numsize)
+{
+	bool need_info = wd_need_info();
+	void *ptr;
+	int shm;
+
+	if (!need_info)
+		return NULL;
+
+	if (numsize > WD_CTX_CNT_NUM) {
+		WD_ERR("invalid: input parameter is err!\n");
+		return NULL;
+	}
+
+	shm = get_shared_memory_id(numsize);
+	if (shm < 0)
+		return NULL;
+
+	ptr = shmat(shm, NULL, 0);
+	if (ptr == (void *)-1) {
+		WD_ERR("failed to get shared memory addr.\n");
+		return NULL;
+	}
+
+	memset(ptr, 0, sizeof(unsigned long) * numsize);
+
+	return ptr;
+}
+
+static void wd_shared_delete(__u32 numsize)
+{
+	bool need_info = wd_need_info();
+	int shm;
+
+	if (!need_info)
+		return;
+
+	if (numsize > WD_CTX_CNT_NUM) {
+		WD_ERR("invalid: input parameter is err!\n");
+		return;
+	}
+
+	shm = get_shared_memory_id(numsize);
+	if (shm < 0)
+		return;
+
+	/* deleted shared memory */
+	shmctl(shm, IPC_RMID, NULL);
+}
+
 int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		       struct wd_ctx_config *cfg)
 {
+	bool need_info = wd_need_info();
 	struct wd_ctx_internal *ctxs;
-	int i, ret;
+	int i, j, ret;
 
 	if (!cfg->ctx_num) {
 		WD_ERR("invalid: ctx_num is 0!\n");
@@ -87,25 +153,29 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		return -WD_EEXIST;
 	}
 
+	in->msg_cnt = wd_shared_create(WD_CTX_CNT_NUM);
+	if (!in->msg_cnt && need_info)
+		return -WD_EINVAL;
+
 	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx_internal));
 	if (!ctxs) {
 		WD_ERR("failed to alloc memory for internal ctxs!\n");
+		wd_shared_delete(WD_CTX_CNT_NUM);
 		return -WD_ENOMEM;
 	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
 		if (!cfg->ctxs[i].ctx) {
 			WD_ERR("invalid: ctx is NULL!\n");
-			free(ctxs);
-			return -WD_EINVAL;
+			ret = -WD_EINVAL;
+			goto err_out;
 		}
 
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 		if (ret) {
 			WD_ERR("failed to init ctxs lock!\n");
-			free(ctxs);
-			return ret;
+			goto err_out;
 		}
 	}
 
@@ -115,6 +185,14 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	in->ctx_num = cfg->ctx_num;
 
 	return 0;
+
+err_out:
+	for (j = 0; j < i; j++)
+		pthread_spin_destroy(&ctxs[j].lock);
+
+	wd_shared_delete(WD_CTX_CNT_NUM);
+	free(ctxs);
+	return ret;
 }
 
 int wd_init_sched(struct wd_sched *in, struct wd_sched *from)
@@ -161,6 +239,9 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 		free(in->ctxs);
 		in->ctxs = NULL;
 	}
+
+	wd_shared_delete(WD_CTX_CNT_NUM);
+	in->msg_cnt = NULL;
 }
 
 void wd_memset_zero(void *data, __u32 size)
