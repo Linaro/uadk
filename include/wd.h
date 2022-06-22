@@ -8,9 +8,11 @@
 #define __WD_H
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
 #include <asm/types.h>
 #include "uacce.h"
@@ -25,39 +27,37 @@ extern "C" {
 #define MAX_DEV_NAME_LEN		256
 #define LINUX_CRTDIR_SIZE		1
 #define LINUX_PRTDIR_SIZE		2
+#define WD_CTX_CNT_NUM			1024
+#define WD_IPC_KEY			0x500011
 
 typedef void (*wd_log)(const char *format, ...);
 
-#ifndef WD_ERR
-#ifndef WITH_LOG_FILE
-extern wd_log log_out;
+#ifndef WD_NO_LOG
+#define WD_DEBUG(fmt, args...)  \
+	do {\
+		openlog("uadk-debug", LOG_CONS | LOG_PID, LOG_LOCAL5);\
+		syslog(LOG_DEBUG, fmt, ##args);\
+	} while (0)
 
-#define __WD_FILENAME__ (strrchr(__FILE__, '/') ?	\
-		((char *)((uintptr_t)strrchr(__FILE__, '/') + 1)) : __FILE__)
+#define WD_INFO(fmt, args...)  \
+	do {\
+		openlog("uadk-info", LOG_CONS | LOG_PID, LOG_LOCAL5);\
+		syslog(LOG_INFO, fmt, ##args);\
+	} while (0)
 
-#define WD_ERR(format, args...)	\
-	(log_out ? log_out("[%s, %d, %s]:"format,	\
-	__WD_FILENAME__, __LINE__, __func__, ##args) : 	\
-	fprintf(stderr, format, ##args))
+#define WD_ERR(fmt, args...)  \
+	do {\
+		openlog("uadk-err", LOG_CONS | LOG_PID, LOG_LOCAL5);\
+		syslog(LOG_ERR, fmt, ##args);\
+	} while (0)
 #else
-extern FILE *flog_fd;
-#define WD_ERR(format, args...)	do {			\
-	if (!flog_fd)					\
-		flog_fd = fopen(WITH_LOG_FILE, "a+");	\
-	if (flog_fd)					\
-		fprintf(flog_fd, format, ##args);	\
-	else						\
-		fprintf(stderr, "log %s not exists!",	\
-			WITH_LOG_FILE);			\
-} while (0)
-#endif
+#define OPEN_LOG(s)
+#define WD_DEBUG(fmt, args...)   fprintf(stderr, fmt, ##args)
+#define WD_INFO(fmt, args...)    fprintf(stderr, fmt, ##args)
+#define WD_ERR(fmt, args...)     fprintf(stderr, fmt, ##args)
 #endif
 
-#ifdef DEBUG_LOG
-#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
-#else
-#define dbg(msg, ...)
-#endif
+#define WD_CONSOLE printf
 
 /* WD error code */
 #define	WD_SUCCESS			0
@@ -487,6 +487,21 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
  * @stats: Pointer of struct wd_blockpool_stats.
  */
 void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
+
+/**
+ * wd_get_version() - Get the libwd version number and released time.
+ */
+void wd_get_version(void);
+
+/**
+ * wd_need_debug() - Get the debug flag from rsyslog.cnf
+ */
+bool wd_need_debug(void);
+
+/**
+ * wd_need_info() - Get the info flag from rsyslog.cnf
+ */
+bool wd_need_info(void);
 
 #ifdef __cplusplus
 }

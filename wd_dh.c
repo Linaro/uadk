@@ -212,6 +212,7 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	if (ret)
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	memset(&msg, 0, sizeof(struct wd_dh_msg));
@@ -257,6 +258,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	if (ret)
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	mid = wd_get_msg_from_pool(&wd_dh_setting.pool, idx, (void **)&msg);
