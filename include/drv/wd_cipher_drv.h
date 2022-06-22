@@ -62,6 +62,7 @@ struct wd_cipher_driver {
 
 void wd_cipher_set_driver(struct wd_cipher_driver *drv);
 struct wd_cipher_driver *wd_cipher_get_driver(void);
+struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_CIPHER_SET_DRIVER(drv)					      \
