@@ -294,6 +294,14 @@ int wd_ctx_wait(handle_t h_ctx, __u16 ms);
 int wd_is_sva(handle_t h_ctx);
 
 /**
+ * wd_is_isolate() - Check if the device has been isolated.
+ * @dev: Indicate one device.
+ *
+ * Return 1 if isolated, 0 for not isolated, less than 0 otherwise.
+ */
+int wd_is_isolate(struct uacce_dev *dev);
+
+/**
  * wd_get_accel_name() - Get device name or driver name.
  * @dev_path: The path of device. e.g. /dev/hisi_zip-0.
  * @no_apdx: Flag to indicate getting device name(0) or driver name(1).
