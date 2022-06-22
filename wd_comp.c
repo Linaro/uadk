@@ -406,6 +406,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	if (unlikely(ret))
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	msg_handle.send = wd_comp_setting.driver->comp_send;
@@ -656,6 +657,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	tag = wd_get_msg_from_pool(&wd_comp_setting.pool, idx, (void **)&msg);

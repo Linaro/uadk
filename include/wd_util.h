@@ -8,6 +8,8 @@
 #define __WD_UTIL_H
 
 #include <stdbool.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <asm/types.h>
 #include "wd_alg_common.h"
 
@@ -292,7 +294,7 @@ int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 idx);
  */
 void dump_env_info(struct wd_env_config *config);
 
-/*
+/**
  * wd_alg_get_env_param() - get specific ctx number.
  * @config: Pointer of wd_env_config which is used to store environment
  *          variable information.
@@ -304,7 +306,7 @@ int wd_alg_get_env_param(struct wd_env_config *env_config,
 			 struct wd_ctx_attr attr,
 			 __u32 *num, __u8 *is_enable);
 
-/*
+/**
  * wd_set_ctx_attr() - set node type and mode for ctx
  * @ctx_attr: ctx attributes pointer.
  * @node: numa id.
@@ -315,7 +317,7 @@ int wd_alg_get_env_param(struct wd_env_config *env_config,
 int wd_set_ctx_attr(struct wd_ctx_attr *ctx_attr,
 		    __u32 node, __u32 type, __u8 mode, __u32 num);
 
-/*
+/**
  * wd_check_ctx() - check ctx mode and index
  * @config: ctx config pointer.
  * @mode: synchronous or asynchronous mode.
@@ -353,6 +355,23 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
  * Return 0 if successful or less than 0 otherwise.
  */
 int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched);
+
+/**
+ * wd_dfx_msg_cnt() - Message counter interface for ctx
+ * @msg: Shared memory addr.
+ * @numSize: Number of elements.
+ * @index: Indicates the CTX index.
+ */
+static inline void wd_dfx_msg_cnt(unsigned long *msg, __u32 numsize, __u32 idx)
+{
+	bool ret;
+
+	ret = wd_need_info();
+	if (idx > numsize || !ret)
+		return;
+
+	msg[idx]++;
+}
 
 #ifdef __cplusplus
 }
