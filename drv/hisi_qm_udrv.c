@@ -167,14 +167,14 @@ static int hisi_qm_setup_region(handle_t h_ctx,
 {
 	q_info->sq_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_DUS);
 	if (!q_info->sq_base) {
-		WD_ERR("failed to mmap dus!\n");
+		WD_DEV_ERR(h_ctx, "failed to mmap dus!\n");
 		return -WD_ENOMEM;
 	}
 
 	q_info->mmio_base = wd_ctx_mmap_qfr(h_ctx, UACCE_QFRT_MMIO);
 	if (!q_info->mmio_base) {
 		wd_ctx_unmap_qfr(h_ctx, UACCE_QFRT_DUS);
-		WD_ERR("failed to mmap mmio!\n");
+		WD_DEV_ERR(h_ctx, "failed to mmap mmio!\n");
 		return -WD_ENOMEM;
 	}
 
@@ -197,14 +197,14 @@ static __u32 get_version_id(handle_t h_ctx)
 
 	api_name = wd_ctx_get_api(h_ctx);
 	if (!api_name || strlen(api_name) <= VERSION_ID_SHIFT) {
-		WD_ERR("invalid: api name is %s!\n", api_name);
+		WD_DEV_ERR(h_ctx, "invalid: api name is %s!\n", api_name);
 		return 0;
 	}
 
 	id = api_name + VERSION_ID_SHIFT;
 	ver = strtoul(id, NULL, 10);
 	if (!ver || ver == ULONG_MAX) {
-		WD_ERR("failed to strtoul, ver = %lu!\n", ver);
+		WD_DEV_ERR(h_ctx, "failed to strtoul, ver = %lu!\n", ver);
 		return 0;
 	}
 
@@ -250,7 +250,7 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 	q_info->qc_type = qp_ctx.qc_type;
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
-		WD_ERR("failed to set qc_type, use default value!\n");
+		WD_DEV_ERR(h_ctx, "failed to set qc_type, use default value!\n");
 		return ret;
 	}
 
@@ -267,14 +267,14 @@ static int hisi_qm_get_qfrs_offs(handle_t h_ctx,
 	type = UACCE_QFRT_DUS;
 	q_info->region_size[type] = wd_ctx_get_region_size(h_ctx, type);
 	if (!q_info->region_size[type]) {
-		WD_ERR("failed to get DUS qfrs offset!\n");
+		WD_DEV_ERR(h_ctx, "failed to get DUS qfrs offset!\n");
 		return -WD_EINVAL;
 	}
 
 	type = UACCE_QFRT_MMIO;
 	q_info->region_size[type] = wd_ctx_get_region_size(h_ctx, type);
 	if (!q_info->region_size[type]) {
-		WD_ERR("failed to get MMIO qfrs offset!\n");
+		WD_DEV_ERR(h_ctx, "failed to get MMIO qfrs offset!\n");
 		return -WD_EINVAL;
 	}
 
@@ -289,25 +289,25 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info = &qp->q_info;
 	ret = hisi_qm_setup_region(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("failed to setup region!\n");
+		WD_DEV_ERR(qp->h_ctx, "failed to setup region!\n");
 		return ret;
 	}
 
 	ret = hisi_qm_get_qfrs_offs(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("failed to get dev qfrs offset!\n");
+		WD_DEV_ERR(qp->h_ctx, "failed to get dev qfrs offset!\n");
 		goto err_out;
 	}
 
 	ret = hisi_qm_setup_db(qp->h_ctx, q_info);
 	if (ret) {
-		WD_ERR("failed to setup db!\n");
+		WD_DEV_ERR(qp->h_ctx, "failed to setup db!\n");
 		goto err_out;
 	}
 
 	ret = his_qm_set_qp_ctx(qp->h_ctx, config, q_info);
 	if (ret) {
-		WD_ERR("failed to setup io cmd!\n");
+		WD_DEV_ERR(qp->h_ctx, "failed to setup io cmd!\n");
 		goto err_out;
 	}
 
@@ -324,7 +324,7 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 
 	ret = pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
 	if (ret) {
-		WD_ERR("failed to init qinfo lock!\n");
+		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo lock!\n");
 		goto err_out;
 	}
 
@@ -455,6 +455,7 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 
 static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 {
+	struct hisi_qp *qp = container_of(q_info, struct hisi_qp, q_info);
 	struct cqe *cqe;
 	__u16 i, j;
 
@@ -466,7 +467,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
 			pthread_spin_unlock(&q_info->lock);
-			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error!\n", j);
+			WD_DEV_ERR(qp->h_ctx, "CQE_SQ_HEAD_INDEX(%u) error!\n", j);
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
@@ -510,7 +511,7 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 
 	q_info = &qp->q_info;
 	if (wd_ioread32(q_info->ds_rx_base) == 1) {
-		WD_ERR("wd queue hw error happened before qm receive!\n");
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened before qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
 
@@ -524,7 +525,7 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 
 	*count = recv_num++;
 	if (wd_ioread32(q_info->ds_rx_base) == 1) {
-		WD_ERR("wd queue hw error happened in qm receive!\n");
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened in qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
 
@@ -537,7 +538,7 @@ int hisi_check_bd_id(handle_t h_qp, __u32 mid, __u32 bid)
 	__u8 mode = qp->q_info.qp_mode;
 
 	if (mode == CTX_MODE_SYNC && mid != bid) {
-		WD_ERR("failed to recv self bd, send id: %u, recv id: %u\n",
+		WD_DEV_ERR(qp->h_ctx, "failed to recv self bd, send id: %u, recv id: %u\n",
 			    mid, bid);
 		return -WD_EINVAL;
 	}
