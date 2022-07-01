@@ -5,6 +5,7 @@
 #define __HZIP_DRV_H__
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <pthread.h>
 #include <linux/types.h>
 
@@ -29,10 +30,9 @@ extern "C" {
 #define BYTE_BITS			8
 #define BYTE_BITS_SHIFT		3
 
-#define __offsetof(t, m) ((size_t)(uintptr_t)&((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
-		(type *)((char *)__mptr - __offsetof(type, member)); })
+		(type *)((char *)__mptr - offsetof(type, member)); })
 
 enum hisi_qm_sgl_copy_dir {
 	COPY_SGL_TO_PBUFF,
