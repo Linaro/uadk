@@ -80,12 +80,51 @@ struct wd_sched_ctx {
 	struct wd_sched_info sched_info[0];
 };
 
+static bool sched_key_valid(struct wd_sched_ctx *sched_ctx,
+			    const struct sched_key *key)
+{
+	if (key->numa_id >= sched_ctx->numa_num ||
+	    key->mode >= SCHED_MODE_BUTT ||
+	    key->type >= sched_ctx->type_num) {
+		WD_ERR("invalid: sched key's numa: %d, mode: %u, type: %u!\n",
+		       key->numa_id, key->mode, key->type);
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * sched_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
+ */
+static struct sched_ctx_region *sched_get_ctx_range(struct wd_sched_ctx *sched_ctx,
+						    const struct sched_key *key)
+{
+	struct wd_sched_info *sched_info;
+	int numa_id;
+	int type;
+
+	sched_info = sched_ctx->sched_info;
+	if (key->numa_id >= 0 &&
+	    sched_info[key->numa_id].ctx_region[key->mode][key->type].valid)
+		return &sched_info[key->numa_id].ctx_region[key->mode][key->type];
+
+	/* If the key->numa_id is not exist, we should scan for a region */
+	for (numa_id = 0; numa_id < sched_ctx->numa_num; numa_id++) {
+		for (type = 0; type < sched_ctx->type_num; type++) {
+			if (sched_info[numa_id].ctx_region[key->mode][type].valid)
+				return &sched_info[numa_id].ctx_region[key->mode][type];
+		}
+	}
+
+	return NULL;
+}
+
 /**
  * sched_get_next_pos_rr - Get next resource pos by RR schedule.
  * The second para is reserved for future.
  */
-static __u32 sched_get_next_pos_rr(struct sched_ctx_region *region,
-				    void *para)
+static __u32 sched_get_next_pos_rr(struct sched_ctx_region *region, void *para)
 {
 	__u32 pos;
 
@@ -104,160 +143,6 @@ static __u32 sched_get_next_pos_rr(struct sched_ctx_region *region,
 }
 
 /**
- * sched_get_ctx_range - Get ctx range from ctx_map by the wd comp arg
- */
-static struct sched_ctx_region *sched_get_ctx_range(struct wd_sched_ctx *ctx,
-			   const struct sched_key *key)
-{
-	struct wd_sched_info *sched_info;
-	int numa_id;
-	int type;
-
-	sched_info = ctx->sched_info;
-	if (key->numa_id >= 0 &&
-	    sched_info[key->numa_id].ctx_region[key->mode][key->type].valid)
-		return &sched_info[key->numa_id].ctx_region[key->mode][key->type];
-
-	/* If the key->numa_id is not exist, we should scan for a region */
-	for (numa_id = 0; numa_id < ctx->numa_num; numa_id++) {
-		for (type = 0; type < ctx->type_num; type++) {
-			if (sched_info[numa_id].ctx_region[key->mode][type].valid)
-				return &sched_info[numa_id].ctx_region[key->mode][type];
-		}
-	}
-
-	return NULL;
-}
-
-static bool sched_key_valid(struct wd_sched_ctx *ctx,
-				   const struct sched_key *key)
-{
-	if (key->numa_id >= ctx->numa_num || key->mode >= SCHED_MODE_BUTT ||
-	    key->type >= ctx->type_num) {
-		WD_ERR("invalid: sched key's numa: %d, mode: %u, type: %u!\n",
-		       key->numa_id, key->mode, key->type);
-		return false;
-	}
-
-	return true;
-}
-
-static int session_poll_region(struct wd_sched_ctx *ctx, __u32 begin,
-			      __u32 end, __u32 expect, __u32 *count)
-{
-	__u32 poll_num = 0;
-	__u32 i;
-	int ret;
-
-	/* i is the pos of ctxs, the max is end */
-	for (i = begin; i <= end; i++) {
-		/*
-		 * RR schedule, one time poll one package,
-		 * poll_num is always not more than one here.
-		 */
-		ret = ctx->poll_func(i, 1, &poll_num);
-		if ((ret < 0) && (ret != -EAGAIN))
-			return ret;
-		else if (ret == -EAGAIN)
-			continue;
-		*count += poll_num;
-		if (*count == expect)
-			break;
-	}
-
-	return 0;
-}
-
-static int session_poll_policy_rr(struct wd_sched_ctx *ctx, int numa_id,
-				 __u32 expect, __u32 *count)
-{
-	struct sched_ctx_region **region =
-					ctx->sched_info[numa_id].ctx_region;
-	__u32 begin, end;
-	__u32 i;
-	int ret;
-
-	for (i = 0; i < ctx->type_num; i++) {
-		if (!region[SCHED_MODE_ASYNC][i].valid)
-			continue;
-
-		begin = region[SCHED_MODE_ASYNC][i].begin;
-		end = region[SCHED_MODE_ASYNC][i].end;
-		ret = session_poll_region(ctx, begin, end, expect,
-					 count);
-		if (unlikely(ret))
-			return ret;
-	}
-
-	return 0;
-}
-
-/**
- * session_poll_policy - The polling policy matches the pick next ctx.
- * @sched_ctx: Schedule ctx, reference the struct sample_sched_ctx.
- * @cfg: The global resoure info.
- * @expect: User expect poll msg num.
- * @count: The actually poll num.
- *
- * The user must init the schedule info through wd_sched_rr_instance, the
- * func interval will not check the valid, becouse it will affect performance.
- */
-static int session_sched_poll_policy(handle_t sched_ctx,
-				    __u32 expect, __u32 *count)
-{
-	struct wd_sched_ctx *ctx = (struct wd_sched_ctx *)sched_ctx;
-	struct wd_sched_info *sched_info;
-	__u32 loop_time = 0;
-	__u32 last_count = 0;
-	__u16 i;
-	int ret;
-
-	if (unlikely(!count || !ctx)) {
-		WD_ERR("invalid: sched ctx is NULL or count is zero!\n");
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(ctx->numa_num > NUMA_NUM_NODES)) {
-		WD_ERR("invalid: ctx's numa number is %u!\n", ctx->numa_num);
-		return -WD_EINVAL;
-	}
-
-	sched_info = ctx->sched_info;
-
-	/*
-	 * Try different numa's ctx if we can't receive any
-	 * package last time, it is more efficient. In most
-	 * bad situation, poll ends after MAX_POLL_TIMES loop.
-	 */
-	while (++loop_time < MAX_POLL_TIMES) {
-		for (i = 0; i < ctx->numa_num;) {
-			/* If current numa is not valid, find next. */
-			if (!sched_info[i].valid) {
-				i++;
-				continue;
-			}
-
-			last_count = *count;
-			ret = session_poll_policy_rr(ctx, i, expect, count);
-			if (unlikely(ret))
-				return ret;
-
-			if (expect == *count)
-				return 0;
-
-			/*
-			 * If no package is received, find next numa,
-			 * otherwise, keep receiving packets at this node.
-			 */
-			if (last_count == *count)
-				i++;
-		}
-	}
-
-	return 0;
-}
-
-/**
  * session_sched_init_ctx - Get one ctx from ctxs by the sched_ctx and arg.
  * @sched_ctx: Schedule ctx, reference the struct sample_sched_ctx.
  * @sched_key: The key of schedule region.
@@ -265,42 +150,41 @@ static int session_sched_poll_policy(handle_t sched_ctx,
  *
  * The user must init the schedule info through wd_sched_rr_instance
  */
-static __u32 session_sched_init_ctx(handle_t sched_ctx,
-		void *sched_key, const int sched_mode)
+static __u32 session_sched_init_ctx(handle_t h_sched_ctx, void *sched_key, const int sched_mode)
 {
-	struct wd_sched_ctx *ctx = (struct wd_sched_ctx *)sched_ctx;
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
 	struct sched_key *key = (struct sched_key *)sched_key;
 	struct sched_ctx_region *region = NULL;
 	bool ret;
 
-	if (!ctx || !key) {
+	if (!sched_ctx || !key) {
 		WD_ERR("invalid: sched ctx or key is NULL!\n");
 		return INVALID_POS;
 	}
 
 	key->mode = sched_mode;
-	ret = sched_key_valid(ctx, key);
+	ret = sched_key_valid(sched_ctx, key);
 	if (!ret)
 		return INVALID_POS;
 
-	region = sched_get_ctx_range(ctx, key);
+	region = sched_get_ctx_range(sched_ctx, key);
 	if (!region)
 		return INVALID_POS;
 
 	return sched_get_next_pos_rr(region, NULL);
 }
 
-static int get_nearby_numa_id(handle_t sched_ctx)
+static int get_nearby_numa_id(handle_t h_sched_ctx)
 {
 #define MAX_NUMA_DISTANCE		1024
-	struct wd_sched_ctx *ctx = (struct wd_sched_ctx *)sched_ctx;
-	struct wd_sched_info *sched_info = ctx->sched_info;
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
+	struct wd_sched_info *sched_info = sched_ctx->sched_info;
 	int cpu = sched_getcpu();
 	int node = numa_node_of_cpu(cpu);
 	int dis = MAX_NUMA_DISTANCE;
 	int i, tmp, valid_id = -1;
 
-	for (i = 0; i < ctx->numa_num; i++) {
+	for (i = 0; i < sched_ctx->numa_num; i++) {
 		if (sched_info[i].valid) {
 			tmp = numa_distance(node, i);
 			if (dis > tmp) {
@@ -313,7 +197,7 @@ static int get_nearby_numa_id(handle_t sched_ctx)
 	return valid_id;
 }
 
-handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
+static handle_t session_sched_init_rr(handle_t h_sched_ctx, void *sched_param)
 {
 	struct sched_params *param = (struct sched_params *)sched_param;
 	struct sched_key *skey;
@@ -337,10 +221,8 @@ handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 		skey->numa_id = param->numa_id;
 	}
 
-	skey->sync_ctxid = session_sched_init_ctx(h_sched_ctx,
-				skey, CTX_MODE_SYNC);
-	skey->async_ctxid = session_sched_init_ctx(h_sched_ctx,
-				skey, CTX_MODE_ASYNC);
+	skey->sync_ctxid = session_sched_init_ctx(h_sched_ctx, skey, CTX_MODE_SYNC);
+	skey->async_ctxid = session_sched_init_ctx(h_sched_ctx, skey, CTX_MODE_ASYNC);
 
 	return (handle_t)skey;
 }
@@ -353,12 +235,12 @@ handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
  *
  * The user must init the schedule info through session_sched_init
  */
-static __u32 session_sched_pick_next_ctx(handle_t sched_ctx,
-		void *sched_key, const int sched_mode)
+static __u32 session_sched_pick_next_ctx_rr(handle_t h_sched_ctx, void *sched_key,
+					    const int sched_mode)
 {
 	struct sched_key *key = (struct sched_key *)sched_key;
 
-	if (unlikely(!sched_ctx || !key)) {
+	if (unlikely(!h_sched_ctx || !key)) {
 		WD_ERR("invalid: sched ctx or key is NULL!\n");
 		return INVALID_POS;
 	}
@@ -369,18 +251,131 @@ static __u32 session_sched_pick_next_ctx(handle_t sched_ctx,
 	return key->async_ctxid;
 }
 
+static int session_poll_region(struct wd_sched_ctx *sched_ctx, __u32 begin,
+			       __u32 end, __u32 expect, __u32 *count)
+{
+	__u32 poll_num = 0;
+	__u32 i;
+	int ret;
+
+	/* i is the pos of ctxs, the max is end */
+	for (i = begin; i <= end; i++) {
+		/*
+		 * RR schedule, one time poll one package,
+		 * poll_num is always not more than one here.
+		 */
+		ret = sched_ctx->poll_func(i, 1, &poll_num);
+		if ((ret < 0) && (ret != -EAGAIN))
+			return ret;
+		else if (ret == -EAGAIN)
+			continue;
+		*count += poll_num;
+		if (*count == expect)
+			break;
+	}
+
+	return 0;
+}
+
+static int session_poll_policy_rr(struct wd_sched_ctx *sched_ctx, int numa_id,
+				  __u32 expect, __u32 *count)
+{
+	struct sched_ctx_region **region =
+				sched_ctx->sched_info[numa_id].ctx_region;
+	__u32 begin, end;
+	__u32 i;
+	int ret;
+
+	for (i = 0; i < sched_ctx->type_num; i++) {
+		if (!region[SCHED_MODE_ASYNC][i].valid)
+			continue;
+
+		begin = region[SCHED_MODE_ASYNC][i].begin;
+		end = region[SCHED_MODE_ASYNC][i].end;
+		ret = session_poll_region(sched_ctx, begin, end, expect,
+					 count);
+		if (unlikely(ret))
+			return ret;
+	}
+
+	return 0;
+}
+
+/**
+ * session_poll_policy - The polling policy matches the pick next ctx.
+ * @sched_ctx: Schedule ctx, reference the struct sample_sched_ctx.
+ * @cfg: The global resoure info.
+ * @expect: User expect poll msg num.
+ * @count: The actually poll num.
+ *
+ * The user must init the schedule info through wd_sched_rr_instance, the
+ * func interval will not check the valid, becouse it will affect performance.
+ */
+static int session_sched_poll_policy_rr(handle_t h_sched_ctx, __u32 expect, __u32 *count)
+{
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
+	struct wd_sched_info *sched_info;
+	__u32 loop_time = 0;
+	__u32 last_count = 0;
+	__u16 i;
+	int ret;
+
+	if (unlikely(!count || !sched_ctx)) {
+		WD_ERR("invalid: sched ctx is NULL or count is zero!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(sched_ctx->numa_num > NUMA_NUM_NODES)) {
+		WD_ERR("invalid: ctx's numa number is %u!\n", sched_ctx->numa_num);
+		return -WD_EINVAL;
+	}
+
+	sched_info = sched_ctx->sched_info;
+
+	/*
+	 * Try different numa's ctx if we can't receive any
+	 * package last time, it is more efficient. In most
+	 * bad situation, poll ends after MAX_POLL_TIMES loop.
+	 */
+	while (++loop_time < MAX_POLL_TIMES) {
+		for (i = 0; i < sched_ctx->numa_num;) {
+			/* If current numa is not valid, find next. */
+			if (!sched_info[i].valid) {
+				i++;
+				continue;
+			}
+
+			last_count = *count;
+			ret = session_poll_policy_rr(sched_ctx, i, expect, count);
+			if (unlikely(ret))
+				return ret;
+
+			if (expect == *count)
+				return 0;
+
+			/*
+			 * If no package is received, find next numa,
+			 * otherwise, keep receiving packets at this node.
+			 */
+			if (last_count == *count)
+				i++;
+		}
+	}
+
+	return 0;
+}
+
 static struct wd_sched sched_table[SCHED_POLICY_BUTT] = {
 	{
 		.name = "RR scheduler",
 		.sched_policy = SCHED_POLICY_RR,
-		.sched_init = session_sched_init,
-		.pick_next_ctx = session_sched_pick_next_ctx,
-		.poll_policy = session_sched_poll_policy,
+		.sched_init = session_sched_init_rr,
+		.pick_next_ctx = session_sched_pick_next_ctx_rr,
+		.poll_policy = session_sched_poll_policy_rr,
 	},
 };
 
-int wd_sched_rr_instance(const struct wd_sched *sched,
-	struct sched_params *param)
+int wd_sched_rr_instance(const struct wd_sched *sched, struct sched_params *param)
 {
 	struct wd_sched_info *sched_info = NULL;
 	struct wd_sched_ctx *sched_ctx = NULL;
@@ -501,8 +496,7 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 		return NULL;
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
-		WD_ERR("invalid: sched_type is %u or type_num is %u!\n",
-		       sched_type, type_num);
+		WD_ERR("invalid: sched_type is %u or type_num is %u!\n", sched_type, type_num);
 		return NULL;
 	}
 
