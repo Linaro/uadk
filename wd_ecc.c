@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <time.h>
 #include <dlfcn.h>
