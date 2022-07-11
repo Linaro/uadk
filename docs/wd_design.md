@@ -102,17 +102,17 @@ libwd and many other algorithm libraries for different applications.
 
 ![overview](./wd_overview.png)
 
-Libwd provides a wrapper of basic UACCE user space interfaces, they are a set 
+Libwd provides a wrapper of basic UACCE user space interfaces, they are a set
 of helper functions.
 
-Algorithm libraries offer a set of APIs to users, who could use this set of 
-APIs to do specific task without accessing low level implementations. Algorithm 
-libraries also offer a register interface to let hardware vendors to register 
-their own user space driver, which could use above helper functions to do UACCE 
+Algorithm libraries offer a set of APIs to users, who could use this set of
+APIs to do specific task without accessing low level implementations. Algorithm
+libraries also offer a register interface to let hardware vendors to register
+their own user space driver, which could use above helper functions to do UACCE
 related work.
 
-So two mechanisms are provided to user application. User application could 
-either access libwd or algorithm libraries. And all of these are compiled as 
+So two mechanisms are provided to user application. User application could
+either access libwd or algorithm libraries. And all of these are compiled as
 libraries. User application could pick up appropriate libraries to link.
 
 This document focuses on the design of libwd and algorithm libraries.
@@ -124,42 +124,42 @@ UADK relies on SVA (Shared Virtual Address) that needs to be supported
 by IOMMU.
 
 In UADK framework, virtual address could be used by vendor driver and
-application directly. And it's actually the same virtual address, memory copy 
+application directly. And it's actually the same virtual address, memory copy
 could be avoided between vendor driver and application with SVA.
 
 
 ### UACCE user space API
 
 As the kernel driver of UADK, UACCE offers a set of APIs between kernel
-and user space. UACCE is introduced in "uacce.rst" and "sysfs-driver-uacce" 
+and user space. UACCE is introduced in "uacce.rst" and "sysfs-driver-uacce"
 in kernel documents.
 
-Hardware accelerator registers in UACCE as a char dev. At the same time, 
-hardware informations of accelerators are also exported in sysfs node. For 
-example, the file path of char dev is */dev/[Accel]* and hardware informations 
-are in */sys/class/uacce/[Accel]/*. The same name is shared in both devfs and 
+Hardware accelerator registers in UACCE as a char dev. At the same time,
+hardware information of accelerators are also exported in sysfs node. For
+example, the file path of char dev is */dev/[Accel]* and hardware information
+are in */sys/class/uacce/[Accel]/*. The same name is shared in both devfs and
 sysfs. The *Accel* is comprised of name, dash and id.
 
-After opening this char device once, vendor driver will get a context to access 
-the resource of this accelerator device. Vendor driver can configure above 
-context by ioctl of this opened fd, and mmap hardware resource, like MMIO or 
+After opening this char device once, vendor driver will get a context to access
+the resource of this accelerator device. Vendor driver can configure above
+context by ioctl of this opened fd, and mmap hardware resource, like MMIO or
 context to user space.
 
 
 ## Libwd Helper Functions
 
-Hardware accelerator communicates with CPU by MMIO and contexts. Libwd helper 
-functions provide the interface that vendor driver could access memory from 
+Hardware accelerator communicates with CPU by MMIO and contexts. Libwd helper
+functions provide the interface that vendor driver could access memory from
 UADK. And libwd is only accessed by vendor driver.
 
 
 ### Context
 
-Context is a dual directional hardware communication resource between hardware 
-accelerator and CPU. When a vendor driver wants to access resources of an 
+Context is a dual directional hardware communication resource between hardware
+accelerator and CPU. When a vendor driver wants to access resources of an
 accelerator, a context is the requisite resource.
 
-UACCE creates a char dev for each registered hardware device. Once the char dev 
+UACCE creates a char dev for each registered hardware device. Once the char dev
 is opened by UADK, a handle of context is created. Vendor driver or
 application could refer to the context by the handle.
 
@@ -173,7 +173,7 @@ Libwd defines APIs to allocate contexts.
 
 | Layer | Parameter | Direction | Comments |
 | :-- | :-- | :-- | :-- |
-| libwd | *dev* | IN | A device in sysfs. All attrs informations in sysfs |
+| libwd | *dev* | IN | A device in sysfs. All attrs information in sysfs |
 |       |       |    | are recorded in this *struct uacce_dev*. |
 
 Return the context handle if it succeeds. Return 0 if it fails.
@@ -187,16 +187,16 @@ Return the context handle if it succeeds. Return 0 if it fails.
 
 ### mmap
 
-With a context, resources on hardware accelerator could be shared to CPU. 
-When vendor driver or application wants to access the resource, it needs to map 
+With a context, resources on hardware accelerator could be shared to CPU.
+When vendor driver or application wants to access the resource, it needs to map
 the context.
 
-Libwd provides API to create the mapping between virtual address and physical 
-address. The mapping could cover three different types. They are MMIO (device 
-MMIO region), DUS (device user share region) and SS (static share memory 
+Libwd provides API to create the mapping between virtual address and physical
+address. The mapping could cover three different types. They are MMIO (device
+MMIO region), DUS (device user share region) and SS (static share memory
 region).
 
-*wd_ctx_mmap_qfr()* and *wd_ctx_unmap_qfr()* are a pair of APIs to create and 
+*wd_ctx_mmap_qfr()* and *wd_ctx_unmap_qfr()* are a pair of APIs to create and
 destroy the mapping.
 
 ***void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);***
@@ -222,39 +222,39 @@ Return virtual address if it succeeds. Return NULL if it fails.
 
 *wd_ctx_unmap_qfr()* unmaps qfile region from user space.
 
-qfrt means queue file region type. The details could be found in UACCE kernel 
+qfrt means queue file region type. The details could be found in UACCE kernel
 driver.
 
 
 ## Algorithm Libraries
 
-Libwd is a fundamental layer what user relies on to access hardware. UADK also 
-provides algorithm interfaces that user could get out of the hardware details, 
-such as contexts. With the algorithm interface, the user application could be 
+Libwd is a fundamental layer what user relies on to access hardware. UADK also
+provides algorithm interfaces that user could get out of the hardware details,
+such as contexts. With the algorithm interface, the user application could be
 executed on multiple vendor's hardware.
 
 
 ### Compression Algorithm
 
-In compression algorithm, the contexts won't be accessed by user any more. 
+In compression algorithm, the contexts won't be accessed by user any more.
 Instead, user only need to focus on compressing and decompressing.
 
-In libwd, everything is based on context resource. In compression algorithm, 
-everything is based on session. Session is a superset of context, since vendor 
-driver may apply multiple contexts for performance. With compression algorithm 
+In libwd, everything is based on context resource. In compression algorithm,
+everything is based on session. Session is a superset of context, since vendor
+driver may apply multiple contexts for performance. With compression algorithm
 layer, user doesn't care how the multiple contexts are used.
 
 
 #### Session in Compression Algorithm
 
-The session in compression algorithm records working algorithm, accelerator, 
-working mode, working context, and so on. It helps to gather more informations 
-and encapsulates them together. Application only needs to record the handle of 
+The session in compression algorithm records working algorithm, accelerator,
+working mode, working context, and so on. It helps to gather more information
+and encapsulates them together. Application only needs to record the handle of
 session.
 
-Whatever user wants to compress or decompress, a session is always necessary. 
-Each session could only support either compression or decompression. And there 
-are also some configurations of the compression/decompression. They are defined 
+Whatever user wants to compress or decompress, a session is always necessary.
+Each session could only support either compression or decompression. And there
+are also some configurations of the compression/decompression. They are defined
 in the *struct wd_comp_sess_setup*.
 
 ```
@@ -267,7 +267,7 @@ struct wd_comp_sess_setup {
 };
 ```
 
-With *struct wd_comp_sess_setup*, a session could be created. The details of 
+With *struct wd_comp_sess_setup*, a session could be created. The details of
 the session is encapsuled. Only a handle is exported to user.
 
 ***handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup \*setup)***
@@ -277,7 +277,7 @@ the session is encapsuled. Only a handle is exported to user.
 | compress  | *setup* | IN | The structure describes the configurations of |
 | algorithm |         |    | compression or decompression. |
 
-If a session is created successfully, a non-zero handle value is returned. 
+If a session is created successfully, a non-zero handle value is returned.
 If fails to create a session, just return 0.
 
 
@@ -293,8 +293,8 @@ With the handle, a related session could be destroyed.
 
 #### Compression & Decompression
 
-Compression & decompression always submit data buffer to hardware accelerator 
-and collect the output. These buffer informations could be encapsulated into a 
+Compression & decompression always submit data buffer to hardware accelerator
+and collect the output. These buffer information could be encapsulated into a
 structure, *struct wd_comp_req*.
 
 ```
@@ -333,19 +333,19 @@ structure, *struct wd_comp_req*.
 | *status*   | OUT  | Indicate the result. 0 means successful, and others |
 |            |      | are error code. |
 
-When an application gets a session, it could request hardware accelerator to 
-work in synchronous mode or asychronous mode. *cb* is the callback function 
-of user application that is only used in asynchronous mode. *cb_param* is the 
+When an application gets a session, it could request hardware accelerator to
+work in synchronous mode or asynchronous mode. *cb* is the callback function
+of user application that is only used in asynchronous mode. *cb_param* is the
 parameter of the asynchronous callback function.
 
-Since synchronous or asynchronous mode is specified in *struct wd_comp_req*, 
-the compression or decompression could be treated that user submits requests to 
+Since synchronous or asynchronous mode is specified in *struct wd_comp_req*,
+the compression or decompression could be treated that user submits requests to
 a session.
 
-There're two kinds of compression interface. One is block mode that the data 
-in the request is not related to the previous or later data. And the other is 
-stream mode that the data in the request is related to the data in the previous 
-or later request. If user wants to compress/decompress large data buffer, it's 
+There're two kinds of compression interface. One is block mode that the data
+in the request is not related to the previous or later data. And the other is
+stream mode that the data in the request is related to the data in the previous
+or later request. If user wants to compress/decompress large data buffer, it's
 suggested to use stream mode.
 
 
@@ -358,10 +358,10 @@ suggested to use stream mode.
 |           | *req*    | IN & | Indicate the source and destination buffer. |
 |           |          | OUT  | |
 
-*wd_do_comp_sync()* sends a synchronous compression/decompression request for 
+*wd_do_comp_sync()* sends a synchronous compression/decompression request for
 block mode.
 
-Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req*
 contains the buffer information.
 
 
@@ -374,11 +374,11 @@ contains the buffer information.
 |           | *req*    | IN & | Indicate the source and destination buffer. |
 |           |          | OUT  | |
 
-Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req*
 contains the buffer information.
 
-*wd_do_comp_strm()* sends a synchronous compression/decompression request for 
-stream mode. *wd_do_comp_strm()* just likes *wd_do_comp_sync()*, user only 
+*wd_do_comp_strm()* sends a synchronous compression/decompression request for
+stream mode. *wd_do_comp_strm()* just likes *wd_do_comp_sync()*, user only
 sends one request that the data buffer should be processed at one time.
 
 
@@ -391,27 +391,27 @@ sends one request that the data buffer should be processed at one time.
 |           | *req*    | IN & | Indicate the source and destination buffer. |
 |           |          | OUT  | |
 
-Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req*
 contains the buffer information.
 
-*wd_do_comp_sync2()* sends a synchronous compression/decompression request for 
-stream mode. *wd_do_comp_sync2()* is the superset of *wd_do_comp_strm()*. If 
-the data buffer of one request is too large to hardware accelerator, it could 
+*wd_do_comp_sync2()* sends a synchronous compression/decompression request for
+stream mode. *wd_do_comp_sync2()* is the superset of *wd_do_comp_strm()*. If
+the data buffer of one request is too large to hardware accelerator, it could
 split it into several requests until all data handled by hardware.
 
 
 
 #### Asynchronous Mode
 
-In synchronous mode, user application is blocked until the submitted request 
-is finished by hardware accelerator. Then a new request could be submitted. 
-In hardware accelerator, multiple requests are always processed in a stream 
-line. If a process needs to submit multiple requests to hardware, it can't 
-get good performance in synchronous mode. Since the stream line isn't fully 
-used. In this case, asynchronous mode could help user application to gain 
+In synchronous mode, user application is blocked until the submitted request
+is finished by hardware accelerator. Then a new request could be submitted.
+In hardware accelerator, multiple requests are always processed in a stream
+line. If a process needs to submit multiple requests to hardware, it can't
+get good performance in synchronous mode. Since the stream line isn't fully
+used. In this case, asynchronous mode could help user application to gain
 better performance.
 
-In asynchronous mode, user application gets return immediately while a request 
+In asynchronous mode, user application gets return immediately while a request
 is submitted.
 
 ***int wd_do_comp_async(handle_t h_sess, struct wd_comp_req \*req)***
@@ -423,11 +423,11 @@ is submitted.
 |           | *req*    | IN & | Indicate the source and destination buffer. |
 |           |          | OUT  | |
 
-Return 0 if it succeeds. Return negative value if it fails. Parameter *req* 
+Return 0 if it succeeds. Return negative value if it fails. Parameter *req*
 contains the buffer information.
 
-When hardware accelerator finishes the request, the callback that 
-is provided by user will be invoked. Because the compression library isn't 
+When hardware accelerator finishes the request, the callback that
+is provided by user will be invoked. Because the compression library isn't
 driven by interrupt, a polling function is necessary to check result.
 
 ***int wd_comp_poll(__u32 expt, __u32 \*count)***
@@ -446,8 +446,8 @@ Usually *wd_comp_poll()* could be invoked in a user defined polling thread.
 
 #### Bind Accelerator and Driver
 
-Compression algorithm library requires each vendor driver providing an 
-instance, *struct wd_comp_driver*. This instance represents a vendor driver. 
+Compression algorithm library requires each vendor driver providing an
+instance, *struct wd_comp_driver*. This instance represents a vendor driver.
 Compression algorithm library binds an vendor driver by the instance.
 
 ```
@@ -472,14 +472,14 @@ Compression algorithm library binds an vendor driver by the instance.
 |            | vendor driver. |
 
 
-A matched vendor driver is bound to compression algorithm library in a global 
-instance, *struct wd_comp_setting*. The binding process is finished by 
+A matched vendor driver is bound to compression algorithm library in a global
+instance, *struct wd_comp_setting*. The binding process is finished by
 macro *WD_COMP_SET_DRIVER()*.
 
 
-*struct wd_comp_setting* binds context resources, user scheduler and vendor 
-driver together. At first, user application needs to allocate contexts and to 
-create scheduler instance. Then use *wd_comp_init()* to initialize vendor 
+*struct wd_comp_setting* binds context resources, user scheduler and vendor
+driver together. At first, user application needs to allocate contexts and to
+create scheduler instance. Then use *wd_comp_init()* to initialize vendor
 device.
 
 ***int wd_comp_init(struct wd_ctx_config \*config, struct wd_sched \*sched)***
@@ -492,7 +492,7 @@ device.
 
 Return 0 if it succeeds. And return error number if it fails.
 
-In *wd_comp_init()*, context resources, user scheduler and vendor driver are 
+In *wd_comp_init()*, context resources, user scheduler and vendor driver are
 initialized.
 
 
@@ -504,13 +504,13 @@ In *wd_comp_uninit()*, all configurations on resources are cleared.
 
 ### Scheduler
 
-When algorithm layer is used, context resource is not exposed to user any more. 
-So user could define a scheduler that allocate context resources, arrange 
+When algorithm layer is used, context resource is not exposed to user any more.
+So user could define a scheduler that allocate context resources, arrange
 proper resources to sessions and free context resources.
 
 For user convenient, a sample scheduler is provided in UADK for reference.
 
-***struct wd_sched \*sample_sched_alloc(__u8 sched_type, __u8 type_num, 
+***struct wd_sched \*sample_sched_alloc(__u8 sched_type, __u8 type_num,
 __u8 numa_num, user_poll_func func)***
 
 | Layer | Parameter | Direction | Comments |
@@ -535,7 +535,7 @@ Return a scheduler instance if it succeeds. And return NULL if it fails.
 *sample_sched_release()* is used to release a scheduler instance.
 
 
-***int sample_sched_fill_data(const struct wd_sched \*sched, int numa_id, 
+***int sample_sched_fill_data(const struct wd_sched \*sched, int numa_id,
 __u8 mode, __u8 type, __u32 begin, __u32 end)***
 
 | Layer | Parameter | Direction | Comments |
@@ -548,23 +548,23 @@ __u8 mode, __u8 type, __u32 begin, __u32 end)***
 |       | *begin*   | Input | The index of first context in the region. |
 |       | *end*     | Input | The index of last context in the region. |
 
-After context resources allocated by *wd_request_ctx()*, user could specify 
-which context resources are working in the specified mode or type by 
+After context resources allocated by *wd_request_ctx()*, user could specify
+which context resources are working in the specified mode or type by
 *sample_sched_fill_data()*.
 
 
 ### Environment Variable
 
-According to above document, user need to care NUMA node and context number 
-to make use of UADK. The configuration process is a little boring. The idea 
-of Environment Variable is to make those parameters configured in user's 
+According to above document, user need to care NUMA node and context number
+to make use of UADK. The configuration process is a little boring. The idea
+of Environment Variable is to make those parameters configured in user's
 environment variable. It could help user to configure those parameters.
 
 
 ***wd_comp_env_init(void)***
 
-Create a registered table for algorithm that could parse different environment 
-variables. With those parameters from user environment variables, allocate 
+Create a registered table for algorithm that could parse different environment
+variables. With those parameters from user environment variables, allocate
 related hardware resources.
 
 
@@ -583,7 +583,7 @@ Free allocated hardware resources.
 |           | *mode* | Input | Specify operation mode. |
 |           |        |       | 0 -- sync mode, 1 -- async mode. |
 
-Specify the parameters and create a pseudo environment variable. By this 
+Specify the parameters and create a pseudo environment variable. By this
 pseduo environment table, allocate related hardware resource.
 
 
@@ -592,7 +592,7 @@ pseduo environment table, allocate related hardware resource.
 Free allocated hardware resources like ***wd_comp_env_uninit()***.
 
 
-***wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode, 
+***wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode,
                          __u32 \*num, __u8 \*is_enable)***
 
 | Layer | Parameter | Direction | Comments |
@@ -605,28 +605,28 @@ Free allocated hardware resources like ***wd_comp_env_uninit()***.
 |           | *is_enable* | Output | Indicate whether asynchronous polling |
 |           |             |        | mode is enabled or not. |
 
-Query context number that is defined in environment variable by specified 
-NUMA node, type and operation mode. At the same time, asynchronous polling 
+Query context number that is defined in environment variable by specified
+NUMA node, type and operation mode. At the same time, asynchronous polling
 mode is queried.
 
 
 
 ## Vendor Driver
 
-A vendor driver is the counterpart of a hardware accelerator. Without the 
-vendor driver, the accelerator can't work. *Context* could store the 
-informations from the both accelerator and vendor driver.
+A vendor driver is the counterpart of a hardware accelerator. Without the
+vendor driver, the accelerator can't work. *Context* could store the
+information from the both accelerator and vendor driver.
 
-If an accelerator is a bit special and not be generalized, application could 
-access the vendor driver directly. The interface to application is defined 
+If an accelerator is a bit special and not be generalized, application could
+access the vendor driver directly. The interface to application is defined
 by vendor driver itself.
 
-Before accessing hardware accelerator, vendor driver needs to allocate 
-*context* first. In the *struct wd_ctx*, the node path of accelerator is also 
-recorded. If there're multiple accelerators share a same vendor driver, vendor 
+Before accessing hardware accelerator, vendor driver needs to allocate
+*context* first. In the *struct wd_ctx*, the node path of accelerator is also
+recorded. If there're multiple accelerators share a same vendor driver, vendor
 driver should decide to choose which accelerator by itself.
 
-Application may want to track *context*. It's not good to share *context* to 
+Application may want to track *context*. It's not good to share *context* to
 application directly. It's better to transfer *context* to handle for security.
 
 
@@ -635,41 +635,41 @@ application directly. It's better to transfer *context* to handle for security.
 
 ### Example in user application
 
-Here's an example of compression in user application. User application just 
+Here's an example of compression in user application. User application just
 needs a few APIs to complete synchronous compression.
 
 ![comp_sync](./wd_comp_sync.png)
 
-Synchoronous operation means polling hardware accelerator status of each 
-operation. It costs too much CPU resources on polling and causes performance 
-down. User application could divide the job into multiple parts. Then it 
+Synchoronous operation means polling hardware accelerator status of each
+operation. It costs too much CPU resources on polling and causes performance
+down. User application could divide the job into multiple parts. Then it
 could make use of asynchronous mechanism to save time on polling.
 
 ![comp_async2](./wd_comp_async2.png)
 
-There's also a limitation on asynchronous operation in SVA scenario. Let's 
-assume there're two output frames generated by accelerator, A frame and B 
-frame. If the output is in fixed-length, then we can calculate the address of 
-A and B frame in the output buffer of application. If the length of hardware 
-accelerator output isn't fixed, we have to setup the temperary buffer to store 
-A and B frame. Then a memory copy operation is required between temperary 
-buffer and application buffer. So we use compression as a demo to explain 
-asynchronous operation. It doesn't mean that we recommend to use asynchronous 
+There's also a limitation on asynchronous operation in SVA scenario. Let's
+assume there're two output frames generated by accelerator, A frame and B
+frame. If the output is in fixed-length, then we can calculate the address of
+A and B frame in the output buffer of application. If the length of hardware
+accelerator output isn't fixed, we have to setup the temperary buffer to store
+A and B frame. Then a memory copy operation is required between temperary
+buffer and application buffer. So we use compression as a demo to explain
+asynchronous operation. It doesn't mean that we recommend to use asynchronous
 compression.
 
 
 ### Vendor Driver Exposed to User Application
 
-Here's an example of implementing vendor driver that is exposed to application 
+Here's an example of implementing vendor driver that is exposed to application
 direcly.
 
-When user application needs to access hardware accelerator, it calls the 
-interface in vendor driver. The interface is defined by vendor driver. Then 
+When user application needs to access hardware accelerator, it calls the
+interface in vendor driver. The interface is defined by vendor driver. Then
 vendor driver requests a context by *wd_request_ctx()*.
 
-With the context, vendor driver could access hardware accelerator by libwd, 
-such as MMIO, memory mapping, and so on. And application has to use the 
+With the context, vendor driver could access hardware accelerator by libwd,
+such as MMIO, memory mapping, and so on. And application has to use the
 interface that is defined by vendor driver.
 
-When application doesn't want to access hardware accelerator, vendor driver 
+When application doesn't want to access hardware accelerator, vendor driver
 could invokes *wd_release_ctx()* to release the hardware.
