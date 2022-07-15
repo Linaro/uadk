@@ -20,7 +20,7 @@ endif	# WITH_LOG_FILE
 # z = revision
 MAJOR = 2
 MINOR = 3
-REVISION = 34
+REVISION = 35
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
 DAY = 11
