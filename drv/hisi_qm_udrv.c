@@ -335,6 +335,14 @@ err_out:
 	return ret;
 }
 
+static void hisi_qm_clear_info(struct hisi_qp *qp)
+{
+	struct hisi_qm_queue_info *q_info = &qp->q_info;
+
+	pthread_spin_destroy(&q_info->lock);
+	hisi_qm_unset_region(qp->h_ctx, q_info);
+}
+
 static int get_free_num(struct hisi_qm_queue_info *q_info)
 {
 	/* The device should reserve one buffer. */
@@ -374,7 +382,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	qp->h_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD,
 						HISI_SGE_NUM_IN_SGL);
 	if (!qp->h_sgl_pool)
-		goto out_qp;
+		goto free_info;
 
 	ret = wd_ctx_start(qp->h_ctx);
 	if (ret)
@@ -390,6 +398,8 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 
 free_pool:
 	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+free_info:
+	hisi_qm_clear_info(qp);
 out_qp:
 	free(qp);
 out:
@@ -598,6 +608,23 @@ static struct hisi_sgl *hisi_qm_align_sgl(const void *sgl, __u32 sge_num)
 	return sgl_align;
 }
 
+static void hisi_qm_free_sglpool(struct hisi_sgl_pool *pool)
+{
+	int i;
+
+	if (pool->sgl) {
+		for (i = 0; i < pool->sgl_num; i++)
+			if (pool->sgl[i])
+				free(pool->sgl[i]);
+
+		free(pool->sgl);
+	}
+
+	if (pool->sgl_align)
+		free(pool->sgl_align);
+	free(pool);
+}
+
 handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 {
 	struct hisi_sgl_pool *sgl_pool;
@@ -650,30 +677,22 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	return (handle_t)sgl_pool;
 
 err_out:
-	hisi_qm_destroy_sglpool((handle_t)sgl_pool);
+	hisi_qm_free_sglpool(sgl_pool);
 	return (handle_t)0;
 }
 
 void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 {
-	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool *)sgl_pool;
-	int i;
+	struct hisi_sgl_pool *pool;
 
-	if (!pool) {
+	if (!sgl_pool) {
 		WD_ERR("invalid: sgl_pool is NULL!\n");
 		return;
 	}
-	if (pool->sgl) {
-		for (i = 0; i < pool->sgl_num; i++)
-			if (pool->sgl[i])
-				free(pool->sgl[i]);
 
-		free(pool->sgl);
-	}
-
-	if (pool->sgl_align)
-		free(pool->sgl_align);
-	free(pool);
+	pool = (struct hisi_sgl_pool *)sgl_pool;
+	pthread_spin_destroy(&pool->lock);
+	hisi_qm_free_sglpool(pool);
 }
 
 static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
