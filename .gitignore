@@ -168,7 +168,7 @@ test/hisi_hpre_test/test_hisi_hpre
 test/hisi_sec_test/test_hisi_sec
 test/hisi_zip_test/zip_sva_perf
 test/wd_mempool_test
-uadk_benchmark/uadk_benchmark
+uadk_tool/uadk_tool
 v1/test/hisi_zip_test/test_hisi_zip
 v1/test/hisi_zip_test/test_hisi_zip_perf
 v1/test/hisi_zip_test/test_hisi_zlib
