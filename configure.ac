@@ -64,6 +64,11 @@ AC_SUBST(with_openssl_dir)
 
 AM_CONDITIONAL([WITH_OPENSSL_DIR], [test -n "$with_openssl_dir"])
 
+AC_ARG_WITH(zlib_fse_dir,
+	AS_HELP_STRING([--with-zlib_fse_dir], [Path to Zlib FSE library]))
+AC_SUBST(with_zlib_fse_dir)
+AM_CONDITIONAL([WITH_ZLIB_FSE_DIR], [test -n "$with_zlib_fse_dir"])
+
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h limits.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/time.h unistd.h])
 

@@ -8,7 +8,12 @@
 #include "sec_wd_benchmark.h"
 #include "sec_soft_benchmark.h"
 
-#define BYTES_TO_KB	10
+#include "hpre_uadk_benchmark.h"
+#include "hpre_wd_benchmark.h"
+
+#include "zip_uadk_benchmark.h"
+#include "zip_wd_benchmark.h"
+
 #define TABLE_SPACE_SIZE	8
 
 /*----------------------------------------head struct--------------------------------------------------------*/
@@ -424,8 +429,18 @@ static int benchmark_run(struct acc_option *option)
 #endif
 		break;
 	case HPRE_TYPE:
+		if (option->modetype & SVA_MODE) {
+			ret = hpre_uadk_benchmark(option);
+		} else if (option->modetype & NOSVA_MODE) {
+			ret = hpre_wd_benchmark(option);
+		}
 		break;
 	case ZIP_TYPE:
+		if (option->modetype & SVA_MODE) {
+			ret = zip_uadk_benchmark(option);
+		} else if (option->modetype & NOSVA_MODE) {
+			ret = zip_wd_benchmark(option);
+		}
 		break;
 	}
 
@@ -546,8 +561,9 @@ static void print_help(void)
 	ACC_TST_PRT("        The name of the algorithm for benchmarking\n");
 	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft]: start UADK or Warpdrive or Openssl mode test\n");
 	ACC_TST_PRT("    [--sync/--async]: start asynchronous/synchronous mode test\n");
-	ACC_TST_PRT("    [--optype 0/1]:\n");
-	ACC_TST_PRT("        encryption/decryption or compression/decompression\n");
+	ACC_TST_PRT("    [--opt 0,1,2,3,4,5]:\n");
+	ACC_TST_PRT("        SEC/ZIP: 0/1:encryption/decryption or compression/decompression\n");
+	ACC_TST_PRT("        HPRE: 0~5:keygen, key compute, Enc, Dec, Sign, Verify\n");
 	ACC_TST_PRT("    [--pktlen]:\n");
 	ACC_TST_PRT("        set the length of BD message in bytes\n");
 	ACC_TST_PRT("    [--seconds]:\n");
