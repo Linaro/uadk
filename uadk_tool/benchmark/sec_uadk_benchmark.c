@@ -10,6 +10,8 @@
 #include "include/wd_sched.h"
 
 #define SEC_TST_PRT printf
+#define MAX_IVK_LENTH		64
+#define DEF_IVK_DATA		0xAA
 
 struct uadk_bd {
 	u8 *src;
@@ -37,18 +39,12 @@ typedef struct uadk_thread_res {
 	u32 td_id;
 } thread_data;
 
-#define MAX_POOL_LENTH		4096
-#define MAX_IVK_LENTH		64
-#define DEF_IVK_DATA		0xAA
-#define MAX_TRY_CNT		5000
-#define SEND_USLEEP		100
-
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched *g_sched;
 static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
+static unsigned int g_prefetch;
 static unsigned int g_pktlen;
-static struct sched_params g_param;
 
 static void *cipher_async_cb(struct wd_cipher_req *req, void *data)
 {
@@ -349,6 +345,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 static int init_ctx_config(char *alg, int subtype, int mode)
 {
 	struct uacce_dev_list *list;
+	struct sched_params param;
 	int i, max_node;
 	int ret = 0;
 
@@ -385,7 +382,7 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		break;
 	default:
 		SEC_TST_PRT("Fail to parse alg subtype!\n");
-		return -EINVAL;
+		goto out;
 	}
 	if (!g_sched) {
 		SEC_TST_PRT("Fail to alloc sched!\n");
@@ -397,12 +394,12 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		list->dev->numa_id = 0;
 
 	g_sched->name = SCHED_SINGLE;
-	g_param.numa_id = list->dev->numa_id;
-	g_param.type = 0;
-	g_param.mode = mode;
-	g_param.begin = 0;
-	g_param.end = g_ctxnum - 1;
-	ret = wd_sched_rr_instance(g_sched, &g_param);
+	param.numa_id = list->dev->numa_id;
+	param.type = 0;
+	param.mode = mode;
+	param.begin = 0;
+	param.end = g_ctxnum - 1;
+	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
 		SEC_TST_PRT("Fail to fill sched data!\n");
 		goto out;
@@ -419,6 +416,8 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 	case DIGEST_TYPE:
 		ret = wd_digest_init(&g_ctx_cfg, g_sched);
 		break;
+	default:
+		goto out;
 	}
 	if (ret) {
 		SEC_TST_PRT("Fail to cipher ctx!\n");
@@ -461,18 +460,13 @@ static void uninit_ctx_config(int subtype)
 	wd_sched_rr_release(g_sched);
 }
 
-int init_uadk_bd_pool(void)
+static int init_uadk_bd_pool(void)
 {
 	unsigned long step;
-	int fill_size;
 	int i, j;
 
 	// make the block not align to 4K
 	step = sizeof(char) * g_pktlen * 2;
-	if (g_pktlen > MAX_IVK_LENTH)
-		fill_size = MAX_IVK_LENTH;
-	else
-		fill_size = g_pktlen;
 
 	g_uadk_pool.iv = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
 	g_uadk_pool.key = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
@@ -498,7 +492,9 @@ int init_uadk_bd_pool(void)
 				if (!g_uadk_pool.pool[i].bds[j].dst)
 					goto malloc_error3;
 
-				get_rand_data(g_uadk_pool.pool[i].bds[j].src, fill_size);
+				get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
+				if (g_prefetch)
+					get_rand_data(g_uadk_pool.pool[i].bds[j].dst, g_pktlen);
 			}
 		}
 	}
@@ -526,12 +522,13 @@ malloc_error1:
 
 	free(g_uadk_pool.iv);
 	free(g_uadk_pool.key);
+	free(g_uadk_pool.mac);
 
 	SEC_TST_PRT("init uadk bd pool alloc failed!\n");
 	return -ENOMEM;
 }
 
-void free_uadk_bd_pool(void)
+static void free_uadk_bd_pool(void)
 {
 	int i, j;
 
@@ -550,21 +547,22 @@ void free_uadk_bd_pool(void)
 
 	free(g_uadk_pool.iv);
 	free(g_uadk_pool.key);
+	free(g_uadk_pool.mac);
 }
 
 /*-------------------------------uadk benchmark main code-------------------------------------*/
 
-void *sec_uadk_poll(void *data)
+static void *sec_uadk_poll(void *data)
 {
 	typedef int (*poll_ctx)(__u32 idx, __u32 expt, __u32 *count);
 	poll_ctx uadk_poll_ctx = NULL;
 	thread_data *pdata = (thread_data *)data;
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
 	u32 id = pdata->td_id;
-	u32 last_time = 2; /* poll need one more recv time */
+	u32 last_time = 2; // poll need one more recv time
 	u32 count = 0;
 	u32 recv = 0;
-	int ret;
+	int  ret;
 
 	if (id > g_ctxnum)
 		return NULL;
@@ -586,7 +584,6 @@ void *sec_uadk_poll(void *data)
 
 	while (last_time) {
 		ret = uadk_poll_ctx(id, expt, &recv);
-		// SEC_TST_PRT("expt %u, poll %d recv: %u!\n", expt, i, recv);
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
@@ -599,7 +596,7 @@ void *sec_uadk_poll(void *data)
 	}
 
 recv_error:
-	add_recv_data(count);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }
@@ -636,7 +633,6 @@ static void *sec_uadk_async_run(void *arg)
 	case CIPHER_TYPE:
 		cipher_setup.alg = pdata->alg;
 		cipher_setup.mode = pdata->mode;
-		cipher_setup.sched_param = (void *)&g_param;
 		h_sess = wd_cipher_alloc_sess(&cipher_setup);
 		if (!h_sess)
 			return NULL;
@@ -682,7 +678,6 @@ static void *sec_uadk_async_run(void *arg)
 	case AEAD_TYPE: // just ccm and gcm
 		aead_setup.calg = pdata->alg;
 		aead_setup.cmode = pdata->mode;
-		aead_setup.sched_param = (void *)&g_param;
 		h_sess = wd_aead_alloc_sess(&aead_setup);
 		if (!h_sess)
 			return NULL;
@@ -740,7 +735,6 @@ static void *sec_uadk_async_run(void *arg)
 	case DIGEST_TYPE:
 		digest_setup.alg = pdata->alg;
 		digest_setup.mode = pdata->mode; // digest mode is optype
-		digest_setup.sched_param = (void *)&g_param;
 		h_sess = wd_digest_alloc_sess(&digest_setup);
 		if (!h_sess)
 			return NULL;
@@ -820,7 +814,6 @@ static void *sec_uadk_sync_run(void *arg)
 	case CIPHER_TYPE:
 		cipher_setup.alg = pdata->alg;
 		cipher_setup.mode = pdata->mode;
-		cipher_setup.sched_param = (void *)&g_param;
 		h_sess = wd_cipher_alloc_sess(&cipher_setup);
 		if (!h_sess)
 			return NULL;
@@ -845,7 +838,7 @@ static void *sec_uadk_sync_run(void *arg)
 			creq.src = uadk_pool->bds[i].src;
 			creq.dst = uadk_pool->bds[i].dst;
 			ret = wd_do_cipher_sync(h_sess, &creq);
-			if (ret || creq.state)
+			if ((ret < 0 && ret != -WD_EBUSY) || creq.state)
 				break;
 			count++;
 			if (get_run_state() == 0)
@@ -856,7 +849,6 @@ static void *sec_uadk_sync_run(void *arg)
 	case AEAD_TYPE: // just ccm and gcm
 		aead_setup.calg = pdata->alg;
 		aead_setup.cmode = pdata->mode;
-		aead_setup.sched_param = (void *)&g_param;
 		h_sess = wd_aead_alloc_sess(&aead_setup);
 		if (!h_sess)
 			return NULL;
@@ -905,7 +897,6 @@ static void *sec_uadk_sync_run(void *arg)
 	case DIGEST_TYPE:
 		digest_setup.alg = pdata->alg;
 		digest_setup.mode = pdata->mode; // digest mode is optype
-		digest_setup.sched_param = (void *)&g_param;
 		h_sess = wd_digest_alloc_sess(&digest_setup);
 		if (!h_sess)
 			return NULL;
@@ -939,7 +930,7 @@ static void *sec_uadk_sync_run(void *arg)
 		break;
 	}
 
-	add_recv_data(count);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }
@@ -982,7 +973,6 @@ int sec_uadk_sync_threads(struct acc_option *options)
 
 sync_error:
 	return ret;
-
 }
 
 int sec_uadk_async_threads(struct acc_option *options)
@@ -998,10 +988,10 @@ int sec_uadk_async_threads(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	/* poll thread */
 	for (i = 0; i < g_ctxnum; i++) {
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].td_id = i;
+		/* poll thread */
 		ret = pthread_create(&pollid[i], NULL, sec_uadk_poll, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create poll thread fail!\n");
@@ -1053,6 +1043,7 @@ int sec_uadk_benchmark(struct acc_option *options)
 	g_thread_num = options->threads;
 	g_pktlen = options->pktlen;
 	g_ctxnum = options->ctxnums;
+	g_prefetch = options->prefetch;
 	if (options->optype > WD_CIPHER_DECRYPTION) {
 		SEC_TST_PRT("SEC optype error: %u\n", options->optype);
 		return -EINVAL;

@@ -56,11 +56,8 @@ typedef struct soft_jobs_res {
 	u32 use_engine;
 } jobs_data;
 
-#define MAX_POOL_LENTH		4096
 #define MAX_IVK_LENTH		64
 #define DEF_IVK_DATA		0xAA
-#define MAX_TRY_CNT		5000
-#define SEND_USLEEP		100
 
 static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
@@ -613,7 +610,7 @@ static void *sec_soft_async_run(void *arg)
 exit_pause:
 	ASYNC_WAIT_CTX_free(waitctx);
 
-	add_recv_data(count);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }
@@ -802,7 +799,7 @@ static void *sec_soft_sync_run(void *arg)
 		break;
 	}
 
-	add_recv_data(count);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }

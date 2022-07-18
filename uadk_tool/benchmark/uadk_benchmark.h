@@ -15,7 +15,6 @@
 #include <signal.h>
 #include <linux/random.h>
 #include <sys/syscall.h>
-#include <sys/mman.h>
 #include <sys/time.h>
 
 #define ACC_TST_PRT printf
@@ -24,21 +23,30 @@
 #define MAX_CTX_NUM	64
 #define MAX_TIME_SECONDS	128
 #define BYTES_TO_MB	20
-#define MAX_OPT_TYPE	5
+#define MAX_OPT_TYPE	6
 #define MAX_DATA_SIZE	(15 * 1024 * 1024)
 #define MAX_ALG_NAME 64
 #define ACC_QUEUE_SIZE	1024
+
+#define MAX_BLOCK_NM		16384 /* BLOCK_NUM must 4 times of POOL_LENTH */
+#define MAX_POOL_LENTH		4096
+#define MAX_TRY_CNT		5000
+#define SEND_USLEEP		100
 
 typedef unsigned char u8;
 typedef unsigned int u32;
 typedef unsigned     long long   u64;
 #define SCHED_SINGLE "sched_single"
+#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 
 /**
  * struct acc_option - Define the test acc app option list.
  * @algclass: 0:cipher 1:digest
  * @acctype: The sub alg type, reference func get_cipher_resource.
  * @syncmode: 0:sync mode 1:async mode
+ * @modetype: sva, no-sva, soft mode
+ * @optype: enc/dec, comp/decomp
+ * @prefetch: write allocated memory to prevent page faults
  */
 struct acc_option {
 	char  algname[64];
@@ -56,6 +64,7 @@ struct acc_option {
 	u32 subtype;
 	char  engine[64];
 	u32 engine_flag;
+	u32 prefetch;
 };
 
 enum acc_type {
@@ -74,7 +83,7 @@ enum alg_type {
 	ECDH_TYPE,
 	ECDSA_TYPE,
 	SM2_TYPE,
-	X22519_TYPE,
+	X25519_TYPE,
 	X448_TYPE,
 };
 
@@ -164,9 +173,8 @@ extern void cal_perfermance_data(struct acc_option *option, u32 sttime);
 extern void time_start(u32 seconds);
 extern int get_run_state(void);
 extern void set_run_state(int state);
-extern int get_rand_int(int range);
-extern void get_rand_data(u8 *addr, int size);
-extern void add_recv_data(u32 cnt);
+extern void get_rand_data(u8 *addr, u32 size);
+extern void add_recv_data(u32 cnt, u32 pkglen);
 extern void add_send_complete(void);
 extern u32 get_recv_time(void);
 

@@ -4,6 +4,5 @@
 
 #include "uadk_benchmark.h"
 
-
 extern int sec_soft_benchmark(struct acc_option *options);
 #endif /* SEC_SOFT_BENCHMARK_H */

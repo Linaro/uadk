@@ -10,19 +10,19 @@
 
 #define BYTES_TO_KB	10
 #define TABLE_SPACE_SIZE	8
-#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 
 /*----------------------------------------head struct--------------------------------------------------------*/
 static unsigned int g_run_state = 1;
 static pthread_mutex_t acc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct _recv_data {
+	double pkg_len;
 	u64 send_cnt;
 	u64 recv_cnt;
 	u32 send_times;
 	u32 recv_times;
 } g_recv_data;
 
-/* SVA mode and NOSVA mode change need re_insmode driver ko */
+/* SVA mode and NOSVA mode change need re_insmod driver ko */
 enum test_type {
 	SVA_MODE = 0x1,
 	NOSVA_MODE = 0x2,
@@ -63,7 +63,7 @@ static struct acc_alg_item alg_options[] = {
 	{"rsa-2048-crt", RSA_2048_CRT},
 	{"rsa-3072-crt", RSA_3072_CRT},
 	{"rsa-4096-crt", RSA_4096_CRT},
-	{"dh-768 ", DH_768},
+	{"dh-768", DH_768},
 	{"dh-1024",    DH_1024},
 	{"dh-1536",    DH_1536},
 	{"dh-2048", DH_2048},
@@ -131,10 +131,14 @@ void add_send_complete(void)
 	__atomic_add_fetch(&g_recv_data.send_times, 1, __ATOMIC_RELAXED);
 }
 
-void add_recv_data(u32 cnt)
+void add_recv_data(u32 cnt, u32 pkglen)
 {
 	pthread_mutex_lock(&acc_mutex);
 	g_recv_data.recv_cnt += cnt;
+	if (g_recv_data.pkg_len == 0)
+		g_recv_data.pkg_len = pkglen;
+	else
+		g_recv_data.pkg_len = ((double)pkglen + g_recv_data.pkg_len) / 2;
 	g_recv_data.recv_times++;
 	pthread_mutex_unlock(&acc_mutex);
 }
@@ -148,6 +152,7 @@ void init_recv_data(void)
 {
 	g_recv_data.send_cnt = 0;
 	g_recv_data.recv_cnt = 0;
+	g_recv_data.pkg_len = 0.0;
 	g_recv_data.send_times = 0;
 	g_recv_data.recv_times = 0;
 }
@@ -263,28 +268,21 @@ void time_start(u32 seconds)
 	alarm(seconds);
 }
 
-int get_rand_int(int range)
+void get_rand_data(u8 *addr, u32 size)
 {
-	int randnum;
-
-	if (range <= 0) {
-		ACC_TST_PRT("rand range error!\n");
-		return 1;
-	}
-	srand((unsigned)time(NULL) * getpid());
-	randnum = rand() % range;
-
-	return randnum;
-}
-
-void get_rand_data(u8 *addr, int size)
-{
+	unsigned short rand_state[3] = {
+		(0xae >> 16) & 0xffff, 0xae & 0xffff, 0x330e};
 	int i;
 
-	srand((unsigned)time(NULL) * getpid());
-	for (i = 0; i < size; i++) {
-		addr[i] = rand() % 0xFF;
-	}
+#if 1
+	// only 32bit valid, other 32bit is zero
+	for (i = 0; i < size >> 3; i++)
+		*((u64 *)addr + i) = nrand48(rand_state);
+#else
+	// full 64bit valid
+	for (i = 0; i < size >> 2; i++)
+		*((u32 *)addr + i) = nrand48(rand_state);
+#endif
 }
 
 /*-------------------------------------main code------------------------------------------------------*/
@@ -320,7 +318,7 @@ static void parse_alg_param(struct acc_option *option)
 	case X25519_ALG:
 		snprintf(option->algclass, MAX_ALG_NAME, "%s", "x25519");
 		option->acctype = HPRE_TYPE;
-		option->subtype = X22519_TYPE;
+		option->subtype = X25519_TYPE;
 		break;
 	case X448_ALG:
 		snprintf(option->algclass, MAX_ALG_NAME, "%s", "x448");
@@ -366,8 +364,8 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 	double perfermance;
 	double cpu_rate;
 	u32 ttime = 1000;
-	u32 perfdata;
-	u32 perfops;
+	double perfdata;
+	double perfops;
 	double ops;
 	u32 ptime;
 	int i, len;
@@ -397,13 +395,13 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 		palgname[i] = '\0';
 
 	ptime = ptime - sttime;
-	perfdata = (g_recv_data.recv_cnt * option->pktlen) >> BYTES_TO_KB;
-	perfops = (g_recv_data.recv_cnt) >> BYTES_TO_KB;
-	perfermance = (double)perfdata / option->times;
-	ops = (double)perfops / option->times;
+	perfdata = g_recv_data.pkg_len * g_recv_data.recv_cnt / 1024.0;
+	perfops = (double)(g_recv_data.recv_cnt) / 1000.0;
+	perfermance = perfdata / option->times;
+	ops = perfops / option->times;
 	cpu_rate = (double)ptime / option->times;
 	ACC_TST_PRT("algname:	length:		perf:		iops:		CPU_rate:\n"
-			"%s	%uBytes	%.1fKB/s	%.1fKops 	%.2f%%\n",
+			"%s	%-2uBytes 	%.1fKB/s 	%.1fKops 	%.2f%%\n",
 			palgname, option->pktlen, perfermance, ops, cpu_rate);
 }
 
@@ -419,11 +417,11 @@ static int benchmark_run(struct acc_option *option)
 			ret = sec_wd_benchmark(option);
 		}
 		usleep(20000);
-		#ifdef WITH_OPENSSL_DIR
+#ifdef WITH_OPENSSL_DIR
 		if (option->modetype & SOFT_MODE) {
 			ret = sec_soft_benchmark(option);
 		}
-		#endif
+#endif
 		break;
 	case HPRE_TYPE:
 		break;
@@ -447,6 +445,7 @@ static void dump_param(struct acc_option *option)
 	ACC_TST_PRT("    [--ctxnum]:  %u\n", option->ctxnums);
 	ACC_TST_PRT("    [--algclass]:%s\n", option->algclass);
 	ACC_TST_PRT("    [--acctype]: %u\n", option->acctype);
+	ACC_TST_PRT("    [--prefetch]:%u\n", option->prefetch);
 	ACC_TST_PRT("    [--engine]:  %s\n", option->engine);
 }
 
@@ -457,6 +456,7 @@ int acc_benchmark_run(struct acc_option *option)
 	int i, ret = 0;
 	int status;
 
+	ACC_TST_PRT("start UADK benchmark test.\n");
 	parse_alg_param(option);
 	dump_param(option);
 
@@ -558,13 +558,27 @@ static void print_help(void)
 	ACC_TST_PRT("        set the number of threads\n");
 	ACC_TST_PRT("    [--ctxnum]:\n");
 	ACC_TST_PRT("        the number of QP queues used by the entire test task\n");
+	ACC_TST_PRT("    [--prefetch]:\n");
+	ACC_TST_PRT("        in SVA mode, Enable prefetch can reduce page faults and improve performance\n");
 	ACC_TST_PRT("    [--engine]:\n");
 	ACC_TST_PRT("        set the test openssl engine\n");
+	ACC_TST_PRT("    [--alglist]:\n");
+	ACC_TST_PRT("        list the all support alg\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
 	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
 	ACC_TST_PRT("    	     --pktlen 1024 --seconds 1 --multi 1 --thread 1 --ctxnum 4\n");
-	ACC_TST_PRT("UPDATE:2021-7-28\n");
+	ACC_TST_PRT("UPDATE:2022-7-18\n");
+}
+
+static void print_support_alg(void)
+{
+	int i;
+
+	ACC_TST_PRT("UADK benchmark supported ALG:\n");
+	for (i = 0; i < ALG_MAX; i++) {
+		ACC_TST_PRT("%s\n", alg_options[i].name);
+	}
 }
 
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
@@ -583,8 +597,10 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		{"thread",    required_argument, 0, 9},
 		{"multi",     required_argument, 0, 10},
 		{"ctxnum",    required_argument, 0, 11},
-		{"engine",    required_argument, 0, 12},
-		{"help",      no_argument,       0, 13},
+		{"prefetch",     no_argument,    0, 12},
+		{"engine",    required_argument, 0, 13},
+		{"alglist",      no_argument,    0, 14},
+		{"help",      no_argument,       0, 15},
 		{0, 0, 0, 0}
 	};
 
@@ -593,7 +609,6 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		if (c == -1)
 			break;
 
-		// ACC_TST_PRT("index:%d , optarg name:%s\n", c, optarg);
 		switch (c) {
 		case 2:
 			option->algtype = get_alg_type(optarg);
@@ -627,26 +642,36 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			option->ctxnums = strtol(optarg, NULL, 0);
 			break;
 		case 12:
-			strcpy(option->engine, optarg);
+			option->prefetch = 1;
 			break;
 		case 13:
-			print_help();
+			strcpy(option->engine, optarg);
 			break;
+		case 14:
+			print_support_alg();
+			goto to_exit;
+		case 15:
+			print_help();
+			goto to_exit;
 		default:
 			ACC_TST_PRT("bad input test parameter!\n");
 			print_help();
-			exit(-1);
+			goto to_exit;
 		}
 	}
+
 	return 0;
+
+to_exit:
+	return -EINVAL;
 }
 
 int acc_option_convert(struct acc_option *option)
 {
-	if (option->algtype >= ALG_MAX)
+	if (option->algtype >= ALG_MAX) {
+		ACC_TST_PRT("invalid: input algname is wrong!\n");
 		goto param_err;
-	else if (option->algtype < 0)
-		option->algtype = AES_128_CBC;
+	}
 
 	if (option->modetype >= INVALID_MODE)
 		goto param_err;
@@ -657,8 +682,8 @@ int acc_option_convert(struct acc_option *option)
 	/* Min test package size is 64Bytes */
 	if (option->pktlen > MAX_DATA_SIZE)
 		goto param_err;
-	else if (option->pktlen < 64)
-		option->pktlen = 64;
+	else if (option->pktlen < 16)
+		option->pktlen = 16;
 
 	if (option->times > MAX_TIME_SECONDS) {
 		ACC_TST_PRT("uadk benchmark max test times to 128 seconds\n");
