@@ -75,7 +75,8 @@ struct hisi_qm_queue_info {
 	__u16 hw_type;
 	__u32 idx;
 	bool cqc_phase;
-	pthread_spinlock_t lock;
+	pthread_spinlock_t sd_lock;
+	pthread_spinlock_t rv_lock;
 	unsigned long region_size[UACCE_QFRT_MAX];
 	bool epoll_en;
 };
