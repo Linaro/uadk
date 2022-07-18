@@ -322,14 +322,22 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 		q_info->region_size[UACCE_QFRT_DUS] - sizeof(uint32_t);
 	q_info->ds_rx_base = q_info->ds_tx_base - sizeof(uint32_t);
 
-	ret = pthread_spin_init(&q_info->lock, PTHREAD_PROCESS_SHARED);
+	ret = pthread_spin_init(&q_info->rv_lock, PTHREAD_PROCESS_SHARED);
 	if (ret) {
-		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo lock!\n");
+		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo rv_lock!\n");
 		goto err_out;
+	}
+
+	ret = pthread_spin_init(&q_info->sd_lock, PTHREAD_PROCESS_SHARED);
+	if (ret) {
+		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo sd_lock!\n");
+		goto err_destory_lock;
 	}
 
 	return 0;
 
+err_destory_lock:
+	pthread_spin_destroy(&q_info->rv_lock);
 err_out:
 	hisi_qm_unset_region(qp->h_ctx, q_info);
 	return ret;
@@ -339,14 +347,16 @@ static void hisi_qm_clear_info(struct hisi_qp *qp)
 {
 	struct hisi_qm_queue_info *q_info = &qp->q_info;
 
-	pthread_spin_destroy(&q_info->lock);
+	pthread_spin_destroy(&q_info->sd_lock);
+	pthread_spin_destroy(&q_info->rv_lock);
 	hisi_qm_unset_region(qp->h_ctx, q_info);
 }
 
 static int get_free_num(struct hisi_qm_queue_info *q_info)
 {
 	/* The device should reserve one buffer. */
-	return (QM_Q_DEPTH - 1) - q_info->used_num;
+	return (QM_Q_DEPTH - 1) -
+		__atomic_load_n(&q_info->used_num, __ATOMIC_RELAXED);
 }
 
 int hisi_qm_get_free_sqe_num(handle_t h_qp)
@@ -441,10 +451,10 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 		return -WD_HW_EACCESS;
 	}
 
-	pthread_spin_lock(&q_info->lock);
+	pthread_spin_lock(&q_info->sd_lock);
 	free_num = get_free_num(q_info);
 	if (!free_num) {
-		pthread_spin_unlock(&q_info->lock);
+		pthread_spin_unlock(&q_info->sd_lock);
 		return -WD_EBUSY;
 	}
 
@@ -455,10 +465,12 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	tail = (tail + send_num) % QM_Q_DEPTH;
 	q_info->db(q_info, QM_DBELL_CMD_SQ, tail, 0);
 	q_info->sq_tail_index = tail;
-	q_info->used_num += send_num;
+
+	/* Make sure used_num is changed before the next thread gets free sqe. */
+	__atomic_add_fetch(&q_info->used_num, send_num, __ATOMIC_RELAXED);
 	*count = send_num;
 
-	pthread_spin_unlock(&q_info->lock);
+	pthread_spin_unlock(&q_info->sd_lock);
 
 	return 0;
 }
@@ -469,21 +481,21 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	struct cqe *cqe;
 	__u16 i, j;
 
-	pthread_spin_lock(&q_info->lock);
+	pthread_spin_lock(&q_info->rv_lock);
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
 
 	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (j >= QM_Q_DEPTH) {
-			pthread_spin_unlock(&q_info->lock);
+			pthread_spin_unlock(&q_info->rv_lock);
 			WD_DEV_ERR(qp->h_ctx, "CQE_SQ_HEAD_INDEX(%u) error!\n", j);
 			return -WD_EIO;
 		}
 		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
 			j * q_info->sqe_size), q_info->sqe_size);
 	} else {
-		pthread_spin_unlock(&q_info->lock);
+		pthread_spin_unlock(&q_info->rv_lock);
 		return -WD_EAGAIN;
 	}
 
@@ -500,8 +512,8 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	q_info->cq_head_index = i;
 	q_info->sq_head_index = i;
 
-	q_info->used_num--;
-	pthread_spin_unlock(&q_info->lock);
+	__atomic_sub_fetch(&q_info->used_num, 1, __ATOMIC_RELAXED);
+	pthread_spin_unlock(&q_info->rv_lock);
 
 	return 0;
 }
