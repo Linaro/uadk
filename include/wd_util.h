@@ -18,8 +18,8 @@ extern "C" {
 #endif
 
 #define FOREACH_NUMA(i, config, config_numa) \
-	for (i = 0, config_numa = config->config_per_numa; \
-	     i < config->numa_num; config_numa++, i++)
+	for ((i) = 0, (config_numa) = (config)->config_per_numa; \
+	     (i) < (config)->numa_num; (config_numa)++, (i)++)
 
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
