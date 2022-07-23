@@ -766,7 +766,6 @@ static int ecc_prepare_alg(struct wd_ecc_msg *msg,
 	return 0;
 }
 
-
 static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
 				      struct wd_dtb *b, struct wd_dtb *n,
 				      struct wd_ecc_point *g)
