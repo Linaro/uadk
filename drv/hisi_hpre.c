@@ -1939,13 +1939,13 @@ static int sm2_enc_out_transfer(struct wd_ecc_msg *msg,
 }
 
 static int ecc_out_transfer(struct wd_ecc_msg *msg,
-			    struct hisi_hpre_sqe *hw_msg)
+			    struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
 {
 	int ret = -WD_EINVAL;
 	void *va;
 
 	/* async */
-	if (LW_U16(hw_msg->low_tag)) {
+	if (qp_mode == CTX_MODE_ASYNC) {
 		va = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 		msg->req.dst = container_of(va, struct wd_ecc_out, data);
 	}
@@ -2258,7 +2258,7 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 
 	hpre_result_check(hw_msg, &msg->result);
 	if (!msg->result) {
-		ret = ecc_out_transfer(msg, hw_msg);
+		ret = ecc_out_transfer(msg, hw_msg, qp->q_info.qp_mode);
 		if (ret) {
 			msg->result = WD_OUT_EPARA;
 			WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
@@ -2306,7 +2306,6 @@ static int parse_second_sqe(handle_t h_qp,
 	hsz = (hw_msg.task_len1 + 1) * BYTE_BITS;
 	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
 		hsz * ECDH_OUT_PARAM_NUM);
-	hw_msg.low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse((struct hisi_qp *)h_qp, dst, &hw_msg);
 	msg->result = dst->result;
 	*second = dst;
@@ -2314,8 +2313,8 @@ static int parse_second_sqe(handle_t h_qp,
 	return ret;
 }
 
-static int sm2_enc_parse(handle_t h_qp,
-			 struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
+static int sm2_enc_parse(handle_t h_qp, struct wd_ecc_msg *msg,
+			 struct hisi_hpre_sqe *hw_msg)
 {
 	__u16 tag = LW_U16(hw_msg->low_tag);
 	struct wd_ecc_msg *second = NULL;
@@ -2325,6 +2324,7 @@ static int sm2_enc_parse(handle_t h_qp,
 	__u32 hsz;
 	int ret;
 
+	msg->tag = tag;
 	data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	hsz = (hw_msg->task_len1 + 1) * BYTE_BITS;
 	first = *(struct wd_ecc_msg **)((uintptr_t)data +
@@ -2332,7 +2332,6 @@ static int sm2_enc_parse(handle_t h_qp,
 	memcpy(&src, first + 1, sizeof(src));
 
 	/* parse first sqe */
-	hw_msg->low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse((struct hisi_qp *)h_qp, first, hw_msg);
 	if (ret) {
 		WD_ERR("failed to parse first BD, ret = %d!\n", ret);
@@ -2351,11 +2350,12 @@ static int sm2_enc_parse(handle_t h_qp,
 		WD_ERR("failed to convert sm2 std format, ret = %d!\n", ret);
 		goto free_second;
 	}
+
 free_second:
 	free_req(second);
 free_first:
 	free_req(first);
-	msg->tag = tag;
+
 	return ret;
 }
 
@@ -2376,21 +2376,21 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 	memcpy(&src, dst + 1, sizeof(src));
 
 	/* parse first sqe */
-	hw_msg->low_tag = 0; /* use sync mode */
 	ret = ecc_sqe_parse((struct hisi_qp *)ctx, dst, hw_msg);
 	if (ret) {
 		WD_ERR("failed to parse decode BD, ret = %d!\n", ret);
 		goto fail;
 	}
 	msg->result = dst->result;
+	msg->tag = tag;
 
 	ret = sm2_convert_dec_out(&src, dst);
 	if (unlikely(ret)) {
 		WD_ERR("failed to convert sm2 decode out, ret = %d!\n", ret);
 		goto fail;
 	}
+
 fail:
-	msg->tag = tag;
 	free(dst->req.dst);
 	free(dst);
 
