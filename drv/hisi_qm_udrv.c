@@ -546,7 +546,7 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 		recv_num++;
 	}
 
-	*count = recv_num++;
+	*count = recv_num;
 	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
 		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened in qm receive!\n");
 		return -WD_HW_EACCESS;
