@@ -531,6 +531,25 @@ static int rsa_send(handle_t ctx, void *rsa_msg)
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
+static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
+			      __u8 *result)
+{
+	*result = WD_SUCCESS;
+
+	if (hw_msg->done != HPRE_HW_TASK_DONE ||
+			hw_msg->etype || hw_msg->etype1) {
+		WD_ERR("failed to do hpre task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
+			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+		if (hw_msg->etype1 & HPRE_HW_SVA_ERROR)
+			WD_ERR("failed to SVA prefetch: status=%u!\n",
+				hw_msg->sva_status);
+		if (hw_msg->done == HPRE_HW_TASK_INIT)
+			*result = WD_EINVAL;
+		else
+			*result = WD_IN_EPARA;
+	}
+}
+
 static int rsa_recv(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -547,25 +566,13 @@ static int rsa_recv(handle_t ctx, void *rsa_msg)
 	if (ret)
 		return ret;
 
-	if (hw_msg.done != HPRE_HW_TASK_DONE ||
-			hw_msg.etype || hw_msg.etype1) {
-		WD_ERR("failed to do rsa task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
-			hw_msg.done, hw_msg.etype, hw_msg.etype1);
-		if (hw_msg.etype1 & HPRE_HW_SVA_ERROR)
-			WD_ERR("failed to SVA prefetch: status=%u!\n",
-				hw_msg.sva_status);
-		if (hw_msg.done == HPRE_HW_TASK_INIT)
-			msg->result = WD_EINVAL;
-		else
-			msg->result = WD_IN_EPARA;
-	} else {
-		msg->tag = LW_U16(hw_msg.low_tag);
+	msg->tag = LW_U16(hw_msg.low_tag);
+	hpre_result_check(&hw_msg, &msg->result);
+	if (!msg->result) {
 		ret = rsa_out_transfer(msg, &hw_msg);
 		if (ret) {
 			WD_ERR("failed to transfer out rsa BD!\n");
 			msg->result = WD_OUT_EPARA;
-		} else {
-			msg->result = WD_SUCCESS;
 		}
 	}
 
@@ -696,25 +703,13 @@ static int dh_recv(handle_t ctx, void *dh_msg)
 	if (ret)
 		return ret;
 
-	if (hw_msg.done != HPRE_HW_TASK_DONE ||
-			hw_msg.etype || hw_msg.etype1) {
-		WD_ERR("failed to do dh task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
-			hw_msg.done, hw_msg.etype, hw_msg.etype1);
-		if (hw_msg.etype1 & HPRE_HW_SVA_ERROR)
-			WD_ERR("failed to SVA prefetch: status=%u!\n",
-				hw_msg.sva_status);
-		if (hw_msg.done == HPRE_HW_TASK_INIT)
-			msg->result = WD_EINVAL;
-		else
-			msg->result = WD_IN_EPARA;
-	} else {
-		msg->tag = LW_U16(hw_msg.low_tag);
+	msg->tag = LW_U16(hw_msg.low_tag);
+	hpre_result_check(&hw_msg, &msg->result);
+	if (!msg->result) {
 		ret = dh_out_transfer(msg, &hw_msg);
 		if (ret) {
 			WD_ERR("failed to transfer out dh BD!\n");
 			msg->result = WD_OUT_EPARA;
-		} else {
-			msg->result = WD_SUCCESS;
 		}
 	}
 
@@ -2191,26 +2186,16 @@ static int ecc_sqe_parse(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 {
 	int ret;
 
-	if (hw_msg->done != HPRE_HW_TASK_DONE ||
-			hw_msg->etype || hw_msg->etype1) {
-		WD_ERR("failed to do ecc task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
-			hw_msg->done, hw_msg->etype, hw_msg->etype1);
-		if (hw_msg->etype1 & HPRE_HW_SVA_ERROR)
-			WD_ERR("failed to SVA prefetch: status=%u!\n",
-				hw_msg->sva_status);
-
-		if (hw_msg->done == HPRE_HW_TASK_INIT)
-			ret = -WD_EINVAL;
-		else
-			ret = -WD_IN_EPARA;
-	} else {
-		msg->result = WD_SUCCESS;
+	msg->tag = LW_U16(hw_msg->low_tag);
+	hpre_result_check(hw_msg, &msg->result);
+	if (!msg->result) {
 		ret = ecc_out_transfer(msg, hw_msg);
 		if (ret) {
 			msg->result = WD_OUT_EPARA;
 			WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
 		}
-		msg->tag = LW_U16(hw_msg->low_tag);
+	} else {
+		ret = -msg->result;
 	}
 
 	return ret;
