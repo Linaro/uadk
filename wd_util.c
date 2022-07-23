@@ -585,7 +585,8 @@ free_numa_dev_num:
 
 static int is_number(const char *str)
 {
-	int len, i;
+	size_t len;
+	int i;
 
 	if (!str)
 		return 0;
