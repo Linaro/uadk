@@ -2,19 +2,13 @@
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
-#include <sys/mman.h>
-#include <assert.h>
-#include <string.h>
-#include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
 #include <sys/types.h>
 #include "hisi_qm_udrv.h"
-#include "wd.h"
 #include "../include/drv/wd_rsa_drv.h"
 #include "../include/drv/wd_dh_drv.h"
 #include "../include/drv/wd_ecc_drv.h"
