@@ -1215,8 +1215,9 @@ static int ecc_prepare_verf_in(struct wcrypto_ecc_msg *msg, void **data)
 	return 0;
 }
 
-static int ecc_prepare_dh_gen_in(struct wcrypto_ecc_point *in, void **data)
+static int ecc_prepare_dh_gen_in(void *input, void **data)
 {
+	struct wcrypto_ecc_point *in = input;
 	int ret;
 
 	ret = qm_crypto_bin_to_hpre_bin(in->x.data, (const char *)in->x.data,
@@ -1325,7 +1326,7 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 		hw_msg->bd_rsv2 = 1; /* fall through */
 	case WCRYPTO_ECXDH_GEN_KEY: /* fall through */
 	case WCRYPTO_SM2_KG:
-		ret = ecc_prepare_dh_gen_in((struct wcrypto_ecc_point *)in,
+		ret = ecc_prepare_dh_gen_in((void *)in,
 					    data);
 		break;
 	case WCRYPTO_ECXDH_COMPUTE_KEY:
