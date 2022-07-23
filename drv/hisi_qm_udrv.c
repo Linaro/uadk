@@ -441,12 +441,12 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	__u16 free_num, send_num;
 	__u16 tail;
 
-	if (!qp || !req || !count)
+	if (unlikely(!qp || !req || !count))
 		return -WD_EINVAL;
 
 	q_info = &qp->q_info;
 
-	if (wd_ioread32(q_info->ds_tx_base) == 1) {
+	if (unlikely(wd_ioread32(q_info->ds_tx_base) == 1)) {
 		WD_ERR("wd queue hw error happened before qm send!\n");
 		return -WD_HW_EACCESS;
 	}
@@ -487,7 +487,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 
 	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
 		j = CQE_SQ_HEAD_INDEX(cqe);
-		if (j >= QM_Q_DEPTH) {
+		if (unlikely(j >= QM_Q_DEPTH)) {
 			pthread_spin_unlock(&q_info->rv_lock);
 			WD_DEV_ERR(qp->h_ctx, "CQE_SQ_HEAD_INDEX(%u) error!\n", j);
 			return -WD_EIO;
@@ -525,14 +525,14 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	int recv_num = 0;
 	int i, ret, offset;
 
-	if (!resp || !qp || !count)
+	if (unlikely(!resp || !qp || !count))
 		return -WD_EINVAL;
 
-	if (!expect)
+	if (unlikely(!expect))
 		return 0;
 
 	q_info = &qp->q_info;
-	if (wd_ioread32(q_info->ds_rx_base) == 1) {
+	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
 		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened before qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
@@ -546,7 +546,7 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	}
 
 	*count = recv_num++;
-	if (wd_ioread32(q_info->ds_rx_base) == 1) {
+	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
 		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened in qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
