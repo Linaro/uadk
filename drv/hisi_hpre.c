@@ -100,6 +100,27 @@ struct hisi_hpre_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
+static void dump_hpre_msg(void *msg, const char *s)
+{
+	struct wd_rsa_msg *rsa_msg;
+	struct wd_ecc_msg *ecc_msg;
+	struct wd_dh_msg *dh_msg;
+
+	WD_ERR("dump %s alg message after a task error occurs.\n", s);
+
+	if (!strcmp(s, "rsa")) {
+		rsa_msg = (struct wd_rsa_msg *)msg;
+		WD_ERR("key_bytes:%u key_type:%u\n", rsa_msg->key_bytes, rsa_msg->key_type);
+	} else if (!strcmp(s, "ecc")) {
+		ecc_msg = (struct wd_ecc_msg *)msg;
+		WD_ERR("key_bytes:%u curve_id:%u\n", ecc_msg->key_bytes, ecc_msg->curve_id);
+	} else if (!strcmp(s, "dh")) {
+		dh_msg = (struct wd_dh_msg *)msg;
+		WD_ERR("gbytes:%u key_bytes:%u is_g2:%u\n", dh_msg->gbytes,
+			dh_msg->key_bytes, dh_msg->is_g2);
+	}
+}
+
 static bool is_hpre_bin_fmt(char *dst, const char *src, __u32 dsz, __u32 bsz)
 {
 	const char *temp = src + dsz;
@@ -557,8 +578,10 @@ static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
 static int rsa_recv(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_hpre_sqe hw_msg = {0};
 	struct wd_rsa_msg *msg = rsa_msg;
+	struct wd_rsa_msg *temp_msg;
 	__u16 recv_cnt = 0;
 	int ret;
 
@@ -571,6 +594,17 @@ static int rsa_recv(handle_t ctx, void *rsa_msg)
 		return ret;
 
 	msg->tag = LW_U16(hw_msg.low_tag);
+	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
+		temp_msg = wd_rsa_get_msg(qp->q_info.idx, msg->tag);
+		if (!temp_msg) {
+			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
+				qp->q_info.idx, msg->tag);
+			return -WD_EINVAL;
+		}
+	} else {
+		temp_msg = msg;
+	}
+
 	hpre_result_check(&hw_msg, &msg->result);
 	if (!msg->result) {
 		ret = rsa_out_transfer(msg, &hw_msg);
@@ -579,6 +613,9 @@ static int rsa_recv(handle_t ctx, void *rsa_msg)
 			msg->result = WD_OUT_EPARA;
 		}
 	}
+
+	if (unlikely(msg->result != WD_SUCCESS))
+		dump_hpre_msg(temp_msg, "rsa");
 
 	return 0;
 }
@@ -694,8 +731,10 @@ static int dh_send(handle_t ctx, void *dh_msg)
 static int dh_recv(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_dh_msg *msg = dh_msg;
 	struct hisi_hpre_sqe hw_msg = {0};
+	struct wd_dh_msg *temp_msg;
 	__u16 recv_cnt = 0;
 	int ret;
 
@@ -708,6 +747,17 @@ static int dh_recv(handle_t ctx, void *dh_msg)
 		return ret;
 
 	msg->tag = LW_U16(hw_msg.low_tag);
+	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
+		temp_msg = wd_dh_get_msg(qp->q_info.idx, msg->tag);
+		if (!temp_msg) {
+			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
+				qp->q_info.idx, msg->tag);
+			return -WD_EINVAL;
+		}
+	} else {
+		temp_msg = msg;
+	}
+
 	hpre_result_check(&hw_msg, &msg->result);
 	if (!msg->result) {
 		ret = dh_out_transfer(msg, &hw_msg);
@@ -716,6 +766,9 @@ static int dh_recv(handle_t ctx, void *dh_msg)
 			msg->result = WD_OUT_EPARA;
 		}
 	}
+
+	if (unlikely(msg->result != WD_SUCCESS))
+		dump_hpre_msg(temp_msg, "dh");
 
 	return 0;
 }
@@ -2185,21 +2238,41 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	return ret;
 }
 
-static int ecc_sqe_parse(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
+static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
+			 struct hisi_hpre_sqe *hw_msg)
 {
+	struct wd_ecc_msg *temp_msg;
 	int ret;
 
 	msg->tag = LW_U16(hw_msg->low_tag);
+	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
+		temp_msg = wd_ecc_get_msg(qp->q_info.idx, msg->tag);
+		if (!temp_msg) {
+			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
+				qp->q_info.idx, msg->tag);
+			return -WD_EINVAL;
+		}
+	} else {
+		temp_msg = msg;
+	}
+
 	hpre_result_check(hw_msg, &msg->result);
 	if (!msg->result) {
 		ret = ecc_out_transfer(msg, hw_msg);
 		if (ret) {
 			msg->result = WD_OUT_EPARA;
 			WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
+			goto dump_err_msg;
 		}
 	} else {
 		ret = -msg->result;
+		goto dump_err_msg;
 	}
+
+	return ret;
+
+dump_err_msg:
+	dump_hpre_msg(temp_msg, "ecc");
 
 	return ret;
 }
@@ -2234,7 +2307,7 @@ static int parse_second_sqe(handle_t h_qp,
 	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
 		hsz * ECDH_OUT_PARAM_NUM);
 	hw_msg.low_tag = 0; /* use sync mode */
-	ret = ecc_sqe_parse(dst, &hw_msg);
+	ret = ecc_sqe_parse((struct hisi_qp *)h_qp, dst, &hw_msg);
 	msg->result = dst->result;
 	*second = dst;
 
@@ -2260,7 +2333,7 @@ static int sm2_enc_parse(handle_t h_qp,
 
 	/* parse first sqe */
 	hw_msg->low_tag = 0; /* use sync mode */
-	ret = ecc_sqe_parse(first, hw_msg);
+	ret = ecc_sqe_parse((struct hisi_qp *)h_qp, first, hw_msg);
 	if (ret) {
 		WD_ERR("failed to parse first BD, ret = %d!\n", ret);
 		goto free_first;
@@ -2304,7 +2377,7 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 
 	/* parse first sqe */
 	hw_msg->low_tag = 0; /* use sync mode */
-	ret = ecc_sqe_parse(dst, hw_msg);
+	ret = ecc_sqe_parse((struct hisi_qp *)ctx, dst, hw_msg);
 	if (ret) {
 		WD_ERR("failed to parse decode BD, ret = %d!\n", ret);
 		goto fail;
@@ -2347,7 +2420,7 @@ static int ecc_recv(handle_t ctx, void *ecc_msg)
 		hw_msg.sm2_mlen == HPRE_SM2_DEC)
 		return sm2_dec_parse(h_qp, msg, &hw_msg);
 
-	return ecc_sqe_parse(msg, &hw_msg);
+	return ecc_sqe_parse((struct hisi_qp *)h_qp, msg, &hw_msg);
 }
 
 static struct wd_ecc_driver ecc_hisi_hpre = {
