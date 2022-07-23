@@ -435,7 +435,7 @@ static struct wcrypto_ecc_in *create_sm2_sign_in(struct wcrypto_ecc_ctx *ctx,
 	}
 
 	in->size = len - sizeof(struct wcrypto_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = ctx->key_size;
 	dgst->bsize = hsz;
@@ -475,7 +475,7 @@ static struct wcrypto_ecc_in *create_sm2_enc_in(struct wcrypto_ecc_ctx *ctx,
 	}
 
 	in->size = ksz + m_len;
-	k = (struct wd_dtb *)in;
+	k = (void *)in;
 	k->data = in->data;
 	k->dsize = ksz;
 	k->bsize = ksz;
@@ -2017,7 +2017,7 @@ static struct wcrypto_ecc_in *create_sm2_verf_in(struct wcrypto_ecc_ctx *ctx,
 
 	memset(in, 0, len);
 	in->size = len - sizeof(struct wcrypto_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = ctx->key_size;
 	dgst->bsize = hsz;
