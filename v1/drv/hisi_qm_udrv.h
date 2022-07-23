@@ -17,6 +17,7 @@
 #ifndef __HISI_QM_DRV_H__
 #define __HISI_QM_DRV_H__
 
+#include <asm/byteorder.h>
 #include <linux/types.h>
 #include "config.h"
 #include "v1/wd.h"
@@ -69,9 +70,9 @@
 
 
 /* cqe shift */
-#define CQE_PHASE(cq)	(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
-#define CQE_SQ_NUM(cq)	((*((__u32 *)(cq) + 2)) >> 16)
-#define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
+#define CQE_PHASE(cq)	(__le16_to_cpu((cq)->w7) & 0x1)
+#define CQE_SQ_NUM(cq)	__le16_to_cpu((cq)->sq_num)
+#define CQE_SQ_HEAD_INDEX(cq)	(__le16_to_cpu((cq)->sq_head) & 0xffff)
 
 /* wd sgl len */
 #define WD_SGL_PAD0_LEN			2
