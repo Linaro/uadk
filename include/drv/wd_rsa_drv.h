@@ -3,6 +3,8 @@
 #ifndef __WD_RSA_DRV_H
 #define __WD_RSA_DRV_H
 
+#include <asm/types.h>
+
 #include "../wd_rsa.h"
 
 #ifdef __cplusplus
