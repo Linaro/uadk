@@ -470,6 +470,11 @@ int wd_digest_poll(__u32 expt, __u32 *count)
 	handle_t h_ctx = wd_digest_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_digest_setting.sched;
 
+	if (unlikely(!count)) {
+		WD_ERR("invalid: digest poll input param is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	return sched->poll_policy(h_ctx, expt, count);
 }
 
