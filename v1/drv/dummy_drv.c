@@ -30,8 +30,8 @@
 
 struct dummy_q_priv {
 	int ver;
-	int head;		/* queue head */
-	int resp_tail;		/* resp tail in the queue */
+	int head;      /* queue head */
+	int resp_tail; /* resp tail in the queue */
 	/* so in the user side: when add to queue, head++ but don't exceed resp_tail.
 	 * when get back from the queue, resp_tail++ but don't exceed tail.
 	 * in the kernel side: when get from queue, tail++ but don't exceed head-1 */
