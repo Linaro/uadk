@@ -510,7 +510,6 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 
 	/* only support one thread poll one queue, so no need protect */
 	q_info->cq_head_index = i;
-	q_info->sq_head_index = i;
 
 	__atomic_sub_fetch(&q_info->used_num, 1, __ATOMIC_RELAXED);
 	pthread_spin_unlock(&q_info->rv_lock);
