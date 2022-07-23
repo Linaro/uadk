@@ -624,7 +624,7 @@ static int get_value_from_sysfs(const char *path, ssize_t path_size)
 	char buf[MAX_ATTR_STR_SIZE];
 	char *ptrRet = NULL;
 	ssize_t size;
-	int fd;
+	int fd, ret;
 
 	ptrRet = realpath(path, dev_path);
 	if (!ptrRet) {
@@ -645,7 +645,14 @@ static int get_value_from_sysfs(const char *path, ssize_t path_size)
 	}
 
 	close(fd);
-	return (int)strtol(buf, NULL, 10);
+
+	ret = strtol(buf, NULL, 10);
+	if (errno == ERANGE) {
+		WD_ERR("failed to strtol %s, out of range!\n", buf);
+		goto err_read;
+	}
+
+	return ret;
 
 err_read:
 	close(fd);
