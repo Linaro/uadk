@@ -97,7 +97,6 @@ static int rng_read(struct rng_queue_info *info, struct wcrypto_rng_msg *msg)
 	int val;
 
 	do {
-recv_again:
 		val = wd_reg_read((void *)((uintptr_t)info->mmio_base +
 						RNG_NUM_OFFSET));
 		if (!val) {
@@ -105,8 +104,9 @@ recv_again:
 				WD_ERR("read random data timeout\n");
 				break;
 			}
+
 			usleep(1);
-			goto recv_again;
+			continue;
 		}
 
 		recv_count = 0;

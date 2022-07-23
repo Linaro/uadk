@@ -970,6 +970,31 @@ static int do_rsa_prepare(struct wcrypto_rsa_ctx *ctxt,
 	return 0;
 }
 
+static int rsa_send(struct wcrypto_rsa_ctx *ctx, struct wcrypto_rsa_msg *req)
+{
+	uint32_t tx_cnt = 0;
+	int ret;
+
+	do {
+		ret = wd_send(ctx->q, req);
+		if (!ret) {
+			break;
+		} else if (ret == -WD_EBUSY) {
+			if (tx_cnt++ > RSA_RESEND_CNT) {
+				WD_ERR("do rsa send cnt %u, exit!\n", tx_cnt);
+				break;
+			}
+
+			usleep(1);
+		} else {
+			WD_ERR("do rsa wd_send err!\n");
+			break;
+		}
+	} while (true);
+
+	return ret;
+}
+
 int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 {
 	struct wcrypto_rsa_msg *resp = NULL;
@@ -977,46 +1002,38 @@ int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_msg *req;
 	uint32_t rx_cnt = 0;
-	uint32_t tx_cnt = 0;
 	int ret;
 
 	ret = do_rsa_prepare(ctxt, opdata, &cookie, &req, tag);
 	if (unlikely(ret))
 		return ret;
 
-send_again:
-	ret = wd_send(ctxt->q, req);
-	if (ret == -WD_EBUSY) {
-		usleep(1);
-		if (tx_cnt++ < RSA_RESEND_CNT)
-			goto send_again;
-		else {
-			WD_ERR("do rsa send cnt %u, exit!\n", tx_cnt);
-			goto fail_with_cookie;
-		}
-	} else if (unlikely(ret)) {
-		WD_ERR("do rsa wd_send err!\n");
+	ret = rsa_send(ctxt, req);
+	if (unlikely(ret))
 		goto fail_with_cookie;
-	}
 
 	if (tag)
 		return ret;
 
 	resp = (void *)(uintptr_t)ctxt->ctx_id;
-recv_again:
-	ret = wd_recv(ctxt->q, (void **)&resp);
-	if (!ret) {
-		if (unlikely(rx_cnt++ >= RSA_RECV_MAX_CNT)) {
-			WD_ERR("failed to recv: timeout!\n");
-			return -WD_ETIMEDOUT;
-		} else if (balance > RSA_BALANCE_THRHD) {
-			usleep(1);
+	do {
+		ret = wd_recv(ctxt->q, (void **)&resp);
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
+			if (unlikely(rx_cnt++ >= RSA_RECV_MAX_CNT)) {
+				WD_ERR("failed to recv: timeout!\n");
+				ret = -WD_ETIMEDOUT;
+				goto fail_with_cookie;
+			}
+
+			if (balance > RSA_BALANCE_THRHD)
+				usleep(1);
+		} else {
+			WD_ERR("do rsa wd_recv err!\n");
+			goto fail_with_cookie;
 		}
-		goto recv_again;
-	} else if (unlikely(ret < 0)) {
-		WD_ERR("do rsa wd_recv err!\n");
-		goto fail_with_cookie;
-	}
+	} while (true);
 
 	balance = rx_cnt;
 	opdata->out = (void *)resp->out;
