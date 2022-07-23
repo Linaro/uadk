@@ -1523,17 +1523,20 @@ static int ecc_send(struct wcrypto_ecc_ctx *ctx, struct wcrypto_ecc_msg *req)
 
 	do {
 		ret = wd_send(ctx->q, req);
-		if (ret == -WD_EBUSY) {
+		if (!ret) {
+			break;
+		} else if (ret == -WD_EBUSY) {
 			if (tx_cnt++ >= ECC_RESEND_CNT) {
 				WD_ERR("failed to send: retry exit!\n");
 				break;
 			}
+
 			usleep(1);
 		} else if (unlikely(ret)) {
 			WD_ERR("failed to send: send error = %d!\n", ret);
 			break;
 		}
-	} while (ret);
+	} while (true);
 
 	return ret;
 }
@@ -1549,7 +1552,9 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 
 	do {
 		ret = wd_recv(ctx->q, (void **)&resp);
-		if (!ret) {
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
 			if (rx_cnt++ >= ECC_RECV_MAX_CNT) {
 				WD_ERR("failed to recv: timeout!\n");
 				return -WD_ETIMEDOUT;
@@ -1557,11 +1562,11 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 
 			if (balance > ECC_BALANCE_THRHD)
 				usleep(1);
-		} else if (unlikely(ret < 0)) {
+		} else {
 			WD_ERR("failed to recv: error = %d!\n", ret);
 			return ret;
 		}
-	} while (!ret);
+	} while (true);
 
 	balance = rx_cnt;
 	opdata->out = resp->out;
