@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_aead.h"
 #include "wd_util.h"
+#include "wd_aead.h"
 
 #define MAX_AEAD_KEY_SIZE		64
 #define MAX_AEAD_MAC_SIZE		64

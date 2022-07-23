@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_digest.h"
 #include "wd_util.h"
+#include "wd_digest.h"
 
 #define MAX_HMAC_KEY_SIZE	128
 #define MAX_DIGEST_RETRY_CNT	20000000
