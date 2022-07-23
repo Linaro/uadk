@@ -356,6 +356,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_rsa_req *req;
 	struct wd_rsa_msg recv_msg, *msg;
 	__u32 rcv_cnt = 0;
+	__u32 tmp = expt;
 	int ret;
 
 	if (unlikely(!count)) {
@@ -395,7 +396,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		req->cb(req);
 		wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, recv_msg.tag);
 		*count = rcv_cnt;
-	} while (--expt);
+	} while (--tmp);
 
 	return ret;
 }
