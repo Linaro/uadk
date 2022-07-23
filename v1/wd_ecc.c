@@ -37,7 +37,7 @@
 #define ECC_MAX_OUT_NUM			4
 #define CURVE_PARAM_NUM			6
 #define ECC_POINT_NUM			2
-#define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof(array[0]))
+#define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof((array)[0]))
 #define MAX_CURVE_SIZE			(ECC_MAX_KEY_SIZE * CURVE_PARAM_NUM)
 #define MAX_HASH_LENS			ECC_MAX_KEY_SIZE
 #define SM2_KEY_SIZE			32
