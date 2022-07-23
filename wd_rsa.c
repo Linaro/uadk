@@ -404,6 +404,11 @@ int wd_rsa_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
 
+	if (unlikely(!count)) {
+		WD_ERR("invalid: rsa poll count is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	return wd_rsa_setting.sched.poll_policy(h_sched_ctx, expt, count);
 }
 

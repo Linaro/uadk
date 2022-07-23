@@ -568,6 +568,11 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 	handle_t h_ctx = wd_cipher_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_cipher_setting.sched;
 
+	if (unlikely(!count)) {
+		WD_ERR("invalid: cipher poll input param is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	return sched->poll_policy(h_ctx, expt, count);
 }
 
