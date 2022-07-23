@@ -31,14 +31,13 @@
 #include "v1/wd_adapter.h"
 #include "v1/wd.h"
 
-#define SYS_CLASS_DIR	"/sys/class"
 #define LINUX_DEV_DIR	"/dev"
-#define WD_UACCE_CLASS_DIR SYS_CLASS_DIR"/"WD_UACCE_CLASS_NAME
+#define WD_UACCE_CLASS_DIR		"/sys/class/"WD_UACCE_CLASS_NAME
 #define _TRY_REQUEST_TIMES		64
 #define INT_MAX_SIZE			10
 #define LINUX_CRTDIR_SIZE		1
 #define LINUX_PRTDIR_SIZE		2
-#define INSTANCE_RATIO_FOR_DEV_SCHED		4
+#define INSTANCE_RATIO_FOR_DEV_SCHED	4
 
 #define GET_WEIGHT(distance, instances) (\
 		((instances) & 0xffff) | (((distance) & 0xffff) << 16))
@@ -112,10 +111,6 @@ static int get_int_attr(struct dev_info *dinfo, const char *attr)
 	char buf[MAX_ATTR_STR_SIZE] = {'\0'};
 	int ret;
 
-	/*
-	 * The signed int max number is INT_MAX 10bit char "4294967295"
-	 * When the value is bigger than INT_MAX, it returns INT_MAX
-	 */
 	ret = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
 	if (ret < 0)
 		return ret;
