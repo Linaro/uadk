@@ -351,7 +351,7 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 	return WD_SUCCESS;
 }
 
-int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **d_opdata,
+int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
 			 void **tag, __u32 num)
 {
 	struct wcrypto_digest_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
@@ -360,7 +360,7 @@ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **d_opdata,
 	__u32 i;
 	int ret;
 
-	if (param_check(ctxt, d_opdata, tag, num))
+	if (param_check(ctxt, opdata, tag, num))
 		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
@@ -370,15 +370,15 @@ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **d_opdata,
 	}
 
 	for (i = 0; i < num; i++) {
-		cookies[i]->tag.priv = d_opdata[i]->priv;
+		cookies[i]->tag.priv = opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
 		if (tag)
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
 
-	digest_requests_init(req, d_opdata, d_ctx, num);
+	digest_requests_init(req, opdata, d_ctx, num);
 	/* when num is 1, wcrypto_burst_digest supports stream mode */
-	if (num == 1 && !d_opdata[0]->has_next) {
+	if (num == 1 && !opdata[0]->has_next) {
 		cookies[0]->tag.long_data_len = ctxt->io_bytes;
 		ctxt->io_bytes = 0;
 	}
@@ -392,7 +392,7 @@ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **d_opdata,
 	if (tag)
 		return ret;
 
-	ret = digest_recv_sync(ctxt, d_opdata, num);
+	ret = digest_recv_sync(ctxt, opdata, num);
 
 fail_with_cookies:
 	wd_put_cookies(&ctxt->pool, (void **)cookies, num);
