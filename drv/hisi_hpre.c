@@ -336,7 +336,7 @@ static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 }
 
 static int rsa_out_transfer(struct wd_rsa_msg *msg,
-				struct hisi_hpre_sqe *hw_msg)
+			    struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
 {
 	struct wd_rsa_req *req = &msg->req;
 	struct wd_rsa_kg_out *key = req->dst;
@@ -348,7 +348,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 
 	if (hw_msg->alg == HPRE_ALG_KG_CRT || hw_msg->alg == HPRE_ALG_KG_STD) {
 		/* async */
-		if (LW_U16(hw_msg->low_tag)) {
+		if (qp_mode == CTX_MODE_ASYNC) {
 			data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 			key = container_of(data, struct wd_rsa_kg_out, data);
 		} else {
@@ -607,7 +607,7 @@ static int rsa_recv(handle_t ctx, void *rsa_msg)
 
 	hpre_result_check(&hw_msg, &msg->result);
 	if (!msg->result) {
-		ret = rsa_out_transfer(msg, &hw_msg);
+		ret = rsa_out_transfer(msg, &hw_msg, qp->q_info.qp_mode);
 		if (ret) {
 			WD_ERR("failed to transfer out rsa BD!\n");
 			msg->result = WD_OUT_EPARA;
@@ -660,7 +660,7 @@ static int fill_dh_xp_params(struct wd_dh_msg *msg,
 }
 
 static int dh_out_transfer(struct wd_dh_msg *msg,
-			   struct hisi_hpre_sqe *hw_msg)
+			   struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
 {
 	__u16 key_bytes = (hw_msg->task_len1 + 1) * BYTE_BITS;
 	struct wd_dh_req *req = &msg->req;
@@ -668,7 +668,7 @@ static int dh_out_transfer(struct wd_dh_msg *msg,
 	int ret;
 
 	/* async */
-	if (LW_U16(hw_msg->low_tag))
+	if (qp_mode == CTX_MODE_ASYNC)
 		out = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	else
 		out = req->pri;
@@ -760,7 +760,7 @@ static int dh_recv(handle_t ctx, void *dh_msg)
 
 	hpre_result_check(&hw_msg, &msg->result);
 	if (!msg->result) {
-		ret = dh_out_transfer(msg, &hw_msg);
+		ret = dh_out_transfer(msg, &hw_msg, qp->q_info.qp_mode);
 		if (ret) {
 			WD_ERR("failed to transfer out dh BD!\n");
 			msg->result = WD_OUT_EPARA;
