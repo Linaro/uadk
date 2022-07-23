@@ -18,9 +18,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
-#include <linux/types.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+#include <linux/types.h>
 
 #include "v1/wd_util.h"
 #include "dummy_drv.h"

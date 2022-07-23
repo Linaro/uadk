@@ -23,9 +23,9 @@
 #include <sys/mman.h>
 
 #include "wd.h"
+#include "wd_util.h"
 #include "internal/wd_ecc_curve.h"
 #include "wd_ecc.h"
-#include "wd_util.h"
 
 #define ECC_BALANCE_THRHD		1280
 #define ECC_RECV_MAX_CNT		60000000

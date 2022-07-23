@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_dh.h"
 #include "wd_util.h"
+#include "wd_dh.h"
 
 #define WD_DH_G2		2
 #define DH_BALANCE_THRHD		1280
