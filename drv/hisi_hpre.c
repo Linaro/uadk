@@ -2257,15 +2257,15 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 	}
 
 	hpre_result_check(hw_msg, &msg->result);
-	if (!msg->result) {
-		ret = ecc_out_transfer(msg, hw_msg, qp->q_info.qp_mode);
-		if (ret) {
-			msg->result = WD_OUT_EPARA;
-			WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
-			goto dump_err_msg;
-		}
-	} else {
+	if (msg->result) {
 		ret = -msg->result;
+		goto dump_err_msg;
+	}
+
+	ret = ecc_out_transfer(msg, hw_msg, qp->q_info.qp_mode);
+	if (ret) {
+		msg->result = WD_OUT_EPARA;
+		WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
 		goto dump_err_msg;
 	}
 
