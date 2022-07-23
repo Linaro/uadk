@@ -100,7 +100,7 @@ struct hisi_hpre_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
-static bool is_hpre_bin_fmt(char *dst, const char *src, int dsz, int bsz)
+static bool is_hpre_bin_fmt(char *dst, const char *src, __u32 dsz, __u32 bsz)
 {
 	const char *temp = src + dsz;
 	int lens = bsz - dsz;
@@ -127,7 +127,7 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 	int i = d_size - 1;
 	int j;
 
-	if (!dst || !src || b_size <= 0 || d_size <= 0) {
+	if (!dst || !src || !b_size || !d_size) {
 		WD_ERR("invalid: %s trans to hpre bin parameters err!\n", p_name);
 		return -WD_EINVAL;
 	}
@@ -150,14 +150,14 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 	return WD_SUCCESS;
 }
 
-static int hpre_bin_to_crypto_bin(char *dst, const char *src, int b_size,
+static int hpre_bin_to_crypto_bin(char *dst, const char *src, __u32 b_size,
 				  const char *p_name)
 {
 	int i, cnt;
 	int j = 0;
 	int k = 0;
 
-	if (!dst || !src || b_size <= 0) {
+	if (!dst || !src || !b_size) {
 		WD_ERR("invalid: %s trans to crypto bin parameters err!\n", p_name);
 		return 0;
 	}
