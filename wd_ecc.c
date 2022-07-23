@@ -1277,7 +1277,7 @@ struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 	return create_ecc_out((struct wd_ecc_sess *)sess, ECDH_OUT_PARAM_NUM);
 }
 
-void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
+void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk)
 {
 	struct wd_ecc_dh_out *dh_out = (void *)out;
 
@@ -1286,8 +1286,8 @@ void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
 		return;
 	}
 
-	if (key)
-		*key = &dh_out->out;
+	if (pbk)
+		*pbk = &dh_out->out;
 }
 
 void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
