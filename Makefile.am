@@ -91,7 +91,7 @@ libwd_comp_la_DEPENDENCIES = libwd.la
 
 libhisi_zip_la_LIBADD = -ldl
 
-libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
+libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma -lm
 libwd_crypto_la_DEPENDENCIES = libwd.la
 
 libhisi_sec_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
@@ -110,7 +110,7 @@ libwd_comp_la_DEPENDENCIES= libwd.la
 libhisi_zip_la_LIBADD= -ldl
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
 
-libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
+libwd_crypto_la_LIBADD= -lwd -ldl -lnuma -lm
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION)
 libwd_crypto_la_DEPENDENCIES= libwd.la
 
