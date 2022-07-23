@@ -23,9 +23,9 @@
 #include <sys/mman.h>
 
 #include "wd.h"
+#include "wd_util.h"
 #include "internal/wd_ecc_curve.h"
 #include "wd_ecc.h"
-#include "wd_util.h"
 
 #define ECC_BALANCE_THRHD		1280
 #define ECC_RECV_MAX_CNT		60000000
@@ -37,7 +37,7 @@
 #define ECC_MAX_OUT_NUM			4
 #define CURVE_PARAM_NUM			6
 #define ECC_POINT_NUM			2
-#define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof(array[0]))
+#define WD_ARRAY_SIZE(array)		(sizeof(array) / sizeof((array)[0]))
 #define MAX_CURVE_SIZE			(ECC_MAX_KEY_SIZE * CURVE_PARAM_NUM)
 #define MAX_HASH_LENS			ECC_MAX_KEY_SIZE
 #define SM2_KEY_SIZE			32
@@ -269,14 +269,15 @@ static void init_dtb_param(void *dtb, char *start,
 			   __u32 dsz, __u32 bsz, __u32 num)
 {
 	struct wd_dtb *tmp = dtb;
+	char *pos = start;
 	int i = 0;
 
 	while (i++ < num) {
-		tmp->data = start;
+		tmp->data = pos;
 		tmp->dsize = dsz;
 		tmp->bsize = bsz;
 		tmp += 1;
-		start += bsz;
+		pos += bsz;
 	}
 }
 
@@ -435,7 +436,7 @@ static struct wcrypto_ecc_in *create_sm2_sign_in(struct wcrypto_ecc_ctx *ctx,
 	}
 
 	in->size = len - sizeof(struct wcrypto_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = ctx->key_size;
 	dgst->bsize = hsz;
@@ -475,7 +476,7 @@ static struct wcrypto_ecc_in *create_sm2_enc_in(struct wcrypto_ecc_ctx *ctx,
 	}
 
 	in->size = ksz + m_len;
-	k = (struct wd_dtb *)in;
+	k = (void *)in;
 	k->data = in->data;
 	k->dsize = ksz;
 	k->bsize = ksz;
@@ -1523,17 +1524,20 @@ static int ecc_send(struct wcrypto_ecc_ctx *ctx, struct wcrypto_ecc_msg *req)
 
 	do {
 		ret = wd_send(ctx->q, req);
-		if (ret == -WD_EBUSY) {
+		if (!ret) {
+			break;
+		} else if (ret == -WD_EBUSY) {
 			if (tx_cnt++ >= ECC_RESEND_CNT) {
 				WD_ERR("failed to send: retry exit!\n");
 				break;
 			}
+
 			usleep(1);
 		} else if (unlikely(ret)) {
 			WD_ERR("failed to send: send error = %d!\n", ret);
 			break;
 		}
-	} while (ret);
+	} while (true);
 
 	return ret;
 }
@@ -1549,7 +1553,9 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 
 	do {
 		ret = wd_recv(ctx->q, (void **)&resp);
-		if (!ret) {
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
 			if (rx_cnt++ >= ECC_RECV_MAX_CNT) {
 				WD_ERR("failed to recv: timeout!\n");
 				return -WD_ETIMEDOUT;
@@ -1557,11 +1563,11 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 
 			if (balance > ECC_BALANCE_THRHD)
 				usleep(1);
-		} else if (unlikely(ret < 0)) {
+		} else {
 			WD_ERR("failed to recv: error = %d!\n", ret);
 			return ret;
 		}
-	} while (!ret);
+	} while (true);
 
 	balance = rx_cnt;
 	opdata->out = resp->out;
@@ -2012,7 +2018,7 @@ static struct wcrypto_ecc_in *create_sm2_verf_in(struct wcrypto_ecc_ctx *ctx,
 
 	memset(in, 0, len);
 	in->size = len - sizeof(struct wcrypto_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = ctx->key_size;
 	dgst->bsize = hsz;

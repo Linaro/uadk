@@ -445,7 +445,7 @@ static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
 
 	memset(in, 0, len);
 	in->size = len - sizeof(struct wd_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = ksz;
 	dgst->bsize = ksz;
@@ -485,7 +485,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 
 	memset(in, 0, len);
 	in->size = ksz + m_len;
-	k = (struct wd_dtb *)in;
+	k = (void *)in;
 	k->data = in->data;
 	k->dsize = ksz;
 	k->bsize = ksz;
@@ -1277,7 +1277,7 @@ struct wd_ecc_out *wd_ecxdh_new_out(handle_t sess)
 	return create_ecc_out((struct wd_ecc_sess *)sess, ECDH_OUT_PARAM_NUM);
 }
 
-void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
+void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk)
 {
 	struct wd_ecc_dh_out *dh_out = (void *)out;
 
@@ -1286,8 +1286,8 @@ void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **key)
 		return;
 	}
 
-	if (key)
-		*key = &dh_out->out;
+	if (pbk)
+		*pbk = &dh_out->out;
 }
 
 void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
@@ -1707,7 +1707,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 
 	memset(in, 0, len);
 	in->size = len - sizeof(struct wd_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = sess->key_size;
 	dgst->bsize = hsz;
@@ -2175,6 +2175,11 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 int wd_ecc_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_sched_sess = wd_ecc_setting.sched.h_sched_ctx;
+
+	if (unlikely(!count)) {
+		WD_ERR("invalid: ecc poll param count is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	return wd_ecc_setting.sched.poll_policy(h_sched_sess, expt, count);
 }

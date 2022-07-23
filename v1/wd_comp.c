@@ -243,19 +243,22 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 		return ret;
 
 	resp = (void *)(uintptr_t)cctx->ctx_id;
-recv_again:
-	ret = wd_recv(cctx->q, (void **)&resp);
-	if (ret == -WD_HW_EACCESS) {
-		WD_ERR("wd_recv hw err!\n");
-		goto err_put_cookie;
-	} else if (ret == 0) {
-		if (++recv_count > MAX_RETRY_COUNTS) {
-			WD_ERR("wd_recv timeout fail!\n");
-			ret = -ETIMEDOUT;
+
+	do {
+		ret = wd_recv(cctx->q, (void **)&resp);
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
+			if (++recv_count > MAX_RETRY_COUNTS) {
+				WD_ERR("wd_recv timeout fail!\n");
+				ret = -ETIMEDOUT;
+				goto err_put_cookie;
+			}
+		} else {
+			WD_ERR("failed to recv msg: ret = %d!\n", ret);
 			goto err_put_cookie;
 		}
-		goto recv_again;
-	}
+	} while (true);
 
 	opdata->consumed = resp->in_cons;
 	opdata->produced = resp->produced;

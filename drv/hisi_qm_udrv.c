@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
+#include <asm/byteorder.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,8 +20,8 @@
 #define QM_DBELL_SQN_MASK	0x3ff
 #define QM_DBELL_CMD_MASK	0xf
 #define QM_Q_DEPTH		1024
-#define CQE_PHASE(cq)		(((*((__u32 *)(cq) + 3)) >> 16) & 0x1)
-#define CQE_SQ_HEAD_INDEX(cq)	((*((__u32 *)(cq) + 2)) & 0xffff)
+#define CQE_PHASE(cq)		(__le16_to_cpu((cq)->w7) & 0x1)
+#define CQE_SQ_HEAD_INDEX(cq)	(__le16_to_cpu((cq)->sq_head) & 0xffff)
 #define VERSION_ID_SHIFT	9
 
 #define UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)

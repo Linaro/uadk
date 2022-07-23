@@ -35,7 +35,7 @@
 
 /* the format of the device io space, which is of drv */
 struct dummy_hw_queue_reg {
-	char hw_tag[DUMMY_HW_TAG_SZ];	/* should be "WDDUMMY\0" */
+	char hw_tag[DUMMY_HW_TAG_SZ];   /* should be "WDDUMMY\0" */
 	struct ring_bd ring[Q_BDS];	/* in real hardware, this is good to be
 					   in memory space, and will be fast
 					   for communication. here we keep it

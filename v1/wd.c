@@ -31,14 +31,13 @@
 #include "v1/wd_adapter.h"
 #include "v1/wd.h"
 
-#define SYS_CLASS_DIR	"/sys/class"
 #define LINUX_DEV_DIR	"/dev"
-#define WD_UACCE_CLASS_DIR SYS_CLASS_DIR"/"WD_UACCE_CLASS_NAME
+#define WD_UACCE_CLASS_DIR		"/sys/class/"WD_UACCE_CLASS_NAME
 #define _TRY_REQUEST_TIMES		64
 #define INT_MAX_SIZE			10
 #define LINUX_CRTDIR_SIZE		1
 #define LINUX_PRTDIR_SIZE		2
-#define INSTANCE_RATIO_FOR_DEV_SCHED		4
+#define INSTANCE_RATIO_FOR_DEV_SCHED	4
 
 #define GET_WEIGHT(distance, instances) (\
 		((instances) & 0xffff) | (((distance) & 0xffff) << 16))
@@ -109,21 +108,20 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 
 static int get_int_attr(struct dev_info *dinfo, const char *attr)
 {
-	int size;
-	char buf[MAX_ATTR_STR_SIZE];
+	char buf[MAX_ATTR_STR_SIZE] = {'\0'};
+	int ret;
 
-	/*
-	 * The signed int max number is INT_MAX 10bit char "4294967295"
-	 * When the value is bigger than INT_MAX, it returns INT_MAX
-	 */
-	size = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
-	if (size < 0)
-		return size;
-	else if (size >= INT_MAX_SIZE)
-		return INT_MAX;
-	/* Handing the read string's end tails '\n' to '\0' */
-	buf[size] = '\0';
-	return atoi((char *)buf);
+	ret = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
+	if (ret < 0)
+		return ret;
+
+	ret = strtol(buf, NULL, 10);
+	if (errno == ERANGE) {
+		WD_ERR("failed to strtol %s, out of range!\n", buf);
+		return -errno;
+	}
+
+	return ret;
 }
 
 /*
@@ -524,7 +522,7 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 	qinfo->fd = open(q_path, O_RDWR | O_CLOEXEC);
 	if (qinfo->fd == -1) {
 		WD_ERR("open %s failed, errno = %d!\n", q_path, errno);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	qinfo->hw_type = dev->api;
@@ -575,23 +573,26 @@ int wd_request_queue(struct wd_queue *q)
 		return -WD_ENOMEM;
 	};
 	q->qinfo = dinfop + 1;
-try_again:
-	ret = find_available_res(q, dinfop, NULL);
-	if (ret) {
-		WD_ERR("cannot find available device\n");
-		goto err_with_dev;
-	}
 
-	ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
-	if (ret == -WD_ENODEV) {
-		try_cnt++;
-		if (try_cnt < _TRY_REQUEST_TIMES) {
-			memset(dinfop, 0, sizeof(*dinfop));
-			goto try_again;
+	do {
+		ret = find_available_res(q, dinfop, NULL);
+		if (ret) {
+			WD_ERR("cannot find available device\n");
+			goto err_with_dev;
 		}
-		WD_ERR("fail to get queue!\n");
-		goto err_with_dev;
-	}
+
+		ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
+		if (!ret) {
+			break;
+		} else {
+			if (try_cnt++ > _TRY_REQUEST_TIMES) {
+				WD_ERR("fail to get queue!\n");
+				goto err_with_dev;
+			}
+
+			memset(dinfop, 0, sizeof(*dinfop));
+		}
+	} while (true);
 
 	ret = drv_open(q);
 	if (ret) {

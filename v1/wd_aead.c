@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_aead.h"
 #include "wd_util.h"
+#include "wd_aead.h"
 
 #define MAX_AEAD_KEY_SIZE		64
 #define MAX_AEAD_MAC_SIZE		64
@@ -566,7 +566,7 @@ static int param_check(struct wcrypto_aead_ctx *a_ctx,
 	return WD_SUCCESS;
 }
 
-int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **a_opdata,
+int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **opdata,
 		       void **tag, __u32 num)
 {
 	struct wcrypto_aead_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = { NULL };
@@ -575,7 +575,7 @@ int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **a_opdata,
 	__u32 i;
 	int ret;
 
-	if (param_check(ctxt, a_opdata, tag, num))
+	if (param_check(ctxt, opdata, tag, num))
 		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
@@ -585,13 +585,13 @@ int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **a_opdata,
 	}
 
 	for (i = 0; i < num; i++) {
-		cookies[i]->tag.priv = a_opdata[i]->priv;
+		cookies[i]->tag.priv = opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
 		if (tag)
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
 
-	ret = aead_requests_init(req, a_opdata, ctxt, num);
+	ret = aead_requests_init(req, opdata, ctxt, num);
 	if (unlikely(ret))
 		goto fail_with_cookies;
 
@@ -604,7 +604,7 @@ int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **a_opdata,
 	if (tag)
 		return ret;
 
-	ret = aead_recv_sync(ctxt, a_opdata, num);
+	ret = aead_recv_sync(ctxt, opdata, num);
 
 fail_with_send:
 	aead_requests_uninit(req, ctxt, num);

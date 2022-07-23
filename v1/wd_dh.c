@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_dh.h"
 #include "wd_util.h"
+#include "wd_dh.h"
 
 #define WD_DH_G2		2
 #define DH_BALANCE_THRHD		1280
@@ -307,6 +307,31 @@ static int do_dh_prepare(struct wcrypto_dh_op_data *opdata,
 	return 0;
 }
 
+static int dh_send(struct wcrypto_dh_ctx *ctx, struct wcrypto_dh_msg *req)
+{
+	uint32_t tx_cnt = 0;
+	int ret;
+
+	do {
+		ret = wd_send(ctx->q, req);
+		if (!ret) {
+			break;
+		} else if (ret == -WD_EBUSY) {
+			if (tx_cnt++ > DH_RESEND_CNT) {
+				WD_ERR("do dh send cnt %u, exit!\n", tx_cnt);
+				break;
+			}
+
+			usleep(1);
+		} else {
+			WD_ERR("do dh wd_send err!\n");
+			break;
+		}
+	} while (true);
+
+	return ret;
+}
+
 int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 {
 	struct wcrypto_dh_msg *resp = NULL;
@@ -314,46 +339,39 @@ int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 	struct wcrypto_dh_cookie *cookie;
 	struct wcrypto_dh_msg *req;
 	uint32_t rx_cnt = 0;
-	uint32_t tx_cnt = 0;
 	int ret;
 
 	ret = do_dh_prepare(opdata, &cookie, ctxt, &req, tag);
 	if (unlikely(ret))
 		return ret;
 
-send_again:
-	ret = wd_send(ctxt->q, req);
-	if (ret == -WD_EBUSY) {
-		usleep(1);
-		if (tx_cnt++ < DH_RESEND_CNT)
-			goto send_again;
-		else {
-			WD_ERR("do dh send cnt %u, exit!\n", tx_cnt);
-			goto fail_with_cookie;
-		}
-	} else if (unlikely(ret)) {
-		WD_ERR("do dh wd_send err!\n");
+	ret = dh_send(ctxt, req);
+	if (unlikely(ret))
 		goto fail_with_cookie;
-	}
 
 	if (tag)
 		return ret;
 
 	resp = (void *)(uintptr_t)ctxt->ctx_id;
-recv_again:
-	ret = wd_recv(ctxt->q, (void **)&resp);
-	if (!ret) {
-		if (unlikely(rx_cnt++ >= DH_RECV_MAX_CNT)) {
-			WD_ERR("failed to receive: timeout!\n");
-			return -WD_ETIMEDOUT;
-		} else if (balance > DH_BALANCE_THRHD) {
-			usleep(1);
+
+	do {
+		ret = wd_recv(ctxt->q, (void **)&resp);
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
+			if (unlikely(rx_cnt++ >= DH_RECV_MAX_CNT)) {
+				WD_ERR("failed to receive: timeout!\n");
+				ret = -WD_ETIMEDOUT;
+				goto fail_with_cookie;
+			}
+
+			if (balance > DH_BALANCE_THRHD)
+				usleep(1);
+		} else {
+			WD_ERR("do dh wd_recv err!\n");
+			goto fail_with_cookie;
 		}
-		goto recv_again;
-	} else if (unlikely(ret < 0)) {
-		WD_ERR("do dh wd_recv err!\n");
-		goto fail_with_cookie;
-	}
+	} while (true);
 
 	balance = rx_cnt;
 	opdata->pri = (void *)resp->out;

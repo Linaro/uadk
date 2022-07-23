@@ -348,6 +348,11 @@ int wd_dh_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_sched_ctx = wd_dh_setting.sched.h_sched_ctx;
 
+	if (unlikely(!count)) {
+		WD_ERR("invalid: dh poll count is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	return wd_dh_setting.sched.poll_policy(h_sched_ctx, expt, count);
 }
 

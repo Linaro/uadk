@@ -359,7 +359,7 @@ struct wcrypto_ecc_out {
 static inline void wd_reg_write(void *reg_addr, uint32_t value)
 {
 	*((uint32_t *)reg_addr) = value;
-	wmb();	/* load fence */
+	wmb(); /* load fence */
 }
 
 static inline uint32_t wd_reg_read(void *reg_addr)
@@ -367,7 +367,7 @@ static inline uint32_t wd_reg_read(void *reg_addr)
 	uint32_t temp;
 
 	temp = *((uint32_t *)reg_addr);
-	rmb();	/* load fence */
+	rmb(); /* load fence */
 
 	return temp;
 }

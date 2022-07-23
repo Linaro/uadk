@@ -611,7 +611,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (!count) {
+	if (unlikely(!count)) {
 		WD_ERR("invalid: aead poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -657,6 +657,11 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 {
 	handle_t h_ctx = wd_aead_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_aead_setting.sched;
+
+	if (unlikely(!count)) {
+		WD_ERR("invalid: aead poll input param is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	return sched->poll_policy(h_ctx, expt, count);
 }
