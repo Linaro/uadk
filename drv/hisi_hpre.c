@@ -100,17 +100,23 @@ struct hisi_hpre_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
-static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
+static bool is_hpre_bin_fmt(char *dst, const char *src, int dsz, int bsz)
 {
-	const char *temp = data + dsz;
+	const char *temp = src + dsz;
 	int lens = bsz - dsz;
 	int i = 0;
 
+	if (!lens)
+		return true;
+
 	while (i < lens) {
-		if (temp[i] && !data[i])
-			return true;
+		if (temp[i] && !src[i])
+			break;
 		i++;
 	}
+
+	if (dst == src && i != lens)
+		return true;
 
 	return false;
 }
@@ -119,7 +125,6 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 				  __u32 b_size, __u32 d_size, const char *p_name)
 {
 	int i = d_size - 1;
-	bool is_hpre_bin;
 	int j;
 
 	if (!dst || !src || b_size <= 0 || d_size <= 0) {
@@ -132,8 +137,7 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 		return  -WD_EINVAL;
 	}
 
-	is_hpre_bin = is_hpre_bin_fmt(src, d_size, b_size);
-	if (b_size == d_size || (dst == src && is_hpre_bin))
+	if (is_hpre_bin_fmt(dst, src, d_size, b_size))
 		return WD_SUCCESS;
 
 	for (j = b_size - 1; j >= 0; j--, i--) {
