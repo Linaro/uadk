@@ -61,6 +61,7 @@ struct wd_rsa_driver {
 
 void wd_rsa_set_driver(struct wd_rsa_driver *drv);
 struct wd_rsa_driver *wd_rsa_get_driver(void);
+struct wd_rsa_msg *wd_rsa_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_RSA_SET_DRIVER(drv)						      \

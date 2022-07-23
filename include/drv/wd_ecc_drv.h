@@ -188,6 +188,7 @@ struct wd_ecc_driver {
 
 void wd_ecc_set_driver(struct wd_ecc_driver *drv);
 struct wd_ecc_driver *wd_ecc_get_driver(void);
+struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_ECC_SET_DRIVER(drv)						\
