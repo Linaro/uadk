@@ -447,6 +447,11 @@ static int hpre_init(struct wd_ctx_config_internal *config, void *priv, const ch
 	handle_t h_ctx, h_qp;
 	int i, j;
 
+	if (!config->ctx_num) {
+		WD_ERR("invalid: hpre init config ctx num is 0!\n");
+		return -WD_EINVAL;
+	}
+
 	memcpy(&hpre_ctx->config, config, sizeof(*config));
 
 	/* allocate qp for each context */

@@ -2341,6 +2341,11 @@ int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv)
 	handle_t h_ctx;
 	int i, j;
 
+	if (!config->ctx_num) {
+		WD_ERR("invalid: sec init config ctx num is 0!\n");
+		return -WD_EINVAL;
+	}
+
 	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {

@@ -780,6 +780,11 @@ static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 	handle_t h_ctx;
 	int i;
 
+	if (!config->ctx_num) {
+		WD_ERR("invalid: zip init config ctx num is 0!\n");
+		return -WD_EINVAL;
+	}
+
 	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
