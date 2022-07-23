@@ -36,6 +36,7 @@ struct wd_dh_driver {
 
 void wd_dh_set_driver(struct wd_dh_driver *drv);
 struct wd_dh_driver *wd_dh_get_driver(void);
+struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag);
 
 #ifdef WD_STATIC_DRV
 #define WD_DH_SET_DRIVER(drv)						\

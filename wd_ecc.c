@@ -2119,6 +2119,11 @@ fail_with_msg:
 	return ret;
 }
 
+struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag)
+{
+	return wd_find_msg_in_pool(&wd_ecc_setting.pool, idx, tag);
+}
+
 int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;

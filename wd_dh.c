@@ -290,6 +290,11 @@ fail_with_msg:
 	return ret;
 }
 
+struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag)
+{
+	return wd_find_msg_in_pool(&wd_dh_setting.pool, idx, tag);
+}
+
 int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
