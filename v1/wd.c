@@ -524,7 +524,7 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 	qinfo->fd = open(q_path, O_RDWR | O_CLOEXEC);
 	if (qinfo->fd == -1) {
 		WD_ERR("open %s failed, errno = %d!\n", q_path, errno);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	qinfo->hw_type = dev->api;
@@ -575,23 +575,26 @@ int wd_request_queue(struct wd_queue *q)
 		return -WD_ENOMEM;
 	};
 	q->qinfo = dinfop + 1;
-try_again:
-	ret = find_available_res(q, dinfop, NULL);
-	if (ret) {
-		WD_ERR("cannot find available device\n");
-		goto err_with_dev;
-	}
 
-	ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
-	if (ret == -WD_ENODEV) {
-		try_cnt++;
-		if (try_cnt < _TRY_REQUEST_TIMES) {
-			memset(dinfop, 0, sizeof(*dinfop));
-			goto try_again;
+	do {
+		ret = find_available_res(q, dinfop, NULL);
+		if (ret) {
+			WD_ERR("cannot find available device\n");
+			goto err_with_dev;
 		}
-		WD_ERR("fail to get queue!\n");
-		goto err_with_dev;
-	}
+
+		ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
+		if (!ret) {
+			break;
+		} else {
+			if (try_cnt++ > _TRY_REQUEST_TIMES) {
+				WD_ERR("fail to get queue!\n");
+				goto err_with_dev;
+			}
+
+			memset(dinfop, 0, sizeof(*dinfop));
+		}
+	} while (true);
 
 	ret = drv_open(q);
 	if (ret) {

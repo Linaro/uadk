@@ -174,7 +174,7 @@ int wcrypto_rng_poll(struct wd_queue *q, unsigned int num)
 		if (!ret)
 			break;
 
-		if (ret == -WD_EINVAL) {
+		if (ret < 0) {
 			WD_ERR("recv err at trng poll!\n");
 			return ret;
 		}
@@ -241,37 +241,45 @@ int wcrypto_do_rng(void *ctx, struct wcrypto_rng_op_data *opdata, void *tag)
 	if (ret)
 		return ret;
 
-send_again:
-	ret = wd_send(ctxt->q, req);
-	if (ret) {
-		if (++tx_cnt > RNG_RESEND_CNT) {
-			WD_ERR("do trng send cnt %u, exit!\n", tx_cnt);
+	do {
+		ret = wd_send(ctxt->q, req);
+		if (!ret) {
+			break;
+		} else if (ret == -WD_EBUSY) {
+			if (++tx_cnt > RNG_RESEND_CNT) {
+				WD_ERR("do trng send cnt %u, exit!\n", tx_cnt);
+				goto fail_with_cookie;
+			}
+
+			usleep(1);
+		} else {
+			WD_ERR("do rng wd_send err!\n");
 			goto fail_with_cookie;
 		}
-		usleep(1);
-		goto send_again;
-	}
+	} while (true);
 
 	if (tag)
 		return ret;
 
 	resp = (void *)(uintptr_t)ctxt->ctx_id;
-recv_again:
-	ret = wd_recv(ctxt->q, (void **)&resp);
-	if (!ret) {
-		if (++rx_cnt > RNG_RECV_CNT) {
-			WD_ERR("do trng recv cnt %u, exit!\n", rx_cnt);
-			ret = -WD_ETIMEDOUT;
+
+	do {
+		ret = wd_recv(ctxt->q, (void **)&resp);
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
+			if (++rx_cnt > RNG_RECV_CNT) {
+				WD_ERR("do trng recv cnt %u, exit!\n", rx_cnt);
+				ret = -WD_ETIMEDOUT;
+				goto fail_with_cookie;
+			}
+
+			usleep(1);
+		} else {
+			WD_ERR("do trng recv err!\n");
 			goto fail_with_cookie;
 		}
-		usleep(1);
-		goto recv_again;
-	}
-
-	if (ret < 0) {
-		WD_ERR("do trng recv err!\n");
-		goto fail_with_cookie;
-	}
+	} while (true);
 
 	opdata->out_bytes = resp->out_bytes;
 	ret = WD_SUCCESS;
