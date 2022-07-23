@@ -620,8 +620,8 @@ void wd_blockpool_destroy(handle_t blkpool)
 
 static int get_value_from_sysfs(const char *path, ssize_t path_size)
 {
+	char buf[MAX_ATTR_STR_SIZE] = {'\0'};
 	char dev_path[PATH_MAX];
-	char buf[MAX_ATTR_STR_SIZE];
 	char *ptrRet = NULL;
 	ssize_t size;
 	int fd, ret;
@@ -638,7 +638,7 @@ static int get_value_from_sysfs(const char *path, ssize_t path_size)
 		goto err_open;
 	}
 
-	size = read(fd, buf, sizeof(buf));
+	size = read(fd, buf, MAX_ATTR_STR_SIZE - 1);
 	if (size <= 0) {
 		WD_ERR("failed to read %s!\n", dev_path);
 		goto err_read;

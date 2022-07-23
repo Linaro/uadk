@@ -109,21 +109,24 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 
 static int get_int_attr(struct dev_info *dinfo, const char *attr)
 {
-	int size;
-	char buf[MAX_ATTR_STR_SIZE];
+	char buf[MAX_ATTR_STR_SIZE] = {'\0'};
+	int ret;
 
 	/*
 	 * The signed int max number is INT_MAX 10bit char "4294967295"
 	 * When the value is bigger than INT_MAX, it returns INT_MAX
 	 */
-	size = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
-	if (size < 0)
-		return size;
-	else if (size >= INT_MAX_SIZE)
-		return INT_MAX;
-	/* Handing the read string's end tails '\n' to '\0' */
-	buf[size] = '\0';
-	return atoi((char *)buf);
+	ret = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
+	if (ret < 0)
+		return ret;
+
+	ret = strtol(buf, NULL, 10);
+	if (errno == ERANGE) {
+		WD_ERR("failed to strtol %s, out of range!\n", buf);
+		return -errno;
+	}
+
+	return ret;
 }
 
 /*
