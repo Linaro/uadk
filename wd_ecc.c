@@ -445,7 +445,7 @@ static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
 
 	memset(in, 0, len);
 	in->size = len - sizeof(struct wd_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = ksz;
 	dgst->bsize = ksz;
@@ -485,7 +485,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 
 	memset(in, 0, len);
 	in->size = ksz + m_len;
-	k = (struct wd_dtb *)in;
+	k = (void *)in;
 	k->data = in->data;
 	k->dsize = ksz;
 	k->bsize = ksz;
@@ -1707,7 +1707,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 
 	memset(in, 0, len);
 	in->size = len - sizeof(struct wd_ecc_in);
-	dgst = (struct wd_dtb *)in;
+	dgst = (void *)in;
 	dgst->data = in->data;
 	dgst->dsize = sess->key_size;
 	dgst->bsize = hsz;
