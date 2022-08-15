@@ -41,6 +41,7 @@
 
 #define SEC_DE_OFFSET_V3	9
 #define SEC_SCENE_OFFSET_V3	5
+#define SEC_CWIDTH_OFFSET_V3	10
 #define SEC_CKEY_OFFSET_V3	13
 #define SEC_CALG_OFFSET_V3	4
 #define SEC_AKEY_OFFSET_V3	9
@@ -169,6 +170,12 @@ enum sec_bd_type {
 	BD_TYPE1 = 0x1,
 	BD_TYPE2 = 0x2,
 	BD_TYPE3 = 0x3,
+};
+
+enum sec_c_width {
+	C_WIDTH_CS1 = 0x1,
+	C_WIDTH_CS2 = 0x2,
+	C_WIDTH_CS3 = 0x3,
 };
 
 struct hisi_sec_ctx {
@@ -480,7 +487,9 @@ static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
 static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
 	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
-	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
+	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256,
+	A_ALG_AES_XCBC_MAC_96, A_ALG_AES_XCBC_PRF_128, A_ALG_AES_CMAC,
+	A_ALG_AES_GMAC
 };
 
 int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv);
@@ -554,6 +563,9 @@ static void update_iv(struct wd_cipher_msg *msg)
 {
 	switch (msg->mode) {
 	case WD_CIPHER_CBC:
+	case WD_CIPHER_CBC_CS1:
+	case WD_CIPHER_CBC_CS2:
+	case WD_CIPHER_CBC_CS3:
 		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
 		    msg->out_bytes >= msg->iv_bytes)
 			memcpy(msg->iv, msg->out + msg->out_bytes -
@@ -765,8 +777,32 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		dump_sec_msg(temp_msg, "cipher");
 }
 
+static int aes_sm4_len_check(struct wd_cipher_msg *msg)
+{
+	if ((msg->mode == WD_CIPHER_CBC_CS1 ||
+	     msg->mode == WD_CIPHER_CBC_CS2 ||
+	     msg->mode == WD_CIPHER_CBC_CS3) &&
+	     msg->alg == WD_CIPHER_AES &&
+	     msg->in_bytes <= AES_BLOCK_SIZE) {
+		WD_ERR("failed to check input bytes of AES_CBC_CS_X, size = %u\n",
+		       msg->in_bytes);
+		return -WD_EINVAL;
+	}
+
+	if ((msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_ECB) &&
+	     msg->in_bytes & (AES_BLOCK_SIZE - 1)) {
+		WD_ERR("failed to check input bytes of AES or SM4, size = %u\n",
+			msg->in_bytes);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int cipher_len_check(struct wd_cipher_msg *msg)
 {
+	int ret;
+
 	if (msg->in_bytes > MAX_INPUT_DATA_LEN ||
 	    !msg->in_bytes) {
 		WD_ERR("input cipher length is error, size = %u\n",
@@ -795,13 +831,12 @@ static int cipher_len_check(struct wd_cipher_msg *msg)
 			return -WD_EINVAL;
 		}
 		return 0;
-	} else if (msg->alg == WD_CIPHER_AES || msg->alg == WD_CIPHER_SM4) {
-		if (msg->in_bytes & (AES_BLOCK_SIZE - 1)) {
-			WD_ERR("failed to check input bytes of AES or SM4, size = %u\n",
-			       msg->in_bytes);
-			return -WD_EINVAL;
-		}
-		return 0;
+	}
+
+	if (msg->alg == WD_CIPHER_AES || msg->alg == WD_CIPHER_SM4) {
+		ret = aes_sm4_len_check(msg);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -1083,6 +1118,18 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 	case WD_CIPHER_CFB:
 		c_mode = C_MODE_CFB;
 		break;
+	case WD_CIPHER_CBC_CS1:
+		c_mode = C_MODE_CBC_CS;
+		sqe->c_icv_key |= C_WIDTH_CS1 << SEC_CWIDTH_OFFSET_V3;
+		break;
+	case WD_CIPHER_CBC_CS2:
+		c_mode = C_MODE_CBC_CS;
+		sqe->c_icv_key |= C_WIDTH_CS2 << SEC_CWIDTH_OFFSET_V3;
+		break;
+	case WD_CIPHER_CBC_CS3:
+		c_mode = C_MODE_CBC_CS;
+		sqe->c_icv_key |= C_WIDTH_CS3 << SEC_CWIDTH_OFFSET_V3;
+		break;
 	default:
 		WD_ERR("failed to check cipher mode type, mode = %u\n",
 		       msg->mode);
@@ -1285,28 +1332,41 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	return WD_SUCCESS;
 }
 
-static void qm_fill_digest_long_bd(struct wd_digest_msg *msg,
+static int fill_digest_long_hash(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
 	__u64 total_bits;
 
+	if (msg->data_fmt == WD_SGL_BUF && msg->has_next) {
+		WD_ERR("invalid: sgl mode not supports long hash!\n");
+		return -WD_EINVAL;
+	}
+
 	if (msg->has_next && !msg->iv_bytes) {
-		/* LONG BD FIRST */
+		/* Long hash first */
 		sqe->ai_apd_cs = AI_GEN_INNER;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
-	} else if (msg->has_next && (msg->iv_bytes != 0)) {
-		/* LONG BD MIDDLE */
+	}
+
+	if (msg->has_next && msg->iv_bytes) {
+		/* Long hash middle */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
-	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
-		/* LONG BD END */
+	}
+
+	if (!msg->has_next && msg->iv_bytes) {
+		/* Long hash end */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_PAD << AUTHPAD_OFFSET;
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
+
+		/* The max total_bits length is LONG_MAX */
 		total_bits = msg->long_data_len * BYTE_BITS;
 		sqe->type2.long_a_data_len = total_bits;
 	}
+
+	return 0;
 }
 
 static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
@@ -1346,7 +1406,7 @@ static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		dump_sec_msg(temp_msg, "digest");
 }
 
-static int digest_long_bd_check(struct wd_digest_msg *msg)
+static int digest_long_bd_align_check(struct wd_digest_msg *msg)
 {
 	__u32 alg_align_sz;
 
@@ -1359,6 +1419,18 @@ static int digest_long_bd_check(struct wd_digest_msg *msg)
 	return 0;
 }
 
+static int aes_auth_len_check(struct wd_digest_msg *msg)
+{
+	if ((msg->alg == WD_DIGEST_AES_XCBC_MAC_96 ||
+	     msg->alg == WD_DIGEST_AES_XCBC_PRF_128 ||
+	     msg->alg == WD_DIGEST_AES_CMAC) && !msg->in_bytes) {
+		WD_ERR("digest mode: %u not supports 0 size!\n", msg->alg);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 {
 	int ret;
@@ -1367,6 +1439,12 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 	if (unlikely(type == BD_TYPE2 && !msg->has_next && !msg->in_bytes)) {
 		WD_ERR("kunpeng 920, digest mode not support 0 size!\n");
 		return -WD_EINVAL;
+	}
+
+	if (type == BD_TYPE3) {
+		ret = aes_auth_len_check(msg);
+		if (ret)
+			return ret;
 	}
 
 	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
@@ -1382,7 +1460,7 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 	}
 
 	if (msg->has_next) {
-		ret = digest_long_bd_check(msg);
+		ret = digest_long_bd_align_check(msg);
 		if (ret) {
 			WD_ERR("input data isn't aligned, size = %u\n",
 			       msg->in_bytes);
@@ -1437,7 +1515,9 @@ int hisi_sec_digest_send(handle_t ctx, void *digest_msg)
 	if (ret)
 		goto put_sgl;
 
-	qm_fill_digest_long_bd(msg, &sqe);
+	ret = fill_digest_long_hash(msg, &sqe);
+	if (ret)
+		goto put_sgl;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
@@ -1493,9 +1573,35 @@ static struct wd_digest_driver hisi_digest_driver = {
 
 WD_DIGEST_SET_DRIVER(hisi_digest_driver);
 
+static int hmac_key_len_check(struct wd_digest_msg *msg)
+{
+	switch (msg->alg) {
+	case WD_DIGEST_AES_XCBC_MAC_96:
+	case WD_DIGEST_AES_XCBC_PRF_128:
+	case WD_DIGEST_AES_CMAC:
+		if (msg->key_bytes != AES_KEYSIZE_128) {
+			WD_ERR("failed to check digest key bytes, size = %u\n",
+			       msg->key_bytes);
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
+			WD_ERR("failed to check digest key bytes, size = %u\n",
+			       msg->key_bytes);
+			return -WD_EINVAL;
+		}
+		break;
+	}
+
+	return 0;
+}
+
 static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
+	int ret;
+
 	if (msg->alg >= WD_DIGEST_TYPE_MAX) {
 		WD_ERR("failed to check digest type, alg = %u\n", msg->alg);
 		return -WD_EINVAL;
@@ -1507,16 +1613,20 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		sqe->auth_mac_key |=
 		(__u32)g_digest_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
 	} else if (msg->mode == WD_DIGEST_HMAC) {
-		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
-			WD_ERR("failed to check digest key bytes, size = %u\n",
-			       msg->key_bytes);
-			return -WD_EINVAL;
-		}
+		ret = hmac_key_len_check(msg);
+		if (ret)
+			return ret;
+
 		sqe->auth_mac_key |= (__u32)(msg->key_bytes /
 			WORD_BYTES) << SEC_AKEY_OFFSET_V3;
 		sqe->a_key_addr = (__u64)(uintptr_t)msg->key;
 		sqe->auth_mac_key |=
 		(__u32)g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
+
+		if (msg->alg == WD_DIGEST_AES_GMAC) {
+			sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
+			sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		}
 	} else {
 		WD_ERR("failed to check digest mode, mode = %u\n", msg->mode);
 		return -WD_EINVAL;
@@ -1525,28 +1635,78 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 	return WD_SUCCESS;
 }
 
-static void qm_fill_digest_long_bd3(struct wd_digest_msg *msg,
+static int aes_auth_long_hash_check(struct wd_digest_msg *msg)
+{
+	if ((msg->alg == WD_DIGEST_AES_XCBC_MAC_96 ||
+	     msg->alg == WD_DIGEST_AES_XCBC_PRF_128 ||
+	     msg->alg == WD_DIGEST_AES_CMAC ||
+	     msg->alg == WD_DIGEST_AES_GMAC) && msg->has_next) {
+		WD_ERR("aes auth algs not supports long hash mode!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int fill_digest_long_hash3(struct wd_digest_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
 	__u64 total_bits;
+	int ret;
+
+	if (msg->data_fmt == WD_SGL_BUF && msg->has_next) {
+		WD_ERR("invalid: sgl mode not supports long hash!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = aes_auth_long_hash_check(msg);
+	if (ret)
+		return ret;
 
 	if (msg->has_next && !msg->iv_bytes) {
-		/* LONG BD FIRST */
+		/* Long hash first */
 		sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
-	} else if (msg->has_next && (msg->iv_bytes != 0)) {
-		/* LONG BD MIDDLE */
+	}
+
+	if (msg->has_next && msg->iv_bytes) {
+		/* Long hash middle */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
-	} else if (!msg->has_next && (msg->iv_bytes != 0)) {
-		/* LONG BD END */
+	}
+
+	if (!msg->has_next && msg->iv_bytes) {
+		/* Long hash end */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_PAD;
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
+
+		/* The max total_bits length is LONG_MAX */
 		total_bits = msg->long_data_len * BYTE_BITS;
 		sqe->stream_scene.long_a_data_len = total_bits;
 	}
+
+	return 0;
+}
+
+static void fill_digest_v3_scene(struct hisi_sec_sqe3 *sqe,
+				 struct wd_digest_msg *msg)
+{
+	__u16 scene, de;
+
+	/* config BD type */
+	sqe->bd_param = BD_TYPE3;
+
+	/* config scene */
+	if (msg->alg == WD_DIGEST_AES_GMAC)
+		scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
+	else
+		scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET_V3;
+
+	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET_V3;
+
+	sqe->bd_param |= (__u16)(de | scene);
 }
 
 int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
@@ -1555,8 +1715,6 @@ int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 	struct wd_digest_msg *msg = digest_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
-	__u16 scene;
-	__u16 de;
 	int ret;
 
 	if (!msg) {
@@ -1569,13 +1727,9 @@ int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 		return ret;
 
 	memset(&sqe, 0, sizeof(struct hisi_sec_sqe3));
-	/* config BD type */
-	sqe.bd_param = BD_TYPE3;
-	sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
+	fill_digest_v3_scene(&sqe, msg);
 
-	/* config scene */
-	scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET_V3;
-	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET_V3;
+	sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
@@ -1584,7 +1738,6 @@ int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 			return ret;
 	}
 
-	sqe.bd_param |= (__u16)(de | scene);
 	sqe.a_len_key = (__u32)msg->in_bytes;
 	sqe.data_src_addr = (__u64)(uintptr_t)msg->in;
 	sqe.mac_addr = (__u64)(uintptr_t)msg->out;
@@ -1593,7 +1746,9 @@ int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 	if (ret)
 		goto put_sgl;
 
-	qm_fill_digest_long_bd3(msg, &sqe);
+	ret = fill_digest_long_hash3(msg, &sqe);
+	if (ret)
+		goto put_sgl;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
@@ -1698,7 +1853,7 @@ static int aead_get_aes_key_len(struct wd_aead_msg *msg, __u8 *key_len)
 	return 0;
 }
 
-static int aead_bd_msg_check(struct wd_aead_msg *msg)
+static int aead_akey_len_check(struct wd_aead_msg *msg)
 {
 	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
 		WD_ERR("failed to check aead auth key bytes, size = %u\n",
@@ -1734,7 +1889,7 @@ static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 
 	sqe->type2.mac_key_alg = msg->auth_bytes / WORD_BYTES;
 
-	ret = aead_bd_msg_check(msg);
+	ret = aead_akey_len_check(msg);
 	if (ret)
 		return ret;
 
@@ -2074,7 +2229,7 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	ret = aead_bd_msg_check(msg);
+	ret = aead_akey_len_check(msg);
 	if (ret)
 		return ret;
 

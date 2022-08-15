@@ -32,6 +32,9 @@
 #define TEST_WORD_LEN	4096
 #define MAX_ALGO_PER_TYPE 16
 #define MIN_SVA_BD_NUM	1
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
 
 #define SGL_ALIGNED_BYTES	64
 

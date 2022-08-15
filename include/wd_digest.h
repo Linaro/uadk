@@ -31,6 +31,10 @@ enum wd_digest_type {
 	WD_DIGEST_SHA512,
 	WD_DIGEST_SHA512_224,
 	WD_DIGEST_SHA512_256,
+	WD_DIGEST_AES_XCBC_MAC_96,
+	WD_DIGEST_AES_XCBC_PRF_128,
+	WD_DIGEST_AES_CMAC,
+	WD_DIGEST_AES_GMAC,
 	WD_DIGEST_TYPE_MAX,
 };
 
@@ -43,7 +47,11 @@ enum wd_digest_mac_len {
 	WD_DIGEST_SHA384_LEN	= 48,
 	WD_DIGEST_SHA512_LEN	= 64,
 	WD_DIGEST_SHA512_224_LEN	= 28,
-	WD_DIGEST_SHA512_256_LEN	= 32
+	WD_DIGEST_SHA512_256_LEN	= 32,
+	WD_DIGEST_AES_XCBC_MAC_96_LEN	= 12,
+	WD_DIGEST_AES_XCBC_PRF_128_LEN	= 16,
+	WD_DIGEST_AES_CMAC_LEN	= 16,
+	WD_DIGEST_AES_GMAC_LEN	= 16,
 };
 
 /**
@@ -78,6 +86,8 @@ typedef void *wd_digest_cb_t(void *cb_param);
  * @in_bytes: input data size
  * @out_bytes: output data size
  * @out_buf_bytes: actual output buffer size
+ * @iv: input iv data addrss for AES_GMAC
+ * @iv_bytes: input iv data size
  * @has_next: is there next data block
  * @cb: callback function for async mode
  * @cb_param: pointer of callback parameter
@@ -96,9 +106,11 @@ struct wd_digest_req {
 	__u32		in_bytes;
 	__u32		out_bytes;
 	__u32		out_buf_bytes;
+	__u8		*iv;
+	__u32		iv_bytes;
 	__u16		state;
 	__u16		has_next;
-	__u8        data_fmt;
+	__u8		data_fmt;
 	wd_digest_cb_t	*cb;
 	void		*cb_param;
 };

@@ -15,6 +15,9 @@
 #define DES_KEY_SIZE		8
 #define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
 
 #define WD_AEAD_CCM_GCM_MIN	4U
 #define WD_AEAD_CCM_GCM_MAX	16
@@ -81,7 +84,7 @@ void wd_aead_set_driver(struct wd_aead_driver *drv)
 	wd_aead_setting.driver = drv;
 }
 
-static int aes_key_len_check(__u16 length)
+static int aes_key_len_check(__u32 length)
 {
 	switch (length) {
 	case AES_KEYSIZE_128:
@@ -333,7 +336,7 @@ static int aead_mac_param_check(struct wd_aead_sess *sess,
 	return ret;
 }
 
-static int aead_param_check(struct wd_aead_sess *sess,
+static int wd_aead_param_check(struct wd_aead_sess *sess,
 	struct wd_aead_req *req)
 {
 	__u32 len;
@@ -516,7 +519,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	__u32 idx;
 	int ret;
 
-	ret = aead_param_check(sess, req);
+	ret = wd_aead_param_check(sess, req);
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
@@ -548,7 +551,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	int msg_id, ret;
 	__u32 idx;
 
-	ret = aead_param_check(sess, req);
+	ret = wd_aead_param_check(sess, req);
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
