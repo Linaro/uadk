@@ -30,7 +30,7 @@
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
 #define TEST_WORD_LEN	4096
-#define MAX_ALGO_PER_TYPE 13
+#define MAX_ALGO_PER_TYPE 16
 #define MIN_SVA_BD_NUM	1
 
 #define SGL_ALIGNED_BYTES	64
@@ -59,7 +59,26 @@ static struct hash_testvec g_long_hash_tv;
 
 char *skcipher_names[MAX_ALGO_PER_TYPE] =
 	{"ecb(aes)", "cbc(aes)", "xts(aes)", "ofb(aes)", "cfb(aes)", "ecb(des3_ede)",
-	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", "ecb(sm4)", NULL,};
+	"cbc(des3_ede)", "cbc(sm4)", "xts(sm4)", "ofb(sm4)", "cfb(sm4)", "ecb(sm4)",
+	"cbc_cs1(aes)", "cbc_cs2(aes)", "cbc_cs3(aes)", NULL,};
+
+enum digest_type {
+	LOCAL_SM3,
+	LOCAL_MD5,
+	LOCAL_SHA1,
+	LOCAL_SHA256,
+	LOCAL_SHA224,
+	LOCAL_SHA384,
+	LOCAL_SHA512,
+	LOCAL_SHA512_224,
+	LOCAL_SHA512_256,
+	LOCAL_AES_CMAC,
+	LOCAL_AES_GMAC_128,
+	LOCAL_AES_GMAC_192,
+	LOCAL_AES_GMAC_256,
+	LOCAL_AES_XCBC_MAC_96,
+};
+
 struct sva_bd {
 	char *src;
 	char *dst;
@@ -452,6 +471,66 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 			}
 			tv = &sm4_ecb_tv_template_128[0];
 			break;
+		case 12:
+			alg_type = WD_CIPHER_AES;
+			switch (g_keylen) {
+			case AES_KEYSIZE_128:
+				mode_type = WD_CIPHER_CBC_CS1;
+				tv = &aes_cbc_cs1_tv_template_128[0];
+				break;
+			case AES_KEYSIZE_192:
+				mode_type = WD_CIPHER_CBC_CS1;
+				tv = &aes_cbc_cs1_tv_template_192[0];
+				break;
+			case AES_KEYSIZE_256:
+				mode_type = WD_CIPHER_CBC_CS1;
+				tv = &aes_cbc_cs1_tv_template_256[0];
+				break;
+			default:
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			break;
+		case 13:
+			alg_type = WD_CIPHER_AES;
+			switch (g_keylen) {
+			case AES_KEYSIZE_128:
+				mode_type = WD_CIPHER_CBC_CS2;
+				tv = &aes_cbc_cs1_tv_template_128[0];
+				break;
+			case AES_KEYSIZE_192:
+				mode_type = WD_CIPHER_CBC_CS2;
+				tv = &aes_cbc_cs1_tv_template_192[0];
+				break;
+			case AES_KEYSIZE_256:
+				mode_type = WD_CIPHER_CBC_CS2;
+				tv = &aes_cbc_cs1_tv_template_256[0];
+				break;
+			default:
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			break;
+		case 14:
+			alg_type = WD_CIPHER_AES;
+			switch (g_keylen) {
+			case AES_KEYSIZE_128:
+				mode_type = WD_CIPHER_CBC_CS3;
+				tv = &aes_cbc_cs1_tv_template_128[0];
+				break;
+			case AES_KEYSIZE_192:
+				mode_type = WD_CIPHER_CBC_CS3;
+				tv = &aes_cbc_cs1_tv_template_192[0];
+				break;
+			case AES_KEYSIZE_256:
+				mode_type = WD_CIPHER_CBC_CS3;
+				tv = &aes_cbc_cs1_tv_template_256[0];
+				break;
+			default:
+				SEC_TST_PRT("%s: input key err!\n", __func__);
+				return -EINVAL;
+			}
+			break;
 		case 16:
 			alg_type = WD_CIPHER_AES;
 			mode_type = WD_CIPHER_CBC;
@@ -622,8 +701,12 @@ static int test_sec_cipher_sync_once(void)
 	}
 
 	SEC_TST_PRT("req src--------->:\n");
-	copy_mem(g_data_fmt, req.src, WD_FLAT_BUF,
-		 (void *)tv->ptext, (size_t)tv->len);
+	if (g_direction == 0)
+		copy_mem(g_data_fmt, req.src, WD_FLAT_BUF,
+			(void *)tv->ptext, (size_t)tv->len);
+	else
+		copy_mem(g_data_fmt, req.src, WD_FLAT_BUF,
+			(void *)tv->ctext, (size_t)tv->len);
 	dump_mem(g_data_fmt, req.src, req.in_bytes);
 
 	req.out_bytes = tv->len;
@@ -755,8 +838,12 @@ static int test_sec_cipher_async_once(void)
 	}
 
 	SEC_TST_PRT("req src--------->:\n");
-	copy_mem(g_data_fmt, req.src, WD_FLAT_BUF,
-		 (void *)tv->ptext, (size_t)tv->len);
+	if (g_direction == 0)
+		copy_mem(g_data_fmt, req.src, WD_FLAT_BUF,
+			(void *)tv->ptext, (size_t)tv->len);
+	else
+		copy_mem(g_data_fmt, req.src, WD_FLAT_BUF,
+			(void *)tv->ctext, (size_t)tv->len);
 	dump_mem(g_data_fmt, req.src, req.in_bytes);
 
 	req.out_bytes = tv->len;
@@ -766,7 +853,6 @@ static int test_sec_cipher_async_once(void)
 		ret = -ENOMEM;
 		goto out_dst;
 	}
-
 
 	req.iv = malloc(IV_SIZE);
 	if (!req.iv) {
@@ -1510,6 +1596,73 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			tv->dsize = 32;
 			alg_type = WD_DIGEST_SHA512_256;
 			break;
+		case 9:
+			switch (g_alg_op_type) {
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "aes-cmac");
+				tv = &aes_cmac_tv_template[0];
+				break;
+			}
+			tv->dsize = 16;
+			alg_type = WD_DIGEST_AES_CMAC;
+			break;
+		case 10:
+			switch (g_alg_op_type) {
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "aes-gmac-128");
+				tv = &aes_gmac_128_tv_template[0];
+				break;
+			}
+			tv->dsize = 16;
+			alg_type = WD_DIGEST_AES_GMAC;
+			break;
+		case 11:
+			switch (g_alg_op_type) {
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "aes-gmac-192");
+				tv = &aes_gmac_192_tv_template[0];
+				break;
+			}
+			tv->dsize = 16;
+			alg_type = WD_DIGEST_AES_GMAC;
+			break;
+		case 12:
+			switch (g_alg_op_type) {
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "aes-gmac-256");
+				tv = &aes_gmac_256_tv_template[0];
+				break;
+			}
+			tv->dsize = 16;
+			alg_type = WD_DIGEST_AES_GMAC;
+			break;
+		case 13:
+			switch (g_alg_op_type) {
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "aes-xcbc-mac-96");
+				tv = &aes_xcbc_mac_96_tv_template[0];
+				break;
+			}
+			tv->dsize = 12;
+			alg_type = WD_DIGEST_AES_XCBC_MAC_96;
+			break;
+		case 14:
+			switch (g_alg_op_type) {
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "aes-xcbc-prf-128");
+				tv = &aes_xcbc_mac_96_tv_template[0];
+				break;
+			}
+			tv->dsize = 16;
+			alg_type = WD_DIGEST_AES_XCBC_PRF_128;
+			break;
+
 		default:
 			SEC_TST_PRT("keylenth error, default test alg: %s\n", "normal(sm3)");
 			return -EINVAL;
@@ -1599,6 +1752,18 @@ static int sec_digest_sync_once(void)
 			SEC_TST_PRT("sess set key failed!\n");
 			goto out_key;
 		}
+
+		if (g_testalg == LOCAL_AES_GMAC_128 ||
+		    g_testalg == LOCAL_AES_GMAC_192 ||
+		    g_testalg == LOCAL_AES_GMAC_256) {
+			req.iv = malloc(sizeof(char) * 16);
+			if (!req.iv) {
+				SEC_TST_PRT("failed to alloc iv memory!\n");
+				goto out_key;
+			}
+			memcpy(req.iv, tv->iv, 16);
+			req.iv_bytes = 16;
+		}
 	}
 
 	gettimeofday(&start_tval, NULL);
@@ -1625,6 +1790,7 @@ out_dst:
 	free_buf(g_data_fmt, req.in);
 out_src:
 	digest_uninit_config();
+	free(req.iv);
 
 	return ret;
 }
@@ -3858,11 +4024,14 @@ static void print_help(void)
 	SEC_TST_PRT("        0 : AES-ECB; 1 : AES-CBC;  2 : AES-XTS;  3 : AES-OFB\n");
 	SEC_TST_PRT("        4 : AES-CFB; 5 : 3DES-ECB; 6 : 3DES-CBC; 7 : SM4-CBC\n");
 	SEC_TST_PRT("        8 : SM4-XTS; 9 : SM4-OFB; 10 : SM4-CFB; 11 : SM4-ECB\n");
+	SEC_TST_PRT("        12 : AES-CBC_CS1; 13 : AES-CBC_CS2; 14 : AES-CBC_CS3\n");
 	SEC_TST_PRT("    [--digest ]:\n");
 	SEC_TST_PRT("        specify symmetric hash algorithm\n");
 	SEC_TST_PRT("        0 : SM3;    1 : MD5;    2 : SHA1;   3 : SHA256\n");
 	SEC_TST_PRT("        4 : SHA224; 5 : SHA384; 6 : SHA512; 7 : SHA512_224\n");
-	SEC_TST_PRT("        8 : SHA512_256\n");
+	SEC_TST_PRT("        8 : SHA512_256; 9 : AES_CMAC; 10 : AES_GMAC_128\n");
+	SEC_TST_PRT("        11 : AES_GMAC_192; 12 : AES_GMAC_256; 13 : AES_XCBC_MAC_96\n");
+	SEC_TST_PRT("        14 : AES_XCBC_PRF_128\n");
 	SEC_TST_PRT("    [--aead ]:\n");
 	SEC_TST_PRT("        specify symmetric aead algorithm\n");
 	SEC_TST_PRT("        0 : AES-CCM; 1 : AES-GCM;  2 : Hmac(sha256),cbc(aes)\n");
