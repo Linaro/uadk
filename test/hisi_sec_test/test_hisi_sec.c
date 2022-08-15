@@ -49,6 +49,7 @@ static unsigned int g_pktlen;
 static unsigned int g_block;
 static unsigned int g_blknum;
 static unsigned int g_direction;
+static unsigned int g_stream;
 static unsigned int g_alg_op_type;
 static unsigned int g_ivlen;
 static unsigned int g_syncmode;
@@ -132,6 +133,7 @@ struct test_sec_option {
 	__u32 ctxnum;
 	__u32 block;
 	__u32 blknum;
+	__u32 stream_mode;
 	__u32 sgl_num;
 	__u32 use_env;
 };
@@ -158,7 +160,7 @@ static void *create_buf(int sgl, size_t sz, size_t unit_sz)
 	int i, tail_sz, sgl_num;
 	void *buf;
 
-	buf = calloc(1, sz);
+	buf = calloc(sz, sizeof(char));
 	if (!buf) {
 		SEC_TST_PRT("Fail to allocate buffer %ld size!\n", sz);
 		return NULL;
@@ -169,7 +171,7 @@ static void *create_buf(int sgl, size_t sz, size_t unit_sz)
 	sgl_num = sz / unit_sz;	/* the number with unit_sz bytes */
 
 	/* the additional slot is for tail_sz */
-	head = calloc(1, sizeof(struct wd_datalist) * (sgl_num + 1));
+	head = calloc(sgl_num + 1, sizeof(struct wd_datalist));
 	if (!head) {
 		SEC_TST_PRT("Fail to allocate memory for SGL head!\n");
 		goto out;
@@ -672,12 +674,11 @@ static int test_sec_cipher_sync_once(void)
 	float speed, time_used;
 	int pid = getpid();
 	int cnt = g_times;
-	int ret;
 	size_t unit_sz;
+	int ret;
 
 	/* config setup */
 	ret = init_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
-
 	if (ret) {
 		SEC_TST_PRT("Fail to init sigle ctx config!\n");
 		return ret;
@@ -1931,7 +1932,6 @@ static int sec_digest_sync_stream_mode(void)
 		SEC_TST_PRT("sess set key failed!\n");
 		goto out;
 	}
-
 
 	while (cnt) {
 		do {
@@ -4058,15 +4058,19 @@ static void print_help(void)
 	SEC_TST_PRT("        the number of memory blocks in the pre-allocated BD message memory pool\n");
 	SEC_TST_PRT("    [--ctxnum]:\n");
 	SEC_TST_PRT("        the number of QP queues used by the entire test task\n");
+	SEC_TST_PRT("    [--stream]:\n");
+	SEC_TST_PRT("        set the steam mode for digest\n");
 	SEC_TST_PRT("    [--help]  = usage\n");
 	SEC_TST_PRT("Example\n");
 	SEC_TST_PRT("    ./test_hisi_sec --cipher 0 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 1\n");
-	SEC_TST_PRT("    ./test_hisi_sec --digest 0 --sync --optype 3\n");
-	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2\n");
+	SEC_TST_PRT("    ./test_hisi_sec --digest 0 --sync --optype 0\n");
+	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2 --stream\n");
+	SEC_TST_PRT("    ./test_hisi_sec --digest 1 --sync --optype 0\n");
+	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2 --stream\n");
 	SEC_TST_PRT("    ./test_hisi_sec --perf --sync --pktlen 1024 --block 1024\n");
 	SEC_TST_PRT("--blknum 100000 --times 10000 --multi 1 --ctxnum 1\n");
-	SEC_TST_PRT("UPDATE:2020-11-06\n");
+	SEC_TST_PRT("UPDATE:2022-06-29\n");
 }
 
 static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *option)
@@ -4089,9 +4093,10 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"ctxnum",    required_argument, 0,  12},
 		{"block",     required_argument, 0,  13},
 		{"blknum",    required_argument, 0,  14},
-		{"help",      no_argument,       0,  15},
+		{"stream",    no_argument,       0,  15},
 		{"sglnum",    required_argument, 0,  16},
 		{"use_env",   no_argument,       0,  17},
+		{"help",      no_argument,       0,  18},
 		{0, 0, 0, 0}
 	};
 
@@ -4147,14 +4152,17 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 			option->blknum = strtol(optarg, NULL, 0);
 			break;
 		case 15:
-			print_help();
-			exit(-1);
+			option->stream_mode = 1;
+			break;
 		case 16:
 			option->sgl_num = strtol(optarg, NULL, 0);
 			break;
 		case 17:
 			option->use_env = 1;
 			break;
+		case 18:
+			print_help();
+			exit(-1);
 		default:
 			SEC_TST_PRT("bad input parameter, exit\n");
 			print_help();
@@ -4203,18 +4211,17 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_ctxnum = option->ctxnum ? option->ctxnum : 1;
 	g_data_fmt = option->sgl_num ? WD_SGL_BUF : WD_FLAT_BUF;
 	g_sgl_num = option->sgl_num;
+	g_stream = option->stream_mode;
 
 	SEC_TST_PRT("set global times is %lld\n", g_times);
 
 	g_thread_num = option->xmulti ? option->xmulti : 1;
 	g_direction = option->optype;
 	if (option->algclass == DIGEST_CLASS) {
-		//0 is normal mode, 1 is HMAC mode, 3 is long hash mode.
+		//0 is normal mode, 1 is HMAC mode
 		g_alg_op_type = g_direction;
-		if (g_direction == 3) {
-			g_alg_op_type = 0;
+		if (g_stream)
 			g_ivlen = 1;
-		}
 	}
 
 	return 0;
@@ -4273,11 +4280,11 @@ static int test_sec_run(__u32 sync_mode, __u32 alg_class)
 			if (g_thread_num > 1 && g_direction != 3) {
 				SEC_TST_PRT("currently digest test is synchronize psize:%u, multi -%d threads!\n", g_pktlen, g_thread_num);
 				ret = sec_digest_sync_multi();
-			} else if (g_thread_num > 1 && g_direction == 3) {
+			} else if (g_thread_num > 1 && g_stream) {
 				ret = sec_digest_sync_stream_mode_multi();
 				(void)sec_digest_sync_stream_cmp();
 				SEC_TST_PRT("currently digest long hash mode, psize:%u, multi thread!\n", g_pktlen);
-			} else if (g_thread_num == 1 && g_direction == 3) {
+			} else if (g_thread_num == 1 && g_stream) {
 				if (g_ivlen == 1) {
 					ret = sec_digest_sync_stream_mode();
 					(void)sec_digest_sync_stream_cmp();
