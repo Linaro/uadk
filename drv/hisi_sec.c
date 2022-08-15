@@ -1332,15 +1332,32 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	return WD_SUCCESS;
 }
 
-static int fill_digest_long_hash(struct wd_digest_msg *msg,
-		struct hisi_sec_sqe *sqe)
+static int long_hash_param_check(handle_t h_qp, struct wd_digest_msg *msg)
 {
-	__u64 total_bits;
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+
+	if (qp->q_info.qp_mode == CTX_MODE_ASYNC && msg->has_next) {
+		WD_ERR("invalid: async mode not supports long hash!\n");
+		return -WD_EINVAL;
+	}
 
 	if (msg->data_fmt == WD_SGL_BUF && msg->has_next) {
 		WD_ERR("invalid: sgl mode not supports long hash!\n");
 		return -WD_EINVAL;
 	}
+
+	return 0;
+}
+
+static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
+		struct hisi_sec_sqe *sqe)
+{
+	__u64 total_bits;
+	int ret;
+
+	ret = long_hash_param_check(h_qp, msg);
+	if (ret)
+		return ret;
 
 	if (msg->has_next && !msg->iv_bytes) {
 		/* Long hash first */
@@ -1515,7 +1532,7 @@ int hisi_sec_digest_send(handle_t ctx, void *digest_msg)
 	if (ret)
 		goto put_sgl;
 
-	ret = fill_digest_long_hash(msg, &sqe);
+	ret = fill_digest_long_hash(h_qp, msg, &sqe);
 	if (ret)
 		goto put_sgl;
 
@@ -1648,16 +1665,15 @@ static int aes_auth_long_hash_check(struct wd_digest_msg *msg)
 	return 0;
 }
 
-static int fill_digest_long_hash3(struct wd_digest_msg *msg,
+static int fill_digest_long_hash3(handle_t h_qp, struct wd_digest_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
 	__u64 total_bits;
 	int ret;
 
-	if (msg->data_fmt == WD_SGL_BUF && msg->has_next) {
-		WD_ERR("invalid: sgl mode not supports long hash!\n");
-		return -WD_EINVAL;
-	}
+	ret = long_hash_param_check(h_qp, msg);
+	if (ret)
+		return ret;
 
 	ret = aes_auth_long_hash_check(msg);
 	if (ret)
@@ -1746,7 +1762,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 	if (ret)
 		goto put_sgl;
 
-	ret = fill_digest_long_hash3(msg, &sqe);
+	ret = fill_digest_long_hash3(h_qp, msg, &sqe);
 	if (ret)
 		goto put_sgl;
 
