@@ -54,6 +54,19 @@ enum wd_digest_mac_len {
 	WD_DIGEST_AES_GMAC_LEN	= 16,
 };
 
+/* User need to input full mac len in first and middle hash */
+enum wd_digest_mac_full_len {
+	WD_DIGEST_SM3_FULL_LEN	= 32,
+	WD_DIGEST_MD5_FULL_LEN	= 16,
+	WD_DIGEST_SHA1_FULL_LEN	= 20,
+	WD_DIGEST_SHA256_FULL_LEN	= 32,
+	WD_DIGEST_SHA224_FULL_LEN	= 32,
+	WD_DIGEST_SHA384_FULL_LEN	= 64,
+	WD_DIGEST_SHA512_FULL_LEN	= 64,
+	WD_DIGEST_SHA512_224_FULL_LEN	= 64,
+	WD_DIGEST_SHA512_256_FULL_LEN	= 64,
+};
+
 /**
  * wd_digest_mode - Mode of digest
  * Mode should be offered by struct wd_digest_arg

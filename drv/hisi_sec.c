@@ -116,6 +116,19 @@ enum A_ALG {
 	A_ALG_HMAC_SM3 = 0x26
 };
 
+/* The long hash mode requires full-length mac output */
+enum SEC_MAX_MAC_LEN {
+	SEC_HMAC_SM3_MAC_LEN = 0x8,
+	SEC_HMAC_MD5_MAC_LEN = 0x4,
+	SEC_HMAC_SHA1_MAC_LEN = 0x5,
+	SEC_HMAC_SHA256_MAC_LEN = 0x8,
+	SEC_HMAC_SHA224_MAC_LEN = 0x7,
+	SEC_HMAC_SHA384_MAC_LEN = 0xc,
+	SEC_HMAC_SHA512_MAC_LEN = 0x10,
+	SEC_HMAC_SHA512_224_MAC_LEN = 0x7,
+	SEC_HMAC_SHA512_256_MAC_LEN = 0x8
+};
+
 enum C_MODE {
 	C_MODE_ECB	  = 0x0,
 	C_MODE_CBC	  = 0x1,
@@ -484,12 +497,19 @@ static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
 	A_ALG_SHA384, A_ALG_SHA512, A_ALG_SHA512_224, A_ALG_SHA512_256
 };
+
 static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
 	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
 	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256,
 	A_ALG_AES_XCBC_MAC_96, A_ALG_AES_XCBC_PRF_128, A_ALG_AES_CMAC,
 	A_ALG_AES_GMAC
+};
+
+static __u32 g_sec_hmac_full_len[WD_DIGEST_TYPE_MAX] = {
+	SEC_HMAC_SM3_MAC_LEN, SEC_HMAC_MD5_MAC_LEN, SEC_HMAC_SHA1_MAC_LEN,
+	SEC_HMAC_SHA256_MAC_LEN, SEC_HMAC_SHA224_MAC_LEN, SEC_HMAC_SHA384_MAC_LEN,
+	SEC_HMAC_SHA512_MAC_LEN, SEC_HMAC_SHA512_224_MAC_LEN, SEC_HMAC_SHA512_256_MAC_LEN
 };
 
 int hisi_sec_init(struct wd_ctx_config_internal *config, void *priv);
@@ -1308,7 +1328,21 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
+	/*
+	 * Long hash mode must config full output length, 0 mac len indicates
+	 * the output full length.
+	 */
+	if (!msg->has_next)
+		sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
+
+	/* SM3 can't config 0 in normal mode */
+	if (msg->has_next && msg->mode == WD_DIGEST_NORMAL &&
+	    msg->alg == WD_DIGEST_SM3)
+		sqe->type2.mac_key_alg = g_sec_hmac_full_len[msg->alg];
+
+	if (msg->has_next && msg->mode == WD_DIGEST_HMAC)
+		sqe->type2.mac_key_alg = g_sec_hmac_full_len[msg->alg];
+
 	if (msg->mode == WD_DIGEST_NORMAL)
 		sqe->type2.mac_key_alg |=
 		(__u32)g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
@@ -1427,7 +1461,7 @@ static int digest_long_bd_align_check(struct wd_digest_msg *msg)
 {
 	__u32 alg_align_sz;
 
-	alg_align_sz = msg->alg >= WD_DIGEST_SHA512 ?
+	alg_align_sz = msg->alg >= WD_DIGEST_SHA384 ?
 		       SHA512_ALIGN_SZ - 1 : SHA1_ALIGN_SZ - 1;
 
 	if (msg->in_bytes & alg_align_sz)
@@ -1624,8 +1658,24 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
+	/*
+	 * Long hash mode must config full output length, 0 mac len indicates
+	 * the output full length.
+	 */
+	if (!msg->has_next)
+		sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
 				SEC_MAC_OFFSET_V3;
+
+	/* SM3 can't config 0 in normal mode */
+	if (msg->has_next && msg->mode == WD_DIGEST_NORMAL &&
+	    msg->alg == WD_DIGEST_SM3)
+		sqe->auth_mac_key |= g_sec_hmac_full_len[msg->alg] <<
+				SEC_MAC_OFFSET_V3;
+
+	if (msg->has_next && msg->mode == WD_DIGEST_HMAC)
+		sqe->auth_mac_key |= g_sec_hmac_full_len[msg->alg] <<
+				SEC_MAC_OFFSET_V3;
+
 	if (msg->mode == WD_DIGEST_NORMAL) {
 		sqe->auth_mac_key |=
 		(__u32)g_digest_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;

@@ -31,6 +31,13 @@ static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_AES_CMAC_LEN, WD_DIGEST_AES_GMAC_LEN
 };
 
+static int g_digest_mac_full_len[WD_DIGEST_TYPE_MAX] = {
+	WD_DIGEST_SM3_FULL_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_FULL_LEN,
+	WD_DIGEST_SHA256_FULL_LEN, WD_DIGEST_SHA224_FULL_LEN,
+	WD_DIGEST_SHA384_FULL_LEN, WD_DIGEST_SHA512_FULL_LEN,
+	WD_DIGEST_SHA512_224_FULL_LEN, WD_DIGEST_SHA512_256_FULL_LEN
+};
+
 struct wd_digest_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched	sched;
@@ -255,7 +262,7 @@ void wd_digest_uninit(void)
 	wd_clear_ctx_config(&wd_digest_setting.config);
 }
 
-static int wd_hmac_length_check(struct wd_digest_sess *sess,
+static int wd_aes_hmac_length_check(struct wd_digest_sess *sess,
 	struct wd_digest_req *req)
 {
 	switch (sess->alg) {
@@ -270,6 +277,32 @@ static int wd_hmac_length_check(struct wd_digest_sess *sess,
 		break;
 	default:
 		break;
+	}
+
+	return 0;
+}
+
+static int wd_mac_length_check(struct wd_digest_sess *sess,
+			       struct wd_digest_req *req)
+{
+	if (unlikely(req->out_bytes == 0)) {
+		WD_ERR("invalid: digest alg:%d mac length is 0.\n", sess->alg);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(!req->has_next &&
+	    req->out_bytes > g_digest_mac_len[sess->alg])) {
+		WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
+			sess->alg, req->out_bytes);
+		return -WD_EINVAL;
+	}
+
+	/* User need to input full mac buffer in first and middle hash */
+	if (unlikely(req->has_next &&
+	    req->out_bytes != g_digest_mac_full_len[sess->alg])) {
+		WD_ERR("invalid: digest mac full length is error, alg = %d, out_bytes = %u\n",
+			sess->alg, req->out_bytes);
+		return -WD_EINVAL;
 	}
 
 	return 0;
@@ -291,12 +324,14 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(sess->alg >= WD_DIGEST_TYPE_MAX || req->out_bytes == 0 ||
-	    req->out_bytes > g_digest_mac_len[sess->alg])) {
-		WD_ERR("failed to check digest type or mac length, alg = %d, out_bytes = %u\n",
-			sess->alg, req->out_bytes);
+	if (unlikely(sess->alg >= WD_DIGEST_TYPE_MAX)) {
+		WD_ERR("invalid: check digest type, alg = %d\n", sess->alg);
 		return -WD_EINVAL;
 	}
+
+	ret = wd_mac_length_check(sess, req);
+	if (ret)
+		return ret;
 
 	if (unlikely(sess->alg == WD_DIGEST_AES_GMAC &&
 	    req->iv_bytes != GMAC_IV_LEN)) {
@@ -314,7 +349,7 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 		}
 	}
 
-	return wd_hmac_length_check(sess, req);
+	return wd_aes_hmac_length_check(sess, req);
 }
 
 static void fill_request_msg(struct wd_digest_msg *msg,
