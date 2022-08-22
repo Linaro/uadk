@@ -14,6 +14,10 @@
 #define SM4_KEY_SIZE		16
 #define DES_KEY_SIZE		8
 #define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
+#define GMAC_IV_LEN		16
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
 
 #define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
@@ -22,7 +26,16 @@ static int g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
 	WD_DIGEST_SHA256_LEN, WD_DIGEST_SHA224_LEN,
 	WD_DIGEST_SHA384_LEN, WD_DIGEST_SHA512_LEN,
-	WD_DIGEST_SHA512_224_LEN, WD_DIGEST_SHA512_256_LEN
+	WD_DIGEST_SHA512_224_LEN, WD_DIGEST_SHA512_256_LEN,
+	WD_DIGEST_AES_XCBC_MAC_96_LEN, WD_DIGEST_AES_XCBC_PRF_128_LEN,
+	WD_DIGEST_AES_CMAC_LEN, WD_DIGEST_AES_GMAC_LEN
+};
+
+static int g_digest_mac_full_len[WD_DIGEST_TYPE_MAX] = {
+	WD_DIGEST_SM3_FULL_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_FULL_LEN,
+	WD_DIGEST_SHA256_FULL_LEN, WD_DIGEST_SHA224_FULL_LEN,
+	WD_DIGEST_SHA384_FULL_LEN, WD_DIGEST_SHA512_FULL_LEN,
+	WD_DIGEST_SHA512_224_FULL_LEN, WD_DIGEST_SHA512_256_FULL_LEN
 };
 
 struct wd_digest_setting {
@@ -82,9 +95,22 @@ void wd_digest_set_driver(struct wd_digest_driver *drv)
 	wd_digest_setting.driver = drv;
 }
 
+static int aes_key_len_check(__u32 length)
+{
+	switch (length) {
+	case AES_KEYSIZE_128:
+	case AES_KEYSIZE_192:
+	case AES_KEYSIZE_256:
+		return 0;
+	default:
+		return -WD_EINVAL;
+	}
+}
+
 int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
+	int ret;
 
 	if (!key || !sess) {
 		WD_ERR("failed to check key param!\n");
@@ -97,6 +123,15 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		WD_ERR("failed to check digest key length, size = %u\n",
 			key_len);
 		return -WD_EINVAL;
+	}
+
+	if (sess->alg == WD_DIGEST_AES_GMAC) {
+		ret = aes_key_len_check(key_len);
+		if (ret) {
+			WD_ERR("failed to check aes-gmac key length, size = %u\n",
+				key_len);
+			return ret;
+		}
 	}
 
 	sess->key_bytes = key_len;
@@ -227,7 +262,53 @@ void wd_digest_uninit(void)
 	wd_clear_ctx_config(&wd_digest_setting.config);
 }
 
-static int digest_param_check(struct wd_digest_sess *sess,
+static int wd_aes_hmac_length_check(struct wd_digest_sess *sess,
+	struct wd_digest_req *req)
+{
+	switch (sess->alg) {
+	case WD_DIGEST_AES_XCBC_MAC_96:
+	case WD_DIGEST_AES_XCBC_PRF_128:
+	case WD_DIGEST_AES_CMAC:
+		if (!req->in_bytes) {
+			WD_ERR("failed to check 0 packet length, alg = %d\n",
+				sess->alg);
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static int wd_mac_length_check(struct wd_digest_sess *sess,
+			       struct wd_digest_req *req)
+{
+	if (unlikely(req->out_bytes == 0)) {
+		WD_ERR("invalid: digest alg:%d mac length is 0.\n", sess->alg);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(!req->has_next &&
+	    req->out_bytes > g_digest_mac_len[sess->alg])) {
+		WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
+			sess->alg, req->out_bytes);
+		return -WD_EINVAL;
+	}
+
+	/* User need to input full mac buffer in first and middle hash */
+	if (unlikely(req->has_next &&
+	    req->out_bytes != g_digest_mac_full_len[sess->alg])) {
+		WD_ERR("invalid: digest mac full length is error, alg = %d, out_bytes = %u\n",
+			sess->alg, req->out_bytes);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int wd_digest_param_check(struct wd_digest_sess *sess,
 	struct wd_digest_req *req)
 {
 	int ret;
@@ -243,10 +324,19 @@ static int digest_param_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(sess->alg >= WD_DIGEST_TYPE_MAX || req->out_bytes == 0 ||
-	    req->out_bytes > g_digest_mac_len[sess->alg])) {
-		WD_ERR("failed to check digest type or mac length, alg = %d, out_bytes = %u\n",
-			sess->alg, req->out_bytes);
+	if (unlikely(sess->alg >= WD_DIGEST_TYPE_MAX)) {
+		WD_ERR("invalid: check digest type, alg = %d\n", sess->alg);
+		return -WD_EINVAL;
+	}
+
+	ret = wd_mac_length_check(sess, req);
+	if (ret)
+		return ret;
+
+	if (unlikely(sess->alg == WD_DIGEST_AES_GMAC &&
+	    req->iv_bytes != GMAC_IV_LEN)) {
+		WD_ERR("failed to check digest aes_gmac iv length, iv_bytes = %u\n",
+			req->iv_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -259,7 +349,7 @@ static int digest_param_check(struct wd_digest_sess *sess,
 		}
 	}
 
-	return 0;
+	return wd_aes_hmac_length_check(sess, req);
 }
 
 static void fill_request_msg(struct wd_digest_msg *msg,
@@ -273,6 +363,7 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->mode = sess->mode;
 	msg->key = sess->key;
 	msg->key_bytes = sess->key_bytes;
+	msg->iv = req->iv;
 	msg->in = req->in;
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->out;
@@ -281,6 +372,7 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->has_next = req->has_next;
 	sess->long_data_len += req->in_bytes;
 	msg->long_data_len = sess->long_data_len;
+
 	/* To store the stream BD state, iv_bytes also means BD state */
 	msg->iv_bytes = sess->bd_state;
 	if (req->has_next == 0) {
@@ -305,11 +397,9 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 		goto out;
 
 	/*
-	 * 'out_bytes' can be expressed BD state, non-zero is final BD or
-	 * middle BD as stream mode.
+	 * non-zero is final BD or middle BD as stream mode.
 	 */
-	if (msg->has_next)
-		dsess->bd_state = msg->out_bytes;
+	dsess->bd_state = msg->has_next;
 
 out:
 	pthread_spin_unlock(&ctx->lock);
@@ -325,7 +415,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	__u32 idx;
 	int ret;
 
-	ret = digest_param_check(dsess, req);
+	ret = wd_digest_param_check(dsess, req);
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
@@ -357,7 +447,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	int msg_id, ret;
 	__u32 idx;
 
-	ret = digest_param_check(dsess, req);
+	ret = wd_digest_param_check(dsess, req);
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
