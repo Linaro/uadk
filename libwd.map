@@ -1,0 +1,39 @@
+UADK_2.0 {
+global:
+	wd_request_ctx;
+	wd_release_ctx;
+	wd_ctx_get_api;
+	wd_ctx_wait;
+	wd_is_sva;
+	wd_is_isolate;
+	wd_get_accel_name;
+	wd_get_numa_id;
+	wd_get_avail_ctx;
+	wd_get_accel_list;
+	wd_get_accel_dev;
+	wd_free_list_accels;
+
+	wd_release_ctx_force;
+	wd_ctx_set_priv;
+	wd_ctx_get_priv;
+	wd_ctx_start;
+	wd_ctx_mmap_qfr;
+	wd_ctx_unmap_qfr;
+	wd_ctx_set_io_cmd;
+	wd_ctx_get_region_size;
+	wd_ctx_get_dev_name;
+
+	wd_block_alloc;
+	wd_block_free;
+	wd_blockpool_create;
+	wd_blockpool_destroy;
+	wd_mempool_create;
+	wd_mempool_destroy;
+	wd_mempool_stats;
+	wd_blockpool_stats;
+	wd_get_version;
+	wd_need_debug;
+	wd_need_info;
+
+local: *;
+};
