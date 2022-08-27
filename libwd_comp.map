@@ -1,0 +1,31 @@
+UADK_COMP_2.0 {
+global:
+	wd_comp_init;
+	wd_comp_uninit;
+	wd_comp_alloc_sess;
+	wd_comp_free_sess;
+	wd_do_comp_sync;
+	wd_do_comp_strm;
+	wd_do_comp_async;
+	wd_comp_poll_ctx;
+	wd_comp_poll;
+	wd_do_comp_sync2;
+	wd_comp_env_init;
+	wd_comp_env_uninit;
+	wd_comp_ctx_num_init;
+	wd_comp_ctx_num_uninit;
+	wd_comp_get_env_param;
+	wd_comp_set_driver;
+	wd_comp_get_driver;
+	wd_comp_close_driver;
+	wd_comp_open_driver;
+	wd_comp_get_msg;
+
+	set_comp_driver;
+
+	wd_sched_rr_instance;
+	wd_sched_rr_alloc;
+	wd_sched_rr_release;
+
+local: *;
+};
