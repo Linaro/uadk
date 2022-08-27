@@ -101,18 +101,24 @@ libhisi_hpre_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 libhisi_hpre_la_DEPENDENCIES = libwd.la libwd_crypto.la
 else
 libwd_la_LDFLAGS=$(UADK_VERSION)
+UADK_WD_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd.map
+UADK_CRYPTO_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_crypto.map
+UADK_COMP_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_comp.map
+UADK_V1_SYMBOL= -Wl,--version-script,$(top_srcdir)/v1/libwd.map
+
+libwd_la_LDFLAGS=$(UADK_VERSION) $(UADK_WD_SYMBOL) $(UADK_V1_SYMBOL)
 libwd_la_LIBADD= -lnuma
 
 libwd_comp_la_LIBADD= -lwd -ldl
-libwd_comp_la_LDFLAGS=$(UADK_VERSION)
+libwd_comp_la_LDFLAGS=$(UADK_VERSION) $(UADK_COMP_SYMBOL)
 libwd_comp_la_DEPENDENCIES= libwd.la
+
+libwd_crypto_la_LIBADD= -lwd -ldl -lnuma -lm
+libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL)
+libwd_crypto_la_DEPENDENCIES= libwd.la
 
 libhisi_zip_la_LIBADD= -ldl
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
-
-libwd_crypto_la_LIBADD= -lwd -ldl -lnuma -lm
-libwd_crypto_la_LDFLAGS=$(UADK_VERSION)
-libwd_crypto_la_DEPENDENCIES= libwd.la
 
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
 libhisi_sec_la_LDFLAGS=$(UADK_VERSION)
@@ -122,6 +128,5 @@ libhisi_hpre_la_LIBADD= -lwd -lwd_crypto
 libhisi_hpre_la_LDFLAGS=$(UADK_VERSION)
 libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
-
 
 SUBDIRS=. test v1/test uadk_tool sample
