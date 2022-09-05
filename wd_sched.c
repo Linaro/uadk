@@ -333,10 +333,10 @@ handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 			return (handle_t)(-WD_ENOMEM);
 		}
 	} else {
-		skey->type = param->type;
 		skey->numa_id = param->numa_id;
 	}
 
+	skey->type = param->type;
 	skey->sync_ctxid = session_sched_init_ctx(h_sched_ctx,
 				skey, CTX_MODE_SYNC);
 	skey->async_ctxid = session_sched_init_ctx(h_sched_ctx,
