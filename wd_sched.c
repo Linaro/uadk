@@ -70,13 +70,15 @@ struct wd_sched_info {
  * @numa_num: the max numa numbers of the scheduler.
  * @type_num: the max operation types of the scheduler.
  * @poll_func: the task's poll operation function.
- * @sched_info: the context of the scheduler
+ * @numa_map: a map of cpus to devices.
+ * @sched_info: the context of the scheduler.
  */
 struct wd_sched_ctx {
 	__u32 policy;
 	__u32 type_num;
 	__u16  numa_num;
 	user_poll_func poll_func;
+	int numa_map[NUMA_NUM_NODES];
 	struct wd_sched_info sched_info[0];
 };
 
@@ -149,17 +151,11 @@ static __u32 sched_get_next_pos_rr(struct sched_ctx_region *region, void *para)
  *
  * The user must init the schedule info through wd_sched_rr_instance
  */
-static __u32 session_sched_init_ctx(handle_t h_sched_ctx, struct sched_key *key,
+static __u32 session_sched_init_ctx(struct wd_sched_ctx *sched_ctx, struct sched_key *key,
 				    const int sched_mode)
 {
-	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
 	struct sched_ctx_region *region = NULL;
 	bool ret;
-
-	if (!sched_ctx) {
-		WD_ERR("invalid: sched ctx is NULL!\n");
-		return INVALID_POS;
-	}
 
 	key->mode = sched_mode;
 	ret = sched_key_valid(sched_ctx, key);
@@ -173,33 +169,18 @@ static __u32 session_sched_init_ctx(handle_t h_sched_ctx, struct sched_key *key,
 	return sched_get_next_pos_rr(region, NULL);
 }
 
-static int get_nearby_numa_id(handle_t h_sched_ctx)
-{
-#define MAX_NUMA_DISTANCE		1024
-	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
-	struct wd_sched_info *sched_info = sched_ctx->sched_info;
-	int cpu = sched_getcpu();
-	int node = numa_node_of_cpu(cpu);
-	int dis = MAX_NUMA_DISTANCE;
-	int i, tmp, valid_id = -1;
-
-	for (i = 0; i < sched_ctx->numa_num; i++) {
-		if (sched_info[i].valid) {
-			tmp = numa_distance(node, i);
-			if (dis > tmp) {
-				valid_id = i;
-				dis = tmp;
-			}
-		}
-	}
-
-	return valid_id;
-}
-
 static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 {
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
 	struct sched_params *param = (struct sched_params *)sched_param;
+	int cpu = sched_getcpu();
+	int node = numa_node_of_cpu(cpu);
 	struct sched_key *skey;
+
+	if (!sched_ctx) {
+		WD_ERR("invalid: sched ctx is NULL!\n");
+		return (handle_t)(-WD_EINVAL);
+	}
 
 	skey = malloc(sizeof(struct sched_key));
 	if (!skey) {
@@ -209,7 +190,7 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 
 	if (!param || param->numa_id < 0) {
 		memset(skey, 0, sizeof(struct sched_key));
-		skey->numa_id = get_nearby_numa_id(h_sched_ctx);
+		skey->numa_id = sched_ctx->numa_map[node];
 		if (skey->numa_id < 0) {
 			WD_ERR("failed to get valid sched numa region!\n");
 			free(skey);
@@ -220,8 +201,8 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 		skey->numa_id = param->numa_id;
 	}
 
-	skey->sync_ctxid = session_sched_init_ctx(h_sched_ctx, skey, CTX_MODE_SYNC);
-	skey->async_ctxid = session_sched_init_ctx(h_sched_ctx, skey, CTX_MODE_ASYNC);
+	skey->sync_ctxid = session_sched_init_ctx(sched_ctx, skey, CTX_MODE_SYNC);
+	skey->async_ctxid = session_sched_init_ctx(sched_ctx, skey, CTX_MODE_ASYNC);
 
 	return (handle_t)skey;
 }
@@ -372,6 +353,39 @@ static struct wd_sched sched_table[SCHED_POLICY_BUTT] = {
 	},
 };
 
+static int wd_sched_get_nearby_numa_id(struct wd_sched_info *sched_info, int node, int numa_num)
+{
+	int dis = INT32_MAX;
+	int valid_id = -1;
+	int i, tmp;
+
+	for (i = 0; i < numa_num; i++) {
+		if (sched_info[i].valid) {
+			tmp = numa_distance(node, i);
+			if (dis > tmp) {
+				valid_id = i;
+				dis = tmp;
+			}
+		}
+	}
+
+	return valid_id;
+}
+
+static void wd_sched_map_cpus_to_dev(struct wd_sched_ctx *sched_ctx)
+{
+	struct wd_sched_info *sched_info = sched_ctx->sched_info;
+	int i, numa_num = sched_ctx->numa_num;
+	int *numa_map = sched_ctx->numa_map;
+
+	for (i = 0; i < numa_num; i++) {
+		if (sched_info[i].valid)
+			numa_map[i] = i;
+		else
+			numa_map[i] = wd_sched_get_nearby_numa_id(sched_info, i, numa_num);
+	}
+}
+
 int wd_sched_rr_instance(const struct wd_sched *sched, struct sched_params *param)
 {
 	struct wd_sched_info *sched_info = NULL;
@@ -425,6 +439,8 @@ int wd_sched_rr_instance(const struct wd_sched *sched, struct sched_params *para
 	sched_info[numa_id].ctx_region[mode][type].last = param->begin;
 	sched_info[numa_id].ctx_region[mode][type].valid = true;
 	sched_info[numa_id].valid = true;
+
+	wd_sched_map_cpus_to_dev(sched_ctx);
 
 	pthread_mutex_init(&sched_info[numa_id].ctx_region[mode][type].lock,
 			   NULL);
@@ -526,6 +542,7 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 	sched_ctx->policy = sched_type;
 	sched_ctx->type_num = type_num;
 	sched_ctx->numa_num = numa_num;
+	memset(sched_ctx->numa_map, -1, sizeof(int) * NUMA_NUM_NODES);
 
 	sched->sched_init = sched_table[sched_type].sched_init;
 	sched->pick_next_ctx = sched_table[sched_type].pick_next_ctx;
