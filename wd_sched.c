@@ -188,17 +188,21 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 		return (handle_t)(-WD_ENOMEM);
 	}
 
-	if (!param || param->numa_id < 0) {
+	if (!param) {
 		memset(skey, 0, sizeof(struct sched_key));
 		skey->numa_id = sched_ctx->numa_map[node];
-		if (skey->numa_id < 0) {
-			WD_ERR("failed to get valid sched numa region!\n");
-			free(skey);
-			return (handle_t)(-WD_ENOMEM);
-		}
+	} else if (param->numa_id < 0) {
+		skey->type = param->type;
+		skey->numa_id = sched_ctx->numa_map[node];
 	} else {
 		skey->type = param->type;
 		skey->numa_id = param->numa_id;
+	}
+
+	if (skey->numa_id < 0) {
+		WD_ERR("failed to get valid sched numa region!\n");
+		free(skey);
+		return (handle_t)(-WD_EINVAL);
 	}
 
 	skey->sync_ctxid = session_sched_init_ctx(sched_ctx, skey, CTX_MODE_SYNC);
@@ -547,6 +551,8 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 	sched->sched_init = sched_table[sched_type].sched_init;
 	sched->pick_next_ctx = sched_table[sched_type].pick_next_ctx;
 	sched->poll_policy = sched_table[sched_type].poll_policy;
+	sched->sched_policy = sched_type;
+	sched->name = sched_table[sched_type].name;
 
 	return sched;
 
