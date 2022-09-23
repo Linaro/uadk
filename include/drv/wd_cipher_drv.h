@@ -72,7 +72,7 @@ struct wd_cipher_driver *wd_cipher_get_driver(void)			      \
 }
 #else
 #define WD_CIPHER_SET_DRIVER(drv)				              \
-static void __attribute__((constructor)) set_driver(void)		      \
+static void __attribute__((constructor)) set_cipher_driver(void)		      \
 {									      \
 	wd_cipher_set_driver(&(drv));					      \
 }
