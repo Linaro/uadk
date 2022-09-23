@@ -74,7 +74,7 @@ struct wd_digest_driver *wd_digest_get_driver(void)			      \
 }
 #else
 #define WD_DIGEST_SET_DRIVER(drv)					      \
-static void __attribute__((constructor)) set_drivers(void)		      \
+static void __attribute__((constructor)) set_digest_drivers(void)		      \
 {									      \
 	wd_digest_set_driver(&(drv));					      \
 }
