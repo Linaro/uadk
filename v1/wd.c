@@ -444,7 +444,7 @@ static int find_available_dev(struct dev_info *dinfop,
 				find_node = true;
 				break;
 			}
-		} else if (ret == -EPFNOSUPPORT || ret == -EBUSY) {
+		} else if (ret == -EPFNOSUPPORT || ret == -EBUSY || ret == -ENODEV) {
 			continue;
 		} else {
 			closedir(wd_class);

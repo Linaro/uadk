@@ -255,9 +255,6 @@ static int get_dev_info(struct uacce_dev *dev)
 static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 {
 	struct uacce_dev *dev = NULL;
-	struct dirent *dev_dir = NULL;
-	DIR *class = NULL;
-	char *name = NULL;
 	int ret;
 
 	if (!dev_name)
@@ -269,42 +266,22 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 	if (!dev)
 		return NULL;
 
-	class = opendir(SYS_CLASS_DIR);
-	if (!class) {
-		WD_ERR("WD framework is not enabled on the system!\n");
+	ret = snprintf(dev->dev_root, MAX_DEV_NAME_LEN, "%s/%s",
+			   SYS_CLASS_DIR, dev_name);
+	if (ret < 0)
 		goto out;
-	}
 
-	while ((dev_dir = readdir(class)) != NULL) {
-		name = dev_dir->d_name;
-		if (strncmp(dev_name, name, strlen(dev_name)))
-			continue;
+	ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
+			   "/dev/%s", dev_name);
+	if (ret < 0)
+		goto out;
 
-		ret = snprintf(dev->dev_root, MAX_DEV_NAME_LEN, "%s/%s",
-			       SYS_CLASS_DIR, dev_name);
-		if (ret < 0)
-			goto out_dir;
-
-		ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
-			       "/dev/%s", dev_name);
-		if (ret < 0)
-			goto out_dir;
-
-		ret = get_dev_info(dev);
-		if (ret < 0)
-			goto out_dir;
-
-		break;
-	}
-	if (!dev_dir)
-		goto out_dir;
-
-	closedir(class);
+	ret = get_dev_info(dev);
+	if (ret < 0)
+		goto out;
 
 	return dev;
 
-out_dir:
-	closedir(class);
 out:
 	free(dev);
 	return NULL;
@@ -707,10 +684,19 @@ struct uacce_dev_list *wd_get_accel_list(const char *alg_name)
 		    !strncmp(dev_dir->d_name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 
+		ret = access_attr(SYS_CLASS_DIR, dev_dir->d_name, F_OK);
+		if (ret < 0) {
+			WD_ERR("failed to access dev: %s, ret: %d\n",
+				    dev_dir->d_name, ret);
+			continue;
+		}
+
 		ret = get_dev_alg_name(dev_dir->d_name, dev_alg_name,
 				       sizeof(dev_alg_name));
-		if (ret < 0)
-			goto free_list;
+		if (ret < 0) {
+			WD_ERR("failed to get dev: %s alg name!\n", dev_dir->d_name);
+			continue;
+		}
 
 		if (!dev_has_alg(dev_alg_name, alg_name))
 			continue;
