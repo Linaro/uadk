@@ -352,12 +352,12 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	ret = pthread_spin_init(&q_info->sd_lock, PTHREAD_PROCESS_SHARED);
 	if (ret) {
 		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo sd_lock!\n");
-		goto err_destory_lock;
+		goto err_destroy_lock;
 	}
 
 	return 0;
 
-err_destory_lock:
+err_destroy_lock:
 	pthread_spin_destroy(&q_info->rv_lock);
 err_out:
 	hisi_qm_unset_region(qp->h_ctx, q_info);
