@@ -125,6 +125,13 @@ struct hisi_qp_ctx {
 	__u16 qc_type;
 };
 
+struct hisi_qp_info {
+	__u32 sqe_size;
+	__u16 sq_depth;
+	__u16 cq_depth;
+	__u64 reserved;
+};
+
 struct qm_queue_info;
 
 typedef int (*qm_sqe_fill)(void *msg,
@@ -147,13 +154,15 @@ struct qm_queue_info {
 	void *ds_rx_base;
 	__u16 sq_tail_index;
 	__u16 cq_head_index;
+	__u16 sq_depth;
+	__u16 cq_depth;
 	__u16 sqn;
 	__u16 resv;
 	bool is_poll;
 	int cqc_phase;
 	int used;
 	int sqe_size;
-	void *req_cache[QM_Q_DEPTH];
+	void **req_cache;
 	qm_sqe_fill sqe_fill[WCRYPTO_MAX_ALG];
 	qm_sqe_parse sqe_parse[WCRYPTO_MAX_ALG];
 	hisi_qm_sqe_fill_priv sqe_fill_priv;
@@ -192,5 +201,6 @@ void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num);
 #define HISI_QM_API_VER3_BASE "hisi_qm_v3"
 
 #define WD_UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)
+#define WD_UACCE_CMD_QM_SET_QP_INFO	_IOWR('H', 11, struct hisi_qp_info)
 
 #endif

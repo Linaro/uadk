@@ -453,14 +453,55 @@ static int qm_set_db_info(struct q_info *qinfo)
 	return 0;
 }
 
-static int qm_set_queue_info(struct wd_queue *q)
+static int qm_init_queue_info(struct wd_queue *q)
 {
 	struct wcrypto_paras *priv = &q->capa.priv;
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
+	struct hisi_qp_info qp_info;
 	struct hisi_qp_ctx qp_ctx;
+	int ret;
+
+	info->sq_tail_index = 0;
+	info->cq_head_index = 0;
+	info->cqc_phase = 1;
+	info->used = 0;
+	info->is_poll = priv->is_poll;
+	qp_ctx.qc_type = priv->direction;
+	qp_ctx.id = 0;
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
+	if (ret < 0) {
+		WD_ERR("failed to set qp type!\n");
+		return ret;
+	}
+	info->sqn = qp_ctx.id;
+
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_QM_SET_QP_INFO, &qp_info);
+	if (ret < 0) {
+		WD_ERR("getting qp information is not supported, use default value!\n");
+
+		/* The default value of sqe_size has been set in qm_set_queue_alg_info. */
+		info->sq_depth = QM_Q_DEPTH;
+		info->cq_depth = QM_Q_DEPTH;
+	} else {
+		info->sq_depth = qp_info.sq_depth;
+		info->cq_depth = qp_info.cq_depth;
+		info->sqe_size = qp_info.sqe_size;
+	}
+
+	return 0;
+}
+
+static int qm_set_queue_info(struct wd_queue *q)
+{
+	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
 	size_t psize;
 	int ret;
+
+	ret = qm_init_queue_info(q);
+	if (ret)
+		return ret;
 
 	ret = qm_set_queue_regions(q);
 	if (ret)
@@ -471,11 +512,11 @@ static int qm_set_queue_info(struct wd_queue *q)
 		goto err_with_regions;
 	}
 	info->cq_base = (void *)((uintptr_t)info->sq_base +
-			info->sqe_size * QM_Q_DEPTH);
+			info->sqe_size * info->sq_depth);
 
 	/* Protect the virtual address of CQ to avoid being over written */
 	psize = qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] -
-		info->sqe_size * QM_Q_DEPTH;
+		info->sqe_size * info->sq_depth;
 	ret = mprotect(info->cq_base, psize, PROT_READ);
 	if (ret) {
 		WD_ERR("cqe mprotect set err!\n");
@@ -491,19 +532,11 @@ static int qm_set_queue_info(struct wd_queue *q)
 	if (ret)
 		goto err_with_regions;
 
-	info->sq_tail_index = 0;
-	info->cq_head_index = 0;
-	info->cqc_phase = 1;
-	info->used = 0;
-	info->is_poll = priv->is_poll;
-	qp_ctx.qc_type = priv->direction;
-	qp_ctx.id = 0;
-	ret = ioctl(qinfo->fd, WD_UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
-	if (ret < 0) {
-		WD_ERR("hisi qm set qc_type fail, use default!\n");
+	info->req_cache = calloc(info->sq_depth, sizeof(void *));
+	if (!info->req_cache) {
+		ret = -WD_ENOMEM;
 		goto err_with_regions;
 	}
-	info->sqn = qp_ctx.id;
 
 	return 0;
 
@@ -545,8 +578,10 @@ err_with_priv:
 void qm_uninit_queue(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
+	struct qm_queue_info *info = qinfo->priv;
 
 	qm_unset_queue_regions(q);
+	free(info->req_cache);
 	free(qinfo->priv);
 	qinfo->priv = NULL;
 }
@@ -570,7 +605,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 
 	wd_spinlock(&info->sd_lock);
 	if (unlikely(__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
-		     QM_Q_DEPTH - num - 1)) {
+		     info->sq_depth - num - 1)) {
 		wd_unspinlock(&info->sd_lock);
 		WD_ERR("queue is full!\n");
 		return -WD_EBUSY;
@@ -585,7 +620,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 			return -WD_EINVAL;
 		}
 
-		if (info->sq_tail_index == QM_Q_DEPTH - 1)
+		if (info->sq_tail_index == info->sq_depth - 1)
 			info->sq_tail_index = 0;
 		else
 			info->sq_tail_index++;
@@ -615,7 +650,7 @@ void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
 		resp[i] = info->req_cache[idx];
 		info->req_cache[idx] = NULL;
 
-		if (idx == QM_Q_DEPTH - 1) {
+		if (idx == info->cq_depth - 1) {
 			info->cqc_phase = !(info->cqc_phase);
 			idx = 0;
 		} else {
@@ -666,7 +701,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 
 		mb(); /* make sure the data is all in memory before read */
 		sq_head = CQE_SQ_HEAD_INDEX(cqe);
-		if (unlikely(sq_head >= QM_Q_DEPTH)) {
+		if (unlikely(sq_head >= info->sq_depth)) {
 			wd_unspinlock(&info->rc_lock);
 			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", sq_head);
 			return -WD_EIO;
@@ -686,7 +721,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 
 		resp[i] = info->req_cache[info->cq_head_index];
 		info->req_cache[info->cq_head_index] = NULL;
-		if (info->cq_head_index == QM_Q_DEPTH - 1) {
+		if (info->cq_head_index == info->cq_depth - 1) {
 			info->cqc_phase = !(info->cqc_phase);
 			info->cq_head_index = 0;
 		} else {
