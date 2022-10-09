@@ -24,8 +24,9 @@
 #define CQE_SQ_HEAD_INDEX(cq)	(__le16_to_cpu((cq)->sq_head) & 0xffff)
 #define VERSION_ID_SHIFT	9
 
-#define UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)
-#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
+#define UACCE_CMD_QM_SET_QP_CTX		_IOWR('H', 10, struct hisi_qp_ctx)
+#define UACCE_CMD_QM_SET_QP_INFO	_IOWR('H', 11, struct hisi_qp_info)
+#define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
 
 /* the max sge num in one sgl */
 #define HISI_SGE_NUM_IN_SGL 255
@@ -60,6 +61,13 @@ struct cqe {
 struct hisi_qp_ctx {
 	__u16 id;
 	__u16 qc_type;
+};
+
+struct hisi_qp_info {
+	__u32 sqe_size;
+	__u16 sq_depth;
+	__u16 cq_depth;
+	__u64 reserved;
 };
 
 struct hisi_sge {
@@ -151,11 +159,11 @@ static void hisi_qm_fill_sqe(const void *sqe, struct hisi_qm_queue_info *info,
 	void *sq_base = info->sq_base;
 	int idx;
 
-	if (tail + num < QM_Q_DEPTH) {
+	if (tail + num < info->sq_depth) {
 		memcpy((void *)((uintptr_t)sq_base + tail * sqe_size),
 			sqe, sqe_size * num);
 	} else {
-		idx = QM_Q_DEPTH - tail;
+		idx = info->sq_depth - tail;
 		memcpy((void *)((uintptr_t)sq_base + tail * sqe_size),
 			sqe, sqe_size * idx);
 		memcpy(sq_base, (void *)((uintptr_t)sqe + sqe_size * idx),
@@ -243,6 +251,7 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 			     struct hisi_qm_queue_info *q_info)
 {
+	struct hisi_qp_info qp_cfg;
 	struct hisi_qp_ctx qp_ctx;
 	int ret;
 
@@ -251,11 +260,23 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 	q_info->qc_type = qp_ctx.qc_type;
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
 	if (ret < 0) {
-		WD_DEV_ERR(h_ctx, "failed to set qc_type, use default value!\n");
+		WD_DEV_ERR(h_ctx, "failed to set qc_type!\n");
 		return ret;
 	}
-
 	q_info->sqn = qp_ctx.id;
+
+	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_INFO, &qp_cfg);
+	if (ret < 0) {
+		WD_INFO("getting qp information is not supported, use default value!\n");
+
+		q_info->sq_depth = QM_Q_DEPTH;
+		q_info->cq_depth = QM_Q_DEPTH;
+		q_info->sqe_size = config->sqe_size;
+	} else {
+		q_info->sq_depth = qp_cfg.sq_depth;
+		q_info->cq_depth = qp_cfg.cq_depth;
+		q_info->sqe_size = qp_cfg.sqe_size;
+	}
 
 	return 0;
 }
@@ -315,9 +336,8 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	q_info->qp_mode = config->qp_mode;
 	q_info->epoll_en = config->epoll_en;
 	q_info->idx = config->idx;
-	q_info->sqe_size = config->sqe_size;
 	q_info->cqc_phase = 1;
-	q_info->cq_base = q_info->sq_base + config->sqe_size * QM_Q_DEPTH;
+	q_info->cq_base = q_info->sq_base + (__u64)config->sqe_size * q_info->sq_depth;
 	/* The last 32 bits of DUS show device or qp statuses */
 	q_info->ds_tx_base = q_info->sq_base +
 		q_info->region_size[UACCE_QFRT_DUS] - sizeof(uint32_t);
@@ -356,7 +376,7 @@ static void hisi_qm_clear_info(struct hisi_qp *qp)
 static int get_free_num(struct hisi_qm_queue_info *q_info)
 {
 	/* The device should reserve one buffer. */
-	return (QM_Q_DEPTH - 1) -
+	return (q_info->sq_depth - 1) -
 		__atomic_load_n(&q_info->used_num, __ATOMIC_RELAXED);
 }
 
@@ -463,7 +483,7 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 
 	tail = q_info->sq_tail_index;
 	hisi_qm_fill_sqe(req, q_info, tail, send_num);
-	tail = (tail + send_num) % QM_Q_DEPTH;
+	tail = (tail + send_num) % q_info->sq_depth;
 	q_info->db(q_info, QM_DBELL_CMD_SQ, tail, 0);
 	q_info->sq_tail_index = tail;
 
@@ -488,7 +508,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 
 	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
 		j = CQE_SQ_HEAD_INDEX(cqe);
-		if (unlikely(j >= QM_Q_DEPTH)) {
+		if (unlikely(j >= q_info->sq_depth)) {
 			pthread_spin_unlock(&q_info->rv_lock);
 			WD_DEV_ERR(qp->h_ctx, "CQE_SQ_HEAD_INDEX(%u) error!\n", j);
 			return -WD_EIO;
@@ -500,7 +520,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		return -WD_EAGAIN;
 	}
 
-	if (i == QM_Q_DEPTH - 1) {
+	if (i == q_info->cq_depth - 1) {
 		q_info->cqc_phase = !(q_info->cqc_phase);
 		i = 0;
 	} else {

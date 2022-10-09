@@ -68,6 +68,8 @@ struct hisi_qm_queue_info {
 	__u8 qp_mode;
 	__u16 sq_tail_index;
 	__u16 cq_head_index;
+	__u16 sq_depth;
+	__u16 cq_depth;
 	__u16 sqn;
 	__u16 qc_type;
 	__u16 used_num;
