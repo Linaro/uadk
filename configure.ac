@@ -46,6 +46,12 @@ AC_CHECK_LIB(z, zlibVersion,
 	     [ have_zlib=false ])
 AM_CONDITIONAL([HAVE_ZLIB], [test "x$have_zlib" = "xtrue"])
 
+AC_CHECK_LIB(crypto, DH_new,
+	     [ AC_DEFINE(HAVE_CRYPTO, 1, [Have crypto])
+	       have_crypto=true ],
+	     [ have_crypto=false ])
+AM_CONDITIONAL([HAVE_CRYPTO], [test "x$have_crypto" = "xtrue"])
+
 AC_ARG_WITH(log_file,
 	AS_HELP_STRING([--with-log_file], [File to write log]),
 	WITH_LOG_FILE=$withvar, WITH_LOG_FILE=)

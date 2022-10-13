@@ -37,15 +37,7 @@ AM_CFLAGS += -DZLIB_FSE
 uadk_tool_LDADD+= $(with_zlib_fse_dir)/libfse.a
 endif
 
-if WITH_OPENSSL_DIR
-AM_CFLAGS+= -DWITH_OPENSSL_DIR -I$(with_openssl_dir)/include
-
+if HAVE_CRYPTO
 uadk_tool_SOURCES+=benchmark/sec_soft_benchmark.c benchmark/sec_soft_benchmark.h
-
-if WD_STATIC_DRV
-uadk_tool_LDADD+= $(with_openssl_dir)/libcrypto.a
-else
-uadk_tool_LDADD+= $(with_openssl_dir)/libcrypto.so.1.1
-endif
-
+uadk_tool_LDADD+=-lcrypto
 endif
