@@ -10,7 +10,6 @@
 #include <semaphore.h>
 #include <string.h>
 #include <ctype.h>
-#include <math.h>
 #include "wd_alg_common.h"
 #include "wd_sched.h"
 #include "wd_util.h"
@@ -21,6 +20,7 @@
 #define WD_RECV_MAX_CNT_SLEEP		60000000
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
 #define PRIVILEGE_FLAG			600
+#define MIN(a, b)			((a) > (b) ? (b) : (a))
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -1475,7 +1475,7 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 		config_numa->async_poll_num = WD_ASYNC_DEF_POLL_NUM;
 	}
 
-	num = fmin(config_numa->async_poll_num, config_numa->async_ctx_num);
+	num = MIN(config_numa->async_poll_num, config_numa->async_ctx_num);
 
 	/* make max task queues as the number of async ctxs */
 	queue_head = calloc(config_numa->async_ctx_num, sizeof(*queue_head));
@@ -1510,7 +1510,7 @@ static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
 
 	head = config_numa->async_task_queue_array;
 	task_queue = head;
-	num = fmin(config_numa->async_poll_num, config_numa->async_ctx_num);
+	num = MIN(config_numa->async_poll_num, config_numa->async_ctx_num);
 
 	for (i = 0; i < num; task_queue++, i++)
 		wd_uninit_one_task_queue(task_queue);
