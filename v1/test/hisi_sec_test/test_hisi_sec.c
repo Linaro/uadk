@@ -1006,7 +1006,6 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 {
 	struct wd_blkpool_setup setup;
 	int i, ret, cnt = 0, j;
-	int block_num = 128;
 	struct wd_queue *q;
 	void **pool;
 	int qidx;
@@ -1054,7 +1053,7 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 	    setup.block_num = MAX_BLOCK_NM;
 	    setup.align_size = SQE_SIZE;
 
-		SEC_TST_PRT("create pool memory: %lld\n", MAX_BLOCK_NM * setup.block_size);
+	    SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
 	    pool[j] = wd_blkpool_create(&q[j], &setup);
 	    if (!pool[j]) {
 			SEC_TST_PRT("%s(): create %dth pool fail!\n", __func__, j);
@@ -2258,7 +2257,6 @@ static int test_sec_default_case(void)
 {
 	unsigned int node_msk = 0;
 	int thread_num = 1;
-	int direction = 0;
 
 	pktlen = 16;
 	g_keylen = 16;
@@ -2359,7 +2357,6 @@ int main(int argc, char *argv[])
 	int ret = 0;
 
 	SEC_TST_PRT("this is a hisi sec test.\n");
-	int thread_num = 1;
 	if (!argv[1])
 		return test_sec_default_case();
 

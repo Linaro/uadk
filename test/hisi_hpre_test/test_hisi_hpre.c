@@ -2,7 +2,6 @@
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
 //#define DEBUG
-//#define WITH_OPENSSL_DIR
 
 #include <stdio.h>
 #include <string.h>
@@ -248,7 +247,7 @@ static struct hpre_test_config g_config = {
 	.k_len = INVALID_LEN,
 	.hash_type = HASH_SM3,
 	.rand_type = RAND_CB,
-	#ifdef WITH_OPENSSL_DIR
+	#ifdef HAVE_CRYPTO
 	.check = 1,
 	#else
 	.check = 0,
@@ -810,7 +809,7 @@ const EVP_MD *EVP_md5(void);
 	EVP_PKEY_CTX_ctrl(ctx, -1, -1, \
 		EVP_PKEY_CTRL_SET1_ID, (int)id_len, (void *)id)
 
-#ifndef WITH_OPENSSL_DIR
+#ifndef HAVE_CRYPTO
 BIGNUM *BN_new(void)
 {
 	return NULL;
@@ -6773,7 +6772,7 @@ int hpre_test_write_to_file(__u8 *out, int size, char *out_file,
 	return fd;
 }
 
-#ifndef WITH_OPENSSL_DIR
+#ifndef HAVE_CRYPTO
 static int get_rsa_key_from_test_sample(handle_t sess, char *pubkey_file,
 			char *privkey_file,
 			char *crt_privkey_file, int is_file)
@@ -7599,7 +7598,7 @@ new_test_again:
 
 	memset(key_info, 0, key_size * 16);
 
-	#ifdef WITH_OPENSSL_DIR
+	#ifdef HAVE_CRYPTO
 		ret = test_rsa_key_gen(sess, NULL, key_info, key_info, 0);
 		if (ret) {
 			HPRE_TST_PRT("thrd-%d:Openssl key gen fail!\n", thread_id);
@@ -8045,7 +8044,7 @@ void *_rsa_async_op_test_thread(void *data)
 	wd_rsa_get_pubkey(sess, &pubkey);
 	wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
 
-#ifdef WITH_OPENSSL_DIR
+#ifdef HAVE_CRYPTO
 	wd_e->dsize = BN_bn2bin(ssl_params.e, (unsigned char *)wd_e->data);
 	if (wd_e->dsize > wd_e->bsize) {
 		HPRE_TST_PRT("e bn to bin overflow!\n");
@@ -8066,7 +8065,7 @@ void *_rsa_async_op_test_thread(void *data)
 	if (wd_rsa_is_crt(sess)) {
 		wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp, &wd_qinv, &wd_q, &wd_p);
 
-#ifdef WITH_OPENSSL_DIR
+#ifdef HAVE_CRYPTO
 		/* CRT mode private key */
 		wd_dq->dsize = BN_bn2bin(ssl_params.dq, (unsigned char *)wd_dq->data);
 		if (wd_dq->dsize > wd_dq->bsize) {
@@ -8109,7 +8108,7 @@ void *_rsa_async_op_test_thread(void *data)
 	} else {
 		wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
 
-#ifdef WITH_OPENSSL_DIR
+#ifdef HAVE_CRYPTO
 		wd_d->dsize = BN_bn2bin(ssl_params.d, (unsigned char *)wd_d->data);
 		wd_n->dsize = BN_bn2bin(ssl_params.n, (unsigned char *)wd_n->data);
 #else
@@ -8124,7 +8123,7 @@ void *_rsa_async_op_test_thread(void *data)
 		memset(rsa_key_in->e, 0, key_size);
 		memset(rsa_key_in->p, 0, key_size >> 1);
 		memset(rsa_key_in->q, 0, key_size >> 1);
-#ifdef WITH_OPENSSL_DIR
+#ifdef HAVE_CRYPTO
 		rsa_key_in->e_size = BN_bn2bin(ssl_params.e, (unsigned char *)rsa_key_in->e);
 		rsa_key_in->p_size = BN_bn2bin(ssl_params.p, (unsigned char *)rsa_key_in->p);
 		rsa_key_in->q_size = BN_bn2bin(ssl_params.q, (unsigned char *)rsa_key_in->q);
@@ -8280,7 +8279,7 @@ static int set_ssl_plantext(void)
 	return 0;
 }
 
-#ifdef WITH_OPENSSL_DIR
+#ifdef HAVE_CRYPTO
 static int rsa_openssl_key_gen_for_async_test(void)
 {
 	int ret;
@@ -8544,7 +8543,7 @@ static int rsa_async_test(int thread_num, __u64 lcore_mask,
 		return ret;
 	}
 
-	#ifdef WITH_OPENSSL_DIR
+	#ifdef HAVE_CRYPTO
 	ret = rsa_openssl_key_gen_for_async_test();
 	if(ret) {
 		HPRE_TST_PRT("openssl genkey for async thread test fail!");
