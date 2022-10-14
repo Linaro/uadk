@@ -49,7 +49,7 @@ enum cipher_mode {
 };
 
 struct cipher_testvec {
-	const char *key;
+	char *key;
 	int klen;
 	const char *iv;
 	int ivlen;
@@ -67,8 +67,8 @@ enum sec_digest_state {
 };
 
 struct hash_testvec {
-	const char *key;
-	const char *plaintext;
+	char *key;
+	char *plaintext;
 	const char *digest;
 	unsigned int psize;
 	unsigned short ksize;

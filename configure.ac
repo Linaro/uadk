@@ -64,12 +64,6 @@ AC_ARG_WITH(static_drv,
 AC_SUBST(with_static_drv)
 AM_CONDITIONAL([WD_STATIC_DRV], [test -n "$with_static_drv"])
 
-AC_ARG_WITH(openssl_dir,
-	AS_HELP_STRING([--with-openssl_dir], [Path to OpenSSL source code]))
-AC_SUBST(with_openssl_dir)
-
-AM_CONDITIONAL([WITH_OPENSSL_DIR], [test -n "$with_openssl_dir"])
-
 AC_ARG_WITH(zlib_fse_dir,
 	AS_HELP_STRING([--with-zlib_fse_dir], [Path to Zlib FSE library]))
 AC_SUBST(with_zlib_fse_dir)
