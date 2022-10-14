@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <semaphore.h>
 #include <stdlib.h>
+#include <openssl/dh.h>
 
 #include "../../wd.h"
 #include "../../drv/hisi_qm_udrv.h"
@@ -66,7 +67,6 @@ struct bn_gencb_st {
         int xxx;
 };
 typedef struct dh_st DH;
-typedef struct big_number BIGNUM;
 typedef struct bn_gencb_st BN_GENCB;
 /*
 struct hpre_queue_mempool {
@@ -84,10 +84,9 @@ struct hpre_queue_mempool {
         int dev;
 };
 */
-static int key_bits = 2048;
 static int openssl_check;
 
-char* s2b(char* s) {
+void s2b(char* s) {
         int i;
         for(i = 0; i < 128; i++) {
 		printf("%x ", s[i]);
@@ -95,7 +94,7 @@ char* s2b(char* s) {
         printf("\n");
 }
 
-char* s2c(char* a, char* b) {
+void s2c(char* a, char* b) {
         int i;
         for(i = 0; i < 128; i++) {
         printf("%d %x %x\n", i, a[i], b[i]);
@@ -1066,7 +1065,7 @@ int hpre_blkpool_operating(char *dev, unsigned int blk_sz, unsigned int blk_num,
                 goto release_q;
         }
 	 if (BLK_NUM_TIMES(blk_num, blk_count) < BLK_NUM_VALUE) {
-	         printf("%u is 87% ;pwer than %u\n", blk_count, blk_num);
+	         printf("%u is lower than %u\n", blk_count, blk_num);
                 ret = -WD_EINVAL;
                 goto release_q;
         }
@@ -1627,7 +1626,7 @@ void *hpre_node_mask_thread(void *pthreadid)
 
         printf("info: thread %d\n      dev %s\n      node %d\n      alg %s\n", tid->threadid, tid->dev, tid->node, tid->alg);
 		hpre_node_mask_do(tid->dev, tid->node, tid->alg);
-      //  return 0;
+        return 0;
 }
 
 /***

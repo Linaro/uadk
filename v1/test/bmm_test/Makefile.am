@@ -1,6 +1,6 @@
 AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir)/v1/include -pthread
 
-if WITH_OPENSSL_DIR
+if HAVE_CRYPTO
 bin_PROGRAMS=bmm_test
 
 bmm_test_SOURCES=bmm_test.c bmm_test.h

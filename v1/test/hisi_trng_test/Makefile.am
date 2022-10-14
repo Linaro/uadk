@@ -1,6 +1,6 @@
 AM_CFLAGS=-Wall -Werror -O0 -fno-strict-aliasing -I$(top_srcdir)/include -I$(srcdir) -pthread
 
-if WITH_OPENSSL_DIR
+if HAVE_CRYPTO
 bin_PROGRAMS=test_hisi_trngu test_hisi_trngk test_hisi_trngp
 
 test_hisi_trngu_SOURCES=test_hisi_trngu.c

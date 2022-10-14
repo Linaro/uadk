@@ -1,6 +1,6 @@
 AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/v1/internal -pthread
 
-if WITH_OPENSSL_DIR
+if HAVE_CRYPTO
 bin_PROGRAMS=test_hisi_hpre hpre_test_tools test_hisi_hpre_times
 
 test_hisi_hpre_SOURCES=test_hisi_hpre.c test_hisi_hpre.h
@@ -17,7 +17,7 @@ hpre_test_tools_LDADD=../../../.libs/libwd.so
 test_hisi_hpre_times_LDADD=../../../.libs/libwd.so
 endif
 
-test_hisi_hpre_LDADD+=$(with_openssl_dir)/libcrypto_wd.so
-hpre_test_tools_LDADD+=$(with_openssl_dir)/libcrypto_wd.so
-test_hisi_hpre_times_LDADD+=$(with_openssl_dir)/libcrypto_wd.so
+test_hisi_hpre_LDADD+=-lcrypto
+hpre_test_tools_LDADD+=-lcrypto
+test_hisi_hpre_times_LDADD+=-lcrypto
 endif
