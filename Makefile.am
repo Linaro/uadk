@@ -123,5 +123,7 @@ libhisi_hpre_la_LDFLAGS=$(UADK_VERSION)
 libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
 
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
 
 SUBDIRS=. test v1/test uadk_tool sample
