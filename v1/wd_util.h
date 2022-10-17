@@ -339,21 +339,14 @@ struct wcrypto_ecc_out {
 #endif
 
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
-
-#define dsb(opt)	{ asm volatile("dsb " #opt : : : "memory"); }
-#define rmb()		dsb(ld)	/* read fence */
-#define wmb()		dsb(st)	/* write fence */
-#define mb()		dsb(sy)	/* rw fence */
-
+#define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }
+#define rmb() dsb(ld) /* read fence */
+#define wmb() dsb(st) /* write fence */
+#define mb() dsb(sy) /* rw fence */
 #else
-
-#define rmb()	/* read fence */
-#define wmb()	/* write fence */
-#define mb()	/* rw fence */
-#ifndef __UT__
-#error "no platform mb, define one before compiling"
-#endif
-
+#define rmb() __sync_synchronize() /* read fence */
+#define wmb() __sync_synchronize() /* write fence */
+#define mb() __sync_synchronize() /* rw fence */
 #endif
 
 static inline void wd_reg_write(void *reg_addr, uint32_t value)
