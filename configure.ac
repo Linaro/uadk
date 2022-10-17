@@ -94,6 +94,7 @@ AC_FUNC_MMAP
 AC_CHECK_FUNCS([gettimeofday memmove memset munmap strstr strtoul strtoull])
 
 AC_CONFIG_FILES([Makefile
+		 lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
 		 test/Makefile
 		 test/hisi_hpre_test/Makefile
 		 test/hisi_sec_test/Makefile
