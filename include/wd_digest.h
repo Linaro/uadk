@@ -134,7 +134,7 @@ struct wd_cb_tag {
 	int ctx_id;	/* user id: context ID or other user identifier */
 };
 
-/* Digest tag format of warpdrive */
+/* Digest tag format */
 struct wd_digest_tag {
 	struct wd_cb_tag wd_tag;
 	__u64 long_data_len;
