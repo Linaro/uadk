@@ -527,8 +527,8 @@ void *sec_wd_poll(void *data)
 	while (last_time) {
 		recv = wd_poll_ctx(g_thread_queue.bd_res[id].queue, expt);
 		/*
-		 * warpdrive async mode poll easy to 100% with small package.
-		 * SEC_TST_PRT("warpdrive poll %d recv: %u!\n", i, recv);
+		 * async mode poll easy to 100% with small package.
+		 * SEC_TST_PRT("poll %d recv: %u!\n", i, recv);
 		 */
 		if (unlikely(recv < 0)) {
 			SEC_TST_PRT("poll ret: %u!\n", recv);

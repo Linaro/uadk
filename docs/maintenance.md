@@ -103,7 +103,7 @@ The library version likes libNAME.so.{x}.{y}.{z}
 
 ### Kernel Branch
 
-Clone kernel from [Github](https://github.com/Linaro/linux-kernel-warpdrive).
+Clone kernel from [Github](https://github.com/Linaro/uadk).
 
  Current working branch: uacce-devel
 

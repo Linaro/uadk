@@ -20,7 +20,7 @@ UADK 2.3.11, Released Jul 9th, 2021
 
 	Offload Warpdrive WCRYPTO TRNG's DRBG/TRNG algorithms.
 
-	Support of poll in user space process as using warpdrive queues.
+	Support of poll in user space process as using queues.
 
 	Support container such as Docker with Warpdrive.
 

@@ -113,8 +113,8 @@ static int init_comp_ctx(struct wcrypto_comp_ctx *ctx, int ctx_id,
 }
 
 /**
- * wcrypto_create_comp_ctx()- create a compress context on the warpdrive queue.
- * @q: warpdrive queue, need requested by user.
+ * wcrypto_create_comp_ctx()- create a compress context on the queue.
+ * @q: queue, need requested by user.
  * @setup: setup data of user
  */
 void *wcrypto_create_comp_ctx(struct wd_queue *q,

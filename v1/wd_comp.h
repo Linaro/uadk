@@ -198,7 +198,7 @@ struct wcrypto_comp_msg {
 };
 
 /**
- * The output format defined by warpdrive and drivers should fill the format
+ * The output format defined by uadk and drivers should fill the format
  * @literals_start:address of the literals data output by the hardware
  * @sequences_start:address of the sequences data output by the hardware
  * @lit_num:the size of literals
