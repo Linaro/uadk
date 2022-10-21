@@ -39,5 +39,5 @@ endif
 
 if HAVE_CRYPTO
 uadk_tool_SOURCES+=benchmark/sec_soft_benchmark.c benchmark/sec_soft_benchmark.h
-uadk_tool_LDADD+=-lcrypto
+uadk_tool_LDADD+=$(libcrypto_LIBS)
 endif

@@ -7,10 +7,10 @@ zip_sva_perf_SOURCES=test_sva_perf.c test_lib.c	testsuit.c
 
 if WD_STATIC_DRV
 zip_sva_perf_LDADD=../../.libs/libwd.a ../../.libs/libwd_comp.a \
-		    ../../.libs/libhisi_zip.a -lpthread -lnuma -lcrypto
+		    ../../.libs/libhisi_zip.a -lpthread -lnuma $(libcrypto_LIBS)
 else
 zip_sva_perf_LDADD=-L../../.libs -l:libwd.so.2 -l:libwd_comp.so.2 \
-		   -lpthread -lnuma -lcrypto
+		   -lpthread -lnuma $(libcrypto_LIBS)
 endif
 zip_sva_perf_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
 
