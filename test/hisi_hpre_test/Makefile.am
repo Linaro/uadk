@@ -12,4 +12,4 @@ test_hisi_hpre_LDADD=-L../../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 			-lnuma
 endif
 test_hisi_hpre_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
-test_hisi_hpre_LDADD+= -lcrypto
+test_hisi_hpre_LDADD+= $(libcrypto_LIBS)
