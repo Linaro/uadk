@@ -29,12 +29,12 @@ YEAR = 2022
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"UADK version: ${MAJOR}.${MINOR}.${REVISION}\""
 AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 
-include_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
+pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
 		  include/wd_common.h include/wd_ecc.h include/wd_sched.h
 
-nobase_include_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
+nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
