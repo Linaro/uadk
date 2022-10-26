@@ -1,6 +1,7 @@
 ACLOCAL_AMFLAGS = -I m4 -I./include
 AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I$(top_srcdir)/include
+CLEANFILES =
 
 if WITH_LOG_FILE
 AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
@@ -125,5 +126,6 @@ endif	# WD_STATIC_DRV
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
+CLEANFILES += $(pkgconfig_DATA)
 
 SUBDIRS=. test v1/test uadk_tool sample
