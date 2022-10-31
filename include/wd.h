@@ -91,11 +91,6 @@ typedef void (*wd_log)(const char *format, ...);
 #define WD_IS_ERR(h)			((uintptr_t)(h) > \
 					(uintptr_t)(-1000))
 
-static inline void *WD_ERR_PTR(uintptr_t error)
-{
-	return (void *)error;
-}
-
 enum wcrypto_type {
 	WD_CIPHER,
 	WD_DIGEST,
@@ -183,6 +178,16 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 {
 	wmb();
 	*((volatile uint64_t *)addr) = value;
+}
+
+static inline void *WD_ERR_PTR(uintptr_t error)
+{
+	return (void *)error;
+}
+
+static inline long WD_PTR_ERR(const void *ptr)
+{
+	return (long)ptr;
 }
 
 /**
