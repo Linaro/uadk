@@ -342,7 +342,13 @@ out:
 	return strndup(name, len);
 }
 
-static struct uacce_dev *clone_uacce_dev(struct uacce_dev *dev)
+static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
+{
+	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
+	       sizeof(ctx->qfrs_offs));
+}
+
+struct uacce_dev *wd_clone_dev(struct uacce_dev *dev)
 {
 	struct uacce_dev *new;
 
@@ -355,10 +361,14 @@ static struct uacce_dev *clone_uacce_dev(struct uacce_dev *dev)
 	return new;
 }
 
-static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
+void wd_add_dev_to_list(struct uacce_dev_list *head, struct uacce_dev_list *node)
 {
-	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
-	       sizeof(ctx->qfrs_offs));
+	struct uacce_dev_list *tmp = head;
+
+	while (tmp->next)
+		tmp = tmp->next;
+
+	tmp->next = node;
 }
 
 handle_t wd_request_ctx(struct uacce_dev *dev)
@@ -393,7 +403,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 	if (!ctx->drv_name)
 		goto free_dev_name;
 
-	ctx->dev = clone_uacce_dev(dev);
+	ctx->dev = wd_clone_dev(dev);
 	if (!ctx->dev)
 		goto free_drv_name;
 
@@ -633,17 +643,6 @@ static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
 	return false;
 }
 
-static void add_uacce_dev_to_list(struct uacce_dev_list *head,
-				  struct uacce_dev_list *node)
-{
-	struct uacce_dev_list *tmp = head;
-
-	while (tmp->next)
-		tmp = tmp->next;
-
-	tmp->next = node;
-}
-
 static int check_alg_name(const char *alg_name)
 {
 	int i = 0;
@@ -715,7 +714,7 @@ struct uacce_dev_list *wd_get_accel_list(const char *alg_name)
 		if (!head)
 			head = node;
 		else
-			add_uacce_dev_to_list(head, node);
+			wd_add_dev_to_list(head, node);
 	}
 
 	closedir(wd_class);
@@ -774,7 +773,7 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 	}
 
 	if (dev)
-		target = clone_uacce_dev(dev);
+		target = wd_clone_dev(dev);
 
 	wd_free_list_accels(head);
 

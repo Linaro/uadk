@@ -509,6 +509,21 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
 void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
 
 /**
+ * wd_clone_dev() - clone a new uacce device.
+ * @dev: The source device.
+ *
+ * Return a pointer value if succeed, and NULL if fail.
+ */
+struct uacce_dev *wd_clone_dev(struct uacce_dev *dev);
+
+/**
+ * wd_add_dev_to_list() - add a node to end of list.
+ * @head: The list head.
+ * @node: The node need to be add.
+ */
+void wd_add_dev_to_list(struct uacce_dev_list *head, struct uacce_dev_list *node);
+
+/**
  * wd_ctx_get_dev_name() - Get the device name about task.
  * @h_ctx: The handle of context.
  * Return device name.
