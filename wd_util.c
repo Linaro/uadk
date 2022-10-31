@@ -5,7 +5,6 @@
  */
 
 #define _GNU_SOURCE
-#include <numa.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <string.h>
@@ -1800,4 +1799,239 @@ bool wd_alg_try_init(enum wd_status *status)
 	} while (!ret);
 
 	return true;
+}
+
+static __u32 wd_get_ctx_numbers(struct wd_ctx_params ctx_params, int end)
+{
+	__u32 count = 0;
+	int i;
+
+	for (i = 0; i < end; i++) {
+		count += ctx_params.ctx_set_num[i].sync_ctx_num;
+		count += ctx_params.ctx_set_num[i].async_ctx_num;
+	}
+
+	return count;
+}
+
+struct uacce_dev_list *wd_get_usable_list(struct uacce_dev_list *list, struct bitmask *bmp)
+{
+	struct uacce_dev_list *p, *node, *result = NULL;
+	struct uacce_dev *dev;
+	int numa_id, ret;
+
+	if (!bmp) {
+		WD_ERR("invalid: bmp is NULL!\n");
+		return WD_ERR_PTR(-WD_EINVAL);
+	}
+
+	p = list;
+	while (p) {
+		dev = p->dev;
+		numa_id = dev->numa_id;
+		ret = numa_bitmask_isbitset(bmp, numa_id);
+		if (!ret) {
+			p = p->next;
+			continue;
+		}
+
+		node = calloc(1, sizeof(*node));
+		if (!node) {
+			result = WD_ERR_PTR(-WD_ENOMEM);
+			goto out_free_list;
+		}
+
+		node->dev = wd_clone_dev(dev);
+		if (!node->dev) {
+			result = WD_ERR_PTR(-WD_ENOMEM);
+			goto out_free_node;
+		}
+
+		if (!result)
+			result = node;
+		else
+			wd_add_dev_to_list(result, node);
+
+		p = p->next;
+	}
+
+	return result ? result : WD_ERR_PTR(-WD_ENODEV);
+
+out_free_node:
+	free(node);
+out_free_list:
+	wd_free_list_accels(result);
+	return result;
+}
+
+static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *list,
+			   int idx, int numa_id, int op_type)
+{
+	struct wd_ctx_nums ctx_nums = attrs->ctx_params->ctx_set_num[op_type];
+	__u32 ctx_set_num = ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num;
+	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	struct uacce_dev *dev;
+	int i;
+
+	dev = wd_find_dev_by_numa(list, numa_id);
+	if (WD_IS_ERR(dev))
+		return WD_PTR_ERR(dev);
+
+	for (i = idx; i < idx + ctx_set_num; i++) {
+		ctx_config->ctxs[i].ctx = wd_request_ctx(dev);
+		if (errno == WD_EBUSY) {
+			dev = wd_find_dev_by_numa(list, numa_id);
+			if (WD_IS_ERR(dev))
+				return WD_PTR_ERR(dev);
+			i--;
+		}
+		ctx_config->ctxs[i].op_type = op_type;
+		ctx_config->ctxs[i].ctx_mode =
+			((i - idx) < ctx_nums.sync_ctx_num) ?
+			CTX_MODE_SYNC : CTX_MODE_ASYNC;
+	}
+
+	return 0;
+}
+
+static void wd_release_ctx_set(struct wd_ctx_config *ctx_config)
+{
+	int i;
+
+	for (i = 0; i < ctx_config->ctx_num; i++)
+		if (ctx_config->ctxs[i].ctx) {
+			wd_release_ctx(ctx_config->ctxs[i].ctx);
+			ctx_config->ctxs[i].ctx = 0;
+		}
+}
+
+static int wd_instance_sched_set(struct wd_sched *sched, struct wd_ctx_nums ctx_nums,
+				 int idx, int numa_id, int op_type)
+{
+	struct sched_params sparams;
+	int i, ret = 0;
+
+	for (i = 0; i < CTX_MODE_MAX; i++) {
+		sparams.numa_id = numa_id;
+		sparams.type = op_type;
+		sparams.mode = i;
+		sparams.begin = idx + ctx_nums.sync_ctx_num * i;
+		sparams.end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
+		if (sparams.begin > sparams.end)
+			continue;
+		ret = wd_sched_rr_instance(sched, &sparams);
+		if (ret)
+			goto out;
+	}
+
+out:
+	return ret;
+}
+
+static int wd_init_ctx_and_sched(struct wd_init_attrs *attrs, struct bitmask *bmp,
+				 struct uacce_dev_list *list)
+{
+	struct wd_ctx_params *ctx_params = attrs->ctx_params;
+	__u32 op_type_num = ctx_params->op_type_num;
+	int max_node = numa_max_node() + 1;
+	struct wd_ctx_nums ctx_nums;
+	int i, j, ret;
+	int idx = 0;
+
+	for (i = 0; i < max_node; i++) {
+		if (!numa_bitmask_isbitset(bmp, i))
+			continue;
+		for (j = 0; j < op_type_num; j++) {
+			ctx_nums = ctx_params->ctx_set_num[j];
+			ret = wd_init_ctx_set(attrs, list, idx, i, j);
+			if (ret)
+				goto free_ctxs;
+			ret = wd_instance_sched_set(attrs->sched, ctx_nums, idx, i, j);
+			if (ret)
+				goto free_ctxs;
+			idx += (ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num);
+		}
+	}
+
+	return 0;
+
+free_ctxs:
+	wd_release_ctx_set(attrs->ctx_config);
+
+	return ret;
+}
+
+int wd_alg_pre_init(struct wd_init_attrs *attrs)
+{
+	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	struct wd_ctx_params *ctx_params = attrs->ctx_params;
+	struct bitmask *used_bmp, *bmp = ctx_params->bmp;
+	struct uacce_dev_list *list, *used_list = NULL;
+	__u32 ctx_set_num, op_type_num;
+	int numa_cnt, ret;
+
+	list = wd_get_accel_list(attrs->alg);
+	if (!list) {
+		WD_ERR("failed to get devices!\n");
+		return -WD_ENODEV;
+	}
+
+	op_type_num = ctx_params->op_type_num;
+	ctx_set_num = wd_get_ctx_numbers(*ctx_params, op_type_num);
+	if (!ctx_set_num || !op_type_num) {
+		WD_ERR("invalid: ctx_set_num is %d, op_type_num is %d!\n",
+		       ctx_set_num, op_type_num);
+		ret = -WD_EINVAL;
+		goto out_freelist;
+	}
+
+	/*
+	 * Not every numa has a device. Therefore, the first thing is to
+	 * filter the devices in the selected numa node, and the second
+	 * thing is to obtain the distribution of devices.
+	 */
+	if (bmp) {
+		used_list = wd_get_usable_list(list, bmp);
+		if (WD_IS_ERR(used_list)) {
+			ret = WD_PTR_ERR(used_list);
+			WD_ERR("failed to get usable devices(%d)!\n", ret);
+			goto out_freelist;
+		}
+	}
+
+	used_bmp = wd_create_device_nodemask(used_list ? used_list : list);
+	if (WD_IS_ERR(used_bmp)) {
+		ret = WD_PTR_ERR(used_bmp);
+		goto out_freeusedlist;
+	}
+
+	numa_cnt = numa_bitmask_weight(used_bmp);
+	if (!numa_cnt) {
+		ret = numa_cnt;
+		WD_ERR("invalid: bmp is clear!\n");
+		goto out_freenodemask;
+	}
+
+	ctx_config->ctx_num = ctx_set_num * numa_cnt;
+	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
+	if (!ctx_config->ctxs) {
+		ret = -WD_ENOMEM;
+		WD_ERR("failed to alloc ctxs!\n");
+		goto out_freenodemask;
+	}
+
+	ret = wd_init_ctx_and_sched(attrs, used_bmp, used_list ? used_list : list);
+	if (ret)
+		free(ctx_config->ctxs);
+
+out_freenodemask:
+	wd_free_device_nodemask(used_bmp);
+
+out_freeusedlist:
+	wd_free_list_accels(used_list);
+
+out_freelist:
+	wd_free_list_accels(list);
+
+	return ret;
 }

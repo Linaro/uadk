@@ -87,7 +87,7 @@ AM_CFLAGS += -DWD_NO_LOG
 
 libwd_la_LIBADD = $(libwd_la_OBJECTS) -lnuma
 
-libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl
+libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_comp_la_DEPENDENCIES = libwd.la
 
 libhisi_zip_la_LIBADD = -ldl
@@ -104,7 +104,7 @@ else
 libwd_la_LDFLAGS=$(UADK_VERSION)
 libwd_la_LIBADD= -lnuma
 
-libwd_comp_la_LIBADD= -lwd -ldl
+libwd_comp_la_LIBADD= -lwd -ldl -lnuma
 libwd_comp_la_LDFLAGS=$(UADK_VERSION)
 libwd_comp_la_DEPENDENCIES= libwd.la
 

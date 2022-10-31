@@ -727,6 +727,35 @@ free_list:
 	return NULL;
 }
 
+struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id)
+{
+	struct uacce_dev *dev = WD_ERR_PTR(-WD_ENODEV);
+	struct uacce_dev_list *p = list;
+	int ctx_num, ctx_max = 0;
+
+	if (!list) {
+		WD_ERR("invalid: list is NULL!\n");
+		return WD_ERR_PTR(-WD_EINVAL);
+	}
+
+	while (p) {
+		if (numa_id != p->dev->numa_id) {
+			p = p->next;
+			continue;
+		}
+
+		ctx_num = wd_get_avail_ctx(p->dev);
+		if (ctx_num > ctx_max) {
+			dev = p->dev;
+			ctx_max = ctx_num;
+		}
+
+		p = p->next;
+	}
+
+	return dev;
+}
+
 void wd_free_list_accels(struct uacce_dev_list *list)
 {
 	struct uacce_dev_list *curr, *next;
@@ -791,6 +820,39 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 		return ioctl(ctx->fd, cmd);
 
 	return ioctl(ctx->fd, cmd, arg);
+}
+
+struct bitmask *wd_create_device_nodemask(struct uacce_dev_list *list)
+{
+	struct uacce_dev_list *p;
+	struct bitmask *bmp;
+
+	if (!list) {
+		WD_ERR("invalid: list is NULL!\n");
+		return WD_ERR_PTR(-WD_EINVAL);
+	}
+
+	bmp = numa_allocate_nodemask();
+	if (!bmp) {
+		WD_ERR("failed to alloc bitmask(%d)!\n", errno);
+		return WD_ERR_PTR(-WD_ENOMEM);
+	}
+
+	p = list;
+	while (p) {
+		numa_bitmask_setbit(bmp, p->dev->numa_id);
+		p = p->next;
+	}
+
+	return bmp;
+}
+
+void wd_free_device_nodemask(struct bitmask *bmp)
+{
+	if (!bmp)
+		return;
+
+	numa_free_nodemask(bmp);
 }
 
 void wd_get_version(void)

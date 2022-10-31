@@ -349,6 +349,16 @@ int wd_get_avail_ctx(struct uacce_dev *dev);
 struct uacce_dev_list *wd_get_accel_list(const char *alg_name);
 
 /**
+ * wd_find_dev_by_numa() - get device with max available ctx number from an
+ *			   device list according to numa id.
+ * @list: The device list.
+ * @numa_id: The numa_id.
+ *
+ * Return device if succeed and other error number if fail.
+ */
+struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id);
+
+/**
  * wd_get_accel_dev() - Get device supporting the algorithm with
 			smallest numa distance to current numa node.
  * @alg_name: Algorithm name, which could be got from
@@ -522,6 +532,20 @@ struct uacce_dev *wd_clone_dev(struct uacce_dev *dev);
  * @node: The node need to be add.
  */
 void wd_add_dev_to_list(struct uacce_dev_list *head, struct uacce_dev_list *node);
+
+/**
+ * wd_create_device_nodemask() - create a numa node mask of device list.
+ * @list: The devices list.
+ *
+ * Return a pointer value if succeed, and error number if fail.
+ */
+struct bitmask *wd_create_device_nodemask(struct uacce_dev_list *list);
+
+/**
+ * wd_free_device_nodemask() - free a numa node mask.
+ * @bmp: A numa node mask.
+ */
+void wd_free_device_nodemask(struct bitmask *bmp);
 
 /**
  * wd_ctx_get_dev_name() - Get the device name about task.
