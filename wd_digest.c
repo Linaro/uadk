@@ -39,6 +39,7 @@ static int g_digest_mac_full_len[WD_DIGEST_TYPE_MAX] = {
 };
 
 struct wd_digest_setting {
+	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched	sched;
 	struct wd_digest_driver	*driver;
@@ -186,24 +187,29 @@ void wd_digest_free_sess(handle_t h_sess)
 int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
+	bool flag;
 	int ret;
+
+	flag = wd_alg_try_init(&wd_digest_setting.status);
+	if (!flag)
+		return 0;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_DIGEST_EPOLL_EN",
 			      &wd_digest_setting.config.epoll_en);
 	if (ret < 0)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
 	if (ret < 0)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_sched(&wd_digest_setting.sched, sched);
 	if (ret < 0)
-		goto out;
+		goto out_clear_ctx_config;
 
 	/* set driver */
 #ifdef WD_STATIC_DRV
@@ -215,33 +221,37 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_digest_msg));
 	if (ret < 0)
-		goto out_sched;
+		goto out_clear_sched;
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_digest_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
-		goto out_priv;
+		goto out_clear_pool;
 	}
 	wd_digest_setting.priv = priv;
 
 	ret = wd_digest_setting.driver->init(&wd_digest_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to init digest dirver!\n");
-		goto out_init;
+		goto out_free_priv;
 	}
+
+	wd_alg_set_init(&wd_digest_setting.status);
 
 	return 0;
 
-out_init:
+out_free_priv:
 	free(priv);
 	wd_digest_setting.priv = NULL;
-out_priv:
+out_clear_pool:
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
-out_sched:
+out_clear_sched:
 	wd_clear_sched(&wd_digest_setting.sched);
-out:
+out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_digest_setting.config);
+out_clear_init:
+	wd_alg_clear_init(&wd_digest_setting.status);
 	return ret;
 }
 
@@ -260,6 +270,7 @@ void wd_digest_uninit(void)
 
 	wd_clear_sched(&wd_digest_setting.sched);
 	wd_clear_ctx_config(&wd_digest_setting.config);
+	wd_alg_clear_init(&wd_digest_setting.status);
 }
 
 static int wd_aes_hmac_length_check(struct wd_digest_sess *sess,
