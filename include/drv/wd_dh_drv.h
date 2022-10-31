@@ -46,7 +46,7 @@ struct wd_dh_driver *wd_dh_get_driver(void)				\
 }
 #else
 #define WD_DH_SET_DRIVER(drv)						\
-static void __attribute__((constructor)) set_driver_dh(void)		\
+void __attribute__((constructor)) set_driver_dh(void)		\
 {									\
 	wd_dh_set_driver(&(drv));						\
 }

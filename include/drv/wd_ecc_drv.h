@@ -198,7 +198,7 @@ struct wd_ecc_driver *wd_ecc_get_driver(void)				\
 }
 #else
 #define WD_ECC_SET_DRIVER(drv)						\
-static void __attribute__((constructor)) set_driver_ecc(void)		\
+void __attribute__((constructor)) set_driver_ecc(void)		\
 {									\
 	wd_ecc_set_driver(&(drv));					\
 }

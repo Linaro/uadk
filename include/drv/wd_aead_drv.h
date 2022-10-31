@@ -86,7 +86,7 @@ struct wd_aead_driver *wd_aead_get_driver(void)			\
 }
 #else
 #define WD_AEAD_SET_DRIVER(drv)				              \
-static void __attribute__((constructor)) set_aead_driver(void)		      \
+void __attribute__((constructor)) set_aead_driver(void)		      \
 {									      \
 	wd_aead_set_driver(&(drv));					      \
 }

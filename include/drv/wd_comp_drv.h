@@ -78,7 +78,7 @@ struct wd_comp_driver *wd_comp_get_driver(void)				      \
 }
 #else
 #define WD_COMP_SET_DRIVER(drv)						      \
-static void __attribute__((constructor)) set_comp_driver(void)		      \
+void __attribute__((constructor)) set_comp_driver(void)		      \
 {									      \
 	wd_comp_set_driver(&(drv));					      \
 }
