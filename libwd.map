@@ -35,5 +35,11 @@ global:
 	wd_need_debug;
 	wd_need_info;
 
+	wd_create_device_nodemask;
+	wd_free_device_nodemask;
+	wd_clone_dev;
+	wd_add_dev_to_list;
+	wd_find_dev_by_numa;
+
 local: *;
 };

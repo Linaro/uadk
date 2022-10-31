@@ -2,6 +2,9 @@ UADK_COMP_2.0 {
 global:
 	wd_comp_init;
 	wd_comp_uninit;
+	wd_comp_init2;
+	wd_comp_init2_;
+	wd_comp_uninit2;
 	wd_comp_alloc_sess;
 	wd_comp_free_sess;
 	wd_do_comp_sync;

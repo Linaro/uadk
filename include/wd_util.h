@@ -7,6 +7,7 @@
 #ifndef __WD_UTIL_H
 #define __WD_UTIL_H
 
+#include <numa.h>
 #include <stdbool.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -110,6 +111,14 @@ struct wd_ctx_attr {
 struct wd_msg_handle {
 	int (*send)(handle_t sess, void *msg);
 	int (*recv)(handle_t sess, void *msg);
+};
+
+struct wd_init_attrs {
+	__u32 sched_type;
+	char *alg;
+	struct wd_sched *sched;
+	struct wd_ctx_params *ctx_params;
+	struct wd_ctx_config *ctx_config;
 };
 
 /*
@@ -403,6 +412,15 @@ static inline void wd_alg_clear_init(enum wd_status *status)
 
 	__atomic_store(status, &setting, __ATOMIC_RELAXED);
 }
+
+/**
+ * wd_alg_pre_init() - Request the ctxs and initialize the sched_domain
+ *                     with the given devices list, ctxs number and numa mask.
+ * @attrs: the algorithm initialization parameters.
+ *
+ * Return device if succeed and other error number if fail.
+ */
+int wd_alg_pre_init(struct wd_init_attrs *attrs);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx
