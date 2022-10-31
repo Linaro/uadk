@@ -22,6 +22,9 @@
 #define PRIVILEGE_FLAG			600
 #define MIN(a, b)			((a) > (b) ? (b) : (a))
 
+#define WD_INIT_SLEEP_UTIME		1000
+#define WD_INIT_RETRY_TIMES		10000
+
 struct msg_pool {
 	/* message array allocated dynamically */
 	void *msgs;
@@ -1776,4 +1779,25 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 	}
 
 	return 0;
+}
+
+bool wd_alg_try_init(enum wd_status *status)
+{
+	enum wd_status expected;
+	int count = 0;
+	bool ret;
+
+	do {
+		expected = WD_UNINIT;
+		ret = __atomic_compare_exchange_n(status, &expected, WD_INITING, true,
+						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+		if (expected == WD_INIT)
+			return false;
+		usleep(WD_INIT_SLEEP_UTIME);
+		if (!(++count % WD_INIT_RETRY_TIMES))
+			WD_ERR("The algorithm initizalite has been waiting for %ds!\n",
+			       WD_INIT_SLEEP_UTIME * count / 1000000);
+	} while (!ret);
+
+	return true;
 }

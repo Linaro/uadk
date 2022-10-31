@@ -32,6 +32,7 @@ struct wd_dh_sess {
 };
 
 static struct wd_dh_setting {
+	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	void *sched_ctx;
@@ -78,24 +79,29 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
+	bool flag;
 	int ret;
+
+	flag = wd_alg_try_init(&wd_dh_setting.status);
+	if (!flag)
+		return 0;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_DH_EPOLL_EN",
 			      &wd_dh_setting.config.epoll_en);
 	if (ret < 0)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_sched(&wd_dh_setting.sched, sched);
 	if (ret)
-		goto out;
+		goto out_clear_ctx_config;
 
 #ifdef WD_STATIC_DRV
 	wd_dh_set_static_drv();
@@ -106,13 +112,13 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_dh_msg));
 	if (ret)
-		goto out_sched;
+		goto out_clear_sched;
 
 	/* initialize ctx related resources in specific driver */
 	priv = calloc(1, wd_dh_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
-		goto out_priv;
+		goto out_clear_pool;
 	}
 
 	wd_dh_setting.priv = priv;
@@ -120,21 +126,24 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 					 wd_dh_setting.driver->alg_name);
 	if (ret < 0) {
 		WD_ERR("failed to init dh driver, ret= %d!\n", ret);
-		goto out_init;
+		goto out_free_priv;
 	}
+
+	wd_alg_set_init(&wd_dh_setting.status);
 
 	return 0;
 
-out_init:
+out_free_priv:
 	free(priv);
 	wd_dh_setting.priv = NULL;
-out_priv:
+out_clear_pool:
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
-out_sched:
+out_clear_sched:
 	wd_clear_sched(&wd_dh_setting.sched);
-out:
+out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_dh_setting.config);
-
+out_clear_init:
+	wd_alg_clear_init(&wd_dh_setting.status);
 	return ret;
 }
 
@@ -156,6 +165,7 @@ void wd_dh_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_dh_setting.sched);
 	wd_clear_ctx_config(&wd_dh_setting.config);
+	wd_alg_clear_init(&wd_dh_setting.status);
 }
 
 static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,

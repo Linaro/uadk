@@ -45,6 +45,7 @@ static const unsigned char des_weak_keys[DES_WEAK_KEY_NUM][DES_KEY_SIZE] = {
 };
 
 struct wd_cipher_setting {
+	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched      sched;
 	void *sched_ctx;
@@ -231,24 +232,29 @@ void wd_cipher_free_sess(handle_t h_sess)
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
+	bool flag;
 	int ret;
+
+	flag = wd_alg_try_init(&wd_cipher_setting.status);
+	if (!flag)
+		return 0;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_CIPHER_EPOLL_EN",
 			      &wd_cipher_setting.config.epoll_en);
 	if (ret < 0)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_ctx_config(&wd_cipher_setting.config, config);
 	if (ret < 0)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_sched(&wd_cipher_setting.sched, sched);
 	if (ret < 0)
-		goto out;
+		goto out_clear_ctx_config;
 
 #ifdef WD_STATIC_DRV
 	/* set driver */
@@ -260,33 +266,37 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_cipher_msg));
 	if (ret < 0)
-		goto out_sched;
+		goto out_clear_sched;
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_cipher_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
-		goto out_priv;
+		goto out_clear_pool;
 	}
 	wd_cipher_setting.priv = priv;
 
 	ret = wd_cipher_setting.driver->init(&wd_cipher_setting.config, priv);
 	if (ret < 0) {
-		WD_ERR("hisi sec init failed.\n");
-		goto out_init;
+		WD_ERR("failed to do dirver init, ret = %d.\n", ret);
+		goto out_free_priv;
 	}
+
+	wd_alg_set_init(&wd_cipher_setting.status);
 
 	return 0;
 
-out_init:
+out_free_priv:
 	free(priv);
 	wd_cipher_setting.priv = NULL;
-out_priv:
+out_clear_pool:
 	wd_uninit_async_request_pool(&wd_cipher_setting.pool);
-out_sched:
+out_clear_sched:
 	wd_clear_sched(&wd_cipher_setting.sched);
-out:
+out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_cipher_setting.config);
+out_clear_init:
+	wd_alg_clear_init(&wd_cipher_setting.status);
 	return ret;
 }
 
@@ -304,6 +314,7 @@ void wd_cipher_uninit(void)
 	wd_uninit_async_request_pool(&wd_cipher_setting.pool);
 	wd_clear_sched(&wd_cipher_setting.sched);
 	wd_clear_ctx_config(&wd_cipher_setting.config);
+	wd_alg_clear_init(&wd_cipher_setting.status);
 }
 
 static void fill_request_msg(struct wd_cipher_msg *msg,
