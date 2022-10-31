@@ -29,6 +29,7 @@
 #include "../../wd_comp.h"
 #include "../../wd_sgl.h"
 #include "../smm.h"
+#include "../smm.c"
 
 #ifdef DEBUG_LOG
 #define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)

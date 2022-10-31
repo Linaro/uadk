@@ -30,6 +30,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include "v1/wd_comp.h"
+#include "../smm.c"
 
 #define SYS_ERR_COND(cond, msg, ...) \
 do { \
