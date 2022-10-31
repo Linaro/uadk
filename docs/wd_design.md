@@ -81,6 +81,7 @@
 |         |                |2) Change *user* layer to *sched* layer since |
 |         |                |   sample_sched is moved from user space into UADK |
 |         |                |   framework. |
+|  1.4    |                |1) Update *wd_alg_init* reentrancy. |
 
 
 ## Terminology
@@ -493,7 +494,9 @@ device.
 Return 0 if it succeeds. And return error number if it fails.
 
 In *wd_comp_init()*, context resources, user scheduler and vendor driver are
-initialized.
+initialized. This function supports multi-threaded concurrent calls and
+reentrant. When one thread is initializing, other threads will wait for
+completion.
 
 
 ***void wd_comp_uninit(void)***
