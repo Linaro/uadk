@@ -69,7 +69,7 @@ static void __attribute__((constructor)) wd_aead_open_driver(void)
 {
 	wd_aead_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_aead_setting.dlhandle)
-		WD_ERR("failed to open libhisi_sec.so!\n");
+		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_aead_close_driver(void)
