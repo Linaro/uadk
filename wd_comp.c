@@ -63,7 +63,7 @@ static void __attribute__((constructor)) wd_comp_open_driver(void)
 {
 	wd_comp_setting.dlhandle = dlopen("libhisi_zip.so", RTLD_NOW);
 	if (!wd_comp_setting.dlhandle)
-		WD_ERR("failed to open libhisi_zip.so!\n");
+		WD_ERR("failed to open libhisi_zip.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_comp_close_driver(void)

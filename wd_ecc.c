@@ -110,7 +110,7 @@ static void __attribute__((constructor)) wd_ecc_open_driver(void)
 {
 	wd_ecc_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_ecc_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so!\n");
+		WD_ERR("failed to open libhisi_hpre.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_ecc_close_driver(void)

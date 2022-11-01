@@ -95,7 +95,7 @@ static void __attribute__((constructor)) wd_rsa_open_driver(void)
 {
 	wd_rsa_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_rsa_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so!\n");
+		WD_ERR("failed to open libhisi_hpre.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_rsa_close_driver(void)

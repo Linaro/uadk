@@ -80,7 +80,7 @@ static void __attribute__((constructor)) wd_cipher_open_driver(void)
 {
 	wd_cipher_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_cipher_setting.dlhandle)
-		WD_ERR("failed to open libhisi_sec.so!\n");
+		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_cipher_close_driver(void)

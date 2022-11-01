@@ -80,7 +80,7 @@ static void __attribute__((constructor)) wd_digest_open_driver(void)
 	/* Fix me: vendor driver should be put in /usr/lib/wd/ */
 	wd_digest_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_digest_setting.dlhandle)
-		WD_ERR("failed to open libhisi_sec.so!\n");
+		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_digest_close_driver(void)

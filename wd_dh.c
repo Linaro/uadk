@@ -55,7 +55,7 @@ static void __attribute__((constructor)) wd_dh_open_driver(void)
 {
 	wd_dh_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_dh_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so!\n");
+		WD_ERR("failed to open libhisi_hpre.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_dh_close_driver(void)
