@@ -13,7 +13,6 @@
 #include <time.h>
 #include <dlfcn.h>
 
-#include "wd_util.h"
 #include "include/drv/wd_ecc_drv.h"
 #include "include/wd_ecc_curve.h"
 #include "wd_ecc.h"

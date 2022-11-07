@@ -4,7 +4,6 @@
 #include <asm/types.h>
 #include "drv/wd_comp_drv.h"
 #include "hisi_qm_udrv.h"
-#include "wd.h"
 
 #define	ZLIB				0
 #define	GZIP				1

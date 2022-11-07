@@ -10,7 +10,6 @@
 #include <semaphore.h>
 #include <string.h>
 #include <ctype.h>
-#include "wd_alg_common.h"
 #include "wd_sched.h"
 #include "wd_util.h"
 

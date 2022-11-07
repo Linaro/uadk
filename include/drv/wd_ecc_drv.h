@@ -7,8 +7,8 @@
 #include <stdint.h>
 #include <asm/types.h>
 
-#include "../wd.h"
 #include "../wd_ecc.h"
+#include "wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {

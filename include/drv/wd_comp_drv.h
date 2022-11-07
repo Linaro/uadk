@@ -6,9 +6,9 @@
 
 #include <pthread.h>
 #include <asm/types.h>
-#include "../wd_common.h"
-#include "../wd_alg_common.h"
+
 #include "../wd_comp.h"
+#include "wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {

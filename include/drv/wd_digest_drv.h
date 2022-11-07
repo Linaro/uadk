@@ -3,9 +3,8 @@
 #ifndef __WD_DIGEST_DRV_H
 #define __WD_DIGEST_DRV_H
 
-#include "../wd_common.h"
-#include "../wd_alg_common.h"
 #include "../wd_digest.h"
+#include "wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {

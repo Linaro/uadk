@@ -6,7 +6,6 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include "wd_util.h"
 #include "include/drv/wd_aead_drv.h"
 #include "wd_aead.h"
 
