@@ -18,6 +18,143 @@
 extern "C" {
 #endif
 
+#if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
+#define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }
+#define rmb() dsb(ld) /* read fence */
+#define wmb() dsb(st) /* write fence */
+#define mb() dsb(sy) /* rw fence */
+#else
+#define rmb() __sync_synchronize() /* read fence */
+#define wmb() __sync_synchronize() /* write fence */
+#define mb() __sync_synchronize() /* rw fence */
+#endif
+
+static inline uint32_t wd_ioread32(void *addr)
+{
+	uint32_t ret;
+
+	ret = *((volatile uint32_t *)addr);
+	rmb();
+	return ret;
+}
+
+static inline uint64_t wd_ioread64(void *addr)
+{
+	uint64_t ret;
+
+	ret = *((volatile uint64_t *)addr);
+	rmb();
+	return ret;
+}
+
+static inline void wd_iowrite32(void *addr, uint32_t value)
+{
+	wmb();
+	*((volatile uint32_t *)addr) = value;
+}
+
+static inline void wd_iowrite64(void *addr, uint64_t value)
+{
+	wmb();
+	*((volatile uint64_t *)addr) = value;
+}
+
+/**
+ * wd_ctx_start() - Start a context.
+ * @h_ctx: The handle of context which will be started.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ *
+ * Context will be started after calling this function. If necessary resource
+ * (e.g. MMIO and DUS) already got, tasks can be received by context.
+ */
+int wd_ctx_start(handle_t h_ctx);
+
+/**
+ * wd_release_ctx_force() - Release a context forcely.
+ * @h_ctx: The handle of context which will be released.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ *
+ * Context will be stopped and related hardware will be released, which avoids
+ * release delay in wd_release_ctx(). After calling this function, context
+ * related hardware resource will be released, however, fd is still there.
+ * wd_release_ctx mush be used to release context finally, other APIs about
+ * context can not work with this context after calling wd_release_ctx_force.
+ */
+int wd_release_ctx_force(handle_t h_ctx);
+
+/**
+ * wd_ctx_set_priv() - Store some information in context.
+ * @h_ctx: The handle of context.
+ * @priv: The pointer of memory which stores above information.
+ *
+ * Return 0 if successful or less than 0 otherwise.
+ */
+int wd_ctx_set_priv(handle_t h_ctx, void *priv);
+
+/**
+ * wd_ctx_get_priv() - Get stored information in context.
+ * @h_ctx: The handle of context.
+ *
+ * Return pointer of memory of stored information if successful or NULL
+ * otherwise.
+ */
+void *wd_ctx_get_priv(handle_t h_ctx);
+
+/**
+ * wd_ctx_get_api() - Get api string of context.
+ * @h_ctx: The handle of context.
+ *
+ * Return api string or NULL otherwise.
+ *
+ * This function is a wrapper of reading /sys/class/uacce/<dev>/api, which is
+ * used to define api version between user space and kernel driver.
+ */
+char *wd_ctx_get_api(handle_t h_ctx);
+
+/**
+ * wd_ctx_mmap_qfr() - Map and get the base address of one context region.
+ * @h_ctx: The handle of context.
+ * @qfrt: Name of context region, which could be got in kernel head file
+ *        include/uapi/misc/uacce/uacce.h
+ *
+ * Return pointer of context region if successful or NULL otherwise.
+ *
+ * Normally, UACCE_QFRT_MMIO is for MMIO registers of one context,
+ * UACCE_QFRT_DUS is for task communication memory of one context.
+ */
+void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+
+/**
+ * wd_ctx_unmap_qfr() - Unmap one context region.
+ * @h_ctx: The handle of context.
+ * @qfrt: Name of context region, which could be got in kernel head file
+ *        include/uapi/misc/uacce/uacce.h.
+ */
+void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt);
+
+/**
+ * wd_ctx_set_io_cmd() - Send ioctl command to context.
+ * @h_ctx: The handle of context.
+ * @cmd: ioctl command which could be found in Linux kernel head file,
+ *       include/uapi/misc/uacce/uacce.h, hisi_qm.h...
+ * @arg: Command output buffer if some information will be got from kernel or
+ *       NULL otherwise.
+ *
+ * This function is a wrapper of ioctl.
+ */
+int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg);
+
+/**
+ * wd_ctx_get_region_size() - Get region offset size
+ * @h_ctx: The handle of context.
+ * @qfrt: Name of context region, which could be got in kernel head file
+ *        include/uapi/misc/uacce/uacce.h
+ * Return device region size.
+ */
+unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt);
+
 struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;

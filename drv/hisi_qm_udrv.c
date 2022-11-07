@@ -8,7 +8,6 @@
 #include <sys/mman.h>
 
 #include "hisi_qm_udrv.h"
-#include "wd_util.h"
 
 #define QM_DBELL_CMD_SQ		0
 #define QM_DBELL_CMD_CQ		1

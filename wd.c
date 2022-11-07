@@ -12,13 +12,12 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <numa.h>
 #include <sched.h>
 
 #include "wd.h"
+#include "wd_common.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
@@ -30,17 +29,6 @@ enum UADK_LOG_LEVEL {
 };
 
 static int uadk_log_level;
-
-struct wd_ctx_h {
-	int fd;
-	char dev_path[MAX_DEV_NAME_LEN];
-	char *dev_name;
-	char *drv_name;
-	unsigned long qfrs_offs[UACCE_QFRT_MAX];
-	void *qfrs_base[UACCE_QFRT_MAX];
-	struct uacce_dev *dev;
-	void *priv;
-};
 
 static void wd_parse_log_level(void)
 {
@@ -430,114 +418,6 @@ void wd_release_ctx(handle_t h_ctx)
 	free(ctx);
 }
 
-int wd_ctx_start(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	int ret;
-
-	if (!ctx)
-		return -WD_EINVAL;
-
-	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
-	if (ret)
-		WD_ERR("failed to start on %s (%d), ret = %d!\n",
-		       ctx->dev_path, -errno, ret);
-
-	return ret;
-}
-
-int wd_release_ctx_force(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	int ret;
-
-	if (!ctx)
-		return -WD_EINVAL;
-
-	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
-	if (ret)
-		WD_ERR("failed to stop on %s (%d), ret = %d!\n",
-		       ctx->dev_path, -errno, ret);
-
-	return ret;
-}
-
-void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-	off_t off = qfrt * getpagesize();
-	size_t size;
-	void *addr;
-
-	if (!ctx || qfrt >= UACCE_QFRT_MAX || !ctx->qfrs_offs[qfrt]) {
-		WD_ERR("failed to check input ctx or qfrt!\n");
-		return NULL;
-	}
-
-	size = ctx->qfrs_offs[qfrt];
-
-	addr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
-	if (addr == MAP_FAILED) {
-		WD_ERR("failed to mmap, qfrt = %d, err = %d!\n", qfrt, -errno);
-		return NULL;
-	}
-
-	ctx->qfrs_base[qfrt] = addr;
-
-	return addr;
-}
-
-void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx || qfrt >= UACCE_QFRT_MAX)
-		return;
-
-	if (ctx->qfrs_offs[qfrt] != 0)
-		munmap(ctx->qfrs_base[qfrt], ctx->qfrs_offs[qfrt]);
-}
-
-unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt)
-{
-	struct wd_ctx_h *ctx = (struct wd_ctx_h *)h_ctx;
-	if (!ctx || qfrt >= UACCE_QFRT_MAX)
-			return 0;
-	return ctx->qfrs_offs[qfrt];
-}
-
-void *wd_ctx_get_priv(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return NULL;
-
-	return ctx->priv;
-}
-
-int wd_ctx_set_priv(handle_t h_ctx, void *priv)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return -WD_EINVAL;
-
-	ctx->priv = priv;
-
-	return 0;
-}
-
-char *wd_ctx_get_api(handle_t h_ctx)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx || !ctx->dev)
-		return NULL;
-
-	return ctx->dev->api;
-}
-
 int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
@@ -778,19 +658,6 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 	wd_free_list_accels(head);
 
 	return target;
-}
-
-int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
-{
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
-
-	if (!ctx)
-		return -WD_EINVAL;
-
-	if (!arg)
-		return ioctl(ctx->fd, cmd);
-
-	return ioctl(ctx->fd, cmd, arg);
 }
 
 void wd_get_version(void)
