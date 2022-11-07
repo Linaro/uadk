@@ -7,7 +7,7 @@
 #include <asm/types.h>
 
 #include "../wd_cipher.h"
-#include "wd_util.h"
+#include "../wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {

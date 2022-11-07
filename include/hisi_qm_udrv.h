@@ -10,8 +10,7 @@
 #include <linux/types.h>
 
 #include "config.h"
-#include "wd.h"
-#include "wd_alg_common.h"
+#include "wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {

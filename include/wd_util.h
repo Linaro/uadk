@@ -12,9 +12,27 @@
 #include <sys/shm.h>
 #include <asm/types.h>
 
+#include "wd.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct wd_ctx_internal {
+	handle_t ctx;
+	__u8 op_type;
+	__u8 ctx_mode;
+	pthread_spinlock_t lock;
+};
+
+struct wd_ctx_config_internal {
+	__u32 ctx_num;
+	struct wd_ctx_internal *ctxs;
+	void *priv;
+	int pid;
+	bool epoll_en;
+	unsigned long *msg_cnt;
+};
 
 #define FOREACH_NUMA(i, config, config_numa) \
 	for ((i) = 0, (config_numa) = (config)->config_per_numa; \

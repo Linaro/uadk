@@ -4,7 +4,7 @@
 #define __WD_DIGEST_DRV_H
 
 #include "../wd_digest.h"
-#include "wd_util.h"
+#include "../wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {

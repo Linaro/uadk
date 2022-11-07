@@ -8,7 +8,6 @@
 #define __WD_AEAD_H
 
 #include <dlfcn.h>
-#include "config.h"
 #include "wd_alg_common.h"
 #include "wd_cipher.h"
 #include "wd_digest.h"

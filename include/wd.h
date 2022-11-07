@@ -30,6 +30,13 @@ extern "C" {
 #define WD_CTX_CNT_NUM			1024
 #define WD_IPC_KEY			0x500011
 
+/* Required compiler attributes */
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+
+#define handle_t uintptr_t
+typedef struct wd_dev_mask wd_dev_mask_t;
+
 typedef void (*wd_log)(const char *format, ...);
 
 #ifndef WD_NO_LOG
@@ -96,7 +103,12 @@ static inline void *WD_ERR_PTR(uintptr_t error)
 	return (void *)error;
 }
 
-enum wcrypto_type {
+enum wd_buff_type {
+	WD_FLAT_BUF,
+	WD_SGL_BUF,
+};
+
+enum wd_alg_type {
 	WD_CIPHER,
 	WD_DIGEST,
 	WD_AEAD,
@@ -141,8 +153,36 @@ struct wd_dev_mask {
 	unsigned int magic;
 };
 
-#define handle_t uintptr_t
-typedef struct wd_dev_mask wd_dev_mask_t;
+/**
+ * struct wd_comp_sched - Define a scheduler.
+ * @name:		Name of this scheduler.
+ * @sched_policy:	Method for scheduler to perform scheduling
+ * @sched_init:		inited the scheduler input parameters.
+ * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
+ *			config points to the ctx config; sched_ctx points to
+ *			scheduler context; req points to the request. Return
+ *			the proper ctx pos in wd_ctx_config.
+ *			(fix me: modify req to request?)
+ * @poll_policy:	Define the polling policy. config points to the ctx
+ *			config; sched_ctx points to scheduler context; Return
+ *			number of polled request.
+ */
+struct wd_sched {
+	const char *name;
+	int sched_policy;
+	handle_t (*sched_init)(handle_t h_sched_ctx, void *sched_param);
+	__u32 (*pick_next_ctx)(handle_t h_sched_ctx,
+				  void *sched_key,
+				  const int sched_mode);
+	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
+	handle_t h_sched_ctx;
+};
+
+struct wd_datalist {
+	void *data;
+	__u32 len;
+	struct wd_datalist *next;
+};
 
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
 #define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }
@@ -184,6 +224,40 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 	wmb();
 	*((volatile uint64_t *)addr) = value;
 }
+
+enum wd_ctx_mode {
+	CTX_MODE_SYNC = 0,
+	CTX_MODE_ASYNC,
+	CTX_MODE_MAX,
+};
+
+/**
+ * struct wd_ctx - Define one ctx and related type.
+ * @ctx:	The ctx itself.
+ * @op_type:	Define the operation type of this specific ctx.
+ *		e.g. 0: compression; 1: decompression.
+ * @ctx_mode:   Define this ctx is used for synchronization of asynchronization
+ *		1: synchronization; 0: asynchronization;
+ */
+struct wd_ctx {
+	handle_t ctx;
+	__u8 op_type;
+	__u8 ctx_mode;
+};
+
+/**
+ * struct wd_ctx_config - Define a ctx set and its related attributes, which
+ *			  will be used in the scope of current process.
+ * @ctx_num:	The ctx number in below ctx array.
+ * @ctxs:	Point to a ctx array, length is above ctx_num.
+ * @priv:	The attributes of ctx defined by user, which is used by user
+ *		defined scheduler.
+ */
+struct wd_ctx_config {
+	__u32 ctx_num;
+	struct wd_ctx *ctxs;
+	void *priv;
+};
 
 /**
  * wd_request_ctx() - Request a communication context from a device.

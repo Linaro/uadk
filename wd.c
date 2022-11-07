@@ -18,7 +18,6 @@
 #include <numa.h>
 #include <sched.h>
 
-#include "wd_alg_common.h"
 #include "wd.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
