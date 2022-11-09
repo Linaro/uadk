@@ -30,6 +30,12 @@
 #define DH_BALANCE_THRHD		1280
 #define DH_RESEND_CNT	8
 #define DH_RECV_MAX_CNT	60000000 // 1 min
+#define DH_KEYSIZE_768	768
+#define DH_KEYSIZE_1024	1024
+#define DH_KEYSIZE_1536	1536
+#define DH_KEYSIZE_2048	2048
+#define DH_KEYSIZE_3072	3072
+#define DH_KEYSIZE_4096	4096
 
 static __thread int balance;
 
@@ -65,7 +71,19 @@ static int create_ctx_param_check(struct wd_queue *q,
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	/* Key width check */
+	switch (setup->key_bits) {
+	case DH_KEYSIZE_768:
+	case DH_KEYSIZE_1024:
+	case DH_KEYSIZE_1536:
+	case DH_KEYSIZE_2048:
+	case DH_KEYSIZE_3072:
+	case DH_KEYSIZE_4096:
+		return WD_SUCCESS;
+	default:
+		WD_ERR("invalid: dh key_bits %u is error!\n", setup->key_bits);
+		return -WD_EINVAL;
+	}
 }
 
 static int wcrypto_init_dh_cookie(struct wcrypto_dh_ctx *ctx)

@@ -30,7 +30,10 @@
 #define RSA_RESEND_CNT	8
 #define RSA_MAX_KEY_SIZE	512
 #define RSA_RECV_MAX_CNT	60000000 // 1 min
-
+#define RSA_KEYSIZE_1024	1024
+#define RSA_KEYSIZE_2048	2048
+#define RSA_KEYSIZE_3072	3072
+#define RSA_KEYSIZE_4096	4096
 
 static __thread int balance;
 
@@ -558,7 +561,17 @@ static int check_q_setup(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	/* Key width check */
+	switch (setup->key_bits) {
+	case RSA_KEYSIZE_1024:
+	case RSA_KEYSIZE_2048:
+	case RSA_KEYSIZE_3072:
+	case RSA_KEYSIZE_4096:
+		return WD_SUCCESS;
+	default:
+		WD_ERR("invalid: rsa key_bits %u is error!\n", setup->key_bits);
+		return -WD_EINVAL;
+	}
 }
 
 /* Before initiate this context, we should get a queue from WD */
