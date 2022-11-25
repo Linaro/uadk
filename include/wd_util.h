@@ -12,7 +12,8 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <asm/types.h>
-#include "wd_alg_common.h"
+
+#include "wd_sched.h"
 
 #ifdef __cplusplus
 extern "C" {

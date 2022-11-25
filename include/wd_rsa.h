@@ -9,7 +9,6 @@
 
 #include <stdbool.h>
 
-#include "wd.h"
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus

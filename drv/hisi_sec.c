@@ -8,10 +8,6 @@
 #include "../include/drv/wd_digest_drv.h"
 #include "../include/drv/wd_aead_drv.h"
 #include "hisi_qm_udrv.h"
-#include "wd_cipher.h"
-#include "wd_digest.h"
-#include "wd_aead.h"
-#include "wd.h"
 
 #define SEC_DIGEST_ALG_OFFSET	11
 #define WORD_ALIGNMENT_MASK	0x3
