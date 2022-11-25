@@ -8,7 +8,7 @@
 #define __WD_COMP_H
 
 #include <numa.h>
-#include "wd.h"
+
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus

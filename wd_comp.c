@@ -12,10 +12,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "config.h"
 #include "drv/wd_comp_drv.h"
-#include "wd_sched.h"
-#include "wd_util.h"
 #include "wd_comp.h"
 
 #define WD_POOL_MAX_ENTRIES		1024

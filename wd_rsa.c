@@ -12,9 +12,8 @@
 #include <time.h>
 #include <dlfcn.h>
 
-#include "config.h"
 #include "include/drv/wd_rsa_drv.h"
-#include "wd_util.h"
+#include "wd_rsa.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define WD_HW_EACCESS			62

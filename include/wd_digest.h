@@ -8,7 +8,6 @@
 #define __WD_DIGEST_H
 #include <dlfcn.h>
 
-#include "wd.h"
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus

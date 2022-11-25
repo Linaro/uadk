@@ -6,6 +6,7 @@
 #include <asm/types.h>
 
 #include "../wd_rsa.h"
+#include "../wd_util.h"
 
 #ifdef __cplusplus
 extern "C" {
