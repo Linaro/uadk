@@ -15,13 +15,10 @@
 extern "C" {
 #endif
 
-#define BYTE_BITS			8
-#define BYTE_BITS_SHIFT			3
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
-#define GET_NEGATIVE(val)		(0 - (val))
 
 typedef void (*wd_rsa_cb_t)(void *cb_param);
 

@@ -30,6 +30,13 @@ extern "C" {
 #define WD_CTX_CNT_NUM			1024
 #define WD_IPC_KEY			0x500011
 
+/* Required compiler attributes */
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+
+#define handle_t uintptr_t
+typedef struct wd_dev_mask wd_dev_mask_t;
+
 typedef void (*wd_log)(const char *format, ...);
 
 #ifndef WD_NO_LOG
@@ -91,7 +98,12 @@ typedef void (*wd_log)(const char *format, ...);
 #define WD_IS_ERR(h)			((uintptr_t)(h) > \
 					(uintptr_t)(-1000))
 
-enum wcrypto_type {
+enum wd_buff_type {
+	WD_FLAT_BUF,
+	WD_SGL_BUF,
+};
+
+enum wd_alg_type {
 	WD_CIPHER,
 	WD_DIGEST,
 	WD_AEAD,
@@ -135,9 +147,6 @@ struct wd_dev_mask {
 	int len;
 	unsigned int magic;
 };
-
-#define handle_t uintptr_t
-typedef struct wd_dev_mask wd_dev_mask_t;
 
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
 #define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }

@@ -10,17 +10,15 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include "wd.h"
-#include "wd_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Required compiler attributes */
-#define likely(x)       __builtin_expect(!!(x), 1)
-#define unlikely(x)     __builtin_expect(!!(x), 0)
+#define BYTE_BITS			8
+#define BYTE_BITS_SHIFT			3
+#define GET_NEGATIVE(val)		(0 - (val))
 
-#define BYTE_BITS_SHIFT		3
 #define BITS_TO_BYTES(bits)	(((bits) + 7) >> 3)
 #define BYTES_TO_BITS(bytes)	((bytes) << 3)
 
@@ -110,7 +108,7 @@ struct wd_ctx_config_internal {
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
  * @sched_policy:	Method for scheduler to perform scheduling
- * @sched_init:		inited the scheduler input parameters.
+ * @sched_init: 	inited the scheduler input parameters.
  * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
  *			config points to the ctx config; sched_ctx points to
  *			scheduler context; req points to the request. Return
