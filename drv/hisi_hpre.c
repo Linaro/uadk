@@ -1054,11 +1054,16 @@ static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
 	}
 }
 
-static bool is_all_zero(struct wd_dtb *e, struct wd_ecc_msg *msg)
+static bool is_all_zero(struct wd_dtb *e)
 {
 	int i;
 
-	for (i = 0; i < e->dsize && i < msg->key_bytes; i++) {
+	if (!e || !e->data) {
+		WD_ERR("invalid: e or e->data is NULL\n");
+		return true;
+	}
+
+	for (i = 0; i < e->bsize; i++) {
 		if (e->data[i])
 			return false;
 	}
@@ -1094,12 +1099,12 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 			return -WD_EINVAL;
 		}
 		hw_msg->sm2_ksel = 1;
-	} else if (is_all_zero(k, msg)) {
+	} else if (is_all_zero(k)) {
 		WD_ERR("invalid: ecc sign in k all zero!\n");
 		return -WD_EINVAL;
 	}
 
-	if (is_all_zero(e, msg)) {
+	if (is_all_zero(e)) {
 		WD_ERR("invalid: ecc sign in e all zero!\n");
 		return -WD_EINVAL;
 	}
@@ -1141,7 +1146,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 	s = &vin->s;
 	r = &vin->r;
 
-	if (is_all_zero(e, msg)) {
+	if (is_all_zero(e)) {
 		WD_ERR("invalid: ecc verf in e all zero!\n");
 		return -WD_EINVAL;
 	}
@@ -1282,7 +1287,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	if (is_all_zero(&pbk->x, msg)) {
+	if (is_all_zero(&pbk->x)) {
 		WD_ERR("invalid: ux is zero!\n");
 		return -WD_EINVAL;
 	}
