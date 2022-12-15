@@ -2191,11 +2191,11 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	struct wd_sm2_dec_out *dout = &out->param.dout;
 	struct wd_ecc_in *in = (void *)src->req.src;
 	struct wd_sm2_dec_in *din = &in->param.din;
+	char buff[MAX_HASH_LENS] = {0};
 	struct wd_ecc_dh_out *dh_out;
 	__u32 ksz = dst->key_bytes;
 	struct wd_ecc_point x2y2;
-	struct wd_dtb tmp = {0};
-	char buff[64] = {0};
+	struct wd_dtb u = {0};
 	int ret;
 
 	/*
@@ -2211,8 +2211,6 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	x2y2.x.dsize = ksz;
 	x2y2.y.dsize = ksz;
 
-	tmp.data = buff;
-
 	/* t = KDF(x2 || y2, klen) */
 	ret = sm2_kdf(&dout->plaintext, &x2y2, din->c2.dsize, &src->hash);
 	if (unlikely(ret)) {
@@ -2220,20 +2218,21 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 		return ret;
 	}
 
-	/* M' = C2 XOR t */
+	/* M' = c2 XOR t */
 	sm2_xor(&dout->plaintext, &din->c2);
 
-	/* u = hash(x2 || M' || y2), save u to din->c2 */
-	ret = sm2_hash(&tmp, &x2y2, &dout->plaintext, &src->hash);
+	/* u = hash(x2 || M' || y2) */
+	u.data = buff;
+	ret = sm2_hash(&u, &x2y2, &dout->plaintext, &src->hash);
 	if (unlikely(ret)) {
 		WD_ERR("failed to compute c3, ret = %d!\n", ret);
 		return ret;
 	}
 
-	/* u == c3 */
-	ret = is_equal(&tmp, &din->c3);
+	/* Judge whether u == c3 */
+	ret = is_equal(&u, &din->c3);
 	if (ret)
-		WD_ERR("failed to decode sm2, u != C3!\n");
+		WD_ERR("failed to decode sm2, u != c3!\n");
 
 	return ret;
 }
