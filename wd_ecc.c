@@ -130,11 +130,18 @@ void wd_ecc_set_driver(struct wd_ecc_driver *drv)
 	wd_ecc_setting.driver = drv;
 }
 
+static void wd_ecc_clear_status(void)
+{
+	wd_alg_clear_init(&wd_ecc_setting.status);
+}
+
 int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	bool flag;
 	int ret;
+
+	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
 
 	flag = wd_alg_try_init(&wd_ecc_setting.status);
 	if (!flag)

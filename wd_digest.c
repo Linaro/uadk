@@ -183,11 +183,18 @@ void wd_digest_free_sess(handle_t h_sess)
 	free(sess);
 }
 
+static void wd_digest_clear_status(void)
+{
+	wd_alg_clear_init(&wd_digest_setting.status);
+}
+
 int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	bool flag;
 	int ret;
+
+	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
 	flag = wd_alg_try_init(&wd_digest_setting.status);
 	if (!flag)
