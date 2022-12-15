@@ -158,10 +158,17 @@ struct wd_comp_sess_setup {
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
 
 /**
- * wd_comp_free_sess() - Free  a wd comp session.
+ * wd_comp_free_sess() - Free a wd comp session.
  * @h_sess: The sess to be freed.
  */
 void wd_comp_free_sess(handle_t h_sess);
+
+/**
+ * wd_comp_reset_sess() - Reset a wd comp session. After reset h_sess, it can
+ * used for a new stream request.
+ * @h_sess: The sess to be reset.
+ */
+int wd_comp_reset_sess(handle_t h_sess);
 
 /**
  * wd_do_comp_sync() - Send a sync compression request.

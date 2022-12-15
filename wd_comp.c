@@ -430,6 +430,21 @@ void wd_comp_free_sess(handle_t h_sess)
 	free(sess);
 }
 
+int wd_comp_reset_sess(handle_t h_sess)
+{
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
+
+	if (!sess) {
+		WD_ERR("invalid: sess is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	sess->stream_pos = WD_COMP_STREAM_NEW;
+	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	return 0;
+}
+
 static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 			  struct wd_comp_req *req)
 {
