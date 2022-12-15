@@ -1111,17 +1111,21 @@ static void correct_random(struct wd_dtb *k)
 	k->data[lens] = 0;
 }
 
-static bool is_all_zero(struct wd_dtb *e, struct wcrypto_ecc_msg *msg,
-			const char *p_name)
+static bool is_all_zero(struct wd_dtb *e, const char *p_name)
 {
 	int i;
 
-	for (i = 0; i < e->dsize && i < msg->key_bytes; i++) {
+	if (!e || !e->data) {
+		WD_ERR("invalid: %s is NULL!\n", p_name);
+		return true;
+	}
+
+	for (i = 0; i < e->bsize; i++) {
 		if (e->data[i])
 			return false;
 	}
 
-	WD_ERR("error: %s all zero!\n", p_name);
+	WD_ERR("invalid: %s all zero!\n", p_name);
 
 	return true;
 }
@@ -1144,15 +1148,15 @@ static int ecc_prepare_sign_in(struct wcrypto_ecc_msg *msg,
 	e = &in->dgst;
 	if (!in->k_set) {
 		if (msg->op_type != WCRYPTO_SM2_SIGN) {
-			WD_ERR("random k not set!\n");
+			WD_ERR("invalid: random k not set!\n");
 			return -WD_EINVAL;
 		}
 		hw_msg->sm2_ksel = 1;
-	} else if (is_all_zero(k, msg, "ecc sgn k")) {
+	} else if (is_all_zero(k, "ecc sgn k")) {
 		return -WD_EINVAL;
 	}
 
-	if (is_all_zero(e, msg, "ecc sgn e"))
+	if (is_all_zero(e, "ecc sgn e"))
 		return -WD_EINVAL;
 
 	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
@@ -1192,7 +1196,7 @@ static int ecc_prepare_verf_in(struct wcrypto_ecc_msg *msg, void **data)
 	s = &vin->s;
 	r = &vin->r;
 
-	if (is_all_zero(e, msg, "ecc vrf e"))
+	if (is_all_zero(e, "ecc vrf e"))
 		return -WD_EINVAL;
 
 	ret = qm_crypto_bin_to_hpre_bin(e->data, (const char *)e->data,
@@ -1274,7 +1278,7 @@ static int ecc_prepare_sm2_enc_in(struct wcrypto_ecc_msg *msg,
 	int ret;
 
 	if (ein->k_set) {
-		if (is_all_zero(k, msg, "sm2 enc k"))
+		if (is_all_zero(k, "sm2 enc k"))
 			return -WD_EINVAL;
 
 		ret = qm_crypto_bin_to_hpre_bin(k->data, (const char *)k->data,

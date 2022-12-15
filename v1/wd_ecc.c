@@ -544,6 +544,7 @@ static struct wcrypto_ecc_in *create_ecc_sign_in(struct wcrypto_ecc_ctx *ctx,
 {
 	if (is_dgst)
 		return create_ecc_in(ctx, ECC_SIGN_IN_PARAM_NUM);
+
 	return create_sm2_sign_in(ctx, m_len);
 }
 
@@ -1489,7 +1490,6 @@ static int ecc_request_init(struct wcrypto_ecc_msg *req,
 	if (req->op_type == WCRYPTO_ECXDH_GEN_KEY ||
 		req->op_type == WCRYPTO_SM2_KG) {
 		struct wcrypto_ecc_point *g = NULL;
-
 		wcrypto_get_ecc_prikey_params((void *)key, NULL, NULL,
 			NULL, NULL, &g, NULL);
 		req->in = (void *)g;
@@ -1715,11 +1715,11 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 	return ret < 0;
 }
 
-static bool is_all_zero(struct wd_dtb *p, struct wcrypto_ecc_ctx *ctx)
+static bool is_all_zero(struct wd_dtb *p)
 {
 	int i;
 
-	for (i = 0; i < p->dsize && i < ctx->key_size; i++) {
+	for (i = 0; i < p->bsize; i++) {
 		if (p->data[i])
 			return false;
 	}
@@ -1733,7 +1733,7 @@ static bool check_k_param(struct wd_dtb *k, struct wcrypto_ecc_ctx *ctx)
 	int ret;
 
 	if (unlikely(!k->data)) {
-		WD_ERR("error: k->data NULL!\n");
+		WD_ERR("invalid: k->data NULL!\n");
 		return false;
 	}
 
@@ -1744,12 +1744,12 @@ static bool check_k_param(struct wd_dtb *k, struct wcrypto_ecc_ctx *ctx)
 	}
 
 	if (unlikely(!less_than_latter(k, &cv->n))) {
-		WD_ERR("error: k >= n\n");
+		WD_ERR("invalid: k >= n!\n");
 		return false;
 	}
 
-	if (unlikely(is_all_zero(k, ctx))) {
-		WD_ERR("error: k all zero\n");
+	if (unlikely(is_all_zero(k))) {
+		WD_ERR("invalid: k all zero!\n");
 		return false;
 	}
 
