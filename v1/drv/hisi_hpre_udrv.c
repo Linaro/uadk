@@ -1969,7 +1969,6 @@ static int fill_sm2_dec_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	/* compute d * c1 */
 	memcpy(dst, req_src, sizeof(*dst));
-
 	dst->op_type = HPRE_SM2_DEC;
 	*(struct wcrypto_ecc_msg **)(dst + 1) = req_src;
 	dst->in = (void *)&din->c1;
@@ -2047,8 +2046,8 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 
 	dma_out = DMA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	dma_key = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
-	dma_in = DMA_ADDR(hw_msg->hi_in, hw_msg->hi_in);
-	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in, olen);
+	dma_in = DMA_ADDR(hw_msg->hi_in, hw_msg->low_in);
+	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in, ilen);
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_out, olen);
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_key, kbytes);
 
@@ -2265,8 +2264,8 @@ static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 static int sm2_hash(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 		    struct wd_dtb *msg, struct q_info *q_info)
 {
-	struct wcrypto_hash_mt *hash = &q_info->hash;
 	__u64 lens = (__u64)msg->dsize + 2 * (__u64)x2y2->x.dsize;
+	struct wcrypto_hash_mt *hash = &q_info->hash;
 	char hash_out[MAX_HASH_LENS] = {0};
 	__u64 in_len = 0;
 	__u32 h_bytes;
@@ -2353,8 +2352,10 @@ static int sm2_convert_dec_out(struct wcrypto_ecc_msg *src,
 	struct wcrypto_sm2_dec_out *dout = &out->param.dout;
 	struct wcrypto_ecc_in *in = (void *)src->in;
 	struct wcrypto_sm2_dec_in *din = &in->param.din;
+	char buff[MAX_HASH_LENS] = {0};
 	struct wcrypto_ecc_point x2y2;
 	__u32 ksz = dst->key_bytes;
+	struct wd_dtb u = {0};
 	int ret;
 
 	/* dec origin out data fmt:
@@ -2362,8 +2363,6 @@ static int sm2_convert_dec_out(struct wcrypto_ecc_msg *src,
 	 * final out data fmt:
 	 * |         plaintext             |
 	 */
-
-	/* x2y2 :copy x2y2 into din->c1 */
 	x2y2.x.data = (void *)dst->out;
 	x2y2.y.data = (void *)(dst->out + ksz);
 	x2y2.x.dsize = ksz;
@@ -2376,20 +2375,21 @@ static int sm2_convert_dec_out(struct wcrypto_ecc_msg *src,
 		return ret;
 	}
 
-	/* M' = C2 XOR t */
+	/* M' = c2 XOR t */
 	sm2_xor(&dout->plaintext, &din->c2);
 
-	/* u = hash(x2 || M' || y2), save u to din->c2 */
-	ret = sm2_hash(&din->c1.x, &x2y2, &dout->plaintext, q_info);
+	/* u = hash(x2 || M' || y2) */
+	u.data = buff;
+	ret = sm2_hash(&u, &x2y2, &dout->plaintext, q_info);
 	if (unlikely(ret)) {
 		WD_ERR("failed to compute c3, ret = %d!\n", ret);
 		return ret;
 	}
 
-	/* u == c3 */
-	ret = is_equal(&din->c1.x, &din->c3);
+	/* Judge whether u == c3 */
+	ret = is_equal(&u, &din->c3);
 	if (ret)
-		WD_ERR("failed to dec sm2, u != C3!\n");
+		WD_ERR("failed to dec sm2, u != c3!\n");
 
 	return ret;
 }
