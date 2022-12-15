@@ -74,11 +74,18 @@ void wd_dh_set_driver(struct wd_dh_driver *drv)
 	wd_dh_setting.driver = drv;
 }
 
+static void wd_dh_clear_status(void)
+{
+	wd_alg_clear_init(&wd_dh_setting.status);
+}
+
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	bool flag;
 	int ret;
+
+	pthread_atfork(NULL, NULL, wd_dh_clear_status);
 
 	flag = wd_alg_try_init(&wd_dh_setting.status);
 	if (!flag)

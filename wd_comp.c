@@ -94,6 +94,11 @@ void wd_comp_set_driver(struct wd_comp_driver *drv)
 	wd_comp_setting.driver = drv;
 }
 
+static void wd_comp_clear_status(void)
+{
+	wd_alg_clear_init(&wd_comp_setting.status);
+}
+
 static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
@@ -187,6 +192,8 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	bool flag;
 	int ret;
 
+	pthread_atfork(NULL, NULL, wd_comp_clear_status);
+
 	flag = wd_alg_try_init(&wd_comp_setting.status);
 	if (!flag)
 		return 0;
@@ -213,6 +220,8 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 {
 	bool flag;
 	int ret;
+
+	pthread_atfork(NULL, NULL, wd_comp_clear_status);
 
 	flag = wd_alg_try_init(&wd_comp_setting.status);
 	if (!flag)

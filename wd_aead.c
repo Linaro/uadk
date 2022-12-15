@@ -389,11 +389,18 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 	return 0;
 }
 
+static void wd_aead_clear_status(void)
+{
+	wd_alg_clear_init(&wd_aead_setting.status);
+}
+
 int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	bool flag;
 	int ret;
+
+	pthread_atfork(NULL, NULL, wd_aead_clear_status);
 
 	flag = wd_alg_try_init(&wd_aead_setting.status);
 	if (!flag)
