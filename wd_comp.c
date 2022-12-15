@@ -94,28 +94,23 @@ void wd_comp_set_driver(struct wd_comp_driver *drv)
 	wd_comp_setting.driver = drv;
 }
 
-int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
-	bool flag;
 	int ret;
-
-	flag = wd_alg_try_init(&wd_comp_setting.status);
-	if (!flag)
-		return 0;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_set_epoll_en("WD_COMP_EPOLL_EN",
 			      &wd_comp_setting.config.epoll_en);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_comp_setting.config, config);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_sched(&wd_comp_setting.sched, sched);
 	if (ret < 0)
@@ -154,8 +149,6 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out_free_priv;
 	}
 
-	wd_alg_set_init(&wd_comp_setting.status);
-
 	return 0;
 
 out_free_priv:
@@ -167,12 +160,10 @@ out_clear_sched:
 	wd_clear_sched(&wd_comp_setting.sched);
 out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_comp_setting.config);
-out_clear_init:
-	wd_alg_clear_init(&wd_comp_setting.status);
 	return ret;
 }
 
-void wd_comp_uninit(void)
+static void wd_comp_uninit_nolock(void)
 {
 	void *priv = wd_comp_setting.priv;
 
@@ -189,23 +180,41 @@ void wd_comp_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_comp_setting.sched);
 	wd_clear_ctx_config(&wd_comp_setting.config);
+}
 
+int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	bool flag;
+	int ret;
+
+	flag = wd_alg_try_init(&wd_comp_setting.status);
+	if (!flag)
+		return 0;
+
+	ret = wd_comp_init_nolock(config, sched);
+	if (ret) {
+		wd_alg_clear_init(&wd_comp_setting.status);
+		goto out;
+	}
+
+	wd_alg_set_init(&wd_comp_setting.status);
+
+out:
+	return ret;
+}
+
+void wd_comp_uninit(void)
+{
+	wd_comp_uninit_nolock();
 	wd_alg_clear_init(&wd_comp_setting.status);
 }
 
 int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
 {
-	enum wd_status status;
 	bool flag;
 	int ret;
 
-	wd_alg_get_init(&wd_comp_setting.status, &status);
-	if (status == WD_INIT) {
-		WD_INFO("UADK comp has been initialized with wd_comp_init()!\n");
-		return 0;
-	}
-
-	flag = wd_alg_try_init(&wd_comp_setting.status2);
+	flag = wd_alg_try_init(&wd_comp_setting.status);
 	if (!flag)
 		return 0;
 
@@ -234,11 +243,11 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 	if (ret)
 		goto out_freesched;
 
-	ret = wd_comp_init(&wd_comp_ctx, wd_comp_sched);
+	ret = wd_comp_init_nolock(&wd_comp_ctx, wd_comp_sched);
 	if (ret)
 		goto out_freesched;
 
-	wd_alg_set_init(&wd_comp_setting.status2);
+	wd_alg_set_init(&wd_comp_setting.status);
 
 	return 0;
 
@@ -246,7 +255,7 @@ out_freesched:
 	wd_sched_rr_release(wd_comp_sched);
 
 out_uninit:
-	wd_alg_clear_init(&wd_comp_setting.status2);
+	wd_alg_clear_init(&wd_comp_setting.status);
 
 	return ret;
 }
@@ -255,7 +264,7 @@ void wd_comp_uninit2(void)
 {
 	int i;
 
-	wd_comp_uninit();
+	wd_comp_uninit_nolock();
 
 	for (i = 0; i < wd_comp_ctx.ctx_num; i++)
 		if (wd_comp_ctx.ctxs[i].ctx) {
@@ -264,7 +273,7 @@ void wd_comp_uninit2(void)
 	}
 
 	wd_sched_rr_release(wd_comp_sched);
-	wd_alg_clear_init(&wd_comp_setting.status2);
+	wd_alg_clear_init(&wd_comp_setting.status);
 }
 
 struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag)
