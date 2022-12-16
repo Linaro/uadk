@@ -18,7 +18,11 @@ extern "C" {
 enum sched_policy_type {
 	/* requests will be sent to ctxs one by one */
 	SCHED_POLICY_RR = 0,
-	SCHED_POLICY_BUTT
+	/* requests will no need ctxs */
+	SCHED_POLICY_NONE,
+	/* requests will   need a fixed ctx */
+	SCHED_POLICY_SINGLE,
+	SCHED_POLICY_BUTT,
 };
 
 struct sched_params {
