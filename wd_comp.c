@@ -230,7 +230,7 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 	wd_comp_sched->name = SCHED_RR_NAME;
 	wd_comp_init_attrs.sched = wd_comp_sched;
 
-	ret = wd_alg_pre_init(&wd_comp_init_attrs);
+	ret = wd_alg_attrs_init(&wd_comp_init_attrs);
 	if (ret)
 		goto out_freesched;
 

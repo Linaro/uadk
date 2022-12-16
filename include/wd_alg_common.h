@@ -28,6 +28,13 @@ extern "C" {
 #define CTX_TYPE_INVALID	9999
 #define POLL_TIME		1000
 
+enum alg_task_type {
+	TASK_MIX = 0x0,
+	TASK_HW,
+	TASK_INSTR,
+	TASK_MAX_TYPE,
+};
+
 enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
 	CTX_MODE_ASYNC,
@@ -129,6 +136,9 @@ struct wd_sched {
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
 };
+
+typedef int (*wd_alg_init)(struct wd_ctx_config *config, struct wd_sched *sched);
+typedef int (*wd_alg_poll_ctx)(__u32 idx, __u32 expt, __u32 *count);
 
 struct wd_datalist {
 	void *data;
