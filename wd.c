@@ -19,7 +19,7 @@
 #include <sched.h>
 
 #include "wd.h"
-
+#include "wd_alg.h"
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
 enum UADK_LOG_LEVEL {
@@ -882,3 +882,57 @@ char *wd_ctx_get_dev_name(handle_t h_ctx)
 
 	return ctx->dev_name;
 }
+
+void wd_release_alg_cap(struct wd_capability *head)
+{
+	struct wd_capability *cap_pnext = head;
+	struct wd_capability *cap_node = NULL;
+
+	while (cap_pnext) {
+		cap_node = cap_pnext;
+		cap_pnext = cap_pnext->next;
+		free(cap_node);
+	}
+
+	if (head)
+		free(head);
+}
+
+struct wd_capability *wd_get_alg_cap(void)
+{
+	struct wd_alg_list *head = wd_get_alg_head();
+	struct wd_alg_list *pnext = head->next;
+	struct wd_capability *cap_head = NULL;
+	struct wd_capability *cap_node = NULL;
+	struct wd_capability *cap_pnext = NULL;
+	int i = 0;
+
+	while (pnext) {
+		cap_node = calloc(1, sizeof(struct wd_capability));
+		if (!cap_head) {
+			WD_ERR("fail to alloc wd capability head\n");
+			goto alloc_err;
+		}
+
+		strcpy(cap_node->alg_name, pnext->alg_name);
+		strcpy(cap_node->drv_name, pnext->drv_name);
+		cap_node->priority = pnext->priority;
+		cap_node->next = NULL;
+
+		cap_pnext->next = cap_node;
+		cap_pnext = cap_node;
+		pnext = pnext->next;
+		if (i == 0) {
+			cap_head = cap_node;
+			cap_pnext = cap_head;
+		}
+		i++;
+	}
+
+	return cap_head;
+
+alloc_err:
+	wd_release_alg_cap(cap_head);
+	return NULL;
+}
+
