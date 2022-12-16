@@ -33,7 +33,7 @@ AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
-		  include/wd_ecc.h include/wd_sched.h
+		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h
 
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
@@ -41,7 +41,7 @@ nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
-libwd_la_SOURCES=wd.c wd_mempool.c wd.h		\
+libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
 		 v1/wd_rng.c v1/wd_rng.h	\
 		 v1/wd_rsa.c v1/wd_rsa.h	\
