@@ -8,7 +8,7 @@ test_hisi_sec_SOURCES=test_hisi_sec.c
 if WD_STATIC_DRV
 AM_CFLAGS+=-Bstatic
 test_hisi_sec_LDADD=../../.libs/libwd.a ../../.libs/libwd_crypto.a \
-			../../.libs/libhisi_sec.a -lnuma
+			../../.libs/libhisi_sec.a -ldl -lnuma
 else
 test_hisi_sec_LDADD=-L../../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 -lnuma
 endif

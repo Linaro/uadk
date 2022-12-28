@@ -9,7 +9,7 @@ if WD_STATIC_DRV
 AM_CFLAGS+=-Bstatic
 uadk_comp_LDADD=../.libs/libwd.a		\
 		  ../.libs/libwd_comp.a		\
-		  ../.libs/libhisi_zip.a -lpthread -lnuma
+		  ../.libs/libhisi_zip.a -ldl -lpthread -lnuma
 else
 uadk_comp_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_comp.so.2 -lpthread -lnuma
 endif

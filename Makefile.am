@@ -86,7 +86,7 @@ if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV
 AM_CFLAGS += -DWD_NO_LOG
 
-libwd_la_LIBADD = $(libwd_la_OBJECTS) -lnuma
+libwd_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 
 libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_comp_la_DEPENDENCIES = libwd.la
@@ -108,7 +108,7 @@ UADK_COMP_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_comp.map
 UADK_V1_SYMBOL= -Wl,--version-script,$(top_srcdir)/v1/libwd.map
 
 libwd_la_LDFLAGS=$(UADK_VERSION) $(UADK_WD_SYMBOL) $(UADK_V1_SYMBOL)
-libwd_la_LIBADD= -lnuma
+libwd_la_LIBADD= -ldl -lnuma
 
 libwd_comp_la_LIBADD= -lwd -ldl -lnuma
 libwd_comp_la_LDFLAGS=$(UADK_VERSION) $(UADK_COMP_SYMBOL)
