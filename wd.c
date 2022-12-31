@@ -190,7 +190,7 @@ int wd_is_isolate(struct uacce_dev *dev)
 	int value = 0;
 	int ret;
 
-	if (!dev || !dev->dev_root)
+	if (!dev || !strlen(dev->dev_root))
 		return -WD_EINVAL;
 
 	ret = access_attr(dev->dev_root, "isolate", F_OK);
