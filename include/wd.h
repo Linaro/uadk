@@ -29,6 +29,7 @@ extern "C" {
 #define LINUX_PRTDIR_SIZE		2
 #define WD_CTX_CNT_NUM			1024
 #define WD_IPC_KEY			0x500011
+#define CRYPTO_MAX_ALG_NAME		128
 
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
@@ -577,6 +578,17 @@ bool wd_need_debug(void);
  * wd_need_info() - Get the info flag from rsyslog.cnf
  */
 bool wd_need_info(void);
+
+struct wd_capability {
+	char	alg_name[CRYPTO_MAX_ALG_NAME];
+	char	drv_name[CRYPTO_MAX_ALG_NAME];
+	int	priority;
+
+	struct wd_capability *next;
+};
+
+struct wd_capability *wd_get_alg_cap(void);
+void wd_release_alg_cap(struct wd_capability *head);
 
 #ifdef __cplusplus
 }
