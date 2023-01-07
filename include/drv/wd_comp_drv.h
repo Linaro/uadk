@@ -55,34 +55,7 @@ struct wd_comp_msg {
 	__u32 tag;
 };
 
-struct wd_comp_driver {
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config_internal *config, void *priv);
-	void (*exit)(void *priv);
-	int (*comp_send)(handle_t ctx, void *comp_msg);
-	int (*comp_recv)(handle_t ctx, void *comp_msg);
-};
-
-void wd_comp_set_driver(struct wd_comp_driver *drv);
-struct wd_comp_driver *wd_comp_get_driver(void);
-
 struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag);
-
-#ifdef WD_STATIC_DRV
-#define WD_COMP_SET_DRIVER(drv)						      \
-struct wd_comp_driver *wd_comp_get_driver(void)				      \
-{									      \
-	return &drv;							      \
-}
-#else
-#define WD_COMP_SET_DRIVER(drv)						      \
-static void __attribute__((constructor)) set_comp_driver(void)		      \
-{									      \
-	wd_comp_set_driver(&(drv));					      \
-}
-#endif
 
 #ifdef __cplusplus
 }
