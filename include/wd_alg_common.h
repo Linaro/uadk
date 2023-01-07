@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include "wd.h"
+#include "wd_alg.h"
 
 #ifdef __cplusplus
 extern "C" {
