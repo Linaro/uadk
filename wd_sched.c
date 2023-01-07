@@ -347,6 +347,82 @@ static int session_sched_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *
 	return 0;
 }
 
+static handle_t sched_none_init(handle_t h_sched_ctx, void *sched_param)
+{
+	return (handle_t)0;
+}
+
+static __u32 sched_none_pick_next_ctx(handle_t sched_ctx,
+		void *sched_key, const int sched_mode)
+{
+	return 0;
+}
+
+static int sched_none_poll_policy(handle_t h_sched_ctx,
+		__u32 expect, __u32 *count)
+{
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
+	__u32 loop_times = MAX_POLL_TIMES + expect;
+	__u32 poll_num = 0;
+	int ret;
+
+	while (loop_times > 0) {
+		/* Default use ctx 0 */
+		ret = sched_ctx->poll_func(0, 1, &poll_num);
+		if ((ret < 0) && (ret != -EAGAIN))
+			return ret;
+		else if (ret == -EAGAIN)
+			continue;
+
+		*count += poll_num;
+		if (*count == expect)
+			break;
+	}
+
+	return 0;
+}
+
+static handle_t sched_single_init(handle_t h_sched_ctx, void *sched_param)
+{
+	return (handle_t)0;
+}
+
+static __u32 sched_single_pick_next_ctx(handle_t sched_ctx,
+		void *sched_key, const int sched_mode)
+{
+#define CTX_ASYNC		1
+#define CTX_SYNC		0
+
+	if (sched_mode)
+		return CTX_ASYNC;
+	else
+		return CTX_SYNC;
+}
+
+static int sched_single_poll_policy(handle_t h_sched_ctx,
+				    __u32 expect, __u32 *count)
+{
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
+	__u32 loop_times = MAX_POLL_TIMES + expect;
+	__u32 poll_num = 0;
+	int ret;
+
+	while (loop_times > 0) {
+		/* Default async mode use ctx 0 */
+		ret = sched_ctx->poll_func(0, 1, &poll_num);
+		if ((ret < 0) && (ret != -EAGAIN))
+			return ret;
+		else if (ret == -EAGAIN)
+			continue;
+
+		*count += poll_num;
+		if (*count == expect)
+			break;
+	}
+
+	return 0;
+}
+
 static struct wd_sched sched_table[SCHED_POLICY_BUTT] = {
 	{
 		.name = "RR scheduler",
@@ -354,7 +430,19 @@ static struct wd_sched sched_table[SCHED_POLICY_BUTT] = {
 		.sched_init = session_sched_init,
 		.pick_next_ctx = session_sched_pick_next_ctx,
 		.poll_policy = session_sched_poll_policy,
-	},
+	}, {
+		.name = "None scheduler",
+		.sched_policy = SCHED_POLICY_SINGLE,
+		.sched_init = sched_none_init,
+		.pick_next_ctx = sched_none_pick_next_ctx,
+		.poll_policy = sched_none_poll_policy,
+	}, {
+		.name = "Single scheduler",
+		.sched_policy = SCHED_POLICY_SINGLE,
+		.sched_init = sched_single_init,
+		.pick_next_ctx = sched_single_pick_next_ctx,
+		.poll_policy = sched_single_poll_policy,
+	}
 };
 
 static int wd_sched_get_nearby_numa_id(struct wd_sched_info *sched_info, int node, int numa_num)
@@ -463,9 +551,12 @@ void wd_sched_rr_release(struct wd_sched *sched)
 
 	sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 	if (!sched_ctx)
-		goto out;
+		goto ctx_out;
 
 	sched_info = sched_ctx->sched_info;
+	if (!sched_info)
+		goto info_out;
+
 	for (i = 0; i < sched_ctx->numa_num; i++) {
 		for (j = 0; j < SCHED_MODE_BUTT; j++) {
 			if (sched_info[i].ctx_region[j]) {
@@ -475,9 +566,9 @@ void wd_sched_rr_release(struct wd_sched *sched)
 		}
 	}
 
+info_out:
 	free(sched_ctx);
-
-out:
+ctx_out:
 	free(sched);
 
 	return;
@@ -531,8 +622,11 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 	}
 
 	sched->h_sched_ctx = (handle_t)sched_ctx;
-	sched_info = sched_ctx->sched_info;
+	if (sched_type == SCHED_POLICY_NONE ||
+	    sched_type == SCHED_POLICY_SINGLE)
+		goto simple_ok;
 
+	sched_info = sched_ctx->sched_info;
 	for (i = 0; i < numa_num; i++) {
 		for (j = 0; j < SCHED_MODE_BUTT; j++) {
 			sched_info[i].ctx_region[j] =
@@ -542,6 +636,7 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 		}
 	}
 
+simple_ok:
 	sched_ctx->poll_func = func;
 	sched_ctx->policy = sched_type;
 	sched_ctx->type_num = type_num;
