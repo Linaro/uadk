@@ -117,9 +117,12 @@ struct wd_msg_handle {
 struct wd_init_attrs {
 	__u32 sched_type;
 	char *alg;
+	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
 	struct wd_ctx_config *ctx_config;
+	wd_alg_init alg_init;
+	wd_alg_poll_ctx alg_poll_ctx;
 };
 
 /*
@@ -415,13 +418,69 @@ static inline void wd_alg_clear_init(enum wd_status *status)
 }
 
 /**
- * wd_alg_pre_init() - Request the ctxs and initialize the sched_domain
+ * wd_ctx_param_init() - Initialize the current device driver according
+ *			to the obtained queue resource and the applied driver.
+ * @config: device resources requested by the current algorithm.
+ * @driver: device driver for the current algorithm application.
+ * @drv_priv: the parameter pointer of the current device driver.
+ *
+ * Return 0 if succeed and other error number if fail.
+ */
+int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
+	struct wd_ctx_params *user_ctx_params,
+	struct wd_ctx_nums *ctx_set_num,
+	struct wd_alg_driver *driver, int max_op_type);
+
+/**
+ * wd_alg_attrs_init() - Request the ctxs and initialize the sched_domain
  *                     with the given devices list, ctxs number and numa mask.
  * @attrs: the algorithm initialization parameters.
  *
  * Return device if succeed and other error number if fail.
  */
-int wd_alg_pre_init(struct wd_init_attrs *attrs);
+int wd_alg_attrs_init(struct wd_init_attrs *attrs);
+void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
+
+/**
+ * wd_alg_drv_bind() - Request the ctxs and initialize the sched_domain
+ *                     with the given devices list, ctxs number and numa mask.
+ * @task_type: the type of task specified by the current algorithm.
+ * @alg_name: the name of the algorithm specified by the task.
+ *
+ * Return device driver if succeed and other NULL if fail.
+ */
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name);
+void wd_alg_drv_unbind(struct wd_alg_driver *drv);
+
+/**
+ * wd_alg_init_driver() - Initialize the current device driver according
+ *			to the obtained queue resource and the applied driver.
+ * @config: device resources requested by the current algorithm.
+ * @driver: device driver for the current algorithm application.
+ * @drv_priv: the parameter pointer of the current device driver.
+ *
+ * Return 0 if succeed and other error number if fail.
+ */
+int wd_alg_init_driver(struct wd_ctx_config_internal *config,
+	struct wd_alg_driver *driver, void **drv_priv);
+void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
+	struct wd_alg_driver *driver, void **drv_priv);
+
+/**
+ * wd_dlopen_drv() - Open the dynamic library file of the device driver.
+ * @cust_lib_dir: the file path of the dynamic library file.
+ */
+void *wd_dlopen_drv(const char *cust_lib_dir);
+void wd_dlclose_drv(void *dlh_list);
+
+/**
+ * wd_get_lib_file_path() - Find the path of the dynamic library file in
+ *			the current system.
+ * @lib_file: the name of the library file.
+ * @lib_path: the found dynamic library file path.
+ * @is_dir: Specify whether to query the file dir or the file path.
+ */
+int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx
