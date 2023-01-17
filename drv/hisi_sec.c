@@ -2580,7 +2580,7 @@ static void hisi_sec_driver_adapter(struct hisi_qp *qp)
 	struct hisi_qm_queue_info q_info = qp->q_info;
 
 	if (q_info.hw_type == HISI_QM_API_VER2_BASE) {
-		WD_ERR("hisi sec init Kunpeng920!\n");
+		WD_INFO("hisi sec init HIP08!\n");
 		hisi_cipher_driver.cipher_send = hisi_sec_cipher_send;
 		hisi_cipher_driver.cipher_recv = hisi_sec_cipher_recv;
 
@@ -2590,7 +2590,7 @@ static void hisi_sec_driver_adapter(struct hisi_qp *qp)
 		hisi_aead_driver.aead_send = hisi_sec_aead_send;
 		hisi_aead_driver.aead_recv = hisi_sec_aead_recv;
 	} else {
-		WD_ERR("hisi sec init Kunpeng930!\n");
+		WD_INFO("hisi sec init HIP09!\n");
 		hisi_cipher_driver.cipher_send = hisi_sec_cipher_send_v3;
 		hisi_cipher_driver.cipher_recv = hisi_sec_cipher_recv_v3;
 
