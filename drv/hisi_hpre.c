@@ -32,6 +32,7 @@
 #define SM2_PONIT_SIZE			64
 #define MAX_HASH_LENS			BITS_TO_BYTES(521)
 #define HW_PLAINTEXT_BYTES_MAX		BITS_TO_BYTES(4096)
+#define HPRE_CTX_Q_NUM_DEF	1
 
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
@@ -459,37 +460,26 @@ static int rsa_prepare_iot(struct wd_rsa_msg *msg,
 	return ret;
 }
 
-static int hpre_init(struct wd_ctx_config_internal *config, void *priv, const char *alg_name)
+static int hpre_init_qm_priv(struct wd_ctx_config_internal *config,
+			     struct hisi_hpre_ctx *hpre_ctx,
+			     struct hisi_qm_priv *qm_priv)
 {
-	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
-	struct hisi_qm_priv qm_priv;
 	handle_t h_ctx, h_qp;
 	int i, j;
-
-	if (!config->ctx_num) {
-		WD_ERR("invalid: hpre init config ctx num is 0!\n");
-		return -WD_EINVAL;
-	}
 
 	memcpy(&hpre_ctx->config, config, sizeof(*config));
 
 	/* allocate qp for each context */
-	qm_priv.sqe_size = sizeof(struct hisi_hpre_sqe);
-
-	/* DH/RSA: qm sqc_type = 0, ECC: qm sqc_type = 1; */
-	if (!strcmp(alg_name, "ecc"))
-		qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
-	else
-		qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
+	qm_priv->sqe_size = sizeof(struct hisi_hpre_sqe);
 
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
-		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
+		qm_priv->qp_mode = config->ctxs[i].ctx_mode;
 		/* Setting the epoll en to 0 for ASYNC ctx */
-		qm_priv.epoll_en = (qm_priv.qp_mode == CTX_MODE_SYNC) ?
+		qm_priv->epoll_en = (qm_priv->qp_mode == CTX_MODE_SYNC) ?
 				   config->epoll_en : 0;
-		qm_priv.idx = i;
-		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
+		qm_priv->idx = i;
+		h_qp = hisi_qm_alloc_qp(qm_priv, h_ctx);
 		if (!h_qp) {
 			WD_ERR("failed to alloc qp!\n");
 			goto out;
@@ -504,6 +494,45 @@ out:
 	}
 
 	return -WD_EINVAL;
+}
+
+static int hpre_rsa_dh_init(struct wd_ctx_config_internal *config, void *priv, const char *alg_name)
+{
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
+	struct hisi_qm_priv qm_priv;
+	int ret;
+
+	if (!config->ctx_num) {
+		WD_ERR("invalid: hpre rsa/dh init config ctx num is 0!\n");
+		return -WD_EINVAL;
+	}
+
+	qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
+	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int hpre_ecc_init(void *conf, void *priv)
+{
+	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
+	struct hisi_qm_priv qm_priv;
+	int ret;
+
+	if (!config->ctx_num) {
+		WD_ERR("invalid: hpre ecc init config ctx num is 0!\n");
+		return -WD_EINVAL;
+	}
+
+	qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
+	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static void hpre_exit(void *priv)
@@ -624,7 +653,7 @@ static struct wd_rsa_driver rsa_hisi_hpre = {
 	.drv_name		= "hisi_hpre",
 	.alg_name		= "rsa",
 	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
-	.init			= hpre_init,
+	.init			= hpre_rsa_dh_init,
 	.exit			= hpre_exit,
 	.send			= rsa_send,
 	.recv			= rsa_recv,
@@ -777,7 +806,7 @@ static struct wd_dh_driver dh_hisi_hpre = {
 	.drv_name		= "hisi_hpre",
 	.alg_name		= "dh",
 	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
-	.init			= hpre_init,
+	.init			= hpre_rsa_dh_init,
 	.exit			= hpre_exit,
 	.send			= dh_send,
 	.recv			= dh_recv,
@@ -2427,16 +2456,51 @@ static int ecc_recv(handle_t ctx, void *ecc_msg)
 	return ecc_sqe_parse((struct hisi_qp *)h_qp, msg, &hw_msg);
 }
 
-static struct wd_ecc_driver ecc_hisi_hpre = {
-	.drv_name		= "hisi_hpre",
-	.alg_name		= "ecc",
-	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
-	.init			= hpre_init,
-	.exit			= hpre_exit,
-	.send			= ecc_send,
-	.recv			= ecc_recv,
+#define GEN_HPRE_ALG_DRIVER(hpre_alg_name) \
+{\
+	.drv_name = "hisi_hpre",\
+	.alg_name = hpre_alg_name,\
+	.priority = UADK_ALG_HW,\
+	.priv_size = sizeof(struct hisi_hpre_ctx),\
+	.queue_num = HPRE_CTX_Q_NUM_DEF,\
+	.op_type_num = 1,\
+	.fallback = 0,\
+	.init = hpre_ecc_init,\
+	.exit = hpre_exit,\
+	.send = ecc_send,\
+	.recv = ecc_recv,\
+}
+
+static struct wd_alg_driver hpre_alg_driver[] = {
+	GEN_HPRE_ALG_DRIVER("sm2"),
+	GEN_HPRE_ALG_DRIVER("ecdh"),
+	GEN_HPRE_ALG_DRIVER("ecdsa"),
+	GEN_HPRE_ALG_DRIVER("x25519"),
+	GEN_HPRE_ALG_DRIVER("x448"),
 };
+
+static void __attribute__((constructor)) hisi_hpre_probe(void)
+{
+	int alg_num = ARRAY_SIZE(hpre_alg_driver);
+	int i, ret;
+
+	WD_INFO("Info: register HPRE alg drivers!\n");
+
+	for (i = 0; i < alg_num; i++) {
+		ret = wd_alg_driver_register(&hpre_alg_driver[i]);
+		if (ret)
+			WD_ERR("failed to register HPRE %s driver!\n", hpre_alg_driver[i].alg_name);
+	}
+}
+
+static void __attribute__((destructor)) hisi_hpre_remove(void)
+{
+	int alg_num = ARRAY_SIZE(hpre_alg_driver);
+	int i;
+
+	for (i = 0; i < alg_num; i++)
+		wd_alg_driver_unregister(&hpre_alg_driver[i]);
+}
 
 WD_RSA_SET_DRIVER(rsa_hisi_hpre);
 WD_DH_SET_DRIVER(dh_hisi_hpre);
-WD_ECC_SET_DRIVER(ecc_hisi_hpre);
