@@ -154,6 +154,9 @@ global:
 	wd_ecdsa_get_sign_out_params;
 	wd_ecc_init;
 	wd_ecc_uninit;
+	wd_ecc_init2;
+	wd_ecc_init2_;
+	wd_ecc_uninit2;
 	wd_ecc_alloc_sess;
 	wd_ecc_free_sess;
 	wd_ecc_poll;
