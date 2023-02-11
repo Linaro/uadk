@@ -120,6 +120,34 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched);
  */
 void wd_rsa_uninit(void);
 
+/**
+ * wd_rsa_init2_() - A simplify interface to initializate rsa.
+ * This interface keeps most functions of
+ * wd_rsa_init(). Users just need to descripe the deployment of
+ * business scenarios. Then the initialization will request appropriate
+ * resources to support the business scenarios.
+ * To make the initializate simpler, ctx_params support set NULL.
+ * And then the function will set them as default.
+ * Please do not use this interface with wd_rsa_init() together, or
+ * some resources may be leak.
+ *
+ * @alg: The algorithm users want to use.
+ * @sched_type: The scheduling type users want to use.
+ * @task_type: Reserved.
+ * @ctx_params: The ctxs resources users want to use. Include per operation
+ * type ctx numbers and business process run numa.
+ *
+ * Return 0 if succeed and others if fail.
+ */
+int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params);
+
+#define wd_rsa_init2(alg, sched_type, task_type) \
+	wd_rsa_init2_(alg, sched_type, task_type, NULL)
+
+/**
+ * wd_rsa_uninit2() - Uninitialise ctx configuration and scheduler.
+ */
+void wd_rsa_uninit2(void);
 
 /**
  * wd_rsa_alloc_sess() - Allocate a wd rsa session.
