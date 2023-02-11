@@ -127,8 +127,7 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	}
 
 	wd_dh_setting.priv = priv;
-	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv,
-					 wd_dh_setting.driver->alg_name);
+	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to init dh driver, ret= %d!\n", ret);
 		goto out_free_priv;

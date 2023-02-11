@@ -49,34 +49,7 @@ struct wd_rsa_msg {
 	__u8 *key; /* Input key VA pointer, should be DMA buffer */
 };
 
-struct wd_rsa_driver {
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config_internal *config, void *priv,
-		    const char *alg_name);
-	void (*exit)(void *priv);
-	int (*send)(handle_t sess, void *rsa_msg);
-	int (*recv)(handle_t sess, void *rsa_msg);
-};
-
-void wd_rsa_set_driver(struct wd_rsa_driver *drv);
-struct wd_rsa_driver *wd_rsa_get_driver(void);
 struct wd_rsa_msg *wd_rsa_get_msg(__u32 idx, __u32 tag);
-
-#ifdef WD_STATIC_DRV
-#define WD_RSA_SET_DRIVER(drv)						      \
-struct wd_rsa_driver *wd_rsa_get_driver(void)				      \
-{									      \
-	return &drv;							      \
-}
-#else
-#define WD_RSA_SET_DRIVER(drv)						      \
-static void __attribute__((constructor)) set_driver_rsa(void)		      \
-{									      \
-	wd_rsa_set_driver(&(drv));					      \
-}
-#endif
 
 #ifdef __cplusplus
 }

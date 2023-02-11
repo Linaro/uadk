@@ -496,8 +496,9 @@ out:
 	return -WD_EINVAL;
 }
 
-static int hpre_rsa_dh_init(struct wd_ctx_config_internal *config, void *priv, const char *alg_name)
+static int hpre_rsa_dh_init(void *conf, void *priv)
 {
+	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
 	int ret;
@@ -648,16 +649,6 @@ static int rsa_recv(handle_t ctx, void *rsa_msg)
 
 	return 0;
 }
-
-static struct wd_rsa_driver rsa_hisi_hpre = {
-	.drv_name		= "hisi_hpre",
-	.alg_name		= "rsa",
-	.drv_ctx_size		= sizeof(struct hisi_hpre_ctx),
-	.init			= hpre_rsa_dh_init,
-	.exit			= hpre_exit,
-	.send			= rsa_send,
-	.recv			= rsa_recv,
-};
 
 static int fill_dh_xp_params(struct wd_dh_msg *msg,
 			     struct hisi_hpre_sqe *hw_msg)
@@ -2479,6 +2470,20 @@ static struct wd_alg_driver hpre_alg_driver[] = {
 	GEN_HPRE_ALG_DRIVER("x448"),
 };
 
+static struct wd_alg_driver hpre_rsa_driver = {
+	.drv_name = "hisi_hpre",
+	.alg_name = "rsa",
+	.priority = UADK_ALG_HW,
+	.priv_size = sizeof(struct hisi_hpre_ctx),
+	.queue_num = HPRE_CTX_Q_NUM_DEF,
+	.op_type_num = 1,
+	.fallback = 0,
+	.init = hpre_rsa_dh_init,
+	.exit = hpre_exit,
+	.send = rsa_send,
+	.recv = rsa_recv,
+};
+
 static void __attribute__((constructor)) hisi_hpre_probe(void)
 {
 	int alg_num = ARRAY_SIZE(hpre_alg_driver);
@@ -2486,6 +2491,9 @@ static void __attribute__((constructor)) hisi_hpre_probe(void)
 
 	WD_INFO("Info: register HPRE alg drivers!\n");
 
+	ret = wd_alg_driver_register(&hpre_rsa_driver);
+	if (ret)
+		WD_ERR("failed to register HPRE rsa driver!\n");
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&hpre_alg_driver[i]);
 		if (ret)
@@ -2500,7 +2508,7 @@ static void __attribute__((destructor)) hisi_hpre_remove(void)
 
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&hpre_alg_driver[i]);
+	wd_alg_driver_unregister(&hpre_rsa_driver);
 }
 
-WD_RSA_SET_DRIVER(rsa_hisi_hpre);
 WD_DH_SET_DRIVER(dh_hisi_hpre);
