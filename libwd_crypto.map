@@ -112,6 +112,9 @@ global:
 	wd_dh_poll;
 	wd_dh_init;
 	wd_dh_uninit;
+	wd_dh_init2;
+	wd_dh_init2_;
+	wd_dh_uninit2;
 	wd_dh_env_init;
 	wd_dh_env_uninit;
 	wd_dh_ctx_num_init;

@@ -41,6 +41,17 @@ static struct wd_dh_setting {
 } wd_dh_setting;
 
 struct wd_env_config wd_dh_env_config;
+static struct wd_init_attrs wd_dh_init_attrs;
+
+static struct wd_ctx_nums wd_dh_ctx_num[] = {
+	{1, 1}, {}
+};
+
+static struct wd_ctx_params wd_dh_ctx_params = {
+	.op_type_num = 1,
+	.ctx_set_num = wd_dh_ctx_num,
+	.bmp = NULL,
+};
 
 #ifdef WD_STATIC_DRV
 static void wd_dh_set_static_drv(void)
@@ -79,30 +90,19 @@ static void wd_dh_clear_status(void)
 	wd_alg_clear_init(&wd_dh_setting.status);
 }
 
-int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
-	bool flag;
 	int ret;
-
-	pthread_atfork(NULL, NULL, wd_dh_clear_status);
-
-	flag = wd_alg_try_init(&wd_dh_setting.status);
-	if (!flag)
-		return 0;
-
-	ret = wd_init_param_check(config, sched);
-	if (ret)
-		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_DH_EPOLL_EN",
 			      &wd_dh_setting.config.epoll_en);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_sched(&wd_dh_setting.sched, sched);
 	if (ret)
@@ -134,8 +134,6 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out_free_priv;
 	}
 
-	wd_alg_set_init(&wd_dh_setting.status);
-
 	return 0;
 
 out_free_priv:
@@ -147,12 +145,10 @@ out_clear_sched:
 	wd_clear_sched(&wd_dh_setting.sched);
 out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_dh_setting.config);
-out_clear_init:
-	wd_alg_clear_init(&wd_dh_setting.status);
 	return ret;
 }
 
-void wd_dh_uninit(void)
+static void wd_dh_common_uninit(void)
 {
 	if (!wd_dh_setting.priv) {
 		WD_ERR("invalid: repeat uninit dh!\n");
@@ -170,6 +166,81 @@ void wd_dh_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_dh_setting.sched);
 	wd_clear_ctx_config(&wd_dh_setting.config);
+}
+
+int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_dh_clear_status);
+
+	flag = wd_alg_try_init(&wd_dh_setting.status);
+	if (!flag)
+		return 0;
+
+	ret = wd_init_param_check(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	ret = wd_dh_common_init(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	wd_alg_set_init(&wd_dh_setting.status);
+
+	return 0;
+
+out_clear_init:
+	wd_alg_clear_init(&wd_dh_setting.status);
+	return ret;
+}
+
+void wd_dh_uninit(void)
+{
+	wd_dh_common_uninit();
+	wd_alg_clear_init(&wd_dh_setting.status);
+}
+
+int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_dh_clear_status);
+
+	flag = wd_alg_try_init(&wd_dh_setting.status);
+	if (!flag)
+		return 0;
+
+	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
+		WD_ERR("invalid: input param is wrong!\n");
+		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+	wd_dh_init_attrs.alg = alg;
+	wd_dh_init_attrs.sched_type = sched_type;
+	wd_dh_init_attrs.ctx_params = ctx_params ? ctx_params : &wd_dh_ctx_params;
+	wd_dh_init_attrs.alg_init = wd_dh_common_init;
+	wd_dh_init_attrs.alg_poll_ctx = wd_dh_poll_ctx;
+	ret = wd_alg_attrs_init(&wd_dh_init_attrs);
+	if (ret)
+		goto out_clear_init;
+
+	wd_alg_set_init(&wd_dh_setting.status);
+
+	return 0;
+
+out_clear_init:
+	wd_alg_clear_init(&wd_dh_setting.status);
+	return ret;
+}
+
+void wd_dh_uninit2(void)
+{
+	wd_dh_common_uninit();
+	wd_alg_attrs_uninit(&wd_dh_init_attrs);
 	wd_alg_clear_init(&wd_dh_setting.status);
 }
 
