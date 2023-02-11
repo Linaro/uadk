@@ -28,8 +28,7 @@ struct wd_dh_driver {
 	const char *drv_name;
 	const char *alg_name;
 	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config_internal *config, void *priv,
-		    const char *alg_name);
+	int (*init)(void *conf, void *priv);
 	void (*exit)(void *priv);
 	int (*send)(handle_t sess, void *dh_msg);
 	int (*recv)(handle_t sess, void *dh_msg);
