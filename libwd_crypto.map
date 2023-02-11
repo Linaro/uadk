@@ -81,6 +81,9 @@ global:
 	wd_rsa_set_kg_out_psz;
 	wd_rsa_init;
 	wd_rsa_uninit;
+	wd_rsa_init2;
+	wd_rsa_init2_;
+	wd_rsa_uninit2;
 	wd_rsa_alloc_sess;
 	wd_rsa_free_sess;
 	wd_do_rsa_async;
