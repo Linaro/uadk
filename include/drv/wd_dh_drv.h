@@ -24,33 +24,7 @@ struct wd_dh_msg {
 	__u8 result; /* Data format, denoted by WD error code */
 };
 
-struct wd_dh_driver {
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(void *conf, void *priv);
-	void (*exit)(void *priv);
-	int (*send)(handle_t sess, void *dh_msg);
-	int (*recv)(handle_t sess, void *dh_msg);
-};
-
-void wd_dh_set_driver(struct wd_dh_driver *drv);
-struct wd_dh_driver *wd_dh_get_driver(void);
 struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag);
-
-#ifdef WD_STATIC_DRV
-#define WD_DH_SET_DRIVER(drv)						\
-struct wd_dh_driver *wd_dh_get_driver(void)				\
-{									\
-	return &drv;							\
-}
-#else
-#define WD_DH_SET_DRIVER(drv)						\
-static void __attribute__((constructor)) set_driver_dh(void)		\
-{									\
-	wd_dh_set_driver(&(drv));						\
-}
-#endif
 
 #ifdef __cplusplus
 }
