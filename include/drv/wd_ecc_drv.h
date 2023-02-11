@@ -175,34 +175,7 @@ struct wd_ecc_out {
 	char data[];
 };
 
-struct wd_ecc_driver {
-	const char *drv_name;
-	const char *alg_name;
-	__u32 drv_ctx_size;
-	int (*init)(struct wd_ctx_config_internal *config, void *priv,
-		    const char *alg_name);
-	void (*exit)(void *priv);
-	int (*send)(handle_t sess, void *ecc_msg);
-	int (*recv)(handle_t sess, void *ecc_msg);
-};
-
-void wd_ecc_set_driver(struct wd_ecc_driver *drv);
-struct wd_ecc_driver *wd_ecc_get_driver(void);
 struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag);
-
-#ifdef WD_STATIC_DRV
-#define WD_ECC_SET_DRIVER(drv)						\
-struct wd_ecc_driver *wd_ecc_get_driver(void)				\
-{									\
-	return &drv;							\
-}
-#else
-#define WD_ECC_SET_DRIVER(drv)						\
-static void __attribute__((constructor)) set_driver_ecc(void)		\
-{									\
-	wd_ecc_set_driver(&(drv));					\
-}
-#endif
 
 #ifdef __cplusplus
 }

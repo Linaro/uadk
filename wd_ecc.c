@@ -66,25 +66,15 @@ static struct wd_ecc_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	void *sched_ctx;
-	const struct wd_ecc_driver *driver;
+	struct wd_async_msg_pool pool;
+	struct wd_alg_driver *driver;
 	void *priv;
 	void *dlhandle;
-	struct wd_async_msg_pool pool;
+	void *dlh_list;
 } wd_ecc_setting;
 
 struct wd_env_config wd_ecc_env_config;
 static struct wd_init_attrs wd_ecc_init_attrs;
-
-static struct wd_ctx_nums wd_ecc_ctx_num[] = {
-	{1, 1}, {}
-};
-
-static struct wd_ctx_params wd_ecc_ctx_params = {
-	.op_type_num = 1,
-	.ctx_set_num = wd_ecc_ctx_num,
-	.bmp = NULL,
-};
 
 static const struct wd_ecc_curve_list curve_list[] = {
 	/* parameter 3 is key width */
@@ -109,36 +99,50 @@ static const struct curve_param_desc curve_pram_list[] = {
 	{ ECC_CURVE_G, offsetof(struct wd_ecc_prikey, g), offsetof(struct wd_ecc_pubkey, g) }
 };
 
-#ifdef WD_STATIC_DRV
-static void wd_ecc_set_static_drv(void)
+static void wd_ecc_close_driver(void)
 {
-	wd_ecc_setting.driver = wd_ecc_get_driver();
-	if (!wd_ecc_setting.driver)
-		WD_ERR("failed to get ecc driver!\n");
-}
-#else
-static void __attribute__((constructor)) wd_ecc_open_driver(void)
-{
-	wd_ecc_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_ecc_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so, %s\n", dlerror());
-}
-
-static void __attribute__((destructor)) wd_ecc_close_driver(void)
-{
-	if (wd_ecc_setting.dlhandle)
-		dlclose(wd_ecc_setting.dlhandle);
-}
-#endif
-
-void wd_ecc_set_driver(struct wd_ecc_driver *drv)
-{
-	if (!drv) {
-		WD_ERR("invalid: ecc drv is NULL!\n");
 		return;
+
+	wd_release_drv(wd_ecc_setting.driver);
+	dlclose(wd_ecc_setting.dlhandle);
+	wd_ecc_setting.dlhandle = NULL;
+}
+
+static int wd_ecc_open_driver(void)
+{
+	struct wd_alg_driver *driver = NULL;
+	char lib_path[PATH_STR_SIZE];
+	const char *alg_name = "sm2";
+	int ret;
+
+	/*
+	 * Compatible with the normal acquisition of device
+	 * drivers in the init interface
+	 */
+	if (wd_ecc_setting.dlh_list)
+		return 0;
+
+	ret = wd_get_lib_file_path("libhisi_hpre.so", lib_path, false);
+	if (ret)
+		return ret;
+
+	wd_ecc_setting.dlhandle = dlopen(lib_path, RTLD_NOW);
+	if (!wd_ecc_setting.dlhandle) {
+		WD_ERR("failed to open libhisi_hpre.so, %s!\n", dlerror());
+		return -WD_EINVAL;
 	}
 
-	wd_ecc_setting.driver = drv;
+	driver = wd_request_drv(alg_name, false);
+	if (!driver) {
+		wd_ecc_close_driver();
+		WD_ERR("failed to get %s driver support\n", alg_name);
+		return -WD_EINVAL;
+	}
+
+	wd_ecc_setting.driver = driver;
+
+	return 0;
 }
 
 static void wd_ecc_clear_status(void)
@@ -148,7 +152,6 @@ static void wd_ecc_clear_status(void)
 
 static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
 	int ret;
 
 	ret = wd_set_epoll_en("WD_ECC_EPOLL_EN",
@@ -164,10 +167,6 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-#ifdef WD_STATIC_DRV
-	wd_ecc_set_static_drv();
-#endif
-
 	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_ecc_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
@@ -175,26 +174,14 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_sched;
 
-	/* initialize ctx related resources in specific driver */
-	priv = calloc(1, wd_ecc_setting.driver->drv_ctx_size);
-	if (!priv) {
-		ret = -WD_ENOMEM;
+	ret = wd_alg_init_driver(&wd_ecc_setting.config,
+				 wd_ecc_setting.driver,
+				 &wd_ecc_setting.priv);
+	if (ret)
 		goto out_clear_pool;
-	}
-
-	wd_ecc_setting.priv = priv;
-	ret = wd_ecc_setting.driver->init(&wd_ecc_setting.config, priv,
-					  wd_ecc_setting.driver->alg_name);
-	if (ret < 0) {
-		WD_ERR("failed to init ecc driver, ret = %d!\n", ret);
-		goto out_free_priv;
-	}
 
 	return 0;
 
-out_free_priv:
-	free(priv);
-	wd_ecc_setting.priv = NULL;
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
 out_clear_sched:
@@ -211,17 +198,14 @@ static void wd_ecc_common_uninit(void)
 		return;
 	}
 
-	/* driver uninit */
-	wd_ecc_setting.driver->exit(wd_ecc_setting.priv);
-	free(wd_ecc_setting.priv);
-	wd_ecc_setting.priv = NULL;
-
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_ecc_setting.sched);
-	wd_clear_ctx_config(&wd_ecc_setting.config);
+	wd_alg_uninit_driver(&wd_ecc_setting.config,
+			     wd_ecc_setting.driver,
+			     &wd_ecc_setting.priv);
 }
 
 int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -239,14 +223,20 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
-	ret = wd_ecc_common_init(config, sched);
+	ret = wd_ecc_open_driver();
 	if (ret)
 		goto out_clear_init;
+
+	ret = wd_ecc_common_init(config, sched);
+	if (ret)
+		goto out_close_driver;
 
 	wd_alg_set_init(&wd_ecc_setting.status);
 
 	return 0;
 
+out_close_driver:
+	wd_ecc_close_driver();
 out_clear_init:
 	wd_alg_clear_init(&wd_ecc_setting.status);
 	return ret;
@@ -255,11 +245,14 @@ out_clear_init:
 void wd_ecc_uninit(void)
 {
 	wd_ecc_common_uninit();
+	wd_ecc_close_driver();
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
 
 int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
 {
+	struct wd_ctx_nums ecc_ctx_num[WD_EC_OP_MAX] = {0};
+	struct wd_ctx_params ecc_ctx_params = {0};
 	bool flag;
 	int ret;
 
@@ -275,19 +268,66 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 		goto out_clear_init;
 	}
 
+	/*
+	 * Driver lib file path could set by env param.
+	 * than open tham by wd_dlopen_drv()
+	 * default dir in the /root/lib/xxx.so and then dlopen
+	 */
+	wd_ecc_setting.dlh_list = wd_dlopen_drv(NULL);
+	if (!wd_ecc_setting.dlh_list) {
+		WD_ERR("failed to open driver lib files!\n");
+		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+res_retry:
+	memset(&wd_ecc_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+
+	/* Get alg driver and dev name */
+	wd_ecc_setting.driver = wd_alg_drv_bind(task_type, alg);
+	if (!wd_ecc_setting.driver) {
+		WD_ERR("failed to bind a valid driver!\n");
+		ret = -WD_EINVAL;
+		goto out_dlopen;
+	}
+
+	ret = wd_ctx_param_init(&ecc_ctx_params, ctx_params,
+				ecc_ctx_num, wd_ecc_setting.driver,
+				WD_EC_OP_MAX);
+	if (ret) {
+		if (ret == -WD_EAGAIN) {
+			wd_disable_drv(wd_ecc_setting.driver);
+			wd_alg_drv_unbind(wd_ecc_setting.driver);
+			goto res_retry;
+		}
+		goto out_driver;
+	}
+
 	wd_ecc_init_attrs.alg = alg;
 	wd_ecc_init_attrs.sched_type = sched_type;
-	wd_ecc_init_attrs.ctx_params = ctx_params ? ctx_params : &wd_ecc_ctx_params;
+	wd_ecc_init_attrs.driver = wd_ecc_setting.driver;
+	wd_ecc_init_attrs.ctx_params = &ecc_ctx_params;
 	wd_ecc_init_attrs.alg_init = wd_ecc_common_init;
 	wd_ecc_init_attrs.alg_poll_ctx = wd_ecc_poll_ctx;
 	ret = wd_alg_attrs_init(&wd_ecc_init_attrs);
-	if (ret)
-		goto out_clear_init;
+	if (ret) {
+		if (ret == -WD_ENODEV) {
+			wd_disable_drv(wd_ecc_setting.driver);
+			wd_alg_drv_unbind(wd_ecc_setting.driver);
+			goto res_retry;
+		}
+		WD_ERR("failed to init alg attrs!\n");
+		goto out_driver;
+	}
 
 	wd_alg_set_init(&wd_ecc_setting.status);
 
 	return 0;
 
+out_driver:
+	wd_alg_drv_unbind(wd_ecc_setting.driver);
+out_dlopen:
+	wd_dlclose_drv(wd_ecc_setting.dlh_list);
 out_clear_init:
 	wd_alg_clear_init(&wd_ecc_setting.status);
 	return ret;
@@ -297,6 +337,9 @@ void wd_ecc_uninit2(void)
 {
 	wd_ecc_common_uninit();
 	wd_alg_attrs_uninit(&wd_ecc_init_attrs);
+	wd_alg_drv_unbind(wd_ecc_setting.driver);
+	wd_dlclose_drv(wd_ecc_setting.dlh_list);
+	wd_ecc_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
 
@@ -1097,6 +1140,12 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 	if (setup_param_check(setup))
 		return (handle_t)0;
+
+	ret = wd_drv_alg_support(setup->alg, wd_ecc_setting.driver);
+	if (!ret) {
+		WD_ERR("failed to support this algorithm: %s!\n", setup->alg);
+		return (handle_t)0;
+	}
 
 	sess = calloc(1, sizeof(struct wd_ecc_sess));
 	if (!sess)
