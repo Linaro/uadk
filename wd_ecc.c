@@ -74,6 +74,17 @@ static struct wd_ecc_setting {
 } wd_ecc_setting;
 
 struct wd_env_config wd_ecc_env_config;
+static struct wd_init_attrs wd_ecc_init_attrs;
+
+static struct wd_ctx_nums wd_ecc_ctx_num[] = {
+	{1, 1}, {}
+};
+
+static struct wd_ctx_params wd_ecc_ctx_params = {
+	.op_type_num = 1,
+	.ctx_set_num = wd_ecc_ctx_num,
+	.bmp = NULL,
+};
 
 static const struct wd_ecc_curve_list curve_list[] = {
 	/* parameter 3 is key width */
@@ -135,30 +146,19 @@ static void wd_ecc_clear_status(void)
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
 
-int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
-	bool flag;
 	int ret;
-
-	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
-
-	flag = wd_alg_try_init(&wd_ecc_setting.status);
-	if (!flag)
-		return 0;
-
-	ret = wd_init_param_check(config, sched);
-	if (ret)
-		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_ECC_EPOLL_EN",
 			      &wd_ecc_setting.config.epoll_en);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_ecc_setting.config, config);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_sched(&wd_ecc_setting.sched, sched);
 	if (ret < 0)
@@ -190,8 +190,6 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 		goto out_free_priv;
 	}
 
-	wd_alg_set_init(&wd_ecc_setting.status);
-
 	return 0;
 
 out_free_priv:
@@ -203,12 +201,10 @@ out_clear_sched:
 	wd_clear_sched(&wd_ecc_setting.sched);
 out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_ecc_setting.config);
-out_clear_init:
-	wd_alg_clear_init(&wd_ecc_setting.status);
 	return ret;
 }
 
-void wd_ecc_uninit(void)
+static void wd_ecc_common_uninit(void)
 {
 	if (!wd_ecc_setting.priv) {
 		WD_ERR("invalid: repeat uninit ecc!\n");
@@ -226,6 +222,81 @@ void wd_ecc_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_ecc_setting.sched);
 	wd_clear_ctx_config(&wd_ecc_setting.config);
+}
+
+int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
+
+	flag = wd_alg_try_init(&wd_ecc_setting.status);
+	if (!flag)
+		return 0;
+
+	ret = wd_init_param_check(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	ret = wd_ecc_common_init(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	wd_alg_set_init(&wd_ecc_setting.status);
+
+	return 0;
+
+out_clear_init:
+	wd_alg_clear_init(&wd_ecc_setting.status);
+	return ret;
+}
+
+void wd_ecc_uninit(void)
+{
+	wd_ecc_common_uninit();
+	wd_alg_clear_init(&wd_ecc_setting.status);
+}
+
+int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
+
+	flag = wd_alg_try_init(&wd_ecc_setting.status);
+	if (!flag)
+		return 0;
+
+	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
+		WD_ERR("invalid: input param is wrong!\n");
+		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+	wd_ecc_init_attrs.alg = alg;
+	wd_ecc_init_attrs.sched_type = sched_type;
+	wd_ecc_init_attrs.ctx_params = ctx_params ? ctx_params : &wd_ecc_ctx_params;
+	wd_ecc_init_attrs.alg_init = wd_ecc_common_init;
+	wd_ecc_init_attrs.alg_poll_ctx = wd_ecc_poll_ctx;
+	ret = wd_alg_attrs_init(&wd_ecc_init_attrs);
+	if (ret)
+		goto out_clear_init;
+
+	wd_alg_set_init(&wd_ecc_setting.status);
+
+	return 0;
+
+out_clear_init:
+	wd_alg_clear_init(&wd_ecc_setting.status);
+	return ret;
+}
+
+void wd_ecc_uninit2(void)
+{
+	wd_ecc_common_uninit();
+	wd_alg_attrs_uninit(&wd_ecc_init_attrs);
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
 
