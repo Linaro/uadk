@@ -33,56 +33,60 @@ static struct wd_dh_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	void *sched_ctx;
-	const struct wd_dh_driver *driver;
+	struct wd_async_msg_pool pool;
+	struct wd_alg_driver *driver;
 	void *priv;
 	void *dlhandle;
-	struct wd_async_msg_pool pool;
+	void *dlh_list;
 } wd_dh_setting;
 
 struct wd_env_config wd_dh_env_config;
 static struct wd_init_attrs wd_dh_init_attrs;
 
-static struct wd_ctx_nums wd_dh_ctx_num[] = {
-	{1, 1}, {}
-};
-
-static struct wd_ctx_params wd_dh_ctx_params = {
-	.op_type_num = 1,
-	.ctx_set_num = wd_dh_ctx_num,
-	.bmp = NULL,
-};
-
-#ifdef WD_STATIC_DRV
-static void wd_dh_set_static_drv(void)
+static void wd_dh_close_driver(void)
 {
-	wd_dh_setting.driver = wd_dh_get_driver();
-	if (!wd_dh_setting.driver)
-		WD_ERR("failed to get dh driver!\n");
-}
-#else
-static void __attribute__((constructor)) wd_dh_open_driver(void)
-{
-	wd_dh_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_dh_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so, %s\n", dlerror());
-}
-
-static void __attribute__((destructor)) wd_dh_close_driver(void)
-{
-	if (wd_dh_setting.dlhandle)
-		dlclose(wd_dh_setting.dlhandle);
-}
-#endif
-
-void wd_dh_set_driver(struct wd_dh_driver *drv)
-{
-	if (!drv) {
-		WD_ERR("invalid: dh drv is NULL!\n");
 		return;
+
+	wd_release_drv(wd_dh_setting.driver);
+	dlclose(wd_dh_setting.dlhandle);
+	wd_dh_setting.dlhandle = NULL;
+}
+
+static int wd_dh_open_driver(void)
+{
+	struct wd_alg_driver *driver = NULL;
+	char lib_path[PATH_STR_SIZE];
+	const char *alg_name = "dh";
+	int ret;
+
+	/*
+	 * Compatible with the normal acquisition of device
+	 * drivers in the init interface.
+	 */
+	if (wd_dh_setting.dlh_list)
+		return 0;
+
+	ret = wd_get_lib_file_path("libhisi_hpre.so", lib_path, false);
+	if (ret)
+		return ret;
+
+	wd_dh_setting.dlhandle = dlopen(lib_path, RTLD_NOW);
+	if (!wd_dh_setting.dlhandle) {
+		WD_ERR("failed to open libhisi_hpre.so, %s!\n", dlerror());
+		return -WD_EINVAL;
 	}
 
-	wd_dh_setting.driver = drv;
+	driver = wd_request_drv(alg_name, false);
+	if (!driver) {
+		wd_dh_close_driver();
+		WD_ERR("failed to get %s driver support\n", alg_name);
+		return -WD_EINVAL;
+	}
+
+	wd_dh_setting.driver = driver;
+
+	return 0;
 }
 
 static void wd_dh_clear_status(void)
@@ -92,7 +96,6 @@ static void wd_dh_clear_status(void)
 
 static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
 	int ret;
 
 	ret = wd_set_epoll_en("WD_DH_EPOLL_EN",
@@ -108,10 +111,6 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret)
 		goto out_clear_ctx_config;
 
-#ifdef WD_STATIC_DRV
-	wd_dh_set_static_drv();
-#endif
-
 	/* initialize async request pool */
 	ret = wd_init_async_request_pool(&wd_dh_setting.pool,
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
@@ -119,25 +118,14 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret)
 		goto out_clear_sched;
 
-	/* initialize ctx related resources in specific driver */
-	priv = calloc(1, wd_dh_setting.driver->drv_ctx_size);
-	if (!priv) {
-		ret = -WD_ENOMEM;
+	ret = wd_alg_init_driver(&wd_dh_setting.config,
+				 wd_dh_setting.driver,
+				 &wd_dh_setting.priv);
+	if (ret)
 		goto out_clear_pool;
-	}
-
-	wd_dh_setting.priv = priv;
-	ret = wd_dh_setting.driver->init(&wd_dh_setting.config, priv);
-	if (ret < 0) {
-		WD_ERR("failed to init dh driver, ret= %d!\n", ret);
-		goto out_free_priv;
-	}
 
 	return 0;
 
-out_free_priv:
-	free(priv);
-	wd_dh_setting.priv = NULL;
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 out_clear_sched:
@@ -154,17 +142,14 @@ static void wd_dh_common_uninit(void)
 		return;
 	}
 
-	/* driver uninit */
-	wd_dh_setting.driver->exit(wd_dh_setting.priv);
-	free(wd_dh_setting.priv);
-	wd_dh_setting.priv = NULL;
-
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_dh_setting.sched);
-	wd_clear_ctx_config(&wd_dh_setting.config);
+	wd_alg_uninit_driver(&wd_dh_setting.config,
+			     wd_dh_setting.driver,
+			     &wd_dh_setting.priv);
 }
 
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -182,14 +167,20 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
-	ret = wd_dh_common_init(config, sched);
+	ret = wd_dh_open_driver();
 	if (ret)
 		goto out_clear_init;
+
+	ret = wd_dh_common_init(config, sched);
+	if (ret)
+		goto out_close_driver;
 
 	wd_alg_set_init(&wd_dh_setting.status);
 
 	return 0;
 
+out_close_driver:
+	wd_dh_close_driver();
 out_clear_init:
 	wd_alg_clear_init(&wd_dh_setting.status);
 	return ret;
@@ -198,11 +189,14 @@ out_clear_init:
 void wd_dh_uninit(void)
 {
 	wd_dh_common_uninit();
+	wd_dh_close_driver();
 	wd_alg_clear_init(&wd_dh_setting.status);
 }
 
 int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
 {
+	struct wd_ctx_nums dh_ctx_num[WD_DH_PHASE2] = {0};
+	struct wd_ctx_params dh_ctx_params = {0};
 	bool flag;
 	int ret;
 
@@ -218,19 +212,66 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 		goto out_clear_init;
 	}
 
+	/*
+	 * Driver lib file path could set by env param.
+	 * than open tham by wd_dlopen_drv()
+	 * default dir in the /root/lib/xxx.so and then dlopen
+	 */
+	wd_dh_setting.dlh_list = wd_dlopen_drv(NULL);
+	if (!wd_dh_setting.dlh_list) {
+		WD_ERR("failed to open driver lib files!\n");
+		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+res_retry:
+	memset(&wd_dh_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+
+	/* Get alg driver and dev name */
+	wd_dh_setting.driver = wd_alg_drv_bind(task_type, alg);
+	if (!wd_dh_setting.driver) {
+		WD_ERR("fail to bind a valid driver.\n");
+		ret = -WD_EINVAL;
+		goto out_dlopen;
+	}
+
+	ret = wd_ctx_param_init(&dh_ctx_params, ctx_params,
+				dh_ctx_num, wd_dh_setting.driver,
+				WD_DH_PHASE2);
+	if (ret) {
+		if (ret == -WD_EAGAIN) {
+			wd_disable_drv(wd_dh_setting.driver);
+			wd_alg_drv_unbind(wd_dh_setting.driver);
+			goto res_retry;
+		}
+		goto out_driver;
+	}
+
 	wd_dh_init_attrs.alg = alg;
 	wd_dh_init_attrs.sched_type = sched_type;
-	wd_dh_init_attrs.ctx_params = ctx_params ? ctx_params : &wd_dh_ctx_params;
+	wd_dh_init_attrs.driver = wd_dh_setting.driver;
+	wd_dh_init_attrs.ctx_params = &dh_ctx_params;
 	wd_dh_init_attrs.alg_init = wd_dh_common_init;
 	wd_dh_init_attrs.alg_poll_ctx = wd_dh_poll_ctx;
 	ret = wd_alg_attrs_init(&wd_dh_init_attrs);
-	if (ret)
-		goto out_clear_init;
+	if (ret) {
+		if (ret == -WD_ENODEV) {
+			wd_disable_drv(wd_dh_setting.driver);
+			wd_alg_drv_unbind(wd_dh_setting.driver);
+			goto res_retry;
+		}
+		WD_ERR("failed to init alg attrs!\n");
+		goto out_driver;
+	}
 
 	wd_alg_set_init(&wd_dh_setting.status);
 
 	return 0;
 
+out_driver:
+	wd_alg_drv_unbind(wd_dh_setting.driver);
+out_dlopen:
+	wd_dlclose_drv(wd_dh_setting.dlh_list);
 out_clear_init:
 	wd_alg_clear_init(&wd_dh_setting.status);
 	return ret;
@@ -240,6 +281,9 @@ void wd_dh_uninit2(void)
 {
 	wd_dh_common_uninit();
 	wd_alg_attrs_uninit(&wd_dh_init_attrs);
+	wd_alg_drv_unbind(wd_dh_setting.driver);
+	wd_dlclose_drv(wd_dh_setting.dlh_list);
+	wd_dh_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_dh_setting.status);
 }
 
