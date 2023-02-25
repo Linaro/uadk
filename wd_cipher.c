@@ -67,6 +67,17 @@ struct wd_cipher_sess {
 };
 
 struct wd_env_config wd_cipher_env_config;
+static struct wd_init_attrs wd_cipher_init_attrs;
+
+static struct wd_ctx_nums wd_cipher_ctx_num[] = {
+	{1, 1}, {}
+};
+
+static struct wd_ctx_params wd_cipher_ctx_params = {
+	.op_type_num = WD_CIPHER_DECRYPTION,
+	.ctx_set_num = wd_cipher_ctx_num,
+	.bmp = NULL,
+};
 
 #ifdef WD_STATIC_DRV
 static void wd_cipher_set_static_drv(void)
@@ -233,30 +244,20 @@ static void wd_cipher_clear_status(void)
 	wd_alg_clear_init(&wd_cipher_setting.status);
 }
 
-int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_cipher_common_init(struct wd_ctx_config *config,
+	struct wd_sched *sched)
 {
 	void *priv;
-	bool flag;
 	int ret;
-
-	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
-
-	flag = wd_alg_try_init(&wd_cipher_setting.status);
-	if (!flag)
-		return 0;
-
-	ret = wd_init_param_check(config, sched);
-	if (ret)
-		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_CIPHER_EPOLL_EN",
 			      &wd_cipher_setting.config.epoll_en);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_cipher_setting.config, config);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_sched(&wd_cipher_setting.sched, sched);
 	if (ret < 0)
@@ -284,11 +285,9 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	ret = wd_cipher_setting.driver->init(&wd_cipher_setting.config, priv);
 	if (ret < 0) {
-		WD_ERR("failed to do dirver init, ret = %d.\n", ret);
+		WD_ERR("failed to init cipher dirver!\n");
 		goto out_free_priv;
 	}
-
-	wd_alg_set_init(&wd_cipher_setting.status);
 
 	return 0;
 
@@ -301,12 +300,10 @@ out_clear_sched:
 	wd_clear_sched(&wd_cipher_setting.sched);
 out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_cipher_setting.config);
-out_clear_init:
-	wd_alg_clear_init(&wd_cipher_setting.status);
 	return ret;
 }
 
-void wd_cipher_uninit(void)
+static void wd_cipher_common_uninit(void)
 {
 	void *priv = wd_cipher_setting.priv;
 
@@ -317,9 +314,92 @@ void wd_cipher_uninit(void)
 	wd_cipher_setting.priv = NULL;
 	free(priv);
 
+	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_cipher_setting.pool);
+
+	/* unset config, sched, driver */
 	wd_clear_sched(&wd_cipher_setting.sched);
 	wd_clear_ctx_config(&wd_cipher_setting.config);
+}
+
+int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
+
+	flag = wd_alg_try_init(&wd_cipher_setting.status);
+	if (!flag)
+		return 0;
+
+	ret = wd_init_param_check(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	ret = wd_cipher_common_init(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	wd_alg_set_init(&wd_cipher_setting.status);
+
+	return 0;
+
+out_clear_init:
+	wd_alg_clear_init(&wd_cipher_setting.status);
+	return ret;
+}
+
+void wd_cipher_uninit(void)
+{
+	wd_cipher_common_uninit();
+	wd_alg_clear_init(&wd_cipher_setting.status);
+}
+
+int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
+
+	flag = wd_alg_try_init(&wd_cipher_setting.status);
+	if (!flag)
+		return 0;
+
+	if (!alg || sched_type > SCHED_POLICY_BUTT ||
+	     task_type < 0 || task_type > TASK_MAX_TYPE) {
+		WD_ERR("invalid: input param is wrong!\n");
+		ret = -WD_EINVAL;
+		goto out_uninit;
+	}
+
+	wd_cipher_init_attrs.alg = alg;
+	wd_cipher_init_attrs.sched_type = sched_type;
+	wd_cipher_init_attrs.ctx_params = ctx_params ? ctx_params : &wd_cipher_ctx_params;
+	wd_cipher_init_attrs.alg_init = wd_cipher_common_init;
+	wd_cipher_init_attrs.alg_poll_ctx = wd_cipher_poll_ctx;
+	ret = wd_alg_attrs_init(&wd_cipher_init_attrs);
+	if (ret) {
+		WD_ERR("fail to init alg attrs.\n");
+		goto out_uninit;
+	}
+
+	wd_alg_set_init(&wd_cipher_setting.status);
+
+	return 0;
+
+out_uninit:
+	wd_alg_clear_init(&wd_cipher_setting.status);
+	return ret;
+}
+
+void wd_cipher_uninit2(void)
+{
+	wd_cipher_common_uninit();
+
+	wd_alg_attrs_uninit(&wd_cipher_init_attrs);
+
 	wd_alg_clear_init(&wd_cipher_setting.status);
 }
 
