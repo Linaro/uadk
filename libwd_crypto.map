@@ -2,6 +2,9 @@ UADK_CRYPTO_2.0 {
 global:
 	wd_cipher_init;
 	wd_cipher_uninit;
+	wd_cipher_init2;
+	wd_cipher_init2_;
+	wd_cipher_uninit2;
 	wd_cipher_alloc_sess;
 	wd_cipher_free_sess;
 	wd_cipher_set_key;
