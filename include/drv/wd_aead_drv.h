@@ -67,7 +67,7 @@ struct wd_aead_driver {
 	const char	*drv_name;
 	const char	*alg_name;
 	__u32	drv_ctx_size;
-	int	(*init)(struct wd_ctx_config_internal *config, void *priv);
+	int	(*init)(void *conf, void *priv);
 	void	(*exit)(void *priv);
 	int	(*aead_send)(handle_t ctx, void *aead_msg);
 	int	(*aead_recv)(handle_t ctx, void *aead_msg);

@@ -55,7 +55,7 @@ struct wd_digest_driver {
 	const char	*drv_name;
 	const char	*alg_name;
 	__u32	drv_ctx_size;
-	int	(*init)(struct wd_ctx_config_internal *config, void *priv);
+	int	(*init)(void *conf, void *priv);
 	void	(*exit)(void *priv);
 	int	(*digest_send)(handle_t ctx, void *digest_msg);
 	int	(*digest_recv)(handle_t ctx, void *digest_msg);
