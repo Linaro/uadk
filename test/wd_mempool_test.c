@@ -20,7 +20,7 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
-#include "hisi_sec_test/test_hisi_sec.h"
+#include "../uadk_tool/test/sec_template_tv.h"
 #include "wd.h"
 #include "wd_cipher.h"
 #include "wd_sched.h"

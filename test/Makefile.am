@@ -12,8 +12,7 @@ wd_mempool_test_LDADD=-L../.libs -lwd -ldl -lwd_crypto -lnuma -lpthread
 endif
 wd_mempool_test_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
 
-SUBDIRS=. hisi_sec_test
-
+SUBDIRS = .
 if HAVE_CRYPTO
 SUBDIRS += hisi_hpre_test
 
