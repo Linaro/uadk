@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
-#ifndef TEST_HISI_SEC_H_
-#define TEST_HISI_SEC_H
+#ifndef SEC_TEMPLATE_TV_H
+#define SEC_TEMPLATE_TV_H
 
 enum alg_class {
 	CIPHER_CLASS,
@@ -1840,4 +1840,4 @@ struct aead_testvec sm4_gcm_tv_template_128[] = {
 	}
 };
 
-#endif /* TEST_HISI_SEC_H_ */
+#endif /* SEC_TEMPLATE_TV_H */

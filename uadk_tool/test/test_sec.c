@@ -12,11 +12,12 @@
 #include <getopt.h>
 #include <numa.h>
 
-#include "test_hisi_sec.h"
-#include "wd_cipher.h"
-#include "wd_digest.h"
-#include "wd_aead.h"
-#include "wd_sched.h"
+#include "sec_template_tv.h"
+#include "test_sec.h"
+#include "include/wd_cipher.h"
+#include "include/wd_digest.h"
+#include "include/wd_aead.h"
+#include "include/wd_sched.h"
 
 #define SEC_TST_PRT printf
 #define HW_CTX_SIZE (24 * 1024)
@@ -26,6 +27,7 @@
 #define SVA_THREADS	64
 #define USE_CTX_NUM	64
 #define BYTES_TO_MB	20
+#define SEC_ARGV_OFFSET	3
 
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
@@ -4013,13 +4015,13 @@ out_thr:
 static void print_help(void)
 {
 	SEC_TST_PRT("NAME\n");
-	SEC_TST_PRT("	test_hisi_sec: test wd sec function,etc\n");
+	SEC_TST_PRT("	uadk_tool test --m sec: test wd sec function,etc\n");
 	SEC_TST_PRT("USAGE\n");
-	SEC_TST_PRT("    test_hisi_sec [--cipher] [--digest] [--aead] [--perf]\n");
-	SEC_TST_PRT("    test_hisi_sec [--optype] [--pktlen] [--keylen] [--times]\n");
-	SEC_TST_PRT("    test_hisi_sec [--multi] [--sync] [--async] [--help]\n");
-	SEC_TST_PRT("    test_hisi_sec [--block] [--blknum] [--ctxnum]\n");
-	SEC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./test_hisi_sec xxxx\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--cipher] [--digest] [--aead] [--perf]\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--optype] [--pktlen] [--keylen] [--times]\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--multi] [--sync] [--async] [--help]\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--block] [--blknum] [--ctxnum]\n");
+	SEC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_tool test --m sec xxxx\n");
 	SEC_TST_PRT("        specify numa nodes for cpu and memory\n");
 	SEC_TST_PRT("DESCRIPTION\n");
 	SEC_TST_PRT("    [--cipher ]:\n");
@@ -4060,17 +4062,19 @@ static void print_help(void)
 	SEC_TST_PRT("        the number of QP queues used by the entire test task\n");
 	SEC_TST_PRT("    [--stream]:\n");
 	SEC_TST_PRT("        set the steam mode for digest\n");
+	SEC_TST_PRT("    [--sglnum]:\n");
+	SEC_TST_PRT("        the number of scatterlist number used by the entire test task\n");
 	SEC_TST_PRT("    [--help]  = usage\n");
 	SEC_TST_PRT("Example\n");
-	SEC_TST_PRT("    ./test_hisi_sec --cipher 0 --sync --optype 0\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --cipher 0 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 1\n");
-	SEC_TST_PRT("    ./test_hisi_sec --digest 0 --sync --optype 0\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --digest 0 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2 --stream\n");
-	SEC_TST_PRT("    ./test_hisi_sec --digest 1 --sync --optype 0\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --digest 1 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2 --stream\n");
-	SEC_TST_PRT("    ./test_hisi_sec --perf --sync --pktlen 1024 --block 1024\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --perf --sync --pktlen 1024 --block 1024\n");
 	SEC_TST_PRT("--blknum 100000 --times 10000 --multi 1 --ctxnum 1\n");
-	SEC_TST_PRT("UPDATE:2022-06-29\n");
+	SEC_TST_PRT("UPDATE:2022-12-16\n");
 }
 
 static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *option)
@@ -4335,7 +4339,7 @@ static int test_sec_run(__u32 sync_mode, __u32 alg_class)
 	return ret;
 }
 
-int main(int argc, char *argv[])
+int test_sec_entry(int argc, char *argv[])
 {
 	struct test_sec_option option = {0};
 	int ret = 0;
@@ -4343,14 +4347,14 @@ int main(int argc, char *argv[])
 	SEC_TST_PRT("this is a hisi sec test.\n");
 
 	g_thread_num = 1;
-	if (!argv[1]) {
+	if (!argv[1 + SEC_ARGV_OFFSET])
 		return test_sec_default_case();
-	}
 
 	test_sec_cmd_parse(argc, argv, &option);
 	ret = test_sec_option_convert(&option);
 	if (ret)
 		return ret;
+
 	if (option.algclass == PERF_CLASS)
 		return sec_sva_test();
 
