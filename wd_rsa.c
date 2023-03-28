@@ -276,9 +276,9 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	rsa_ctx_params.ctx_set_num = rsa_ctx_num;
 	ret = wd_ctx_param_init(&rsa_ctx_params, ctx_params,
-				rsa_ctx_num, wd_rsa_setting.driver,
-				WD_RSA_GENKEY);
+				wd_rsa_setting.driver, WD_RSA_TYPE, WD_RSA_GENKEY);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_rsa_setting.driver);

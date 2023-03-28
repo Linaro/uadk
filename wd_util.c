@@ -47,6 +47,16 @@ static const char *comp_ctx_type[2][2] = {
 /* define two ctx mode here for cipher and other alg */
 static const char *ctx_type[2][1] = { {"sync:"}, {"async:"} };
 
+static const char *wd_env_name[WD_TYPE_MAX] = {
+	"WD_COMP_CTX_NUM",
+	"WD_CIPHER_CTX_NUM",
+	"WD_DIGEST_CTX_NUM",
+	"WD_AEAD_CTX_NUM",
+	"WD_RSA_CTX_NUM",
+	"WD_DH_CTX_NUM",
+	"WD_ECC_CTX_NUM",
+};
+
 struct async_task {
 	__u32 idx;
 };
@@ -2000,34 +2010,116 @@ static void add_lib_to_list(struct drv_lib_list *head,
 	tmp->next = node;
 }
 
-int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
-	struct wd_ctx_params *user_ctx_params,
-	struct wd_ctx_nums *ctx_set_num,
-	struct wd_alg_driver *driver, int max_op_type)
+static int wd_set_ctx_nums(struct wd_ctx_nums *ctx_nums, const char *section,
+			   __u32 op_type_num, int is_comp)
 {
-	int i;
+	int i, j, ctx_num, node, ret;
+	char *ctx_section;
+	const char *type;
 
-	if (!user_ctx_params) {
-		ctx_params->bmp = NULL;
-		ctx_params->ctx_set_num = ctx_set_num;
-		ctx_params->op_type_num = driver->op_type_num;
-		if (ctx_params->op_type_num > max_op_type) {
-			WD_ERR("fail to check driver op type numbers.\n");
-			return -WD_EAGAIN;
-		}
+	/* Prevent out-of-bounds */
+	if (is_comp && op_type_num > ARRAY_SIZE(comp_ctx_type))
+		return -WD_EINVAL;
 
-		for (i = 0; i < ctx_params->op_type_num; i++) {
-			ctx_set_num[i].sync_ctx_num = driver->queue_num;
-			ctx_set_num[i].async_ctx_num = driver->queue_num;
+	ctx_section = index(section, ':');
+	if (!ctx_section) {
+		WD_ERR("invalid: ctx section got wrong format: %s!\n", section);
+		return -WD_EINVAL;
+	}
+	ctx_section++;
+	ret = parse_num_on_numa(ctx_section, &ctx_num, &node);
+	if (ret)
+		return ret;
+
+	/* Allocate queues evenly on each numa */
+	for (i = 0; i < CTX_MODE_MAX; i++) {
+		for (j = 0; j < op_type_num; j++) {
+			type = is_comp ? comp_ctx_type[i][j] : ctx_type[i][0];
+			if (strncmp(section, type, strlen(type)))
+				continue;
+
+			if (!i)
+				ctx_nums[j].sync_ctx_num = ctx_num;
+			else
+				ctx_nums[j].async_ctx_num = ctx_num;
+
+			return 0;
 		}
-	} else {
-		ctx_params->bmp = user_ctx_params->bmp;
-		ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
-		ctx_params->op_type_num = user_ctx_params->op_type_num;
-		if (ctx_params->op_type_num > max_op_type) {
-			WD_ERR("fail to check user op type numbers.\n");
+	}
+
+	return -WD_EINVAL;
+}
+
+/* return 0 for success, others failed */
+static int wd_env_set_ctx_nums(const char *name, const char *var_s,
+			       struct wd_ctx_nums *ctx_nums, __u32 size)
+{
+	char *left, *section, *start;
+	int is_comp;
+	int ret = 0;
+
+	/* COMP environment variable's format is different, mark it */
+	is_comp = strncmp(name, "WD_COMP_CTX_NUM", strlen(name)) ? 0 : 1;
+
+	start = strdup(var_s);
+	if (!start)
+		return -WD_ENOMEM;
+
+	left = start;
+	while ((section = strsep(&left, ","))) {
+		ret = wd_set_ctx_nums(ctx_nums, section, size, is_comp);
+		if (ret < 0)
+			goto out_free_str;
+	}
+
+out_free_str:
+	free(start);
+	return ret;
+}
+
+int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
+		      struct wd_ctx_params *user_ctx_params,
+		      struct wd_alg_driver *driver,
+		      enum wd_type type, int max_op_type)
+{
+	const char *env_name = wd_env_name[type];
+	const char *var_s;
+	int i, ret;
+
+	var_s = secure_getenv(env_name);
+	if (var_s && strlen(var_s)) {
+		/* environment variable has the highest priority */
+		ret = wd_env_set_ctx_nums(env_name, var_s, ctx_params->ctx_set_num, max_op_type);
+		if (ret) {
+			WD_ERR("fail to init ctx nums from %s!\n", env_name);
 			return -WD_EINVAL;
 		}
+	} else {
+		/* environment variable is not set, try to use user_ctx_params first */
+		if (user_ctx_params) {
+			ctx_params->bmp = user_ctx_params->bmp;
+			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
+			ctx_params->op_type_num = user_ctx_params->op_type_num;
+			if (ctx_params->op_type_num > max_op_type) {
+				WD_ERR("fail to check user op type numbers.\n");
+				return -WD_EINVAL;
+			}
+
+			return 0;
+		}
+
+		/* user_ctx_params is also not set, use driver's defalut queue_num */
+		for (i = 0; i < driver->op_type_num; i++) {
+			ctx_params->ctx_set_num[i].sync_ctx_num = driver->queue_num;
+			ctx_params->ctx_set_num[i].async_ctx_num = driver->queue_num;
+		}
+	}
+
+	ctx_params->bmp = NULL;
+	ctx_params->op_type_num = driver->op_type_num;
+	if (ctx_params->op_type_num > max_op_type) {
+		WD_ERR("fail to check driver op type numbers.\n");
+		return -WD_EAGAIN;
 	}
 
 	return 0;
@@ -2580,4 +2672,3 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
 	}
 	wd_sched_rr_release(alg_sched);
 }
-

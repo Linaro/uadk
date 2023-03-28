@@ -291,9 +291,9 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	ecc_ctx_params.ctx_set_num = ecc_ctx_num;
 	ret = wd_ctx_param_init(&ecc_ctx_params, ctx_params,
-				ecc_ctx_num, wd_ecc_setting.driver,
-				WD_EC_OP_MAX);
+				wd_ecc_setting.driver, WD_ECC_TYPE, WD_EC_OP_MAX);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_ecc_setting.driver);

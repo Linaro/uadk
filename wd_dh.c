@@ -235,9 +235,9 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	dh_ctx_params.ctx_set_num = dh_ctx_num;
 	ret = wd_ctx_param_init(&dh_ctx_params, ctx_params,
-				dh_ctx_num, wd_dh_setting.driver,
-				WD_DH_PHASE2);
+				wd_dh_setting.driver, WD_DH_TYPE, WD_DH_PHASE2);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_dh_setting.driver);

@@ -422,9 +422,11 @@ res_retry:
 		goto out_dlopen;
 	}
 
+
+	cipher_ctx_params.ctx_set_num = cipher_ctx_num;
 	ret = wd_ctx_param_init(&cipher_ctx_params, ctx_params,
-				cipher_ctx_num, wd_cipher_setting.driver,
-				WD_CIPHER_DECRYPTION + 1);
+				wd_cipher_setting.driver,
+				WD_CIPHER_TYPE, WD_CIPHER_DECRYPTION + 1);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_cipher_setting.driver);
