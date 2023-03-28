@@ -527,7 +527,7 @@ static int hisi_sec_get_usage(void *param)
 
 #define GEN_SEC_ALG_DRIVER(sec_alg_name) \
 {\
-	.drv_name = "hisi_sec2_cipher",\
+	.drv_name = "hisi_sec2",\
 	.alg_name = sec_alg_name,\
 	.priority = UADK_ALG_HW,\
 	.priv_size = sizeof(struct hisi_sec_ctx),\
