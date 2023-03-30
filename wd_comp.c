@@ -12,6 +12,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "adapter.h"
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 
@@ -38,6 +39,7 @@ struct wd_comp_sess {
 	void *sched_key;
 };
 
+/* can we remove this? */
 struct wd_comp_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
@@ -63,22 +65,34 @@ static void wd_comp_close_driver(void)
 
 static int wd_comp_open_driver(void)
 {
-	struct wd_alg_driver *driver = NULL;
+	struct wd_alg_driver *adapter = NULL;
 	char lib_path[PATH_STR_SIZE];
-	const char *alg_name = "zlib";
+	char *alg_name = "zlib";
+	char *drv_name = "hisi_zip";
 	int ret;
 
 	/*
 	 * Compatible with the normal acquisition of device
 	 * drivers in the init interface
 	 */
-	if (wd_comp_setting.dlh_list)
-		return 0;
+	//if (wd_comp_setting.dlh_list)
+	//	return 0;
 
 	ret = wd_get_lib_file_path("libhisi_zip.so", lib_path, false);
 	if (ret)
 		return ret;
+	adapter = uadk_adapter_alloc();
+	if (!adapter)
+		return -WD_EINVAL;
 
+	ret = uadk_adapter_parse(adapter, lib_path, drv_name, alg_name);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to parse adapter\n");
+		return -WD_EINVAL;
+	}
+
+/*
 	wd_comp_setting.dlhandle = dlopen(lib_path, RTLD_NOW);
 	if (!wd_comp_setting.dlhandle) {
 		WD_ERR("failed to open libhisi_zip.so, %s\n", dlerror());
@@ -91,8 +105,8 @@ static int wd_comp_open_driver(void)
 		WD_ERR("failed to get %s driver support\n", alg_name);
 		return -WD_EINVAL;
 	}
-
-	wd_comp_setting.driver = driver;
+*/
+	wd_comp_setting.driver = adapter;
 
 	return 0;
 }
@@ -126,9 +140,13 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_sched;
 
+	ret = wd_alg_driver_init(wd_comp_setting.driver, &wd_comp_setting.config);
+
+	/*
 	ret = wd_alg_init_driver(&wd_comp_setting.config,
 					wd_comp_setting.driver,
 					&wd_comp_setting.priv);
+	*/
 	if (ret)
 		goto out_clear_pool;
 
@@ -156,8 +174,11 @@ static void wd_comp_uninit_nolock(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_comp_setting.sched);
 
-	wd_alg_uninit_driver(&wd_comp_setting.config,
-		 wd_comp_setting.driver, &priv);
+	wd_alg_driver_exit(wd_comp_setting.driver);
+	uadk_adapter_free(wd_comp_setting.driver);
+
+	// wd_alg_uninit_driver(&wd_comp_setting.config,
+	//	 wd_comp_setting.driver, &priv);
 }
 
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -326,7 +347,8 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_comp_setting.driver->recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_comp_setting.driver, ctx->ctx, &resp_msg);
+		//ret = wd_comp_setting.driver->recv(ctx->ctx, &resp_msg);
 		if (unlikely(ret < 0)) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw error!\n");
@@ -561,7 +583,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	msg_handle.recv = wd_comp_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+	ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx, msg,
 				 NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
@@ -817,7 +839,8 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
 
-	ret = wd_comp_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_comp_setting.driver, ctx->ctx, msg);
+	//ret = wd_comp_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;

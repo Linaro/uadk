@@ -6,6 +6,8 @@
 
 #include <stdlib.h>
 #include <pthread.h>
+
+#include "adapter.h"
 #include "include/drv/wd_aead_drv.h"
 #include "wd_aead.h"
 
@@ -33,7 +35,7 @@ struct wd_aead_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	struct wd_aead_driver *driver;
+	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
 	void *priv;
@@ -79,7 +81,7 @@ static void __attribute__((destructor)) wd_aead_close_driver(void)
 }
 #endif
 
-void wd_aead_set_driver(struct wd_aead_driver *drv)
+void wd_aead_set_driver(struct wd_alg_driver *drv)
 {
 	wd_aead_setting.driver = drv;
 }
@@ -396,9 +398,26 @@ static void wd_aead_clear_status(void)
 
 int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	bool flag;
+	struct wd_alg_driver *adapter = NULL;
+	char lib_path[PATH_STR_SIZE];
+	char *alg_name = "aead";
+	char *drv_name = "hisi_sec2";
 	int ret;
+	bool flag;
+
+	ret = wd_get_lib_file_path("libhisi_sec2.so", lib_path, false);
+	if (ret)
+		return ret;
+	adapter = uadk_adapter_alloc();
+	if (!adapter)
+		return -WD_EINVAL;
+
+	ret = uadk_adapter_parse(adapter, lib_path, drv_name, alg_name);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to parse adapter\n");
+		return -WD_EINVAL;
+	}
 
 	pthread_atfork(NULL, NULL, wd_aead_clear_status);
 
@@ -435,27 +454,18 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		goto out_clear_sched;
 
-	/* init ctx related resources in specific driver */
-	priv = calloc(1, wd_aead_setting.driver->drv_ctx_size);
-	if (!priv) {
-		ret = -WD_ENOMEM;
-		goto out_clear_pool;
-	}
-	wd_aead_setting.priv = priv;
-
-	ret = wd_aead_setting.driver->init(&wd_aead_setting.config, priv);
+	// ret = wd_aead_setting.driver->init(&wd_aead_setting.config, priv);
+	ret = wd_alg_driver_init(adapter, &wd_aead_setting.config);
 	if (ret < 0) {
 		WD_ERR("failed to init aead dirver!\n");
-		goto out_free_priv;
+		goto out_clear_pool;
 	}
 
 	wd_alg_set_init(&wd_aead_setting.status);
+	wd_aead_setting.driver = adapter;
 
 	return 0;
 
-out_free_priv:
-	free(priv);
-	wd_aead_setting.priv = NULL;
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_aead_setting.pool);
 out_clear_sched:
@@ -469,14 +479,8 @@ out_clear_init:
 
 void wd_aead_uninit(void)
 {
-	void *priv = wd_aead_setting.priv;
-
-	if (!priv)
-		return;
-
-	wd_aead_setting.driver->exit(priv);
-	wd_aead_setting.priv = NULL;
-	free(priv);
+	wd_alg_driver_exit(wd_aead_setting.driver);
+	uadk_adapter_free(wd_aead_setting.driver);
 
 	wd_uninit_async_request_pool(&wd_aead_setting.pool);
 	wd_clear_sched(&wd_aead_setting.sched);
@@ -517,11 +521,11 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	struct wd_msg_handle msg_handle;
 	int ret;
 
-	msg_handle.send = wd_aead_setting.driver->aead_send;
-	msg_handle.recv = wd_aead_setting.driver->aead_recv;
+	msg_handle.send = wd_aead_setting.driver->send;
+	msg_handle.recv = wd_aead_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
+	ret = wd_handle_msg_sync(wd_aead_setting.driver, &msg_handle, ctx->ctx, msg, NULL,
 			  wd_aead_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
@@ -597,7 +601,8 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
+	// ret = wd_aead_setting.driver->aead_send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_aead_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -645,7 +650,8 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_aead_setting.driver, ctx->ctx, &resp_msg);
+		// ret = wd_aead_setting.driver->aead_recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

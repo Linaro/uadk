@@ -1785,7 +1785,7 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 	return 0;
 }
 
-int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle, handle_t ctx,
 		       void *msg, __u64 *balance, bool epoll_en)
 {
 	__u64 timeout = WD_RECV_MAX_CNT_NOSLEEP;
@@ -1795,7 +1795,7 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
 	if (balance)
 		timeout = WD_RECV_MAX_CNT_SLEEP;
 
-	ret = msg_handle->send(ctx, msg);
+	ret = msg_handle->send(drv, ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send msg to hw, ret = %d!\n", ret);
 		return ret;
@@ -1808,7 +1808,7 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
 		}
 
-		ret = msg_handle->recv(ctx, msg);
+		ret = msg_handle->recv(drv, ctx, msg);
 		if (ret == -WD_EAGAIN) {
 			if (unlikely(rx_cnt++ >= timeout)) {
 				WD_ERR("failed to recv msg: timeout!\n");
@@ -1915,13 +1915,16 @@ static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 	struct wd_alg_driver *driver, void **drv_priv)
 {
-	void *priv;
+//	void *priv;
 	int ret;
 
+	/* driver should alloc ctx by itself */
 	/* Init ctx related resources in specific driver */
+/*
 	priv = calloc(1, driver->priv_size);
 	if (!priv)
 		return -WD_ENOMEM;
+*/
 
 	if (!driver->init) {
 		driver->fallback = 0;
@@ -1930,7 +1933,7 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 		goto err_alloc;
 	}
 
-	ret = driver->init(config, priv);
+	ret = driver->init(driver, config);
 	if (ret < 0) {
 		WD_ERR("driver init failed.\n");
 		goto err_alloc;
@@ -1943,12 +1946,12 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 			WD_ERR("soft alg driver init failed.\n");
 		}
 	}
-	*drv_priv = priv;
+	// *drv_priv = priv;
 
 	return 0;
 
 err_alloc:
-	free(priv);
+	//free(priv);
 	return ret;
 }
 

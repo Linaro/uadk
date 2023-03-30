@@ -415,7 +415,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	msg_handle.recv = wd_rsa_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+	ret = wd_handle_msg_sync(wd_rsa_setting.driver, &msg_handle, ctx->ctx, &msg, &balance,
 				 wd_rsa_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
@@ -461,7 +461,8 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_rsa_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_rsa_setting.driver, ctx->ctx, msg);
+	//ret = wd_rsa_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send rsa BD, hw is err!\n");
@@ -509,7 +510,8 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
+		ret = wd_alg_driver_recv(wd_rsa_setting.driver, ctx->ctx, &recv_msg);
+		//ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

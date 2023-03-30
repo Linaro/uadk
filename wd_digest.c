@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include "include/drv/wd_digest_drv.h"
 #include "wd_digest.h"
+#include "adapter.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
@@ -41,7 +42,7 @@ struct wd_digest_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched	sched;
-	struct wd_digest_driver	*driver;
+	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
 	void *sched_ctx;
 	void *priv;
@@ -90,7 +91,7 @@ static void __attribute__((destructor)) wd_digest_close_driver(void)
 }
 #endif
 
-void wd_digest_set_driver(struct wd_digest_driver *drv)
+void wd_digest_set_driver(struct wd_alg_driver *drv)
 {
 	wd_digest_setting.driver = drv;
 }
@@ -190,9 +191,26 @@ static void wd_digest_clear_status(void)
 
 int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	bool flag;
+	struct wd_alg_driver *adapter = NULL;
+	char lib_path[PATH_STR_SIZE];
+	char *alg_name = "digest";
+	char *drv_name = "hisi_sec2";
 	int ret;
+	bool flag;
+
+	ret = wd_get_lib_file_path("libhisi_sec2.so", lib_path, false);
+	if (ret)
+		return ret;
+	adapter = uadk_adapter_alloc();
+	if (!adapter)
+		return -WD_EINVAL;
+
+	ret = uadk_adapter_parse(adapter, lib_path, drv_name, alg_name);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to parse adapter\n");
+		return -WD_EINVAL;
+	}
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
@@ -229,28 +247,33 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		goto out_clear_sched;
 
+	/* drv should alloc priv by itself */
 	/* init ctx related resources in specific driver */
+/*
 	priv = calloc(1, wd_digest_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
 		goto out_clear_pool;
 	}
 	wd_digest_setting.priv = priv;
+*/
 
-	ret = wd_digest_setting.driver->init(&wd_digest_setting.config, priv);
+	ret = wd_alg_driver_init(adapter, &wd_digest_setting.config);
+	//ret = wd_digest_setting.driver->init(&wd_digest_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to init digest dirver!\n");
 		goto out_free_priv;
 	}
 
+	wd_digest_setting.driver = adapter;
 	wd_alg_set_init(&wd_digest_setting.status);
 
 	return 0;
 
 out_free_priv:
-	free(priv);
+//	free(priv);
 	wd_digest_setting.priv = NULL;
-out_clear_pool:
+// out_clear_pool:
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_digest_setting.sched);
@@ -263,14 +286,18 @@ out_clear_init:
 
 void wd_digest_uninit(void)
 {
-	void *priv = wd_digest_setting.priv;
+	struct wd_alg_driver *adapter = wd_digest_setting.driver;
+	//void *priv = wd_digest_setting.priv;
 
-	if (!priv)
-		return;
+	//if (!priv)
+	//	return;
 
-	wd_digest_setting.driver->exit(priv);
-	wd_digest_setting.priv = NULL;
-	free(priv);
+	wd_alg_driver_exit(adapter);
+	// wd_digest_setting.driver->exit(wd_digest_setting.driver);
+	// wd_digest_setting.priv = NULL;
+	uadk_adapter_free(adapter);
+
+	// free(priv);
 
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 
@@ -404,11 +431,11 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	struct wd_msg_handle msg_handle;
 	int ret;
 
-	msg_handle.send = wd_digest_setting.driver->digest_send;
-	msg_handle.recv = wd_digest_setting.driver->digest_recv;
+	msg_handle.send = wd_digest_setting.driver->send;
+	msg_handle.recv = wd_digest_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+	ret = wd_handle_msg_sync(wd_digest_setting.driver, &msg_handle, ctx->ctx, msg,
 				 NULL, wd_digest_setting.config.epoll_en);
 	if (unlikely(ret))
 		goto out;
@@ -493,7 +520,8 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_digest_setting.driver->digest_send(ctx->ctx, msg);
+	// ret = wd_digest_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_digest_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -541,8 +569,8 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_digest_setting.driver->digest_recv(ctx->ctx,
-							    &recv_msg);
+		ret = wd_alg_driver_recv(wd_digest_setting.driver, ctx->ctx, &recv_msg);
+		// ret = wd_digest_setting.driver->digest_recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

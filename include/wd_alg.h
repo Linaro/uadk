@@ -37,6 +37,7 @@ enum alg_priority {
  *		 algorithm business and requires queues to be executed separately
  * @priv_size: parameter memory size passed between the internal
  *		 interfaces of the driver
+ * @priv: pointer of priv ctx
  * @fallback: soft calculation driver handle when performing soft
  *		 calculation supplement
  * @init: callback interface for initializing device drivers
@@ -55,14 +56,35 @@ struct wd_alg_driver {
 	int	queue_num;
 	int	op_type_num;
 	int	priv_size;
+	void *priv;
 	handle_t fallback;
 
-	int (*init)(void *conf, void *priv);
-	void (*exit)(void *priv);
-	int (*send)(handle_t ctx, void *drv_msg);
-	int (*recv)(handle_t ctx, void *drv_msg);
+	int (*init)(struct wd_alg_driver *drv, void *conf);
+	void (*exit)(struct wd_alg_driver *drv);
+	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 	int (*get_usage)(void *param);
 };
+
+inline int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
+{
+	return drv->init(drv, conf);
+}
+
+inline void wd_alg_driver_exit(struct wd_alg_driver *drv)
+{
+	drv->exit(drv);
+}
+
+inline int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+{
+	return drv->send(drv, ctx, msg);
+}
+
+inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+{
+	return drv->recv(drv, ctx, msg);
+}
 
 int wd_alg_driver_register(struct wd_alg_driver *drv);
 void wd_alg_driver_unregister(struct wd_alg_driver *drv);
@@ -80,6 +102,7 @@ struct wd_alg_list {
 
 struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
 void wd_release_drv(struct wd_alg_driver *drv);
+struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name);
 
 bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_driver *drv);

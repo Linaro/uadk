@@ -771,21 +771,26 @@ static void hisi_zip_sqe_ops_adapt(handle_t h_qp)
 	}
 }
 
-static int hisi_zip_init(void *conf, void *priv)
+static int hisi_zip_init(struct wd_alg_driver *drv, void *conf)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
+	struct hisi_zip_ctx *priv;
 	struct hisi_qm_priv qm_priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
 	int i;
 
+	priv = malloc(sizeof(struct hisi_zip_ctx));
+	if (!priv)
+		return -WD_EINVAL;
+
 	if (!config->ctx_num) {
 		WD_ERR("invalid: zip init config ctx num is 0!\n");
+		free(priv);
 		return -WD_EINVAL;
 	}
 
-	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config_internal));
+	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
@@ -802,6 +807,7 @@ static int hisi_zip_init(void *conf, void *priv)
 	}
 
 	hisi_zip_sqe_ops_adapt(h_qp);
+	drv->priv = priv;
 
 	return 0;
 out:
@@ -809,13 +815,14 @@ out:
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
+	free(priv);
 	return -WD_EINVAL;
 }
 
-static void hisi_zip_exit(void *priv)
+static void hisi_zip_exit(struct wd_alg_driver *drv)
 {
-	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
-	struct wd_ctx_config_internal *config = &zip_ctx->config;
+	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
+	struct wd_ctx_config_internal *config = &priv->config;
 	handle_t h_qp;
 	int i;
 
@@ -823,6 +830,8 @@ static void hisi_zip_exit(void *priv)
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
+
+	free(priv);
 }
 
 static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
@@ -877,7 +886,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	return 0;
 }
 
-static int hisi_zip_comp_send(handle_t ctx, void *comp_msg)
+static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	struct wd_comp_msg *msg = comp_msg;
@@ -1040,7 +1049,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	return 0;
 }
 
-static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
+static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	struct wd_comp_msg *recv_msg = comp_msg;

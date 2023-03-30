@@ -1557,7 +1557,7 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	msg_handle.recv = wd_ecc_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+	ret = wd_handle_msg_sync(wd_ecc_setting.driver, &msg_handle, ctx->ctx, &msg, &balance,
 				 wd_ecc_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
@@ -2237,7 +2237,8 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_ecc_setting.driver->send(ctx->ctx, msg);
+	// ret = wd_ecc_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_ecc_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send ecc BD, hw is err!\n");
@@ -2285,7 +2286,8 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
+		ret = wd_alg_driver_recv(wd_ecc_setting.driver, ctx->ctx, &recv_msg);
+		// ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

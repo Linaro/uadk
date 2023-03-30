@@ -110,8 +110,10 @@ struct wd_ctx_attr {
 };
 
 struct wd_msg_handle {
-	int (*send)(handle_t sess, void *msg);
-	int (*recv)(handle_t sess, void *msg);
+	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	// int (*send)(handle_t sess, void *msg);
+	// int (*recv)(handle_t sess, void *msg);
 };
 
 struct wd_init_attrs {
@@ -363,7 +365,7 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
  *
  * Return 0 if successful or less than 0 otherwise.
  */
-int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle, handle_t ctx,
 		void *msg, __u64 *balance, bool epoll_en);
 
 /**

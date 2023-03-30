@@ -353,7 +353,7 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	msg_handle.recv = wd_dh_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+	ret = wd_handle_msg_sync(wd_dh_setting.driver, &msg_handle, ctx->ctx, &msg, &balance,
 				 wd_dh_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
@@ -399,7 +399,8 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_dh_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_dh_setting.driver, ctx->ctx, msg);
+	//ret = wd_dh_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send dh BD, hw is err!\n");
@@ -449,7 +450,8 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_dh_setting.driver->recv(ctx->ctx, &rcv_msg);
+		ret = wd_alg_driver_recv(wd_dh_setting.driver, ctx->ctx, &rcv_msg);
+	//	ret = wd_dh_setting.driver->recv(ctx->ctx, &rcv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (unlikely(ret)) {

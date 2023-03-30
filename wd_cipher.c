@@ -9,6 +9,7 @@
 #include <sched.h>
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_cipher.h"
+#include "adapter.h"
 
 #define XTS_MODE_KEY_DIVISOR	2
 #define SM4_KEY_SIZE		16
@@ -89,8 +90,9 @@ static void wd_cipher_close_driver(void)
 
 static int wd_cipher_open_driver(void)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "cbc(aes)";
+	struct wd_alg_driver *adapter = NULL;
+	char *alg_name = "cbc(aes)";
+	char *drv_name = "hisi_sec2";
 	char lib_path[PATH_STR_SIZE];
 	int ret;
 
@@ -98,13 +100,24 @@ static int wd_cipher_open_driver(void)
 	 * Compatible with the normal acquisition of device
 	 * drivers in the init interface
 	 */
-	if (wd_cipher_setting.dlh_list)
-		return 0;
+	//if (wd_cipher_setting.dlh_list)
+	//	return 0;
 
 	ret = wd_get_lib_file_path("libhisi_sec.so", lib_path, false);
 	if (ret)
 		return ret;
 
+	adapter = uadk_adapter_alloc();
+	if (!adapter)
+		return -WD_EINVAL;
+
+	ret = uadk_adapter_parse(adapter, lib_path, drv_name, alg_name);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to parse adapter\n");
+		return -WD_EINVAL;
+	}
+/*
 	wd_cipher_setting.dlhandle = dlopen(lib_path, RTLD_NOW);
 	if (!wd_cipher_setting.dlhandle) {
 		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
@@ -117,8 +130,8 @@ static int wd_cipher_open_driver(void)
 		WD_ERR("failed to get %s driver support\n", alg_name);
 		return -WD_EINVAL;
 	}
-
-	wd_cipher_setting.driver = driver;
+*/
+	wd_cipher_setting.driver = adapter;
 
 	return 0;
 }
@@ -304,9 +317,12 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 	if (ret < 0)
 		goto out_clear_sched;
 
+	ret = wd_alg_driver_init(wd_cipher_setting.driver, &wd_cipher_setting.config);
+	/*
 	ret = wd_alg_init_driver(&wd_cipher_setting.config,
 					wd_cipher_setting.driver,
 					&wd_cipher_setting.priv);
+	*/
 	if (ret)
 		goto out_clear_pool;
 
@@ -334,8 +350,12 @@ static void wd_cipher_common_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_cipher_setting.sched);
 
+	wd_alg_driver_exit(wd_cipher_setting.driver);
+	uadk_adapter_free(wd_cipher_setting.driver);
+	/*
 	wd_alg_uninit_driver(&wd_cipher_setting.config,
 		 wd_cipher_setting.driver, &priv);
+	*/
 }
 
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -582,7 +602,7 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	msg_handle.recv = wd_cipher_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
+	ret = wd_handle_msg_sync(wd_cipher_setting.driver, &msg_handle, ctx->ctx, msg, NULL,
 			  wd_cipher_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	return ret;
@@ -658,7 +678,8 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_cipher_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_cipher_setting.driver, ctx->ctx, msg);
+	// ret = wd_cipher_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
@@ -706,7 +727,8 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_cipher_setting.driver->recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_cipher_setting.driver, ctx->ctx, &resp_msg);
+		// ret = wd_cipher_setting.driver->recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN)
 			return ret;
 		else if (ret < 0) {
