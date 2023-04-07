@@ -256,6 +256,9 @@ void wd_comp_ctx_num_uninit(void);
 int wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode,
 			  __u32 *num, __u8 *is_enable);
 
+int wd_comp_attach_worker(char *lib_path, char *drv_name, char *alg_name);
+void wd_comp_stop_worker(void);
+
 #ifdef __cplusplus
 }
 #endif

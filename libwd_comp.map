@@ -37,5 +37,7 @@ global:
 	wd_inflateReset;
 	wd_inflateEnd;
 
+	wd_comp_attach_worker;
+	wd_comp_stop_worker;
 local: *;
 };

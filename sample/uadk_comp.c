@@ -21,6 +21,8 @@
 
 struct request_config {
 	char algname[MAX_ALG_LEN];
+	char drvname[MAX_ALG_LEN];
+	char libname[MAX_ALG_LEN];
 	enum wd_comp_alg_type alg;
 	enum wd_comp_level complv;
 	enum wd_comp_op_type optype;
@@ -127,6 +129,18 @@ out:
 	return NULL;
 }
 
+static struct uacce_dev_list *get_dev_list_from_drv(char *drv_name, char *alg_name)
+{
+	/* Todo
+	 * need realize wd_get_accel_list(const char *drv_name)
+	 */
+
+	// hack for simple
+	if (!drv_name || (strcmp(drv_name, "hisi_zlib") == 0))
+		return NULL;
+	else
+		return get_dev_list(alg_name);
+}
 static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 {
 	int ret;
@@ -386,10 +400,19 @@ static int operation(FILE *source, FILE *dest)
 {
 	int ret;
 
-	ret = uadk_comp_ctx_init();
-	if (ret) {
-		fprintf(stderr, "%s fail to init ctx!\n", __func__);
-		return ret;
+	if (config.list) {
+		/* only hardware accelerator need ctx and sched for queue resource */
+		ret = uadk_comp_ctx_init();
+		if (ret) {
+			fprintf(stderr, "%s fail to init ctx!\n", __func__);
+			return ret;
+		}
+	} else {
+		ret = wd_comp_attach_worker(config.libname, config.drvname, config.algname);
+		if (ret) {
+			fprintf(stderr, "%s fail to attach worker!\n", __func__);
+			return ret;
+		}
 	}
 
 	ret = uadk_comp_sess_init();
@@ -420,7 +443,11 @@ out_sess_uninit:
 	uadk_comp_sess_uninit();
 
 out_ctx_uninit:
-	uadk_comp_ctx_uninit();
+
+	if (config.list)
+		uadk_comp_ctx_uninit();
+	else
+		wd_comp_stop_worker();
 
 	return ret;
 }
@@ -438,6 +465,8 @@ static void print_help(void)
 		"The window size for compression(8K as default).\n"
 		"\t[--complv]:       "
 		"The compression level(8 as default).\n"
+		"\t[--drv]:	The driver using for the alg.\n"
+		"\t[--lib]:	shared library of the driver.\n"
 		"\t[--help]          "
 		"Print Help (this message) and exit\n"
 		"");
@@ -455,6 +484,9 @@ int main(int argc, char *argv[])
 		{"complv", required_argument, 0, 2},
 		{"optype", required_argument, 0, 3},
 		{"winsize", required_argument, 0, 4},
+		{"drv", required_argument, 0, 5},
+		{"lib", required_argument, 0, 6},
+
 		{0, 0, 0, 0}
 	};
 
@@ -468,13 +500,7 @@ int main(int argc, char *argv[])
 			help = 1;
 			break;
 		case 1:
-			config.list = get_dev_list(optarg);
-			if (!config.list) {
-				cowfail("Can't find your algorithm!\n");
-				help = 1;
-			} else {
-				strcpy(config.algname, optarg);
-			}
+			strcpy(config.algname, optarg);
 			break;
 		case 2:
 			config.complv = strtol(optarg, NULL, 0);
@@ -484,6 +510,12 @@ int main(int argc, char *argv[])
 			break;
 		case 4:
 			config.winsize = strtol(optarg, NULL, 0);
+			break;
+		case 5:
+			strcpy(config.drvname, optarg);
+			break;
+		case 6:
+			strcpy(config.libname, optarg);
 			break;
 		default:
 			help = 1;
@@ -496,6 +528,8 @@ int main(int argc, char *argv[])
 		print_help();
 		exit(-1);
 	}
+
+	config.list = get_dev_list_from_drv(config.drvname, config.algname);
 
 	ret = operation(stdin, stdout);
 	if (ret)

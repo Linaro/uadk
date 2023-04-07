@@ -63,6 +63,45 @@ static void wd_comp_close_driver(void)
 	}
 }
 
+int wd_comp_attach_worker(char *lib_path, char *drv_name, char *alg_name)
+{
+	struct wd_alg_driver *adapter = wd_comp_setting.driver;
+	int ret;
+
+	if (!adapter) {
+		wd_comp_setting.driver = adapter = uadk_adapter_alloc();
+		if (!adapter)
+			return -WD_EINVAL;
+	}
+
+	ret = uadk_adapter_parse(adapter, lib_path, drv_name, alg_name);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to parse adapter\n");
+		return -WD_EINVAL;
+	}
+
+	ret = wd_alg_driver_init(adapter, NULL);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to init adapter\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+void wd_comp_stop_worker(void)
+{
+	struct wd_alg_driver *adapter = wd_comp_setting.driver;
+
+	if (adapter) {
+		wd_alg_driver_exit(adapter);
+		uadk_adapter_free(adapter);
+		wd_comp_setting.driver = NULL;
+	}
+}
+
 static int wd_comp_open_driver(void)
 {
 	struct wd_alg_driver *adapter = NULL;
@@ -430,12 +469,14 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
 
-	/* Some simple scheduler don't need scheduling parameters */
-	sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
-		     wd_comp_setting.sched.h_sched_ctx, setup->sched_param);
-	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init session schedule key!\n");
-		goto sched_err;
+	if (wd_comp_setting.sched.sched_init) {
+		/* Some simple scheduler don't need scheduling parameters */
+		sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
+				wd_comp_setting.sched.h_sched_ctx, setup->sched_param);
+		if (WD_IS_ERR(sess->sched_key)) {
+			WD_ERR("failed to init session schedule key!\n");
+			goto sched_err;
+		}
 	}
 
 	return (handle_t)sess;
@@ -569,23 +610,28 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	__u32 idx;
 	int ret;
 
-	idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
-						  sess->sched_key,
-						  CTX_MODE_SYNC);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
-	if (unlikely(ret))
-		return ret;
-
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
-	ctx = config->ctxs + idx;
-
 	msg_handle.send = wd_comp_setting.driver->send;
 	msg_handle.recv = wd_comp_setting.driver->recv;
 
-	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx, msg,
-				 NULL, config->epoll_en);
-	pthread_spin_unlock(&ctx->lock);
+	if (wd_comp_setting.sched.pick_next_ctx) {
+		idx = wd_comp_setting.sched.pick_next_ctx(h_sched_ctx,
+							sess->sched_key,
+							CTX_MODE_SYNC);
+		ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+		if (unlikely(ret))
+			return ret;
+
+		wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
+		ctx = config->ctxs + idx;
+
+		pthread_spin_lock(&ctx->lock);
+		ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx, msg,
+					NULL, config->epoll_en);
+		pthread_spin_unlock(&ctx->lock);
+	} else {
+		ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, 0, msg,
+					NULL, config->epoll_en);
+	}
 
 	return ret;
 }
