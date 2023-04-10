@@ -21,6 +21,7 @@
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
 #define PRIVILEGE_FLAG			600
 #define MIN(a, b)			((a) > (b) ? (b) : (a))
+#define MAX(a, b)			((a) > (b) ? (a) : (b))
 
 #define WD_INIT_SLEEP_UTIME		1000
 #define WD_INIT_RETRY_TIMES		10000
@@ -2010,9 +2011,10 @@ static void add_lib_to_list(struct drv_lib_list *head,
 	tmp->next = node;
 }
 
-static int wd_set_ctx_nums(struct wd_ctx_nums *ctx_nums, const char *section,
+static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, const char *section,
 			   __u32 op_type_num, int is_comp)
 {
+	struct wd_ctx_nums *ctxs = ctx_params->ctx_set_num;
 	int i, j, ctx_num, node, ret;
 	char *ctx_section;
 	const char *type;
@@ -2031,18 +2033,24 @@ static int wd_set_ctx_nums(struct wd_ctx_nums *ctx_nums, const char *section,
 	if (ret)
 		return ret;
 
-	/* Allocate queues evenly on each numa */
+	/* If the number of ctxs is set to 0, skip the configuration */
+	if (!ctx_num)
+		return 0;
+
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		for (j = 0; j < op_type_num; j++) {
 			type = is_comp ? comp_ctx_type[i][j] : ctx_type[i][0];
 			if (strncmp(section, type, strlen(type)))
 				continue;
 
+			/* If there're multiple configurations, use the maximum ctx number */
 			if (!i)
-				ctx_nums[j].sync_ctx_num = ctx_num;
+				ctxs[j].sync_ctx_num = MAX(ctxs[j].sync_ctx_num, ctx_num);
 			else
-				ctx_nums[j].async_ctx_num = ctx_num;
+				ctxs[j].async_ctx_num = MAX(ctxs[j].async_ctx_num, ctx_num);
 
+			/* enable a node here, all enabled nodes share the same configuration */
+			numa_bitmask_setbit(ctx_params->bmp, node);
 			return 0;
 		}
 	}
@@ -2050,9 +2058,8 @@ static int wd_set_ctx_nums(struct wd_ctx_nums *ctx_nums, const char *section,
 	return -WD_EINVAL;
 }
 
-/* return 0 for success, others failed */
 static int wd_env_set_ctx_nums(const char *name, const char *var_s,
-			       struct wd_ctx_nums *ctx_nums, __u32 size)
+			       struct wd_ctx_params *ctx_params, __u32 size)
 {
 	char *left, *section, *start;
 	int is_comp;
@@ -2067,7 +2074,7 @@ static int wd_env_set_ctx_nums(const char *name, const char *var_s,
 
 	left = start;
 	while ((section = strsep(&left, ","))) {
-		ret = wd_set_ctx_nums(ctx_nums, section, size, is_comp);
+		ret = wd_set_ctx_nums(ctx_params, section, size, is_comp);
 		if (ret < 0)
 			goto out_free_str;
 	}
@@ -2089,7 +2096,7 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 	var_s = secure_getenv(env_name);
 	if (var_s && strlen(var_s)) {
 		/* environment variable has the highest priority */
-		ret = wd_env_set_ctx_nums(env_name, var_s, ctx_params->ctx_set_num, max_op_type);
+		ret = wd_env_set_ctx_nums(env_name, var_s, ctx_params, max_op_type);
 		if (ret) {
 			WD_ERR("fail to init ctx nums from %s!\n", env_name);
 			return -WD_EINVAL;
@@ -2109,13 +2116,13 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		}
 
 		/* user_ctx_params is also not set, use driver's defalut queue_num */
+		ctx_params->bmp = NULL;
 		for (i = 0; i < driver->op_type_num; i++) {
 			ctx_params->ctx_set_num[i].sync_ctx_num = driver->queue_num;
 			ctx_params->ctx_set_num[i].async_ctx_num = driver->queue_num;
 		}
 	}
 
-	ctx_params->bmp = NULL;
 	ctx_params->op_type_num = driver->op_type_num;
 	if (ctx_params->op_type_num > max_op_type) {
 		WD_ERR("fail to check driver op type numbers.\n");

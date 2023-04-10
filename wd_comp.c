@@ -206,6 +206,7 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 {
 	struct wd_ctx_nums comp_ctx_num[WD_DIR_MAX] = {0};
 	struct wd_ctx_params comp_ctx_params;
+	struct bitmask *inner_bmp;
 	int ret = 0;
 	bool flag;
 
@@ -233,6 +234,14 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 		goto out_uninit;
 	}
 
+	inner_bmp = numa_allocate_nodemask();
+	if (!inner_bmp) {
+		WD_ERR("fail to allocate nodemask.\n");
+		ret = -WD_ENOMEM;
+		goto out_dlopen;
+	}
+	comp_ctx_params.bmp = inner_bmp;
+
 res_retry:
 	memset(&wd_comp_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
@@ -240,7 +249,7 @@ res_retry:
 	wd_comp_setting.driver = wd_alg_drv_bind(task_type, alg);
 	if (!wd_comp_setting.driver) {
 		WD_ERR("fail to bind a valid driver.\n");
-		goto out_dlopen;
+		goto out_bmp;
 	}
 
 	comp_ctx_params.ctx_set_num = comp_ctx_num;
@@ -274,10 +283,14 @@ res_retry:
 
 	wd_alg_set_init(&wd_comp_setting.status);
 
+	numa_free_nodemask(inner_bmp);
+
 	return 0;
 
 out_driver:
 	wd_alg_drv_unbind(wd_comp_setting.driver);
+out_bmp:
+	numa_free_nodemask(inner_bmp);
 out_dlopen:
 	wd_dlclose_drv(wd_comp_setting.dlh_list);
 out_uninit:

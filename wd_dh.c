@@ -197,6 +197,7 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 {
 	struct wd_ctx_nums dh_ctx_num[WD_DH_PHASE2] = {0};
 	struct wd_ctx_params dh_ctx_params = {0};
+	struct bitmask *inner_bmp;
 	bool flag;
 	int ret;
 
@@ -224,6 +225,14 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 		goto out_clear_init;
 	}
 
+	inner_bmp = numa_allocate_nodemask();
+	if (!inner_bmp) {
+		ret = -WD_ENOMEM;
+		WD_ERR("fail to allocate nodemask.\n");
+		goto out_dlopen;
+	}
+	dh_ctx_params.bmp = inner_bmp;
+
 res_retry:
 	memset(&wd_dh_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
@@ -232,7 +241,7 @@ res_retry:
 	if (!wd_dh_setting.driver) {
 		WD_ERR("fail to bind a valid driver.\n");
 		ret = -WD_EINVAL;
-		goto out_dlopen;
+		goto out_bmp;
 	}
 
 	dh_ctx_params.ctx_set_num = dh_ctx_num;
@@ -270,6 +279,8 @@ res_retry:
 
 out_driver:
 	wd_alg_drv_unbind(wd_dh_setting.driver);
+out_bmp:
+	numa_free_nodemask(inner_bmp);
 out_dlopen:
 	wd_dlclose_drv(wd_dh_setting.dlh_list);
 out_clear_init:
