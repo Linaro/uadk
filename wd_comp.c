@@ -824,7 +824,7 @@ static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
 	    req->src_len == src_len)
 		sess->stream_pos = WD_COMP_STREAM_NEW;
 	else if (req->op_type == WD_DIR_DECOMPRESS &&
-		 req->status == WD_STREAM_END)
+		(req->src_len == src_len || req->status == WD_STREAM_END))
 		sess->stream_pos = WD_COMP_STREAM_NEW;
 }
 
