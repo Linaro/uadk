@@ -23,6 +23,9 @@ global:
 
 	wd_aead_init;
 	wd_aead_uninit;
+	wd_aead_init2;
+	wd_aead_init2_;
+	wd_aead_uninit2;
 	wd_aead_alloc_sess;
 	wd_aead_free_sess;
 	wd_aead_set_ckey;
