@@ -105,6 +105,17 @@ char *digest_names[MAX_ALGO_PER_TYPE] = {
 	"ccm(aes)", /* --digest 15: for error alg test */
 };
 
+char *aead_names[MAX_ALGO_PER_TYPE] = {
+	"ccm(aes)",
+	"gcm(aes)",
+	"authenc(hmac(sha256),cbc(aes))",
+	"ccm(sm4)",
+	"gcm(sm4)",
+	"authenc(hmac(sha256),cbc(sm4))",
+	"sm3", /*--aead 6: for error alg test */
+	"authenc(hmac(sha3),cbc(aes))", /* --aead 7: for error alg test */
+};
+
 struct sva_bd {
 	char *src;
 	char *dst;
@@ -2658,7 +2669,7 @@ static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx,
 	return 0;
 }
 
-static int init_aead_ctx_config(int type, int mode)
+static int aead_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
 	struct wd_sched sched;
@@ -2708,7 +2719,74 @@ out:
 	return ret;
 }
 
-static void aead_uninit_config(void)
+static int aead_init2(int type, int mode)
+{
+	struct wd_ctx_nums *ctx_set_num;
+	struct wd_ctx_params cparams;
+	int ret;
+
+	if (g_testalg >= MAX_ALGO_PER_TYPE)
+		return -WD_EINVAL;
+
+	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
+	if (!ctx_set_num) {
+		WD_ERR("failed to alloc ctx_set_size!\n");
+		return -WD_ENOMEM;
+	}
+
+	cparams.op_type_num = 1;
+	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
+
+	if (mode == CTX_MODE_SYNC)
+		ctx_set_num->sync_ctx_num = g_ctxnum;
+
+	if (mode == CTX_MODE_ASYNC)
+		ctx_set_num->async_ctx_num = g_ctxnum;
+
+	ret = wd_aead_init2_(aead_names[g_testalg], 0, 0, &cparams);
+	if (ret)
+		goto out_freebmp;
+
+out_freebmp:
+	numa_free_nodemask(cparams.bmp);
+
+out_freectx:
+	free(ctx_set_num);
+
+	return ret;
+}
+
+static int init_aead_ctx_config(int type, int mode)
+{
+	int ret = -1;
+
+	switch (g_init) {
+	case 0:
+	case 1:
+		SEC_TST_PRT("uadk entry init1!\n");
+		ret = aead_init1(type, mode);
+		break;
+	case 2:
+		SEC_TST_PRT("uadk entry init2!\n");
+		ret = aead_init2(type, mode);
+		break;
+	default:
+		SEC_TST_PRT("unsupported aead init-type%u!\n", g_init);
+		break;
+	}
+
+	return ret;
+}
+
+static void aead_uninit1(void)
 {
 	int i;
 
@@ -2721,6 +2799,26 @@ static void aead_uninit_config(void)
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
+}
+
+static void aead_uninit2(void)
+{
+	wd_aead_uninit2();
+}
+
+static void aead_uninit_config(void)
+{
+	switch (g_init) {
+	case 0:
+	case 1:
+		aead_uninit1();
+		break;
+	case 2:
+		aead_uninit2();
+		break;
+	default:
+		SEC_TST_PRT("unsupported aead uninit-type%u!\n", g_init);
+	}
 }
 
 int get_aead_resource(struct aead_testvec **alg_tv,
