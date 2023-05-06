@@ -51,33 +51,7 @@ struct wd_digest_msg {
 	__u64 long_data_len;
 };
 
-struct wd_digest_driver {
-	const char	*drv_name;
-	const char	*alg_name;
-	__u32	drv_ctx_size;
-	int	(*init)(void *conf, void *priv);
-	void	(*exit)(void *priv);
-	int	(*digest_send)(handle_t ctx, void *digest_msg);
-	int	(*digest_recv)(handle_t ctx, void *digest_msg);
-};
-
-void wd_digest_set_driver(struct wd_digest_driver *drv);
-struct wd_digest_driver *wd_digest_get_driver(void);
 struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag);
-
-#ifdef WD_STATIC_DRV
-#define WD_DIGEST_SET_DRIVER(drv)					      \
-struct wd_digest_driver *wd_digest_get_driver(void)			      \
-{									      \
-	return &drv;							      \
-}
-#else
-#define WD_DIGEST_SET_DRIVER(drv)					      \
-static void __attribute__((constructor)) set_digest_drivers(void)		      \
-{									      \
-	wd_digest_set_driver(&(drv));					      \
-}
-#endif
 
 #ifdef __cplusplus
 }

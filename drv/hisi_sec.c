@@ -527,7 +527,7 @@ static int hisi_sec_get_usage(void *param)
 
 #define GEN_SEC_ALG_DRIVER(sec_alg_name) \
 {\
-	.drv_name = "hisi_sec2_cipher",\
+	.drv_name = "hisi_sec2",\
 	.alg_name = sec_alg_name,\
 	.priority = UADK_ALG_HW,\
 	.priv_size = sizeof(struct hisi_sec_ctx),\
@@ -563,6 +563,31 @@ static struct wd_alg_driver cipher_alg_driver[] = {
 	GEN_SEC_ALG_DRIVER("cbc-cs1(sm4)"),
 	GEN_SEC_ALG_DRIVER("cbc-cs2(sm4)"),
 	GEN_SEC_ALG_DRIVER("cbc-cs3(sm4)"),
+};
+
+static struct wd_alg_driver digest_alg_driver[] = {
+	GEN_SEC_ALG_DRIVER("sm3"),
+	GEN_SEC_ALG_DRIVER("md5"),
+	GEN_SEC_ALG_DRIVER("sha1"),
+	GEN_SEC_ALG_DRIVER("sha224"),
+	GEN_SEC_ALG_DRIVER("sha256"),
+	GEN_SEC_ALG_DRIVER("sha384"),
+	GEN_SEC_ALG_DRIVER("sha512"),
+	GEN_SEC_ALG_DRIVER("sha512-224"),
+	GEN_SEC_ALG_DRIVER("sha512-256"),
+	GEN_SEC_ALG_DRIVER("xcbc-mac-96(aes)"),
+	GEN_SEC_ALG_DRIVER("xcbc-prf-128(aes)"),
+	GEN_SEC_ALG_DRIVER("cmac(aes)"),
+	GEN_SEC_ALG_DRIVER("gmac(aes)"),
+};
+
+static struct wd_alg_driver aead_alg_driver[] = {
+	GEN_SEC_ALG_DRIVER("ccm(aes)"),
+	GEN_SEC_ALG_DRIVER("gcm(aes)"),
+	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(aes))"),
+	GEN_SEC_ALG_DRIVER("ccm(sm4)"),
+	GEN_SEC_ALG_DRIVER("gcm(sm4)"),
+	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(sm4))"),
 };
 
 static void dump_sec_msg(void *msg, const char *alg)
@@ -1698,16 +1723,6 @@ int hisi_sec_digest_recv(handle_t ctx, void *digest_msg)
 	return 0;
 }
 
-static struct wd_digest_driver hisi_digest_driver = {
-		.drv_name	= "hisi_sec2",
-		.alg_name	= "digest",
-		.drv_ctx_size	= sizeof(struct hisi_sec_ctx),
-		.init		= hisi_sec_init,
-		.exit		= hisi_sec_exit,
-};
-
-WD_DIGEST_SET_DRIVER(hisi_digest_driver);
-
 static int hmac_key_len_check(struct wd_digest_msg *msg)
 {
 	switch (msg->alg) {
@@ -2343,16 +2358,6 @@ int hisi_sec_aead_recv(handle_t ctx, void *aead_msg)
 	return 0;
 }
 
-static struct wd_aead_driver hisi_aead_driver = {
-	.drv_name	= "hisi_sec2",
-	.alg_name	= "aead",
-	.drv_ctx_size	= sizeof(struct hisi_sec_ctx),
-	.init		= hisi_sec_init,
-	.exit		= hisi_sec_exit,
-};
-
-WD_AEAD_SET_DRIVER(hisi_aead_driver);
-
 static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	struct hisi_sec_sqe3 *sqe)
 {
@@ -2625,11 +2630,16 @@ static void hisi_sec_driver_adapter(struct hisi_qp *qp)
 			cipher_alg_driver[i].recv = hisi_sec_cipher_recv;
 		}
 
-		hisi_digest_driver.digest_send = hisi_sec_digest_send;
-		hisi_digest_driver.digest_recv = hisi_sec_digest_recv;
-
-		hisi_aead_driver.aead_send = hisi_sec_aead_send;
-		hisi_aead_driver.aead_recv = hisi_sec_aead_recv;
+		alg_num = ARRAY_SIZE(digest_alg_driver);
+		for (i = 0; i < alg_num; i++) {
+			digest_alg_driver[i].send = hisi_sec_digest_send;
+			digest_alg_driver[i].recv = hisi_sec_digest_recv;
+		}
+		alg_num = ARRAY_SIZE(aead_alg_driver);
+		for (i = 0; i < alg_num; i++) {
+			aead_alg_driver[i].send = hisi_sec_aead_send;
+			aead_alg_driver[i].recv = hisi_sec_aead_recv;
+		}
 	} else {
 		WD_INFO("hisi sec init HIP09!\n");
 		alg_num = ARRAY_SIZE(cipher_alg_driver);
@@ -2638,11 +2648,16 @@ static void hisi_sec_driver_adapter(struct hisi_qp *qp)
 			cipher_alg_driver[i].recv = hisi_sec_cipher_recv_v3;
 		}
 
-		hisi_digest_driver.digest_send = hisi_sec_digest_send_v3;
-		hisi_digest_driver.digest_recv = hisi_sec_digest_recv_v3;
-
-		hisi_aead_driver.aead_send = hisi_sec_aead_send_v3;
-		hisi_aead_driver.aead_recv = hisi_sec_aead_recv_v3;
+		alg_num = ARRAY_SIZE(digest_alg_driver);
+		for (i = 0; i < alg_num; i++) {
+			digest_alg_driver[i].send = hisi_sec_digest_send_v3;
+			digest_alg_driver[i].recv = hisi_sec_digest_recv_v3;
+		}
+		alg_num = ARRAY_SIZE(aead_alg_driver);
+		for (i = 0; i < alg_num; i++) {
+			aead_alg_driver[i].send = hisi_sec_aead_send_v3;
+			aead_alg_driver[i].recv = hisi_sec_aead_recv_v3;
+		}
 	}
 }
 
@@ -2709,25 +2724,51 @@ void hisi_sec_exit(void *priv)
 
 static void __attribute__((constructor)) hisi_sec2_probe(void)
 {
-	int alg_num = ARRAY_SIZE(cipher_alg_driver);
+	int alg_num;
 	int i, ret;
 
 	WD_INFO("Info: register SEC alg drivers!\n");
 
+	alg_num = ARRAY_SIZE(cipher_alg_driver);
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&cipher_alg_driver[i]);
 		if (ret)
 			WD_ERR("Error: register SEC %s failed!\n",
 				cipher_alg_driver[i].alg_name);
 	}
+
+	alg_num = ARRAY_SIZE(digest_alg_driver);
+	for (i = 0; i < alg_num; i++) {
+		ret = wd_alg_driver_register(&digest_alg_driver[i]);
+		if (ret)
+			WD_ERR("Error: register SEC %s failed!\n",
+				digest_alg_driver[i].alg_name);
+	}
+
+	alg_num = ARRAY_SIZE(aead_alg_driver);
+	for (i = 0; i < alg_num; i++) {
+		ret = wd_alg_driver_register(&aead_alg_driver[i]);
+		if (ret)
+			WD_ERR("Error: register SEC %s failed!\n",
+				aead_alg_driver[i].alg_name);
+	}
 }
 
 static void __attribute__((destructor)) hisi_sec2_remove(void)
 {
-	int alg_num = ARRAY_SIZE(cipher_alg_driver);
+	int alg_num;
 	int i;
 
+	alg_num = ARRAY_SIZE(cipher_alg_driver);
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&cipher_alg_driver[i]);
+
+	alg_num = ARRAY_SIZE(digest_alg_driver);
+	for (i = 0; i < alg_num; i++)
+		wd_alg_driver_unregister(&digest_alg_driver[i]);
+
+	alg_num = ARRAY_SIZE(aead_alg_driver);
+	for (i = 0; i < alg_num; i++)
+		wd_alg_driver_unregister(&aead_alg_driver[i]);
 }
 
