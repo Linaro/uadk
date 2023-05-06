@@ -2249,6 +2249,8 @@ struct uacce_dev_list *wd_get_usable_list(struct uacce_dev_list *list, struct bi
 	p = list;
 	while (p) {
 		dev = p->dev;
+		if (dev->numa_id < 0)
+			dev->numa_id = 0;
 		numa_id = dev->numa_id;
 		ret = numa_bitmask_isbitset(bmp, numa_id);
 		if (!ret) {
