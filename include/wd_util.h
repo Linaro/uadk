@@ -23,6 +23,17 @@ extern "C" {
 	for ((i) = 0, (config_numa) = (config)->config_per_numa; \
 	     (i) < (config)->numa_num; (config_numa)++, (i)++)
 
+enum wd_type {
+	WD_COMP_TYPE = 0,
+	WD_CIPHER_TYPE,
+	WD_DIGEST_TYPE,
+	WD_AEAD_TYPE,
+	WD_RSA_TYPE,
+	WD_DH_TYPE,
+	WD_ECC_TYPE,
+	WD_TYPE_MAX,
+};
+
 enum wd_status {
 	WD_UNINIT,
 	WD_INITING,
@@ -420,16 +431,18 @@ static inline void wd_alg_clear_init(enum wd_status *status)
 /**
  * wd_ctx_param_init() - Initialize the current device driver according
  *			to the obtained queue resource and the applied driver.
- * @config: device resources requested by the current algorithm.
+ * @ctx_params: wd_ctx_params to be initialized.
+ * @user_ctx_params: user input wd_ctx_params.
  * @driver: device driver for the current algorithm application.
- * @drv_priv: the parameter pointer of the current device driver.
+ * @type: algorithm type.
+ * @max_op_type: algorithm max operation type.
  *
  * Return 0 if succeed and other error number if fail.
  */
 int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
-	struct wd_ctx_params *user_ctx_params,
-	struct wd_ctx_nums *ctx_set_num,
-	struct wd_alg_driver *driver, int max_op_type);
+		      struct wd_ctx_params *user_ctx_params,
+		      struct wd_alg_driver *driver,
+		      enum wd_type type, int max_op_type);
 
 /**
  * wd_alg_attrs_init() - Request the ctxs and initialize the sched_domain
