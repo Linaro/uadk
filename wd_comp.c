@@ -243,9 +243,9 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	comp_ctx_params.ctx_set_num = comp_ctx_num;
 	ret = wd_ctx_param_init(&comp_ctx_params, ctx_params,
-				comp_ctx_num, wd_comp_setting.driver,
-				WD_DIR_MAX);
+				wd_comp_setting.driver, WD_COMP_TYPE, WD_DIR_MAX);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_comp_setting.driver);
@@ -266,16 +266,20 @@ res_retry:
 		if (ret == -WD_ENODEV) {
 			wd_disable_drv(wd_comp_setting.driver);
 			wd_alg_drv_unbind(wd_comp_setting.driver);
+			wd_ctx_param_uninit(&comp_ctx_params);
 			goto res_retry;
 		}
 		WD_ERR("fail to init alg attrs.\n");
-		goto out_driver;
+		goto out_params_uninit;
 	}
 
 	wd_alg_set_init(&wd_comp_setting.status);
+	wd_ctx_param_uninit(&comp_ctx_params);
 
 	return 0;
 
+out_params_uninit:
+	wd_ctx_param_uninit(&comp_ctx_params);
 out_driver:
 	wd_alg_drv_unbind(wd_comp_setting.driver);
 out_dlopen:
