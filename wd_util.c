@@ -21,6 +21,7 @@
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
 #define PRIVILEGE_FLAG			600
 #define MIN(a, b)			((a) > (b) ? (b) : (a))
+#define MAX(a, b)			((a) > (b) ? (a) : (b))
 
 #define WD_INIT_SLEEP_UTIME		1000
 #define WD_INIT_RETRY_TIMES		10000
@@ -46,6 +47,16 @@ static const char *comp_ctx_type[2][2] = {
 
 /* define two ctx mode here for cipher and other alg */
 static const char *ctx_type[2][1] = { {"sync:"}, {"async:"} };
+
+static const char *wd_env_name[WD_TYPE_MAX] = {
+	"WD_COMP_CTX_NUM",
+	"WD_CIPHER_CTX_NUM",
+	"WD_DIGEST_CTX_NUM",
+	"WD_AEAD_CTX_NUM",
+	"WD_RSA_CTX_NUM",
+	"WD_DH_CTX_NUM",
+	"WD_ECC_CTX_NUM",
+};
 
 struct async_task {
 	__u32 idx;
@@ -2000,34 +2011,134 @@ static void add_lib_to_list(struct drv_lib_list *head,
 	tmp->next = node;
 }
 
-int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
-	struct wd_ctx_params *user_ctx_params,
-	struct wd_ctx_nums *ctx_set_num,
-	struct wd_alg_driver *driver, int max_op_type)
+static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, const char *section,
+			   __u32 op_type_num, int is_comp)
 {
-	int i;
+	struct wd_ctx_nums *ctxs = ctx_params->ctx_set_num;
+	int i, j, ctx_num, node, ret;
+	char *ctx_section;
+	const char *type;
 
-	if (!user_ctx_params) {
-		ctx_params->bmp = NULL;
-		ctx_params->ctx_set_num = ctx_set_num;
-		ctx_params->op_type_num = driver->op_type_num;
-		if (ctx_params->op_type_num > max_op_type) {
-			WD_ERR("fail to check driver op type numbers.\n");
-			return -WD_EAGAIN;
-		}
+	ctx_section = index(section, ':');
+	if (!ctx_section) {
+		WD_ERR("invalid: ctx section got wrong format: %s!\n", section);
+		return -WD_EINVAL;
+	}
+	ctx_section++;
+	ret = parse_num_on_numa(ctx_section, &ctx_num, &node);
+	if (ret)
+		return ret;
 
-		for (i = 0; i < ctx_params->op_type_num; i++) {
-			ctx_set_num[i].sync_ctx_num = driver->queue_num;
-			ctx_set_num[i].async_ctx_num = driver->queue_num;
+	/* If the number of ctxs is set to 0, skip the configuration */
+	if (!ctx_num)
+		return 0;
+
+	for (i = 0; i < CTX_MODE_MAX; i++) {
+		for (j = 0; j < op_type_num; j++) {
+			type = is_comp ? comp_ctx_type[i][j] : ctx_type[i][0];
+			if (strncmp(section, type, strlen(type)))
+				continue;
+
+			/* If there're multiple configurations, use the maximum ctx number */
+			if (!i)
+				ctxs[j].sync_ctx_num = MAX(ctxs[j].sync_ctx_num, ctx_num);
+			else
+				ctxs[j].async_ctx_num = MAX(ctxs[j].async_ctx_num, ctx_num);
+
+			/* enable a node here, all enabled nodes share the same configuration */
+			numa_bitmask_setbit(ctx_params->bmp, node);
+			return 0;
 		}
-	} else {
-		ctx_params->bmp = user_ctx_params->bmp;
-		ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
-		ctx_params->op_type_num = user_ctx_params->op_type_num;
-		if (ctx_params->op_type_num > max_op_type) {
-			WD_ERR("fail to check user op type numbers.\n");
+	}
+
+	return -WD_EINVAL;
+}
+
+static int wd_env_set_ctx_nums(const char *name, const char *var_s,
+			       struct wd_ctx_params *ctx_params, __u32 op_type_num)
+{
+	char *left, *section, *start;
+	int is_comp;
+	int ret = 0;
+
+	/* COMP environment variable's format is different, mark it */
+	is_comp = strncmp(name, "WD_COMP_CTX_NUM", strlen(name)) ? 0 : 1;
+	if (is_comp && op_type_num > ARRAY_SIZE(comp_ctx_type))
+		return -WD_EINVAL;
+
+	start = strdup(var_s);
+	if (!start)
+		return -WD_ENOMEM;
+
+	left = start;
+	while ((section = strsep(&left, ","))) {
+		ret = wd_set_ctx_nums(ctx_params, section, op_type_num, is_comp);
+		if (ret < 0)
+			goto out_free_str;
+	}
+
+out_free_str:
+	free(start);
+	return ret;
+}
+
+void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params)
+{
+	numa_free_nodemask(ctx_params->bmp);
+}
+
+int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
+		      struct wd_ctx_params *user_ctx_params,
+		      struct wd_alg_driver *driver,
+		      enum wd_type type, int max_op_type)
+{
+	const char *env_name = wd_env_name[type];
+	const char *var_s;
+	int i, ret;
+
+	ctx_params->bmp = numa_allocate_nodemask();
+	if (!ctx_params->bmp) {
+		WD_ERR("fail to allocate nodemask.\n");
+		return -WD_ENOMEM;
+	}
+
+	var_s = secure_getenv(env_name);
+	if (var_s && strlen(var_s)) {
+		/* environment variable has the highest priority */
+		ret = wd_env_set_ctx_nums(env_name, var_s, ctx_params, max_op_type);
+		if (ret) {
+			WD_ERR("fail to init ctx nums from %s!\n", env_name);
+			numa_free_nodemask(ctx_params->bmp);
 			return -WD_EINVAL;
 		}
+	} else {
+		/* environment variable is not set, try to use user_ctx_params first */
+		if (user_ctx_params) {
+			copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
+			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
+			ctx_params->op_type_num = user_ctx_params->op_type_num;
+			if (ctx_params->op_type_num > max_op_type) {
+				WD_ERR("fail to check user op type numbers.\n");
+				numa_free_nodemask(ctx_params->bmp);
+				return -WD_EINVAL;
+			}
+
+			return 0;
+		}
+
+		/* user_ctx_params is also not set, use driver's defalut queue_num */
+		numa_bitmask_setall(ctx_params->bmp);
+		for (i = 0; i < driver->op_type_num; i++) {
+			ctx_params->ctx_set_num[i].sync_ctx_num = driver->queue_num;
+			ctx_params->ctx_set_num[i].async_ctx_num = driver->queue_num;
+		}
+	}
+
+	ctx_params->op_type_num = driver->op_type_num;
+	if (ctx_params->op_type_num > max_op_type) {
+		WD_ERR("fail to check driver op type numbers.\n");
+		numa_free_nodemask(ctx_params->bmp);
+		return -WD_EAGAIN;
 	}
 
 	return 0;
@@ -2382,11 +2493,22 @@ free_ctxs:
 	return ret;
 }
 
+static void wd_init_device_nodemask(struct uacce_dev_list *list, struct bitmask *bmp)
+{
+	struct uacce_dev_list *p = list;
+
+	numa_bitmask_clearall(bmp);
+	while (p) {
+		numa_bitmask_setbit(bmp, p->dev->numa_id);
+		p = p->next;
+	}
+}
+
 static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 {
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	struct wd_ctx_params *ctx_params = attrs->ctx_params;
-	struct bitmask *used_bmp, *bmp = ctx_params->bmp;
+	struct bitmask *used_bmp = ctx_params->bmp;
 	struct uacce_dev_list *list, *used_list = NULL;
 	__u32 ctx_set_num, op_type_num;
 	int numa_cnt, ret;
@@ -2411,26 +2533,20 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 	 * filter the devices in the selected numa node, and the second
 	 * thing is to obtain the distribution of devices.
 	 */
-	if (bmp) {
-		used_list = wd_get_usable_list(list, bmp);
-		if (WD_IS_ERR(used_list)) {
-			ret = WD_PTR_ERR(used_list);
-			WD_ERR("failed to get usable devices(%d)!\n", ret);
-			goto out_freelist;
-		}
+	used_list = wd_get_usable_list(list, used_bmp);
+	if (WD_IS_ERR(used_list)) {
+		ret = WD_PTR_ERR(used_list);
+		WD_ERR("failed to get usable devices(%d)!\n", ret);
+		goto out_freelist;
 	}
 
-	used_bmp = wd_create_device_nodemask(used_list ? used_list : list);
-	if (WD_IS_ERR(used_bmp)) {
-		ret = WD_PTR_ERR(used_bmp);
-		goto out_freeusedlist;
-	}
+	wd_init_device_nodemask(used_list, used_bmp);
 
 	numa_cnt = numa_bitmask_weight(used_bmp);
 	if (!numa_cnt) {
 		ret = numa_cnt;
 		WD_ERR("invalid: bmp is clear!\n");
-		goto out_freenodemask;
+		goto out_freeusedlist;
 	}
 
 	ctx_config->ctx_num = ctx_set_num * numa_cnt;
@@ -2438,19 +2554,15 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 	if (!ctx_config->ctxs) {
 		ret = -WD_ENOMEM;
 		WD_ERR("failed to alloc ctxs!\n");
-		goto out_freenodemask;
+		goto out_freeusedlist;
 	}
 
-	ret = wd_init_ctx_and_sched(attrs, used_bmp, used_list ? used_list : list);
+	ret = wd_init_ctx_and_sched(attrs, used_bmp, used_list);
 	if (ret)
 		free(ctx_config->ctxs);
 
-out_freenodemask:
-	wd_free_device_nodemask(used_bmp);
-
 out_freeusedlist:
 	wd_free_list_accels(used_list);
-
 out_freelist:
 	wd_free_list_accels(list);
 
@@ -2580,4 +2692,3 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
 	}
 	wd_sched_rr_release(alg_sched);
 }
-

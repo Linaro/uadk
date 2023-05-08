@@ -422,9 +422,10 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	cipher_ctx_params.ctx_set_num = cipher_ctx_num;
 	ret = wd_ctx_param_init(&cipher_ctx_params, ctx_params,
-				cipher_ctx_num, wd_cipher_setting.driver,
-				WD_CIPHER_DECRYPTION + 1);
+				wd_cipher_setting.driver,
+				WD_CIPHER_TYPE, WD_CIPHER_DECRYPTION + 1);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_cipher_setting.driver);
@@ -445,16 +446,20 @@ res_retry:
 		if (ret == -WD_ENODEV) {
 			wd_disable_drv(wd_cipher_setting.driver);
 			wd_alg_drv_unbind(wd_cipher_setting.driver);
+			wd_ctx_param_uninit(&cipher_ctx_params);
 			goto res_retry;
 		}
 		WD_ERR("fail to init alg attrs.\n");
-		goto out_driver;
+		goto out_params_uninit;
 	}
 
 	wd_alg_set_init(&wd_cipher_setting.status);
+	wd_ctx_param_uninit(&cipher_ctx_params);
 
 	return 0;
 
+out_params_uninit:
+	wd_ctx_param_uninit(&cipher_ctx_params);
 out_driver:
 	wd_alg_drv_unbind(wd_cipher_setting.driver);
 out_dlopen:

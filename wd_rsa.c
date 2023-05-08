@@ -276,9 +276,9 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	rsa_ctx_params.ctx_set_num = rsa_ctx_num;
 	ret = wd_ctx_param_init(&rsa_ctx_params, ctx_params,
-				rsa_ctx_num, wd_rsa_setting.driver,
-				WD_RSA_GENKEY);
+				wd_rsa_setting.driver, WD_RSA_TYPE, WD_RSA_GENKEY);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_rsa_setting.driver);
@@ -299,16 +299,20 @@ res_retry:
 		if (ret == -WD_ENODEV) {
 			wd_disable_drv(wd_rsa_setting.driver);
 			wd_alg_drv_unbind(wd_rsa_setting.driver);
+			wd_ctx_param_uninit(&rsa_ctx_params);
 			goto res_retry;
 		}
 		WD_ERR("failed to init alg attrs!\n");
-		goto out_driver;
+		goto out_params_uninit;
 	}
 
 	wd_alg_set_init(&wd_rsa_setting.status);
+	wd_ctx_param_uninit(&rsa_ctx_params);
 
 	return 0;
 
+out_params_uninit:
+	wd_ctx_param_uninit(&rsa_ctx_params);
 out_driver:
 	wd_alg_drv_unbind(wd_rsa_setting.driver);
 out_dlopen:

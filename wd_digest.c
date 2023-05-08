@@ -340,8 +340,8 @@ static bool wd_digest_algs_check(const char *alg)
 int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 					 struct wd_ctx_params *ctx_params)
 {
-	struct wd_ctx_nums digest_ctx_num[1] = {0};
 	struct wd_ctx_params digest_ctx_params = {0};
+	struct wd_ctx_nums digest_ctx_num = {0};
 	int ret = 0;
 	bool flag;
 
@@ -385,8 +385,9 @@ res_retry:
 		goto out_dlopen;
 	}
 
+	digest_ctx_params.ctx_set_num = &digest_ctx_num;
 	ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
-				digest_ctx_num, wd_digest_setting.driver, 1);
+				wd_digest_setting.driver, WD_DIGEST_TYPE, 1);
 	if (ret) {
 		if (ret == -WD_EAGAIN) {
 			wd_disable_drv(wd_digest_setting.driver);
@@ -407,16 +408,20 @@ res_retry:
 		if (ret == -WD_ENODEV) {
 			wd_disable_drv(wd_digest_setting.driver);
 			wd_alg_drv_unbind(wd_digest_setting.driver);
+			wd_ctx_param_uninit(&digest_ctx_params);
 			goto res_retry;
 		}
 		WD_ERR("fail to init alg attrs.\n");
-		goto out_driver;
+		goto out_params_uninit;
 	}
 
 	wd_alg_set_init(&wd_digest_setting.status);
+	wd_ctx_param_uninit(&digest_ctx_params);
 
 	return 0;
 
+out_params_uninit:
+	wd_ctx_param_uninit(&digest_ctx_params);
 out_driver:
 	wd_alg_drv_unbind(wd_digest_setting.driver);
 out_dlopen:
