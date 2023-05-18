@@ -353,35 +353,6 @@ void wd_aead_free_sess(handle_t h_sess)
 	free(sess);
 }
 
-static int aead_mac_param_check(struct wd_aead_sess *sess,
-	struct wd_aead_req *req)
-{
-	int ret = 0;
-
-	switch (sess->cmode) {
-	case WD_CIPHER_CBC:
-		if (req->mac_bytes < g_aead_mac_len[sess->dalg]) {
-			WD_ERR("failed to check cbc-hmac mac buffer length, size = %u\n",
-				req->mac_bytes);
-			ret = -WD_EINVAL;
-		}
-		break;
-	case WD_CIPHER_CCM:
-	case WD_CIPHER_GCM:
-		if (req->mac_bytes < WD_AEAD_CCM_GCM_MAX) {
-			WD_ERR("failed to check CCM or GCM mac buffer length, size = %u\n",
-				req->mac_bytes);
-			ret = -WD_EINVAL;
-		}
-		break;
-	default:
-		ret = -WD_EINVAL;
-		WD_ERR("set the aead cmode is error, cmode = %d\n", sess->cmode);
-	}
-
-	return ret;
-}
-
 static int wd_aead_param_check(struct wd_aead_sess *sess,
 	struct wd_aead_req *req)
 {
@@ -411,9 +382,10 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = aead_mac_param_check(sess, req);
-	if (unlikely(ret))
+	if (unlikely(req->mac_bytes < sess->auth_bytes)) {
+		WD_ERR("failed to check aead mac length, size = %u\n", req->mac_bytes);
 		return -WD_EINVAL;
+	}
 
 	if (req->data_fmt == WD_SGL_BUF) {
 		len = req->in_bytes + req->assoc_bytes;
