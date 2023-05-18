@@ -119,22 +119,23 @@ struct wd_dtb {
 	__u32 bsize;
 };
 
+/* Members should be exactly 8-byte aligned */
 struct uacce_dev {
 	/* sysfs node content */
 	/* flag: SVA */
 	int flags;
+	int numa_id;
 	/* HW context type */
 	char api[WD_NAME_SIZE];
 	/* dev supported algorithms */
 	char algs[MAX_ATTR_STR_SIZE];
-	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 	/* sysfs path with dev name */
 	char dev_root[PATH_STR_SIZE];
 
 	/* dev path in devfs */
 	char char_dev_path[MAX_DEV_NAME_LEN];
 
-	int numa_id;
+	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 };
 
 struct uacce_dev_list {
