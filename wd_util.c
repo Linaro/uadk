@@ -2233,7 +2233,7 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (ret < 0)
 			goto free_node;
 
-		node->dlhandle = dlopen(lib_path, RTLD_NOW);
+		node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
 		if (!node->dlhandle) {
 			free(node);
 			/* there are many other files need to skip */
