@@ -2148,6 +2148,7 @@ static void dladdr_empty(void) {}
 int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 {
 	char file_path[PATH_STR_SIZE] = {0};
+	char path[PATH_MAX];
 	Dl_info file_info;
 	int len, rc, i;
 
@@ -2176,6 +2177,11 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 	len = snprintf(lib_path, PATH_STR_SIZE, "%s/%s", file_path, lib_file);
 	if (len < 0)
 		return -WD_EINVAL;
+
+	if (realpath(lib_path, path) == NULL) {
+		WD_ERR("%s: no such file or directory!\n", path);
+		return -WD_EINVAL;
+	}
 
 	return 0;
 }
