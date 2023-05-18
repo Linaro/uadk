@@ -244,6 +244,12 @@ static int get_dev_info(struct uacce_dev *dev)
 	if (ret < 0)
 		return ret;
 
+	/* Special processing is performed when NUMA is not configured */
+	if (dev->numa_id < 0) {
+		WD_INFO("numa node of the device is not configured, set it to 0!\n");
+		dev->numa_id = 0;
+	}
+
 	ret = get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
 	if (ret < 0)
 		return ret;

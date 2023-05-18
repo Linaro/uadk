@@ -545,9 +545,7 @@ static __u16 wd_get_dev_numa(struct uacce_dev_list *head,
 	__u16 numa_num = 0;
 
 	while (list) {
-		if (list->dev->numa_id < 0) {
-			list->dev->numa_id = 0;
-		} else if (list->dev->numa_id >= size) {
+		if (list->dev->numa_id >= size) {
 			WD_ERR("invalid: numa id is %d!\n", list->dev->numa_id);
 			return 0;
 		}
