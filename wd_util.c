@@ -1993,7 +1993,7 @@ void wd_dlclose_drv(void *dlh_list)
 	while (dlhead) {
 		dlnode = dlhead;
 		dlhead = dlhead->next;
-		dlclose(dlnode);
+		dlclose(dlnode->dlhandle);
 		free(dlnode);
 	}
 }
