@@ -32,7 +32,7 @@ uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 		-l:libwd_comp.so.2 -lnuma
 endif
 
-uadk_tool_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
+uadk_tool_LDFLAGS=-Wl,-rpath,'/usr/local/lib',--enable-new-dtags
 
 if WITH_ZLIB_FSE_DIR
 AM_CFLAGS += -DZLIB_FSE
