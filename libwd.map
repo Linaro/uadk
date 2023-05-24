@@ -50,5 +50,12 @@ global:
 	wd_enable_drv;
 	wd_disable_drv;
 	wd_get_alg_head;
+
+	uadk_adapter_alloc;
+	uadk_adapter_free;
+	uadk_adapter_set_mode;
+	uadk_adapter_attach_worker;
+	uadk_adapter_parse;
+	uadk_adapter_config;
 local: *;
 };
