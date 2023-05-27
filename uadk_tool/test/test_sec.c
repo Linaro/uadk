@@ -3058,7 +3058,7 @@ static int sec_aead_sync_once(void)
 		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -3372,7 +3372,7 @@ static int sec_aead_async_once(void)
 		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -3585,7 +3585,7 @@ static int sec_aead_sync_multi(void)
 		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -3789,7 +3789,7 @@ static int sec_aead_async_multi(void)
 		goto out;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;

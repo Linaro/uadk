@@ -56,11 +56,17 @@ struct wd_aead_sess {
 	enum wd_digest_mode	dmode;
 	unsigned char		ckey[MAX_CIPHER_KEY_SIZE];
 	unsigned char		akey[MAX_HMAC_KEY_SIZE];
+	/* Mac data pointer for decrypto as stream mode */
+	unsigned char		mac_bak[WD_AEAD_CCM_GCM_MAX];
 	__u16			ckey_bytes;
 	__u16			akey_bytes;
 	__u16			auth_bytes;
 	void			*priv;
 	void			*sched_key;
+	/* Stored the counter for gcm stream mode */
+	__u8			iv[MAX_IV_SIZE];
+	/* Total of data for stream mode */
+	__u64			long_data_len;
 };
 
 struct wd_env_config wd_aead_env_config;
@@ -154,7 +160,7 @@ static unsigned int get_iv_block_size(int mode)
 		ret = AES_BLOCK_SIZE;
 		break;
 	case WD_CIPHER_GCM:
-		ret = GCM_BLOCK_SIZE;
+		ret = GCM_IV_SIZE;
 		break;
 	default:
 		ret = AES_BLOCK_SIZE;
@@ -628,6 +634,41 @@ void wd_aead_uninit2(void)
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
 
+static void fill_stream_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
+			    struct wd_aead_sess *sess)
+{
+	switch (req->msg_state) {
+	case AEAD_MSG_FIRST:
+		/* Stream iv is extended to 16 bytes and last 4 bytes must be zero */
+		memset(sess->iv, 0, MAX_IV_SIZE);
+		memcpy(sess->iv, req->iv, GCM_IV_SIZE);
+
+		/* Store the original mac of first message to session */
+		if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
+			memcpy(sess->mac_bak, req->mac, sess->auth_bytes);
+		break;
+	case AEAD_MSG_MIDDLE:
+		/* Middle messages need to store the stream's total length to session */
+		sess->long_data_len += req->in_bytes;
+
+		msg->long_data_len = sess->long_data_len;
+		break;
+	case AEAD_MSG_END:
+		/* Sets the original mac for final message */
+		if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
+			memcpy(msg->mac_bak, sess->mac_bak, sess->auth_bytes);
+
+		msg->long_data_len = sess->long_data_len + req->in_bytes;
+		/* Reset the session's long_data_len */
+		sess->long_data_len = 0;
+		break;
+	default:
+		return;
+	}
+
+	msg->iv = sess->iv;
+}
+
 static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 			    struct wd_aead_sess *sess)
 {
@@ -653,6 +694,9 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 	msg->mac = req->mac;
 	msg->auth_bytes = sess->auth_bytes;
 	msg->data_fmt = req->data_fmt;
+
+	msg->msg_state = req->msg_state;
+	fill_stream_msg(msg, req, sess);
 }
 
 static int send_recv_sync(struct wd_ctx_internal *ctx,

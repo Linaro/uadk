@@ -78,7 +78,8 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd.c wd.h
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
-		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h
+		lib/crypto/aes.c lib/crypto/galois.c \
+		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h aes.h galois.h
 
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h

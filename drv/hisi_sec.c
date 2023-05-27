@@ -4,11 +4,14 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include "../include/drv/wd_cipher_drv.h"
-#include "../include/drv/wd_digest_drv.h"
-#include "../include/drv/wd_aead_drv.h"
+#include "drv/wd_cipher_drv.h"
+#include "drv/wd_digest_drv.h"
+#include "drv/wd_aead_drv.h"
+#include "crypto/aes.h"
+#include "crypto/galois.h"
 #include "hisi_qm_udrv.h"
 
+#define BIT(nr)			(1UL << (nr))
 #define SEC_DIGEST_ALG_OFFSET	11
 #define WORD_ALIGNMENT_MASK	0x3
 #define CTR_MODE_LEN_SHIFT	4
@@ -66,6 +69,15 @@
 #define DES3_BLOCK_SIZE		8
 #define AES_BLOCK_SIZE		16
 #define CTR_128BIT_COUNTER	16
+#define GCM_FINAL_COUNTER	0x1000000
+#define GCM_FINAL_COUNTER_LEN	4
+#define GCM_STREAM_MAC_OFFSET	32
+#define GCM_FULL_MAC_LEN	16
+#define GCM_AUTH_MAC_OFFSET	47
+#define GCM_BLOCK_SIZE		AES_BLOCK_SIZE
+#define AKEY_LEN(c_key_len)	(2 * (c_key_len) + 0x4)
+#define MAC_LEN			4
+#define LONG_AUTH_DATA_OFFSET   24
 
 /* The max BD data length is 16M-512B */
 #define MAX_INPUT_DATA_LEN	0xFFFE00
@@ -173,8 +185,10 @@ enum {
 };
 
 enum sec_cipher_dir {
+	SEC_NO_CIPHER = 0x0,
 	SEC_CIPHER_ENC = 0x1,
 	SEC_CIPHER_DEC = 0x2,
+	SEC_CIPHER_COPY = 0x3,
 };
 
 enum sec_bd_type {
@@ -367,7 +381,8 @@ struct bd3_stream_scene {
 	/*
 	 * auth_pad: 0~1 bits
 	 * stream_protocol: 2~4 bits
-	 * reserved: 5~7 bits
+	 * mac_sel: 5 bits
+	 * reserved: 6~7 bits
 	 */
 	__u8 stream_auth_pad;
 	__u8 plaintext_type;
@@ -613,6 +628,7 @@ static void dump_sec_msg(void *msg, const char *alg)
 			dmsg->key_bytes, dmsg->iv_bytes, dmsg->in_bytes, dmsg->out_bytes);
 	} else if (!strcmp(alg, "aead")) {
 		amsg = (struct wd_aead_msg *)msg;
+		WD_ERR("MSG_STATE:%u\n", amsg->msg_state);
 		WD_ERR("type:%u calg:%u op_type:%u cmode:%u\n",
 			amsg->alg_type, amsg->calg, amsg->op_type, amsg->cmode);
 		WD_ERR("data_fmt:%u ckey_bytes:%u auth_bytes:%u\n",
@@ -2100,6 +2116,10 @@ static int fill_aead_bd2_mode(struct wd_aead_msg *msg,
 	case WD_CIPHER_GCM:
 		c_mode = C_MODE_GCM;
 		sqe->type_auth_cipher &= SEC_AUTH_MASK;
+		if ((msg->msg_state == AEAD_MSG_FIRST) && !msg->assoc_bytes) {
+			WD_ERR("invalid: first bd assoc bytes is 0!\n");
+			return -WD_EINVAL;
+		}
 		sqe->type2.alen_ivllen = msg->assoc_bytes;
 		sqe->type2.icvw_kmode |= msg->auth_bytes;
 		break;
@@ -2175,8 +2195,22 @@ static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
 	sqe->type2.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
 }
 
-static int aead_len_check(struct wd_aead_msg *msg)
+static int aead_len_check(struct wd_aead_msg *msg, enum sec_bd_type type)
 {
+	if (msg->msg_state == AEAD_MSG_MIDDLE) {
+		if ((!msg->in_bytes || (msg->in_bytes & (AES_BLOCK_SIZE - 1)))) {
+			WD_ERR("invalid: middle bd input size is 0 or not 16 bytes aligned!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	if (msg->cmode == WD_CIPHER_GCM || msg->cmode == WD_CIPHER_CCM) {
+		if (msg->msg_state == AEAD_MSG_BLOCK && type == BD_TYPE2 && !msg->in_bytes) {
+			WD_ERR("invalid: ccm/gcm block mode input size is 0 for hw_v2!\n");
+			return -WD_EINVAL;
+		}
+	}
+
 	if (unlikely(msg->in_bytes + msg->assoc_bytes > MAX_INPUT_DATA_LEN)) {
 		WD_ERR("aead input data length is too long, size = %u\n",
 		       msg->in_bytes + msg->assoc_bytes);
@@ -2193,16 +2227,184 @@ static int aead_len_check(struct wd_aead_msg *msg)
 	return 0;
 }
 
+static void fill_gcm_akey_len(struct wd_aead_msg *msg, void *sqe, enum sec_bd_type type)
+{
+	struct hisi_sec_sqe3 *sqe3;
+	struct hisi_sec_sqe *sqe2;
+	__u8 c_key_len = 0;
+
+	aead_get_aes_key_len(msg, &c_key_len);
+
+	if (type == BD_TYPE2) {
+		sqe2 = (struct hisi_sec_sqe *)sqe;
+		sqe2->type2.mac_key_alg |= (__u32)AKEY_LEN(c_key_len) << MAC_LEN_OFFSET;
+	} else if (type == BD_TYPE3) {
+		sqe3 = (struct hisi_sec_sqe3 *)sqe;
+		sqe3->auth_mac_key |= (__u32)AKEY_LEN(c_key_len) << SEC_AKEY_OFFSET_V3;
+	}
+}
+
+static void gcm_auth_ivin(struct wd_aead_msg *msg)
+{
+	__u32 final_counter = GCM_FINAL_COUNTER;
+
+	/* auth_ivin = {cipher_ivin(16B), null(16B), auth_mac(16B), null(16B)} */
+	memset(msg->aiv_stream, 0, AIV_STREAM_LEN);
+
+	memcpy(msg->aiv_stream, msg->iv, GCM_IV_SIZE);
+	/* The last 4 bytes of c_ivin are counters */
+	memcpy(msg->aiv_stream + GCM_IV_SIZE, &final_counter, GCM_FINAL_COUNTER_LEN);
+
+	/* Fill auth_ivin with the mac of last MIDDLE BD */
+	memcpy(msg->aiv_stream + GCM_STREAM_MAC_OFFSET, msg->mac, GCM_FULL_MAC_LEN);
+
+	/* Use the user's origin mac for decrypt icv check */
+	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
+		memcpy(msg->mac, msg->mac_bak, msg->auth_bytes);
+}
+
+static void fill_gcm_first_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	sqe->ai_apd_cs = AI_GEN_INNER;
+	sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
+	sqe->type_auth_cipher &= ~(SEC_CIPHER_COPY << SEC_CIPHER_OFFSET);
+	sqe->type_auth_cipher |= AUTH_HMAC_CALCULATE << AUTHTYPE_OFFSET;
+	sqe->type2.mac_key_alg = MAC_LEN;
+	fill_gcm_akey_len(msg, sqe, BD_TYPE2);
+	sqe->type2.mac_key_alg |= A_ALG_AES_GMAC << AUTH_ALG_OFFSET;
+	sqe->type2.clen_ivhlen = 0;
+	sqe->type2.icvw_kmode = 0;
+	sqe->type2.a_ivin_addr = 0;
+	sqe->type2.c_key_addr = 0;
+	sqe->type2.c_alg  = 0;
+	sqe->type2.auth_src_offset = 0;
+	sqe->type2.alen_ivllen = msg->assoc_bytes;
+	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->ckey;
+}
+
+static void fill_gcm_middle_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
+	sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
+	sqe->type_auth_cipher |= NO_AUTH << AUTHTYPE_OFFSET;
+	sqe->type2.cipher_src_offset = 0;
+	sqe->type2.auth_src_offset = 0;
+	fill_gcm_akey_len(msg, sqe, BD_TYPE2);
+	sqe->type2.alen_ivllen = 0;
+	sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
+	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->ckey;
+}
+
+static void fill_gcm_final_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
+	sqe->ai_apd_cs |= AUTHPAD_PAD << AUTHPAD_OFFSET;
+	sqe->type_auth_cipher |= NO_AUTH << AUTHTYPE_OFFSET;
+	sqe->type2.cipher_src_offset = 0;
+	sqe->type2.auth_src_offset = 0;
+	fill_gcm_akey_len(msg, sqe, BD_TYPE2);
+	sqe->type2.alen_ivllen = 0;
+	sqe->type2.long_a_data_len = msg->assoc_bytes;
+	sqe->type2.long_a_data_len |= msg->long_data_len << LONG_AUTH_DATA_OFFSET;
+	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->ckey;
+	sqe->type2.a_ivin_addr = (__u64)(uintptr_t)msg->aiv_stream;
+}
+
+static void get_galois_vector_s(struct wd_aead_msg *msg, __u8 *s)
+{
+	unsigned int aad_len, cipher_len;
+	__u8 a_c[GCM_BLOCK_SIZE] = {0};
+	int i;
+
+	aad_len = msg->assoc_bytes * BYTE_BITS;
+	memcpy(&a_c[BYTE_BITS], &aad_len, sizeof(unsigned int));
+
+	cipher_len = msg->long_data_len * BYTE_BITS;
+	memcpy(&a_c[0], &cipher_len, sizeof(unsigned int));
+
+	/* Based the little-endian operation */
+	for (i = 0; i < GCM_BLOCK_SIZE; i++)
+		s[i] = a_c[i] ^ msg->aiv_stream[(__u8)(GCM_AUTH_MAC_OFFSET - i)];
+}
+
+static int gcm_do_soft_mac(struct wd_aead_msg *msg)
+{
+	__u8 ctr_r[GCM_BLOCK_SIZE] = {0};
+	__u8 data[GCM_BLOCK_SIZE] = {0};
+	__u8 H[GCM_BLOCK_SIZE] = {0};
+	__u8 S[GCM_BLOCK_SIZE] = {0};
+	__u8 g[GCM_BLOCK_SIZE] = {0};
+	int i, ret;
+
+	aes_encrypt(msg->ckey, msg->ckey_bytes, data, H);
+
+	get_galois_vector_s(msg, S);
+
+	galois_compute(S, H, g, GCM_BLOCK_SIZE);
+
+	/* Encrypt ctr0 based on AES_ECB */
+	aes_encrypt(msg->ckey, msg->ckey_bytes, msg->aiv_stream, ctr_r);
+
+	/* Get the GMAC tag final */
+	for (i = 0; i < GCM_BLOCK_SIZE; i++)
+		msg->mac[i] = g[i] ^ ctr_r[i];
+
+	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
+		ret = memcmp(msg->mac, msg->mac_bak, msg->auth_bytes);
+		if (ret) {
+			msg->result = WD_IN_EPARA;
+			WD_ERR("failed to do the gcm authentication!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	msg->result = WD_SUCCESS;
+
+	return 0;
+}
+
+static int fill_stream_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	int ret = 0;
+
+	switch (msg->msg_state) {
+	case AEAD_MSG_FIRST:
+		fill_gcm_first_bd2(msg, sqe);
+		break;
+	case AEAD_MSG_MIDDLE:
+		fill_gcm_middle_bd2(msg, sqe);
+		break;
+	case AEAD_MSG_END:
+		gcm_auth_ivin(msg);
+		if (msg->in_bytes) {
+			fill_gcm_final_bd2(msg, sqe);
+		} else {
+			ret = gcm_do_soft_mac(msg);
+			if (!ret)
+				ret = WD_SOFT_COMPUTING;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
 static int fill_aead_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 {
 	__u8 scene, cipher, de;
 	int ret;
 
-	/* config BD type */
 	sqe->type_auth_cipher = BD_TYPE2;
-	/* config scene */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
-	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
+
+	if (msg->msg_state == AEAD_MSG_BLOCK)
+		scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET;
+	else
+		scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET;
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
 		cipher = SEC_CIPHER_ENC << SEC_CIPHER_OFFSET;
@@ -2218,6 +2420,8 @@ static int fill_aead_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 		WD_ERR("failed to check aead op type, op = %u\n", msg->op_type);
 		return -WD_EINVAL;
 	}
+
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET;
 	sqe->sds_sa_type |= (__u8)(de | scene);
 	sqe->type_auth_cipher |= cipher;
 
@@ -2240,6 +2444,23 @@ static int fill_aead_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 	return 0;
 }
 
+int aead_msg_state_check(struct wd_aead_msg *msg)
+{
+	if (msg->cmode == WD_CIPHER_GCM) {
+		if (unlikely(msg->msg_state >= AEAD_MSG_INVALID)) {
+			WD_ERR("invalid: GCM input msg state is wrong!\n");
+			return -WD_EINVAL;
+		}
+	} else {
+		if (unlikely(msg->msg_state != AEAD_MSG_BLOCK)) {
+			WD_ERR("invalid: cmode not support stream msg state!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 int hisi_sec_aead_send(handle_t ctx, void *aead_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -2253,12 +2474,11 @@ int hisi_sec_aead_send(handle_t ctx, void *aead_msg)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->cmode != WD_CIPHER_CBC && !msg->in_bytes)) {
-		WD_ERR("ccm or gcm not supports 0 packet size at hw_v2!\n");
-		return -WD_EINVAL;
-	}
+	ret = aead_msg_state_check(msg);
+	if (unlikely(ret))
+		return ret;
 
-	ret = aead_len_check(msg);
+	ret = aead_len_check(msg, BD_TYPE2);
 	if (unlikely(ret))
 		return ret;
 
@@ -2275,6 +2495,13 @@ int hisi_sec_aead_send(handle_t ctx, void *aead_msg)
 	}
 
 	fill_aead_bd2_addr(msg, &sqe);
+
+	ret = fill_stream_bd2(msg, &sqe);
+	if (ret == WD_SOFT_COMPUTING)
+		return 0;
+	else if (unlikely(ret))
+		return ret;
+
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
 
@@ -2291,6 +2518,20 @@ int hisi_sec_aead_send(handle_t ctx, void *aead_msg)
 	}
 
 	return 0;
+}
+
+static void update_stream_counter(struct wd_aead_msg *recv_msg)
+{
+	/*
+	 * The counter of the first middle BD is set to 1.
+	 * Other middle BDs and tail BD are set based on
+	 * cipher_len and the counter of the previous BD.
+	 */
+	if (recv_msg->msg_state == AEAD_MSG_FIRST) {
+		recv_msg->iv[MAX_IV_SIZE - 1] = 0x1;
+	} else if (recv_msg->msg_state == AEAD_MSG_MIDDLE) {
+		ctr_iv_inc(recv_msg->iv, recv_msg->in_bytes >> CTR_MODE_LEN_SHIFT);
+	}
 }
 
 static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
@@ -2329,8 +2570,17 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		temp_msg = recv_msg;
 	}
 
+	update_stream_counter(recv_msg);
+
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "aead");
+}
+
+static bool soft_compute_check(struct hisi_qp *qp, struct wd_aead_msg *msg)
+{
+	/* Asynchronous mode does not use the sent message, so ignores it */
+	return (msg->msg_state == AEAD_MSG_END) && !msg->in_bytes &&
+		qp->q_info.qp_mode == CTX_MODE_SYNC;
 }
 
 int hisi_sec_aead_recv(handle_t ctx, void *aead_msg)
@@ -2340,6 +2590,9 @@ int hisi_sec_aead_recv(handle_t ctx, void *aead_msg)
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
+
+	if (soft_compute_check((struct hisi_qp *)h_qp, recv_msg))
+		return 0;
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
@@ -2431,6 +2684,10 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 	case WD_CIPHER_GCM:
 		sqe->c_mode_alg |= C_MODE_GCM;
 		sqe->auth_mac_key &= SEC_AUTH_MASK_V3;
+		if ((msg->msg_state == AEAD_MSG_FIRST) && !msg->assoc_bytes) {
+			WD_ERR("invalid: first bd assoc bytes is 0!\n");
+			return -WD_EINVAL;
+		}
 		sqe->a_len_key = msg->assoc_bytes;
 		sqe->c_icv_key |= msg->auth_bytes << SEC_MAC_OFFSET_V3;
 		break;
@@ -2460,17 +2717,97 @@ static void fill_aead_bd3_addr(struct wd_aead_msg *msg,
 	sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
 }
 
+static void fill_gcm_first_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
+	sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
+	sqe->stream_scene.stream_auth_pad |= BIT(5);
+	sqe->c_icv_key &= ~0x3;
+	sqe->auth_mac_key = AUTH_HMAC_CALCULATE;
+	sqe->auth_mac_key |= MAC_LEN << SEC_MAC_OFFSET_V3;
+	fill_gcm_akey_len(msg, sqe, BD_TYPE3);
+	sqe->auth_mac_key |= A_ALG_AES_GMAC << SEC_AUTH_ALG_OFFSET_V3;
+	sqe->c_len_ivin = 0;
+	sqe->auth_ivin.a_ivin_addr = 0;
+	sqe->c_key_addr = 0;
+	sqe->c_mode_alg &= ~(0x7 << SEC_CALG_OFFSET_V3);
+	sqe->auth_src_offset = 0;
+	sqe->a_len_key = msg->assoc_bytes;
+	sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
+}
+
+static void fill_gcm_middle_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
+	sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
+	sqe->stream_scene.stream_auth_pad |= BIT(5);
+	sqe->auth_mac_key |= NO_AUTH;
+	sqe->cipher_src_offset = 0;
+	sqe->auth_src_offset = 0;
+	fill_gcm_akey_len(msg, sqe, BD_TYPE3);
+	sqe->a_len_key = 0;
+	sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
+	sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
+}
+
+static void fill_gcm_final_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
+	sqe->stream_scene.stream_auth_pad = AUTHPAD_PAD;
+	sqe->stream_scene.stream_auth_pad |= BIT(5);
+	sqe->auth_mac_key |= NO_AUTH;
+	sqe->cipher_src_offset = 0;
+	sqe->auth_src_offset = 0;
+	fill_gcm_akey_len(msg, sqe, BD_TYPE3);
+	sqe->a_len_key = 0;
+	sqe->stream_scene.long_a_data_len = msg->assoc_bytes;
+	sqe->stream_scene.long_a_data_len |= msg->long_data_len << LONG_AUTH_DATA_OFFSET;
+	sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+	sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
+	sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->aiv_stream;
+}
+
+static int fill_stream_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	int ret = 0;
+
+	switch (msg->msg_state) {
+	case AEAD_MSG_FIRST:
+		fill_gcm_first_bd3(msg, sqe);
+		break;
+	case AEAD_MSG_MIDDLE:
+		fill_gcm_middle_bd3(msg, sqe);
+		break;
+	case AEAD_MSG_END:
+		gcm_auth_ivin(msg);
+		if (msg->in_bytes) {
+			fill_gcm_final_bd3(msg, sqe);
+		} else {
+			ret = gcm_do_soft_mac(msg);
+			if (!ret)
+				ret = WD_SOFT_COMPUTING;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
 
 static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 {
 	__u16 scene, de;
 	int ret;
 
-	/* config BD type */
 	sqe->bd_param = BD_TYPE3;
-	/* config scene */
-	scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
-	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
+
+	if (msg->msg_state == AEAD_MSG_BLOCK)
+		scene = SEC_IPSEC_SCENE << SEC_SCENE_OFFSET_V3;
+	else
+		scene = SEC_STREAM_SCENE << SEC_SCENE_OFFSET_V3;
 
 	if (msg->op_type == WD_CIPHER_ENCRYPTION_DIGEST) {
 		sqe->c_icv_key = SEC_CIPHER_ENC;
@@ -2484,6 +2821,8 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 		WD_ERR("failed to check aead op type, op = %u\n", msg->op_type);
 		return -WD_EINVAL;
 	}
+
+	de = DATA_DST_ADDR_ENABLE << SEC_DE_OFFSET_V3;
 	sqe->bd_param |= (__u16)(de | scene);
 
 	sqe->c_len_ivin = msg->in_bytes;
@@ -2518,7 +2857,11 @@ int hisi_sec_aead_send_v3(handle_t ctx, void *aead_msg)
 		return -WD_EINVAL;
 	}
 
-	ret = aead_len_check(msg);
+	ret = aead_msg_state_check(msg);
+	if (unlikely(ret))
+		return ret;
+
+	ret = aead_len_check(msg, BD_TYPE3);
 	if (unlikely(ret))
 		return ret;
 
@@ -2535,6 +2878,12 @@ int hisi_sec_aead_send_v3(handle_t ctx, void *aead_msg)
 	}
 
 	fill_aead_bd3_addr(msg, &sqe);
+	ret = fill_stream_bd3(msg, &sqe);
+	if (ret == WD_SOFT_COMPUTING)
+		return 0;
+	else if (unlikely(ret))
+		return ret;
+
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = msg->tag;
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -2588,6 +2937,8 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		temp_msg = recv_msg;
 	}
 
+	update_stream_counter(recv_msg);
+
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "aead");
 }
@@ -2599,6 +2950,9 @@ int hisi_sec_aead_recv_v3(handle_t ctx, void *aead_msg)
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
+
+	if (soft_compute_check((struct hisi_qp *)h_qp, recv_msg))
+		return 0;
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)

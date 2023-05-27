@@ -55,12 +55,19 @@ struct wd_aead_msg {
 	__u8 *iv;
 	/* input auth iv pointer */
 	__u8 aiv[MAX_IV_SIZE];
+	/* input auth iv pointer for stream mode */
+	__u8 aiv_stream[AIV_STREAM_LEN];
 	/* input data pointer */
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
 	/* mac */
 	__u8 *mac;
+	/* mac data pointer for decrypto as stream mode */
+	__u8 mac_bak[AES_BLOCK_SIZE];
+	/* total of data for stream mode */
+	__u64 long_data_len;
+	enum wd_aead_msg_state msg_state;
 };
 
 struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag);
