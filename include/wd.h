@@ -78,6 +78,7 @@ typedef void (*wd_log)(const char *format, ...);
 #define	WD_SUCCESS			0
 #define	WD_STREAM_END			1
 #define	WD_STREAM_START			2
+#define	WD_SOFT_COMPUTING		3
 #define	WD_EIO				EIO
 #define	WD_EAGAIN			EAGAIN
 #define	WD_ENOMEM			ENOMEM

@@ -16,6 +16,7 @@
 extern "C" {
 #endif
 
+#define AIV_STREAM_LEN 64
 /**
  * wd_aead_op_type - Algorithm type of option
  */
@@ -40,6 +41,18 @@ struct wd_aead_sess_setup {
 	enum wd_digest_type dalg;
 	enum wd_digest_mode dmode;
 	void *sched_param;
+};
+
+/**
+ * wd_aead_msg_state - Notify the message state
+ * zero is message for block mode, non-zero is message for stream mode.
+ */
+enum wd_aead_msg_state {
+	AEAD_MSG_BLOCK = 0x0,
+	AEAD_MSG_FIRST,
+	AEAD_MSG_MIDDLE,
+	AEAD_MSG_END,
+	AEAD_MSG_INVALID,
 };
 
 struct wd_aead_req;
@@ -82,6 +95,8 @@ struct wd_aead_req {
 	__u8		    data_fmt;
 	wd_alg_aead_cb_t	*cb;
 	void			*cb_param;
+
+	enum wd_aead_msg_state	msg_state;
 };
 
 /**
