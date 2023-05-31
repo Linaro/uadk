@@ -1,4 +1,9 @@
 
+# UADK Release v2.5 June 2023
+
+## Features:
+- Support init2 interface, already supported algorithm: cipher, digest, aead, dh, rsa, ecc
+
 # UADK Release v2.4 December 2022
 
 ## Features:
