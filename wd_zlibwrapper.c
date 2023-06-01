@@ -38,7 +38,7 @@ static void wd_zlib_unlock(void)
 	zlib_config.status = WD_ZLIB_UNINIT;
 }
 
-static int wd_zlib_init(void)
+static int wd_zlib_uadk_init(void)
 {
 	struct wd_ctx_nums *ctx_set_num;
 	struct wd_ctx_params cparams;
@@ -84,7 +84,7 @@ out_freectx:
 	return ret;
 }
 
-static void wd_zlib_uninit(void)
+static void wd_zlib_uadk_uninit(void)
 {
 	wd_comp_uninit2();
 	zlib_config.status = WD_ZLIB_UNINIT;
@@ -155,6 +155,62 @@ static void wd_zlib_free_sess(z_streamp strm)
 	wd_comp_free_sess((handle_t)strm->reserved);
 }
 
+static int wd_zlib_init(z_streamp strm, int level, int windowbits, enum wd_comp_op_type type)
+{
+	int ret;
+
+	if (unlikely(!strm))
+		return Z_STREAM_ERROR;
+
+	pthread_mutex_lock(&wd_zlib_mutex);
+	ret = wd_zlib_uadk_init();
+	if (unlikely(ret < 0))
+		goto out_unlock;
+
+	strm->total_in = 0;
+	strm->total_out = 0;
+
+	ret = wd_zlib_alloc_sess(strm, level, windowbits, type);
+	if (unlikely(ret < 0))
+		goto out_uninit;
+
+	__atomic_add_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
+	pthread_mutex_unlock(&wd_zlib_mutex);
+
+	return Z_OK;
+
+out_uninit:
+	wd_zlib_uadk_uninit();
+
+out_unlock:
+	pthread_mutex_unlock(&wd_zlib_mutex);
+
+	return ret;
+}
+
+static int wd_zlib_uninit(z_streamp strm)
+{
+	int ret;
+
+	if (unlikely(!strm))
+		return Z_STREAM_ERROR;
+
+	wd_zlib_free_sess(strm);
+
+	pthread_mutex_lock(&wd_zlib_mutex);
+
+	ret = __atomic_sub_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
+	if (ret != 0)
+		goto out_unlock;
+
+	wd_zlib_uadk_uninit();
+
+out_unlock:
+	pthread_mutex_unlock(&wd_zlib_mutex);
+
+	return Z_OK;
+}
+
 static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type type)
 {
 	handle_t h_sess = strm->reserved;
@@ -211,37 +267,9 @@ int wd_deflateInit_(z_streamp strm, int level, const char *version, int stream_s
 int wd_deflateInit2_(z_streamp strm, int level, int method, int windowBits,
 		     int memLevel, int strategy, const char *version, int stream_size)
 {
-	int ret;
-
-	if (!strm)
-		return Z_STREAM_ERROR;
-
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
-	pthread_mutex_lock(&wd_zlib_mutex);
-	ret = wd_zlib_init();
-	if (unlikely(ret < 0))
-		goto out_unlock;
-
-	strm->total_in = 0;
-	strm->total_out = 0;
-
-	ret = wd_zlib_alloc_sess(strm, level, windowBits, WD_DIR_COMPRESS);
-	if (unlikely(ret < 0))
-		goto out_uninit;
-
-	__atomic_add_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return Z_OK;
-
-out_uninit:
-	wd_zlib_uninit();
-
-out_unlock:
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return ret;
+	return wd_zlib_init(strm, level, windowBits, WD_DIR_COMPRESS);
 }
 
 int wd_deflate(z_streamp strm, int flush)
@@ -264,25 +292,7 @@ int wd_deflateReset(z_streamp strm)
 
 int wd_deflateEnd(z_streamp strm)
 {
-	int ret;
-
-	if (!strm)
-		return Z_STREAM_ERROR;
-
-	wd_zlib_free_sess(strm);
-
-	pthread_mutex_lock(&wd_zlib_mutex);
-
-	ret = __atomic_sub_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
-	if (ret != 0)
-		goto out_unlock;
-
-	wd_zlib_uninit();
-
-out_unlock:
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return Z_OK;
+	return wd_zlib_uninit(strm);
 }
 
 /* ===   Decompression   === */
@@ -293,37 +303,9 @@ int wd_inflateInit_(z_streamp strm, const char *version, int stream_size)
 
 int wd_inflateInit2_(z_streamp strm, int  windowBits, const char *version, int stream_size)
 {
-	int ret;
-
-	if (!strm)
-		return Z_STREAM_ERROR;
-
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
-	pthread_mutex_lock(&wd_zlib_mutex);
-	ret = wd_zlib_init();
-	if (unlikely(ret < 0))
-		goto out_unlock;
-
-	strm->total_in = 0;
-	strm->total_out = 0;
-
-	ret = wd_zlib_alloc_sess(strm, 0, windowBits, WD_DIR_DECOMPRESS);
-	if (unlikely(ret < 0))
-		goto out_uninit;
-
-	__atomic_add_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return Z_OK;
-
-out_uninit:
-	wd_zlib_uninit();
-
-out_unlock:
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return ret;
+	return wd_zlib_init(strm, 0, windowBits, WD_DIR_DECOMPRESS);
 }
 
 int wd_inflate(z_streamp strm, int flush)
@@ -346,23 +328,5 @@ int wd_inflateReset(z_streamp strm)
 
 int wd_inflateEnd(z_streamp strm)
 {
-	int ret;
-
-	if (!strm)
-		return Z_STREAM_ERROR;
-
-	wd_zlib_free_sess(strm);
-
-	pthread_mutex_lock(&wd_zlib_mutex);
-
-	ret = __atomic_sub_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
-	if (ret != 0)
-		goto out_unlock;
-
-	wd_zlib_uninit();
-
-out_unlock:
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return Z_OK;
+	return wd_zlib_uninit(strm);
 }
