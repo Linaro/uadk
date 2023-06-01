@@ -16,8 +16,6 @@
 extern "C" {
 #endif
 
-#define ZLIB_VERSION	"1.2.11"
-
 /* Allowed flush values; the same as zlib library */
 #define Z_NO_FLUSH		0
 #define Z_PARTIAL_FLUSH		1
@@ -89,33 +87,17 @@ typedef struct z_stream_s {
 
 typedef z_stream * z_streamp;
 
-int wd_deflateInit_(z_streamp strm, int level, const char *version, int stream_size);
-int wd_deflateInit2_(z_streamp strm, int level, int method, int windowBits,
-		     int memLevel, int strategy, const char *version, int stream_size);
+int wd_deflate_init(z_streamp strm, int level, int windowbits);
 /*
  * The flush support Z_SYNC_FLUSH and Z_FINISH only.
  */
 int wd_deflate(z_streamp strm, int flush);
-int wd_deflateReset(z_streamp strm);
-int wd_deflateEnd(z_streamp strm);
+int wd_deflate_reset(z_streamp strm);
+int wd_deflate_end(z_streamp strm);
 
-int wd_inflateInit_(z_streamp strm, const char *version, int stream_size);
-int wd_inflateInit2_(z_streamp strm, int  windowBits, const char *version, int stream_size);
+int wd_inflate_init(z_streamp strm, int  windowbits);
 int wd_inflate(z_streamp strm, int flush);
-int wd_inflateReset(z_streamp strm);
-int wd_inflateEnd(z_streamp strm);
-
-#define wd_deflateInit(strm, level) \
-	wd_deflateInit_((strm), (level), ZLIB_VERSION, (int)sizeof(z_stream))
-
-#define wd_deflateInit2(strm, level, method, windowBits, memLevel, strategy) \
-	wd_deflateInit2_((strm), (level), (method), (windowBits), (memLevel),\
-			 (strategy), ZLIB_VERSION, (int)sizeof(z_stream))
-
-#define wd_inflateInit(strm) \
-	wd_inflateInit_((strm), ZLIB_VERSION, (int)sizeof(z_stream))
-
-#define wd_inflateInit2(strm, windowBits) \
-	wd_inflateInit2_((strm), (windowBits), ZLIB_VERSION, (int)sizeof(z_stream))
+int wd_inflate_reset(z_streamp strm);
+int wd_inflate_end(z_streamp strm);
 
 #endif /* UADK_ZLIBWRAPPER_H */
