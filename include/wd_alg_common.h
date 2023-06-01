@@ -106,6 +106,7 @@ struct wd_ctx_internal {
 
 struct wd_ctx_config_internal {
 	__u32 ctx_num;
+	int shmid;
 	struct wd_ctx_internal *ctxs;
 	void *priv;
 	bool epoll_en;
