@@ -186,8 +186,12 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 	strm->avail_out = dst_len - req.dst_len;
 	strm->total_in += req.src_len;
 	strm->total_out += req.dst_len;
+	strm->next_in += req.src_len;
+	strm->next_out += req.dst_len;
 
-	if (flush == Z_FINISH && req.src_len == src_len)
+	if (type == WD_DIR_COMPRESS && flush == Z_FINISH && req.src_len == src_len)
+		ret = Z_STREAM_END;
+	else if (type == WD_DIR_DECOMPRESS && req.status == WD_STREAM_END)
 		ret = Z_STREAM_END;
 
 	return ret;
