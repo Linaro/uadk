@@ -257,19 +257,11 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 }
 
 /* ===   Compression   === */
-int wd_deflateInit_(z_streamp strm, int level, const char *version, int stream_size)
-
-{
-	return wd_deflateInit2_(strm, level, Z_DEFLATED, MAX_WBITS, DEF_MEM_LEVEL,
-				Z_DEFAULT_STRATEGY, version, stream_size);
-}
-
-int wd_deflateInit2_(z_streamp strm, int level, int method, int windowBits,
-		     int memLevel, int strategy, const char *version, int stream_size)
+int wd_deflate_init(z_streamp strm, int level, int windowbits)
 {
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
-	return wd_zlib_init(strm, level, windowBits, WD_DIR_COMPRESS);
+	return wd_zlib_init(strm, level, windowbits, WD_DIR_COMPRESS);
 }
 
 int wd_deflate(z_streamp strm, int flush)
@@ -277,7 +269,7 @@ int wd_deflate(z_streamp strm, int flush)
 	return wd_zlib_do_request(strm, flush, WD_DIR_COMPRESS);
 }
 
-int wd_deflateReset(z_streamp strm)
+int wd_deflate_reset(z_streamp strm)
 {
 	if (!strm)
 		return Z_STREAM_ERROR;
@@ -290,30 +282,28 @@ int wd_deflateReset(z_streamp strm)
 	return Z_OK;
 }
 
-int wd_deflateEnd(z_streamp strm)
+int wd_deflate_end(z_streamp strm)
 {
 	return wd_zlib_uninit(strm);
 }
 
 /* ===   Decompression   === */
-int wd_inflateInit_(z_streamp strm, const char *version, int stream_size)
-{
-	return wd_inflateInit2_(strm, MAX_WBITS, version, stream_size);
-}
-
-int wd_inflateInit2_(z_streamp strm, int  windowBits, const char *version, int stream_size)
+int wd_inflate_init(z_streamp strm, int  windowbits)
 {
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
-	return wd_zlib_init(strm, 0, windowBits, WD_DIR_DECOMPRESS);
+	return wd_zlib_init(strm, 0, windowbits, WD_DIR_DECOMPRESS);
 }
 
 int wd_inflate(z_streamp strm, int flush)
 {
+	if (unlikely(!strm))
+		return Z_STREAM_ERROR;
+
 	return wd_zlib_do_request(strm, flush, WD_DIR_DECOMPRESS);
 }
 
-int wd_inflateReset(z_streamp strm)
+int wd_inflate_reset(z_streamp strm)
 {
 	if (!strm)
 		return Z_STREAM_ERROR;
@@ -326,7 +316,7 @@ int wd_inflateReset(z_streamp strm)
 	return Z_OK;
 }
 
-int wd_inflateEnd(z_streamp strm)
+int wd_inflate_end(z_streamp strm)
 {
 	return wd_zlib_uninit(strm);
 }

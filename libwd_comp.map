@@ -26,16 +26,15 @@ global:
 	wd_sched_rr_alloc;
 	wd_sched_rr_release;
 
-	wd_deflateInit_;
-	wd_deflateInit2_;
+	wd_deflate_init;
 	wd_deflate;
-	wd_deflateReset;
-	wd_deflateEnd;
-	wd_inflateInit_;
-	wd_inflateInit2_;
+	wd_deflate_reset;
+	wd_deflate_end;
+
+	wd_inflate_init;
 	wd_inflate;
-	wd_inflateReset;
-	wd_inflateEnd;
+	wd_inflate_reset;
+	wd_inflate_end;
 
 local: *;
 };
