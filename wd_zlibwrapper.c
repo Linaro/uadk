@@ -101,23 +101,23 @@ static int wd_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
 	static const int WBINS_ZLIB_4K = 12;
 	static const int WBINS_GZIP_4K = 27;
 	static const int WBINS_DEFLATE_4K = -12;
-	int ret = Z_STREAM_ERROR;
 
 	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
 		*alg = WD_ZLIB;
 		*windowsize = max(windowbits - WBINS_ZLIB_4K, WD_COMP_WS_4K);
-		ret = Z_OK;
 	} else if ((windowbits >= GZIP_MIN_WBITS) && (windowbits <= GZIP_MAX_WBITS)) {
 		*alg = WD_GZIP;
 		*windowsize = max(windowbits - WBINS_GZIP_4K, WD_COMP_WS_4K);
-		ret = Z_OK;
 	} else if ((windowbits >= DEFLATE_MIN_WBITS) && (windowbits <= DEFLATE_MAX_WBITS)) {
 		*alg = WD_DEFLATE;
 		*windowsize = max(windowbits - WBINS_DEFLATE_4K, WD_COMP_WS_4K);
-		ret = Z_OK;
+	} else {
+		return Z_STREAM_ERROR;
 	}
 
-	return ret;
+	*windowsize = *windowsize == WD_COMP_WS_24K ? WD_COMP_WS_32K : *windowsize;
+
+	return Z_OK;
 }
 
 static int wd_zlib_alloc_sess(z_streamp strm, int level, int windowbits, enum wd_comp_op_type type)
