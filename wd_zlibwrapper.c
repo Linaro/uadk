@@ -163,6 +163,9 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 	__u32 dst_len = strm->avail_out;
 	int ret;
 
+	if (unlikely(!strm))
+		return Z_STREAM_ERROR;
+
 	if (unlikely(flush != Z_SYNC_FLUSH && flush != Z_FINISH)) {
 		WD_ERR("invalid: flush is %d!\n", flush);
 		return Z_STREAM_ERROR;
@@ -210,6 +213,9 @@ int wd_deflateInit2_(z_streamp strm, int level, int method, int windowBits,
 {
 	int ret;
 
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
 	pthread_mutex_lock(&wd_zlib_mutex);
@@ -227,7 +233,7 @@ int wd_deflateInit2_(z_streamp strm, int level, int method, int windowBits,
 	__atomic_add_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
 	pthread_mutex_unlock(&wd_zlib_mutex);
 
-	return 0;
+	return Z_OK;
 
 out_uninit:
 	wd_zlib_uninit();
@@ -245,6 +251,9 @@ int wd_deflate(z_streamp strm, int flush)
 
 int wd_deflateReset(z_streamp strm)
 {
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	wd_comp_reset_sess((handle_t)strm->reserved);
 
 	strm->total_in = 0;
@@ -256,6 +265,9 @@ int wd_deflateReset(z_streamp strm)
 int wd_deflateEnd(z_streamp strm)
 {
 	int ret;
+
+	if (!strm)
+		return Z_STREAM_ERROR;
 
 	wd_zlib_free_sess(strm);
 
@@ -283,6 +295,9 @@ int wd_inflateInit2_(z_streamp strm, int  windowBits, const char *version, int s
 {
 	int ret;
 
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
 	pthread_mutex_lock(&wd_zlib_mutex);
@@ -300,7 +315,7 @@ int wd_inflateInit2_(z_streamp strm, int  windowBits, const char *version, int s
 	__atomic_add_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
 	pthread_mutex_unlock(&wd_zlib_mutex);
 
-	return 0;
+	return Z_OK;
 
 out_uninit:
 	wd_zlib_uninit();
@@ -318,6 +333,9 @@ int wd_inflate(z_streamp strm, int flush)
 
 int wd_inflateReset(z_streamp strm)
 {
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	wd_comp_reset_sess((handle_t)strm->reserved);
 
 	strm->total_in = 0;
@@ -329,6 +347,9 @@ int wd_inflateReset(z_streamp strm)
 int wd_inflateEnd(z_streamp strm)
 {
 	int ret;
+
+	if (!strm)
+		return Z_STREAM_ERROR;
 
 	wd_zlib_free_sess(strm);
 
