@@ -6,18 +6,16 @@
 /* ===   Dependencies   === */
 #define _GNU_SOURCE
 
-#include <errno.h>
-#include <math.h>
-#include <numa.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <numa.h>
 
 #include "wd.h"
 #include "wd_comp.h"
 #include "wd_sched.h"
 #include "wd_util.h"
-#include "wd_zlibwrapper.h"
 #include "drv/wd_comp_drv.h"
+#include "wd_zlibwrapper.h"
 
 #define max(a, b)		((a) > (b) ? (a) : (b))
 
@@ -52,7 +50,7 @@ static int wd_zlib_init(void)
 	ctx_set_num = calloc(WD_DIR_MAX, sizeof(*ctx_set_num));
 	if (!ctx_set_num) {
 		WD_ERR("failed to alloc ctx_set_size!\n");
-		return -WD_ENOMEM;
+		return Z_MEM_ERROR;
 	}
 
 	cparams.op_type_num = WD_DIR_MAX;
@@ -60,18 +58,20 @@ static int wd_zlib_init(void)
 	cparams.bmp = numa_allocate_nodemask();
 	if (!cparams.bmp) {
 		WD_ERR("failed to create nodemask!\n");
-		ret = -WD_ENOMEM;
+		ret = Z_MEM_ERROR;
 		goto out_freectx;
 	}
 
 	numa_bitmask_setall(cparams.bmp);
 
 	for (i = 0; i < WD_DIR_MAX; i++)
-		ctx_set_num[i].sync_ctx_num = 2;
+		ctx_set_num[i].sync_ctx_num = WD_DIR_MAX;
 
 	ret = wd_comp_init2_("zlib", 0, 0, &cparams);
-	if (ret)
+	if (ret) {
+		ret = Z_STREAM_ERROR;
 		goto out_freebmp;
+	}
 
 	zlib_config.status = WD_ZLIB_INIT;
 
