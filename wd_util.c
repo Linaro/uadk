@@ -229,12 +229,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		return -WD_EINVAL;
 	}
 
-	/* ctx could only be invoked once for one process. */
-	if (in->ctx_num && in->pid == getpid()) {
-		WD_ERR("ctx have initialized.\n");
-		return -WD_EEXIST;
-	}
-
 	in->msg_cnt = wd_shared_create(WD_CTX_CNT_NUM);
 	if (!in->msg_cnt && need_info)
 		return -WD_EINVAL;
@@ -262,7 +256,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	in->ctxs = ctxs;
-	in->pid = getpid();
 	in->priv = cfg->priv;
 	in->ctx_num = cfg->ctx_num;
 
@@ -316,7 +309,6 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 
 	in->priv = NULL;
 	in->ctx_num = 0;
-	in->pid = 0;
 	if (in->ctxs) {
 		free(in->ctxs);
 		in->ctxs = NULL;
@@ -2342,8 +2334,10 @@ bool wd_alg_try_init(enum wd_status *status)
 		expected = WD_UNINIT;
 		ret = __atomic_compare_exchange_n(status, &expected, WD_INITING, true,
 						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
-		if (expected == WD_INIT)
+		if (expected == WD_INIT) {
+			WD_ERR("The algorithm has been initialized!\n");
 			return false;
+		}
 		usleep(WD_INIT_SLEEP_UTIME);
 		if (!(++count % WD_INIT_RETRY_TIMES))
 			WD_ERR("The algorithm initizalite has been waiting for %ds!\n",

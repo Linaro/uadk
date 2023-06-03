@@ -107,7 +107,6 @@ struct wd_ctx_config_internal {
 	__u32 ctx_num;
 	struct wd_ctx_internal *ctxs;
 	void *priv;
-	int pid;
 	bool epoll_en;
 	unsigned long *msg_cnt;
 };

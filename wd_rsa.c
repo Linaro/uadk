@@ -202,7 +202,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	flag = wd_alg_try_init(&wd_rsa_setting.status);
 	if (!flag)
-		return 0;
+		return -WD_EEXIST;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -245,7 +245,7 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 
 	flag = wd_alg_try_init(&wd_rsa_setting.status);
 	if (!flag)
-		return 0;
+		return -WD_EEXIST;
 
 	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
