@@ -265,6 +265,7 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 		return ret;
 	}
 	q_info->sqn = qp_ctx.id;
+	config->sqn = qp_ctx.id;
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_INFO, &qp_cfg);
 	if (ret < 0) {

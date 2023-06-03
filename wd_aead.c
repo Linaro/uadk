@@ -740,7 +740,7 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	if (unlikely(ret))
 		return ret;
 
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 	ret = send_recv_sync(ctx, &msg);
 	req->state = msg.result;
@@ -773,7 +773,6 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	if (ret)
 		return ret;
 
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	msg_id = wd_get_msg_from_pool(&wd_aead_setting.pool,
@@ -794,6 +793,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 		goto fail_with_msg;
 	}
 
+	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ret = wd_add_task_to_async_queue(&wd_aead_env_config, idx);
 	if (ret)
 		goto fail_with_msg;

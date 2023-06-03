@@ -799,6 +799,7 @@ static int hisi_zip_init(void *conf, void *priv)
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (unlikely(!h_qp))
 			goto out;
+		config->ctxs[i].sqn = qm_priv.sqn;
 	}
 
 	hisi_zip_sqe_ops_adapt(h_qp);

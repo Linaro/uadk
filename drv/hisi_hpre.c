@@ -484,6 +484,7 @@ static int hpre_init_qm_priv(struct wd_ctx_config_internal *config,
 			WD_ERR("failed to alloc qp!\n");
 			goto out;
 		}
+		config->ctxs[i].sqn = qm_priv->sqn;
 	}
 
 	return 0;

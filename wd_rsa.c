@@ -407,7 +407,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	if (ret)
 		return ret;
 
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
@@ -453,7 +453,6 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	if (ret)
 		return ret;
 
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	mid = wd_get_msg_from_pool(&wd_rsa_setting.pool, idx, (void **)&msg);
@@ -473,6 +472,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	}
 
+	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ret = wd_add_task_to_async_queue(&wd_rsa_env_config, idx);
 	if (ret)
 		goto fail_with_msg;

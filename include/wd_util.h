@@ -499,19 +499,22 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx
- * @msg: Shared memory addr.
+ * @config: Ctx configuration in global setting.
  * @numSize: Number of elements.
  * @index: Indicates the CTX index.
  */
-static inline void wd_dfx_msg_cnt(unsigned long *msg, __u32 numsize, __u32 idx)
+static inline void wd_dfx_msg_cnt(struct wd_ctx_config_internal *config,
+				  __u32 numsize, __u32 idx)
 {
+	__u16 sqn;
 	bool ret;
 
 	ret = wd_need_info();
 	if (idx > numsize || !ret)
 		return;
 
-	msg[idx]++;
+	sqn = config->ctxs[idx].sqn;
+	config->msg_cnt[sqn]++;
 }
 
 #ifdef __cplusplus
