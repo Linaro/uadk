@@ -2153,7 +2153,10 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 	return 0;
 }
 
-static void dladdr_empty(void) {}
+static void dladdr_empty(void)
+{
+}
+
 int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 {
 	char file_path[PATH_STR_SIZE] = {0};
@@ -2162,7 +2165,7 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 	int len, rc, i;
 
 	/* Get libwd.so file's system path */
-	rc = dladdr((void *)dladdr_empty, &file_info);
+	rc = dladdr(dladdr_empty, &file_info);
 	if (!rc) {
 		WD_ERR("fail to get lib file path.\n");
 		return -WD_EINVAL;
