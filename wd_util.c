@@ -2445,16 +2445,18 @@ static int wd_instance_sched_set(struct wd_sched *sched, struct wd_ctx_nums ctx_
 				 int idx, int numa_id, int op_type)
 {
 	struct sched_params sparams;
-	int i, ret = 0;
+	int i, end, ret = 0;
 
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		sparams.numa_id = numa_id;
 		sparams.type = op_type;
 		sparams.mode = i;
 		sparams.begin = idx + ctx_nums.sync_ctx_num * i;
-		sparams.end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
-		if (sparams.begin > sparams.end)
+		end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
+		if (end < 0 || sparams.begin > end)
 			continue;
+
+		sparams.end = end;
 		ret = wd_sched_rr_instance(sched, &sparams);
 		if (ret)
 			goto out;
