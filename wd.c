@@ -760,6 +760,9 @@ struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id)
 		p = p->next;
 	}
 
+	if (dev == WD_ERR_PTR(-WD_ENODEV))
+		WD_ERR("no available device was found in numa %d!\n", numa_id);
+
 	return dev;
 }
 
