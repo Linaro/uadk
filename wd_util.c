@@ -2159,7 +2159,7 @@ static void dladdr_empty(void)
 
 int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 {
-	char file_path[PATH_STR_SIZE] = {0};
+	char file_path[PATH_MAX] = {0};
 	char path[PATH_MAX];
 	Dl_info file_info;
 	int len, rc, i;
@@ -2170,23 +2170,23 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 		WD_ERR("fail to get lib file path.\n");
 		return -WD_EINVAL;
 	}
-	strncpy(file_path, file_info.dli_fname, PATH_STR_SIZE - 1);
+	strncpy(file_path, file_info.dli_fname, PATH_MAX - 1);
 
 	/* Clear the file path's tail file name */
 	len = strlen(file_path) - 1;
 	for (i = len; i >= 0; i--) {
 		if (file_path[i] == '/') {
-			memset(&file_path[i], 0, PATH_STR_SIZE - i + 1);
+			memset(&file_path[i], 0, PATH_MAX - i + 1);
 			break;
 		}
 	}
 
 	if (is_dir) {
-		(void)snprintf(lib_path, PATH_STR_SIZE, "%s", file_path);
+		(void)snprintf(lib_path, PATH_MAX, "%s", file_path);
 		return 0;
 	}
 
-	len = snprintf(lib_path, PATH_STR_SIZE, "%s/%s", file_path, lib_file);
+	len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, lib_file);
 	if (len < 0)
 		return -WD_EINVAL;
 
@@ -2202,8 +2202,8 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 {
 	typedef int (*alg_ops)(struct wd_alg_driver *drv);
 	struct drv_lib_list *node, *head = NULL;
-	char lib_dir_path[PATH_STR_SIZE] = {0};
-	char lib_path[PATH_STR_SIZE] = {0};
+	char lib_dir_path[PATH_MAX] = {0};
+	char lib_path[PATH_MAX] = {0};
 	struct dirent *lib_dir;
 	alg_ops dl_func = NULL;
 	DIR *wd_dir;
@@ -2214,12 +2214,12 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (ret)
 			return NULL;
 	} else {
-		(void)snprintf(lib_path, PATH_STR_SIZE, "%s/%s", cust_lib_dir, DEF_DRV_LIB_FILE);
+		(void)snprintf(lib_path, PATH_MAX, "%s/%s", cust_lib_dir, DEF_DRV_LIB_FILE);
 		ret = access(lib_path, F_OK);
 		if (ret)
 			return NULL;
 
-		strncpy(lib_dir_path, cust_lib_dir, PATH_STR_SIZE - 1);
+		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
 	}
 
 	wd_dir = opendir(lib_dir_path);
@@ -2241,7 +2241,7 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (!node)
 			goto free_list;
 
-		ret = snprintf(lib_path, PATH_STR_SIZE, "%s/%s", lib_dir_path, lib_dir->d_name);
+		ret = snprintf(lib_path, PATH_MAX, "%s/%s", lib_dir_path, lib_dir->d_name);
 		if (ret < 0)
 			goto free_node;
 

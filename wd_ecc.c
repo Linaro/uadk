@@ -112,7 +112,7 @@ static void wd_ecc_close_driver(void)
 static int wd_ecc_open_driver(void)
 {
 	struct wd_alg_driver *driver = NULL;
-	char lib_path[PATH_STR_SIZE];
+	char lib_path[PATH_MAX];
 	const char *alg_name = "sm2";
 	int ret;
 

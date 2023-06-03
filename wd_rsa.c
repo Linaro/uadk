@@ -97,7 +97,7 @@ static void wd_rsa_close_driver(void)
 static int wd_rsa_open_driver(void)
 {
 	struct wd_alg_driver *driver = NULL;
-	char lib_path[PATH_STR_SIZE];
+	char lib_path[PATH_MAX];
 	const char *alg_name = "rsa";
 	int ret;
 

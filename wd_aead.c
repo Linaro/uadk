@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <pthread.h>
+#include <limits.h>
 #include "include/drv/wd_aead_drv.h"
 #include "wd_aead.h"
 
@@ -85,7 +86,7 @@ static int wd_aead_open_driver(void)
 {
 	struct wd_alg_driver *driver = NULL;
 	const char *alg_name = "gcm(aes)";
-	char lib_path[PATH_STR_SIZE];
+	char lib_path[PATH_MAX];
 	int ret;
 
 	/*

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <sched.h>
+#include <limits.h>
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_cipher.h"
 
@@ -91,7 +92,7 @@ static int wd_cipher_open_driver(void)
 {
 	struct wd_alg_driver *driver = NULL;
 	const char *alg_name = "cbc(aes)";
-	char lib_path[PATH_STR_SIZE];
+	char lib_path[PATH_MAX];
 	int ret;
 
 	/*
