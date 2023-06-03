@@ -2009,11 +2009,12 @@ static void add_lib_to_list(struct drv_lib_list *head,
 	tmp->next = node;
 }
 
-static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, const char *section,
-			   __u32 op_type_num, int is_comp)
+static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, struct uacce_dev_list *list,
+			   const char *section, __u32 op_type_num, int is_comp)
 {
 	struct wd_ctx_nums *ctxs = ctx_params->ctx_set_num;
 	int i, j, ctx_num, node, ret;
+	struct uacce_dev *dev;
 	char *ctx_section;
 	const char *type;
 
@@ -2030,6 +2031,10 @@ static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, const char *section
 	/* If the number of ctxs is set to 0, skip the configuration */
 	if (!ctx_num)
 		return 0;
+
+	dev = wd_find_dev_by_numa(list, node);
+	if (WD_IS_ERR(dev))
+		return -WD_ENODEV;
 
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		for (j = 0; j < op_type_num; j++) {
@@ -2052,10 +2057,12 @@ static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, const char *section
 	return -WD_EINVAL;
 }
 
-static int wd_env_set_ctx_nums(const char *name, const char *var_s,
+static int wd_env_set_ctx_nums(const char *alg_name, const char *name, const char *var_s,
 			       struct wd_ctx_params *ctx_params, __u32 op_type_num)
 {
+	char alg_type[CRYPTO_MAX_ALG_NAME];
 	char *left, *section, *start;
+	struct uacce_dev_list *list;
 	int is_comp;
 	int ret = 0;
 
@@ -2068,14 +2075,22 @@ static int wd_env_set_ctx_nums(const char *name, const char *var_s,
 	if (!start)
 		return -WD_ENOMEM;
 
-	left = start;
-	while ((section = strsep(&left, ","))) {
-		ret = wd_set_ctx_nums(ctx_params, section, op_type_num, is_comp);
-		if (ret < 0)
-			goto out_free_str;
+	wd_get_alg_type(alg_name, alg_type);
+	list = wd_get_accel_list(alg_type);
+	if (!list) {
+		WD_ERR("failed to get devices!\n");
+		free(start);
+		return -WD_ENODEV;
 	}
 
-out_free_str:
+	left = start;
+	while ((section = strsep(&left, ","))) {
+		ret = wd_set_ctx_nums(ctx_params, list, section, op_type_num, is_comp);
+		if (ret < 0)
+			break;
+	}
+
+	wd_free_list_accels(list);
 	free(start);
 	return ret;
 }
@@ -2103,11 +2118,12 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 	var_s = secure_getenv(env_name);
 	if (var_s && strlen(var_s)) {
 		/* environment variable has the highest priority */
-		ret = wd_env_set_ctx_nums(env_name, var_s, ctx_params, max_op_type);
+		ret = wd_env_set_ctx_nums(driver->alg_name, env_name, var_s,
+					  ctx_params, max_op_type);
 		if (ret) {
 			WD_ERR("fail to init ctx nums from %s!\n", env_name);
 			numa_free_nodemask(ctx_params->bmp);
-			return -WD_EINVAL;
+			return ret;
 		}
 	} else {
 		/* environment variable is not set, try to use user_ctx_params first */
@@ -2599,7 +2615,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	__u32 sched_type = attrs->sched_type;
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
-	char alg_type[WD_NAME_SIZE];
+	char alg_type[CRYPTO_MAX_ALG_NAME];
 	char *alg = attrs->alg;
 	int driver_type = UADK_ALG_HW;
 	int ret;
