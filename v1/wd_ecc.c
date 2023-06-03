@@ -1660,7 +1660,7 @@ int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
 		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY)) {
-		WD_ERR("do ecxdh: op_type = %hhu error!\n", opdata->op_type);
+		WD_ERR("do ecxdh: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -2173,7 +2173,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECDSA_SIGN &&
 	    opdata->op_type != WCRYPTO_ECDSA_VERIFY)) {
-		WD_ERR("do ecdsa: op_type = %hhu error!\n", opdata->op_type);
+		WD_ERR("do ecdsa: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -2463,7 +2463,7 @@ int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 		opdata->op_type != WCRYPTO_SM2_KG &&
 		opdata->op_type != WCRYPTO_SM2_ENCRYPT &&
 		opdata->op_type != WCRYPTO_SM2_DECRYPT)) {
-		WD_ERR("do sm2: op_type = %hhu error!\n", opdata->op_type);
+		WD_ERR("do sm2: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
