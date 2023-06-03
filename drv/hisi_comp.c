@@ -778,7 +778,7 @@ static int hisi_zip_init(void *conf, void *priv)
 	struct hisi_qm_priv qm_priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
-	int i;
+	__u32 i, j;
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: zip init config ctx num is 0!\n");
@@ -805,8 +805,8 @@ static int hisi_zip_init(void *conf, void *priv)
 
 	return 0;
 out:
-	for (; i >= 0; i--) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
+	for (j = 0; j < i; j++) {
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return -WD_EINVAL;
@@ -817,7 +817,7 @@ static void hisi_zip_exit(void *priv)
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct wd_ctx_config_internal *config = &zip_ctx->config;
 	handle_t h_qp;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);

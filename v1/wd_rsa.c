@@ -430,7 +430,7 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 	struct wd_mm_br *br = &setup->br;
 	struct wcrypto_rsa_prikey2 *pkey2;
 	struct wcrypto_rsa_prikey1 *pkey1;
-	int len;
+	__u32 len;
 
 	if (setup->is_crt) {
 		len = sizeof(struct wcrypto_rsa_prikey) +
@@ -500,7 +500,8 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 {
 	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_ctx *ctx;
-	int i, ret;
+	__u32 i;
+	int ret;
 
 	ctx = calloc(1, sizeof(struct wcrypto_rsa_ctx));
 	if (!ctx)

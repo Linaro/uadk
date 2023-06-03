@@ -377,7 +377,7 @@ static void free_mem_to_mempool_nolock(struct blkpool *bp)
 	struct mempool *mp = bp->mp;
 	struct memzone *iter;
 	size_t blks;
-	int i;
+	__u32 i;
 
 	while ((iter = TAILQ_LAST(&bp->mz_list, memzone_list))) {
 		for (i = iter->begin; i <= iter->end; i++)
@@ -423,7 +423,7 @@ static int alloc_block_from_mempool(struct mempool *mp,
 
 	do {
 		pos_first = find_next_zero_bit(mp->bitmap, pos_last);
-		if (pos_first == mp->bitmap->bits) {
+		if ((__u32)pos_first == mp->bitmap->bits) {
 			WD_ERR("failed to find free block from mempool!\n");
 			return -WD_ENOMEM;
 		}
@@ -536,7 +536,7 @@ static int init_blkpool_elem(struct blkpool *bp)
 {
 	struct memzone *iter;
 	int idx = 0;
-	int i;
+	__u32 i;
 
 	bp->blk_elem = calloc(bp->depth, sizeof(void *));
 	if (!bp->blk_elem) {

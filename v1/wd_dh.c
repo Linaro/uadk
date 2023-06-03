@@ -90,7 +90,8 @@ static int wcrypto_init_dh_cookie(struct wcrypto_dh_ctx *ctx)
 {
 	struct wcrypto_dh_ctx_setup *setup = &ctx->setup;
 	struct wcrypto_dh_cookie *cookie;
-	int ret, i;
+	int ret;
+	__u32 i;
 
 	ret = wd_init_cookie_pool(&ctx->pool,
 		sizeof(struct wcrypto_dh_cookie), WD_HPRE_CTX_MSG_NUM);

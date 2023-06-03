@@ -188,7 +188,7 @@ static int usr_pool_init(struct wd_blkpool *p)
 	struct wd_blkpool_setup *sp = &p->setup;
 	__u32 blk_size = sp->block_size;
 	struct wd_blk_hd *hd = NULL;
-	int i;
+	__u32 i;
 
 	p->act_start = (void *)ALIGN((uintptr_t)p->usr_mem_start,
 				     sp->align_size);

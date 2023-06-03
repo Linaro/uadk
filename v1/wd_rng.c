@@ -84,8 +84,8 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	struct wcrypto_rng_cookie *cookie;
 	struct wcrypto_rng_ctx *ctx;
 	struct q_info *qinfo;
-	__u32 ctx_id = 0;
-	int i, ret;
+	__u32 i, ctx_id = 0;
+	int ret;
 
 	if (wcrypto_setup_qinfo(setup, q, &ctx_id))
 		return NULL;

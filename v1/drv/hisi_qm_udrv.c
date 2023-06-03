@@ -596,7 +596,8 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	int i, ret;
+	int ret;
+	__u32 i;
 
 	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
 		WD_ERR("wd queue hw error happened before qm send!\n");
@@ -604,7 +605,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 	}
 
 	wd_spinlock(&info->sd_lock);
-	if (unlikely(__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
+	if (unlikely((__u32)__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
 		     info->sq_depth - num - 1)) {
 		wd_unspinlock(&info->sd_lock);
 		WD_ERR("queue is full!\n");
@@ -644,7 +645,7 @@ void qm_rx_update(struct qm_queue_info *info, __u32 num)
 void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
 {
 	__u16 idx = info->cq_head_index;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < num; i++) {
 		resp[i] = info->req_cache[idx];
@@ -686,8 +687,9 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 	struct qm_queue_info *info = qinfo->priv;
 	struct cqe *cqe;
 	__u16 sq_head;
-	int i, ret;
 	void *sqe;
+	int ret;
+	__u32 i;
 
 	ret = check_ds_rx_base(info, resp, num, 1);
 	if (unlikely(ret))

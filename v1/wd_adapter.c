@@ -114,7 +114,7 @@ static struct wd_drv_dio_if hw_dio_tbl[] = { {
 int drv_open(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
-	int i;
+	__u32 i;
 
 	/* try to find another device if the user driver is not available */
 	for (i = 0; i < MAX_HW_TYPE; i++) {

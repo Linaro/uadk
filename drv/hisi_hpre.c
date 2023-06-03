@@ -175,9 +175,9 @@ static int crypto_bin_to_hpre_bin(char *dst, const char *src,
 static int hpre_bin_to_crypto_bin(char *dst, const char *src, __u32 b_size,
 				  const char *p_name)
 {
-	int i, cnt;
-	int j = 0;
-	int k = 0;
+	__u32 i, cnt;
+	__u32 j = 0;
+	__u32 k = 0;
 
 	if (!dst || !src || !b_size) {
 		WD_ERR("invalid: %s trans to crypto bin parameters err!\n", p_name);
@@ -465,7 +465,7 @@ static int hpre_init_qm_priv(struct wd_ctx_config_internal *config,
 			     struct hisi_qm_priv *qm_priv)
 {
 	handle_t h_ctx, h_qp;
-	int i, j;
+	__u32 i, j;
 
 	memcpy(&hpre_ctx->config, config, sizeof(*config));
 
@@ -541,7 +541,7 @@ static void hpre_exit(void *priv)
 	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct wd_ctx_config_internal *config = &hpre_ctx->config;
 	handle_t h_qp;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
@@ -877,7 +877,7 @@ static int trans_d_to_hpre_bin(struct wd_dtb *d)
 
 static bool big_than_one(const char *data, __u32 data_sz)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < data_sz - 1; i++) {
 		if (data[i] > 0)
@@ -1066,7 +1066,7 @@ static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
 
 static bool is_all_zero(struct wd_dtb *e)
 {
-	int i;
+	__u32 i;
 
 	if (!e || !e->data) {
 		WD_ERR("invalid: e or e->data is NULL\n");
@@ -2094,7 +2094,7 @@ static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 
 static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < val1->dsize; ++i)
 		val1->data[i] = (char)((__u8)val1->data[i] ^

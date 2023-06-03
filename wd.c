@@ -155,14 +155,16 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	int ret;
+	__u32 ret;
+	int size;
 
-	ret = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
-	if (ret < 0) {
+	size = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
+	if (size < 0) {
 		buf[0] = '\0';
-		return ret;
+		return size;
 	}
 
+	ret = size;
 	if (ret == buf_sz)
 		ret--;
 
@@ -614,6 +616,7 @@ int wd_get_avail_ctx(struct uacce_dev *dev)
 static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 {
 	char dev_path[MAX_DEV_NAME_LEN] = {0};
+	__u32 size;
 	int ret;
 
 	ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
@@ -629,7 +632,8 @@ static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 		return ret;
 	}
 
-	if (ret == sz)
+	size = ret;
+	if (size == sz)
 		dev_alg_name[sz - 1] = '\0';
 
 	return 0;
