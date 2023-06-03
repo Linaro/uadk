@@ -181,6 +181,21 @@ alloc_sgl_err:
 	return ret;
 }
 
+static void *wd_alloc_blk_sgl(void *pool, size_t size)
+{
+	return wd_alloc_blk(pool);
+}
+
+static void *wd_blk_iova_map_sgl(void *pool, void *blk, size_t sz)
+{
+	return wd_blk_iova_map(pool, blk);
+}
+
+static void wd_blk_iova_unmap_sgl(void *pool, void *blk_dma, void *blk, size_t sz)
+{
+	wd_blk_iova_unmap(pool, blk_dma, blk);
+}
+
 static void *sgl_buf_pool_init(struct wd_queue *q, struct wd_sglpool *pool)
 {
 	struct wd_sglpool_setup *sp = &pool->setup;
@@ -198,11 +213,11 @@ static void *sgl_buf_pool_init(struct wd_queue *q, struct wd_sglpool *pool)
 		return NULL;
 	}
 
-	pool->buf_br.alloc = (void *)wd_alloc_blk;
-	pool->buf_br.free = (void *)wd_free_blk;
-	pool->buf_br.iova_map = (void *)wd_blk_iova_map;
-	pool->buf_br.iova_unmap = (void *)wd_blk_iova_unmap;
-	pool->buf_br.get_bufsize = (void *)wd_blksize;
+	pool->buf_br.alloc = wd_alloc_blk_sgl;
+	pool->buf_br.free = wd_free_blk;
+	pool->buf_br.iova_map = wd_blk_iova_map_sgl;
+	pool->buf_br.iova_unmap = wd_blk_iova_unmap_sgl;
+	pool->buf_br.get_bufsize = wd_blksize;
 	pool->buf_br.usr = p;
 
 	return p;
