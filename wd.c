@@ -29,7 +29,7 @@ enum UADK_LOG_LEVEL {
 	WD_LOG_DEBUG,
 };
 
-static int uadk_log_level;
+static int uadk_log_level = -1;
 
 struct wd_ctx_h {
 	int fd;
@@ -264,8 +264,6 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 
 	if (!dev_name)
 		return NULL;
-
-	wd_parse_log_level();
 
 	dev = calloc(1, sizeof(struct uacce_dev));
 	if (!dev)
@@ -871,11 +869,17 @@ void wd_get_version(void)
 
 bool wd_need_debug(void)
 {
+	if (uadk_log_level < 0)
+		wd_parse_log_level();
+
 	return uadk_log_level >= WD_LOG_DEBUG;
 }
 
 bool wd_need_info(void)
 {
+	if (uadk_log_level < 0)
+		wd_parse_log_level();
+
 	return uadk_log_level >= WD_LOG_INFO;
 }
 
