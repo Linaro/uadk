@@ -607,7 +607,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 		return NULL;
 	}
 
-	kg_in_size = GEN_PARAMS_SZ(c->key_size);
+	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
 	kg_in = malloc(kg_in_size + sizeof(*kg_in));
 	if (!kg_in) {
 		WD_ERR("failed to malloc kg_in memory!\n");
@@ -682,9 +682,9 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	}
 
 	if (c->setup.is_crt)
-		kg_out_size = CRT_GEN_PARAMS_SZ(c->key_size);
+		kg_out_size = (int)CRT_GEN_PARAMS_SZ(c->key_size);
 	else
-		kg_out_size = GEN_PARAMS_SZ(c->key_size);
+		kg_out_size = (int)GEN_PARAMS_SZ(c->key_size);
 
 	kg_out = malloc(kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
@@ -828,7 +828,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 
 	if (setup->is_crt) {
 		len = sizeof(struct wd_rsa_prikey) +
-			CRT_PARAMS_SZ(sess->key_size);
+			(int)CRT_PARAMS_SZ(sess->key_size);
 		sess->prikey = malloc(len);
 		if (!sess->prikey) {
 			WD_ERR("failed to alloc sess prikey2!\n");
@@ -839,7 +839,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 		init_pkey2(pkey2, sess->key_size);
 	} else {
 		len = sizeof(struct wd_rsa_prikey) +
-			GEN_PARAMS_SZ(sess->key_size);
+			(int)GEN_PARAMS_SZ(sess->key_size);
 		sess->prikey = malloc(len);
 		if (!sess->prikey) {
 			WD_ERR("failed to alloc sess prikey1!\n");
@@ -851,7 +851,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 	}
 
 	len = sizeof(struct wd_rsa_pubkey) +
-		GEN_PARAMS_SZ(sess->key_size);
+		(int)GEN_PARAMS_SZ(sess->key_size);
 	sess->pubkey = malloc(len);
 	if (!sess->pubkey) {
 		free(sess->prikey);

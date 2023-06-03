@@ -795,7 +795,7 @@ static int mbind_memory(void *addr, size_t size, int node)
 	unsigned long node_mask;
 	int ret = 0;
 
-	node_mask = 1U << (unsigned int)node;
+	node_mask = (unsigned long)(1 << (unsigned int)node);
 	ret = mbind(addr, size, MPOL_BIND, &node_mask, max_node, 0);
 	if (ret < 0) {
 		WD_ERR("failed to mbind memory, ret is %d!\n", ret);
