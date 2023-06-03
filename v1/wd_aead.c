@@ -146,7 +146,7 @@ static void init_aead_cookie(struct wcrypto_aead_ctx *ctx,
 	struct wcrypto_aead_ctx_setup *setup)
 {
 	struct wcrypto_aead_cookie *cookie;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx->pool.cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
@@ -407,7 +407,7 @@ err_key_len:
 static void aead_requests_uninit(struct wcrypto_aead_msg **req,
 				struct wcrypto_aead_ctx *ctx, __u32 num)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < num; i++) {
 		if (req[i]->aiv)

@@ -2317,7 +2317,7 @@ static void get_galois_vector_s(struct wd_aead_msg *msg, __u8 *s)
 {
 	unsigned int aad_len, cipher_len;
 	__u8 a_c[GCM_BLOCK_SIZE] = {0};
-	int i;
+	__u32 i;
 
 	aad_len = msg->assoc_bytes * BYTE_BITS;
 	memcpy(&a_c[BYTE_BITS], &aad_len, sizeof(unsigned int));
@@ -3022,7 +3022,7 @@ int hisi_sec_init(void *conf, void *priv)
 	struct hisi_qm_priv qm_priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
-	int i, j;
+	__u32 i, j;
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: sec init config ctx num is 0!\n");
@@ -3050,7 +3050,7 @@ int hisi_sec_init(void *conf, void *priv)
 	return 0;
 
 out:
-	for (j = i - 1; j >= 0; j--) {
+	for (j = 0; j < i; j++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
@@ -3062,7 +3062,7 @@ void hisi_sec_exit(void *priv)
 	struct hisi_sec_ctx *sec_ctx = priv;
 	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
-	int i;
+	__u32 i;
 
 	if (!sec_ctx) {
 		WD_ERR("hisi sec exit input parameter is err!\n");

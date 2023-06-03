@@ -270,7 +270,7 @@ static void init_dtb_param(void *dtb, char *start,
 {
 	struct wd_dtb *tmp = dtb;
 	char *pos = start;
-	int i = 0;
+	__u32 i = 0;
 
 	while (i++ < num) {
 		tmp->data = pos;
@@ -894,7 +894,7 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 	}
 
 	if (unlikely(!param->p.dsize ||
-		param->p.dsize > BITS_TO_BYTES(setup->key_bits))) {
+		param->p.dsize > (__u32)BITS_TO_BYTES(setup->key_bits))) {
 		WD_ERR("fill curve cfg:dsize %u error!\n", param->p.dsize);
 		return -WD_EINVAL;
 	}
@@ -1068,7 +1068,7 @@ static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 	__u32 hsz = get_hw_keysize(ctx->key_size);
 	struct q_info *qinfo = ctx->q->qinfo;
 	struct wcrypto_ecc_cookie *cookie;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx->pool.cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
@@ -1717,7 +1717,7 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 
 static bool is_all_zero(struct wd_dtb *p)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < p->bsize; i++) {
 		if (p->data[i])

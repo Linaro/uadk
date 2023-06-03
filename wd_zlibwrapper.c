@@ -159,8 +159,8 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 {
 	handle_t h_sess = strm->reserved;
 	struct wd_comp_req req = {0};
-	int src_len = strm->avail_in;
-	int dst_len = strm->avail_out;
+	__u32 src_len = strm->avail_in;
+	__u32 dst_len = strm->avail_out;
 	int ret;
 
 	if (unlikely(flush != Z_SYNC_FLUSH && flush != Z_FINISH)) {

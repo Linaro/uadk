@@ -222,7 +222,8 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 {
 	bool need_info = wd_need_info();
 	struct wd_ctx_internal *ctxs;
-	int i, j, ret;
+	__u32 i, j;
+	int ret;
 
 	if (!cfg->ctx_num) {
 		WD_ERR("invalid: ctx_num is 0!\n");
@@ -302,7 +303,7 @@ void wd_clear_sched(struct wd_sched *in)
 
 void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < in->ctx_num; i++)
 		pthread_spin_destroy(&in->ctxs[i].lock);
@@ -365,7 +366,8 @@ static void uninit_msg_pool(struct msg_pool *pool)
 int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
 			       __u32 msg_num, __u32 msg_size)
 {
-	int i, j, ret;
+	__u32 i, j;
+	int ret;
 
 	pool->pool_num = pool_num;
 
@@ -392,7 +394,7 @@ err:
 
 void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < pool->pool_num; i++)
 		uninit_msg_pool(&pool->pools[i]);
@@ -424,7 +426,7 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 	struct msg_pool *p = &pool->pools[ctx_idx];
 	__u32 msg_num = p->msg_num;
 	__u32 msg_size = p->msg_size;
-	int cnt = 0;
+	__u32 cnt = 0;
 	__u32 idx = p->tail;
 
 	while (__atomic_test_and_set(&p->used[idx], __ATOMIC_ACQUIRE)) {
@@ -657,8 +659,7 @@ free_numa_dev_num:
 
 static int is_number(const char *str)
 {
-	size_t len;
-	int i;
+	size_t i, len;
 
 	if (!str)
 		return 0;
@@ -984,7 +985,8 @@ static int wd_parse_env(struct wd_env_config *config)
 {
 	const struct wd_config_variable *var;
 	const char *var_s;
-	int ret, i;
+	int ret;
+	__u32 i;
 
 	for (i = 0; i < config->table_size; i++) {
 		var = config->table + i;
@@ -1055,10 +1057,10 @@ static void wd_uninit_env_config(struct wd_env_config *config)
 	config->table = NULL;
 }
 
-static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
+static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, __u32 idx)
 {
 	struct wd_ctx_range **ctx_table = config->ctx_table;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < config->op_type_num; i++) {
 		if ((idx >= ctx_table[CTX_MODE_SYNC][i].begin) &&
@@ -1070,10 +1072,10 @@ static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
 }
 
 static int get_op_type(struct wd_env_config_per_numa *config,
-		       int idx, __u8 ctx_mode)
+		       __u32 idx, __u8 ctx_mode)
 {
 	struct wd_ctx_range **ctx_table = config->ctx_table;
-	int i;
+	__u32 i;
 
 	if (config->op_type_num == 1)
 		return 0;
@@ -1110,11 +1112,12 @@ static handle_t request_ctx_on_numa(struct wd_env_config_per_numa *config)
 }
 
 static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
-			 struct wd_ctx_config *ctx_config, int start)
+			 struct wd_ctx_config *ctx_config, __u32 start)
 {
 	int ctx_num = config->sync_ctx_num + config->async_ctx_num;
 	handle_t h_ctx;
-	int i, j, ret;
+	__u32 i, j;
+	int ret;
 
 	if (!ctx_num)
 		return 0;
@@ -1144,7 +1147,7 @@ free_ctx:
 	return ret;
 }
 
-static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, int ctx_num)
+static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, __u32 ctx_num)
 {
 	__u32 i;
 
@@ -1156,8 +1159,8 @@ static int wd_alloc_ctx(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
 	struct wd_ctx_config *ctx_config;
-	int ctx_num = 0, start = 0, ret = 0;
-	int i;
+	__u32 i, ctx_num = 0, start = 0;
+	int ret;
 
 	config->ctx_config = calloc(1, sizeof(*ctx_config));
 	if (!config->ctx_config)
@@ -1299,8 +1302,7 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	struct wd_ctx_range **ctx_table;
 	struct async_task_queue *head;
 	unsigned long offset = 0;
-	int num = 0;
-	int i;
+	__u32 i, num = 0;
 
 	FOREACH_NUMA(i, config, config_numa) {
 		num += config_numa->sync_ctx_num + config_numa->async_ctx_num;
@@ -2005,10 +2007,11 @@ static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, struct uacce_dev_li
 			   const char *section, __u32 op_type_num, int is_comp)
 {
 	struct wd_ctx_nums *ctxs = ctx_params->ctx_set_num;
-	int i, j, ctx_num, node, ret;
+	int ret, ctx_num, node;
 	struct uacce_dev *dev;
 	char *ctx_section;
 	const char *type;
+	__u32 i, j;
 
 	ctx_section = index(section, ':');
 	if (!ctx_section) {
@@ -2036,9 +2039,9 @@ static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, struct uacce_dev_li
 
 			/* If there're multiple configurations, use the maximum ctx number */
 			if (!i)
-				ctxs[j].sync_ctx_num = MAX(ctxs[j].sync_ctx_num, ctx_num);
+				ctxs[j].sync_ctx_num = MAX(ctxs[j].sync_ctx_num, (__u32)ctx_num);
 			else
-				ctxs[j].async_ctx_num = MAX(ctxs[j].async_ctx_num, ctx_num);
+				ctxs[j].async_ctx_num = MAX(ctxs[j].async_ctx_num, (__u32)ctx_num);
 
 			/* enable a node here, all enabled nodes share the same configuration */
 			numa_bitmask_setbit(ctx_params->bmp, node);
@@ -2123,7 +2126,7 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 			copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
 			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
 			ctx_params->op_type_num = user_ctx_params->op_type_num;
-			if (ctx_params->op_type_num > max_op_type) {
+			if (ctx_params->op_type_num > (__u32)max_op_type) {
 				WD_ERR("fail to check user op type numbers.\n");
 				numa_free_nodemask(ctx_params->bmp);
 				return -WD_EINVAL;
@@ -2141,7 +2144,7 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 	}
 
 	ctx_params->op_type_num = driver->op_type_num;
-	if (ctx_params->op_type_num > max_op_type) {
+	if (ctx_params->op_type_num > (__u32)max_op_type) {
 		WD_ERR("fail to check driver op type numbers.\n");
 		numa_free_nodemask(ctx_params->bmp);
 		return -WD_EAGAIN;
@@ -2411,13 +2414,13 @@ out_free_list:
 }
 
 static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *list,
-			   int idx, int numa_id, int op_type)
+			   __u32 idx, int numa_id, __u32 op_type)
 {
 	struct wd_ctx_nums ctx_nums = attrs->ctx_params->ctx_set_num[op_type];
 	__u32 ctx_set_num = ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num;
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	struct uacce_dev *dev;
-	int i;
+	__u32 i;
 
 	/* If the ctx set number is 0, the initialization is skipped. */
 	if (!ctx_set_num)
@@ -2446,7 +2449,7 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 
 static void wd_release_ctx_set(struct wd_ctx_config *ctx_config)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx_config->ctx_num; i++)
 		if (ctx_config->ctxs[i].ctx) {
@@ -2467,7 +2470,7 @@ static int wd_instance_sched_set(struct wd_sched *sched, struct wd_ctx_nums ctx_
 		sparams.mode = i;
 		sparams.begin = idx + ctx_nums.sync_ctx_num * i;
 		end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
-		if (end < 0 || sparams.begin > end)
+		if (end < 0 || sparams.begin > (__u32)end)
 			continue;
 
 		sparams.end = end;
@@ -2485,10 +2488,9 @@ static int wd_init_ctx_and_sched(struct wd_init_attrs *attrs, struct bitmask *bm
 {
 	struct wd_ctx_params *ctx_params = attrs->ctx_params;
 	__u32 op_type_num = ctx_params->op_type_num;
-	int max_node = numa_max_node() + 1;
+	int i, ret, max_node = numa_max_node() + 1;
 	struct wd_ctx_nums ctx_nums;
-	int i, j, ret;
-	int idx = 0;
+	__u32 j, idx = 0;
 
 	for (i = 0; i < max_node; i++) {
 		if (!numa_bitmask_isbitset(bmp, i))
@@ -2591,7 +2593,7 @@ out_freelist:
 
 static void wd_alg_ctx_uninit(struct wd_ctx_config *ctx_config)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx_config->ctx_num; i++)
 		if (ctx_config->ctxs[i].ctx) {

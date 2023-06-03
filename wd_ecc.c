@@ -424,7 +424,7 @@ static void init_dtb_param(void *dtb, char *str,
 {
 	struct wd_dtb *tmp = dtb;
 	char *start = str;
-	int i = 0;
+	__u32 i = 0;
 
 	while (i++ < num) {
 		tmp->data = start;
@@ -1002,7 +1002,7 @@ static int fill_user_curve_cfg(struct wd_ecc_curve *param,
 	}
 
 	if (!param->p.dsize ||
-	     param->p.dsize > BITS_TO_BYTES(setup->key_bits)) {
+	     param->p.dsize > (__u32)BITS_TO_BYTES(setup->key_bits)) {
 		WD_ERR("invalid: fill curve cfg dsize %u is error!\n", param->p.dsize);
 		return -WD_EINVAL;
 	}

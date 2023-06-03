@@ -1113,7 +1113,7 @@ static void correct_random(struct wd_dtb *k)
 
 static bool is_all_zero(struct wd_dtb *e, const char *p_name)
 {
-	int i;
+	__u32 i;
 
 	if (!e || !e->data) {
 		WD_ERR("invalid: %s is NULL!\n", p_name);
@@ -2248,7 +2248,7 @@ static int sm2_kdf(struct wd_dtb *out, struct wcrypto_ecc_point *x2y2,
 
 static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < val1->dsize; ++i)
 		val1->data[i] = (char)((__u8)val1->data[i] ^

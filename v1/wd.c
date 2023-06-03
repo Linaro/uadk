@@ -132,14 +132,16 @@ static int get_int_attr(struct dev_info *dinfo, const char *attr)
 static int get_str_attr(struct dev_info *dinfo, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	int size;
+	__u32 size;
+	int ret;
 
-	size = get_raw_attr(dinfo->dev_root, attr, buf, buf_sz);
-	if (size < 0) {
+	ret = get_raw_attr(dinfo->dev_root, attr, buf, buf_sz);
+	if (ret < 0) {
 		buf[0] = '\0';
-		return size;
+		return ret;
 	}
 
+	size = ret;
 	if (size == buf_sz)
 		size = size - 1;
 

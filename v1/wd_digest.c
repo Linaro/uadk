@@ -47,7 +47,7 @@ struct wcrypto_digest_ctx {
 	struct wcrypto_digest_ctx_setup setup;
 };
 
-static int g_digest_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
+static __u32 g_digest_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_DIGEST_SM3_LEN, WCRYPTO_DIGEST_MD5_LEN, WCRYPTO_DIGEST_SHA1_LEN,
 	WCRYPTO_DIGEST_SHA256_LEN, WCRYPTO_DIGEST_SHA224_LEN,
 	WCRYPTO_DIGEST_SHA384_LEN, WCRYPTO_DIGEST_SHA512_LEN,
@@ -102,7 +102,7 @@ static void init_digest_cookie(struct wcrypto_digest_ctx *ctx,
 	struct wcrypto_digest_ctx_setup *setup)
 {
 	struct wcrypto_digest_cookie *cookie;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx->pool.cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +

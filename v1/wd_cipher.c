@@ -126,7 +126,7 @@ static void init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 	struct wcrypto_cipher_ctx_setup *setup)
 {
 	struct wcrypto_cipher_cookie *cookie;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx->pool.cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +

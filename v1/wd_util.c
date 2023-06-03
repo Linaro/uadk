@@ -57,7 +57,7 @@ void drv_iova_unmap(struct wd_queue *q, void *va, void *dma, size_t sz)
 int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max)
 {
 	__u32 idx = last_id;
-	int cnt = 0;
+	__u32 cnt = 0;
 
 	while (__atomic_test_and_set(&buf[idx], __ATOMIC_ACQUIRE)) {
 		idx++;
@@ -134,7 +134,7 @@ static void *get_cookie(struct wd_cookie_pool *pool)
 
 void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < num; i++)
 		put_cookie(pool, cookies[i]);
@@ -142,7 +142,7 @@ void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)
 
 int wd_get_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num)
 {
-	int i ;
+	__u32 i;
 
 	for (i = 0; i < num; i++) {
 		cookies[i] = get_cookie(pool);
