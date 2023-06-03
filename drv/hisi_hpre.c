@@ -1777,7 +1777,7 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 		goto fail_fill_sqe;
 	}
 
-	ret = hisi_qm_send(h_qp, &hw_msg, SM2_SQE_NUM, &send_cnt);
+	ret = hisi_qm_send(h_qp, hw_msg, SM2_SQE_NUM, &send_cnt);
 	if (unlikely(ret))
 		goto fail_fill_sqe;
 

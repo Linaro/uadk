@@ -351,7 +351,7 @@ out:
 
 static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 {
-	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
+	memcpy(ctx->qfrs_offs, ctx->dev->qfrs_offs,
 	       sizeof(ctx->qfrs_offs));
 }
 
