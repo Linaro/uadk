@@ -286,7 +286,7 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 	msg->result = WD_SUCCESS;
 	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
 		msg->out_bytes = CRT_GEN_PARAMS_SZ(kbytes);
-		*in_len = GEN_PARAMS_SZ(kbytes);
+		*in_len = (size_t)GEN_PARAMS_SZ(kbytes);
 		*out_len = msg->out_bytes;
 		wcrypto_get_rsa_kg_out_crt_params(key, &qinv, &dq, &dp);
 		ret = qm_tri_bin_transfer(&qinv, &dq, &dp, "rsa kg qinv&dp&dq");
@@ -298,7 +298,7 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 	} else if (hw_msg->alg == HPRE_ALG_KG_STD) {
 		msg->out_bytes = GEN_PARAMS_SZ(kbytes);
 		*out_len = msg->out_bytes;
-		*in_len = GEN_PARAMS_SZ(kbytes);
+		*in_len = (size_t)GEN_PARAMS_SZ(kbytes);
 
 		wcrypto_get_rsa_kg_out_params(key, &d, &n);
 		ret = qm_tri_bin_transfer(&d, &n, NULL, "rsa kg d & n");
@@ -535,11 +535,11 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 		}
 
 		if (hw_msg->alg == HPRE_ALG_KG_CRT) {
-			olen = CRT_GEN_PARAMS_SZ(kbytes);
-			ilen = GEN_PARAMS_SZ(kbytes);
+			olen = (size_t)CRT_GEN_PARAMS_SZ(kbytes);
+			ilen = (size_t)GEN_PARAMS_SZ(kbytes);
 		} else if (hw_msg->alg == HPRE_ALG_KG_STD) {
-			olen = GEN_PARAMS_SZ(kbytes);
-			ilen = GEN_PARAMS_SZ(kbytes);
+			olen = (size_t)GEN_PARAMS_SZ(kbytes);
+			ilen = (size_t)GEN_PARAMS_SZ(kbytes);
 		} else {
 			olen = kbytes;
 			ilen = kbytes;
@@ -598,7 +598,7 @@ static void dh_xp_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
 {
 	uintptr_t phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
 
-	drv_iova_unmap(q, msg->x_p, (void *)phy, GEN_PARAMS_SZ(msg->key_bytes));
+	drv_iova_unmap(q, msg->x_p, (void *)phy, (size_t)GEN_PARAMS_SZ(msg->key_bytes));
 }
 
 static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
@@ -621,7 +621,7 @@ static int qm_fill_dh_xp_params(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 		return ret;
 
 	phy = (uintptr_t)drv_iova_map(q, (void *)x,
-				GEN_PARAMS_SZ(msg->key_bytes));
+				(size_t)GEN_PARAMS_SZ(msg->key_bytes));
 	if (unlikely(!phy)) {
 		WD_ERR("get dh xp parameter dma address fail!\n");
 		return -WD_ENOMEM;
@@ -760,7 +760,7 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 	drv_iova_unmap(q, dh_msg->out, (void *)(uintptr_t)dma_out,
 				dh_msg->key_bytes);
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_in,
-		GEN_PARAMS_SZ(dh_msg->key_bytes));
+		(size_t)GEN_PARAMS_SZ(dh_msg->key_bytes));
 	drv_iova_unmap(q, NULL, (void *)(uintptr_t)dma_key, dh_msg->key_bytes);
 	return 1;
 }
