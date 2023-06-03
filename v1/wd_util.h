@@ -45,6 +45,7 @@
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
+#define GEN_PARAMS_SZ_UL(key_size)	((unsigned long)(key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 #define GET_NEGATIVE(val)	(0 - (val))
 #define XTS_MODE_KEY_SHIFT 	1
