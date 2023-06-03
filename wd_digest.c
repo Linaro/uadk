@@ -776,7 +776,7 @@ int wd_digest_env_init(struct wd_sched *sched)
 
 void wd_digest_env_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_digest_env_config, &wd_digest_ops);
+	wd_alg_env_uninit(&wd_digest_env_config, &wd_digest_ops);
 }
 
 int wd_digest_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
@@ -794,7 +794,7 @@ int wd_digest_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 
 void wd_digest_ctx_num_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_digest_env_config, &wd_digest_ops);
+	wd_alg_env_uninit(&wd_digest_env_config, &wd_digest_ops);
 }
 
 int wd_digest_get_env_param(__u32 node, __u32 type, __u32 mode,

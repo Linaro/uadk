@@ -1592,7 +1592,7 @@ static void get_sign_out_params(struct wd_ecc_out *out,
 void wd_sm2_get_sign_out_params(struct wd_ecc_out *out,
 				struct wd_dtb **r, struct wd_dtb **s)
 {
-	return get_sign_out_params(out, r, s);
+	get_sign_out_params(out, r, s);
 }
 
 static int set_sign_in_param(struct wd_ecc_sign_in *sin,
@@ -2195,7 +2195,7 @@ struct wd_ecc_out *wd_ecdsa_new_sign_out(handle_t sess)
 void wd_ecdsa_get_sign_out_params(struct wd_ecc_out *out,
 				  struct wd_dtb **r, struct wd_dtb **s)
 {
-	return get_sign_out_params(out, r, s);
+	get_sign_out_params(out, r, s);
 }
 
 struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
@@ -2358,7 +2358,7 @@ int wd_ecc_env_init(struct wd_sched *sched)
 
 void wd_ecc_env_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_ecc_env_config, &wd_ecc_ops);
+	wd_alg_env_uninit(&wd_ecc_env_config, &wd_ecc_ops);
 }
 
 int wd_ecc_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
@@ -2376,7 +2376,7 @@ int wd_ecc_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 
 void wd_ecc_ctx_num_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_ecc_env_config, &wd_ecc_ops);
+	wd_alg_env_uninit(&wd_ecc_env_config, &wd_ecc_ops);
 }
 
 int wd_ecc_get_env_param(__u32 node, __u32 type, __u32 mode,
