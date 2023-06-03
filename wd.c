@@ -23,13 +23,14 @@
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 
 enum UADK_LOG_LEVEL {
-	LOG_NONE = 0,
+	WD_LOG_NONE = 0,
 	WD_LOG_ERROR,
 	WD_LOG_INFO,
 	WD_LOG_DEBUG,
+	WD_LOG_INVALID,
 };
 
-static int uadk_log_level = -1;
+static int uadk_log_level = WD_LOG_INVALID;
 
 struct wd_ctx_h {
 	int fd;
@@ -51,6 +52,9 @@ static void wd_parse_log_level(void)
 	struct stat file_info;
 	char *file_contents;
 	FILE *in_file;
+
+	if (uadk_log_level == WD_LOG_INVALID)
+		uadk_log_level = WD_LOG_NONE;
 
 	in_file = fopen(syslog_file, "r");
 	if (!in_file) {
@@ -869,18 +873,36 @@ void wd_get_version(void)
 
 bool wd_need_debug(void)
 {
-	if (uadk_log_level < 0)
+	switch (uadk_log_level) {
+	case WD_LOG_NONE:
+	case WD_LOG_ERROR:
+	case WD_LOG_INFO:
+		return false;
+	case WD_LOG_DEBUG:
+		return true;
+	case WD_LOG_INVALID:
 		wd_parse_log_level();
-
-	return uadk_log_level >= WD_LOG_DEBUG;
+		return uadk_log_level >= WD_LOG_DEBUG;
+	default:
+		return false;
+	}
 }
 
 bool wd_need_info(void)
 {
-	if (uadk_log_level < 0)
+	switch (uadk_log_level) {
+	case WD_LOG_NONE:
+	case WD_LOG_ERROR:
+		return false;
+	case WD_LOG_INFO:
+	case WD_LOG_DEBUG:
+		return true;
+	case WD_LOG_INVALID:
 		wd_parse_log_level();
-
-	return uadk_log_level >= WD_LOG_INFO;
+		return uadk_log_level >= WD_LOG_INFO;
+	default:
+		return false;
+	}
 }
 
 char *wd_ctx_get_dev_name(handle_t h_ctx)
