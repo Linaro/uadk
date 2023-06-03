@@ -2,6 +2,7 @@
 /* Copyright 2023 Huawei Technologies Co.,Ltd. All rights reserved. */
 
 #include <string.h>
+#include <stdint.h>
 #include "crypto/aes.h"
 
 #define WORD(n) (0x##n##n##n##n)
@@ -284,6 +285,7 @@ static void cipher(const unsigned char *in, unsigned char *out,
 {
 #define STATE_BYTE	16
 	__u64 state[STATE_CNT];
+	__u64 *s;
 	__u8 i;
 
 	memcpy(state, in, STATE_BYTE);
@@ -295,13 +297,15 @@ static void cipher(const unsigned char *in, unsigned char *out,
 		sublong(&state[1]);
 		shift_rows(state);
 		mix_columns(state);
-		add_round_key(state, w + i * STATE_CNT);
+		s = (void *)((uintptr_t)w + i * STATE_CNT * sizeof(__u64));
+		add_round_key(state, s);
 	}
 
 	sublong(&state[0]);
 	sublong(&state[1]);
 	shift_rows(state);
-	add_round_key(state, w + nr * STATE_CNT);
+	s = (void *)((uintptr_t)w + nr * STATE_CNT * sizeof(__u64));
+	add_round_key(state, s);
 
 	memcpy(out, state, STATE_BYTE);
 }

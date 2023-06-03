@@ -601,22 +601,22 @@ static void sgl_cp_to_pbuf(struct wd_sgl *src_sgl, int start_sg, int strtad,
 		return;
 
 	size -= sz - strtad;
-	pbuf += sz - strtad;
+	pbuf = (void *)((uintptr_t)pbuf + sz - strtad);
 	for (i = strtsg + 1; i <= sgl->buf_num - 1 && size > sz; i++) {
-		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, sz);
+		memcpy((void *)((uintptr_t)pbuf + (i - strtsg - 1) * sz), sgl->sge[i].buf, sz);
 		size -= sz;
 	}
 
 	if (i <= sgl->buf_num - 1) {
-		memcpy(pbuf + (i - strtsg - 1) * sz, sgl->sge[i].buf, size);
+		memcpy((void *)((uintptr_t)pbuf + (i - strtsg - 1) * sz), sgl->sge[i].buf, size);
 	} else {
 		sgl = next;
 		for (i = 0; i < sgl->buf_num - 1 && size > sz; i++) {
-			memcpy(pbuf + (i + sgl->buf_num - strtsg - 1) * sz,
+			memcpy((void *)((uintptr_t)pbuf + (i + sgl->buf_num - strtsg - 1) * sz),
 			       sgl->sge[i].buf, sz);
 			size -= sz;
 		}
-		memcpy(pbuf + (i + sgl->buf_num - strtsg - 1) * sz,
+		memcpy((void *)((uintptr_t)pbuf + (i + sgl->buf_num - strtsg - 1) * sz),
 			       sgl->sge[i].buf, size);
 	}
 }
@@ -687,25 +687,26 @@ static void sgl_cp_from_pbuf(struct wd_sgl *dst_sgl, int start_sg, int strtad,
 		return;
 
 	size -= sz - strtad;
-	pbuf += sz - strtad;
+	pbuf = (void *)((uintptr_t)pbuf + sz - strtad);
 	for (i = strtsg + 1; i <= sgl->buf_num - 1 && size > sz; i++) {
-		memcpy(sgl->sge[i].buf, pbuf + (i - strtsg - 1) * sz, sz);
+		memcpy(sgl->sge[i].buf, (void *)((uintptr_t)pbuf + (i - strtsg - 1) * sz), sz);
 		sgl->sge[i].data_len = sz;
 		size -= sz;
 	}
 
 	if (i <= sgl->buf_num - 1) {
-		memcpy(sgl->sge[i].buf, pbuf + (i - strtsg - 1) * sz, size);
+		memcpy(sgl->sge[i].buf, (void *)((uintptr_t)pbuf + (i - strtsg - 1) * sz), size);
 	} else {
 		sgl = next;
 		for (i = 0; i < sgl->buf_num - 1 && size > sz; i++) {
 			memcpy(sgl->sge[i].buf,
-			       pbuf + (i + sgl->buf_num - strtsg - 1) * sz, sz);
+			       (void *)((uintptr_t)pbuf + (i + sgl->buf_num - strtsg - 1) * sz),
+			       sz);
 			sgl->sge[i].data_len = sz;
 			size -= sz;
 		}
 		memcpy(sgl->sge[i].buf,
-		       pbuf + (i + sgl->buf_num - strtsg - 1) * sz, size);
+		       (void *)((uintptr_t)pbuf + (i + sgl->buf_num - strtsg - 1) * sz), size);
 	}
 	sgl->sge[i].data_len = size;
 }
