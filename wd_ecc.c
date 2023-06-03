@@ -1698,8 +1698,7 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 {
 	struct wd_hash_mt *hash = &sess->setup.hash;
 	__u8 za[SM2_KEY_SIZE] = {0};
-	__u32 za_len = SM2_KEY_SIZE;
-	__u32 hash_bytes;
+	__u32 za_len, hash_bytes;
 	__u64 in_len = 0;
 	char *p_in;
 	__u64 lens;
@@ -1712,7 +1711,7 @@ static int sm2_compute_digest(struct wd_ecc_sess *sess, struct wd_dtb *hash_msg,
 	}
 
 	ret = sm2_compute_za_hash(za, &za_len, id, sess);
-	if (unlikely(ret)) {
+	if (unlikely(ret || za_len > SM2_KEY_SIZE)) {
 		WD_ERR("failed to compute za, ret = %d!\n", ret);
 		return ret;
 	}
