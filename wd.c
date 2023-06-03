@@ -21,6 +21,7 @@
 #include "wd.h"
 #include "wd_alg.h"
 #define SYS_CLASS_DIR			"/sys/class/uacce"
+#define FILE_MAX_SIZE			(8 << 20)
 
 enum UADK_LOG_LEVEL {
 	WD_LOG_NONE = 0,
@@ -64,6 +65,11 @@ static void wd_parse_log_level(void)
 
 	if (stat(syslog_file, &file_info) == -1) {
 		WD_ERR("failed to get file information.\n");
+		goto close_file;
+	}
+
+	if (file_info.st_size > FILE_MAX_SIZE) {
+		WD_ERR("failed to check rsyslog.conf size.\n");
 		goto close_file;
 	}
 
