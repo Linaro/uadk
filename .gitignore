@@ -173,7 +173,6 @@ v1/test/hisi_zip_test/test_hisi_zip
 v1/test/hisi_zip_test/test_hisi_zip_perf
 v1/test/hisi_zip_test/test_hisi_zlib
 v1/test/hisi_zip_test/wd_zip_test
-v1/test/hisi_zip_test/wd_zip_test_1630
 v1/test/hisi_zip_test_sgl/sgl_test
 v1/test/hisi_zip_test_sgl/wd_zip_test_sgl
 v1/test/test_mm/test_wd_mem
