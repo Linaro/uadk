@@ -214,7 +214,7 @@ static void br_free(struct wd_mm_br *br, void *va)
 		return;
 	}
 
-	return br->free(br->usr, va);
+	br->free(br->usr, va);
 }
 
 static __u32 get_hw_keysize(__u32 ksz)
@@ -1699,7 +1699,7 @@ static void get_sign_out_params(struct wcrypto_ecc_out *out,
 void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
 				       struct wd_dtb **r, struct wd_dtb **s)
 {
-	return get_sign_out_params(out, r, s);
+	get_sign_out_params(out, r, s);
 }
 
 
@@ -2218,7 +2218,7 @@ void wcrypto_get_sm2_sign_out_params(struct wcrypto_ecc_out *out,
 				       struct wd_dtb **r,
 				       struct wd_dtb **s)
 {
-	return get_sign_out_params(out, r, s);
+	get_sign_out_params(out, r, s);
 }
 
 struct wcrypto_ecc_out *wcrypto_new_sm2_kg_out(void *ctx)
