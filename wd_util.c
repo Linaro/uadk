@@ -2409,6 +2409,10 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	struct uacce_dev *dev;
 	int i;
 
+	/* If the ctx set number is 0, the initialization is skipped. */
+	if (!ctx_set_num)
+		return 0;
+
 	dev = wd_find_dev_by_numa(list, numa_id);
 	if (WD_IS_ERR(dev))
 		return WD_PTR_ERR(dev);
