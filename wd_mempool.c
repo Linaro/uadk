@@ -273,8 +273,9 @@ static void set_bit(struct bitmap *bm, unsigned int pos)
 {
 	unsigned long *map = bm->map;
 	unsigned long mask = BIT_MASK(pos);
-	unsigned long *p = map + BIT_WORD(pos);
+	unsigned long *p;
 
+	p = (void *)((uintptr_t)map + BIT_WORD(pos) * sizeof(unsigned long));
 	*p |= mask;
 }
 
@@ -282,14 +283,15 @@ static void clear_bit(struct bitmap *bm, unsigned int pos)
 {
 	unsigned long *map = bm->map;
 	unsigned long mask = BIT_MASK(pos);
-	unsigned long *p = map + BIT_WORD(pos);
+	unsigned long *p;
 
+	p = (void *)((uintptr_t)map + BIT_WORD(pos) * sizeof(unsigned long));
 	*p &= ~mask;
 }
 
 static int test_bit(struct bitmap *bm, unsigned int nr)
 {
-	unsigned long *p = bm->map + BIT_WORD(nr);
+	unsigned long *p = (void *)((uintptr_t)bm->map + BIT_WORD(nr) * sizeof(unsigned long));
 	unsigned long mask = BIT_MASK(nr);
 
 	return !(*p & mask);

@@ -620,7 +620,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 	kg_in->qbytes = q->dsize;
 	kg_in->e = (void *)kg_in->data;
 	kg_in->p = (void *)kg_in->e + c->key_size;
-	kg_in->q = (void *)kg_in->p + CRT_PARAM_SZ(c->key_size);
+	kg_in->q = (void *)((uintptr_t)kg_in->p + CRT_PARAM_SZ(c->key_size));
 
 	memcpy(kg_in->e, e->data, e->dsize);
 	memcpy(kg_in->p, p->data, p->dsize);
@@ -699,8 +699,8 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	kg_out->size = kg_out_size;
 	if (c->setup.is_crt) {
 		kg_out->qinv = (void *)kg_out->n + kz;
-		kg_out->dq = kg_out->qinv + CRT_PARAM_SZ(kz);
-		kg_out->dp = kg_out->dq + CRT_PARAM_SZ(kz);
+		kg_out->dq = (void *)((uintptr_t)kg_out->qinv + CRT_PARAM_SZ(kz));
+		kg_out->dp = (void *)((uintptr_t)kg_out->dq + CRT_PARAM_SZ(kz));
 	}
 
 	return kg_out;
