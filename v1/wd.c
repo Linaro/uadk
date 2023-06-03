@@ -132,7 +132,6 @@ static int get_int_attr(struct dev_info *dinfo, const char *attr)
 static int get_str_attr(struct dev_info *dinfo, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	__u32 size;
 	int ret;
 
 	ret = get_raw_attr(dinfo->dev_root, attr, buf, buf_sz);
@@ -141,16 +140,15 @@ static int get_str_attr(struct dev_info *dinfo, const char *attr, char *buf,
 		return ret;
 	}
 
-	size = ret;
-	if (size == buf_sz)
-		size = size - 1;
+	if ((size_t)ret == buf_sz)
+		ret = ret - 1;
 
-	buf[size] = '\0';
-	while ((size > 1) && (buf[size - 1] == '\n')) {
-		buf[size - 1] = '\0';
-		size = size - 1;
+	buf[ret] = '\0';
+	while ((ret > 1) && (buf[ret - 1] == '\n')) {
+		buf[ret - 1] = '\0';
+		ret = ret - 1;
 	}
-	return size;
+	return ret;
 }
 
 static int get_ul_vec_attr(struct dev_info *dinfo, const char *attr,
