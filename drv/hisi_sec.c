@@ -3043,6 +3043,7 @@ int hisi_sec_init(void *conf, void *priv)
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (!h_qp)
 			goto out;
+		config->ctxs[i].sqn = qm_priv.sqn;
 	}
 	memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 	hisi_sec_driver_adapter((struct hisi_qp *)h_qp);

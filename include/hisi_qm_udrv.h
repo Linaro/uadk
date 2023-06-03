@@ -49,6 +49,7 @@ struct hisi_qm_priv {
 	__u8 qp_mode;
 	__u16 sqe_size;
 	__u16 op_type;
+	__u16 sqn;
 	/* index of ctxs */
 	__u32 idx;
 	bool epoll_en;
