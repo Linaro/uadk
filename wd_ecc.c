@@ -272,7 +272,8 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	if (!flag)
 		return -WD_EEXIST;
 
-	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
+	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
+	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
 		goto out_clear_init;
 	}
