@@ -46,6 +46,8 @@
 #define SEC_AKEY_OFFSET_V3	9
 #define SEC_MAC_OFFSET_V3	4
 #define SEC_AUTH_ALG_OFFSET_V3	15
+#define SEC_SVA_PREFETCH_OFFSET	27
+#define SEC_ENABLE_SVA_PREFETCH	0x1
 #define SEC_CIPHER_AUTH_V3	0xbf
 #define SEC_AUTH_CIPHER_V3	0x40
 #define SEC_AI_GEN_OFFSET_V3	2
@@ -1283,6 +1285,8 @@ static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 		return ret;
 	}
 
+	sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
+
 	return 0;
 }
 
@@ -1934,6 +1938,7 @@ int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
+	sqe.auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -2828,6 +2833,7 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	sqe->c_len_ivin = msg->in_bytes;
 	sqe->cipher_src_offset = msg->assoc_bytes;
 	sqe->a_len_key = msg->in_bytes + msg->assoc_bytes;
+	sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 
 	ret = fill_aead_bd3_alg(msg, sqe);
 	if (ret) {
