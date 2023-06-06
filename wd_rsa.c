@@ -238,8 +238,8 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 {
 	struct wd_ctx_nums rsa_ctx_num[WD_RSA_GENKEY] = {0};
 	struct wd_ctx_params rsa_ctx_params = {0};
+	int ret = -WD_EINVAL;
 	bool flag;
-	int ret;
 
 	pthread_atfork(NULL, NULL, wd_rsa_clear_status);
 
@@ -249,7 +249,11 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 
 	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
-		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+	if (strcmp(alg, "rsa")) {
+		WD_ERR("invalid: the alg %s not support!\n", alg);
 		goto out_clear_init;
 	}
 
@@ -261,7 +265,6 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	wd_rsa_setting.dlh_list = wd_dlopen_drv(NULL);
 	if (!wd_rsa_setting.dlh_list) {
 		WD_ERR("failed to open driver lib files!\n");
-		ret = -WD_EINVAL;
 		goto out_clear_init;
 	}
 

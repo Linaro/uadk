@@ -197,8 +197,8 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 {
 	struct wd_ctx_nums dh_ctx_num[WD_DH_PHASE2] = {0};
 	struct wd_ctx_params dh_ctx_params = {0};
+	int ret = -WD_EINVAL;
 	bool flag;
-	int ret;
 
 	pthread_atfork(NULL, NULL, wd_dh_clear_status);
 
@@ -208,7 +208,11 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 
 	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
-		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+	if (strcmp(alg, "dh")) {
+		WD_ERR("invalid: the alg %s not support!\n", alg);
 		goto out_clear_init;
 	}
 
@@ -220,7 +224,6 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 	wd_dh_setting.dlh_list = wd_dlopen_drv(NULL);
 	if (!wd_dh_setting.dlh_list) {
 		WD_ERR("failed to open driver lib files!\n");
-		ret = -WD_EINVAL;
 		goto out_clear_init;
 	}
 
