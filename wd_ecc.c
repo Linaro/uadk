@@ -145,6 +145,16 @@ static int wd_ecc_open_driver(void)
 	return 0;
 }
 
+static bool is_alg_support(const char *alg)
+{
+	if (unlikely(strcmp(alg, "ecdh") && strcmp(alg, "ecdsa") &&
+		     strcmp(alg, "x25519") && strcmp(alg, "x448") &&
+		     strcmp(alg, "sm2")))
+		return false;
+
+	return true;
+}
+
 static void wd_ecc_clear_status(void)
 {
 	wd_alg_clear_init(&wd_ecc_setting.status);
@@ -253,8 +263,8 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 {
 	struct wd_ctx_nums ecc_ctx_num[WD_EC_OP_MAX] = {0};
 	struct wd_ctx_params ecc_ctx_params = {0};
+	int ret = -WD_EINVAL;
 	bool flag;
-	int ret;
 
 	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
 
@@ -264,7 +274,12 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 
 	if (!alg || sched_type > SCHED_POLICY_BUTT || task_type < 0 || task_type > TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
-		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
+	flag = is_alg_support(alg);
+	if (!flag) {
+		WD_ERR("invalid: alg %s not support!\n", alg);
 		goto out_clear_init;
 	}
 
@@ -276,7 +291,6 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	wd_ecc_setting.dlh_list = wd_dlopen_drv(NULL);
 	if (!wd_ecc_setting.dlh_list) {
 		WD_ERR("failed to open driver lib files!\n");
-		ret = -WD_EINVAL;
 		goto out_clear_init;
 	}
 
@@ -1074,16 +1088,6 @@ static bool is_key_width_support(__u32 key_bits)
 	    key_bits != 224 && key_bits != 256 &&
 	    key_bits != 320 && key_bits != 384 &&
 	    key_bits != 448 && key_bits != 521))
-		return false;
-
-	return true;
-}
-
-static bool is_alg_support(const char *alg)
-{
-	if (unlikely(strcmp(alg, "ecdh") && strcmp(alg, "ecdsa") &&
-		     strcmp(alg, "x25519") && strcmp(alg, "x448") &&
-		     strcmp(alg, "sm2")))
 		return false;
 
 	return true;
