@@ -12,6 +12,8 @@ extern "C" {
 #endif
 
 struct wd_aead_msg {
+	/* in bytes */
+	__u32 in_bytes;
 	struct wd_aead_req req;
 	/* Request identifier */
 	__u32 tag;
@@ -32,8 +34,6 @@ struct wd_aead_msg {
 	/* Operation result, denoted by WD error code */
 	__u8 result;
 
-	/* in bytes */
-	__u32 in_bytes;
 	/* out_bytes */
 	__u32 out_bytes;
 	/* iv bytes */
