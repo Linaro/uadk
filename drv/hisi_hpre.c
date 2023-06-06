@@ -529,7 +529,7 @@ static int hpre_ecc_init(void *conf, void *priv)
 		return -WD_EINVAL;
 	}
 
-	qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
+	qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
 	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
 	if (ret)
 		return ret;
