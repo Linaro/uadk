@@ -176,11 +176,11 @@ out_clear_ctx_config:
 	return ret;
 }
 
-static void wd_rsa_common_uninit(void)
+static int wd_rsa_common_uninit(void)
 {
 	if (!wd_rsa_setting.priv) {
 		WD_ERR("invalid: repeat uninit rsa!\n");
-		return;
+		return -WD_EINVAL;
 	}
 
 	/* uninit async request pool */
@@ -191,6 +191,8 @@ static void wd_rsa_common_uninit(void)
 	wd_alg_uninit_driver(&wd_rsa_setting.config,
 			     wd_rsa_setting.driver,
 			     &wd_rsa_setting.priv);
+
+	return 0;
 }
 
 int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -229,7 +231,12 @@ out_clear_init:
 
 void wd_rsa_uninit(void)
 {
-	wd_rsa_common_uninit();
+	int ret;
+
+	ret = wd_rsa_common_uninit();
+	if (ret)
+		return;
+
 	wd_rsa_close_driver();
 	wd_alg_clear_init(&wd_rsa_setting.status);
 }
@@ -328,7 +335,12 @@ out_clear_init:
 
 void wd_rsa_uninit2(void)
 {
-	wd_rsa_common_uninit();
+	int ret;
+
+	ret = wd_rsa_common_uninit();
+	if (ret)
+		return;
+
 	wd_alg_attrs_uninit(&wd_rsa_init_attrs);
 	wd_alg_drv_unbind(wd_rsa_setting.driver);
 	wd_dlclose_drv(wd_rsa_setting.dlh_list);

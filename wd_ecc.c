@@ -201,11 +201,11 @@ out_clear_ctx_config:
 	return ret;
 }
 
-static void wd_ecc_common_uninit(void)
+static int wd_ecc_common_uninit(void)
 {
 	if (!wd_ecc_setting.priv) {
 		WD_ERR("invalid: repeat uninit ecc!\n");
-		return;
+		return -WD_EINVAL;
 	}
 
 	/* uninit async request pool */
@@ -216,6 +216,8 @@ static void wd_ecc_common_uninit(void)
 	wd_alg_uninit_driver(&wd_ecc_setting.config,
 			     wd_ecc_setting.driver,
 			     &wd_ecc_setting.priv);
+
+	return 0;
 }
 
 int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -254,7 +256,12 @@ out_clear_init:
 
 void wd_ecc_uninit(void)
 {
-	wd_ecc_common_uninit();
+	int ret;
+
+	ret = wd_ecc_common_uninit();
+	if (ret)
+		return;
+
 	wd_ecc_close_driver();
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
@@ -353,7 +360,12 @@ out_clear_init:
 
 void wd_ecc_uninit2(void)
 {
-	wd_ecc_common_uninit();
+	int ret;
+
+	ret = wd_ecc_common_uninit();
+	if (ret)
+		return;
+
 	wd_alg_attrs_uninit(&wd_ecc_init_attrs);
 	wd_alg_drv_unbind(wd_ecc_setting.driver);
 	wd_dlclose_drv(wd_ecc_setting.dlh_list);
