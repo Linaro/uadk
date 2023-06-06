@@ -2438,7 +2438,7 @@ static int ecc_recv(handle_t ctx, void *ecc_msg)
 	return ecc_sqe_parse((struct hisi_qp *)h_qp, msg, &hw_msg);
 }
 
-#define GEN_HPRE_ALG_DRIVER(hpre_alg_name) \
+#define GEN_HPRE_ECC_DRIVER(hpre_alg_name) \
 {\
 	.drv_name = "hisi_hpre",\
 	.alg_name = hpre_alg_name,\
@@ -2453,12 +2453,12 @@ static int ecc_recv(handle_t ctx, void *ecc_msg)
 	.recv = ecc_recv,\
 }
 
-static struct wd_alg_driver hpre_alg_driver[] = {
-	GEN_HPRE_ALG_DRIVER("sm2"),
-	GEN_HPRE_ALG_DRIVER("ecdh"),
-	GEN_HPRE_ALG_DRIVER("ecdsa"),
-	GEN_HPRE_ALG_DRIVER("x25519"),
-	GEN_HPRE_ALG_DRIVER("x448"),
+static struct wd_alg_driver hpre_ecc_driver[] = {
+	GEN_HPRE_ECC_DRIVER("sm2"),
+	GEN_HPRE_ECC_DRIVER("ecdh"),
+	GEN_HPRE_ECC_DRIVER("ecdsa"),
+	GEN_HPRE_ECC_DRIVER("x25519"),
+	GEN_HPRE_ECC_DRIVER("x448"),
 };
 
 static struct wd_alg_driver hpre_rsa_driver = {
@@ -2490,7 +2490,7 @@ static struct wd_alg_driver hpre_dh_driver = {
 };
 static void __attribute__((constructor)) hisi_hpre_probe(void)
 {
-	int alg_num = ARRAY_SIZE(hpre_alg_driver);
+	int alg_num = ARRAY_SIZE(hpre_ecc_driver);
 	int i, ret;
 
 	WD_INFO("Info: register HPRE alg drivers!\n");
@@ -2504,19 +2504,19 @@ static void __attribute__((constructor)) hisi_hpre_probe(void)
 		WD_ERR("failed to register HPRE dh driver!\n");
 
 	for (i = 0; i < alg_num; i++) {
-		ret = wd_alg_driver_register(&hpre_alg_driver[i]);
+		ret = wd_alg_driver_register(&hpre_ecc_driver[i]);
 		if (ret)
-			WD_ERR("failed to register HPRE %s driver!\n", hpre_alg_driver[i].alg_name);
+			WD_ERR("failed to register HPRE %s driver!\n", hpre_ecc_driver[i].alg_name);
 	}
 }
 
 static void __attribute__((destructor)) hisi_hpre_remove(void)
 {
-	int alg_num = ARRAY_SIZE(hpre_alg_driver);
+	int alg_num = ARRAY_SIZE(hpre_ecc_driver);
 	int i;
 
 	for (i = 0; i < alg_num; i++)
-		wd_alg_driver_unregister(&hpre_alg_driver[i]);
+		wd_alg_driver_unregister(&hpre_ecc_driver[i]);
 
 	wd_alg_driver_unregister(&hpre_dh_driver);
 	wd_alg_driver_unregister(&hpre_rsa_driver);
