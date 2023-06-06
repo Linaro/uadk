@@ -116,13 +116,6 @@ static int wd_ecc_open_driver(void)
 	const char *alg_name = "sm2";
 	int ret;
 
-	/*
-	 * Compatible with the normal acquisition of device
-	 * drivers in the init interface
-	 */
-	if (wd_ecc_setting.dlh_list)
-		return 0;
-
 	ret = wd_get_lib_file_path("libhisi_hpre.so", lib_path, false);
 	if (ret)
 		return ret;
