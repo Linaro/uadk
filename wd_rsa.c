@@ -101,13 +101,6 @@ static int wd_rsa_open_driver(void)
 	const char *alg_name = "rsa";
 	int ret;
 
-	/*
-	 * Compatible with the normal acquisition of device
-	 * drivers in the init interface.
-	 */
-	if (wd_rsa_setting.dlh_list)
-		return 0;
-
 	ret = wd_get_lib_file_path("libhisi_hpre.so", lib_path, false);
 	if (ret)
 		return ret;
@@ -764,19 +757,19 @@ void wd_rsa_get_kg_out_crt_params(struct wd_rsa_kg_out *kout,
 		return;
 	}
 
-	if (qinv && kout->qinv) {
+	if (kout->qinv) {
 		qinv->bsize = CRT_PARAM_SZ(kout->key_size);
 		qinv->dsize = kout->qinvbytes;
 		qinv->data = (void *)kout->qinv;
 	}
 
-	if (dq && kout->dq) {
+	if (kout->dq) {
 		dq->bsize = CRT_PARAM_SZ(kout->key_size);
 		dq->dsize = kout->dqbytes;
 		dq->data = (void *)kout->dq;
 	}
 
-	if (dp && kout->dp) {
+	if (kout->dp) {
 		dp->bsize = CRT_PARAM_SZ(kout->key_size);
 		dp->dsize = kout->dpbytes;
 		dp->data = (void *)kout->dp;
