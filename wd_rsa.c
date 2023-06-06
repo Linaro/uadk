@@ -384,7 +384,7 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 		}
 
 		if (unlikely(req->dst_bytes != sess->key_size)) {
-			WD_ERR("invalid: req dst bytes %hu is error!\n", req->dst_bytes);
+			WD_ERR("invalid: req dst bytes %u is error!\n", req->dst_bytes);
 			return -WD_EINVAL;
 		}
 	}
