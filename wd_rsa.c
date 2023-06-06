@@ -276,45 +276,46 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 		goto out_clear_init;
 	}
 
-res_retry:
-	memset(&wd_rsa_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+	while (ret) {
+		memset(&wd_rsa_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-	/* Get alg driver and dev name */
-	wd_rsa_setting.driver = wd_alg_drv_bind(task_type, alg);
-	if (!wd_rsa_setting.driver) {
-		WD_ERR("failed to bind a valid driver!\n");
-		ret = -WD_EINVAL;
-		goto out_dlopen;
-	}
-
-	rsa_ctx_params.ctx_set_num = rsa_ctx_num;
-	ret = wd_ctx_param_init(&rsa_ctx_params, ctx_params,
-				wd_rsa_setting.driver, WD_RSA_TYPE, WD_RSA_GENKEY);
-	if (ret) {
-		if (ret == -WD_EAGAIN) {
-			wd_disable_drv(wd_rsa_setting.driver);
-			wd_alg_drv_unbind(wd_rsa_setting.driver);
-			goto res_retry;
+		/* Get alg driver and dev name */
+		wd_rsa_setting.driver = wd_alg_drv_bind(task_type, alg);
+		if (!wd_rsa_setting.driver) {
+			WD_ERR("failed to bind a valid driver!\n");
+			ret = -WD_EINVAL;
+			goto out_dlopen;
 		}
-		goto out_driver;
-	}
 
-	wd_rsa_init_attrs.alg = alg;
-	wd_rsa_init_attrs.sched_type = sched_type;
-	wd_rsa_init_attrs.driver = wd_rsa_setting.driver;
-	wd_rsa_init_attrs.ctx_params = &rsa_ctx_params;
-	wd_rsa_init_attrs.alg_init = wd_rsa_common_init;
-	wd_rsa_init_attrs.alg_poll_ctx = wd_rsa_poll_ctx;
-	ret = wd_alg_attrs_init(&wd_rsa_init_attrs);
-	if (ret) {
-		if (ret == -WD_ENODEV) {
-			wd_disable_drv(wd_rsa_setting.driver);
-			wd_alg_drv_unbind(wd_rsa_setting.driver);
-			wd_ctx_param_uninit(&rsa_ctx_params);
-			goto res_retry;
+		rsa_ctx_params.ctx_set_num = rsa_ctx_num;
+		ret = wd_ctx_param_init(&rsa_ctx_params, ctx_params,
+					wd_rsa_setting.driver, WD_RSA_TYPE, WD_RSA_GENKEY);
+		if (ret) {
+			if (ret == -WD_EAGAIN) {
+				wd_disable_drv(wd_rsa_setting.driver);
+				wd_alg_drv_unbind(wd_rsa_setting.driver);
+				continue;
+			}
+			goto out_driver;
 		}
-		WD_ERR("failed to init alg attrs!\n");
-		goto out_params_uninit;
+
+		wd_rsa_init_attrs.alg = alg;
+		wd_rsa_init_attrs.sched_type = sched_type;
+		wd_rsa_init_attrs.driver = wd_rsa_setting.driver;
+		wd_rsa_init_attrs.ctx_params = &rsa_ctx_params;
+		wd_rsa_init_attrs.alg_init = wd_rsa_common_init;
+		wd_rsa_init_attrs.alg_poll_ctx = wd_rsa_poll_ctx;
+		ret = wd_alg_attrs_init(&wd_rsa_init_attrs);
+		if (ret) {
+			if (ret == -WD_ENODEV) {
+				wd_disable_drv(wd_rsa_setting.driver);
+				wd_alg_drv_unbind(wd_rsa_setting.driver);
+				wd_ctx_param_uninit(&rsa_ctx_params);
+				continue;
+			}
+			WD_ERR("failed to init alg attrs!\n");
+			goto out_params_uninit;
+		}
 	}
 
 	wd_alg_set_init(&wd_rsa_setting.status);
