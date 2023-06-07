@@ -103,7 +103,6 @@ static struct sched_ctx_region *sched_get_ctx_range(struct wd_sched_ctx *sched_c
 {
 	struct wd_sched_info *sched_info;
 	int numa_id;
-	int type;
 
 	sched_info = sched_ctx->sched_info;
 	if (key->numa_id >= 0 &&
@@ -112,10 +111,8 @@ static struct sched_ctx_region *sched_get_ctx_range(struct wd_sched_ctx *sched_c
 
 	/* If the key->numa_id is not exist, we should scan for a region */
 	for (numa_id = 0; numa_id < sched_ctx->numa_num; numa_id++) {
-		for (type = 0; type < sched_ctx->type_num; type++) {
-			if (sched_info[numa_id].ctx_region[key->mode][type].valid)
-				return &sched_info[numa_id].ctx_region[key->mode][type];
-		}
+		if (sched_info[numa_id].ctx_region[key->mode][key->type].valid)
+			return &sched_info[numa_id].ctx_region[key->mode][key->type];
 	}
 
 	return NULL;
