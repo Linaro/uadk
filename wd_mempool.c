@@ -646,14 +646,13 @@ static int get_value_from_sysfs(const char *path, ssize_t path_size)
 		goto err_read;
 	}
 
-	close(fd);
-
 	ret = strtol(buf, NULL, 10);
 	if (errno == ERANGE) {
 		WD_ERR("failed to strtol %s, out of range!\n", buf);
 		goto err_read;
 	}
 
+	close(fd);
 	return ret;
 
 err_read:
