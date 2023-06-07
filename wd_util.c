@@ -461,9 +461,9 @@ void dump_env_info(struct wd_env_config *config)
 			continue;
 
 		ctx_table = config_numa->ctx_table;
-		WD_ERR("-> %s: %d: sync num: %lu\n", __func__, i,
+		WD_ERR("-> %s: %d: sync num: %u\n", __func__, i,
 		       config_numa->sync_ctx_num);
-		WD_ERR("-> %s: %d: async num: %lu\n", __func__, i,
+		WD_ERR("-> %s: %d: async num: %u\n", __func__, i,
 		       config_numa->async_ctx_num);
 		for (j = 0; j < CTX_MODE_MAX; j++)
 			for (k = 0; k < config_numa->op_type_num; k++) {
