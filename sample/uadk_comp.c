@@ -19,6 +19,7 @@
 #define required_argument	1
 #define optional_argument	2
 
+#define INIT2
 struct request_config {
 	char algname[MAX_ALG_LEN];
 	enum wd_comp_alg_type alg;
@@ -127,6 +128,7 @@ out:
 	return NULL;
 }
 
+#ifndef INIT2
 static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 {
 	int ret;
@@ -179,9 +181,11 @@ out_free_sched:
 
 	return NULL;
 }
+#endif
 
 static int uadk_comp_ctx_init(void)
 {
+#ifndef INIT2
 	struct wd_ctx_config *ctx = &config.ctx;
 	int ctx_set_num = CTX_SET_NUM;
 	struct wd_sched *sched;
@@ -235,10 +239,14 @@ out_free_ctx:
 	free(ctx->ctxs);
 
 	return ret;
+#else
+	return wd_comp_init2(config.algname, 0, 0);
+#endif
 }
 
 static void uadk_comp_ctx_uninit(void)
 {
+#ifndef INIT2
 	struct wd_ctx_config *ctx = &config.ctx;
 	int i;
 
@@ -249,6 +257,9 @@ static void uadk_comp_ctx_uninit(void)
 
 	wd_free_list_accels(config.list);
 	wd_sched_rr_release(config.sched);
+#else
+	wd_comp_uninit2();
+#endif
 }
 
 static int uadk_comp_sess_init(void)
