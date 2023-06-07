@@ -604,7 +604,6 @@ static struct wd_alg_driver aead_alg_driver[] = {
 	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(aes))"),
 	GEN_SEC_ALG_DRIVER("ccm(sm4)"),
 	GEN_SEC_ALG_DRIVER("gcm(sm4)"),
-	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(sm4))"),
 };
 
 static void dump_sec_msg(void *msg, const char *alg)

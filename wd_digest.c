@@ -48,8 +48,8 @@ static char *wd_digest_alg_name[WD_DIGEST_TYPE_MAX] = {
 struct wd_digest_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
-	struct wd_sched	sched;
-	struct wd_alg_driver	*driver;
+	struct wd_sched sched;
+	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
 	void *priv;
 	void *dlhandle;
@@ -91,13 +91,6 @@ static int wd_digest_open_driver(void)
 	const char *alg_name = "sm3";
 	char lib_path[PATH_MAX];
 	int ret;
-
-	/*
-	 * Compatible with the normal acquisition of device
-	 * drivers in the init interface
-	 */
-	if (wd_digest_setting.dlh_list)
-		return 0;
 
 	ret = wd_get_lib_file_path("libhisi_sec.so", lib_path, false);
 	if (ret)
@@ -310,19 +303,18 @@ out_clear_init:
 
 static void wd_digest_uninit_nolock(void)
 {
-	void *priv = wd_digest_setting.priv;
-
-	if (!priv)
-		return;
-
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 	wd_clear_sched(&wd_digest_setting.sched);
 	wd_alg_uninit_driver(&wd_digest_setting.config,
-						 wd_digest_setting.driver, &priv);
+						 wd_digest_setting.driver,
+						 &wd_digest_setting.priv);
 }
 
 void wd_digest_uninit(void)
 {
+	if (!wd_digest_setting.priv)
+		return;
+
 	wd_digest_uninit_nolock();
 	wd_digest_close_driver();
 	wd_alg_clear_init(&wd_digest_setting.status);
@@ -343,7 +335,7 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 {
 	struct wd_ctx_params digest_ctx_params = {0};
 	struct wd_ctx_nums digest_ctx_num = {0};
-	int ret = 0;
+	int ret = -WD_EINVAL;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
@@ -355,67 +347,64 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	     task_type < 0 || task_type >= TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
-		ret = -WD_EINVAL;
 		goto out_uninit;
 	}
 
 	if (!wd_digest_algs_check(alg)) {
 		WD_ERR("invalid: digest:%s unsupported!\n", alg);
-		ret = -WD_EINVAL;
 		goto out_uninit;
 	}
 	/*
 	 * Driver lib file path could set by env param.
-	 * than open them by wd_dlopen_drv()
+	 * then open them by wd_dlopen_drv()
 	 * use NULL means dynamic query path
 	 */
 	wd_digest_setting.dlh_list = wd_dlopen_drv(NULL);
 	if (!wd_digest_setting.dlh_list) {
-		WD_ERR("fail to open driver lib files.\n");
+		WD_ERR("failed to open driver lib files.\n");
 		goto out_uninit;
 	}
 
-res_retry:
-	memset(&wd_digest_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+	while (ret != 0) {
+		memset(&wd_digest_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-	/* Get alg driver and dev name */
-	wd_digest_setting.driver = wd_alg_drv_bind(task_type, alg);
-	if (!wd_digest_setting.driver) {
-		WD_ERR("fail to bind a valid driver.\n");
-		ret = -WD_EINVAL;
-		goto out_dlopen;
-	}
-
-	digest_ctx_params.ctx_set_num = &digest_ctx_num;
-	ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
-				wd_digest_setting.driver, WD_DIGEST_TYPE, 1);
-	if (ret) {
-		if (ret == -WD_EAGAIN) {
-			wd_disable_drv(wd_digest_setting.driver);
-			wd_alg_drv_unbind(wd_digest_setting.driver);
-			goto res_retry;
+		/* Get alg driver and dev name */
+		wd_digest_setting.driver = wd_alg_drv_bind(task_type, alg);
+		if (!wd_digest_setting.driver) {
+			WD_ERR("failed to bind %s driver.\n", alg);
+			goto out_dlopen;
 		}
-		goto out_driver;
-	}
 
-	wd_digest_init_attrs.alg = alg;
-	wd_digest_init_attrs.sched_type = sched_type;
-	wd_digest_init_attrs.driver = wd_digest_setting.driver;
-	wd_digest_init_attrs.ctx_params = &digest_ctx_params;
-	wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
-	wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
-	ret = wd_alg_attrs_init(&wd_digest_init_attrs);
-	if (ret) {
-		if (ret == -WD_ENODEV) {
-			wd_disable_drv(wd_digest_setting.driver);
-			wd_alg_drv_unbind(wd_digest_setting.driver);
-			wd_ctx_param_uninit(&digest_ctx_params);
-			goto res_retry;
+		digest_ctx_params.ctx_set_num = &digest_ctx_num;
+		ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
+					wd_digest_setting.driver, WD_DIGEST_TYPE, 1);
+		if (ret) {
+			if (ret == -WD_EAGAIN) {
+				wd_disable_drv(wd_digest_setting.driver);
+				wd_alg_drv_unbind(wd_digest_setting.driver);
+				continue;
+			}
+			goto out_driver;
 		}
-		WD_ERR("fail to init alg attrs.\n");
-		goto out_params_uninit;
-	}
 
+		wd_digest_init_attrs.alg = alg;
+		wd_digest_init_attrs.sched_type = sched_type;
+		wd_digest_init_attrs.driver = wd_digest_setting.driver;
+		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
+		wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
+		wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
+		ret = wd_alg_attrs_init(&wd_digest_init_attrs);
+		if (ret) {
+			if (ret == -WD_ENODEV) {
+				wd_disable_drv(wd_digest_setting.driver);
+				wd_alg_drv_unbind(wd_digest_setting.driver);
+				wd_ctx_param_uninit(&digest_ctx_params);
+				continue;
+			}
+			WD_ERR("failed to init alg attrs.\n");
+			goto out_params_uninit;
+		}
+	}
 	wd_alg_set_init(&wd_digest_setting.status);
 	wd_ctx_param_uninit(&digest_ctx_params);
 
@@ -434,6 +423,9 @@ out_uninit:
 
 void wd_digest_uninit2(void)
 {
+	if (!wd_digest_setting.priv)
+		return;
+
 	wd_digest_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
 	wd_alg_drv_unbind(wd_digest_setting.driver);
