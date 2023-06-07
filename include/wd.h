@@ -584,11 +584,17 @@ bool wd_need_info(void);
 struct wd_capability {
 	char	alg_name[CRYPTO_MAX_ALG_NAME];
 	char	drv_name[CRYPTO_MAX_ALG_NAME];
+	bool	available;
 	int	priority;
+	int	calc_type;
 
 	struct wd_capability *next;
 };
 
+/**
+ * wd_get_alg_cap() - Get the algorithm information supported
+ * in the current system.
+ */
 struct wd_capability *wd_get_alg_cap(void);
 void wd_release_alg_cap(struct wd_capability *head);
 
