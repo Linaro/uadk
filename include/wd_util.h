@@ -53,17 +53,9 @@ struct wd_ctx_range {
 
 struct wd_env_config_per_numa {
 	/* Config begin */
-	unsigned long node;
-	unsigned long sync_ctx_num;
-	unsigned long async_ctx_num;
-	/*
-	 * Define which polling thread to poll each async ctx, polling thread
-	 * number stars from 0.
-	 *
-	 * async_ctx_poll: 0, 0, 0, 1, 1, means polling thread 0 polls async
-	 * ctx 0, 1, 2, polling thread 1 polls async ctx 3, 4.
-	 */
-	unsigned long *async_ctx_poll;
+	int node;
+	__u32 sync_ctx_num;
+	__u32 async_ctx_num;
 
 	/*
 	 * +---------+-----------------+---------------+
