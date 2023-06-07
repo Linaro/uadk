@@ -1344,8 +1344,8 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 
 	done = sqe->done_flag & SEC_DONE_MASK;
 	if (done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("failed to parse cipher BD3! done=0x%x, etype=0x%x\n",
-		       done, sqe->error_type);
+		WD_ERR("failed to parse cipher BD3! done=0x%x, etype=0x%x, sva_status=0x%x\n",
+		       done, sqe->error_type, sqe->check_sum.hac_sva_status);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
 		recv_msg->result = WD_SUCCESS;
@@ -1965,8 +1965,8 @@ static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 
 	done = sqe->done_flag & SEC_DONE_MASK;
 	if (done != SEC_HW_TASK_DONE || sqe->error_type) {
-		WD_ERR("failed to parse digest BD3! done=0x%x, etype=0x%x\n",
-		       done, sqe->error_type);
+		WD_ERR("failed to parse digest BD3! done=0x%x, etype=0x%x, sva_status=0x%x\n",
+		       done, sqe->error_type, sqe->check_sum.hac_sva_status);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
 		recv_msg->result = WD_SUCCESS;
@@ -2917,8 +2917,9 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 	icv = (sqe->done_flag & SEC_ICV_MASK) >> 1;
 	if (done != SEC_HW_TASK_DONE || sqe->error_type ||
 	    icv == SEC_HW_ICV_ERR) {
-		WD_ERR("failed to parse aead BD3! done=0x%x, etype=0x%x, icv=0x%x\n",
-		       done, sqe->error_type, icv);
+		WD_ERR("failed to parse aead BD3!\n"
+		       "done=0x%x, etype=0x%x, icv=0x%x, sva_status=0x%x\n",
+		       done, sqe->error_type, icv, sqe->check_sum.hac_sva_status);
 		recv_msg->result = WD_IN_EPARA;
 	} else {
 		recv_msg->result = WD_SUCCESS;
