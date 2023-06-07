@@ -973,8 +973,8 @@ static int wd_parse_env(struct wd_env_config *config)
 		var_s = secure_getenv(var->name);
 		if (!var_s || !strlen(var_s)) {
 			var_s = var->def_val;
-			WD_ERR("no %s environment variable! Use default: %s\n",
-			       var->name, var->def_val);
+			WD_INFO("no %s environment variable! Use default: %s\n",
+				var->name, var->def_val);
 		}
 
 		ret = var->parse_fn(config, var_s);
@@ -1875,7 +1875,7 @@ static int file_check_valid(char *lib_file)
 static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
 {
 	if (!fb_driver->init) {
-		WD_ERR("soft sec driver have no init interface.\n");
+		WD_ERR("soft acc driver have no init interface.\n");
 		return -WD_EINVAL;
 	}
 
@@ -1887,7 +1887,7 @@ static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
 static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
 {
 	if (!fb_driver->exit) {
-		WD_ERR("soft sec driver have no exit interface.\n");
+		WD_ERR("soft acc driver have no exit interface.\n");
 		return;
 	}
 
@@ -2529,7 +2529,7 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 	op_type_num = ctx_params->op_type_num;
 	ctx_set_num = wd_get_ctx_numbers(*ctx_params, op_type_num);
 	if (!ctx_set_num || !op_type_num) {
-		WD_ERR("invalid: ctx_set_num is %d, op_type_num is %d!\n",
+		WD_ERR("invalid: ctx_set_num is %u, op_type_num is %u!\n",
 		       ctx_set_num, op_type_num);
 		ret = -WD_EINVAL;
 		goto out_freelist;
