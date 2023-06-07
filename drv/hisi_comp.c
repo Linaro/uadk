@@ -1060,8 +1060,9 @@ static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
 #define GEN_ZIP_ALG_DRIVER(zip_alg_name) \
 {\
 	.drv_name = "hisi_zip",\
-	.alg_name = zip_alg_name,\
-	.priority = UADK_ALG_HW,\
+	.alg_name = (zip_alg_name),\
+	.calc_type = UADK_ALG_HW,\
+	.priority = 100,\
 	.priv_size = sizeof(struct hisi_zip_ctx),\
 	.queue_num = ZIP_CTX_Q_NUM_DEF,\
 	.op_type_num = 2,\
@@ -1089,7 +1090,7 @@ static void __attribute__((constructor)) hisi_zip_probe(void)
 
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&zip_alg_driver[i]);
-		if (ret)
+		if (ret && ret != -WD_ENODEV)
 			WD_ERR("Error: register ZIP %s failed!\n",
 				zip_alg_driver[i].alg_name);
 	}
@@ -1100,7 +1101,7 @@ static void __attribute__((destructor)) hisi_zip_remove(void)
 	int alg_num = ARRAY_SIZE(zip_alg_driver);
 	int i;
 
+	WD_INFO("Info: unregister ZIP alg drivers!\n");
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&zip_alg_driver[i]);
 }
-
