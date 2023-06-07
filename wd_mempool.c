@@ -230,8 +230,10 @@ static struct bitmap *create_bitmap(int bits)
 
 static void destroy_bitmap(struct bitmap *bm)
 {
-	free(bm->map);
-	free(bm);
+	if (bm) {
+		free(bm->map);
+		free(bm);
+	}
 }
 
 static unsigned long _find_next_bit(unsigned long *map, unsigned long bits,
@@ -892,8 +894,10 @@ static int init_mempool(struct mempool *mp)
 
 static void uninit_mempool(struct mempool *mp)
 {
-	destroy_bitmap(mp->bitmap);
-	mp->bitmap = NULL;
+	if (mp->bitmap) {
+		destroy_bitmap(mp->bitmap);
+		mp->bitmap = NULL;
+	}
 }
 
 handle_t wd_mempool_create(size_t size, int node)
