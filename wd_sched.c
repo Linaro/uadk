@@ -177,6 +177,11 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 	int node = numa_node_of_cpu(cpu);
 	struct sched_key *skey;
 
+	if (node < 0) {
+		WD_ERR("invalid: failed to get numa node!\n");
+		return (handle_t)(-WD_EINVAL);
+	}
+
 	if (!sched_ctx) {
 		WD_ERR("invalid: sched ctx is NULL!\n");
 		return (handle_t)(-WD_EINVAL);
