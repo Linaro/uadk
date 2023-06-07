@@ -9,18 +9,17 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <syslog.h>
 #include <unistd.h>
-#include <asm/types.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define handle_t uintptr_t
-enum alg_priority {
+#define ALG_NAME_SIZE		128
+#define DEV_NAME_LEN		128
+
+enum alg_dev_type {
 	UADK_ALG_SOFT = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,
 	UADK_ALG_SVE_INSTR = 0x2,
@@ -31,6 +30,13 @@ enum alg_priority {
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
  * @priority: priority of the type of algorithm supported by the driver
+ *	    the larger the value of priority, the higher the priority of the driver,
+ *	    it will be used first when selecting a driver.
+ *	    soft calculation can be defined as 0.
+ *	    hard calculation can be defined as a value above 100.
+ *	    instruction acceleration can define a higher value according to
+ *	    the performance situation, such as 400.
+ * @calc_type: the calculation method of algorithm supported by the driver
  * @queue_num: number of device queues required by the device to
  *		 execute the algorithm task
  * @op_type_num: number of modes in which the device executes the
@@ -52,6 +58,7 @@ struct wd_alg_driver {
 	const char	*drv_name;
 	const char	*alg_name;
 	int	priority;
+	int	calc_type;
 	int	queue_num;
 	int	op_type_num;
 	int	priv_size;
@@ -64,25 +71,62 @@ struct wd_alg_driver {
 	int (*get_usage)(void *param);
 };
 
+/**
+ * wd_alg_driver_register() - Register a device driver.
+ * @wd_alg_driver: a device driver that supports an algorithm.
+ *
+ * Return the execution result, non-zero means error code.
+ */
 int wd_alg_driver_register(struct wd_alg_driver *drv);
 void wd_alg_driver_unregister(struct wd_alg_driver *drv);
 
+/**
+ * @alg_name: name of the algorithm supported by the driver
+ * @drv_name: name of the current device driver
+ * @available: Indicates whether the current driver still has resources available
+ * @priority: priority of the type of algorithm supported by the driver
+ * @calc_type: the calculation method of algorithm supported by the driver
+ * @refcnt: the number of times the algorithm driver is being cited by the task
+ *
+ * @drv: device Drivers Supporting Algorithms
+ * @next: pointer to the next node of the algorithm linked list
+ */
 struct wd_alg_list {
-	const char	*alg_name;
-	const char	*drv_name;
+	char alg_name[ALG_NAME_SIZE];
+	char drv_name[DEV_NAME_LEN];
 	bool available;
 	int	priority;
+	int	calc_type;
 	int	refcnt;
 
 	struct wd_alg_driver *drv;
 	struct wd_alg_list *next;
 };
 
+/**
+ * wd_request_drv() - Apply for an algorithm driver.
+ * @alg_name: task algorithm name.
+ * @hw_mask: the flag of shield hardware device drivers.
+ *
+ * Returns the applied algorithm driver, non means error.
+ */
 struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
 void wd_release_drv(struct wd_alg_driver *drv);
 
+/**
+ * wd_drv_alg_support() - Check the algorithms supported by the driver.
+ * @alg_name: task algorithm name.
+ * @drv: a device driver that supports an algorithm.
+ *
+ * Return check result.
+ */
 bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_driver *drv);
+
+/**
+ * wd_enable_drv() - Re-enable use of the current device driver.
+ * @drv: a device driver that supports an algorithm.
+ */
 void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 

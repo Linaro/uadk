@@ -4,22 +4,64 @@
  */
 
 #define _GNU_SOURCE
-#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <string.h>
 #include <pthread.h>
 
 #include "wd.h"
 #include "wd_alg.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
+#define SVA_FILE_NAME			"flags"
+#define DEV_SVA_SIZE		32
+#define STR_DECIMAL		0xA
+
 static struct wd_alg_list alg_list_head;
 static struct wd_alg_list *alg_list_tail = &alg_list_head;
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static bool wd_check_dev_sva(const char *dev_name)
+{
+	char dev_path[PATH_MAX] = {'\0'};
+	char buf[DEV_SVA_SIZE] = {'\0'};
+	unsigned int val;
+	ssize_t ret;
+	int fd;
+
+	ret = snprintf(dev_path, PATH_STR_SIZE, "%s/%s/%s", SYS_CLASS_DIR,
+			  dev_name, SVA_FILE_NAME);
+	if (ret < 0) {
+		WD_ERR("failed to snprintf, device name: %s!\n", dev_name);
+		return false;
+	}
+
+	/**
+	 * The opened file is the specified device driver file.
+	 * no need for realpath processing.
+	 */
+	fd = open(dev_path, O_RDONLY, 0);
+	if (fd < 0) {
+		WD_ERR("failed to open %s(%d)!\n", dev_path, -errno);
+		return false;
+	}
+
+	ret = read(fd, buf, DEV_SVA_SIZE - 1);
+	if (ret <= 0) {
+		WD_ERR("failed to read anything at %s!\n", dev_path);
+		close(fd);
+		return false;
+	}
+	close(fd);
+
+	val = strtol(buf, NULL, STR_DECIMAL);
+	if (val & UACCE_DEV_SVA)
+		return true;
+
+	return false;
+}
 
 static bool wd_check_accel_dev(const char *dev_name)
 {
@@ -37,7 +79,8 @@ static bool wd_check_accel_dev(const char *dev_name)
 		     !strncmp(dev_dir->d_name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 
-		if (!strncmp(dev_dir->d_name, dev_name, strlen(dev_name))) {
+		if (!strncmp(dev_dir->d_name, dev_name, strlen(dev_name)) &&
+		     wd_check_dev_sva(dev_dir->d_name)) {
 			closedir(wd_class);
 			return true;
 		}
@@ -45,6 +88,46 @@ static bool wd_check_accel_dev(const char *dev_name)
 	closedir(wd_class);
 
 	return false;
+}
+
+static bool wd_alg_check_available(int calc_type, const char *dev_name)
+{
+	bool ret = false;
+
+	switch (calc_type) {
+	case UADK_ALG_SOFT:
+		break;
+	/* Should find the CPU if not support CE */
+	case UADK_ALG_CE_INSTR:
+		break;
+	/* Should find the CPU if not support SVE */
+	case UADK_ALG_SVE_INSTR:
+		break;
+	/* Check if the current driver has device support */
+	case UADK_ALG_HW:
+		ret = wd_check_accel_dev(dev_name);
+		break;
+	}
+
+	return ret;
+}
+
+static bool wd_alg_driver_match(struct wd_alg_driver *drv,
+	struct wd_alg_list *node)
+{
+	if (strcmp(drv->alg_name, node->alg_name))
+		return false;
+
+	if (strcmp(drv->drv_name, node->drv_name))
+		return false;
+
+	if (drv->priority != node->priority)
+		return false;
+
+	if (drv->calc_type != node->calc_type)
+		return false;
+
+	return true;
 }
 
 int wd_alg_driver_register(struct wd_alg_driver *drv)
@@ -62,24 +145,18 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 		return -WD_ENOMEM;
 	}
 
-	new_alg->alg_name = drv->alg_name;
-	new_alg->drv_name = drv->drv_name;
+	strncpy(new_alg->alg_name, drv->alg_name, ALG_NAME_SIZE - 1);
+	strncpy(new_alg->drv_name, drv->drv_name, DEV_NAME_LEN - 1);
 	new_alg->priority = drv->priority;
+	new_alg->calc_type = drv->calc_type;
 	new_alg->drv = drv;
 	new_alg->refcnt = 0;
 	new_alg->next = NULL;
 
-	if (drv->priority == UADK_ALG_HW) {
-		/* If not find dev, remove this driver node */
-		new_alg->available = wd_check_accel_dev(drv->drv_name);
-		if (!new_alg->available) {
-			free(new_alg);
-			WD_ERR("failed to find alg driver's device!\n");
-			return -WD_ENODEV;
-		}
-	} else {
-		/* Should find the CPU if not support SVE or CE */
-		new_alg->available = true;
+	new_alg->available = wd_alg_check_available(drv->calc_type, drv->drv_name);
+	if (!new_alg->available) {
+		free(new_alg);
+		return -WD_ENODEV;
 	}
 
 	pthread_mutex_lock(&mutex);
@@ -101,11 +178,8 @@ void wd_alg_driver_unregister(struct wd_alg_driver *drv)
 
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
-		if (!strcmp(drv->alg_name, pnext->alg_name) &&
-		     !strcmp(drv->drv_name, pnext->drv_name) &&
-		     drv->priority == pnext->priority) {
+		if (wd_alg_driver_match(drv, pnext))
 			break;
-		}
 		npre = pnext;
 		pnext = pnext->next;
 	}
@@ -160,21 +234,13 @@ void wd_enable_drv(struct wd_alg_driver *drv)
 
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
-		if (!strcmp(drv->alg_name, pnext->alg_name) &&
-		     !strcmp(drv->drv_name, pnext->drv_name) &&
-		     drv->priority == pnext->priority) {
+		if (wd_alg_driver_match(drv, pnext))
 			break;
-		}
 		pnext = pnext->next;
 	}
 
-	if (drv->priority == UADK_ALG_HW) {
-		/* If not find dev, remove this driver node */
-		pnext->available = wd_check_accel_dev(drv->drv_name);
-	} else {
-		/* Should find the CPU if not support SVE or CE */
-		pnext->available = true;
-	}
+	if (pnext)
+		pnext->available = wd_alg_check_available(drv->calc_type, drv->drv_name);
 	pthread_mutex_unlock(&mutex);
 }
 
@@ -188,15 +254,13 @@ void wd_disable_drv(struct wd_alg_driver *drv)
 
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
-		if (!strcmp(drv->alg_name, pnext->alg_name) &&
-		     !strcmp(drv->drv_name, pnext->drv_name) &&
-		     drv->priority == pnext->priority) {
+		if (wd_alg_driver_match(drv, pnext) && pnext->available)
 			break;
-		}
 		pnext = pnext->next;
 	}
 
-	pnext->available = false;
+	if (pnext)
+		pnext->available = false;
 	pthread_mutex_unlock(&mutex);
 }
 
@@ -217,7 +281,7 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, bool hw_mask)
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
 		/* hw_mask true mean not to used hardware dev */
-		if (hw_mask && pnext->drv->priority == UADK_ALG_HW) {
+		if (hw_mask && pnext->drv->calc_type == UADK_ALG_HW) {
 			pnext = pnext->next;
 			continue;
 		}
@@ -249,17 +313,14 @@ void wd_release_drv(struct wd_alg_driver *drv)
 
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
-		if (!strcmp(drv->alg_name, pnext->alg_name) &&
-			!strcmp(drv->drv_name, pnext->drv_name) &&
-			drv->priority == pnext->priority) {
+		if (wd_alg_driver_match(drv, pnext) && pnext->refcnt > 0) {
 			select_node = pnext;
 			break;
 		}
 		pnext = pnext->next;
 	}
 
-	if (select_node && select_node->refcnt > 0)
+	if (select_node)
 		select_node->refcnt--;
 	pthread_mutex_unlock(&mutex);
 }
-
