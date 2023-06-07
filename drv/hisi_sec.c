@@ -534,8 +534,8 @@ static __u32 g_sec_hmac_full_len[WD_DIGEST_TYPE_MAX] = {
 	SEC_HMAC_SHA512_MAC_LEN, SEC_HMAC_SHA512_224_MAC_LEN, SEC_HMAC_SHA512_256_MAC_LEN
 };
 
-int hisi_sec_init(void *conf, void *priv);
-void hisi_sec_exit(void *priv);
+static int hisi_sec_init(void *conf, void *priv);
+static void hisi_sec_exit(void *priv);
 
 static int hisi_sec_get_usage(void *param)
 {
@@ -545,8 +545,9 @@ static int hisi_sec_get_usage(void *param)
 #define GEN_SEC_ALG_DRIVER(sec_alg_name) \
 {\
 	.drv_name = "hisi_sec2",\
-	.alg_name = sec_alg_name,\
-	.priority = UADK_ALG_HW,\
+	.alg_name = (sec_alg_name),\
+	.calc_type = UADK_ALG_HW,\
+	.priority = 100,\
 	.priv_size = sizeof(struct hisi_sec_ctx),\
 	.queue_num = SEC_CTX_Q_NUM_DEF,\
 	.op_type_num = 1,\
@@ -3020,7 +3021,7 @@ static void hisi_sec_driver_adapter(struct hisi_qp *qp)
 	}
 }
 
-int hisi_sec_init(void *conf, void *priv)
+static int hisi_sec_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
 	struct hisi_sec_ctx *sec_ctx = priv;
@@ -3063,15 +3064,15 @@ out:
 	return -WD_EINVAL;
 }
 
-void hisi_sec_exit(void *priv)
+static void hisi_sec_exit(void *priv)
 {
 	struct hisi_sec_ctx *sec_ctx = priv;
 	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
 
-	if (!sec_ctx) {
-		WD_ERR("hisi sec exit input parameter is err!\n");
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
 		return;
 	}
 
@@ -3092,7 +3093,7 @@ static void __attribute__((constructor)) hisi_sec2_probe(void)
 	alg_num = ARRAY_SIZE(cipher_alg_driver);
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&cipher_alg_driver[i]);
-		if (ret)
+		if (ret && ret != -WD_ENODEV)
 			WD_ERR("Error: register SEC %s failed!\n",
 				cipher_alg_driver[i].alg_name);
 	}
@@ -3100,7 +3101,7 @@ static void __attribute__((constructor)) hisi_sec2_probe(void)
 	alg_num = ARRAY_SIZE(digest_alg_driver);
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&digest_alg_driver[i]);
-		if (ret)
+		if (ret && ret != -WD_ENODEV)
 			WD_ERR("Error: register SEC %s failed!\n",
 				digest_alg_driver[i].alg_name);
 	}
@@ -3108,7 +3109,7 @@ static void __attribute__((constructor)) hisi_sec2_probe(void)
 	alg_num = ARRAY_SIZE(aead_alg_driver);
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&aead_alg_driver[i]);
-		if (ret)
+		if (ret && ret != -WD_ENODEV)
 			WD_ERR("Error: register SEC %s failed!\n",
 				aead_alg_driver[i].alg_name);
 	}
@@ -3119,6 +3120,7 @@ static void __attribute__((destructor)) hisi_sec2_remove(void)
 	int alg_num;
 	int i;
 
+	WD_INFO("Info: unregister SEC alg drivers!\n");
 	alg_num = ARRAY_SIZE(cipher_alg_driver);
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&cipher_alg_driver[i]);
@@ -3131,4 +3133,3 @@ static void __attribute__((destructor)) hisi_sec2_remove(void)
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&aead_alg_driver[i]);
 }
-
