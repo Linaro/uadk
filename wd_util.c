@@ -90,7 +90,7 @@ struct acc_alg_item {
 };
 
 static struct acc_alg_item alg_options[] = {
-	{"zlib", "zlib-deflate"},
+	{"zlib", "zlib"},
 	{"gzip", "gzip"},
 	{"deflate", "deflate"},
 	{"lz77_zstd", "lz77_zstd"},
@@ -142,6 +142,10 @@ static struct acc_alg_item alg_options[] = {
 	{"sha512", "digest"},
 	{"sha512-224", "digest"},
 	{"sha512-256", "digest"},
+	{"cmac(aes)", "digest"},
+	{"gmac(aes)", "digest"},
+	{"xcbc-mac-96(aes)", "digest"},
+	{"xcbc-prf-128(aes)", "digest"},
 	{"", ""}
 };
 
@@ -1962,7 +1966,7 @@ void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
 
 	driver->exit(priv);
 	/* Ctx config just need clear once */
-	if (driver->priority == UADK_ALG_HW)
+	if (driver->calc_type == UADK_ALG_HW)
 		wd_clear_ctx_config(config);
 
 	if (driver->fallback)
@@ -1970,7 +1974,7 @@ void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
 
 	if (priv) {
 		free(priv);
-		priv = NULL;
+		*drv_priv = NULL;
 	}
 }
 
@@ -2176,7 +2180,7 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 	len = strlen(file_path) - 1;
 	for (i = len; i >= 0; i--) {
 		if (file_path[i] == '/') {
-			memset(&file_path[i], 0, PATH_MAX - i + 1);
+			memset(&file_path[i], 0, PATH_MAX - i);
 			break;
 		}
 	}
@@ -2312,6 +2316,9 @@ struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
 			}
 		}
 		break;
+	default:
+		WD_ERR("task type error.\n");
+		return NULL;
 	}
 
 	return set_driver;
@@ -2623,7 +2630,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		return -WD_EINVAL;
 
 	if (attrs->driver)
-		driver_type = attrs->driver->priority;
+		driver_type = attrs->driver->calc_type;
 
 	switch (driver_type) {
 	case UADK_ALG_SOFT:
@@ -2692,6 +2699,10 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		ret = alg_init_func(ctx_config, alg_sched);
 		if (ret)
 			goto out_pre_init;
+		break;
+	default:
+		WD_ERR("driver type error: %d\n", driver_type);
+		return -WD_EINVAL;
 	}
 
 	return 0;

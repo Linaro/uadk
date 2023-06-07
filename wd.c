@@ -931,7 +931,7 @@ char *wd_ctx_get_dev_name(handle_t h_ctx)
 void wd_release_alg_cap(struct wd_capability *head)
 {
 	struct wd_capability *cap_pnext = head;
-	struct wd_capability *cap_node = NULL;
+	struct wd_capability *cap_node;
 
 	while (cap_pnext) {
 		cap_node = cap_pnext;
@@ -948,30 +948,30 @@ struct wd_capability *wd_get_alg_cap(void)
 	struct wd_alg_list *head = wd_get_alg_head();
 	struct wd_alg_list *pnext = head->next;
 	struct wd_capability *cap_head = NULL;
-	struct wd_capability *cap_node = NULL;
 	struct wd_capability *cap_pnext = NULL;
-	int i = 0;
+	struct wd_capability *cap_node;
 
 	while (pnext) {
 		cap_node = calloc(1, sizeof(struct wd_capability));
-		if (!cap_head) {
+		if (!cap_node) {
 			WD_ERR("fail to alloc wd capability head\n");
 			goto alloc_err;
 		}
 
 		strcpy(cap_node->alg_name, pnext->alg_name);
 		strcpy(cap_node->drv_name, pnext->drv_name);
+		cap_node->available = pnext->available;
 		cap_node->priority = pnext->priority;
+		cap_node->calc_type = pnext->calc_type;
 		cap_node->next = NULL;
 
+		pnext = pnext->next;
+		if (!cap_pnext) {
+			cap_head = cap_node;
+			cap_pnext = cap_node;
+		}
 		cap_pnext->next = cap_node;
 		cap_pnext = cap_node;
-		pnext = pnext->next;
-		if (i == 0) {
-			cap_head = cap_node;
-			cap_pnext = cap_head;
-		}
-		i++;
 	}
 
 	return cap_head;
