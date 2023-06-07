@@ -84,8 +84,7 @@ struct wd_sched_ctx {
 
 static bool sched_key_valid(struct wd_sched_ctx *sched_ctx, const struct sched_key *key)
 {
-	if (key->numa_id >= sched_ctx->numa_num ||
-	    key->mode >= SCHED_MODE_BUTT ||
+	if (key->numa_id >= sched_ctx->numa_num || key->mode >= SCHED_MODE_BUTT ||
 	    key->type >= sched_ctx->type_num) {
 		WD_ERR("invalid: sched key's numa: %d, mode: %u, type: %u!\n",
 		       key->numa_id, key->mode, key->type);
@@ -193,6 +192,7 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 	if (!param) {
 		memset(skey, 0, sizeof(struct sched_key));
 		skey->numa_id = sched_ctx->numa_map[node];
+		WD_INFO("session don't set scheduler parameters!\n");
 	} else if (param->numa_id < 0) {
 		skey->type = param->type;
 		skey->numa_id = sched_ctx->numa_map[node];
@@ -203,14 +203,21 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 
 	if (skey->numa_id < 0) {
 		WD_ERR("failed to get valid sched numa region!\n");
-		free(skey);
-		return (handle_t)(-WD_EINVAL);
+		goto out;
 	}
 
 	skey->sync_ctxid = session_sched_init_ctx(sched_ctx, skey, CTX_MODE_SYNC);
 	skey->async_ctxid = session_sched_init_ctx(sched_ctx, skey, CTX_MODE_ASYNC);
+	if (skey->sync_ctxid == INVALID_POS && skey->async_ctxid == INVALID_POS) {
+		WD_ERR("failed to get valid sync_ctxid or async_ctxid!\n");
+		goto out;
+	}
 
 	return (handle_t)skey;
+
+out:
+	free(skey);
+	return (handle_t)(-WD_EINVAL);
 }
 
 /*
@@ -222,7 +229,7 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
  * The user must init the schedule info through session_sched_init
  */
 static __u32 session_sched_pick_next_ctx(handle_t h_sched_ctx, void *sched_key,
-					    const int sched_mode)
+					 const int sched_mode)
 {
 	struct sched_key *key = (struct sched_key *)sched_key;
 
@@ -244,7 +251,7 @@ static int session_poll_region(struct wd_sched_ctx *sched_ctx, __u32 begin,
 	__u32 i;
 	int ret;
 
-	/* i is the pos of ctxs, the max is end */
+	/* i is the pos of sched_ctxs, the max is end */
 	for (i = begin; i <= end; i++) {
 		/*
 		 * RR schedule, one time poll one package,
@@ -370,6 +377,7 @@ static int sched_none_poll_policy(handle_t h_sched_ctx,
 
 	while (loop_times > 0) {
 		/* Default use ctx 0 */
+		loop_times--;
 		ret = sched_ctx->poll_func(0, 1, &poll_num);
 		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
@@ -411,6 +419,7 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 
 	while (loop_times > 0) {
 		/* Default async mode use ctx 0 */
+		loop_times--;
 		ret = sched_ctx->poll_func(0, 1, &poll_num);
 		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
@@ -606,7 +615,8 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 		return NULL;
 
 	if (sched_type >= SCHED_POLICY_BUTT || !type_num) {
-		WD_ERR("invalid: sched_type is %u or type_num is %u!\n", sched_type, type_num);
+		WD_ERR("invalid: sched_type is %u or type_num is %u!\n",
+		       sched_type, type_num);
 		return NULL;
 	}
 
