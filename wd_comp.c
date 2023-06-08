@@ -27,6 +27,10 @@
 
 #define cpu_to_be32(x) swap_byte(x)
 
+static char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
+	"zlib", "gzip", "deflate", "lz77_zstd"
+};
+
 struct wd_comp_sess {
 	enum wd_comp_alg_type alg_type;
 	enum wd_comp_level comp_lv;
@@ -68,13 +72,6 @@ static int wd_comp_open_driver(void)
 	const char *alg_name = "zlib";
 	int ret;
 
-	/*
-	 * Compatible with the normal acquisition of device
-	 * drivers in the init interface
-	 */
-	if (wd_comp_setting.dlh_list)
-		return 0;
-
 	ret = wd_get_lib_file_path("libhisi_zip.so", lib_path, false);
 	if (ret)
 		return ret;
@@ -100,6 +97,21 @@ static int wd_comp_open_driver(void)
 static void wd_comp_clear_status(void)
 {
 	wd_alg_clear_init(&wd_comp_setting.status);
+}
+
+static bool wd_comp_alg_check(const char *alg_name)
+{
+	int i;
+
+	for (i = 0; i < WD_COMP_ALG_MAX; i++) {
+		/* Some algorithms do not support all modes */
+		if (!wd_comp_alg_name[i] || !strlen(wd_comp_alg_name[i]))
+			continue;
+		if (!strcmp(alg_name, wd_comp_alg_name[i]))
+			return true;
+	}
+
+	return false;
 }
 
 static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -143,21 +155,23 @@ out_clear_ctx_config:
 	return ret;
 }
 
-static void wd_comp_uninit_nolock(void)
+static int wd_comp_uninit_nolock(void)
 {
 	void *priv = wd_comp_setting.priv;
 
 	if (!priv)
-		return;
+		return -WD_EINVAL;
 
-	/* uninit async request pool */
+	/* Uninit async request pool */
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
 
-	/* unset config, sched, driver */
+	/* Unset config, sched, driver */
 	wd_clear_sched(&wd_comp_setting.sched);
 
 	wd_alg_uninit_driver(&wd_comp_setting.config,
 		 wd_comp_setting.driver, &priv);
+
+	return 0;
 }
 
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -196,7 +210,11 @@ out_clear_init:
 
 void wd_comp_uninit(void)
 {
-	wd_comp_uninit_nolock();
+	int ret;
+
+	ret = wd_comp_uninit_nolock();
+	if (ret)
+		return;
 
 	wd_comp_close_driver();
 	wd_alg_clear_init(&wd_comp_setting.status);
@@ -206,7 +224,7 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 {
 	struct wd_ctx_nums comp_ctx_num[WD_DIR_MAX] = {0};
 	struct wd_ctx_params comp_ctx_params;
-	int ret = 0;
+	int ret = -WD_EINVAL;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_comp_clear_status);
@@ -215,16 +233,21 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 	if (!flag)
 		return -WD_EEXIST;
 
-	if (!alg || sched_type > SCHED_POLICY_BUTT ||
-	     task_type < 0 || task_type > TASK_MAX_TYPE) {
+	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
+	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
-		ret = -WD_EINVAL;
+		goto out_uninit;
+	}
+
+	flag = wd_comp_alg_check(alg);
+	if (!flag) {
+		WD_ERR("invalid: comp:%s unsupported!\n", alg);
 		goto out_uninit;
 	}
 
 	/*
 	 * Driver lib file path could set by env param.
-	 * than open tham by wd_dlopen_drv()
+	 * then open tham by wd_dlopen_drv()
 	 * use NULL means dynamic query path
 	 */
 	wd_comp_setting.dlh_list = wd_dlopen_drv(NULL);
@@ -233,44 +256,45 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 		goto out_uninit;
 	}
 
-res_retry:
-	memset(&wd_comp_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+	while (ret != 0) {
+		memset(&wd_comp_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-	/* Get alg driver and dev name */
-	wd_comp_setting.driver = wd_alg_drv_bind(task_type, alg);
-	if (!wd_comp_setting.driver) {
-		WD_ERR("fail to bind a valid driver.\n");
-		goto out_dlopen;
-	}
-
-	comp_ctx_params.ctx_set_num = comp_ctx_num;
-	ret = wd_ctx_param_init(&comp_ctx_params, ctx_params,
-				wd_comp_setting.driver, WD_COMP_TYPE, WD_DIR_MAX);
-	if (ret) {
-		if (ret == -WD_EAGAIN) {
-			wd_disable_drv(wd_comp_setting.driver);
-			wd_alg_drv_unbind(wd_comp_setting.driver);
-			goto res_retry;
+		/* Get alg driver and dev name */
+		wd_comp_setting.driver = wd_alg_drv_bind(task_type, alg);
+		if (!wd_comp_setting.driver) {
+			WD_ERR("failed to bind %s driver.\n", alg);
+			goto out_dlclose;
 		}
-		goto out_driver;
-	}
 
-	wd_comp_init_attrs.alg = alg;
-	wd_comp_init_attrs.sched_type = sched_type;
-	wd_comp_init_attrs.driver = wd_comp_setting.driver;
-	wd_comp_init_attrs.ctx_params = &comp_ctx_params;
-	wd_comp_init_attrs.alg_init = wd_comp_init_nolock;
-	wd_comp_init_attrs.alg_poll_ctx = wd_comp_poll_ctx;
-	ret = wd_alg_attrs_init(&wd_comp_init_attrs);
-	if (ret) {
-		if (ret == -WD_ENODEV) {
-			wd_disable_drv(wd_comp_setting.driver);
-			wd_alg_drv_unbind(wd_comp_setting.driver);
-			wd_ctx_param_uninit(&comp_ctx_params);
-			goto res_retry;
+		comp_ctx_params.ctx_set_num = comp_ctx_num;
+		ret = wd_ctx_param_init(&comp_ctx_params, ctx_params,
+					wd_comp_setting.driver, WD_COMP_TYPE, WD_DIR_MAX);
+		if (ret) {
+			if (ret == -WD_EAGAIN) {
+				wd_disable_drv(wd_comp_setting.driver);
+				wd_alg_drv_unbind(wd_comp_setting.driver);
+				continue;
+			}
+			goto out_unbind_drv;
 		}
-		WD_ERR("fail to init alg attrs.\n");
-		goto out_params_uninit;
+
+		wd_comp_init_attrs.alg = alg;
+		wd_comp_init_attrs.sched_type = sched_type;
+		wd_comp_init_attrs.driver = wd_comp_setting.driver;
+		wd_comp_init_attrs.ctx_params = &comp_ctx_params;
+		wd_comp_init_attrs.alg_init = wd_comp_init_nolock;
+		wd_comp_init_attrs.alg_poll_ctx = wd_comp_poll_ctx;
+		ret = wd_alg_attrs_init(&wd_comp_init_attrs);
+		if (ret) {
+			if (ret == -WD_ENODEV) {
+				wd_disable_drv(wd_comp_setting.driver);
+				wd_alg_drv_unbind(wd_comp_setting.driver);
+				wd_ctx_param_uninit(&comp_ctx_params);
+				continue;
+			}
+			WD_ERR("fail to init alg attrs.\n");
+			goto out_params_uninit;
+		}
 	}
 
 	wd_alg_set_init(&wd_comp_setting.status);
@@ -280,9 +304,9 @@ res_retry:
 
 out_params_uninit:
 	wd_ctx_param_uninit(&comp_ctx_params);
-out_driver:
+out_unbind_drv:
 	wd_alg_drv_unbind(wd_comp_setting.driver);
-out_dlopen:
+out_dlclose:
 	wd_dlclose_drv(wd_comp_setting.dlh_list);
 out_uninit:
 	wd_alg_clear_init(&wd_comp_setting.status);
@@ -291,7 +315,11 @@ out_uninit:
 
 void wd_comp_uninit2(void)
 {
-	wd_comp_uninit_nolock();
+	int ret;
+
+	ret = wd_comp_uninit_nolock();
+	if (ret)
+		return;
 
 	wd_alg_attrs_uninit(&wd_comp_init_attrs);
 	wd_alg_drv_unbind(wd_comp_setting.driver);
@@ -844,6 +872,11 @@ int wd_comp_poll(__u32 expt, __u32 *count)
 	handle_t h_sched_ctx;
 	struct wd_sched *sched;
 
+	if (unlikely(!count)) {
+		WD_ERR("invalid: comp poll count is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	sched = &wd_comp_setting.sched;
 
@@ -914,6 +947,11 @@ int wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode,
 {
 	struct wd_ctx_attr ctx_attr;
 	int ret;
+
+	if (!num || !is_enable) {
+		WD_ERR("invalid: num or is_enable is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	if (type >= WD_DIR_MAX) {
 		WD_ERR("invalid: op_type is %u!\n", type);
