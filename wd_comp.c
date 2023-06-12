@@ -307,8 +307,16 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 			wd_alg_driver_init(adapter, NULL);
 		}
 
-		if (found > 1)
-			uadk_adapter_set_mode(adapter, UADK_ADAPT_MODE_ROUNDROBIN);
+		if (found > 1) {
+			/* fixme, should detect env */
+			//uadk_adapter_set_mode(adapter, UADK_ADAPT_MODE_ROUNDROBIN);
+
+			struct uadk_adapter_threshold_cfg cfg;
+
+			uadk_adapter_set_mode(adapter, UADK_ADAPT_MODE_THRESHOLD);
+			cfg.threshold = 16 * 1024;
+			uadk_adapter_config(adapter, &cfg);
+		}
 	} else {
 		while (ret != 0) {
 			memset(&wd_comp_setting.config, 0, sizeof(struct wd_ctx_config_internal));
@@ -553,6 +561,7 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_comp_req));
 
+	msg->in_bytes = req->src_len;
 	msg->alg_type = sess->alg_type;
 	msg->comp_lv = sess->comp_lv;
 	msg->win_sz = sess->win_sz;

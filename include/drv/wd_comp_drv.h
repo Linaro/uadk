@@ -26,6 +26,8 @@ enum wd_comp_state {
 
 /* fixme wd_comp_msg */
 struct wd_comp_msg {
+	/* in bytes */
+	__u32 in_bytes;
 	struct wd_comp_req req;
 	/* Denoted HW ctx cache, for stream mode */
 	void *ctx_buf;
