@@ -128,6 +128,7 @@ static bool wd_alg_check_available(int calc_type, const char *dev_name)
 
 	switch (calc_type) {
 	case UADK_ALG_SOFT:
+		ret = true;
 		break;
 	/* Should find the CPU if not support CE */
 	case UADK_ALG_CE_INSTR:
