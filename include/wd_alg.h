@@ -23,7 +23,8 @@ enum alg_dev_type {
 	UADK_ALG_SOFT = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,
 	UADK_ALG_SVE_INSTR = 0x2,
-	UADK_ALG_HW = 0x3
+	UADK_ALG_HW = 0x3,
+	UADK_ALG_ADAPT = 0x4
 };
 
 /**
@@ -150,6 +151,7 @@ void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 
 struct wd_alg_list *wd_get_alg_head(void);
+struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name, int idx);
 
 #ifdef __cplusplus
 }

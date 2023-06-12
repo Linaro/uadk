@@ -213,9 +213,12 @@ bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
 
+	if (drv->priority == UADK_ALG_ADAPT)
+		return true;
+
 	while (pnext) {
 		if (!strcmp(alg_name, pnext->alg_name) &&
-		     !strcmp(drv->drv_name, pnext->drv_name)) {
+		    !strcmp(drv->drv_name, pnext->drv_name)) {
 			return true;
 		}
 		pnext = pnext->next;
@@ -323,4 +326,45 @@ void wd_release_drv(struct wd_alg_driver *drv)
 	if (select_node)
 		select_node->refcnt--;
 	pthread_mutex_unlock(&mutex);
+}
+
+struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name, int idx)
+{
+	struct wd_alg_list *head = &alg_list_head;
+	struct wd_alg_list *pnext = head->next;
+	struct wd_alg_driver *drv = NULL;
+
+	if (!pnext || !alg_name) {
+		WD_ERR("invalid: request alg param is error!\n");
+		return NULL;
+	}
+
+	pthread_mutex_lock(&mutex);
+
+	if (drv_name) {
+		while (pnext) {
+			if (!strcmp(alg_name, pnext->alg_name) &&
+			    !strcmp(drv_name, pnext->drv_name)) {
+				drv = pnext->drv;
+				break;
+			}
+			pnext = pnext->next;
+		}
+	} else {
+		int i = 0;
+
+		while (pnext) {
+			if (!strcmp(alg_name, pnext->alg_name)) {
+				if (i++ == idx) {
+					drv = pnext->drv;
+					break;
+				}
+			}
+			pnext = pnext->next;
+		}
+	}
+
+	pthread_mutex_unlock(&mutex);
+
+	return drv;
 }
