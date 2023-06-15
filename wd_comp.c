@@ -169,7 +169,8 @@ static int wd_comp_uninit_nolock(void)
 	wd_clear_sched(&wd_comp_setting.sched);
 
 	wd_alg_uninit_driver(&wd_comp_setting.config,
-		 wd_comp_setting.driver, &priv);
+		 wd_comp_setting.driver,
+		 &wd_comp_setting.priv);
 
 	return 0;
 }
