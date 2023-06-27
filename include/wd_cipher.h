@@ -127,7 +127,7 @@ void wd_cipher_uninit(void);
 int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params);
 
 #define wd_cipher_init2(alg, sched_type, task_type) \
-	wd_cipher_init2(alg, sched_type, task_type, NULL)
+	wd_cipher_init2_(alg, sched_type, task_type, NULL)
 
 /**
  * wd_cipher_uninit2() - Uninitialise ctx configuration and scheduler.
