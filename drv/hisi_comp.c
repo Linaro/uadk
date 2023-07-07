@@ -420,7 +420,7 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	struct wd_comp_req *req = &msg->req;
 	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
-	__u32 lit_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
 	__u32 out_size = msg->avail_out;
 	void *ctx_buf = NULL;
 
@@ -442,12 +442,12 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	}
 
 	/*
-	 * For lz77_zstd, the hardware need 784 Bytes buffer to output
+	 * For lz77_zstd, the hardware needs 784 Bytes buffer to output
 	 * the frequency information about input data.
 	 */
-	if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lit_size)) {
-		WD_ERR("invalid: sequences output size(%u) is not enough!\n",
-		       ZSTD_FREQ_DATA_SIZE + in_size);
+	if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough, %u bytes are minimum!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size);
 		return -WD_EINVAL;
 	}
 
@@ -458,13 +458,12 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
 	}
 
-	fill_buf_size_lz77_zstd(sqe, in_size, lit_size, out_size - lit_size);
+	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
-	fill_buf_addr_lz77_zstd(sqe, req->src, req->dst,
-				req->dst + lit_size, ctx_buf);
+	fill_buf_addr_lz77_zstd(sqe, req->src, req->dst, req->dst + lits_size, ctx_buf);
 
 	data->literals_start = req->dst;
-	data->sequences_start = req->dst + lit_size;
+	data->sequences_start = req->dst + lits_size;
 
 	return 0;
 }
@@ -515,7 +514,22 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
 
+	/*
+	 * For lz77_zstd, the hardware needs 784 Bytes buffer to output
+	 * the frequency information about input data. The sequences
+	 * and frequency data need to be written to an independent sgl
+	 * splited from list_dst.
+	 */
 	lits_size = hisi_qm_get_list_size(req->list_dst, seq_start);
+	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+		WD_ERR("invalid: output is not enough for literals, %u bytes are minimum!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size);
+		return -WD_EINVAL;
+	} else if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size - out_size);
+		return -WD_EINVAL;
+	}
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
