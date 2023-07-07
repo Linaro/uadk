@@ -843,6 +843,10 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 		return -WD_EINVAL;
 	}
 
+	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
+	if (unlikely(ret))
+		return ret;
+
 	ret = ops[alg_type].fill_buf[msg->req.data_fmt]((handle_t)qp, sqe, msg);
 	if (unlikely(ret))
 		return ret;
@@ -852,10 +856,6 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	ops[alg_type].fill_alg(sqe);
 
 	ops[alg_type].fill_tag(sqe, msg->tag);
-
-	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
-	if (unlikely(ret))
-		return ret;
 
 	state = (msg->stream_mode == WD_COMP_STATEFUL) ? HZ_STATEFUL :
 		HZ_STATELESS;
@@ -878,6 +878,31 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	return 0;
 }
 
+static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			enum wd_comp_alg_type alg_type)
+{
+	void *hw_sgl_in, *hw_sgl_out;
+	handle_t h_sgl_pool;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (unlikely(!h_sgl_pool)) {
+		WD_ERR("failed to get sglpool to free hw sgl!\n");
+		return;
+	}
+
+	hw_sgl_in = VA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
+	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
+
+	hw_sgl_out = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
+
+	if (alg_type == WD_LZ77_ZSTD) {
+		hw_sgl_out = VA_ADDR(sqe->literals_addr_h,
+				     sqe->literals_addr_l);
+		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
+	}
+}
+
 static int hisi_zip_comp_send(handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
@@ -895,6 +920,8 @@ static int hisi_zip_comp_send(handle_t ctx, void *comp_msg)
 	}
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (unlikely(ret < 0)) {
+		if (msg->req.data_fmt == WD_SGL_BUF)
+			free_hw_sgl(h_qp, &sqe, msg->alg_type);
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send to hardware, ret = %d!\n", ret);
 
@@ -927,31 +954,6 @@ static int get_alg_type(__u32 type)
 	}
 
 	return alg_type;
-}
-
-static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			enum wd_comp_alg_type alg_type)
-{
-	void *hw_sgl_in, *hw_sgl_out;
-	handle_t h_sgl_pool;
-
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (unlikely(!h_sgl_pool)) {
-		WD_ERR("failed to get sglpool to free hw sgl!\n");
-		return;
-	}
-
-	hw_sgl_in = VA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-
-	hw_sgl_out = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
-
-	if (alg_type == WD_LZ77_ZSTD) {
-		hw_sgl_out = VA_ADDR(sqe->literals_addr_h,
-				     sqe->literals_addr_l);
-		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
-	}
 }
 
 static void get_ctx_buf(struct hisi_zip_sqe *sqe,
