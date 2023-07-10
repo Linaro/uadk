@@ -94,7 +94,7 @@ static int rng_read(struct rng_queue_info *info, struct wcrypto_rng_msg *msg)
 	__u32 max = msg->in_bytes;
 	__u32 currsize = 0;
 	int recv_count = 0;
-	int val;
+	__u32 val;
 
 	do {
 		val = wd_reg_read((void *)((uintptr_t)info->mmio_base +
