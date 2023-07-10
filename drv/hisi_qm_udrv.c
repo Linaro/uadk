@@ -648,8 +648,7 @@ static void hisi_qm_free_sglpool(struct hisi_sgl_pool *pool)
 
 	if (pool->sgl) {
 		for (i = 0; i < pool->sgl_num; i++)
-			if (pool->sgl[i])
-				free(pool->sgl[i]);
+			free(pool->sgl[i]);
 
 		free(pool->sgl);
 	}
@@ -692,8 +691,10 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
 		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
-		if (!sgl_pool->sgl[i])
+		if (!sgl_pool->sgl[i]) {
+			sgl_pool->sgl_num = i;
 			goto err_out;
+		}
 
 		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i],
 							   sge_num);
