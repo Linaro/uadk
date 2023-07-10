@@ -119,6 +119,25 @@ static void sgl_sge_init(struct wd_sgl *sgl, __u8 num, void *buf)
 	sgl->sge[num].flag &= ~FLAG_SGE_CHAIN;
 }
 
+static void sgl_chain_destory(struct wd_queue *q, struct wd_sglpool *pool)
+{
+	__u16 sgl_num = pool->setup.sgl_num;
+	struct wd_mm_br br = pool->buf_br;
+	struct wd_sgl *sgl;
+	__u16 i, j;
+
+	for (i = 0; i < sgl_num; i++) {
+		sgl = pool->sgl_blk[i];
+		drv_uninit_sgl(q, pool, sgl);
+
+		for (j = 0; j < sgl->buf_num; j++)
+			br.free(br.usr, sgl->sge[j].buf);
+	}
+
+	free(pool->sgl_blk);
+	pool->sgl_blk = NULL;
+}
+
 static int sgl_chain_build(struct wd_queue *q, struct wd_sglpool *pool)
 {
 	struct wd_sglpool_setup *sp = &pool->setup;
@@ -290,15 +309,14 @@ static int sgl_pool_init(struct wd_queue *q, struct wd_sglpool *pool)
 	buf_pool = sgl_buf_pool_init(q, pool);
 	if (!buf_pool) {
 		WD_ERR("failed to create hardware buf pool.\n");
-		goto err;
+		goto free_sgl_pool;
 	}
 	pool->buf_pool = buf_pool;
 
 	ret = sgl_chain_build(q, pool);
 	if (ret) {
 		WD_ERR("failed to build sgl chain, ret = %d.\n", ret);
-		sgl_buf_pool_uninit(buf_pool);
-		goto err;
+		goto free_buf_pool;
 	}
 
 	pool->q = q;
@@ -309,14 +327,19 @@ static int sgl_pool_init(struct wd_queue *q, struct wd_sglpool *pool)
 	ret = wd_blk_alloc_failures(sgl_pool, &pool->alloc_failures);
 	if (ret != WD_SUCCESS) {
 		WD_ERR("wd blk alloc failures failed, ret = %d.\n", ret);
-		goto err;
+		goto free_sgl_chain;
 	}
 
 	pool->free_sgl_num = pool->setup.sgl_num;
 	pool->sgl_mem_sz = sp.buf_num_in_sgl * sp.buf_size;
 
 	return WD_SUCCESS;
-err:
+
+free_sgl_chain:
+	sgl_chain_destory(q, pool);
+free_buf_pool:
+	sgl_buf_pool_uninit(buf_pool);
+free_sgl_pool:
 	sgl_blk_pool_uninit(sgl_pool);
 	return ret;
 }
@@ -447,8 +470,6 @@ void wd_sglpool_destroy(void *pool)
 {
 	struct wd_sglpool *p = pool;
 	struct wd_sglpool_setup sp;
-	struct wd_sgl *sgl;
-	int i, j;
 
 	if (!p || !p->sgl_blk || !p->buf_pool || !p->sgl_pool) {
 		WD_ERR("pool parameter is err!\n");
@@ -461,20 +482,11 @@ void wd_sglpool_destroy(void *pool)
 		return;
 	}
 
-	for (i = 0; i < sp.sgl_num; i++) {
-		sgl = p->sgl_blk[i];
-		drv_uninit_sgl(p->q, pool, sgl);
-
-		for (j = 0; j < sp.buf_num_in_sgl; j++)
-			wd_free_blk(p->buf_pool, sgl->sge[j].buf);
-	}
-
+	sgl_chain_destory(p->q, p);
 	wd_blkpool_destroy(p->sgl_pool);
 	p->sgl_pool = NULL;
 	wd_blkpool_destroy(p->buf_pool);
 	p->buf_pool = NULL;
-	free(p->sgl_blk);
-	p->sgl_blk = NULL;
 
 	free(p);
 }
@@ -510,18 +522,26 @@ struct wd_sgl *wd_alloc_sgl(void *pool, __u32 size)
 			WD_ERR("alloc for sg2 failed!\n");
 			__atomic_add_fetch(&p->alloc_failures, 1,
 					   __ATOMIC_RELAXED);
-			return NULL;
+			goto free_sg1;
 		}
 		__atomic_sub_fetch(&p->free_sgl_num, 1, __ATOMIC_RELAXED);
 
 		ret = wd_sgl_merge(sg1, sg2);
 		if (ret) {
 			WD_ERR("merge two sgls failed for u!, ret = %d.\n", ret);
-			return NULL;
+			goto free_sg2;
 		}
 	}
 
 	return sg1;
+
+free_sg2:
+	wd_free_blk(p->sgl_pool, sg2);
+	wd_get_free_blk_num(p->sgl_pool, &p->free_sgl_num);
+free_sg1:
+	wd_free_blk(p->sgl_pool, sg1);
+	wd_get_free_blk_num(p->sgl_pool, &p->free_sgl_num);
+	return NULL;
 }
 
 void wd_free_sgl(void *pool, struct wd_sgl *sgl)
