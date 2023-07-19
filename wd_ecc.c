@@ -68,7 +68,6 @@ static struct wd_ecc_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_ecc_setting;
@@ -178,8 +177,7 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_ecc_setting.config,
-				 wd_ecc_setting.driver,
-				 &wd_ecc_setting.priv);
+				 wd_ecc_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -196,19 +194,13 @@ out_clear_ctx_config:
 
 static int wd_ecc_common_uninit(void)
 {
-	if (!wd_ecc_setting.priv) {
-		WD_ERR("invalid: repeat uninit ecc!\n");
-		return -WD_EINVAL;
-	}
-
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_ecc_setting.sched);
 	wd_alg_uninit_driver(&wd_ecc_setting.config,
-			     wd_ecc_setting.driver,
-			     &wd_ecc_setting.priv);
+			     wd_ecc_setting.driver);
 
 	return 0;
 }
@@ -1572,8 +1564,8 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	msg_handle.recv = wd_ecc_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
-				 wd_ecc_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(wd_ecc_setting.driver, &msg_handle, ctx->ctx, &msg,
+				 &balance, wd_ecc_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -2250,7 +2242,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_ecc_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_ecc_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send ecc BD, hw is err!\n");
@@ -2299,7 +2291,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
+		ret = wd_alg_driver_recv(wd_ecc_setting.driver, ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
