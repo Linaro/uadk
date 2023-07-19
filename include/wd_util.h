@@ -113,8 +113,8 @@ struct wd_ctx_attr {
 };
 
 struct wd_msg_handle {
-	int (*send)(handle_t sess, void *msg);
-	int (*recv)(handle_t sess, void *msg);
+	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 };
 
 struct wd_init_attrs {
@@ -358,6 +358,7 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
 
 /**
  * wd_handle_msg_sync() - recv msg from hardware
+ * @drv: the driver to handle msg.
  * @msg_handle: callback of msg handle ops.
  * @ctx: the handle of context.
  * @msg: the msg of task.
@@ -366,8 +367,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
  *
  * Return 0 if successful or less than 0 otherwise.
  */
-int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
-		void *msg, __u64 *balance, bool epoll_en);
+int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
+		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en);
 
 /**
  * wd_init_check() - Check input parameters for wd_<alg>_init.
@@ -464,14 +465,13 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv);
  *			to the obtained queue resource and the applied driver.
  * @config: device resources requested by the current algorithm.
  * @driver: device driver for the current algorithm application.
- * @drv_priv: the parameter pointer of the current device driver.
  *
  * Return 0 if succeed and other error number if fail.
  */
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
+		       struct wd_alg_driver *driver);
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
+			  struct wd_alg_driver *driver);
 
 /**
  * wd_dlopen_drv() - Open the dynamic library file of the device driver.

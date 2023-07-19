@@ -44,7 +44,6 @@ struct wd_aead_setting {
 	struct wd_sched sched;
 	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_aead_setting;
@@ -436,8 +435,7 @@ static int wd_aead_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_aead_setting.config,
-					wd_aead_setting.driver,
-					&wd_aead_setting.priv);
+					wd_aead_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -492,13 +490,15 @@ static void wd_aead_uninit_nolock(void)
 	wd_uninit_async_request_pool(&wd_aead_setting.pool);
 	wd_clear_sched(&wd_aead_setting.sched);
 	wd_alg_uninit_driver(&wd_aead_setting.config,
-						 wd_aead_setting.driver,
-						 &wd_aead_setting.priv);
+			     wd_aead_setting.driver);
 }
 
 void wd_aead_uninit(void)
 {
-	if (!wd_aead_setting.priv)
+	enum wd_status status;
+
+	wd_alg_get_init(&wd_aead_setting.status, &status);
+	if (status == WD_UNINIT)
 		return;
 
 	wd_aead_uninit_nolock();
@@ -615,7 +615,10 @@ out_uninit:
 
 void wd_aead_uninit2(void)
 {
-	if (!wd_aead_setting.priv)
+	enum wd_status status;
+
+	wd_alg_get_init(&wd_aead_setting.status, &status);
+	if (status == WD_UNINIT)
 		return;
 
 	wd_aead_uninit_nolock();
@@ -701,8 +704,8 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	msg_handle.recv = wd_aead_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
-			  wd_aead_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(wd_aead_setting.driver, &msg_handle, ctx->ctx,
+				 msg, NULL, wd_aead_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -777,7 +780,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_aead_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_aead_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -826,7 +829,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_aead_setting.driver->recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_aead_setting.driver, ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
