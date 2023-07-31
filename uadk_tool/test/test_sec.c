@@ -1469,8 +1469,8 @@ out:
 
 static int digest_init2(int type, int mode)
 {
+	struct wd_ctx_params cparams = {0};
 	struct wd_ctx_nums *ctx_set_num;
-	struct wd_ctx_params cparams;
 	int ret;
 
 	if (g_testalg >= MAX_ALGO_PER_TYPE)
@@ -2721,8 +2721,8 @@ out:
 
 static int aead_init2(int type, int mode)
 {
+	struct wd_ctx_params cparams = {0};
 	struct wd_ctx_nums *ctx_set_num;
-	struct wd_ctx_params cparams;
 	int ret;
 
 	if (g_testalg >= MAX_ALGO_PER_TYPE)
