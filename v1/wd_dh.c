@@ -90,17 +90,19 @@ static int wcrypto_init_dh_cookie(struct wcrypto_dh_ctx *ctx)
 {
 	struct wcrypto_dh_ctx_setup *setup = &ctx->setup;
 	struct wcrypto_dh_cookie *cookie;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
 	int ret;
-	__u32 i;
 
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
 	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_dh_cookie), WD_HPRE_CTX_MSG_NUM);
+		sizeof(struct wcrypto_dh_cookie), cookies_num);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
 		return ret;
 	}
 
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		cookie->msg.is_g2 = (__u8)setup->is_g2;

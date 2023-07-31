@@ -496,19 +496,21 @@ static void del_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 	}
 }
 
-struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_id)
+static struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup,
+					  int ctx_id, __u32 flags)
 {
 	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_ctx *ctx;
-	__u32 i;
+	__u32 cookies_num, i;
 	int ret;
 
 	ctx = calloc(1, sizeof(struct wcrypto_rsa_ctx));
 	if (!ctx)
 		return ctx;
 
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
 	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_rsa_cookie), WD_HPRE_CTX_MSG_NUM);
+		sizeof(struct wcrypto_rsa_cookie), cookies_num);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
 		free(ctx);
@@ -518,7 +520,7 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->ctx_id = ctx_id;
 	ctx->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		if (setup->is_crt)
@@ -611,7 +613,7 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
-	ctx = create_ctx(setup, cid + 1);
+	ctx = create_ctx(setup, cid + 1, q->capa.flags);
 	if (!ctx) {
 		WD_ERR("create rsa ctx fail!\n");
 		goto free_ctx_id;
