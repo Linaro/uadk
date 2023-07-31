@@ -122,13 +122,23 @@ static int create_ctx_para_check(struct wd_queue *q,
 	return WD_SUCCESS;
 }
 
-static void init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
+static int init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 	struct wcrypto_cipher_ctx_setup *setup)
 {
 	struct wcrypto_cipher_cookie *cookie;
-	__u32 i;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
+	int ret;
 
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_cipher_cookie), cookies_num);
+	if (ret) {
+		WD_ERR("failed to init cookie pool!\n");
+		return ret;
+	}
+
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		cookie->msg.alg_type = WCRYPTO_CIPHER;
@@ -139,6 +149,8 @@ static void init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 		cookie->tag.wcrypto_tag.ctx_id = ctx->ctx_id;
 		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
+
+	return 0;
 }
 
 static int setup_qinfo(struct wcrypto_cipher_ctx_setup *setup,
@@ -209,14 +221,9 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->alg, setup->mode);
-
-	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_cipher_cookie), WD_CTX_MSG_NUM);
-	if (ret) {
-		WD_ERR("fail to init cookie pool!\n");
+	ret = init_cipher_cookie(ctx, setup);
+	if (ret)
 		goto free_ctx_key;
-	}
-	init_cipher_cookie(ctx, setup);
 
 	return ctx;
 

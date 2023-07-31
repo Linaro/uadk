@@ -36,11 +36,11 @@
 #include "v1/wd_ecc.h"
 #include "v1/wd_adapter.h"
 
-#define WD_CTX_MSG_NUM		64
-#define WD_HPRE_CTX_MSG_NUM	64
-#define WD_RNG_CTX_MSG_NUM	256
-#define WD_MAX_CTX_NUM			256
-#define BYTE_BITS			8
+#define WD_CTX_COOKIES_NUM	64
+#define WD_MAX_CTX_COOKIES_NUM	1024
+#define WD_CTX_COOKIES_NUM_MASK	0xffff
+#define WD_MAX_CTX_NUM		256
+#define BYTE_BITS		8
 #define BYTE_BITS_SHIFT		3
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
@@ -393,6 +393,7 @@ int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max);
 void wd_free_id(__u8 *buf, __u32 size, __u32 id, __u32 id_max);
 int wd_get_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num);
 void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num);
+__u32 wd_get_ctx_cookies_num(__u32 usr_cookies_num, __u32 def_num);
 const char *wd_get_drv(struct wd_queue *q);
 int wd_burst_send(struct wd_queue *q, void **req, __u32 num);
 int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num);

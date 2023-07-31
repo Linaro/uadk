@@ -1062,15 +1062,25 @@ static void del_ctx_key(struct wd_mm_br *br,
 	}
 }
 
-static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
-			     struct wcrypto_ecc_ctx_setup *setup)
+static int init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
+			    struct wcrypto_ecc_ctx_setup *setup)
 {
 	__u32 hsz = get_hw_keysize(ctx->key_size);
 	struct q_info *qinfo = ctx->q->qinfo;
 	struct wcrypto_ecc_cookie *cookie;
-	__u32 i;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
+	int ret;
 
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_ecc_cookie), cookies_num);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		return ret;
+	}
+
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		cookie->msg.curve_id = setup->cv.cfg.id;
@@ -1082,6 +1092,8 @@ static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 		cookie->tag.ctx_id = ctx->ctx_id;
 		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
+
+	return 0;
 }
 
 static int setup_qinfo(struct wcrypto_ecc_ctx_setup *setup,
@@ -1147,13 +1159,10 @@ void *wcrypto_create_ecc_ctx(struct wd_queue *q,
 	ctx->key_size = BITS_TO_BYTES(setup->key_bits);
 	ctx->q = q;
 	ctx->ctx_id = cid + 1;
-	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_ecc_cookie), WD_HPRE_CTX_MSG_NUM);
-	if (ret) {
-		WD_ERR("fail to init cookie pool!\n");
+
+	ret = init_ctx_cookies(ctx, setup);
+	if (ret)
 		goto free_ctx;
-	}
-	init_ctx_cookies(ctx, setup);
 
 	ret = create_ctx_key(setup, ctx);
 	if (unlikely(ret)) {

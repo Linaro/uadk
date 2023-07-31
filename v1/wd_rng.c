@@ -26,9 +26,9 @@
 #include "wd_util.h"
 #include "wd_rng.h"
 
-#define MAX_NUM		10
-#define RNG_RESEND_CNT	8
-#define RNG_RECV_CNT	8
+#define RNG_RESEND_CNT		8
+#define RNG_RECV_CNT		8
+#define WD_RNG_CTX_COOKIE_NUM	256
 
 struct wcrypto_rng_cookie {
 	struct wcrypto_cb_tag tag;
@@ -84,7 +84,8 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	struct wcrypto_rng_cookie *cookie;
 	struct wcrypto_rng_ctx *ctx;
 	struct q_info *qinfo;
-	__u32 i, ctx_id = 0;
+	__u32 cookies_num, i;
+	__u32 ctx_id = 0;
 	int ret;
 
 	if (wcrypto_setup_qinfo(setup, q, &ctx_id))
@@ -99,14 +100,15 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	ctx->q = q;
 	ctx->ctx_id = ctx_id + 1;
 
+	cookies_num = wd_get_ctx_cookies_num(q->capa.flags, WD_RNG_CTX_COOKIE_NUM);
 	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_rng_cookie), WD_RNG_CTX_MSG_NUM);
+		sizeof(struct wcrypto_rng_cookie), cookies_num);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
 		free(ctx);
 		goto free_ctx_id;
 	}
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		cookie->msg.alg_type = WCRYPTO_RNG;

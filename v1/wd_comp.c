@@ -122,6 +122,7 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 {
 	struct wcrypto_comp_ctx *ctx;
 	struct q_info *qinfo;
+	__u32 cookies_num;
 	__u32 ctx_id = 0;
 	int ret;
 
@@ -169,8 +170,9 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		goto free_ctx_id;
 	}
 
+	cookies_num = wd_get_ctx_cookies_num(q->capa.flags, WD_CTX_COOKIES_NUM);
 	ret = wd_init_cookie_pool(&ctx->pool,
-			sizeof(struct wcrypto_comp_cookie), WD_CTX_MSG_NUM);
+			sizeof(struct wcrypto_comp_cookie), cookies_num);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
 		goto free_ctx_buf;
