@@ -310,6 +310,20 @@ void wd_memset_zero(void *data, __u32 size)
 		*s++ = 0;
 }
 
+static void get_ctx_msg_num(struct wd_cap_config *cap, __u32 *msg_num)
+{
+	if (!cap || !cap->ctx_msg_num)
+		return;
+
+	if (cap->ctx_msg_num > WD_POOL_MAX_ENTRIES) {
+		WD_INFO("ctx_msg_num %u is invalid, use default value: %u!\n",
+			cap->ctx_msg_num, *msg_num);
+		return;
+	}
+
+	*msg_num = cap->ctx_msg_num;
+}
+
 static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 {
 	pool->msgs = calloc(1, msg_num * msg_size);
@@ -335,6 +349,9 @@ static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 
 static void uninit_msg_pool(struct msg_pool *pool)
 {
+	if (!pool->msg_num)
+		return;
+
 	free(pool->msgs);
 	free(pool->used);
 	pool->msgs = NULL;
@@ -342,21 +359,27 @@ static void uninit_msg_pool(struct msg_pool *pool)
 	memset(pool, 0, sizeof(*pool));
 }
 
-int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
+int wd_init_async_request_pool(struct wd_async_msg_pool *pool, struct wd_ctx_config *config,
 			       __u32 msg_num, __u32 msg_size)
 {
+	__u32 pool_num = config->ctx_num;
 	__u32 i, j;
 	int ret;
 
 	pool->pool_num = pool_num;
 
-	pool->pools = calloc(1, pool->pool_num * sizeof(struct msg_pool));
+	pool->pools = calloc(1, pool_num * sizeof(struct msg_pool));
 	if (!pool->pools) {
 		WD_ERR("failed to alloc memory for async msg pools!\n");
 		return -WD_ENOMEM;
 	}
 
-	for (i = 0; i < pool->pool_num; i++) {
+	/* If user set valid msg num, use user's. */
+	get_ctx_msg_num(config->cap, &msg_num);
+	for (i = 0; i < pool_num; i++) {
+		if (config->ctxs[i].ctx_mode == CTX_MODE_SYNC)
+			continue;
+
 		ret = init_msg_pool(&pool->pools[i], msg_num, msg_size);
 		if (ret < 0)
 			goto err;
@@ -2089,6 +2112,7 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		/* environment variable is not set, try to use user_ctx_params first */
 		if (user_ctx_params) {
 			copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
+			ctx_params->cap = user_ctx_params->cap;
 			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
 			ctx_params->op_type_num = user_ctx_params->op_type_num;
 			if (ctx_params->op_type_num > (__u32)max_op_type) {
@@ -2657,6 +2681,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 			goto out_freesched;
 		}
 
+		ctx_config->cap = attrs->ctx_params->cap;
 		ret = alg_init_func(ctx_config, alg_sched);
 		if (ret)
 			goto out_pre_init;

@@ -19,7 +19,6 @@
 #define AES_KEYSIZE_192		24
 #define AES_KEYSIZE_256		32
 
-#define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	4
 
 static __u32 g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
@@ -243,7 +242,7 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 
 	/* allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_digest_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_digest_msg));
 	if (ret < 0)
 		goto out_clear_sched;

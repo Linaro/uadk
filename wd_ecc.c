@@ -17,9 +17,6 @@
 #include "include/wd_ecc_curve.h"
 #include "wd_ecc.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
-#define WD_ECC_CTX_MSG_NUM		64
-#define WD_ECC_MAX_CTX			256
 #define ECC_MAX_HW_BITS			521
 #define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(ECC_MAX_HW_BITS)
 #define ECC_MAX_IN_NUM			4
@@ -169,9 +166,8 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_ecc_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_ecc_msg));
 	if (ret < 0)
 		goto out_clear_sched;
