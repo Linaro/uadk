@@ -15,7 +15,6 @@
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
 
@@ -130,9 +129,8 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_comp_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_comp_msg));
 	if (ret < 0)
 		goto out_clear_sched;
@@ -222,7 +220,7 @@ void wd_comp_uninit(void)
 int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
 {
 	struct wd_ctx_nums comp_ctx_num[WD_DIR_MAX] = {0};
-	struct wd_ctx_params comp_ctx_params;
+	struct wd_ctx_params comp_ctx_params = {0};
 	int ret = -WD_EINVAL;
 	bool flag;
 

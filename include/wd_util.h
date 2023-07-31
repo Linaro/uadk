@@ -19,6 +19,8 @@
 extern "C" {
 #endif
 
+#define WD_POOL_MAX_ENTRIES    1024
+
 #define FOREACH_NUMA(i, config, config_numa) \
 	for ((i) = 0, (config_numa) = (config)->config_per_numa; \
 	     (i) < (config)->numa_num; (config_numa)++, (i)++)
@@ -167,9 +169,9 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in);
 void wd_memset_zero(void *data, __u32 size);
 
 /*
- * wd_init_async_request_pool() - Init message pools.
+ * wd_init_async_request_pool() - Init async message pools.
  * @pool: Pointer of message pool.
- * @pool_num: Message pool number.
+ * @config: ctx configuration input by user.
  * @msg_num: Message entry number in one pool.
  * @msg_size: Size of each message entry.
  *
@@ -186,7 +188,8 @@ void wd_memset_zero(void *data, __u32 size);
  *         +-------+-------+----+-------+ -+-
  *         |<------- msg_num ---------->|
  */
-int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
+int wd_init_async_request_pool(struct wd_async_msg_pool *pool,
+			       struct wd_ctx_config *config,
 			       __u32 msg_num, __u32 msg_size);
 
 /*

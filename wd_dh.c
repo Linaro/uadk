@@ -15,7 +15,6 @@
 #include "include/drv/wd_dh_drv.h"
 #include "wd_util.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
 #define DH_MAX_KEY_SIZE			512
 #define WD_DH_G2			2
 
@@ -105,7 +104,7 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 
 	/* initialize async request pool */
 	ret = wd_init_async_request_pool(&wd_dh_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_dh_msg));
 	if (ret)
 		goto out_clear_sched;

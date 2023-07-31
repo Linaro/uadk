@@ -21,7 +21,6 @@
 
 #define WD_AEAD_CCM_GCM_MIN	4U
 #define WD_AEAD_CCM_GCM_MAX	16
-#define WD_POOL_MAX_ENTRIES	1024
 
 static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -429,8 +428,8 @@ static int wd_aead_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 
 	/* init async request pool */
 	ret = wd_init_async_request_pool(&wd_aead_setting.pool,
-				config->ctx_num, WD_POOL_MAX_ENTRIES,
-				sizeof(struct wd_aead_msg));
+					config, WD_POOL_MAX_ENTRIES,
+					sizeof(struct wd_aead_msg));
 	if (ret < 0)
 		goto out_clear_sched;
 

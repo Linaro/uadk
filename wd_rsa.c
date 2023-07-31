@@ -15,9 +15,6 @@
 #include "include/drv/wd_rsa_drv.h"
 #include "wd_rsa.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
-#define WD_HW_EACCESS			62
-
 #define RSA_MAX_KEY_SIZE		512
 
 static __thread __u64 balance;
@@ -144,9 +141,8 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_rsa_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_rsa_msg));
 	if (ret < 0)
 		goto out_clear_sched;
