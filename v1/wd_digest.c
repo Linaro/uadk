@@ -64,7 +64,7 @@ static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
 	 * whose 'pbuf' is all zero.
 	 */
-	if (ctx->key) {
+	if (ctx->key && ctx->key_bytes) {
 		if (ctx->setup.data_fmt == WD_FLAT_BUF)
 			memset(ctx->key, 0, MAX_HMAC_KEY_SIZE);
 		else if (ctx->setup.data_fmt == WD_SGL_BUF)
