@@ -64,6 +64,11 @@ static int g_hmac_a_alg[WCRYPTO_MAX_DIGEST_TYPE] = {
 	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256
 };
 
+static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+			   struct wcrypto_aead_msg *msg);
+static int fill_aead_bd_udata(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+			      struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag);
+
 #ifdef DEBUG_LOG
 static void sec_dump_bd(unsigned char *bd, unsigned int len)
 {
@@ -2224,6 +2229,7 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_aead_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_queue *q = info->q;
 	struct hisi_sec_bd3_sqe *sqe;
+	struct hisi_sec_sqe *sqe2;
 	uintptr_t temp;
 	int ret;
 
@@ -2235,13 +2241,17 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
-	sqe = (struct hisi_sec_bd3_sqe *)temp;
-
-	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
-
-	fill_bd3_addr_type(msg->data_fmt, sqe);
-
-	ret = fill_aead_bd3(q, sqe, msg, tag);
+	if (tag->priv) {
+		sqe2 = (struct hisi_sec_sqe *)temp;
+		memset(sqe2, 0, sizeof(struct hisi_sec_sqe));
+		fill_bd_addr_type(msg->data_fmt, sqe2);
+		ret = fill_aead_bd_udata(q, sqe2, msg, tag);
+	} else {
+		sqe = (struct hisi_sec_bd3_sqe *)temp;
+		memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
+		fill_bd3_addr_type(msg->data_fmt, sqe);
+		ret = fill_aead_bd3(q, sqe, msg, tag);
+	}
 	if (ret != WD_SUCCESS)
 		return ret;
 
@@ -2313,6 +2323,7 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_aead_msg *aead_msg = info->req_cache[i];
 	struct hisi_sec_bd3_sqe *sqe = msg;
+	struct hisi_sec_sqe *sqe2 = msg;
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!aead_msg)) {
@@ -2324,6 +2335,10 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 		if (usr && sqe->tag_l != usr)
 			return 0;
 		parse_aead_bd3(q, sqe, aead_msg);
+	} else if (sqe->type == BD_TYPE2) {
+		if (usr && sqe2->type2.tag != usr)
+			return 0;
+		parse_aead_bd2(q, sqe2, aead_msg);
 	} else {
 		WD_ERR("SEC BD Type error\n");
 		aead_msg->result = WD_IN_EPARA;
@@ -2664,7 +2679,45 @@ static int aead_param_len_check(struct wcrypto_aead_msg *msg)
 	return 0;
 }
 
-static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+static int fill_aead_bd2_udata_inner(struct wcrypto_aead_msg *msg,
+				     struct hisi_sec_sqe *sqe, struct wd_aead_udata *udata)
+{
+	uintptr_t phy;
+
+	sqe->type2.auth_src_offset = udata->src_offset;
+	sqe->type2.cipher_src_offset = udata->src_offset + msg->assoc_bytes;
+	/* for bd2 udata scene, address do not need to be mapped. */
+	phy = (uintptr_t)msg->in;
+	sqe->type2.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.data_src_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->out;
+	sqe->type2.data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.data_dst_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->iv;
+	sqe->type2.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.c_ivin_addr_h = HI_U32(phy);
+
+	phy = (uintptr_t)udata->ckey;
+	sqe->type2.c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.c_key_addr_h = HI_U32(phy);
+	phy = (uintptr_t)udata->mac;
+	sqe->type2.mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.mac_addr_h = HI_U32(phy);
+	if (msg->cmode == WCRYPTO_CIPHER_CCM || msg->cmode == WCRYPTO_CIPHER_GCM) {
+		if (udata->aiv) {
+			phy = (uintptr_t)udata->aiv;
+			sqe->type2.a_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+			sqe->type2.a_ivin_addr_h = HI_U32(phy);
+		} else {
+			WD_ERR("Invalid aiv addr in CCM/GCM mode!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_aead_bd2_common(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
 {
 	int ret;
@@ -2686,24 +2739,75 @@ static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 
 	ret = fill_aead_bd2_alg(msg, sqe);
 	if (ret != WD_SUCCESS) {
-		WD_ERR("fill_cipher_bd2_alg fail!\n");
+		WD_ERR("fill_aead_bd2_alg fail!\n");
 		return ret;
 	}
 
 	ret = fill_aead_bd2_mode(msg, sqe);
 	if (ret != WD_SUCCESS) {
-		WD_ERR("fill_cipher_bd2_mode fail!\n");
+		WD_ERR("fill_aead_bd2_mode fail!\n");
 		return ret;
 	}
-
-	ret = fill_aead_bd2_addr(q, msg, sqe);
-	if (ret != WD_SUCCESS)
-		return ret;
 
 	if (tag)
 		sqe->type2.tag = tag->wcrypto_tag.ctx_id;
 
 	return ret;
+}
+
+static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+			 struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
+{
+	int ret;
+
+	ret = fill_aead_bd2_common(q, sqe, msg, tag);
+	if (ret != WD_SUCCESS)
+		return ret;
+
+	return fill_aead_bd2_addr(q, msg, sqe);
+}
+
+static int init_msg_with_udata(struct wcrypto_aead_msg *req, struct wd_aead_udata *udata)
+{
+	if (!udata->ckey || !udata->mac) {
+		WD_ERR("invalid udata para!\n");
+		return -WD_EINVAL;
+	}
+
+	if (req->cmode == WCRYPTO_CIPHER_CCM || req->cmode == WCRYPTO_CIPHER_GCM) {
+		req->ckey_bytes = udata->ckey_bytes;
+		req->auth_bytes = udata->mac_bytes;
+	} else {
+		WD_ERR("invalid cmode para!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int fill_aead_bd2_udata(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+			       struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
+{
+	int ret;
+
+	ret = fill_aead_bd2_common(q, sqe, msg, tag);
+	if (ret != WD_SUCCESS)
+		return ret;
+
+	return fill_aead_bd2_udata_inner(msg, sqe, (struct wd_aead_udata *)tag->priv);
+}
+
+static int fill_aead_bd_udata(struct wd_queue *q, struct hisi_sec_sqe *sqe,
+			      struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
+{
+	struct wd_aead_udata *udata = tag->priv;
+	int ret;
+
+	ret = init_msg_with_udata(msg, udata);
+	if (ret != WD_SUCCESS)
+		return ret;
+
+	return fill_aead_bd2_udata(q, sqe, msg, tag);
 }
 
 int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
@@ -2727,7 +2831,10 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
 
-	ret = fill_aead_bd2(q, sqe, msg, tag);
+	if (tag->priv)
+		ret = fill_aead_bd_udata(q, sqe, msg, tag);
+	else
+		ret = fill_aead_bd2(q, sqe, msg, tag);
 	if (ret != WD_SUCCESS)
 		return ret;
 
@@ -2743,6 +2850,7 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_aead_msg *msg)
 {
+	struct wcrypto_aead_tag *tag;
 	__u8 mac[64] = { 0 };
 	__u64 dma_addr;
 	int ret;
@@ -2755,6 +2863,10 @@ static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	} else {
 		msg->result = WD_SUCCESS;
 	}
+
+	tag = (void *)(uintptr_t)msg->usr_data;
+	if (tag->priv)
+		return;
 
 	/*
 	 * We obtain a memory from IV SGL as a temporary address space for MAC，
