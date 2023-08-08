@@ -175,6 +175,19 @@ struct wd_sec_udata {
 	__u8 *key;
 };
 
+struct wd_aead_udata {
+	__u32 src_offset;
+	__u32 dst_offset;
+	__u16 ckey_bytes;
+	__u16 akey_bytes;
+	__u16 aiv_bytes;
+	__u16 mac_bytes;
+	__u8 *ckey;
+	__u8 *akey;
+	__u8 *aiv;
+	__u8 *mac;
+};
+
 /* Digest tag format of Warpdrive */
 struct wcrypto_digest_tag {
 	struct wcrypto_cb_tag wcrypto_tag;

@@ -79,14 +79,14 @@ static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
 	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
 	 * whose 'pbuf' is all zero.
 	 */
-	if (ctx->ckey) {
+	if (ctx->ckey && ctx->ckey_bytes) {
 		if (ctx->setup.data_fmt == WD_FLAT_BUF)
 			memset(ctx->ckey, 0, MAX_CIPHER_KEY_SIZE);
 		else if (ctx->setup.data_fmt == WD_SGL_BUF)
 			wd_sgl_cp_from_pbuf(ctx->ckey, 0, tmp, MAX_CIPHER_KEY_SIZE);
 	}
 
-	if (ctx->akey) {
+	if (ctx->akey && ctx->akey_bytes) {
 		if (ctx->setup.data_fmt == WD_FLAT_BUF)
 			memset(ctx->akey, 0, MAX_AEAD_KEY_SIZE);
 		else if (ctx->setup.data_fmt == WD_SGL_BUF)
@@ -445,7 +445,6 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 			     struct wcrypto_aead_op_data **op,
 			     struct wcrypto_aead_ctx *ctx, __u32 num)
 {
-	struct wd_sec_udata *udata;
 	int ret;
 	__u32 i;
 
@@ -471,11 +470,6 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 		req[i]->out_bytes = op[i]->out_bytes;
 		req[i]->assoc_bytes = op[i]->assoc_size;
 		req[i]->auth_bytes = ctx->auth_size;
-		udata = op[i]->priv;
-		if (udata && udata->key) {
-			req[i]->ckey = udata->key;
-			req[i]->ckey_bytes = udata->key_bytes;
-		}
 
 		req[i]->aiv = ctx->setup.br.alloc(ctx->setup.br.usr,
 						  MAX_AEAD_KEY_SIZE);
