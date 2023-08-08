@@ -326,7 +326,7 @@ struct bd3_tls_type_back {
 	__u32 pad_len_1p3_back:16;
 };
 
-/* the kp930 sence */
+/* the hw v2 sence */
 struct hisi_sec_bd3_sqe {
 	__u32 type:4;
 	__u32 inveld:1;
