@@ -2,15 +2,15 @@ UADK 2.3.11, Released Jul 9th, 2021
 
 	Feature list:
 
-	Support SVA on ZIP/SEC/HPRE accelerator on kunpeng930.
+	Support SVA on ZIP/SEC/HPRE accelerator on kunpeng.
 
 	Support of user space algorithm API layer of Warpdrive.
 
 	Offload Warpdrive WCRYPTO asymmetric algorithms with HPRE DH/RSA
-	on kunpeng920/930.
+	on kunpeng.
 
 	Offload elliptic curve EC algorithms SM2/ECDH/ECDSA/X25519/X448 on
-	kunpeng930 HPRE in user space.
+	kunpeng HPRE in user space.
 
 	Offload Warpdrive WCRYPTO symmetric algorithms AES/SM4/SM3/AEAD .etc
 	algorithms.
