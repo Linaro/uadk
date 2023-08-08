@@ -81,7 +81,7 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 			dev_root, attr);
 	if (size <= 0) {
 		WD_ERR("get %s/%s path fail!\n", dev_root, attr);
-		return size;
+		return -WD_EINVAL;
 	}
 
 	ptrRet = realpath(attr_file, attr_path);
@@ -140,7 +140,7 @@ static int get_str_attr(struct dev_info *dinfo, const char *attr, char *buf,
 		return ret;
 	}
 
-	if ((size_t)ret == buf_sz)
+	if ((__u32)ret == buf_sz)
 		ret = ret - 1;
 
 	buf[ret] = '\0';
