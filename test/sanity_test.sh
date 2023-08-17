@@ -87,10 +87,10 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		zip_sva_perf --in $1 --out $2 --olist /tmp/gzip_list.bin $@
+		run_cmd zip_sva_perf --in $1 --out $2 --olist /tmp/gzip_list.bin $@
 		;;
 	"zlib")
-		zip_sva_perf -z --in $1 --out $2 --olist /tmp/zlib_list.bin $@
+		run_cmd zip_sva_perf -z --in $1 --out $2 --olist /tmp/zlib_list.bin $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -104,10 +104,10 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		zip_sva_perf -d --in $1 --out $2 --ilist /tmp/gzip_list.bin $@
+		run_cmd zip_sva_perf -d --in $1 --out $2 --ilist /tmp/gzip_list.bin $@
 		;;
 	"zlib")
-		zip_sva_perf -z -d --in $1 --out $2 --ilist /tmp/zlib_list.bin $@
+		run_cmd zip_sva_perf -z -d --in $1 --out $2 --ilist /tmp/zlib_list.bin $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -121,10 +121,10 @@ hw_strm_deflate()
 {
 	case $3 in
 	"gzip")
-		zip_sva_perf -S --in $1 --out $2 $@
+		run_cmd zip_sva_perf -S --in $1 --out $2 $@
 		;;
 	"zlib")
-		zip_sva_perf -z -S --in $1 --out $2 $@
+		run_cmd zip_sva_perf -z -S --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -138,10 +138,10 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
-		zip_sva_perf -S -d --in $1 --out $2 $@
+		run_cmd zip_sva_perf -S -d --in $1 --out $2 $@
 		;;
 	"zlib")
-		zip_sva_perf -z -S -d --in $1 --out $2 $@
+		run_cmd zip_sva_perf -z -S -d --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -365,9 +365,9 @@ run_zip_test_v2()
 	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
 	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
-	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self
+	#run_cmd zip_sva_perf -b 8192 -s 81920 -l 1000 --self
 	# test with environment variables
-	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
+	#run_cmd zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
 }
 
 # Accept more paraterms
