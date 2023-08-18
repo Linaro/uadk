@@ -390,9 +390,10 @@ run_sec_test_v2()
 # failed: return 1; success: return 0
 run_hpre_test_v2()
 {
-	run_cmd test_hisi_hpre --trd_mode=sync
+	dev_path=$(ls -1 /dev/hisi_hpre-* | head -1)
+	run_cmd test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
 
-	run_cmd test_hisi_hpre --trd_mode=async
+	run_cmd test_hisi_hpre --trd_mode=async --dev_path=$dev_path
 }
 
 # failed: return 1; success: return 0
