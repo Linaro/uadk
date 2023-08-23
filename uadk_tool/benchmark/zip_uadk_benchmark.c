@@ -55,8 +55,11 @@ struct zip_file_head {
 	u32 blk_sz[MAX_POOL_LENTH];
 };
 
+#define INIT2
+#ifndef INIT2
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched *g_sched;
+#endif
 static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
 static unsigned int g_pktlen;
@@ -274,6 +277,7 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 
 static int init_ctx_config(char *alg, int mode, int optype)
 {
+#ifndef INIT2
 	struct uacce_dev_list *list;
 	struct sched_params param;
 	int i, max_node;
@@ -342,10 +346,14 @@ out:
 	wd_sched_rr_release(g_sched);
 
 	return ret;
+#else
+	return wd_comp_init2(alg, 0, 0);
+#endif
 }
 
 static void uninit_ctx_config(void)
 {
+#ifndef INIT2
 	int i;
 
 	/* uninit */
@@ -355,6 +363,9 @@ static void uninit_ctx_config(void)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
 	wd_sched_rr_release(g_sched);
+#else
+	wd_comp_uninit2();
+#endif
 }
 
 static int init_uadk_bd_pool(u32 optype)

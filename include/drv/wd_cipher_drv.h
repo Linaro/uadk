@@ -15,6 +15,8 @@ extern "C" {
 
 /* fixme wd_cipher_msg */
 struct wd_cipher_msg {
+	/* in bytes */
+	__u32 in_bytes;
 	struct wd_cipher_req req;
 	/* request identifier */
 	__u32 tag;
@@ -35,8 +37,6 @@ struct wd_cipher_msg {
 	__u16 key_bytes;
 	/* iv bytes */
 	__u16 iv_bytes;
-	/* in bytes */
-	__u32 in_bytes;
 	/* out_bytes */
 	__u32 out_bytes;
 
