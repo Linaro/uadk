@@ -29,6 +29,7 @@
 #define MAX_CIPHER_KEY_SIZE		64
 #define MAX_CIPHER_RETRY_CNT		20000000
 
+#define XTS_MODE_KEY_LEN_MASK 0x1
 #define DES_KEY_SIZE 8
 #define SM4_KEY_SIZE 16
 #define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
@@ -266,30 +267,36 @@ static int aes_key_len_check(__u16 length)
 static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
 					__u16 length)
 {
+	__u16 key_len = length;
 	int ret = WD_SUCCESS;
 
 	if (setup->mode == WCRYPTO_CIPHER_XTS) {
-		if (length != AES_KEYSIZE_128 && length != AES_KEYSIZE_256) {
-			WD_ERR("unsupported XTS key length, length = %u.\n",
-				length);
+		if (length & XTS_MODE_KEY_LEN_MASK) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
+		key_len = length >> XTS_MODE_KEY_SHIFT;
+
+		if (key_len != AES_KEYSIZE_128 && key_len != AES_KEYSIZE_256) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
 			return -WD_EINVAL;
 		}
 	}
 
 	switch (setup->alg) {
 	case WCRYPTO_CIPHER_SM4:
-		if (length != SM4_KEY_SIZE)
+		if (key_len != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_AES:
-		ret = aes_key_len_check(length);
+		ret = aes_key_len_check(key_len);
 		break;
 	case WCRYPTO_CIPHER_DES:
-		if (length != DES_KEY_SIZE)
+		if (key_len != DES_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_3DES:
-		if ((length != SEC_3DES_2KEY_SIZE) && (length != SEC_3DES_3KEY_SIZE))
+		if ((key_len != SEC_3DES_2KEY_SIZE) && (key_len != SEC_3DES_3KEY_SIZE))
 			ret = -WD_EINVAL;
 		break;
 	default:
@@ -303,7 +310,6 @@ static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
 int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_cipher_ctx *ctxt = ctx;
-	__u16 length = key_len;
 	int ret;
 
 	if (!ctx || !key) {
@@ -311,17 +317,14 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (ctxt->setup.mode == WCRYPTO_CIPHER_XTS)
-		length = key_len >> XTS_MODE_KEY_SHIFT;
-
-	ret = cipher_key_len_check(&ctxt->setup, length);
+	ret = cipher_key_len_check(&ctxt->setup, key_len);
 	if (ret != WD_SUCCESS) {
 		WD_ERR("%s: input key length err!\n", __func__);
 		return ret;
 	}
 
 	if (ctxt->setup.alg == WCRYPTO_CIPHER_DES &&
-		is_des_weak_key((__u64 *)key, length)) {
+		is_des_weak_key((__u64 *)key, key_len)) {
 		WD_ERR("%s: des weak key!\n", __func__);
 		return -WD_EINVAL;
 	}
