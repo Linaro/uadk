@@ -266,14 +266,13 @@ out_clear_ctx_config:
 
 int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
-	flag = wd_alg_try_init(&wd_digest_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_digest_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -334,14 +333,13 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 {
 	struct wd_ctx_params digest_ctx_params = {0};
 	struct wd_ctx_nums digest_ctx_num = {0};
-	int ret = -WD_EINVAL;
-	bool flag;
+	int state, ret = -WD_EINVAL;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
-	flag = wd_alg_try_init(&wd_digest_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_digest_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	     task_type < 0 || task_type >= TASK_MAX_TYPE) {

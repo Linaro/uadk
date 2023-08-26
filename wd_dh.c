@@ -140,14 +140,13 @@ static int wd_dh_common_uninit(void)
 
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_dh_clear_status);
 
-	flag = wd_alg_try_init(&wd_dh_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_dh_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -188,14 +187,13 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 {
 	struct wd_ctx_nums dh_ctx_num[WD_DH_PHASE2] = {0};
 	struct wd_ctx_params dh_ctx_params = {0};
-	int ret = -WD_EINVAL;
-	bool flag;
+	int state, ret = -WD_EINVAL;
 
 	pthread_atfork(NULL, NULL, wd_dh_clear_status);
 
-	flag = wd_alg_try_init(&wd_dh_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_dh_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	    task_type < 0 || task_type >= TASK_MAX_TYPE) {

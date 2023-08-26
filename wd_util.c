@@ -25,6 +25,8 @@
 
 #define WD_INIT_SLEEP_UTIME		1000
 #define WD_INIT_RETRY_TIMES		10000
+#define US2S(us)			((us) >> 20)
+#define WD_INIT_RETRY_TIMEOUT		3
 
 #define DEF_DRV_LIB_FILE		"libwd.so"
 
@@ -2322,10 +2324,10 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv)
 	wd_release_drv(drv);
 }
 
-bool wd_alg_try_init(enum wd_status *status)
+int wd_alg_try_init(enum wd_status *status)
 {
 	enum wd_status expected;
-	int count = 0;
+	__u32 count = 0;
 	bool ret;
 
 	do {
@@ -2334,15 +2336,17 @@ bool wd_alg_try_init(enum wd_status *status)
 						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
 		if (expected == WD_INIT) {
 			WD_ERR("The algorithm has been initialized!\n");
-			return false;
+			return -WD_EEXIST;
 		}
 		usleep(WD_INIT_SLEEP_UTIME);
-		if (!(++count % WD_INIT_RETRY_TIMES))
-			WD_ERR("The algorithm initizalite has been waiting for %ds!\n",
-			       WD_INIT_SLEEP_UTIME * count / 1000000);
+
+		if (US2S(WD_INIT_SLEEP_UTIME * ++count) >= WD_INIT_RETRY_TIMEOUT) {
+			WD_ERR("The algorithm initialize wait timeout!\n");
+			return -WD_ETIMEDOUT;
+		}
 	} while (!ret);
 
-	return true;
+	return 0;
 }
 
 static __u32 wd_get_ctx_numbers(struct wd_ctx_params ctx_params, int end)
