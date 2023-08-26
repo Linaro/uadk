@@ -11,7 +11,8 @@
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_cipher.h"
 
-#define XTS_MODE_KEY_DIVISOR	2
+#define XTS_MODE_KEY_SHIFT	1
+#define XTS_MODE_KEY_LEN_MASK	0x1
 #define SM4_KEY_SIZE		16
 #define DES_KEY_SIZE		8
 #define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
@@ -141,27 +142,36 @@ static int aes_key_len_check(__u32 length)
 
 static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 {
+	__u32 key_len = length;
 	int ret = 0;
 
-	if (sess->mode == WD_CIPHER_XTS && length == AES_KEYSIZE_192) {
-		WD_ERR("unsupported XTS key length, length = %u\n", length);
-		return -WD_EINVAL;
+	if (sess->mode == WD_CIPHER_XTS) {
+		if (length & XTS_MODE_KEY_LEN_MASK) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
+		key_len = length >> XTS_MODE_KEY_SHIFT;
+
+		if (key_len == AES_KEYSIZE_192) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
 	}
 
 	switch (sess->alg) {
 	case WD_CIPHER_SM4:
-		if (length != SM4_KEY_SIZE)
+		if (key_len != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WD_CIPHER_AES:
-		ret = aes_key_len_check(length);
+		ret = aes_key_len_check(key_len);
 		break;
 	case WD_CIPHER_DES:
-		if (length != DES_KEY_SIZE)
+		if (key_len != DES_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WD_CIPHER_3DES:
-		if (length != DES3_2KEY_SIZE && length != DES3_3KEY_SIZE)
+		if (key_len != DES3_2KEY_SIZE && key_len != DES3_3KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	default:
@@ -193,7 +203,6 @@ static bool wd_cipher_alg_check(const char *alg_name)
 int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-	__u32 length = key_len;
 	int ret;
 
 	if (!key || !sess) {
@@ -201,10 +210,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (sess->mode == WD_CIPHER_XTS)
-		length = key_len / XTS_MODE_KEY_DIVISOR;
-
-	ret = cipher_key_len_check(sess, length);
+	ret = cipher_key_len_check(sess, key_len);
 	if (ret) {
 		WD_ERR("cipher set key input key length err!\n");
 		return -WD_EINVAL;
