@@ -387,10 +387,11 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched);
  * if need initialization.
  * @status: algorithm initialization status.
  *
- * Return true if need initialization and false if initialized, otherwise will wait
- * last initialization result.
+ * Return 0 if need initialization.
+ * Return -WD_EEXIST if the algorithm has been initialized.
+ * Return -WD_ETIMEDOUT if wait timeout.
  */
-bool wd_alg_try_init(enum wd_status *status);
+int wd_alg_try_init(enum wd_status *status);
 
 /**
  * wd_alg_set_init() - Set the algorithm status as WD_INIT.
