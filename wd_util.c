@@ -28,7 +28,7 @@
 #define US2S(us)			((us) >> 20)
 #define WD_INIT_RETRY_TIMEOUT		3
 
-#define DEF_DRV_LIB_FILE		"libwd.so"
+#define WD_DRV_LIB_DIR			"uadk"
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -2151,7 +2151,7 @@ static void dladdr_empty(void)
 int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 {
 	char file_path[PATH_MAX] = {0};
-	char path[PATH_MAX];
+	char path[PATH_MAX] = {0};
 	Dl_info file_info;
 	int len, rc, i;
 
@@ -2173,16 +2173,17 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 	}
 
 	if (is_dir) {
-		(void)snprintf(lib_path, PATH_MAX, "%s", file_path);
-		return 0;
+		len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, WD_DRV_LIB_DIR);
+		if (len >= PATH_MAX)
+			return -WD_EINVAL;
+	} else {
+		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s", file_path, WD_DRV_LIB_DIR, lib_file);
+		if (len >= PATH_MAX)
+			return -WD_EINVAL;
 	}
 
-	len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, lib_file);
-	if (len < 0)
-		return -WD_EINVAL;
-
 	if (realpath(lib_path, path) == NULL) {
-		WD_ERR("%s: no such file or directory!\n", path);
+		WD_ERR("invalid: %s: no such file or directory!\n", path);
 		return -WD_EINVAL;
 	}
 
@@ -2205,11 +2206,10 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (ret)
 			return NULL;
 	} else {
-		(void)snprintf(lib_path, PATH_MAX, "%s/%s", cust_lib_dir, DEF_DRV_LIB_FILE);
-		ret = access(lib_path, F_OK);
-		if (ret)
+		if (realpath(cust_lib_dir, lib_path) == NULL) {
+			WD_ERR("invalid: %s: no such file or directory!\n", lib_path);
 			return NULL;
-
+		}
 		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
 	}
 

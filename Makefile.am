@@ -38,8 +38,10 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
-lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
-		libhisi_hpre.la libhisi_sec.la
+lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la
+
+uadk_driversdir=$(libdir)/uadk
+uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
