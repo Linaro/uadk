@@ -6,6 +6,8 @@
 #ifndef UADK_ZLIBWRAPPER_H
 #define UADK_ZLIBWRAPPER_H
 
+#include <asm/types.h>
+
 /*
  * These APIs are used to replace the ZLIB library. So if you don't use them.
  * Please do not use these. These APIs provide limited function, while the
