@@ -461,6 +461,12 @@ enum C_MODE {
 	C_MODE_CBC_CS	= 0x9
 };
 
+enum SEC_C_WIDTH {
+	C_WIDTH_CS1 = 0x1,
+	C_WIDTH_CS2 = 0x2,
+	C_WIDTH_CS3 = 0x3,
+};
+
 enum CKEY_LEN {
 	CKEY_LEN_128_BIT = 0x0,
 	CKEY_LEN_192_BIT = 0x1,

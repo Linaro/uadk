@@ -179,6 +179,18 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
 	case WCRYPTO_CIPHER_XTS:
 		sqe->type2.c_mode = C_MODE_XTS;
 		break;
+	case WCRYPTO_CIPHER_CBC_CS1:
+		sqe->type2.c_mode = C_MODE_CBC_CS;
+		sqe->type2.c_width = C_WIDTH_CS1;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS2:
+		sqe->type2.c_mode = C_MODE_CBC_CS;
+		sqe->type2.c_width = C_WIDTH_CS2;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS3:
+		sqe->type2.c_mode = C_MODE_CBC_CS;
+		sqe->type2.c_width = C_WIDTH_CS3;
+		break;
 	default:
 		WD_ERR("Invalid cipher alg type!\n");
 		ret = -WD_EINVAL;
@@ -253,6 +265,9 @@ static void update_iv(struct wcrypto_cipher_msg *msg)
 {
 	switch (msg->mode) {
 	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_CBC_CS1:
+	case WCRYPTO_CIPHER_CBC_CS2:
+	case WCRYPTO_CIPHER_CBC_CS3:
 		if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION &&
 			msg->out_bytes >= msg->iv_bytes)
 			update_iv_from_res(msg->iv, msg->out,
@@ -359,6 +374,18 @@ static int fill_cipher_bd1_mode(struct wcrypto_cipher_msg *msg,
 		break;
 	case WCRYPTO_CIPHER_XTS:
 		sqe->type1.c_mode = C_MODE_XTS;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS1:
+		sqe->type1.c_mode = C_MODE_CBC_CS;
+		sqe->type1.c_width = C_WIDTH_CS1;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS2:
+		sqe->type1.c_mode = C_MODE_CBC_CS;
+		sqe->type1.c_width = C_WIDTH_CS2;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS3:
+		sqe->type1.c_mode = C_MODE_CBC_CS;
+		sqe->type1.c_width = C_WIDTH_CS3;
 		break;
 	default:
 		WD_ERR("Invalid cipher alg type for bd1\n");
@@ -587,8 +614,32 @@ map_in_error:
 	return ret;
 }
 
+static int aes_sm4_param_check(struct wcrypto_cipher_msg *msg)
+{
+	if (msg->alg == WCRYPTO_CIPHER_AES &&
+	    msg->in_bytes <= CBC_AES_BLOCK_SIZE &&
+	    (msg->mode == WCRYPTO_CIPHER_CBC_CS1 ||
+	     msg->mode == WCRYPTO_CIPHER_CBC_CS2 ||
+	     msg->mode == WCRYPTO_CIPHER_CBC_CS3)) {
+		WD_ERR("failed to check input bytes of AES CTS, size = %u\n",
+		       msg->in_bytes);
+		return -WD_EINVAL;
+	}
+
+	if ((msg->in_bytes & (CBC_AES_BLOCK_SIZE - 1)) &&
+	    (msg->mode == WCRYPTO_CIPHER_CBC ||
+	     msg->mode == WCRYPTO_CIPHER_ECB)) {
+		WD_ERR("input AES or SM4 cipher parameter is error!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
 static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 {
+	int ret;
+
 	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH ||
 	    !msg->in_bytes)) {
 		WD_ERR("input cipher len is too large!\n");
@@ -616,10 +667,9 @@ static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 	}
 
 	if (msg->alg == WCRYPTO_CIPHER_AES || msg->alg == WCRYPTO_CIPHER_SM4) {
-		if (unlikely(msg->in_bytes & (CBC_AES_BLOCK_SIZE - 1))) {
-			WD_ERR("input AES or SM4 cipher parameter is error!\n");
-			return -WD_EINVAL;
-		}
+		ret = aes_sm4_param_check(msg);
+		if (ret)
+			return ret;
 	}
 
 	return WD_SUCCESS;
@@ -793,6 +843,18 @@ static int fill_cipher_bd3_mode(struct wcrypto_cipher_msg *msg,
 	case WCRYPTO_CIPHER_CFB:
 		sqe->c_mode = C_MODE_CFB;
 		break;
+	case WCRYPTO_CIPHER_CBC_CS1:
+		sqe->c_mode = C_MODE_CBC_CS;
+		sqe->c_width = C_WIDTH_CS1;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS2:
+		sqe->c_mode = C_MODE_CBC_CS;
+		sqe->c_width = C_WIDTH_CS2;
+		break;
+	case WCRYPTO_CIPHER_CBC_CS3:
+		sqe->c_mode = C_MODE_CBC_CS;
+		sqe->c_width = C_WIDTH_CS3;
+		break;
 	default:
 		WD_ERR("Invalid cipher alg type!\n");
 		ret = -WD_EINVAL;
@@ -843,7 +905,7 @@ static int fill_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 	return ret;
 }
 
-static int sm4_aes_mode_check(int mode)
+static int sm4_mode_check(int mode)
 {
 	switch (mode) {
 	case WCRYPTO_CIPHER_ECB:
@@ -854,6 +916,26 @@ static int sm4_aes_mode_check(int mode)
 	case WCRYPTO_CIPHER_XTS:
 	case WCRYPTO_CIPHER_CCM:
 	case WCRYPTO_CIPHER_GCM:
+		return WD_SUCCESS;
+	default:
+		return -WD_EINVAL;
+	}
+}
+
+static int aes_mode_check(int mode)
+{
+	switch (mode) {
+	case WCRYPTO_CIPHER_ECB:
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_OFB:
+	case WCRYPTO_CIPHER_CFB:
+	case WCRYPTO_CIPHER_CTR:
+	case WCRYPTO_CIPHER_XTS:
+	case WCRYPTO_CIPHER_CCM:
+	case WCRYPTO_CIPHER_GCM:
+	case WCRYPTO_CIPHER_CBC_CS1:
+	case WCRYPTO_CIPHER_CBC_CS2:
+	case WCRYPTO_CIPHER_CBC_CS3:
 		return WD_SUCCESS;
 	default:
 		return -WD_EINVAL;
@@ -878,8 +960,10 @@ static int cipher_comb_param_check(struct wcrypto_cipher_msg *msg)
 
 	switch (msg->alg) {
 	case WCRYPTO_CIPHER_SM4:
+		ret = sm4_mode_check(msg->mode);
+		break;
 	case WCRYPTO_CIPHER_AES:
-		ret = sm4_aes_mode_check(msg->mode);
+		ret = aes_mode_check(msg->mode);
 		break;
 	case WCRYPTO_CIPHER_DES:
 	case WCRYPTO_CIPHER_3DES:
@@ -2228,8 +2312,10 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 
 	switch (msg->calg) {
 	case WCRYPTO_CIPHER_SM4:
+		ret = sm4_mode_check(msg->cmode);
+		break;
 	case WCRYPTO_CIPHER_AES:
-		ret = sm4_aes_mode_check(msg->cmode);
+		ret = aes_mode_check(msg->cmode);
 		break;
 	default:
 		return -WD_EINVAL;

@@ -83,6 +83,9 @@ static __u32 get_iv_block_size(int alg, int mode)
 
 	switch (mode) {
 	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_CBC_CS1:
+	case WCRYPTO_CIPHER_CBC_CS2:
+	case WCRYPTO_CIPHER_CBC_CS3:
 	case WCRYPTO_CIPHER_OFB:
 		if (alg == WCRYPTO_CIPHER_3DES ||
 		    alg == WCRYPTO_CIPHER_DES)
