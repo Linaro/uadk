@@ -199,7 +199,7 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 		}
 	}
 
-	if (setup->alg >= WCRYPTO_SHA512)
+	if (setup->alg >= WCRYPTO_SHA384)
 		ctx->align_sz = SEC_SHA512_ALIGN_SZ;
 	else
 		ctx->align_sz = SEC_SHA1_ALIGN_SZ;
