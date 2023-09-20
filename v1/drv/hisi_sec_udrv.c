@@ -992,9 +992,16 @@ static int fill_digest_bd2_alg(struct wcrypto_digest_msg *msg,
 	if (unlikely(ret))
 		return ret;
 
-	if (unlikely(msg->in_bytes == 0)) {
-		WD_ERR("digest bd2 not supports 0 packet!\n");
-		return -WD_EINVAL;
+	if(unlikely(msg->in_bytes == 0)) {
+		if ((msg->has_next && !msg->iv_bytes) || (msg->has_next && msg->iv_bytes)) {
+			/* Long hash first and middle BD */
+			WD_ERR("invalid: digest bd2 not supports 0 packet in first bd and middle bd!\n");
+			return -WD_EINVAL;
+		} else if (!msg->has_next && !msg->iv_bytes) {
+			/* Block hash BD */
+			WD_ERR("invalid: digest bd2 not supports 0 packet in block mode!\n");
+			return -WD_EINVAL;
+		}
 	}
 
 	sqe->type2.mac_len = msg->out_bytes / WORD_BYTES;
@@ -1382,6 +1389,14 @@ static int fill_digest_bd3_alg(struct wcrypto_digest_msg *msg,
 	ret = digest_param_check(msg);
 	if (unlikely(ret))
 		return ret;
+
+	if (unlikely(msg->in_bytes == 0)) {
+		if ((msg->has_next && !msg->iv_bytes) || (msg->has_next && msg->iv_bytes)) {
+			/* Long hash first and middle BD */
+				WD_ERR("invalid: digest bd3 not supports 0 packet in first bd and middle bd!\n");
+				return -WD_EINVAL;
+		}
+	}
 
 	sqe->mac_len = msg->out_bytes / WORD_BYTES;
 	if (msg->mode == WCRYPTO_DIGEST_NORMAL)

@@ -1574,18 +1574,6 @@ static int digest_long_bd_align_check(struct wd_digest_msg *msg)
 	return 0;
 }
 
-static int aes_auth_len_check(struct wd_digest_msg *msg)
-{
-	if ((msg->alg == WD_DIGEST_AES_XCBC_MAC_96 ||
-	     msg->alg == WD_DIGEST_AES_XCBC_PRF_128 ||
-	     msg->alg == WD_DIGEST_AES_CMAC) && !msg->in_bytes) {
-		WD_ERR("digest mode: %u not supports 0 size!\n", msg->alg);
-		return -WD_EINVAL;
-	}
-
-	return 0;
-}
-
 static int digest_bd2_zero_packet_check(struct wd_digest_msg *msg)
 {
 	enum hash_bd_type type = get_hash_bd_type(msg);
@@ -1605,14 +1593,33 @@ static int digest_bd2_zero_packet_check(struct wd_digest_msg *msg)
 	return 0;
 }
 
+static int digest_bd3_zero_packet_check(struct wd_digest_msg *msg)
+{
+	enum hash_bd_type type = get_hash_bd_type(msg);
+	/* Long hash first and middle bd */
+	if (type == HASH_FRIST_BD || type == HASH_MIDDLE_BD) {
+		WD_ERR("invalid: hardware v3 not supports 0 size in long hash!\n");
+		return -WD_EINVAL;
+	}
+
+	if (msg->alg == WD_DIGEST_AES_XCBC_MAC_96 ||
+		msg->alg == WD_DIGEST_AES_XCBC_PRF_128 ||
+		msg->alg == WD_DIGEST_AES_CMAC) {
+		WD_ERR("invalid: digest mode %u not supports 0 size!\n", msg->alg);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 {
 	int ret;
 
 	/*
-	 * Hardware v2 needs to check the zero byte packet in the block
-	 * and long hash mode. Frist and Middle bd not supports 0 size,
-	 * final bd not need to check it. Hardware v3 has fixed it.
+	 * Hardware needs to check the zero byte packet in the block
+	 * and long hash mode. First and middle bd not support 0 size,
+	 * final bd not need to check it.
 	 */
 	if (type == BD_TYPE2 && !msg->in_bytes) {
 		ret = digest_bd2_zero_packet_check(msg);
@@ -1620,8 +1627,8 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 			return ret;
 	}
 
-	if (type == BD_TYPE3) {
-		ret = aes_auth_len_check(msg);
+	if (type == BD_TYPE3 && !msg->in_bytes) {
+		ret = digest_bd3_zero_packet_check(msg);
 		if (ret)
 			return ret;
 	}
