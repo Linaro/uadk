@@ -90,6 +90,7 @@ enum wd_digest_msg_state {
 	WD_DIGEST_DOING,
 	WD_DIGEST_STREAM_END,
 	WD_DIGEST_STREAM_DOING,
+	WD_DIGEST_MSG_STATE_MAX,
 };
 
 /**
