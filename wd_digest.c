@@ -463,19 +463,26 @@ static int wd_mac_length_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(!req->has_next &&
-	    req->out_bytes > g_digest_mac_len[sess->alg])) {
-		WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
-			sess->alg, req->out_bytes);
-		return -WD_EINVAL;
-	}
-
-	/* User need to input full mac buffer in first and middle hash */
-	if (unlikely(req->has_next &&
-	    req->out_bytes != g_digest_mac_full_len[sess->alg])) {
-		WD_ERR("invalid: digest mac full length is error, alg = %d, out_bytes = %u\n",
-			sess->alg, req->out_bytes);
-		return -WD_EINVAL;
+	switch (req->has_next) {
+	case WD_DIGEST_END:
+	case WD_DIGEST_STREAM_END:
+		if (unlikely(req->out_bytes > g_digest_mac_len[sess->alg])) {
+			WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
+			       sess->alg, req->out_bytes);
+			return -WD_EINVAL;
+		}
+		break;
+	case WD_DIGEST_DOING:
+	case WD_DIGEST_STREAM_DOING:
+		/* User need to input full mac buffer in first and middle hash */
+		if (unlikely(req->out_bytes != g_digest_mac_full_len[sess->alg])) {
+			WD_ERR("invalid: digest mac full length, alg = %d, out_bytes = %u\n",
+			       sess->alg, req->out_bytes);
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		break;
 	}
 
 	return 0;
