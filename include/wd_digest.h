@@ -180,7 +180,7 @@ void wd_digest_uninit2(void);
 handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup);
 
 /**
- * wd_alg_digest_free_sess() - Free digest session.
+ * wd_digest_free_sess() - Free digest session.
  * @h_sess: session handler which will be free
  */
 void wd_digest_free_sess(handle_t h_sess);
