@@ -54,6 +54,14 @@ static __u32 g_digest_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_DIGEST_SHA512_224_LEN, WCRYPTO_DIGEST_SHA512_256_LEN
 };
 
+static __u32 g_digest_mac_full_len[WCRYPTO_MAX_DIGEST_TYPE] = {
+	WCRYPTO_DIGEST_SM3_FULL_LEN, WCRYPTO_DIGEST_MD5_FULL_LEN,
+	WCRYPTO_DIGEST_SHA1_FULL_LEN, WCRYPTO_DIGEST_SHA256_FULL_LEN,
+	WCRYPTO_DIGEST_SHA224_FULL_LEN, WCRYPTO_DIGEST_SHA384_FULL_LEN,
+	WCRYPTO_DIGEST_SHA512_FULL_LEN, WCRYPTO_DIGEST_SHA512_224_FULL_LEN,
+	WCRYPTO_DIGEST_SHA512_256_FULL_LEN
+};
+
 static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
@@ -330,20 +338,30 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 			return -WD_EINVAL;
 		}
 
-		if (unlikely(num != 1 && d_opdata[i]->has_next)) {
-			WD_ERR("num > 1, wcrypto_burst_digest does not support stream mode!\n");
+		if (unlikely(!d_opdata[i]->out_bytes)) {
+			WD_ERR("invalid: digest mac length is 0.\n");
 			return -WD_EINVAL;
 		}
 
-		if (unlikely(d_opdata[0]->has_next && d_opdata[0]->in_bytes % d_ctx->align_sz)) {
-			WD_ERR("digest stream mode must be %u-byte aligned!\n", d_ctx->align_sz);
-			return -WD_EINVAL;
-		}
-		if (d_opdata[i]->out_bytes == 0 ||
-			d_opdata[i]->out_bytes > g_digest_mac_len[alg]) {
+		if (d_opdata[i]->has_next) {
+			if (unlikely(num != 1)) {
+				WD_ERR("num > 1, wcrypto_burst_digest does not support stream mode!\n");
+				return -WD_EINVAL;
+			}
+			if (unlikely(d_opdata[i]->in_bytes % d_ctx->align_sz)) {
+				WD_ERR("digest stream mode must be %u-byte aligned!\n", d_ctx->align_sz);
+				return -WD_EINVAL;
+			}
+			if (unlikely(d_opdata[i]->out_bytes < g_digest_mac_full_len[alg])) {
+				WD_ERR("digest stream mode out buffer space is not enough!\n");
+				return -WD_EINVAL;
+			}
+		} else {
+			if (unlikely(d_opdata[i]->out_bytes > g_digest_mac_len[alg])) {
 				WD_ERR("failed to check digest mac length!\n");
 				return -WD_EINVAL;
 			}
+		}
 
 		if (unlikely(tag && !tag[i])) {
 			WD_ERR("tag[%u] is NULL!\n", i);
