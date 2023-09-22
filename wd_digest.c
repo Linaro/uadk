@@ -63,12 +63,13 @@ struct wd_digest_sess {
 	__u32			key_bytes;
 	void			*sched_key;
 	/*
-	 * Notify the BD state, zero is frist BD, non-zero
-	 * is middle or final BD.
+	 * Notify the stream message state, zero is frist message,
+	 * non-zero is middle or final message.
 	 */
-	int			bd_state;
-	/* Total of data for stream mode */
-	__u64			 long_data_len;
+	int			msg_state;
+
+	/* Total data length for stream mode */
+	__u64			long_data_len;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -542,15 +543,10 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->out_bytes = req->out_bytes;
 	msg->data_fmt = req->data_fmt;
 	msg->has_next = req->has_next;
-	sess->long_data_len += req->in_bytes;
-	msg->long_data_len = sess->long_data_len;
+	msg->long_data_len = sess->long_data_len + req->in_bytes;
 
-	/* To store the stream BD state, iv_bytes also means BD state */
-	msg->iv_bytes = sess->bd_state;
-	if (req->has_next == 0) {
-		sess->long_data_len = 0;
-		sess->bd_state = 0;
-	}
+	/* Use iv_bytes to store the stream message state */
+	msg->iv_bytes = sess->msg_state;
 }
 
 static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *dsess,
@@ -565,17 +561,23 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	pthread_spin_lock(&ctx->lock);
 	ret = wd_handle_msg_sync(wd_digest_setting.driver, &msg_handle, ctx->ctx,
 				 msg, NULL, wd_digest_setting.config.epoll_en);
-	if (unlikely(ret))
-		goto out;
-
-	/*
-	 * non-zero is final BD or middle BD as stream mode.
-	 */
-	dsess->bd_state = msg->has_next;
-
-out:
 	pthread_spin_unlock(&ctx->lock);
-	return ret;
+	if (unlikely(ret))
+		return ret;
+
+	/* After a stream mode job was done, update session long_data_len */
+	if (msg->has_next) {
+		/* Long hash(first and middle message) */
+		dsess->long_data_len += msg->in_bytes;
+	} else if (msg->iv_bytes) {
+		/* Long hash(final message) */
+		dsess->long_data_len = 0;
+	}
+
+	/* Update session message state */
+	dsess->msg_state = msg->has_next;
+
+	return 0;
 }
 
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
