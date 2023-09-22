@@ -342,8 +342,8 @@ void wd_aead_free_sess(handle_t h_sess)
 		return;
 	}
 
-	wd_memset_zero(sess->ckey, MAX_CIPHER_KEY_SIZE);
-	wd_memset_zero(sess->akey, MAX_HMAC_KEY_SIZE);
+	wd_memset_zero(sess->ckey, sess->ckey_bytes);
+	wd_memset_zero(sess->akey, sess->akey_bytes);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
