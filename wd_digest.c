@@ -531,6 +531,16 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_digest_req));
 
+	if (unlikely(req->has_next == WD_DIGEST_STREAM_END)) {
+		sess->long_data_len = req->long_data_len;
+		sess->msg_state = WD_DIGEST_DOING;
+		req->has_next = WD_DIGEST_END;
+	} else if (unlikely(req->has_next == WD_DIGEST_STREAM_DOING)) {
+		sess->long_data_len = req->long_data_len;
+		sess->msg_state = WD_DIGEST_DOING;
+		req->has_next = WD_DIGEST_DOING;
+	}
+
 	msg->alg_type = WD_DIGEST;
 	msg->alg = sess->alg;
 	msg->mode = sess->mode;
