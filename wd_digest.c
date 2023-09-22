@@ -211,7 +211,7 @@ void wd_digest_free_sess(handle_t h_sess)
 		return;
 	}
 
-	wd_memset_zero(sess->key, MAX_HMAC_KEY_SIZE);
+	wd_memset_zero(sess->key, sess->key_bytes);
 	if (sess->sched_key)
 		free(sess->sched_key);
 	free(sess);
