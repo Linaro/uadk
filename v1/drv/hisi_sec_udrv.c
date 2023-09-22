@@ -1025,11 +1025,13 @@ static void qm_fill_digest_long_bd(struct wcrypto_digest_msg *msg,
 
 	if (msg->has_next && (msg->iv_bytes == 0)) {
 		/* LONG BD FIRST */
+		sqe->type2.mac_len = 0x1;
 		sqe->type2.ai_gen = AI_GEN_INNER;
 		sqe->type2.a_pad = AUTHPAD_NOPAD;
 		msg->iv_bytes = msg->out_bytes;
 	} else if (msg->has_next && (msg->iv_bytes != 0)) {
 		/* LONG BD MIDDLE */
+		sqe->type2.mac_len = 0x1;
 		sqe->type2.ai_gen = AI_GEN_IVIN_ADDR;
 		sqe->type2.a_pad = AUTHPAD_NOPAD;
 		sqe->type2.a_ivin_addr_h = sqe->type2.mac_addr_h;
@@ -1355,11 +1357,13 @@ static void qm_fill_digest_long_bd3(struct wcrypto_digest_msg *msg,
 	/* iv_bytes is multiplexed as a flag bit to determine whether it is LOGN BD FIRST */
 	if (msg->has_next && msg->iv_bytes == 0) {
 		/* LONG BD FIRST */
+		sqe->mac_len = 0x1;
 		sqe->ai_gen = AI_GEN_INNER;
 		sqe->stream_scene.auth_pad = AUTHPAD_NOPAD;
 		msg->iv_bytes = msg->out_bytes;
 	} else if (msg->has_next && msg->iv_bytes != 0) {
 		/* LONG BD MIDDLE */
+		sqe->mac_len = 0x1;
 		sqe->ai_gen = AI_GEN_IVIN_ADDR;
 		sqe->stream_scene.auth_pad = AUTHPAD_NOPAD;
 		sqe->auth_key_iv.a_ivin_addr_h = sqe->mac_addr_h;
