@@ -635,20 +635,24 @@ static void fill_stream_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 		memset(sess->iv, 0, MAX_IV_SIZE);
 		memcpy(sess->iv, req->iv, GCM_IV_SIZE);
 
-		/* Store the original mac of first message to session */
 		if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
-			memcpy(sess->mac_bak, req->mac, sess->auth_bytes);
+			msg->mac = sess->mac_bak;
 		break;
 	case AEAD_MSG_MIDDLE:
 		/* Middle messages need to store the stream's total length to session */
 		sess->long_data_len += req->in_bytes;
 
 		msg->long_data_len = sess->long_data_len;
+
+		if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
+			msg->mac = sess->mac_bak;
 		break;
 	case AEAD_MSG_END:
-		/* Sets the original mac for final message */
-		if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
-			memcpy(msg->mac_bak, sess->mac_bak, sess->auth_bytes);
+		if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
+			/* Sets the original mac for final message */
+			msg->dec_mac = req->mac;
+			msg->mac = sess->mac_bak;
+		}
 
 		msg->long_data_len = sess->long_data_len + req->in_bytes;
 		/* Reset the session's long_data_len */

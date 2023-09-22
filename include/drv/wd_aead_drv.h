@@ -64,7 +64,7 @@ struct wd_aead_msg {
 	/* mac */
 	__u8 *mac;
 	/* mac data pointer for decrypto as stream mode */
-	__u8 mac_bak[AES_BLOCK_SIZE];
+	__u8 *dec_mac;
 	/* total of data for stream mode */
 	__u64 long_data_len;
 	enum wd_aead_msg_state msg_state;
