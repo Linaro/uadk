@@ -2271,7 +2271,7 @@ static void gcm_auth_ivin(struct wd_aead_msg *msg)
 
 	/* Use the user's origin mac for decrypt icv check */
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
-		memcpy(msg->mac, msg->mac_bak, msg->auth_bytes);
+		memcpy(msg->mac, msg->dec_mac, msg->auth_bytes);
 }
 
 static void fill_gcm_first_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
@@ -2364,7 +2364,7 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 		msg->mac[i] = g[i] ^ ctr_r[i];
 
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
-		ret = memcmp(msg->mac, msg->mac_bak, msg->auth_bytes);
+		ret = memcmp(msg->mac, msg->dec_mac, msg->auth_bytes);
 		if (ret) {
 			msg->result = WD_IN_EPARA;
 			WD_ERR("failed to do the gcm authentication!\n");
