@@ -395,7 +395,7 @@ static int fill_cipher_bd1_mode(struct wcrypto_cipher_msg *msg,
 	return WD_SUCCESS;
 }
 
-static void fill_cipher_bd1_udata(struct hisi_sec_sqe *sqe,
+static void fill_cipher_bd1_dif(struct hisi_sec_sqe *sqe,
 		struct wd_sec_udata *udata)
 {
 	sqe->type1.gran_num = udata->gran_num;
@@ -416,6 +416,28 @@ static void fill_cipher_bd1_udata(struct hisi_sec_sqe *sqe,
 	sqe->type1.chk_ref_ctrl = udata->dif.ctrl.verify.ref_verify_type;
 	sqe->type1.lba_l = udata->dif.lba & QM_L32BITS_MASK;
 	sqe->type1.lba_h = udata->dif.lba >> QM_HADDR_SHIFT;
+}
+
+static void fill_cipher_bd1_udata_addr(struct wcrypto_cipher_msg *msg,
+				  struct hisi_sec_sqe *sqe)
+{
+	uintptr_t phy;
+
+	/* For user self-defined scene, iova = pa */
+	phy = (uintptr_t)msg->in;
+	sqe->type1.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type1.data_src_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->out;
+	sqe->type1.data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type1.data_dst_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->key;
+	sqe->type1.c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type1.c_key_addr_h = HI_U32(phy);
+	if (msg->iv_bytes) {
+		phy = (uintptr_t)msg->iv;
+		sqe->type1.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->type1.c_ivin_addr_h = HI_U32(phy);
+	}
 }
 
 static int map_addr(struct wd_queue *q, __u8 *key, __u16 len,
@@ -500,8 +522,8 @@ map_key_error:
 static int fill_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_cipher_msg *msg, struct wcrypto_cipher_tag *tag)
 {
-	int ret;
 	struct wd_sec_udata *udata = tag->priv;
+	int ret;
 
 	sqe->type = BD_TYPE1;
 	sqe->scene = SCENE_STORAGE;
@@ -519,11 +541,16 @@ static int fill_cipher_bd1(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	if (ret != WD_SUCCESS)
 		return ret;
 
-	fill_cipher_bd1_udata(sqe, udata);
-
-	ret = fill_cipher_bd1_addr(q, msg, sqe);
-	if (ret != WD_SUCCESS)
-		return ret;
+	if (udata) {
+		/* User self-defined data with DIF scence */
+		fill_cipher_bd1_dif(sqe, udata);
+		fill_cipher_bd1_udata_addr(msg, sqe);
+	} else {
+		/* Reserved for non user self-defined data scence */
+		ret = fill_cipher_bd1_addr(q, msg, sqe);
+		if (ret != WD_SUCCESS)
+			return ret;
+	}
 
 	sqe->type1.tag = tag->wcrypto_tag.ctx_id;
 
@@ -636,6 +663,27 @@ static int aes_sm4_param_check(struct wcrypto_cipher_msg *msg)
 	return WD_SUCCESS;
 }
 
+static void fill_cipher_bd2_udata_addr(struct wcrypto_cipher_msg *msg,
+				       struct hisi_sec_sqe *sqe)
+{
+	uintptr_t phy;
+
+	phy = (uintptr_t)msg->in;
+	sqe->type2.data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.data_src_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->out;
+	sqe->type2.data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.data_dst_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->key;
+	sqe->type2.c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->type2.c_key_addr_h = HI_U32(phy);
+	if (msg->iv_bytes) {
+		phy = (uintptr_t)msg->iv;
+		sqe->type2.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->type2.c_ivin_addr_h = HI_U32(phy);
+	}
+}
+
 static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 {
 	int ret;
@@ -705,9 +753,14 @@ static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		return ret;
 	}
 
-	ret = fill_cipher_bd2_addr(q, msg, sqe);
-	if (ret != WD_SUCCESS)
-		return ret;
+	if (tag->priv) {
+		/* User self-defined data process */
+		fill_cipher_bd2_udata_addr(msg, sqe);
+	} else {
+		ret = fill_cipher_bd2_addr(q, msg, sqe);
+		if (ret != WD_SUCCESS)
+			return ret;
+	}
 
 	if (tag)
 		sqe->type2.tag = tag->wcrypto_tag.ctx_id;
@@ -978,10 +1031,11 @@ static int cipher_comb_param_check(struct wcrypto_cipher_msg *msg)
 
 int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 {
-	struct hisi_sec_sqe *sqe;
 	struct wcrypto_cipher_msg *msg = message;
-	struct wd_queue *q = info->q;
 	struct wcrypto_cipher_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wd_sec_udata *udata = tag->priv;
+	struct wd_queue *q = info->q;
+	struct hisi_sec_sqe *sqe;
 	uintptr_t temp;
 	int ret;
 
@@ -994,10 +1048,13 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
 	sqe = (struct hisi_sec_sqe *)temp;
-
 	memset(sqe, 0, sizeof(struct hisi_sec_sqe));
 
-	if (tag->priv)
+	/**
+	 * For user self-defined data with DIF scence, will fill BD1.
+	 * Other scences will fill BD2 by default, including no DIF scence.
+	 */
+	if (udata && udata->gran_num != 0)
 		ret = fill_cipher_bd1(q, sqe, msg, tag);
 	else
 		ret = fill_cipher_bd2(q, sqe, msg, tag);
@@ -1015,10 +1072,12 @@ int qm_fill_cipher_sqe(void *message, struct qm_queue_info *info, __u16 i)
 
 int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 {
-	struct hisi_sec_bd3_sqe *sqe3;
 	struct wcrypto_cipher_msg *msg = message;
-	struct wd_queue *q = info->q;
 	struct wcrypto_cipher_tag *tag = (void *)(uintptr_t)msg->usr_data;
+	struct wd_sec_udata *udata = tag->priv;
+	struct wd_queue *q = info->q;
+	struct hisi_sec_bd3_sqe *sqe3;
+	struct hisi_sec_sqe *sqe;
 	uintptr_t temp;
 	int ret;
 
@@ -1030,18 +1089,35 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
-	sqe3 = (struct hisi_sec_bd3_sqe *)temp;
 
-	memset(sqe3, 0, sizeof(struct hisi_sec_bd3_sqe));
+	/*
+	 * For user self-defined data with DIF scence, will fill BD1.
+	 * For user self-defined data without DIF scence, will fill BD2.
+	 * For non user self-defined data scence, will fill BD3.
+	 */
+	if (udata) {
+		sqe = (struct hisi_sec_sqe *)temp;
+		memset(sqe, 0, sizeof(struct hisi_sec_sqe));
+		if (udata->gran_num != 0)
+			ret = fill_cipher_bd1(q, sqe, msg, tag);
+		else
+			ret = fill_cipher_bd2(q, sqe, msg, tag);
+	} else {
+		sqe3 = (struct hisi_sec_bd3_sqe *)temp;
+		memset(sqe3, 0, sizeof(struct hisi_sec_bd3_sqe));
+		ret = fill_cipher_bd3(q, sqe3, msg, tag);
+	}
 
-	ret = fill_cipher_bd3(q, sqe3, msg, tag);
 	if (ret != WD_SUCCESS)
 		return ret;
 
 	info->req_cache[i] = msg;
 
 #ifdef DEBUG_LOG
-	sec_dump_bd((unsigned char *)sqe3, SQE_BYTES_NUMS);
+	if (udata)
+		sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+	else
+		sec_dump_bd((unsigned char *)sqe3, SQE_BYTES_NUMS);
 #endif
 
 	return ret;
@@ -1686,6 +1762,7 @@ static void cipher_ofb_data_handle(struct wcrypto_cipher_msg *msg)
 static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		struct wcrypto_cipher_msg *cipher_msg)
 {
+	struct wcrypto_cipher_tag *tag;
 	__u64 dma_addr;
 
 	if (sqe->type2.done != SEC_HW_TASK_DONE || sqe->type2.error_type) {
@@ -1694,6 +1771,11 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		cipher_msg->result = WD_IN_EPARA;
 	} else
 		cipher_msg->result = WD_SUCCESS;
+
+	/* In user self-define data case, may not need addr map, just return */
+	tag = (void *)(uintptr_t)cipher_msg->usr_data;
+	if (tag->priv)
+		return;
 
 	dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
 			sqe->type2.data_src_addr_l);
@@ -1790,25 +1872,44 @@ int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 		__u16 i, __u16 usr)
 {
 	struct wcrypto_cipher_msg *cipher_msg = info->req_cache[i];
-	struct hisi_sec_bd3_sqe *sqe = msg;
+	struct hisi_sec_bd3_sqe *sqe3 = msg;
 	struct wd_queue *q = info->q;
+	struct hisi_sec_sqe *sqe;
 
 	if (unlikely(!cipher_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
-	if (likely(sqe->type == BD_TYPE3)) {
-		if (unlikely(usr && sqe->tag_l != usr))
+	switch (sqe3->type) {
+	case BD_TYPE3:
+		if (unlikely(usr && sqe3->tag_l != usr))
 			return 0;
-		parse_cipher_bd3(q, sqe, cipher_msg);
-	} else {
+		parse_cipher_bd3(q, sqe3, cipher_msg);
+		break;
+	case BD_TYPE2:
+		sqe = (struct hisi_sec_sqe *)sqe3;
+		if (usr && sqe->type2.tag != usr)
+			return 0;
+		parse_cipher_bd2(q, sqe, cipher_msg);
+		break;
+	case BD_TYPE1:
+		sqe = (struct hisi_sec_sqe *)sqe3;
+		if (usr && sqe->type1.tag != usr)
+			return 0;
+		parse_cipher_bd1(q, sqe, cipher_msg);
+		break;
+	default:
 		WD_ERR("SEC BD Type error\n");
 		cipher_msg->result = WD_IN_EPARA;
+		break;
 	}
 
 #ifdef DEBUG_LOG
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+	if (sqe3->type == BD_TYPE3)
+		sec_dump_bd((unsigned char *)sqe3, SQE_BYTES_NUMS);
+	else
+		sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
 #endif
 
 	return 1;
