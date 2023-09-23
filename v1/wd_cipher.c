@@ -69,7 +69,7 @@ static void del_ctx_key(struct wcrypto_cipher_ctx *ctx)
 	if (ctx->key) {
 		if (ctx->setup.data_fmt == WD_FLAT_BUF)
 			memset(ctx->key, 0, MAX_CIPHER_KEY_SIZE);
-		else if (ctx->setup.data_fmt == WD_SGL_BUF)
+		else if (ctx->setup.data_fmt == WD_SGL_BUF && ctx->key_bytes)
 			wd_sgl_cp_from_pbuf(ctx->key, 0, tmp, MAX_CIPHER_KEY_SIZE);
 	}
 
@@ -361,6 +361,8 @@ static int cipher_requests_init(struct wcrypto_cipher_msg **req,
 		req[i]->in_bytes = op[i]->in_bytes;
 		req[i]->out = op[i]->out;
 		req[i]->out_bytes = op[i]->out_bytes;
+
+		/* In user self-define data case, need update key from udata */
 		udata = op[i]->priv;
 		if (udata && udata->key) {
 			req[i]->key = udata->key;
