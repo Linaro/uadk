@@ -891,18 +891,18 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 
 static int aes_sm4_len_check(struct wd_cipher_msg *msg)
 {
-	if ((msg->mode == WD_CIPHER_CBC_CS1 ||
+	if (msg->alg == WD_CIPHER_AES &&
+	    msg->in_bytes <= AES_BLOCK_SIZE &&
+	    (msg->mode == WD_CIPHER_CBC_CS1 ||
 	     msg->mode == WD_CIPHER_CBC_CS2 ||
-	     msg->mode == WD_CIPHER_CBC_CS3) &&
-	     msg->alg == WD_CIPHER_AES &&
-	     msg->in_bytes <= AES_BLOCK_SIZE) {
+	     msg->mode == WD_CIPHER_CBC_CS3)) {
 		WD_ERR("failed to check input bytes of AES_CBC_CS_X, size = %u\n",
 		       msg->in_bytes);
 		return -WD_EINVAL;
 	}
 
-	if ((msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_ECB) &&
-	     msg->in_bytes & (AES_BLOCK_SIZE - 1)) {
+	if ((msg->in_bytes & (AES_BLOCK_SIZE - 1)) &&
+	    (msg->mode == WD_CIPHER_CBC || msg->mode == WD_CIPHER_ECB)) {
 		WD_ERR("failed to check input bytes of AES or SM4, size = %u\n",
 			msg->in_bytes);
 		return -WD_EINVAL;
