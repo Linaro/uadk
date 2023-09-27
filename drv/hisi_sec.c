@@ -1574,7 +1574,7 @@ static int digest_long_bd_align_check(struct wd_digest_msg *msg)
 	return 0;
 }
 
-static int digest_bd2_zero_packet_check(struct wd_digest_msg *msg)
+static int digest_bd2_type_check(struct wd_digest_msg *msg)
 {
 	enum hash_bd_type type = get_hash_bd_type(msg);
 
@@ -1593,7 +1593,7 @@ static int digest_bd2_zero_packet_check(struct wd_digest_msg *msg)
 	return 0;
 }
 
-static int digest_bd3_zero_packet_check(struct wd_digest_msg *msg)
+static int digest_bd3_type_check(struct wd_digest_msg *msg)
 {
 	enum hash_bd_type type = get_hash_bd_type(msg);
 	/* Long hash first and middle bd */
@@ -1614,28 +1614,23 @@ static int digest_bd3_zero_packet_check(struct wd_digest_msg *msg)
 
 static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 {
-	int ret;
+	int ret = 0;
 
 	/*
 	 * Hardware needs to check the zero byte packet in the block
 	 * and long hash mode. First and middle bd not support 0 size,
 	 * final bd not need to check it.
 	 */
-	if (type == BD_TYPE2 && !msg->in_bytes) {
-		ret = digest_bd2_zero_packet_check(msg);
+	if (unlikely(!msg->in_bytes)) {
+		if (type == BD_TYPE2)
+			ret = digest_bd2_type_check(msg);
+		else if (type == BD_TYPE3)
+			ret = digest_bd3_type_check(msg);
+
 		if (ret)
 			return ret;
-	}
-
-	if (type == BD_TYPE3 && !msg->in_bytes) {
-		ret = digest_bd3_zero_packet_check(msg);
-		if (ret)
-			return ret;
-	}
-
-	if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("digest input length is too long, size = %u\n",
-		       msg->in_bytes);
+	} else if (unlikely(msg->in_bytes > MAX_INPUT_DATA_LEN)) {
+		WD_ERR("digest input length is too long, size = %u\n", msg->in_bytes);
 		return -WD_EINVAL;
 	}
 
