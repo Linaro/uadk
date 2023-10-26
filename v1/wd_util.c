@@ -87,7 +87,7 @@ int wd_init_cookie_pool(struct wd_cookie_pool *pool,
 {
 	__u64 total_size = cookies_size * cookies_num;
 
-	pool->cookies = malloc(total_size + cookies_num);
+	pool->cookies = calloc(1, total_size + cookies_num);
 	if (!pool->cookies)
 		return -WD_ENOMEM;
 
