@@ -30,6 +30,7 @@
 #define MAX_DIGEST_RETRY_CNT	20000000
 #define SEC_SHA1_ALIGN_SZ	64
 #define SEC_SHA512_ALIGN_SZ	128
+#define SEC_GMAC_IV_LEN	16
 
 struct wcrypto_digest_cookie {
 	struct wcrypto_digest_tag tag;
@@ -51,7 +52,9 @@ static __u32 g_digest_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_DIGEST_SM3_LEN, WCRYPTO_DIGEST_MD5_LEN, WCRYPTO_DIGEST_SHA1_LEN,
 	WCRYPTO_DIGEST_SHA256_LEN, WCRYPTO_DIGEST_SHA224_LEN,
 	WCRYPTO_DIGEST_SHA384_LEN, WCRYPTO_DIGEST_SHA512_LEN,
-	WCRYPTO_DIGEST_SHA512_224_LEN, WCRYPTO_DIGEST_SHA512_256_LEN
+	WCRYPTO_DIGEST_SHA512_224_LEN, WCRYPTO_DIGEST_SHA512_256_LEN,
+	WCRYPTO_AES_XCBC_MAC_96_LEN, WCRYPTO_AES_XCBC_PRF_128_LEN,
+	WCRYPTO_AES_CMAC_LEN, WCRYPTO_AES_GMAC_LEN
 };
 
 static __u32 g_digest_mac_full_len[WCRYPTO_MAX_DIGEST_TYPE] = {
@@ -100,6 +103,17 @@ static int create_ctx_para_check(struct wd_queue *q,
 
 	if (strcmp(q->capa.alg, "digest")) {
 		WD_ERR("%s: algorithm mismatching!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (setup->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+		WD_ERR("invalid: the alg %d does not support!\n", setup->alg);
+		return -WD_EINVAL;
+	}
+
+	if (setup->mode == WCRYPTO_DIGEST_NORMAL &&
+	    setup->alg >= WCRYPTO_AES_XCBC_MAC_96) {
+		WD_ERR("invalid: the alg %d does not support normal mode!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
@@ -246,25 +260,64 @@ static void digest_requests_init(struct wcrypto_digest_msg **req,
 		req[i]->in_bytes = op[i]->in_bytes;
 		req[i]->out = op[i]->out;
 		req[i]->out_bytes = op[i]->out_bytes;
+		req[i]->iv = op[i]->iv;
 		c->io_bytes += op[i]->in_bytes;
 	}
+}
+
+static int digest_hmac_key_check(enum wcrypto_digest_alg alg, __u16 key_len)
+{
+	switch (alg) {
+	case WCRYPTO_SM3 ... WCRYPTO_SHA224:
+		if (key_len > (MAX_HMAC_KEY_SIZE >> 1)) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_SHA384 ... WCRYPTO_SHA512_256:
+		break;
+	case WCRYPTO_AES_XCBC_MAC_96:
+	case WCRYPTO_AES_XCBC_PRF_128:
+	case WCRYPTO_AES_CMAC:
+		if (key_len != AES_KEYSIZE_128) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_AES_GMAC:
+		if (key_len != AES_KEYSIZE_128 &&
+		    key_len != AES_KEYSIZE_192 &&
+		    key_len != AES_KEYSIZE_256) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		WD_ERR("failed to check digest key bytes, invalid alg type = %d\n", alg);
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
 }
 
 int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_digest_ctx *ctxt = ctx;
+	int ret;
 
 	if (!ctx || !key) {
 		WD_ERR("%s(): input param err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
-	if ((ctxt->setup.alg <= WCRYPTO_SHA224 && key_len >
-		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
-		key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("%s: input key length err!\n", __func__);
+	if (key_len == 0 || key_len > MAX_HMAC_KEY_SIZE) {
+		WD_ERR("%s: input key length err, key_len = %u!\n", __func__, key_len);
 		return -WD_EINVAL;
 	}
+
+	ret = digest_hmac_key_check(ctxt->setup.alg, key_len);
+	if (ret)
+		return ret;
 
 	ctxt->key_bytes = key_len;
 
@@ -359,6 +412,12 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 		} else {
 			if (unlikely(d_opdata[i]->out_bytes > g_digest_mac_len[alg])) {
 				WD_ERR("failed to check digest mac length!\n");
+				return -WD_EINVAL;
+			}
+			if (d_ctx->setup.alg == WCRYPTO_AES_GMAC &&
+			    d_opdata[i]->iv_bytes != SEC_GMAC_IV_LEN) {
+				WD_ERR("failed to check digest aes_gmac iv length, iv_bytes = %u\n",
+					d_opdata[i]->iv_bytes);
 				return -WD_EINVAL;
 			}
 		}
