@@ -213,6 +213,9 @@ bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
 
+	if (!alg_name)
+		return false;
+
 	while (pnext) {
 		if (!strcmp(alg_name, pnext->alg_name) &&
 		     !strcmp(drv->drv_name, pnext->drv_name)) {
