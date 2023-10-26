@@ -92,6 +92,7 @@ static __u32 get_iv_block_size(int alg, int mode)
 			iv_block_size = CBC_3DES_BLOCK_SIZE;
 		break;
 	case WCRYPTO_CIPHER_XTS:
+	case WCRYPTO_CIPHER_XTS_GB:
 	case WCRYPTO_CIPHER_CFB:
 	case WCRYPTO_CIPHER_CTR:
 		break;
@@ -273,7 +274,7 @@ static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
 	__u16 key_len = length;
 	int ret = WD_SUCCESS;
 
-	if (setup->mode == WCRYPTO_CIPHER_XTS) {
+	if (setup->mode == WCRYPTO_CIPHER_XTS || setup->mode == WCRYPTO_CIPHER_XTS_GB) {
 		if (length & XTS_MODE_KEY_LEN_MASK) {
 			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
 			return -WD_EINVAL;

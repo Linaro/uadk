@@ -37,6 +37,7 @@
 
 #define SEC_HW_TASK_DONE	1
 #define SEC_HW_ICV_ERR		0x2
+#define SEC_SM4_XTS_GB_V3	0x1
 #define SQE_BYTES_NUMS		128
 #define CTR_MODE_LEN_SHIFT	4
 #define WORD_BYTES		4
@@ -699,7 +700,7 @@ static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 	    msg->mode == WCRYPTO_CIPHER_CTR)
 		return WD_SUCCESS;
 
-	if (msg->mode == WCRYPTO_CIPHER_XTS) {
+	if (msg->mode == WCRYPTO_CIPHER_XTS || msg->mode == WCRYPTO_CIPHER_XTS_GB) {
 		if (unlikely(msg->in_bytes < CBC_AES_BLOCK_SIZE)) {
 			WD_ERR("input cipher length is too small!\n");
 			return -WD_EINVAL;
@@ -893,6 +894,10 @@ static int fill_cipher_bd3_mode(struct wcrypto_cipher_msg *msg,
 	case WCRYPTO_CIPHER_XTS:
 		sqe->c_mode = C_MODE_XTS;
 		break;
+	case WCRYPTO_CIPHER_XTS_GB:
+		sqe->c_mode = C_MODE_XTS;
+		sqe->ctr_counter_mode = SEC_SM4_XTS_GB_V3;
+		break;
 	case WCRYPTO_CIPHER_CFB:
 		sqe->c_mode = C_MODE_CFB;
 		break;
@@ -910,8 +915,7 @@ static int fill_cipher_bd3_mode(struct wcrypto_cipher_msg *msg,
 		break;
 	default:
 		WD_ERR("Invalid cipher alg type!\n");
-		ret = -WD_EINVAL;
-		break;
+		return -WD_EINVAL;
 	}
 
 	return ret;
@@ -967,6 +971,7 @@ static int sm4_mode_check(int mode)
 	case WCRYPTO_CIPHER_CFB:
 	case WCRYPTO_CIPHER_CTR:
 	case WCRYPTO_CIPHER_XTS:
+	case WCRYPTO_CIPHER_XTS_GB:
 	case WCRYPTO_CIPHER_CCM:
 	case WCRYPTO_CIPHER_GCM:
 		return WD_SUCCESS;

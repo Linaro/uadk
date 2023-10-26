@@ -38,6 +38,10 @@ enum wcrypto_cipher_alg {
 	WCRYPTO_CIPHER_3DES,
 };
 
+/**
+ * WCRYPTO_CIPHER_XTS for xts specified by IEEE Std 1619-2007.
+ * WCRYPTO_CIPHER_XTS_GB for xts specified by GB/T 17964-2021.
+ */
 enum wcrypto_cipher_mode {
 	WCRYPTO_CIPHER_ECB,
 	WCRYPTO_CIPHER_CBC,
@@ -50,6 +54,7 @@ enum wcrypto_cipher_mode {
 	WCRYPTO_CIPHER_CBC_CS1,
 	WCRYPTO_CIPHER_CBC_CS2,
 	WCRYPTO_CIPHER_CBC_CS3,
+	WCRYPTO_CIPHER_XTS_GB,
 	WCRYPTO_CIPHER_MODE_MAX,
 };
 
