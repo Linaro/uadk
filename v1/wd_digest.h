@@ -36,6 +36,10 @@ enum wcrypto_digest_alg {
 	WCRYPTO_SHA512,
 	WCRYPTO_SHA512_224,
 	WCRYPTO_SHA512_256,
+	WCRYPTO_AES_XCBC_MAC_96,
+	WCRYPTO_AES_XCBC_PRF_128,
+	WCRYPTO_AES_CMAC,
+	WCRYPTO_AES_GMAC,
 	WCRYPTO_MAX_DIGEST_TYPE,
 };
 
@@ -43,12 +47,16 @@ enum wd_digest_mac_len {
 	WCRYPTO_DIGEST_SM3_LEN	= 32,
 	WCRYPTO_DIGEST_MD5_LEN	= 16,
 	WCRYPTO_DIGEST_SHA1_LEN	= 20,
-	WCRYPTO_DIGEST_SHA256_LEN	= 32,
-	WCRYPTO_DIGEST_SHA224_LEN	= 28,
-	WCRYPTO_DIGEST_SHA384_LEN	= 48,
-	WCRYPTO_DIGEST_SHA512_LEN	= 64,
-	WCRYPTO_DIGEST_SHA512_224_LEN	= 28,
-	WCRYPTO_DIGEST_SHA512_256_LEN	= 32
+	WCRYPTO_DIGEST_SHA256_LEN = 32,
+	WCRYPTO_DIGEST_SHA224_LEN = 28,
+	WCRYPTO_DIGEST_SHA384_LEN = 48,
+	WCRYPTO_DIGEST_SHA512_LEN = 64,
+	WCRYPTO_DIGEST_SHA512_224_LEN = 28,
+	WCRYPTO_DIGEST_SHA512_256_LEN = 32,
+	WCRYPTO_AES_XCBC_MAC_96_LEN = 12,
+	WCRYPTO_AES_XCBC_PRF_128_LEN = 16,
+	WCRYPTO_AES_CMAC_LEN = 16,
+	WCRYPTO_AES_GMAC_LEN = 16,
 };
 
 enum wcrypto_digest_mac_full_len {
@@ -93,6 +101,8 @@ struct wcrypto_digest_ctx_setup {
  * @priv:reserved data field segment
  * @status:I/O operation return status
  * @has_next: is there next data block
+ * @iv: initialization verctor data address
+ * @iv_bytes:initialization verctor data size
  */
 struct wcrypto_digest_op_data {
 	void *in;
@@ -102,6 +112,8 @@ struct wcrypto_digest_op_data {
 	void *priv;
 	int status;
 	bool has_next;
+	void *iv;
+	__u32 iv_bytes;
 };
 
 /* Digest message format of Warpdrive */
