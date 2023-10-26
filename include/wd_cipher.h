@@ -50,6 +50,8 @@ enum wd_cipher_alg {
 
 /**
  * wd_cipher_mode - Algorithm mode of cipher
+ * WD_CIPHER_XTS for xts specified by IEEE Std 1619-2007.
+ * WD_CIPHER_XTS_GB for xts specified by GB/T 17964-2021.
  */
 enum wd_cipher_mode {
 	WD_CIPHER_ECB,
@@ -63,6 +65,7 @@ enum wd_cipher_mode {
 	WD_CIPHER_CBC_CS3,
 	WD_CIPHER_CCM,
 	WD_CIPHER_GCM,
+	WD_CIPHER_XTS_GB,
 	WD_CIPHER_MODE_TYPE_MAX,
 };
 

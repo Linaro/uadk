@@ -46,7 +46,8 @@ static const unsigned char des_weak_keys[DES_WEAK_KEY_NUM][DES_KEY_SIZE] = {
 
 static char *wd_cipher_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
 	{"ecb(sm4)", "cbc(sm4)", "ctr(sm4)", "xts(sm4)", "ofb(sm4)",
-	 "cfb(sm4)", "cbc-cs1(sm4)", "cbc-cs2(sm4)", "cbc-cs3(sm4)"},
+	 "cfb(sm4)", "cbc-cs1(sm4)", "cbc-cs2(sm4)", "cbc-cs3(sm4)",
+	 "", "", "xts(sm4)"},
 	{"ecb(aes)", "cbc(aes)", "ctr(aes)", "xts(aes)", "ofb(aes)",
 	 "cfb(aes)", "cbc-cs1(aes)", "cbc-cs2(aes)", "cbc-cs3(aes)"},
 	{"ecb(des)", "cbc(des)",},
@@ -145,7 +146,7 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 	__u32 key_len = length;
 	int ret = 0;
 
-	if (sess->mode == WD_CIPHER_XTS) {
+	if (sess->mode == WD_CIPHER_XTS || sess->mode == WD_CIPHER_XTS_GB) {
 		if (length & XTS_MODE_KEY_LEN_MASK) {
 			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
 			return -WD_EINVAL;
@@ -250,13 +251,13 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	}
 
 	sess->alg_name = wd_cipher_alg_name[setup->alg][setup->mode];
-	sess->alg = setup->alg;
-	sess->mode = setup->mode;
 	ret = wd_drv_alg_support(sess->alg_name, wd_cipher_setting.driver);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
+	sess->alg = setup->alg;
+	sess->mode = setup->mode;
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_cipher_setting.sched.sched_init(

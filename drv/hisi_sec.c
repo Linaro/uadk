@@ -45,6 +45,8 @@
 #define SEC_CALG_OFFSET_V3	4
 #define SEC_AKEY_OFFSET_V3	9
 #define SEC_MAC_OFFSET_V3	4
+#define SEC_SM4_XTS_STD_V3	25
+#define SEC_SM4_XTS_GB_V3	0x1
 #define SEC_AUTH_ALG_OFFSET_V3	15
 #define SEC_SVA_PREFETCH_OFFSET	27
 #define SEC_ENABLE_SVA_PREFETCH	0x1
@@ -927,7 +929,7 @@ static int cipher_len_check(struct wd_cipher_msg *msg)
 	    msg->mode == WD_CIPHER_CTR)
 		return 0;
 
-	if (msg->mode == WD_CIPHER_XTS) {
+	if (msg->mode == WD_CIPHER_XTS || msg->mode == WD_CIPHER_XTS_GB) {
 		if (msg->in_bytes < AES_BLOCK_SIZE) {
 			WD_ERR("input cipher length is too small, size = %u\n",
 			       msg->in_bytes);
@@ -1216,6 +1218,10 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 		break;
 	case WD_CIPHER_XTS:
 		c_mode = C_MODE_XTS;
+		break;
+	case WD_CIPHER_XTS_GB:
+		c_mode = C_MODE_XTS;
+		sqe->auth_mac_key |= (__u32)(SEC_SM4_XTS_GB_V3 << SEC_SM4_XTS_STD_V3);
 		break;
 	case WD_CIPHER_CFB:
 		c_mode = C_MODE_CFB;
