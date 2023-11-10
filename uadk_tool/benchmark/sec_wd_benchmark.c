@@ -733,6 +733,7 @@ static void uninit_wd_queue(void)
 	for (j = 0; j < g_thread_num; j++) {
 		wd_blkpool_destroy(g_thread_queue.bd_res[j].pool);
 		wd_release_queue(g_thread_queue.bd_res[j].queue);
+		free(g_thread_queue.bd_res[j].queue);
 	}
 
 	free(g_thread_queue.bd_res);
