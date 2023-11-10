@@ -344,8 +344,11 @@ static int hpre_uadk_param_parse(thread_data *tddata, struct acc_option *options
 	return 0;
 }
 
-static int init_hpre_ctx_config(char *alg, int subtype, int mode)
+static int init_hpre_ctx_config(struct acc_option *options)
 {
+	int subtype = options->subtype;
+	char *alg = options->algclass;
+	int mode = options->syncmode;
 	struct sched_params param;
 	struct uacce_dev *dev;
 	int max_node;
@@ -398,7 +401,7 @@ static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 		break;
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype!\n");
-		g_sched = NULL;
+		return -EINVAL;
 	}
 	if (!g_sched) {
 		HPRE_TST_PRT("failed to alloc sched!\n");
@@ -432,8 +435,6 @@ static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 	case X448_TYPE:
 		ret = wd_ecc_init(&g_ctx_cfg, g_sched);
 		break;
-	default:
-		ret =  -EINVAL;
 	}
 	if (ret) {
 		HPRE_TST_PRT("failed to get hpre ctx!\n");
@@ -456,7 +457,7 @@ static void uninit_hpre_ctx_config(int subtype)
 	int i;
 
 	/* uninit */
-	switch(subtype) {
+	switch (subtype) {
 	case RSA_TYPE:
 		wd_rsa_uninit();
 		break;
@@ -481,6 +482,59 @@ static void uninit_hpre_ctx_config(int subtype)
 	wd_sched_rr_release(g_sched);
 }
 
+static void uninit_hpre_ctx_config2(int subtype)
+{
+	/* uninit2 */
+	switch (subtype) {
+	case RSA_TYPE:
+		wd_rsa_uninit2();
+		break;
+	case DH_TYPE:
+		wd_dh_uninit2();
+		break;
+	case ECDH_TYPE:
+	case ECDSA_TYPE:
+	case SM2_TYPE:
+	case X25519_TYPE:
+	case X448_TYPE:
+		wd_ecc_uninit2();
+		break;
+	default:
+		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
+		return;
+	}
+}
+
+static int init_hpre_ctx_config2(struct acc_option *options)
+{
+	int subtype = options->subtype;
+	char alg_name[MAX_ALG_NAME];
+	int ret;
+
+	ret = get_alg_name(options->algtype, alg_name);
+	if (ret) {
+		HPRE_TST_PRT("failed to get valid alg name!\n");
+		return -EINVAL;
+	}
+
+	/* init2 */
+	switch (subtype) {
+	case RSA_TYPE:
+		return wd_rsa_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	case DH_TYPE:
+		return wd_dh_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	case ECDH_TYPE:
+	case ECDSA_TYPE:
+	case SM2_TYPE:
+	case X25519_TYPE:
+	case X448_TYPE:
+		return wd_ecc_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	default:
+		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
+		return -EINVAL;
+	}
+}
+
 /*-------------------------------uadk benchmark main code-------------------------------------*/
 
 void *hpre_uadk_poll(void *data)
@@ -498,7 +552,7 @@ void *hpre_uadk_poll(void *data)
 	if (id > g_ctxnum)
 		return NULL;
 
-	switch(pdata->subtype) {
+	switch (pdata->subtype) {
 	case RSA_TYPE:
 		uadk_poll_ctx = wd_rsa_poll_ctx;
 		break;
@@ -522,7 +576,56 @@ void *hpre_uadk_poll(void *data)
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
-			HPRE_TST_PRT("poll ret: %u!\n", ret);
+			HPRE_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+
+		if (get_run_state() == 0)
+			last_time--;
+	}
+
+recv_error:
+	add_recv_data(count, pdata->keybits >> 3);
+
+	return NULL;
+}
+
+void *hpre_uadk_poll2(void *data)
+{
+	typedef int (*poll_ctx)(__u32 expt, __u32 *count);
+	thread_data *pdata = (thread_data *)data;
+	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	poll_ctx uadk_poll = NULL;
+	u32 last_time = 2; // poll need one more recv time
+	u32 count = 0;
+	u32 recv = 0;
+	int  ret;
+
+	switch (pdata->subtype) {
+	case RSA_TYPE:
+		uadk_poll = wd_rsa_poll;
+		break;
+	case DH_TYPE:
+		uadk_poll = wd_dh_poll;
+		break;
+	case ECDH_TYPE:
+	case ECDSA_TYPE:
+	case SM2_TYPE:
+	case X25519_TYPE:
+	case X448_TYPE:
+		uadk_poll = wd_ecc_poll;
+		break;
+	default:
+		HPRE_TST_PRT("<<<<<<async poll interface is NULL!\n");
+		return NULL;
+	}
+
+	while (last_time) {
+		ret = uadk_poll(expt, &recv);
+		count += recv;
+		recv = 0;
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			HPRE_TST_PRT("poll ret: %d!\n", ret);
 			goto recv_error;
 		}
 
@@ -2451,7 +2554,10 @@ static int hpre_uadk_async_threads(struct acc_option *options)
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].td_id = i;
 		/* poll thread */
-		ret = pthread_create(&pollid[i], NULL, hpre_uadk_poll, &threads_args[i]);
+		if (options->inittype == INIT2_TYPE)
+			ret = pthread_create(&pollid[i], NULL, hpre_uadk_poll2, &threads_args[i]);
+		else
+			ret = pthread_create(&pollid[i], NULL, hpre_uadk_poll, &threads_args[i]);
 		if (ret) {
 			HPRE_TST_PRT("Create poll thread fail!\n");
 			goto async_error;
@@ -2505,10 +2611,14 @@ int hpre_uadk_benchmark(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ret = init_hpre_ctx_config(options->algclass, options->subtype,
-					  options->syncmode);
-	if (ret)
+	if (options->inittype == INIT2_TYPE)
+		ret = init_hpre_ctx_config2(options);
+	else
+		ret = init_hpre_ctx_config(options);
+	if (ret) {
+		HPRE_TST_PRT("failed to init %s ctx, ret = %d!\n", options->algclass, ret);
 		return ret;
+	}
 
 	get_pid_cpu_time(&ptime);
 	time_start(options->times);
@@ -2520,7 +2630,10 @@ int hpre_uadk_benchmark(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	uninit_hpre_ctx_config(options->subtype);
+	if (options->inittype == INIT2_TYPE)
+		uninit_hpre_ctx_config2(options->subtype);
+	else
+		uninit_hpre_ctx_config(options->subtype);
 
 	return 0;
 }
