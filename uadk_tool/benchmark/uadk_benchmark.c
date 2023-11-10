@@ -122,6 +122,7 @@ static struct acc_alg_item alg_options[] = {
 	{"sm4-128-ofb", SM4_128_OFB},
 	{"sm4-128-cfb", SM4_128_CFB},
 	{"sm4-128-xts", SM4_128_XTS},
+	{"sm4-128-xts-gb", SM4_128_XTS_GB},
 	{"aes-128-ccm", AES_128_CCM},
 	{"aes-192-ccm", AES_192_CCM},
 	{"aes-256-ccm", AES_256_CCM},
@@ -210,6 +211,7 @@ static struct acc_alg_item alg_name_options[] = {
 	{"ofb(sm4)", SM4_128_OFB},
 	{"cfb(sm4)", SM4_128_CFB},
 	{"xts(sm4)", SM4_128_XTS},
+	{"xts(sm4)", SM4_128_XTS_GB},
 	{"ccm(aes)", AES_128_CCM},
 	{"ccm(aes)", AES_192_CCM},
 	{"ccm(aes)", AES_256_CCM},
@@ -482,7 +484,7 @@ static void parse_alg_param(struct acc_option *option)
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "ecdsa");
 			option->acctype = HPRE_TYPE;
 			option->subtype = ECDSA_TYPE;
-		} else if (option->algtype <= SM4_128_XTS) {
+		} else if (option->algtype <= SM4_128_XTS_GB) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "cipher");
 			option->acctype = SEC_TYPE;
 			option->subtype = CIPHER_TYPE;

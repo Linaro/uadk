@@ -370,6 +370,12 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		mode = WD_CIPHER_XTS;
 		alg = WD_CIPHER_SM4;
 		break;
+	case SM4_128_XTS_GB:
+		keysize = 32;
+		ivsize = 16;
+		mode = WD_CIPHER_XTS_GB;
+		alg = WD_CIPHER_SM4;
+		break;
 	case AES_128_CCM:
 		keysize = 16;
 		ivsize = 16;

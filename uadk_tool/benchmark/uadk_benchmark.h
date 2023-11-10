@@ -173,6 +173,7 @@ enum test_alg {
 	SM4_128_OFB,
 	SM4_128_CFB,
 	SM4_128_XTS,
+	SM4_128_XTS_GB,
 	AES_128_CCM, // aead
 	AES_192_CCM,
 	AES_256_CCM,
