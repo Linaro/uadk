@@ -428,7 +428,7 @@ static int sec_soft_cipher_jobfunc(void *args)
 	u32 jid = jdata->jobid;
 	struct bd_pool *soft_pool;
 	u8 *priv_iv, *priv_key;
-	int ret, outl, i = 0;
+	int ret, outl, i;
 	EVP_CIPHER_CTX *ctx;
 	ASYNC_JOB *currjob;
 	u32 count = 0;
@@ -509,9 +509,13 @@ static int sec_soft_aead_jobfunc(void *args)
 	u32 jid = jdata->jobid;
 	struct bd_pool *soft_pool;
 	u8 *priv_iv, *priv_key;
-	int ret, outl, i = 0;
+	int ret, outl, i;
 	EVP_CIPHER_CTX *ctx;
 	ASYNC_JOB *currjob;
+	/* 
+	 * these length parameters specify the default
+	 * length according to the GCM/CCM algorithm
+	 */
 	u8 faketag[16] = {0xcc};
 	u8 aad[13] = {0xcc};
 	u8 tag[12] = {0};
@@ -615,7 +619,7 @@ static int sec_soft_digest_jobfunc(void *args)
 	u32 ssl_size = 0;
 	u8 *priv_key, *src;
 	u32 count = 0;
-	int i = 0;
+	int i;
 
 	currjob = ASYNC_get_current_job();
 	if (!currjob) {
@@ -821,7 +825,7 @@ static void *sec_soft_cipher_sync(void *arg)
 	EVP_CIPHER_CTX *ctx = NULL;
 	u32 count = 0;
 	u8 *src, *dst;
-	int ret, i = 0;
+	int ret, i;
 	int outl = 0;
 
 	if (!evp_cipher) {
@@ -901,7 +905,7 @@ static void *sec_soft_aead_sync(void *arg)
 	u8 tag[12] = {0};
 	u32 count = 0;
 	u8 *src, *dst;
-	int ret, i = 0;
+	int ret, i;
 	int outl = 0;
 
 	if (!evp_cipher) {
@@ -1006,7 +1010,7 @@ static void *sec_soft_digest_sync(void *arg)
 	u8 *priv_key, *src;
 	u32 ssl_size = 0;
 	u32 count = 0;
-	int i = 0;
+	int i;
 
 	if (!evp_cipher && !evp_md) {
 		SSL_TST_PRT("Error: openssl not support!\n");

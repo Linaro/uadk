@@ -1206,11 +1206,6 @@ key_release:
 
 static void rsa_async_cb(void *req_t)
 {
-	//struct wd_rsa_req *req = req_t;
-	//struct rsa_async_tag *tag = req->cb_param;
-	//enum wd_rsa_op_type   	 op_type = req->op_type;
-	//handle_t h_sess = tag->sess;
-
 	return;
 }
 
@@ -1517,11 +1512,6 @@ ag_error:
 
 static void dh_async_cb(void *req_t)
 {
-	//struct wd_dh_req *req = req_t;
-	//struct rsa_async_tag *tag = req->cb_param;
-	//enum wd_rsa_op_type op_type = req->op_type;
-	//handle_t h_sess = tag->sess;
-
 	return;
 }
 
@@ -2112,11 +2102,6 @@ msg_release:
 
 static void ecc_async_cb(void *req_t)
 {
-	//struct wd_ecc_req *req = req_t;
-	//struct rsa_async_tag *tag = req->cb_param;
-	//enum wd_rsa_op_type op_type = req->op_type;
-	//handle_t h_sess = tag->sess;
-
 	return;
 }
 

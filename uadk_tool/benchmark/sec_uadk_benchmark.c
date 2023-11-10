@@ -62,7 +62,6 @@ static void *aead_async_cb(struct wd_aead_req *req, void *data)
 
 static void *digest_async_cb(void *data)
 {
-	// struct wd_digest_req *req = (struct wd_digest_req *)data;
 	return NULL;
 }
 
@@ -648,7 +647,7 @@ static void *sec_uadk_cipher_async(void *arg)
 	int try_cnt = 0;
 	handle_t h_sess;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -720,7 +719,7 @@ static void *sec_uadk_aead_async(void *arg)
 	handle_t h_sess;
 	u32 auth_size = 16;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -819,7 +818,7 @@ static void *sec_uadk_digest_async(void *arg)
 	int try_cnt = 0;
 	handle_t h_sess;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -888,7 +887,7 @@ static void *sec_uadk_cipher_sync(void *arg)
 	u8 *priv_iv, *priv_key;
 	handle_t h_sess;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -950,7 +949,7 @@ static void *sec_uadk_aead_sync(void *arg)
 	handle_t h_sess;
 	u32 auth_size = 16;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -1040,7 +1039,7 @@ static void *sec_uadk_digest_sync(void *arg)
 	u8 *priv_iv, *priv_key;
 	handle_t h_sess;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;

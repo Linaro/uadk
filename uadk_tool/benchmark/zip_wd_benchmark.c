@@ -509,7 +509,7 @@ static void *zip_wd_blk_lz77_sync_run(void *arg)
 	u32 first_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -617,7 +617,7 @@ static void *zip_wd_stm_lz77_sync_run(void *arg)
 	u32 first_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -726,7 +726,7 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 	u32 out_len = 0;
 	u32 count = 0;
 	u32 try_cnt = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -847,7 +847,7 @@ static void *zip_wd_blk_sync_run(void *arg)
 	struct wd_bd *bd_pool;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -920,7 +920,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 	struct wd_bd *bd_pool;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -999,7 +999,7 @@ static void *zip_wd_blk_async_run(void *arg)
 	int try_cnt = 0;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
