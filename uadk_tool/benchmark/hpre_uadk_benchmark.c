@@ -1238,7 +1238,7 @@ static void *rsa_uadk_async_run(void *arg)
 	key_info = malloc(key_size * 16);
 	if (!key_info) {
 		HPRE_TST_PRT("failed to alloc RSA key info!\n");
-		return NULL;
+		goto h_sess_release;
 	}
 	memset(key_info, 0, key_size * 16);
 
@@ -1251,13 +1251,20 @@ static void *rsa_uadk_async_run(void *arg)
 	rsa_key_in->p = rsa_key_in->e + key_size;
 	rsa_key_in->q = rsa_key_in->p + (key_size >> 1);
 
-	ret = get_rsa_key_from_sample(h_sess,		key_info, key_info,
+	ret = get_rsa_key_from_sample(h_sess, key_info, key_info,
 					pdata->keybits, pdata->kmode);
 	if (ret) {
 		HPRE_TST_PRT("failed to get sample key data!\n");
-		goto sample_release;
+		goto key_in_release;
 	}
 
+	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
+	if (!tag) {
+		HPRE_TST_PRT("failed to malloc rsa tag!\n");
+		goto key_in_release;
+	}
+
+	req.cb = rsa_async_cb;
 	req.src_bytes = key_size;
 	req.dst_bytes = key_size;
 	req.op_type = pdata->optype;
@@ -1265,13 +1272,13 @@ static void *rsa_uadk_async_run(void *arg)
 		ret = get_hpre_keygen_opdata(h_sess, &req);
 		if (ret){
 			HPRE_TST_PRT("failed to fill rsa key gen req!\n");
-			goto sample_release;
+			goto tag_release;
 		}
 	} else {
 		req.src = malloc(key_size);
 		if (!req.src) {
 			HPRE_TST_PRT("failed to alloc rsa in buffer!\n");
-			goto sample_release;
+			goto tag_release;
 		}
 		memset(req.src, 0, req.src_bytes);
                 memcpy(req.src + key_size - sizeof(rsa_m), rsa_m, sizeof(rsa_m));
@@ -1281,13 +1288,6 @@ static void *rsa_uadk_async_run(void *arg)
 			goto src_release;
 		}
 	}
-
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
-	if (!tag) {
-		HPRE_TST_PRT("failed to malloc rsa tag!\n");
-		goto dst_release;
-	}
-	req.cb = rsa_async_cb;
 
 	do {
 		if (get_run_state() == 0)
@@ -1309,7 +1309,7 @@ static void *rsa_uadk_async_run(void *arg)
 			continue;
 		} else if (ret) {
 			HPRE_TST_PRT("failed to do rsa async task!\n");
-			goto tag_release;
+			break;
 		}
 		count++;
 	} while(true);
@@ -1322,19 +1322,18 @@ static void *rsa_uadk_async_run(void *arg)
 		req.dst = NULL;
 	}
 
-tag_release:
-	free(tag);
-dst_release:
 	if (req.dst)
 		free(req.dst);
 src_release:
 	if (req.src)
 		free(req.src);
-sample_release:
+tag_release:
+	free(tag);
+key_in_release:
 	free(rsa_key_in);
 key_release:
 	free(key_info);
-
+h_sess_release:
 	wd_rsa_free_sess(h_sess);
 	add_send_complete();
 
@@ -1542,7 +1541,7 @@ static void *dh_uadk_async_run(void *arg)
 	ret = get_dh_opdata_param(h_sess, &req, &param, key_size);
 	if (ret){
 		HPRE_TST_PRT("failed to fill dh key gen req!\n");
-		goto param_release;
+		goto sess_release;
 	}
 
 	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
@@ -1572,12 +1571,11 @@ static void *dh_uadk_async_run(void *arg)
 			continue;
 		} else if (ret) {
 			HPRE_TST_PRT("failed to do DH async task!\n");
-			goto tag_release;
+			break;
 		}
 		count++;
 	} while(true);
 
-tag_release:
 	free(tag);
 param_release:
 	free(req.x_p);
@@ -2200,7 +2198,7 @@ static void *ecc_uadk_async_run(void *arg)
 	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
 	if (!tag) {
 		HPRE_TST_PRT("failed to malloc rsa tag!\n");
-		goto  src_release;
+		goto src_release;
 	}
 	req.cb = ecc_async_cb;
 
@@ -2224,12 +2222,11 @@ static void *ecc_uadk_async_run(void *arg)
 			continue;
 		} else if (ret) {
 			HPRE_TST_PRT("failed to do ECC async task!\n");
-			goto tag_release;
+			break;
 		}
 		count++;
 	} while(true);
 
-tag_release:
 	free(tag);
 src_release:
 	if (req.src)
