@@ -323,9 +323,8 @@ static int init_zip_wd_queue(struct acc_option *options)
 	memset(&blksetup, 0, sizeof(blksetup));
 	outsize = ALIGN(outsize, ALIGN_SIZE);
 	blksetup.block_size = outsize;
-	blksetup.block_num = MAX_BLOCK_NM;
+	blksetup.block_num = MAX_POOL_LENTH_COMP * 3;
 	blksetup.align_size = ALIGN_SIZE;
-	// ZIP_TST_PRT("create pool memory: %d KB\n", (MAX_BLOCK_NM * blksetup.block_size) >> 10);
 
 	for (j = 0; j < g_thread_num; j++) {
 		g_thread_queue.bd_res[j].pool = wd_blkpool_create(g_thread_queue.bd_res[j].queue, &blksetup);
@@ -832,14 +831,14 @@ static void *zip_wd_blk_sync_run(void *arg)
 
 static void *zip_wd_stm_sync_run(void *arg)
 {
+	u32 in_len, out_len, total_out, count = 0;
 	thread_data *pdata = (thread_data *)arg;
 	struct wcrypto_comp_ctx_setup comp_setup;
 	struct wcrypto_comp_op_data opdata;
 	struct wcrypto_comp_ctx *ctx;
 	struct wd_queue *queue;
 	struct wd_bd *bd_pool;
-	u32 out_len = 0;
-	u32 count = 0;
+	void *src, *dst;
 	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
@@ -867,34 +866,46 @@ static void *zip_wd_stm_sync_run(void *arg)
 	if (!ctx)
 		return NULL;
 
-	opdata.stream_pos = WCRYPTO_COMP_STREAM_NEW;
 	opdata.alg_type = pdata->alg;
 	opdata.priv = NULL;
 	opdata.status = 0;
-	if (pdata->optype == WCRYPTO_INFLATE)
-		opdata.flush = WCRYPTO_SYNC_FLUSH;
-	else
-		opdata.flush = WCRYPTO_FINISH;
-
-	out_len = bd_pool[0].dst_len;
 
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
-		opdata.in = bd_pool[i].src;
-		opdata.out = bd_pool[i].dst;
-		opdata.in_len = bd_pool[i].src_len;
-		opdata.avail_out = out_len;
+		src = bd_pool[i].src;
+		dst = bd_pool[i].dst;
+		in_len = bd_pool[i].src_len;
+		out_len = g_pktlen * DECOMP_LEN_RATE;
+		total_out = 0;
+		opdata.stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
-		ret = wcrypto_do_comp(ctx, &opdata, NULL);
-		if (ret || opdata.status == WCRYPTO_DECOMP_END_NOSPACE ||
-		     opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
-			ZIP_TST_PRT("wd comp, invalid or incomplete data! "
-			       "ret(%d), req.status(%u)\n", ret, opdata.status);
-			break;
-		}
+		do {
+			opdata.in_len = in_len > CHUNK_SIZE ? CHUNK_SIZE : in_len;
+			opdata.avail_out = out_len > 2 * CHUNK_SIZE ? 2 * CHUNK_SIZE : out_len;
+			opdata.in = src;
+			opdata.out = dst;
+			opdata.flush = in_len ? WCRYPTO_SYNC_FLUSH : WCRYPTO_FINISH;
+
+			ret = wcrypto_do_comp(ctx, &opdata, NULL);
+			if (ret || opdata.status == WCRYPTO_DECOMP_END_NOSPACE ||
+			    opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
+				ZIP_TST_PRT("wd comp, invalid or incomplete data! "
+				"ret(%d), req.status(%u)\n", ret, opdata.status);
+				break;
+			}
+
+			opdata.stream_pos = WCRYPTO_COMP_STREAM_OLD;
+
+			src += opdata.consumed;
+			in_len -= opdata.consumed;
+			dst += opdata.produced;
+			out_len -= opdata.produced;
+			total_out += opdata.produced;
+		} while (in_len > 0);
 
 		count++;
-		bd_pool[i].dst_len = opdata.produced;
+		bd_pool[i].dst_len = total_out;
+
 		if (get_run_state() == 0)
 			break;
 	}
