@@ -429,7 +429,7 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 	ops = perfops / option->times;
 	cpu_rate = (double)ptime / option->times;
 	ACC_TST_PRT("algname:	length:		perf:		iops:		CPU_rate:\n"
-			"%s	%-2uBytes 	%.1fKB/s 	%.1fKops 	%.2f%%\n",
+			"%s	%-2uBytes	%.1fKB/s	%.1fKops	%.2f%%\n",
 			palgname, option->pktlen, perfermance, ops, cpu_rate);
 }
 
@@ -572,7 +572,7 @@ int acc_default_case(struct acc_option *option)
 	option->multis = 1;
 	option->ctxnums = 2;
 
-	return	 acc_benchmark_run(option);
+	return acc_benchmark_run(option);
 }
 
 static void print_help(void)
@@ -634,21 +634,23 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 	int c;
 
 	static struct option long_options[] = {
-		{"alg",    required_argument, 0,  1},
-		{"mode",    required_argument, 0,  2},
-		{"opt",    required_argument, 0,  3},
-		{"sync",      no_argument,       0,4},
-		{"async",     no_argument,       0,5},
-		{"pktlen",    required_argument, 0,  6},
-		{"seconds",    required_argument, 0,  7},
-		{"thread",     required_argument, 0,  8},
-		{"multi",     required_argument, 0,  9},
-		{"ctxnum",    required_argument, 0,  10},
-		{"prefetch",     no_argument,      0,11},
-		{"engine",    required_argument,    0,12},
-		{"alglist",      no_argument,    0,  13},
-		{"latency",      no_argument,    0,  14},
-		{"help",      no_argument,       0,  15},
+		{"help",      no_argument,       0, 0},
+		{"alg",       required_argument, 0, 1},
+		{"mode",      required_argument, 0, 2},
+		{"opt",       required_argument, 0, 3},
+		{"sync",      no_argument,       0, 4},
+		{"async",     no_argument,       0, 5},
+		{"pktlen",    required_argument, 0, 6},
+		{"seconds",   required_argument, 0, 7},
+		{"thread",    required_argument, 0, 8},
+		{"multi",     required_argument, 0, 9},
+		{"ctxnum",    required_argument, 0, 10},
+		{"prefetch",  no_argument,       0, 11},
+		{"engine",    required_argument, 0, 12},
+		{"alglist",   no_argument,       0, 13},
+		{"latency",   no_argument,       0, 14},
+		{"winsize",   required_argument, 0, 15},
+		{"complevel", required_argument, 0, 16},
 		{0, 0, 0, 0}
 	};
 
@@ -658,6 +660,9 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 
 		switch (c) {
+		case 0:
+			print_help();
+			goto to_exit;
 		case 1:
 			option->algtype = get_alg_type(optarg);
 			strcpy(option->algname, optarg);
@@ -702,8 +707,11 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			option->latency = true;
 			break;
 		case 15:
-			print_help();
-			goto to_exit;
+			option->winsize = strtol(optarg, NULL, 0);
+			break;
+		case 16:
+			option->complevel = strtol(optarg, NULL, 0);
+			break;
 		default:
 			ACC_TST_PRT("bad input test parameter!\n");
 			print_help();
