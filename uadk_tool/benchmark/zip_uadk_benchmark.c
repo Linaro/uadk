@@ -278,10 +278,40 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	return 0;
 }
 
+static void uninit_ctx_config2(void)
+{
+	/* uninit2 */
+	wd_comp_uninit2();
+}
+
+static int init_ctx_config2(struct acc_option *options)
+{
+	char alg_name[64];
+	int ret = 0;
+
+	ret = get_alg_name(options->algtype, alg_name);
+	if (ret) {
+		ZIP_TST_PRT("failed to get valid alg name!\n");
+		return -EINVAL;
+	}
+
+	/* init */
+	ret = wd_comp_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	if (ret) {
+		ZIP_TST_PRT("Fail to do comp init2!\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static struct sched_params param;
-static int init_ctx_config(char *alg, int mode, int optype)
+static int init_ctx_config(struct acc_option *options)
 {
 	struct uacce_dev_list *list;
+	char *alg = options->algclass;
+	int optype = options->optype;
+	int mode = options->syncmode;
 	int i, max_node;
 	int ret = 0;
 
@@ -511,7 +541,34 @@ static void *zip_uadk_poll(void *data)
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
-			ZIP_TST_PRT("poll ret: %u!\n", ret);
+			ZIP_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+
+		if (get_run_state() == 0)
+			last_time--;
+	}
+
+recv_error:
+	add_recv_data(count, g_pktlen);
+
+	return NULL;
+}
+
+static void *zip_uadk_poll2(void *data)
+{
+	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	u32 last_time = 2; // poll need one more recv time
+	u32 count = 0;
+	u32 recv = 0;
+	int  ret;
+
+	while (last_time) {
+		ret = wd_comp_poll(expt, &recv);
+		count += recv;
+		recv = 0;
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			ZIP_TST_PRT("poll ret: %d!\n", ret);
 			goto recv_error;
 		}
 
@@ -1103,7 +1160,10 @@ static int zip_uadk_async_threads(struct acc_option *options)
 	for (i = 0; i < g_ctxnum; i++) {
 		threads_args[i].td_id = i;
 		/* poll thread */
-		ret = pthread_create(&pollid[i], NULL, zip_uadk_poll, &threads_args[i]);
+		if (options->inittype == INIT2_TYPE)
+			ret = pthread_create(&pollid[i], NULL, zip_uadk_poll2, &threads_args[i]);
+		else
+			ret = pthread_create(&pollid[i], NULL, zip_uadk_poll, &threads_args[i]);
 		if (ret) {
 			ZIP_TST_PRT("Create poll thread fail!\n");
 			goto async_error;
@@ -1160,7 +1220,10 @@ int zip_uadk_benchmark(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ret = init_ctx_config(options->algclass, options->syncmode, options->optype);
+	if (options->inittype == INIT2_TYPE)
+		ret = init_ctx_config2(options);
+	else
+		ret = init_ctx_config(options);
 	if (ret)
 		return ret;
 
@@ -1187,7 +1250,10 @@ int zip_uadk_benchmark(struct acc_option *options)
 		return ret;
 
 	free_uadk_bd_pool();
-	uninit_ctx_config();
+	if (options->inittype == INIT2_TYPE)
+		uninit_ctx_config2();
+	else
+		uninit_ctx_config();
 
 	return 0;
 }
