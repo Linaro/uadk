@@ -13,7 +13,7 @@
 #define ZIP_FILE			"./zip"
 #define COMP_LEN_RATE			2
 #define DECOMP_LEN_RATE			2
-#define MAX_POOL_LENTH_COMP		512
+#define MAX_POOL_LENTH_COMP		1
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define CHUNK_SIZE			(128 * 1024)
 struct uadk_bd {
@@ -912,7 +912,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 		creq.src_len = uadk_pool->bds[i].src_len;
 		creq.dst_len = out_len;
 
-		ret = wd_do_comp_strm(h_sess, &creq);
+		ret = wd_do_comp_sync2(h_sess, &creq);
 		if (ret < 0 || creq.status == WD_IN_EPARA) {
 			ZIP_TST_PRT("wd comp, invalid or incomplete data! "
 			       "ret(%d), req.status(%u)\n", ret, creq.status);
