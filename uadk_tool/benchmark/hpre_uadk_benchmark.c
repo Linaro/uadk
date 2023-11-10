@@ -1316,16 +1316,6 @@ static void *rsa_uadk_async_run(void *arg)
 
 	/* clean output buffer remainings in the last time operation */
 	if (req.op_type == WD_RSA_GENKEY) {
-		char *data;
-		int len;
-
-		len = wd_rsa_kg_out_data((void *)req.dst, &data);
-		if (len < 0) {
-			HPRE_TST_PRT("failed to wd rsa get key gen out data!\n");
-			goto tag_release;
-		}
-		memset(data, 0, len);
-
 		wd_rsa_del_kg_in(h_sess, req.src);
 		req.src = NULL;
 		wd_rsa_del_kg_out(h_sess, req.dst);
