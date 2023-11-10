@@ -20,6 +20,7 @@
 #define DECOMP_LEN_RATE		2
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define MAX_POOL_LENTH_COMP	512
+#define CHUNK_SIZE		(128 * 1024)
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -74,18 +75,6 @@ struct zip_file_head {
 
 static unsigned int g_thread_num;
 static unsigned int g_pktlen;
-
-#ifndef ZLIB_FSE
-static ZSTD_CCtx* zstd_soft_fse_init(unsigned    int level)
-{
-	return NULL;
-}
-
-static int zstd_soft_fse(void *Ftuple, ZSTD_inBuffer *input, ZSTD_outBuffer *output, ZSTD_CCtx * cctx, ZSTD_EndDirective cmode)
-{
-	return input->size;
-}
-#endif
 
 static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 {
@@ -430,26 +419,12 @@ static void zip_lz77_async_cb(const void *message, void *data)
 {
 	const struct wcrypto_comp_msg *cbmsg = message;
 	struct zip_async_tag *tag = data;
-	ZSTD_CCtx *cctx = tag->cctx;
-	ZSTD_inBuffer zstd_input;
-	ZSTD_outBuffer zstd_output;
-	struct wd_bd *bd_pool;
 	int td_id = tag->td_id;
+	struct wd_bd *bd_pool;
 	int idx = tag->bd_idx;
-	size_t fse_size;
 
 	bd_pool = g_thread_queue.bd_res[td_id].bds;
 	bd_pool[idx].dst_len = cbmsg->produced;
-
-	zstd_input.src = cbmsg->src;
-	zstd_input.size = cbmsg->in_size;
-	zstd_input.pos = 0;
-	zstd_output.dst = bd_pool[idx].dst;
-	zstd_output.size = tag->cm_len;
-	zstd_output.pos = 0;
-	fse_size = zstd_soft_fse(tag->priv, &zstd_input, &zstd_output, cctx, ZSTD_e_end);
-
-	bd_pool[idx].dst_len = fse_size;
 }
 
 static void zip_async_cb(const void *message, void *data)
@@ -501,18 +476,12 @@ recv_error:
 static void *zip_wd_blk_lz77_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
-	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
-	ZSTD_inBuffer zstd_input = {0};
-	ZSTD_outBuffer zstd_output = {0};
 	COMP_TUPLE_TAG *ftuple = NULL;
 	struct wcrypto_comp_ctx_setup comp_setup;
 	struct wcrypto_comp_op_data opdata;
 	struct wcrypto_comp_ctx *ctx;
 	struct wd_queue *queue;
 	struct wd_bd *bd_pool;
-	u8 *hw_buff_out = NULL;
-	size_t fse_size;
-	u32 first_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
 	int ret, i;
@@ -557,15 +526,10 @@ static void *zip_wd_blk_lz77_sync_run(void *arg)
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
-	if (!hw_buff_out)
-		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
-
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
-		opdata.out = &hw_buff_out[i]; //temp out
+		opdata.out = bd_pool[i].dst;
 		opdata.in_len = bd_pool[i].src_len;
 		opdata.avail_out = out_len;
 		opdata.priv = &ftuple[i];
@@ -576,32 +540,17 @@ static void *zip_wd_blk_lz77_sync_run(void *arg)
 			break;
 
 		count++;
-		zstd_input.src = opdata.in;
-		zstd_input.size = opdata.in_len;
-		zstd_input.pos = 0;
-		zstd_output.dst = bd_pool[i].dst;
-		zstd_output.size = out_len;
-		zstd_output.pos = 0;
-		fse_size = zstd_soft_fse(opdata.priv, &zstd_input, &zstd_output, cctx, ZSTD_e_end);
 
-		bd_pool[i].dst_len = fse_size;
-		if (unlikely(i == 0))
-			first_len = fse_size;
 		if (get_run_state() == 0)
 			break;
 	}
 
-hw_buff_err:
-	free(hw_buff_out);
-fse_err:
 	free(ftuple);
+fse_err:
 	wcrypto_del_comp_ctx(ctx);
 
 	cal_avg_latency(count);
-	if (pdata->optype == WCRYPTO_DEFLATE)
-		add_recv_data(count, g_pktlen);
-	else
-		add_recv_data(count, first_len);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }
@@ -609,18 +558,14 @@ fse_err:
 static void *zip_wd_stm_lz77_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
-	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
-	ZSTD_inBuffer zstd_input = {0};
-	ZSTD_outBuffer zstd_output = {0};
 	COMP_TUPLE_TAG *ftuple = NULL;
 	struct wcrypto_comp_ctx_setup comp_setup;
 	struct wcrypto_comp_op_data opdata;
 	struct wcrypto_comp_ctx *ctx;
 	struct wd_queue *queue;
 	struct wd_bd *bd_pool;
-	u8 *hw_buff_out = NULL;
-	size_t fse_size;
-	u32 first_len = 0;
+	void *src, *dst;
+	u32 in_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
 	int ret, i;
@@ -659,60 +604,48 @@ static void *zip_wd_stm_lz77_sync_run(void *arg)
 	else
 		opdata.flush = WCRYPTO_FINISH;
 
-	out_len = bd_pool[0].dst_len;
-
 	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
-	if (!hw_buff_out)
-		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
-
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
-		opdata.in = bd_pool[i].src;
-		opdata.out = &hw_buff_out[i]; //temp out
-		opdata.in_len = bd_pool[i].src_len;
-		opdata.avail_out = out_len;
-		opdata.priv = &ftuple[i];
+		src = bd_pool[i].src;
+		dst = bd_pool[i].dst;
+		in_len = bd_pool[i].src_len;
+		out_len = bd_pool[i].dst_len;
 
-		ret = wcrypto_do_comp(ctx, &opdata, NULL);
-		if (ret || opdata.status == WCRYPTO_DECOMP_END_NOSPACE ||
-		     opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
-			ZIP_TST_PRT("wd comp, invalid or incomplete data! "
-			       "ret(%d), req.status(%u)\n", ret, opdata.status);
-			break;
+		while (in_len > 0) {
+			opdata.in_len = in_len > CHUNK_SIZE ? CHUNK_SIZE : in_len;
+			opdata.avail_out = out_len > 2 * CHUNK_SIZE ? 2 * CHUNK_SIZE : out_len;
+			opdata.in = src;
+			opdata.out = dst;
+			opdata.priv = &ftuple[i];
+
+			ret = wcrypto_do_comp(ctx, &opdata, NULL);
+			if (ret || opdata.status == WCRYPTO_DECOMP_END_NOSPACE ||
+				opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
+				ZIP_TST_PRT("wd comp, invalid or incomplete data! "
+					"ret(%d), req.status(%u)\n", ret, opdata.status);
+				break;
+			}
+			src += CHUNK_SIZE;
+			in_len -= CHUNK_SIZE;
+			dst += 2 * CHUNK_SIZE;
+			out_len -= 2 * CHUNK_SIZE;
 		}
-
 		count++;
-		zstd_input.src = opdata.in;
-		zstd_input.size = opdata.in_len;
-		zstd_input.pos = 0;
-		zstd_output.dst = opdata.out;
-		zstd_output.size = out_len;
-		zstd_output.pos = 0;
-		fse_size = zstd_soft_fse(opdata.priv, &zstd_input, &zstd_output, cctx, ZSTD_e_end);
 
-		bd_pool[i].dst_len = fse_size;
-		if (unlikely(i == 0))
-			first_len = fse_size;
 		if (get_run_state() == 0)
 			break;
 	}
 
-hw_buff_err:
-	free(hw_buff_out);
-fse_err:
 	free(ftuple);
+fse_err:
 	wcrypto_del_comp_ctx(ctx);
 
 	cal_avg_latency(count);
-	if (pdata->optype == WCRYPTO_DEFLATE)
-		add_recv_data(count, g_pktlen);
-	else
-		add_recv_data(count, first_len);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }
@@ -720,18 +653,16 @@ fse_err:
 static void *zip_wd_blk_lz77_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
-	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
-	COMP_TUPLE_TAG *ftuple = NULL;
 	struct wcrypto_comp_ctx_setup comp_setup;
 	struct wcrypto_comp_op_data opdata;
+	COMP_TUPLE_TAG *ftuple = NULL;
 	struct wcrypto_comp_ctx *ctx;
 	struct zip_async_tag *tag;
-	u8 *hw_buff_out = NULL;
 	struct wd_queue *queue;
 	struct wd_bd *bd_pool;
 	u32 out_len = 0;
-	u32 count = 0;
 	u32 try_cnt = 0;
+	u32 count = 0;
 	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
@@ -760,25 +691,15 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 	if (!ctx)
 		return NULL;
 
-	opdata.stream_pos = WCRYPTO_COMP_STREAM_NEW;
 	opdata.alg_type = pdata->alg;
 	opdata.priv = NULL;
 	opdata.status = 0;
-	if (pdata->optype == WCRYPTO_INFLATE)
-		opdata.flush = WCRYPTO_SYNC_FLUSH;
-	else
-		opdata.flush = WCRYPTO_FINISH;
 
 	out_len = bd_pool[0].dst_len;
 
 	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
-
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
-	if (!hw_buff_out)
-		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
 	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
 	if (!tag) {
@@ -793,7 +714,7 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
-		opdata.out = &hw_buff_out[i]; //temp out
+		opdata.out = bd_pool[i].dst; //temp out
 		opdata.in_len = bd_pool[i].src_len;
 		opdata.avail_out = out_len;
 		opdata.priv = &ftuple[i];
@@ -802,7 +723,6 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 		tag[i].ctx = ctx;
 		tag[i].td_id = pdata->td_id;
 		tag[i].cm_len = out_len;
-		tag[i].cctx = cctx;
 		tag[i].priv = opdata.priv;
 
 		ret = wcrypto_do_comp(ctx, &opdata, &tag[i]);
@@ -827,12 +747,10 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 		usleep(SEND_USLEEP);
 	}
 
-tag_err:
 	free(tag);
-hw_buff_err:
-	free(hw_buff_out);
-fse_err:
+tag_err:
 	free(ftuple);
+fse_err:
 	wcrypto_del_comp_ctx(ctx);
 	add_send_complete();
 

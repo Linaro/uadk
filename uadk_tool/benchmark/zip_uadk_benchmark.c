@@ -15,7 +15,7 @@
 #define DECOMP_LEN_RATE			2
 #define MAX_POOL_LENTH_COMP		512
 #define COMPRESSION_RATIO_FACTOR	0.7
-
+#define CHUNK_SIZE			(128 * 1024)
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
@@ -623,16 +623,12 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
-	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
-	ZSTD_inBuffer zstd_input = {0};
-	ZSTD_outBuffer zstd_output = {0};
 	COMP_TUPLE_TAG *ftuple = NULL;
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
-	char *hw_buff_out = NULL;
-	size_t fse_size;
 	handle_t h_sess;
-	u32 first_len = 0;
+	void *src, *dst;
+	u32 in_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
 	int ret, i;
@@ -654,7 +650,6 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 		return NULL;
 
 	creq.op_type = pdata->optype;
-	creq.src_len = g_pktlen;
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
@@ -665,53 +660,45 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
-	if (!hw_buff_out)
-		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
-
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
-		creq.src = uadk_pool->bds[i].src;
-		creq.dst = &hw_buff_out[i]; //temp out
-		creq.src_len = uadk_pool->bds[i].src_len;
-		creq.dst_len = out_len;
-		creq.priv = &ftuple[i];
+		src = uadk_pool->bds[i].src;
+		dst = uadk_pool->bds[i].dst;
+		in_len = uadk_pool->bds[0].src_len;
+		out_len = uadk_pool->bds[0].dst_len;
 
-		ret = wd_do_comp_strm(h_sess, &creq);
-		if (ret < 0 || creq.status == WD_IN_EPARA) {
-			ZIP_TST_PRT("wd comp, invalid or incomplete data! "
-			       "ret(%d), req.status(%u)\n", ret, creq.status);
-			break;
+		while (in_len > 0) {
+			creq.src_len = in_len > CHUNK_SIZE ? CHUNK_SIZE : in_len;
+			creq.dst_len = out_len > 2 * CHUNK_SIZE ? 2 * CHUNK_SIZE : out_len;
+			creq.src = src;
+			creq.dst = dst;
+			creq.priv = &ftuple[i];
+
+			ret = wd_do_comp_strm(h_sess, &creq);
+			if (ret < 0 || creq.status == WD_IN_EPARA) {
+				ZIP_TST_PRT("wd comp, invalid or incomplete data! "
+				"ret(%d), req.status(%u)\n", ret, creq.status);
+				break;
+			}
+
+			src += CHUNK_SIZE;
+			in_len -= CHUNK_SIZE;
+			dst += 2 * CHUNK_SIZE;
+			out_len -= 2 * CHUNK_SIZE;
 		}
 
 		count++;
-		zstd_input.src = creq.src;
-		zstd_input.size = creq.src_len;
-		zstd_input.pos = 0;
-		zstd_output.dst = uadk_pool->bds[i].dst;
-		zstd_output.size = out_len;
-		zstd_output.pos = 0;
-		fse_size = zstd_soft_fse(creq.priv, &zstd_input, &zstd_output, cctx, ZSTD_e_end);
 
-		uadk_pool->bds[i].dst_len = fse_size;
-		if (unlikely(i == 0))
-			first_len = fse_size;
 		if (get_run_state() == 0)
 			break;
 	}
 
-hw_buff_err:
-	free(hw_buff_out);
-fse_err:
 	free(ftuple);
+fse_err:
 	wd_comp_free_sess(h_sess);
 
 	cal_avg_latency(count);
-	if (pdata->optype == WD_DIR_COMPRESS)
-		add_recv_data(count, g_pktlen);
-	else
-		add_recv_data(count, first_len);
+	add_recv_data(count, g_pktlen);
 
 	return NULL;
 }
