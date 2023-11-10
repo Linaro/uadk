@@ -936,11 +936,6 @@ key_release:
 
 static void rsa_async_cb(const void *msg, void *tag)
 {
-	//struct wcrypto_rsa_msg *massage = msg;
-	//struct rsa_async_tag *ptag = tag;
-	//u32 op_type = tag->op_type;
-	//void *ctx = tag->ctx;
-
 	return;
 }
 
@@ -1333,11 +1328,6 @@ ctx_release:
 
 static void dh_async_cb(const void *msg, void *tag)
 {
-	//struct wcrypto_dh_msg *massage = msg;
-	//struct rsa_async_tag *ptag = tag;
-	//u32 op_type = tag->op_type;
-	//void *ctx = tag->ctx;
-
 	return;
 }
 
@@ -2203,11 +2193,6 @@ msg_release:
 
 static void ecc_async_cb(const void *msg, void *tag)
 {
-	//struct wcrypto_ecc_msg *massage = msg;
-	//struct rsa_async_tag *ptag = tag;
-	//u32 op_type = tag->op_type;
-	//void *ctx = tag->ctx;
-
 	return;
 }
 

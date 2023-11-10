@@ -281,19 +281,19 @@ void get_rand_data(u8 *addr, u32 size)
 {
 	unsigned short rand_state[3] = {
 		(0xae >> 16) & 0xffff, 0xae & 0xffff, 0x330e};
+	static __thread u64 rand_seed = 0x330eabcd;
+	u64 rand48 = 0;
 	int i;
 
-#if 1
 	// only 32bit valid, other 32bit is zero
-	for (i = 0; i < size >> 3; i++)
-		*((u64 *)addr + i) = nrand48(rand_state);
-#else
-	// full 64bit valid
-	for (i = 0; i < size >> 2; i++)
-		*((u32 *)addr + i) = nrand48(rand_state);
-#endif
+	for (i = 0; i < size >> 3; i++) {
+		rand_state[0] = (u16)rand_seed;
+		rand_state[1] = (u16)(rand_seed >> 16);
+		rand48 = nrand48(rand_state);
+		*((u64 *)addr + i) = rand48;
+		rand_seed = rand48;
+	}
 }
-
 
 void cal_avg_latency(u32 count)
 {
@@ -307,7 +307,6 @@ void cal_avg_latency(u32 count)
 }
 
 /*-------------------------------------main code------------------------------------------------------*/
-
 static void parse_alg_param(struct acc_option *option)
 {
 	switch(option->algtype) {

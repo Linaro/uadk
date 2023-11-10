@@ -535,7 +535,7 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	u32 first_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -628,7 +628,7 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 	u32 first_len = 0;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -722,7 +722,7 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	u32 out_len = 0;
 	u32 count = 0;
 	u32 try_cnt = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -826,7 +826,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	handle_t h_sess;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -885,7 +885,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 	handle_t h_sess;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;
@@ -950,7 +950,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 	int try_cnt = 0;
 	u32 out_len = 0;
 	u32 count = 0;
-	int ret, i = 0;
+	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
 		return NULL;

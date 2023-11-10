@@ -62,7 +62,6 @@ static void *aead_async_cb(void *message, void *cipher_tag)
 
 static void *digest_async_cb(void *message, void *digest_tag)
 {
-	// struct WCRYPTO_req *req = (struct WCRYPTO_req *)data;
 	return NULL;
 }
 
@@ -598,7 +597,7 @@ static void *sec_wd_cipher_async(void *arg)
 	void **res_iv;
 	u32 count = 0;
 	int try_cnt = 0;
-	int ret, i = 0;
+	int ret, i;
 	void *pool;
 
 	if (pdata->td_id > g_thread_num)
@@ -632,7 +631,7 @@ static void *sec_wd_cipher_async(void *arg)
 	ctx = wcrypto_create_cipher_ctx(queue, &cipher_setup);
 	if (!ctx) {
 		SEC_TST_PRT("wd create cipher ctx fail!\n");
-		return NULL;
+		goto tag_err;
 	}
 	tag->ctx = ctx;
 
@@ -640,7 +639,7 @@ static void *sec_wd_cipher_async(void *arg)
 	if (ret) {
 		SEC_TST_PRT("wd cipher set key fail!\n");
 		wcrypto_del_cipher_ctx(ctx);
-		return NULL;
+		goto tag_err;
 	}
 
 	if (queue->capa.priv.direction == 0)
@@ -692,6 +691,9 @@ static void *sec_wd_cipher_async(void *arg)
 
 	wcrypto_del_cipher_ctx(ctx);
 
+tag_err:
+	free(tag);
+
 	return NULL;
 }
 
@@ -712,7 +714,7 @@ static void *sec_wd_aead_async(void *arg)
 	u32 count = 0;
 	int try_cnt = 0;
 	u32 authsize;
-	int ret, i = 0;
+	int ret, i;
 	void *pool;
 
 	if (pdata->td_id > g_thread_num)
@@ -759,7 +761,7 @@ static void *sec_wd_aead_async(void *arg)
 	if (ret) {
 		SEC_TST_PRT("wd aead set key fail!\n");
 		wcrypto_del_aead_ctx(ctx);
-		return NULL;
+		goto tag_err;
 	}
 
 	if (pdata->is_union) {
@@ -767,7 +769,7 @@ static void *sec_wd_aead_async(void *arg)
 		if (ret) {
 			SEC_TST_PRT("set akey fail!\n");
 			wcrypto_del_aead_ctx(ctx);
-			return NULL;
+			goto tag_err;
 		}
 	}
 
@@ -776,7 +778,7 @@ static void *sec_wd_aead_async(void *arg)
 	if (ret) {
 		SEC_TST_PRT("set authsize fail!\n");
 		wcrypto_del_aead_ctx(ctx);
-		return NULL;
+		goto tag_err;
 	}
 
 	if (queue->capa.priv.direction == 0) {
@@ -833,6 +835,9 @@ static void *sec_wd_aead_async(void *arg)
 
 	wcrypto_del_aead_ctx(ctx);
 
+tag_err:
+	free(tag);
+
 	return NULL;
 }
 
@@ -850,7 +855,7 @@ static void *sec_wd_digest_async(void *arg)
 	void **res_out;
 	u32 count = 0;
 	int try_cnt = 0;
-	int ret, i = 0;
+	int ret, i;
 	void *pool;
 
 	if (pdata->td_id > g_thread_num)
@@ -883,7 +888,7 @@ static void *sec_wd_digest_async(void *arg)
 	ctx = wcrypto_create_digest_ctx(queue, &digest_setup);
 	if (!ctx) {
 		SEC_TST_PRT("wd create digest ctx fail!\n");
-		return NULL;
+		goto tag_err;
 	}
 	tag->ctx = ctx;
 
@@ -893,7 +898,7 @@ static void *sec_wd_digest_async(void *arg)
 		if (ret) {
 			SEC_TST_PRT("wd digest set key fail!\n");
 			wcrypto_del_digest_ctx(ctx);
-			return NULL;
+			goto tag_err;
 		}
 	}
 
@@ -939,6 +944,9 @@ static void *sec_wd_digest_async(void *arg)
 
 	wcrypto_del_digest_ctx(ctx);
 
+tag_err:
+	free(tag);
+
 	return NULL;
 }
 
@@ -957,7 +965,7 @@ static void *sec_wd_cipher_sync(void *arg)
 	void **res_iv;
 	u32 count = 0;
 	int try_cnt = 0;
-	int ret, i = 0;
+	int ret, i;
 	void *pool;
 
 	if (pdata->td_id > g_thread_num)
@@ -1055,7 +1063,7 @@ static void *sec_wd_aead_sync(void *arg)
 	u32 count = 0;
 	int try_cnt = 0;
 	u32 authsize;
-	int ret, i = 0;
+	int ret, i;
 	void *pool;
 
 	if (pdata->td_id > g_thread_num)
@@ -1177,7 +1185,7 @@ static void *sec_wd_digest_sync(void *arg)
 	void **res_out;
 	u32 count = 0;
 	int try_cnt = 0;
-	int ret, i = 0;
+	int ret, i;
 	void *pool;
 
 	if (pdata->td_id > g_thread_num)
