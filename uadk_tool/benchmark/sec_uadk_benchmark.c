@@ -454,10 +454,13 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	return 0;
 }
 
-static int init_ctx_config(char *alg, int subtype, int mode)
+static int init_ctx_config(struct acc_option *options)
 {
 	struct sched_params param;
 	struct uacce_dev *dev = NULL;
+	char *alg = options->algclass;
+	int subtype = options->subtype;
+	int mode = options->syncmode;
 	int ret, max_node, i;
 
 	max_node = numa_max_node() + 1;
@@ -574,6 +577,57 @@ static void uninit_ctx_config(int subtype)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
 	wd_sched_rr_release(g_sched);
+}
+
+static void uninit_ctx_config2(int subtype)
+{
+	/* uninit2 */
+	switch(subtype) {
+	case CIPHER_TYPE:
+		wd_cipher_uninit2();
+		break;
+	case AEAD_TYPE:
+		wd_aead_uninit2();
+		break;
+	case DIGEST_TYPE:
+		wd_digest_uninit2();
+		break;
+	default:
+		SEC_TST_PRT("failed to parse alg subtype on uninit2!\n");
+		return;
+	}
+}
+
+static int init_ctx_config2(struct acc_option *options)
+{
+	char alg_name[64];
+	int subtype = options->subtype;
+	int ret;
+
+	ret = get_alg_name(options->algtype, alg_name);
+	if (ret) {
+		SEC_TST_PRT("failed to get valid alg name!\n");
+		return -EINVAL;
+	}
+
+	/* init */
+	switch(subtype) {
+	case CIPHER_TYPE:
+		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		break;
+	case AEAD_TYPE:
+		ret = wd_aead_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		break;
+	case DIGEST_TYPE:
+		ret = wd_digest_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		break;
+	}
+	if (ret) {
+		SEC_TST_PRT("failed to do cipher init2!\n");
+		return ret;
+	}
+
+	return 0;
 }
 
 static void get_aead_data(u8 *addr, u32 size)
@@ -852,7 +906,7 @@ static void *sec_uadk_poll(void *data)
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
-			SEC_TST_PRT("poll ret: %u!\n", ret);
+			SEC_TST_PRT("poll ret: %d!\n", ret);
 			goto recv_error;
 		}
 
@@ -865,6 +919,52 @@ recv_error:
 
 	return NULL;
 }
+
+static void *sec_uadk_poll2(void *data)
+{
+	typedef int (*poll_ctx)(__u32 expt, __u32 *count);
+	poll_ctx uadk_poll_policy = NULL;
+	thread_data *pdata = (thread_data *)data;
+	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	u32 last_time = 2; // poll need one more recv time
+	u32 count = 0;
+	u32 recv = 0;
+	int  ret;
+
+	switch(pdata->subtype) {
+	case CIPHER_TYPE:
+		uadk_poll_policy = wd_cipher_poll;
+		break;
+	case AEAD_TYPE:
+		uadk_poll_policy = wd_aead_poll;
+		break;
+	case DIGEST_TYPE:
+		uadk_poll_policy = wd_digest_poll;
+		break;
+	default:
+		SEC_TST_PRT("<<<<<<async poll interface is NULL!\n");
+		return NULL;
+	}
+
+	while (last_time) {
+		ret = uadk_poll_policy(expt, &recv);
+		count += recv;
+		recv = 0;
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			SEC_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+
+		if (get_run_state() == 0)
+			last_time--;
+	}
+
+recv_error:
+	add_recv_data(count, g_pktlen);
+
+	return NULL;
+}
+
 
 static void *sec_uadk_cipher_async(void *arg)
 {
@@ -1404,7 +1504,10 @@ int sec_uadk_async_threads(struct acc_option *options)
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].td_id = i;
 		/* poll thread */
-		ret = pthread_create(&pollid[i], NULL, sec_uadk_poll, &threads_args[i]);
+		if (options->inittype == INIT2_TYPE)
+			ret = pthread_create(&pollid[i], NULL, sec_uadk_poll2, &threads_args[i]);
+		else
+			ret = pthread_create(&pollid[i], NULL, sec_uadk_poll, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create poll thread fail!\n");
 			goto async_error;
@@ -1475,7 +1578,10 @@ int sec_uadk_benchmark(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ret = init_ctx_config(options->algclass, options->subtype, options->syncmode);
+	if (options->inittype == INIT2_TYPE)
+		ret = init_ctx_config2(options);
+	else
+		ret = init_ctx_config(options);
 	if (ret)
 		return ret;
 
@@ -1494,7 +1600,10 @@ int sec_uadk_benchmark(struct acc_option *options)
 		return ret;
 
 	free_uadk_bd_pool();
-	uninit_ctx_config(options->subtype);
+	if (options->inittype == INIT2_TYPE)
+		uninit_ctx_config2(options->subtype);
+	else
+		uninit_ctx_config(options->subtype);
 
 	return 0;
 }
