@@ -73,6 +73,7 @@ struct acc_option {
 	u32 prefetch;
 	u32 winsize;
 	u32 complevel;
+	u32 inittype;
 	bool latency;
 };
 
@@ -81,6 +82,12 @@ enum acc_type {
 	HPRE_TYPE,
 	ZIP_TYPE,
 	TRNG_TYPE,
+};
+
+enum acc_init_type {
+	INIT_TYPE = 0,
+	INIT2_TYPE,
+	MAX_TYPE,
 };
 
 enum alg_type {
@@ -192,6 +199,7 @@ extern void add_recv_data(u32 cnt, u32 pkglen);
 extern void add_send_complete(void);
 extern u32 get_recv_time(void);
 extern void cal_avg_latency(u32 count);
+extern int get_alg_name(int alg, char *alg_name);
 
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);
