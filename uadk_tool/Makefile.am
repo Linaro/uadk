@@ -1,7 +1,9 @@
 ACLOCAL_AMFLAGS = -I m4 -I./include
 AUTOMAKE_OPTIONS = foreign subdir-objects
-AM_CFLAGS=-Wall -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/benchmark/include \
+AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/benchmark/include \
 			-pthread
+AM_CFLAGS += -fPIC -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
+-O2 -ftrapv -Wl,-z,now -Wl,-s
 
 #AUTOMAKE_OPTIONS = subdir-objects
 
@@ -32,8 +34,6 @@ else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 		-l:libwd_comp.so.2 -lnuma
 endif
-
-uadk_tool_LDFLAGS=-Wl,-rpath,'/usr/local/lib',--enable-new-dtags
 
 if WITH_ZLIB_FSE_DIR
 AM_CFLAGS += -DZLIB_FSE
