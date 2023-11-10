@@ -516,12 +516,14 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 
 static int init_ctx_config(struct acc_option *options)
 {
-	struct sched_params param;
+	struct sched_params param = {0};
 	struct uacce_dev *dev = NULL;
 	char *alg = options->algclass;
 	int subtype = options->subtype;
 	int mode = options->syncmode;
-	int ret, max_node, i;
+	int max_node = 0;
+	int ret = 0;
+	int i = 0;
 
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
@@ -533,7 +535,6 @@ static int init_ctx_config(struct acc_option *options)
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	i = 0;
 	while (i < g_ctxnum) {
 		dev = wd_get_accel_dev(alg);
 		if (!dev) {
