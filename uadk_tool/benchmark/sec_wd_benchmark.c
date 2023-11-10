@@ -14,6 +14,10 @@
 #define MAX_IVK_LENTH		64
 #define DEF_IVK_DATA		0xAA
 #define SQE_SIZE		128
+#define SEC_AAD_LEN		16
+#define SEC_PERF_KEY_LEN	16
+#define SEC_SAVE_FILE_LEN	64
+#define SEC_MAC_LEN		16
 
 typedef struct wd_thread_res {
 	u32 subtype;
@@ -46,9 +50,133 @@ struct wcrypto_async_tag {
 	int cnt;
 };
 
+struct aead_alg_info {
+	int index;
+	char *name;
+	unsigned int mac_len;
+};
+
 static struct thread_queue_res g_thread_queue;
 static unsigned int g_thread_num;
 static unsigned int g_pktlen;
+
+static unsigned int g_alg;
+static unsigned int g_algtype;
+static unsigned int g_optype;
+
+static char wd_aead_key[] = "\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
+			    "\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf";
+
+static char wd_aead_aad[] = "\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
+			    "\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf";
+
+static struct aead_alg_info wd_aead_info[] = {
+	{
+		.index = AES_128_CCM,
+		.name = "AES_128_CCM",
+		.mac_len = 16,
+	}, {
+		.index = AES_128_GCM,
+		.name = "AES_128_GCM",
+		.mac_len = 16,
+	}, {
+		.index = AES_128_CBC_SHA256_HMAC,
+		.name = "AES_128_CBC_SHA256_HMAC",
+		.mac_len = 32,
+	}, {
+		.index = SM4_128_GCM,
+		.name = "SM4_128_GCM",
+		.mac_len = 16,
+	}, {
+		.index = SM4_128_CCM,
+		.name = "SM4_128_CCM",
+		.mac_len = 16,
+	},
+};
+
+static char *get_aead_alg_name(int algtype)
+{
+	int table_size = ARRAY_SIZE(wd_aead_info);
+	int i;
+
+	for (i = 0; i < table_size; i++) {
+		if (algtype == wd_aead_info[i].index)
+			return wd_aead_info[i].name;
+	}
+
+	SEC_TST_PRT("failed to get the aead alg name\n");
+
+	return NULL;
+}
+
+static void init_aead_enc_input(u8 *addr, u32 size)
+{
+	memset(addr, 0, size);
+	memcpy(addr, wd_aead_aad, SEC_AAD_LEN);
+}
+
+static void save_aead_enc_output(u8 *addr, u32 size)
+{
+	char file_name[SEC_SAVE_FILE_LEN] = {0};
+	char *alg_name;
+	FILE *fp;
+
+	alg_name = get_aead_alg_name(g_algtype);
+	if (!alg_name) {
+		SEC_TST_PRT("failed to get the aead alg name!\n");
+		return;
+	}
+
+	snprintf(file_name, SEC_SAVE_FILE_LEN, "ctext_%s_%u_WD", alg_name, g_pktlen);
+
+	fp = fopen(file_name, "w");
+	if (!fp) {
+		SEC_TST_PRT("failed to open the ctext file!\n");
+		return;
+	}
+
+	for (int i = 0; i < size; i++)
+		fputc((char)addr[i], fp);
+
+	fclose(fp);
+}
+
+static void init_aead_dec_input(u8 *addr, u32 size)
+{
+	char file_name[SEC_SAVE_FILE_LEN] = {0};
+	char *alg_name;
+	FILE *fp;
+	int read_size;
+
+	alg_name = get_aead_alg_name(g_algtype);
+	if (!alg_name) {
+		SEC_TST_PRT("failed to get the aead alg name!\n");
+		return;
+	}
+
+	snprintf(file_name, SEC_SAVE_FILE_LEN, "ctext_%s_%u_WD", alg_name, g_pktlen);
+
+	fp = fopen(file_name, "r");
+	if (!fp) {
+		SEC_TST_PRT("failed to open the ctext file!\n");
+		return;
+	}
+
+	fseek(fp, 0, SEEK_END);
+	size = ftell(fp);
+
+	rewind(fp);
+	read_size = fread(addr, 1, size, fp);
+	if (read_size != size) {
+		SEC_TST_PRT("failed to read enough data from ctext!\n");
+		fclose(fp);
+		return;
+	}
+
+	addr[size] = '\0';
+
+	fclose(fp);
+}
 
 static void *cipher_async_cb(void *message, void *cipher_tag)
 {
@@ -434,6 +562,15 @@ static int init_wd_queue(struct acc_option *options)
 				ret = -ENOMEM;
 				goto in_err;
 			}
+			if (g_alg == AEAD_TYPE) {
+				if (!g_optype) {
+					init_aead_enc_input(g_thread_queue.bd_res[m].in[idx],
+							    g_pktlen + SEC_AAD_LEN);
+				} else {
+					init_aead_dec_input(g_thread_queue.bd_res[m].in[idx],
+							    g_pktlen + SEC_AAD_LEN + SEC_MAC_LEN);
+				}
+			}
 		}
 	}
 
@@ -508,6 +645,11 @@ queue_out:
 static void uninit_wd_queue(void)
 {
 	int i, j, idx;
+
+	// save aad + ciphertxt + mac to file.
+	if (g_alg == AEAD_TYPE && !g_optype)
+		save_aead_enc_output(g_thread_queue.bd_res[0].out[0],
+				     g_pktlen + SEC_AAD_LEN + SEC_MAC_LEN);
 
 	for (i = 0; i < g_thread_num; i++) {
 		for (idx = 0; idx < MAX_POOL_LENTH; idx++) {
@@ -642,7 +784,7 @@ static void *sec_wd_cipher_async(void *arg)
 		goto tag_err;
 	}
 
-	if (queue->capa.priv.direction == 0)
+	if (!g_optype)
 		copdata.op_type = WCRYPTO_CIPHER_ENCRYPTION;
 	else
 		copdata.op_type = WCRYPTO_CIPHER_DECRYPTION;
@@ -728,7 +870,7 @@ static void *sec_wd_aead_async(void *arg)
 	res_iv = bd_res->iv;
 
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
-	memset(priv_hash, DEF_IVK_DATA, MAX_IVK_LENTH);
+	memcpy(priv_hash, wd_aead_key, SEC_PERF_KEY_LEN);
 	tag = malloc(sizeof(struct wcrypto_async_tag)); // set the user tag
 	if (!tag) {
 		SEC_TST_PRT("wcrypto async alloc tag fail!\n");
@@ -781,7 +923,7 @@ static void *sec_wd_aead_async(void *arg)
 		goto tag_err;
 	}
 
-	if (queue->capa.priv.direction == 0) {
+	if (!g_optype) {
 		aopdata.op_type = WCRYPTO_CIPHER_ENCRYPTION_DIGEST;
 		aopdata.out_bytes = g_pktlen + 32; // aad + plen + authsize;
 	} else {
@@ -791,7 +933,6 @@ static void *sec_wd_aead_async(void *arg)
 
 	aopdata.assoc_size = 16;
 	aopdata.in_bytes = g_pktlen;
-	aopdata.out_bytes = g_pktlen;
 	aopdata.iv_bytes = pdata->ivsize;
 	aopdata.priv = NULL;
 	aopdata.out_buf_bytes = g_pktlen * 2;
@@ -800,6 +941,7 @@ static void *sec_wd_aead_async(void *arg)
 	aopdata.in = res_in[0];
 	aopdata.out   = res_out[0];
 	aopdata.iv = res_iv[0];
+	memset(aopdata.iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	usleep(SEND_USLEEP);
 	while(1) {
 		if (get_run_state() == 0)
@@ -1002,7 +1144,7 @@ static void *sec_wd_cipher_sync(void *arg)
 		return NULL;
 	}
 
-	if (queue->capa.priv.direction == 0)
+	if (!g_optype)
 		copdata.op_type = WCRYPTO_CIPHER_ENCRYPTION;
 	else
 		copdata.op_type = WCRYPTO_CIPHER_DECRYPTION;
@@ -1077,7 +1219,7 @@ static void *sec_wd_aead_sync(void *arg)
 	res_iv = bd_res->iv;
 
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
-	memset(priv_hash, DEF_IVK_DATA, MAX_IVK_LENTH);
+	memcpy(priv_hash, wd_aead_key, SEC_PERF_KEY_LEN);
 
 	aead_setup.calg = pdata->alg;
 	aead_setup.cmode = pdata->mode;
@@ -1122,7 +1264,7 @@ static void *sec_wd_aead_sync(void *arg)
 		return NULL;
 	}
 
-	if (queue->capa.priv.direction == 0) {
+	if (!g_optype) {
 		aopdata.op_type = WCRYPTO_CIPHER_ENCRYPTION_DIGEST;
 		aopdata.out_bytes = g_pktlen + 32; // aad + plen + authsize;
 	} else {
@@ -1132,7 +1274,6 @@ static void *sec_wd_aead_sync(void *arg)
 
 	aopdata.assoc_size = 16;
 	aopdata.in_bytes = g_pktlen;
-	aopdata.out_bytes = g_pktlen;
 	aopdata.iv_bytes = pdata->ivsize;
 	aopdata.priv = NULL;
 	aopdata.out_buf_bytes = g_pktlen * 2;
@@ -1140,6 +1281,7 @@ static void *sec_wd_aead_sync(void *arg)
 	aopdata.in = res_in[0];
 	aopdata.out   = res_out[0];
 	aopdata.iv = res_iv[0];
+	memset(aopdata.iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	usleep(SEND_USLEEP);
 	while(1) {
 		if (get_run_state() == 0)
@@ -1290,7 +1432,9 @@ int sec_wd_sync_threads(struct acc_option *options)
 	for (i = 0; i < g_thread_num; i++) {
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].alg = threads_option.alg;
+		threads_args[i].dalg = threads_option.dalg;
 		threads_args[i].mode = threads_option.mode;
+		threads_args[i].is_union = threads_option.is_union;
 		threads_args[i].keysize = threads_option.keysize;
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
@@ -1357,7 +1501,9 @@ int sec_wd_async_threads(struct acc_option *options)
 	for (i = 0; i < g_thread_num; i++) {
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].alg = threads_option.alg;
+		threads_args[i].dalg = threads_option.dalg;
 		threads_args[i].mode = threads_option.mode;
+		threads_args[i].is_union = threads_option.is_union;
 		threads_args[i].keysize = threads_option.keysize;
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
@@ -1395,6 +1541,9 @@ int sec_wd_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	g_alg = options->subtype;
+	g_algtype = options->algtype;
+	g_optype = options->optype;
 	g_thread_num = options->threads;
 	g_pktlen = options->pktlen;
 	if (options->optype > WCRYPTO_CIPHER_DECRYPTION) {
