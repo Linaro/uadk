@@ -756,6 +756,7 @@ static int init_ivkey_source(void)
 	int i, j, m, idx;
 
 	g_uadk_pool.iv = malloc(sizeof(char *) * g_thread_num);
+	memset(g_uadk_pool.iv, 0, sizeof(char *) * g_thread_num);
 	for (i = 0; i < g_thread_num; i++) {
 		g_uadk_pool.iv[i] = calloc(MAX_IVK_LENTH, sizeof(char));
 		if (!g_uadk_pool.iv[i])
@@ -763,6 +764,7 @@ static int init_ivkey_source(void)
 	}
 
 	g_uadk_pool.key = malloc(sizeof(char *) * g_thread_num);
+	memset(g_uadk_pool.key, 0, sizeof(char *) * g_thread_num);
 	for (j = 0; j < g_thread_num; j++) {
 		g_uadk_pool.key[j] = calloc(MAX_IVK_LENTH, sizeof(char));
 		if (!g_uadk_pool.key[j])
@@ -772,6 +774,7 @@ static int init_ivkey_source(void)
 	}
 
 	g_uadk_pool.hash = malloc(sizeof(char *) * g_thread_num);
+	memset(g_uadk_pool.hash, 0, sizeof(char *) * g_thread_num);
 	for (m = 0; m < g_thread_num; m++) {
 		g_uadk_pool.hash[m] = calloc(MAX_IVK_LENTH, sizeof(char));
 		if (!g_uadk_pool.hash[m])
@@ -832,22 +835,25 @@ static int init_uadk_bd_pool(void)
 	}
 
 	g_uadk_pool.pool = malloc(g_thread_num * sizeof(struct bd_pool));
+	memset(g_uadk_pool.pool, 0, g_thread_num * sizeof(struct bd_pool));
 	if (!g_uadk_pool.pool) {
 		SEC_TST_PRT("init uadk pool alloc thread failed!\n");
 		goto free_ivkey;
 	} else {
 		for (i = 0; i < g_thread_num; i++) {
-			g_uadk_pool.pool[i].bds = malloc(MAX_POOL_LENTH *
-							 sizeof(struct uadk_bd));
+			g_uadk_pool.pool[i].bds = malloc(MAX_POOL_LENTH *sizeof(struct uadk_bd));
+			memset(g_uadk_pool.pool[i].bds, 0, MAX_POOL_LENTH *sizeof(struct uadk_bd));
 			if (!g_uadk_pool.pool[i].bds) {
 				SEC_TST_PRT("init uadk bds alloc failed!\n");
 				goto malloc_error1;
 			}
 			for (j = 0; j < MAX_POOL_LENTH; j++) {
 				g_uadk_pool.pool[i].bds[j].src = malloc(step);
+				memset(g_uadk_pool.pool[i].bds[j].src, 0, step);
 				if (!g_uadk_pool.pool[i].bds[j].src)
 					goto malloc_error2;
 				g_uadk_pool.pool[i].bds[j].dst = malloc(step);
+				memset(g_uadk_pool.pool[i].bds[j].dst, 0, step);
 				if (!g_uadk_pool.pool[i].bds[j].dst)
 					goto malloc_error3;
 
@@ -1097,7 +1103,7 @@ static void *sec_uadk_aead_async(void *arg)
 	struct wd_aead_sess_setup aead_setup = {0};
 	u8 *priv_iv, *priv_key, *priv_hash;
 	u32 auth_size = SEC_PERF_AUTH_SIZE;
-	struct wd_aead_req areq;
+	struct wd_aead_req areq = {0};
 	struct bd_pool *uadk_pool;
 	int try_cnt = 0;
 	handle_t h_sess;
@@ -1328,7 +1334,7 @@ static void *sec_uadk_aead_sync(void *arg)
 	struct wd_aead_sess_setup aead_setup = {0};
 	u8 *priv_iv, *priv_key, *priv_hash;
 	u32 auth_size = SEC_PERF_AUTH_SIZE;
-	struct wd_aead_req areq;
+	struct wd_aead_req areq = {0};
 	struct bd_pool *uadk_pool;
 	handle_t h_sess;
 	u32 count = 0;
