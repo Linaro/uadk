@@ -256,6 +256,60 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		mode = WCRYPTO_CIPHER_CBC;
 		alg = WCRYPTO_CIPHER_AES;
 		break;
+	case AES_128_CBC_CS1:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS1;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_128_CBC_CS2:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS2;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_128_CBC_CS3:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS3;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_192_CBC_CS1:
+		keysize = 24;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS1;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_192_CBC_CS2:
+		keysize = 24;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS2;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_192_CBC_CS3:
+		keysize = 24;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS3;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_256_CBC_CS1:
+		keysize = 32;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS1;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_256_CBC_CS2:
+		keysize = 32;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS2;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
+	case AES_256_CBC_CS3:
+		keysize = 32;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS3;
+		alg = WCRYPTO_CIPHER_AES;
+		break;
 	case AES_128_CTR:
 		keysize = 16;
 		ivsize = 16;
