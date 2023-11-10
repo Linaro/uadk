@@ -12,7 +12,7 @@
 #include "v1/wd_bmm.h"
 #include "v1/wd_util.h"
 
-#define ECC_CURVE_ID		0x3 /* def set secp256k1 */
+#define ECC_CURVE_ID		0x2 /* def set secp256k1 */
 #define HPRE_TST_PRT 		printf
 #define ERR_OPTYPE		0xFF
 #define SM2_DG_SZ		1024
@@ -403,32 +403,8 @@ static int hpre_wd_get_block(u32 algtype)
 	case DH_4096:
 		block_size = 8192;
 		break;
-	case ECDH_256:
-		block_size = 256;
-		break;
-	case ECDH_384:
-		block_size = 384;
-		break;
-	case ECDH_521:
+	default:
 		block_size = 576;
-		break;
-	case ECDSA_256:
-		block_size = 256;
-		break;
-	case ECDSA_384:
-		block_size = 384;
-		break;
-	case ECDSA_521:
-		block_size = 576;
-		break;
-	case SM2_ALG:
-		block_size = 4352;
-		break;
-	case X25519_ALG:
-		block_size = 256;
-		break;
-	case X448_ALG:
-		block_size = 384;
 		break;
 	}
 
@@ -1759,6 +1735,38 @@ static int get_ecc_param_from_sample(struct hpre_ecc_setup *setup,
 	return 0;
 }
 
+static void fill_ecc_cv_data(struct wcrypto_ecc_curve *cv,
+				struct hpre_ecc_setup *ecc_setup,
+				u32 key_bits)
+{
+	u32 key_size = (key_bits + 7) / 8;
+
+	cv->a.data = ecdsa_verf_a_secp256k1;
+	cv->b.data = ecdsa_verf_b_secp256k1;
+	cv->p.data = ecdsa_verf_p_secp256k1;
+	cv->n.data = ecdsa_verf_n_secp256k1;
+	cv->g.x.data = ecdsa_verf_g_secp256k1;
+	cv->g.y.data = ecdsa_verf_g_secp256k1 + key_size;
+
+	ecc_setup->sign = ecdsa_verf_sign_secp256k1;
+	ecc_setup->sign_size = sizeof(ecdsa_verf_sign_secp256k1);
+	ecc_setup->pub_key = ecdh_verf_pubkey_secp256k1;
+	ecc_setup->pub_key_size = sizeof(ecdh_verf_pubkey_secp256k1);
+
+	cv->a.bsize = key_size;
+	cv->a.dsize = key_size;
+	cv->b.bsize = key_size;
+	cv->b.dsize = key_size;
+	cv->p.bsize = key_size;
+	cv->p.dsize = key_size;
+	cv->n.bsize = key_size;
+	cv->n.dsize = key_size;
+	cv->g.x.bsize = key_size;
+	cv->g.x.dsize = key_size;
+	cv->g.y.bsize = key_size;
+	cv->g.y.dsize = key_size;
+}
+
 static int ecdsa_param_fill(void *ctx, struct wcrypto_ecc_op_data *opdata,
 	struct wcrypto_ecc_key *ecc_key, struct hpre_ecc_setup *setup,
 	thread_data *pdata)
@@ -2060,6 +2068,8 @@ static void *ecc_wd_sync_run(void *arg)
 	struct wcrypto_ecc_ctx_setup ctx_setup;
 	struct wcrypto_ecc_op_data opdata;
 	struct wcrypto_ecc_curve param;
+	struct wcrypto_ecc_curve_cfg cfg;
+	struct wcrypto_ecc_curve cv;
 	struct hpre_ecc_setup setup;
 	struct wcrypto_ecc_key *ecc_key;
 	struct wcrypto_ecc_point pbk;
@@ -2113,6 +2123,14 @@ static void *ecc_wd_sync_run(void *arg)
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
 		return NULL;
+
+	if (subtype == ECDSA_TYPE && key_size == 32) {
+		fill_ecc_cv_data(&cv, &setup, pdata->keybits);
+
+		cfg.type = WCRYPTO_CV_CFG_PARAM;
+		cfg.cfg.pparam = &cv;
+		ctx_setup.cv = cfg;
+	}
 
 	ctx = wcrypto_create_ecc_ctx(queue, &ctx_setup);
 	if (!ctx)
@@ -2208,6 +2226,8 @@ static void *ecc_wd_async_run(void *arg)
 	struct wcrypto_ecc_ctx_setup ctx_setup;
 	struct wcrypto_ecc_op_data opdata;
 	struct wcrypto_ecc_curve param;
+	struct wcrypto_ecc_curve_cfg cfg;
+	struct wcrypto_ecc_curve cv;
 	struct hpre_ecc_setup setup;
 	struct wcrypto_ecc_key *ecc_key;
 	struct wcrypto_ecc_point pbk;
@@ -2262,6 +2282,14 @@ static void *ecc_wd_async_run(void *arg)
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
 		return NULL;
+
+	if (subtype == ECDSA_TYPE && key_size == 32) {
+		fill_ecc_cv_data(&cv, &setup, pdata->keybits);
+
+		cfg.type = WCRYPTO_CV_CFG_PARAM;
+		cfg.cfg.pparam = &cv;
+		ctx_setup.cv = cfg;
+	}
 
 	ctx = wcrypto_create_ecc_ctx(queue, &ctx_setup);
 	if (!ctx)

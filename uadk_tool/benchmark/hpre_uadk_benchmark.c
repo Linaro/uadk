@@ -346,30 +346,40 @@ static int hpre_uadk_param_parse(thread_data *tddata, struct acc_option *options
 
 static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 {
-	struct uacce_dev_list *list;
 	struct sched_params param;
-	int i, max_node;
+	struct uacce_dev *dev;
+	int max_node;
 	int ret = 0;
+	int i = 0;
 
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
 		return -EINVAL;
 
-	list = wd_get_accel_list(alg);
-	if (!list) {
-		HPRE_TST_PRT("failed to get %s device\n", alg);
-		return -ENODEV;
-	}
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = g_ctxnum;
 	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	for (i = 0; i < g_ctxnum; i++) {
-		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
-		g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
-		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			HPRE_TST_PRT("failed to get %s device\n", alg);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
 	}
 
 	switch(subtype) {
@@ -395,12 +405,8 @@ static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 		goto out;
 	}
 
-	/* If there is no numa, we defualt config to zero */
-	if (list->dev->numa_id < 0)
-		list->dev->numa_id = 0;
-
 	g_sched->name = SCHED_SINGLE;
-	param.numa_id = list->dev->numa_id;
+	param.numa_id = 0;
 	param.type = 0;
 	param.mode = mode;
 	param.begin = 0;
@@ -434,10 +440,11 @@ static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 		goto out;
 	}
 
-	wd_free_list_accels(list);
-
 	return 0;
 out:
+	for (i = i - 1; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
 	free(g_ctx_cfg.ctxs);
 	wd_sched_rr_release(g_sched);
 
@@ -1964,6 +1971,38 @@ del_ecc_out:
 	return ret;
 }
 
+static void fill_ecc_param_data(struct wd_ecc_curve *ecc_pa,
+				struct hpre_ecc_setup *ecc_set,
+				u32 key_bits)
+{
+	u32 key_size = (key_bits + 7) / 8;
+
+	ecc_pa->a.data = ecdsa_verf_a_secp256k1;
+	ecc_pa->b.data = ecdsa_verf_b_secp256k1;
+	ecc_pa->p.data = ecdsa_verf_p_secp256k1;
+	ecc_pa->n.data = ecdsa_verf_n_secp256k1;
+	ecc_pa->g.x.data = ecdsa_verf_g_secp256k1;
+	ecc_pa->g.y.data = ecdsa_verf_g_secp256k1 + key_size;
+
+	ecc_set->sign = ecdsa_verf_sign_secp256k1;
+	ecc_set->sign_size = sizeof(ecdsa_verf_sign_secp256k1);
+	ecc_set->pub_key = ecdh_verf_pubkey_secp256k1;
+	ecc_set->pub_key_size = sizeof(ecdh_verf_pubkey_secp256k1);
+
+	ecc_pa->a.bsize = key_size;
+	ecc_pa->a.dsize = key_size;
+	ecc_pa->b.bsize = key_size;
+	ecc_pa->b.dsize = key_size;
+	ecc_pa->p.bsize = key_size;
+	ecc_pa->p.dsize = key_size;
+	ecc_pa->n.bsize = key_size;
+	ecc_pa->n.dsize = key_size;
+	ecc_pa->g.x.bsize = key_size;
+	ecc_pa->g.x.dsize = key_size;
+	ecc_pa->g.y.bsize = key_size;
+	ecc_pa->g.y.dsize = key_size;
+}
+
 static void *ecc_uadk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
@@ -1971,6 +2010,8 @@ static void *ecc_uadk_sync_run(void *arg)
 	u32 subtype = pdata->subtype;
 	struct wd_ecc_sess_setup sess_setup;
 	struct hpre_ecc_setup setup;
+	struct wd_ecc_curve_cfg cfg;
+	struct wd_ecc_curve cv;
 	struct wd_ecc_curve param;
 	struct wd_ecc_key *ecc_key;
 	struct wd_ecc_point pbk;
@@ -2015,6 +2056,12 @@ static void *ecc_uadk_sync_run(void *arg)
 	case ECDSA_TYPE:
 		sess_setup.alg = "ecdsa";
 		break;
+	case X448_TYPE:
+		sess_setup.alg = "x448";
+		break;
+	case X25519_TYPE:
+		sess_setup.alg = "x25519";
+		break;
 	}
 
 	// set def setting;
@@ -2024,6 +2071,14 @@ static void *ecc_uadk_sync_run(void *arg)
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
 		return NULL;
+
+	if (subtype == ECDSA_TYPE && key_size == 32) {
+		fill_ecc_param_data(&cv, &setup, pdata->keybits);
+
+		cfg.type = WD_CV_CFG_PARAM;
+		cfg.cfg.pparam = &cv;
+		sess_setup.cv = cfg;
+	}
 
 	h_sess = wd_ecc_alloc_sess(&sess_setup);
 	if (!h_sess)
@@ -2113,6 +2168,8 @@ static void *ecc_uadk_async_run(void *arg)
 	struct wd_ecc_sess_setup sess_setup;
 	struct rsa_async_tag *tag;
 	struct hpre_ecc_setup setup;
+	struct wd_ecc_curve_cfg cfg;
+	struct wd_ecc_curve cv;
 	struct wd_ecc_curve param;
 	struct wd_ecc_key *ecc_key;
 	struct wd_ecc_point pbk;
@@ -2158,6 +2215,12 @@ static void *ecc_uadk_async_run(void *arg)
 	case ECDSA_TYPE:
 		sess_setup.alg = "ecdsa";
 		break;
+	case X448_TYPE:
+		sess_setup.alg = "x448";
+		break;
+	case X25519_TYPE:
+		sess_setup.alg = "x25519";
+		break;
 	}
 
 	// set def setting;
@@ -2167,6 +2230,14 @@ static void *ecc_uadk_async_run(void *arg)
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
 		return NULL;
+
+	if (subtype == ECDSA_TYPE && key_size == 32) {
+		fill_ecc_param_data(&cv, &setup, pdata->keybits);
+
+		cfg.type = WD_CV_CFG_PARAM;
+		cfg.cfg.pparam = &cv;
+		sess_setup.cv = cfg;
+	}
 
 	h_sess = wd_ecc_alloc_sess(&sess_setup);
 	if (!h_sess)
