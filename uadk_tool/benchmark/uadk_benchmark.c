@@ -429,7 +429,7 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 	ops = perfops / option->times;
 	cpu_rate = (double)ptime / option->times;
 	ACC_TST_PRT("algname:	length:		perf:		iops:		CPU_rate:\n"
-			"%s	%-2uBytes	%.1fKB/s	%.1fKops	%.2f%%\n",
+			"%s	%-2uBytes 	%.1fKB/s 	%.1fKops 	%.2f%%\n",
 			palgname, option->pktlen, perfermance, ops, cpu_rate);
 }
 
