@@ -55,7 +55,9 @@ typedef unsigned char u8;
  * @latency: test packet running time
  */
 struct acc_option {
-	char  algname[64];
+	char algname[64];
+	char algclass[64];
+	char engine[64];
 	u32 algtype;
 	u32 modetype;
 	u32 optype;
@@ -65,12 +67,12 @@ struct acc_option {
 	u32 threads;
 	u32 multis;
 	u32 ctxnums;
-	char  algclass[64];
 	u32 acctype;
 	u32 subtype;
-	char  engine[64];
 	u32 engine_flag;
 	u32 prefetch;
+	u32 winsize;
+	u32 complevel;
 	bool latency;
 };
 

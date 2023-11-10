@@ -8,11 +8,11 @@
 #include "include/wd_sched.h"
 #include "include/fse.h"
 
-#define ZIP_TST_PRT printf
-#define PATH_SIZE	64
-#define ZIP_FILE	"./zip"
-#define COMP_LEN_RATE		2
-#define DECOMP_LEN_RATE		2
+#define ZIP_TST_PRT			printf
+#define PATH_SIZE			64
+#define ZIP_FILE			"./zip"
+#define COMP_LEN_RATE			2
+#define DECOMP_LEN_RATE			2
 
 struct uadk_bd {
 	u8 *src;
@@ -44,9 +44,11 @@ struct zip_async_tag {
 
 typedef struct uadk_thread_res {
 	u32 alg;
-	u32 mode; // block/stream
+	u32 mode;
 	u32 optype;
 	u32 td_id;
+	u32 win_sz;
+	u32 comp_lv;
 } thread_data;
 
 struct zip_file_head {
@@ -240,9 +242,9 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		return -EINVAL;
 	} else if (optype >= WD_DIR_MAX) {
 		mode = STREAM_MODE;
+		optype = optype % WD_DIR_MAX;
+		options->optype = optype;
 	}
-
-	optype = optype % WD_DIR_MAX;
 
 	switch(algtype) {
 	case ZLIB:
@@ -268,17 +270,20 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	tddata->alg = alg;
 	tddata->mode = mode;
 	tddata->optype = optype;
+	tddata->win_sz = options->winsize;
+	tddata->comp_lv = options->complevel;
 
 	return 0;
 }
 
+static struct sched_params param;
 static int init_ctx_config(char *alg, int mode, int optype)
 {
 	struct uacce_dev_list *list;
-	struct sched_params param;
 	int i, max_node;
 	int ret = 0;
 
+	optype = optype % WD_DIR_MAX;
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
 		return -EINVAL;
@@ -306,7 +311,7 @@ static int init_ctx_config(char *alg, int mode, int optype)
 
 	for (i = 0; i < g_ctxnum; i++) {
 		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
-		g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
+		g_ctx_cfg.ctxs[i].op_type = optype; // default op_type
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 	}
 	g_sched->name = SCHED_SINGLE;
@@ -315,7 +320,6 @@ static int init_ctx_config(char *alg, int mode, int optype)
 	 * All contexts for 2 modes & 2 types.
 	 * The test only uses one kind of contexts at the same time.
 	 */
-	optype = optype % WD_DIR_MAX;
 	param.numa_id = list->dev->numa_id;
 	param.type = optype;
 	param.mode = mode;
@@ -546,8 +550,9 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WD_COMP_L8;
-	comp_setup.win_sz = WD_COMP_WS_8K;
+	comp_setup.win_sz = pdata->win_sz;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -639,8 +644,9 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WD_COMP_L8;
-	comp_setup.win_sz = WD_COMP_WS_8K;
+	comp_setup.win_sz = pdata->win_sz;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -733,8 +739,9 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WD_COMP_L8;
-	comp_setup.win_sz = WD_COMP_WS_8K;
+	comp_setup.win_sz = pdata->win_sz;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -837,8 +844,9 @@ static void *zip_uadk_blk_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WD_COMP_L8;
-	comp_setup.win_sz = WD_COMP_WS_8K;
+	comp_setup.win_sz = pdata->win_sz;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -896,8 +904,9 @@ static void *zip_uadk_stm_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WD_COMP_L8;
-	comp_setup.win_sz = WD_COMP_WS_8K;
+	comp_setup.win_sz = pdata->win_sz;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -961,8 +970,9 @@ static void *zip_uadk_blk_async_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WD_COMP_L8;
-	comp_setup.win_sz = WD_COMP_WS_8K;
+	comp_setup.win_sz = pdata->win_sz;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -1044,6 +1054,7 @@ static int zip_uadk_sync_threads(struct acc_option *options)
 	if (ret)
 		return ret;
 
+	threads_option.optype = options->optype;
 	if (threads_option.mode == 1) {// stream mode
 		if (threads_option.alg == LZ77_ZSTD)
 			uadk_zip_sync_run = zip_uadk_stm_lz77_sync_run;
@@ -1059,6 +1070,8 @@ static int zip_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].alg = threads_option.alg;
 		threads_args[i].mode = threads_option.mode;
 		threads_args[i].optype = threads_option.optype;
+		threads_args[i].win_sz = threads_option.win_sz;
+		threads_args[i].comp_lv = threads_option.comp_lv;
 		threads_args[i].td_id = i;
 		ret = pthread_create(&tdid[i], NULL, uadk_zip_sync_run, &threads_args[i]);
 		if (ret) {
@@ -1119,6 +1132,8 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		threads_args[i].alg = threads_option.alg;
 		threads_args[i].mode = threads_option.mode;
 		threads_args[i].optype = threads_option.optype;
+		threads_args[i].win_sz = threads_option.win_sz;
+		threads_args[i].comp_lv = threads_option.comp_lv;
 		threads_args[i].td_id = i;
 		ret = pthread_create(&tdid[i], NULL, uadk_zip_async_run, &threads_args[i]);
 		if (ret) {

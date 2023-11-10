@@ -57,9 +57,11 @@ struct zip_async_tag {
 
 typedef struct uadk_thread_res {
 	u32 alg;
-	u32 mode; // block/stream
+	u32 mode;
 	u32 optype;
 	u32 td_id;
+	u32 comp_lv;
+	u32 win_size;
 } thread_data;
 
 struct zip_file_head {
@@ -277,6 +279,8 @@ static int zip_wd_param_parse(thread_data *tddata, struct acc_option *options)
 	tddata->alg = alg;
 	tddata->mode = mode;
 	tddata->optype = optype;
+	tddata->win_size = options->winsize;
+	tddata->comp_lv = options->complevel;
 
 	return 0;
 }
@@ -528,8 +532,8 @@ static void *zip_wd_blk_lz77_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WCRYPTO_COMP_L8;
-	comp_setup.win_size = WCRYPTO_COMP_WS_8K;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.win_size = pdata->win_size;
 	comp_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 
 	ctx = wcrypto_create_comp_ctx(queue, &comp_setup);
@@ -636,8 +640,8 @@ static void *zip_wd_stm_lz77_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WCRYPTO_COMP_L8;
-	comp_setup.win_size = WCRYPTO_COMP_WS_8K;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.win_size = pdata->win_size;
 	comp_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
 
 	ctx = wcrypto_create_comp_ctx(queue, &comp_setup);
@@ -745,8 +749,8 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WCRYPTO_COMP_L8;
-	comp_setup.win_size = WCRYPTO_COMP_WS_8K;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.win_size = pdata->win_size;
 	comp_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 	comp_setup.cb = zip_lz77_async_cb;
 
@@ -866,8 +870,8 @@ static void *zip_wd_blk_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WCRYPTO_COMP_L8;
-	comp_setup.win_size = WCRYPTO_COMP_WS_8K;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.win_size = pdata->win_size;
 	comp_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 
 	ctx = wcrypto_create_comp_ctx(queue, &comp_setup);
@@ -939,8 +943,8 @@ static void *zip_wd_stm_sync_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WCRYPTO_COMP_L8;
-	comp_setup.win_size = WCRYPTO_COMP_WS_8K;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.win_size = pdata->win_size;
 	comp_setup.stream_mode = WCRYPTO_COMP_STATEFUL;
 
 	ctx = wcrypto_create_comp_ctx(queue, &comp_setup);
@@ -1018,8 +1022,8 @@ static void *zip_wd_blk_async_run(void *arg)
 
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
-	comp_setup.comp_lv = WCRYPTO_COMP_L8;
-	comp_setup.win_size = WCRYPTO_COMP_WS_8K;
+	comp_setup.comp_lv = pdata->comp_lv;
+	comp_setup.win_size = pdata->win_size;
 	comp_setup.stream_mode = WCRYPTO_COMP_STATELESS;
 	comp_setup.cb = zip_async_cb;
 
@@ -1123,6 +1127,8 @@ static int zip_wd_sync_threads(struct acc_option *options)
 		threads_args[i].alg = threads_option.alg;
 		threads_args[i].mode = threads_option.mode;
 		threads_args[i].optype = threads_option.optype;
+		threads_args[i].comp_lv = threads_option.comp_lv;
+		threads_args[i].win_size = threads_option.win_size;
 		threads_args[i].td_id = i;
 		ret = pthread_create(&tdid[i], NULL, wd_zip_sync_run, &threads_args[i]);
 		if (ret) {
@@ -1183,6 +1189,8 @@ static int zip_wd_async_threads(struct acc_option *options)
 		threads_args[i].alg = threads_option.alg;
 		threads_args[i].mode = threads_option.mode;
 		threads_args[i].optype = threads_option.optype;
+		threads_args[i].comp_lv = threads_option.comp_lv;
+		threads_args[i].win_size = threads_option.win_size;
 		threads_args[i].td_id = i;
 		ret = pthread_create(&tdid[i], NULL, wd_zip_async_run, &threads_args[i]);
 		if (ret) {
