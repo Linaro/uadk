@@ -436,6 +436,12 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		mode = WCRYPTO_CIPHER_XTS;
 		alg = WCRYPTO_CIPHER_SM4;
 		break;
+	case SM4_128_XTS_GB:
+		keysize = 32;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_XTS_GB;
+		alg = WCRYPTO_CIPHER_SM4;
+		break;
 	case AES_128_CCM:
 		keysize = 16;
 		ivsize = 16;
