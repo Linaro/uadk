@@ -286,7 +286,7 @@ static void uninit_ctx_config2(void)
 
 static int init_ctx_config2(struct acc_option *options)
 {
-	char alg_name[64];
+	char alg_name[MAX_ALG_NAME];
 	int ret = 0;
 
 	ret = get_alg_name(options->algtype, alg_name);

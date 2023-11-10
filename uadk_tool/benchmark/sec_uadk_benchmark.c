@@ -600,8 +600,8 @@ static void uninit_ctx_config2(int subtype)
 
 static int init_ctx_config2(struct acc_option *options)
 {
-	char alg_name[64];
 	int subtype = options->subtype;
+	char alg_name[MAX_ALG_NAME];
 	int ret;
 
 	ret = get_alg_name(options->algtype, alg_name);
