@@ -2211,7 +2211,7 @@ static void *ecc_uadk_async_run(void *arg)
 		tag[i].sess = h_sess;
 		req.cb_param = &tag[i];
 
-		ret = wd_do_ecc_sync(h_sess, &req);
+		ret = wd_do_ecc_async(h_sess, &req);
 		if (ret == -WD_EBUSY) {
 			usleep(SEND_USLEEP * try_cnt);
 			try_cnt++;
