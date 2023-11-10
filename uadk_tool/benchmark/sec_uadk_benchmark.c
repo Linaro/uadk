@@ -12,6 +12,18 @@
 #define SEC_TST_PRT printf
 #define MAX_IVK_LENTH		64
 #define DEF_IVK_DATA		0xAA
+#define SEC_AEAD_LEN		16
+#define SEC_PERF_KEY_LEN		16
+#define SEC_MAX_MAC_LEN		64
+#define SEC_SAVE_FILE_LEN	64
+#define SEC_PERF_AUTH_SIZE	16
+
+char aead_key[] = "\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
+		  "\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf";
+
+char aead_aad[] = "\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
+		  "\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf";
+char g_save_mac[SEC_MAX_MAC_LEN];
 
 struct uadk_bd {
 	u8 *src;
@@ -24,10 +36,10 @@ struct bd_pool {
 
 struct thread_pool {
 	struct bd_pool *pool;
-	u8 *iv;
-	u8 *key;
-	u8 *mac;
-	u8 *hash;
+	u8 **iv;
+	u8 **key;
+	u8 **mac;
+	u8 **hash;
 } g_uadk_pool;
 
 typedef struct uadk_thread_res {
@@ -49,6 +61,70 @@ static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
 static unsigned int g_prefetch;
 static unsigned int g_pktlen;
+static unsigned int g_alg;
+static unsigned int g_algtype;
+static unsigned int g_optype;
+static unsigned int g_maclen;
+
+struct aead_alg_info {
+	int index;
+	char *name;
+	unsigned int mac_len;
+};
+
+struct aead_alg_info aead_info[] = {
+	{
+		.index = AES_128_CCM,
+		.name = "AES_128_CCM",
+		.mac_len = 16,
+	}, {
+		.index = AES_128_GCM,
+		.name = "AES_128_GCM",
+		.mac_len = 16,
+	}, {
+		.index = AES_128_CBC_SHA256_HMAC,
+		.name = "AES_128_CBC_SHA256_HMAC",
+		.mac_len = 32,
+	}, {
+		.index = SM4_128_GCM,
+		.name = "SM4_128_GCM",
+		.mac_len = 16,
+	}, {
+		.index = SM4_128_CCM,
+		.name = "SM4_128_CCM",
+		.mac_len = 16,
+	},
+};
+
+static u32 get_aead_mac_len(int algtype)
+{
+	int table_size = sizeof(aead_info) / sizeof(aead_info[0]);
+	int i;
+
+	for (i = 0; i < table_size; i++) {
+		if (algtype == aead_info[i].index)
+			return aead_info[i].mac_len;
+	}
+
+	SEC_TST_PRT("failed to get the aead mac len\n");
+
+	return -1;
+}
+
+static char *get_aead_alg_name(int algtype)
+{
+	int table_size = sizeof(aead_info) / sizeof(aead_info[0]);
+	int i;
+
+	for (i = 0; i < table_size; i++) {
+		if (algtype == aead_info[i].index)
+			return aead_info[i].name;
+	}
+
+	SEC_TST_PRT("failed to get the aead alg name\n");
+
+	return NULL;
+}
 
 static void *cipher_async_cb(struct wd_cipher_req *req, void *data)
 {
@@ -361,7 +437,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		alg = WD_DIGEST_SHA512_256;
 		break;
 	default:
-		SEC_TST_PRT("Fail to set sec alg\n");
+		SEC_TST_PRT("failed to set sec alg\n");
 		return -EINVAL;
 	}
 
@@ -391,7 +467,7 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 
 	list = wd_get_accel_list(alg);
 	if (!list) {
-		SEC_TST_PRT("Fail to get %s device\n", alg);
+		SEC_TST_PRT("failed to get %s device\n", alg);
 		return -ENODEV;
 	}
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
@@ -417,11 +493,11 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_digest_poll_ctx);
 		break;
 	default:
-		SEC_TST_PRT("Fail to parse alg subtype!\n");
+		SEC_TST_PRT("failed to parse alg subtype!\n");
 		return -EINVAL;
 	}
 	if (!g_sched) {
-		SEC_TST_PRT("Fail to alloc sched!\n");
+		SEC_TST_PRT("failed to alloc sched!\n");
 		goto out;
 	}
 
@@ -437,7 +513,7 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 	param.end = g_ctxnum - 1;
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
-		SEC_TST_PRT("Fail to fill sched data!\n");
+		SEC_TST_PRT("failed to fill sched data!\n");
 		goto out;
 	}
 
@@ -454,7 +530,7 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		break;
 	}
 	if (ret) {
-		SEC_TST_PRT("Fail to cipher ctx!\n");
+		SEC_TST_PRT("failed to cipher ctx!\n");
 		goto out;
 	}
 
@@ -484,7 +560,7 @@ static void uninit_ctx_config(int subtype)
 		wd_digest_uninit();
 		break;
 	default:
-		SEC_TST_PRT("Fail to parse alg subtype on uninit!\n");
+		SEC_TST_PRT("failed to parse alg subtype on uninit!\n");
 		return;
 	}
 
@@ -494,23 +570,172 @@ static void uninit_ctx_config(int subtype)
 	wd_sched_rr_release(g_sched);
 }
 
+static void get_aead_data(u8 *addr, u32 size)
+{
+	memset(addr, 0, size);
+	memcpy(addr, aead_aad, SEC_AEAD_LEN);
+}
+
+static void save_aead_dst_data(u8 *addr, u32 size)
+{
+	char file_name[SEC_SAVE_FILE_LEN] = {0};
+	char *alg_name;
+	FILE *fp;
+
+	alg_name = get_aead_alg_name(g_algtype);
+	if (!alg_name) {
+		SEC_TST_PRT("failed to get the aead alg name!\n");
+		return;
+	}
+
+	snprintf(file_name, SEC_SAVE_FILE_LEN, "ctext_%s_%u", alg_name, g_pktlen);
+
+	fp = fopen(file_name, "w");
+	if (!fp) {
+		SEC_TST_PRT("failed to open the ctext file!\n");
+		return;
+	}
+
+	memcpy(addr + size, g_uadk_pool.mac[0], SEC_PERF_AUTH_SIZE);
+
+	for (int i = 0; i < size + SEC_PERF_AUTH_SIZE; i++)
+		fputc((char)addr[i], fp);
+
+	fclose(fp);
+}
+
+static void read_aead_dst_data(u8 *addr, u32 len)
+{
+	char file_name[SEC_SAVE_FILE_LEN] = {0};
+	char *alg_name;
+	FILE *fp;
+	int size;
+
+	alg_name = get_aead_alg_name(g_algtype);
+	if (!alg_name) {
+		SEC_TST_PRT("failed to get the aead alg name!\n");
+		return;
+	}
+
+	snprintf(file_name, SEC_SAVE_FILE_LEN, "ctext_%s_%u", alg_name, g_pktlen);
+
+	fp = fopen(file_name, "r");
+	if (!fp) {
+		SEC_TST_PRT("failed to open the ctext file!\n");
+		return;
+	}
+
+	fseek(fp, 0, SEEK_END);
+	size = ftell(fp);
+
+	rewind(fp);
+	size = fread(addr, 1, size, fp);
+	addr[size] = '\0';
+
+	memcpy(g_save_mac, (char *)addr + len, SEC_MAX_MAC_LEN);
+
+	fclose(fp);
+}
+
+static int init_ivkey_source(void)
+{
+	int i, j, k, m, idx;
+
+	g_uadk_pool.iv = malloc(sizeof(char *) * g_thread_num);
+	for (i = 0; i < g_thread_num; i++) {
+		g_uadk_pool.iv[i] = calloc(MAX_IVK_LENTH, sizeof(char));
+		if (!g_uadk_pool.iv[i])
+			goto free_iv;
+	}
+
+	g_uadk_pool.key = malloc(sizeof(char *) * g_thread_num);
+	for (j = 0; j < g_thread_num; j++) {
+		g_uadk_pool.key[j] = calloc(MAX_IVK_LENTH, sizeof(char));
+		if (!g_uadk_pool.key[j])
+			goto free_key;
+
+		memcpy(g_uadk_pool.key[j], aead_key, SEC_PERF_KEY_LEN);
+	}
+
+	g_uadk_pool.mac = malloc(sizeof(char *) * g_thread_num);
+	for (k = 0; k < g_thread_num; k++) {
+		g_uadk_pool.mac[k] = calloc(MAX_IVK_LENTH, sizeof(char));
+		if (!g_uadk_pool.mac[k])
+			goto free_mac;
+	}
+
+	g_uadk_pool.hash = malloc(sizeof(char *) * g_thread_num);
+	for (m = 0; m < g_thread_num; m++) {
+		g_uadk_pool.hash[m] = calloc(MAX_IVK_LENTH, sizeof(char));
+		if (!g_uadk_pool.hash[m])
+			goto free_hash;
+
+		memcpy(g_uadk_pool.hash[m], aead_key, SEC_PERF_KEY_LEN);
+	}
+
+	return 0;
+
+free_hash:
+	for (idx = m - 1; idx >= 0; idx--)
+		free(g_uadk_pool.hash[idx]);
+	free(g_uadk_pool.hash);
+
+free_mac:
+	for (idx = k - 1; idx >= 0; idx--)
+		free(g_uadk_pool.mac[idx]);
+
+	free(g_uadk_pool.mac);
+
+free_key:
+	for (idx = j - 1; idx >= 0; idx--)
+		free(g_uadk_pool.key[idx]);
+
+	free(g_uadk_pool.key);
+free_iv:
+	for (idx = i - 1; idx >= 0; idx--)
+		free(g_uadk_pool.iv[idx]);
+
+	free(g_uadk_pool.iv);
+
+	return -1;
+}
+
+static void free_ivkey_source(void)
+{
+	int i;
+
+	for (i = 0; i < g_thread_num; i++) {
+		free(g_uadk_pool.hash[i]);
+		free(g_uadk_pool.mac[i]);
+		free(g_uadk_pool.key[i]);
+		free(g_uadk_pool.iv[i]);
+	}
+
+	free(g_uadk_pool.hash);
+	free(g_uadk_pool.mac);
+	free(g_uadk_pool.key);
+	free(g_uadk_pool.iv);
+}
+
 static int init_uadk_bd_pool(void)
 {
 	unsigned long step;
 	int i, j;
+	int ret;
 
 	// make the block not align to 4K
 	step = sizeof(char) * g_pktlen * 2;
 
-	g_uadk_pool.iv = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
-	g_uadk_pool.key = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
-	g_uadk_pool.mac = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
-	g_uadk_pool.hash = malloc(g_thread_num * MAX_IVK_LENTH * sizeof(char));
+	ret = init_ivkey_source();
+	if (ret) {
+		SEC_TST_PRT("init uadk ivkey resource failed!\n");
+		return -ENOMEM;
+	}
 
 	g_uadk_pool.pool = malloc(g_thread_num * sizeof(struct bd_pool));
 	if (!g_uadk_pool.pool) {
 		SEC_TST_PRT("init uadk pool alloc thread failed!\n");
-		return -ENOMEM;
+		goto free_ivkey;
 	} else {
 		for (i = 0; i < g_thread_num; i++) {
 			g_uadk_pool.pool[i].bds = malloc(MAX_POOL_LENTH *
@@ -527,10 +752,23 @@ static int init_uadk_bd_pool(void)
 				if (!g_uadk_pool.pool[i].bds[j].dst)
 					goto malloc_error3;
 
-				get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
-				if (g_prefetch)
-					get_rand_data(g_uadk_pool.pool[i].bds[j].dst, g_pktlen);
+				if (g_alg != AEAD_TYPE) {
+					get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
+					if (g_prefetch)
+						get_rand_data(g_uadk_pool.pool[i].bds[j].dst,
+							      g_pktlen);
+				} else {
+					if (!g_optype)
+						get_aead_data(g_uadk_pool.pool[i].bds[j].src,
+							      g_pktlen + SEC_AEAD_LEN);
+					else
+						read_aead_dst_data(g_uadk_pool.pool[i].bds[j].src,
+								   g_pktlen + SEC_AEAD_LEN);
+				}
 			}
+
+			if (g_alg == AEAD_TYPE && g_optype)
+				memcpy(g_uadk_pool.mac[i], g_save_mac, SEC_MAX_MAC_LEN);
 		}
 	}
 
@@ -555,10 +793,8 @@ malloc_error1:
 	free(g_uadk_pool.pool);
 	g_uadk_pool.pool = NULL;
 
-	free(g_uadk_pool.iv);
-	free(g_uadk_pool.key);
-	free(g_uadk_pool.mac);
-	free(g_uadk_pool.hash);
+free_ivkey:
+	free_ivkey_source();
 
 	SEC_TST_PRT("init uadk bd pool alloc failed!\n");
 	return -ENOMEM;
@@ -567,6 +803,11 @@ malloc_error1:
 static void free_uadk_bd_pool(void)
 {
 	int i, j;
+
+	/* save aad + ctext + mac */
+	if (g_alg == AEAD_TYPE && !g_optype)
+		save_aead_dst_data(g_uadk_pool.pool[0].bds[0].dst,
+				   g_pktlen + SEC_AEAD_LEN);
 
 	for (i = 0; i < g_thread_num; i++) {
 		if (g_uadk_pool.pool[i].bds) {
@@ -581,9 +822,7 @@ static void free_uadk_bd_pool(void)
 	free(g_uadk_pool.pool);
 	g_uadk_pool.pool = NULL;
 
-	free(g_uadk_pool.iv);
-	free(g_uadk_pool.key);
-	free(g_uadk_pool.mac);
+	free_ivkey_source();
 }
 
 /*-------------------------------uadk benchmark main code-------------------------------------*/
@@ -653,8 +892,8 @@ static void *sec_uadk_cipher_async(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = &g_uadk_pool.iv[pdata->td_id];
-	priv_key = &g_uadk_pool.key[pdata->td_id];
+	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -713,11 +952,11 @@ static void *sec_uadk_aead_async(void *arg)
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_aead_sess_setup aead_setup = {0};
 	u8 *priv_iv, *priv_key, *priv_mac, *priv_hash;
+	u32 auth_size = SEC_PERF_AUTH_SIZE;
 	struct wd_aead_req areq;
 	struct bd_pool *uadk_pool;
 	int try_cnt = 0;
 	handle_t h_sess;
-	u32 auth_size = 16;
 	u32 count = 0;
 	int ret, i;
 
@@ -725,10 +964,10 @@ static void *sec_uadk_aead_async(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = &g_uadk_pool.iv[pdata->td_id];
-	priv_key = &g_uadk_pool.key[pdata->td_id];
-	priv_mac = &g_uadk_pool.mac[pdata->td_id];
-	priv_hash = &g_uadk_pool.hash[pdata->td_id];
+	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	priv_key = g_uadk_pool.key[pdata->td_id];
+	priv_mac = g_uadk_pool.mac[pdata->td_id];
+	priv_hash = g_uadk_pool.hash[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -768,7 +1007,7 @@ static void *sec_uadk_aead_async(void *arg)
 	areq.mac = priv_mac;
 	areq.iv_bytes = pdata->ivsize;
 	areq.mac_bytes = auth_size;
-	areq.assoc_bytes = 16;
+	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
 	if (pdata->is_union)
 		areq.mac_bytes = 32;
@@ -824,8 +1063,8 @@ static void *sec_uadk_digest_async(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = &g_uadk_pool.iv[pdata->td_id];
-	priv_key = &g_uadk_pool.key[pdata->td_id];
+	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -893,8 +1132,8 @@ static void *sec_uadk_cipher_sync(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = &g_uadk_pool.iv[pdata->td_id];
-	priv_key = &g_uadk_pool.key[pdata->td_id];
+	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -944,10 +1183,10 @@ static void *sec_uadk_aead_sync(void *arg)
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_aead_sess_setup aead_setup = {0};
 	u8 *priv_iv, *priv_key, *priv_mac, *priv_hash;
+	u32 auth_size = SEC_PERF_AUTH_SIZE;
 	struct wd_aead_req areq;
 	struct bd_pool *uadk_pool;
 	handle_t h_sess;
-	u32 auth_size = 16;
 	u32 count = 0;
 	int ret, i;
 
@@ -955,10 +1194,11 @@ static void *sec_uadk_aead_sync(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = &g_uadk_pool.iv[pdata->td_id];
-	priv_key = &g_uadk_pool.key[pdata->td_id];
-	priv_mac = &g_uadk_pool.mac[pdata->td_id];
-	priv_hash = &g_uadk_pool.hash[pdata->td_id];
+
+	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	priv_key = g_uadk_pool.key[pdata->td_id];
+	priv_mac = g_uadk_pool.mac[pdata->td_id];
+	priv_hash = g_uadk_pool.hash[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -996,13 +1236,10 @@ static void *sec_uadk_aead_sync(void *arg)
 	areq.op_type = pdata->optype;
 	areq.iv = priv_iv; // aead IV need update with param
 	areq.mac = priv_mac;
-	areq.mac_bytes = 16;
 	areq.iv_bytes = pdata->ivsize;
-	areq.assoc_bytes = 16;
+	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
-	areq.mac_bytes = auth_size;
-	if (pdata->is_union)
-		areq.mac_bytes = 32;
+	areq.mac_bytes = g_maclen;
 	if (areq.op_type) // decrypto
 		areq.out_bytes = g_pktlen + 16; // aadsize = 16;
 	else
@@ -1016,6 +1253,7 @@ static void *sec_uadk_aead_sync(void *arg)
 		areq.src = uadk_pool->bds[i].src;
 		areq.dst = uadk_pool->bds[i].dst;
 		count++;
+
 		ret = wd_do_aead_sync(h_sess, &areq);
 		if (ret || areq.state)
 			break;
@@ -1045,8 +1283,8 @@ static void *sec_uadk_digest_sync(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = &g_uadk_pool.iv[pdata->td_id];
-	priv_key = &g_uadk_pool.key[pdata->td_id];
+	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -1119,7 +1357,9 @@ int sec_uadk_sync_threads(struct acc_option *options)
 	for (i = 0; i < g_thread_num; i++) {
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].alg = threads_option.alg;
+		threads_args[i].dalg = threads_option.dalg;
 		threads_args[i].mode = threads_option.mode;
+		threads_args[i].is_union = threads_option.is_union;
 		threads_args[i].keysize = threads_option.keysize;
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
@@ -1185,7 +1425,9 @@ int sec_uadk_async_threads(struct acc_option *options)
 	for (i = 0; i < g_thread_num; i++) {
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].alg = threads_option.alg;
+		threads_args[i].dalg = threads_option.dalg;
 		threads_args[i].mode = threads_option.mode;
+		threads_args[i].is_union = threads_option.is_union;
 		threads_args[i].keysize = threads_option.keysize;
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
@@ -1227,6 +1469,18 @@ int sec_uadk_benchmark(struct acc_option *options)
 	g_pktlen = options->pktlen;
 	g_ctxnum = options->ctxnums;
 	g_prefetch = options->prefetch;
+	g_alg = options->subtype;
+	g_optype = options->optype;
+	g_algtype = options->algtype;
+
+	if (g_alg == AEAD_TYPE) {
+		g_maclen = get_aead_mac_len(g_algtype);
+		if (g_maclen < 0) {
+			SEC_TST_PRT("SEC algtype error: %u\n", g_algtype);
+			return -EINVAL;
+		}
+	}
+
 	if (options->optype > WD_CIPHER_DECRYPTION) {
 		SEC_TST_PRT("SEC optype error: %u\n", options->optype);
 		return -EINVAL;
