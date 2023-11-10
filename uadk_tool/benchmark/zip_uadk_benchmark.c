@@ -603,8 +603,7 @@ fse_err:
 	free(ftuple);
 	wd_comp_free_sess(h_sess);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, creq.dst_len);
+	cal_avg_latency(count);
 	if (pdata->optype == WD_DIR_COMPRESS)
 		add_recv_data(count, creq.src_len);
 	else
@@ -700,8 +699,7 @@ fse_err:
 	free(ftuple);
 	wd_comp_free_sess(h_sess);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, creq.dst_len);
+	cal_avg_latency(count);
 	if (pdata->optype == WD_DIR_COMPRESS)
 		add_recv_data(count, creq.src_len);
 	else
@@ -872,8 +870,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	}
 	wd_comp_free_sess(h_sess);
 
-	//ZIP_TST_PRT("valid pool len: %u, send count BD: %u, input len: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, creq.src_len, g_pktlen);
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -936,8 +933,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 	}
 	wd_comp_free_sess(h_sess);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, creq.dst_len);
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;

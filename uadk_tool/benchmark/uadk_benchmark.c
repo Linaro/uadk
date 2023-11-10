@@ -18,6 +18,7 @@
 
 /*----------------------------------------head struct--------------------------------------------------------*/
 static unsigned int g_run_state = 1;
+static struct acc_option *g_run_options;
 static pthread_mutex_t acc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct _recv_data {
 	double pkg_len;
@@ -116,6 +117,9 @@ static struct acc_alg_item alg_options[] = {
 	{"aes-128-gcm", AES_128_GCM},
 	{"aes-192-gcm", AES_192_GCM},
 	{"aes-256-gcm", AES_256_GCM},
+	{"aes-128-cbc-sha256-hmac", AES_128_CBC_SHA256_HMAC},
+	{"aes-192-cbc-sha256-hmac", AES_192_CBC_SHA256_HMAC},
+	{"aes-256-cbc-sha256-hmac", AES_256_CBC_SHA256_HMAC},
 	{"sm4-128-ccm", SM4_128_CCM},
 	{"sm4-128-gcm", SM4_128_GCM},
 	{"sm3",    SM3_ALG},
@@ -290,6 +294,18 @@ void get_rand_data(u8 *addr, u32 size)
 #endif
 }
 
+
+void cal_avg_latency(u32 count)
+{
+	double latency;
+
+	if (!g_run_options || !g_run_options->latency)
+		return;
+
+	latency = (double)g_run_options->times * SEC_2_USEC / count;
+	ACC_TST_PRT("thread<%lu> avg latency: %.1fus\n", gettid(), latency);
+}
+
 /*-------------------------------------main code------------------------------------------------------*/
 
 static void parse_alg_param(struct acc_option *option)
@@ -382,7 +398,7 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 			if (get_recv_time() == option->threads)
 				break;
 		} else { // ASYNC_MODE
-			if (get_recv_time() == 1)
+			if (get_recv_time() == 1) // poll complete
 				break;
 		}
 		usleep(1000);
@@ -471,9 +487,9 @@ int acc_benchmark_run(struct acc_option *option)
 	int i, ret = 0;
 	int status;
 
-	ACC_TST_PRT("start UADK benchmark test.\n");
 	parse_alg_param(option);
 	dump_param(option);
+	g_run_options = option;
 
 	pthread_mutex_init(&acc_mutex, NULL);
 	if (option->multis <= 1) {
@@ -549,12 +565,12 @@ int acc_default_case(struct acc_option *option)
 static void print_help(void)
 {
 	ACC_TST_PRT("NAME\n");
-	ACC_TST_PRT("    uadk_tool benchmark: test UADK acc performance,etc\n");
+	ACC_TST_PRT("    benchmark: test UADK acc performance,etc\n");
 	ACC_TST_PRT("USAGE\n");
-	ACC_TST_PRT("    uadk_tool benchmark [--alg aes-128-cbc] [--alg rsa-2048]\n");
-	ACC_TST_PRT("    uadk_tool benchmark [--mode] [--pktlen] [--keylen] [--seconds]\n");
-	ACC_TST_PRT("    uadk_tool benchmark [--multi] [--sync] [--async] [--help]\n");
-	ACC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_tool benchmark xxxx\n");
+	ACC_TST_PRT("    benchmark [--alg aes-128-cbc] [--alg rsa-2048]\n");
+	ACC_TST_PRT("    benchmark [--mode] [--pktlen] [--keylen] [--seconds]\n");
+	ACC_TST_PRT("    benchmark [--multi] [--sync] [--async] [--help]\n");
+	ACC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_benchmark xxxx\n");
 	ACC_TST_PRT("        specify numa nodes for cpu and memory\n");
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
@@ -569,7 +585,7 @@ static void print_help(void)
 	ACC_TST_PRT("    [--seconds]:\n");
 	ACC_TST_PRT("        set the test times\n");
 	ACC_TST_PRT("    [--multi]:\n");
-	ACC_TST_PRT("        set the number of process\n");
+	ACC_TST_PRT("        set the number of threads\n");
 	ACC_TST_PRT("    [--thread]:\n");
 	ACC_TST_PRT("        set the number of threads\n");
 	ACC_TST_PRT("    [--ctxnum]:\n");
@@ -580,11 +596,13 @@ static void print_help(void)
 	ACC_TST_PRT("        set the test openssl engine\n");
 	ACC_TST_PRT("    [--alglist]:\n");
 	ACC_TST_PRT("        list the all support alg\n");
+	ACC_TST_PRT("    [--latency]:\n");
+	ACC_TST_PRT("        test the running time of packets\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
 	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
-	ACC_TST_PRT("    	     --pktlen 1024 --seconds 1 --multi 1 --thread 1 --ctxnum 4\n");
-	ACC_TST_PRT("UPDATE:2022-7-18\n");
+	ACC_TST_PRT("    	     --pktlen 1024 --seconds 1 --multi 1 --thread 1 --ctxnum 2\n");
+	ACC_TST_PRT("UPDATE:2022-3-28\n");
 }
 
 static void print_support_alg(void)
@@ -603,20 +621,21 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 	int c;
 
 	static struct option long_options[] = {
-		{"alg",       required_argument, 0, 2},
-		{"mode",      required_argument, 0, 3},
-		{"opt",       required_argument, 0, 4},
-		{"sync",      no_argument,       0, 5},
-		{"async",     no_argument,       0, 6},
-		{"pktlen",    required_argument, 0, 7},
-		{"seconds",   required_argument, 0, 8},
-		{"thread",    required_argument, 0, 9},
-		{"multi",     required_argument, 0, 10},
-		{"ctxnum",    required_argument, 0, 11},
-		{"prefetch",     no_argument,    0, 12},
-		{"engine",    required_argument, 0, 13},
-		{"alglist",      no_argument,    0, 14},
-		{"help",      no_argument,       0, 15},
+		{"alg",    required_argument, 0,  1},
+		{"mode",    required_argument, 0,  2},
+		{"opt",    required_argument, 0,  3},
+		{"sync",      no_argument,       0,4},
+		{"async",     no_argument,       0,5},
+		{"pktlen",    required_argument, 0,  6},
+		{"seconds",    required_argument, 0,  7},
+		{"thread",     required_argument, 0,  8},
+		{"multi",     required_argument, 0,  9},
+		{"ctxnum",    required_argument, 0,  10},
+		{"prefetch",     no_argument,      0,11},
+		{"engine",    required_argument,    0,12},
+		{"alglist",      no_argument,    0,  13},
+		{"latency",      no_argument,    0,  14},
+		{"help",      no_argument,       0,  15},
 		{0, 0, 0, 0}
 	};
 
@@ -626,46 +645,49 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 
 		switch (c) {
-		case 2:
+		case 1:
 			option->algtype = get_alg_type(optarg);
 			strcpy(option->algname, optarg);
 			break;
-		case 3:
+		case 2:
 			option->modetype = get_mode_type(optarg);
 			break;
-		case 4:
+		case 3:
 			option->optype = strtol(optarg, NULL, 0);
 			break;
-		case 5:
+		case 4:
 			option->syncmode = SYNC_MODE;
 			break;
-		case 6:
+		case 5:
 			option->syncmode = ASYNC_MODE;
 			break;
-		case 7:
+		case 6:
 			option->pktlen = strtol(optarg, NULL, 0);
 			break;
-		case 8:
+		case 7:
 			option->times = strtol(optarg, NULL, 0);
 			break;
-		case 9:
+		case 8:
 			option->threads = strtol(optarg, NULL, 0);
 			break;
-		case 10:
+		case 9:
 			option->multis = strtol(optarg, NULL, 0);
 			break;
-		case 11:
+		case 10:
 			option->ctxnums = strtol(optarg, NULL, 0);
 			break;
-		case 12:
+		case 11:
 			option->prefetch = 1;
 			break;
-		case 13:
+		case 12:
 			strcpy(option->engine, optarg);
 			break;
-		case 14:
+		case 13:
 			print_support_alg();
 			goto to_exit;
+		case 14:
+			option->latency = true;
+			break;
 		case 15:
 			print_help();
 			goto to_exit;
@@ -729,9 +751,14 @@ int acc_option_convert(struct acc_option *option)
 	if (!strlen(option->engine)) {
 		option->engine_flag = false;
 		return 0;
-	} else if (strcmp(option->engine, "uadk")) {
+	} else if (strcmp(option->engine, "uadk_engine")) {
 		option->engine_flag = false;
-		ACC_TST_PRT("uadk benchmark just support engine: uadk\n");
+		ACC_TST_PRT("uadk benchmark just support engine: uadk_engine\n");
+		goto param_err;
+	}
+
+	if (option->syncmode == ASYNC_MODE && option->latency) {
+		ACC_TST_PRT("uadk benchmark async mode can't test latency\n");
 		goto param_err;
 	}
 

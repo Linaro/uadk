@@ -882,6 +882,7 @@ static void *sec_soft_cipher_sync(void *arg)
 	EVP_CIPHER_CTX_cleanup(ctx);
 	EVP_CIPHER_CTX_free(ctx);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -986,6 +987,7 @@ static void *sec_soft_aead_sync(void *arg)
 	}
 	EVP_CIPHER_CTX_free(ctx);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -1056,6 +1058,7 @@ static void *sec_soft_digest_sync(void *arg)
 		HMAC_CTX_free(hm_ctx);
 	}
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;

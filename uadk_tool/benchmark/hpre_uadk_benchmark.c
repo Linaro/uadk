@@ -1198,6 +1198,7 @@ key_release:
 	free(key_info);
 
 	wd_rsa_free_sess(h_sess);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -1670,6 +1671,7 @@ param_release:
 	free(req.pri);
 sess_release:
 	wd_dh_free_sess(h_sess);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -2102,6 +2104,7 @@ msg_release:
 	if (subtype == SM2_TYPE)
 		free(setup.msg);
 
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;

@@ -591,8 +591,7 @@ fse_err:
 	free(ftuple);
 	wcrypto_del_comp_ctx(ctx);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, opdata.produced);
+	cal_avg_latency(count);
 	if (pdata->optype == WCRYPTO_DEFLATE)
 		add_recv_data(count, opdata.in_len);
 	else
@@ -703,8 +702,7 @@ fse_err:
 	free(ftuple);
 	wcrypto_del_comp_ctx(ctx);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, opdata.produced);
+	cal_avg_latency(count);
 	if (pdata->optype == WCRYPTO_DEFLATE)
 		add_recv_data(count, opdata.in_len);
 	else
@@ -906,8 +904,7 @@ static void *zip_wd_blk_sync_run(void *arg)
 	}
 	wcrypto_del_comp_ctx(ctx);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, opdata.produced);
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -983,8 +980,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 	}
 	wcrypto_del_comp_ctx(ctx);
 
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, opdata.produced);
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
