@@ -32,12 +32,17 @@
 #define MAX_POOL_LENTH		4096
 #define MAX_TRY_CNT		5000
 #define SEND_USLEEP		100
+#define SEC_2_USEC		1000000
+#define HASH_ZISE		16
 
-typedef unsigned char u8;
+typedef unsigned long long u64;
 typedef unsigned int u32;
-typedef unsigned     long long   u64;
+typedef unsigned short u16;
+typedef unsigned char u8;
+
 #define SCHED_SINGLE "sched_single"
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
+#define gettid() syscall(__NR_gettid)
 
 /**
  * struct acc_option - Define the test acc app option list.
@@ -47,6 +52,7 @@ typedef unsigned     long long   u64;
  * @modetype: sva, no-sva, soft mode
  * @optype: enc/dec, comp/decomp
  * @prefetch: write allocated memory to prevent page faults
+ * @latency: test packet running time
  */
 struct acc_option {
 	char  algname[64];
@@ -65,6 +71,7 @@ struct acc_option {
 	char  engine[64];
 	u32 engine_flag;
 	u32 prefetch;
+	bool latency;
 };
 
 enum acc_type {
@@ -153,6 +160,9 @@ enum test_alg {
 	AES_128_GCM,
 	AES_192_GCM,
 	AES_256_GCM,
+	AES_128_CBC_SHA256_HMAC,
+	AES_192_CBC_SHA256_HMAC,
+	AES_256_CBC_SHA256_HMAC,
 	SM4_128_CCM,
 	SM4_128_GCM,
 	SM3_ALG, // digest
@@ -177,6 +187,7 @@ extern void get_rand_data(u8 *addr, u32 size);
 extern void add_recv_data(u32 cnt, u32 pkglen);
 extern void add_send_complete(void);
 extern u32 get_recv_time(void);
+extern void cal_avg_latency(u32 count);
 
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);

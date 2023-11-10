@@ -934,6 +934,7 @@ static void *sec_uadk_cipher_sync(void *arg)
 	}
 	wd_cipher_free_sess(h_sess);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -1024,6 +1025,7 @@ static void *sec_uadk_aead_sync(void *arg)
 	}
 	wd_aead_free_sess(h_sess);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -1083,6 +1085,7 @@ static void *sec_uadk_digest_sync(void *arg)
 	}
 	wd_digest_free_sess(h_sess);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;

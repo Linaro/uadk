@@ -1032,6 +1032,7 @@ static void *sec_wd_cipher_sync(void *arg)
 	}
 	wcrypto_del_cipher_ctx(ctx);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -1156,6 +1157,7 @@ static void *sec_wd_aead_sync(void *arg)
 	}
 	wcrypto_del_aead_ctx(ctx);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;
@@ -1245,6 +1247,7 @@ static void *sec_wd_digest_sync(void *arg)
 	}
 	wcrypto_del_digest_ctx(ctx);
 
+	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
 	return NULL;

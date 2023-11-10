@@ -928,6 +928,7 @@ key_release:
 	free(key_info);
 
 	wcrypto_del_rsa_ctx(ctx);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -1324,6 +1325,7 @@ param_release:
 	wd_free_blk(pool, opdata.pri);
 ctx_release:
 	wcrypto_del_dh_ctx(ctx);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -2193,6 +2195,7 @@ sess_release:
 msg_release:
 	if (subtype == SM2_TYPE)
 		free(setup.msg);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
