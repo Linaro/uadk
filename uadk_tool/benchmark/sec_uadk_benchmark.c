@@ -456,30 +456,38 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 
 static int init_ctx_config(char *alg, int subtype, int mode)
 {
-	struct uacce_dev_list *list;
 	struct sched_params param;
-	int i, max_node;
-	int ret = 0;
+	struct uacce_dev *dev = NULL;
+	int ret, max_node, i;
 
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
 		return -EINVAL;
 
-	list = wd_get_accel_list(alg);
-	if (!list) {
-		SEC_TST_PRT("failed to get %s device\n", alg);
-		return -ENODEV;
-	}
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = g_ctxnum;
 	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	for (i = 0; i < g_ctxnum; i++) {
-		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
-		g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
-		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	i = 0;
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			SEC_TST_PRT("failed to get %s device\n", alg);
+			goto out;
+		}
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
 	}
 
 	switch(subtype) {
@@ -501,12 +509,8 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		goto out;
 	}
 
-	/* If there is no numa, we defualt config to zero */
-	if (list->dev->numa_id < 0)
-		list->dev->numa_id = 0;
-
 	g_sched->name = SCHED_SINGLE;
-	param.numa_id = list->dev->numa_id;
+	param.numa_id = 0;
 	param.type = 0;
 	param.mode = mode;
 	param.begin = 0;
@@ -534,10 +538,12 @@ static int init_ctx_config(char *alg, int subtype, int mode)
 		goto out;
 	}
 
-	wd_free_list_accels(list);
-
 	return 0;
+
 out:
+	for (i--; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
 	free(g_ctx_cfg.ctxs);
 	wd_sched_rr_release(g_sched);
 
