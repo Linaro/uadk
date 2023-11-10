@@ -1314,7 +1314,22 @@ static void *rsa_uadk_async_run(void *arg)
 		count++;
 	} while(true);
 
-	/* clean output buffer remainings in the last time operation */
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				HPRE_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+
+		/* Wait for the device to complete the tasks. */
+		usleep(SEND_USLEEP * MAX_TRY_CNT);
+	}
+
 	if (req.op_type == WD_RSA_GENKEY) {
 		wd_rsa_del_kg_in(h_sess, req.src);
 		req.src = NULL;
@@ -1575,6 +1590,22 @@ static void *dh_uadk_async_run(void *arg)
 		}
 		count++;
 	} while(true);
+
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				HPRE_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+
+		/* Wait for the device to complete the tasks. */
+		usleep(SEND_USLEEP * MAX_TRY_CNT);
+	}
 
 	free(tag);
 param_release:
@@ -2226,6 +2257,22 @@ static void *ecc_uadk_async_run(void *arg)
 		}
 		count++;
 	} while(true);
+
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				HPRE_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+
+		/* Wait for the device to complete the tasks. */
+		usleep(SEND_USLEEP * MAX_TRY_CNT);
+	}
 
 	free(tag);
 src_release:
