@@ -18,6 +18,8 @@
 
 #define COMP_LEN_RATE		2
 #define DECOMP_LEN_RATE		2
+#define COMPRESSION_RATIO_FACTOR	0.7
+#define MAX_POOL_LENTH_COMP	512
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -67,7 +69,7 @@ typedef struct uadk_thread_res {
 struct zip_file_head {
 	u32 file_size;
 	u32 block_num;
-	u32 blk_sz[MAX_POOL_LENTH];
+	u32 blk_sz[MAX_POOL_LENTH_COMP];
 };
 
 static unsigned int g_thread_num;
@@ -124,11 +126,11 @@ static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 	}
 
 	// init file head informations
-	for (j = 0; j < MAX_POOL_LENTH; j++) {
+	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 		fhead->blk_sz[j] = g_thread_queue.bd_res[0].bds[j].dst_len;
 		total_file_size += fhead->blk_sz[j];
 	}
-	fhead->block_num = MAX_POOL_LENTH;
+	fhead->block_num = MAX_POOL_LENTH_COMP;
 	fhead->file_size = total_file_size;
 	size = write(fd, fhead, sizeof(*fhead));
 	if (size < 0) {
@@ -138,7 +140,7 @@ static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 	}
 
 	// write data for one buffer one buffer to file line.
-	for (j = 0; j < MAX_POOL_LENTH; j++) {
+	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 		size = write(fd, g_thread_queue.bd_res[0].bds[j].dst,
 				fhead->blk_sz[j]);
 		if (size < 0) {
@@ -153,7 +155,7 @@ write_error:
 fd_error:
 	close(fd);
 
-	full_size = g_pktlen * MAX_POOL_LENTH;
+	full_size = g_pktlen * MAX_POOL_LENTH_COMP;
 	comp_rate = (double) total_file_size / full_size;
 	ZIP_TST_PRT("compress data rate: %.1f%%!\n", comp_rate * 100);
 
@@ -196,14 +198,14 @@ static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 		goto fd_err;
 	}
 	size = read(fd, fhead, sizeof(*fhead));
-	if (size < 0 || fhead->block_num != MAX_POOL_LENTH) {
+	if (size < 0 || fhead->block_num != MAX_POOL_LENTH_COMP) {
 		ZIP_TST_PRT("failed to read file head\n");
 		ret = -EINVAL;
 		goto read_err;
 	}
 
 	// read data for one buffer one buffer from file line
-	for (j = 0; j < MAX_POOL_LENTH; j++) {
+	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 		memset(g_thread_queue.bd_res[0].bds[j].src, 0x0,
 			g_thread_queue.bd_res[0].bds[j].src_len);
 		if (size != 0) { // zero size buffer no need to read;
@@ -221,7 +223,7 @@ static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 	}
 
 	for (i = 1; i < g_thread_num; i++) {
-		for (j = 0; j < MAX_POOL_LENTH; j++) {
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 			if (g_thread_queue.bd_res[0].bds[j].src_len)
 				memcpy(g_thread_queue.bd_res[i].bds[j].src,
 					g_thread_queue.bd_res[0].bds[j].src,
@@ -328,7 +330,7 @@ static int init_zip_wd_queue(struct acc_option *options)
 		}
 	}
 
-	// use no-sva pbuffer, MAX_BLOCK_NM at least 4 times of MAX_POOL_LENTH
+	// use no-sva pbuffer, MAX_BLOCK_NM at least 4 times of MAX_POOL_LENTH_COMP
 	memset(&blksetup, 0, sizeof(blksetup));
 	outsize = ALIGN(outsize, ALIGN_SIZE);
 	blksetup.block_size = outsize;
@@ -345,12 +347,12 @@ static int init_zip_wd_queue(struct acc_option *options)
 		}
 		pool = g_thread_queue.bd_res[j].pool;
 
-		g_thread_queue.bd_res[j].bds = malloc(sizeof(struct wd_bd) * MAX_POOL_LENTH);
+		g_thread_queue.bd_res[j].bds = malloc(sizeof(struct wd_bd) * MAX_POOL_LENTH_COMP);
 		if (!g_thread_queue.bd_res[j].bds)
 			goto bds_error;
 		bds = g_thread_queue.bd_res[j].bds;
 
-		for (i = 0; i < MAX_POOL_LENTH; i++) {
+		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
 			bds[i].src = wd_alloc_blk(pool);
 			if (!bds[i].src) {
 				ret = -ENOMEM;
@@ -365,7 +367,7 @@ static int init_zip_wd_queue(struct acc_option *options)
 			}
 			bds[i].dst_len = outsize;
 
-			get_rand_data(bds[i].src, insize);
+			get_rand_data(bds[i].src, insize * COMPRESSION_RATIO_FACTOR);
 		}
 
 	}
@@ -385,7 +387,7 @@ pool_err:
 	for (j--; j >= 0; j--) {
 		pool = g_thread_queue.bd_res[j].pool;
 		bds = g_thread_queue.bd_res[j].bds;
-		for (i = 0; i < MAX_POOL_LENTH; i++) {
+		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
 			wd_free_blk(pool, bds[i].src);
 			wd_free_blk(pool, bds[i].dst);
 		}
@@ -410,7 +412,7 @@ static void uninit_zip_wd_queue(void)
 	for (j = 0; j < g_thread_num; j++) {
 		pool = g_thread_queue.bd_res[j].pool;
 		bds = g_thread_queue.bd_res[j].bds;
-		for (i = 0; i < MAX_POOL_LENTH; i++) {
+		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
 			wd_free_blk(pool, bds[i].src);
 			wd_free_blk(pool, bds[i].dst);
 		}
@@ -551,17 +553,17 @@ static void *zip_wd_blk_lz77_sync_run(void *arg)
 
 	out_len = bd_pool[0].dst_len;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH);
+	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH);
+	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH);
+	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = &hw_buff_out[i]; //temp out
 		opdata.in_len = bd_pool[i].src_len;
@@ -597,7 +599,7 @@ fse_err:
 
 	cal_avg_latency(count);
 	if (pdata->optype == WCRYPTO_DEFLATE)
-		add_recv_data(count, opdata.in_len);
+		add_recv_data(count, g_pktlen);
 	else
 		add_recv_data(count, first_len);
 
@@ -659,17 +661,17 @@ static void *zip_wd_stm_lz77_sync_run(void *arg)
 
 	out_len = bd_pool[0].dst_len;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH);
+	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH);
+	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH);
+	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = &hw_buff_out[i]; //temp out
 		opdata.in_len = bd_pool[i].src_len;
@@ -708,7 +710,7 @@ fse_err:
 
 	cal_avg_latency(count);
 	if (pdata->optype == WCRYPTO_DEFLATE)
-		add_recv_data(count, opdata.in_len);
+		add_recv_data(count, g_pktlen);
 	else
 		add_recv_data(count, first_len);
 
@@ -769,16 +771,16 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 
 	out_len = bd_pool[0].dst_len;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH);
+	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH);
+	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH);
+	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
+	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
 	if (!tag) {
 		ZIP_TST_PRT("failed to malloc zip tag!\n");
 		goto tag_err;
@@ -789,7 +791,7 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 				break;
 
 		try_cnt = 0;
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = &hw_buff_out[i]; //temp out
 		opdata.in_len = bd_pool[i].src_len;
@@ -832,10 +834,6 @@ hw_buff_err:
 fse_err:
 	free(ftuple);
 	wcrypto_del_comp_ctx(ctx);
-
-	// ZIP_TST_PRT("LZ77 valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, opdata.produced);
-
 	add_send_complete();
 
 	return NULL;
@@ -890,7 +888,7 @@ static void *zip_wd_blk_sync_run(void *arg)
 	out_len = bd_pool[0].dst_len;
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = bd_pool[i].dst;
 		opdata.in_len = bd_pool[i].src_len;
@@ -963,7 +961,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 	out_len = bd_pool[0].dst_len;
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = bd_pool[i].dst;
 		opdata.in_len = bd_pool[i].src_len;
@@ -1041,7 +1039,7 @@ static void *zip_wd_blk_async_run(void *arg)
 		opdata.flush = WCRYPTO_FINISH;
 
 	out_len = bd_pool[0].dst_len;
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
+	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
 	if (!tag) {
 		ZIP_TST_PRT("failed to malloc zip tag!\n");
 		goto tag_release;
@@ -1051,7 +1049,7 @@ static void *zip_wd_blk_async_run(void *arg)
 		if (get_run_state() == 0)
 			break;
 
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = bd_pool[i].dst;
 		opdata.in_len = bd_pool[i].src_len;
@@ -1088,10 +1086,6 @@ static void *zip_wd_blk_async_run(void *arg)
 tag_release:
 	free(tag);
 	wcrypto_del_comp_ctx(ctx);
-
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, opdata.produced);
-
 	add_send_complete();
 
 	return NULL;

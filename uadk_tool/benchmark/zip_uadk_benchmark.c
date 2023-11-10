@@ -13,6 +13,8 @@
 #define ZIP_FILE			"./zip"
 #define COMP_LEN_RATE			2
 #define DECOMP_LEN_RATE			2
+#define MAX_POOL_LENTH_COMP		512
+#define COMPRESSION_RATIO_FACTOR	0.7
 
 struct uadk_bd {
 	u8 *src;
@@ -54,7 +56,7 @@ typedef struct uadk_thread_res {
 struct zip_file_head {
 	u32 file_size;
 	u32 block_num;
-	u32 blk_sz[MAX_POOL_LENTH];
+	u32 blk_sz[MAX_POOL_LENTH_COMP];
 };
 
 static struct wd_ctx_config g_ctx_cfg;
@@ -115,11 +117,11 @@ static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 	}
 
 	// init file head informations
-	for (j = 0; j < MAX_POOL_LENTH; j++) {
+	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 		fhead->blk_sz[j] = g_zip_pool.pool[0].bds[j].dst_len;
 		total_file_size += fhead->blk_sz[j];
 	}
-	fhead->block_num = MAX_POOL_LENTH;
+	fhead->block_num = MAX_POOL_LENTH_COMP;
 	fhead->file_size = total_file_size;
 	size = write(fd, fhead, sizeof(*fhead));
 	if (size < 0) {
@@ -129,7 +131,7 @@ static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 	}
 
 	// write data for one buffer one buffer to file line.
-	for (j = 0; j < MAX_POOL_LENTH; j++) {
+	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 		size = write(fd, g_zip_pool.pool[0].bds[j].dst,
 				fhead->blk_sz[j]);
 		if (size < 0) {
@@ -144,7 +146,7 @@ write_error:
 fd_error:
 	close(fd);
 
-	full_size = g_pktlen * MAX_POOL_LENTH;
+	full_size = g_pktlen * MAX_POOL_LENTH_COMP;
 	comp_rate = (double) total_file_size / full_size;
 	ZIP_TST_PRT("compress data rate: %.1f%%!\n", comp_rate * 100);
 
@@ -187,14 +189,14 @@ static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 		goto fd_err;
 	}
 	size = read(fd, fhead, sizeof(*fhead));
-	if (size < 0 || fhead->block_num != MAX_POOL_LENTH) {
+	if (size < 0 || fhead->block_num != MAX_POOL_LENTH_COMP) {
 		ZIP_TST_PRT("failed to read file head\n");
 		ret = -EINVAL;
 		goto read_err;
 	}
 
 	// read data for one buffer one buffer from file line
-	for (j = 0; j < MAX_POOL_LENTH; j++) {
+	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 		memset(g_zip_pool.pool[0].bds[j].src, 0x0,
 			g_zip_pool.pool[0].bds[j].src_len);
 		if (size != 0) { // zero size buffer no need to read;
@@ -212,7 +214,7 @@ static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 	}
 
 	for (i = 1; i < g_thread_num; i++) {
-		for (j = 0; j < MAX_POOL_LENTH; j++) {
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 			if (g_zip_pool.pool[0].bds[j].src_len)
 				memcpy(g_zip_pool.pool[i].bds[j].src,
 					g_zip_pool.pool[0].bds[j].src,
@@ -383,14 +385,14 @@ static int init_uadk_bd_pool(u32 optype)
 		return -ENOMEM;
 	} else {
 		for (i = 0; i < g_thread_num; i++) {
-			g_zip_pool.pool[i].bds = malloc(MAX_POOL_LENTH *
+			g_zip_pool.pool[i].bds = malloc(MAX_POOL_LENTH_COMP *
 							 sizeof(struct uadk_bd));
 			if (!g_zip_pool.pool[i].bds) {
 				ZIP_TST_PRT("init uadk bds alloc failed!\n");
 				goto malloc_error1;
 			}
-			for (j = 0; j < MAX_POOL_LENTH; j++) {
-				g_zip_pool.pool[i].bds[j].src = malloc(insize);
+			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+				g_zip_pool.pool[i].bds[j].src = calloc(1, insize);
 				if (!g_zip_pool.pool[i].bds[j].src)
 					goto malloc_error2;
 				g_zip_pool.pool[i].bds[j].src_len = insize;
@@ -400,7 +402,7 @@ static int init_uadk_bd_pool(u32 optype)
 					goto malloc_error3;
 				g_zip_pool.pool[i].bds[j].dst_len = outsize;
 
-				get_rand_data(g_zip_pool.pool[i].bds[j].src, insize);
+				get_rand_data(g_zip_pool.pool[i].bds[j].src, insize * COMPRESSION_RATIO_FACTOR);
 				if (g_prefetch)
 					get_rand_data(g_zip_pool.pool[i].bds[j].dst, outsize);
 			}
@@ -418,7 +420,7 @@ malloc_error2:
 	}
 malloc_error1:
 	for (i--; i >= 0; i--) {
-		for (j = 0; j < MAX_POOL_LENTH; j++) {
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 			free(g_zip_pool.pool[i].bds[j].src);
 			free(g_zip_pool.pool[i].bds[j].dst);
 		}
@@ -438,7 +440,7 @@ static void free_uadk_bd_pool(void)
 
 	for (i = 0; i < g_thread_num; i++) {
 		if (g_zip_pool.pool[i].bds) {
-			for (j = 0; j < MAX_POOL_LENTH; j++) {
+			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 				free(g_zip_pool.pool[i].bds[j].src);
 				free(g_zip_pool.pool[i].bds[j].dst);
 			}
@@ -565,17 +567,17 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	creq.data_fmt = 0;
 	creq.status = 0;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH);
+	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH);
+	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH);
+	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = &hw_buff_out[i]; //temp out
 		creq.src_len = uadk_pool->bds[i].src_len;
@@ -610,7 +612,7 @@ fse_err:
 
 	cal_avg_latency(count);
 	if (pdata->optype == WD_DIR_COMPRESS)
-		add_recv_data(count, creq.src_len);
+		add_recv_data(count, g_pktlen);
 	else
 		add_recv_data(count, first_len);
 
@@ -659,17 +661,17 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 	creq.data_fmt = 0;
 	creq.status = 0;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH);
+	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH);
+	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH);
+	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = &hw_buff_out[i]; //temp out
 		creq.src_len = uadk_pool->bds[i].src_len;
@@ -707,7 +709,7 @@ fse_err:
 
 	cal_avg_latency(count);
 	if (pdata->optype == WD_DIR_COMPRESS)
-		add_recv_data(count, creq.src_len);
+		add_recv_data(count, g_pktlen);
 	else
 		add_recv_data(count, first_len);
 
@@ -754,16 +756,16 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	creq.data_fmt = 0;
 	creq.status = 0;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH);
+	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH);
+	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH);
+	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
+	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
 	if (!tag) {
 		ZIP_TST_PRT("failed to malloc zip tag!\n");
 		goto tag_err;
@@ -774,7 +776,7 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 				break;
 
 		try_cnt = 0;
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = &hw_buff_out[i]; //temp out
 		creq.src_len = uadk_pool->bds[i].src_len;
@@ -815,10 +817,6 @@ hw_buff_err:
 fse_err:
 	free(ftuple);
 	wd_comp_free_sess(h_sess);
-
-	// ZIP_TST_PRT("LZ77 valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, creq.dst_len);
-
 	add_send_complete();
 
 	return NULL;
@@ -861,7 +859,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	creq.status = 0;
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = uadk_pool->bds[i].dst;
 		creq.src_len = uadk_pool->bds[i].src_len;
@@ -921,7 +919,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 	creq.status = 0;
 
 	while(1) {
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = uadk_pool->bds[i].dst;
 		creq.src_len = uadk_pool->bds[i].src_len;
@@ -986,7 +984,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 	creq.priv = 0;
 	creq.status = 0;
 
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
+	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
 	if (!tag) {
 		ZIP_TST_PRT("failed to malloc zip tag!\n");
 		wd_comp_free_sess(h_sess);
@@ -998,7 +996,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 				break;
 
 		try_cnt = 0;
-		i = count % MAX_POOL_LENTH;
+		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = uadk_pool->bds[i].dst;
 		creq.src_len = uadk_pool->bds[i].src_len;
@@ -1031,9 +1029,6 @@ static void *zip_uadk_blk_async_run(void *arg)
 
 	free(tag);
 	wd_comp_free_sess(h_sess);
-
-	// ZIP_TST_PRT("valid pool len: %u, send count BD: %u, output len: %u!\n",
-	//		MAX_POOL_LENTH, count, creq.dst_len);
 
 	add_send_complete();
 
