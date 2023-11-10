@@ -94,6 +94,20 @@ static struct aead_alg_info wd_aead_info[] = {
 	},
 };
 
+static void wait_recv_complete(void)
+{
+	int i = 0;
+
+	while (get_recv_time() != g_thread_num) {
+		if (i++ >= MAX_TRY_CNT) {
+			SEC_TST_PRT("failed to wait poll thread finish!\n");
+			break;
+		}
+
+		usleep(SEND_USLEEP);
+	}
+}
+
 static char *get_aead_alg_name(int algtype)
 {
 	int table_size = ARRAY_SIZE(wd_aead_info);
@@ -705,17 +719,19 @@ void *sec_wd_poll(void *data)
 		recv = wd_poll_ctx(g_thread_queue.bd_res[id].queue, expt);
 		/*
 		 * warpdrive async mode poll easy to 100% with small package.
-		 * SEC_TST_PRT("warpdrive poll %d recv: %u!\n", i, recv);
+		 * SEC_TST_PRT("warpdrive poll %d recv: %d!\n", i, recv);
 		 */
 		if (unlikely(recv < 0)) {
-			SEC_TST_PRT("poll ret: %u!\n", recv);
+			SEC_TST_PRT("poll ret: %d!\n", recv);
 			goto recv_error;
 		}
 		count += recv;
 		recv = 0;
 
-		if (get_run_state() == 0)
+		if (get_run_state() == 0) {
 			last_time--;
+			usleep(SEND_USLEEP);
+		}
 	}
 
 recv_error:
@@ -824,12 +840,7 @@ static void *sec_wd_cipher_async(void *arg)
 	}
 
 	add_send_complete();
-
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
+	wait_recv_complete();
 
 	wcrypto_del_cipher_ctx(ctx);
 
@@ -968,12 +979,7 @@ static void *sec_wd_aead_async(void *arg)
 	}
 
 	add_send_complete();
-
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
+	wait_recv_complete();
 
 	wcrypto_del_aead_ctx(ctx);
 
@@ -1077,12 +1083,7 @@ static void *sec_wd_digest_async(void *arg)
 	}
 
 	add_send_complete();
-
-	while (1) {
-		if (get_recv_time() > 0) // wait async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
+	wait_recv_complete();
 
 	wcrypto_del_digest_ctx(ctx);
 
