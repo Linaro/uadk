@@ -14,6 +14,8 @@
 #include "zip_uadk_benchmark.h"
 #include "zip_wd_benchmark.h"
 
+#include "trng_wd_benchmark.h"
+
 #define TABLE_SPACE_SIZE	8
 
 /*----------------------------------------head struct--------------------------------------------------------*/
@@ -131,6 +133,7 @@ static struct acc_alg_item alg_options[] = {
 	{"sha512",    SHA512_ALG},
 	{"sha512-224",    SHA512_224},
 	{"sha512-256",    SHA512_256},
+	{"trng", TRNG},
 	{"", ALG_MAX}
 };
 
@@ -345,6 +348,11 @@ static void parse_alg_param(struct acc_option *option)
 		option->acctype = HPRE_TYPE;
 		option->subtype = X448_TYPE;
 		break;
+	case TRNG:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "trng");
+		option->acctype = TRNG_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
 	default:
 		if (option->algtype <= RSA_4096_CRT) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "rsa");
@@ -456,6 +464,12 @@ static int benchmark_run(struct acc_option *option)
 		} else if (option->modetype & NOSVA_MODE) {
 			ret = zip_wd_benchmark(option);
 		}
+	case TRNG_TYPE:
+		if (option->modetype & SVA_MODE)
+			ACC_TST_PRT("TRNG not support sva mode..\n");
+		else if (option->modetype & NOSVA_MODE)
+			ret = trng_wd_benchmark(option);
+
 		break;
 	}
 

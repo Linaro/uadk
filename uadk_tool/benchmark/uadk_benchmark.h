@@ -78,6 +78,7 @@ enum acc_type {
 	SEC_TYPE,
 	HPRE_TYPE,
 	ZIP_TYPE,
+	TRNG_TYPE,
 };
 
 enum alg_type {
@@ -174,6 +175,7 @@ enum test_alg {
 	SHA512_ALG,
 	SHA512_224,
 	SHA512_256, // digest key all set 4 Bytes
+	TRNG,
 	ALG_MAX,
 };
 
