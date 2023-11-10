@@ -28,6 +28,7 @@ char g_save_mac[SEC_MAX_MAC_LEN];
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
+	u8 mac[SEC_MAX_MAC_LEN];
 };
 
 struct bd_pool {
@@ -38,7 +39,6 @@ struct thread_pool {
 	struct bd_pool *pool;
 	u8 **iv;
 	u8 **key;
-	u8 **mac;
 	u8 **hash;
 } g_uadk_pool;
 
@@ -602,7 +602,7 @@ static void save_aead_dst_data(u8 *addr, u32 size)
 		return;
 	}
 
-	memcpy(addr + size, g_uadk_pool.mac[0], SEC_PERF_AUTH_SIZE);
+	memcpy(addr + size, g_uadk_pool.pool[0].bds[0].mac, SEC_PERF_AUTH_SIZE);
 
 	for (int i = 0; i < size + SEC_PERF_AUTH_SIZE; i++)
 		fputc((char)addr[i], fp);
@@ -645,7 +645,7 @@ static void read_aead_dst_data(u8 *addr, u32 len)
 
 static int init_ivkey_source(void)
 {
-	int i, j, k, m, idx;
+	int i, j, m, idx;
 
 	g_uadk_pool.iv = malloc(sizeof(char *) * g_thread_num);
 	for (i = 0; i < g_thread_num; i++) {
@@ -663,13 +663,6 @@ static int init_ivkey_source(void)
 		memcpy(g_uadk_pool.key[j], aead_key, SEC_PERF_KEY_LEN);
 	}
 
-	g_uadk_pool.mac = malloc(sizeof(char *) * g_thread_num);
-	for (k = 0; k < g_thread_num; k++) {
-		g_uadk_pool.mac[k] = calloc(MAX_IVK_LENTH, sizeof(char));
-		if (!g_uadk_pool.mac[k])
-			goto free_mac;
-	}
-
 	g_uadk_pool.hash = malloc(sizeof(char *) * g_thread_num);
 	for (m = 0; m < g_thread_num; m++) {
 		g_uadk_pool.hash[m] = calloc(MAX_IVK_LENTH, sizeof(char));
@@ -685,12 +678,6 @@ free_hash:
 	for (idx = m - 1; idx >= 0; idx--)
 		free(g_uadk_pool.hash[idx]);
 	free(g_uadk_pool.hash);
-
-free_mac:
-	for (idx = k - 1; idx >= 0; idx--)
-		free(g_uadk_pool.mac[idx]);
-
-	free(g_uadk_pool.mac);
 
 free_key:
 	for (idx = j - 1; idx >= 0; idx--)
@@ -712,13 +699,11 @@ static void free_ivkey_source(void)
 
 	for (i = 0; i < g_thread_num; i++) {
 		free(g_uadk_pool.hash[i]);
-		free(g_uadk_pool.mac[i]);
 		free(g_uadk_pool.key[i]);
 		free(g_uadk_pool.iv[i]);
 	}
 
 	free(g_uadk_pool.hash);
-	free(g_uadk_pool.mac);
 	free(g_uadk_pool.key);
 	free(g_uadk_pool.iv);
 }
@@ -767,14 +752,13 @@ static int init_uadk_bd_pool(void)
 					if (!g_optype)
 						get_aead_data(g_uadk_pool.pool[i].bds[j].src,
 							      g_pktlen + SEC_AEAD_LEN);
-					else
+					else {
 						read_aead_dst_data(g_uadk_pool.pool[i].bds[j].src,
 								   g_pktlen + SEC_AEAD_LEN);
+						memcpy(g_uadk_pool.pool[i].bds[j].mac, g_save_mac, SEC_MAX_MAC_LEN);
+					}
 				}
 			}
-
-			if (g_alg == AEAD_TYPE && g_optype)
-				memcpy(g_uadk_pool.mac[i], g_save_mac, SEC_MAX_MAC_LEN);
 		}
 	}
 
@@ -957,7 +941,7 @@ static void *sec_uadk_aead_async(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_aead_sess_setup aead_setup = {0};
-	u8 *priv_iv, *priv_key, *priv_mac, *priv_hash;
+	u8 *priv_iv, *priv_key, *priv_hash;
 	u32 auth_size = SEC_PERF_AUTH_SIZE;
 	struct wd_aead_req areq;
 	struct bd_pool *uadk_pool;
@@ -972,7 +956,6 @@ static void *sec_uadk_aead_async(void *arg)
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
 	priv_iv = g_uadk_pool.iv[pdata->td_id];
 	priv_key = g_uadk_pool.key[pdata->td_id];
-	priv_mac = g_uadk_pool.mac[pdata->td_id];
 	priv_hash = g_uadk_pool.hash[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -1010,7 +993,7 @@ static void *sec_uadk_aead_async(void *arg)
 
 	areq.op_type = pdata->optype;
 	areq.iv = priv_iv; // aead IV need update with param
-	areq.mac = priv_mac;
+	areq.mac = uadk_pool->bds[0].mac;
 	areq.iv_bytes = pdata->ivsize;
 	areq.mac_bytes = auth_size;
 	areq.assoc_bytes = SEC_AEAD_LEN;
@@ -1033,6 +1016,7 @@ static void *sec_uadk_aead_async(void *arg)
 		i = count % MAX_POOL_LENTH;
 		areq.src = uadk_pool->bds[i].src;
 		areq.dst = uadk_pool->bds[i].dst;
+		areq.mac = uadk_pool->bds[i].mac;
 
 		ret = wd_do_aead_async(h_sess, &areq);
 		if (ret < 0) {
@@ -1188,7 +1172,7 @@ static void *sec_uadk_aead_sync(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_aead_sess_setup aead_setup = {0};
-	u8 *priv_iv, *priv_key, *priv_mac, *priv_hash;
+	u8 *priv_iv, *priv_key, *priv_hash;
 	u32 auth_size = SEC_PERF_AUTH_SIZE;
 	struct wd_aead_req areq;
 	struct bd_pool *uadk_pool;
@@ -1203,7 +1187,6 @@ static void *sec_uadk_aead_sync(void *arg)
 
 	priv_iv = g_uadk_pool.iv[pdata->td_id];
 	priv_key = g_uadk_pool.key[pdata->td_id];
-	priv_mac = g_uadk_pool.mac[pdata->td_id];
 	priv_hash = g_uadk_pool.hash[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -1212,8 +1195,8 @@ static void *sec_uadk_aead_sync(void *arg)
 	aead_setup.calg = pdata->alg;
 	aead_setup.cmode = pdata->mode;
 	if (pdata->is_union) {
-		aead_setup.dalg = WD_DIGEST_SHA256;
-		aead_setup.dmode = WD_DIGEST_HMAC;
+		aead_setup.dalg = pdata->dalg;
+		aead_setup.dmode = pdata->dmode;
 	}
 	h_sess = wd_aead_alloc_sess(&aead_setup);
 	if (!h_sess)
@@ -1241,7 +1224,7 @@ static void *sec_uadk_aead_sync(void *arg)
 
 	areq.op_type = pdata->optype;
 	areq.iv = priv_iv; // aead IV need update with param
-	areq.mac = priv_mac;
+	areq.mac = uadk_pool->bds[0].mac;
 	areq.iv_bytes = pdata->ivsize;
 	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
