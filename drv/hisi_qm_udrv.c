@@ -972,20 +972,19 @@ void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset, __u32 size,
 		      __u8 direct)
 {
 	struct hisi_sgl *tmp = hw_sgl;
+	int begin_sge = 0, i;
 	__u32 sge_offset = 0;
 	__u32 len = 0;
-	int begin_sge = 0;
-	int i;
 
 	if (!pbuff || !size || !tmp)
 		return;
 
 	while (len + tmp->entry_size_in_sgl <= offset) {
+		len += tmp->entry_size_in_sgl;
+
 		tmp = (struct hisi_sgl *)tmp->next_dma;
 		if (!tmp)
 			return;
-
-		len += tmp->entry_size_in_sgl;
 	}
 
 	/* find the start sge position and start offset */
