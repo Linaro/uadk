@@ -494,7 +494,6 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->win_sz = sess->win_sz;
 	msg->avail_out = req->dst_len;
 
-	/* if is last 1: flush end; other: sync flush */
 	msg->req.last = 1;
 }
 
@@ -722,7 +721,7 @@ static int append_store_block(struct wd_comp_sess *sess,
 		memcpy(req->dst, store_block, blocksize);
 		req->dst_len = blocksize;
 		checksum = (__u32) cpu_to_be32(checksum);
-		 /* if zlib, ADLER32 */
+		/* if zlib, ADLER32 */
 		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
 		req->dst_len += sizeof(checksum);
 	} else if (sess->alg_type == WD_GZIP) {

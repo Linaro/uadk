@@ -39,12 +39,12 @@ enum wd_comp_level {
 	WD_COMP_L7,     /* Compression level 7 */
 	WD_COMP_L8,     /* Compression level 8 */
 	WD_COMP_L9,     /* Compression level 9 */
-	WD_COMP_L10,     /* Compression level 10 */
-	WD_COMP_L11,     /* Compression level 11 */
-	WD_COMP_L12,     /* Compression level 12 */
-	WD_COMP_L13,     /* Compression level 13 */
-	WD_COMP_L14,     /* Compression level 14 */
-	WD_COMP_L15,     /* Compression level 15 */
+	WD_COMP_L10,    /* Compression level 10 */
+	WD_COMP_L11,    /* Compression level 11 */
+	WD_COMP_L12,    /* Compression level 12 */
+	WD_COMP_L13,    /* Compression level 13 */
+	WD_COMP_L14,    /* Compression level 14 */
+	WD_COMP_L15,    /* Compression level 15 */
 };
 
 enum wd_comp_winsz_type {
@@ -72,10 +72,10 @@ struct wd_comp_req {
 	__u32			dst_len;
 	wd_alg_comp_cb_t	*cb;
 	void			*cb_param;
-	enum wd_comp_op_type 	op_type;  /* Denoted by wd_comp_op_type */
-	enum wd_buff_type 	data_fmt; /* Denoted by wd_buff_type */
-	__u32			last;
-	__u32			status;
+	enum wd_comp_op_type	op_type;  /* denoted by wd_comp_op_type */
+	enum wd_buff_type	data_fmt; /* denoted by wd_buff_type */
+	__u32			last;     /* flag of last block for stream mode */
+	__u32			status;   /* request error code */
 	void			*priv;
 };
 
