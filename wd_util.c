@@ -2420,7 +2420,7 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	__u32 count = idx + ctx_set_num;
 	struct uacce_dev *dev;
-	__u32 i;
+	__u32 i, cnt = 0;
 
 	/* If the ctx set number is 0, the initialization is skipped. */
 	if (!ctx_set_num)
@@ -2437,6 +2437,12 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 			if (WD_IS_ERR(dev))
 				return WD_PTR_ERR(dev);
 
+			if (cnt++ > WD_INIT_RETRY_TIMES) {
+				WD_ERR("failed to request enough ctx due to timeout!\n");
+				return -WD_ETIMEDOUT;
+			}
+
+			/* self-decrease i to eliminate self-increase on next loop */
 			i--;
 			continue;
 		} else if (!ctx_config->ctxs[i].ctx) {
