@@ -192,8 +192,8 @@ free_ctx_buf:
 	free(ctx);
 free_ctx_id:
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
-	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	wd_spinlock(&qinfo->qlock);
 unlock:
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
