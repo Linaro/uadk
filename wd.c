@@ -79,7 +79,7 @@ static void wd_parse_log_level(void)
 		goto close_file;
 	}
 
-	while (fscanf(in_file, "%[^\n ] ", file_contents) != EOF) {
+	while (fscanf(in_file, " %[^\n ] ", file_contents) != EOF) {
 		if (!strcmp("local5.debug", file_contents))
 			log_debug = true;
 		else if (!strcmp("local5.info", file_contents))
