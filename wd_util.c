@@ -2418,6 +2418,7 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	struct wd_ctx_nums ctx_nums = attrs->ctx_params->ctx_set_num[op_type];
 	__u32 ctx_set_num = ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num;
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	__u32 count = idx + ctx_set_num;
 	struct uacce_dev *dev;
 	__u32 i;
 
@@ -2429,13 +2430,21 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	if (WD_IS_ERR(dev))
 		return WD_PTR_ERR(dev);
 
-	for (i = idx; i < idx + ctx_set_num; i++) {
+	for (i = idx; i < count; i++) {
 		ctx_config->ctxs[i].ctx = wd_request_ctx(dev);
 		if (errno == WD_EBUSY) {
 			dev = wd_find_dev_by_numa(list, numa_id);
 			if (WD_IS_ERR(dev))
 				return WD_PTR_ERR(dev);
+
 			i--;
+			continue;
+		} else if (!ctx_config->ctxs[i].ctx) {
+			/*
+			 * wd_release_ctx_set will release ctx in
+			 * caller wd_init_ctx_and_sched.
+			 */
+			return -WD_ENOMEM;
 		}
 		ctx_config->ctxs[i].op_type = op_type;
 		ctx_config->ctxs[i].ctx_mode =
