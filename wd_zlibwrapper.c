@@ -236,8 +236,8 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 	req.last = (flush == Z_FINISH) ? 1 : 0;
 
 	ret = wd_do_comp_strm(h_sess, &req);
-	if (unlikely(ret)) {
-		WD_ERR("failed to do compress(%d)!\n", ret);
+	if (unlikely(ret || req.status == WD_IN_EPARA)) {
+		WD_ERR("failed to do compress, ret = %d, req.status = %u!\n", ret, req.status);
 		return Z_STREAM_ERROR;
 	}
 
