@@ -126,6 +126,7 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 		WD_ERR("Get zip in buf dma address fail!\n");
 		return -WD_ENOMEM;
 	}
+
 	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF)) {
 		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
 		if (!phy_out) {
@@ -296,8 +297,8 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
 	if (recv_msg->ctx_buf) {
-		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h,
-				      sqe->stream_ctx_addr_l);
+		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l) -
+			     CTX_BUFFER_OFFSET;
 		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
 			       MAX_CTX_RSV_SIZE);
 	}
@@ -727,8 +728,8 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
 	if (recv_msg->ctx_buf) {
-		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h,
-				      sqe->stream_ctx_addr_l);
+		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l) -
+			     CTX_BUFFER_OFFSET;
 		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
 			       MAX_CTX_RSV_SIZE);
 	}
