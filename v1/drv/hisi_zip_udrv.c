@@ -512,6 +512,9 @@ static int fill_zip_addr_lz77_zstd(void *ssqe,
 unmap_phy_seq:
 	drv_iova_unmap(q, zstd_out->literal, (void *)phy_lit, zstd_out->lit_sz);
 unmap_phy_lit:
+	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
+		drv_iova_unmap(q, msg->ctx_buf, (void *)addr.ctxbuf_addr - CTX_BUFFER_OFFSET,
+			       MAX_CTX_RSV_SIZE);
 	drv_iova_unmap(q, msg->src, (void *)addr.source_addr, msg->in_size);
 	return -WD_ENOMEM;
 }
