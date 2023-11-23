@@ -51,7 +51,7 @@ struct wd_digest_msg {
 	__u64 long_data_len;
 };
 
-struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag);
+struct wd_digest_msg *wd_digest_get_msg(__u32 tag);
 
 #ifdef __cplusplus
 }

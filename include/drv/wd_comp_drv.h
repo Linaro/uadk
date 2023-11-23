@@ -55,7 +55,7 @@ struct wd_comp_msg {
 	__u32 tag;
 };
 
-struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag);
+struct wd_comp_msg *wd_comp_get_msg(__u32 tag);
 
 #ifdef __cplusplus
 }

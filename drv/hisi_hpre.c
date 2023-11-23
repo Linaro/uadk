@@ -656,7 +656,7 @@ static int rsa_recv(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 
 	msg->tag = LW_U16(hw_msg.low_tag);
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_rsa_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_rsa_get_msg(msg->tag);
 		if (!temp_msg) {
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
 				qp->q_info.idx, msg->tag);
@@ -799,7 +799,7 @@ static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 
 	msg->tag = LW_U16(hw_msg.low_tag);
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_dh_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_dh_get_msg(msg->tag);
 		if (!temp_msg) {
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
 				qp->q_info.idx, msg->tag);
@@ -2291,7 +2291,7 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 
 	msg->tag = LW_U16(hw_msg->low_tag);
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_ecc_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_ecc_get_msg(msg->tag);
 		if (!temp_msg) {
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
 				qp->q_info.idx, msg->tag);

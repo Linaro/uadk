@@ -58,7 +58,7 @@ struct wd_cipher_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	struct wd_async_msg_pool pool;
+	struct msg_pool pool;
 	struct wd_alg_driver *driver;
 	void *dlhandle;
 	void *dlh_list;
@@ -685,8 +685,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 
 	ctx = config->ctxs + idx;
 
-	msg_id = wd_get_msg_from_pool(&wd_cipher_setting.pool, idx,
-				   (void **)&msg);
+	msg_id = wd_get_msg_from_pool(&wd_cipher_setting.pool, (void **)&msg);
 	if (unlikely(msg_id < 0)) {
 		WD_ERR("busy, failed to get msg from pool!\n");
 		return -WD_EBUSY;
@@ -711,13 +710,13 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	return 0;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
+	wd_put_msg_to_pool(&wd_cipher_setting.pool, msg->tag);
 	return ret;
 }
 
-struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag)
+struct wd_cipher_msg *wd_cipher_get_msg(__u32 tag)
 {
-	return wd_find_msg_in_pool(&wd_cipher_setting.pool, idx, tag);
+	return wd_find_msg_in_pool(&wd_cipher_setting.pool, tag);
 }
 
 int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
@@ -752,8 +751,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return ret;
 		}
 		recv_count++;
-		msg = wd_find_msg_in_pool(&wd_cipher_setting.pool, idx,
-					  resp_msg.tag);
+		msg = wd_find_msg_in_pool(&wd_cipher_setting.pool, resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
 			return -WD_EINVAL;
@@ -765,8 +763,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 		req->cb(req, req->cb_param);
 		/* free msg cache to msg_pool */
-		wd_put_msg_to_pool(&wd_cipher_setting.pool, idx,
-				   resp_msg.tag);
+		wd_put_msg_to_pool(&wd_cipher_setting.pool, resp_msg.tag);
 		*count = recv_count;
 	} while (--tmp);
 

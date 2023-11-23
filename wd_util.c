@@ -30,15 +30,6 @@
 
 #define WD_DRV_LIB_DIR			"uadk"
 
-struct msg_pool {
-	/* message array allocated dynamically */
-	void *msgs;
-	int *used;
-	__u32 msg_num;
-	__u32 msg_size;
-	int tail;
-};
-
 /* parse wd env begin */
 
 /* define comp's combination of two operation type and two mode here */
@@ -361,58 +352,42 @@ static void uninit_msg_pool(struct msg_pool *pool)
 	memset(pool, 0, sizeof(*pool));
 }
 
-int wd_init_async_request_pool(struct wd_async_msg_pool *pool, struct wd_ctx_config *config,
+int wd_init_async_request_pool(struct msg_pool *pool, struct wd_ctx_config *config,
 			       __u32 msg_num, __u32 msg_size)
 {
 	__u32 pool_num = config->ctx_num;
-	__u32 i, j;
+	__u32 async_ctx_num = 0;
+	__u32 i;
 	int ret;
 
-	pool->pool_num = pool_num;
-
-	pool->pools = calloc(1, pool_num * sizeof(struct msg_pool));
-	if (!pool->pools) {
-		WD_ERR("failed to alloc memory for async msg pools!\n");
-		return -WD_ENOMEM;
-	}
-
-	/* If user set valid msg num, use user's. */
-	get_ctx_msg_num(config->cap, &msg_num);
 	for (i = 0; i < pool_num; i++) {
 		if (config->ctxs[i].ctx_mode == CTX_MODE_SYNC)
 			continue;
 
-		ret = init_msg_pool(&pool->pools[i], msg_num, msg_size);
-		if (ret < 0)
-			goto err;
+		async_ctx_num++;
 	}
+
+	/* If user set valid msg num, use user's. */
+	get_ctx_msg_num(config->cap, &msg_num);
+
+	ret = init_msg_pool(pool, msg_num * async_ctx_num, msg_size);
+	if (ret < 0)
+		goto err;
 
 	return 0;
 err:
-	for (j = 0; j < i; j++)
-		uninit_msg_pool(&pool->pools[j]);
-	free(pool->pools);
-	pool->pools = NULL;
+	uninit_msg_pool(pool);
 	return ret;
 }
 
-void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
+void wd_uninit_async_request_pool(struct msg_pool *pool)
 {
-	__u32 i;
-
-	for (i = 0; i < pool->pool_num; i++)
-		uninit_msg_pool(&pool->pools[i]);
-
-	free(pool->pools);
-	pool->pools = NULL;
-	pool->pool_num = 0;
+	uninit_msg_pool(pool);
 }
 
 /* fix me: this is old wd_get_req_from_pool */
-void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
-			  int ctx_idx, __u32 tag)
+void *wd_find_msg_in_pool(struct msg_pool *p, __u32 tag)
 {
-	struct msg_pool *p = &pool->pools[ctx_idx];
 	__u32 msg_num = p->msg_num;
 
 	/* tag value start from 1 */
@@ -424,10 +399,8 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 	return (void *)((uintptr_t)p->msgs + p->msg_size * (tag - 1));
 }
 
-int wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
-			 int ctx_idx, void **msg)
+int wd_get_msg_from_pool(struct msg_pool *p, void **msg)
 {
-	struct msg_pool *p = &pool->pools[ctx_idx];
 	__u32 msg_num = p->msg_num;
 	__u32 msg_size = p->msg_size;
 	__u32 cnt = 0;
@@ -446,9 +419,8 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 	return idx + 1;
 }
 
-void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int ctx_idx, __u32 tag)
+void wd_put_msg_to_pool(struct msg_pool *p, __u32 tag)
 {
-	struct msg_pool *p = &pool->pools[ctx_idx];
 	__u32 msg_num = p->msg_num;
 
 	/* tag value start from 1 */

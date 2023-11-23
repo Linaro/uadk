@@ -42,9 +42,13 @@ enum wd_type {
 	WD_TYPE_MAX,
 };
 
-struct wd_async_msg_pool {
-	struct msg_pool *pools;
-	__u32 pool_num;
+struct msg_pool {
+	/* message array allocated dynamically */
+	void *msgs;
+	int *used;
+	__u32 msg_num;
+	__u32 msg_size;
+	int tail;
 };
 
 struct wd_ctx_range {
@@ -177,18 +181,8 @@ void wd_memset_zero(void *data, __u32 size);
  *
  * Return 0 if successful or less than 0 otherwise.
  *
- * pool
- *   pools
- *         +-------+-------+----+-------+ -+-
- *         | msg_0 | msg_1 |... | n - 1 |  |
- *         +-------+-------+----+-------+
- *         ...                             pool_num
- *         +-------+-------+----+-------+
- *         | msg_0 | msg_1 |... | n - 1 |  |
- *         +-------+-------+----+-------+ -+-
- *         |<------- msg_num ---------->|
  */
-int wd_init_async_request_pool(struct wd_async_msg_pool *pool,
+int wd_init_async_request_pool(struct msg_pool *pool,
 			       struct wd_ctx_config *config,
 			       __u32 msg_num, __u32 msg_size);
 
@@ -196,12 +190,11 @@ int wd_init_async_request_pool(struct wd_async_msg_pool *pool,
  * wd_uninit_async_request_pool() - Uninit message pools.
  * @pool: Pool which will be uninit.
  */
-void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool);
+void wd_uninit_async_request_pool(struct msg_pool *pool);
 
 /*
  * wd_get_msg_from_pool() - Get a free message from pool.
  * @pool: Pointer of global pools.
- * @ctx_idx: Index of pool. Should be 0 ~ (pool_num - 1).
  * @msg: Put pointer of got message into *msg.
  *
  * Return tag of got message. This tag can be used to put a message and
@@ -210,28 +203,23 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool);
  * be used to avoid possible error; -WD_EBUSY will return if related message pool
  * is full.
  */
-int wd_get_msg_from_pool(struct wd_async_msg_pool *pool, int ctx_idx,
-			 void **msg);
+int wd_get_msg_from_pool(struct msg_pool *pool, void **msg);
 
 /*
  * wd_put_msg_to_pool() - Put a message to pool.
  * @pool: Pointer of global pools.
- * @ctx_idx: Index of pool. Should be 0 ~ (pool_num - 1).
  * @tag: Tag of put message.
  */
-void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int ctx_idx,
-			__u32 tag);
+void wd_put_msg_to_pool(struct msg_pool *pool, __u32 tag);
 
 /*
  * wd_find_msg_in_pool() - Find a message in pool.
  * @pool: Pointer of global pools.
- * @ctx_idx: Index of pool. Should be 0 ~ (pool_num - 1).
  * @tag: Tag of expected message.
  *
  * Return pointer of message whose tag is input tag.
  */
-void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int ctx_idx,
-			  __u32 tag);
+void *wd_find_msg_in_pool(struct msg_pool *pool, __u32 tag);
 
 /*
  * wd_check_datalist() - Check the data list length

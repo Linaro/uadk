@@ -32,7 +32,7 @@ static struct wd_dh_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	struct wd_async_msg_pool pool;
+	struct msg_pool pool;
 	struct wd_alg_driver *driver;
 	void *dlhandle;
 	void *dlh_list;
@@ -392,7 +392,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 
 	ctx = config->ctxs + idx;
 
-	mid = wd_get_msg_from_pool(&wd_dh_setting.pool, idx, (void **)&msg);
+	mid = wd_get_msg_from_pool(&wd_dh_setting.pool, (void **)&msg);
 	if (mid < 0)
 		return -WD_EBUSY;
 
@@ -417,14 +417,14 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	return 0;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_dh_setting.pool, idx, mid);
+	wd_put_msg_to_pool(&wd_dh_setting.pool, mid);
 
 	return ret;
 }
 
-struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag)
+struct wd_dh_msg *wd_dh_get_msg(__u32 tag)
 {
-	return wd_find_msg_in_pool(&wd_dh_setting.pool, idx, tag);
+	return wd_find_msg_in_pool(&wd_dh_setting.pool, tag);
 }
 
 int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
@@ -458,13 +458,11 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		} else if (unlikely(ret)) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_dh_setting.pool, idx,
-					   rcv_msg.tag);
+			wd_put_msg_to_pool(&wd_dh_setting.pool, rcv_msg.tag);
 			return ret;
 		}
 		rcv_cnt++;
-		msg = wd_find_msg_in_pool(&wd_dh_setting.pool,
-			idx, rcv_msg.tag);
+		msg = wd_find_msg_in_pool(&wd_dh_setting.pool, rcv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to find msg!\n");
 			return -WD_EINVAL;
@@ -474,7 +472,7 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		msg->req.status = rcv_msg.result;
 		req = &msg->req;
 		req->cb(req);
-		wd_put_msg_to_pool(&wd_dh_setting.pool, idx, rcv_msg.tag);
+		wd_put_msg_to_pool(&wd_dh_setting.pool, rcv_msg.tag);
 		*count = rcv_cnt;
 	} while (--tmp);
 

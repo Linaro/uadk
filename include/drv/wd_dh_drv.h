@@ -24,7 +24,7 @@ struct wd_dh_msg {
 	__u8 result; /* Data format, denoted by WD error code */
 };
 
-struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag);
+struct wd_dh_msg *wd_dh_get_msg(__u32 tag);
 
 #ifdef __cplusplus
 }

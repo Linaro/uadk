@@ -49,7 +49,7 @@ struct wd_digest_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_alg_driver *driver;
-	struct wd_async_msg_pool pool;
+	struct msg_pool pool;
 	void *dlhandle;
 	void *dlh_list;
 } wd_digest_setting;
@@ -656,8 +656,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	ctx = config->ctxs + idx;
 
-	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, idx,
-				   (void **)&msg);
+	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, (void **)&msg);
 	if (unlikely(msg_id < 0)) {
 		WD_ERR("busy, failed to get msg from pool!\n");
 		return -WD_EBUSY;
@@ -682,13 +681,13 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	return 0;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_digest_setting.pool, idx, msg->tag);
+	wd_put_msg_to_pool(&wd_digest_setting.pool, msg->tag);
 	return ret;
 }
 
-struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag)
+struct wd_digest_msg *wd_digest_get_msg(__u32 tag)
 {
-	return wd_find_msg_in_pool(&wd_digest_setting.pool, idx, tag);
+	return wd_find_msg_in_pool(&wd_digest_setting.pool, tag);
 }
 
 int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
@@ -725,8 +724,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 		recv_cnt++;
 
-		msg = wd_find_msg_in_pool(&wd_digest_setting.pool, idx,
-					  recv_msg.tag);
+		msg = wd_find_msg_in_pool(&wd_digest_setting.pool, recv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to get msg from pool!\n");
 			return -WD_EINVAL;
@@ -737,8 +735,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		if (likely(req))
 			req->cb(req);
 
-		wd_put_msg_to_pool(&wd_digest_setting.pool, idx,
-				   recv_msg.tag);
+		wd_put_msg_to_pool(&wd_digest_setting.pool, recv_msg.tag);
 		*count = recv_cnt;
 	} while (--tmp);
 

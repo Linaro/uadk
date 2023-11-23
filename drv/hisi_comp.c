@@ -1031,7 +1031,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	recv_msg->tag = tag;
 
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		recv_msg = wd_comp_get_msg(qp->q_info.idx, tag);
+		recv_msg = wd_comp_get_msg(tag);
 		if (unlikely(!recv_msg)) {
 			WD_ERR("failed to get send msg! idx = %u, tag = %u!\n",
 			       qp->q_info.idx, tag);
