@@ -56,6 +56,62 @@ static void fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 	msg->status = 0;
 }
 
+static int ctx_params_check(struct wd_queue *q, struct wcrypto_comp_ctx_setup *setup)
+{
+	struct q_info *qinfo;
+
+	if (!q || !setup) {
+		WD_ERR("err: q or setup is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (strcmp(q->capa.alg, "zlib") &&
+	    strcmp(q->capa.alg, "gzip") &&
+	    strcmp(q->capa.alg, "deflate") &&
+	    strcmp(q->capa.alg, "lz77_zstd")) {
+		WD_ERR("err: algorithm is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	qinfo = q->qinfo;
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
+		WD_ERR("err: create too many compress ctx!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->alg_type >= WCRYPTO_COMP_MAX_ALG) {
+		WD_ERR("err: alg_type is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->comp_lv > WCRYPTO_COMP_L9) {
+		WD_ERR("err: comp_lv is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->op_type > WCRYPTO_INFLATE) {
+		WD_ERR("err: op_type is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->stream_mode > WCRYPTO_FINISH) {
+		WD_ERR("err: stream_mode is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->win_size > WCRYPTO_COMP_WS_32K) {
+		WD_ERR("err: win_size is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->data_fmt > WD_SGL_BUF) {
+		WD_ERR("err: data_fmt is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int set_comp_ctx_br(struct q_info *qinfo, struct wd_mm_br *br)
 {
 	if (!br->alloc || !br->free ||
@@ -126,18 +182,9 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	__u32 ctx_id = 0;
 	int ret;
 
-	if (!q || !setup) {
-		WD_ERR("err, input parameter invalid!\n");
+	ret = ctx_params_check(q, setup);
+	if (ret)
 		return NULL;
-	}
-
-	if (strcmp(q->capa.alg, "zlib") &&
-	    strcmp(q->capa.alg, "gzip") &&
-	    strcmp(q->capa.alg, "deflate") &&
-	    strcmp(q->capa.alg, "lz77_zstd")) {
-		WD_ERR("algorithm mismatch!\n");
-		return NULL;
-	}
 
 	qinfo = q->qinfo;
 
@@ -147,11 +194,6 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	ret = set_comp_ctx_br(qinfo, &setup->br);
 	if (ret) {
 		WD_ERR("err: fail to set compress ctx br!\n");
-		goto unlock;
-	}
-
-	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
-		WD_ERR("err: create too many compress ctx!\n");
 		goto unlock;
 	}
 
@@ -357,4 +399,3 @@ void wcrypto_del_comp_ctx(void *ctx)
 
 	free(cctx);
 }
-
