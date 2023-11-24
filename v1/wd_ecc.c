@@ -1006,7 +1006,7 @@ static bool is_key_width_support(__u32 key_bits)
 
 static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 {
-	if (unlikely(!q || !setup)) {
+	if (unlikely(!q || !q->qinfo || !setup)) {
 		WD_ERR("input parameter error!\n");
 		return -WD_EINVAL;
 	}
@@ -1663,7 +1663,7 @@ static int ecc_poll(struct wd_queue *q, unsigned int num)
 int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 {
 	if (unlikely(!opdata)) {
-		WD_ERR("do ecxdh: opdata null!\n");
+		WD_ERR("invalid: do ecxdh: opdata null!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2176,7 +2176,7 @@ void wcrypto_get_ecdsa_sign_in_params(struct wcrypto_ecc_in *in,
 int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 {
 	if (unlikely(!opdata)) {
-		WD_ERR("do ecdsa: opdata null!\n");
+		WD_ERR("invalid: do ecdsa: opdata null!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2463,7 +2463,7 @@ int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 	struct wcrypto_ecc_in *in;
 
 	if (unlikely(!opdata)) {
-		WD_ERR("do sm2: opdata null!\n");
+		WD_ERR("invalid: do sm2: opdata null!\n");
 		return -WD_EINVAL;
 	}
 

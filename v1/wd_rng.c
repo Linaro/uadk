@@ -48,7 +48,7 @@ static int wcrypto_setup_qinfo(struct wcrypto_rng_ctx_setup *setup,
 	struct q_info *qinfo;
 	int ret = -WD_EINVAL;
 
-	if (!q || !setup) {
+	if (!q || !q->qinfo || !setup) {
 		WD_ERR("input parameter err!\n");
 		return ret;
 	}
@@ -202,8 +202,13 @@ static int wcrypto_do_prepare(struct wcrypto_rng_cookie **cookie_addr,
 	struct wcrypto_rng_msg *req;
 	int ret;
 
-	if (!ctxt || !opdata) {
-		WD_ERR("input parameter err!\n");
+	if (unlikely(!ctxt || !opdata)) {
+		WD_ERR("invalid: rng input parameter err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely((opdata->in_bytes && !opdata->out))) {
+		WD_ERR("invalid: dst addr is NULL when in_bytes is non-zero!!\n");
 		return -WD_EINVAL;
 	}
 
@@ -213,7 +218,7 @@ static int wcrypto_do_prepare(struct wcrypto_rng_cookie **cookie_addr,
 
 	if (tag) {
 		if (!ctxt->setup.cb) {
-			WD_ERR("ctx call back is null!\n");
+			WD_ERR("invalid: ctx call back is null!\n");
 			wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
 			return -WD_EINVAL;
 		}

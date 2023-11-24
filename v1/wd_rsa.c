@@ -549,7 +549,7 @@ static void del_ctx(struct wcrypto_rsa_ctx *c)
 
 static int check_q_setup(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup)
 {
-	if (!q || !setup) {
+	if (!q || !q->qinfo || !setup) {
 		WD_ERR("create rsa ctx input parameter err!\n");
 		return -WD_EINVAL;
 	}
@@ -957,12 +957,18 @@ static int do_rsa_prepare(struct wcrypto_rsa_ctx *ctxt,
 	int ret;
 
 	if (unlikely(!ctxt || !opdata)) {
-		WD_ERR("input parameter err!\n");
+		WD_ERR("invalid: input parameter err!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = wd_check_src_dst(opdata->in, opdata->in_bytes, opdata->out, opdata->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(tag && !ctxt->setup.cb)) {
-		WD_ERR("ctx call back is null!\n");
+		WD_ERR("invalid: ctx call back is null!\n");
 		return -WD_EINVAL;
 	}
 
