@@ -56,7 +56,7 @@ struct wcrypto_dh_ctx {
 static int create_ctx_param_check(struct wd_queue *q,
 				  struct wcrypto_dh_ctx_setup *setup)
 {
-	if (!q || !setup) {
+	if (!q || !q->qinfo || !setup) {
 		WD_ERR("%s(): input parameter err!\n", __func__);
 		return -WD_EINVAL;
 	}
@@ -299,12 +299,12 @@ static int do_dh_prepare(struct wcrypto_dh_op_data *opdata,
 	int ret;
 
 	if (unlikely(!ctxt || !opdata)) {
-		WD_ERR("input parameter err!\n");
+		WD_ERR("invalid: dh input parameter err!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(tag && !ctxt->setup.cb)) {
-		WD_ERR("ctx call back is null!\n");
+		WD_ERR("invalid: ctx call back is null!\n");
 		return -WD_EINVAL;
 	}
 

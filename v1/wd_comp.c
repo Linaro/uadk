@@ -60,8 +60,8 @@ static int ctx_params_check(struct wd_queue *q, struct wcrypto_comp_ctx_setup *s
 {
 	struct q_info *qinfo;
 
-	if (!q || !setup) {
-		WD_ERR("err: q or setup is NULL!\n");
+	if (!q || !q->qinfo || !setup) {
+		WD_ERR("%s: input param err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
@@ -255,8 +255,8 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	__u64 recv_count = 0;
 	int ret;
 
-	if (!ctx || !opdata) {
-		WD_ERR("input parameter err!\n");
+	if (unlikely(!ctx || !opdata || !opdata->in || !opdata->out)) {
+		WD_ERR("invalid: comp input parameter err!\n");
 		return -EINVAL;
 	}
 
@@ -267,7 +267,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	msg = &cookie->msg;
 	if (tag) {
 		if (!cctx->cb) {
-			WD_ERR("ctx call back is null!\n");
+			WD_ERR("invalid: ctx call back is null!\n");
 			ret = -WD_EINVAL;
 			goto err_put_cookie;
 		}

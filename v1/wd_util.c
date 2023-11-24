@@ -182,3 +182,10 @@ int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	return drv_recv(q, resp, num);
 }
+
+int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
+{
+	if (unlikely((in_bytes && !src) || (out_bytes && !dst)))
+		return -WD_EINVAL;
+	return 0;
+}
