@@ -107,7 +107,7 @@ static __u32 get_iv_block_size(int alg, int mode)
 static int create_ctx_para_check(struct wd_queue *q,
 	struct wcrypto_cipher_ctx_setup *setup)
 {
-	if (!q || !setup) {
+	if (!q || !q->qinfo || !setup) {
 		WD_ERR("%s: input param err!\n", __func__);
 		return -WD_EINVAL;
 	}
@@ -426,26 +426,38 @@ static int param_check(struct wcrypto_cipher_ctx *c_ctx,
 		       void **tag, __u32 num)
 {
 	__u32 i;
+	int ret;
 
 	if (unlikely(!c_ctx || !c_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
-		WD_ERR("input param err!\n");
+		WD_ERR("invalid: input param err!\n");
 		return -WD_EINVAL;
 	}
 
 	for (i = 0; i < num; i++) {
 		if (unlikely(!c_opdata[i])) {
-			WD_ERR("cipher opdata[%u] is NULL!\n", i);
+			WD_ERR("invalid: cipher opdata[%u] is NULL!\n", i);
+			return -WD_EINVAL;
+		}
+
+		ret = wd_check_src_dst(c_opdata[i]->in, c_opdata[i]->in_bytes, c_opdata[i]->out, c_opdata[i]->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
+			return -WD_EINVAL;
+		}
+
+		if (c_ctx->setup.mode != WCRYPTO_CIPHER_ECB && !c_opdata[i]->iv) {
+			WD_ERR("invalid: cipher input iv is NULL!\n");
 			return -WD_EINVAL;
 		}
 
 		if (unlikely(tag && !tag[i])) {
-			WD_ERR("tag[%u] is NULL!\n", i);
+			WD_ERR("invalid: tag[%u] is NULL!\n", i);
 			return -WD_EINVAL;
 		}
 	}
 
 	if (unlikely(tag && !c_ctx->setup.cb)) {
-		WD_ERR("cipher ctx call back is NULL!\n");
+		WD_ERR("invalid: cipher ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
 
