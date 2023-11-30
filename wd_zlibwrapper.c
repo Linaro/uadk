@@ -73,6 +73,7 @@ static int wd_zlib_uadk_init(void)
 		goto out_freebmp;
 	}
 
+	ret = 0;
 	zlib_config.status = WD_ZLIB_INIT;
 
 out_freebmp:
