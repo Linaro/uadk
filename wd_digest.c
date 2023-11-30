@@ -132,7 +132,7 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	int ret;
 
 	if (!key || !sess) {
-		WD_ERR("failed to check key param!\n");
+		WD_ERR("invalid: failed to check input param, sess or key is NULL!\n");
 		return -WD_EINVAL;
 	}
 
