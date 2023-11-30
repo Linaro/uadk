@@ -6,6 +6,7 @@
 
 #ifndef SCHED_SAMPLE_h
 #define SCHED_SAMPLE_h
+#include <asm/types.h>
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus

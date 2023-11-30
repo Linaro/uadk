@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <numa.h>
 #include "wd.h"
 #include "wd_alg.h"
 
