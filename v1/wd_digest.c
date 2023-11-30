@@ -456,10 +456,8 @@ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
 		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
-	if (unlikely(ret)) {
-		WD_ERR("failed to get cookies %d!\n", ret);
+	if (unlikely(ret))
 		return ret;
-	}
 
 	for (i = 0; i < num; i++) {
 		cookies[i]->tag.priv = opdata[i]->priv;
