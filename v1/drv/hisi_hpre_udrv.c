@@ -136,27 +136,32 @@ static int qm_fill_rsa_crt_prikey2(struct wcrypto_rsa_prikey *prikey,
 				wd_dq->bsize, wd_dq->dsize, "rsa crt dq");
 	if (unlikely(ret))
 		return ret;
+	wd_dq->dsize = wd_dq->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_dp->data, (const char *)wd_dp->data,
 				wd_dp->bsize, wd_dp->dsize, "rsa crt dp");
 	if (unlikely(ret))
 		return ret;
+	wd_dp->dsize = wd_dp->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
 				wd_q->bsize, wd_q->dsize, "rsa crt q");
 	if (unlikely(ret))
 		return ret;
+	wd_q->dsize = wd_q->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_p->data,
 		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize, "rsa crt p");
 	if (unlikely(ret))
 		return ret;
+	wd_p->dsize = wd_p->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_qinv->data,
 		(const char *)wd_qinv->data, wd_qinv->bsize,
 		wd_qinv->dsize, "rsa crt qinv");
 	if (unlikely(ret))
 		return ret;
+	wd_qinv->dsize = wd_qinv->bsize;
 
 	*data = wd_dq->data;
 	return (int)(wd_dq->bsize + wd_qinv->bsize + wd_p->bsize +
@@ -179,11 +184,13 @@ static int qm_fill_rsa_prikey1(struct wcrypto_rsa_prikey *prikey, void **data)
 				wd_d->bsize, wd_d->dsize, "rsa prikey1 d");
 	if (unlikely(ret))
 		return ret;
+	wd_d->dsize = wd_d->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa prikey1 n");
 	if (unlikely(ret))
 		return ret;
+	wd_n->dsize = wd_n->bsize;
 
 	*data = wd_d->data;
 	return (int)(wd_n->bsize + wd_d->bsize);
@@ -200,11 +207,13 @@ static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 				wd_e->bsize, wd_e->dsize, "rsa pubkey e");
 	if (unlikely(ret))
 		return ret;
+	wd_e->dsize = wd_e->dsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa pubkey n");
 	if (unlikely(ret))
 		return ret;
+	wd_n->dsize = wd_n->dsize;
 
 	*data = wd_e->data;
 	return (int)(wd_n->bsize + wd_e->bsize);
