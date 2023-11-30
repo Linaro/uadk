@@ -408,7 +408,6 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 	pool->pool_num = 0;
 }
 
-/* fix me: this is old wd_get_req_from_pool */
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 			  int ctx_idx, __u32 tag)
 {
@@ -1344,7 +1343,6 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	return head + offset;
 }
 
-/* fix me: all return value here, and no config input */
 int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 idx)
 {
 	struct async_task_queue *task_queue;
