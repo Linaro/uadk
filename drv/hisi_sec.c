@@ -2153,6 +2153,8 @@ static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 	case WD_CIPHER_AES:
 		sqe->type2.c_alg = C_ALG_AES;
 		ret = aead_get_aes_key_len(msg, &c_key_len);
+		if (ret)
+			return ret;
 		sqe->type2.icvw_kmode = (__u16)c_key_len << SEC_CKEY_OFFSET;
 		break;
 	default:
@@ -2722,6 +2724,8 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	case WD_CIPHER_AES:
 		sqe->c_mode_alg |= C_ALG_AES << SEC_CALG_OFFSET_V3;
 		ret = aead_get_aes_key_len(msg, &c_key_len);
+		if (ret)
+			return ret;
 		sqe->c_icv_key |= (__u16)c_key_len << SEC_CKEY_OFFSET_V3;
 		break;
 	default:
