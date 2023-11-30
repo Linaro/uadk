@@ -469,11 +469,6 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 
 	q_info = &qp->q_info;
 
-	if (unlikely(wd_ioread32(q_info->ds_tx_base) == 1)) {
-		WD_ERR("wd queue hw error happened before qm send!\n");
-		return -WD_HW_EACCESS;
-	}
-
 	pthread_spin_lock(&q_info->sd_lock);
 	free_num = get_free_num(q_info);
 	if (!free_num) {
@@ -486,14 +481,26 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	tail = q_info->sq_tail_index;
 	hisi_qm_fill_sqe(req, q_info, tail, send_num);
 	tail = (tail + send_num) % q_info->sq_depth;
+
+	/*
+	 * Before sending doorbell, check the queue status,
+	 * if the queue is disable, return failure.
+	 */
+	if (unlikely(wd_ioread32(q_info->ds_tx_base) == 1)) {
+		pthread_spin_unlock(&q_info->sd_lock);
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened before qm send!\n");
+		return -WD_HW_EACCESS;
+	}
+
+	/* Make sure sqe is filled before db ring and queue status check is complete. */
+	mb();
 	q_info->db(q_info, QM_DBELL_CMD_SQ, tail, 0);
 	q_info->sq_tail_index = tail;
 
 	/* Make sure used_num is changed before the next thread gets free sqe. */
 	__atomic_add_fetch(&q_info->used_num, send_num, __ATOMIC_RELAXED);
-	*count = send_num;
-
 	pthread_spin_unlock(&q_info->sd_lock);
+	*count = send_num;
 
 	return 0;
 }
@@ -509,6 +516,8 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
 
 	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
+		/* Make sure cqe valid bit is set */
+		rmb();
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (unlikely(j >= q_info->sq_depth)) {
 			pthread_spin_unlock(&q_info->rv_lock);
@@ -529,6 +538,18 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		i++;
 	}
 
+	/*
+	 * Before sending doorbell, check the queue status,
+	 * if the queue is disable, return failure.
+	 */
+	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
+		pthread_spin_unlock(&q_info->rv_lock);
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened after qm receive!\n");
+		return -WD_HW_EACCESS;
+	}
+
+	/* Make sure queue status check is complete. */
+	rmb();
 	q_info->db(q_info, QM_DBELL_CMD_CQ, i, q_info->epoll_en);
 
 	/* only support one thread poll one queue, so no need protect */
@@ -568,10 +589,6 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	}
 
 	*count = recv_num;
-	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
-		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened in qm receive!\n");
-		return -WD_HW_EACCESS;
-	}
 
 	return ret;
 }
