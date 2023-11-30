@@ -544,6 +544,11 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 	if (sess->mode == WD_CIPHER_ECB)
 		return 0;
 
+	if (!req->iv) {
+		WD_ERR("invalid: cipher input iv is NULL!\n");
+		ret = -WD_EINVAL;
+	}
+
 	switch (sess->alg) {
 	case WD_CIPHER_AES:
 	case WD_CIPHER_SM4:
@@ -588,6 +593,12 @@ static int wd_cipher_check_params(handle_t h_sess,
 	if (unlikely(req->out_buf_bytes < req->in_bytes)) {
 		WD_ERR("cipher set out_buf_bytes is error, size = %u\n",
 			req->out_buf_bytes);
+		return -WD_EINVAL;
+	}
+
+	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 		return -WD_EINVAL;
 	}
 

@@ -236,6 +236,18 @@ void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool, int ctx_idx,
 			  __u32 tag);
 
 /*
+ * wd_check_src_dst() - Check the request input and output
+ * @src: input data pointer.
+ * @in_bytes: input data length.
+ * @dst: output data pointer.
+ * @out_bytes: output data length.
+ *
+ * Return -WD_EINVAL when in_bytes or out_bytes is non-zero, the
+ * corresponding input or output pointers is NULL, otherwise return 0.
+ */
+int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
+
+/*
  * wd_check_datalist() - Check the data list length
  * @head: Data list's head pointer.
  * @size: The size which is expected.

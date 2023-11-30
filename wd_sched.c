@@ -311,8 +311,8 @@ static int session_sched_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *
 	__u16 i;
 	int ret;
 
-	if (unlikely(!count || !sched_ctx)) {
-		WD_ERR("invalid: sched ctx is NULL or count is zero!\n");
+	if (unlikely(!count || !sched_ctx || !sched_ctx->poll_func)) {
+		WD_ERR("invalid: sched ctx or poll_func is NULL or count is zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -375,6 +375,11 @@ static int sched_none_poll_policy(handle_t h_sched_ctx,
 	__u32 poll_num = 0;
 	int ret;
 
+	if (!sched_ctx || !sched_ctx->poll_func) {
+		WD_ERR("invalid: sched ctx or poll_func is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	while (loop_times > 0) {
 		/* Default use ctx 0 */
 		loop_times--;
@@ -416,6 +421,11 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 	__u32 loop_times = MAX_POLL_TIMES + expect;
 	__u32 poll_num = 0;
 	int ret;
+
+	if (!sched_ctx || !sched_ctx->poll_func) {
+		WD_ERR("invalid: sched ctx or poll_func is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	while (loop_times > 0) {
 		/* Default async mode use ctx 0 */

@@ -459,6 +459,14 @@ void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int ctx_idx, __u32 tag)
 	__atomic_clear(&p->used[tag - 1], __ATOMIC_RELEASE);
 }
 
+int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
+{
+	if ((in_bytes && !src) || (out_bytes && !dst))
+		return -WD_EINVAL;
+
+	return 0;
+}
+
 int wd_check_datalist(struct wd_datalist *head, __u32 size)
 {
 	struct wd_datalist *tmp = head;
