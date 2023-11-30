@@ -18,7 +18,6 @@
 #define __HISI_RNG_UDRV_H__
 
 #include <linux/types.h>
-#include "config.h"
 #include "v1/wd.h"
 #include "v1/wd_util.h"
 #include "v1/wd_rng.h"
