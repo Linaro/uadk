@@ -458,8 +458,8 @@ static int qm_init_queue_info(struct wd_queue *q)
 	struct wcrypto_paras *priv = &q->capa.priv;
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
-	struct hisi_qp_info qp_info;
-	struct hisi_qp_ctx qp_ctx;
+	struct hisi_qp_info qp_info = {0};
+	struct hisi_qp_ctx qp_ctx = {0};
 	int ret;
 
 	info->sq_tail_index = 0;
