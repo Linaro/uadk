@@ -449,10 +449,10 @@ void hisi_qm_free_qp(handle_t h_qp)
 	}
 
 	wd_release_ctx_force(qp->h_ctx);
-	wd_ctx_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
-	wd_ctx_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-	if (qp->h_sgl_pool)
-		hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+
+	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+
+	hisi_qm_clear_info(qp);
 
 	free(qp);
 }
