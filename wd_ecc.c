@@ -2272,8 +2272,8 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
-		WD_ERR("invalid: param count is NULL!\n");
+	if (unlikely(!count || !expt)) {
+		WD_ERR("invalid: ecc poll param count or expt is NULL!\n");
 		return -WD_EINVAL;
 	}
 
