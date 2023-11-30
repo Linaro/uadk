@@ -167,7 +167,7 @@ static inline uint32_t wd_ioread32(void *addr)
 	uint32_t ret;
 
 	ret = *((volatile uint32_t *)addr);
-	rmb();
+
 	return ret;
 }
 
@@ -176,19 +176,17 @@ static inline uint64_t wd_ioread64(void *addr)
 	uint64_t ret;
 
 	ret = *((volatile uint64_t *)addr);
-	rmb();
+
 	return ret;
 }
 
 static inline void wd_iowrite32(void *addr, uint32_t value)
 {
-	wmb();
 	*((volatile uint32_t *)addr) = value;
 }
 
 static inline void wd_iowrite64(void *addr, uint64_t value)
 {
-	wmb();
 	*((volatile uint64_t *)addr) = value;
 }
 
