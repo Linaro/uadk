@@ -342,8 +342,8 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
-		WD_ERR("invalid: comp poll count is 0!\n");
+	if (unlikely(!count || !expt)) {
+		WD_ERR("invalid: comp poll count or expt is 0!\n");
 		return -WD_EINVAL;
 	}
 

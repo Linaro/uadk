@@ -698,7 +698,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
+	if (unlikely(!count || !expt)) {
 		WD_ERR("invalid: digest poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
