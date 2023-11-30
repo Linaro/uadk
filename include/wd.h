@@ -7,6 +7,7 @@
 #ifndef __WD_H
 #define __WD_H
 #include <errno.h>
+#include <numa.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>

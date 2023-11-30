@@ -13,7 +13,9 @@
 #include <sys/shm.h>
 #include <asm/types.h>
 
+#include "wd.h"
 #include "wd_sched.h"
+#include "wd_alg.h"
 
 #ifdef __cplusplus
 extern "C" {
