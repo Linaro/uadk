@@ -252,11 +252,10 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 			     struct hisi_qm_queue_info *q_info)
 {
-	struct hisi_qp_info qp_cfg;
-	struct hisi_qp_ctx qp_ctx;
+	struct hisi_qp_info qp_cfg = {0};
+	struct hisi_qp_ctx qp_ctx = {0};
 	int ret;
 
-	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
 	q_info->qc_type = qp_ctx.qc_type;
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
@@ -264,6 +263,7 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 		WD_DEV_ERR(h_ctx, "failed to set qc_type!\n");
 		return ret;
 	}
+
 	q_info->sqn = qp_ctx.id;
 	config->sqn = qp_ctx.id;
 
