@@ -517,12 +517,12 @@ struct hisi_sec_sqe3 {
 	__le32 counter;
 } __attribute__((packed, aligned(4)));
 
-static int g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
+static __u32 g_digest_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_SM3, A_ALG_MD5, A_ALG_SHA1, A_ALG_SHA256, A_ALG_SHA224,
 	A_ALG_SHA384, A_ALG_SHA512, A_ALG_SHA512_224, A_ALG_SHA512_256
 };
 
-static int g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
+static __u32 g_hmac_a_alg[WD_DIGEST_TYPE_MAX] = {
 	A_ALG_HMAC_SM3, A_ALG_HMAC_MD5, A_ALG_HMAC_SHA1,
 	A_ALG_HMAC_SHA256, A_ALG_HMAC_SHA224, A_ALG_HMAC_SHA384,
 	A_ALG_HMAC_SHA512, A_ALG_HMAC_SHA512_224, A_ALG_HMAC_SHA512_256,
@@ -1518,7 +1518,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 
 	if (msg->mode == WD_DIGEST_NORMAL)
 		sqe->type2.mac_key_alg |=
-		(__u32)g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
+		g_digest_a_alg[msg->alg] << AUTH_ALG_OFFSET;
 	else if (msg->mode == WD_DIGEST_HMAC) {
 		if (msg->key_bytes & WORD_ALIGNMENT_MASK) {
 			WD_ERR("failed to check digest key_bytes, size = %u\n",
@@ -1530,7 +1530,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 		sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->key;
 
 		sqe->type2.mac_key_alg |=
-		(__u32)g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET;
+		g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET;
 	} else {
 		WD_ERR("failed to check digest mode, mode = %u\n", msg->mode);
 		return -WD_EINVAL;
@@ -1887,7 +1887,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 
 	if (msg->mode == WD_DIGEST_NORMAL) {
 		sqe->auth_mac_key |=
-		(__u32)g_digest_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
+		g_digest_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
 	} else if (msg->mode == WD_DIGEST_HMAC) {
 		ret = hmac_key_len_check(msg);
 		if (ret)
@@ -1897,7 +1897,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 			WORD_BYTES) << SEC_AKEY_OFFSET_V3;
 		sqe->a_key_addr = (__u64)(uintptr_t)msg->key;
 		sqe->auth_mac_key |=
-		(__u32)g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
+		g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
 
 		if (msg->alg == WD_DIGEST_AES_GMAC) {
 			sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
