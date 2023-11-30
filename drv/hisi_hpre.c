@@ -212,27 +212,32 @@ static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 				wd_dq->bsize, wd_dq->dsize, "rsa crt dq");
 	if (ret)
 		return ret;
+	wd_dq->dsize = wd_dq->bsize;
 
 	ret = crypto_bin_to_hpre_bin(wd_dp->data, (const char *)wd_dp->data,
 				wd_dp->bsize, wd_dp->dsize, "rsa crt dp");
 	if (ret)
 		return ret;
+	wd_dp->dsize = wd_dp->bsize;
 
 	ret = crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
 				wd_q->bsize, wd_q->dsize, "rsa crt q");
 	if (ret)
 		return ret;
+	wd_q->dsize = wd_q->bsize;
 
 	ret = crypto_bin_to_hpre_bin(wd_p->data,
 		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize, "rsa crt p");
 	if (ret)
 		return ret;
+	wd_p->dsize = wd_p->bsize;
 
 	ret = crypto_bin_to_hpre_bin(wd_qinv->data,
 		(const char *)wd_qinv->data, wd_qinv->bsize,
 		wd_qinv->dsize, "rsa crt qinv");
 	if (ret)
 		return ret;
+	wd_qinv->dsize = wd_qinv->bsize;
 
 	*data = wd_dq->data;
 
@@ -249,11 +254,13 @@ static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 				wd_d->bsize, wd_d->dsize, "rsa d");
 	if (ret)
 		return ret;
+	wd_d->dsize = wd_d->bsize;
 
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa n");
 	if (ret)
 		return ret;
+	wd_n->dsize = wd_n->bsize;
 
 	*data = wd_d->data;
 
@@ -270,11 +277,13 @@ static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 				wd_e->bsize, wd_e->dsize, "rsa e");
 	if (ret)
 		return ret;
+	wd_e->dsize = wd_e->bsize;
 
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa n");
 	if (ret)
 		return ret;
+	wd_n->dsize = wd_n->bsize;
 
 	*data = wd_e->data;
 
