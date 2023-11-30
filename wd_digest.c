@@ -514,9 +514,15 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 		return ret;
 
 	if (unlikely(sess->alg == WD_DIGEST_AES_GMAC &&
-	    req->iv_bytes != GMAC_IV_LEN)) {
+	    (!req->iv || req->iv_bytes != GMAC_IV_LEN))) {
 		WD_ERR("failed to check digest aes_gmac iv length, iv_bytes = %u\n",
 			req->iv_bytes);
+		return -WD_EINVAL;
+	}
+
+	ret = wd_check_src_dst(req->in, req->in_bytes, req->out, req->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: in/out addr is NULL when in/out size is non-zero!\n");
 		return -WD_EINVAL;
 	}
 

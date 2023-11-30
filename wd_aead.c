@@ -361,6 +361,11 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(!req->iv || !req->mac)) {
+		WD_ERR("invalid: aead input iv or mac is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	if (unlikely(sess->cmode == WD_CIPHER_CBC && req->in_bytes == 0)) {
 		WD_ERR("aead input data length is zero!\n");
 		return -WD_EINVAL;
@@ -381,6 +386,12 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 
 	if (unlikely(req->mac_bytes < sess->auth_bytes)) {
 		WD_ERR("failed to check aead mac length, size = %u\n", req->mac_bytes);
+		return -WD_EINVAL;
+	}
+
+	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 		return -WD_EINVAL;
 	}
 

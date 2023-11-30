@@ -756,7 +756,7 @@ struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id)
 	}
 
 	while (p) {
-		if (numa_id != p->dev->numa_id) {
+		if (p->dev && numa_id != p->dev->numa_id) {
 			p = p->next;
 			continue;
 		}
