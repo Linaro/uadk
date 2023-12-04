@@ -121,9 +121,9 @@ libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL)
 libwd_crypto_la_DEPENDENCIES= libwd.la
 
-libhisi_zip_la_LIBADD= -lwd -ldl
+libhisi_zip_la_LIBADD= -lwd -ldl -lwd_comp
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
-libhisi_zip_la_DEPENDENCIES= libwd.la
+libhisi_zip_la_DEPENDENCIES= libwd.la libwd_comp.la
 
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
 libhisi_sec_la_LDFLAGS=$(UADK_VERSION)
