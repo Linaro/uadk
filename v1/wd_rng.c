@@ -144,14 +144,14 @@ void wcrypto_del_rng_ctx(void *ctx)
 
 	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
-	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
-		WD_MAX_CTX_NUM);
-	qinfo->ctx_num--;
-	if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("repeat delete trng ctx!\n");
 		return;
 	}
+	qinfo->ctx_num--;
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
 	wd_unspinlock(&qinfo->qlock);
 
 	free(ctx);
