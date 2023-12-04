@@ -29,6 +29,19 @@ extern "C" {
 #define CTX_TYPE_INVALID	9999
 #define POLL_TIME		1000
 
+/* Key size of chiper */
+#define MAX_CIPHER_KEY_SIZE	64
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
+#define SM4_KEY_SIZE		16
+#define DES_KEY_SIZE		8
+#define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
+#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
+
+/* Key size of digest */
+#define MAX_HMAC_KEY_SIZE	128U
+
 enum alg_task_type {
 	TASK_MIX = 0x0,
 	TASK_HW,

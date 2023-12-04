@@ -18,7 +18,6 @@ extern "C" {
 #define AES_BLOCK_SIZE	16
 #define GCM_IV_SIZE	12
 #define DES3_BLOCK_SIZE	8
-#define MAX_CIPHER_KEY_SIZE	64
 #define MAX_IV_SIZE	AES_BLOCK_SIZE
 
 /**
