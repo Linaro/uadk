@@ -642,6 +642,7 @@ struct wd_sched *wd_sched_rr_alloc(__u8 sched_type, __u8 type_num,
 		WD_ERR("failed to alloc memory for sched_ctx!\n");
 		goto err_out;
 	}
+	sched_ctx->numa_num = numa_num;
 
 	sched->h_sched_ctx = (handle_t)sched_ctx;
 	if (sched_type == SCHED_POLICY_NONE ||
@@ -662,7 +663,6 @@ simple_ok:
 	sched_ctx->poll_func = func;
 	sched_ctx->policy = sched_type;
 	sched_ctx->type_num = type_num;
-	sched_ctx->numa_num = numa_num;
 	memset(sched_ctx->numa_map, -1, sizeof(int) * NUMA_NUM_NODES);
 
 	sched->sched_init = sched_table[sched_type].sched_init;
