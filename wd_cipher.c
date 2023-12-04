@@ -13,13 +13,6 @@
 
 #define XTS_MODE_KEY_SHIFT	1
 #define XTS_MODE_KEY_LEN_MASK	0x1
-#define SM4_KEY_SIZE		16
-#define DES_KEY_SIZE		8
-#define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
-#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
-#define AES_KEYSIZE_128		16
-#define AES_KEYSIZE_192		24
-#define AES_KEYSIZE_256		32
 
 #define DES_WEAK_KEY_NUM	16
 

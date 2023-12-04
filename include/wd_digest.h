@@ -14,8 +14,6 @@
 extern "C" {
 #endif
 
-#define MAX_HMAC_KEY_SIZE	128U
-
 /**
  * wd_digest_type - Algorithm type of digest
  * algorithm should be offered by struct wd_digest_arg

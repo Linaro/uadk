@@ -10,16 +10,7 @@
 #include "include/drv/wd_digest_drv.h"
 #include "wd_digest.h"
 
-#define XTS_MODE_KEY_DIVISOR	2
-#define SM4_KEY_SIZE		16
-#define DES_KEY_SIZE		8
-#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
 #define GMAC_IV_LEN		16
-#define AES_KEYSIZE_128		16
-#define AES_KEYSIZE_192		24
-#define AES_KEYSIZE_256		32
-
-#define DES_WEAK_KEY_NUM	4
 
 static __u32 g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
