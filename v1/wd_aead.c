@@ -26,23 +26,8 @@
 #include "wd_util.h"
 #include "wd_aead.h"
 
-#define MAX_AEAD_KEY_SIZE		64
-#define MAX_AEAD_MAC_SIZE		64
-#define MAX_CIPHER_KEY_SIZE		64
 #define MAX_AEAD_AUTH_SIZE		64
-#define MAX_AEAD_ASSOC_SIZE		65536
-#define MAX_HMAC_KEY_SIZE		128
 #define MAX_AEAD_RETRY_CNT		20000000
-
-#define DES_KEY_SIZE 8
-#define SM4_KEY_SIZE 16
-#define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
-#define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
-
-#define AES_BLOCK_SIZE 16
-#define GCM_BLOCK_SIZE 12
-
-#define MAX_BURST_NUM	16
 
 static int g_aead_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_SM3_LEN, WCRYPTO_MD5_LEN, WCRYPTO_SHA1_LEN,

@@ -76,6 +76,23 @@
 #define X_DH_OUT_PARAM_NUM		1
 #define X_DH_HW_KEY_PARAM_NUM		3
 
+/* Key size and block size of aead */
+#define MAX_AEAD_KEY_SIZE		64
+#define GCM_BLOCK_SIZE			12
+
+/* Key size and block size of chiper */
+#define MAX_CIPHER_KEY_SIZE		64
+#define AES_BLOCK_SIZE			16
+#define DES_KEY_SIZE			8
+#define SM4_KEY_SIZE			16
+#define DES3_2KEY_SIZE			(2 * DES_KEY_SIZE)
+#define DES3_3KEY_SIZE			(3 * DES_KEY_SIZE)
+#define CBC_AES_BLOCK_SIZE		16
+#define CBC_3DES_BLOCK_SIZE		8
+
+/* Key size and block size of digest */
+#define MAX_HMAC_KEY_SIZE		128
+
 #define X_DH_OUT_PARAMS_SZ(hsz)		((hsz) * X_DH_OUT_PARAM_NUM)
 #define X_DH_HW_KEY_SZ(hsz)		((hsz) * X_DH_HW_KEY_PARAM_NUM)
 #define SM2_KG_OUT_PARAMS_SZ(hsz)	((hsz) * SM2_KG_OUT_PARAM_NUM)
