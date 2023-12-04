@@ -63,13 +63,6 @@
 #define SEC_MAC_LEN_MASK	0x1F
 #define SEC_AUTH_LEN_MASK	0x3F
 
-#define DES_KEY_SIZE		  8
-#define SEC_3DES_2KEY_SIZE	  (2 * DES_KEY_SIZE)
-#define SEC_3DES_3KEY_SIZE	  (3 * DES_KEY_SIZE)
-#define AES_KEYSIZE_128		  16
-#define AES_KEYSIZE_192		  24
-#define AES_KEYSIZE_256		  32
-
 #define DES3_BLOCK_SIZE		8
 #define AES_BLOCK_SIZE		16
 #define CTR_128BIT_COUNTER	16
@@ -824,9 +817,9 @@ static void update_iv_sgl(struct wd_cipher_msg *msg)
 
 static int get_3des_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 {
-	if (msg->key_bytes == SEC_3DES_2KEY_SIZE) {
+	if (msg->key_bytes == DES3_2KEY_SIZE) {
 		*c_key_len = CKEY_LEN_3DES_2KEY;
-	} else if (msg->key_bytes == SEC_3DES_3KEY_SIZE) {
+	} else if (msg->key_bytes == DES3_3KEY_SIZE) {
 		*c_key_len = CKEY_LEN_3DES_3KEY;
 	} else {
 		WD_ERR("failed to check 3des key size, size = %u\n",
