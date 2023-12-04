@@ -209,9 +209,7 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 
 	ptr = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_SS, tmp);
 	if (ptr == MAP_FAILED) {
-		int value = errno;
-
-		WD_ERR("wd drv mmap fail!(err =%d)\n", value);
+		WD_ERR("wd drv mmap fail!(err = %d)\n", errno);
 		return NULL;
 	}
 
@@ -219,7 +217,7 @@ void *drv_reserve_mem(struct wd_queue *q, size_t size)
 	qinfo->ss_size = tmp;
 	tmp = 0;
 	while (ret > 0) {
-		info = (unsigned long)i;
+		info = i;
 		ret = ioctl(qinfo->fd, WD_UACCE_CMD_GET_SS_DMA, &info);
 		if (ret < 0) {
 			drv_show_ss_slices(q);
