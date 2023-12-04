@@ -426,7 +426,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 
 	wd_ctx_init_qfrs_offs(ctx);
 
-	strncpy(ctx->dev_path, dev->char_dev_path, MAX_DEV_NAME_LEN);
+	memcpy(ctx->dev_path, dev->char_dev_path, MAX_DEV_NAME_LEN);
 	ctx->dev_path[MAX_DEV_NAME_LEN - 1] = '\0';
 
 	return (handle_t)ctx;
