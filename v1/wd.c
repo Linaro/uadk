@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <errno.h>
-#include <sys/mman.h>
-#include <string.h>
 #include <dirent.h>
-#include <sys/poll.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/poll.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "v1/wd_util.h"
 #include "v1/wd_adapter.h"
@@ -94,12 +94,12 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 	fd = open(attr_path, O_RDONLY, 0);
 	if (fd < 0) {
 		WD_ERR("open %s fail, errno = %d!\n", attr_path, errno);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 	size = read(fd, buf, sz);
 	if (size <= 0) {
 		WD_ERR("read nothing at %s!\n", attr_path);
-		size = -ENODEV;
+		size = -WD_ENODEV;
 	}
 
 	close(fd);
@@ -214,7 +214,7 @@ static bool is_weight_more(unsigned int new, unsigned int old)
 	ins_old = GET_AVAILABLE_INSTANCES(old);
 	dis_old = GET_NODE_DISTANCE(old);
 
-	dbg("dis_new %u, ins_new %u,dis_old %u, ins_old %u\n",
+	dbg("dis_new %u, ins_new %u, dis_old %u, ins_old %u\n",
 		dis_new, ins_new, dis_old, ins_old);
 
 	if (dis_new > dis_old)
@@ -240,16 +240,16 @@ static int get_int_attr_all(struct dev_info *dinfo)
 	/* ret == 1 means device has been isolated */
 	ret = get_int_attr(dinfo, "isolate");
 	if (ret < 0)
-		return -ENODEV;
+		return -WD_ENODEV;
 	else if (ret == 1)
-		return -EBUSY;
+		return -WD_EBUSY;
 
 	/* ret == 0 means device has no available queues */
 	ret = get_int_attr(dinfo, "available_instances");
 	if (ret < 0)
-		return -ENODEV;
+		return -WD_ENODEV;
 	else if (ret == 0)
-		return -EBUSY;
+		return -WD_EBUSY;
 
 	dinfo->available_instances = ret;
 
@@ -318,13 +318,13 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 						LINUX_DEV_DIR, dinfo->name);
 	if (ret <= 0) {
 		WD_ERR("snprintf err, ret %d!\n", ret);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = access(buf, F_OK);
 	if (ret < 0) {
 		WD_ERR("failed to check file path %s, ret: %d\n", buf, ret);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	ret = get_str_attr_all(dinfo, alg);
@@ -407,7 +407,7 @@ static int get_denoted_dev(struct wd_capa *capa, const char *dev,
 	if (!get_dev_info(dinfop, capa->alg))
 		return 0;
 	WD_ERR("%s not available, will try other devices\n", dev);
-	return -ENODEV;
+	return -WD_ENODEV;
 }
 
 static int find_available_dev(struct dev_info *dinfop,
@@ -425,7 +425,7 @@ static int find_available_dev(struct dev_info *dinfop,
 	wd_class = opendir(WD_UACCE_CLASS_DIR);
 	if (!wd_class) {
 		WD_ERR("WD framework is not enabled on the system, errno = %d!\n", errno);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	while (true) {
@@ -444,7 +444,7 @@ static int find_available_dev(struct dev_info *dinfop,
 				find_node = true;
 				break;
 			}
-		} else if (ret == -EPFNOSUPPORT || ret == -EBUSY || ret == -ENODEV) {
+		} else if (ret == -EPFNOSUPPORT || ret == -WD_EBUSY || ret == -WD_ENODEV) {
 			continue;
 		} else {
 			closedir(wd_class);
@@ -470,12 +470,12 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 	if (dev[0] && dev[0] != '/' && !strstr(dev, "../")) {
 		if (!dinfop) {
 			WD_ERR("dinfop NULL!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 
 		if (q->node_mask) {
 			WD_ERR("dev and node cannot be denoted together!\n");
-			return -EINVAL;
+			return -WD_EINVAL;
 		}
 
 		if (!get_denoted_dev(capa, dev, dinfop))
@@ -485,7 +485,7 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 	ret = find_available_dev(dinfop, capa, q->node_mask);
 	if (ret <= 0 && dinfop) {
 		WD_ERR("get /%s path fail!\n", dinfop->name);
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	if (num) {
@@ -496,14 +496,14 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 dev_path:
 	if (!dinfop) {
 		WD_ERR("dinfop NULL!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	ret = snprintf(q->dev_path, PATH_STR_SIZE, "%s/%s",
 						LINUX_DEV_DIR, dinfop->name);
 	if (ret <= 0) {
 		WD_ERR("snprintf err, ret %d!\n", ret);
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	return 0;
 }
@@ -654,7 +654,7 @@ int wd_send(struct wd_queue *q, void *req)
 {
 	if (unlikely(!q || !req)) {
 		WD_ERR("wd send input parameter null!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	return wd_burst_send(q, &req, 1);
 }
@@ -663,7 +663,7 @@ int wd_recv(struct wd_queue *q, void **resp)
 {
 	if (unlikely(!q || !resp)) {
 		WD_ERR("wd recv input parameter null!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 	return wd_burst_recv(q, resp, 1);
 }
@@ -676,11 +676,11 @@ int wd_wait(struct wd_queue *q, __u16 ms)
 	int ret;
 
 	if (unlikely(!q))
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	priv = &q->capa.priv;
 	if (unlikely(!priv->is_poll))
-		return -EINVAL;
+		return -WD_EINVAL;
 
 	qinfo = q->qinfo;
 	fds[0].fd = qinfo->fd;
@@ -688,7 +688,7 @@ int wd_wait(struct wd_queue *q, __u16 ms)
 
 	ret = poll(fds, 1, ms);
 	if (unlikely(ret < 0))
-		return -ENODEV;
+		return -WD_ENODEV;
 
 	/* return 0 for no data, 1 for new message */
 	return ret;
@@ -735,7 +735,7 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	/* Just share DMA memory from 'q' in NO-IOMMU mode */
 	if (qinfo->iommu_type) {
 		WD_ERR("IOMMU opened, not support share mem!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (qinfo->iommu_type != tqinfo->iommu_type) {
@@ -871,6 +871,7 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 	else
 		munmap(addr, size);
 }
+
 int wd_register_log(wd_log log)
 {
 	if (!log) {
