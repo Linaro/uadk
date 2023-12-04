@@ -1398,6 +1398,7 @@ err_out:
 	task_queue->cur_task--;
 	task_queue->prod = curr_prod;
 	pthread_mutex_unlock(&task_queue->lock);
+	sem_post(&task_queue->empty_sem);
 
 	return ret;
 }
