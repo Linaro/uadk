@@ -26,7 +26,6 @@
 #include "wd_util.h"
 #include "wd_digest.h"
 
-#define MAX_HMAC_KEY_SIZE	128
 #define MAX_DIGEST_RETRY_CNT	20000000
 #define SEC_SHA1_ALIGN_SZ	64
 #define SEC_SHA512_ALIGN_SZ	128

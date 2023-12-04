@@ -31,10 +31,6 @@
 #include "config.h"
 #include "hisi_sec_udrv.h"
 
-#define DES_KEY_SIZE 8
-#define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
-#define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
-
 #define SEC_HW_TASK_DONE	1
 #define SEC_HW_ICV_ERR		0x2
 #define SEC_SM4_XTS_GB_V3	0x1
@@ -47,11 +43,8 @@
 #define CTR_128BIT_COUNTER	16
 #define CTR_128BIT_FLIP		0x2
 #define DIF_VERIFY_FAIL		2
-#define AES_BLOCK_SIZE		16
 #define WCRYPTO_CIPHER_THEN_DIGEST	0
 #define WCRYPTO_DIGEST_THEN_CIPHER	1
-#define CBC_3DES_BLOCK_SIZE	8
-#define CBC_AES_BLOCK_SIZE	16
 #define AEAD_IV_MAX_BYTES	64
 #define MAX_CCM_AAD_LEN		65279
 #define SEC_GMAC_IV_LEN	16
@@ -111,9 +104,9 @@ static int get_aes_c_key_len(__u8 mode, __u16 key_bytes, __u8 *c_key_len)
 
 static int get_3des_c_key_len(struct wcrypto_cipher_msg *msg, __u8 *c_key_len)
 {
-	if (msg->key_bytes == SEC_3DES_2KEY_SIZE)
+	if (msg->key_bytes == DES3_2KEY_SIZE)
 		*c_key_len = CKEY_LEN_3DES_2KEY;
-	else if (msg->key_bytes == SEC_3DES_3KEY_SIZE)
+	else if (msg->key_bytes == DES3_3KEY_SIZE)
 		*c_key_len = CKEY_LEN_3DES_3KEY;
 	else {
 		WD_ERR("Invalid 3DES key size!\n");

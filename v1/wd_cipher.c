@@ -26,17 +26,10 @@
 #include "v1/wd_util.h"
 #include "v1/wd_cipher.h"
 
-#define MAX_CIPHER_KEY_SIZE		64
 #define MAX_CIPHER_RETRY_CNT		20000000
 
 #define XTS_MODE_KEY_LEN_MASK 0x1
-#define DES_KEY_SIZE 8
-#define SM4_KEY_SIZE 16
-#define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
-#define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
 
-#define CBC_3DES_BLOCK_SIZE 8
-#define CBC_AES_BLOCK_SIZE 16
 #define DES_WEAK_KEY_NUM 4
 static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
 	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
@@ -300,7 +293,7 @@ static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_3DES:
-		if ((key_len != SEC_3DES_2KEY_SIZE) && (key_len != SEC_3DES_3KEY_SIZE))
+		if ((key_len != DES3_2KEY_SIZE) && (key_len != DES3_3KEY_SIZE))
 			ret = -WD_EINVAL;
 		break;
 	default:
