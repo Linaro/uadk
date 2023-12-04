@@ -573,7 +573,7 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 	bp = calloc(1, sizeof(struct blkpool));
 	if (!bp) {
 		WD_ERR("failed to alloc memory for blkpool!\n");
-		return (handle_t)(-WD_ENOMEM);
+		goto err_sub_ref;
 	}
 
 	bp->top = block_num;
@@ -597,6 +597,7 @@ err_free_mem:
 	free_mem_to_mempool(bp);
 err_free_bp:
 	free(bp);
+err_sub_ref:
 	wd_atomic_sub(&mp->ref, 1);
 	return (handle_t)(-WD_ENOMEM);
 }
