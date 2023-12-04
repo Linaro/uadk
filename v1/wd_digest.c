@@ -371,20 +371,61 @@ static int digest_recv_sync(struct wcrypto_digest_ctx *d_ctx,
 	return recv_count;
 }
 
+static int stream_mode_param_check(struct wcrypto_digest_ctx *d_ctx,
+				   struct wcrypto_digest_op_data *d_opdata, __u32 num)
+{
+	enum wcrypto_digest_alg alg = d_ctx->setup.alg;
+
+	if (unlikely(num != 1)) {
+		WD_ERR("invalid: wcrypto_burst_digest does not support stream mode, num = %u!\n",
+			num);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(d_opdata->in_bytes % d_ctx->align_sz)) {
+		WD_ERR("invalid: digest stream mode must be %u-byte aligned!\n", d_ctx->align_sz);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(d_opdata->out_bytes < g_digest_mac_full_len[alg])) {
+		WD_ERR("invalid: digest stream mode out buffer space is not enough!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int block_mode_param_check(struct wcrypto_digest_ctx *d_ctx,
+				  struct wcrypto_digest_op_data *d_opdata)
+{
+	enum wcrypto_digest_alg alg = d_ctx->setup.alg;
+
+	if (unlikely(d_opdata->out_bytes > g_digest_mac_len[alg])) {
+		WD_ERR("invalid: failed to check digest mac length!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(d_ctx->setup.alg == WCRYPTO_AES_GMAC &&
+		(!d_opdata->iv || d_opdata->iv_bytes != SEC_GMAC_IV_LEN))) {
+		WD_ERR("invalid: failed to check digest aes_gmac iv length, iv_bytes = %u\n",
+			d_opdata->iv_bytes);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int param_check(struct wcrypto_digest_ctx *d_ctx,
 		       struct wcrypto_digest_op_data **d_opdata,
 		       void **tag, __u32 num)
 {
-	enum wcrypto_digest_alg alg;
 	__u32 i;
 	int ret;
 
 	if (unlikely(!d_ctx || !d_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
-		WD_ERR("input param err!\n");
+		WD_ERR("invalid: input param err!\n");
 		return -WD_EINVAL;
 	}
-
-	alg = d_ctx->setup.alg;
 
 	for (i = 0; i < num; i++) {
 		if (unlikely(!d_opdata[i])) {
@@ -397,37 +438,19 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 			return -WD_EINVAL;
 		}
 
-		ret = wd_check_src_dst(d_opdata[i]->in, d_opdata[i]->in_bytes, d_opdata[i]->out, d_opdata[i]->out_bytes);
+		ret = wd_check_src_dst(d_opdata[i]->in, d_opdata[i]->in_bytes,
+				       d_opdata[i]->out, d_opdata[i]->out_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 
-		if (d_opdata[i]->has_next) {
-			if (unlikely(num != 1)) {
-				WD_ERR("num > 1, wcrypto_burst_digest does not support stream mode!\n");
-				return -WD_EINVAL;
-			}
-			if (unlikely(d_opdata[i]->in_bytes % d_ctx->align_sz)) {
-				WD_ERR("digest stream mode must be %u-byte aligned!\n", d_ctx->align_sz);
-				return -WD_EINVAL;
-			}
-			if (unlikely(d_opdata[i]->out_bytes < g_digest_mac_full_len[alg])) {
-				WD_ERR("digest stream mode out buffer space is not enough!\n");
-				return -WD_EINVAL;
-			}
-		} else {
-			if (unlikely(d_opdata[i]->out_bytes > g_digest_mac_len[alg])) {
-				WD_ERR("failed to check digest mac length!\n");
-				return -WD_EINVAL;
-			}
-			if (unlikely(d_ctx->setup.alg == WCRYPTO_AES_GMAC &&
-				(!d_opdata[i]->iv || d_opdata[i]->iv_bytes != SEC_GMAC_IV_LEN))) {
-				WD_ERR("failed to check digest aes_gmac iv length, iv_bytes = %u\n",
-					d_opdata[i]->iv_bytes);
-				return -WD_EINVAL;
-			}
-		}
+		if (d_opdata[i]->has_next)
+			ret = stream_mode_param_check(d_ctx, d_opdata[i], num);
+		else
+			ret = block_mode_param_check(d_ctx, d_opdata[i]);
+		if (unlikely(ret))
+			return ret;
 
 		if (unlikely(tag && !tag[i])) {
 			WD_ERR("invalid: tag[%u] is NULL!\n", i);
