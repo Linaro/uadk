@@ -189,6 +189,10 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		goto free_ctx;
 	}
 	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
+	if (!ctx->g.data) {
+		WD_ERR("failed to alloc ctx->g.data memory!\n");
+		goto free_ctx;
+	}
 	ctx->g.bsize = ctx->key_size;
 
 	ret = wcrypto_init_dh_cookie(ctx);
