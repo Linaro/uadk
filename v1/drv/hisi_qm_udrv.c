@@ -244,7 +244,7 @@ static int qm_set_queue_regions(struct wd_queue *q)
 	if (info->sq_base == MAP_FAILED) {
 		info->sq_base = NULL;
 		WD_ERR("mmap dus fail\n");
-		return -ENOMEM;
+		return -WD_ENOMEM;
 	}
 
 	info->mmio_base = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_MMIO, 0);
@@ -253,7 +253,7 @@ static int qm_set_queue_regions(struct wd_queue *q)
 		info->sq_base = NULL;
 		info->mmio_base = NULL;
 		WD_ERR("mmap mmio fail\n");
-		return -ENOMEM;
+		return -WD_ENOMEM;
 	}
 
 	return 0;
@@ -439,7 +439,7 @@ static int qm_set_db_info(struct q_info *qinfo)
 	struct qm_queue_info *info = qinfo->priv;
 
 	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE) ||
-	strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+	    strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
 		info->db = qm_db_v2;
 		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
 	} else if (strstr(qinfo->hw_type, HISI_QM_API_VER_BASE)) {
@@ -447,7 +447,7 @@ static int qm_set_db_info(struct q_info *qinfo)
 		info->doorbell_base = info->mmio_base + QM_DOORBELL_OFFSET;
 	} else {
 		WD_ERR("hw version mismatch!\n");
-		return -EINVAL;
+		return -WD_EINVAL;
 	}
 
 	return 0;
@@ -505,10 +505,10 @@ static int qm_set_queue_info(struct wd_queue *q)
 
 	ret = qm_set_queue_regions(q);
 	if (ret)
-		return -EINVAL;
+		return -WD_EINVAL;
 	if (!info->sqe_size) {
 		WD_ERR("sqe size =%d err!\n", info->sqe_size);
-		ret = -EINVAL;
+		ret = -WD_EINVAL;
 		goto err_with_regions;
 	}
 	info->cq_base = (void *)((uintptr_t)info->sq_base +
@@ -520,7 +520,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	ret = mprotect(info->cq_base, psize, PROT_READ);
 	if (ret) {
 		WD_ERR("cqe mprotect set err!\n");
-		ret = -EINVAL;
+		ret = -WD_EINVAL;
 		goto err_with_regions;
 	}
 
@@ -549,7 +549,7 @@ int qm_init_queue(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info;
-	int ret = -ENOMEM;
+	int ret = -WD_ENOMEM;
 
 	info = calloc(1, sizeof(*info));
 	if (!info) {

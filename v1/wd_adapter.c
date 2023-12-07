@@ -28,7 +28,7 @@
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
 
-static struct wd_drv_dio_if hw_dio_tbl[] = { {
+static const struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.hw_type = "dummy_v1",
 		.open = dummy_set_queue_dio,
 		.close = dummy_unset_queue_dio,
@@ -155,13 +155,13 @@ void drv_free_slice(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rgn;
 
-        while (true) {
-                rgn = TAILQ_FIRST(&qinfo->ss_list);
-                if (!rgn)
-                        break;
-                TAILQ_REMOVE(&qinfo->ss_list, rgn, next);
-                free(rgn);
-        }
+	while (true) {
+		rgn = TAILQ_FIRST(&qinfo->ss_list);
+		if (!rgn)
+			break;
+		TAILQ_REMOVE(&qinfo->ss_list, rgn, next);
+		free(rgn);
+	}
 }
 
 void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
@@ -188,7 +188,7 @@ void drv_show_ss_slices(struct wd_queue *q)
 	int i = 0;
 
 	TAILQ_FOREACH(rgn, qinfo->head, next) {
-		WD_ERR("slice-%d:size=0x%lx\n", i, rgn->size);
+		WD_ERR("slice-%d:size = 0x%lx\n", i, rgn->size);
 		i++;
 	}
 }
