@@ -77,7 +77,7 @@ static int wd_dh_open_driver(void)
 
 	wd_dh_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void wd_dh_clear_status(void)
@@ -114,7 +114,7 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret)
 		goto out_clear_pool;
 
-	return 0;
+	return WD_SUCCESS;
 
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
@@ -135,7 +135,7 @@ static int wd_dh_common_uninit(void)
 	wd_alg_uninit_driver(&wd_dh_setting.config,
 			     wd_dh_setting.driver);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -162,7 +162,7 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	wd_alg_set_init(&wd_dh_setting.status);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_close_driver:
 	wd_dh_close_driver();
@@ -262,7 +262,7 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 	wd_alg_set_init(&wd_dh_setting.status);
 	wd_ctx_param_uninit(&dh_ctx_params);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_params_uninit:
 	wd_ctx_param_uninit(&dh_ctx_params);
@@ -318,7 +318,7 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
@@ -414,7 +414,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	return 0;
+	return WD_SUCCESS;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_dh_setting.pool, idx, mid);
@@ -502,7 +502,7 @@ int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)
 
 	*alg_mode = ((struct wd_dh_sess *)sess)->setup.is_g2;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 __u32 wd_dh_key_bits(handle_t sess)

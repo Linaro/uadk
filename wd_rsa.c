@@ -116,7 +116,7 @@ static int wd_rsa_open_driver(void)
 
 	wd_rsa_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void wd_rsa_clear_status(void)
@@ -152,7 +152,7 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret)
 		goto out_clear_pool;
 
-	return 0;
+	return WD_SUCCESS;
 
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
@@ -173,7 +173,7 @@ static int wd_rsa_common_uninit(void)
 	wd_alg_uninit_driver(&wd_rsa_setting.config,
 			     wd_rsa_setting.driver);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -200,7 +200,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	wd_alg_set_init(&wd_rsa_setting.status);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_close_driver:
 	wd_rsa_close_driver();
@@ -300,7 +300,7 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	wd_alg_set_init(&wd_rsa_setting.status);
 	wd_ctx_param_uninit(&rsa_ctx_params);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_params_uninit:
 	wd_ctx_param_uninit(&rsa_ctx_params);
@@ -377,7 +377,7 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 
 	msg->key = key;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
@@ -473,7 +473,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	return 0;
+	return WD_SUCCESS;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, mid);
