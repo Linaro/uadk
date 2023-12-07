@@ -40,7 +40,7 @@
 #define HPRE_SM2_ENC	0xE
 #define HPRE_SM2_DEC	0xF
 
-#define SM2_SQE_NUM			2
+#define SM2_SQE_NUM	2
 
 static bool is_hpre_bin_fmt(const char *data, int dsz, int bsz)
 {
@@ -203,6 +203,11 @@ static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 	int ret;
 
 	wcrypto_get_rsa_pubkey_params(pubkey, &wd_e, &wd_n);
+	if (unlikely(!wd_e || !wd_n)) {
+		WD_ERR("failed to get rsa pubkey params!\n");
+		return -WD_EINVAL;
+	}
+
 	ret = qm_crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
 				wd_e->bsize, wd_e->dsize, "rsa pubkey e");
 	if (unlikely(ret))
@@ -330,7 +335,7 @@ static void rsa_key_unmap(struct wcrypto_rsa_msg *msg, struct wd_queue *q,
 	struct wcrypto_rsa_kg_out *key = (void *)msg->key;
 	uintptr_t phy;
 
-	phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
+	phy = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 	phy -= (uintptr_t)va - (uintptr_t)key;
 
 	drv_iova_unmap(q, msg->key, (void *)phy, size);
@@ -597,7 +602,7 @@ static int fill_dh_g_param(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 static void dh_g_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
 		       struct hisi_hpre_sqe *hw_msg)
 {
-	uintptr_t phy = DMA_ADDR(hw_msg->low_in, hw_msg->hi_in);
+	uintptr_t phy = DMA_ADDR(hw_msg->hi_in, hw_msg->low_in);
 	if (phy)
 		drv_iova_unmap(q, msg->g, (void *)phy, msg->key_bytes);
 }
@@ -605,7 +610,7 @@ static void dh_g_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
 static void dh_xp_unmap(struct wcrypto_dh_msg *msg, struct wd_queue *q,
 			struct hisi_hpre_sqe *hw_msg)
 {
-	uintptr_t phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
+	uintptr_t phy = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 
 	drv_iova_unmap(q, msg->x_p, (void *)phy, GEN_PARAMS_SZ_UL(msg->key_bytes));
 }
@@ -1008,7 +1013,7 @@ static void ecc_key_unmap(struct wcrypto_ecc_msg *msg, struct wd_queue *q,
 {
 	uintptr_t phy;
 
-	phy = DMA_ADDR(hw_msg->low_key, hw_msg->hi_key);
+	phy = DMA_ADDR(hw_msg->hi_key, hw_msg->low_key);
 	drv_iova_unmap(q, va, (void *)phy, size);
 }
 
@@ -1586,8 +1591,7 @@ static int ecc_verf_out_transfer(struct wcrypto_ecc_msg *msg,
 {
 	__u32 result = hw_msg->low_out;
 
-	result >>= 1;
-	result &= 1;
+	result = (result >> 1) & 1;
 	if (!result)
 		msg->result = WD_VERIFY_ERR;
 
@@ -1667,7 +1671,7 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	hw_msg = (struct hisi_hpre_sqe *)sqe;
 
 	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
-	hw_msg->task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
+	hw_msg->task_len1 = ((msg->key_bytes) >> BYTE_BITS_SHIFT) - 0x1;
 
 	/* prepare algorithm */
 	ret = qm_ecc_prepare_alg(hw_msg, msg);
@@ -2327,7 +2331,7 @@ static int sm2_convert_enc_out(struct wcrypto_ecc_msg *src,
 	/* enc origin out data fmt:
 	 * | x1y1(2*256bit) | x2y2(2*256bit) | other |
 	 * final out data fmt:
-	 * | c1(2*256bit)   | c2(plaintext size) | c3(256bit) |
+	 * | c1(2*256bit)   | c3(256bit) | c2(plaintext size) |
 	 */
 	x2y2.x.data = (void *)second->out;
 	x2y2.x.dsize = ksz;

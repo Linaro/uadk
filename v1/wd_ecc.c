@@ -428,7 +428,7 @@ static struct wcrypto_ecc_in *create_sm2_sign_in(struct wcrypto_ecc_ctx *ctx,
 
 	hsz = get_hw_keysize(ctx->key_size);
 	len = sizeof(struct wcrypto_ecc_in)
-		+ ECC_SIGN_IN_PARAM_NUM * hsz + (__u64)m_len;
+		+ ECC_SIGN_IN_PARAM_NUM * hsz + m_len;
 	in = br_alloc(br, len);
 	if (unlikely(!in)) {
 		WD_ERR("failed to br alloc, sz = %llu!\n", len);
@@ -1802,6 +1802,11 @@ static int generate_random(struct wcrypto_ecc_ctx *ctx, struct wd_dtb *k)
 	struct wcrypto_rand_mt *rand_mt = &ctx->setup.rand;
 	int ret;
 
+	if (!rand_mt->cb) {
+		WD_ERR("failed to get rand cb!\n");
+		return -WD_EINVAL;
+	}
+
 	ret = rand_mt->cb(k->data, k->dsize, rand_mt->usr);
 	if (unlikely(ret))
 		WD_ERR("failed to rand cb: ret = %d!\n", ret);
@@ -1932,7 +1937,7 @@ static struct wcrypto_ecc_in *new_sign_in(struct wcrypto_ecc_ctx *ctx,
 		return NULL;
 
 	sin = &ecc_in->param.sin;
-	if (!k && cx->setup.rand.cb) {
+	if (!k) {
 		ret = generate_random(cx, &sin->k);
 		if (unlikely(ret))
 			goto release_in;
@@ -2018,7 +2023,7 @@ static struct wcrypto_ecc_in *create_sm2_verf_in(struct wcrypto_ecc_ctx *ctx,
 
 	hsz = get_hw_keysize(ctx->key_size);
 	len = sizeof(struct wcrypto_ecc_in) + ECC_VERF_IN_PARAM_NUM * hsz +
-		(__u64)m_len;
+		m_len;
 	in = br_alloc(br, len);
 	if (unlikely(!in)) {
 		WD_ERR("failed to br alloc, sz = %llu!\n", len);
