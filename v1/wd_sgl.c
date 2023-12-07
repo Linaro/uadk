@@ -349,11 +349,28 @@ static int sgl_params_check(struct wd_sglpool_setup *setup)
 	struct wd_sglpool_setup *sp = setup;
 	__u32 buf_num_need;
 
-	if (!sp->buf_num ||  !sp->sgl_num || !sp->sge_num_in_sgl ||
-	    !sp->buf_num_in_sgl || sp->buf_size < BUF_SIZE_MAX ||
-	    sp->buf_num_in_sgl > sp->sge_num_in_sgl ||
-	    sp->sgl_num > SGL_NUM_MAX || sp->sge_num_in_sgl > SGE_NUM_MAX) {
-		WD_ERR("invalid size or num in sgl!\n");
+	if (!sp->sgl_num || sp->sgl_num > SGL_NUM_MAX) {
+		WD_ERR("invalid sgl_num, %u!\n", sp->sgl_num);
+		return -WD_EINVAL;
+	}
+
+	if (!sp->sge_num_in_sgl || sp->sge_num_in_sgl > SGE_NUM_MAX) {
+		WD_ERR("invlaid sge_num_in_sgl, %u\n!", sp->sge_num_in_sgl);
+		return -WD_EINVAL;
+	}
+
+	if (!sp->buf_num) {
+		WD_ERR("invalid buf_num, %u!\n", sp->buf_num);
+		return -WD_EINVAL;
+	}
+
+	if (sp->buf_size < BUF_SIZE_MAX) {
+		WD_ERR("invalid buf_size, %u!\n", sp->buf_size);
+		return -WD_EINVAL;
+	}
+
+	if (!sp->buf_num_in_sgl || sp->buf_num_in_sgl > sp->sge_num_in_sgl) {
+		WD_ERR("invalid buf_num_in_sgl, %u!\n", sp->buf_num_in_sgl);
 		return -WD_EINVAL;
 	}
 

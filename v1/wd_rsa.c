@@ -554,7 +554,8 @@ static int check_q_setup(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup
 		return -WD_EINVAL;
 	}
 
-	if (!setup->br.alloc || !setup->br.free) {
+	if (!setup->br.alloc || !setup->br.free ||
+	    !setup->br.iova_map || !setup->br.iova_unmap) {
 		WD_ERR("create rsa ctx user mm br err!\n");
 		return -WD_EINVAL;
 	}
@@ -797,6 +798,9 @@ static int rsa_prikey2_param_set(struct wcrypto_rsa_prikey2 *pkey2,
 
 	case WD_CRT_PRIKEY_Q:
 		ret = rsa_set_param(&pkey2->q, param);
+		break;
+	default:
+		ret = -WD_EINVAL;
 		break;
 	}
 

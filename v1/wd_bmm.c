@@ -29,8 +29,12 @@
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
 
-#define TAG_FREE 0x12345678  /* block is free */
-#define TAG_USED 0x87654321  /* block is busy */
+#define TAG_FREE	0x12345678  /* block is free */
+#define TAG_USED	0x87654321  /* block is busy */
+#define MAX_ALIGN_SIZE	0x1000 /* 4KB */
+#define MAX_BLOCK_SIZE	0x10000000 /* 256MB */
+#define BLK_BALANCE_SZ	0x100000ul
+#define NUM_TIMES(x)	(87 * (x) / 100)
 
 struct wd_blk_hd {
 	unsigned int blk_tag;
@@ -67,9 +71,6 @@ static struct wd_blk_hd *wd_blk_head(struct wd_blkpool *pool, void *blk)
 
 static int pool_params_check(struct wd_blkpool_setup *setup)
 {
-#define MAX_ALIGN_SIZE 0x1000 /* 4KB */
-#define MAX_BLOCK_SIZE 0x10000000 /* 256MB */
-
 	if (!setup->block_num || !setup->block_size ||
 		setup->block_size > MAX_BLOCK_SIZE) {
 		WD_ERR("Invalid block_size or block_num(%x, %u)!\n",
@@ -103,7 +104,6 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 	if (!sp->br.alloc)
 		qinfo = q->qinfo;
 
-#define BLK_BALANCE_SZ		0x100000ul
 	ret = pool_params_check(sp);
 	if (ret)
 		return ret;
@@ -171,7 +171,6 @@ static int wd_pool_init(struct wd_queue *q, struct wd_blkpool *p)
 	 * if dma_num <= (1 / 1.15) * user's block_num, we think the pool
 	 * is created with failure.
 	 */
-#define NUM_TIMES(x)	(87 * (x) / 100)
 	if (dma_num <= NUM_TIMES(p->setup.block_num)) {
 		WD_ERR("dma_num = %u, not enough.\n", dma_num);
 		return -WD_EINVAL;
