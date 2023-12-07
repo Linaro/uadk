@@ -301,7 +301,6 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
 		msg->out_bytes = CRT_GEN_PARAMS_SZ(kbytes);
 		*in_len = GEN_PARAMS_SZ_UL(kbytes);
-		*out_len = msg->out_bytes;
 		wcrypto_get_rsa_kg_out_crt_params(key, &qinv, &dq, &dp);
 		ret = qm_tri_bin_transfer(&qinv, &dq, &dp, "rsa kg qinv&dp&dq");
 		if (unlikely(ret))
@@ -311,9 +310,7 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 					       dq.dsize, dp.dsize);
 	} else if (hw_msg->alg == HPRE_ALG_KG_STD) {
 		msg->out_bytes = GEN_PARAMS_SZ(kbytes);
-		*out_len = msg->out_bytes;
 		*in_len = GEN_PARAMS_SZ_UL(kbytes);
-
 		wcrypto_get_rsa_kg_out_params(key, &d, &n);
 		ret = qm_tri_bin_transfer(&d, &n, NULL, "rsa kg d & n");
 		if (unlikely(ret))
@@ -323,8 +320,10 @@ static int qm_rsa_out_transfer(struct wcrypto_rsa_msg *msg,
 	} else {
 		*in_len = kbytes;
 		msg->out_bytes = kbytes;
-		*out_len = msg->out_bytes;
 	}
+
+	*out_len = msg->out_bytes;
+
 	return WD_SUCCESS;
 }
 
@@ -1922,7 +1921,7 @@ static int fill_sm2_enc_sqe(void *msg, struct qm_queue_info *info, __u16 idx)
 	}
 
 	/* split message into two inner request msg
-	 * firest msg used to compute k * g
+	 * first msg used to compute k * g
 	 * second msg used to compute k * pb
 	 */
 	ret = split_req(info, req_src, req_dst);

@@ -1011,7 +1011,8 @@ static int param_check(struct wd_queue *q, struct wcrypto_ecc_ctx_setup *setup)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(!setup->br.alloc || !setup->br.free)) {
+	if (unlikely(!setup->br.alloc || !setup->br.free ||
+	    !setup->br.iova_map || !setup->br.iova_unmap)) {
 		WD_ERR("user mm br error!\n");
 		return -WD_EINVAL;
 	}
