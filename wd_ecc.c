@@ -132,7 +132,7 @@ static int wd_ecc_open_driver(void)
 
 	wd_ecc_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static bool is_alg_support(const char *alg)
@@ -179,7 +179,7 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret)
 		goto out_clear_pool;
 
-	return 0;
+	return WD_SUCCESS;
 
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
@@ -206,7 +206,7 @@ static int wd_ecc_common_uninit(void)
 			     wd_ecc_setting.driver,
 			     &wd_ecc_setting.priv);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -233,7 +233,7 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	wd_alg_set_init(&wd_ecc_setting.status);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_close_driver:
 	wd_ecc_close_driver();
@@ -335,7 +335,7 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	wd_alg_set_init(&wd_ecc_setting.status);
 	wd_ctx_param_uninit(&ecc_ctx_params);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_params_uninit:
 	wd_ctx_param_uninit(&ecc_ctx_params);
@@ -827,7 +827,7 @@ static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src,
 	memset(dst->data, 0, dst->bsize);
 	memcpy(dst->data, src->data, src->dsize);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_ecc_get_key_bits(handle_t sess)
@@ -905,7 +905,7 @@ static int set_curve_param(struct wd_ecc_key *key,
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static const struct wd_ecc_curve_list *find_curve_list(__u32 id)
@@ -942,7 +942,7 @@ static int fill_param_by_id(struct wd_ecc_curve *c,
 	key_size = BITS_TO_BYTES(item->key_bits);
 	memcpy(c->p.data, item->data, CURVE_PARAM_NUM * key_size);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void setup_curve_cfg(struct wd_ecc_sess_setup *setup)
@@ -1064,7 +1064,7 @@ static int create_sess_key(struct wd_ecc_sess_setup *setup,
 		goto free_d;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 
 free_d:
 	release_ecc_d(sess);
@@ -1115,7 +1115,7 @@ static int setup_param_check(struct wd_ecc_sess_setup *setup)
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void del_sess_key(struct wd_ecc_sess *sess)
@@ -1627,13 +1627,18 @@ static int set_sign_in_param(struct wd_ecc_sign_in *sin,
 			return ret;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 {
 	struct wd_rand_mt rand_t = sess->setup.rand;
 	int ret;
+
+	if (!rand_t.cb) {
+		WD_ERR("failed to get rand cb!\n");
+		return -WD_EINVAL;
+	}
 
 	ret = rand_t.cb(k->data, k->dsize, rand_t.usr);
 	if (ret)
@@ -1764,7 +1769,7 @@ static struct wd_ecc_in *new_sign_in(struct wd_ecc_sess *sess,
 		return NULL;
 
 	sin = &ecc_in->param.sin;
-	if (!k && sess_t->setup.rand.cb) {
+	if (!k) {
 		ret = generate_random(sess_t, &sin->k);
 		if (ret)
 			goto release_in;
@@ -1826,7 +1831,7 @@ static int set_verf_in_param(struct wd_ecc_verf_in *vin,
 	if (ret)
 		return ret;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
@@ -2258,7 +2263,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	return 0;
+	return WD_SUCCESS;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, mid);

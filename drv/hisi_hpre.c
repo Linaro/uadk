@@ -39,6 +39,8 @@
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 
+#define WD_TRANS_FAIL  0
+
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,
 	HPRE_ALG_NC_CRT = 0x1,
@@ -62,6 +64,12 @@ enum hpre_alg_type {
 	HPRE_ALG_SM2_VERF = 0x13,
 	HPRE_ALG_SM2_ENC = 0x14,
 	HPRE_ALG_SM2_DEC = 0x15
+};
+
+enum hpre_alg_name {
+	WD_RSA,
+	WD_DH,
+	WD_ECC
 };
 
 /* put vendor hardware message as a user interface is not suitable here */
@@ -101,24 +109,34 @@ struct hisi_hpre_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
-static void dump_hpre_msg(void *msg, const char *s)
+static void dump_hpre_msg(void *msg, int alg)
 {
 	struct wd_rsa_msg *rsa_msg;
 	struct wd_ecc_msg *ecc_msg;
 	struct wd_dh_msg *dh_msg;
 
-	WD_ERR("dump %s alg message after a task error occurs.\n", s);
-
-	if (!strcmp(s, "rsa")) {
+	switch (alg) {
+	case WD_RSA:
 		rsa_msg = (struct wd_rsa_msg *)msg;
-		WD_ERR("key_bytes:%u key_type:%u\n", rsa_msg->key_bytes, rsa_msg->key_type);
-	} else if (!strcmp(s, "ecc")) {
-		ecc_msg = (struct wd_ecc_msg *)msg;
-		WD_ERR("key_bytes:%u curve_id:%u\n", ecc_msg->key_bytes, ecc_msg->curve_id);
-	} else if (!strcmp(s, "dh")) {
+		WD_ERR("dump RSA alg message after a task error occurs\n"
+		       "key_bytes:%u key_type:%u\n", rsa_msg->key_bytes,
+			rsa_msg->key_type);
+		break;
+	case WD_DH:
 		dh_msg = (struct wd_dh_msg *)msg;
-		WD_ERR("gbytes:%u key_bytes:%u is_g2:%u\n", dh_msg->gbytes,
-			dh_msg->key_bytes, dh_msg->is_g2);
+		WD_ERR("dump DH alg message after a task error occurs\n"
+		       "gbytes:%u key_bytes:%u is_g2:%u\n", dh_msg->gbytes,
+		       dh_msg->key_bytes, dh_msg->is_g2);
+		break;
+	case WD_ECC:
+		ecc_msg = (struct wd_ecc_msg *)msg;
+		WD_ERR("dump ECC alg message after a task error occurs\n"
+		       "key_bytes:%u curve_id:%u\n", ecc_msg->key_bytes,
+			ecc_msg->curve_id);
+		break;
+	default:
+		WD_ERR("invalid alg!\n");
+		break;
 	}
 }
 
@@ -181,7 +199,7 @@ static int hpre_bin_to_crypto_bin(char *dst, const char *src, __u32 b_size,
 
 	if (!dst || !src || !b_size) {
 		WD_ERR("invalid: %s trans to crypto bin parameters err!\n", p_name);
-		return 0;
+		return WD_TRANS_FAIL;
 	}
 
 	while (!src[j] && k < (b_size - 1))
@@ -496,7 +514,7 @@ static int hpre_init_qm_priv(struct wd_ctx_config_internal *config,
 		config->ctxs[i].sqn = qm_priv->sqn;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 out:
 	for (j = 0; j < i; j++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
@@ -523,7 +541,7 @@ static int hpre_rsa_dh_init(void *conf, void *priv)
 	if (ret)
 		return ret;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int hpre_ecc_init(void *conf, void *priv)
@@ -543,7 +561,7 @@ static int hpre_ecc_init(void *conf, void *priv)
 	if (ret)
 		return ret;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void hpre_exit(void *priv)
@@ -655,9 +673,9 @@ static int rsa_recv(handle_t ctx, void *rsa_msg)
 	}
 
 	if (unlikely(msg->result != WD_SUCCESS))
-		dump_hpre_msg(temp_msg, "rsa");
+		dump_hpre_msg(temp_msg, WD_RSA);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int fill_dh_xp_params(struct wd_dh_msg *msg,
@@ -798,9 +816,9 @@ static int dh_recv(handle_t ctx, void *dh_msg)
 	}
 
 	if (unlikely(msg->result != WD_SUCCESS))
-		dump_hpre_msg(temp_msg, "dh");
+		dump_hpre_msg(temp_msg, WD_DH);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_prepare_alg(struct wd_ecc_msg *msg,
@@ -841,7 +859,7 @@ static int ecc_prepare_alg(struct wd_ecc_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
@@ -976,7 +994,7 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 
 	*data = p->data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int trans_pub_to_hpre_bin(struct wd_ecc_point *pub)
@@ -1017,7 +1035,7 @@ static int ecc_prepare_pubkey(struct wd_ecc_key *key, void **data)
 
 	*data = p->data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static bool is_prikey_used(__u8 op_type)
@@ -1050,7 +1068,7 @@ static int ecc_prepare_key(struct wd_ecc_msg *msg,
 	hw_msg->low_key = LW_U32((uintptr_t)data);
 	hw_msg->hi_key = HI_U32((uintptr_t)data);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
@@ -1146,7 +1164,7 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 
 	*data = e->data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
@@ -1188,7 +1206,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 
 	*data = e->data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int sm2_prepare_enc_in(struct wd_ecc_msg *msg,
@@ -1211,7 +1229,7 @@ static int sm2_prepare_enc_in(struct wd_ecc_msg *msg,
 	hw_msg->sm2_mlen = ein->plaintext.dsize - 1;
 	*data = k->data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int sm2_prepare_dec_in(struct wd_ecc_msg *msg,
@@ -1235,7 +1253,7 @@ static int sm2_prepare_dec_in(struct wd_ecc_msg *msg,
 	hw_msg->sm2_mlen = din->c2.dsize - 1;
 	*data = c1->x.data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_prepare_dh_gen_in(struct wd_ecc_msg *msg,
@@ -1256,7 +1274,7 @@ static int ecc_prepare_dh_gen_in(struct wd_ecc_msg *msg,
 
 	*data = in->x.data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
@@ -1278,7 +1296,7 @@ static int ecc_prepare_dh_compute_in(struct wd_ecc_msg *msg,
 
 	*data = pbk->x.data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int u_is_in_p(struct wd_ecc_msg *msg)
@@ -1312,7 +1330,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_prepare_in(struct wd_ecc_msg *msg,
@@ -1369,7 +1387,7 @@ static int ecc_prepare_dh_out(struct wd_ecc_out *out, void **data)
 
 	*data = dh_out->x.data;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
@@ -1437,13 +1455,14 @@ static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 		return ret;
 	}
 
+	/* op_type WD_ECDSA_VERIFY and WD_SM2_VERIFY do not need data */
 	if (!data)
-		return 0;
+		return WD_SUCCESS;
 
 	hw_msg->low_out = LW_U32((uintptr_t)data);
 	hw_msg->hi_out = HI_U32((uintptr_t)data);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static __u32 get_hw_keysz(__u32 ksz)
@@ -1505,7 +1524,7 @@ static int set_param(struct wd_dtb *dst, const struct wd_dtb *src,
 	memset(dst->data, 0, dst->bsize);
 	memcpy(dst->data, src->data, src->dsize);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int set_prikey(struct wd_ecc_prikey *prikey,
@@ -1571,7 +1590,6 @@ static struct wd_ecc_out *create_ecdh_out(struct wd_ecc_msg *msg)
 	dh_out->out.y.data = out->data;
 	dh_out->out.y.dsize = msg->key_bytes;
 	dh_out->out.y.bsize = hsz;
-	out->size = data_sz;
 
 	memcpy(out->data + data_sz, &msg, sizeof(void *));
 
@@ -1598,7 +1616,7 @@ static int init_req(struct wd_ecc_msg *dst, struct wd_ecc_msg *src,
 	else
 		dst->req.src = (void *)&pubkey->pub;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static struct wd_ecc_msg *create_req(struct wd_ecc_msg *src, __u8 req_idx)
@@ -1674,7 +1692,7 @@ static int split_req(struct wd_ecc_msg *src, struct wd_ecc_msg **dst)
 		return -WD_ENOMEM;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
@@ -1914,8 +1932,7 @@ static int ecc_verf_out_transfer(struct wd_ecc_msg *msg,
 {
 	__u32 result = hw_msg->low_out;
 
-	result >>= 1;
-	result &= 1;
+	result = (result >> 1) & 1;
 	if (!result)
 		msg->result = WD_VERIFY_ERR;
 
@@ -2115,7 +2132,7 @@ static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 {
 	if (src->dsize == dst->dsize &&
 		!memcmp(src->data, dst->data, src->dsize)) {
-		return 0;
+		return WD_SUCCESS;
 	}
 
 	return -WD_EINVAL;
@@ -2296,7 +2313,7 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 	return ret;
 
 dump_err_msg:
-	dump_hpre_msg(temp_msg, "ecc");
+	dump_hpre_msg(temp_msg, WD_ECC);
 
 	return ret;
 }
@@ -2449,7 +2466,7 @@ static int ecc_recv(handle_t ctx, void *ecc_msg)
 
 static int hpre_get_usage(void *param)
 {
-	return 0;
+	return WD_SUCCESS;
 }
 
 #define GEN_HPRE_ALG_DRIVER(hpre_alg_name) \
