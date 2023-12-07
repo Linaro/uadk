@@ -61,7 +61,8 @@ static int create_ctx_param_check(struct wd_queue *q,
 		return -WD_EINVAL;
 	}
 
-	if (!setup->br.alloc || !setup->br.free) {
+	if (!setup->br.alloc || !setup->br.free ||
+	    !setup->br.iova_map || !setup->br.iova_unmap) {
 		WD_ERR("create dh ctx user mm br err!\n");
 		return -WD_EINVAL;
 	}
