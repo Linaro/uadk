@@ -539,12 +539,93 @@ static __u32 g_sec_hmac_full_len[WD_DIGEST_TYPE_MAX] = {
 static int hisi_sec_init(void *conf, void *priv);
 static void hisi_sec_exit(void *priv);
 
+static int hisi_sec_cipher_send(handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_recv(handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_send_v3(handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_recv_v3(handle_t ctx, void *wd_msg);
+
+static int hisi_sec_digest_send(handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_recv(handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_send_v3(handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_recv_v3(handle_t ctx, void *wd_msg);
+
+static int hisi_sec_aead_send(handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_recv(handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_send_v3(handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_recv_v3(handle_t ctx, void *wd_msg);
+
+static int cipher_send(handle_t ctx, void *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info q_info = qp->q_info;
+
+	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+		return hisi_sec_cipher_send(ctx, msg);
+	return hisi_sec_cipher_send_v3(ctx, msg);
+}
+
+static int cipher_recv(handle_t ctx, void *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info q_info = qp->q_info;
+
+	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+		return hisi_sec_cipher_recv(ctx, msg);
+	return hisi_sec_cipher_recv_v3(ctx, msg);
+}
+
+static int digest_send(handle_t ctx, void *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info q_info = qp->q_info;
+
+	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+		return hisi_sec_digest_send(ctx, msg);
+	return hisi_sec_digest_send_v3(ctx, msg);
+}
+
+static int digest_recv(handle_t ctx, void *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info q_info = qp->q_info;
+
+	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+		return hisi_sec_digest_recv(ctx, msg);
+	return hisi_sec_digest_recv_v3(ctx, msg);
+}
+
+static int aead_send(handle_t ctx, void *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info q_info = qp->q_info;
+
+	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+		return hisi_sec_aead_send(ctx, msg);
+	return hisi_sec_aead_send_v3(ctx, msg);
+}
+
+static int aead_recv(handle_t ctx, void *msg)
+{
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info q_info = qp->q_info;
+
+	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+		return hisi_sec_aead_recv(ctx, msg);
+	return hisi_sec_aead_recv_v3(ctx, msg);
+}
+
 static int hisi_sec_get_usage(void *param)
 {
 	return 0;
 }
 
-#define GEN_SEC_ALG_DRIVER(sec_alg_name) \
+#define GEN_SEC_ALG_DRIVER(sec_alg_name, alg_type) \
 {\
 	.drv_name = "hisi_sec2",\
 	.alg_name = (sec_alg_name),\
@@ -556,57 +637,59 @@ static int hisi_sec_get_usage(void *param)
 	.fallback = 0,\
 	.init = hisi_sec_init,\
 	.exit = hisi_sec_exit,\
+	.send = alg_type##_send,\
+	.recv = alg_type##_recv,\
 	.get_usage = hisi_sec_get_usage,\
 }
 
 static struct wd_alg_driver cipher_alg_driver[] = {
-	GEN_SEC_ALG_DRIVER("ecb(aes)"),
-	GEN_SEC_ALG_DRIVER("cbc(aes)"),
-	GEN_SEC_ALG_DRIVER("xts(aes)"),
-	GEN_SEC_ALG_DRIVER("ecb(sm4)"),
-	GEN_SEC_ALG_DRIVER("cbc(sm4)"),
-	GEN_SEC_ALG_DRIVER("ctr(sm4)"),
-	GEN_SEC_ALG_DRIVER("xts(sm4)"),
-	GEN_SEC_ALG_DRIVER("ecb(des)"),
-	GEN_SEC_ALG_DRIVER("cbc(des)"),
-	GEN_SEC_ALG_DRIVER("ecb(des3_ede)"),
-	GEN_SEC_ALG_DRIVER("cbc(des3_ede)"),
+	GEN_SEC_ALG_DRIVER("ecb(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("xts(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("ecb(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("ctr(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("xts(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("ecb(des)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc(des)", cipher),
+	GEN_SEC_ALG_DRIVER("ecb(des3_ede)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc(des3_ede)", cipher),
 
-	GEN_SEC_ALG_DRIVER("ctr(aes)"),
-	GEN_SEC_ALG_DRIVER("ofb(aes)"),
-	GEN_SEC_ALG_DRIVER("cfb(aes)"),
-	GEN_SEC_ALG_DRIVER("cbc-cs1(aes)"),
-	GEN_SEC_ALG_DRIVER("cbc-cs2(aes)"),
-	GEN_SEC_ALG_DRIVER("cbc-cs3(aes)"),
-	GEN_SEC_ALG_DRIVER("ofb(sm4)"),
-	GEN_SEC_ALG_DRIVER("cfb(sm4)"),
-	GEN_SEC_ALG_DRIVER("cbc-cs1(sm4)"),
-	GEN_SEC_ALG_DRIVER("cbc-cs2(sm4)"),
-	GEN_SEC_ALG_DRIVER("cbc-cs3(sm4)"),
+	GEN_SEC_ALG_DRIVER("ctr(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("ofb(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("cfb(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc-cs1(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc-cs2(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc-cs3(aes)", cipher),
+	GEN_SEC_ALG_DRIVER("ofb(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("cfb(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc-cs1(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc-cs2(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("cbc-cs3(sm4)", cipher),
 };
 
 static struct wd_alg_driver digest_alg_driver[] = {
-	GEN_SEC_ALG_DRIVER("sm3"),
-	GEN_SEC_ALG_DRIVER("md5"),
-	GEN_SEC_ALG_DRIVER("sha1"),
-	GEN_SEC_ALG_DRIVER("sha224"),
-	GEN_SEC_ALG_DRIVER("sha256"),
-	GEN_SEC_ALG_DRIVER("sha384"),
-	GEN_SEC_ALG_DRIVER("sha512"),
-	GEN_SEC_ALG_DRIVER("sha512-224"),
-	GEN_SEC_ALG_DRIVER("sha512-256"),
-	GEN_SEC_ALG_DRIVER("xcbc-mac-96(aes)"),
-	GEN_SEC_ALG_DRIVER("xcbc-prf-128(aes)"),
-	GEN_SEC_ALG_DRIVER("cmac(aes)"),
-	GEN_SEC_ALG_DRIVER("gmac(aes)"),
+	GEN_SEC_ALG_DRIVER("sm3", digest),
+	GEN_SEC_ALG_DRIVER("md5", digest),
+	GEN_SEC_ALG_DRIVER("sha1", digest),
+	GEN_SEC_ALG_DRIVER("sha224", digest),
+	GEN_SEC_ALG_DRIVER("sha256", digest),
+	GEN_SEC_ALG_DRIVER("sha384", digest),
+	GEN_SEC_ALG_DRIVER("sha512", digest),
+	GEN_SEC_ALG_DRIVER("sha512-224", digest),
+	GEN_SEC_ALG_DRIVER("sha512-256", digest),
+	GEN_SEC_ALG_DRIVER("xcbc-mac-96(aes)", digest),
+	GEN_SEC_ALG_DRIVER("xcbc-prf-128(aes)", digest),
+	GEN_SEC_ALG_DRIVER("cmac(aes)", digest),
+	GEN_SEC_ALG_DRIVER("gmac(aes)", digest),
 };
 
 static struct wd_alg_driver aead_alg_driver[] = {
-	GEN_SEC_ALG_DRIVER("ccm(aes)"),
-	GEN_SEC_ALG_DRIVER("gcm(aes)"),
-	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(aes))"),
-	GEN_SEC_ALG_DRIVER("ccm(sm4)"),
-	GEN_SEC_ALG_DRIVER("gcm(sm4)"),
+	GEN_SEC_ALG_DRIVER("ccm(aes)", aead),
+	GEN_SEC_ALG_DRIVER("gcm(aes)", aead),
+	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(aes))", aead),
+	GEN_SEC_ALG_DRIVER("ccm(sm4)", aead),
+	GEN_SEC_ALG_DRIVER("gcm(sm4)", aead),
 };
 
 static void dump_sec_msg(void *msg, const char *alg)
@@ -1093,10 +1176,10 @@ static int fill_cipher_bd2(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 	return 0;
 }
 
-int hisi_sec_cipher_send(handle_t ctx, void *cipher_msg)
+static int hisi_sec_cipher_send(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_cipher_msg *msg = cipher_msg;
+	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -1138,10 +1221,10 @@ int hisi_sec_cipher_send(handle_t ctx, void *cipher_msg)
 	return 0;
 }
 
-int hisi_sec_cipher_recv(handle_t ctx, void *cipher_msg)
+int hisi_sec_cipher_recv(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_cipher_msg *recv_msg = cipher_msg;
+	struct wd_cipher_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -1296,10 +1379,10 @@ static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 	return 0;
 }
 
-int hisi_sec_cipher_send_v3(handle_t ctx, void *cipher_msg)
+static int hisi_sec_cipher_send_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_cipher_msg *msg = cipher_msg;
+	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -1386,10 +1469,10 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		dump_sec_msg(temp_msg, "cipher");
 }
 
-int hisi_sec_cipher_recv_v3(handle_t ctx, void *cipher_msg)
+int hisi_sec_cipher_recv_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_cipher_msg *recv_msg = cipher_msg;
+	struct wd_cipher_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -1659,10 +1742,10 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 	return 0;
 }
 
-int hisi_sec_digest_send(handle_t ctx, void *digest_msg)
+static int hisi_sec_digest_send(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_digest_msg *msg = digest_msg;
+	struct wd_digest_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	__u8 scene;
@@ -1726,10 +1809,10 @@ put_sgl:
 	return ret;
 }
 
-int hisi_sec_digest_recv(handle_t ctx, void *digest_msg)
+int hisi_sec_digest_recv(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_digest_msg *recv_msg = digest_msg;
+	struct wd_digest_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -1903,10 +1986,10 @@ static void fill_digest_v3_scene(struct hisi_sec_sqe3 *sqe,
 	sqe->bd_param |= (__u16)(de | scene);
 }
 
-int hisi_sec_digest_send_v3(handle_t ctx, void *digest_msg)
+static int hisi_sec_digest_send_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_digest_msg *msg = digest_msg;
+	struct wd_digest_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -2002,10 +2085,10 @@ static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		dump_sec_msg(temp_msg, "digest");
 }
 
-int hisi_sec_digest_recv_v3(handle_t ctx, void *digest_msg)
+int hisi_sec_digest_recv_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_digest_msg *recv_msg = digest_msg;
+	struct wd_digest_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -2474,10 +2557,10 @@ int aead_msg_state_check(struct wd_aead_msg *msg)
 	return 0;
 }
 
-int hisi_sec_aead_send(handle_t ctx, void *aead_msg)
+static int hisi_sec_aead_send(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_aead_msg *msg = aead_msg;
+	struct wd_aead_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -2596,10 +2679,10 @@ static bool soft_compute_check(struct hisi_qp *qp, struct wd_aead_msg *msg)
 		qp->q_info.qp_mode == CTX_MODE_SYNC;
 }
 
-int hisi_sec_aead_recv(handle_t ctx, void *aead_msg)
+int hisi_sec_aead_recv(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_aead_msg *recv_msg = aead_msg;
+	struct wd_aead_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
@@ -2858,10 +2941,10 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	return 0;
 }
 
-int hisi_sec_aead_send_v3(handle_t ctx, void *aead_msg)
+static int hisi_sec_aead_send_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_aead_msg *msg = aead_msg;
+	struct wd_aead_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -2958,10 +3041,10 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		dump_sec_msg(temp_msg, "aead");
 }
 
-int hisi_sec_aead_recv_v3(handle_t ctx, void *aead_msg)
+int hisi_sec_aead_recv_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct wd_aead_msg *recv_msg = aead_msg;
+	struct wd_aead_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
 	int ret;
@@ -2984,50 +3067,6 @@ int hisi_sec_aead_recv_v3(handle_t ctx, void *aead_msg)
 			recv_msg->in, recv_msg->out);
 
 	return 0;
-}
-
-static void hisi_sec_driver_adapter(struct hisi_qp *qp)
-{
-	struct hisi_qm_queue_info q_info = qp->q_info;
-	int alg_num, i;
-
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE) {
-		WD_INFO("hisi sec init HIP08!\n");
-		alg_num = ARRAY_SIZE(cipher_alg_driver);
-		for (i = 0; i < alg_num; i++) {
-			cipher_alg_driver[i].send = hisi_sec_cipher_send;
-			cipher_alg_driver[i].recv = hisi_sec_cipher_recv;
-		}
-
-		alg_num = ARRAY_SIZE(digest_alg_driver);
-		for (i = 0; i < alg_num; i++) {
-			digest_alg_driver[i].send = hisi_sec_digest_send;
-			digest_alg_driver[i].recv = hisi_sec_digest_recv;
-		}
-		alg_num = ARRAY_SIZE(aead_alg_driver);
-		for (i = 0; i < alg_num; i++) {
-			aead_alg_driver[i].send = hisi_sec_aead_send;
-			aead_alg_driver[i].recv = hisi_sec_aead_recv;
-		}
-	} else {
-		WD_INFO("hisi sec init HIP09!\n");
-		alg_num = ARRAY_SIZE(cipher_alg_driver);
-		for (i = 0; i < alg_num; i++) {
-			cipher_alg_driver[i].send = hisi_sec_cipher_send_v3;
-			cipher_alg_driver[i].recv = hisi_sec_cipher_recv_v3;
-		}
-
-		alg_num = ARRAY_SIZE(digest_alg_driver);
-		for (i = 0; i < alg_num; i++) {
-			digest_alg_driver[i].send = hisi_sec_digest_send_v3;
-			digest_alg_driver[i].recv = hisi_sec_digest_recv_v3;
-		}
-		alg_num = ARRAY_SIZE(aead_alg_driver);
-		for (i = 0; i < alg_num; i++) {
-			aead_alg_driver[i].send = hisi_sec_aead_send_v3;
-			aead_alg_driver[i].recv = hisi_sec_aead_recv_v3;
-		}
-	}
 }
 
 static int hisi_sec_init(void *conf, void *priv)
@@ -3061,7 +3100,6 @@ static int hisi_sec_init(void *conf, void *priv)
 		config->ctxs[i].sqn = qm_priv.sqn;
 	}
 	memcpy(&sec_ctx->config, config, sizeof(struct wd_ctx_config_internal));
-	hisi_sec_driver_adapter((struct hisi_qp *)h_qp);
 
 	return 0;
 
