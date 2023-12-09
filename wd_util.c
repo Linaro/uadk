@@ -1570,17 +1570,22 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	task_queue = queue_head;
 	for (i = 0; i < num; task_queue++, i++) {
 		ret = wd_init_one_task_queue(task_queue, alg_poll_ctx);
-		if (ret) {
-			for (j = 0; j < i; task_queue++, j++)
-				wd_uninit_one_task_queue(task_queue);
-			free(queue_head);
-			return ret;
-		}
+		if (ret)
+			goto uninit_queue;
 	}
 
 	config_numa->async_task_queue_array = (void *)queue_head;
 
 	return 0;
+
+uninit_queue:
+	task_queue = queue_head;
+	for (j = 0; j < i; task_queue++, j++)
+		wd_uninit_one_task_queue(task_queue);
+
+	free(queue_head);
+
+	return ret;
 }
 
 static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
