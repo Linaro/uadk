@@ -34,6 +34,7 @@ static struct wd_dh_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_dh_setting;
@@ -110,7 +111,8 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_dh_setting.config,
-				 wd_dh_setting.driver);
+				 wd_dh_setting.driver,
+				 &wd_dh_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -127,13 +129,19 @@ out_clear_ctx_config:
 
 static int wd_dh_common_uninit(void)
 {
+	if (!wd_dh_setting.priv) {
+		WD_ERR("invalid: repeat uninit dh!\n");
+		return -WD_EINVAL;
+	}
+
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_dh_setting.sched);
 	wd_alg_uninit_driver(&wd_dh_setting.config,
-			     wd_dh_setting.driver);
+			     wd_dh_setting.driver,
+			     &wd_dh_setting.priv);
 
 	return 0;
 }
@@ -356,8 +364,8 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	msg_handle.recv = wd_dh_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_dh_setting.driver, &msg_handle, ctx->ctx,
-				 &msg, &balance, wd_dh_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_dh_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -401,7 +409,7 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_dh_setting.driver, ctx->ctx, msg);
+	ret = wd_dh_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send dh BD, hw is err!\n");
@@ -452,7 +460,7 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_dh_setting.driver, ctx->ctx, &rcv_msg);
+		ret = wd_dh_setting.driver->recv(ctx->ctx, &rcv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (unlikely(ret)) {
