@@ -231,7 +231,8 @@ static struct bitmap *create_bitmap(int bits)
 static void destroy_bitmap(struct bitmap *bm)
 {
 	if (bm) {
-		free(bm->map);
+		if (bm->map)
+			free(bm->map);
 		free(bm);
 	}
 }
