@@ -421,6 +421,6 @@ void drv_set_sgl_pri(struct wd_sgl *sgl, void *priv);
 void *drv_get_sgl_pri(struct wd_sgl *sgl);
 struct wd_mm_br *drv_get_br(void *pool);
 void wd_sgl_memset(struct wd_sgl *sgl, int ch);
-int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
+int wd_check_src_dst_ptr(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
 
 #endif

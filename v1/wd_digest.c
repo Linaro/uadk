@@ -437,7 +437,7 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 			return -WD_EINVAL;
 		}
 
-		ret = wd_check_src_dst(d_opdata[i]->in, d_opdata[i]->in_bytes,
+		ret = wd_check_src_dst_ptr(d_opdata[i]->in, d_opdata[i]->in_bytes,
 				       d_opdata[i]->out, d_opdata[i]->out_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");

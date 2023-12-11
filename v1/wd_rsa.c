@@ -965,7 +965,7 @@ static int do_rsa_prepare(struct wcrypto_rsa_ctx *ctxt,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_check_src_dst(opdata->in, opdata->in_bytes, opdata->out, opdata->out_bytes);
+	ret = wd_check_src_dst_ptr(opdata->in, opdata->in_bytes, opdata->out, opdata->out_bytes);
 	if (unlikely(ret)) {
 		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 		return -WD_EINVAL;

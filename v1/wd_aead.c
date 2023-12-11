@@ -540,7 +540,7 @@ static int param_check(struct wcrypto_aead_ctx *a_ctx,
 			return -WD_EINVAL;
 		}
 
-		ret = wd_check_src_dst(a_opdata[i]->in, a_opdata[i]->in_bytes, a_opdata[i]->out, a_opdata[i]->out_bytes);
+		ret = wd_check_src_dst_ptr(a_opdata[i]->in, a_opdata[i]->in_bytes, a_opdata[i]->out, a_opdata[i]->out_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;
