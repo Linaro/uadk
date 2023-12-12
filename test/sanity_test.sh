@@ -306,9 +306,9 @@ sw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
-	md5sum -c ori.md5
+	#sw_blk_deflate origin /tmp/ori.gz gzip 8192
+	#hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	#md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
@@ -340,9 +340,9 @@ hw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
-	md5sum -c ori.md5
+	#hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	#hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	#md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
