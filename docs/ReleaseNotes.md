@@ -1,4 +1,14 @@
 
+# UADK Release v2.6 Dec 2023
+
+## Features:
+- Support sm4-xts GB
+- Support queue depth configurable feature
+- Support user-defined custom data structure function for uadk v1
+- Support aes-cts algorithm
+- Support xts mode DIF function for uadk v1
+- Support uadk_tool for performance testing using the init2 interface
+
 # UADK Release v2.5 June 2023
 
 ## Features:
