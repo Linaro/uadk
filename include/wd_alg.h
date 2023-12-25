@@ -150,6 +150,7 @@ void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 
 struct wd_alg_list *wd_get_alg_head(void);
+struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name, int idx);
 
 #ifdef __cplusplus
 }

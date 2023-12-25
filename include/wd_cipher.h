@@ -73,6 +73,7 @@ struct wd_cipher_sess_setup {
 	enum wd_cipher_alg alg;
 	enum wd_cipher_mode mode;
 	void *sched_param;
+	struct wd_sess_para para;
 };
 
 struct wd_cipher_req;

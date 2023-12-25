@@ -2629,17 +2629,17 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 {
 	wd_alg_poll_ctx alg_poll_func = attrs->alg_poll_ctx;
 	wd_alg_init alg_init_func = attrs->alg_init;
-	__u32 sched_type = attrs->sched_type;
+	//__u32 sched_type = attrs->sched_type;
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
 	char *alg = attrs->alg;
-	int driver_type = UADK_ALG_HW;
+	//int driver_type = UADK_ALG_HW;
 	int ret;
 
 	if (!attrs->ctx_params)
 		return -WD_EINVAL;
-
+#if 0
 	if (attrs->driver)
 		driver_type = attrs->driver->calc_type;
 
@@ -2716,7 +2716,37 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		WD_ERR("driver type error: %d\n", driver_type);
 		return -WD_EINVAL;
 	}
+#endif
+	// all use rr, hw method, todo, handle sw no ctxs
+	wd_get_alg_type(alg, alg_type);
+	attrs->alg = alg_type;
 
+	ctx_config = calloc(1, sizeof(*ctx_config));
+	if (!ctx_config) {
+		WD_ERR("fail to alloc ctx config\n");
+		return -WD_ENOMEM;
+	}
+	attrs->ctx_config = ctx_config;
+
+	alg_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, attrs->ctx_params->op_type_num,
+				      numa_max_node() + 1, alg_poll_func);
+	if (!alg_sched) {
+		WD_ERR("fail to instance scheduler\n");
+		ret = -WD_EINVAL;
+		goto out_ctx_config;
+	}
+	attrs->sched = alg_sched;
+
+	ret = wd_alg_ctx_init(attrs);
+	if (ret) {
+		WD_ERR("fail to init ctx\n");
+		goto out_freesched;
+	}
+
+	ctx_config->cap = attrs->ctx_params->cap;
+	ret = alg_init_func(ctx_config, alg_sched);
+	if (ret)
+		goto out_pre_init;
 	return 0;
 
 out_pre_init:
