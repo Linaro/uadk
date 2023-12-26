@@ -720,6 +720,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg msg;
+	struct op_ctx op;
 	__u32 idx;
 	int ret;
 
@@ -746,8 +747,12 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	msg_handle.send = sess->drv->send;
 	msg_handle.recv = sess->drv->recv;
 
+	op.ctx = ctx->ctx;
+	op.ctx_id = idx;
+	op.mode = CTX_MODE_SYNC;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(sess->drv, &msg_handle, ctx->ctx,
+	ret = wd_handle_msg_sync(sess->drv, &msg_handle, (handle_t)&op,
 				 &msg, NULL, wd_cipher_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
@@ -762,6 +767,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg *msg;
+	struct op_ctx op;
 	int msg_id, ret;
 	__u32 idx;
 
@@ -790,7 +796,11 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(sess->drv, ctx->ctx, msg);
+	op.ctx = ctx->ctx;
+	op.ctx_id = idx;
+	op.mode = CTX_MODE_ASYNC;
+
+	ret = wd_alg_driver_send(sess->drv, (handle_t)&op, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
@@ -823,6 +833,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_cipher_msg resp_msg, *msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
+	struct op_ctx op;
 	int ret, i;
 
 	if (unlikely(!count || !expt)) {
@@ -846,7 +857,11 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return -WD_EINVAL;
 		}
 
-		ret = wd_alg_driver_recv(drv, ctx->ctx, &resp_msg);
+		op.ctx = ctx->ctx;
+		op.ctx_id = idx;
+		op.mode = CTX_MODE_ASYNC;
+
+		ret = wd_alg_driver_recv(drv, (handle_t)&op, &resp_msg);
 		if (ret == -WD_EAGAIN)
 			continue;
 		else if (ret < 0) {

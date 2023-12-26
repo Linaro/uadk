@@ -549,7 +549,8 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 
 static int cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(op->ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_qm_queue_info q_info = qp->q_info;
 
@@ -560,7 +561,8 @@ static int cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 
 static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(op->ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_qm_queue_info q_info = qp->q_info;
 
@@ -1170,7 +1172,8 @@ static int fill_cipher_bd2(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 
 static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(op->ctx);
 	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
@@ -1215,7 +1218,8 @@ static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 
 static int hisi_sec_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(op->ctx);
 	struct wd_cipher_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
@@ -1373,7 +1377,8 @@ static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 
 static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(op->ctx);
 	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
@@ -1463,7 +1468,8 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 
 static int hisi_sec_cipher_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	handle_t h_qp = (handle_t)wd_ctx_get_priv(op->ctx);
 	struct wd_cipher_msg *recv_msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
