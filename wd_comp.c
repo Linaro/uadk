@@ -378,6 +378,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_comp_msg *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
+	struct op_ctx op;
 	int ret, i;
 
 	if (unlikely(!count || !expt)) {
@@ -401,7 +402,11 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return -WD_EINVAL;
 		}
 
-		ret = wd_alg_driver_recv(drv, ctx->ctx, &resp_msg);
+		op.ctx = ctx->ctx;
+		op.ctx_id = idx;
+		op.mode = CTX_MODE_ASYNC;
+
+		ret = wd_alg_driver_recv(drv, (handle_t)&op, &resp_msg);
 		if (unlikely(ret < 0)) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw error!\n");
@@ -689,6 +694,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
+	struct op_ctx op;
 	__u32 idx;
 	int ret;
 
@@ -705,8 +711,12 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	msg_handle.send = sess->drv->send;
 	msg_handle.recv = sess->drv->recv;
 
+	op.ctx = ctx->ctx;
+	op.ctx_id = idx;
+	op.mode = CTX_MODE_SYNC;
+
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(sess->drv, &msg_handle, ctx->ctx,
+	ret = wd_handle_msg_sync(sess->drv, &msg_handle, (handle_t)&op,
 				 msg, NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
@@ -931,6 +941,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	handle_t h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
 	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
+	struct op_ctx op;
 	int tag, ret;
 	__u32 idx;
 
@@ -961,7 +972,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
 
-	ret = wd_alg_driver_send(sess->drv, ctx->ctx, msg);
+	op.ctx = ctx->ctx;
+	op.ctx_id = idx;
+	op.mode = CTX_MODE_ASYNC;
+
+	ret = wd_alg_driver_send(sess->drv, (handle_t)&op, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;

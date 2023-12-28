@@ -937,7 +937,8 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
-	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	struct hisi_qp *qp = wd_ctx_get_priv(op->ctx);
 	struct wd_comp_msg *msg = comp_msg;
 	handle_t h_qp = (handle_t)qp;
 	struct hisi_zip_sqe sqe = {0};
@@ -1077,7 +1078,8 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
-	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
+	struct op_ctx *op = (struct op_ctx *)ctx;
+	struct hisi_qp *qp = wd_ctx_get_priv(op->ctx);
 	struct wd_comp_msg *recv_msg = comp_msg;
 	handle_t h_qp = (handle_t)qp;
 	struct hisi_zip_sqe sqe = {0};
