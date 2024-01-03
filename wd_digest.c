@@ -676,43 +676,14 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->iv_bytes = sess->msg_state;
 }
 
-static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *dsess,
-			  struct wd_digest_msg *msg)
-{
-	struct wd_msg_handle msg_handle;
-	int ret;
-
-	msg_handle.send = dsess->drv->send;
-	msg_handle.recv = dsess->drv->recv;
-
-	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(dsess->drv, &msg_handle, ctx->ctx,
-				 msg, NULL, wd_digest_setting.config.epoll_en);
-	pthread_spin_unlock(&ctx->lock);
-	if (unlikely(ret))
-		return ret;
-
-	/* After a stream mode job was done, update session long_data_len */
-	if (msg->has_next) {
-		/* Long hash(first and middle message) */
-		dsess->long_data_len += msg->in_bytes;
-	} else if (msg->iv_bytes) {
-		/* Long hash(final message) */
-		dsess->long_data_len = 0;
-	}
-
-	/* Update session message state */
-	dsess->msg_state = msg->has_next;
-
-	return 0;
-}
-
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg msg;
+	struct wd_msg_handle msg_handle;
+	struct op_ctx op;
 	__u32 idx;
 	int ret;
 
@@ -733,7 +704,31 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
-	ret = send_recv_sync(ctx, dsess, &msg);
+	msg_handle.send = dsess->drv->send;
+	msg_handle.recv = dsess->drv->recv;
+
+	op.ctx = ctx->ctx;
+	op.ctx_id = idx;
+	op.mode = CTX_MODE_SYNC;
+
+	pthread_spin_lock(&ctx->lock);
+	ret = wd_handle_msg_sync(dsess->drv, &msg_handle, (handle_t)&op,
+				 &msg, NULL, wd_digest_setting.config.epoll_en);
+	pthread_spin_unlock(&ctx->lock);
+	if (unlikely(ret))
+		return ret;
+
+	/* After a stream mode job was done, update session long_data_len */
+	if (msg.has_next) {
+		/* Long hash(first and middle message) */
+		dsess->long_data_len += msg.in_bytes;
+	} else if (msg.iv_bytes) {
+		/* Long hash(final message) */
+		dsess->long_data_len = 0;
+	}
+
+	/* Update session message state */
+	dsess->msg_state = msg.has_next;
 	req->state = msg.result;
 
 	return ret;
@@ -745,6 +740,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg *msg;
+	struct op_ctx op;
 	int msg_id, ret;
 	__u32 idx;
 
@@ -776,7 +772,11 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(dsess->drv, ctx->ctx, msg);
+	op.ctx = ctx->ctx;
+	op.ctx_id = idx;
+	op.mode = CTX_MODE_ASYNC;
+
+	ret = wd_alg_driver_send(dsess->drv, (handle_t)&op, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -809,6 +809,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	struct wd_digest_msg recv_msg, *msg;
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
+	struct op_ctx op;
 	int ret, i;
 
 	if (unlikely(!count || !expt)) {
@@ -832,7 +833,11 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return -WD_EINVAL;
 		}
 
-		ret = wd_alg_driver_recv(drv, ctx->ctx, &recv_msg);
+		op.ctx = ctx->ctx;
+		op.ctx_id = idx;
+		op.mode = CTX_MODE_ASYNC;
+
+		ret = wd_alg_driver_recv(drv, (handle_t)&op, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			continue;
 		} else if (ret < 0) {
