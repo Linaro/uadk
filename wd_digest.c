@@ -35,6 +35,7 @@ static char *wd_digest_alg_name[WD_DIGEST_TYPE_MAX] = {
 	"xcbc-prf-128(aes)", "cmac(aes)", "gmac(aes)"
 };
 
+#define ALG_NAME_SIZE 128
 struct wd_digest_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
@@ -43,6 +44,8 @@ struct wd_digest_setting {
 	struct wd_async_msg_pool pool;
 	void *dlhandle;
 	void *dlh_list;
+	char alg[ALG_NAME_SIZE];
+	int task_type;
 } wd_digest_setting;
 
 struct wd_digest_sess {
@@ -61,6 +64,7 @@ struct wd_digest_sess {
 
 	/* Total data length for stream mode */
 	__u64			long_data_len;
+	struct wd_alg_driver	*drv;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -152,6 +156,9 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 {
 	struct wd_digest_sess *sess = NULL;
+	bool found = 0;
+	int idx, i;
+	char *alg;
 	bool ret;
 
 	if (unlikely(!setup)) {
@@ -169,14 +176,58 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 		return (handle_t)0;
 	memset(sess, 0, sizeof(struct wd_digest_sess));
 
-	sess->alg_name = wd_digest_alg_name[setup->alg];
-	sess->alg = setup->alg;
-	sess->mode = setup->mode;
-	ret = wd_drv_alg_support(sess->alg_name, wd_digest_setting.driver);
+	if (wd_digest_setting.driver != NULL) {
+		/* compatible with v1 */
+		sess->drv = wd_digest_setting.driver;
+	} else {
+		/* compatible with no setup->para */
+		if (setup->para.alg) {
+			/* bind init2 alg drv and check sess alg
+			 * consider same drv supports different algs
+			 */
+			sess->drv = wd_alg_drv_bind(setup->para.type,
+						    wd_digest_setting.alg);
+		} else {
+			sess->drv = wd_alg_drv_bind(wd_digest_setting.task_type,
+						    wd_digest_setting.alg);
+		}
+	}
+
+	if (WD_IS_ERR(sess->drv)) {
+		WD_ERR("failed to init session drv!\n");
+		goto err_sess;
+	}
+
+	if (setup->para.alg) {
+		alg = setup->para.alg;
+		for (i = 0; i < WD_DIGEST_TYPE_MAX; i++) {
+			if (!wd_digest_alg_name[i] ||
+			    !strlen(wd_digest_alg_name[i]))
+				continue;
+			if (!strcmp(alg, wd_digest_alg_name[i])) {
+				sess->alg = i;
+				sess->alg_name = wd_digest_alg_name[i];
+
+				if (strstr(alg, "hmac") != NULL)
+					sess->mode = WD_DIGEST_HMAC;
+				else
+					sess->mode = WD_DIGEST_NORMAL;
+
+				break;
+			}
+		}
+	} else {
+		sess->alg_name = wd_digest_alg_name[setup->alg];
+		sess->alg = setup->alg;
+		sess->mode = setup->mode;
+	}
+
+	ret = wd_drv_alg_support(sess->alg_name, sess->drv);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
+
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_digest_setting.sched.sched_init(
 			wd_digest_setting.sched.h_sched_ctx, setup->sched_param);
@@ -185,9 +236,29 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 		goto err_sess;
 	}
 
+	pthread_mutex_lock(&wd_digest_setting.sched.lock);
+
+	idx = wd_digest_setting.sched.drv_nb;
+
+	for (i = 0; i < idx; i++) {
+		if (strcmp(sess->drv->drv_name, wd_digest_setting.sched.drv[i]->drv_name) == 0) {
+			found = 1;
+			break;
+		}
+	}
+
+	if (!found) {
+		wd_digest_setting.sched.drv[idx] = sess->drv;
+		wd_digest_setting.sched.drv_nb++;
+	}
+
+	pthread_mutex_unlock(&wd_digest_setting.sched.lock);
+
 	return (handle_t)sess;
 
 err_sess:
+	if (sess->drv && wd_digest_setting.driver == NULL)
+		wd_alg_drv_unbind(sess->drv);
 	if (sess->sched_key)
 		free(sess->sched_key);
 	free(sess);
@@ -202,6 +273,9 @@ void wd_digest_free_sess(handle_t h_sess)
 		WD_ERR("failed to check free sess param!\n");
 		return;
 	}
+
+	if (sess->drv && wd_digest_setting.driver == NULL)
+		wd_alg_drv_unbind(sess->drv);
 
 	wd_memset_zero(sess->key, sess->key_bytes);
 	if (sess->sched_key)
@@ -239,15 +313,10 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_digest_setting.config,
-					wd_digest_setting.driver);
-	if (ret)
-		goto out_clear_pool;
+	pthread_mutex_init(&wd_digest_setting.sched.lock, NULL);
 
 	return 0;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_digest_setting.sched);
 out_clear_ctx_config:
@@ -278,10 +347,17 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_close_driver;
 
+	ret = wd_alg_init_driver(&wd_digest_setting.config,
+				 wd_digest_setting.driver);
+	if (ret)
+		goto out_clear_pool;
+
 	wd_alg_set_init(&wd_digest_setting.status);
 
 	return 0;
 
+out_clear_pool:
+	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 out_close_driver:
 	wd_digest_close_driver();
 out_clear_init:
@@ -291,10 +367,24 @@ out_clear_init:
 
 static void wd_digest_uninit_nolock(void)
 {
+	struct wd_alg_driver *drv;
+	int idx = 0;
+
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 	wd_clear_sched(&wd_digest_setting.sched);
-	wd_alg_uninit_driver(&wd_digest_setting.config,
-			     wd_digest_setting.driver);
+
+	if (wd_digest_setting.driver != NULL) {
+		wd_alg_uninit_driver(&wd_digest_setting.config,
+				     wd_digest_setting.driver);
+	} else {
+		do {
+			drv = wd_find_drv(NULL, wd_digest_setting.alg, idx);
+			if (!drv)
+				break;
+			idx++;
+			wd_alg_uninit_driver(&wd_digest_setting.config, drv);
+		} while (drv);
+	}
 }
 
 void wd_digest_uninit(void)
@@ -325,7 +415,8 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 {
 	struct wd_ctx_params digest_ctx_params = {0};
 	struct wd_ctx_nums digest_ctx_num = {0};
-	int state, ret = -WD_EINVAL;
+	struct wd_alg_driver *drv, *init_drv = NULL;
+	int state, ret = -WD_EINVAL, idx = 0;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
@@ -343,6 +434,10 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 		WD_ERR("invalid: digest:%s unsupported!\n", alg);
 		goto out_uninit;
 	}
+
+	strcpy(wd_digest_setting.alg, alg);
+	wd_digest_setting.task_type = task_type;
+
 	/*
 	 * Driver lib file path could set by env param.
 	 * then open them by wd_dlopen_drv()
@@ -354,39 +449,43 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 		goto out_uninit;
 	}
 
+	do {
+		/* find init_drv to alloc shared resources, ctxs, sched, pool */
+		drv = wd_find_drv(NULL, alg, idx);
+		if (drv) {
+			init_drv = drv;
+			if (drv->calc_type == UADK_ALG_HW)
+				break;
+		} else {
+			break;
+		}
+		idx++;
+	} while (drv);
+
+	if (!init_drv)
+		goto out_uninit;
+
+	/* init resources */
 	while (ret != 0) {
 		memset(&wd_digest_setting.config, 0, sizeof(struct wd_ctx_config_internal));
-
-		/* Get alg driver and dev name */
-		wd_digest_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_digest_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
-			goto out_dlopen;
-		}
-
 		digest_ctx_params.ctx_set_num = &digest_ctx_num;
 		ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
-					wd_digest_setting.driver, WD_DIGEST_TYPE, 1);
+					init_drv, WD_DIGEST_TYPE, 1);
 		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_digest_setting.driver);
-				wd_alg_drv_unbind(wd_digest_setting.driver);
+			if (ret == -WD_EAGAIN)
 				continue;
-			}
-			goto out_driver;
+			goto out_dlopen;
 		}
 
 		wd_digest_init_attrs.alg = alg;
 		wd_digest_init_attrs.sched_type = sched_type;
-		wd_digest_init_attrs.driver = wd_digest_setting.driver;
+		wd_digest_init_attrs.driver = init_drv;
 		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
 		wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
 		wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_digest_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_digest_setting.driver);
-				wd_alg_drv_unbind(wd_digest_setting.driver);
 				wd_ctx_param_uninit(&digest_ctx_params);
 				continue;
 			}
@@ -394,15 +493,29 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_params_uninit;
 		}
 	}
+
+	/* init all driver */
+	idx = 0;
+
+	do {
+		drv = wd_find_drv(NULL, alg, idx);
+		if (!drv)
+			break;
+		idx++;
+		ret = wd_alg_init_driver(&wd_digest_setting.config, drv);
+		if (ret)
+			goto out_init_fail;
+	} while (drv);
+
 	wd_alg_set_init(&wd_digest_setting.status);
 	wd_ctx_param_uninit(&digest_ctx_params);
 
 	return 0;
 
+out_init_fail:
+	wd_digest_uninit_nolock();
 out_params_uninit:
 	wd_ctx_param_uninit(&digest_ctx_params);
-out_driver:
-	wd_alg_drv_unbind(wd_digest_setting.driver);
 out_dlopen:
 	wd_dlclose_drv(wd_digest_setting.dlh_list);
 out_uninit:
@@ -569,11 +682,11 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	struct wd_msg_handle msg_handle;
 	int ret;
 
-	msg_handle.send = wd_digest_setting.driver->send;
-	msg_handle.recv = wd_digest_setting.driver->recv;
+	msg_handle.send = dsess->drv->send;
+	msg_handle.recv = dsess->drv->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_digest_setting.driver, &msg_handle, ctx->ctx,
+	ret = wd_handle_msg_sync(dsess->drv, &msg_handle, ctx->ctx,
 				 msg, NULL, wd_digest_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
@@ -663,7 +776,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(wd_digest_setting.driver, ctx->ctx, msg);
+	ret = wd_alg_driver_send(dsess->drv, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -691,12 +804,12 @@ struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag)
 int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
+	int nb = wd_digest_setting.sched.drv_nb;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg recv_msg, *msg;
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
-	__u32 tmp = expt;
-	int ret;
+	int ret, i;
 
 	if (unlikely(!count || !expt)) {
 		WD_ERR("invalid: digest poll ctx input param is NULL!\n");
@@ -711,10 +824,17 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 	ctx = config->ctxs + idx;
 
-	do {
-		ret = wd_alg_driver_recv(wd_digest_setting.driver, ctx->ctx, &recv_msg);
+	for (i = 0; i < nb; i++) {
+		struct wd_alg_driver *drv = wd_digest_setting.sched.drv[i];
+
+		if (unlikely(!drv)) {
+			WD_ERR("invalid: cipher poll ctx drv is NULL!\n");
+			return -WD_EINVAL;
+		}
+
+		ret = wd_alg_driver_recv(drv, ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
-			return ret;
+			continue;
 		} else if (ret < 0) {
 			WD_ERR("wd recv err!\n");
 			return ret;
@@ -737,7 +857,9 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		wd_put_msg_to_pool(&wd_digest_setting.pool, idx,
 				   recv_msg.tag);
 		*count = recv_cnt;
-	} while (--tmp);
+		if (recv_cnt == expt)
+			break;
+	}
 
 	return ret;
 }
