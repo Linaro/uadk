@@ -2287,7 +2287,9 @@ struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
 	/* Get alg driver and dev name */
 	switch (task_type) {
 	case TASK_INSTR:
-		drv = wd_request_drv(alg_name, true);
+	case TASK_CE:
+	case TASK_SVE:
+		drv = wd_request_drv(alg_name, task_type);
 		if (!drv) {
 			WD_ERR("no soft %s driver support\n", alg_name);
 			return NULL;
@@ -2297,7 +2299,7 @@ struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
 		break;
 	case TASK_HW:
 	case TASK_MIX:
-		drv = wd_request_drv(alg_name, false);
+		drv = wd_request_drv(alg_name, TASK_HW);
 		if (!drv) {
 			WD_ERR("no HW %s driver support\n", alg_name);
 			return NULL;
@@ -2305,7 +2307,7 @@ struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
 		set_driver = drv;
 		set_driver->fallback = 0;
 		if (task_type == TASK_MIX) {
-			drv = wd_request_drv(alg_name, true);
+			drv = wd_request_drv(alg_name, TASK_INSTR);
 			if (!drv) {
 				set_driver->fallback = 0;
 				WD_ERR("no soft %s driver support\n", alg_name);

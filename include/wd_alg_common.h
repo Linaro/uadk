@@ -46,6 +46,8 @@ enum alg_task_type {
 	TASK_MIX = 0x0,
 	TASK_HW,
 	TASK_INSTR,
+	TASK_CE,
+	TASK_SVE,
 	TASK_MAX_TYPE,
 };
 

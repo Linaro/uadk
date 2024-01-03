@@ -125,11 +125,11 @@ struct wd_alg_list {
 /**
  * wd_request_drv() - Apply for an algorithm driver.
  * @alg_name: task algorithm name.
- * @hw_mask: the flag of shield hardware device drivers.
+ * @task_type: task_type required from user.
  *
  * Returns the applied algorithm driver, non means error.
  */
-struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
+struct wd_alg_driver *wd_request_drv(const char	*alg_name, int task_type);
 void wd_release_drv(struct wd_alg_driver *drv);
 
 /**

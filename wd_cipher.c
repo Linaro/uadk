@@ -101,7 +101,7 @@ static int wd_cipher_open_driver(void)
 		return -WD_EINVAL;
 	}
 
-	driver = wd_request_drv(alg_name, false);
+	driver = wd_request_drv(alg_name, TASK_HW);
 	if (!driver) {
 		wd_cipher_close_driver();
 		WD_ERR("failed to get %s driver support\n", alg_name);
