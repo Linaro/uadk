@@ -293,7 +293,8 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, int task_type)
 		if (!strcmp(alg_name, pnext->alg_name) && pnext->available) {
 			calc_type = pnext->drv->calc_type;
 
-			if ((task_type == TASK_HW && calc_type == UADK_ALG_HW) ||
+			if ((task_type == TASK_ANY) ||
+			    (task_type == TASK_HW && calc_type == UADK_ALG_HW) ||
 			    (task_type == TASK_CE && calc_type == UADK_ALG_CE_INSTR) ||
 			    (task_type == TASK_SVE && calc_type == UADK_ALG_SVE_INSTR)) {
 				select_node = pnext;

@@ -265,7 +265,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		}
 	}
 
-	if (WD_IS_ERR(sess->drv)) {
+	if (!sess->drv) {
 		WD_ERR("failed to init session drv!\n");
 		goto err_sess;
 	}

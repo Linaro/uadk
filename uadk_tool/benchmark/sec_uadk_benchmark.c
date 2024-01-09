@@ -674,13 +674,13 @@ static int init_ctx_config2(struct acc_option *options)
 	/* init */
 	switch(subtype) {
 	case CIPHER_TYPE:
-		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_ANY);
 		break;
 	case AEAD_TYPE:
 		ret = wd_aead_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 		break;
 	case DIGEST_TYPE:
-		ret = wd_digest_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		ret = wd_digest_init2(alg_name, SCHED_POLICY_RR, TASK_ANY);
 		break;
 	}
 	if (ret) {

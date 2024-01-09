@@ -296,7 +296,7 @@ static int init_ctx_config2(struct acc_option *options)
 	}
 
 	/* init */
-	ret = wd_comp_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	ret = wd_comp_init2(alg_name, SCHED_POLICY_RR, TASK_ANY);
 	if (ret) {
 		ZIP_TST_PRT("Fail to do comp init2!\n");
 		return ret;

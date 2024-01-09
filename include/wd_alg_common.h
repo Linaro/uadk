@@ -48,6 +48,7 @@ enum alg_task_type {
 	TASK_INSTR,
 	TASK_CE,
 	TASK_SVE,
+	TASK_ANY,
 	TASK_MAX_TYPE,
 };
 
