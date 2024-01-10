@@ -114,11 +114,11 @@ libwd_la_LDFLAGS=$(UADK_VERSION) $(UADK_WD_SYMBOL) $(UADK_V1_SYMBOL)
 libwd_la_LIBADD= -ldl -lnuma
 
 libwd_comp_la_LIBADD= -lwd -ldl -lnuma
-libwd_comp_la_LDFLAGS=$(UADK_VERSION) $(UADK_COMP_SYMBOL)
+libwd_comp_la_LDFLAGS=$(UADK_VERSION) $(UADK_COMP_SYMBOL) -lpthread
 libwd_comp_la_DEPENDENCIES= libwd.la
 
 libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
-libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL)
+libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL) -lpthread
 libwd_crypto_la_DEPENDENCIES= libwd.la
 
 libhisi_zip_la_LIBADD= -lwd -ldl -lwd_comp
