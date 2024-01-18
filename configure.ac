@@ -18,6 +18,7 @@ AM_PROG_AR
 AC_PROG_LIBTOOL
 AM_PROG_LIBTOOL
 LT_INIT
+AC_SUBST([hardcode_into_libs], [no])
 AM_PROG_CC_C_O
 
 AC_ARG_ENABLE([debug-log],
