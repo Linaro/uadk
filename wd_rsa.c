@@ -45,8 +45,10 @@ struct wd_rsa_prikey2 {
 };
 
 struct wd_rsa_prikey {
-	struct wd_rsa_prikey1 pkey1;
-	struct wd_rsa_prikey2 pkey2;
+	union {
+		struct wd_rsa_prikey1 pkey1;
+		struct wd_rsa_prikey2 pkey2;
+	} pkey;
 };
 
 /* RSA private key parameter types */
@@ -830,7 +832,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 			WD_ERR("failed to alloc sess prikey2!\n");
 			return -WD_ENOMEM;
 		}
-		pkey2 = &sess->prikey->pkey2;
+		pkey2 = &sess->prikey->pkey.pkey2;
 		memset(sess->prikey, 0, len);
 		init_pkey2(pkey2, sess->key_size);
 	} else {
@@ -841,7 +843,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 			WD_ERR("failed to alloc sess prikey1!\n");
 			return -WD_ENOMEM;
 		}
-		pkey1 = &sess->prikey->pkey1;
+		pkey1 = &sess->prikey->pkey.pkey1;
 		memset(sess->prikey, 0, len);
 		init_pkey1(pkey1, sess->key_size);
 	}
@@ -872,9 +874,9 @@ static void del_sess_key(struct wd_rsa_sess *sess)
 	}
 
 	if (sess->setup.is_crt)
-		wd_memset_zero(prk->pkey2.data, CRT_PARAMS_SZ(sess->key_size));
+		wd_memset_zero(prk->pkey.pkey2.data, CRT_PARAMS_SZ(sess->key_size));
 	else
-		wd_memset_zero(prk->pkey1.data, GEN_PARAMS_SZ(sess->key_size));
+		wd_memset_zero(prk->pkey.pkey1.data, GEN_PARAMS_SZ(sess->key_size));
 	free(sess->prikey);
 	free(sess->pubkey);
 }
@@ -1027,7 +1029,7 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 		WD_ERR("invalid: sess err in set rsa private key1!\n");
 		return -WD_EINVAL;
 	}
-	pkey1 = &c->prikey->pkey1;
+	pkey1 = &c->prikey->pkey.pkey1;
 	if (d) {
 		if (!d->dsize || !d->data || d->dsize > pkey1->key_size) {
 			WD_ERR("invalid: d err in set rsa private key1!\n");
@@ -1062,7 +1064,7 @@ void wd_rsa_get_prikey_params(struct wd_rsa_prikey *pvk, struct wd_dtb **d,
 		return;
 	}
 
-	pkey1 = &pvk->pkey1;
+	pkey1 = &pvk->pkey.pkey1;
 
 	if (d)
 		*d = &pkey1->d;
@@ -1134,7 +1136,7 @@ int wd_rsa_set_crt_prikey_params(handle_t sess, struct wd_dtb *dq,
 		return ret;
 	}
 
-	pkey2 = &c->prikey->pkey2;
+	pkey2 = &c->prikey->pkey.pkey2;
 	ret = rsa_prikey2_param_set(pkey2, dq, WD_CRT_PRIKEY_DQ);
 	if (ret) {
 		WD_ERR("failed to set dq for rsa private key2!\n");
@@ -1180,7 +1182,7 @@ void wd_rsa_get_crt_prikey_params(struct wd_rsa_prikey *pvk,
 		return;
 	}
 
-	pkey2 = &pvk->pkey2;
+	pkey2 = &pvk->pkey.pkey2;
 
 	if (dq)
 		*dq = &pkey2->dq;
