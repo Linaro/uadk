@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#ifndef __WD_ZIP_ALG_SGL__H__
+#ifndef __WD_ZIP_ALG_SGL_H__
 #define __WD_ZIP_ALG_SGL_H__
 
 #include <stdio.h>

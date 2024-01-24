@@ -75,11 +75,6 @@ static inline unsigned long long va_to_pa(struct wd_queue *q, void *va)
 	return (unsigned long long)wd_iova_map(q, va, 0);
 }
 
-static inline void *pa_to_va(struct wd_queue *q, unsigned long long pa)
-{
-	return wd_dma_to_va(q, (void *)pa);
-}
-
 struct mmt_queue_mempool *mmt_test_mempool_create(struct wd_queue *q,
 				unsigned int block_size, unsigned int block_num)
 {

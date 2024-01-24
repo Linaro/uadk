@@ -105,8 +105,10 @@ struct wcrypto_rsa_prikey2 {
 };
 
 struct wcrypto_rsa_prikey {
-	struct wcrypto_rsa_prikey1 pkey1;
-	struct wcrypto_rsa_prikey2 pkey2;
+	union {
+		struct wcrypto_rsa_prikey1 pkey1;
+		struct wcrypto_rsa_prikey2 pkey2;
+	} pkey;
 };
 
 /* RSA CRT private key parameter types */
@@ -444,7 +446,7 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 			WD_ERR("alloc prikey2 fail!\n");
 			return -WD_ENOMEM;
 		}
-		pkey2 = &ctx->prikey->pkey2;
+		pkey2 = &ctx->prikey->pkey.pkey2;
 		memset(ctx->prikey, 0, len);
 		init_pkey2(pkey2, ctx->key_size);
 	} else {
@@ -459,7 +461,7 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 			WD_ERR("alloc prikey1 fail!\n");
 			return -WD_ENOMEM;
 		}
-		pkey1 = &ctx->prikey->pkey1;
+		pkey1 = &ctx->prikey->pkey.pkey1;
 		memset(ctx->prikey, 0, len);
 		init_pkey1(pkey1, ctx->key_size);
 	}
@@ -716,7 +718,7 @@ int wcrypto_set_rsa_prikey_params(void *ctx, struct wd_dtb *d, struct wd_dtb *n)
 		WD_ERR("ctx err in set rsa private key1!\n");
 		return -WD_EINVAL;
 	}
-	pkey1 = &c->prikey->pkey1;
+	pkey1 = &c->prikey->pkey.pkey1;
 	if (d) {
 		if (d->dsize > pkey1->key_size || !d->data) {
 			WD_ERR("d err in set rsa private key1!\n");
@@ -750,7 +752,7 @@ void wcrypto_get_rsa_prikey_params(struct wcrypto_rsa_prikey *pvk, struct wd_dtb
 		return;
 	}
 
-	pkey1 = &pvk->pkey1;
+	pkey1 = &pvk->pkey.pkey1;
 
 	if (d)
 		*d = &pkey1->d;
@@ -825,7 +827,7 @@ int wcrypto_set_rsa_crt_prikey_params(void *ctx, struct wd_dtb *dq,
 		return ret;
 	}
 
-	pkey2 = &c->prikey->pkey2;
+	pkey2 = &c->prikey->pkey.pkey2;
 	ret = rsa_prikey2_param_set(pkey2, dq, WD_CRT_PRIKEY_DQ);
 	if (ret) {
 		WD_ERR("dq err in set rsa private key2!\n");
@@ -871,7 +873,7 @@ void wcrypto_get_rsa_crt_prikey_params(struct wcrypto_rsa_prikey *pvk,
 		return;
 	}
 
-	pkey2 = &pvk->pkey2;
+	pkey2 = &pvk->pkey.pkey2;
 
 	if (dq)
 		*dq = &pkey2->dq;

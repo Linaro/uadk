@@ -15,7 +15,7 @@
  */
 
 #ifndef __TEST_WD_MEM_H
-#define ___TEST_WD_MEM_H
+#define __TEST_WD_MEM_H
 
 #include <stdio.h>
 #include <string.h>
