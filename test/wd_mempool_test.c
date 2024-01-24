@@ -644,7 +644,7 @@ static void *sva_sec_cipher_async(void *arg)
         int cnt = g_times;
         handle_t h_sess;
         int ret;
-        int j, i;
+	int j;
 
 	setup->alg = WD_CIPHER_AES;
         setup->mode = WD_CIPHER_CBC;
@@ -658,7 +658,6 @@ static void *sva_sec_cipher_async(void *arg)
                 SEC_TST_PRT("test sec cipher set key is failed!\n");
                 goto out;;
         }
-	i = cnt;
         /* run task */
         do {
 try_do_again:
@@ -666,7 +665,6 @@ try_do_again:
                 req->src = pdata->bd_pool->bds[j].src;
                 req->dst = pdata->bd_pool->bds[j].dst;
                 ret = wd_do_cipher_async(h_sess, req);
-		i--;
                 if (ret == -EBUSY) { // busy
                         usleep(100);
                         goto try_do_again;
