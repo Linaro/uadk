@@ -214,10 +214,10 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 	bool is_union = false;
 	u8 keysize = 0;
 	u8 ivsize = 0;
-	u8 dmode;
-	u8 dalg;
-	u8 mode;
-	u8 alg;
+	u8 dmode = 0;
+	u8 dalg = 0;
+	u8 mode = 0;
+	u8 alg = 0;
 
 	switch(algtype) {
 	case AES_128_ECB:
