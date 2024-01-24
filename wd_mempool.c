@@ -71,7 +71,7 @@ static inline int wd_atomic_test_add(struct wd_ref *ref, int a, int u)
 		c = __atomic_load_n(&ref->ref, __ATOMIC_RELAXED);
 		if (c == u)
 			break;
-	} while (! __atomic_compare_exchange_n(&ref->ref, &c, c + a, true,
+	} while (!__atomic_compare_exchange_n(&ref->ref, (__u32 *)&c, c + a, true,
 					       __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
 	return c;
@@ -297,11 +297,6 @@ static int test_bit(struct bitmap *bm, unsigned int nr)
 	unsigned long mask = BIT_MASK(nr);
 
 	return !(*p & mask);
-}
-
-inline static size_t wd_get_page_size(void)
-{
-	return sysconf(_SC_PAGESIZE);
 }
 
 void *wd_block_alloc(handle_t blkpool)
