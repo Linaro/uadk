@@ -2090,7 +2090,7 @@ static void *ecc_wd_sync_run(void *arg)
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;
@@ -2248,7 +2248,7 @@ static void *ecc_wd_async_run(void *arg)
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;

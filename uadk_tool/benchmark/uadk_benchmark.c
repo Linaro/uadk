@@ -364,18 +364,6 @@ int get_pid_cpu_time(u32 *ptime)
 	return 0;
 }
 
-void mdelay(u32 ms)
-{
-	int clock_tcy = 2600000000; // 2.6Ghz CPU;
-	int i;
-
-	while(ms) {
-		i++;
-		if (i == clock_tcy)
-			ms--;
-	}
-}
-
 static void alarm_end(int sig)
 {
 	if (sig == SIGALRM) {

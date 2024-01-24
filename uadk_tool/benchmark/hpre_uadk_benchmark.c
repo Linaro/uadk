@@ -2130,7 +2130,7 @@ static void *ecc_uadk_sync_run(void *arg)
 	memset(&req,     0, sizeof(req));
 
 	memset(&setup,     0, sizeof(setup));
-	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;
@@ -2289,7 +2289,7 @@ static void *ecc_uadk_async_run(void *arg)
 	memset(&req,	 0, sizeof(req));
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;

@@ -198,7 +198,6 @@ enum test_alg {
 	ALG_MAX,
 };
 
-extern void mdelay(u32 ms);
 extern int get_pid_cpu_time(u32 *ptime);
 extern void cal_perfermance_data(struct acc_option *option, u32 sttime);
 extern void time_start(u32 seconds);

@@ -60,7 +60,6 @@ static unsigned int g_ctxnum;
 static unsigned int g_data_fmt = WD_FLAT_BUF;
 static unsigned int g_sgl_num = 0;
 static unsigned int g_init;
-static pthread_spinlock_t lock = 0;
 
 static struct hash_testvec g_long_hash_tv;
 
