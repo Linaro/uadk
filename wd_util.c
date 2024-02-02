@@ -224,12 +224,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
-		if (!cfg->ctxs[i].ctx) {
-			WD_ERR("invalid: ctx is NULL!\n");
-			ret = -WD_EINVAL;
-			goto err_out;
-		}
-
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 		if (ret) {
@@ -1153,8 +1147,10 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 	return 0;
 
 free_ctx:
-	for (j = start; j < i; j++)
-		wd_release_ctx(ctx_config->ctxs[j].ctx);
+	for (j = start; j < i; j++) {
+		if (ctx_config->ctxs[j].ctx)
+			wd_release_ctx(ctx_config->ctxs[j].ctx);
+	}
 	return ret;
 }
 
@@ -1162,8 +1158,10 @@ static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, __u32 ctx_num)
 {
 	__u32 i;
 
-	for (i = 0; i < ctx_num; i++)
-		wd_release_ctx(ctx_config->ctxs[i].ctx);
+	for (i = 0; i < ctx_num; i++) {
+		if (ctx_config->ctxs[i].ctx)
+			wd_release_ctx(ctx_config->ctxs[i].ctx);
+	}
 }
 
 static int wd_alloc_ctx(struct wd_env_config *config)
@@ -2147,7 +2145,14 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		numa_free_nodemask(ctx_params->bmp);
 		return -WD_EAGAIN;
 	}
-
+	if (ctx_params->op_type_num == 0) {
+		/* set default */
+		ctx_params->op_type_num = 1;
+		if (ctx_params->ctx_set_num) {
+			ctx_params->ctx_set_num[0].sync_ctx_num = 1;
+			ctx_params->ctx_set_num[0].async_ctx_num = 1;
+		}
+	}
 	return 0;
 }
 
@@ -2281,8 +2286,12 @@ struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
 
 	/* Get alg driver and dev name */
 	switch (task_type) {
+	case TASK_ANY:
 	case TASK_INSTR:
-		drv = wd_request_drv(alg_name, true);
+	case TASK_CE:
+	case TASK_SVE:
+	case TASK_HW:
+		drv = wd_request_drv(alg_name, task_type);
 		if (!drv) {
 			WD_ERR("no soft %s driver support\n", alg_name);
 			return NULL;
@@ -2290,24 +2299,20 @@ struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
 		set_driver = drv;
 		set_driver->fallback = 0;
 		break;
-	case TASK_HW:
 	case TASK_MIX:
-		drv = wd_request_drv(alg_name, false);
+		drv = wd_request_drv(alg_name, TASK_HW);
 		if (!drv) {
 			WD_ERR("no HW %s driver support\n", alg_name);
 			return NULL;
 		}
 		set_driver = drv;
-		set_driver->fallback = 0;
-		if (task_type == TASK_MIX) {
-			drv = wd_request_drv(alg_name, true);
-			if (!drv) {
-				set_driver->fallback = 0;
-				WD_ERR("no soft %s driver support\n", alg_name);
-			} else {
-				set_driver->fallback = (handle_t)drv;
-				WD_ERR("successful to get soft driver\n");
-			}
+		drv = wd_request_drv(alg_name, TASK_INSTR);
+		if (!drv) {
+			set_driver->fallback = 0;
+			WD_ERR("no soft %s driver support\n", alg_name);
+		} else {
+			set_driver->fallback = (handle_t)drv;
+			WD_ERR("successful to get soft driver\n");
 		}
 		break;
 	default:
@@ -2433,9 +2438,10 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	if (!ctx_set_num)
 		return 0;
 
+	/* sw share common resources, so dev is NULL is treated as error */
 	dev = wd_find_dev_by_numa(list, numa_id);
 	if (WD_IS_ERR(dev))
-		return WD_PTR_ERR(dev);
+		return 0;
 
 	for (i = idx; i < count; i++) {
 		ctx_config->ctxs[i].ctx = wd_request_ctx(dev);
@@ -2452,12 +2458,6 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 			/* self-decrease i to eliminate self-increase on next loop */
 			i--;
 			continue;
-		} else if (!ctx_config->ctxs[i].ctx) {
-			/*
-			 * wd_release_ctx_set will release ctx in
-			 * caller wd_init_ctx_and_sched.
-			 */
-			return -WD_ENOMEM;
 		}
 		ctx_config->ctxs[i].op_type = op_type;
 		ctx_config->ctxs[i].ctx_mode =
@@ -2557,9 +2557,20 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 	int numa_cnt, ret;
 
 	list = wd_get_accel_list(attrs->alg);
-	if (!list) {
-		WD_ERR("failed to get devices!\n");
-		return -WD_ENODEV;
+	if (list) {
+		/*
+		 * Not every numa has a device. Therefore, the first thing is to
+		 * filter the devices in the selected numa node, and the second
+		 * thing is to obtain the distribution of devices.
+		 */
+		used_list = wd_get_usable_list(list, used_bmp);
+		if (WD_IS_ERR(used_list)) {
+			ret = WD_PTR_ERR(used_list);
+			WD_ERR("failed to get usable devices(%d)!\n", ret);
+			goto out_freelist;
+		}
+
+		wd_init_device_nodemask(used_list, used_bmp);
 	}
 
 	op_type_num = ctx_params->op_type_num;
@@ -2570,20 +2581,6 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 		ret = -WD_EINVAL;
 		goto out_freelist;
 	}
-
-	/*
-	 * Not every numa has a device. Therefore, the first thing is to
-	 * filter the devices in the selected numa node, and the second
-	 * thing is to obtain the distribution of devices.
-	 */
-	used_list = wd_get_usable_list(list, used_bmp);
-	if (WD_IS_ERR(used_list)) {
-		ret = WD_PTR_ERR(used_list);
-		WD_ERR("failed to get usable devices(%d)!\n", ret);
-		goto out_freelist;
-	}
-
-	wd_init_device_nodemask(used_list, used_bmp);
 
 	numa_cnt = numa_bitmask_weight(used_bmp);
 	if (!numa_cnt) {
@@ -2629,17 +2626,17 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 {
 	wd_alg_poll_ctx alg_poll_func = attrs->alg_poll_ctx;
 	wd_alg_init alg_init_func = attrs->alg_init;
-	__u32 sched_type = attrs->sched_type;
+	//__u32 sched_type = attrs->sched_type;
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
 	char *alg = attrs->alg;
-	int driver_type = UADK_ALG_HW;
+	//int driver_type = UADK_ALG_HW;
 	int ret;
 
 	if (!attrs->ctx_params)
 		return -WD_EINVAL;
-
+#if 0
 	if (attrs->driver)
 		driver_type = attrs->driver->calc_type;
 
@@ -2716,7 +2713,37 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		WD_ERR("driver type error: %d\n", driver_type);
 		return -WD_EINVAL;
 	}
+#endif
+	// all use rr, hw method, todo, handle sw no ctxs
+	wd_get_alg_type(alg, alg_type);
+	attrs->alg = alg_type;
 
+	ctx_config = calloc(1, sizeof(*ctx_config));
+	if (!ctx_config) {
+		WD_ERR("fail to alloc ctx config\n");
+		return -WD_ENOMEM;
+	}
+	attrs->ctx_config = ctx_config;
+
+	alg_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, attrs->ctx_params->op_type_num,
+				      numa_max_node() + 1, alg_poll_func);
+	if (!alg_sched) {
+		WD_ERR("fail to instance scheduler\n");
+		ret = -WD_EINVAL;
+		goto out_ctx_config;
+	}
+	attrs->sched = alg_sched;
+
+	ret = wd_alg_ctx_init(attrs);
+	if (ret) {
+		WD_ERR("fail to init ctx\n");
+		goto out_freesched;
+	}
+
+	ctx_config->cap = attrs->ctx_params->cap;
+	ret = alg_init_func(ctx_config, alg_sched);
+	if (ret)
+		goto out_pre_init;
 	return 0;
 
 out_pre_init:

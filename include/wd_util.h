@@ -116,6 +116,12 @@ struct wd_ctx_attr {
 	__u8 mode;
 };
 
+struct op_ctx {
+	handle_t ctx;
+	__u32 ctx_id;
+	__u8 mode;
+};
+
 struct wd_msg_handle {
 	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);

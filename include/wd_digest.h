@@ -100,6 +100,7 @@ struct wd_digest_sess_setup {
 	enum wd_digest_type alg;
 	enum wd_digest_mode mode;
 	void *sched_param;
+	struct wd_sess_para para;
 };
 
 typedef void *wd_digest_cb_t(void *cb_param);

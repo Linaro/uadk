@@ -149,6 +149,7 @@ struct wd_comp_sess_setup {
 	enum wd_comp_winsz_type win_sz; /* Denoted by enum wd_comp_winsz_type */
 	enum wd_comp_op_type op_type;   /* Denoted by enum wd_comp_op_type */
 	void *sched_param;
+	struct wd_sess_para para;
 };
 
 /**

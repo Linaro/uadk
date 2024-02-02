@@ -46,6 +46,9 @@ enum alg_task_type {
 	TASK_MIX = 0x0,
 	TASK_HW,
 	TASK_INSTR,
+	TASK_CE,
+	TASK_SVE,
+	TASK_ANY,
 	TASK_MAX_TYPE,
 };
 
@@ -53,6 +56,11 @@ enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
 	CTX_MODE_ASYNC,
 	CTX_MODE_MAX,
+};
+
+struct wd_sess_para {
+	enum alg_task_type type;
+	char *alg;
 };
 
 /**
@@ -144,6 +152,8 @@ struct wd_ctx_config_internal {
 	unsigned long *msg_cnt;
 };
 
+#define MAX_NB_DRV		(8)
+
 /**
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
@@ -167,6 +177,9 @@ struct wd_sched {
 				  const int sched_mode);
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
+	__u32 drv_nb;
+	struct wd_alg_driver *drv[MAX_NB_DRV];
+	pthread_mutex_t lock;
 };
 
 typedef int (*wd_alg_init)(struct wd_ctx_config *config, struct wd_sched *sched);

@@ -45,6 +45,7 @@ global:
 	wd_alg_driver_unregister;
 	wd_request_drv;
 	wd_release_drv;
+	wd_find_drv;
 	wd_drv_alg_support;
 	wd_enable_drv;
 	wd_disable_drv;

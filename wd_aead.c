@@ -88,7 +88,7 @@ static int wd_aead_open_driver(void)
 		return -WD_EINVAL;
 	}
 
-	driver = wd_request_drv(alg_name, false);
+	driver = wd_request_drv(alg_name, TASK_HW);
 	if (!driver) {
 		wd_aead_close_driver();
 		WD_ERR("failed to get %s driver support\n", alg_name);
