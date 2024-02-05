@@ -11,6 +11,7 @@
 #include "wd_digest.h"
 
 #define GMAC_IV_LEN		16
+#define MAX_BLOCK_SIZE		128
 
 static __u32 g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -45,6 +46,19 @@ struct wd_digest_setting {
 	void *dlh_list;
 } wd_digest_setting;
 
+struct wd_digest_stream_data {
+	/* Long hash mode, first and middle block misaligned data */
+	unsigned char partial_block[MAX_BLOCK_SIZE];
+	__u32 partial_bytes;
+	/* Total data length for stream mode */
+	__u64 long_data_len;
+	/*
+	 * Notify the stream message state, zero is frist message,
+	 * non-zero is middle or final message.
+	 */
+	int msg_state;
+};
+
 struct wd_digest_sess {
 	char			*alg_name;
 	enum wd_digest_type	alg;
@@ -53,14 +67,7 @@ struct wd_digest_sess {
 	unsigned char		key[MAX_HMAC_KEY_SIZE];
 	__u32			key_bytes;
 	void			*sched_key;
-	/*
-	 * Notify the stream message state, zero is frist message,
-	 * non-zero is middle or final message.
-	 */
-	int			msg_state;
-
-	/* Total data length for stream mode */
-	__u64			long_data_len;
+	struct wd_digest_stream_data stream_data;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -536,12 +543,12 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	memcpy(&msg->req, req, sizeof(struct wd_digest_req));
 
 	if (unlikely(req->has_next == WD_DIGEST_STREAM_END)) {
-		sess->long_data_len = req->long_data_len;
-		sess->msg_state = WD_DIGEST_DOING;
+		sess->stream_data.long_data_len = req->long_data_len;
+		sess->stream_data.msg_state = WD_DIGEST_DOING;
 		req->has_next = WD_DIGEST_END;
 	} else if (unlikely(req->has_next == WD_DIGEST_STREAM_DOING)) {
-		sess->long_data_len = req->long_data_len;
-		sess->msg_state = WD_DIGEST_DOING;
+		sess->stream_data.long_data_len = req->long_data_len;
+		sess->stream_data.msg_state = WD_DIGEST_DOING;
 		req->has_next = WD_DIGEST_DOING;
 	}
 
@@ -557,10 +564,12 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->out_bytes = req->out_bytes;
 	msg->data_fmt = req->data_fmt;
 	msg->has_next = req->has_next;
-	msg->long_data_len = sess->long_data_len + req->in_bytes;
+	msg->long_data_len = sess->stream_data.long_data_len + req->in_bytes;
+	msg->partial_block = sess->stream_data.partial_block;
+	msg->partial_bytes = sess->stream_data.partial_bytes;
 
 	/* Use iv_bytes to store the stream message state */
-	msg->iv_bytes = sess->msg_state;
+	msg->iv_bytes = sess->stream_data.msg_state;
 }
 
 static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *dsess,
@@ -579,17 +588,22 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	if (unlikely(ret))
 		return ret;
 
-	/* After a stream mode job was done, update session long_data_len */
+	/*
+	 * After a stream mode job was done, update session
+	 * long_data_len and partial_bytes.
+	 */
 	if (msg->has_next) {
 		/* Long hash(first and middle message) */
-		dsess->long_data_len += msg->in_bytes;
+		dsess->stream_data.long_data_len += msg->in_bytes;
+		dsess->stream_data.partial_bytes = msg->partial_bytes;
 	} else if (msg->iv_bytes) {
 		/* Long hash(final message) */
-		dsess->long_data_len = 0;
+		dsess->stream_data.long_data_len = 0;
+		dsess->stream_data.partial_bytes = 0;
 	}
 
 	/* Update session message state */
-	dsess->msg_state = msg->has_next;
+	dsess->stream_data.msg_state = msg->has_next;
 
 	return 0;
 }
