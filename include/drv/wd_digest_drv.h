@@ -44,6 +44,8 @@ struct wd_digest_msg {
 	__u32 in_bytes;
 	/* out_bytes */
 	__u32 out_bytes;
+	/* partial bytes for stream mode */
+	__u32 partial_bytes;
 
 	/* input key pointer */
 	__u8 *key;
@@ -53,6 +55,8 @@ struct wd_digest_msg {
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
+	/* partial pointer for stream mode */
+	__u8 *partial_block;
 	/* total of data for stream mode */
 	__u64 long_data_len;
 };
