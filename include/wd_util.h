@@ -527,6 +527,29 @@ static inline void wd_dfx_msg_cnt(struct wd_ctx_config_internal *config,
 	config->msg_cnt[sqn]++;
 }
 
+/**
+ * wd_ctx_spin_lock() - Lock interface, which is used in the synchronization process.
+ * @ctx: queue context.
+ * @type: the type of the driver.
+ *
+ * If the drvier type is not UADK_ALG_HW, the lock is not required.
+ */
+static inline void wd_ctx_spin_lock(struct wd_ctx_internal *ctx, int type)
+{
+	if (type != UADK_ALG_HW)
+		return;
+
+	pthread_spin_lock(&ctx->lock);
+}
+
+static inline void wd_ctx_spin_unlock(struct wd_ctx_internal *ctx, int type)
+{
+	if (type != UADK_ALG_HW)
+		return;
+
+	pthread_spin_unlock(&ctx->lock);
+}
+
 #ifdef __cplusplus
 }
 #endif
