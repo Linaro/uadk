@@ -200,13 +200,6 @@ enum sec_c_width {
 	C_WIDTH_CS3 = 0x3,
 };
 
-enum hash_bd_type {
-	HASH_SINGLE_BD,
-	HASH_FRIST_BD,
-	HASH_MIDDLE_BD,
-	HASH_END_BD,
-};
-
 struct hisi_sec_ctx {
 	struct wd_ctx_config_internal config;
 };
@@ -1549,29 +1542,10 @@ static int long_hash_param_check(handle_t h_qp, struct wd_digest_msg *msg)
 	return 0;
 }
 
-static enum hash_bd_type get_hash_bd_type(struct wd_digest_msg *msg)
-{
-	/*
-	 *     [has_next , iv_bytes]
-	 *     [    1    ,     0   ]   =   long hash(frist bd)
-	 *     [    1    ,     1   ]   =   long hash(middle bd)
-	 *     [    0    ,     1   ]   =   long hash(end bd)
-	 *     [    0    ,     0   ]   =   block hash(single bd)
-	 */
-	if (msg->has_next && !msg->iv_bytes)
-		return HASH_FRIST_BD;
-	else if (msg->has_next && msg->iv_bytes)
-		return HASH_MIDDLE_BD;
-	else if (!msg->has_next && msg->iv_bytes)
-		return HASH_END_BD;
-	else
-		return HASH_SINGLE_BD;
-}
-
 static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
 		struct hisi_sec_sqe *sqe)
 {
-	enum hash_bd_type bd_type = get_hash_bd_type(msg);
+	enum hash_block_type block_type = get_hash_block_type(msg);
 	__u64 total_bits;
 	int ret;
 
@@ -1579,20 +1553,20 @@ static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
 	if (ret)
 		return ret;
 
-	if (bd_type == HASH_FRIST_BD) {
+	if (block_type == HASH_FRIST_BLOCK) {
 		/* Long hash first */
 		sqe->ai_apd_cs = AI_GEN_INNER;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
 	}
 
-	if (bd_type == HASH_MIDDLE_BD) {
+	if (block_type == HASH_MIDDLE_BLOCK) {
 		/* Long hash middle */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
 		sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
 	}
 
-	if (bd_type == HASH_END_BD) {
+	if (block_type == HASH_END_BLOCK) {
 		/* Long hash end */
 		sqe->ai_apd_cs = AI_GEN_IVIN_ADDR;
 		sqe->ai_apd_cs |= AUTHPAD_PAD << AUTHPAD_OFFSET;
@@ -1658,16 +1632,16 @@ static int digest_long_bd_align_check(struct wd_digest_msg *msg)
 
 static int digest_bd2_type_check(struct wd_digest_msg *msg)
 {
-	enum hash_bd_type type = get_hash_bd_type(msg);
+	enum hash_block_type type = get_hash_block_type(msg);
 
 	/* Long hash first and middle bd */
-	if (type == HASH_FRIST_BD || type == HASH_MIDDLE_BD) {
+	if (type == HASH_FRIST_BLOCK || type == HASH_MIDDLE_BLOCK) {
 		WD_ERR("hardware v2 not supports 0 size in long hash!\n");
 		return -WD_EINVAL;
 	}
 
 	/* Block mode hash bd */
-	if (type == HASH_SINGLE_BD) {
+	if (type == HASH_SINGLE_BLOCK) {
 		WD_ERR("hardware v2 not supports 0 size in block hash!\n");
 		return -WD_EINVAL;
 	}
@@ -1677,9 +1651,9 @@ static int digest_bd2_type_check(struct wd_digest_msg *msg)
 
 static int digest_bd3_type_check(struct wd_digest_msg *msg)
 {
-	enum hash_bd_type type = get_hash_bd_type(msg);
+	enum hash_block_type type = get_hash_block_type(msg);
 	/* Long hash first and middle bd */
-	if (type == HASH_FRIST_BD || type == HASH_MIDDLE_BD) {
+	if (type == HASH_FRIST_BLOCK || type == HASH_MIDDLE_BLOCK) {
 		WD_ERR("invalid: hardware v3 not supports 0 size in long hash!\n");
 		return -WD_EINVAL;
 	}
@@ -1920,7 +1894,7 @@ static int aes_auth_long_hash_check(struct wd_digest_msg *msg)
 static int fill_digest_long_hash3(handle_t h_qp, struct wd_digest_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
-	enum hash_bd_type bd_type = get_hash_bd_type(msg);
+	enum hash_block_type block_type = get_hash_block_type(msg);
 	__u64 total_bits;
 	int ret;
 
@@ -1932,20 +1906,20 @@ static int fill_digest_long_hash3(handle_t h_qp, struct wd_digest_msg *msg,
 	if (ret)
 		return ret;
 
-	if (bd_type == HASH_FRIST_BD) {
+	if (block_type == HASH_FRIST_BLOCK) {
 		/* Long hash first */
 		sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
 	}
 
-	if (bd_type == HASH_MIDDLE_BD) {
+	if (block_type == HASH_MIDDLE_BLOCK) {
 		/* Long hash middle */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;
 		sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
 	}
 
-	if (bd_type == HASH_END_BD) {
+	if (block_type == HASH_END_BLOCK) {
 		/* Long hash end */
 		sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_PAD;
