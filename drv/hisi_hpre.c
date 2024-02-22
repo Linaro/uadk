@@ -527,30 +527,27 @@ out:
 static int hpre_rsa_dh_init(struct wd_alg_driver *drv, void *conf)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
-	struct hisi_hpre_ctx *priv = (struct hisi_hpre_ctx *)drv->priv;
 	struct hisi_qm_priv qm_priv;
+	struct hisi_hpre_ctx *priv;
 	int ret;
-
-	if (priv) {
-		/* return if already inited */
-		return WD_SUCCESS;
-	}
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: hpre rsa/dh init config ctx num is 0!\n");
 		return -WD_EINVAL;
 	}
 
-	drv->priv = malloc(sizeof(struct hisi_hpre_ctx));
-	if (!drv->priv)
+	priv = malloc(sizeof(struct hisi_hpre_ctx));
+	if (!priv)
 		return -WD_EINVAL;
 
 	qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
-	ret = hpre_init_qm_priv(config, drv->priv, &qm_priv);
+	ret = hpre_init_qm_priv(config, priv, &qm_priv);
 	if (ret) {
-		free(drv->priv);
+		free(priv);
 		return ret;
 	}
+
+	drv->priv = priv;
 
 	return WD_SUCCESS;
 }
@@ -558,30 +555,27 @@ static int hpre_rsa_dh_init(struct wd_alg_driver *drv, void *conf)
 static int hpre_ecc_init(struct wd_alg_driver *drv, void *conf)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
-	struct hisi_hpre_ctx *priv = (struct hisi_hpre_ctx *)drv->priv;
 	struct hisi_qm_priv qm_priv;
+	struct hisi_hpre_ctx *priv;
 	int ret;
-
-	if (priv) {
-		/* return if already inited */
-		return WD_SUCCESS;
-	}
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: hpre ecc init config ctx num is 0!\n");
 		return -WD_EINVAL;
 	}
 
-	drv->priv = malloc(sizeof(struct hisi_hpre_ctx));
-	if (!drv->priv)
+	priv = malloc(sizeof(struct hisi_hpre_ctx));
+	if (!priv)
 		return -WD_EINVAL;
 
 	qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
-	ret = hpre_init_qm_priv(config, drv->priv, &qm_priv);
+	ret = hpre_init_qm_priv(config, priv, &qm_priv);
 	if (ret) {
-		free(drv->priv);
+		free(priv);
 		return ret;
 	}
+
+	drv->priv = priv;
 
 	return WD_SUCCESS;
 }

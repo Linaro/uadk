@@ -787,17 +787,12 @@ static void hisi_zip_sqe_ops_adapt(handle_t h_qp)
 
 static int hisi_zip_init(struct wd_alg_driver *drv, void *conf)
 {
-	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config = conf;
 	struct hisi_qm_priv qm_priv;
+	struct hisi_zip_ctx *priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
 	__u32 i, j;
-
-	if (priv) {
-		/* return if already inited */
-		return 0;
-	}
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: zip init config ctx num is 0!\n");
