@@ -3067,17 +3067,12 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 
 static int hisi_sec_init(struct wd_alg_driver *drv, void *conf)
 {
-	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config = conf;
 	struct hisi_qm_priv qm_priv;
+	struct hisi_sec_ctx *priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
 	__u32 i, j;
-
-	if (priv) {
-		/* return if already inited */
-		return 0;
-	}
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: sec init config ctx num is 0!\n");
