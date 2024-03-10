@@ -35,7 +35,8 @@ AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
-		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h
+		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h \
+		  include/wd_zlibwrapper.h
 
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
@@ -66,7 +67,7 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h \
-		      wd_sched.c wd_sched.h wd.c wd.h wd_zlibwrapper.c wd_zlibwrapper.h
+		      wd_sched.c wd_sched.h wd.c wd.h wd_zlibwrapper.c
 
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h
