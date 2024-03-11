@@ -491,6 +491,7 @@ static void parse_alg_param(struct acc_option *option)
 void cal_perfermance_data(struct acc_option *option, u32 sttime)
 {
 	u8 palgname[MAX_ALG_NAME];
+	char *unit = "KiB/s";
 	double perfermance;
 	double cpu_rate;
 	u32 ttime = 1000;
@@ -506,8 +507,8 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 		if (option->syncmode == SYNC_MODE) {
 			if (get_recv_time() == option->threads)
 				break;
-		} else { // ASYNC_MODE
-			if (get_recv_time() == 1) // poll complete
+		} else {
+			if (get_recv_time() == 1)
 				break;
 		}
 		usleep(1000);
@@ -525,14 +526,17 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 		palgname[i] = '\0';
 
 	ptime = ptime - sttime;
-	perfdata = g_recv_data.pkg_len * g_recv_data.recv_cnt / 1024.0;
-	perfops = (double)(g_recv_data.recv_cnt) / 1000.0;
-	perfermance = perfdata / option->times;
-	ops = perfops / option->times;
 	cpu_rate = (double)ptime / option->times;
-	ACC_TST_PRT("algname:	length:		perf:		iops:		CPU_rate:\n"
-			"%s	%-2uBytes 	%.1fKB/s 	%.1fKops 	%.2f%%\n",
-			palgname, option->pktlen, perfermance, ops, cpu_rate);
+
+	perfdata = g_recv_data.pkg_len * g_recv_data.recv_cnt / 1024.0;
+	perfermance = perfdata / option->times;
+
+	perfops = g_recv_data.recv_cnt / 1000.0;
+	ops = perfops / option->times;
+
+	ACC_TST_PRT("algname:\tlength:\t\tperf:\t\tiops:\t\tCPU_rate:\n"
+		    "%s\t%-2uBytes \t%.2f%s\t%.1fKops \t%.2f%%\n",
+		    palgname, option->pktlen, perfermance, unit, ops, cpu_rate);
 }
 
 static int benchmark_run(struct acc_option *option)
@@ -744,24 +748,25 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 	int c;
 
 	static struct option long_options[] = {
-		{"help",      no_argument,       0, 0},
-		{"alg",       required_argument, 0, 1},
-		{"mode",      required_argument, 0, 2},
-		{"opt",       required_argument, 0, 3},
-		{"sync",      no_argument,       0, 4},
-		{"async",     no_argument,       0, 5},
-		{"pktlen",    required_argument, 0, 6},
-		{"seconds",   required_argument, 0, 7},
-		{"thread",    required_argument, 0, 8},
-		{"multi",     required_argument, 0, 9},
-		{"ctxnum",    required_argument, 0, 10},
-		{"prefetch",  no_argument,       0, 11},
-		{"engine",    required_argument, 0, 12},
-		{"alglist",   no_argument,       0, 13},
-		{"latency",   no_argument,       0, 14},
-		{"winsize",   required_argument, 0, 15},
-		{"complevel", required_argument, 0, 16},
-		{"init2", no_argument, 0, 17},
+		{"help",	no_argument,		0, 0},
+		{"alg",		required_argument,	0, 1},
+		{"mode",	required_argument,	0, 2},
+		{"opt",		required_argument,	0, 3},
+		{"sync",	no_argument,		0, 4},
+		{"async",	no_argument,		0, 5},
+		{"pktlen",	required_argument,	0, 6},
+		{"seconds",	required_argument,	0, 7},
+		{"thread",	required_argument,	0, 8},
+		{"multi",	required_argument,	0, 9},
+		{"ctxnum",	required_argument,	0, 10},
+		{"prefetch",	no_argument,		0, 11},
+		{"engine",	required_argument,	0, 12},
+		{"alglist",	no_argument,		0, 13},
+		{"latency",	no_argument,		0, 14},
+		{"winsize",	required_argument,	0, 15},
+		{"complevel",	required_argument,	0, 16},
+		{"init2",	no_argument,		0, 17},
+		{"device",	required_argument,	0, 18},
 		{0, 0, 0, 0}
 	};
 
@@ -826,8 +831,15 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		case 17:
 			option->inittype = INIT2_TYPE;
 			break;
+		case 18:
+			if (strlen(optarg) >= MAX_DEVICE_NAME) {
+				ACC_TST_PRT("invalid: device name is %s\n", optarg);
+				goto to_exit;
+			}
+			strcpy(option->device, optarg);
+			break;
 		default:
-			ACC_TST_PRT("bad input test parameter!\n");
+			ACC_TST_PRT("invalid: bad input parameter!\n");
 			print_help();
 			goto to_exit;
 		}
