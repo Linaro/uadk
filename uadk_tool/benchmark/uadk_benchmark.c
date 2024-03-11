@@ -595,6 +595,7 @@ static void dump_param(struct acc_option *option)
 	ACC_TST_PRT("    [--engine]:  %s\n", option->engine);
 	ACC_TST_PRT("    [--latency]: %u\n", option->latency);
 	ACC_TST_PRT("    [--init2]:   %u\n", option->inittype);
+	ACC_TST_PRT("    [--device]:  %s\n", option->device);
 }
 
 int acc_benchmark_run(struct acc_option *option)
@@ -718,6 +719,8 @@ static void print_help(void)
 	ACC_TST_PRT("        test the running time of packets\n");
 	ACC_TST_PRT("    [--init2]:\n");
 	ACC_TST_PRT("        select init2 mode in the init interface of UADK SVA\n");
+	ACC_TST_PRT("    [--device]:\n");
+	ACC_TST_PRT("        select device to do task\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
 	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
