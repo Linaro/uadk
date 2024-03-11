@@ -594,6 +594,7 @@ static int benchmark_run(struct acc_option *option)
 		} else if (option->modetype == NOSVA_MODE) {
 			ret = zip_wd_benchmark(option);
 		}
+		break;
 	case TRNG_TYPE:
 		if (option->modetype == SVA_MODE)
 			ACC_TST_PRT("TRNG not support sva mode..\n");
