@@ -37,6 +37,7 @@ enum test_type {
 	SOFT_MODE = 0x4,
 	SVA_SOFT = 0x5,
 	NOSVA_SOFT = 0x6,
+	INSTR_MODE = 0x7,
 	INVALID_MODE = 0x8,
 };
 
@@ -51,6 +52,7 @@ static struct acc_sva_item sys_name_item[] = {
 	{"soft", SOFT_MODE},
 	{"sva-soft", SVA_SOFT},
 	{"nosva-soft", NOSVA_SOFT},
+	{"instr", INSTR_MODE},
 };
 
 struct acc_alg_item {
@@ -286,7 +288,7 @@ static int get_alg_type(const char *alg_name)
 
 	for (i = 0; i < ALG_MAX; i++) {
 		if (strcmp(alg_name, alg_options[i].name) == 0) {
-			alg = 	alg_options[i].alg;
+			alg = alg_options[i].alg;
 			break;
 		}
 	}
@@ -482,8 +484,11 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = AEAD_TYPE;
 		} else if (option->algtype <= SHA512_256) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "digest");
+			if (option->modetype == INSTR_MODE)
+				option->subtype = DIGEST_INSTR_TYPE;
+			else
+				option->subtype = DIGEST_TYPE;
 			option->acctype = SEC_TYPE;
-			option->subtype = DIGEST_TYPE;
 		}
 	}
 }
@@ -545,35 +550,35 @@ static int benchmark_run(struct acc_option *option)
 
 	switch(option->acctype) {
 	case SEC_TYPE:
-		if (option->modetype & SVA_MODE) {
+		if ((option->modetype == SVA_MODE) || (option->modetype == INSTR_MODE)) {
 			ret = sec_uadk_benchmark(option);
-		} else if (option->modetype & NOSVA_MODE) {
+		} else if (option->modetype == NOSVA_MODE) {
 			ret = sec_wd_benchmark(option);
 		}
 		usleep(20000);
 #ifdef HAVE_CRYPTO
-		if (option->modetype & SOFT_MODE) {
+		if (option->modetype == SOFT_MODE) {
 			ret = sec_soft_benchmark(option);
 		}
 #endif
 		break;
 	case HPRE_TYPE:
-		if (option->modetype & SVA_MODE) {
+		if (option->modetype == SVA_MODE) {
 			ret = hpre_uadk_benchmark(option);
-		} else if (option->modetype & NOSVA_MODE) {
+		} else if (option->modetype == NOSVA_MODE) {
 			ret = hpre_wd_benchmark(option);
 		}
 		break;
 	case ZIP_TYPE:
-		if (option->modetype & SVA_MODE) {
+		if (option->modetype == SVA_MODE) {
 			ret = zip_uadk_benchmark(option);
-		} else if (option->modetype & NOSVA_MODE) {
+		} else if (option->modetype == NOSVA_MODE) {
 			ret = zip_wd_benchmark(option);
 		}
 	case TRNG_TYPE:
-		if (option->modetype & SVA_MODE)
+		if (option->modetype == SVA_MODE)
 			ACC_TST_PRT("TRNG not support sva mode..\n");
-		else if (option->modetype & NOSVA_MODE)
+		else if (option->modetype == NOSVA_MODE)
 			ret = trng_wd_benchmark(option);
 
 		break;
@@ -698,7 +703,7 @@ static void print_help(void)
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
 	ACC_TST_PRT("        The name of the algorithm for benchmarking\n");
-	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft]: start UADK or Warpdrive or Openssl mode test\n");
+	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft/instr]: start UADK or Warpdrive or Openssl or Instruction mode test\n");
 	ACC_TST_PRT("    [--sync/--async]: start asynchronous/synchronous mode test\n");
 	ACC_TST_PRT("    [--opt 0,1,2,3,4,5]:\n");
 	ACC_TST_PRT("        SEC/ZIP: 0/1:encryption/decryption or compression/decompression\n");
