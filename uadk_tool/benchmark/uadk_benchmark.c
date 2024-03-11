@@ -120,6 +120,9 @@ static struct acc_alg_item alg_options[] = {
 	{"3des-192-cbc", DES3_192_CBC},
 	{"sm4-128-ecb", SM4_128_ECB},
 	{"sm4-128-cbc", SM4_128_CBC},
+	{"sm4-128-cbc-cs1", SM4_128_CBC_CS1},
+	{"sm4-128-cbc-cs2", SM4_128_CBC_CS2},
+	{"sm4-128-cbc-cs3", SM4_128_CBC_CS3},
 	{"sm4-128-ctr", SM4_128_CTR},
 	{"sm4-128-ofb", SM4_128_OFB},
 	{"sm4-128-cfb", SM4_128_CFB},
@@ -209,6 +212,9 @@ static struct acc_alg_item alg_name_options[] = {
 	{"cbc(des3_ede)", DES3_192_CBC},
 	{"ecb(sm4)", SM4_128_ECB},
 	{"cbc(sm4)", SM4_128_CBC},
+	{"cbc-cs1(sm4)", SM4_128_CBC_CS1},
+	{"cbc-cs2(sm4)", SM4_128_CBC_CS2},
+	{"cbc-cs3(sm4)", SM4_128_CBC_CS3},
 	{"ctr(sm4)", SM4_128_CTR},
 	{"ofb(sm4)", SM4_128_OFB},
 	{"cfb(sm4)", SM4_128_CFB},
@@ -476,8 +482,11 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = ECDSA_TYPE;
 		} else if (option->algtype <= SM4_128_XTS_GB) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "cipher");
+			if (option->modetype == INSTR_MODE)
+				option->subtype = CIPHER_INSTR_TYPE;
+			else
+				option->subtype = CIPHER_TYPE;
 			option->acctype = SEC_TYPE;
-			option->subtype = CIPHER_TYPE;
 		} else if (option->algtype <= SM4_128_GCM) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "aead");
 			option->acctype = SEC_TYPE;
