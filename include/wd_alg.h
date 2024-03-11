@@ -19,6 +19,49 @@ extern "C" {
 #define ALG_NAME_SIZE		128
 #define DEV_NAME_LEN		128
 
+/*
+ * Macros related to arm platform:
+ * ARM puts the feature bits for Crypto Extensions in AT_HWCAP2, whereas
+ * AArch64 used AT_HWCAP.
+ */
+#ifndef AT_HWCAP
+# define AT_HWCAP               16
+#endif
+
+#ifndef AT_HWCAP2
+# define AT_HWCAP2              26
+#endif
+
+#if defined(__arm__) || defined(__arm)
+# define HWCAP                  AT_HWCAP
+# define HWCAP_NEON             (1 << 12)
+
+# define HWCAP_CE               AT_HWCAP2
+# define HWCAP_CE_AES           (1 << 0)
+# define HWCAP_CE_PMULL         (1 << 1)
+# define HWCAP_CE_SHA1          (1 << 2)
+# define HWCAP_CE_SHA256        (1 << 3)
+#elif defined(__aarch64__)
+# define HWCAP                  AT_HWCAP
+# define HWCAP_NEON             (1 << 1)
+
+# define HWCAP_CE               HWCAP
+# define HWCAP_CE_AES           (1 << 3)
+# define HWCAP_CE_PMULL         (1 << 4)
+# define HWCAP_CE_SHA1          (1 << 5)
+# define HWCAP_CE_SHA256        (1 << 6)
+# define HWCAP_CPUID            (1 << 11)
+# define HWCAP_SHA3             (1 << 17)
+# define HWCAP_CE_SM3           (1 << 18)
+# define HWCAP_CE_SM4           (1 << 19)
+# define HWCAP_CE_SHA512        (1 << 21)
+# define HWCAP_SVE              (1 << 22)
+/* AT_HWCAP2 */
+# define HWCAP2                 26
+# define HWCAP2_SVE2            (1 << 1)
+# define HWCAP2_RNG             (1 << 16)
+#endif
+
 enum alg_dev_type {
 	UADK_ALG_SOFT = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,

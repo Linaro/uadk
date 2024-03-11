@@ -453,7 +453,7 @@ static struct wd_sched sched_table[SCHED_POLICY_BUTT] = {
 		.poll_policy = session_sched_poll_policy,
 	}, {
 		.name = "None scheduler",
-		.sched_policy = SCHED_POLICY_SINGLE,
+		.sched_policy = SCHED_POLICY_NONE,
 		.sched_init = sched_none_init,
 		.pick_next_ctx = sched_none_pick_next_ctx,
 		.poll_policy = sched_none_poll_policy,

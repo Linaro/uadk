@@ -222,7 +222,7 @@ static void wd_digest_clear_status(void)
 }
 
 static int wd_digest_init_nolock(struct wd_ctx_config *config,
-								 struct wd_sched *sched)
+				 struct wd_sched *sched)
 {
 	int ret;
 
