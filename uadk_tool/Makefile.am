@@ -29,6 +29,7 @@ uadk_tool_LDADD=$(libwd_la_OBJECTS) \
 			../.libs/libhisi_sec.a \
 			../.libs/libhisi_hpre.a \
 			../.libs/libhisi_zip.a \
+			../.libs/libisa_ce.a \
 			-ldl -lnuma
 else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \

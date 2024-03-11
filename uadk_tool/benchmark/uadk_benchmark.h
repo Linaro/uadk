@@ -104,6 +104,7 @@ enum alg_type {
 	SM2_TYPE,
 	X25519_TYPE,
 	X448_TYPE,
+	DIGEST_INSTR_TYPE,
 };
 
 enum sync_type {
