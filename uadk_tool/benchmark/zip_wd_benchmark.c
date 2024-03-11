@@ -708,9 +708,8 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 
 	while(1) {
 		if (get_run_state() == 0)
-				break;
+			break;
 
-		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = bd_pool[i].dst; //temp out
@@ -737,6 +736,7 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 			opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
 			break;
 		}
+		try_cnt = 0;
 		count++;
 	}
 
@@ -984,7 +984,6 @@ static void *zip_wd_blk_async_run(void *arg)
 		opdata.in_len = bd_pool[i].src_len;
 		opdata.avail_out = out_len;
 
-		try_cnt = 0;
 		tag[i].ctx = ctx;
 		tag[i].td_id = pdata->td_id;
 		tag[i].bd_idx = i;
@@ -1002,7 +1001,7 @@ static void *zip_wd_blk_async_run(void *arg)
 		     opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
 			break;
 		}
-
+		try_cnt = 0;
 		count++;
 	}
 
