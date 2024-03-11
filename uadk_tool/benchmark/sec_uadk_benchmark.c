@@ -544,21 +544,17 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	return 0;
 }
 
-static int init_ctx_config(struct acc_option *options)
+static int specified_device_request_ctx(struct acc_option *options)
 {
-	struct uacce_dev_list *list, *tmp;
-	struct sched_params param = {0};
-	int subtype = options->subtype;
+	struct uacce_dev_list *list = NULL;
+	struct uacce_dev_list *tmp = NULL;
 	char *alg = options->algclass;
 	int mode = options->syncmode;
 	struct uacce_dev *dev = NULL;
-	int max_node, i;
+	int avail_ctx = 0;
 	char *dev_name;
 	int ret = 0;
-
-	max_node = numa_max_node() + 1;
-	if (max_node <= 0)
-		return -EINVAL;
+	int i = 0;
 
 	list = wd_get_accel_list(alg);
 	if (!list) {
@@ -566,15 +562,11 @@ static int init_ctx_config(struct acc_option *options)
 		return -ENODEV;
 	}
 
-	if (strlen(options->device) == 0) {
-		dev = list->dev;
-	} else {
-		for (tmp = list; tmp; tmp = tmp->next) {
-			dev_name = strrchr(tmp->dev->dev_root, '/') + 1;
-			if (!strcmp(dev_name, options->device)) {
-				dev = tmp->dev;
-				break;
-			}
+	for (tmp = list; tmp != NULL; tmp = tmp->next) {
+		dev_name = strrchr(tmp->dev->dev_root, '/') + 1;
+		if (!strcmp(dev_name, options->device)) {
+			dev = tmp->dev;
+			break;
 		}
 	}
 
@@ -584,17 +576,20 @@ static int init_ctx_config(struct acc_option *options)
 		goto free_list;
 	}
 
-	/* If there is no numa, we defualt config to zero */
-	if (dev->numa_id < 0)
-		dev->numa_id = 0;
-
-	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
-	g_ctx_cfg.ctx_num = g_ctxnum;
-	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
-	if (!g_ctx_cfg.ctxs) {
-		ret = -ENOMEM;
+	avail_ctx = wd_get_avail_ctx(dev);
+	if (avail_ctx < 0) {
+		SEC_TST_PRT("failed to get the number of available ctx from %s\n", options->device);
+		ret = avail_ctx;
+		goto free_list;
+	} else if (avail_ctx < g_ctxnum) {
+		SEC_TST_PRT("error: not enough ctx available in %s\n", options->device);
+		ret = -ENODEV;
 		goto free_list;
 	}
+
+	/* If there is no numa, we default config to zero */
+	if (dev->numa_id < 0)
+		dev->numa_id = 0;
 
 	for (i = 0; i < g_ctxnum; i++) {
 		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
@@ -603,9 +598,90 @@ static int init_ctx_config(struct acc_option *options)
 			ret = -ENOMEM;
 			goto free_ctx;
 		}
-
 		g_ctx_cfg.ctxs[i].op_type = 0;
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	}
+
+	wd_free_list_accels(list);
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+free_list:
+	wd_free_list_accels(list);
+
+	return ret;
+}
+
+static int non_specified_device_request_ctx(struct acc_option *options)
+{
+	char *alg = options->algclass;
+	int mode = options->syncmode;
+	struct uacce_dev *dev = NULL;
+	int ret = 0;
+	int i = 0;
+
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			SEC_TST_PRT("failed to get %s device\n", alg);
+			ret = -ENODEV;
+			goto free_ctx;
+		}
+
+		/* If there is no numa, we default config to zero */
+		if (dev->numa_id < 0)
+			dev->numa_id = 0;
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0;
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
+	}
+
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+	return ret;
+}
+
+static int init_ctx_config(struct acc_option *options)
+{
+	struct sched_params param = {0};
+	int subtype = options->subtype;
+	int mode = options->syncmode;
+	int max_node;
+	int ret = 0;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0)
+		return -EINVAL;
+
+	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
+	g_ctx_cfg.ctx_num = g_ctxnum;
+	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
+	if (!g_ctx_cfg.ctxs)
+		return -ENOMEM;
+
+	if (strlen(options->device) != 0)
+		ret = specified_device_request_ctx(options);
+	else
+		ret = non_specified_device_request_ctx(options);
+
+	if (ret) {
+		SEC_TST_PRT("failed to request sec ctx!\n");
+		goto free_ctxs;
 	}
 
 	switch(subtype) {
@@ -652,7 +728,7 @@ static int init_ctx_config(struct acc_option *options)
 		break;
 	}
 	if (ret) {
-		SEC_TST_PRT("failed to cipher ctx!\n");
+		SEC_TST_PRT("failed to init sec ctx!\n");
 		goto free_sched;
 	}
 
@@ -662,12 +738,11 @@ free_sched:
 	wd_sched_rr_release(g_sched);
 
 free_ctx:
-	for (; i >= 0; i--)
+	for (int i = g_ctxnum; i >= 0; i--)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
-	free(g_ctx_cfg.ctxs);
 
-free_list:
-	wd_free_list_accels(list);
+free_ctxs:
+	free(g_ctx_cfg.ctxs);
 
 	return ret;
 }
