@@ -817,9 +817,8 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 
 	while(1) {
 		if (get_run_state() == 0)
-				break;
+			break;
 
-		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = &hw_buff_out[i]; //temp out
@@ -845,6 +844,7 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 		} else if (ret || creq.status) {
 			break;
 		}
+		try_cnt = 0;
 		count++;
 	}
 
@@ -1037,9 +1037,8 @@ static void *zip_uadk_blk_async_run(void *arg)
 
 	while(1) {
 		if (get_run_state() == 0)
-				break;
+			break;
 
-		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = uadk_pool->bds[i].dst;
@@ -1062,6 +1061,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 		} else if (ret || creq.status) {
 			break;
 		}
+		try_cnt = 0;
 		count++;
 	}
 
