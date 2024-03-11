@@ -2681,12 +2681,6 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	switch (driver_type) {
 	case UADK_ALG_SOFT:
 	case UADK_ALG_CE_INSTR:
-		/* No need to alloc resource */
-		if (sched_type != SCHED_POLICY_NONE) {
-			WD_ERR("invalid sched_type\n");
-			return -WD_EINVAL;
-		}
-
 		ctx_config = calloc(1, sizeof(*ctx_config));
 		if (!ctx_config) {
 			WD_ERR("fail to alloc ctx config\n");
@@ -2694,6 +2688,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 		attrs->ctx_config = ctx_config;
 
+		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_NONE, 1, 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to alloc scheduler\n");
@@ -2714,10 +2709,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 
 		break;
 	case UADK_ALG_SVE_INSTR:
-		/* Todo lock cpu core */
-		if (sched_type != SCHED_POLICY_SINGLE)
-			return -WD_EINVAL;
-
+		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_SINGLE, 1, 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to alloc scheduler\n");
