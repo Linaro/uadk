@@ -594,6 +594,7 @@ static int benchmark_run(struct acc_option *option)
 		} else if (option->modetype == NOSVA_MODE) {
 			ret = zip_wd_benchmark(option);
 		}
+		break;
 	case TRNG_TYPE:
 		if (option->modetype == SVA_MODE)
 			ACC_TST_PRT("TRNG not support sva mode..\n");
@@ -727,7 +728,8 @@ static void print_help(void)
 	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft/instr/multibuff]: start UADK or Warpdrive or Openssl or Instruction mode test\n");
 	ACC_TST_PRT("    [--sync/--async]: start asynchronous/synchronous mode test\n");
 	ACC_TST_PRT("    [--opt 0,1,2,3,4,5]:\n");
-	ACC_TST_PRT("        SEC/ZIP: 0/1:encryption/decryption or compression/decompression\n");
+	ACC_TST_PRT("        SEC: cipher,aead: 0/1:encryption/decryption; digest: 0/1:normal/hmac\n");
+	ACC_TST_PRT("        ZIP: 0~1:block compression, block decompression; 2~3:stream compression, stream decompression\n");
 	ACC_TST_PRT("        HPRE: 0~5:keygen, key compute, Enc, Dec, Sign, Verify\n");
 	ACC_TST_PRT("    [--pktlen]:\n");
 	ACC_TST_PRT("        set the length of BD message in bytes\n");
