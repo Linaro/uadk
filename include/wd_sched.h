@@ -21,7 +21,7 @@ enum sched_policy_type {
 	SCHED_POLICY_RR = 0,
 	/* requests will no need ctxs */
 	SCHED_POLICY_NONE,
-	/* requests will   need a fixed ctx */
+	/* requests will need a fixed ctx */
 	SCHED_POLICY_SINGLE,
 	SCHED_POLICY_BUTT,
 };
