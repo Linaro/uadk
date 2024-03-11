@@ -1165,6 +1165,7 @@ static void *sec_uadk_aead_async(void *arg)
 	areq.mac_bytes = auth_size;
 	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
+	areq.msg_state = 0;
 	if (pdata->is_union)
 		areq.mac_bytes = 32;
 	if (areq.op_type) // decrypto
@@ -1396,6 +1397,7 @@ static void *sec_uadk_aead_sync(void *arg)
 	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
 	areq.mac_bytes = g_maclen;
+	areq.msg_state = 0;
 	if (areq.op_type) // decrypto
 		areq.out_bytes = g_pktlen + 16; // aadsize = 16;
 	else
