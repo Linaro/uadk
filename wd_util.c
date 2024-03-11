@@ -2111,8 +2111,9 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		return -WD_ENOMEM;
 	}
 
+	/* Only hw driver support environment variable */
 	var_s = secure_getenv(env_name);
-	if (var_s && strlen(var_s)) {
+	if (var_s && strlen(var_s) && driver->calc_type == UADK_ALG_HW) {
 		/* environment variable has the highest priority */
 		ret = wd_env_set_ctx_nums(driver->alg_name, env_name, var_s,
 					  ctx_params, max_op_type);
