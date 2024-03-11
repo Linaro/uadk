@@ -105,6 +105,7 @@ enum alg_type {
 	X25519_TYPE,
 	X448_TYPE,
 	DIGEST_INSTR_TYPE,
+	CIPHER_INSTR_TYPE,
 };
 
 enum sync_type {
@@ -172,6 +173,9 @@ enum test_alg {
 	DES3_192_CBC,
 	SM4_128_ECB,
 	SM4_128_CBC,
+	SM4_128_CBC_CS1,
+	SM4_128_CBC_CS2,
+	SM4_128_CBC_CS3,
 	SM4_128_CTR,
 	SM4_128_OFB,
 	SM4_128_CFB,
