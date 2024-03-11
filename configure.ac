@@ -21,6 +21,9 @@ LT_INIT
 AC_SUBST([hardcode_into_libs], [no])
 AM_PROG_CC_C_O
 
+# Support assembler
+AM_PROG_AS
+
 AC_ARG_ENABLE([debug-log],
 	AS_HELP_STRING([--enable-debug-log], [enable debug logging globally]),
 	[ AS_IF([test "x$enable_debug_log" = "xyes"],
