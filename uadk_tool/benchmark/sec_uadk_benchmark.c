@@ -346,6 +346,24 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		mode = WD_CIPHER_CBC;
 		alg = WD_CIPHER_SM4;
 		break;
+	case SM4_128_CBC_CS1:
+		keysize = 16;
+		ivsize = 16;
+		mode = WD_CIPHER_CBC_CS1;
+		alg = WD_CIPHER_SM4;
+		break;
+	case SM4_128_CBC_CS2:
+		keysize = 16;
+		ivsize = 16;
+		mode = WD_CIPHER_CBC_CS2;
+		alg = WD_CIPHER_SM4;
+		break;
+	case SM4_128_CBC_CS3:
+		keysize = 16;
+		ivsize = 16;
+		mode = WD_CIPHER_CBC_CS3;
+		alg = WD_CIPHER_SM4;
+		break;
 	case SM4_128_CTR:
 		keysize = 16;
 		ivsize = 16;
@@ -673,6 +691,7 @@ static void uninit_ctx_config2(int subtype)
 	/* uninit2 */
 	switch(subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		wd_cipher_uninit2();
 		break;
 	case AEAD_TYPE:
@@ -706,6 +725,11 @@ static int init_ctx_config2(struct acc_option *options)
 		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 		if (ret)
 			SEC_TST_PRT("failed to do cipher init2!\n");
+		break;
+	case CIPHER_INSTR_TYPE:
+		ret = wd_cipher_init2(alg_name, SCHED_POLICY_NONE, TASK_INSTR);
+		if (ret)
+			SEC_TST_PRT("failed to do cipher intruction init2!\n");
 		break;
 	case AEAD_TYPE:
 		ret = wd_aead_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
@@ -1542,6 +1566,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 
 	switch (options->subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		uadk_sec_sync_run = sec_uadk_cipher_sync;
 		break;
 	case AEAD_TYPE:
