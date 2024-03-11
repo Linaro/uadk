@@ -53,6 +53,7 @@ typedef struct uadk_thread_res {
 	bool is_union;
 	u32 dalg;
 	u32 dmode;
+	u32 d_outbytes;
 } thread_data;
 
 static struct wd_ctx_config g_ctx_cfg;
@@ -146,6 +147,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	u32 algtype = options->algtype;
 	u32 optype = options->optype;
 	bool is_union = false;
+	u32 out_bytes = 32;
 	u8 keysize = 0;
 	u8 ivsize = 0;
 	u8 dmode = 0;
@@ -472,45 +474,54 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	case SM3_ALG:		// digest mode is optype
 		keysize = 4;
 		mode = optype;
+		out_bytes = 32;
 		alg = WD_DIGEST_SM3;
 		break;
 	case MD5_ALG:
 		keysize = 4;
+		out_bytes = 16;
 		mode = optype;
 		alg = WD_DIGEST_MD5;
 		break;
 	case SHA1_ALG:
 		keysize = 4;
+		out_bytes = 20;
 		mode = optype;
 		alg = WD_DIGEST_SHA1;
 		break;
 	case SHA256_ALG:
 		keysize = 4;
+		out_bytes = 32;
 		mode = optype;
 		alg = WD_DIGEST_SHA256;
 		break;
 	case SHA224_ALG:
 		keysize = 4;
+		out_bytes = 28;
 		mode = optype;
 		alg = WD_DIGEST_SHA224;
 		break;
 	case SHA384_ALG:
 		keysize = 4;
+		out_bytes = 48;
 		mode = optype;
 		alg = WD_DIGEST_SHA384;
 		break;
 	case SHA512_ALG:
 		keysize = 4;
+		out_bytes = 64;
 		mode = optype;
 		alg = WD_DIGEST_SHA512;
 		break;
 	case SHA512_224:
 		keysize = 4;
+		out_bytes = 28;
 		mode = optype;
 		alg = WD_DIGEST_SHA512_224;
 		break;
 	case SHA512_256:
 		keysize = 4;
+		out_bytes = 32;
 		mode = optype;
 		alg = WD_DIGEST_SHA512_256;
 		break;
@@ -528,6 +539,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	tddata->is_union = is_union;
 	tddata->optype = options->optype;
 	tddata->subtype = options->subtype;
+	tddata->d_outbytes = out_bytes;
 
 	return 0;
 }
@@ -698,7 +710,6 @@ static void uninit_ctx_config2(int subtype)
 		wd_aead_uninit2();
 		break;
 	case DIGEST_TYPE:
-	case DIGEST_INSTR_TYPE:
 		wd_digest_uninit2();
 		break;
 	default:
@@ -737,14 +748,9 @@ static int init_ctx_config2(struct acc_option *options)
 			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
-		ret = wd_digest_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		ret = wd_digest_init2(alg_name, options->sched_type, options->task_type);
 		if (ret)
 			SEC_TST_PRT("failed to do digest init2!\n");
-		break;
-	case DIGEST_INSTR_TYPE:
-		ret = wd_digest_init2(alg_name, SCHED_POLICY_NONE, TASK_INSTR);
-		if (ret)
-			SEC_TST_PRT("failed to do digest intruction init2!\n");
 		break;
 	}
 	if (ret) {
@@ -1305,8 +1311,8 @@ static void *sec_uadk_digest_async(void *arg)
 		}
 	}
 	dreq.in_bytes = g_pktlen;
-	dreq.out_bytes = 16;
-	dreq.out_buf_bytes = 16;
+	dreq.out_bytes = pdata->d_outbytes;
+	dreq.out_buf_bytes = pdata->d_outbytes;
 	dreq.data_fmt = 0;
 	dreq.state = 0;
 	dreq.has_next = 0;
@@ -1525,8 +1531,8 @@ static void *sec_uadk_digest_sync(void *arg)
 		}
 	}
 	dreq.in_bytes = g_pktlen;
-	dreq.out_bytes = 32;
-	dreq.out_buf_bytes = 32;
+	dreq.out_bytes = pdata->d_outbytes;
+	dreq.out_buf_bytes = pdata->d_outbytes;
 	dreq.data_fmt = 0;
 	dreq.state = 0;
 	dreq.has_next = 0;
@@ -1573,7 +1579,6 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		uadk_sec_sync_run = sec_uadk_aead_sync;
 		break;
 	case DIGEST_TYPE:
-	case DIGEST_INSTR_TYPE:
 		uadk_sec_sync_run = sec_uadk_digest_sync;
 		break;
 	default:
@@ -1591,6 +1596,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
+		threads_args[i].d_outbytes = threads_option.d_outbytes;
 		ret = pthread_create(&tdid[i], NULL, uadk_sec_sync_run, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create sync thread fail!\n");
@@ -1662,6 +1668,7 @@ int sec_uadk_async_threads(struct acc_option *options)
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
+		threads_args[i].d_outbytes = threads_option.d_outbytes;
 		ret = pthread_create(&tdid[i], NULL, uadk_sec_async_run, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create async thread fail!\n");

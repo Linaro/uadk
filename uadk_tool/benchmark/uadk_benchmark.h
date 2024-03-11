@@ -77,6 +77,8 @@ struct acc_option {
 	u32 complevel;
 	u32 inittype;
 	bool latency;
+	u32 sched_type;
+	int task_type;
 };
 
 enum acc_type {
@@ -104,7 +106,6 @@ enum alg_type {
 	SM2_TYPE,
 	X25519_TYPE,
 	X448_TYPE,
-	DIGEST_INSTR_TYPE,
 	CIPHER_INSTR_TYPE,
 };
 
