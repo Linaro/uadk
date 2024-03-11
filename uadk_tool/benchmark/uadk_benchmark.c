@@ -2,6 +2,8 @@
 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "include/wd_alg_common.h"
+#include "include/wd_sched.h"
 
 #include "uadk_benchmark.h"
 #include "sec_uadk_benchmark.h"
@@ -38,7 +40,8 @@ enum test_type {
 	SVA_SOFT = 0x5,
 	NOSVA_SOFT = 0x6,
 	INSTR_MODE = 0x7,
-	INVALID_MODE = 0x8,
+	MULTIBUF_MODE = 0x8,
+	INVALID_MODE = 0x9,
 };
 
 struct acc_sva_item {
@@ -53,6 +56,7 @@ static struct acc_sva_item sys_name_item[] = {
 	{"sva-soft", SVA_SOFT},
 	{"nosva-soft", NOSVA_SOFT},
 	{"instr", INSTR_MODE},
+	{"multibuff", MULTIBUF_MODE},
 };
 
 struct acc_alg_item {
@@ -493,11 +497,15 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = AEAD_TYPE;
 		} else if (option->algtype <= SHA512_256) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "digest");
-			if (option->modetype == INSTR_MODE)
-				option->subtype = DIGEST_INSTR_TYPE;
-			else
-				option->subtype = DIGEST_TYPE;
+			option->subtype = DIGEST_TYPE;
 			option->acctype = SEC_TYPE;
+			if (option->modetype == INSTR_MODE) {
+				option->sched_type = SCHED_POLICY_NONE;
+				option->task_type = TASK_INSTR;
+			} else if (option->modetype == MULTIBUF_MODE) {
+				option->sched_type = SCHED_POLICY_SINGLE;
+				option->task_type = TASK_INSTR;
+			}
 		}
 	}
 }
@@ -559,7 +567,9 @@ static int benchmark_run(struct acc_option *option)
 
 	switch(option->acctype) {
 	case SEC_TYPE:
-		if ((option->modetype == SVA_MODE) || (option->modetype == INSTR_MODE)) {
+		if ((option->modetype == SVA_MODE) ||
+		    (option->modetype == INSTR_MODE) ||
+		    (option->modetype == MULTIBUF_MODE)) {
 			ret = sec_uadk_benchmark(option);
 		} else if (option->modetype == NOSVA_MODE) {
 			ret = sec_wd_benchmark(option);
@@ -623,6 +633,8 @@ int acc_benchmark_run(struct acc_option *option)
 	int i, ret = 0;
 	int status;
 
+	option->sched_type = SCHED_POLICY_RR;
+	option->task_type = TASK_HW;
 	parse_alg_param(option);
 	dump_param(option);
 	g_run_options = option;
@@ -712,7 +724,7 @@ static void print_help(void)
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
 	ACC_TST_PRT("        The name of the algorithm for benchmarking\n");
-	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft/instr]: start UADK or Warpdrive or Openssl or Instruction mode test\n");
+	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft/instr/multibuff]: start UADK or Warpdrive or Openssl or Instruction mode test\n");
 	ACC_TST_PRT("    [--sync/--async]: start asynchronous/synchronous mode test\n");
 	ACC_TST_PRT("    [--opt 0,1,2,3,4,5]:\n");
 	ACC_TST_PRT("        SEC/ZIP: 0/1:encryption/decryption or compression/decompression\n");
