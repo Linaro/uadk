@@ -679,6 +679,7 @@ static void uninit_ctx_config2(int subtype)
 		wd_aead_uninit2();
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		wd_digest_uninit2();
 		break;
 	default:
@@ -703,12 +704,23 @@ static int init_ctx_config2(struct acc_option *options)
 	switch(subtype) {
 	case CIPHER_TYPE:
 		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		if (ret)
+			SEC_TST_PRT("failed to do cipher init2!\n");
 		break;
 	case AEAD_TYPE:
 		ret = wd_aead_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		if (ret)
+			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
 		ret = wd_digest_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		if (ret)
+			SEC_TST_PRT("failed to do digest init2!\n");
+		break;
+	case DIGEST_INSTR_TYPE:
+		ret = wd_digest_init2(alg_name, SCHED_POLICY_NONE, TASK_INSTR);
+		if (ret)
+			SEC_TST_PRT("failed to do digest intruction init2!\n");
 		break;
 	}
 	if (ret) {
@@ -716,7 +728,7 @@ static int init_ctx_config2(struct acc_option *options)
 		return ret;
 	}
 
-	return 0;
+	return ret;
 }
 
 static void get_aead_data(u8 *addr, u32 size)
@@ -1489,8 +1501,8 @@ static void *sec_uadk_digest_sync(void *arg)
 		}
 	}
 	dreq.in_bytes = g_pktlen;
-	dreq.out_bytes = 16;
-	dreq.out_buf_bytes = 16;
+	dreq.out_bytes = 32;
+	dreq.out_buf_bytes = 32;
 	dreq.data_fmt = 0;
 	dreq.state = 0;
 	dreq.has_next = 0;
@@ -1536,8 +1548,12 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		uadk_sec_sync_run = sec_uadk_aead_sync;
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		uadk_sec_sync_run = sec_uadk_digest_sync;
 		break;
+	default:
+		SEC_TST_PRT("Invalid subtype!\n");
+		return -EINVAL;
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
