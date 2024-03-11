@@ -6,27 +6,28 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <linux/random.h>
 #include <pthread.h>
-#include <unistd.h>
 #include <stdbool.h>
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <signal.h>
-#include <linux/random.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
+#include <unistd.h>
 
-#define ACC_TST_PRT printf
-#define PROCESS_NUM	32
-#define THREADS_NUM	64
-#define MAX_CTX_NUM	64
+#define ACC_TST_PRT		printf
+#define PROCESS_NUM		32
+#define THREADS_NUM		64
+#define MAX_CTX_NUM		64
 #define MAX_TIME_SECONDS	128
-#define BYTES_TO_MB	20
-#define MAX_OPT_TYPE	6
-#define MAX_DATA_SIZE	(15 * 1024 * 1024)
-#define MAX_ALG_NAME 64
-#define ACC_QUEUE_SIZE	1024
+#define BYTES_TO_MB		20
+#define MAX_OPT_TYPE		6
+#define MAX_DATA_SIZE		(15 * 1024 * 1024)
+#define MAX_ALG_NAME		64
+#define ACC_QUEUE_SIZE		1024
+#define MAX_DEVICE_NAME		64
 
 #define MAX_BLOCK_NM		16384 /* BLOCK_NUM must 4 times of POOL_LENTH */
 #define MAX_POOL_LENTH		4096
@@ -35,14 +36,14 @@
 #define SEC_2_USEC		1000000
 #define HASH_ZISE		16
 
+#define SCHED_SINGLE		"sched_single"
+#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
+#define gettid()		syscall(__NR_gettid)
+
 typedef unsigned long long u64;
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
-
-#define SCHED_SINGLE "sched_single"
-#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
-#define gettid() syscall(__NR_gettid)
 
 /**
  * struct acc_option - Define the test acc app option list.
@@ -55,9 +56,10 @@ typedef unsigned char u8;
  * @latency: test packet running time
  */
 struct acc_option {
-	char algname[64];
+	char algname[MAX_ALG_NAME];
 	char algclass[64];
 	char engine[64];
+	char device[MAX_DEVICE_NAME];
 	u32 algtype;
 	u32 modetype;
 	u32 optype;
