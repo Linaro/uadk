@@ -86,7 +86,7 @@ libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h aes.h galois.h
 
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
-		hisi_qm_udrv.h wd_hpre_drv.h
+		hisi_qm_udrv.h
 if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV -fPIC
 AM_CFLAGS += -DWD_NO_LOG
