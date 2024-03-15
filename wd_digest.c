@@ -53,7 +53,7 @@ struct wd_digest_stream_data {
 	/* Total data length for stream mode */
 	__u64 long_data_len;
 	/*
-	 * Notify the stream message state, zero is frist message,
+	 * Notify the stream message state, zero is first message,
 	 * non-zero is middle or final message.
 	 */
 	int msg_state;

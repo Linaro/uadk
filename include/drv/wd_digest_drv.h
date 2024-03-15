@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 enum hash_block_type {
-	HASH_FRIST_BLOCK,
+	HASH_FIRST_BLOCK,
 	HASH_MIDDLE_BLOCK,
 	HASH_END_BLOCK,
 	HASH_SINGLE_BLOCK,
@@ -65,13 +65,13 @@ static inline enum hash_block_type get_hash_block_type(struct wd_digest_msg *msg
 {
 	/*
 	 *     [has_next , iv_bytes]
-	 *     [    1    ,     0   ]   =   long hash(frist bd)
+	 *     [    1    ,     0   ]   =   long hash(first bd)
 	 *     [    1    ,     1   ]   =   long hash(middle bd)
 	 *     [    0    ,     1   ]   =   long hash(end bd)
 	 *     [    0    ,     0   ]   =   block hash(single bd)
 	 */
 	if (msg->has_next && !msg->iv_bytes)
-		return HASH_FRIST_BLOCK;
+		return HASH_FIRST_BLOCK;
 	else if (msg->has_next && msg->iv_bytes)
 		return HASH_MIDDLE_BLOCK;
 	else if (!msg->has_next && msg->iv_bytes)
