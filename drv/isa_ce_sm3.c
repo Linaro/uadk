@@ -187,7 +187,7 @@ static int do_sm3_ce(struct wd_digest_msg *msg, __u8 *out_digest)
 		sm3_ce_update(&sctx, data, data_len, sm3_ce_block_compress);
 		sm3_ce_final(&sctx, out_digest, sm3_ce_block_compress);
 		break;
-	case HASH_FRIST_BLOCK:
+	case HASH_FIRST_BLOCK:
 		sm3_ce_init(&sctx);
 		sm3_ce_update(&sctx, data, data_len, sm3_ce_block_compress);
 		trans_output_result(out_digest, sctx.word_reg);
@@ -305,7 +305,7 @@ static int do_hmac_sm3_ce(struct wd_digest_msg *msg, __u8 *out_hmac)
 		sm3_ce_hmac_update(&hctx, data, data_len);
 		sm3_ce_hmac_final(&hctx, out_hmac);
 		break;
-	case HASH_FRIST_BLOCK:
+	case HASH_FIRST_BLOCK:
 		sm3_ce_hmac_init(&hctx, key, key_len);
 		sm3_ce_hmac_update(&hctx, data, data_len);
 		trans_output_result(out_hmac, hctx.sctx.word_reg);
