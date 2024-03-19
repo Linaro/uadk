@@ -296,23 +296,29 @@ out_clear_init:
 	return ret;
 }
 
-static void wd_digest_uninit_nolock(void)
-{
-	wd_uninit_async_request_pool(&wd_digest_setting.pool);
-	wd_clear_sched(&wd_digest_setting.sched);
-	wd_alg_uninit_driver(&wd_digest_setting.config,
-			     wd_digest_setting.driver);
-}
-
-void wd_digest_uninit(void)
+static int wd_digest_uninit_nolock(void)
 {
 	enum wd_status status;
 
 	wd_alg_get_init(&wd_digest_setting.status, &status);
 	if (status == WD_UNINIT)
+		return -WD_EINVAL;
+
+	wd_uninit_async_request_pool(&wd_digest_setting.pool);
+	wd_clear_sched(&wd_digest_setting.sched);
+	wd_alg_uninit_driver(&wd_digest_setting.config,
+			     wd_digest_setting.driver);
+	return 0;
+}
+
+void wd_digest_uninit(void)
+{
+	int ret;
+
+	ret = wd_digest_uninit_nolock();
+	if (ret)
 		return;
 
-	wd_digest_uninit_nolock();
 	wd_digest_close_driver();
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
@@ -419,13 +425,12 @@ out_uninit:
 
 void wd_digest_uninit2(void)
 {
-	enum wd_status status;
+	int ret;
 
-	wd_alg_get_init(&wd_digest_setting.status, &status);
-	if (status == WD_UNINIT)
+	ret = wd_digest_uninit_nolock();
+	if (ret)
 		return;
 
-	wd_digest_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
 	wd_alg_drv_unbind(wd_digest_setting.driver);
 	wd_dlclose_drv(wd_digest_setting.dlh_list);
