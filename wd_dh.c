@@ -127,6 +127,12 @@ out_clear_ctx_config:
 
 static int wd_dh_common_uninit(void)
 {
+	enum wd_status status;
+
+	wd_alg_get_init(&wd_dh_setting.status, &status);
+	if (status == WD_UNINIT)
+		return -WD_EINVAL;
+
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 
