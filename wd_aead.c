@@ -485,23 +485,30 @@ out_clear_init:
 	return ret;
 }
 
-static void wd_aead_uninit_nolock(void)
-{
-	wd_uninit_async_request_pool(&wd_aead_setting.pool);
-	wd_clear_sched(&wd_aead_setting.sched);
-	wd_alg_uninit_driver(&wd_aead_setting.config,
-			     wd_aead_setting.driver);
-}
-
-void wd_aead_uninit(void)
+static int wd_aead_uninit_nolock(void)
 {
 	enum wd_status status;
 
 	wd_alg_get_init(&wd_aead_setting.status, &status);
 	if (status == WD_UNINIT)
+		return -WD_EINVAL;
+
+	wd_uninit_async_request_pool(&wd_aead_setting.pool);
+	wd_clear_sched(&wd_aead_setting.sched);
+	wd_alg_uninit_driver(&wd_aead_setting.config,
+			     wd_aead_setting.driver);
+
+	return 0;
+}
+
+void wd_aead_uninit(void)
+{
+	int ret;
+
+	ret = wd_aead_uninit_nolock();
+	if (ret)
 		return;
 
-	wd_aead_uninit_nolock();
 	wd_aead_close_driver();
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
@@ -614,13 +621,12 @@ out_uninit:
 
 void wd_aead_uninit2(void)
 {
-	enum wd_status status;
+	int ret;
 
-	wd_alg_get_init(&wd_aead_setting.status, &status);
-	if (status == WD_UNINIT)
+	ret = wd_aead_uninit_nolock();
+	if (ret)
 		return;
 
-	wd_aead_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_aead_init_attrs);
 	wd_alg_drv_unbind(wd_aead_setting.driver);
 	wd_dlclose_drv(wd_aead_setting.dlh_list);
