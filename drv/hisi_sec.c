@@ -1553,7 +1553,7 @@ static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
 	if (ret)
 		return ret;
 
-	if (block_type == HASH_FRIST_BLOCK) {
+	if (block_type == HASH_FIRST_BLOCK) {
 		/* Long hash first */
 		sqe->ai_apd_cs = AI_GEN_INNER;
 		sqe->ai_apd_cs |= AUTHPAD_NOPAD << AUTHPAD_OFFSET;
@@ -1635,7 +1635,7 @@ static int digest_bd2_type_check(struct wd_digest_msg *msg)
 	enum hash_block_type type = get_hash_block_type(msg);
 
 	/* Long hash first and middle bd */
-	if (type == HASH_FRIST_BLOCK || type == HASH_MIDDLE_BLOCK) {
+	if (type == HASH_FIRST_BLOCK || type == HASH_MIDDLE_BLOCK) {
 		WD_ERR("hardware v2 not supports 0 size in long hash!\n");
 		return -WD_EINVAL;
 	}
@@ -1653,7 +1653,7 @@ static int digest_bd3_type_check(struct wd_digest_msg *msg)
 {
 	enum hash_block_type type = get_hash_block_type(msg);
 	/* Long hash first and middle bd */
-	if (type == HASH_FRIST_BLOCK || type == HASH_MIDDLE_BLOCK) {
+	if (type == HASH_FIRST_BLOCK || type == HASH_MIDDLE_BLOCK) {
 		WD_ERR("invalid: hardware v3 not supports 0 size in long hash!\n");
 		return -WD_EINVAL;
 	}
@@ -1906,7 +1906,7 @@ static int fill_digest_long_hash3(handle_t h_qp, struct wd_digest_msg *msg,
 	if (ret)
 		return ret;
 
-	if (block_type == HASH_FRIST_BLOCK) {
+	if (block_type == HASH_FIRST_BLOCK) {
 		/* Long hash first */
 		sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
 		sqe->stream_scene.stream_auth_pad = AUTHPAD_NOPAD;

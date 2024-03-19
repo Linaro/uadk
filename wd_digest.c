@@ -53,7 +53,7 @@ struct wd_digest_stream_data {
 	/* Total data length for stream mode */
 	__u64 long_data_len;
 	/*
-	 * Notify the stream message state, zero is frist message,
+	 * Notify the stream message state, zero is first message,
 	 * non-zero is middle or final message.
 	 */
 	int msg_state;
@@ -222,7 +222,7 @@ static void wd_digest_clear_status(void)
 }
 
 static int wd_digest_init_nolock(struct wd_ctx_config *config,
-								 struct wd_sched *sched)
+				 struct wd_sched *sched)
 {
 	int ret;
 

@@ -91,6 +91,11 @@ struct acc_alg_item {
 	char *algtype;
 };
 
+struct wd_ce_ctx {
+	char *drv_name;
+	void *priv;
+};
+
 static struct acc_alg_item alg_options[] = {
 	{"zlib", "zlib"},
 	{"gzip", "gzip"},
@@ -229,7 +234,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 			ret = -WD_EINVAL;
 			goto err_out;
 		}
-
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 		if (ret) {
@@ -2107,8 +2111,9 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		return -WD_ENOMEM;
 	}
 
+	/* Only hw driver support environment variable */
 	var_s = secure_getenv(env_name);
-	if (var_s && strlen(var_s)) {
+	if (var_s && strlen(var_s) && driver->calc_type == UADK_ALG_HW) {
 		/* environment variable has the highest priority */
 		ret = wd_env_set_ctx_nums(driver->alg_name, env_name, var_s,
 					  ctx_params, max_op_type);
@@ -2612,14 +2617,44 @@ out_freelist:
 	return ret;
 }
 
+static int wd_alg_ce_ctx_init(struct wd_init_attrs *attrs)
+{
+	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+
+	ctx_config->ctx_num = 1;
+	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
+	if (!ctx_config->ctxs) {
+		return -WD_ENOMEM;
+		WD_ERR("failed to alloc ctxs!\n");
+	}
+	ctx_config->ctxs[0].ctx = (handle_t)calloc(1, sizeof(struct wd_ce_ctx));
+
+	return WD_SUCCESS;
+}
+
+static void wd_alg_ce_ctx_uninit(struct wd_ctx_config *ctx_config)
+{
+	__u32 i;
+
+	for (i = 0; i < ctx_config->ctx_num; i++) {
+		if (ctx_config->ctxs[i].ctx) {
+			free((struct wd_ce_ctx *)ctx_config->ctxs[i].ctx);
+			ctx_config->ctxs[i].ctx = 0;
+		}
+	}
+
+	free(ctx_config->ctxs);
+}
+
 static void wd_alg_ctx_uninit(struct wd_ctx_config *ctx_config)
 {
 	__u32 i;
 
-	for (i = 0; i < ctx_config->ctx_num; i++)
+	for (i = 0; i < ctx_config->ctx_num; i++) {
 		if (ctx_config->ctxs[i].ctx) {
 			wd_release_ctx(ctx_config->ctxs[i].ctx);
 			ctx_config->ctxs[i].ctx = 0;
+		}
 	}
 
 	free(ctx_config->ctxs);
@@ -2633,9 +2668,9 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
-	char *alg = attrs->alg;
 	int driver_type = UADK_ALG_HW;
-	int ret;
+	char *alg = attrs->alg;
+	int ret = 0;
 
 	if (!attrs->ctx_params)
 		return -WD_EINVAL;
@@ -2646,28 +2681,35 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	switch (driver_type) {
 	case UADK_ALG_SOFT:
 	case UADK_ALG_CE_INSTR:
-		/* No need to	alloc resource */
-		if (sched_type != SCHED_POLICY_NONE)
-			return -WD_EINVAL;
+		ctx_config = calloc(1, sizeof(*ctx_config));
+		if (!ctx_config) {
+			WD_ERR("fail to alloc ctx config\n");
+			return -WD_ENOMEM;
+		}
+		attrs->ctx_config = ctx_config;
 
+		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_NONE, 1, 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to alloc scheduler\n");
-			return -WD_EINVAL;
+			goto out_ctx_config;
 		}
+
 		attrs->sched = alg_sched;
 
-		ret = wd_sched_rr_instance(alg_sched, NULL);
+		ret = wd_alg_ce_ctx_init(attrs);
 		if (ret) {
-			WD_ERR("fail to instance scheduler\n");
+			WD_ERR("fail to init ce ctx\n");
 			goto out_freesched;
 		}
+
+		ret = alg_init_func(ctx_config, alg_sched);
+		if (ret)
+			goto out_pre_init;
+
 		break;
 	case UADK_ALG_SVE_INSTR:
-		/* Todo lock cpu core */
-		if (sched_type != SCHED_POLICY_SINGLE)
-			return -WD_EINVAL;
-
+		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_SINGLE, 1, 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to alloc scheduler\n");
@@ -2720,7 +2762,10 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	return 0;
 
 out_pre_init:
-	wd_alg_ctx_uninit(ctx_config);
+	if (driver_type == UADK_ALG_CE_INSTR || driver_type == UADK_ALG_SOFT)
+		wd_alg_ce_ctx_uninit(ctx_config);
+	else
+		wd_alg_ctx_uninit(ctx_config);
 out_freesched:
 	wd_sched_rr_release(alg_sched);
 out_ctx_config:
@@ -2733,10 +2778,19 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
 {
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	struct wd_sched *alg_sched = attrs->sched;
+	int driver_type = attrs->driver->calc_type;
 
-	if (ctx_config) {
-		wd_alg_ctx_uninit(ctx_config);
-		free(ctx_config);
+	if (driver_type == UADK_ALG_CE_INSTR || driver_type == UADK_ALG_SOFT) {
+		if (ctx_config) {
+			wd_alg_ce_ctx_uninit(ctx_config);
+			free(ctx_config);
+		}
+	} else {
+		if (ctx_config) {
+			wd_alg_ctx_uninit(ctx_config);
+			free(ctx_config);
+		}
 	}
+
 	wd_sched_rr_release(alg_sched);
 }
