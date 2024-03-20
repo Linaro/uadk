@@ -28,6 +28,8 @@ void sm4_v8_set_decrypt_key(const unsigned char *userKey, struct SM4_KEY *key);
 void sm4_v8_cbc_encrypt(const unsigned char *in, unsigned char *out,
 			size_t length, const struct SM4_KEY *key,
 			unsigned char *ivec, const int enc);
+void sm4_v8_ecb_encrypt(const unsigned char *in, unsigned char *out,
+			size_t length, const struct SM4_KEY *key, const int enc);
 void sm4_v8_ctr32_encrypt_blocks(const unsigned char *in, unsigned char *out,
 			size_t len, const void *key, const unsigned char ivec[16]);
 

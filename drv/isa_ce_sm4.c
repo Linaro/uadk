@@ -128,6 +128,16 @@ static void sm4_cbc_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rke
 	sm4_v8_cbc_encrypt(msg->in, msg->out, msg->in_bytes, rkey_dec, msg->iv, SM4_DECRYPT);
 }
 
+static void sm4_ecb_encrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_enc)
+{
+	sm4_v8_ecb_encrypt(msg->in, msg->out, msg->in_bytes, rkey_enc, SM4_ENCRYPT);
+}
+
+static void sm4_ecb_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_dec)
+{
+	sm4_v8_ecb_encrypt(msg->in, msg->out, msg->in_bytes, rkey_dec, SM4_DECRYPT);
+}
+
 void sm4_set_encrypt_key(const __u8 *userKey, struct SM4_KEY *key)
 {
 	sm4_v8_set_encrypt_key(userKey, key);
@@ -254,6 +264,12 @@ static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 		sm4_set_decrypt_key(msg->key, &rkey);
 
 	switch (msg->mode) {
+	case WD_CIPHER_ECB:
+		if (msg->op_type == WD_CIPHER_ENCRYPTION)
+			sm4_ecb_encrypt(msg, &rkey);
+		else
+			sm4_ecb_decrypt(msg, &rkey);
+		break;
 	case WD_CIPHER_CBC:
 		if (msg->op_type == WD_CIPHER_ENCRYPTION)
 			sm4_cbc_encrypt(msg, &rkey);
@@ -317,6 +333,7 @@ static struct wd_alg_driver cipher_alg_driver[] = {
 	GEN_CE_ALG_DRIVER("ctr(sm4)", cipher),
 	GEN_CE_ALG_DRIVER("cfb(sm4)", cipher),
 	GEN_CE_ALG_DRIVER("xts(sm4)", cipher),
+	GEN_CE_ALG_DRIVER("ecb(sm4)", cipher),
 };
 
 static void __attribute__((constructor)) isa_ce_probe(void)

@@ -506,6 +506,269 @@ sm4_v8_cbc_encrypt:
 	ldp	d8,d9,[sp],#16
 	ret
 .size	sm4_v8_cbc_encrypt,.-sm4_v8_cbc_encrypt
+.globl	sm4_v8_ecb_encrypt
+.type	sm4_v8_ecb_encrypt,%function
+.align	5
+sm4_v8_ecb_encrypt:
+	AARCH64_VALID_CALL_TARGET
+	ld1	{v0.4s,v1.4s,v2.4s,v3.4s},[x3],#64
+	ld1	{v4.4s,v5.4s,v6.4s,v7.4s},[x3]
+1:
+	cmp	x2,#64
+	b.lt	1f
+	ld1	{v16.4s,v17.4s,v18.4s,v19.4s},[x0],#64
+	cmp	x2,#128
+	b.lt	2f
+	ld1	{v20.4s,v21.4s,v22.4s,v23.4s},[x0],#64
+	// 8 blocks
+#ifndef __ARMEB__
+	rev32	v16.16b,v16.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v17.16b,v17.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v18.16b,v18.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v19.16b,v19.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v20.16b,v20.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v21.16b,v21.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v22.16b,v22.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v23.16b,v23.16b
+#endif
+	sm4e v16.4s,v0.4s;
+	sm4e v17.4s,v0.4s;
+	sm4e v18.4s,v0.4s;
+	sm4e v19.4s,v0.4s;
+
+	sm4e v16.4s,v1.4s;
+	sm4e v17.4s,v1.4s;
+	sm4e v18.4s,v1.4s;
+	sm4e v19.4s,v1.4s;
+
+	sm4e v16.4s,v2.4s;
+	sm4e v17.4s,v2.4s;
+	sm4e v18.4s,v2.4s;
+	sm4e v19.4s,v2.4s;
+
+	sm4e v16.4s,v3.4s;
+	sm4e v17.4s,v3.4s;
+	sm4e v18.4s,v3.4s;
+	sm4e v19.4s,v3.4s;
+
+	sm4e v16.4s,v4.4s;
+	sm4e v17.4s,v4.4s;
+	sm4e v18.4s,v4.4s;
+	sm4e v19.4s,v4.4s;
+
+	sm4e v16.4s,v5.4s;
+	sm4e v17.4s,v5.4s;
+	sm4e v18.4s,v5.4s;
+	sm4e v19.4s,v5.4s;
+
+	sm4e v16.4s,v6.4s;
+	sm4e v17.4s,v6.4s;
+	sm4e v18.4s,v6.4s;
+	sm4e v19.4s,v6.4s;
+
+	sm4e v16.4s,v7.4s;
+	rev64	v16.4S,v16.4S
+	sm4e v17.4s,v7.4s;
+	ext	v16.16b,v16.16b,v16.16b,#8
+	rev64	v17.4S,v17.4S
+	sm4e v18.4s,v7.4s;
+	ext	v17.16b,v17.16b,v17.16b,#8
+	rev64	v18.4S,v18.4S
+	sm4e v19.4s,v7.4s;
+	ext	v18.16b,v18.16b,v18.16b,#8
+	rev64	v19.4S,v19.4S
+	ext	v19.16b,v19.16b,v19.16b,#8
+	sm4e v20.4s,v0.4s;
+	sm4e v21.4s,v0.4s;
+	sm4e v22.4s,v0.4s;
+	sm4e v23.4s,v0.4s;
+
+	sm4e v20.4s,v1.4s;
+	sm4e v21.4s,v1.4s;
+	sm4e v22.4s,v1.4s;
+	sm4e v23.4s,v1.4s;
+
+	sm4e v20.4s,v2.4s;
+	sm4e v21.4s,v2.4s;
+	sm4e v22.4s,v2.4s;
+	sm4e v23.4s,v2.4s;
+
+	sm4e v20.4s,v3.4s;
+	sm4e v21.4s,v3.4s;
+	sm4e v22.4s,v3.4s;
+	sm4e v23.4s,v3.4s;
+
+	sm4e v20.4s,v4.4s;
+	sm4e v21.4s,v4.4s;
+	sm4e v22.4s,v4.4s;
+	sm4e v23.4s,v4.4s;
+
+	sm4e v20.4s,v5.4s;
+	sm4e v21.4s,v5.4s;
+	sm4e v22.4s,v5.4s;
+	sm4e v23.4s,v5.4s;
+
+	sm4e v20.4s,v6.4s;
+	sm4e v21.4s,v6.4s;
+	sm4e v22.4s,v6.4s;
+	sm4e v23.4s,v6.4s;
+
+	sm4e v20.4s,v7.4s;
+	rev64	v20.4S,v20.4S
+	sm4e v21.4s,v7.4s;
+	ext	v20.16b,v20.16b,v20.16b,#8
+	rev64	v21.4S,v21.4S
+	sm4e v22.4s,v7.4s;
+	ext	v21.16b,v21.16b,v21.16b,#8
+	rev64	v22.4S,v22.4S
+	sm4e v23.4s,v7.4s;
+	ext	v22.16b,v22.16b,v22.16b,#8
+	rev64	v23.4S,v23.4S
+	ext	v23.16b,v23.16b,v23.16b,#8
+#ifndef __ARMEB__
+	rev32	v16.16b,v16.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v17.16b,v17.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v18.16b,v18.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v19.16b,v19.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v20.16b,v20.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v21.16b,v21.16b
+#endif
+	st1	{v16.4s,v17.4s,v18.4s,v19.4s},[x1],#64
+#ifndef __ARMEB__
+	rev32	v22.16b,v22.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v23.16b,v23.16b
+#endif
+	st1	{v20.4s,v21.4s,v22.4s,v23.4s},[x1],#64
+	subs	x2,x2,#128
+	b.gt	1b
+	ret
+	// 4 blocks
+2:
+#ifndef __ARMEB__
+	rev32	v16.16b,v16.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v17.16b,v17.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v18.16b,v18.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v19.16b,v19.16b
+#endif
+	sm4e v16.4s,v0.4s;
+	sm4e v17.4s,v0.4s;
+	sm4e v18.4s,v0.4s;
+	sm4e v19.4s,v0.4s;
+
+	sm4e v16.4s,v1.4s;
+	sm4e v17.4s,v1.4s;
+	sm4e v18.4s,v1.4s;
+	sm4e v19.4s,v1.4s;
+
+	sm4e v16.4s,v2.4s;
+	sm4e v17.4s,v2.4s;
+	sm4e v18.4s,v2.4s;
+	sm4e v19.4s,v2.4s;
+
+	sm4e v16.4s,v3.4s;
+	sm4e v17.4s,v3.4s;
+	sm4e v18.4s,v3.4s;
+	sm4e v19.4s,v3.4s;
+
+	sm4e v16.4s,v4.4s;
+	sm4e v17.4s,v4.4s;
+	sm4e v18.4s,v4.4s;
+	sm4e v19.4s,v4.4s;
+
+	sm4e v16.4s,v5.4s;
+	sm4e v17.4s,v5.4s;
+	sm4e v18.4s,v5.4s;
+	sm4e v19.4s,v5.4s;
+
+	sm4e v16.4s,v6.4s;
+	sm4e v17.4s,v6.4s;
+	sm4e v18.4s,v6.4s;
+	sm4e v19.4s,v6.4s;
+
+	sm4e v16.4s,v7.4s;
+	rev64	v16.4S,v16.4S
+	sm4e v17.4s,v7.4s;
+	ext	v16.16b,v16.16b,v16.16b,#8
+	rev64	v17.4S,v17.4S
+	sm4e v18.4s,v7.4s;
+	ext	v17.16b,v17.16b,v17.16b,#8
+	rev64	v18.4S,v18.4S
+	sm4e v19.4s,v7.4s;
+	ext	v18.16b,v18.16b,v18.16b,#8
+	rev64	v19.4S,v19.4S
+	ext	v19.16b,v19.16b,v19.16b,#8
+#ifndef __ARMEB__
+	rev32	v16.16b,v16.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v17.16b,v17.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v18.16b,v18.16b
+#endif
+#ifndef __ARMEB__
+	rev32	v19.16b,v19.16b
+#endif
+	st1	{v16.4s,v17.4s,v18.4s,v19.4s},[x1],#64
+	subs	x2,x2,#64
+	b.gt	1b
+1:
+	subs	x2,x2,#16
+	b.lt	1f
+	ld1	{v16.4s},[x0],#16
+#ifndef __ARMEB__
+	rev32	v16.16b,v16.16b
+#endif
+	sm4e v16.4s,v0.4s;
+	sm4e v16.4s,v1.4s;
+	sm4e v16.4s,v2.4s;
+	sm4e v16.4s,v3.4s;
+	sm4e v16.4s,v4.4s;
+	sm4e v16.4s,v5.4s;
+	sm4e v16.4s,v6.4s;
+	sm4e v16.4s,v7.4s;
+	rev64	v16.4S,v16.4S
+	ext	v16.16b,v16.16b,v16.16b,#8
+#ifndef __ARMEB__
+	rev32	v16.16b,v16.16b
+#endif
+	st1	{v16.4s},[x1],#16
+	b.ne	1b
+1:
+	ret
+.size	sm4_v8_ecb_encrypt,.-sm4_v8_ecb_encrypt
 .globl	sm4_v8_ctr32_encrypt_blocks
 .type	sm4_v8_ctr32_encrypt_blocks,%function
 .align	5
