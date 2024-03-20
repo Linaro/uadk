@@ -506,6 +506,139 @@ sm4_v8_cbc_encrypt:
 	ldp	d8,d9,[sp],#16
 	ret
 .size	sm4_v8_cbc_encrypt,.-sm4_v8_cbc_encrypt
+
+.globl	sm4_v8_cbc_cts_encrypt
+.type	sm4_v8_cbc_cts_encrypt,%function
+.align	5
+sm4_v8_cbc_cts_encrypt:
+	AARCH64_VALID_CALL_TARGET
+	ld1	{v0.4s,v1.4s,v2.4s,v3.4s}, [x3], #64
+	ld1	{v4.4s,v5.4s,v6.4s,v7.4s}, [x3]
+	sub	x5, x2, #16
+
+	ld1	{v8.4s}, [x4]
+
+	ld1	{v10.4s}, [x0]
+	eor	v8.16b, v8.16b, v10.16b
+	rev32	v8.16b, v8.16b;
+	sm4e	v8.4s, v0.4s;
+	sm4e	v8.4s, v1.4s;
+	sm4e	v8.4s, v2.4s;
+	sm4e	v8.4s, v3.4s;
+	sm4e	v8.4s, v4.4s;
+	sm4e	v8.4s, v5.4s;
+	sm4e	v8.4s, v6.4s;
+	sm4e	v8.4s, v7.4s;
+	rev64	v8.4s, v8.4s;
+	ext	v8.16b, v8.16b, v8.16b, #8;
+	rev32	v8.16b, v8.16b;
+
+	/* load permute table */
+	adr	x6, .cts_permute_table
+	add	x7, x6, #32
+	add	x6, x6, x5
+	sub	x7, x7, x5
+	ld1	{v13.4s}, [x6]
+	ld1	{v14.4s}, [x7]
+
+	/* overlapping loads */
+	add	x0, x0, x5
+	ld1	{v11.4s}, [x0]
+
+	/* create Cn from En-1 */
+	tbl	v10.16b, {v8.16b}, v13.16b
+	/* padding Pn with zeros */
+	tbl	v11.16b, {v11.16b}, v14.16b
+
+	eor	v11.16b, v11.16b, v8.16b
+	rev32	v11.16b, v11.16b;
+	sm4e	v11.4s, v0.4s;
+	sm4e	v11.4s, v1.4s;
+	sm4e	v11.4s, v2.4s;
+	sm4e	v11.4s, v3.4s;
+	sm4e	v11.4s, v4.4s;
+	sm4e	v11.4s, v5.4s;
+	sm4e	v11.4s, v6.4s;
+	sm4e	v11.4s, v7.4s;
+	rev64	v11.4s, v11.4s;
+	ext	v11.16b, v11.16b, v11.16b, #8;
+	rev32	v11.16b, v11.16b;
+
+	/* overlapping stores */
+	add	x5, x1, x5
+	st1	{v10.16b}, [x5]
+	st1	{v11.16b}, [x1]
+
+	ret
+.size	sm4_v8_cbc_cts_encrypt,.-sm4_v8_cbc_cts_encrypt
+
+.globl	sm4_v8_cbc_cts_decrypt
+.type	sm4_v8_cbc_cts_decrypt,%function
+.align	5
+sm4_v8_cbc_cts_decrypt:
+	AARCH64_VALID_CALL_TARGET
+	ld1	{v0.4s,v1.4s,v2.4s,v3.4s}, [x3], #64
+	ld1	{v4.4s,v5.4s,v6.4s,v7.4s}, [x3]
+
+	sub	x5, x2, #16
+
+	ld1	{v8.4s}, [x4]
+
+	/* load permute table */
+	adr	x6, .cts_permute_table
+	add	x7, x6, #32
+	add	x6, x6, x5
+	sub	x7, x7, x5
+	ld1	{v13.4s}, [x6]
+	ld1	{v14.4s}, [x7]
+
+	/* overlapping loads */
+	ld1	{v10.16b}, [x0], x5
+	ld1	{v11.16b}, [x0]
+
+	rev32	v10.16b, v10.16b;
+	sm4e	v10.4s, v0.4s;
+	sm4e	v10.4s, v1.4s;
+	sm4e	v10.4s, v2.4s;
+	sm4e	v10.4s, v3.4s;
+	sm4e	v10.4s, v4.4s;
+	sm4e	v10.4s, v5.4s;
+	sm4e	v10.4s, v6.4s;
+	sm4e	v10.4s, v7.4s;
+	rev64	v10.4s, v10.4s;
+	ext	v10.16b, v10.16b, v10.16b, #8;
+	rev32	v10.16b, v10.16b;
+
+	/* select the first Ln bytes of Xn to create Pn */
+	tbl	v12.16b, {v10.16b}, v13.16b
+	eor	v12.16b, v12.16b, v11.16b
+
+	/* overwrite the first Ln bytes with Cn to create En-1 */
+	tbx	v10.16b, {v11.16b}, v14.16b
+
+	rev32	v10.16b, v10.16b;
+	sm4e	v10.4s, v0.4s;
+	sm4e	v10.4s, v1.4s;
+	sm4e	v10.4s, v2.4s;
+	sm4e	v10.4s, v3.4s;
+	sm4e	v10.4s, v4.4s;
+	sm4e	v10.4s, v5.4s;
+	sm4e	v10.4s, v6.4s;
+	sm4e	v10.4s, v7.4s;
+	rev64	v10.4s, v10.4s;
+	ext	v10.16b, v10.16b, v10.16b, #8;
+	rev32	v10.16b, v10.16b;
+
+	eor	v10.16b, v10.16b, v8.16b
+
+	/* overlapping stores */
+	add	x5, x1, x5
+	st1	{v12.16b}, [x5]
+	st1	{v10.16b}, [x1]
+
+	ret
+.size	sm4_v8_cbc_cts_decrypt,.-sm4_v8_cbc_cts_decrypt
+
 .globl	sm4_v8_ecb_encrypt
 .type	sm4_v8_ecb_encrypt,%function
 .align	5
