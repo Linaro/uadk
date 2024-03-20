@@ -22,6 +22,8 @@
 #define SM4_BLOCK_SIZE	16
 #define MAX_BLOCK_NUM	(1U << 28)
 #define CTR96_SHIFT_BITS	8
+#define SM4_BYTES2BLKS(nbytes)	((nbytes) >> 4)
+#define SM4_KEY_SIZE 16
 
 #define GETU32(p) \
 	((__u32)(p)[0] << 24 | (__u32)(p)[1] << 16 | (__u32)(p)[2] << 8 | (__u32)(p)[3])
@@ -136,10 +138,104 @@ void sm4_set_decrypt_key(const __u8 *userKey, struct SM4_KEY *key)
 	sm4_v8_set_decrypt_key(userKey, key);
 }
 
+static void sm4_cfb_crypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey, const int enc)
+{
+	unsigned char keydata[SM4_BLOCK_SIZE];
+	const unsigned char *src = msg->in;
+	unsigned char *dst = msg->out;
+	__u32 nbytes = msg->in_bytes;
+	__u32 blocks, bbytes;
+	__u32 i = 0;
+
+	blocks = SM4_BYTES2BLKS(nbytes);
+	if (blocks) {
+		if (enc == SM4_ENCRYPT)
+			sm4_v8_cfb_encrypt_blocks(src, dst, blocks, rkey, msg->iv);
+		else
+			sm4_v8_cfb_decrypt_blocks(src, dst, blocks, rkey, msg->iv);
+
+		bbytes = blocks * SM4_BLOCK_SIZE;
+		dst += bbytes;
+		src += bbytes;
+		nbytes -= bbytes;
+	}
+
+	if (nbytes == 0)
+		return;
+
+	sm4_v8_crypt_block(msg->iv, keydata, rkey);
+	while (nbytes > 0) {
+		*dst++ = *src++ ^ keydata[i++];
+		nbytes--;
+	}
+
+	/* store new IV  */
+	if (enc == SM4_ENCRYPT) {
+		if (msg->out_bytes >= msg->iv_bytes)
+			memcpy(msg->iv, msg->out + msg->out_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		else
+			memcpy(msg->iv, msg->out, msg->out_bytes);
+	} else {
+		if (msg->in_bytes >= msg->iv_bytes)
+			memcpy(msg->iv, msg->in + msg->in_bytes -
+				msg->iv_bytes, msg->iv_bytes);
+		else
+			memcpy(msg->iv, msg->in, msg->in_bytes);
+	}
+}
+
+static void sm4_cfb_encrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_enc)
+{
+	sm4_cfb_crypt(msg, rkey_enc, SM4_ENCRYPT);
+}
+
+static void sm4_cfb_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_dec)
+{
+	sm4_cfb_crypt(msg, rkey_dec, SM4_DECRYPT);
+}
+
+static int sm4_xts_encrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey)
+{
+	struct SM4_KEY rkey2;
+
+	if (msg->in_bytes < SM4_BLOCK_SIZE) {
+		WD_ERR("invalid: cipher input length is wrong!\n");
+		return -WD_EINVAL;
+	}
+
+	/* set key for tweak */
+	sm4_set_encrypt_key(msg->key + SM4_KEY_SIZE, &rkey2);
+
+	sm4_v8_xts_encrypt(msg->in, msg->out, msg->in_bytes,
+				rkey, msg->iv, &rkey2);
+
+	return 0;
+}
+
+static int sm4_xts_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey)
+{
+	struct SM4_KEY rkey2;
+
+	if (msg->in_bytes < SM4_BLOCK_SIZE) {
+		WD_ERR("invalid: cipher input length is wrong!\n");
+		return -WD_EINVAL;
+	}
+
+	/* set key for tweak */
+	sm4_set_encrypt_key(msg->key + SM4_KEY_SIZE, &rkey2);
+
+	sm4_v8_xts_decrypt(msg->in, msg->out, msg->in_bytes,
+				rkey, msg->iv, &rkey2);
+
+	return 0;
+}
+
 static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	struct wd_cipher_msg *msg = wd_msg;
 	struct SM4_KEY rkey;
+	int ret = 0;
 
 	if (!msg) {
 		WD_ERR("invalid: input sm4 msg is NULL!\n");
@@ -151,7 +247,8 @@ static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 		return -WD_EINVAL;
 	}
 
-	if (msg->op_type == WD_CIPHER_ENCRYPTION || msg->mode == WD_CIPHER_CTR)
+	if (msg->op_type == WD_CIPHER_ENCRYPTION || msg->mode == WD_CIPHER_CTR
+		|| msg->mode == WD_CIPHER_CFB)
 		sm4_set_encrypt_key(msg->key, &rkey);
 	else
 		sm4_set_decrypt_key(msg->key, &rkey);
@@ -166,12 +263,24 @@ static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 	case WD_CIPHER_CTR:
 		sm4_ctr_encrypt(msg, &rkey);
 		break;
+	case WD_CIPHER_CFB:
+		if (msg->op_type == WD_CIPHER_ENCRYPTION)
+			sm4_cfb_encrypt(msg, &rkey);
+		else
+			sm4_cfb_decrypt(msg, &rkey);
+		break;
+	case WD_CIPHER_XTS:
+		if (msg->op_type == WD_CIPHER_ENCRYPTION)
+			ret = sm4_xts_encrypt(msg, &rkey);
+		else
+			ret = sm4_xts_decrypt(msg, &rkey);
+		break;
 	default:
 		WD_ERR("The current block cipher mode is not supported!\n");
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int isa_ce_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
@@ -206,6 +315,8 @@ static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 static struct wd_alg_driver cipher_alg_driver[] = {
 	GEN_CE_ALG_DRIVER("cbc(sm4)", cipher),
 	GEN_CE_ALG_DRIVER("ctr(sm4)", cipher),
+	GEN_CE_ALG_DRIVER("cfb(sm4)", cipher),
+	GEN_CE_ALG_DRIVER("xts(sm4)", cipher),
 };
 
 static void __attribute__((constructor)) isa_ce_probe(void)
