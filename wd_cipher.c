@@ -622,10 +622,10 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	msg_handle.send = wd_cipher_setting.driver->send;
 	msg_handle.recv = wd_cipher_setting.driver->recv;
 
-	pthread_spin_lock(&ctx->lock);
+	wd_ctx_spin_lock(ctx, wd_cipher_setting.driver->calc_type);
 	ret = wd_handle_msg_sync(wd_cipher_setting.driver, &msg_handle, ctx->ctx,
 				 msg, NULL, wd_cipher_setting.config.epoll_en);
-	pthread_spin_unlock(&ctx->lock);
+	wd_ctx_spin_unlock(ctx, wd_cipher_setting.driver->calc_type);
 
 	return ret;
 }
