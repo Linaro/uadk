@@ -78,6 +78,7 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_rsa.c wd_rsa.h wd_rsa_drv.h \
 			wd_dh.c wd_dh.h wd_dh_drv.h \
 			wd_ecc.c wd_ecc.h wd_ecc_drv.h \
+			arm_arch_ce.h isa_ce_sm3.h isa_ce_sm4.h \
 			wd_digest.c wd_digest.h wd_digest_drv.h \
 			wd_util.c wd_util.h \
 			wd_sched.c wd_sched.h \
@@ -90,8 +91,8 @@ libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h
 
-libisa_ce_la_SOURCES=drv/isa_ce_sm3.c drv/isa_ce_sm3_armv8.S arm_arch_ce.h \
-		drv/isa_ce_sm3.h
+libisa_ce_la_SOURCES=arm_arch_ce.h drv/isa_ce_sm3.c drv/isa_ce_sm3_armv8.S isa_ce_sm3.h \
+		drv/isa_ce_sm4.c drv/isa_ce_sm4_armv8.S drv/isa_ce_sm4.h
 
 if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV -fPIC
