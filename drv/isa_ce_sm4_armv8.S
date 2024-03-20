@@ -37,6 +37,14 @@
 .long	0x10171E25, 0x2C333A41, 0x484F565D, 0x646B7279
 .Lfk:
 .long	0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc
+.align 4
+.cts_permute_table:
+.byte	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+.byte	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+.byte	0x0,  0x1,  0x2,  0x3,  0x4,  0x5,  0x6,  0x7
+.byte	0x8,  0x9,  0xa,  0xb,  0xc,  0xd,  0xe,  0xf
+.byte	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+.byte	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 .globl	sm4_v8_set_encrypt_key
 .type	sm4_v8_set_encrypt_key,%function
 .align	5
@@ -772,3 +780,1121 @@ sm4_v8_ctr32_encrypt_blocks:
 	ldp	d8,d9,[sp],#16
 	ret
 .size	sm4_v8_ctr32_encrypt_blocks,.-sm4_v8_ctr32_encrypt_blocks
+
+.globl	sm4_v8_crypt_block
+.type	sm4_v8_crypt_block,%function
+.align	5
+sm4_v8_crypt_block:
+	/* parameters:
+	 *   x0: src
+	 *   x1: dst
+	 *   x2: key
+	 */
+	AARCH64_VALID_CALL_TARGET
+
+	ld1	{v0.16b-v3.16b}, [x2], #64
+	ld1	{v4.16b-v7.16b}, [x2]
+
+	ld1	{v16.4s},[x0]
+
+	rev32 v16.16b, v16.16b
+	sm4e v16.4s, v0.4s
+	sm4e v16.4s, v1.4s
+	sm4e v16.4s, v2.4s
+	sm4e v16.4s, v3.4s
+	sm4e v16.4s, v4.4s
+	sm4e v16.4s, v5.4s
+	sm4e v16.4s, v6.4s
+	sm4e v16.4s, v7.4s
+	rev64 v16.4s, v16.4s
+	ext v16.16b, v16.16b, v16.16b, #8
+	rev32 v16.16b, v16.16b
+
+	st1	{v16.16b}, [x1];
+
+	ret
+.size	sm4_v8_crypt_block,.-sm4_v8_crypt_block
+
+.globl	sm4_v8_cfb_encrypt_blocks
+.type	sm4_v8_cfb_encrypt_blocks,%function
+.align	5
+sm4_v8_cfb_encrypt_blocks:
+	/* parameters:
+	 *   x0: src
+	 *   x1: dst
+	 *   w2: nblocks
+	 *   x3: key
+	 *   x4: iv
+	 */
+	AARCH64_VALID_CALL_TARGET
+	stp	d8,d9,[sp, #-16]!
+
+	ld1	{v0.4s-v3.4s}, [x3], #64
+	ld1	{v4.4s-v7.4s}, [x3]
+
+	ld1	{v8.4s},[x4]
+
+.loop_cfb_enc_4block:
+	cmp	w2, #4
+	blt	.loob_cfb_enc_1block
+
+	sub	w2, w2, #4
+
+	ld1	{v16.4s-v19.4s}, [x0], #64
+
+	rev32 v8.16b, v8.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+	eor	v16.16b, v16.16b, v8.16b
+
+	rev32 v8.16b, v16.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+	eor	v17.16b, v17.16b, v8.16b
+
+	rev32 v8.16b, v17.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+	eor	v18.16b, v18.16b, v8.16b
+
+	rev32 v8.16b, v18.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+	eor	v19.16b, v19.16b, v8.16b
+
+	st1	{v16.4s-v19.4s}, [x1], #64
+	mov	v8.16b, v19.16b
+
+	cbz	w2, .end_cfb_enc
+	b .loop_cfb_enc_4block
+
+.loob_cfb_enc_1block:
+	sub	w2, w2, #1
+
+	ld1	{v16.4s}, [x0], #16
+
+	rev32 v8.16b, v8.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+	eor	v8.16b, v8.16b, v16.16b
+
+	st1	{v8.4s}, [x1], #16
+
+	cbnz w2, .loob_cfb_enc_1block
+
+.end_cfb_enc:
+	st1	{v8.4s}, [x4]
+
+	ldp	d8,d9,[sp],#16
+	ret
+.size	sm4_v8_cfb_encrypt_blocks,.-sm4_v8_cfb_encrypt_blocks
+
+.globl	sm4_v8_cfb_decrypt_blocks
+.type	sm4_v8_cfb_decrypt_blocks,%function
+.align	5
+sm4_v8_cfb_decrypt_blocks:
+	/* parameters:
+	 *   x0: src
+	 *   x1: dst
+	 *   w2: nblocks
+	 *   x3: key
+	 *   x4: iv
+	 */
+	AARCH64_VALID_CALL_TARGET
+	stp	d8,d9,[sp, #-16]!
+
+	ld1	{v0.4s-v3.4s}, [x3], #64
+	ld1	{v4.4s-v7.4s}, [x3]
+
+	ld1	{v8.4s},[x4]
+
+.loop_cfb_dec_8block:
+	cmp	w2, #8
+	blt	.cfb_dec_4block
+
+	sub	w2, w2, #8
+
+	ld1	{v12.4s-v15.4s}, [x0], #64
+	ld1	{v16.4s-v19.4s}, [x0], #64
+
+	rev32 v20.16b, v8.16b
+	rev32 v21.16b, v12.16b
+	rev32 v22.16b, v13.16b
+	rev32 v23.16b, v14.16b
+	rev32 v24.16b, v15.16b
+	rev32 v25.16b, v16.16b
+	rev32 v26.16b, v17.16b
+	rev32 v27.16b, v18.16b
+	sm4e v20.4s, v0.4s
+	sm4e v21.4s, v0.4s
+	sm4e v22.4s, v0.4s
+	sm4e v23.4s, v0.4s
+	sm4e v24.4s, v0.4s
+	sm4e v25.4s, v0.4s
+	sm4e v26.4s, v0.4s
+	sm4e v27.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v21.4s, v1.4s
+	sm4e v22.4s, v1.4s
+	sm4e v23.4s, v1.4s
+	sm4e v24.4s, v1.4s
+	sm4e v25.4s, v1.4s
+	sm4e v26.4s, v1.4s
+	sm4e v27.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v21.4s, v2.4s
+	sm4e v22.4s, v2.4s
+	sm4e v23.4s, v2.4s
+	sm4e v24.4s, v2.4s
+	sm4e v25.4s, v2.4s
+	sm4e v26.4s, v2.4s
+	sm4e v27.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v21.4s, v3.4s
+	sm4e v22.4s, v3.4s
+	sm4e v23.4s, v3.4s
+	sm4e v24.4s, v3.4s
+	sm4e v25.4s, v3.4s
+	sm4e v26.4s, v3.4s
+	sm4e v27.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v21.4s, v4.4s
+	sm4e v22.4s, v4.4s
+	sm4e v23.4s, v4.4s
+	sm4e v24.4s, v4.4s
+	sm4e v25.4s, v4.4s
+	sm4e v26.4s, v4.4s
+	sm4e v27.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v21.4s, v5.4s
+	sm4e v22.4s, v5.4s
+	sm4e v23.4s, v5.4s
+	sm4e v24.4s, v5.4s
+	sm4e v25.4s, v5.4s
+	sm4e v26.4s, v5.4s
+	sm4e v27.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v21.4s, v6.4s
+	sm4e v22.4s, v6.4s
+	sm4e v23.4s, v6.4s
+	sm4e v24.4s, v6.4s
+	sm4e v25.4s, v6.4s
+	sm4e v26.4s, v6.4s
+	sm4e v27.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	sm4e v21.4s, v7.4s
+	sm4e v22.4s, v7.4s
+	sm4e v23.4s, v7.4s
+	sm4e v24.4s, v7.4s
+	sm4e v25.4s, v7.4s
+	sm4e v26.4s, v7.4s
+	sm4e v27.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	rev64 v21.4s, v21.4s
+	rev64 v22.4s, v22.4s
+	rev64 v23.4s, v23.4s
+	rev64 v24.4s, v24.4s
+	rev64 v25.4s, v25.4s
+	rev64 v26.4s, v26.4s
+	rev64 v27.4s, v27.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	ext v21.16b, v21.16b, v21.16b, #8
+	ext v22.16b, v22.16b, v22.16b, #8
+	ext v23.16b, v23.16b, v23.16b, #8
+	ext v24.16b, v24.16b, v24.16b, #8
+	ext v25.16b, v25.16b, v25.16b, #8
+	ext v26.16b, v26.16b, v26.16b, #8
+	ext v27.16b, v27.16b, v27.16b, #8
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	rev32 v24.16b, v24.16b
+	rev32 v25.16b, v25.16b
+	rev32 v26.16b, v26.16b
+	rev32 v27.16b, v27.16b
+
+	mov	v8.16b, v19.16b		//Modify IV
+
+	eor	v20.16b, v20.16b, v12.16b
+	eor	v21.16b, v21.16b, v13.16b
+	eor	v22.16b, v22.16b, v14.16b
+	eor	v23.16b, v23.16b, v15.16b
+	eor	v24.16b, v24.16b, v16.16b
+	eor	v25.16b, v25.16b, v17.16b
+	eor	v26.16b, v26.16b, v18.16b
+	eor	v27.16b, v27.16b, v19.16b
+
+	st1	{v20.4s-v23.4s}, [x1], #64
+	st1	{v24.4s-v27.4s}, [x1], #64
+
+	cbz	w2, .end_cfb_dec
+	b .loop_cfb_dec_8block
+
+.cfb_dec_4block:
+	cmp	w2, #4
+	blt	.loop_cfb_dec_1block
+
+	sub	w2, w2, #4
+
+	ld1	{v12.4s-v15.4s}, [x0], #64
+
+	rev32 v20.16b, v8.16b
+	rev32 v21.16b, v12.16b
+	rev32 v22.16b, v13.16b
+	rev32 v23.16b, v14.16b
+	sm4e v20.4s, v0.4s
+	sm4e v21.4s, v0.4s
+	sm4e v22.4s, v0.4s
+	sm4e v23.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v21.4s, v1.4s
+	sm4e v22.4s, v1.4s
+	sm4e v23.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v21.4s, v2.4s
+	sm4e v22.4s, v2.4s
+	sm4e v23.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v21.4s, v3.4s
+	sm4e v22.4s, v3.4s
+	sm4e v23.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v21.4s, v4.4s
+	sm4e v22.4s, v4.4s
+	sm4e v23.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v21.4s, v5.4s
+	sm4e v22.4s, v5.4s
+	sm4e v23.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v21.4s, v6.4s
+	sm4e v22.4s, v6.4s
+	sm4e v23.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	sm4e v21.4s, v7.4s
+	sm4e v22.4s, v7.4s
+	sm4e v23.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	rev64 v21.4s, v21.4s
+	rev64 v22.4s, v22.4s
+	rev64 v23.4s, v23.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	ext v21.16b, v21.16b, v21.16b, #8
+	ext v22.16b, v22.16b, v22.16b, #8
+	ext v23.16b, v23.16b, v23.16b, #8
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+
+	mov	v8.16b, v15.16b		//Modify IV
+
+	eor	v20.16b, v20.16b, v12.16b
+	eor	v21.16b, v21.16b, v13.16b
+	eor	v22.16b, v22.16b, v14.16b
+	eor	v23.16b, v23.16b, v15.16b
+
+	st1	{v20.4s-v23.4s}, [x1], #64
+
+	cbz	w2, .end_cfb_dec
+
+.loop_cfb_dec_1block:
+	sub	w2, w2, #1
+
+	ld1	{v12.4s}, [x0], #16
+
+	rev32 v20.16b, v8.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+
+	eor	v20.16b, v20.16b, v12.16b
+	st1	{v20.4s}, [x1], #16
+
+	mov	v8.16b, v12.16b		//Modify IV
+
+	cbnz w2, .loop_cfb_dec_1block
+
+.end_cfb_dec:
+	/* store new IV */
+	st1	{v8.4s}, [x4]
+
+	ldp	d8,d9,[sp],#16
+	ret
+.size	sm4_v8_cfb_decrypt_blocks,.-sm4_v8_cfb_decrypt_blocks
+
+#define tweak_calc(out, in, MSK, TMP)			\
+		sshr TMP.2d, in.2d, #63;				\
+		and	 TMP.16b, TMP.16b, MSK.16b;			\
+		add	 out.2d, in.2d, in.2d;				\
+		ext	 TMP.16b, TMP.16b, TMP.16b, #8;		\
+		eor	 out.16b, out.16b, TMP.16b;
+
+.globl	sm4_v8_xts_encrypt
+.type	sm4_v8_xts_encrypt,%function
+.align	5
+sm4_v8_xts_encrypt:
+	/* parameters:
+	 *   x0: src
+	 *   x1: dst
+	 *   w2: nbytes
+	 *   x3: key
+	 *   x4: tweak
+	 *   x5: key array for tweak
+	 */
+	AARCH64_VALID_CALL_TARGET
+	stp	d8,d9,[sp, #-16]!
+
+	ld1	{v8.16b}, [x4]
+
+	cbz	x5, .enc_xts_nokey2
+
+	/* load round key array for tweak */
+	ld1	{v0.16b-v3.16b}, [x5], #64
+	ld1	{v4.16b-v7.16b}, [x5]
+
+	/* first tweak */
+	rev32 v8.16b, v8.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+
+.enc_xts_nokey2:
+	/* load key array */
+	ld1	{v0.16b-v3.16b}, [x3], #64
+	ld1	{v4.16b-v7.16b}, [x3]
+
+	and w5, w2, #15
+	lsr	w2, w2, #4
+	cbz w5, .enc_xts_mask
+	/* leave the last block for tail */
+	sub	w2, w2, #1
+
+.enc_xts_mask:
+	/* init mask */
+	movi v31.2s, #0x1
+	movi v16.2s, #0x87
+	uzp1 v31.4s, v31.4s, v16.4s
+
+	cbz	w2, .enc_xts_tail
+
+.enc_xts_8block:
+	sub	w2, w2, #8
+	tbnz w2, #31, .enc_xts_4block
+
+	tweak_calc(v9, v8, v31, v16)
+	tweak_calc(v10, v9, v31, v17)
+	tweak_calc(v11, v10, v31, v18)
+	tweak_calc(v12, v11, v31, v19)
+	tweak_calc(v13, v12, v31, v16)
+	tweak_calc(v14, v13, v31, v17)
+	tweak_calc(v15, v14, v31, v18)
+
+	ld1	{v20.16b-v23.16b}, [x0], #64
+	ld1	{v24.16b-v27.16b}, [x0], #64
+	eor	v20.16b, v20.16b,  v8.16b
+	eor	v21.16b, v21.16b,  v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+	eor	v24.16b, v24.16b, v12.16b
+	eor	v25.16b, v25.16b, v13.16b
+	eor	v26.16b, v26.16b, v14.16b
+	eor	v27.16b, v27.16b, v15.16b
+
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	rev32 v24.16b, v24.16b
+	rev32 v25.16b, v25.16b
+	rev32 v26.16b, v26.16b
+	rev32 v27.16b, v27.16b
+	sm4e v20.4s, v0.4s
+	sm4e v21.4s, v0.4s
+	sm4e v22.4s, v0.4s
+	sm4e v23.4s, v0.4s
+	sm4e v24.4s, v0.4s
+	sm4e v25.4s, v0.4s
+	sm4e v26.4s, v0.4s
+	sm4e v27.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v21.4s, v1.4s
+	sm4e v22.4s, v1.4s
+	sm4e v23.4s, v1.4s
+	sm4e v24.4s, v1.4s
+	sm4e v25.4s, v1.4s
+	sm4e v26.4s, v1.4s
+	sm4e v27.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v21.4s, v2.4s
+	sm4e v22.4s, v2.4s
+	sm4e v23.4s, v2.4s
+	sm4e v24.4s, v2.4s
+	sm4e v25.4s, v2.4s
+	sm4e v26.4s, v2.4s
+	sm4e v27.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v21.4s, v3.4s
+	sm4e v22.4s, v3.4s
+	sm4e v23.4s, v3.4s
+	sm4e v24.4s, v3.4s
+	sm4e v25.4s, v3.4s
+	sm4e v26.4s, v3.4s
+	sm4e v27.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v21.4s, v4.4s
+	sm4e v22.4s, v4.4s
+	sm4e v23.4s, v4.4s
+	sm4e v24.4s, v4.4s
+	sm4e v25.4s, v4.4s
+	sm4e v26.4s, v4.4s
+	sm4e v27.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v21.4s, v5.4s
+	sm4e v22.4s, v5.4s
+	sm4e v23.4s, v5.4s
+	sm4e v24.4s, v5.4s
+	sm4e v25.4s, v5.4s
+	sm4e v26.4s, v5.4s
+	sm4e v27.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v21.4s, v6.4s
+	sm4e v22.4s, v6.4s
+	sm4e v23.4s, v6.4s
+	sm4e v24.4s, v6.4s
+	sm4e v25.4s, v6.4s
+	sm4e v26.4s, v6.4s
+	sm4e v27.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	sm4e v21.4s, v7.4s
+	sm4e v22.4s, v7.4s
+	sm4e v23.4s, v7.4s
+	sm4e v24.4s, v7.4s
+	sm4e v25.4s, v7.4s
+	sm4e v26.4s, v7.4s
+	sm4e v27.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	rev64 v21.4s, v21.4s
+	rev64 v22.4s, v22.4s
+	rev64 v23.4s, v23.4s
+	rev64 v24.4s, v24.4s
+	rev64 v25.4s, v25.4s
+	rev64 v26.4s, v26.4s
+	rev64 v27.4s, v27.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	ext v21.16b, v21.16b, v21.16b, #8
+	ext v22.16b, v22.16b, v22.16b, #8
+	ext v23.16b, v23.16b, v23.16b, #8
+	ext v24.16b, v24.16b, v24.16b, #8
+	ext v25.16b, v25.16b, v25.16b, #8
+	ext v26.16b, v26.16b, v26.16b, #8
+	ext v27.16b, v27.16b, v27.16b, #8
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	rev32 v24.16b, v24.16b
+	rev32 v25.16b, v25.16b
+	rev32 v26.16b, v26.16b
+	rev32 v27.16b, v27.16b
+
+	eor	v20.16b, v20.16b,  v8.16b
+	eor	v21.16b, v21.16b,  v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+	eor	v24.16b, v24.16b, v12.16b
+	eor	v25.16b, v25.16b, v13.16b
+	eor	v26.16b, v26.16b, v14.16b
+	eor	v27.16b, v27.16b, v15.16b
+	st1	{v20.16b-v23.16b}, [x1], #64
+	st1	{v24.16b-v27.16b}, [x1], #64
+
+	tweak_calc(v8, v15, v31, v19)
+
+	cbz	w2, .enc_xts_tail
+	b .enc_xts_8block
+
+.enc_xts_4block:
+	add	w2, w2, #8
+	cmp	w2, #4
+	blt	.enc_xts_1block
+
+	sub	w2, w2, #4
+
+	tweak_calc(v9, v8, v31, v16)
+	tweak_calc(v10, v9, v31, v17)
+	tweak_calc(v11, v10, v31, v18)
+
+	ld1	{v20.16b-v23.16b}, [x0], #64
+	eor	v20.16b, v20.16b, v8.16b
+	eor	v21.16b, v21.16b, v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	sm4e v20.4s, v0.4s
+	sm4e v21.4s, v0.4s
+	sm4e v22.4s, v0.4s
+	sm4e v23.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v21.4s, v1.4s
+	sm4e v22.4s, v1.4s
+	sm4e v23.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v21.4s, v2.4s
+	sm4e v22.4s, v2.4s
+	sm4e v23.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v21.4s, v3.4s
+	sm4e v22.4s, v3.4s
+	sm4e v23.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v21.4s, v4.4s
+	sm4e v22.4s, v4.4s
+	sm4e v23.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v21.4s, v5.4s
+	sm4e v22.4s, v5.4s
+	sm4e v23.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v21.4s, v6.4s
+	sm4e v22.4s, v6.4s
+	sm4e v23.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	sm4e v21.4s, v7.4s
+	sm4e v22.4s, v7.4s
+	sm4e v23.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	rev64 v21.4s, v21.4s
+	rev64 v22.4s, v22.4s
+	rev64 v23.4s, v23.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	ext v21.16b, v21.16b, v21.16b, #8
+	ext v22.16b, v22.16b, v22.16b, #8
+	ext v23.16b, v23.16b, v23.16b, #8
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+
+	eor	v20.16b, v20.16b, v8.16b
+	eor	v21.16b, v21.16b, v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+	st1	{v20.16b-v23.16b}, [x1], #64
+
+	tweak_calc(v8, v11, v31, v19)
+
+	cbz	w2, .enc_xts_tail
+
+.enc_xts_1block:
+	sub	w2, w2, #1
+
+	ld1	{v20.16b}, [x0], #16
+	eor	v20.16b, v20.16b, v8.16b
+
+	rev32 v20.16b, v20.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+
+	eor	v20.16b, v20.16b, v8.16b
+	st1	{v20.16b}, [x1], #16
+
+	tweak_calc(v8, v8, v31, v16)
+
+	cbnz w2, .enc_xts_1block
+
+.enc_xts_tail:
+	uxtw x5, w5
+	cbz	x5, .enc_xts_end
+
+	tweak_calc(v9, v8, v31, v16)
+	ld1	{v20.16b}, [x0]
+	eor	v20.16b, v20.16b, v8.16b
+	rev32 v20.16b, v20.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+	eor	v20.16b, v20.16b, v8.16b
+
+	adr x6, .cts_permute_table
+	add	x7, x6, #32
+	add	x6, x6, x5
+	sub	x7, x7, x5
+	ld1	{v23.16b}, [x6]
+	ld1	{v24.16b}, [x7]
+
+	add	x0, x0, x5
+	ld1	{v21.16b}, [x0]
+
+	tbl	v22.16b, {v20.16b}, v23.16b
+	tbx	v20.16b, {v21.16b}, v24.16b
+
+	eor	v20.16b, v20.16b, v9.16b
+	rev32 v20.16b, v20.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+	eor	v20.16b, v20.16b, v9.16b
+
+	add	x5, x1, x5
+	st1	{v22.16b}, [x5]
+	st1	{v20.16b}, [x1]
+
+	b .enc_xts_ret
+
+.enc_xts_end:
+	/* new tweak */
+	st1	{v8.16b}, [x4]
+
+.enc_xts_ret:
+	ldp	d8,d9,[sp],#16
+	ret
+.size	sm4_v8_xts_encrypt,.-sm4_v8_xts_encrypt
+
+.globl	sm4_v8_xts_decrypt
+.type	sm4_v8_xts_decrypt,%function
+.align	5
+sm4_v8_xts_decrypt:
+	/* parameters:
+	 *   x0: src
+	 *   x1: dst
+	 *   w2: nbytes
+	 *   x3: key
+	 *   x4: tweak
+	 *   x5: key array for tweak
+	 */
+	AARCH64_VALID_CALL_TARGET
+	stp	d8,d9,[sp, #-16]!
+
+	ld1	{v8.16b}, [x4]
+
+	cbz	x5, .dec_xts_nokey2
+
+	/* load round key array for tweak */
+	ld1	{v0.16b-v3.16b}, [x5], #64
+	ld1	{v4.16b-v7.16b}, [x5]
+
+	/* first tweak */
+	rev32 v8.16b, v8.16b
+	sm4e v8.4s, v0.4s
+	sm4e v8.4s, v1.4s
+	sm4e v8.4s, v2.4s
+	sm4e v8.4s, v3.4s
+	sm4e v8.4s, v4.4s
+	sm4e v8.4s, v5.4s
+	sm4e v8.4s, v6.4s
+	sm4e v8.4s, v7.4s
+	rev64 v8.4s, v8.4s
+	ext v8.16b, v8.16b, v8.16b, #8
+	rev32 v8.16b, v8.16b
+
+.dec_xts_nokey2:
+	ld1	{v0.16b-v3.16b}, [x3], #64
+	ld1	{v4.16b-v7.16b}, [x3]
+
+	and w5, w2, #15
+	lsr	w2, w2, #4
+	cbz w5, .dec_xts_mask
+	/* leave the last block for tail */
+	sub	w2, w2, #1
+
+.dec_xts_mask:
+	/* init mask */
+	movi v31.2s, #0x1
+	movi v16.2s, #0x87
+	uzp1 v31.4s, v31.4s, v16.4s
+
+	cbz	w2, .dec_xts_tail
+
+.dec_xts_8block:
+	sub	w2, w2, #8
+	tbnz w2, #31, .dec_xts_4block
+
+	tweak_calc(v9, v8, v31, v16)
+	tweak_calc(v10, v9, v31, v17)
+	tweak_calc(v11, v10, v31, v18)
+	tweak_calc(v12, v11, v31, v19)
+	tweak_calc(v13, v12, v31, v16)
+	tweak_calc(v14, v13, v31, v17)
+	tweak_calc(v15, v14, v31, v18)
+
+	ld1	{v20.16b-v23.16b}, [x0], #64
+	ld1	{v24.16b-v27.16b}, [x0], #64
+	eor	v20.16b, v20.16b, v8.16b
+	eor	v21.16b, v21.16b, v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+	eor	v24.16b, v24.16b, v12.16b
+	eor	v25.16b, v25.16b, v13.16b
+	eor	v26.16b, v26.16b, v14.16b
+	eor	v27.16b, v27.16b, v15.16b
+
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	rev32 v24.16b, v24.16b
+	rev32 v25.16b, v25.16b
+	rev32 v26.16b, v26.16b
+	rev32 v27.16b, v27.16b
+	sm4e v20.4s, v0.4s
+	sm4e v21.4s, v0.4s
+	sm4e v22.4s, v0.4s
+	sm4e v23.4s, v0.4s
+	sm4e v24.4s, v0.4s
+	sm4e v25.4s, v0.4s
+	sm4e v26.4s, v0.4s
+	sm4e v27.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v21.4s, v1.4s
+	sm4e v22.4s, v1.4s
+	sm4e v23.4s, v1.4s
+	sm4e v24.4s, v1.4s
+	sm4e v25.4s, v1.4s
+	sm4e v26.4s, v1.4s
+	sm4e v27.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v21.4s, v2.4s
+	sm4e v22.4s, v2.4s
+	sm4e v23.4s, v2.4s
+	sm4e v24.4s, v2.4s
+	sm4e v25.4s, v2.4s
+	sm4e v26.4s, v2.4s
+	sm4e v27.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v21.4s, v3.4s
+	sm4e v22.4s, v3.4s
+	sm4e v23.4s, v3.4s
+	sm4e v24.4s, v3.4s
+	sm4e v25.4s, v3.4s
+	sm4e v26.4s, v3.4s
+	sm4e v27.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v21.4s, v4.4s
+	sm4e v22.4s, v4.4s
+	sm4e v23.4s, v4.4s
+	sm4e v24.4s, v4.4s
+	sm4e v25.4s, v4.4s
+	sm4e v26.4s, v4.4s
+	sm4e v27.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v21.4s, v5.4s
+	sm4e v22.4s, v5.4s
+	sm4e v23.4s, v5.4s
+	sm4e v24.4s, v5.4s
+	sm4e v25.4s, v5.4s
+	sm4e v26.4s, v5.4s
+	sm4e v27.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v21.4s, v6.4s
+	sm4e v22.4s, v6.4s
+	sm4e v23.4s, v6.4s
+	sm4e v24.4s, v6.4s
+	sm4e v25.4s, v6.4s
+	sm4e v26.4s, v6.4s
+	sm4e v27.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	sm4e v21.4s, v7.4s
+	sm4e v22.4s, v7.4s
+	sm4e v23.4s, v7.4s
+	sm4e v24.4s, v7.4s
+	sm4e v25.4s, v7.4s
+	sm4e v26.4s, v7.4s
+	sm4e v27.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	rev64 v21.4s, v21.4s
+	rev64 v22.4s, v22.4s
+	rev64 v23.4s, v23.4s
+	rev64 v24.4s, v24.4s
+	rev64 v25.4s, v25.4s
+	rev64 v26.4s, v26.4s
+	rev64 v27.4s, v27.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	ext v21.16b, v21.16b, v21.16b, #8
+	ext v22.16b, v22.16b, v22.16b, #8
+	ext v23.16b, v23.16b, v23.16b, #8
+	ext v24.16b, v24.16b, v24.16b, #8
+	ext v25.16b, v25.16b, v25.16b, #8
+	ext v26.16b, v26.16b, v26.16b, #8
+	ext v27.16b, v27.16b, v27.16b, #8
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	rev32 v24.16b, v24.16b
+	rev32 v25.16b, v25.16b
+	rev32 v26.16b, v26.16b
+	rev32 v27.16b, v27.16b
+
+	eor	v20.16b, v20.16b, v8.16b
+	eor	v21.16b, v21.16b, v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+	eor	v24.16b, v24.16b, v12.16b
+	eor	v25.16b, v25.16b, v13.16b
+	eor	v26.16b, v26.16b, v14.16b
+	eor	v27.16b, v27.16b, v15.16b
+	st1	{v20.16b-v23.16b}, [x1], #64
+	st1	{v24.16b-v27.16b}, [x1], #64
+
+	tweak_calc(v8, v15, v31, v19)
+
+	cbz	w2, .dec_xts_tail
+	b .dec_xts_8block
+
+.dec_xts_4block:
+	add	w2, w2, #8
+	cmp	w2, #4
+	blt	.dec_xts_1block
+
+	sub	w2, w2, #4
+
+	tweak_calc(v9, v8, v31, v16)
+	tweak_calc(v10, v9, v31, v17)
+	tweak_calc(v11, v10, v31, v18)
+
+	ld1	{v20.16b-v23.16b}, [x0], #64
+	eor	v20.16b, v20.16b, v8.16b
+	eor	v21.16b, v21.16b, v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+	sm4e v20.4s, v0.4s
+	sm4e v21.4s, v0.4s
+	sm4e v22.4s, v0.4s
+	sm4e v23.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v21.4s, v1.4s
+	sm4e v22.4s, v1.4s
+	sm4e v23.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v21.4s, v2.4s
+	sm4e v22.4s, v2.4s
+	sm4e v23.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v21.4s, v3.4s
+	sm4e v22.4s, v3.4s
+	sm4e v23.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v21.4s, v4.4s
+	sm4e v22.4s, v4.4s
+	sm4e v23.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v21.4s, v5.4s
+	sm4e v22.4s, v5.4s
+	sm4e v23.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v21.4s, v6.4s
+	sm4e v22.4s, v6.4s
+	sm4e v23.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	sm4e v21.4s, v7.4s
+	sm4e v22.4s, v7.4s
+	sm4e v23.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	rev64 v21.4s, v21.4s
+	rev64 v22.4s, v22.4s
+	rev64 v23.4s, v23.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	ext v21.16b, v21.16b, v21.16b, #8
+	ext v22.16b, v22.16b, v22.16b, #8
+	ext v23.16b, v23.16b, v23.16b, #8
+	rev32 v20.16b, v20.16b
+	rev32 v21.16b, v21.16b
+	rev32 v22.16b, v22.16b
+	rev32 v23.16b, v23.16b
+
+	eor	v20.16b, v20.16b, v8.16b
+	eor	v21.16b, v21.16b, v9.16b
+	eor	v22.16b, v22.16b, v10.16b
+	eor	v23.16b, v23.16b, v11.16b
+	st1	{v20.16b-v23.16b}, [x1], #64
+
+	tweak_calc(v8, v11, v31, v19)
+
+	cbz	w2, .dec_xts_tail
+
+.dec_xts_1block:
+	sub	w2, w2, #1
+
+	ld1	{v20.16b}, [x0], #16
+	eor	v20.16b, v20.16b, v8.16b
+
+	rev32 v20.16b, v20.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+
+	eor	v20.16b, v20.16b, v8.16b
+	st1	{v20.16b}, [x1], #16
+
+	tweak_calc(v8, v8, v31, v16)
+
+	cbnz w2, .dec_xts_1block
+
+.dec_xts_tail:
+	uxtw x5, w5
+	cbz	x5, .dec_xts_end
+
+	tweak_calc(v9, v8, v31, v16)
+	ld1	{v20.16b}, [x0]
+	eor	v20.16b, v20.16b, v9.16b
+	rev32 v20.16b, v20.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+	eor	v20.16b, v20.16b, v9.16b
+
+	adr x6, .cts_permute_table
+	add	x7, x6, #32
+	add	x6, x6, x5
+	sub	x7, x7, x5
+	ld1	{v23.16b}, [x6]
+	ld1	{v24.16b}, [x7]
+
+	add	x0, x0, x5
+	ld1	{v21.16b}, [x0]
+
+	tbl	v22.16b, {v20.16b}, v23.16b
+	tbx	v20.16b, {v21.16b}, v24.16b
+
+	eor	v20.16b, v20.16b, v8.16b
+	rev32 v20.16b, v20.16b
+	sm4e v20.4s, v0.4s
+	sm4e v20.4s, v1.4s
+	sm4e v20.4s, v2.4s
+	sm4e v20.4s, v3.4s
+	sm4e v20.4s, v4.4s
+	sm4e v20.4s, v5.4s
+	sm4e v20.4s, v6.4s
+	sm4e v20.4s, v7.4s
+	rev64 v20.4s, v20.4s
+	ext v20.16b, v20.16b, v20.16b, #8
+	rev32 v20.16b, v20.16b
+	eor	v20.16b, v20.16b, v8.16b
+
+	add	x5, x1, x5
+	st1	{v22.16b}, [x5]
+	st1	{v20.16b}, [x1]
+
+	b .dec_xts_ret
+
+.dec_xts_end:
+	/* new tweak */
+	st1	{v8.16b}, [x4]
+
+.dec_xts_ret:
+	ldp	d8,d9,[sp],#16
+	ret
+.size	sm4_v8_xts_decrypt,.-sm4_v8_xts_decrypt
