@@ -128,6 +128,82 @@ static void sm4_cbc_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rke
 	sm4_v8_cbc_encrypt(msg->in, msg->out, msg->in_bytes, rkey_dec, msg->iv, SM4_DECRYPT);
 }
 
+/*
+ * In some situations, the cts mode can use cbc mode instead to imporve performance.
+ */
+static int sm4_cts_cbc_instead(struct wd_cipher_msg *msg)
+{
+	if (msg->in_bytes == SM4_BLOCK_SIZE)
+		return true;
+
+	if (!(msg->in_bytes % SM4_BLOCK_SIZE) && msg->mode != WD_CIPHER_CBC_CS3)
+		return true;
+
+	return false;
+}
+
+static void sm4_cts_cs1_mode_adapt(__u8 *cts_in, __u8 *cts_out,
+				   const __u32 cts_bytes, const int enc)
+{
+	__u32 rsv_bytes = cts_bytes % SM4_BLOCK_SIZE;
+	__u8 blocks[SM4_BLOCK_SIZE] = {0};
+
+	if (enc == SM4_ENCRYPT) {
+		memcpy(blocks, cts_out, SM4_BLOCK_SIZE);
+		memcpy(cts_out, cts_out + SM4_BLOCK_SIZE, rsv_bytes);
+		memcpy(cts_out + rsv_bytes, blocks, SM4_BLOCK_SIZE);
+	} else {
+		memcpy(blocks, cts_in + rsv_bytes, SM4_BLOCK_SIZE);
+		memcpy(cts_in + SM4_BLOCK_SIZE, cts_in, rsv_bytes);
+		memcpy(cts_in, blocks, SM4_BLOCK_SIZE);
+	}
+}
+
+static void sm4_cts_cbc_crypt(struct wd_cipher_msg *msg,
+			      const struct SM4_KEY *rkey_enc, const int enc)
+{
+	enum wd_cipher_mode mode = msg->mode;
+	__u32 in_bytes = msg->in_bytes;
+	__u8 *cts_in, *cts_out;
+	__u32 cts_bytes;
+
+	if (sm4_cts_cbc_instead(msg))
+		return sm4_v8_cbc_encrypt(msg->in, msg->out, in_bytes, rkey_enc, msg->iv, enc);
+
+	cts_bytes = in_bytes % SM4_BLOCK_SIZE + SM4_BLOCK_SIZE;
+	if (cts_bytes == SM4_BLOCK_SIZE)
+		cts_bytes += SM4_BLOCK_SIZE;
+
+	in_bytes -= cts_bytes;
+	if (in_bytes)
+		sm4_v8_cbc_encrypt(msg->in, msg->out, in_bytes, rkey_enc, msg->iv, enc);
+
+	cts_in = msg->in + in_bytes;
+	cts_out = msg->out + in_bytes;
+
+	if (enc == SM4_ENCRYPT) {
+		sm4_v8_cbc_cts_encrypt(cts_in, cts_out, cts_bytes, rkey_enc, msg->iv);
+
+		if (mode == WD_CIPHER_CBC_CS1)
+			sm4_cts_cs1_mode_adapt(cts_in, cts_out, cts_bytes, enc);
+	} else {
+		if (mode == WD_CIPHER_CBC_CS1)
+			sm4_cts_cs1_mode_adapt(cts_in, cts_out, cts_bytes, enc);
+
+		sm4_v8_cbc_cts_decrypt(cts_in, cts_out, cts_bytes, rkey_enc, msg->iv);
+	}
+}
+
+static void sm4_cbc_cts_encrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_enc)
+{
+	sm4_cts_cbc_crypt(msg, rkey_enc, SM4_ENCRYPT);
+}
+
+static void sm4_cbc_cts_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_enc)
+{
+	sm4_cts_cbc_crypt(msg, rkey_enc, SM4_DECRYPT);
+}
+
 static void sm4_ecb_encrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey_enc)
 {
 	sm4_v8_ecb_encrypt(msg->in, msg->out, msg->in_bytes, rkey_enc, SM4_ENCRYPT);
@@ -138,12 +214,12 @@ static void sm4_ecb_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rke
 	sm4_v8_ecb_encrypt(msg->in, msg->out, msg->in_bytes, rkey_dec, SM4_DECRYPT);
 }
 
-void sm4_set_encrypt_key(const __u8 *userKey, struct SM4_KEY *key)
+static void sm4_set_encrypt_key(const __u8 *userKey, struct SM4_KEY *key)
 {
 	sm4_v8_set_encrypt_key(userKey, key);
 }
 
-void sm4_set_decrypt_key(const __u8 *userKey, struct SM4_KEY *key)
+static void sm4_set_decrypt_key(const __u8 *userKey, struct SM4_KEY *key)
 {
 	sm4_v8_set_decrypt_key(userKey, key);
 }
@@ -276,6 +352,14 @@ static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 		else
 			sm4_cbc_decrypt(msg, &rkey);
 		break;
+	case WD_CIPHER_CBC_CS1:
+	case WD_CIPHER_CBC_CS2:
+	case WD_CIPHER_CBC_CS3:
+		if (msg->op_type == WD_CIPHER_ENCRYPTION)
+			sm4_cbc_cts_encrypt(msg, &rkey);
+		else
+			sm4_cbc_cts_decrypt(msg, &rkey);
+		break;
 	case WD_CIPHER_CTR:
 		sm4_ctr_encrypt(msg, &rkey);
 		break;
@@ -330,6 +414,9 @@ static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 
 static struct wd_alg_driver cipher_alg_driver[] = {
 	GEN_CE_ALG_DRIVER("cbc(sm4)", cipher),
+	GEN_CE_ALG_DRIVER("cbc-cs1(sm4)", cipher),
+	GEN_CE_ALG_DRIVER("cbc-cs2(sm4)", cipher),
+	GEN_CE_ALG_DRIVER("cbc-cs3(sm4)", cipher),
 	GEN_CE_ALG_DRIVER("ctr(sm4)", cipher),
 	GEN_CE_ALG_DRIVER("cfb(sm4)", cipher),
 	GEN_CE_ALG_DRIVER("xts(sm4)", cipher),
