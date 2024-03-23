@@ -127,6 +127,10 @@ struct wd_ctx_params {
 	struct wd_cap_config *cap;
 };
 
+struct wd_soft_ctx {
+	void *priv;
+};
+
 struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
