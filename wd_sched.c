@@ -428,9 +428,9 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 	}
 
 	while (loop_times > 0) {
-		/* Default async mode use ctx 0 */
+		/* Default async mode use ctx 1 */
 		loop_times--;
-		ret = sched_ctx->poll_func(0, 1, &poll_num);
+		ret = sched_ctx->poll_func(1, 1, &poll_num);
 		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
 		else if (ret == -EAGAIN)
