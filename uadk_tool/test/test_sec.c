@@ -32,7 +32,7 @@
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
 #define TEST_WORD_LEN	4096
-#define MAX_ALGO_PER_TYPE 16
+#define MAX_ALGO_PER_TYPE 17
 #define MIN_SVA_BD_NUM	1
 #define AES_KEYSIZE_128		16
 #define AES_KEYSIZE_192		24
@@ -83,6 +83,8 @@ enum digest_type {
 	LOCAL_AES_GMAC_192,
 	LOCAL_AES_GMAC_256,
 	LOCAL_AES_XCBC_MAC_96,
+	LOCAL_AES_XCBC_PRF_128,
+	LOCAL_AES_CCM,
 };
 
 char *digest_names[MAX_ALGO_PER_TYPE] = {
@@ -102,6 +104,7 @@ char *digest_names[MAX_ALGO_PER_TYPE] = {
 	"xcbc-mac-96(aes)",
 	"xcbc-prf-128(aes)",
 	"ccm(aes)", /* --digest 15: for error alg test */
+	"sm3-ce",
 };
 
 char *aead_names[MAX_ALGO_PER_TYPE] = {
@@ -1464,10 +1467,13 @@ static int digest_init2(int type, int mode)
 {
 	struct wd_ctx_params cparams = {0};
 	struct wd_ctx_nums *ctx_set_num;
+	char *alg_name;
 	int ret;
 
 	if (g_testalg >= MAX_ALGO_PER_TYPE)
 		return -WD_EINVAL;
+
+	alg_name = digest_names[g_testalg];
 
 	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
 	if (!ctx_set_num) {
@@ -1492,7 +1498,10 @@ static int digest_init2(int type, int mode)
 	if (mode == CTX_MODE_ASYNC)
 		ctx_set_num->async_ctx_num = g_ctxnum;
 
-	ret = wd_digest_init2_(digest_names[g_testalg], 0, 0, &cparams);
+	if (!strcmp(alg_name, "sm3-ce"))
+		ret = wd_digest_init2("sm3", SCHED_POLICY_NONE, TASK_INSTR);
+	else
+		ret = wd_digest_init2_(digest_names[g_testalg], 0, 0, &cparams);
 	if (ret)
 		goto out_freebmp;
 
@@ -1780,7 +1789,22 @@ int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
 			tv->dsize = 16;
 			alg_type = WD_DIGEST_AES_XCBC_PRF_128;
 			break;
-
+		case 16: /* SM3-CE */
+			switch (g_alg_op_type) {
+			case 0:
+				mode_type = WD_DIGEST_NORMAL;
+				SEC_TST_PRT("test alg: %s\n", "normal(sm3-ce)");
+				tv = &sm3_tv_template[0];
+				break;
+			case 1:
+				mode_type = WD_DIGEST_HMAC;
+				SEC_TST_PRT("test alg: %s\n", "hmac(sm3-ce)");
+				tv = &hmac_sm3_tv_template[0];
+				break;
+			}
+			tv->dsize = 32;
+			alg_type = WD_DIGEST_SM3;
+			break;
 		default:
 			SEC_TST_PRT("keylenth error, default test alg: %s\n", "normal(sm3)");
 			return -EINVAL;
@@ -4229,7 +4253,7 @@ static void print_help(void)
 	SEC_TST_PRT("        4 : SHA224; 5 : SHA384; 6 : SHA512; 7 : SHA512_224\n");
 	SEC_TST_PRT("        8 : SHA512_256; 9 : AES_CMAC; 10 : AES_GMAC_128\n");
 	SEC_TST_PRT("        11 : AES_GMAC_192; 12 : AES_GMAC_256; 13 : AES_XCBC_MAC_96\n");
-	SEC_TST_PRT("        14 : AES_XCBC_PRF_128\n");
+	SEC_TST_PRT("        14 : AES_XCBC_PRF_128; 15 : SM3-CE\n");
 	SEC_TST_PRT("    [--aead ]:\n");
 	SEC_TST_PRT("        specify symmetric aead algorithm\n");
 	SEC_TST_PRT("        0 : AES-CCM; 1 : AES-GCM;  2 : Hmac(sha256),cbc(aes)\n");
@@ -4257,6 +4281,9 @@ static void print_help(void)
 	SEC_TST_PRT("        set the steam mode for digest\n");
 	SEC_TST_PRT("    [--sglnum]:\n");
 	SEC_TST_PRT("        the number of scatterlist number used by the entire test task\n");
+	SEC_TST_PRT("    [--init]:\n");
+	SEC_TST_PRT("        1: use init API of uadk\n");
+	SEC_TST_PRT("        2: use init2 API of uadk\n");
 	SEC_TST_PRT("    [--help]  = usage\n");
 	SEC_TST_PRT("Example\n");
 	SEC_TST_PRT("    ./uadk_tool test --m sec --cipher 0 --sync --optype 0\n");

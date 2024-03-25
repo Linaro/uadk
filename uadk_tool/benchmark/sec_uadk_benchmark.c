@@ -53,6 +53,7 @@ typedef struct uadk_thread_res {
 	bool is_union;
 	u32 dalg;
 	u32 dmode;
+	u32 d_outbytes;
 } thread_data;
 
 static struct wd_ctx_config g_ctx_cfg;
@@ -146,6 +147,7 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	u32 algtype = options->algtype;
 	u32 optype = options->optype;
 	bool is_union = false;
+	u32 out_bytes = 32;
 	u8 keysize = 0;
 	u8 ivsize = 0;
 	u8 dmode = 0;
@@ -346,6 +348,24 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		mode = WD_CIPHER_CBC;
 		alg = WD_CIPHER_SM4;
 		break;
+	case SM4_128_CBC_CS1:
+		keysize = 16;
+		ivsize = 16;
+		mode = WD_CIPHER_CBC_CS1;
+		alg = WD_CIPHER_SM4;
+		break;
+	case SM4_128_CBC_CS2:
+		keysize = 16;
+		ivsize = 16;
+		mode = WD_CIPHER_CBC_CS2;
+		alg = WD_CIPHER_SM4;
+		break;
+	case SM4_128_CBC_CS3:
+		keysize = 16;
+		ivsize = 16;
+		mode = WD_CIPHER_CBC_CS3;
+		alg = WD_CIPHER_SM4;
+		break;
 	case SM4_128_CTR:
 		keysize = 16;
 		ivsize = 16;
@@ -454,45 +474,54 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	case SM3_ALG:		// digest mode is optype
 		keysize = 4;
 		mode = optype;
+		out_bytes = 32;
 		alg = WD_DIGEST_SM3;
 		break;
 	case MD5_ALG:
 		keysize = 4;
+		out_bytes = 16;
 		mode = optype;
 		alg = WD_DIGEST_MD5;
 		break;
 	case SHA1_ALG:
 		keysize = 4;
+		out_bytes = 20;
 		mode = optype;
 		alg = WD_DIGEST_SHA1;
 		break;
 	case SHA256_ALG:
 		keysize = 4;
+		out_bytes = 32;
 		mode = optype;
 		alg = WD_DIGEST_SHA256;
 		break;
 	case SHA224_ALG:
 		keysize = 4;
+		out_bytes = 28;
 		mode = optype;
 		alg = WD_DIGEST_SHA224;
 		break;
 	case SHA384_ALG:
 		keysize = 4;
+		out_bytes = 48;
 		mode = optype;
 		alg = WD_DIGEST_SHA384;
 		break;
 	case SHA512_ALG:
 		keysize = 4;
+		out_bytes = 64;
 		mode = optype;
 		alg = WD_DIGEST_SHA512;
 		break;
 	case SHA512_224:
 		keysize = 4;
+		out_bytes = 28;
 		mode = optype;
 		alg = WD_DIGEST_SHA512_224;
 		break;
 	case SHA512_256:
 		keysize = 4;
+		out_bytes = 32;
 		mode = optype;
 		alg = WD_DIGEST_SHA512_256;
 		break;
@@ -510,20 +539,130 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	tddata->is_union = is_union;
 	tddata->optype = options->optype;
 	tddata->subtype = options->subtype;
+	tddata->d_outbytes = out_bytes;
 
 	return 0;
+}
+
+static int specified_device_request_ctx(struct acc_option *options)
+{
+	struct uacce_dev_list *list = NULL;
+	struct uacce_dev_list *tmp = NULL;
+	char *alg = options->algclass;
+	int mode = options->syncmode;
+	struct uacce_dev *dev = NULL;
+	int avail_ctx = 0;
+	char *dev_name;
+	int ret = 0;
+	int i = 0;
+
+	list = wd_get_accel_list(alg);
+	if (!list) {
+		SEC_TST_PRT("failed to get %s device\n", alg);
+		return -ENODEV;
+	}
+
+	for (tmp = list; tmp != NULL; tmp = tmp->next) {
+		dev_name = strrchr(tmp->dev->dev_root, '/') + 1;
+		if (!strcmp(dev_name, options->device)) {
+			dev = tmp->dev;
+			break;
+		}
+	}
+
+	if (dev == NULL) {
+		SEC_TST_PRT("failed to find device %s\n", options->device);
+		ret = -ENODEV;
+		goto free_list;
+	}
+
+	avail_ctx = wd_get_avail_ctx(dev);
+	if (avail_ctx < 0) {
+		SEC_TST_PRT("failed to get the number of available ctx from %s\n", options->device);
+		ret = avail_ctx;
+		goto free_list;
+	} else if (avail_ctx < g_ctxnum) {
+		SEC_TST_PRT("error: not enough ctx available in %s\n", options->device);
+		ret = -ENODEV;
+		goto free_list;
+	}
+
+	/* If there is no numa, we default config to zero */
+	if (dev->numa_id < 0)
+		dev->numa_id = 0;
+
+	for (i = 0; i < g_ctxnum; i++) {
+		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+		if (!g_ctx_cfg.ctxs[i].ctx) {
+			SEC_TST_PRT("failed to alloc %dth ctx\n", i);
+			ret = -ENOMEM;
+			goto free_ctx;
+		}
+		g_ctx_cfg.ctxs[i].op_type = 0;
+		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	}
+
+	wd_free_list_accels(list);
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+free_list:
+	wd_free_list_accels(list);
+
+	return ret;
+}
+
+static int non_specified_device_request_ctx(struct acc_option *options)
+{
+	char *alg = options->algclass;
+	int mode = options->syncmode;
+	struct uacce_dev *dev = NULL;
+	int ret = 0;
+	int i = 0;
+
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			SEC_TST_PRT("failed to get %s device\n", alg);
+			ret = -ENODEV;
+			goto free_ctx;
+		}
+
+		/* If there is no numa, we default config to zero */
+		if (dev->numa_id < 0)
+			dev->numa_id = 0;
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0;
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
+	}
+
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+	return ret;
 }
 
 static int init_ctx_config(struct acc_option *options)
 {
 	struct sched_params param = {0};
-	struct uacce_dev *dev = NULL;
-	char *alg = options->algclass;
 	int subtype = options->subtype;
 	int mode = options->syncmode;
-	int max_node = 0;
+	int max_node;
 	int ret = 0;
-	int i = 0;
 
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
@@ -535,23 +674,14 @@ static int init_ctx_config(struct acc_option *options)
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	while (i < g_ctxnum) {
-		dev = wd_get_accel_dev(alg);
-		if (!dev) {
-			SEC_TST_PRT("failed to get %s device\n", alg);
-			goto out;
-		}
+	if (strlen(options->device) != 0)
+		ret = specified_device_request_ctx(options);
+	else
+		ret = non_specified_device_request_ctx(options);
 
-		for (; i < g_ctxnum; i++) {
-			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
-			if (!g_ctx_cfg.ctxs[i].ctx)
-				break;
-
-			g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
-			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
-		}
-
-		free(dev);
+	if (ret) {
+		SEC_TST_PRT("failed to request sec ctx!\n");
+		goto free_ctxs;
 	}
 
 	switch(subtype) {
@@ -566,11 +696,11 @@ static int init_ctx_config(struct acc_option *options)
 		break;
 	default:
 		SEC_TST_PRT("failed to parse alg subtype!\n");
-		return -EINVAL;
+		goto free_ctx;
 	}
 	if (!g_sched) {
 		SEC_TST_PRT("failed to alloc sched!\n");
-		goto out;
+		goto free_ctx;
 	}
 
 	g_sched->name = SCHED_SINGLE;
@@ -582,7 +712,7 @@ static int init_ctx_config(struct acc_option *options)
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
 		SEC_TST_PRT("failed to fill sched data!\n");
-		goto out;
+		goto free_sched;
 	}
 
 	/* init */
@@ -598,18 +728,21 @@ static int init_ctx_config(struct acc_option *options)
 		break;
 	}
 	if (ret) {
-		SEC_TST_PRT("failed to cipher ctx!\n");
-		goto out;
+		SEC_TST_PRT("failed to init sec ctx!\n");
+		goto free_sched;
 	}
 
 	return 0;
 
-out:
-	for (i--; i >= 0; i--)
+free_sched:
+	wd_sched_rr_release(g_sched);
+
+free_ctx:
+	for (int i = g_ctxnum; i >= 0; i--)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 
+free_ctxs:
 	free(g_ctx_cfg.ctxs);
-	wd_sched_rr_release(g_sched);
 
 	return ret;
 }
@@ -645,6 +778,7 @@ static void uninit_ctx_config2(int subtype)
 	/* uninit2 */
 	switch(subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		wd_cipher_uninit2();
 		break;
 	case AEAD_TYPE:
@@ -675,12 +809,23 @@ static int init_ctx_config2(struct acc_option *options)
 	switch(subtype) {
 	case CIPHER_TYPE:
 		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		if (ret)
+			SEC_TST_PRT("failed to do cipher init2!\n");
+		break;
+	case CIPHER_INSTR_TYPE:
+		ret = wd_cipher_init2(alg_name, SCHED_POLICY_NONE, TASK_INSTR);
+		if (ret)
+			SEC_TST_PRT("failed to do cipher intruction init2!\n");
 		break;
 	case AEAD_TYPE:
 		ret = wd_aead_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		if (ret)
+			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
-		ret = wd_digest_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		ret = wd_digest_init2(alg_name, options->sched_type, options->task_type);
+		if (ret)
+			SEC_TST_PRT("failed to do digest init2!\n");
 		break;
 	}
 	if (ret) {
@@ -688,7 +833,7 @@ static int init_ctx_config2(struct acc_option *options)
 		return ret;
 	}
 
-	return 0;
+	return ret;
 }
 
 static void get_aead_data(u8 *addr, u32 size)
@@ -1165,6 +1310,7 @@ static void *sec_uadk_aead_async(void *arg)
 	areq.mac_bytes = auth_size;
 	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
+	areq.msg_state = 0;
 	if (pdata->is_union)
 		areq.mac_bytes = 32;
 	if (areq.op_type) // decrypto
@@ -1240,8 +1386,8 @@ static void *sec_uadk_digest_async(void *arg)
 		}
 	}
 	dreq.in_bytes = g_pktlen;
-	dreq.out_bytes = 16;
-	dreq.out_buf_bytes = 16;
+	dreq.out_bytes = pdata->d_outbytes;
+	dreq.out_buf_bytes = pdata->d_outbytes;
 	dreq.data_fmt = 0;
 	dreq.state = 0;
 	dreq.has_next = 0;
@@ -1396,6 +1542,7 @@ static void *sec_uadk_aead_sync(void *arg)
 	areq.assoc_bytes = SEC_AEAD_LEN;
 	areq.in_bytes = g_pktlen;
 	areq.mac_bytes = g_maclen;
+	areq.msg_state = 0;
 	if (areq.op_type) // decrypto
 		areq.out_bytes = g_pktlen + 16; // aadsize = 16;
 	else
@@ -1459,8 +1606,8 @@ static void *sec_uadk_digest_sync(void *arg)
 		}
 	}
 	dreq.in_bytes = g_pktlen;
-	dreq.out_bytes = 16;
-	dreq.out_buf_bytes = 16;
+	dreq.out_bytes = pdata->d_outbytes;
+	dreq.out_buf_bytes = pdata->d_outbytes;
 	dreq.data_fmt = 0;
 	dreq.state = 0;
 	dreq.has_next = 0;
@@ -1500,6 +1647,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 
 	switch (options->subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		uadk_sec_sync_run = sec_uadk_cipher_sync;
 		break;
 	case AEAD_TYPE:
@@ -1508,6 +1656,9 @@ int sec_uadk_sync_threads(struct acc_option *options)
 	case DIGEST_TYPE:
 		uadk_sec_sync_run = sec_uadk_digest_sync;
 		break;
+	default:
+		SEC_TST_PRT("Invalid subtype!\n");
+		return -EINVAL;
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
@@ -1520,6 +1671,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
+		threads_args[i].d_outbytes = threads_option.d_outbytes;
 		ret = pthread_create(&tdid[i], NULL, uadk_sec_sync_run, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create sync thread fail!\n");
@@ -1591,6 +1743,7 @@ int sec_uadk_async_threads(struct acc_option *options)
 		threads_args[i].ivsize = threads_option.ivsize;
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
+		threads_args[i].d_outbytes = threads_option.d_outbytes;
 		ret = pthread_create(&tdid[i], NULL, uadk_sec_async_run, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create async thread fail!\n");

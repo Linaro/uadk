@@ -21,6 +21,7 @@
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define MAX_POOL_LENTH_COMP	512
 #define CHUNK_SIZE		(128 * 1024)
+#define MAX_UNRECV_PACKET_NUM		2
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -49,6 +50,11 @@ enum ZIP_OP_MODE {
 	STREAM_MODE
 };
 
+enum ZIP_THREAD_STATE {
+	THREAD_PROCESSING,
+	THREAD_COMPLETED
+};
+
 struct zip_async_tag {
 	void *ctx;
 	u32 td_id;
@@ -75,6 +81,8 @@ struct zip_file_head {
 
 static unsigned int g_thread_num;
 static unsigned int g_pktlen;
+static unsigned int g_send_cnt[THREADS_NUM];
+static unsigned int g_recv_state[THREADS_NUM];
 
 static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 {
@@ -310,6 +318,14 @@ static int init_zip_wd_queue(struct acc_option *options)
 		/* nodemask need to    be clean */
 		g_thread_queue.bd_res[i].queue->node_mask = 0x0;
 		memset(g_thread_queue.bd_res[i].queue->dev_path, 0x0, PATH_STR_SIZE);
+		if (strlen(options->device) != 0) {
+			ret = snprintf(g_thread_queue.bd_res[i].queue->dev_path,
+					PATH_STR_SIZE, "%s", options->device);
+			if (ret < 0) {
+				WD_ERR("failed to copy dev file path!\n");
+				return -WD_EINVAL;
+			}
+		}
 
 		ret = wd_request_queue(g_thread_queue.bd_res[i].queue);
 		if (ret) {
@@ -462,9 +478,10 @@ static void *zip_wd_poll(void *data)
 		count += recv;
 		recv = 0;
 
-		if (get_run_state() == 0)
+		if (get_run_state() == 0 && g_send_cnt[id] <= count + MAX_UNRECV_PACKET_NUM)
 			last_time--;
 	}
+	g_recv_state[id] = THREAD_COMPLETED;
 
 recv_error:
 	add_recv_data(count, g_pktlen);
@@ -708,9 +725,8 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 
 	while(1) {
 		if (get_run_state() == 0)
-				break;
+			break;
 
-		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		opdata.in = bd_pool[i].src;
 		opdata.out = bd_pool[i].dst; //temp out
@@ -737,14 +753,13 @@ static void *zip_wd_blk_lz77_async_run(void *arg)
 			opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
 			break;
 		}
+		try_cnt = 0;
 		count++;
+		__atomic_add_fetch(&g_send_cnt[pdata->td_id], 1, __ATOMIC_RELAXED);
 	}
 
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
+	while (g_recv_state[pdata->td_id] == THREAD_PROCESSING)
 		usleep(SEND_USLEEP);
-	}
 
 	free(tag);
 tag_err:
@@ -984,7 +999,6 @@ static void *zip_wd_blk_async_run(void *arg)
 		opdata.in_len = bd_pool[i].src_len;
 		opdata.avail_out = out_len;
 
-		try_cnt = 0;
 		tag[i].ctx = ctx;
 		tag[i].td_id = pdata->td_id;
 		tag[i].bd_idx = i;
@@ -1002,15 +1016,13 @@ static void *zip_wd_blk_async_run(void *arg)
 		     opdata.status == WD_IN_EPARA || opdata.status == WD_VERIFY_ERR) {
 			break;
 		}
-
+		try_cnt = 0;
 		count++;
+		__atomic_add_fetch(&g_send_cnt[pdata->td_id], 1, __ATOMIC_RELAXED);
 	}
 
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
+	while (g_recv_state[pdata->td_id] == THREAD_PROCESSING)
 		usleep(SEND_USLEEP);
-	}
 
 tag_release:
 	free(tag);
@@ -1100,6 +1112,7 @@ static int zip_wd_async_threads(struct acc_option *options)
 
 	for (i = 0; i < g_thread_num; i++) {
 		threads_args[i].td_id = i;
+		g_recv_state[i] = THREAD_PROCESSING;
 		/* poll thread */
 		ret = pthread_create(&pollid[i], NULL, zip_wd_poll, &threads_args[i]);
 		if (ret) {
@@ -1115,6 +1128,7 @@ static int zip_wd_async_threads(struct acc_option *options)
 		threads_args[i].comp_lv = threads_option.comp_lv;
 		threads_args[i].win_size = threads_option.win_size;
 		threads_args[i].td_id = i;
+		g_send_cnt[i] = 0;
 		ret = pthread_create(&tdid[i], NULL, wd_zip_async_run, &threads_args[i]);
 		if (ret) {
 			ZIP_TST_PRT("Create async thread fail!\n");
