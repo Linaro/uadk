@@ -759,8 +759,7 @@ static int fill_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 			return ret;
 	}
 
-	if (tag)
-		sqe->type2.tag = tag->wcrypto_tag.ctx_id;
+	sqe->type2.tag = tag->wcrypto_tag.ctx_id;
 
 	return ret;
 }
