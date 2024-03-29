@@ -3087,7 +3087,11 @@ static void hisi_sec_exit(struct wd_alg_driver *drv)
 	drv->priv = NULL;
 }
 
+#ifdef WD_STATIC_DRV
+void hisi_sec2_probe(void)
+#else
 static void __attribute__((constructor)) hisi_sec2_probe(void)
+#endif
 {
 	int alg_num;
 	int i, ret;
@@ -3119,7 +3123,11 @@ static void __attribute__((constructor)) hisi_sec2_probe(void)
 	}
 }
 
+#ifdef WD_STATIC_DRV
+void hisi_sec2_remove(void)
+#else
 static void __attribute__((destructor)) hisi_sec2_remove(void)
+#endif
 {
 	int alg_num;
 	int i;

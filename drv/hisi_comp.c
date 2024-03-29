@@ -1109,7 +1109,11 @@ static struct wd_alg_driver zip_alg_driver[] = {
 	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
 };
 
+#ifdef WD_STATIC_DRV
+void hisi_zip_probe(void)
+#else
 static void __attribute__((constructor)) hisi_zip_probe(void)
+#endif
 {
 	int alg_num = ARRAY_SIZE(zip_alg_driver);
 	int i, ret;
@@ -1124,7 +1128,11 @@ static void __attribute__((constructor)) hisi_zip_probe(void)
 	}
 }
 
+#ifdef WD_STATIC_DRV
+void hisi_zip_remove(void)
+#else
 static void __attribute__((destructor)) hisi_zip_remove(void)
+#endif
 {
 	int alg_num = ARRAY_SIZE(zip_alg_driver);
 	int i;

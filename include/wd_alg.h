@@ -69,7 +69,7 @@ enum alg_dev_type {
 	UADK_ALG_HW = 0x3
 };
 
-/**
+/*
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
  * @priority: priority of the type of algorithm supported by the driver
@@ -133,7 +133,7 @@ inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg
 	return drv->recv(drv, ctx, msg);
 }
 
-/**
+/*
  * wd_alg_driver_register() - Register a device driver.
  * @wd_alg_driver: a device driver that supports an algorithm.
  *
@@ -142,7 +142,7 @@ inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg
 int wd_alg_driver_register(struct wd_alg_driver *drv);
 void wd_alg_driver_unregister(struct wd_alg_driver *drv);
 
-/**
+/*
  * @alg_name: name of the algorithm supported by the driver
  * @drv_name: name of the current device driver
  * @available: Indicates whether the current driver still has resources available
@@ -165,7 +165,7 @@ struct wd_alg_list {
 	struct wd_alg_list *next;
 };
 
-/**
+/*
  * wd_request_drv() - Apply for an algorithm driver.
  * @alg_name: task algorithm name.
  * @hw_mask: the flag of shield hardware device drivers.
@@ -175,7 +175,7 @@ struct wd_alg_list {
 struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
 void wd_release_drv(struct wd_alg_driver *drv);
 
-/**
+/*
  * wd_drv_alg_support() - Check the algorithms supported by the driver.
  * @alg_name: task algorithm name.
  * @drv: a device driver that supports an algorithm.
@@ -185,7 +185,7 @@ void wd_release_drv(struct wd_alg_driver *drv);
 bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_driver *drv);
 
-/**
+/*
  * wd_enable_drv() - Re-enable use of the current device driver.
  * @drv: a device driver that supports an algorithm.
  */
@@ -193,6 +193,20 @@ void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 
 struct wd_alg_list *wd_get_alg_head(void);
+
+#ifdef WD_STATIC_DRV
+/*
+ * duplicate drivers will be skipped when it register to alg_list
+ */
+void hisi_sec2_probe(void);
+void hisi_hpre_probe(void);
+void hisi_zip_probe(void);
+
+void hisi_sec2_remove(void);
+void hisi_hpre_remove(void);
+void hisi_zip_remove(void);
+
+#endif
 
 #ifdef __cplusplus
 }
