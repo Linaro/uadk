@@ -542,66 +542,54 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 
 static int cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info q_info = qp->q_info;
+	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
 		return hisi_sec_cipher_send(drv, ctx, msg);
 	return hisi_sec_cipher_send_v3(drv, ctx, msg);
 }
 
 static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info q_info = qp->q_info;
+	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
 		return hisi_sec_cipher_recv(drv, ctx, msg);
 	return hisi_sec_cipher_recv_v3(drv, ctx, msg);
 }
 
 static int digest_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info q_info = qp->q_info;
+	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
 		return hisi_sec_digest_send(drv, ctx, msg);
 	return hisi_sec_digest_send_v3(drv, ctx, msg);
 }
 
 static int digest_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info q_info = qp->q_info;
+	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
 		return hisi_sec_digest_recv(drv, ctx, msg);
 	return hisi_sec_digest_recv_v3(drv, ctx, msg);
 }
 
 static int aead_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info q_info = qp->q_info;
+	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
 		return hisi_sec_aead_send(drv, ctx, msg);
 	return hisi_sec_aead_send_v3(drv, ctx, msg);
 }
 
 static int aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 {
-	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info q_info = qp->q_info;
+	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
-	if (q_info.hw_type == HISI_QM_API_VER2_BASE)
+	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
 		return hisi_sec_aead_recv(drv, ctx, msg);
 	return hisi_sec_aead_recv_v3(drv, ctx, msg);
 }
