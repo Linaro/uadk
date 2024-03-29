@@ -312,11 +312,10 @@ static int fill_cipher_bd1_type(struct wcrypto_cipher_msg *msg,
 
 	fill_bd_addr_type(msg->data_fmt, sqe);
 
-	/*
-	 * BD1 cipher only provides ci_gen=0 for compatibility, so user
-	 * should prepare iv[gran_num] and iv_bytes is sum of all grans
-	 */
-	sqe->type1.ci_gen = CI_GEN_BY_ADDR;
+	if (msg->mode == WCRYPTO_CIPHER_XTS)
+		sqe->type1.ci_gen = CI_GEN_BY_LBA;
+	else
+		sqe->type1.ci_gen = CI_GEN_BY_ADDR;
 
 	return WD_SUCCESS;
 }
