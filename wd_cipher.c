@@ -565,6 +565,28 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 	return ret;
 }
 
+static int cipher_len_check(handle_t h_sess, struct wd_cipher_req *req)
+{
+	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+
+	if (!req->in_bytes) {
+		WD_ERR("invalid: cipher input length is zero!\n");
+		return -WD_EINVAL;
+	}
+
+	if (sess->alg != WD_CIPHER_AES && sess->alg != WD_CIPHER_SM4)
+		return 0;
+
+	if ((req->in_bytes & (AES_BLOCK_SIZE - 1)) &&
+	    (sess->mode == WD_CIPHER_CBC || sess->mode == WD_CIPHER_ECB)) {
+		WD_ERR("failed to check input bytes of AES or SM4, size = %u\n",
+		       req->in_bytes);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int wd_cipher_check_params(handle_t h_sess,
 				struct wd_cipher_req *req, __u8 mode)
 {
@@ -586,6 +608,10 @@ static int wd_cipher_check_params(handle_t h_sess,
 			req->out_buf_bytes);
 		return -WD_EINVAL;
 	}
+
+	ret = cipher_len_check(h_sess, req);
+	if (unlikely(ret))
+		return ret;
 
 	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
 	if (unlikely(ret)) {
