@@ -21,8 +21,8 @@
 #define QM_DBELL_SQN_MASK	0x3ff
 #define QM_DBELL_CMD_MASK	0xf
 #define QM_Q_DEPTH		1024
-#define CQE_PHASE(cq)		(__le16_to_cpu((cq)->w7) & 0x1)
-#define CQE_SQ_HEAD_INDEX(cq)	(__le16_to_cpu((cq)->sq_head) & 0xffff)
+#define CQE_PHASE(cqe)		(__le16_to_cpu((cqe)->w7) & 0x1)
+#define CQE_SQ_HEAD_INDEX(cqe)	(__le16_to_cpu((cqe)->sq_head) & 0xffff)
 #define VERSION_ID_SHIFT	9
 
 #define UACCE_CMD_QM_SET_QP_CTX		_IOWR('H', 10, struct hisi_qp_ctx)
@@ -505,31 +505,32 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	return 0;
 }
 
-static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
+static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, handle_t h_ctx,
+			       void *resp, __u16 idx)
 {
-	struct hisi_qp *qp = container_of(q_info, struct hisi_qp, q_info);
+	__u16 i, j, cqe_phase;
 	struct cqe *cqe;
-	__u16 i, j;
 
 	pthread_spin_lock(&q_info->rv_lock);
 	i = q_info->cq_head_index;
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
+	cqe_phase = CQE_PHASE(cqe);
+	/* Use dsb to read from memory and improve the receiving efficiency. */
+	rmb();
 
-	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
-		/* Make sure cqe valid bit is set */
-		rmb();
-		j = CQE_SQ_HEAD_INDEX(cqe);
-		if (unlikely(j >= q_info->sq_depth)) {
-			pthread_spin_unlock(&q_info->rv_lock);
-			WD_DEV_ERR(qp->h_ctx, "CQE_SQ_HEAD_INDEX(%u) error!\n", j);
-			return -WD_EIO;
-		}
-		memcpy(resp, (void *)((uintptr_t)q_info->sq_base +
-			j * q_info->sqe_size), q_info->sqe_size);
-	} else {
+	if (q_info->cqc_phase != cqe_phase) {
 		pthread_spin_unlock(&q_info->rv_lock);
 		return -WD_EAGAIN;
 	}
+
+	j = CQE_SQ_HEAD_INDEX(cqe);
+	if (unlikely(j >= q_info->sq_depth)) {
+		pthread_spin_unlock(&q_info->rv_lock);
+		WD_DEV_ERR(h_ctx, "CQE_SQ_HEAD_INDEX(%u) error!\n", j);
+		return -WD_EIO;
+	}
+	memcpy((void *)((uintptr_t)resp + idx * q_info->sqe_size),
+	       (void *)((uintptr_t)q_info->sq_base + j * q_info->sqe_size), q_info->sqe_size);
 
 	if (i == q_info->cq_depth - 1) {
 		q_info->cqc_phase = !(q_info->cqc_phase);
@@ -544,7 +545,7 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	 */
 	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
 		pthread_spin_unlock(&q_info->rv_lock);
-		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened after qm receive!\n");
+		WD_DEV_ERR(h_ctx, "wd queue hw error happened before qm receive!\n");
 		return -WD_HW_EACCESS;
 	}
 
@@ -565,8 +566,9 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_qm_queue_info *q_info;
-	int recv_num = 0;
-	int i, ret, offset;
+	__u16 recv_num = 0;
+	__u16 i;
+	int ret;
 
 	if (unlikely(!resp || !qp || !count))
 		return -WD_EINVAL;
@@ -581,8 +583,7 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	}
 
 	for (i = 0; i < expect; i++) {
-		offset = i * q_info->sqe_size;
-		ret = hisi_qm_recv_single(q_info, resp + offset);
+		ret = hisi_qm_recv_single(q_info, qp->h_ctx, resp, i);
 		if (ret)
 			break;
 		recv_num++;
