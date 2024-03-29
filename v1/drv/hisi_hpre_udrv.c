@@ -212,13 +212,13 @@ static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 				wd_e->bsize, wd_e->dsize, "rsa pubkey e");
 	if (unlikely(ret))
 		return ret;
-	wd_e->dsize = wd_e->dsize;
+	wd_e->dsize = wd_e->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa pubkey n");
 	if (unlikely(ret))
 		return ret;
-	wd_n->dsize = wd_n->dsize;
+	wd_n->dsize = wd_n->bsize;
 
 	*data = wd_e->data;
 	return (int)(wd_n->bsize + wd_e->bsize);
