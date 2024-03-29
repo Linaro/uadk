@@ -19,7 +19,7 @@
 #define WD_BALANCE_THRHD		1280
 #define WD_RECV_MAX_CNT_SLEEP		60000000
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
-#define PRIVILEGE_FLAG			600
+#define PRIVILEGE_FLAG			0600
 #define MIN(a, b)			((a) > (b) ? (b) : (a))
 #define MAX(a, b)			((a) > (b) ? (a) : (b))
 

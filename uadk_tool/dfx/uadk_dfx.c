@@ -16,7 +16,7 @@
 
 #define uadk_build_date()	printf("built on: %s %s\n", __DATE__, __TIME__)
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
-#define PRIVILEGE_FLAG		666
+#define PRIVILEGE_FLAG		0666
 
 struct uadk_env_var {
 	const char *module;
