@@ -1822,24 +1822,28 @@ int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_hand
 	do {
 		if (epoll_en) {
 			ret = wd_ctx_wait(ctx, POLL_TIME);
-			if (ret < 0)
+			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
 		}
 
 		ret = msg_handle->recv(drv, ctx, msg);
-		if (ret == -WD_EAGAIN) {
-			if (unlikely(rx_cnt++ >= timeout)) {
-				WD_ERR("failed to recv msg: timeout!\n");
-				return -WD_ETIMEDOUT;
+		if (ret != -WD_EAGAIN) {
+			if (unlikely(ret < 0)) {
+				WD_ERR("failed to recv msg: error = %d!\n", ret);
+				return ret;
 			}
-
-			if (balance && *balance > WD_BALANCE_THRHD)
-				usleep(1);
-		} else if (unlikely(ret < 0)) {
-			WD_ERR("failed to recv msg: error = %d!\n", ret);
-			return ret;
+			break;
 		}
-	} while (ret < 0);
+
+		rx_cnt++;
+		if (unlikely(rx_cnt >= timeout)) {
+			WD_ERR("failed to recv msg: timeout!\n");
+			return -WD_ETIMEDOUT;
+		}
+
+		if (balance && *balance > WD_BALANCE_THRHD)
+			usleep(1);
+	} while (1);
 
 	if (balance)
 		*balance = rx_cnt;
