@@ -164,6 +164,26 @@ static bool wd_alg_driver_match(struct wd_alg_driver *drv,
 	return true;
 }
 
+static bool wd_alg_repeat_check(struct wd_alg_driver *drv)
+{
+	struct wd_alg_list *npre = &alg_list_head;
+	struct wd_alg_list *pnext = NULL;
+
+	pthread_mutex_lock(&mutex);
+	pnext = npre->next;
+	while (pnext) {
+		if (wd_alg_driver_match(drv, pnext)) {
+			pthread_mutex_unlock(&mutex);
+			return true;
+		}
+		npre = pnext;
+		pnext = pnext->next;
+	}
+	pthread_mutex_unlock(&mutex);
+
+	return false;
+}
+
 int wd_alg_driver_register(struct wd_alg_driver *drv)
 {
 	struct wd_alg_list *new_alg;
@@ -177,6 +197,9 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 		WD_ERR("invalid: driver's parameter is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	if (wd_alg_repeat_check(drv))
+		return 0;
 
 	new_alg = calloc(1, sizeof(struct wd_alg_list));
 	if (!new_alg) {
@@ -252,7 +275,7 @@ bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
 
-	if (!alg_name)
+	if (!alg_name || !drv)
 		return false;
 
 	while (pnext) {

@@ -1,3 +1,4 @@
+
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
@@ -2547,7 +2548,11 @@ static struct wd_alg_driver hpre_dh_driver = {
 	.get_usage = hpre_get_usage,
 };
 
+#ifdef WD_STATIC_DRV
+void hisi_hpre_probe(void)
+#else
 static void __attribute__((constructor)) hisi_hpre_probe(void)
+#endif
 {
 	__u32 alg_num = ARRAY_SIZE(hpre_ecc_driver);
 	__u32 i;
@@ -2569,7 +2574,11 @@ static void __attribute__((constructor)) hisi_hpre_probe(void)
 	}
 }
 
+#ifdef WD_STATIC_DRV
+void hisi_hpre_remove(void)
+#else
 static void __attribute__((destructor)) hisi_hpre_remove(void)
+#endif
 {
 	__u32 alg_num = ARRAY_SIZE(hpre_ecc_driver);
 	__u32 i;

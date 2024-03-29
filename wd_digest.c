@@ -73,21 +73,47 @@ struct wd_digest_sess {
 struct wd_env_config wd_digest_env_config;
 static struct wd_init_attrs wd_digest_init_attrs;
 
-static void wd_digest_close_driver(void)
+static void wd_digest_close_driver(int init_type)
 {
+#ifndef WD_STATIC_DRV
+	if (init_type == WD_TYPE_V2) {
+		wd_dlclose_drv(wd_digest_setting.dlh_list);
+		return;
+	}
+
 	if (wd_digest_setting.dlhandle) {
 		wd_release_drv(wd_digest_setting.driver);
 		dlclose(wd_digest_setting.dlhandle);
 		wd_digest_setting.dlhandle = NULL;
 	}
+#else
+	wd_release_drv(wd_digest_setting.driver);
+	hisi_sec2_remove();
+#endif
 }
 
-static int wd_digest_open_driver(void)
+static int wd_digest_open_driver(int init_type)
 {
 	struct wd_alg_driver *driver = NULL;
 	const char *alg_name = "sm3";
+#ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
+
+	if (init_type == WD_TYPE_V2) {
+		/*
+		 * Driver lib file path could set by env param.
+		 * then open tham by wd_dlopen_drv()
+		 * use NULL means dynamic query path
+		 */
+		wd_digest_setting.dlh_list = wd_dlopen_drv(NULL);
+		if (!wd_digest_setting.dlh_list) {
+			WD_ERR("fail to open driver lib files.\n");
+			return -WD_EINVAL;
+		}
+
+		return WD_SUCCESS;
+	}
 
 	ret = wd_get_lib_file_path("libhisi_sec.so", lib_path, false);
 	if (ret)
@@ -98,17 +124,21 @@ static int wd_digest_open_driver(void)
 		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
 		return -WD_EINVAL;
 	}
-
+#else
+	hisi_sec2_probe();
+	if (init_type == WD_TYPE_V2)
+		return WD_SUCCESS;
+#endif
 	driver = wd_request_drv(alg_name, false);
 	if (!driver) {
-		wd_digest_close_driver();
+		wd_digest_close_driver(WD_TYPE_V1);
 		WD_ERR("failed to get %s driver support\n", alg_name);
 		return -WD_EINVAL;
 	}
 
 	wd_digest_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int aes_key_len_check(__u32 length)
@@ -277,7 +307,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
-	ret = wd_digest_open_driver();
+	ret = wd_digest_open_driver(WD_TYPE_V1);
 	if (ret)
 		goto out_clear_init;
 
@@ -290,7 +320,7 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 
 out_close_driver:
-	wd_digest_close_driver();
+	wd_digest_close_driver(WD_TYPE_V1);
 out_clear_init:
 	wd_alg_clear_init(&wd_digest_setting.status);
 	return ret;
@@ -319,7 +349,7 @@ void wd_digest_uninit(void)
 	if (ret)
 		return;
 
-	wd_digest_close_driver();
+	wd_digest_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
 
@@ -356,16 +386,11 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 		WD_ERR("invalid: digest:%s unsupported!\n", alg);
 		goto out_uninit;
 	}
-	/*
-	 * Driver lib file path could set by env param.
-	 * then open them by wd_dlopen_drv()
-	 * use NULL means dynamic query path
-	 */
-	wd_digest_setting.dlh_list = wd_dlopen_drv(NULL);
-	if (!wd_digest_setting.dlh_list) {
-		WD_ERR("failed to open driver lib files.\n");
+
+	state = wd_digest_open_driver(WD_TYPE_V2);
+	if (state)
 		goto out_uninit;
-	}
+
 
 	while (ret != 0) {
 		memset(&wd_digest_setting.config, 0, sizeof(struct wd_ctx_config_internal));
@@ -417,7 +442,7 @@ out_params_uninit:
 out_driver:
 	wd_alg_drv_unbind(wd_digest_setting.driver);
 out_dlopen:
-	wd_dlclose_drv(wd_digest_setting.dlh_list);
+	wd_digest_close_driver(WD_TYPE_V2);
 out_uninit:
 	wd_alg_clear_init(&wd_digest_setting.status);
 	return ret;
@@ -433,7 +458,7 @@ void wd_digest_uninit2(void)
 
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
 	wd_alg_drv_unbind(wd_digest_setting.driver);
-	wd_dlclose_drv(wd_digest_setting.dlh_list);
+	wd_digest_close_driver(WD_TYPE_V2);
 	wd_digest_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
