@@ -15,7 +15,6 @@ extern "C" {
 
 #define UACCE_CMD_START         _IO('W', 0)
 #define UACCE_CMD_PUT_Q         _IO('W', 1)
-#define UACCE_CMD_GET_SS_DMA    _IOR('W', 100, unsigned long)
 
 /**
  * UACCE Device flags:
