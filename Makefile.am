@@ -60,7 +60,6 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd_bmm.c v1/wd_bmm.h	\
 		 v1/wd_ecc.c v1/wd_ecc.h	\
 		 v1/wd_sgl.c v1/wd_sgl.h	\
-		 v1/drv/dummy_drv.c v1/drv/dummy_drv.h \
 		 v1/drv/hisi_qm_udrv.c v1/drv/hisi_qm_udrv.h \
 		 v1/drv/hisi_zip_udrv.c v1/drv/hisi_zip_udrv.h \
 		 v1/drv/hisi_hpre_udrv.c v1/drv/hisi_hpre_udrv.h \
