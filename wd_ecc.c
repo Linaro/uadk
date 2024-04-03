@@ -997,20 +997,19 @@ static int fill_user_curve_cfg(struct wd_ecc_curve *param,
 			       struct wd_ecc_sess_setup *setup)
 {
 	struct wd_ecc_curve *src_param = setup->cv.cfg.pparam;
-	__u32 curve_id;
+	bool need_debug = wd_need_debug();
+	__u32 curve_id = 0;
 	int ret = 0;
 
 	if (setup->cv.type == WD_CV_CFG_ID) {
 		curve_id = setup->cv.cfg.id;
 		ret = fill_param_by_id(param, setup->key_bits, curve_id);
-		WD_DEBUG("set curve id %u!\n", curve_id);
 	} else if (setup->cv.type == WD_CV_CFG_PARAM) {
 		ret = set_key_cv(param, src_param);
 		if (ret) {
 			WD_ERR("failed to set key cv!\n");
 			return ret;
 		}
-		WD_DEBUG("set curve by user param!\n");
 	} else {
 		WD_ERR("invalid: fill curve cfg type %u is error!\n", setup->cv.type);
 		return -WD_EINVAL;
@@ -1021,6 +1020,9 @@ static int fill_user_curve_cfg(struct wd_ecc_curve *param,
 		WD_ERR("invalid: fill curve cfg dsize %u is error!\n", param->p.dsize);
 		return -WD_EINVAL;
 	}
+
+	if (need_debug)
+		WD_DEBUG("curve cfg type is %u, curve_id is %u!\n", setup->cv.type, curve_id);
 
 	return ret;
 }
