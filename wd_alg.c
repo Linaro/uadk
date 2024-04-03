@@ -109,6 +109,19 @@ static bool wd_check_ce_support(const char *dev_name)
 	return false;
 }
 
+static bool wd_check_sve_support(void)
+{
+	unsigned long hwcaps = 0;
+
+	#if defined(__aarch64__)
+		hwcaps = getauxval(AT_HWCAP);
+	#endif
+	if (hwcaps & HWCAP_SVE)
+		return true;
+
+	return false;
+}
+
 static bool wd_alg_check_available(int calc_type, const char *dev_name)
 {
 	bool ret = false;
@@ -122,6 +135,7 @@ static bool wd_alg_check_available(int calc_type, const char *dev_name)
 		break;
 	/* Should find the CPU if not support SVE */
 	case UADK_ALG_SVE_INSTR:
+		ret = wd_check_sve_support();
 		break;
 	/* Check if the current driver has device support */
 	case UADK_ALG_HW:

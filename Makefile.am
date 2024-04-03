@@ -45,7 +45,7 @@ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la
 
 uadk_driversdir=$(libdir)/uadk
 uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
-			 libisa_ce.la
+			 libisa_ce.la libisa_sve.la
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
@@ -78,6 +78,7 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_rsa.c wd_rsa.h wd_rsa_drv.h \
 			wd_dh.c wd_dh.h wd_dh_drv.h \
 			wd_ecc.c wd_ecc.h wd_ecc_drv.h \
+			arm_arch_ce.h isa_ce_sm3.h isa_ce_sm4.h \
 			wd_digest.c wd_digest.h wd_digest_drv.h \
 			wd_util.c wd_util.h \
 			wd_sched.c wd_sched.h \
@@ -90,8 +91,14 @@ libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h
 
-libisa_ce_la_SOURCES=drv/isa_ce_sm3.c drv/isa_ce_sm3_armv8.S arm_arch_ce.h \
-		drv/isa_ce_sm3.h
+libisa_ce_la_SOURCES=arm_arch_ce.h drv/isa_ce_sm3.c drv/isa_ce_sm3_armv8.S isa_ce_sm3.h \
+		drv/isa_ce_sm4.c drv/isa_ce_sm4_armv8.S drv/isa_ce_sm4.h
+
+libisa_sve_la_SOURCES=drv/hash_mb/hash_mb.c wd_digest_drv.h drv/hash_mb/hash_mb.h \
+		drv/hash_mb/sm3_sve_common.S drv/hash_mb/sm3_mb_asimd_x1.S \
+		drv/hash_mb/sm3_mb_asimd_x4.S drv/hash_mb/sm3_mb_sve.S \
+		drv/hash_mb/md5_sve_common.S drv/hash_mb/md5_mb_asimd_x1.S \
+		drv/hash_mb/md5_mb_asimd_x4.S drv/hash_mb/md5_mb_sve.S
 
 if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV -fPIC
@@ -115,6 +122,9 @@ libhisi_hpre_la_DEPENDENCIES = libwd.la libwd_crypto.la
 
 libisa_ce_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 libisa_ce_la_DEPENDENCIES = libwd.la libwd_crypto.la
+
+libisa_sve_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
+libisa_sve_la_DEPENDENCIES = libwd.la libwd_crypto.la
 
 else
 UADK_WD_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd.map
@@ -148,6 +158,10 @@ libhisi_hpre_la_DEPENDENCIES= libwd.la libwd_crypto.la
 libisa_ce_la_LIBADD= -lwd -lwd_crypto
 libisa_ce_la_LDFLAGS=$(UADK_VERSION)
 libisa_ce_la_DEPENDENCIES= libwd.la libwd_crypto.la
+
+libisa_sve_la_LIBADD= -lwd -lwd_crypto
+libisa_sve_la_LDFLAGS=$(UADK_VERSION)
+libisa_sve_la_DEPENDENCIES= libwd.la libwd_crypto.la
 endif	# WD_STATIC_DRV
 
 pkgconfigdir = $(libdir)/pkgconfig

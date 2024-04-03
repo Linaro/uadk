@@ -16,6 +16,7 @@
 #define MAX_POOL_LENTH_COMP		1
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define CHUNK_SIZE			(128 * 1024)
+#define MAX_UNRECV_PACKET_NUM		2
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
@@ -36,11 +37,17 @@ enum ZIP_OP_MODE {
 	STREAM_MODE
 };
 
+enum ZIP_THREAD_STATE {
+	THREAD_PROCESSING,
+	THREAD_COMPLETED
+};
+
 struct zip_async_tag {
 	handle_t sess;
 	u32 td_id;
 	u32 bd_idx;
 	u32 cm_len;
+	u32 recv_cnt;
 	ZSTD_CCtx *cctx;
 };
 
@@ -51,6 +58,10 @@ typedef struct uadk_thread_res {
 	u32 td_id;
 	u32 win_sz;
 	u32 comp_lv;
+	u32 send_cnt;
+	struct zip_async_tag *tag;
+	COMP_TUPLE_TAG *ftuple;
+	char *hw_buff_out;
 } thread_data;
 
 struct zip_file_head {
@@ -61,10 +72,12 @@ struct zip_file_head {
 
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched *g_sched;
+static struct sched_params param;
 static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
 static unsigned int g_pktlen;
 static unsigned int g_prefetch;
+static unsigned int g_state;
 
 #ifndef ZLIB_FSE
 static ZSTD_CCtx* zstd_soft_fse_init(unsigned    int level)
@@ -240,7 +253,7 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	u8 alg;
 
 	if (optype >= WD_DIR_MAX << 1) {
-		ZIP_TST_PRT("Fail to get zip optype!\n");
+		ZIP_TST_PRT("failed to get zip optype!\n");
 		return -EINVAL;
 	} else if (optype >= WD_DIR_MAX) {
 		mode = STREAM_MODE;
@@ -265,7 +278,7 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		optype = WD_DIR_COMPRESS;
 		break;
 	default:
-		ZIP_TST_PRT("Fail to set zip alg\n");
+		ZIP_TST_PRT("failed to set zip alg\n");
 		return -EINVAL;
 	}
 
@@ -298,21 +311,130 @@ static int init_ctx_config2(struct acc_option *options)
 	/* init */
 	ret = wd_comp_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 	if (ret) {
-		ZIP_TST_PRT("Fail to do comp init2!\n");
+		ZIP_TST_PRT("failed to do comp init2!\n");
 		return ret;
 	}
 
 	return 0;
 }
 
-static struct sched_params param;
+static int specified_device_request_ctx(struct acc_option *options)
+{
+	struct uacce_dev_list *list = NULL;
+	struct uacce_dev_list *tmp = NULL;
+	char *alg = options->algclass;
+	int mode = options->syncmode;
+	struct uacce_dev *dev = NULL;
+	int avail_ctx = 0;
+	char *dev_name;
+	int ret = 0;
+	int i = 0;
+
+	list = wd_get_accel_list(alg);
+	if (!list) {
+		ZIP_TST_PRT("failed to get %s device\n", alg);
+		return -ENODEV;
+	}
+
+	for (tmp = list; tmp != NULL; tmp = tmp->next) {
+		dev_name = strrchr(tmp->dev->dev_root, '/') + 1;
+		if (!strcmp(dev_name, options->device)) {
+			dev = tmp->dev;
+			break;
+		}
+	}
+
+	if (dev == NULL) {
+		ZIP_TST_PRT("failed to find device %s\n", options->device);
+		ret = -ENODEV;
+		goto free_list;
+	}
+
+	avail_ctx = wd_get_avail_ctx(dev);
+	if (avail_ctx < 0) {
+		ZIP_TST_PRT("failed to get the number of available ctx from %s\n", options->device);
+		ret = avail_ctx;
+		goto free_list;
+	} else if (avail_ctx < g_ctxnum) {
+		ZIP_TST_PRT("error: not enough ctx available in %s\n", options->device);
+		ret = -ENODEV;
+		goto free_list;
+	}
+
+	/* If there is no numa, we default config to zero */
+	if (dev->numa_id < 0)
+		dev->numa_id = 0;
+
+	for (; i < g_ctxnum; i++) {
+		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+		if (!g_ctx_cfg.ctxs[i].ctx) {
+			ZIP_TST_PRT("failed to alloc %dth ctx\n", i);
+			ret = -ENOMEM;
+			goto free_ctx;
+		}
+		g_ctx_cfg.ctxs[i].op_type = 0;
+		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	}
+
+	wd_free_list_accels(list);
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+free_list:
+	wd_free_list_accels(list);
+
+	return ret;
+}
+
+static int non_specified_device_request_ctx(struct acc_option *options)
+{
+	char *alg = options->algclass;
+	int mode = options->syncmode;
+	struct uacce_dev *dev = NULL;
+	int ret = 0;
+	int i = 0;
+
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			ZIP_TST_PRT("failed to get %s device\n", alg);
+			ret = -ENODEV;
+			goto free_ctx;
+		}
+
+		/* If there is no numa, we default config to zero */
+		if (dev->numa_id < 0)
+			dev->numa_id = 0;
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0;
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
+	}
+
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+	return ret;
+}
+
 static int init_ctx_config(struct acc_option *options)
 {
-	struct uacce_dev_list *list;
-	char *alg = options->algclass;
 	int optype = options->optype;
 	int mode = options->syncmode;
-	int i, max_node;
+	int max_node;
 	int ret = 0;
 
 	optype = optype % WD_DIR_MAX;
@@ -320,62 +442,63 @@ static int init_ctx_config(struct acc_option *options)
 	if (max_node <= 0)
 		return -EINVAL;
 
-	list = wd_get_accel_list(alg);
-	if (!list) {
-		ZIP_TST_PRT("Fail to get %s device\n", alg);
-		return -ENODEV;
-	}
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = g_ctxnum;
 	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
+	if (strlen(options->device) != 0)
+		ret = specified_device_request_ctx(options);
+	else
+		ret = non_specified_device_request_ctx(options);
+
+	if (ret) {
+		ZIP_TST_PRT("failed to request zip ctx!\n");
+		goto free_ctxs;
+	}
+
 	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, max_node, wd_comp_poll_ctx);
 	if (!g_sched) {
-		ZIP_TST_PRT("Fail to alloc sched!\n");
-		goto out;
+		ZIP_TST_PRT("failed to alloc sched!\n");
+		ret = -ENOMEM;
+		goto free_ctx;
 	}
 
-	/* If there is no numa, we defualt config to zero */
-	if (list->dev->numa_id < 0)
-		list->dev->numa_id = 0;
-
-	for (i = 0; i < g_ctxnum; i++) {
-		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
-		g_ctx_cfg.ctxs[i].op_type = optype; // default op_type
-		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
-	}
 	g_sched->name = SCHED_SINGLE;
 
 	/*
 	 * All contexts for 2 modes & 2 types.
 	 * The test only uses one kind of contexts at the same time.
 	 */
-	param.numa_id = list->dev->numa_id;
+	param.numa_id = 0;
 	param.type = optype;
 	param.mode = mode;
 	param.begin = 0;
 	param.end = g_ctxnum - 1;
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
-		ZIP_TST_PRT("Fail to fill sched data!\n");
-		goto out;
+		ZIP_TST_PRT("failed to fill sched data!\n");
+		goto free_sched;
 	}
 
-	/* init */
 	ret = wd_comp_init(&g_ctx_cfg, g_sched);
 	if (ret) {
-		ZIP_TST_PRT("Fail to cipher ctx!\n");
-		goto out;
+		ZIP_TST_PRT("failed to init zip ctx!\n");
+		goto free_sched;
 	}
 
-	wd_free_list_accels(list);
-
 	return 0;
-out:
-	free(g_ctx_cfg.ctxs);
+
+free_sched:
 	wd_sched_rr_release(g_sched);
+
+free_ctx:
+	for (int i = g_ctxnum; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+free_ctxs:
+	free(g_ctx_cfg.ctxs);
 
 	return ret;
 }
@@ -503,6 +626,7 @@ static void *zip_lz77_async_cb(struct wd_comp_req *req, void *data)
 	zstd_output.dst = uadk_pool->bds[idx].dst;
 	zstd_output.size = tag->cm_len;
 	zstd_output.pos = 0;
+	__atomic_add_fetch(&tag->recv_cnt, 1, __ATOMIC_RELAXED);
 	fse_size = zstd_soft_fse(req->priv, &zstd_input, &zstd_output, cctx, ZSTD_e_end);
 
 	uadk_pool->bds[idx].dst_len = fse_size;
@@ -516,6 +640,7 @@ static void *zip_async_cb(struct wd_comp_req *req, void *data)
 	struct bd_pool *uadk_pool;
 	int td_id = tag->td_id;
 	int idx = tag->bd_idx;
+	__atomic_add_fetch(&tag->recv_cnt, 1, __ATOMIC_RELAXED);
 
 	uadk_pool = &g_zip_pool.pool[td_id];
 	uadk_pool->bds[idx].dst_len = req->dst_len;
@@ -528,15 +653,14 @@ static void *zip_uadk_poll(void *data)
 	thread_data *pdata = (thread_data *)data;
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
 	u32 id = pdata->td_id;
-	u32 last_time = 2; // poll need one more recv time
 	u32 count = 0;
 	u32 recv = 0;
-	int  ret;
+	int ret;
 
 	if (id > g_ctxnum)
 		return NULL;
 
-	while (last_time) {
+	while (g_state == THREAD_PROCESSING) {
 		ret = wd_comp_poll_ctx(id, expt, &recv);
 		count += recv;
 		recv = 0;
@@ -544,9 +668,6 @@ static void *zip_uadk_poll(void *data)
 			ZIP_TST_PRT("poll ret: %d!\n", ret);
 			goto recv_error;
 		}
-
-		if (get_run_state() == 0)
-			last_time--;
 	}
 
 recv_error:
@@ -558,12 +679,11 @@ recv_error:
 static void *zip_uadk_poll2(void *data)
 {
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
-	u32 last_time = 2; // poll need one more recv time
 	u32 count = 0;
 	u32 recv = 0;
 	int  ret;
 
-	while (last_time) {
+	while (g_state == THREAD_PROCESSING) {
 		ret = wd_comp_poll(expt, &recv);
 		count += recv;
 		recv = 0;
@@ -571,9 +691,6 @@ static void *zip_uadk_poll2(void *data)
 			ZIP_TST_PRT("poll ret: %d!\n", ret);
 			goto recv_error;
 		}
-
-		if (get_run_state() == 0)
-			last_time--;
 	}
 
 recv_error:
@@ -765,11 +882,8 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
 	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
-	COMP_TUPLE_TAG *ftuple = NULL;
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
-	struct zip_async_tag *tag;
-	char *hw_buff_out = NULL;
 	handle_t h_sess;
 	u32 out_len = 0;
 	u32 count = 0;
@@ -800,38 +914,22 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	creq.data_fmt = 0;
 	creq.status = 0;
 
-	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
-	if (!ftuple)
-		goto fse_err;
-
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
-	if (!hw_buff_out)
-		goto hw_buff_err;
-	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
-
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
-	if (!tag) {
-		ZIP_TST_PRT("failed to malloc zip tag!\n");
-		goto tag_err;
-	}
-
 	while(1) {
 		if (get_run_state() == 0)
-				break;
+			break;
 
-		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
-		creq.dst = &hw_buff_out[i]; //temp out
+		creq.dst = &pdata->hw_buff_out[i]; //temp out
 		creq.src_len = uadk_pool->bds[i].src_len;
 		creq.dst_len = out_len;
-		creq.priv = &ftuple[i];
+		creq.priv = &pdata->ftuple[i];
 
-		tag[i].td_id = pdata->td_id;
-		tag[i].bd_idx = i;
-		tag[i].cm_len = out_len;
-		tag[i].cctx = cctx;
-		creq.cb_param = &tag[i];
+		pdata->tag[i].td_id = pdata->td_id;
+		pdata->tag[i].bd_idx = i;
+		pdata->tag[i].cm_len = out_len;
+		pdata->tag[i].cctx = cctx;
+		creq.cb_param = &pdata->tag[i];
 
 		ret = wd_do_comp_async(h_sess, &creq);
 		if (ret == -WD_EBUSY) {
@@ -845,21 +943,10 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 		} else if (ret || creq.status) {
 			break;
 		}
+		try_cnt = 0;
 		count++;
+		__atomic_add_fetch(&pdata->send_cnt, 1, __ATOMIC_RELAXED);
 	}
-
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
-
-tag_err:
-	free(tag);
-hw_buff_err:
-	free(hw_buff_out);
-fse_err:
-	free(ftuple);
 	wd_comp_free_sess(h_sess);
 	add_send_complete();
 
@@ -995,7 +1082,6 @@ static void *zip_uadk_blk_async_run(void *arg)
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
 	struct bd_pool *uadk_pool;
-	struct zip_async_tag *tag;
 	struct wd_comp_req creq;
 	handle_t h_sess;
 	int try_cnt = 0;
@@ -1028,27 +1114,19 @@ static void *zip_uadk_blk_async_run(void *arg)
 	creq.priv = 0;
 	creq.status = 0;
 
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH_COMP);
-	if (!tag) {
-		ZIP_TST_PRT("failed to malloc zip tag!\n");
-		wd_comp_free_sess(h_sess);
-		return NULL;
-	}
-
 	while(1) {
 		if (get_run_state() == 0)
-				break;
+			break;
 
-		try_cnt = 0;
 		i = count % MAX_POOL_LENTH_COMP;
 		creq.src = uadk_pool->bds[i].src;
 		creq.dst = uadk_pool->bds[i].dst;
 		creq.src_len = uadk_pool->bds[i].src_len;
 		creq.dst_len = out_len;
 
-		tag[i].td_id = pdata->td_id;
-		tag[i].bd_idx = i;
-		creq.cb_param = &tag[i];
+		pdata->tag[i].td_id = pdata->td_id;
+		pdata->tag[i].bd_idx = i;
+		creq.cb_param = &pdata->tag[i];
 
 		ret = wd_do_comp_async(h_sess, &creq);
 		if (ret == -WD_EBUSY) {
@@ -1062,16 +1140,11 @@ static void *zip_uadk_blk_async_run(void *arg)
 		} else if (ret || creq.status) {
 			break;
 		}
+		try_cnt = 0;
 		count++;
+		__atomic_add_fetch(&pdata->send_cnt, 1, __ATOMIC_RELAXED);
 	}
 
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
-
-	free(tag);
 	wd_comp_free_sess(h_sess);
 
 	add_send_complete();
@@ -1177,10 +1250,35 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		threads_args[i].win_sz = threads_option.win_sz;
 		threads_args[i].comp_lv = threads_option.comp_lv;
 		threads_args[i].td_id = i;
+		if (threads_option.alg == LZ77_ZSTD) {
+			struct bd_pool *uadk_pool = &g_zip_pool.pool[i];
+			u32 out_len = uadk_pool->bds[0].dst_len;
+
+			threads_args[i].ftuple = malloc(sizeof(COMP_TUPLE_TAG) *
+				MAX_POOL_LENTH_COMP);
+			if (!threads_args[i].ftuple) {
+				ZIP_TST_PRT("failed to malloc lz77 ftuple!\n");
+				goto lz77_free;
+			}
+
+			threads_args[i].hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
+			if (!threads_args[i].hw_buff_out) {
+				ZIP_TST_PRT("failed to malloc lz77 hw_buff_out!\n");
+				goto lz77_free;
+			}
+			memset(threads_args[i].hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
+		}
+		threads_args[i].tag = malloc(sizeof(struct zip_async_tag) * MAX_POOL_LENTH_COMP);
+		if (!threads_args[i].tag) {
+			ZIP_TST_PRT("failed to malloc zip tag!\n");
+			goto tag_free;
+		}
+		threads_args[i].tag->recv_cnt = 0;
+		threads_args[i].send_cnt = 0;
 		ret = pthread_create(&tdid[i], NULL, uadk_zip_async_run, &threads_args[i]);
 		if (ret) {
 			ZIP_TST_PRT("Create async thread fail!\n");
-			goto async_error;
+			goto tag_free;
 		}
 	}
 
@@ -1189,18 +1287,41 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		ret = pthread_join(tdid[i], NULL);
 		if (ret) {
 			ZIP_TST_PRT("Join async thread fail!\n");
-			goto async_error;
+			goto tag_free;
 		}
 	}
+
+	/* wait for the poll to clear packets */
+	g_state = THREAD_PROCESSING;
+	for (i = 0; i < g_thread_num;) {
+		if (threads_args[i].send_cnt <= threads_args[i].tag->recv_cnt + MAX_UNRECV_PACKET_NUM)
+			i++;
+	}
+	g_state = THREAD_COMPLETED; // finish poll
 
 	for (i = 0; i < g_ctxnum; i++) {
 		ret = pthread_join(pollid[i], NULL);
 		if (ret) {
 			ZIP_TST_PRT("Join poll thread fail!\n");
-			goto async_error;
+			goto tag_free;
 		}
 	}
 
+tag_free:
+	for (i = 0; i < g_thread_num; i++) {
+		if (threads_args[i].tag)
+			free(threads_args[i].tag);
+	}
+lz77_free:
+	if (threads_option.alg == LZ77_ZSTD) {
+		for (i = 0; i < g_thread_num; i++) {
+			if (threads_args[i].ftuple)
+				free(threads_args[i].ftuple);
+
+			if (threads_args[i].hw_buff_out)
+				free(threads_args[i].hw_buff_out);
+		}
+	}
 async_error:
 	return ret;
 }

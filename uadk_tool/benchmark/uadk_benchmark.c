@@ -2,6 +2,8 @@
 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "include/wd_alg_common.h"
+#include "include/wd_sched.h"
 
 #include "uadk_benchmark.h"
 #include "sec_uadk_benchmark.h"
@@ -37,7 +39,9 @@ enum test_type {
 	SOFT_MODE = 0x4,
 	SVA_SOFT = 0x5,
 	NOSVA_SOFT = 0x6,
-	INVALID_MODE = 0x8,
+	INSTR_MODE = 0x7,
+	MULTIBUF_MODE = 0x8,
+	INVALID_MODE = 0x9,
 };
 
 struct acc_sva_item {
@@ -51,6 +55,8 @@ static struct acc_sva_item sys_name_item[] = {
 	{"soft", SOFT_MODE},
 	{"sva-soft", SVA_SOFT},
 	{"nosva-soft", NOSVA_SOFT},
+	{"instr", INSTR_MODE},
+	{"multibuff", MULTIBUF_MODE},
 };
 
 struct acc_alg_item {
@@ -118,6 +124,9 @@ static struct acc_alg_item alg_options[] = {
 	{"3des-192-cbc", DES3_192_CBC},
 	{"sm4-128-ecb", SM4_128_ECB},
 	{"sm4-128-cbc", SM4_128_CBC},
+	{"sm4-128-cbc-cs1", SM4_128_CBC_CS1},
+	{"sm4-128-cbc-cs2", SM4_128_CBC_CS2},
+	{"sm4-128-cbc-cs3", SM4_128_CBC_CS3},
 	{"sm4-128-ctr", SM4_128_CTR},
 	{"sm4-128-ofb", SM4_128_OFB},
 	{"sm4-128-cfb", SM4_128_CFB},
@@ -207,6 +216,9 @@ static struct acc_alg_item alg_name_options[] = {
 	{"cbc(des3_ede)", DES3_192_CBC},
 	{"ecb(sm4)", SM4_128_ECB},
 	{"cbc(sm4)", SM4_128_CBC},
+	{"cbc-cs1(sm4)", SM4_128_CBC_CS1},
+	{"cbc-cs2(sm4)", SM4_128_CBC_CS2},
+	{"cbc-cs3(sm4)", SM4_128_CBC_CS3},
 	{"ctr(sm4)", SM4_128_CTR},
 	{"ofb(sm4)", SM4_128_OFB},
 	{"cfb(sm4)", SM4_128_CFB},
@@ -286,7 +298,7 @@ static int get_alg_type(const char *alg_name)
 
 	for (i = 0; i < ALG_MAX; i++) {
 		if (strcmp(alg_name, alg_options[i].name) == 0) {
-			alg = 	alg_options[i].alg;
+			alg = alg_options[i].alg;
 			break;
 		}
 	}
@@ -474,16 +486,26 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = ECDSA_TYPE;
 		} else if (option->algtype <= SM4_128_XTS_GB) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "cipher");
+			if (option->modetype == INSTR_MODE)
+				option->subtype = CIPHER_INSTR_TYPE;
+			else
+				option->subtype = CIPHER_TYPE;
 			option->acctype = SEC_TYPE;
-			option->subtype = CIPHER_TYPE;
 		} else if (option->algtype <= SM4_128_GCM) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "aead");
 			option->acctype = SEC_TYPE;
 			option->subtype = AEAD_TYPE;
 		} else if (option->algtype <= SHA512_256) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "digest");
-			option->acctype = SEC_TYPE;
 			option->subtype = DIGEST_TYPE;
+			option->acctype = SEC_TYPE;
+			if (option->modetype == INSTR_MODE) {
+				option->sched_type = SCHED_POLICY_NONE;
+				option->task_type = TASK_INSTR;
+			} else if (option->modetype == MULTIBUF_MODE) {
+				option->sched_type = SCHED_POLICY_SINGLE;
+				option->task_type = TASK_INSTR;
+			}
 		}
 	}
 }
@@ -491,6 +513,7 @@ static void parse_alg_param(struct acc_option *option)
 void cal_perfermance_data(struct acc_option *option, u32 sttime)
 {
 	u8 palgname[MAX_ALG_NAME];
+	char *unit = "KiB/s";
 	double perfermance;
 	double cpu_rate;
 	u32 ttime = 1000;
@@ -506,8 +529,8 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 		if (option->syncmode == SYNC_MODE) {
 			if (get_recv_time() == option->threads)
 				break;
-		} else { // ASYNC_MODE
-			if (get_recv_time() == 1) // poll complete
+		} else {
+			if (get_recv_time() == 1)
 				break;
 		}
 		usleep(1000);
@@ -525,14 +548,17 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 		palgname[i] = '\0';
 
 	ptime = ptime - sttime;
-	perfdata = g_recv_data.pkg_len * g_recv_data.recv_cnt / 1024.0;
-	perfops = (double)(g_recv_data.recv_cnt) / 1000.0;
-	perfermance = perfdata / option->times;
-	ops = perfops / option->times;
 	cpu_rate = (double)ptime / option->times;
-	ACC_TST_PRT("algname:	length:		perf:		iops:		CPU_rate:\n"
-			"%s	%-2uBytes 	%.1fKB/s 	%.1fKops 	%.2f%%\n",
-			palgname, option->pktlen, perfermance, ops, cpu_rate);
+
+	perfdata = g_recv_data.pkg_len * g_recv_data.recv_cnt / 1024.0;
+	perfermance = perfdata / option->times;
+
+	perfops = g_recv_data.recv_cnt / 1000.0;
+	ops = perfops / option->times;
+
+	ACC_TST_PRT("algname:\tlength:\t\tperf:\t\tiops:\t\tCPU_rate:\n"
+		    "%s\t%-2uBytes \t%.2f%s\t%.1fKops \t%.2f%%\n",
+		    palgname, option->pktlen, perfermance, unit, ops, cpu_rate);
 }
 
 static int benchmark_run(struct acc_option *option)
@@ -541,35 +567,38 @@ static int benchmark_run(struct acc_option *option)
 
 	switch(option->acctype) {
 	case SEC_TYPE:
-		if (option->modetype & SVA_MODE) {
+		if ((option->modetype == SVA_MODE) ||
+		    (option->modetype == INSTR_MODE) ||
+		    (option->modetype == MULTIBUF_MODE)) {
 			ret = sec_uadk_benchmark(option);
-		} else if (option->modetype & NOSVA_MODE) {
+		} else if (option->modetype == NOSVA_MODE) {
 			ret = sec_wd_benchmark(option);
 		}
 		usleep(20000);
 #ifdef HAVE_CRYPTO
-		if (option->modetype & SOFT_MODE) {
+		if (option->modetype == SOFT_MODE) {
 			ret = sec_soft_benchmark(option);
 		}
 #endif
 		break;
 	case HPRE_TYPE:
-		if (option->modetype & SVA_MODE) {
+		if (option->modetype == SVA_MODE) {
 			ret = hpre_uadk_benchmark(option);
-		} else if (option->modetype & NOSVA_MODE) {
+		} else if (option->modetype == NOSVA_MODE) {
 			ret = hpre_wd_benchmark(option);
 		}
 		break;
 	case ZIP_TYPE:
-		if (option->modetype & SVA_MODE) {
+		if (option->modetype == SVA_MODE) {
 			ret = zip_uadk_benchmark(option);
-		} else if (option->modetype & NOSVA_MODE) {
+		} else if (option->modetype == NOSVA_MODE) {
 			ret = zip_wd_benchmark(option);
 		}
+		break;
 	case TRNG_TYPE:
-		if (option->modetype & SVA_MODE)
+		if (option->modetype == SVA_MODE)
 			ACC_TST_PRT("TRNG not support sva mode..\n");
-		else if (option->modetype & NOSVA_MODE)
+		else if (option->modetype == NOSVA_MODE)
 			ret = trng_wd_benchmark(option);
 
 		break;
@@ -595,6 +624,7 @@ static void dump_param(struct acc_option *option)
 	ACC_TST_PRT("    [--engine]:  %s\n", option->engine);
 	ACC_TST_PRT("    [--latency]: %u\n", option->latency);
 	ACC_TST_PRT("    [--init2]:   %u\n", option->inittype);
+	ACC_TST_PRT("    [--device]:  %s\n", option->device);
 }
 
 int acc_benchmark_run(struct acc_option *option)
@@ -604,6 +634,8 @@ int acc_benchmark_run(struct acc_option *option)
 	int i, ret = 0;
 	int status;
 
+	option->sched_type = SCHED_POLICY_RR;
+	option->task_type = TASK_HW;
 	parse_alg_param(option);
 	dump_param(option);
 	g_run_options = option;
@@ -693,10 +725,11 @@ static void print_help(void)
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
 	ACC_TST_PRT("        The name of the algorithm for benchmarking\n");
-	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft]: start UADK or Warpdrive or Openssl mode test\n");
+	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft/instr/multibuff]: start UADK or Warpdrive or Openssl or Instruction mode test\n");
 	ACC_TST_PRT("    [--sync/--async]: start asynchronous/synchronous mode test\n");
 	ACC_TST_PRT("    [--opt 0,1,2,3,4,5]:\n");
-	ACC_TST_PRT("        SEC/ZIP: 0/1:encryption/decryption or compression/decompression\n");
+	ACC_TST_PRT("        SEC: cipher,aead: 0/1:encryption/decryption; digest: 0/1:normal/hmac\n");
+	ACC_TST_PRT("        ZIP: 0~1:block compression, block decompression; 2~3:stream compression, stream decompression\n");
 	ACC_TST_PRT("        HPRE: 0~5:keygen, key compute, Enc, Dec, Sign, Verify\n");
 	ACC_TST_PRT("    [--pktlen]:\n");
 	ACC_TST_PRT("        set the length of BD message in bytes\n");
@@ -718,6 +751,8 @@ static void print_help(void)
 	ACC_TST_PRT("        test the running time of packets\n");
 	ACC_TST_PRT("    [--init2]:\n");
 	ACC_TST_PRT("        select init2 mode in the init interface of UADK SVA\n");
+	ACC_TST_PRT("    [--device]:\n");
+	ACC_TST_PRT("        select device to do task\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
 	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
@@ -741,24 +776,25 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 	int c;
 
 	static struct option long_options[] = {
-		{"help",      no_argument,       0, 0},
-		{"alg",       required_argument, 0, 1},
-		{"mode",      required_argument, 0, 2},
-		{"opt",       required_argument, 0, 3},
-		{"sync",      no_argument,       0, 4},
-		{"async",     no_argument,       0, 5},
-		{"pktlen",    required_argument, 0, 6},
-		{"seconds",   required_argument, 0, 7},
-		{"thread",    required_argument, 0, 8},
-		{"multi",     required_argument, 0, 9},
-		{"ctxnum",    required_argument, 0, 10},
-		{"prefetch",  no_argument,       0, 11},
-		{"engine",    required_argument, 0, 12},
-		{"alglist",   no_argument,       0, 13},
-		{"latency",   no_argument,       0, 14},
-		{"winsize",   required_argument, 0, 15},
-		{"complevel", required_argument, 0, 16},
-		{"init2", no_argument, 0, 17},
+		{"help",	no_argument,		0, 0},
+		{"alg",		required_argument,	0, 1},
+		{"mode",	required_argument,	0, 2},
+		{"opt",		required_argument,	0, 3},
+		{"sync",	no_argument,		0, 4},
+		{"async",	no_argument,		0, 5},
+		{"pktlen",	required_argument,	0, 6},
+		{"seconds",	required_argument,	0, 7},
+		{"thread",	required_argument,	0, 8},
+		{"multi",	required_argument,	0, 9},
+		{"ctxnum",	required_argument,	0, 10},
+		{"prefetch",	no_argument,		0, 11},
+		{"engine",	required_argument,	0, 12},
+		{"alglist",	no_argument,		0, 13},
+		{"latency",	no_argument,		0, 14},
+		{"winsize",	required_argument,	0, 15},
+		{"complevel",	required_argument,	0, 16},
+		{"init2",	no_argument,		0, 17},
+		{"device",	required_argument,	0, 18},
 		{0, 0, 0, 0}
 	};
 
@@ -823,8 +859,15 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		case 17:
 			option->inittype = INIT2_TYPE;
 			break;
+		case 18:
+			if (strlen(optarg) >= MAX_DEVICE_NAME) {
+				ACC_TST_PRT("invalid: device name is %s\n", optarg);
+				goto to_exit;
+			}
+			strcpy(option->device, optarg);
+			break;
 		default:
-			ACC_TST_PRT("bad input test parameter!\n");
+			ACC_TST_PRT("invalid: bad input parameter!\n");
 			print_help();
 			goto to_exit;
 		}

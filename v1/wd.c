@@ -88,7 +88,8 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 	if (ptrRet == NULL)
 		return -WD_ENODEV;
 
-	/* The attr_file = "/sys/class/uacce/xxx"
+	/*
+	 * The attr_file = "/sys/class/uacce/xxx"
 	 * It's the Internal Definition File Node
 	 */
 	fd = open(attr_path, O_RDONLY, 0);

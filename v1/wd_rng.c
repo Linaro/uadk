@@ -57,7 +57,7 @@ static int wcrypto_setup_qinfo(struct wcrypto_rng_ctx_setup *setup,
 		WD_ERR("algorithm mismatch!\n");
 		return ret;
 	}
-        qinfo = q->qinfo;
+	qinfo = q->qinfo;
 	/* lock at ctx creating */
 	wd_spinlock(&qinfo->qlock);
 	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
@@ -120,7 +120,7 @@ void *wcrypto_create_rng_ctx(struct wd_queue *q,
 	return ctx;
 
 free_ctx_id:
-        qinfo = q->qinfo;
+	qinfo = q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
