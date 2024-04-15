@@ -17,7 +17,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <assert.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <linux/types.h>

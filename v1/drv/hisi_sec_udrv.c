@@ -18,17 +18,12 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
-#include <assert.h>
 #include <string.h>
 #include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
 
-#include "config.h"
 #include "hisi_sec_udrv.h"
 
 #define SEC_HW_TASK_DONE	1
