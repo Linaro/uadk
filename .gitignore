@@ -160,7 +160,6 @@ m4/
 missing
 sample/uadk_comp
 stamp-h1
-test/test_dummy
 test/test_hisi_zip
 test/test_hisi_zlib
 test/test_bind_api
