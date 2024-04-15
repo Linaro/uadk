@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include "config.h"
 #include "wd_comp.h"
 #include "wd_sched.h"
 
