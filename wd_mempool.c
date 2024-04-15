@@ -409,10 +409,10 @@ static int check_mempool_real_size(struct mempool *mp, struct blkpool *bp)
 }
 
 static int alloc_block_from_mempool(struct mempool *mp,
-					struct blkpool *bp,
-					int pos,
-					int mem_combined_num,
-					int mem_splited_num)
+				    struct blkpool *bp,
+				    int pos,
+				    int mem_combined_num,
+				    int mem_splited_num)
 {
 	int pos_last = pos;
 	int pos_first;
@@ -435,7 +435,7 @@ static int alloc_block_from_mempool(struct mempool *mp,
 		set_bit(mp->bitmap, i);
 
 	ret = alloc_memzone(bp, mp->addr + pos_first * mp->blk_size,
-				mem_splited_num, pos_first, pos_last);
+			    mem_splited_num, pos_first, pos_last);
 	if (ret < 0)
 		goto err_clear_bit;
 
@@ -461,7 +461,7 @@ static int alloc_mem_multi_in_one(struct mempool *mp, struct blkpool *bp)
 
 	while (blk_num > 0) {
 		ret = alloc_block_from_mempool(mp, bp, pos, 1,
-						MIN(blk_num, mem_splited_num));
+					       MIN(blk_num, mem_splited_num));
 		if (ret < 0)
 			goto err_free_memzone;
 
@@ -488,7 +488,7 @@ err_check_size:
 static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 {
 	int mem_combined_num = bp->blk_size / mp->blk_size +
-				 (bp->blk_size % mp->blk_size ? 1 : 0);
+			       (bp->blk_size % mp->blk_size ? 1 : 0);
 	int blk_num = bp->depth;
 	int ret = -WD_ENOMEM;
 	int pos = 0;
@@ -499,7 +499,7 @@ static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 
 	while (blk_num > 0) {
 		ret = alloc_block_from_mempool(mp, bp, pos,
-						mem_combined_num, 1);
+					       mem_combined_num, 1);
 		if (ret < 0)
 			goto err_free_memzone;
 
@@ -660,8 +660,8 @@ err_open:
 }
 
 /* hp_dir is e.g. /sys/devices/system/node/nodex/hugepages/hugepages-64kB */
-static int get_hugepage_info_per_type(const char *hugepage_path, int path_size,
-	struct dirent *hp_dir, struct sys_hugepage_config *cfg)
+static int get_hugepage_info_per_type(const char *hugepage_path, int path_size, struct dirent *hp_dir,
+				      struct sys_hugepage_config *cfg)
 {
 	char path[MAX_ATTR_STR_SIZE];
 	char *name = hp_dir->d_name;

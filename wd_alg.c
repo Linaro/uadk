@@ -270,7 +270,7 @@ struct wd_alg_list *wd_get_alg_head(void)
 }
 
 bool wd_drv_alg_support(const char *alg_name,
-	struct wd_alg_driver *drv)
+			struct wd_alg_driver *drv)
 {
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
@@ -358,7 +358,7 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, bool hw_mask)
 		}
 
 		if (!strcmp(alg_name, pnext->alg_name) && pnext->available &&
-		      pnext->drv->priority > tmp_priority) {
+		    pnext->drv->priority > tmp_priority) {
 			tmp_priority = pnext->drv->priority;
 			select_node = pnext;
 			drv = pnext->drv;

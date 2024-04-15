@@ -595,7 +595,7 @@ static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess, __u32 num)
 }
 
 static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
-						 __u64 m_len)
+					    __u64 m_len)
 {
 	struct wd_dtb *dgst, *k, *plaintext;
 	__u32 ksz = sess->key_size;
@@ -1238,7 +1238,7 @@ struct wd_ecc_key *wd_ecc_get_key(handle_t sess)
 }
 
 int wd_ecc_set_prikey(struct wd_ecc_key *ecc_key,
-			   struct wd_dtb *prikey)
+		      struct wd_dtb *prikey)
 {
 	struct wd_ecc_prikey *ecc_prikey;
 	struct wd_dtb *d;
@@ -1264,7 +1264,7 @@ int wd_ecc_set_prikey(struct wd_ecc_key *ecc_key,
 }
 
 int wd_ecc_get_prikey(struct wd_ecc_key *ecc_key,
-			   struct wd_dtb **prikey)
+		      struct wd_dtb **prikey)
 {
 	if (!ecc_key || !prikey) {
 		WD_ERR("invalid:  get ecc prikey parameter err!\n");
@@ -2259,8 +2259,8 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	}
 
 	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx,
-							    sess_t->sched_key,
-							    CTX_MODE_ASYNC);
+						 sess_t->sched_key,
+						 CTX_MODE_ASYNC);
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
@@ -2408,7 +2408,7 @@ int wd_ecc_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 		return ret;
 
 	return wd_alg_env_init(&wd_ecc_env_config, table,
-			      &wd_ecc_ops, ARRAY_SIZE(table), &ctx_attr);
+			       &wd_ecc_ops, ARRAY_SIZE(table), &ctx_attr);
 }
 
 void wd_ecc_ctx_num_uninit(void)

@@ -813,7 +813,7 @@ static void wd_free_ctx_table(struct wd_env_config *config)
 }
 
 static int get_and_fill_ctx_num(struct wd_env_config_per_numa *config_numa,
-				     const char *p, int ctx_num)
+				const char *p, int ctx_num)
 {
 	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
 	const char *type;
@@ -891,7 +891,7 @@ static int get_start_ctx_index(struct wd_env_config *config,
 }
 
 static void set_ctx_index(struct wd_env_config_per_numa *config_numa,
-			      __u8 mode, int *start)
+			  __u8 mode, int *start)
 {
 	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
 	int size, i, sum = 0;
@@ -1551,8 +1551,8 @@ static void wd_uninit_one_task_queue(struct async_task_queue *task_queue)
 }
 
 static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
-				struct wd_env_config_per_numa *config_numa,
-				void *alg_poll_ctx)
+						 struct wd_env_config_per_numa *config_numa,
+						 void *alg_poll_ctx)
 {
 	struct async_task_queue *task_queue, *queue_head;
 	int i, j, ret;
@@ -1592,7 +1592,7 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 }
 
 static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
-				struct wd_env_config_per_numa *config_numa)
+						    struct wd_env_config_per_numa *config_numa)
 {
 	struct async_task_queue *task_queue, *head;
 	double num;
@@ -2001,7 +2001,7 @@ void wd_dlclose_drv(void *dlh_list)
 }
 
 static void add_lib_to_list(struct drv_lib_list *head,
-				  struct drv_lib_list *node)
+			    struct drv_lib_list *node)
 {
 	struct drv_lib_list *tmp = head;
 

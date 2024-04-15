@@ -372,7 +372,7 @@ void wd_aead_free_sess(handle_t h_sess)
 }
 
 static int wd_aead_param_check(struct wd_aead_sess *sess,
-	struct wd_aead_req *req)
+			       struct wd_aead_req *req)
 {
 	__u32 len;
 	int ret;
@@ -558,7 +558,7 @@ static bool wd_aead_algs_check(const char *alg)
 }
 
 int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
-					 struct wd_ctx_params *ctx_params)
+		   struct wd_ctx_params *ctx_params)
 {
 	struct wd_ctx_nums aead_ctx_num[WD_DIGEST_CIPHER_DECRYPTION + 1] = {0};
 	struct wd_ctx_params aead_ctx_params = {0};
@@ -697,7 +697,7 @@ static void fill_stream_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 }
 
 static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
-			    struct wd_aead_sess *sess)
+			     struct wd_aead_sess *sess)
 {
 	memcpy(&msg->req, req, sizeof(struct wd_aead_req));
 
@@ -944,7 +944,7 @@ int wd_aead_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 		return ret;
 
 	return wd_alg_env_init(&wd_aead_env_config, table,
-			      &wd_aead_ops, ARRAY_SIZE(table), &ctx_attr);
+			       &wd_aead_ops, ARRAY_SIZE(table), &ctx_attr);
 }
 
 void wd_aead_ctx_num_uninit(void)
