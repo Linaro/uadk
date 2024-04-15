@@ -10,7 +10,6 @@
 #include <sys/mman.h>
 #include <zlib.h>
 
-#include "hisi_qm_udrv.h"
 #include "test_lib.h"
 
 #define SCHED_RR_NAME	"sched_rr"
