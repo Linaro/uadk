@@ -277,7 +277,7 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_digest_setting.config,
-					wd_digest_setting.driver);
+				 wd_digest_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -364,7 +364,7 @@ static bool wd_digest_algs_check(const char *alg)
 }
 
 int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
-					 struct wd_ctx_params *ctx_params)
+		     struct wd_ctx_params *ctx_params)
 {
 	struct wd_ctx_params digest_ctx_params = {0};
 	struct wd_ctx_nums digest_ctx_num = {0};
@@ -464,7 +464,7 @@ void wd_digest_uninit2(void)
 }
 
 static int wd_aes_hmac_length_check(struct wd_digest_sess *sess,
-	struct wd_digest_req *req)
+				    struct wd_digest_req *req)
 {
 	switch (sess->alg) {
 	case WD_DIGEST_AES_XCBC_MAC_96:
@@ -517,7 +517,7 @@ static int wd_mac_length_check(struct wd_digest_sess *sess,
 }
 
 static int wd_digest_param_check(struct wd_digest_sess *sess,
-	struct wd_digest_req *req)
+				 struct wd_digest_req *req)
 {
 	int ret;
 
@@ -841,7 +841,7 @@ int wd_digest_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 		return ret;
 
 	return wd_alg_env_init(&wd_digest_env_config, table,
-			      &wd_digest_ops, ARRAY_SIZE(table), &ctx_attr);
+			       &wd_digest_ops, ARRAY_SIZE(table), &ctx_attr);
 }
 
 void wd_digest_ctx_num_uninit(void)

@@ -605,10 +605,10 @@ int wd_rsa_kg_out_data(struct wd_rsa_kg_out *ko, char **data)
 
 /* Create a RSA key generate operation input with parameter e, p and q */
 struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
-				struct wd_dtb *p, struct wd_dtb *q)
+				      struct wd_dtb *p, struct wd_dtb *q)
 {
-	struct wd_rsa_kg_in *kg_in;
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
+	struct wd_rsa_kg_in *kg_in;
 	int kg_in_size;
 
 	if (!c || !e || !p || !q) {
@@ -745,7 +745,7 @@ void wd_rsa_del_kg_out(handle_t sess, struct wd_rsa_kg_out *kout)
 }
 
 void wd_rsa_get_kg_out_params(struct wd_rsa_kg_out *kout, struct wd_dtb *d,
-					struct wd_dtb *n)
+			      struct wd_dtb *n)
 {
 	if (!kout) {
 		WD_ERR("invalid: input null at get key gen params!\n");
@@ -766,8 +766,8 @@ void wd_rsa_get_kg_out_params(struct wd_rsa_kg_out *kout, struct wd_dtb *d,
 }
 
 void wd_rsa_get_kg_out_crt_params(struct wd_rsa_kg_out *kout,
-					struct wd_dtb *qinv,
-					struct wd_dtb *dq, struct wd_dtb *dp)
+				  struct wd_dtb *qinv,
+				  struct wd_dtb *dq, struct wd_dtb *dp)
 {
 	if (!kout || !qinv || !dq || !dp) {
 		WD_ERR("invalid: input null at get key gen crt para!\n");
@@ -794,9 +794,9 @@ void wd_rsa_get_kg_out_crt_params(struct wd_rsa_kg_out *kout,
 }
 
 void wd_rsa_set_kg_out_crt_psz(struct wd_rsa_kg_out *kout,
-				    size_t qinv_sz,
-				    size_t dq_sz,
-				    size_t dp_sz)
+			       size_t qinv_sz,
+			       size_t dq_sz,
+			       size_t dp_sz)
 {
 	kout->qinvbytes = qinv_sz;
 	kout->dqbytes = dq_sz;
@@ -804,8 +804,8 @@ void wd_rsa_set_kg_out_crt_psz(struct wd_rsa_kg_out *kout,
 }
 
 void wd_rsa_set_kg_out_psz(struct wd_rsa_kg_out *kout,
-				size_t d_sz,
-				size_t n_sz)
+			   size_t d_sz,
+			   size_t n_sz)
 {
 	kout->dbytes = d_sz;
 	kout->nbytes = n_sz;
@@ -847,7 +847,7 @@ static void init_pubkey(struct wd_rsa_pubkey *pubkey, int ksz)
 }
 
 static int create_sess_key(struct wd_rsa_sess_setup *setup,
-			struct wd_rsa_sess *sess)
+			   struct wd_rsa_sess *sess)
 {
 	struct wd_rsa_prikey2 *pkey2;
 	struct wd_rsa_prikey1 *pkey1;
@@ -1036,7 +1036,7 @@ int wd_rsa_set_pubkey_params(handle_t sess, struct wd_dtb *e, struct wd_dtb *n)
 }
 
 void wd_rsa_get_pubkey_params(struct wd_rsa_pubkey *pbk, struct wd_dtb **e,
-					struct wd_dtb **n)
+			      struct wd_dtb **n)
 {
 	if (!pbk) {
 		WD_ERR("invalid: input NULL in get rsa public key!\n");
@@ -1084,7 +1084,7 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 }
 
 void wd_rsa_get_prikey_params(struct wd_rsa_prikey *pvk, struct wd_dtb **d,
-					struct wd_dtb **n)
+			      struct wd_dtb **n)
 {
 	struct wd_rsa_prikey1 *pkey1;
 
@@ -1148,8 +1148,8 @@ static int rsa_prikey2_param_set(struct wd_rsa_prikey2 *pkey2,
 }
 
 int wd_rsa_set_crt_prikey_params(handle_t sess, struct wd_dtb *dq,
-			struct wd_dtb *dp, struct wd_dtb *qinv,
-			struct wd_dtb *q, struct wd_dtb *p)
+				 struct wd_dtb *dp, struct wd_dtb *qinv,
+				 struct wd_dtb *q, struct wd_dtb *p)
 {
 	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
 	struct wd_rsa_prikey2 *pkey2;
@@ -1200,9 +1200,9 @@ int wd_rsa_set_crt_prikey_params(handle_t sess, struct wd_dtb *dq,
 }
 
 void wd_rsa_get_crt_prikey_params(struct wd_rsa_prikey *pvk,
-		struct wd_dtb **dq,
-		struct wd_dtb **dp, struct wd_dtb **qinv,
-		struct wd_dtb **q, struct wd_dtb **p)
+				  struct wd_dtb **dq,
+				  struct wd_dtb **dp, struct wd_dtb **qinv,
+				  struct wd_dtb **q, struct wd_dtb **p)
 {
 	struct wd_rsa_prikey2 *pkey2;
 

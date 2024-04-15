@@ -321,7 +321,7 @@ static void wd_cipher_clear_status(void)
 }
 
 static int wd_cipher_common_init(struct wd_ctx_config *config,
-	struct wd_sched *sched)
+				 struct wd_sched *sched)
 {
 	int ret;
 
@@ -346,7 +346,7 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_cipher_setting.config,
-					wd_cipher_setting.driver);
+				 wd_cipher_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -611,7 +611,7 @@ static int cipher_len_check(handle_t h_sess, struct wd_cipher_req *req)
 }
 
 static int wd_cipher_check_params(handle_t h_sess,
-				struct wd_cipher_req *req, __u8 mode)
+				  struct wd_cipher_req *req, __u8 mode)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
 	int ret;
@@ -881,7 +881,7 @@ int wd_cipher_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 		return ret;
 
 	return wd_alg_env_init(&wd_cipher_env_config, table,
-			      &wd_cipher_ops, ARRAY_SIZE(table), &ctx_attr);
+			       &wd_cipher_ops, ARRAY_SIZE(table), &ctx_attr);
 }
 
 void wd_cipher_ctx_num_uninit(void)

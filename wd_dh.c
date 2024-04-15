@@ -320,7 +320,7 @@ void wd_dh_uninit2(void)
 }
 
 static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
-			struct wd_dh_sess *sess)
+		       struct wd_dh_sess *sess)
 {
 	memcpy(&msg->req, req, sizeof(*req));
 	msg->result = WD_EINVAL;
