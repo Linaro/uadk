@@ -19,7 +19,6 @@
 
 #include <asm/byteorder.h>
 #include <linux/types.h>
-#include "config.h"
 #include "v1/wd.h"
 #include "v1/wd_ecc.h"
 #include "v1/wd_rsa.h"

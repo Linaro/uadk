@@ -23,6 +23,7 @@
 #define __DUMMY_HW_USR_IF_H
 
 #include <linux/types.h>
+#include "v1/internal/wd_dummy_usr_if.h"
 
 #define DUMMY_WD 		"dummy_wd"
 

@@ -17,7 +17,6 @@
 #ifndef _UAPI_WD_UACCE_H
 #define _UAPI_WD_UACCE_H
 
-#include <linux/types.h>
 #include <linux/ioctl.h>
 
 #define WD_UACCE_CLASS_NAME	"uacce"

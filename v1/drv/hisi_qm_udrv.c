@@ -18,17 +18,13 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
-#include <assert.h>
 #include <string.h>
 #include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
 
-#include "config.h"
 #include "v1/drv/hisi_zip_udrv.h"
 #include "v1/drv/hisi_hpre_udrv.h"
 #include "v1/drv/hisi_sec_udrv.h"
