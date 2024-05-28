@@ -13,6 +13,7 @@
 #include "test_lib.h"
 
 #define SCHED_RR_NAME	"sched_rr"
+//add test
 
 struct check_rand_ctx {
 	int off;
