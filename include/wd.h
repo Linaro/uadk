@@ -83,7 +83,7 @@ typedef void (*wd_log)(const char *format, ...);
 #define	WD_EIO				EIO
 #define	WD_EAGAIN			EAGAIN
 #define	WD_ENOMEM			ENOMEM
-#define	WD_EACCESS			EACCESS
+#define	WD_EACCES			EACCES
 #define	WD_EBUSY			EBUSY
 #define	WD_EEXIST			EEXIST
 #define	WD_ENODEV			ENODEV

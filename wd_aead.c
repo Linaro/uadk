@@ -243,7 +243,7 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (!sess) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -282,7 +282,7 @@ int wd_aead_get_authsize(handle_t h_sess)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (!sess) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -294,7 +294,7 @@ int wd_aead_get_maxauthsize(handle_t h_sess)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (!sess || sess->dalg >= WD_DIGEST_TYPE_MAX) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL or invalid alg type!\n");
 		return -WD_EINVAL;
 	}
 
@@ -359,7 +359,7 @@ void wd_aead_free_sess(handle_t h_sess)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (unlikely(!sess)) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL!\n");
 		return;
 	}
 
