@@ -389,7 +389,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		msg = wd_find_msg_in_pool(&wd_comp_setting.pool, idx,
 					  resp_msg.tag);
 		if (unlikely(!msg)) {
-			WD_ERR("failed to get msg from pool!\n");
+			WD_ERR("failed to find msg from pool!\n");
 			return -WD_EINVAL;
 		}
 
