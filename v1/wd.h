@@ -61,8 +61,10 @@ extern "C" {
 #define	WD_IN_EPARA		67
 #define	WD_ENOPROC		68
 
+typedef unsigned char __u8;
+typedef unsigned int __u32;
+typedef unsigned long long __u64;
 typedef void (*wcrypto_cb)(const void *msg, void *tag);
-
 typedef void (*wd_log)(const char *format, ...);
 
 struct wcrypto_cb_tag {

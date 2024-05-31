@@ -32,6 +32,9 @@ extern "C" {
 #define WD_IPC_KEY			0x500011
 #define CRYPTO_MAX_ALG_NAME		128
 
+typedef unsigned char __u8;
+typedef unsigned int __u32;
+typedef unsigned long long __u64;
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
