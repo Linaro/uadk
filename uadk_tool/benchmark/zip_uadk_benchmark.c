@@ -372,7 +372,7 @@ static int specified_device_request_ctx(struct acc_option *options)
 			ret = -ENOMEM;
 			goto free_ctx;
 		}
-		g_ctx_cfg.ctxs[i].op_type = 0;
+		g_ctx_cfg.ctxs[i].op_type = options->optype % WD_DIR_MAX;
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 	}
 
@@ -414,7 +414,7 @@ static int non_specified_device_request_ctx(struct acc_option *options)
 			if (!g_ctx_cfg.ctxs[i].ctx)
 				break;
 
-			g_ctx_cfg.ctxs[i].op_type = 0;
+			g_ctx_cfg.ctxs[i].op_type = options->optype % WD_DIR_MAX;
 			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 		}
 
