@@ -75,7 +75,7 @@ int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max)
 void wd_free_id(__u8 *buf, __u32 size, __u32 id, __u32 id_max)
 {
 	if (unlikely(id >= id_max)) {
-		WD_ERR("id error, id = %u!\n", id);
+		WD_ERR("id error, id(%u) >= id_max(%u)!\n", id, id_max);
 		return;
 	}
 
@@ -111,7 +111,7 @@ void wd_uninit_cookie_pool(struct wd_cookie_pool *pool)
 
 static void put_cookie(struct wd_cookie_pool *pool, const void *cookie)
 {
-	__u32 idx = ((uintptr_t)cookie - (uintptr_t)pool->cookies) /
+	__u32 idx = (__u32)((uintptr_t)cookie - (uintptr_t)pool->cookies) /
 		pool->cookies_size;
 
 	wd_free_id(pool->cstatus, pool->cookies_num, idx, pool->cookies_num);
