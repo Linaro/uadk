@@ -25,10 +25,6 @@
 extern "C" {
 #endif
 
-typedef unsigned char __u8;
-typedef unsigned int __u32;
-typedef unsigned long long __u64;
-
 #define ZIP_LOG(format, args...) fprintf(stderr, format, ##args)
 
 #define MAX_CTX_RSV_SIZE		65536
