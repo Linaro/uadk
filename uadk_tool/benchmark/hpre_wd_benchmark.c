@@ -18,6 +18,7 @@
 #define SM2_DG_SZ		1024
 #define SEND_USLEEP		100
 #define ALIGN_SIZE		128
+#define WAIT_POLL_USLEEP	1000
 
 static   char rsa_m[8] = {0x54, 0x85, 0x9b, 0x34, 0x2c, 0x49, 0xea, 0x2a};
 
@@ -114,6 +115,28 @@ static struct thread_queue_res g_thread_queue;
 static const char* const alg_operations[] = {
 	"GenKey", "ShareKey", "Encrypt", "Decrypt", "Sign", "Verify",
 };
+
+static void hpre_wait_recv_complete(void)
+{
+	int i = 0;
+
+	while (get_run_state() != 0) {
+		if (i++ >= MAX_TRY_CNT) {
+			HPRE_TST_PRT("failed to get run state!\n");
+			break;
+		}
+		usleep(WAIT_POLL_USLEEP);
+	}
+
+	i = 0;
+	while (get_recv_time() != g_thread_num) {
+		if (i++ >= MAX_TRY_CNT) {
+			HPRE_TST_PRT("failed to wait poll thread finish!\n");
+			break;
+		}
+		usleep(WAIT_POLL_USLEEP);
+	}
+}
 
 static void get_rsa_param(u32 algtype, u32 *keysize, u32 *mode)
 {
@@ -543,7 +566,6 @@ void *hpre_wd_poll(void *data)
 		}
 		count += recv;
 		recv = 0;
-
 		if (get_run_state() == 0)
 			last_time--;
 	}
@@ -1037,6 +1059,9 @@ static void *rsa_wd_async_run(void *arg)
 		count++;
 	} while(true);
 
+	/* Wait async mode finish recv */
+	hpre_wait_recv_complete();
+
 	/* clean output buffer remainings in the last time operation */
 	if (opdata.op_type == WCRYPTO_RSA_GENKEY) {
 		char *data;
@@ -1067,12 +1092,6 @@ sample_release:
 	free(rsa_key_in);
 key_release:
 	free(key_info);
-
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
 	wcrypto_del_rsa_ctx(ctx);
 
 	add_send_complete();
@@ -1396,6 +1415,9 @@ static void *dh_wd_async_run(void *arg)
 		count++;
 	} while(true);
 
+	/* Wait async mode finish recv */
+	hpre_wait_recv_complete();
+
 tag_release:
 	free(tag);
 param_release:
@@ -1403,12 +1425,6 @@ param_release:
 	wd_free_blk(pool, opdata.pv);
 	wd_free_blk(pool, opdata.pri);
 ctx_release:
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
-
 	wcrypto_del_dh_ctx(ctx);
 	add_send_complete();
 
@@ -1450,7 +1466,7 @@ static int get_ecc_curve(struct hpre_ecc_setup *setup, u32 cid)
 	return 0;
 }
 
-static int    get_ecc_key_param(struct wcrypto_ecc_curve *param, u32 key_bits)
+static int get_ecc_key_param(struct wcrypto_ecc_curve *param, u32 key_bits)
 {
 	u32 key_size = (key_bits + 7) / 8;
 
@@ -1568,7 +1584,8 @@ static int get_ecc_param_from_sample(struct hpre_ecc_setup *setup,
 				return -1;
 			memset(setup->msg, 0xFF, len);
 
-			if (true) { // for msg_sigest mode
+			/* for msg_digest mode */
+			if (true) {
 				memcpy(setup->msg, sm2_digest, sizeof(sm2_digest));
 				setup->msg_size = sizeof(sm2_digest);
 			} else {
@@ -2380,6 +2397,9 @@ static void *ecc_wd_async_run(void *arg)
 		count++;
 	} while(true);
 
+	/* Wait async mode finish recv */
+	hpre_wait_recv_complete();
+
 tag_release:
 	free(tag);
 src_release:
@@ -2388,12 +2408,6 @@ src_release:
 	if (opdata.out)
 		(void)wcrypto_del_ecc_out(ctx, opdata.out);
 sess_release:
-	while (1) {
-		if (get_recv_time() > 0) // wait Async mode finish recv
-			break;
-		usleep(SEND_USLEEP);
-	}
-
 	wcrypto_del_ecc_ctx(ctx);
 msg_release:
 	if (subtype == SM2_TYPE)
