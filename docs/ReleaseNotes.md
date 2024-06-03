@@ -1,4 +1,15 @@
 
+# UADK Release v2.7 June 2024
+
+## Features:
+- Support CE instruction:
+  SM4(ECB), SM4(CFB0, SM4(XTS), SM4(CBC) and SM4(CTR)
+  SM3
+- Support SVE instruction:
+  multi-buffer for SM3 and MD5 algorithms.
+- uadk_tool add sm4 and sm3 ce test
+- uadk_tool add sm3 and md5 sve test
+
 # UADK Release v2.6 Dec 2023
 
 ## Features:
