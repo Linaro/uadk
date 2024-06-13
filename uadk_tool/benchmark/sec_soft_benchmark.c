@@ -280,6 +280,7 @@ static int sec_soft_param_parse(soft_thread *tddata, struct acc_option *options)
 		mode = WD_CIPHER_CBC;
 		tddata->evp_cipher = EVP_des_ede3_cbc();
 		break;
+#ifndef OPENSSL_NO_SM4
 	case SM4_128_ECB:
 		keysize = 16;
 		mode = WD_CIPHER_ECB;
@@ -309,6 +310,7 @@ static int sec_soft_param_parse(soft_thread *tddata, struct acc_option *options)
 		keysize = 16;
 		mode = WD_CIPHER_XTS;
 		break;
+#endif
 	case AES_128_CCM:
 		keysize = 16;
 		mode = WD_CIPHER_CCM;
@@ -354,6 +356,7 @@ static int sec_soft_param_parse(soft_thread *tddata, struct acc_option *options)
 		mode = WD_CIPHER_CBC;
 		tddata->evp_cipher = EVP_aes_256_cbc();
 		break;
+#ifndef OPENSSL_NO_SM4
 	case SM4_128_CCM:
 		keysize = 16;
 		mode = WD_CIPHER_CCM;
@@ -362,6 +365,7 @@ static int sec_soft_param_parse(soft_thread *tddata, struct acc_option *options)
 		keysize = 16;
 		mode = WD_CIPHER_GCM;
 		break;
+#endif
 	case SM3_ALG:		// digest mode is optype
 		keysize = 4;
 		mode = optype;
