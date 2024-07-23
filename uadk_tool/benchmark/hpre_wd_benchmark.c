@@ -2564,6 +2564,7 @@ int hpre_wd_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_thread_num = options->threads;
 
 	if (options->optype >= (WCRYPTO_EC_OP_MAX - WCRYPTO_ECDSA_VERIFY)) {
