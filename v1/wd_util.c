@@ -24,14 +24,23 @@
 
 void wd_spinlock(struct wd_lock *lock)
 {
-	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
-		while (__atomic_load_n(&lock->lock, __ATOMIC_ACQUIRE))
-			;
+	int val = 0;
+
+	if (__atomic_compare_exchange_n(&lock->lock, &val, 1, 1,
+					      __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return;
+
+	do {
+		do {
+			val = __atomic_load_n(&lock->lock, __ATOMIC_RELAXED);
+		} while (val != 0);
+	} while (!__atomic_compare_exchange_n(&lock->lock, &val, 1, 1,
+					      __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
 }
 
 void wd_unspinlock(struct wd_lock *lock)
 {
-	__atomic_clear(&lock->lock, __ATOMIC_RELEASE);
+	__atomic_store_n(&lock->lock, 0, __ATOMIC_RELEASE);
 }
 
 void *drv_iova_map(struct wd_queue *q, void *va, size_t sz)
