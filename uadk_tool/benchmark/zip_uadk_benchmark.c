@@ -1331,6 +1331,7 @@ int zip_uadk_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_thread_num = options->threads;
 	g_pktlen = options->pktlen;
 	g_ctxnum = options->ctxnums;

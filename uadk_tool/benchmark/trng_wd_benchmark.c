@@ -312,6 +312,7 @@ int trng_wd_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_thread_num = options->threads;
 
 	ret = init_trng_wd_queue(options);
