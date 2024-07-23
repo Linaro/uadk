@@ -375,7 +375,11 @@ static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf)
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
 	struct sm3_ce_drv_ctx *sctx = (struct sm3_ce_drv_ctx *)drv->priv;
 
-	config->epoll_en = false;
+	/* Fallback init is NULL */
+	if (!drv || !conf)
+		return 0;
+
+	config->epoll_en = 0;
 
 	/* return if already inited */
 	if (sctx)
