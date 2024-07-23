@@ -166,8 +166,8 @@ struct qm_queue_info {
 	qm_sqe_parse sqe_parse[WCRYPTO_MAX_ALG];
 	hisi_qm_sqe_fill_priv sqe_fill_priv;
 	hisi_qm_sqe_parse_priv sqe_parse_priv;
-	struct wd_lock sd_lock;
-	struct wd_lock rc_lock;
+	pthread_spinlock_t sd_lock;
+	pthread_spinlock_t rc_lock;
 	struct wd_queue *q;
 	int (*sgl_info)(struct hw_sgl_info *info);
 	int (*sgl_init)(void *pool, struct wd_sgl *sgl);
