@@ -25,7 +25,7 @@
 void wd_spinlock(struct wd_lock *lock)
 {
 	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
-		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED))
+		while (__atomic_load_n(&lock->lock, __ATOMIC_ACQUIRE))
 			;
 }
 
