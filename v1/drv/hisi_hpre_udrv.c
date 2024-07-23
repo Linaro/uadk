@@ -490,12 +490,10 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	hw_msg->task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
-	/* prepare rsa key */
 	ret = qm_rsa_prepare_key(msg, q, hw_msg, &va, &size);
 	if (unlikely(ret))
 		return ret;
 
-	/* prepare in/out put */
 	ret = qm_rsa_prepare_iot(msg, q, hw_msg);
 	if (unlikely(ret)) {
 		rsa_key_unmap(msg, q, hw_msg, va, size);
@@ -576,13 +574,11 @@ static int fill_dh_g_param(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	int ret;
 
 	ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
-		(const char *)msg->g, msg->key_bytes,
-		msg->gbytes, "dh g");
+		(const char *)msg->g, msg->key_bytes, msg->gbytes, "dh g");
 	if (unlikely(ret))
 		return ret;
 
-	phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
-				msg->key_bytes);
+	phy = (uintptr_t)drv_iova_map(q, (void *)msg->g, msg->key_bytes);
 	if (unlikely(!phy)) {
 		WD_ERR("Get dh g parameter dma address fail!\n");
 		return -WD_ENOMEM;
@@ -1338,8 +1334,7 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 		hw_msg->bd_rsv2 = 1; /* fall through */
 	case WCRYPTO_ECXDH_GEN_KEY: /* fall through */
 	case WCRYPTO_SM2_KG:
-		ret = ecc_prepare_dh_gen_in((void *)in,
-					    data);
+		ret = ecc_prepare_dh_gen_in((void *)in, data);
 		break;
 	case WCRYPTO_ECXDH_COMPUTE_KEY:
 		/*
@@ -1667,17 +1662,14 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 	hw_msg->task_len1 = ((msg->key_bytes) >> BYTE_BITS_SHIFT) - 0x1;
 
-	/* prepare algorithm */
 	ret = qm_ecc_prepare_alg(hw_msg, msg);
 	if (unlikely(ret))
 		return ret;
 
-	/* prepare key */
 	ret = qm_ecc_prepare_key(msg, q, hw_msg, &va, &size);
 	if (unlikely(ret))
 		return ret;
 
-	/* prepare in/out put */
 	ret = qm_ecc_prepare_iot(msg, q, hw_msg);
 	if (unlikely(ret))
 		goto map_key_fail;
