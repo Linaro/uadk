@@ -36,21 +36,6 @@
 #define WD_HUNDRED			100
 #define PAGE_SIZE_OFFSET		10
 
-struct wd_lock {
-	__u32 lock;
-};
-
-static inline void wd_spinlock(struct wd_lock *lock)
-{
-	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
-		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED));
-}
-
-static inline void wd_unspinlock(struct wd_lock *lock)
-{
-	__atomic_clear(&lock->lock, __ATOMIC_RELEASE);
-}
-
 struct wd_ref {
 	__u32 ref;
 };
@@ -127,7 +112,7 @@ struct blkpool {
 	struct mempool *mp;
 	struct memzone_list mz_list;
 	unsigned long free_block_num;
-	struct wd_lock lock;
+	pthread_spinlock_t lock;
 	struct wd_ref ref;
 };
 
@@ -161,8 +146,7 @@ struct mempool {
 	size_t size;
 	size_t real_size;
 	struct bitmap *bitmap;
-	/* use self-define lock to avoid to use pthread lib in libwd */
-	struct wd_lock lock;
+	pthread_spinlock_t lock;
 	struct wd_ref ref;
 	struct sys_hugepage_list hp_list;
 	unsigned long free_blk_num;
@@ -314,16 +298,16 @@ void *wd_block_alloc(handle_t blkpool)
 		return NULL;
 	}
 
-	wd_spinlock(&bp->lock);
+	pthread_spin_lock(&bp->lock);
 	if (bp->top > 0) {
 		bp->top--;
 		bp->free_block_num--;
 		p = bp->blk_elem[bp->top];
-		wd_unspinlock(&bp->lock);
+		pthread_spin_unlock(&bp->lock);
 		return p;
 	}
 
-	wd_unspinlock(&bp->lock);
+	pthread_spin_unlock(&bp->lock);
 	wd_atomic_sub(&bp->ref, 1);
 
 	return NULL;
@@ -336,17 +320,17 @@ void wd_block_free(handle_t blkpool, void *addr)
 	if (!bp || !addr)
 		return;
 
-	wd_spinlock(&bp->lock);
+	pthread_spin_lock(&bp->lock);
 	if (bp->top < bp->depth) {
 		bp->blk_elem[bp->top] = addr;
 		bp->top++;
 		bp->free_block_num++;
-		wd_unspinlock(&bp->lock);
+		pthread_spin_unlock(&bp->lock);
 		wd_atomic_sub(&bp->ref, 1);
 		return;
 	}
 
-	wd_unspinlock(&bp->lock);
+	pthread_spin_unlock(&bp->lock);
 }
 
 static int alloc_memzone(struct blkpool *bp, void *addr, size_t blk_num,
@@ -392,9 +376,9 @@ static void free_mem_to_mempool(struct blkpool *bp)
 {
 	struct mempool *mp = bp->mp;
 
-	wd_spinlock(&mp->lock);
+	pthread_spin_lock(&mp->lock);
 	free_mem_to_mempool_nolock(bp);
-	wd_unspinlock(&mp->lock);
+	pthread_spin_unlock(&mp->lock);
 }
 
 static int check_mempool_real_size(struct mempool *mp, struct blkpool *bp)
@@ -455,7 +439,7 @@ static int alloc_mem_multi_in_one(struct mempool *mp, struct blkpool *bp)
 	int ret = -WD_ENOMEM;
 	int pos = 0;
 
-	wd_spinlock(&mp->lock);
+	pthread_spin_lock(&mp->lock);
 	if (check_mempool_real_size(mp, bp))
 		goto err_check_size;
 
@@ -471,13 +455,13 @@ static int alloc_mem_multi_in_one(struct mempool *mp, struct blkpool *bp)
 		pos = ret;
 	}
 
-	wd_unspinlock(&mp->lock);
+	pthread_spin_unlock(&mp->lock);
 	return 0;
 
 err_free_memzone:
 	free_mem_to_mempool_nolock(bp);
 err_check_size:
-	wd_unspinlock(&mp->lock);
+	pthread_spin_unlock(&mp->lock);
 	return ret;
 }
 
@@ -493,7 +477,7 @@ static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 	int ret = -WD_ENOMEM;
 	int pos = 0;
 
-	wd_spinlock(&mp->lock);
+	pthread_spin_lock(&mp->lock);
 	if (check_mempool_real_size(mp, bp))
 		goto err_check_size;
 
@@ -509,13 +493,13 @@ static int alloc_mem_one_need_multi(struct mempool *mp, struct blkpool *bp)
 		mp->real_size -= mp->blk_size * mem_combined_num;
 	}
 
-	wd_unspinlock(&mp->lock);
+	pthread_spin_unlock(&mp->lock);
 	return 0;
 
 err_free_memzone:
 	free_mem_to_mempool_nolock(bp);
 err_check_size:
-	wd_unspinlock(&mp->lock);
+	pthread_spin_unlock(&mp->lock);
 	return ret;
 }
 
@@ -576,10 +560,13 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 	bp->blk_size = block_size;
 	bp->free_block_num = block_num;
 	bp->mp = mp;
+	ret = pthread_spin_init(&bp->lock, PTHREAD_PROCESS_PRIVATE);
+	if (ret < 0)
+		goto err_free_bp;
 
 	ret = alloc_mem_from_mempool(mp, bp);
 	if (ret < 0)
-		goto err_free_bp;
+		goto err_uninit_lock;
 
 	ret = init_blkpool_elem(bp);
 	if (ret < 0)
@@ -590,6 +577,8 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 
 err_free_mem:
 	free_mem_to_mempool(bp);
+err_uninit_lock:
+	pthread_spin_destroy(&bp->lock);
 err_free_bp:
 	free(bp);
 err_sub_ref:
@@ -613,6 +602,7 @@ void wd_blockpool_destroy(handle_t blkpool)
 		sched_yield();
 
 	free_mem_to_mempool(bp);
+	pthread_spin_destroy(&bp->lock);
 	free(bp->blk_elem);
 	free(bp);
 	wd_atomic_sub(&mp->ref, 1);
@@ -919,10 +909,13 @@ handle_t wd_mempool_create(size_t size, int node)
 	mp->node = node;
 	mp->size = tmp;
 	mp->blk_size = WD_MEMPOOL_BLOCK_SIZE;
+	ret = pthread_spin_init(&mp->lock, PTHREAD_PROCESS_PRIVATE);
+	if (ret < 0)
+		goto free_pool;
 
 	ret = alloc_mem_from_hugepage(mp);
 	if (ret < 0)
-		goto free_pool;
+		goto uninit_lock;
 
 	ret = init_mempool(mp);
 	if (ret < 0)
@@ -933,6 +926,8 @@ handle_t wd_mempool_create(size_t size, int node)
 
 free_pool_memory:
 	free_hugepage_mem(mp);
+uninit_lock:
+	pthread_spin_destroy(&mp->lock);
 free_pool:
 	free(mp);
 	return (handle_t)(-WD_ENOMEM);
@@ -951,6 +946,7 @@ void wd_mempool_destroy(handle_t mempool)
 	while(wd_atomic_load(&mp->ref));
 	uninit_mempool(mp);
 	free_hugepage_mem(mp);
+	pthread_spin_destroy(&mp->lock);
 	free(mp);
 }
 
@@ -968,7 +964,7 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats)
 		return;
 	}
 
-	wd_spinlock(&mp->lock);
+	pthread_spin_lock(&mp->lock);
 
 	stats->page_type = mp->page_type;
 	stats->page_size = mp->page_size;
@@ -979,7 +975,7 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats)
 	stats->blk_usage_rate = (stats->blk_num - mp->free_blk_num) /
 				stats->blk_num * WD_HUNDRED;
 
-	wd_unspinlock(&mp->lock);
+	pthread_spin_unlock(&mp->lock);
 }
 
 void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
@@ -993,7 +989,7 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 		return;
 	}
 
-	wd_spinlock(&bp->lock);
+	pthread_spin_lock(&bp->lock);
 
 	stats->block_size = bp->blk_size;
 	stats->block_num = bp->depth;
@@ -1006,12 +1002,12 @@ void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats)
 
 	if (!size) {
 		WD_ERR("invalid: blkpool size is zero!\n");
-		wd_unspinlock(&bp->lock);
+		pthread_spin_unlock(&bp->lock);
 		return;
 	}
 
 	stats->mem_waste_rate = (size - bp->blk_size * bp->depth) /
 				size * WD_HUNDRED;
 
-	wd_unspinlock(&bp->lock);
+	pthread_spin_unlock(&bp->lock);
 }

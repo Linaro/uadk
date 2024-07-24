@@ -177,13 +177,11 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->in_size > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->in_size > MAX_BUFFER_SIZE)) {
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
-	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->avail_out > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
 		       msg->avail_out);
 		msg->avail_out = MAX_BUFFER_SIZE;
@@ -500,8 +498,10 @@ static int fill_zip_addr_lz77_zstd(void *ssqe,
 	} else {
 		sqe->cipher_key_addr_l = lower_32_bits((__u64)addr.dest_addr);
 		sqe->cipher_key_addr_h = upper_32_bits((__u64)addr.dest_addr);
-		sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr + msg->in_size);
-		sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr + msg->in_size);
+		sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr +
+						 msg->in_size + ZSTD_LIT_RSV_SIZE);
+		sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr +
+						 msg->in_size + ZSTD_LIT_RSV_SIZE);
 	}
 
 	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
@@ -671,7 +671,7 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 		format->sequences_start = zstd_out->sequence;
 	} else {
 		format->literals_start = recv_msg->dst;
-		format->sequences_start = recv_msg->dst + recv_msg->in_size;
+		format->sequences_start = recv_msg->dst + recv_msg->in_size + ZSTD_LIT_RSV_SIZE;
 		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
 	}
 

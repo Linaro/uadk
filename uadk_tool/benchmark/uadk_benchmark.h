@@ -4,6 +4,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <linux/random.h>
@@ -15,6 +16,7 @@
 #include <signal.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
+#include <signal.h>
 #include <unistd.h>
 
 #define ACC_TST_PRT		printf
@@ -217,6 +219,7 @@ extern void add_send_complete(void);
 extern u32 get_recv_time(void);
 extern void cal_avg_latency(u32 count);
 extern int get_alg_name(int alg, char *alg_name);
+extern void segmentfault_handler(int sig);
 
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);

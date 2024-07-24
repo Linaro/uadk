@@ -36,6 +36,10 @@ static int isa_ce_init(struct wd_alg_driver *drv, void *conf)
 	struct wd_ctx_config_internal *config = conf;
 	struct sm4_ce_drv_ctx *sctx = drv->priv;
 
+	/* Fallback init is NULL */
+	if (!drv || !conf)
+		return 0;
+
 	config->epoll_en = 0;
 	memcpy(&sctx->config, config, sizeof(struct wd_ctx_config_internal));
 

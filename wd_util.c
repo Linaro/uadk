@@ -1212,6 +1212,7 @@ err_free_ctxs:
 	free(ctx_config->ctxs);
 err_free_ctx_config:
 	free(ctx_config);
+	config->ctx_config = NULL;
 	return ret;
 }
 

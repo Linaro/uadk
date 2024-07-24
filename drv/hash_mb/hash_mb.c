@@ -192,6 +192,10 @@ static int hash_mb_init(struct wd_alg_driver *drv, void *conf)
 	struct hash_mb_ctx *priv;
 	int ret;
 
+	/* Fallback init is NULL */
+	if (!drv || !conf)
+		return 0;
+
 	priv = malloc(sizeof(struct hash_mb_ctx));
 	if (!priv)
 		return -WD_ENOMEM;

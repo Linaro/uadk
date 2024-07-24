@@ -1630,6 +1630,7 @@ int sec_wd_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_alg = options->subtype;
 	g_algtype = options->algtype;
 	g_optype = options->optype;

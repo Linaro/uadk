@@ -331,6 +331,21 @@ void cal_avg_latency(u32 count)
 	ACC_TST_PRT("thread<%lu> avg latency: %.1fus\n", gettid(), latency);
 }
 
+void segmentfault_handler(int sig)
+{
+#define BUF_SZ 64
+	void *array[BUF_SZ];
+	size_t size;
+
+	/* Get void*'s for all entries on the stack */
+	size = backtrace(array, BUF_SZ);
+
+	/* Print out all the frames to stderr */
+	fprintf(stderr, "Error: signal %d:\n", sig);
+	backtrace_symbols_fd(array, size, STDERR_FILENO);
+	exit(1);
+}
+
 /*-------------------------------------main code------------------------------------------------------*/
 static void parse_alg_param(struct acc_option *option)
 {
