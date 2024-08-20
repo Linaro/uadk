@@ -2632,10 +2632,15 @@ static int wd_alg_ce_ctx_init(struct wd_init_attrs *attrs)
 	ctx_config->ctx_num = 1;
 	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
 	if (!ctx_config->ctxs) {
-		return -WD_ENOMEM;
 		WD_ERR("failed to alloc ctxs!\n");
+		return -WD_ENOMEM;
 	}
+
 	ctx_config->ctxs[0].ctx = (handle_t)calloc(1, sizeof(struct wd_ce_ctx));
+	if (!ctx_config->ctxs[0].ctx) {
+		free(ctx_config->ctxs);
+		return -WD_ENOMEM;
+	}
 
 	return WD_SUCCESS;
 }
@@ -2719,7 +2724,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	char alg_type[CRYPTO_MAX_ALG_NAME];
 	int driver_type = UADK_ALG_HW;
 	char *alg = attrs->alg;
-	int ret = 0;
+	int ret = -WD_EINVAL;
 
 	if (!attrs->ctx_params)
 		return -WD_EINVAL;
@@ -2801,7 +2806,6 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 						  numa_max_node() + 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to instance scheduler\n");
-			ret = -WD_EINVAL;
 			goto out_ctx_config;
 		}
 		attrs->sched = alg_sched;
