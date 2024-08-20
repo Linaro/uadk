@@ -1738,7 +1738,7 @@ int qm_fill_digest_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	info->req_cache[i] = msg;
 
 #ifdef DEBUG_LOG
-	sec_dump_bd((unsigned int *)sqe, SQE_BYTES_NUMS);
+	sec_dump_bd((unsigned char *)temp, SQE_BYTES_NUMS);
 #endif
 
 	return WD_SUCCESS;
@@ -1961,10 +1961,7 @@ int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	}
 
 #ifdef DEBUG_LOG
-	if (sqe3->type == BD_TYPE3)
-		sec_dump_bd((unsigned char *)sqe3, SQE_BYTES_NUMS);
-	else
-		sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+	sec_dump_bd((unsigned char *)msg, SQE_BYTES_NUMS);
 #endif
 
 	return 1;
@@ -2515,7 +2512,7 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	info->req_cache[i] = msg;
 
 #ifdef DEBUG_LOG
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+	sec_dump_bd((unsigned char *)temp, SQE_BYTES_NUMS);
 #endif
 
 	return ret;
@@ -2602,7 +2599,7 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	}
 
 #ifdef DEBUG_LOG
-	sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
+	sec_dump_bd((unsigned char *)msg, SQE_BYTES_NUMS);
 #endif
 
 	return 1;
@@ -2669,7 +2666,7 @@ int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	}
 
 #ifdef DEBUG_LOG
-	sec_dump_bd((unsigned int *)sqe, SQE_BYTES_NUMS);
+	sec_dump_bd((unsigned char *)msg, SQE_BYTES_NUMS);
 #endif
 
 	return 1;
