@@ -160,6 +160,7 @@ global:
 	wd_get_sgl_datalen;
 	wd_get_sge_datalen;
 	wd_get_sgl_bufsize;
+	hisi_qm_inject_op_register;
 
 local: *;
 };
