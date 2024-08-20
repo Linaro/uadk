@@ -688,8 +688,10 @@ int wd_wait(struct wd_queue *q, __u16 ms)
 	fds[0].events = POLLIN;
 
 	ret = poll(fds, 1, ms);
-	if (unlikely(ret < 0))
+	if (unlikely(ret < 0)) {
+		WD_ERR("failed to poll a queue!\n");
 		return -WD_ENODEV;
+	}
 
 	/* return 0 for no data, 1 for new message */
 	return ret;
@@ -700,8 +702,11 @@ int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms)
 	int ret;
 
 	ret = wd_wait(q, ms);
-	if (likely(ret > 0))
-		return wd_recv(q, resp);
+	if (likely(ret > 0)) {
+		ret = wd_recv(q, resp);
+		if (unlikely(!ret))
+			WD_ERR("failed to recv data after poll!\n");
+	}
 
 	return ret;
 }
