@@ -45,7 +45,7 @@ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la
 
 uadk_driversdir=$(libdir)/uadk
 uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
-			 libisa_ce.la libisa_sve.la
+			 libisa_ce.la libisa_sve.la libhisi_dae.la
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
@@ -101,6 +101,9 @@ libisa_sve_la_SOURCES=drv/hash_mb/hash_mb.c wd_digest_drv.h drv/hash_mb/hash_mb.
 		drv/hash_mb/md5_sve_common.S drv/hash_mb/md5_mb_asimd_x1.S \
 		drv/hash_mb/md5_mb_asimd_x4.S drv/hash_mb/md5_mb_sve.S
 
+libhisi_dae_la_SOURCES=drv/hisi_dae.c drv/hisi_qm_udrv.c \
+		hisi_qm_udrv.h
+
 if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV -fPIC
 AM_CFLAGS += -DWD_NO_LOG
@@ -129,6 +132,9 @@ libisa_ce_la_DEPENDENCIES = libwd.la libwd_crypto.la
 
 libisa_sve_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 libisa_sve_la_DEPENDENCIES = libwd.la libwd_crypto.la
+
+libhisi_dae_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_dae_la_OBJECTS)
+libhisi_dae_la_DEPENDENCIES = libwd.la libwd_dae.la
 
 else
 UADK_WD_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd.map
@@ -171,6 +177,11 @@ libisa_ce_la_DEPENDENCIES= libwd.la libwd_crypto.la
 libisa_sve_la_LIBADD= -lwd -lwd_crypto
 libisa_sve_la_LDFLAGS=$(UADK_VERSION)
 libisa_sve_la_DEPENDENCIES= libwd.la libwd_crypto.la
+
+libhisi_dae_la_LIBADD= -lwd -lwd_dae
+libhisi_dae_la_LDFLAGS=$(UADK_VERSION)
+libhisi_dae_la_DEPENDENCIES= libwd.la libwd_dae.la
+
 endif	# WD_STATIC_DRV
 
 pkgconfigdir = $(libdir)/pkgconfig

@@ -86,6 +86,8 @@ struct hisi_qp {
 	struct hisi_qm_queue_info q_info;
 	handle_t h_sgl_pool;
 	handle_t h_ctx;
+	/* Private area for driver use, point to queue specifial data */
+	void *priv;
 };
 
 /* Capabilities */
