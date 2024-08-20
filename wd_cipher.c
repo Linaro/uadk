@@ -560,7 +560,7 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 
 	if (!req->iv) {
 		WD_ERR("invalid: cipher input iv is NULL!\n");
-		ret = -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	switch (sess->alg) {
@@ -636,12 +636,6 @@ static int wd_cipher_check_params(handle_t h_sess,
 	if (unlikely(ret))
 		return ret;
 
-	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
-	if (unlikely(ret)) {
-		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
-		return -WD_EINVAL;
-	}
-
 	if (req->data_fmt == WD_SGL_BUF) {
 		ret = wd_check_datalist(req->list_src, req->in_bytes);
 		if (unlikely(ret)) {
@@ -655,6 +649,12 @@ static int wd_cipher_check_params(handle_t h_sess,
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the dst datalist, len = %u\n",
 				req->in_bytes);
+			return -WD_EINVAL;
+		}
+	} else {
+		ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 	}
