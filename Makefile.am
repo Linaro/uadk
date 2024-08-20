@@ -36,12 +36,12 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
 		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h \
-		  include/wd_zlibwrapper.h
+		  include/wd_zlibwrapper.h include/wd_dae.h include/wd_agg.h
 
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
-lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la
+lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la
 
 uadk_driversdir=$(libdir)/uadk
 uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
@@ -65,6 +65,9 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/drv/hisi_hpre_udrv.c v1/drv/hisi_hpre_udrv.h \
 		 v1/drv/hisi_sec_udrv.c v1/drv/hisi_sec_udrv.h \
 		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
+
+libwd_dae_la_SOURCES=wd_dae.h wd_agg.h wd_agg_drv.h wd_agg.c \
+		     wd_util.c wd_util.h wd_sched.c wd_sched.h wd.c wd.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h \
 		      wd_sched.c wd_sched.h wd.c wd.h wd_zlibwrapper.c
@@ -112,6 +115,9 @@ libhisi_zip_la_LIBADD = -ldl
 libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_crypto_la_DEPENDENCIES = libwd.la
 
+libwd_dae_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
+libwd_dae_la_DEPENDENCIES = libwd.la
+
 libhisi_sec_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 libhisi_sec_la_DEPENDENCIES = libwd.la libwd_crypto.la
 
@@ -127,6 +133,7 @@ libisa_sve_la_DEPENDENCIES = libwd.la libwd_crypto.la
 else
 UADK_WD_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd.map
 UADK_CRYPTO_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_crypto.map
+UADK_DAE_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_dae.map
 UADK_COMP_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_comp.map
 UADK_V1_SYMBOL= -Wl,--version-script,$(top_srcdir)/v1/libwd.map
 
@@ -140,6 +147,10 @@ libwd_comp_la_DEPENDENCIES= libwd.la
 libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL) -lpthread
 libwd_crypto_la_DEPENDENCIES= libwd.la
+
+libwd_dae_la_LIBADD= -lwd -ldl -lnuma
+libwd_dae_la_LDFLAGS=$(UADK_VERSION) $(UADK_DAE_SYMBOL)
+libwd_dae_la_DEPENDENCIES= libwd.la
 
 libhisi_zip_la_LIBADD= -lwd -ldl -lwd_comp
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)

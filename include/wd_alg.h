@@ -95,6 +95,7 @@ enum alg_dev_type {
  *	    result of the task   packets from the hardware device.
  * @get_usage: callback interface used to obtain the
  *	    utilization rate of devices.
+ * @get_extend_ops: callback interface to get private operation of drivers.
  */
 struct wd_alg_driver {
 	const char	*drv_name;
@@ -111,6 +112,7 @@ struct wd_alg_driver {
 	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 	int (*get_usage)(void *param);
+	int (*get_extend_ops)(void *ops);
 };
 
 inline int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
@@ -201,10 +203,12 @@ struct wd_alg_list *wd_get_alg_head(void);
 void hisi_sec2_probe(void);
 void hisi_hpre_probe(void);
 void hisi_zip_probe(void);
+void hisi_dae_probe(void);
 
 void hisi_sec2_remove(void);
 void hisi_hpre_remove(void);
 void hisi_zip_remove(void);
+void hisi_dae_remove(void);
 
 #endif
 
