@@ -548,17 +548,23 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_check_src_dst(req->in, req->in_bytes, req->out, req->out_bytes);
-	if (unlikely(ret)) {
-		WD_ERR("invalid: in/out addr is NULL when in/out size is non-zero!\n");
-		return -WD_EINVAL;
-	}
-
 	if (req->data_fmt == WD_SGL_BUF) {
 		ret = wd_check_datalist(req->list_in, req->in_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the src datalist, size = %u\n",
 				req->in_bytes);
+			return -WD_EINVAL;
+		}
+
+		ret = wd_check_src_dst(NULL, 0, req->out, req->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: out addr is NULL when out size is non-zero!\n");
+			return -WD_EINVAL;
+		}
+	} else {
+		ret = wd_check_src_dst(req->in, req->in_bytes, req->out, req->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: in/out addr is NULL when in/out size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 	}

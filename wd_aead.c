@@ -374,7 +374,7 @@ void wd_aead_free_sess(handle_t h_sess)
 static int wd_aead_param_check(struct wd_aead_sess *sess,
 			       struct wd_aead_req *req)
 {
-	__u32 len;
+	__u64 len;
 	int ret;
 
 	if (unlikely(!sess || !req)) {
@@ -410,18 +410,11 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
-	if (unlikely(ret)) {
-		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
-		return -WD_EINVAL;
-	}
-
 	if (req->data_fmt == WD_SGL_BUF) {
-		len = req->in_bytes + req->assoc_bytes;
+		len = (__u64)req->in_bytes + req->assoc_bytes;
 		ret = wd_check_datalist(req->list_src, len);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the src datalist, size = %u\n",
-				len);
+			WD_ERR("failed to check the src datalist, size = %llu\n", len);
 			return -WD_EINVAL;
 		}
 
@@ -429,6 +422,12 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the dst datalist, size = %u\n",
 				req->out_bytes);
+			return -WD_EINVAL;
+		}
+	} else {
+		ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 	}

@@ -475,10 +475,10 @@ int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
 	return 0;
 }
 
-int wd_check_datalist(struct wd_datalist *head, __u32 size)
+int wd_check_datalist(struct wd_datalist *head, __u64 size)
 {
 	struct wd_datalist *tmp = head;
-	__u32 list_size = 0;
+	__u64 list_size = 0;
 
 	while (tmp) {
 		if (tmp->data)

@@ -254,7 +254,7 @@ int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
  *
  * Return 0 if the datalist is not less than expected size.
  */
-int wd_check_datalist(struct wd_datalist *head, __u32 size);
+int wd_check_datalist(struct wd_datalist *head, __u64 size);
 
 
 /*
