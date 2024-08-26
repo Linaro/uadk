@@ -292,6 +292,9 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 		goto out_uninit;
 	wd_comp_setting.adapter = adapter;
 
+	//test round robin
+	adapter->mode = UADK_ADAPT_MODE_ROUNDROBIN;
+
 	state = wd_comp_open_driver(WD_TYPE_V2);
 	if (state)
 		goto out_uninit;
