@@ -64,7 +64,8 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/drv/hisi_zip_udrv.c v1/drv/hisi_zip_udrv.h \
 		 v1/drv/hisi_hpre_udrv.c v1/drv/hisi_hpre_udrv.h \
 		 v1/drv/hisi_sec_udrv.c v1/drv/hisi_sec_udrv.h \
-		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
+		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h \
+		 adapter.c
 
 libwd_dae_la_SOURCES=wd_dae.h wd_agg.h wd_agg_drv.h wd_agg.c \
 		     wd_util.c wd_util.h wd_sched.c wd_sched.h wd.c wd.h
