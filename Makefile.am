@@ -47,6 +47,10 @@ uadk_driversdir=$(libdir)/uadk
 uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
 			 libisa_ce.la libisa_sve.la libhisi_dae.la
 
+if HAVE_ZLIB
+uadk_drivers_LTLIBRARIES+=libhisi_zlib.la
+endif
+
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
 		 v1/wd_rng.c v1/wd_rng.h	\
@@ -75,6 +79,8 @@ libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h \
 
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_comp_drv.h
+
+libhisi_zlib_la_SOURCES=drv/hisi_zlib.c
 
 libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd_aead.c wd_aead.h wd_aead_drv.h \
@@ -115,6 +121,8 @@ libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_comp_la_DEPENDENCIES = libwd.la
 
 libhisi_zip_la_LIBADD = -ldl
+
+libhisi_zlib_la_LIBADD = -ldl -lz
 
 libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_crypto_la_DEPENDENCIES = libwd.la
@@ -162,6 +170,9 @@ libwd_dae_la_DEPENDENCIES= libwd.la
 libhisi_zip_la_LIBADD= -lwd -ldl -lwd_comp
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
 libhisi_zip_la_DEPENDENCIES= libwd.la libwd_comp.la
+
+libhisi_zlib_la_LIBADD= -ldl -lz
+libhisi_zlib_la_LDFLAGS=$(UADK_VERSION)
 
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
 libhisi_sec_la_LDFLAGS=$(UADK_VERSION)
