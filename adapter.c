@@ -11,9 +11,14 @@
 #define DRIVER_NAME_KEY "driver_name"
 #define MODE_KEY "mode"
 
-static int read_value_int(FILE *fp, const char *key)
+static int read_value_int(char *conf, const char *key)
 {
+	FILE *fp = fopen(conf, "r");
 	char line[1024];
+	int ret = 0;
+
+	if (fp == NULL)
+		return 0;
 
 	while (fgets(line, sizeof(line), fp) != NULL) {
 		char *key_value = strtok(line, "=");
@@ -21,21 +26,27 @@ static int read_value_int(FILE *fp, const char *key)
 				char *value = strtok(NULL, "\n");
 
 				if (value) {
-					int mode = atoi(value);
-					return mode;
+					ret = atoi(value);
+					goto exit;
 				}
 			}
 	}
-	return 0;
+exit:
+	fclose(fp);
+	return ret;
 }
 
-static void read_config_entries(FILE *fp, struct uadk_adapter *adapter, char *alg_name)
+static void read_config_entries(char *conf, struct uadk_adapter *adapter, char *alg_name)
 {
 	struct uadk_adapter_worker *worker;
+	FILE *fp = fopen(conf, "r");
 	struct wd_alg_driver *drv;
 	char *drv_name = NULL;
 	char line[1024];
 	int i = 0;
+
+	if (fp == NULL)
+		return;
 
 	while (fgets(line, sizeof(line), fp) != NULL) {
 		char *key_value = strtok(line, "=");
@@ -53,7 +64,6 @@ static void read_config_entries(FILE *fp, struct uadk_adapter *adapter, char *al
 			worker->lifetime = 0;
 			worker->idx = i;
 			adapter->workers_nb++;
-
 			if (drv_name) {
 				free(drv_name);
 				drv_name = NULL;
@@ -66,41 +76,40 @@ static void read_config_entries(FILE *fp, struct uadk_adapter *adapter, char *al
 
 	if (drv_name)
 		free(drv_name);
+
+	fclose(fp);
 }
 
 int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 {
-	char *uadk_conf = getenv(CONFIG_FILE_ENV);
+	char *conf = getenv(CONFIG_FILE_ENV);
 	struct uadk_adapter_worker *worker;
 	struct wd_alg_driver *drv;
-	FILE *fp = NULL;
 	int idx = 0;
 
-	if (uadk_conf != NULL)
-		fp = fopen(uadk_conf, "r");
-
-	if (fp) {
-		/* if env UADK_CONF exist, only parse config */
-		adapter->mode = read_value_int(fp, MODE_KEY);
-		read_config_entries(fp, adapter, alg);
-		fclose(fp);
-	} else {
-		/* if no UADK_CONF, parse all drv to the workers*/
-		do {
-			drv = wd_find_drv(NULL, alg, idx);
-			if (!drv)
-				break;
-
-			worker = &adapter->workers[idx];
-			worker->driver = drv;
-			worker->lifetime = 0;
-			worker->idx = idx;
-			adapter->workers_nb++;
-
-			if (++idx >= UADK_MAX_NB_WORKERS)
-				break;
-		} while (drv);
+	if (conf != NULL) {
+		/* if env UADK_CONF exist, parse config first */
+		adapter->mode = read_value_int(conf, MODE_KEY);
+		read_config_entries(conf, adapter, alg);
+		if (adapter->workers_nb != 0)
+			return 0;
 	}
+
+	/* Then parse system drivers */
+	do {
+		drv = wd_find_drv(NULL, alg, idx);
+		if (!drv)
+			break;
+
+		worker = &adapter->workers[idx];
+		worker->driver = drv;
+		worker->lifetime = 0;
+		worker->idx = idx;
+		adapter->workers_nb++;
+
+		if (++idx >= UADK_MAX_NB_WORKERS)
+			break;
+	} while (drv);
 
 	return (adapter->workers_nb == 0);
 }
