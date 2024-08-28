@@ -299,8 +299,11 @@ static void uninit_ctx_config2(void)
 
 static int init_ctx_config2(struct acc_option *options)
 {
+	struct wd_ctx_params cparams = {0};
+	struct wd_ctx_nums *ctx_set_num;
+	int mode = options->syncmode;
 	char alg_name[MAX_ALG_NAME];
-	int ret = 0;
+	int ret;
 
 	ret = get_alg_name(options->algtype, alg_name);
 	if (ret) {
@@ -308,14 +311,43 @@ static int init_ctx_config2(struct acc_option *options)
 		return -EINVAL;
 	}
 
+	ctx_set_num = calloc(WD_DIR_MAX, sizeof(*ctx_set_num));
+	if (!ctx_set_num) {
+		WD_ERR("failed to alloc ctx_set_size!\n");
+		return -WD_ENOMEM;
+	}
+
+	cparams.op_type_num = WD_DIR_MAX;
+	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
+
+	for (int i = 0; i < WD_DIR_MAX; i++) {
+		if (mode == CTX_MODE_SYNC)
+			ctx_set_num[i].sync_ctx_num = g_ctxnum;
+		else
+			ctx_set_num[i].async_ctx_num = g_ctxnum;
+	}
+
 	/* init */
-	ret = wd_comp_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	ret = wd_comp_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
 	if (ret) {
 		ZIP_TST_PRT("failed to do comp init2!\n");
 		return ret;
 	}
 
 	return 0;
+
+out_freectx:
+	free(ctx_set_num);
+
+	return ret;
 }
 
 static int specified_device_request_ctx(struct acc_option *options)
