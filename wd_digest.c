@@ -436,7 +436,6 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_dlclose;
 		}
 		wd_digest_init_attrs.alg = alg;
-		wd_digest_init_attrs.sched_type = sched_type;
 		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
 		wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
 		wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx_;

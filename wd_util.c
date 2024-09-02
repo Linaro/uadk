@@ -2729,7 +2729,6 @@ int wd_alg_attrs_init(struct uadk_adapter_worker *worker,
 {
 	wd_alg_poll_ctx alg_poll_func = attrs->alg_poll_ctx;
 	wd_alg_init alg_init_func = attrs->alg_init;
-	__u32 sched_type = attrs->sched_type;
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
@@ -2814,7 +2813,8 @@ int wd_alg_attrs_init(struct uadk_adapter_worker *worker,
 		attrs->ctx_config = ctx_config;
 		worker->ctx_config = ctx_config;
 
-		alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+		/* Use default sched_type to alloc scheduler */
+		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, attrs->ctx_params->op_type_num,
 						  numa_max_node() + 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to instance scheduler\n");
