@@ -34,20 +34,32 @@
 static int isa_ce_init(struct wd_alg_driver *drv, void *conf)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct sm4_ce_drv_ctx *sctx = drv->priv;
+	struct sm4_ce_drv_ctx *priv;
 
 	/* Fallback init is NULL */
 	if (!drv || !conf)
 		return 0;
 
-	config->epoll_en = 0;
-	memcpy(&sctx->config, config, sizeof(struct wd_ctx_config_internal));
+	priv = malloc(sizeof(struct sm4_ce_drv_ctx));
+	if (!priv)
+		return -WD_EINVAL;
 
-	return 0;
+	config->epoll_en = 0;
+	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
+	drv->priv = priv;
+
+	return WD_SUCCESS;
 }
 
 static void isa_ce_exit(struct wd_alg_driver *drv)
 {
+	struct sm4_ce_drv_ctx *sctx = (struct sm4_ce_drv_ctx *)drv->priv;
+
+	if (!sctx)
+		return;
+
+	free(sctx);
+	drv->priv = NULL;
 }
 
 /* increment upper 96 bits of 128-bit counter by 1 */
