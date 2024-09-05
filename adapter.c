@@ -61,7 +61,6 @@ static void read_config_entries(char *conf, struct uadk_adapter *adapter, char *
 
 			worker = &adapter->workers[i];
 			worker->driver = drv;
-			worker->lifetime = 0;
 			worker->idx = i;
 			adapter->workers_nb++;
 			if (drv_name) {
@@ -103,7 +102,6 @@ int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 
 		worker = &adapter->workers[idx];
 		worker->driver = drv;
-		worker->lifetime = 0;
 		worker->idx = idx;
 		adapter->workers_nb++;
 
@@ -123,7 +121,6 @@ struct uadk_adapter_worker *uadk_adapter_choose_worker(
 	/* use worker[0] for simplicity now */
 	worker = &adapter->workers[0];
 	worker->valid = true;
-	worker->lifetime = 0;
 
 	return worker;
 }
@@ -150,7 +147,6 @@ struct uadk_adapter_worker *uadk_adapter_switch_worker(
 
 	new_worker = &adapter->workers[idx];
 	new_worker->valid = true;
-	new_worker->lifetime = 0;
 
 	return new_worker;
 }

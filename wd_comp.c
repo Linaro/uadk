@@ -42,6 +42,7 @@ struct wd_comp_sess {
 	void *sched_key;
 	struct uadk_adapter_worker *worker;
 	pthread_spinlock_t worker_lock;
+	int worker_lifetime;
 };
 
 struct wd_comp_setting {
@@ -63,6 +64,7 @@ void wd_comp_switch_worker(struct wd_comp_sess *sess, int para)
 					    sess->worker, para);
 	if (worker)
 		sess->worker = worker;
+	sess->worker_lifetime = 0;
 	pthread_spin_unlock(&sess->worker_lock);
 }
 
@@ -474,7 +476,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	/* todo, use workers[0] now, will adapter.choose_worker later */
 	worker = sess->worker = &wd_comp_setting.adapter->workers[0];
 	worker->valid = true;
-
+	sess->worker_lifetime = 0;
 	sess->alg_type = setup->alg_type;
 	sess->comp_lv = setup->comp_lv;
 	sess->win_sz = setup->win_sz;
@@ -641,15 +643,16 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 
 	if (ret) {
 		wd_comp_switch_worker(sess, 1);
-		worker->lifetime++;
+		sess->worker_lifetime++;
 		return ret;
 	}
 
-	if ((worker->lifetime != 0) ||
-	    (wd_comp_setting.adapter->mode = UADK_ADAPT_MODE_ROUNDROBIN))
-		worker->lifetime++;
+	if ((sess->worker_lifetime != 0) ||
+	    (wd_comp_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN)) {
+		sess->worker_lifetime++;
+	}
 
-	if (worker->lifetime == UADK_WORKER_LIFETIME)
+	if (sess->worker_lifetime == UADK_WORKER_LIFETIME)
 		wd_comp_switch_worker(sess, 0);
 
 	return ret;
@@ -917,11 +920,11 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	if (unlikely(ret))
 		goto fail_with_msg;
 
-	if ((worker->lifetime != 0) ||
-	    (wd_comp_setting.adapter->mode = UADK_ADAPT_MODE_ROUNDROBIN))
-		worker->lifetime++;
+	if ((sess->worker_lifetime != 0) ||
+	    (wd_comp_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		sess->worker_lifetime++;
 
-	if (worker->lifetime == UADK_WORKER_LIFETIME)
+	if (sess->worker_lifetime == UADK_WORKER_LIFETIME)
 		wd_comp_switch_worker(sess, 0);
 
 	return 0;
@@ -929,7 +932,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 fail_with_msg:
 	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
 	wd_comp_switch_worker(sess, 1);
-	worker->lifetime++;
+	sess->worker_lifetime++;
 	return ret;
 }
 

@@ -25,7 +25,6 @@ struct uadk_adapter_worker {
 	struct wd_ctx_config_internal config;
 	struct wd_async_msg_pool pool;
 	bool valid;
-	int lifetime;
 	int idx;
 };
 

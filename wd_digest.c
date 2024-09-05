@@ -68,6 +68,7 @@ struct wd_digest_sess {
 	struct wd_digest_stream_data stream_data;
 	struct uadk_adapter_worker *worker;
 	pthread_spinlock_t worker_lock;
+	int worker_lifetime;
 };
 
 void wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
@@ -210,6 +211,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	/* todo, use workers[0] now, will adapter.choose_worker later */
 	worker = sess->worker = &wd_digest_setting.adapter->workers[0];
 	worker->valid = true;
+	sess->worker_lifetime = 0;
 
 	sess->alg_name = wd_digest_alg_name[setup->alg];
 	sess->alg = setup->alg;
@@ -691,15 +693,15 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	if (ret) {
 		wd_digest_switch_worker(dsess, 1);
-		worker->lifetime++;
+		dsess->worker_lifetime++;
 		return ret;
 	}
 
-	if ((worker->lifetime != 0) ||
-	    (wd_digest_setting.adapter->mode = UADK_ADAPT_MODE_ROUNDROBIN))
-		worker->lifetime++;
+	if ((dsess->worker_lifetime != 0) ||
+	    (wd_digest_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		dsess->worker_lifetime++;
 
-	if (worker->lifetime == UADK_WORKER_LIFETIME)
+	if (dsess->worker_lifetime == UADK_WORKER_LIFETIME)
 		wd_digest_switch_worker(dsess, 0);
 
 	return ret;
@@ -759,11 +761,11 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	if ((worker->lifetime != 0) ||
-	    (wd_digest_setting.adapter->mode = UADK_ADAPT_MODE_ROUNDROBIN))
-		worker->lifetime++;
+	if ((dsess->worker_lifetime != 0) ||
+	    (wd_digest_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		dsess->worker_lifetime++;
 
-	if (worker->lifetime == UADK_WORKER_LIFETIME)
+	if (dsess->worker_lifetime == UADK_WORKER_LIFETIME)
 		wd_digest_switch_worker(dsess, 0);
 
 	return 0;
@@ -771,7 +773,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 fail_with_msg:
 	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
 	wd_digest_switch_worker(dsess, 1);
-	worker->lifetime++;
+	dsess->worker_lifetime++;
 	return ret;
 }
 
