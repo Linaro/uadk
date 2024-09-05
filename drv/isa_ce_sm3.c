@@ -373,22 +373,19 @@ static int sm3_ce_drv_recv(struct wd_alg_driver *drv, handle_t ctx, void *digest
 static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
-	struct sm3_ce_drv_ctx *sctx = (struct sm3_ce_drv_ctx *)drv->priv;
+	struct sm3_ce_drv_ctx *priv;
 
 	/* Fallback init is NULL */
 	if (!drv || !conf)
 		return 0;
 
-	config->epoll_en = 0;
-
-	/* return if already inited */
-	if (sctx)
-		return WD_SUCCESS;
-	sctx = malloc(sizeof(struct sm3_ce_drv_ctx));
-	if (!sctx)
+	priv = malloc(sizeof(struct sm3_ce_drv_ctx));
+	if (!priv)
 		return -WD_EINVAL;
 
-	memcpy(&sctx->config, config, sizeof(struct wd_ctx_config_internal));
+	config->epoll_en = 0;
+	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
+	drv->priv = priv;
 
 	return WD_SUCCESS;
 }
