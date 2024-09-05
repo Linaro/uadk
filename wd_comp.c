@@ -39,7 +39,7 @@ struct wd_comp_sess {
 	__u32 isize;
 	__u32 checksum;
 	__u8 *ctx_buf;
-	void *sched_key;
+	void **sched_key;
 	struct uadk_adapter_worker *worker;
 	pthread_spinlock_t worker_lock;
 	int worker_lifetime;
@@ -318,7 +318,6 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 		}
 
 		wd_comp_init_attrs.alg = alg;
-		wd_comp_init_attrs.sched_type = sched_type;
 		wd_comp_init_attrs.ctx_params = &comp_ctx_params;
 		wd_comp_init_attrs.alg_init = wd_comp_init_nolock;
 		wd_comp_init_attrs.alg_poll_ctx = wd_comp_poll_ctx_;
@@ -456,7 +455,8 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
 	struct uadk_adapter_worker *worker;
 	struct wd_comp_sess *sess;
-	int ret;
+	int nb = wd_comp_setting.adapter->workers_nb;
+	int ret, i;
 
 	if (!setup)
 		return (handle_t)0;
@@ -482,17 +482,26 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
 
-	/* Some simple scheduler don't need scheduling parameters */
-	sess->sched_key = (void *)worker->sched->sched_init(
-		worker->sched->h_sched_ctx, setup->sched_param);
-	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init session schedule key!\n");
-		goto sched_err;
+	sess->sched_key = calloc(sizeof(void *), nb);
+	for (i = 0; i < nb; i++) {
+		worker = &wd_comp_setting.adapter->workers[i];
+
+		sess->sched_key[i] = (void *)worker->sched->sched_init(
+				worker->sched->h_sched_ctx, setup->sched_param);
+		if (WD_IS_ERR(sess->sched_key[i])) {
+			WD_ERR("failed to init session schedule key!\n");
+			goto sched_err;
+		}
 	}
 
 	return (handle_t)sess;
 
 sched_err:
+	if (sess->sched_key) {
+		for (i = 0; i < nb; i++)
+			free(sess->sched_key[i]);
+		free(sess->sched_key);
+	}
 	free(sess->ctx_buf);
 sess_err:
 	free(sess);
@@ -509,8 +518,11 @@ void wd_comp_free_sess(handle_t h_sess)
 	if (sess->ctx_buf)
 		free(sess->ctx_buf);
 
-	if (sess->sched_key)
+	if (sess->sched_key) {
+		for (int i = 0; i < wd_comp_setting.adapter->workers_nb; i++)
+			free(sess->sched_key[i]);
 		free(sess->sched_key);
+	}
 
 	free(sess);
 }
@@ -625,7 +637,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	
 	idx = worker->sched->pick_next_ctx(
 		     worker->sched->h_sched_ctx,
-		     sess->sched_key, CTX_MODE_SYNC);
+		     sess->sched_key[worker->idx], CTX_MODE_SYNC);
 	ret = wd_check_ctx(&worker->config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
@@ -893,7 +905,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	idx = worker->sched->pick_next_ctx(
 		     worker->sched->h_sched_ctx,
-		     sess->sched_key, CTX_MODE_ASYNC);
+		     sess->sched_key[worker->idx], CTX_MODE_ASYNC);
 	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (unlikely(ret))
 		return ret;

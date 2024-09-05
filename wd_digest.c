@@ -64,7 +64,7 @@ struct wd_digest_sess {
 	void			*priv;
 	unsigned char		key[MAX_HMAC_KEY_SIZE];
 	__u32			key_bytes;
-	void			*sched_key;
+	void			**sched_key;
 	struct wd_digest_stream_data stream_data;
 	struct uadk_adapter_worker *worker;
 	pthread_spinlock_t worker_lock;
@@ -191,7 +191,8 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 {
 	struct wd_digest_sess *sess = NULL;
 	struct uadk_adapter_worker *worker;
-	bool ret;
+	int nb = wd_digest_setting.adapter->workers_nb;
+	int ret, i;
 
 	if (unlikely(!setup)) {
 		WD_ERR("failed to check alloc sess param!\n");
@@ -221,19 +222,27 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
-	/* Some simple scheduler don't need scheduling parameters */
-	sess->sched_key = (void *)worker->sched->sched_init(
+
+	sess->sched_key = calloc(sizeof(void *), nb);
+	for (i = 0; i < nb; i++) {
+		worker = &wd_digest_setting.adapter->workers[i];
+
+		sess->sched_key[i] = (void *)worker->sched->sched_init(
 				worker->sched->h_sched_ctx, setup->sched_param);
-	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init session schedule key!\n");
-		goto err_sess;
+		if (WD_IS_ERR(sess->sched_key[i])) {
+			WD_ERR("failed to init session schedule key!\n");
+			goto err_sess;
+		}
 	}
 
 	return (handle_t)sess;
 
 err_sess:
-	if (sess->sched_key)
+	if (sess->sched_key) {
+		for (i = 0; i < nb; i++)
+			free(sess->sched_key[i]);
 		free(sess->sched_key);
+	}
 	free(sess);
 	return (handle_t)0;
 }
@@ -248,8 +257,11 @@ void wd_digest_free_sess(handle_t h_sess)
 	}
 
 	wd_memset_zero(sess->key, sess->key_bytes);
-	if (sess->sched_key)
+	if (sess->sched_key) {
+		for (int i = 0; i < wd_digest_setting.adapter->workers_nb; i++)
+			free(sess->sched_key[i]);
 		free(sess->sched_key);
+	}
 	free(sess);
 }
 
@@ -681,7 +693,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 	idx = worker->sched->pick_next_ctx(
 		worker->sched->h_sched_ctx,
-		dsess->sched_key, CTX_MODE_SYNC);
+		dsess->sched_key[worker->idx], CTX_MODE_SYNC);
 	ret = wd_check_ctx(&worker->config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
@@ -731,7 +743,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 
 	idx = worker->sched->pick_next_ctx(
 		worker->sched->h_sched_ctx,
-		dsess->sched_key, CTX_MODE_ASYNC);
+		dsess->sched_key[worker->idx], CTX_MODE_ASYNC);
 	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
