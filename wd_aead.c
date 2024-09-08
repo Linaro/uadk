@@ -464,6 +464,8 @@ static int wd_aead_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_sched;
 
+	wd_aead_setting.config.pool = &wd_aead_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_aead_setting.config,
 					wd_aead_setting.driver);
 	if (ret)
@@ -829,11 +831,6 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_aead_setting.pool, idx, msg->tag);
 	return ret;
-}
-
-struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_aead_setting.pool, idx, tag);
 }
 
 int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)

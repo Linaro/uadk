@@ -19,7 +19,6 @@ global:
 	wd_cipher_get_env_param;
 	wd_cipher_set_driver;
 	wd_cipher_get_driver;
-	wd_cipher_get_msg;
 
 	wd_aead_init;
 	wd_aead_uninit;
@@ -44,7 +43,6 @@ global:
 	wd_aead_get_env_param;
 	wd_aead_set_driver;
 	wd_aead_get_driver;
-	wd_aead_get_msg;
 
 	wd_digest_init;
 	wd_digest_uninit;
@@ -65,7 +63,6 @@ global:
 	wd_digest_get_env_param;
 	wd_digest_set_driver;
 	wd_digest_get_driver;
-	wd_digest_get_msg;
 
 	wd_rsa_is_crt;
 	wd_rsa_get_key_bits;
@@ -107,7 +104,6 @@ global:
 	wd_rsa_get_env_param;
 	wd_rsa_set_driver;
 	wd_rsa_get_driver;
-	wd_rsa_get_msg;
 
 	wd_dh_get_mode;
 	wd_dh_key_bits;
@@ -131,7 +127,6 @@ global:
 	wd_dh_get_env_param;
 	wd_dh_set_driver;
 	wd_dh_get_driver;
-	wd_dh_get_msg;
 
 	wd_ecc_get_key_bits;
 	wd_ecc_get_key;
@@ -148,7 +143,6 @@ global:
 	wd_ecxdh_get_out_params;
 	wd_ecc_set_driver;
 	wd_ecc_get_driver;
-	wd_ecc_get_msg;
 
 	wd_sm2_new_sign_in;
 	wd_sm2_new_verf_in;
@@ -187,5 +181,6 @@ global:
 	wd_sched_rr_instance;
 	wd_sched_rr_alloc;
 	wd_sched_rr_release;
+	wd_find_msg_in_pool;
 local: *;
 };
