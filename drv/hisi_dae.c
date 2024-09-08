@@ -653,6 +653,7 @@ static void fill_hashagg_msg_task_err(struct dae_sqe *sqe, struct wd_agg_msg *ms
 
 static int hashagg_recv(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_msg)
 {
+	struct hisi_dae_ctx *priv = (struct hisi_dae_ctx *)drv->priv;
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct dae_extend_addr *ext_addr = qp->priv;
@@ -673,7 +674,7 @@ static int hashagg_recv(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_m
 
 	msg->tag = sqe.low_tag;
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_agg_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, msg->tag);
 		if (!temp_msg) {
 			msg->result = WD_AGG_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",

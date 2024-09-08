@@ -999,9 +999,10 @@ static void get_ctx_buf(struct hisi_zip_sqe *sqe,
 	}
 }
 
-static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
-			 struct wd_comp_msg *msg)
+static int parse_zip_sqe(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			 struct hisi_zip_sqe *sqe, struct wd_comp_msg *msg)
 {
+	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
 	__u32 buf_type = (sqe->dw9 & HZ_BUF_TYPE_MASK) >> BUF_TYPE_SHIFT;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
@@ -1026,7 +1027,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	recv_msg->tag = tag;
 
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		recv_msg = wd_comp_get_msg(qp->q_info.idx, tag);
+		recv_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, tag);
 		if (unlikely(!recv_msg)) {
 			WD_ERR("failed to get send msg! idx = %u, tag = %u!\n",
 			       qp->q_info.idx, tag);
@@ -1083,7 +1084,7 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	if (unlikely(ret < 0))
 		return ret;
 
-	return parse_zip_sqe(qp, &sqe, recv_msg);
+	return parse_zip_sqe(drv, qp, &sqe, recv_msg);
 }
 
 #define GEN_ZIP_ALG_DRIVER(zip_alg_name) \
