@@ -48,6 +48,7 @@ uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
 			 libisa_ce.la libisa_sve.la libhisi_dae.la
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
+		 wd_sched.c wd_util.c		\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
 		 v1/wd_rng.c v1/wd_rng.h	\
 		 v1/wd_rsa.c v1/wd_rsa.h	\

@@ -177,10 +177,5 @@ global:
 	wd_ecc_ctx_num_init;
 	wd_ecc_ctx_num_uninit;
 	wd_ecc_get_env_param;
-
-	wd_sched_rr_instance;
-	wd_sched_rr_alloc;
-	wd_sched_rr_release;
-	wd_find_msg_in_pool;
 local: *;
 };
