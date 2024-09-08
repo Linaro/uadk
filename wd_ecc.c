@@ -202,6 +202,8 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_sched;
 
+	wd_ecc_setting.config.pool = &wd_ecc_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_ecc_setting.config,
 				 wd_ecc_setting.driver);
 	if (ret)
@@ -2296,11 +2298,6 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, mid);
 	return ret;
-}
-
-struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_ecc_setting.pool, idx, tag);
 }
 
 int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
