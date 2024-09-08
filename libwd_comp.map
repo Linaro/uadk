@@ -22,10 +22,6 @@ global:
 	wd_comp_get_driver;
 	wd_comp_reset_sess;
 
-	wd_sched_rr_instance;
-	wd_sched_rr_alloc;
-	wd_sched_rr_release;
-
 	wd_deflate_init;
 	wd_deflate;
 	wd_deflate_reset;
@@ -35,7 +31,5 @@ global:
 	wd_inflate;
 	wd_inflate_reset;
 	wd_inflate_end;
-
-	wd_find_msg_in_pool;
 local: *;
 };
