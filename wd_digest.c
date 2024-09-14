@@ -80,6 +80,7 @@ void wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
 					    sess->worker, para);
 	if (worker)
 		sess->worker = worker;
+	sess->worker_lifetime = 0;
 	pthread_spin_unlock(&sess->worker_lock);
 
 }
