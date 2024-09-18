@@ -860,7 +860,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	tag = wd_get_msg_from_pool(&wd_comp_setting.pool, idx, (void **)&msg);
 	if (unlikely(tag < 0)) {
 		WD_ERR("failed to get msg from pool!\n");
-		return -WD_EBUSY;
+		return tag;
 	}
 	fill_comp_msg(sess, msg, req);
 	msg->tag = tag;

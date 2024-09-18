@@ -741,8 +741,8 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	msg_id = wd_get_msg_from_pool(&wd_cipher_setting.pool, idx,
 				   (void **)&msg);
 	if (unlikely(msg_id < 0)) {
-		WD_ERR("busy, failed to get msg from pool!\n");
-		return -WD_EBUSY;
+		WD_ERR("failed to get msg from pool!\n");
+		return msg_id;
 	}
 
 	fill_request_msg(msg, req, sess);

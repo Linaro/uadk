@@ -442,6 +442,10 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 	__u32 cnt = 0;
 	__u32 idx = p->tail;
 
+	/* Scheduler set a sync ctx */
+	if (!msg_num)
+		return -WD_EINVAL;
+
 	while (__atomic_test_and_set(&p->used[idx], __ATOMIC_ACQUIRE)) {
 		idx = (idx + 1) % msg_num;
 		cnt++;

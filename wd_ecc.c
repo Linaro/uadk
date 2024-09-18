@@ -2268,8 +2268,10 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	ctx = config->ctxs + idx;
 
 	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);
-	if (mid < 0)
-		return -WD_EBUSY;
+	if (unlikely(mid < 0)) {
+		WD_ERR("failed to get msg from pool!\n");
+		return mid;
+	}
 
 	ret = fill_ecc_msg(msg, req, (struct wd_ecc_sess *)sess);
 	if (ret)
