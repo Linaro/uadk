@@ -1192,8 +1192,8 @@ static int wd_agg_async_job(struct wd_agg_sess *sess, struct wd_agg_req *req, bo
 	ctx = config->ctxs + idx;
 	msg_id = wd_get_msg_from_pool(&wd_agg_setting.pool, idx, (void **)&msg);
 	if (unlikely(msg_id < 0)) {
-		WD_ERR("busy, failed to get agg msg from pool!\n");
-		return -WD_EBUSY;
+		WD_ERR("failed to get agg msg from pool!\n");
+		return msg_id;
 	}
 
 	if (is_input)

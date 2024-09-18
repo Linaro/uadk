@@ -805,7 +805,7 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 				     idx, (void **)&msg);
 	if (unlikely(msg_id < 0)) {
 		WD_ERR("failed to get msg from pool!\n");
-		return -WD_EBUSY;
+		return msg_id;
 	}
 
 	fill_request_msg(msg, req, sess);
