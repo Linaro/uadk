@@ -938,9 +938,6 @@ void wd_release_alg_cap(struct wd_capability *head)
 		cap_pnext = cap_pnext->next;
 		free(cap_node);
 	}
-
-	if (head)
-		free(head);
 }
 
 struct wd_capability *wd_get_alg_cap(void)
