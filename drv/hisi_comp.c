@@ -836,7 +836,7 @@ out:
 static void hisi_zip_exit(struct wd_alg_driver *drv)
 {
 	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
-	struct wd_ctx_config_internal *config = &priv->config;
+	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
 
@@ -845,6 +845,7 @@ static void hisi_zip_exit(struct wd_alg_driver *drv)
 		return;
 	}
 
+	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
