@@ -220,9 +220,6 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 	__u32 dst_len = strm->avail_out;
 	int ret;
 
-	if (unlikely(!strm))
-		return Z_STREAM_ERROR;
-
 	if (unlikely(flush != Z_SYNC_FLUSH && flush != Z_FINISH)) {
 		WD_ERR("invalid: flush is %d!\n", flush);
 		return Z_STREAM_ERROR;
@@ -267,12 +264,15 @@ int wd_deflate_init(z_streamp strm, int level, int windowbits)
 
 int wd_deflate(z_streamp strm, int flush)
 {
+	if (unlikely(!strm))
+		return Z_STREAM_ERROR;
+
 	return wd_zlib_do_request(strm, flush, WD_DIR_COMPRESS);
 }
 
 int wd_deflate_reset(z_streamp strm)
 {
-	if (!strm)
+	if (unlikely(!strm))
 		return Z_STREAM_ERROR;
 
 	wd_comp_reset_sess((handle_t)strm->reserved);

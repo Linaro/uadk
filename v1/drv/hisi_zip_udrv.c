@@ -254,7 +254,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		     __u16 i, __u16 usr)
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
-	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)recv_msg->udata;
 	struct hisi_zip_sqe *sqe = hw_msg;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
@@ -262,12 +261,14 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 	uintptr_t phy_in, phy_out, phy_ctxbuf;
 	struct wd_queue *q = info->q;
+	struct wcrypto_comp_tag *tag;
 
 	if (unlikely(!recv_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
+	tag = (void *)(uintptr_t)recv_msg->udata;
 	if (usr && sqe->tag != usr)
 		return 0;
 
