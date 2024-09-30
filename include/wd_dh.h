@@ -8,12 +8,18 @@
 #define __WD_DH_H
 
 #include <stdbool.h>
+#include <asm/types.h>
 
+#include "wd.h"
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define BYTE_BITS			8
+#define BYTE_BITS_SHIFT			3
+#define GET_NEGATIVE(val)		(0 - (val))
 
 typedef void (*wd_dh_cb_t)(void *cb_param);
 
@@ -24,7 +30,7 @@ enum wd_dh_op_type {
 };
 
 struct wd_dh_sess_setup {
-	__u16 key_bits; /* DH key bites */
+	__u16 key_bits; /* DH key bits */
 	bool is_g2; /* is g2 mode or not */
 	void *sched_param;
 };

@@ -13,6 +13,7 @@
 #include <dlfcn.h>
 
 #include "include/drv/wd_rsa_drv.h"
+#include "wd_util.h"
 #include "wd_rsa.h"
 
 #define RSA_MAX_KEY_SIZE		512
@@ -45,10 +46,8 @@ struct wd_rsa_prikey2 {
 };
 
 struct wd_rsa_prikey {
-	union {
-		struct wd_rsa_prikey1 pkey1;
-		struct wd_rsa_prikey2 pkey2;
-	} pkey;
+	struct wd_rsa_prikey1 pkey1;
+	struct wd_rsa_prikey2 pkey2;
 };
 
 /* RSA private key parameter types */
@@ -75,6 +74,7 @@ static struct wd_rsa_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_rsa_setting;
@@ -124,6 +124,13 @@ static int wd_rsa_open_driver(int init_type)
 
 		return WD_SUCCESS;
 	}
+
+	/*
+	 * Compatible with the normal acquisition of device
+	 * drivers in the init interface.
+	 */
+	if (wd_rsa_setting.dlh_list)
+		return WD_SUCCESS;
 
 	ret = wd_get_lib_file_path("libhisi_hpre.so", lib_path, false);
 	if (ret)
@@ -180,7 +187,8 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_rsa_setting.config,
-				 wd_rsa_setting.driver);
+				 wd_rsa_setting.driver,
+				 &wd_rsa_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -197,11 +205,10 @@ out_clear_ctx_config:
 
 static int wd_rsa_common_uninit(void)
 {
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_rsa_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!wd_rsa_setting.priv) {
+		WD_ERR("invalid: repeat uninit rsa!\n");
 		return -WD_EINVAL;
+	}
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
@@ -209,7 +216,8 @@ static int wd_rsa_common_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_rsa_setting.sched);
 	wd_alg_uninit_driver(&wd_rsa_setting.config,
-			     wd_rsa_setting.driver);
+			     wd_rsa_setting.driver,
+			     &wd_rsa_setting.priv);
 
 	return WD_SUCCESS;
 }
@@ -446,8 +454,8 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	msg_handle.recv = wd_rsa_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_rsa_setting.driver, &msg_handle, ctx->ctx, &msg,
-				 &balance, wd_rsa_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_rsa_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -493,7 +501,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_rsa_setting.driver, ctx->ctx, msg);
+	ret = wd_rsa_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send rsa BD, hw is err!\n");
@@ -542,7 +550,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_rsa_setting.driver, ctx->ctx, &recv_msg);
+		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
@@ -863,7 +871,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 			WD_ERR("failed to alloc sess prikey2!\n");
 			return -WD_ENOMEM;
 		}
-		pkey2 = &sess->prikey->pkey.pkey2;
+		pkey2 = &sess->prikey->pkey2;
 		memset(sess->prikey, 0, len);
 		init_pkey2(pkey2, sess->key_size);
 	} else {
@@ -874,7 +882,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 			WD_ERR("failed to alloc sess prikey1!\n");
 			return -WD_ENOMEM;
 		}
-		pkey1 = &sess->prikey->pkey.pkey1;
+		pkey1 = &sess->prikey->pkey1;
 		memset(sess->prikey, 0, len);
 		init_pkey1(pkey1, sess->key_size);
 	}
@@ -905,9 +913,9 @@ static void del_sess_key(struct wd_rsa_sess *sess)
 	}
 
 	if (sess->setup.is_crt)
-		wd_memset_zero(prk->pkey.pkey2.data, CRT_PARAMS_SZ(sess->key_size));
+		wd_memset_zero(prk->pkey2.data, CRT_PARAMS_SZ(sess->key_size));
 	else
-		wd_memset_zero(prk->pkey.pkey1.data, GEN_PARAMS_SZ(sess->key_size));
+		wd_memset_zero(prk->pkey1.data, GEN_PARAMS_SZ(sess->key_size));
 	free(sess->prikey);
 	free(sess->pubkey);
 }
@@ -954,7 +962,7 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	sess->sched_key = (void *)wd_rsa_setting.sched.sched_init(
 		     wd_rsa_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init session schedule key!\n");
+		WD_ERR("failed to init rsa session schedule key!\n");
 		goto sched_err;
 	}
 
@@ -1051,6 +1059,24 @@ void wd_rsa_get_pubkey_params(struct wd_rsa_pubkey *pbk, struct wd_dtb **e,
 		*n = &pbk->n;
 }
 
+void wd_rsa_get_prikey_params(struct wd_rsa_prikey *pvk, struct wd_dtb **d,
+			      struct wd_dtb **n)
+{
+	struct wd_rsa_prikey1 *pkey1;
+
+	if (!pvk) {
+		WD_ERR("invalid: pvk is NULL!\n");
+		return;
+	}
+
+	pkey1 = &pvk->pkey1;
+
+	if (d)
+		*d = &pkey1->d;
+	if (n)
+		*n = &pkey1->n;
+}
+
 int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 {
 	struct wd_rsa_prikey1 *pkey1;
@@ -1060,7 +1086,7 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 		WD_ERR("invalid: sess err in set rsa private key1!\n");
 		return -WD_EINVAL;
 	}
-	pkey1 = &c->prikey->pkey.pkey1;
+	pkey1 = &c->prikey->pkey1;
 	if (d) {
 		if (!d->dsize || !d->data || d->dsize > pkey1->key_size) {
 			WD_ERR("invalid: d err in set rsa private key1!\n");
@@ -1083,24 +1109,6 @@ int wd_rsa_set_prikey_params(handle_t sess, struct wd_dtb *d, struct wd_dtb *n)
 	}
 
 	return WD_SUCCESS;
-}
-
-void wd_rsa_get_prikey_params(struct wd_rsa_prikey *pvk, struct wd_dtb **d,
-			      struct wd_dtb **n)
-{
-	struct wd_rsa_prikey1 *pkey1;
-
-	if (!pvk) {
-		WD_ERR("invalid: pvk is NULL!\n");
-		return;
-	}
-
-	pkey1 = &pvk->pkey.pkey1;
-
-	if (d)
-		*d = &pkey1->d;
-	if (n)
-		*n = &pkey1->n;
 }
 
 static int rsa_set_param(struct wd_dtb *src, struct wd_dtb *dst)
@@ -1167,7 +1175,7 @@ int wd_rsa_set_crt_prikey_params(handle_t sess, struct wd_dtb *dq,
 		return ret;
 	}
 
-	pkey2 = &c->prikey->pkey.pkey2;
+	pkey2 = &c->prikey->pkey2;
 	ret = rsa_prikey2_param_set(pkey2, dq, WD_CRT_PRIKEY_DQ);
 	if (ret) {
 		WD_ERR("failed to set dq for rsa private key2!\n");
@@ -1213,7 +1221,7 @@ void wd_rsa_get_crt_prikey_params(struct wd_rsa_prikey *pvk,
 		return;
 	}
 
-	pkey2 = &pvk->pkey.pkey2;
+	pkey2 = &pvk->pkey2;
 
 	if (dq)
 		*dq = &pkey2->dq;
