@@ -11,6 +11,7 @@
  * Copyright 2023 Huawei Technologies Co.,Ltd. All rights reserved.
  */
 
+#include "wd_alg.h"
 #include "drv/wd_cipher_drv.h"
 #include "isa_ce_sm4.h"
 #include "wd_cipher.h"
@@ -323,14 +324,19 @@ static int sm4_xts_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey
 
 static int isa_ce_cipher_send(handle_t ctx, void *wd_msg)
 {
+	struct wd_soft_ctx	*sfctx = (struct wd_soft_ctx *)ctx;
 	struct wd_cipher_msg *msg = wd_msg;
 	struct SM4_KEY rkey;
 	int ret = 0;
 
-	if (!msg) {
+	if (!msg || !ctx) {
 		WD_ERR("invalid: input sm4 msg is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_queue_is_busy(sfctx);
+	if (ret)
+		return ret;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		WD_ERR("invalid: SM4 CE driver do not support sgl data format!\n");
@@ -384,11 +390,23 @@ static int isa_ce_cipher_send(handle_t ctx, void *wd_msg)
 		return -WD_EINVAL;
 	}
 
+	ret = wd_get_sqe_from_queue(sfctx, msg->tag);
+	if (ret)
+		return ret;
+
 	return ret;
 }
 
 static int isa_ce_cipher_recv(handle_t ctx, void *wd_msg)
 {
+	struct wd_soft_ctx	*sfctx = (struct wd_soft_ctx *)ctx;
+	struct wd_cipher_msg *msg = wd_msg;
+	int ret;
+
+	ret = wd_put_sqe_to_queue(sfctx, &msg->tag, &msg->result);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
@@ -428,7 +446,11 @@ static struct wd_alg_driver cipher_alg_driver[] = {
 	GEN_CE_ALG_DRIVER("ecb(sm4)", cipher),
 };
 
+#ifdef WD_STATIC_DRV
+void isa_ce_probe(void)
+#else
 static void __attribute__((constructor)) isa_ce_probe(void)
+#endif
 {
 	__u32 alg_num, i;
 	int ret;
@@ -444,7 +466,11 @@ static void __attribute__((constructor)) isa_ce_probe(void)
 	}
 }
 
+#ifdef WD_STATIC_DRV
+void isa_ce_remove(void)
+#else
 static void __attribute__((destructor)) isa_ce_remove(void)
+#endif
 {
 	__u32 alg_num, i;
 

@@ -11,6 +11,10 @@
 #include "wd_digest.h"
 #include "wd_aead.h"
 
+#include "isa_ce_sm4.h"
+#include "isa_ce_sm3.h"
+#include "hash_mb/hash_mb.h"
+
 #define BIT(nr)			(1UL << (nr))
 #define SEC_DIGEST_ALG_OFFSET	11
 #define WORD_ALIGNMENT_MASK	0x3
@@ -1567,7 +1571,7 @@ static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
 static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 			     struct wd_digest_msg *recv_msg)
 {
-	struct wd_digest_msg *temp_msg;
+	struct wd_digest_msg *temp_msg = NULL;
 	__u16 done;
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
@@ -2002,7 +2006,7 @@ put_sgl:
 static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 				struct wd_digest_msg *recv_msg)
 {
-	struct wd_digest_msg *temp_msg;
+	struct wd_digest_msg *temp_msg = NULL;
 	__u16 done;
 
 	done = sqe->done_flag & SEC_DONE_MASK;
@@ -2260,9 +2264,9 @@ static int aead_len_check(struct wd_aead_msg *msg, enum sec_bd_type type)
 		}
 	}
 
-	if (unlikely((__u64)msg->in_bytes + msg->assoc_bytes > MAX_INPUT_DATA_LEN)) {
-		WD_ERR("aead input data length is too long, size = %llu\n",
-		       (__u64)msg->in_bytes + msg->assoc_bytes);
+	if (unlikely(msg->in_bytes + msg->assoc_bytes > MAX_INPUT_DATA_LEN)) {
+		WD_ERR("aead input data length is too long, size = %u\n",
+		       msg->in_bytes + msg->assoc_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -2521,11 +2525,6 @@ int aead_msg_state_check(struct wd_aead_msg *msg)
 		}
 	}
 
-	if (unlikely(msg->msg_state != AEAD_MSG_BLOCK && msg->data_fmt == WD_SGL_BUF)) {
-		WD_ERR("invalid: sgl mode not supports stream mode!\n");
-		return -WD_EINVAL;
-	}
-
 	return 0;
 }
 
@@ -2565,12 +2564,10 @@ static int hisi_sec_aead_send(handle_t ctx, void *wd_msg)
 	fill_aead_bd2_addr(msg, &sqe);
 
 	ret = fill_stream_bd2(msg, &sqe);
-	if (ret == WD_SOFT_COMPUTING) {
-		ret = 0;
-		goto put_sgl;
-	} else if (unlikely(ret)) {
-		goto put_sgl;
-	}
+	if (ret == WD_SOFT_COMPUTING)
+		return 0;
+	else if (unlikely(ret))
+		return ret;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
@@ -2580,16 +2577,14 @@ static int hisi_sec_aead_send(handle_t ctx, void *wd_msg)
 		if (ret != -WD_EBUSY)
 			WD_ERR("aead send sqe is err(%d)!\n", ret);
 
-		goto put_sgl;
+		if (msg->data_fmt == WD_SGL_BUF)
+			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
+					 msg->out);
+
+		return ret;
 	}
 
 	return 0;
-
-put_sgl:
-	if (msg->data_fmt == WD_SGL_BUF)
-		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
-	return ret;
 }
 
 static void update_stream_counter(struct wd_aead_msg *recv_msg)
@@ -2610,7 +2605,7 @@ static void update_stream_counter(struct wd_aead_msg *recv_msg)
 static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 	struct wd_aead_msg *recv_msg)
 {
-	struct wd_aead_msg *temp_msg;
+	struct wd_aead_msg *temp_msg = NULL;
 	__u16 done, icv;
 
 	done = sqe->type2.done_flag & SEC_DONE_MASK;
@@ -2631,7 +2626,7 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
 		recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
-		temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
+		//temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -2643,7 +2638,7 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		temp_msg = recv_msg;
 	}
 
-	update_stream_counter(temp_msg);
+	update_stream_counter(recv_msg);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "aead");
@@ -2652,17 +2647,8 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 static bool soft_compute_check(struct hisi_qp *qp, struct wd_aead_msg *msg)
 {
 	/* Asynchronous mode does not use the sent message, so ignores it */
-	if (qp->q_info.qp_mode == CTX_MODE_ASYNC)
-		return false;
-	/*
-	 * For aead gcm stream mode, due to some hardware limitations,
-	 * the final message was not sent to hardware if the qm is
-	 * not higher than v3 version or the input length of the
-	 * message is 0, the software calculation has been executed.
-	 */
-	if (msg->msg_state == AEAD_MSG_END && msg->cmode == WD_CIPHER_GCM &&
-	    (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes))
-		return true;
+	if (msg->cmode == WD_CIPHER_GCM)
+		return (msg->msg_state == AEAD_MSG_END) && qp->q_info.qp_mode == CTX_MODE_SYNC;
 
 	return false;
 }
@@ -2972,12 +2958,10 @@ static int hisi_sec_aead_send_v3(handle_t ctx, void *wd_msg)
 	fill_aead_bd3_addr(msg, &sqe);
 
 	ret = fill_stream_bd3(h_qp, msg, &sqe);
-	if (ret == WD_SOFT_COMPUTING) {
-		ret = 0;
-		goto put_sgl;
-	} else if (unlikely(ret)) {
-		goto put_sgl;
-	}
+	if (ret == WD_SOFT_COMPUTING)
+		return 0;
+	else if (unlikely(ret))
+		return ret;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = msg->tag;
@@ -2986,22 +2970,20 @@ static int hisi_sec_aead_send_v3(handle_t ctx, void *wd_msg)
 		if (ret != -WD_EBUSY)
 			WD_ERR("aead send sqe v3 is err(%d)!\n", ret);
 
-		goto put_sgl;
+		if (msg->data_fmt == WD_SGL_BUF)
+			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
+					 msg->out);
+
+		return ret;
 	}
 
 	return 0;
-
-put_sgl:
-	if (msg->data_fmt == WD_SGL_BUF)
-		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
-	return ret;
 }
 
 static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 	struct wd_aead_msg *recv_msg)
 {
-	struct wd_aead_msg *temp_msg;
+	struct wd_aead_msg *temp_msg = NULL;
 	__u16 done, icv;
 
 	done = sqe->done_flag & SEC_DONE_MASK;
@@ -3023,7 +3005,7 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
 		recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
-		temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
+		//temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -3035,7 +3017,7 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		temp_msg = recv_msg;
 	}
 
-	update_stream_counter(temp_msg);
+	update_stream_counter(recv_msg);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "aead");
@@ -3083,9 +3065,12 @@ static int hisi_sec_init(void *conf, void *priv)
 		return -WD_EINVAL;
 	}
 
+	WD_ERR("debug: call function: %s!\n", __func__);
 	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
+		if (config->ctxs[i].ctx_type != UADK_CTX_HW)
+			continue;
 		h_ctx = config->ctxs[i].ctx;
 		/* setting the type is 0 for sqc_type */
 		qm_priv.op_type = 0;
@@ -3164,6 +3149,10 @@ static void __attribute__((constructor)) hisi_sec2_probe(void)
 			WD_ERR("Error: register SEC %s failed!\n",
 				aead_alg_driver[i].alg_name);
 	}
+
+	isa_ce_probe();
+	sm3_ce_probe();
+	hash_mb_probe();
 }
 
 #ifdef WD_STATIC_DRV
@@ -3187,5 +3176,9 @@ static void __attribute__((destructor)) hisi_sec2_remove(void)
 	alg_num = ARRAY_SIZE(aead_alg_driver);
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&aead_alg_driver[i]);
+
+	isa_ce_remove();
+	sm3_ce_remove();
+	hash_mb_remove();
 }
 

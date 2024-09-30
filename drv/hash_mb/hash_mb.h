@@ -54,6 +54,9 @@ void md5_mb_asimd_x4(struct hash_job *job1, struct hash_job *job2,
 void md5_mb_asimd_x1(struct hash_job *job, int len);
 int md5_mb_sve_max_lanes(void);
 
+void hash_mb_probe(void);
+void hash_mb_remove(void);
+
 #ifdef __cplusplus
 }
 #endif

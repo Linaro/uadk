@@ -818,7 +818,11 @@ static struct wd_alg_driver hash_mb_driver[] = {
 	GEN_HASH_ALG_DRIVER("md5"),
 };
 
+#ifdef WD_STATIC_DRV
+void hash_mb_probe(void)
+#else
 static void __attribute__((constructor)) hash_mb_probe(void)
+#endif
 {
 	unsigned long auxval = getauxval(AT_HWCAP);
 	size_t alg_num = ARRAY_SIZE(hash_mb_driver);
@@ -837,7 +841,11 @@ static void __attribute__((constructor)) hash_mb_probe(void)
 	}
 }
 
+#ifdef WD_STATIC_DRV
+void hash_mb_remove(void)
+#else
 static void __attribute__((destructor)) hash_mb_remove(void)
+#endif
 {
 	unsigned long auxval = getauxval(AT_HWCAP);
 	size_t alg_num = ARRAY_SIZE(hash_mb_driver);

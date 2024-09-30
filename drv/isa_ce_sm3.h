@@ -79,6 +79,9 @@ struct sm3_ce_drv_ctx {
 void sm3_ce_block_compress(__u32 word_reg[SM3_STATE_WORDS],
 			   const __u8 *src, size_t blocks);
 
+void sm3_ce_probe(void);
+void sm3_ce_remove(void);
+
 #ifdef __cplusplus
 }
 #endif

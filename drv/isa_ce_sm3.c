@@ -44,7 +44,11 @@ static struct wd_alg_driver sm3_ce_alg_driver = {
 	.get_usage = sm3_ce_get_usage,
 };
 
+#ifdef WD_STATIC_DRV
+void sm3_ce_probe(void)
+#else
 static void __attribute__((constructor)) sm3_ce_probe(void)
+#endif
 {
 	int ret;
 
@@ -54,7 +58,11 @@ static void __attribute__((constructor)) sm3_ce_probe(void)
 		WD_ERR("Error: register SM3 CE failed!\n");
 }
 
+#ifdef WD_STATIC_DRV
+void sm3_ce_remove(void)
+#else
 static void __attribute__((destructor)) sm3_ce_remove(void)
+#endif
 {
 	wd_alg_driver_unregister(&sm3_ce_alg_driver);
 }
@@ -340,6 +348,7 @@ static int do_hmac_sm3_ce(struct wd_digest_msg *msg, __u8 *out_hmac)
 
 static int sm3_ce_drv_send(handle_t ctx, void *digest_msg)
 {
+	struct wd_soft_ctx	*sfctx = (struct wd_soft_ctx *)ctx;
 	struct wd_digest_msg *msg = (struct wd_digest_msg *)digest_msg;
 	__u8 digest[SM3_DIGEST_SIZE] = {0};
 	int ret;
@@ -348,6 +357,10 @@ static int sm3_ce_drv_send(handle_t ctx, void *digest_msg)
 		WD_ERR("invalid: digest_msg is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_queue_is_busy(sfctx);
+	if (ret)
+		return ret;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		WD_ERR("invalid: SM3 CE driver do not support sgl data format!\n");
@@ -363,11 +376,23 @@ static int sm3_ce_drv_send(handle_t ctx, void *digest_msg)
 		ret = -WD_EINVAL;
 	}
 
+	ret = wd_get_sqe_from_queue(sfctx, msg->tag);
+	if (ret)
+		return ret;
+
 	return ret;
 }
 
 static int sm3_ce_drv_recv(handle_t ctx, void *digest_msg)
 {
+	struct wd_soft_ctx	*sfctx = (struct wd_soft_ctx *)ctx;
+	struct wd_digest_msg *msg = (struct wd_digest_msg *)digest_msg;
+	int ret;
+
+	ret = wd_put_sqe_to_queue(sfctx, &msg->tag, &msg->result);
+	if (ret)
+		return ret;
+
 	return WD_SUCCESS;
 }
 
