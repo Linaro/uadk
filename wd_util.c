@@ -24,11 +24,10 @@
 #define MAX(a, b)			((a) > (b) ? (a) : (b))
 
 #define WD_INIT_SLEEP_UTIME		1000
-#define WD_INIT_RETRY_TIMES		10000
+#define WD_INIT_RETRY_TIMES		1000
 #define US2S(us)			((us) >> 20)
 #define WD_INIT_RETRY_TIMEOUT		3
-
-#define WD_SOFT_CTX_NUM		2
+#define WD_SOFT_CTX_NUM			2
 #define WD_SOFT_SYNC_CTX		0
 #define WD_SOFT_ASYNC_CTX		1
 
@@ -421,8 +420,15 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 			  int ctx_idx, __u32 tag)
 {
-	struct msg_pool *p = &pool->pools[ctx_idx];
-	__u32 msg_num = p->msg_num;
+	struct msg_pool *p;
+	__u32 msg_num;
+
+	if ((__u32)ctx_idx > pool->pool_num) {
+		WD_ERR("invalid: message ctx id index is %d!\n", ctx_idx);
+		return NULL;
+	}
+	p = &pool->pools[ctx_idx];
+	msg_num = p->msg_num;
 
 	/* tag value start from 1 */
 	if (tag == 0 || tag > msg_num) {
@@ -1585,17 +1591,22 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	task_queue = queue_head;
 	for (i = 0; i < num; task_queue++, i++) {
 		ret = wd_init_one_task_queue(task_queue, alg_poll_ctx);
-		if (ret) {
-			for (j = 0; j < i; task_queue++, j++)
-				wd_uninit_one_task_queue(task_queue);
-			free(queue_head);
-			return ret;
-		}
+		if (ret)
+			goto uninit;
 	}
 
 	config_numa->async_task_queue_array = (void *)queue_head;
 
 	return 0;
+
+uninit:
+	task_queue = queue_head;
+	for (j = 0; j < i; task_queue++, j++)
+		wd_uninit_one_task_queue(task_queue);
+
+	free(queue_head);
+
+	return ret;
 }
 
 static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
@@ -1814,8 +1825,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 	return 0;
 }
 
-int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
-		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en)
+int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+		       void *msg, __u64 *balance, bool epoll_en)
 {
 	__u64 timeout = WD_RECV_MAX_CNT_NOSLEEP;
 	__u64 rx_cnt = 0;
@@ -1824,7 +1835,7 @@ int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_hand
 	if (balance)
 		timeout = WD_RECV_MAX_CNT_SLEEP;
 
-	ret = msg_handle->send(drv, ctx, msg);
+	ret = msg_handle->send(ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send msg to hw, ret = %d!\n", ret);
 		return ret;
@@ -1837,7 +1848,7 @@ int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_hand
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
 		}
 
-		ret = msg_handle->recv(drv, ctx, msg);
+		ret = msg_handle->recv(ctx, msg);
 		if (ret != -WD_EAGAIN) {
 			if (unlikely(ret < 0)) {
 				WD_ERR("failed to recv msg: error = %d!\n", ret);
@@ -1865,12 +1876,12 @@ int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_hand
 int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	if (!config || !config->ctxs || !config->ctxs[0].ctx) {
-		WD_ERR("invalid: config or config->ctxs is NULL!\n");
+		WD_ERR("invalid: wd_ctx_config is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (!sched) {
-		WD_ERR("invalid: sched is NULL!\n");
+		WD_ERR("invalid: wd_sched is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -1882,11 +1893,44 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 }
 
+int wd_alg_try_init(enum wd_status *status)
+{
+	enum wd_status expected;
+	__u32 count = 0;
+	bool ret;
+
+	/*
+	 * Here is aimed to protect the security of the initialization interface
+	 * in the multi-thread scenario. Only one thread can get the WD_INITING
+	 * status to initialize algorithm. Other thread will wait for the result.
+	 * And the algorithm initialization interfaces is a liner process.
+	 * So the initing thread will return a result to notify other thread go on.
+	 */
+	do {
+		expected = WD_UNINIT;
+		ret = __atomic_compare_exchange_n(status, &expected, WD_INITING, true,
+						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+		if (expected == WD_INIT) {
+			WD_ERR("The algorithm has been initialized!\n");
+			return -WD_EEXIST;
+		}
+		usleep(WD_INIT_SLEEP_UTIME);
+
+		if (US2S(WD_INIT_SLEEP_UTIME * ++count) >= WD_INIT_RETRY_TIMEOUT) {
+			WD_ERR("The algorithm initialize wait timeout!\n");
+			return -WD_ETIMEDOUT;
+		}
+	} while (!ret);
+
+	return 0;
+}
+
 static void wd_get_alg_type(const char *alg_name, char *alg_type)
 {
+	int alg_nums = ARRAY_SIZE(alg_options);
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(alg_options); i++) {
+	for (i = 0; i < alg_nums; i++) {
 		if (strcmp(alg_name, alg_options[i].name) == 0) {
 			(void)strcpy(alg_type, alg_options[i].algtype);
 			break;
@@ -1946,9 +1990,20 @@ static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
 }
 
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-		       struct wd_alg_driver *driver)
+		       struct wd_alg_driver *driver, void **drv_priv)
 {
+	void *priv;
 	int ret;
+
+	if (!driver->priv_size) {
+		WD_ERR("invalid: driver priv ctx size is zero!\n");
+		return -WD_EINVAL;
+	}
+
+	/* Init ctx related resources in specific driver */
+	priv = calloc(1, driver->priv_size);
+	if (!priv)
+		return -WD_ENOMEM;
 
 	if (!driver->init) {
 		driver->fallback = 0;
@@ -1957,7 +2012,7 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 		goto err_alloc;
 	}
 
-	ret = driver->init(driver, config);
+	ret = driver->init(config, priv);
 	if (ret < 0) {
 		WD_ERR("driver init failed.\n");
 		goto err_alloc;
@@ -1970,23 +2025,31 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 			WD_ERR("soft alg driver init failed.\n");
 		}
 	}
+	*drv_priv = priv;
 
 	return 0;
 
 err_alloc:
+	free(priv);
 	return ret;
 }
 
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-			  struct wd_alg_driver *driver)
+			  struct wd_alg_driver *driver, void **drv_priv)
 {
+	void *priv = *drv_priv;
 
-	driver->exit(driver);
+	driver->exit(priv);
 	/* Ctx config just need clear once */
 	wd_clear_ctx_config(config);
 
 	if (driver->fallback)
 		wd_alg_uninit_fallback((struct wd_alg_driver *)driver->fallback);
+
+	if (priv) {
+		free(priv);
+		*drv_priv = NULL;
+	}
 }
 
 void wd_dlclose_drv(void *dlh_list)
@@ -2200,11 +2263,11 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 
 	if (is_dir) {
 		len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, WD_DRV_LIB_DIR);
-		if (len >= PATH_MAX)
+		if (len < 0)
 			return -WD_EINVAL;
 	} else {
 		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s", file_path, WD_DRV_LIB_DIR, lib_file);
-		if (len >= PATH_MAX)
+		if (len < 0)
 			return -WD_EINVAL;
 	}
 
@@ -2348,31 +2411,6 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv)
 	if (fb_drv)
 		wd_release_drv(fb_drv);
 	wd_release_drv(drv);
-}
-
-int wd_alg_try_init(enum wd_status *status)
-{
-	enum wd_status expected;
-	__u32 count = 0;
-	bool ret;
-
-	do {
-		expected = WD_UNINIT;
-		ret = __atomic_compare_exchange_n(status, &expected, WD_INITING, true,
-						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
-		if (expected == WD_INIT) {
-			WD_ERR("The algorithm has been initialized!\n");
-			return -WD_EEXIST;
-		}
-		usleep(WD_INIT_SLEEP_UTIME);
-
-		if (US2S(WD_INIT_SLEEP_UTIME * ++count) >= WD_INIT_RETRY_TIMEOUT) {
-			WD_ERR("The algorithm initialize wait timeout!\n");
-			return -WD_ETIMEDOUT;
-		}
-	} while (!ret);
-
-	return 0;
 }
 
 static __u32 wd_get_ctx_numbers(struct wd_ctx_params ctx_params, int end)
@@ -2715,8 +2753,8 @@ free_ctxs:
 
 static void wd_alg_uninit_sve_ctx(struct wd_ctx_config *ctx_config)
 {
-	free((struct wd_soft_ctx *)ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx);
-	free((struct wd_soft_ctx *)ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx);
+	free((struct wd_soft_ctx *)(uintptr_t)ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx);
+	free((struct wd_soft_ctx *)(uintptr_t)ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx);
 	free(ctx_config->ctxs);
 }
 

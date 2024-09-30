@@ -6,11 +6,13 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <pthread.h>
 #include <linux/types.h>
 
-#include "config.h"
-#include "wd_util.h"
+#include "uacce.h"
+#include "wd.h"
+#include "wd_alg_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -86,7 +88,6 @@ struct hisi_qp {
 	struct hisi_qm_queue_info q_info;
 	handle_t h_sgl_pool;
 	handle_t h_ctx;
-	/* Private area for driver use, point to queue specifial data */
 	void *priv;
 };
 
@@ -126,7 +127,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx);
 void hisi_qm_free_qp(handle_t h_qp);
 
 /**
- * hisi_check_bd_id - Check the SQE BD's id and send msg id.
+ * hisi_check_bd_id - Check the SQE BD's id and send msg id
  * @h_qp: Handle of the qp.
  * @mid: send message id.
  * @bid: recv BD id.
@@ -134,7 +135,7 @@ void hisi_qm_free_qp(handle_t h_qp);
 int hisi_check_bd_id(handle_t h_qp, __u32 mid, __u32 bid);
 
 /**
- * hisi_set_msg_id - set the message tag id.
+ * hisi_set_msg_id - set the alg message tag id
  * @h_qp: Handle of the qp.
  * @tag: the message tag id.
  */

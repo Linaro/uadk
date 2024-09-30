@@ -35,13 +35,6 @@ extern "C" {
 typedef unsigned char __u8;
 typedef unsigned int __u32;
 typedef unsigned long long __u64;
-/* Required compiler attributes */
-#define likely(x)       __builtin_expect(!!(x), 1)
-#define unlikely(x)     __builtin_expect(!!(x), 0)
-
-#define handle_t uintptr_t
-typedef struct wd_dev_mask wd_dev_mask_t;
-
 typedef void (*wd_log)(const char *format, ...);
 
 #ifndef WD_NO_LOG
@@ -104,12 +97,7 @@ typedef void (*wd_log)(const char *format, ...);
 #define WD_IS_ERR(h)			((uintptr_t)(h) > \
 					(uintptr_t)(-1000))
 
-enum wd_buff_type {
-	WD_FLAT_BUF,
-	WD_SGL_BUF,
-};
-
-enum wd_alg_type {
+enum wcrypto_type {
 	WD_CIPHER,
 	WD_DIGEST,
 	WD_AEAD,
@@ -155,6 +143,9 @@ struct wd_dev_mask {
 	unsigned int magic;
 };
 
+#define handle_t uintptr_t
+typedef struct wd_dev_mask wd_dev_mask_t;
+
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
 #define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }
 #define rmb() dsb(ld) /* read fence */
@@ -194,14 +185,14 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 	*((volatile uint64_t *)addr) = value;
 }
 
-static inline void *WD_ERR_PTR(uintptr_t error)
+static inline void *WD_ERR_PTR(intptr_t error)
 {
 	return (void *)error;
 }
 
 static inline long WD_PTR_ERR(const void *ptr)
 {
-	return (long)ptr;
+	return (intptr_t)ptr;
 }
 
 /**

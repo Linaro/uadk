@@ -8,7 +8,6 @@
 #include <sys/mman.h>
 
 #include "hisi_qm_udrv.h"
-#include "wd_util.h"
 
 #define QM_DBELL_CMD_SQ		0
 #define QM_DBELL_CMD_CQ		1
@@ -25,9 +24,9 @@
 #define CQE_SQ_HEAD_INDEX(cqe)	(__le16_to_cpu((cqe)->sq_head) & 0xffff)
 #define VERSION_ID_SHIFT	9
 
-#define UACCE_CMD_QM_SET_QP_CTX		_IOWR('H', 10, struct hisi_qp_ctx)
+#define UACCE_CMD_QM_SET_QP_CTX	_IOWR('H', 10, struct hisi_qp_ctx)
 #define UACCE_CMD_QM_SET_QP_INFO	_IOWR('H', 11, struct hisi_qp_info)
-#define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
+#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 
 /* the max sge num in one sgl */
 #define HISI_SGE_NUM_IN_SGL 255
@@ -354,12 +353,12 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 	ret = pthread_spin_init(&q_info->sd_lock, PTHREAD_PROCESS_SHARED);
 	if (ret) {
 		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo sd_lock!\n");
-		goto err_destroy_lock;
+		goto err_destory_lock;
 	}
 
 	return 0;
 
-err_destroy_lock:
+err_destory_lock:
 	pthread_spin_destroy(&q_info->rv_lock);
 err_out:
 	hisi_qm_unset_region(qp->h_ctx, q_info);
@@ -395,22 +394,22 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 	int ret;
 
 	if (!config)
-		goto out;
+		return (handle_t)NULL;
 
 	if (!config->sqe_size) {
-		WD_ERR("invalid: sqe size is zero!\n");
-		goto out;
+		WD_DEV_ERR(ctx, "invalid: sqe size is zero!\n");
+		return (handle_t)NULL;
 	}
 
 	qp = calloc(1, sizeof(struct hisi_qp));
 	if (!qp)
-		goto out;
+		return (handle_t)NULL;
 
 	qp->h_ctx = ctx;
 
 	ret = hisi_qm_setup_info(qp, config);
 	if (ret)
-		goto out_qp;
+		goto free_qp;
 
 	qp->h_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD,
 						HISI_SGE_NUM_IN_SGL);
@@ -433,9 +432,8 @@ free_pool:
 	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
 free_info:
 	hisi_qm_clear_info(qp);
-out_qp:
+free_qp:
 	free(qp);
-out:
 	return (handle_t)NULL;
 }
 
@@ -562,46 +560,14 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, handle_t h_ctx
 	return 0;
 }
 
-int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
-{
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_qm_queue_info *q_info;
-	__u16 recv_num = 0;
-	__u16 i;
-	int ret;
-
-	if (unlikely(!resp || !qp || !count))
-		return -WD_EINVAL;
-
-	if (unlikely(!expect))
-		return 0;
-
-	q_info = &qp->q_info;
-	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
-		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened before qm receive!\n");
-		return -WD_HW_EACCESS;
-	}
-
-	for (i = 0; i < expect; i++) {
-		ret = hisi_qm_recv_single(q_info, qp->h_ctx, resp, i);
-		if (ret)
-			break;
-		recv_num++;
-	}
-
-	*count = recv_num;
-
-	return ret;
-}
-
 int hisi_check_bd_id(handle_t h_qp, __u32 mid, __u32 bid)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	__u8 mode = qp->q_info.qp_mode;
 
 	if (mode == CTX_MODE_SYNC && mid != bid) {
-		WD_DEV_ERR(qp->h_ctx, "failed to recv self bd, send id: %u, recv id: %u\n",
-			    mid, bid);
+		WD_DEV_ERR(qp->h_ctx, "failed to recv bd, send id:%u, recv id:%u!\n",
+				       mid, bid);
 		return -WD_EINVAL;
 	}
 
@@ -628,6 +594,39 @@ void hisi_set_msg_id(handle_t h_qp, __u32 *tag)
 		*tag = LW_U32(id);
 		rand_seed = id;
 	}
+}
+
+int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
+{
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info *q_info;
+	__u16 recv_num = 0;
+	__u16 i;
+	int ret;
+
+	if (unlikely(!resp || !qp || !count))
+		return -WD_EINVAL;
+
+	if (unlikely(!expect))
+		return 0;
+
+	q_info = &qp->q_info;
+
+	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened before qm receive!\n");
+		return -WD_HW_EACCESS;
+	}
+
+	for (i = 0; i < expect; i++) {
+		ret = hisi_qm_recv_single(q_info, qp->h_ctx, resp, i);
+		if (ret)
+			break;
+		recv_num++;
+	}
+
+	*count = recv_num;
+
+	return ret;
 }
 
 static void *hisi_qm_create_sgl(__u32 sge_num)
@@ -745,7 +744,9 @@ void hisi_qm_destroy_sglpool(handle_t sgl_pool)
 	}
 
 	pool = (struct hisi_sgl_pool *)sgl_pool;
+
 	pthread_spin_destroy(&pool->lock);
+
 	hisi_qm_free_sglpool(pool);
 }
 

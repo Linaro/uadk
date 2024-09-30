@@ -5,9 +5,9 @@
 
 #define _GNU_SOURCE
 #include <dirent.h>
-#include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
 #include <sys/auxv.h>
 

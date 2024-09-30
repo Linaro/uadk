@@ -16,16 +16,17 @@
 #include "wd.h"
 #include "wd_sched.h"
 #include "wd_alg.h"
+#include "wd_alg_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define WD_POOL_MAX_ENTRIES    1024
+#define WD_POOL_MAX_ENTRIES	1024
 
 #define FOREACH_NUMA(i, config, config_numa) \
 	for ((i) = 0, (config_numa) = (config)->config_per_numa; \
-	     (i) < (config)->numa_num; (config_numa)++, (i)++)
+		(i) < (config)->numa_num; (config_numa)++, (i)++)
 
 enum wd_status {
 	WD_UNINIT,
@@ -118,8 +119,8 @@ struct wd_ctx_attr {
 };
 
 struct wd_msg_handle {
-	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
-	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*send)(handle_t sess, void *msg);
+	int (*recv)(handle_t sess, void *msg);
 };
 
 struct wd_init_attrs {
@@ -376,7 +377,6 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
 
 /**
  * wd_handle_msg_sync() - recv msg from hardware
- * @drv: the driver to handle msg.
  * @msg_handle: callback of msg handle ops.
  * @ctx: the handle of context.
  * @msg: the msg of task.
@@ -385,8 +385,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
  *
  * Return 0 if successful or less than 0 otherwise.
  */
-int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
-		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en);
+int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+		void *msg, __u64 *balance, bool epoll_en);
 
 /**
  * wd_init_check() - Check input parameters for wd_<alg>_init.
@@ -443,11 +443,11 @@ static inline void wd_alg_clear_init(enum wd_status *status)
 /**
  * wd_ctx_param_init() - Initialize the current device driver according
  *			to the obtained queue resource and the applied driver.
- * @ctx_params: wd_ctx_params to be initialized.
- * @user_ctx_params: user input wd_ctx_params.
- * @driver: device driver for the current algorithm application.
+ * @ctx_params: queue configuration parameters required for device initialization.
+ * @user_ctx_params: user-configured queue context parameters.
+ * @driver: device drivers that support current business algorithms.
  * @type: algorithm type.
- * @max_op_type: algorithm max operation type.
+ * @max_op_type: number of device queue types that support algorithmic services.
  *
  * Return 0 if succeed and other error number if fail.
  */
@@ -484,13 +484,14 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv);
  *			to the obtained queue resource and the applied driver.
  * @config: device resources requested by the current algorithm.
  * @driver: device driver for the current algorithm application.
+ * @drv_priv: the parameter pointer of the current device driver.
  *
  * Return 0 if succeed and other error number if fail.
  */
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-		       struct wd_alg_driver *driver);
+	struct wd_alg_driver *driver, void **drv_priv);
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-			  struct wd_alg_driver *driver);
+	struct wd_alg_driver *driver, void **drv_priv);
 
 /**
  * wd_dlopen_drv() - Open the dynamic library file of the device driver.

@@ -18,8 +18,10 @@
 #include <numa.h>
 #include <sched.h>
 
-#include "wd.h"
+#include "wd_alg_common.h"
 #include "wd_alg.h"
+#include "wd.h"
+
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 #define FILE_MAX_SIZE			(8 << 20)
 
@@ -202,7 +204,7 @@ int wd_is_isolate(struct uacce_dev *dev)
 	int value = 0;
 	int ret;
 
-	if (!dev || !strlen(dev->dev_root))
+	if (!dev)
 		return -WD_EINVAL;
 
 	ret = access_attr(dev->dev_root, "isolate", F_OK);
@@ -282,12 +284,12 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 		return NULL;
 
 	ret = snprintf(dev->dev_root, MAX_DEV_NAME_LEN, "%s/%s",
-			   SYS_CLASS_DIR, dev_name);
+		       SYS_CLASS_DIR, dev_name);
 	if (ret < 0)
 		goto out;
 
 	ret = snprintf(dev->char_dev_path, MAX_DEV_NAME_LEN,
-			   "/dev/%s", dev_name);
+		       "/dev/%s", dev_name);
 	if (ret < 0)
 		goto out;
 
@@ -703,7 +705,7 @@ struct uacce_dev_list *wd_get_accel_list(const char *alg_name)
 		ret = access_attr(SYS_CLASS_DIR, dev_dir->d_name, F_OK);
 		if (ret < 0) {
 			WD_ERR("failed to access dev: %s, ret: %d\n",
-				    dev_dir->d_name, ret);
+				  dev_dir->d_name, ret);
 			continue;
 		}
 

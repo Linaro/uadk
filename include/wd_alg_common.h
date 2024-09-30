@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <numa.h>
+#include <asm/types.h>
+
 #include "wd.h"
 #include "wd_alg.h"
 
@@ -17,10 +19,11 @@
 extern "C" {
 #endif
 
-#define BYTE_BITS			8
-#define BYTE_BITS_SHIFT			3
-#define GET_NEGATIVE(val)		(0 - (val))
+/* Required compiler attributes */
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 
+#define BYTE_BITS_SHIFT		3
 #define BITS_TO_BYTES(bits)	(((bits) + 7) >> 3)
 #define BYTES_TO_BITS(bytes)	((bytes) << 3)
 
@@ -55,12 +58,17 @@ enum wd_ctx_mode {
 	CTX_MODE_MAX,
 };
 
+enum wd_buff_type {
+	WD_FLAT_BUF,
+	WD_SGL_BUF,
+};
+
 enum wd_init_type {
 	WD_TYPE_V1,
 	WD_TYPE_V2,
 };
 
-/*
+/**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
  * @op_type:	Define the operation type of this specific ctx.
@@ -74,7 +82,7 @@ struct wd_ctx {
 	__u8 ctx_mode;
 };
 
-/*
+/**
  * struct wd_cap_config - Capabilities.
  * @ctx_msg_num: number of asynchronous msg pools that the user wants to allocate.
  *		 Optional, user can set ctx_msg_num based on the number of requests
@@ -87,7 +95,7 @@ struct wd_cap_config {
 	__u32 resv;
 };
 
-/*
+/**
  * struct wd_ctx_config - Define a ctx set and its related attributes, which
  *			  will be used in the scope of current process.
  * @ctx_num:	The ctx number in below ctx array.
@@ -103,7 +111,7 @@ struct wd_ctx_config {
 	struct wd_cap_config *cap;
 };
 
-/*
+/**
  * struct wd_ctx_nums - Define the ctx sets numbers.
  * @sync_ctx_num: The ctx numbers which are used for sync mode for each
  * ctx sets.
@@ -115,7 +123,7 @@ struct wd_ctx_nums {
 	__u32 async_ctx_num;
 };
 
-/*
+/**
  * struct wd_ctx_params - Define the ctx sets params which are used for init
  * algorithms.
  * @op_type_num: Used for index of ctx_set_num, the order is the same as
@@ -153,11 +161,11 @@ struct wd_ctx_config_internal {
 	unsigned long *msg_cnt;
 };
 
-/*
+/**
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
  * @sched_policy:	Method for scheduler to perform scheduling
- * @sched_init: 	inited the scheduler input parameters.
+ * @sched_init:		inited the scheduler input parameters.
  * @pick_next_ctx:	Pick the proper ctx which a request will be sent to.
  *			config points to the ctx config; sched_ctx points to
  *			scheduler context; req points to the request. Return

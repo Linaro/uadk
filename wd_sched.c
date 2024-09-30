@@ -499,7 +499,8 @@ static void wd_sched_map_cpus_to_dev(struct wd_sched_ctx *sched_ctx)
 	}
 }
 
-int wd_sched_rr_instance(const struct wd_sched *sched, struct sched_params *param)
+int wd_sched_rr_instance(const struct wd_sched *sched,
+			 struct sched_params *param)
 {
 	struct wd_sched_info *sched_info = NULL;
 	struct wd_sched_ctx *sched_ctx = NULL;

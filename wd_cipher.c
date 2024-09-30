@@ -53,6 +53,7 @@ struct wd_cipher_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_cipher_setting;
@@ -346,7 +347,8 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_cipher_setting.config,
-				 wd_cipher_setting.driver);
+				 wd_cipher_setting.driver,
+				 &wd_cipher_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -363,10 +365,9 @@ out_clear_ctx_config:
 
 static int wd_cipher_common_uninit(void)
 {
-	enum wd_status status;
+	void *priv = wd_cipher_setting.priv;
 
-	wd_alg_get_init(&wd_cipher_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!priv)
 		return -WD_EINVAL;
 
 	/* uninit async request pool */
@@ -376,7 +377,8 @@ static int wd_cipher_common_uninit(void)
 	wd_clear_sched(&wd_cipher_setting.sched);
 
 	wd_alg_uninit_driver(&wd_cipher_setting.config,
-			     wd_cipher_setting.driver);
+			     wd_cipher_setting.driver,
+			     &wd_cipher_setting.priv);
 
 	return 0;
 }
@@ -588,9 +590,10 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 	return ret;
 }
 
-static int cipher_len_check(handle_t h_sess, struct wd_cipher_req *req)
+static int cipher_in_len_check(handle_t h_sess, struct wd_cipher_req *req)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+	int ret = 0;
 
 	if (!req->in_bytes) {
 		WD_ERR("invalid: cipher input length is zero!\n");
@@ -600,14 +603,27 @@ static int cipher_len_check(handle_t h_sess, struct wd_cipher_req *req)
 	if (sess->alg != WD_CIPHER_AES && sess->alg != WD_CIPHER_SM4)
 		return 0;
 
-	if ((req->in_bytes & (AES_BLOCK_SIZE - 1)) &&
-	    (sess->mode == WD_CIPHER_CBC || sess->mode == WD_CIPHER_ECB)) {
-		WD_ERR("failed to check input bytes of AES or SM4, size = %u\n",
-		       req->in_bytes);
-		return -WD_EINVAL;
+	switch (sess->mode) {
+	case WD_CIPHER_ECB:
+	case WD_CIPHER_CBC:
+		if (req->in_bytes & (AES_BLOCK_SIZE - 1))
+			ret = -WD_EINVAL;
+		break;
+	case WD_CIPHER_CBC_CS1:
+	case WD_CIPHER_CBC_CS2:
+	case WD_CIPHER_CBC_CS3:
+		if (req->in_bytes < AES_BLOCK_SIZE)
+			ret = -WD_EINVAL;
+		break;
+	default:
+		break;
 	}
 
-	return 0;
+	if (ret)
+		WD_ERR("invalid: %s input bytes is %u!\n",
+		       wd_cipher_alg_name[sess->alg][sess->mode], req->in_bytes);
+
+	return ret;
 }
 
 static int wd_cipher_check_params(handle_t h_sess,
@@ -632,7 +648,7 @@ static int wd_cipher_check_params(handle_t h_sess,
 		return -WD_EINVAL;
 	}
 
-	ret = cipher_len_check(h_sess, req);
+	ret = cipher_in_len_check(h_sess, req);
 	if (unlikely(ret))
 		return ret;
 
@@ -672,8 +688,8 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	msg_handle.recv = wd_cipher_setting.driver->recv;
 
 	wd_ctx_spin_lock(ctx, wd_cipher_setting.driver->calc_type);
-	ret = wd_handle_msg_sync(wd_cipher_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, wd_cipher_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
+			  wd_cipher_setting.config.epoll_en);
 	wd_ctx_spin_unlock(ctx, wd_cipher_setting.driver->calc_type);
 
 	return ret;
@@ -748,7 +764,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(wd_cipher_setting.driver, ctx->ctx, msg);
+	ret = wd_cipher_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
@@ -797,7 +813,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_cipher_setting.driver, ctx->ctx, &resp_msg);
+		ret = wd_cipher_setting.driver->recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN)
 			return ret;
 		else if (ret < 0) {

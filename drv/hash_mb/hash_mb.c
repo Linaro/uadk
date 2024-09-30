@@ -1,5 +1,15 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-/* Copyright 2024 Huawei Technologies Co.,Ltd. All rights reserved. */
+// SPDX-License-Identifier: Apache-2.0
+/*
+ * Copyright 2023 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * this file except in compliance with the License.  You can obtain a copy
+ * in the file LICENSE in the source distribution or at
+ * https://www.openssl.org/source/license.html
+ */
+/*
+ * Copyright 2023 Huawei Technologies Co.,Ltd. All rights reserved.
+ */
 
 #include <sys/auxv.h>
 #include <pthread.h>
@@ -19,7 +29,6 @@
 #define HASH_PADDING_BLOCKS	2
 #define HASH_NENO_PROCESS_JOBS	4
 #define HASH_TRY_PROCESS_COUNT	16
-#define BYTES_TO_BITS_OFFSET	3
 
 #define MD5_DIGEST_DATA_SIZE	16
 #define SM3_DIGEST_DATA_SIZE	32
@@ -109,7 +118,7 @@ static void hash_mb_queue_uninit(struct wd_ctx_config_internal *config, int ctx_
 	int i;
 
 	for (i = 0; i < ctx_num; i++) {
-		ctx = (struct wd_soft_ctx *)config->ctxs[i].ctx;
+		ctx = (struct wd_soft_ctx *)(uintptr_t)config->ctxs[i].ctx;
 		mb_queue = ctx->priv;
 		pthread_spin_destroy(&mb_queue->r_lock);
 		hash_mb_uninit_poll_queue(&mb_queue->sm3_poll_queue);
@@ -150,7 +159,7 @@ static int hash_mb_queue_init(struct wd_ctx_config_internal *config)
 		}
 
 		mb_queue->ctx_mode = config->ctxs[i].ctx_mode;
-		ctx = (struct wd_soft_ctx *)config->ctxs[i].ctx;
+		ctx = (struct wd_soft_ctx *)(uintptr_t)config->ctxs[i].ctx;
 		ctx->priv = mb_queue;
 		ret = hash_mb_init_poll_queue(&mb_queue->sm3_poll_queue);
 		if (ret)
@@ -186,52 +195,41 @@ free_mb_queue:
 	return ret;
 }
 
-static int hash_mb_init(struct wd_alg_driver *drv, void *conf)
+static int hash_mb_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct hash_mb_ctx *priv;
-	int ret;
+	struct hash_mb_ctx *mb_ctx = priv;
 
 	/* Fallback init is NULL */
-	if (!drv || !conf)
+	if (!conf || !priv)
 		return 0;
-
-	priv = malloc(sizeof(struct hash_mb_ctx));
-	if (!priv)
-		return -WD_ENOMEM;
 
 	/* multibuff does not use epoll. */
 	config->epoll_en = 0;
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
+	memcpy(&mb_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 
-	ret = hash_mb_queue_init(config);
-	if (ret) {
-		free(priv);
-		return ret;
-	}
-
-	drv->priv = priv;
-
-	return WD_SUCCESS;
+	return hash_mb_queue_init(config);
 }
 
-static void hash_mb_exit(struct wd_alg_driver *drv)
+static void hash_mb_exit(void *priv)
 {
-	struct hash_mb_ctx *priv = (struct hash_mb_ctx *)drv->priv;
+	struct hash_mb_ctx *mb_ctx = priv;
+	struct wd_ctx_config_internal *config;
 
-	if (!priv)
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
 		return;
+	}
 
-	hash_mb_queue_uninit(&priv->config, priv->config.ctx_num);
-	free(priv);
-	drv->priv = NULL;
+	config = &mb_ctx->config;
+	hash_mb_queue_uninit(config, config->ctx_num);
 }
 
 static void hash_mb_pad_data(struct hash_pad *hash_pad, __u8 *in, __u32 partial,
 		     __u64 total_len, bool transfer)
 {
-	__u64 size = total_len << BYTES_TO_BITS_OFFSET;
 	__u8 *buffer = hash_pad->pad;
+	__u64 size = total_len << 3;
 
 	if (partial)
 		memcpy(buffer, in, partial);
@@ -266,7 +264,7 @@ static inline void hash_xor(__u8 *key_out, __u8 *key_in, __u32 key_len, __u8 xor
 		if (i < key_len)
 			key_out[i] = key_in[i] ^ xor_value;
 		else
-			key_out[i] = xor_value;
+			key_out[i] = 0x0 ^ xor_value;
 	}
 }
 
@@ -391,8 +389,7 @@ static int hash_first_block_process(struct wd_digest_msg *d_msg,
 		memcpy(d_msg->partial_block, buffer, d_msg->partial_bytes);
 	}
 
-	/*
-	 * Long hash mode, if first block is less than HASH_BLOCK_SIZE,
+	/* Long hash mode, if first block is less than HASH_BLOCK_SIZE,
 	 * copy ikey hash result to out.
 	 */
 	if (!job->len) {
@@ -550,9 +547,9 @@ static int hash_mb_check_param(struct hash_mb_queue *mb_queue, struct wd_digest_
 	return WD_SUCCESS;
 }
 
-static int hash_mb_send(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
+static int hash_mb_send(handle_t ctx, void *drv_msg)
 {
-	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)ctx;
+	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)(uintptr_t)ctx;
 	struct hash_mb_queue *mb_queue = s_ctx->priv;
 	struct wd_digest_msg *d_msg = drv_msg;
 	struct hash_mb_poll_queue *poll_queue;
@@ -771,9 +768,9 @@ static int hash_mb_do_jobs(struct hash_mb_queue *mb_queue)
 	return WD_SUCCESS;
 }
 
-static int hash_mb_recv(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
+static int hash_mb_recv(handle_t ctx, void *drv_msg)
 {
-	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)ctx;
+	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)(uintptr_t)ctx;
 	struct hash_mb_queue *mb_queue = s_ctx->priv;
 	struct wd_digest_msg *msg = drv_msg;
 	int ret, i = 0;
@@ -805,6 +802,7 @@ static int hash_mb_get_usage(void *param)
 	.alg_name = (hash_alg_name),\
 	.calc_type = UADK_ALG_SVE_INSTR,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hash_mb_ctx),\
 	.queue_num = 1,\
 	.op_type_num = 1,\
 	.fallback = 0,\
@@ -822,14 +820,18 @@ static struct wd_alg_driver hash_mb_driver[] = {
 
 static void __attribute__((constructor)) hash_mb_probe(void)
 {
+	unsigned long auxval = getauxval(AT_HWCAP);
 	size_t alg_num = ARRAY_SIZE(hash_mb_driver);
 	size_t i;
 	int ret;
 
+	if (!(auxval & HWCAP_SVE))
+		return;
+
 	WD_INFO("Info: register hash_mb alg drivers!\n");
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&hash_mb_driver[i]);
-		if (ret && ret != -WD_ENODEV)
+		if (ret)
 			WD_ERR("Error: register hash multibuff %s failed!\n",
 				hash_mb_driver[i].alg_name);
 	}
@@ -837,11 +839,14 @@ static void __attribute__((constructor)) hash_mb_probe(void)
 
 static void __attribute__((destructor)) hash_mb_remove(void)
 {
+	unsigned long auxval = getauxval(AT_HWCAP);
 	size_t alg_num = ARRAY_SIZE(hash_mb_driver);
 	size_t i;
+
+	if (!(auxval & HWCAP_SVE))
+		return;
 
 	WD_INFO("Info: unregister hash_mb alg drivers!\n");
 	for (i = 0; i < alg_num; i++)
 		wd_alg_driver_unregister(&hash_mb_driver[i]);
 }
-
