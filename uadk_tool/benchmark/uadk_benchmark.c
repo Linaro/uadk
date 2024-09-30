@@ -7,16 +7,16 @@
 
 #include "uadk_benchmark.h"
 #include "sec_uadk_benchmark.h"
-#include "sec_wd_benchmark.h"
-#include "sec_soft_benchmark.h"
+//#include "sec_wd_benchmark.h"
+//#include "sec_soft_benchmark.h"
 
-#include "hpre_uadk_benchmark.h"
-#include "hpre_wd_benchmark.h"
+//#include "hpre_uadk_benchmark.h"
+//#include "hpre_wd_benchmark.h"
 
 #include "zip_uadk_benchmark.h"
-#include "zip_wd_benchmark.h"
+//#include "zip_wd_benchmark.h"
 
-#include "trng_wd_benchmark.h"
+//#include "trng_wd_benchmark.h"
 
 #define TABLE_SPACE_SIZE	8
 
@@ -495,13 +495,16 @@ static int benchmark_run(struct acc_option *option)
 		    (option->modetype == MULTIBUF_MODE)) {
 			ret = sec_uadk_benchmark(option);
 			usleep(20000);
+#if 0
 		} else if (option->modetype == NOSVA_MODE) {
 			ret = sec_wd_benchmark(option);
 			usleep(20000);
 		} else if (option->modetype == SOFT_MODE) {
 			ret = sec_soft_benchmark(option);
+#endif
 		}
 		break;
+#if 0
 	case HPRE_TYPE:
 		if (option->modetype == SVA_MODE) {
 			ret = hpre_uadk_benchmark(option);
@@ -509,13 +512,15 @@ static int benchmark_run(struct acc_option *option)
 			ret = hpre_wd_benchmark(option);
 		}
 		break;
+#endif
 	case ZIP_TYPE:
 		if (option->modetype == SVA_MODE) {
 			ret = zip_uadk_benchmark(option);
-		} else if (option->modetype == NOSVA_MODE) {
-			ret = zip_wd_benchmark(option);
+//		} else if (option->modetype == NOSVA_MODE) {
+//			ret = zip_wd_benchmark(option);
 		}
 		break;
+#if 0
 	case TRNG_TYPE:
 		if (option->modetype == SVA_MODE)
 			ACC_TST_PRT("TRNG not support sva mode..\n");
@@ -523,6 +528,7 @@ static int benchmark_run(struct acc_option *option)
 			ret = trng_wd_benchmark(option);
 
 		break;
+#endif
 	}
 
 	return ret;
