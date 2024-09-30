@@ -150,10 +150,10 @@ static int sec_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 	u32 out_bytes = 32;
 	u8 keysize = 0;
 	u8 ivsize = 0;
-	u8 dmode = 0;
-	u8 dalg = 0;
-	u8 mode = 0;
-	u8 alg = 0;
+	u8 dmode;
+	u8 dalg;
+	u8 mode;
+	u8 alg;
 
 	switch(algtype) {
 	case AES_128_ECB:
@@ -795,10 +795,7 @@ static void uninit_ctx_config2(int subtype)
 
 static int init_ctx_config2(struct acc_option *options)
 {
-	struct wd_ctx_params cparams = {0};
-	struct wd_ctx_nums *ctx_set_num;
 	int subtype = options->subtype;
-	int mode = options->syncmode;
 	char alg_name[MAX_ALG_NAME];
 	int ret;
 
@@ -808,32 +805,10 @@ static int init_ctx_config2(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
-	if (!ctx_set_num) {
-		WD_ERR("failed to alloc ctx_set_size!\n");
-		return -WD_ENOMEM;
-	}
-
-	cparams.op_type_num = 1;
-	cparams.ctx_set_num = ctx_set_num;
-	cparams.bmp = numa_allocate_nodemask();
-	if (!cparams.bmp) {
-		WD_ERR("failed to create nodemask!\n");
-		ret = -WD_ENOMEM;
-		goto out_freectx;
-	}
-
-	numa_bitmask_setall(cparams.bmp);
-
-	if (mode == CTX_MODE_SYNC)
-		ctx_set_num->sync_ctx_num = g_ctxnum;
-	else
-		ctx_set_num->async_ctx_num = g_ctxnum;
-
 	/* init */
 	switch(subtype) {
 	case CIPHER_TYPE:
-		ret = wd_cipher_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_cipher_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 		if (ret)
 			SEC_TST_PRT("failed to do cipher init2!\n");
 		break;
@@ -843,12 +818,12 @@ static int init_ctx_config2(struct acc_option *options)
 			SEC_TST_PRT("failed to do cipher intruction init2!\n");
 		break;
 	case AEAD_TYPE:
-		ret = wd_aead_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_aead_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 		if (ret)
 			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
-		ret = wd_digest_init2_(alg_name, options->sched_type, options->task_type, &cparams);
+		ret = wd_digest_init2(alg_name, options->sched_type, options->task_type);
 		if (ret)
 			SEC_TST_PRT("failed to do digest init2!\n");
 		break;
@@ -858,11 +833,7 @@ static int init_ctx_config2(struct acc_option *options)
 		return ret;
 	}
 
-out_freectx:
-	free(ctx_set_num);
-
 	return ret;
-
 }
 
 static void get_aead_data(u8 *addr, u32 size)

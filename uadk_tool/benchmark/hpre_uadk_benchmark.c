@@ -610,10 +610,7 @@ static void uninit_hpre_ctx_config2(int subtype)
 
 static int init_hpre_ctx_config2(struct acc_option *options)
 {
-	struct wd_ctx_params cparams = {0};
-	struct wd_ctx_nums *ctx_set_num;
 	int subtype = options->subtype;
-	int mode = options->syncmode;
 	char alg_name[MAX_ALG_NAME];
 	int ret;
 
@@ -623,49 +620,22 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
-	if (!ctx_set_num) {
-		WD_ERR("failed to alloc ctx_set_size!\n");
-		return -WD_ENOMEM;
-	}
-
-	cparams.op_type_num = 1;
-	cparams.ctx_set_num = ctx_set_num;
-	cparams.bmp = numa_allocate_nodemask();
-	if (!cparams.bmp) {
-		WD_ERR("failed to create nodemask!\n");
-		ret = -WD_ENOMEM;
-		goto out_freectx;
-	}
-
-	numa_bitmask_setall(cparams.bmp);
-
-	if (mode == CTX_MODE_SYNC)
-		ctx_set_num->sync_ctx_num = g_ctxnum;
-	else
-		ctx_set_num->async_ctx_num = g_ctxnum;
-
 	/* init2 */
 	switch (subtype) {
 	case RSA_TYPE:
-		return wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		return wd_rsa_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 	case DH_TYPE:
-		return wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		return wd_dh_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
-		return wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		return wd_ecc_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
 		return -EINVAL;
 	}
-
-out_freectx:
-	free(ctx_set_num);
-
-	return ret;
 }
 
 /*-------------------------------uadk benchmark main code-------------------------------------*/
@@ -2263,7 +2233,7 @@ static void *ecc_uadk_sync_run(void *arg)
 	memset(&req,     0, sizeof(req));
 
 	memset(&setup,     0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;
@@ -2422,7 +2392,7 @@ static void *ecc_uadk_async_run(void *arg)
 	memset(&req,	 0, sizeof(req));
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;

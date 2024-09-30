@@ -480,7 +480,7 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 	ops = perfops / option->times;
 
 	ACC_TST_PRT("algname:\tlength:\t\tperf:\t\tiops:\t\tCPU_rate:\n"
-		    "%s\t%-2uBytes \t%.2f%s\t%.1fKops \t%.2f%%\n",
+		    "%s\t%-2uBytes \t%.2f%s\t%.2fKops\t%.2f%%\n",
 		    palgname, option->pktlen, perfermance, unit, ops, cpu_rate);
 }
 
@@ -494,15 +494,13 @@ static int benchmark_run(struct acc_option *option)
 		    (option->modetype == INSTR_MODE) ||
 		    (option->modetype == MULTIBUF_MODE)) {
 			ret = sec_uadk_benchmark(option);
+			usleep(20000);
 		} else if (option->modetype == NOSVA_MODE) {
 			ret = sec_wd_benchmark(option);
-		}
-		usleep(20000);
-#ifdef HAVE_CRYPTO
-		if (option->modetype == SOFT_MODE) {
+			usleep(20000);
+		} else if (option->modetype == SOFT_MODE) {
 			ret = sec_soft_benchmark(option);
 		}
-#endif
 		break;
 	case HPRE_TYPE:
 		if (option->modetype == SVA_MODE) {
