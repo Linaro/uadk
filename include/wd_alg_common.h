@@ -44,6 +44,7 @@ extern "C" {
 
 /* Key size of digest */
 #define MAX_HMAC_KEY_SIZE	128U
+#define MAX_SOFT_QUEUE_LENGTH	1024U
 
 enum alg_task_type {
 	TASK_MIX = 0x0,
@@ -68,6 +69,26 @@ enum wd_init_type {
 	WD_TYPE_V2,
 };
 
+struct wd_soft_sqe {
+	__u8 used;
+	__u8 result;
+	__u8 complete;
+	__u32 id;
+};
+
+/**
+ * default queue length set to 1024
+ */
+struct wd_soft_ctx {
+	pthread_spinlock_t slock;
+	__u32 head;
+	struct wd_soft_sqe qfifo[MAX_SOFT_QUEUE_LENGTH];
+	pthread_spinlock_t rlock;
+	__u32 tail;
+	__u32 run_num;
+	void *priv;
+};
+
 /**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
@@ -80,6 +101,7 @@ struct wd_ctx {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	__u8 ctx_type;
 };
 
 /**
@@ -123,6 +145,15 @@ struct wd_ctx_nums {
 	__u32 async_ctx_num;
 };
 
+/* 0x0 mean calloc init value */
+enum wd_ctx_priority {
+	UADK_CTX_HW = 0x0,
+	UADK_CTX_CE_INS = 0x1,
+	UADK_CTX_SVE_INS = 0x2,
+	UADK_CTX_SOFT = 0x3,
+	UADK_CTX_ERR
+};
+
 /**
  * struct wd_ctx_params - Define the ctx sets params which are used for init
  * algorithms.
@@ -140,16 +171,16 @@ struct wd_ctx_params {
 	struct wd_cap_config *cap;
 };
 
-struct wd_soft_ctx {
-	void *priv;
-};
-
 struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	__u8 ctx_type;
 	__u16 sqn;
 	pthread_spinlock_t lock;
+	struct wd_alg_driver *drv;
+	void *drv_priv;
+	__u32 fb_num;
 };
 
 struct wd_ctx_config_internal {

@@ -125,8 +125,8 @@ struct wd_msg_handle {
 
 struct wd_init_attrs {
 	__u32 sched_type;
+	__u32 task_type;
 	char *alg;
-	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
 	struct wd_ctx_config *ctx_config;
@@ -171,6 +171,9 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in);
  * @size: the data length.
  */
 void wd_memset_zero(void *data, __u32 size);
+
+int wd_ctx_drv_config(char *alg_name,	struct wd_ctx_config_internal *ctx_config);
+void wd_ctx_drv_deconfig(struct wd_ctx_config_internal *ctx_config);
 
 /*
  * wd_init_async_request_pool() - Init async message pools.
@@ -256,7 +259,7 @@ int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
  *
  * Return 0 if the datalist is not less than expected size.
  */
-int wd_check_datalist(struct wd_datalist *head, __u64 size);
+int wd_check_datalist(struct wd_datalist *head, __u32 size);
 
 
 /*
@@ -453,8 +456,8 @@ static inline void wd_alg_clear_init(enum wd_status *status)
  */
 int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		      struct wd_ctx_params *user_ctx_params,
-		      struct wd_alg_driver *driver,
-		      enum wd_type type, int max_op_type);
+		      char *alg, int task_type, enum wd_type type,
+		      int max_op_type);
 
 void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params);
 
@@ -471,12 +474,12 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
 /**
  * wd_alg_drv_bind() - Request the ctxs and initialize the sched_domain
  *                     with the given devices list, ctxs number and numa mask.
- * @task_type: the type of task specified by the current algorithm.
+ * @ctx_type: the type of ctx specified by the current algorithm.
  * @alg_name: the name of the algorithm specified by the task.
  *
  * Return device driver if succeed and other NULL if fail.
  */
-struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name);
+struct wd_alg_driver *wd_alg_drv_bind(__u8 ctx_type, char *alg_name);
 void wd_alg_drv_unbind(struct wd_alg_driver *drv);
 
 /**
@@ -488,10 +491,8 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv);
  *
  * Return 0 if succeed and other error number if fail.
  */
-int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
-void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
+int wd_alg_init_driver(struct wd_ctx_config_internal *config);
+void wd_alg_uninit_driver(struct wd_ctx_config_internal *config);
 
 /**
  * wd_dlopen_drv() - Open the dynamic library file of the device driver.
@@ -508,6 +509,9 @@ void wd_dlclose_drv(void *dlh_list);
  * @is_dir: Specify whether to query the file dir or the file path.
  */
 int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir);
+
+int wd_msg_sync_fb(handle_t ctx, void *msg, int err_code);
+int wd_msg_recv_fb(handle_t ctx);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx
@@ -551,6 +555,10 @@ static inline void wd_ctx_spin_unlock(struct wd_ctx_internal *ctx, int type)
 
 	pthread_spin_unlock(&ctx->lock);
 }
+
+int wd_queue_is_busy(struct wd_soft_ctx *sctx);
+int wd_get_sqe_from_queue(struct wd_soft_ctx *sctx, __u32 tag_id);
+int wd_put_sqe_to_queue(struct wd_soft_ctx *sctx, __u32 *tag_id, __u8 *result);
 
 #ifdef __cplusplus
 }

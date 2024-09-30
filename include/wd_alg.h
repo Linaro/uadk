@@ -63,13 +63,22 @@ extern "C" {
 #endif
 
 enum alg_priority {
-	UADK_ALG_SOFT = 0x0,
+	UADK_ALG_HW = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,
 	UADK_ALG_SVE_INSTR = 0x2,
-	UADK_ALG_HW = 0x3
+	UADK_ALG_SOFT = 0x3
 };
 
-/*
+enum alg_drv_type {
+	ALG_DRV_HW = 0x0,
+	ALG_DRV_CE_INS,
+	ALG_DRV_SVE_INS,
+	ALG_DRV_SOFT,
+	ALG_DRV_INS,
+	ALG_DRV_FB,
+};
+
+/**
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
  * @priority: priority of the type of algorithm supported by the driver
@@ -106,6 +115,7 @@ struct wd_alg_driver {
 	int	op_type_num;
 	int	priv_size;
 	handle_t fallback;
+	int	init_state;
 
 	int (*init)(void *conf, void *priv);
 	void (*exit)(void *priv);
