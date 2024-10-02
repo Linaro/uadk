@@ -479,7 +479,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
 
-	sess->sched_key = calloc(sizeof(void *), nb);
+	sess->sched_key = (void **)calloc(nb, sizeof(void *));
 	for (i = 0; i < nb; i++) {
 		worker = &wd_comp_setting.adapter->workers[i];
 

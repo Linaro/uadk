@@ -224,7 +224,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 		goto err_sess;
 	}
 
-	sess->sched_key = calloc(sizeof(void *), nb);
+	sess->sched_key = (void **)calloc(nb, sizeof(void *));
 	for (i = 0; i < nb; i++) {
 		worker = &wd_digest_setting.adapter->workers[i];
 
