@@ -109,6 +109,22 @@ int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 			break;
 	} while (drv);
 
+	/* sorted as priority */
+	for (int i = 0; i < adapter->workers_nb; i++) {
+		for (int j = i; j < adapter->workers_nb; j++) {
+			if (adapter->workers[i].driver->priority <
+			    adapter->workers[j].driver->priority) {
+				struct uadk_adapter_worker tmp_worker;
+
+				tmp_worker.driver = adapter->workers[i].driver;
+				adapter->workers[i].driver = adapter->workers[j].driver;
+				adapter->workers[i].idx = i;
+				adapter->workers[j].driver = tmp_worker.driver;
+				adapter->workers[j].idx = j;
+			}
+		}
+	}
+
 	return (adapter->workers_nb == 0);
 }
 
