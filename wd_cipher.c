@@ -10,6 +10,7 @@
 #include <limits.h>
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_cipher.h"
+#include "adapter.h"
 
 #define XTS_MODE_KEY_SHIFT	1
 #define XTS_MODE_KEY_LEN_MASK	0x1
@@ -49,12 +50,9 @@ static char *wd_cipher_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX]
 
 struct wd_cipher_setting {
 	enum wd_status status;
-	struct wd_ctx_config_internal config;
-	struct wd_sched sched;
-	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
 	void *dlhandle;
 	void *dlh_list;
+	struct uadk_adapter *adapter;
 } wd_cipher_setting;
 
 struct wd_cipher_sess {
@@ -67,6 +65,8 @@ struct wd_cipher_sess {
 	unsigned char		key[MAX_CIPHER_KEY_SIZE];
 	__u32			key_bytes;
 	void			*sched_key;
+	struct uadk_adapter_worker *worker;
+	pthread_spinlock_t worker_lock;
 };
 
 struct wd_env_config wd_cipher_env_config;
@@ -81,12 +81,10 @@ static void wd_cipher_close_driver(int init_type)
 	}
 
 	if (wd_cipher_setting.dlhandle) {
-		wd_release_drv(wd_cipher_setting.driver);
 		dlclose(wd_cipher_setting.dlhandle);
 		wd_cipher_setting.dlhandle = NULL;
 	}
 #else
-	wd_release_drv(wd_cipher_setting.driver);
 	hisi_sec2_remove();
 #endif
 }
@@ -94,7 +92,7 @@ static void wd_cipher_close_driver(int init_type)
 static int wd_cipher_open_driver(int init_type)
 {
 	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "cbc(aes)";
+	char *alg_name = "cbc(aes)";
 #ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
@@ -128,14 +126,14 @@ static int wd_cipher_open_driver(int init_type)
 	if (init_type == WD_TYPE_V2)
 		return WD_SUCCESS;
 #endif
-	driver = wd_request_drv(alg_name, false);
+	driver = wd_find_drv(NULL, alg_name, 0);
 	if (!driver) {
 		wd_cipher_close_driver(WD_TYPE_V1);
 		WD_ERR("failed to get %s driver support\n", alg_name);
 		return -WD_EINVAL;
 	}
 
-	wd_cipher_setting.driver = driver;
+	wd_cipher_setting.adapter->workers[0].driver = driver;
 
 	return WD_SUCCESS;
 }
@@ -252,6 +250,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
+	struct uadk_adapter_worker *worker;
 	struct wd_cipher_sess *sess = NULL;
 	bool ret;
 
@@ -273,8 +272,12 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		goto err_sess;
 	}
 
+	/* todo, use workers[0] now, will adapter.choose_worker later */
+	worker = sess->worker = &wd_cipher_setting.adapter->workers[0];
+	worker->valid = true;
+
 	sess->alg_name = wd_cipher_alg_name[setup->alg][setup->mode];
-	ret = wd_drv_alg_support(sess->alg_name, wd_cipher_setting.driver);
+	ret = wd_drv_alg_support(sess->alg_name, worker->driver);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
@@ -283,8 +286,8 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	sess->mode = setup->mode;
 
 	/* Some simple scheduler don't need scheduling parameters */
-	sess->sched_key = (void *)wd_cipher_setting.sched.sched_init(
-		wd_cipher_setting.sched.h_sched_ctx, setup->sched_param);
+	sess->sched_key = (void *)worker->sched->sched_init(
+		worker->sched->h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
 		goto err_sess;
@@ -320,69 +323,69 @@ static void wd_cipher_clear_status(void)
 	wd_alg_clear_init(&wd_cipher_setting.status);
 }
 
-static int wd_cipher_common_init(struct wd_ctx_config *config,
+static int wd_cipher_common_init(struct uadk_adapter_worker *worker,
 				 struct wd_sched *sched)
 {
 	int ret;
 
 	ret = wd_set_epoll_en("WD_CIPHER_EPOLL_EN",
-			      &wd_cipher_setting.config.epoll_en);
+			      &worker->config.epoll_en);
 	if (ret < 0)
 		return ret;
 
-	ret = wd_init_ctx_config(&wd_cipher_setting.config, config);
+	ret = wd_init_ctx_config(&worker->config, worker->ctx_config);
 	if (ret < 0)
 		return ret;
 
-	ret = wd_init_sched(&wd_cipher_setting.sched, sched);
+	worker->config.pool = &worker->pool;
+	sched->worker = worker;
+	worker->sched = sched;
+
+	/* allocate async pool for every ctx */
+	ret = wd_init_async_request_pool(&worker->pool,
+					 worker->ctx_config, WD_POOL_MAX_ENTRIES,
+					 sizeof(struct wd_cipher_msg));
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* allocate async pool for every ctx */
-	ret = wd_init_async_request_pool(&wd_cipher_setting.pool,
-					 config, WD_POOL_MAX_ENTRIES,
-					 sizeof(struct wd_cipher_msg));
-	if (ret < 0)
-		goto out_clear_sched;
-
-	ret = wd_alg_init_driver(&wd_cipher_setting.config,
-				 wd_cipher_setting.driver);
+	ret = wd_alg_init_driver(&worker->config, worker->driver);
 	if (ret)
 		goto out_clear_pool;
 
 	return 0;
 
 out_clear_pool:
-	wd_uninit_async_request_pool(&wd_cipher_setting.pool);
-out_clear_sched:
-	wd_clear_sched(&wd_cipher_setting.sched);
+	wd_uninit_async_request_pool(&worker->pool);
 out_clear_ctx_config:
-	wd_clear_ctx_config(&wd_cipher_setting.config);
+	wd_clear_ctx_config(&worker->config);
 	return ret;
 }
 
 static int wd_cipher_common_uninit(void)
 {
+	struct uadk_adapter_worker *worker;
 	enum wd_status status;
 
 	wd_alg_get_init(&wd_cipher_setting.status, &status);
 	if (status == WD_UNINIT)
 		return -WD_EINVAL;
 
-	/* uninit async request pool */
-	wd_uninit_async_request_pool(&wd_cipher_setting.pool);
+	for (int i = 0; i < wd_cipher_setting.adapter->workers_nb; i++) {
+		worker = &wd_cipher_setting.adapter->workers[i];
 
-	/* unset config, sched, driver */
-	wd_clear_sched(&wd_cipher_setting.sched);
+		wd_uninit_async_request_pool(&worker->pool);
+		wd_alg_uninit_driver(&worker->config, worker->driver);
+	}
 
-	wd_alg_uninit_driver(&wd_cipher_setting.config,
-			     wd_cipher_setting.driver);
+	free(wd_cipher_setting.adapter);
 
 	return 0;
 }
 
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
+	struct uadk_adapter_worker *worker;
+	struct uadk_adapter *adapter = NULL;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
@@ -395,11 +398,20 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
+	adapter = calloc(1, sizeof(*adapter));
+	if (adapter == NULL)
+		goto out_clear_init;
+
+	wd_cipher_setting.adapter = adapter;
+	worker = &adapter->workers[0];
+	worker->ctx_config = config;
+	adapter->workers_nb++;
+
 	ret = wd_cipher_open_driver(WD_TYPE_V1);
 	if (ret)
 		goto out_clear_init;
 
-	ret = wd_cipher_common_init(config, sched);
+	ret = wd_cipher_common_init(worker, sched);
 	if (ret)
 		goto out_close_driver;
 
@@ -410,6 +422,7 @@ int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 out_close_driver:
 	wd_cipher_close_driver(WD_TYPE_V1);
 out_clear_init:
+	free(adapter);
 	wd_alg_clear_init(&wd_cipher_setting.status);
 	return ret;
 }
@@ -430,7 +443,11 @@ int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_p
 {
 	struct wd_ctx_nums cipher_ctx_num[WD_CIPHER_DECRYPTION + 1] = {0};
 	struct wd_ctx_params cipher_ctx_params = {0};
+	struct uadk_adapter_worker *worker;
+	struct uadk_adapter *adapter = NULL;
+	struct wd_alg_driver *drv;
 	int state, ret = -WD_EINVAL;
+	int idx = 0;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
@@ -451,78 +468,72 @@ int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_p
 		goto out_uninit;
 	}
 
+	adapter = calloc(1, sizeof(*adapter));
+	if (adapter == NULL)
+		goto out_uninit;
+	wd_cipher_setting.adapter = adapter;
+
 	state = wd_cipher_open_driver(WD_TYPE_V2);
 	if (state)
 		goto out_uninit;
 
-	while (ret != 0) {
-		memset(&wd_cipher_setting.config, 0, sizeof(struct wd_ctx_config_internal));
-
-		/* Get alg driver and dev name */
-		wd_cipher_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_cipher_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
-			goto out_dlopen;
-		}
+	do {
+		worker = &adapter->workers[idx];
+		drv = wd_find_drv(NULL, alg, idx);
+		if (!drv)
+			break;
+		worker->driver = drv;
 
 		cipher_ctx_params.ctx_set_num = cipher_ctx_num;
-		ret = wd_ctx_param_init(&cipher_ctx_params, ctx_params,
-					wd_cipher_setting.driver,
+		ret = wd_ctx_param_init(&cipher_ctx_params, ctx_params, drv,
 					WD_CIPHER_TYPE, WD_CIPHER_DECRYPTION + 1);
 		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_cipher_setting.driver);
-				wd_alg_drv_unbind(wd_cipher_setting.driver);
-				continue;
-			}
+			WD_ERR("fail to init ctx param\n");
 			goto out_driver;
 		}
 
 		wd_cipher_init_attrs.alg = alg;
 		wd_cipher_init_attrs.sched_type = sched_type;
-		wd_cipher_init_attrs.driver = wd_cipher_setting.driver;
 		wd_cipher_init_attrs.ctx_params = &cipher_ctx_params;
 		wd_cipher_init_attrs.alg_init = wd_cipher_common_init;
-		wd_cipher_init_attrs.alg_poll_ctx = wd_cipher_poll_ctx;
-		ret = wd_alg_attrs_init(&wd_cipher_init_attrs);
+		wd_cipher_init_attrs.alg_poll_ctx = wd_cipher_poll_ctx_;
+		ret = wd_alg_attrs_init(worker, &wd_cipher_init_attrs);
+		wd_ctx_param_uninit(&cipher_ctx_params);
 		if (ret) {
-			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_cipher_setting.driver);
-				wd_alg_drv_unbind(wd_cipher_setting.driver);
-				wd_ctx_param_uninit(&cipher_ctx_params);
-				continue;
-			}
 			WD_ERR("fail to init alg attrs.\n");
-			goto out_params_uninit;
+			goto out_driver;
 		}
-	}
+		adapter->workers_nb++;
+		if (++idx >= UADK_MAX_NB_WORKERS)
+			break;
+	} while (drv);
 
 	wd_alg_set_init(&wd_cipher_setting.status);
-	wd_ctx_param_uninit(&cipher_ctx_params);
 
 	return 0;
 
-out_params_uninit:
-	wd_ctx_param_uninit(&cipher_ctx_params);
 out_driver:
-	wd_alg_drv_unbind(wd_cipher_setting.driver);
-out_dlopen:
 	wd_cipher_close_driver(WD_TYPE_V2);
 out_uninit:
+	free(adapter);
 	wd_alg_clear_init(&wd_cipher_setting.status);
 	return ret;
 }
 
 void wd_cipher_uninit2(void)
 {
+	struct uadk_adapter_worker *worker;
 	int ret;
 
 	ret = wd_cipher_common_uninit();
 	if (ret)
 		return;
 
-	wd_alg_attrs_uninit(&wd_cipher_init_attrs);
-	wd_alg_drv_unbind(wd_cipher_setting.driver);
+	for (int i = 0; i < wd_cipher_setting.adapter->workers_nb; i++) {
+		worker = &wd_cipher_setting.adapter->workers[i];
+		wd_alg_attrs_uninit(worker);
+	}
+
 	wd_cipher_close_driver(WD_TYPE_V2);
 	wd_cipher_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_cipher_setting.status);
@@ -662,27 +673,27 @@ static int wd_cipher_check_params(handle_t h_sess,
 	return cipher_iv_len_check(req, sess);
 }
 
-static int send_recv_sync(struct wd_ctx_internal *ctx,
+static int send_recv_sync(struct uadk_adapter_worker *worker, struct wd_ctx_internal *ctx,
 			  struct wd_cipher_msg *msg)
 {
 	struct wd_msg_handle msg_handle;
 	int ret;
 
-	msg_handle.send = wd_cipher_setting.driver->send;
-	msg_handle.recv = wd_cipher_setting.driver->recv;
+	msg_handle.send = worker->driver->send;
+	msg_handle.recv = worker->driver->recv;
 
-	wd_ctx_spin_lock(ctx, wd_cipher_setting.driver->calc_type);
-	ret = wd_handle_msg_sync(wd_cipher_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, wd_cipher_setting.config.epoll_en);
-	wd_ctx_spin_unlock(ctx, wd_cipher_setting.driver->calc_type);
+	wd_ctx_spin_lock(ctx, worker->driver->calc_type);
+	ret = wd_handle_msg_sync(worker->driver, &msg_handle, ctx->ctx,
+				 msg, NULL, worker->config.epoll_en);
+	wd_ctx_spin_unlock(ctx, worker->driver->calc_type);
 
 	return ret;
 }
 
 int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 {
-	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+	struct uadk_adapter_worker *worker;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg msg;
 	__u32 idx;
@@ -694,21 +705,25 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+	
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
 	req->state = 0;
 
-	idx = wd_cipher_setting.sched.pick_next_ctx(
-		     wd_cipher_setting.sched.h_sched_ctx,
+	idx = worker->sched->pick_next_ctx(
+		     worker->sched->h_sched_ctx,
 		     sess->sched_key, CTX_MODE_SYNC);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
-	ctx = config->ctxs + idx;
+	wd_dfx_msg_cnt(&worker->config, WD_CTX_CNT_NUM, idx);
+	ctx = worker->config.ctxs + idx;
 
-	ret = send_recv_sync(ctx, &msg);
+	ret = send_recv_sync(worker, ctx, &msg);
 	req->state = msg.result;
 
 	return ret;
@@ -716,8 +731,8 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 
 int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 {
-	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
+	struct uadk_adapter_worker *worker;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg *msg;
 	int msg_id, ret;
@@ -729,17 +744,20 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
-	idx = wd_cipher_setting.sched.pick_next_ctx(
-		     wd_cipher_setting.sched.h_sched_ctx,
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+	
+	idx = worker->sched->pick_next_ctx(
+		     worker->sched->h_sched_ctx,
 		     sess->sched_key, CTX_MODE_ASYNC);
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
 
-	ctx = config->ctxs + idx;
+	ctx = worker->config.ctxs + idx;
 
-	msg_id = wd_get_msg_from_pool(&wd_cipher_setting.pool, idx,
-				   (void **)&msg);
+	msg_id = wd_get_msg_from_pool(&worker->pool, idx, (void **)&msg);
 	if (unlikely(msg_id < 0)) {
 		WD_ERR("failed to get msg from pool!\n");
 		return msg_id;
@@ -748,7 +766,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(wd_cipher_setting.driver, ctx->ctx, msg);
+	ret = wd_alg_driver_send(worker->driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
@@ -756,7 +774,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		goto fail_with_msg;
 	}
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(&worker->config, WD_CTX_CNT_NUM, idx);
 	ret = wd_add_task_to_async_queue(&wd_cipher_env_config, idx);
 	if (ret)
 		goto fail_with_msg;
@@ -764,18 +782,13 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	return 0;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
+	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
 	return ret;
 }
 
-struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag)
+int wd_cipher_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
-	return wd_find_msg_in_pool(&wd_cipher_setting.pool, idx, tag);
-}
-
-int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
-{
-	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+	struct uadk_adapter_worker *worker;
 	struct wd_ctx_internal *ctx;
 	struct wd_cipher_msg resp_msg, *msg;
 	struct wd_cipher_req *req;
@@ -788,16 +801,22 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
+	/* back-compatible with init1 api */
+	if (sched == NULL)
+		worker = &wd_cipher_setting.adapter->workers[0];
+	else
+		worker = sched->worker; 
+
 	*count = 0;
 
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
 
-	ctx = config->ctxs + idx;
+	ctx = worker->config.ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_cipher_setting.driver, ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(worker->driver, ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN)
 			return ret;
 		else if (ret < 0) {
@@ -805,7 +824,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return ret;
 		}
 		recv_count++;
-		msg = wd_find_msg_in_pool(&wd_cipher_setting.pool, idx,
+		msg = wd_find_msg_in_pool(&worker->pool, idx,
 					  resp_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to find msg from pool!\n");
@@ -818,25 +837,47 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 		req->cb(req, req->cb_param);
 		/* free msg cache to msg_pool */
-		wd_put_msg_to_pool(&wd_cipher_setting.pool, idx,
-				   resp_msg.tag);
+		wd_put_msg_to_pool(&worker->pool, idx, resp_msg.tag);
 		*count = recv_count;
 	} while (--tmp);
 
 	return ret;
 }
 
+int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+{
+	return wd_cipher_poll_ctx_(NULL, idx, expt, count);
+}
+
 int wd_cipher_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_ctx = wd_cipher_setting.sched.h_sched_ctx;
-	struct wd_sched *sched = &wd_cipher_setting.sched;
-
+	struct uadk_adapter_worker *worker;
+	__u32 recv = 0;
+	int ret = WD_SUCCESS;
+	
 	if (unlikely(!count)) {
 		WD_ERR("invalid: cipher poll input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return sched->poll_policy(h_ctx, expt, count);
+	for (int i = 0; i < wd_cipher_setting.adapter->workers_nb; i++) {
+		worker = &wd_cipher_setting.adapter->workers[i];
+
+		if (worker->valid) {
+			struct wd_sched *sched = worker->sched;
+
+			ret = worker->sched->poll_policy(sched, expt, &recv);
+			if (ret)
+				return ret;
+
+			*count += recv;
+			expt -= recv;
+
+			if (expt == 0)
+				break;
+		}
+	}
+	return ret;
 }
 
 static const struct wd_config_variable table[] = {

@@ -47,8 +47,6 @@ struct wd_agg_ops {
 	int (*hash_table_init)(struct wd_dae_hash_table *hash_table, void *priv);
 };
 
-struct wd_agg_msg *wd_agg_get_msg(__u32 idx, __u32 tag);
-
 #ifdef __cplusplus
 }
 #endif

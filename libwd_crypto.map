@@ -11,6 +11,7 @@ global:
 	wd_do_cipher_sync;
 	wd_do_cipher_async;
 	wd_cipher_poll_ctx;
+	wd_cipher_poll_ctx_;
 	wd_cipher_poll;
 	wd_cipher_env_init;
 	wd_cipher_env_uninit;
@@ -19,7 +20,6 @@ global:
 	wd_cipher_get_env_param;
 	wd_cipher_set_driver;
 	wd_cipher_get_driver;
-	wd_cipher_get_msg;
 
 	wd_aead_init;
 	wd_aead_uninit;
@@ -36,6 +36,7 @@ global:
 	wd_aead_get_authsize;
 	wd_aead_get_maxauthsize;
 	wd_aead_poll_ctx;
+	wd_aead_poll_ctx_;
 	wd_aead_poll;
 	wd_aead_env_init;
 	wd_aead_env_uninit;
@@ -44,7 +45,6 @@ global:
 	wd_aead_get_env_param;
 	wd_aead_set_driver;
 	wd_aead_get_driver;
-	wd_aead_get_msg;
 
 	wd_digest_init;
 	wd_digest_uninit;
@@ -57,6 +57,7 @@ global:
 	wd_do_digest_async;
 	wd_digest_set_key;
 	wd_digest_poll_ctx;
+	wd_digest_poll_ctx_;
 	wd_digest_poll;
 	wd_digest_env_init;
 	wd_digest_env_uninit;
@@ -65,7 +66,6 @@ global:
 	wd_digest_get_env_param;
 	wd_digest_set_driver;
 	wd_digest_get_driver;
-	wd_digest_get_msg;
 
 	wd_rsa_is_crt;
 	wd_rsa_get_key_bits;
@@ -100,6 +100,7 @@ global:
 	wd_do_rsa_sync;
 	wd_do_rsa_async;
 	wd_rsa_poll_ctx;
+	wd_rsa_poll_ctx_;
 	wd_rsa_env_init;
 	wd_rsa_env_uninit;
 	wd_rsa_ctx_num_init;
@@ -107,7 +108,6 @@ global:
 	wd_rsa_get_env_param;
 	wd_rsa_set_driver;
 	wd_rsa_get_driver;
-	wd_rsa_get_msg;
 
 	wd_dh_get_mode;
 	wd_dh_key_bits;
@@ -118,6 +118,7 @@ global:
 	wd_do_dh_async;
 	wd_do_dh_sync;
 	wd_dh_poll_ctx;
+	wd_dh_poll_ctx_;
 	wd_dh_poll;
 	wd_dh_init;
 	wd_dh_uninit;
@@ -131,7 +132,6 @@ global:
 	wd_dh_get_env_param;
 	wd_dh_set_driver;
 	wd_dh_get_driver;
-	wd_dh_get_msg;
 
 	wd_ecc_get_key_bits;
 	wd_ecc_get_key;
@@ -148,7 +148,6 @@ global:
 	wd_ecxdh_get_out_params;
 	wd_ecc_set_driver;
 	wd_ecc_get_driver;
-	wd_ecc_get_msg;
 
 	wd_sm2_new_sign_in;
 	wd_sm2_new_verf_in;
@@ -178,6 +177,7 @@ global:
 	wd_do_ecc_sync;
 	wd_do_ecc_async;
 	wd_ecc_poll_ctx;
+	wd_ecc_poll_ctx_;
 	wd_ecc_env_init;
 	wd_ecc_env_uninit;
 	wd_ecc_ctx_num_init;
@@ -187,5 +187,6 @@ global:
 	wd_sched_rr_instance;
 	wd_sched_rr_alloc;
 	wd_sched_rr_release;
+	wd_find_msg_in_pool;
 local: *;
 };

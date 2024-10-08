@@ -1789,7 +1789,7 @@ static __u32 hpre_pick_next_ctx(handle_t sched_ctx,
 	return last_ctx;
 }
 
-int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
+int rsa_poll_policy(struct wd_sched *sched, __u32 expect, __u32 *count)
 {
 	int ret;
 	struct wd_ctx *ctxs;
@@ -1813,7 +1813,7 @@ int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 	return 0;
 }
 
-static int dh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
+static int dh_poll_policy(struct wd_sched *sched, __u32 expect, __u32 *count)
 {
 	int ret;
 	struct wd_ctx *ctxs;
@@ -1836,7 +1836,7 @@ static int dh_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 	return 0;
 }
 
-static int ecc_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
+static int ecc_poll_policy(struct wd_sched *sched, __u32 expect, __u32 *count)
 {
 	int ret;
 	struct wd_ctx *ctxs;
