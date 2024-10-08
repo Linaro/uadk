@@ -175,8 +175,6 @@ struct wd_ecc_out {
 	char data[];
 };
 
-struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag);
-
 #ifdef __cplusplus
 }
 #endif
