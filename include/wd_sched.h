@@ -23,6 +23,9 @@ enum sched_policy_type {
 	SCHED_POLICY_NONE,
 	/* requests will need a fixed ctx */
 	SCHED_POLICY_SINGLE,
+	/* Hard calculation and soft calculation interval loop call */
+	SCHED_POLICY_LOOP,
+	SCHED_POLICY_RTE_LOOP,
 	SCHED_POLICY_BUTT,
 };
 
@@ -32,6 +35,7 @@ struct sched_params {
 	__u8 mode;
 	__u32 begin;
 	__u32 end;
+	int ctx_prop;
 };
 
 typedef int (*user_poll_func)(__u32 pos, __u32 expect, __u32 *count);

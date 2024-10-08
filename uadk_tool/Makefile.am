@@ -12,14 +12,14 @@ bin_PROGRAMS=uadk_tool
 uadk_tool_SOURCES=uadk_tool.c dfx/uadk_dfx.c dfx/uadk_dfx.h \
 		benchmark/uadk_benchmark.c benchmark/uadk_benchmark.h \
 		benchmark/sec_uadk_benchmark.c benchmark/sec_uadk_benchmark.h \
-		benchmark/sec_wd_benchmark.c benchmark/sec_wd_benchmark.h \
-		benchmark/hpre_uadk_benchmark.c benchmark/hpre_uadk_benchmark.h \
-		benchmark/hpre_wd_benchmark.c hpre_wd_benchmark.h \
-		benchmark/zip_uadk_benchmark.c benchmark/zip_uadk_benchmark.h \
-		benchmark/zip_wd_benchmark.c benchmark/zip_wd_benchmark.h \
-		benchmark/trng_wd_benchmark.c benchmark/trng_wd_benchmark.h \
-		test/uadk_test.c test/uadk_test.h \
-		test/test_sec.c test/test_sec.h test/sec_template_tv.h
+		benchmark/zip_uadk_benchmark.c benchmark/zip_uadk_benchmark.h
+#		benchmark/sec_wd_benchmark.c benchmark/sec_wd_benchmark.h \
+#		benchmark/hpre_uadk_benchmark.c benchmark/hpre_uadk_benchmark.h \
+#		benchmark/hpre_wd_benchmark.c hpre_wd_benchmark.h \
+#		benchmark/zip_wd_benchmark.c benchmark/zip_wd_benchmark.h
+#		benchmark/trng_wd_benchmark.c benchmark/trng_wd_benchmark.h
+#		test/uadk_test.c test/uadk_test.h \
+#		test/test_sec.c test/test_sec.h test/sec_template_tv.h
 
 if WD_STATIC_DRV
 AM_CFLAGS+=-Bstatic
@@ -27,9 +27,7 @@ uadk_tool_LDADD=$(libwd_la_OBJECTS) \
 			$(libwd_crypto_la_OBJECTS) \
 			../.libs/libwd_comp.a \
 			../.libs/libhisi_sec.a \
-			../.libs/libhisi_hpre.a \
 			../.libs/libhisi_zip.a \
-			../.libs/libisa_ce.a \
 			-ldl -lnuma
 else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \

@@ -459,7 +459,8 @@ static int init_hpre_wd_queue(struct acc_option *options)
 					PATH_STR_SIZE, "%s", options->device);
 			if (ret < 0) {
 				WD_ERR("failed to copy dev file path!\n");
-				return -WD_EINVAL;
+				ret = -WD_EINVAL;
+				goto queue_out;
 			}
 		}
 
@@ -556,8 +557,8 @@ void *hpre_wd_poll(void *data)
 	while (last_time) {
 		recv = wd_poll_ctx(queue, expt);
 		/*
-		 * async mode poll easy to 100% with small package.
-		 * SEC_TST_PRT("poll %d recv: %u!\n", i, recv);
+		 * warpdrive async mode poll easy to 100% with small package.
+		 * SEC_TST_PRT("warpdrive poll %d recv: %u!\n", i, recv);
 		 */
 
 		if (unlikely(recv < 0)) {
@@ -2115,7 +2116,7 @@ static void *ecc_wd_sync_run(void *arg)
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;
@@ -2273,7 +2274,7 @@ static void *ecc_wd_async_run(void *arg)
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Copyright 2024 Huawei Technologies Co.,Ltd. All rights reserved. */
+/* Copyright 2023 Huawei Technologies Co.,Ltd. All rights reserved. */
 
 #ifndef __SM4_CE_DRV_H
 #define __SM4_CE_DRV_H
@@ -54,6 +54,9 @@ int sm4_v8_xts_encrypt(const unsigned char *in, unsigned char *out, size_t lengt
 int sm4_v8_xts_decrypt(const unsigned char *in, unsigned char *out, size_t length,
 		       const struct SM4_KEY *key, unsigned char *ivec,
 		       const struct SM4_KEY *key2);
+
+void isa_ce_probe(void);
+void isa_ce_remove(void);
 
 #ifdef __cplusplus
 }

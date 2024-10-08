@@ -8,6 +8,7 @@
 #define __WD_DIGEST_H
 #include <dlfcn.h>
 
+#include "wd.h"
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus
@@ -144,12 +145,12 @@ struct wd_digest_req {
 };
 
 struct wd_cb_tag {
-	void *ctx;	/* user: context or other user relatives */
-	void *tag;	/* to store user tag */
-	int ctx_id;	/* user id: context ID or other user identifier */
+	void *ctx;  /* user: context or other user relatives */
+	void *tag;  /* to store user tag */
+	int ctx_id; /* user id: context ID or other user identifier */
 };
 
-/* Digest tag format */
+/* Digest tag format of warpdrive */
 struct wd_digest_tag {
 	struct wd_cb_tag wd_tag;
 	__u64 long_data_len;

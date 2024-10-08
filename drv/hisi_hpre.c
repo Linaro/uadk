@@ -1,4 +1,3 @@
-
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
@@ -40,31 +39,31 @@
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 
-#define WD_TRANS_FAIL  0
+#define WD_TRANS_FAIL	0
 
 enum hpre_alg_type {
-	HPRE_ALG_NC_NCRT = 0x0,
-	HPRE_ALG_NC_CRT = 0x1,
-	HPRE_ALG_KG_STD = 0x2,
-	HPRE_ALG_KG_CRT = 0x3,
-	HPRE_ALG_DH_G2 = 0x4,
-	HPRE_ALG_DH = 0x5,
-	HPRE_ALG_PRIME = 0x6,
-	HPRE_ALG_MOD = 0x7,
-	HPRE_ALG_MOD_INV = 0x8,
-	HPRE_ALG_MUL = 0x9,
-	HPRE_ALG_COPRIME = 0xA,
-	HPRE_ALG_ECC_CURVE_TEST = 0xB,
-	HPRE_ALG_ECDH_PLUS = 0xC,
-	HPRE_ALG_ECDH_MULTIPLY = 0xD,
-	HPRE_ALG_ECDSA_SIGN = 0xE,
-	HPRE_ALG_ECDSA_VERF = 0xF,
-	HPRE_ALG_X_DH_MULTIPLY = 0x10,
-	HPRE_ALG_SM2_KEY_GEN = 0x11,
-	HPRE_ALG_SM2_SIGN = 0x12,
-	HPRE_ALG_SM2_VERF = 0x13,
-	HPRE_ALG_SM2_ENC = 0x14,
-	HPRE_ALG_SM2_DEC = 0x15
+	HW_ALG_NC_NCRT = 0x0,
+	HW_ALG_NC_CRT = 0x1,
+	HW_ALG_KG_STD = 0x2,
+	HW_ALG_KG_CRT = 0x3,
+	HW_ALG_DH_G2 = 0x4,
+	HW_ALG_DH = 0x5,
+	HW_ALG_PRIME = 0x6,
+	HW_ALG_MOD = 0x7,
+	HW_ALG_MOD_INV = 0x8,
+	HW_ALG_MUL = 0x9,
+	HW_ALG_COPRIME = 0xA,
+	HW_ALG_ECC_CURVE_TEST = 0xB,
+	HW_ALG_ECDH_PLUS = 0xC,
+	HW_ALG_ECDH_MULTIPLY = 0xD,
+	HW_ALG_ECDSA_SIGN = 0xE,
+	HW_ALG_ECDSA_VERF = 0xF,
+	HW_ALG_X_DH_MULTIPLY = 0x10,
+	HW_ALG_SM2_KEY_GEN = 0x11,
+	HW_ALG_SM2_SIGN = 0x12,
+	HW_ALG_SM2_VERF = 0x13,
+	HW_ALG_SM2_ENC = 0x14,
+	HW_ALG_SM2_DEC = 0x15
 };
 
 enum hpre_alg_name {
@@ -141,7 +140,7 @@ static void dump_hpre_msg(void *msg, int alg)
 	}
 }
 
-static bool is_hpre_bin_fmt(char *dst, const char *src, __u32 dsz, __u32 bsz)
+static bool is_hpre_bin_fmt(char *dst, const char *src, int dsz, int bsz)
 {
 	const char *temp = src + dsz;
 	int lens = bsz - dsz;
@@ -227,6 +226,25 @@ static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 
 	wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp,
 				&wd_qinv, &wd_q, &wd_p);
+	ret = crypto_bin_to_hpre_bin(wd_p->data,
+		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize, "rsa crt p");
+	if (ret)
+		return ret;
+	wd_p->dsize = wd_p->bsize;
+
+	ret = crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
+				wd_q->bsize, wd_q->dsize, "rsa crt q");
+	if (ret)
+		return ret;
+	wd_q->dsize = wd_q->bsize;
+
+	ret = crypto_bin_to_hpre_bin(wd_qinv->data,
+		(const char *)wd_qinv->data, wd_qinv->bsize,
+		wd_qinv->dsize, "rsa crt qinv");
+	if (ret)
+		return ret;
+	wd_qinv->dsize = wd_qinv->bsize;
+
 	ret = crypto_bin_to_hpre_bin(wd_dq->data, (const char *)wd_dq->data,
 				wd_dq->bsize, wd_dq->dsize, "rsa crt dq");
 	if (ret)
@@ -239,25 +257,6 @@ static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 		return ret;
 	wd_dp->dsize = wd_dp->bsize;
 
-	ret = crypto_bin_to_hpre_bin(wd_q->data, (const char *)wd_q->data,
-				wd_q->bsize, wd_q->dsize, "rsa crt q");
-	if (ret)
-		return ret;
-	wd_q->dsize = wd_q->bsize;
-
-	ret = crypto_bin_to_hpre_bin(wd_p->data,
-		(const char *)wd_p->data, wd_p->bsize, wd_p->dsize, "rsa crt p");
-	if (ret)
-		return ret;
-	wd_p->dsize = wd_p->bsize;
-
-	ret = crypto_bin_to_hpre_bin(wd_qinv->data,
-		(const char *)wd_qinv->data, wd_qinv->bsize,
-		wd_qinv->dsize, "rsa crt qinv");
-	if (ret)
-		return ret;
-	wd_qinv->dsize = wd_qinv->bsize;
-
 	*data = wd_dq->data;
 
 	return WD_SUCCESS;
@@ -269,17 +268,17 @@ static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 	int ret;
 
 	wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
-	ret = crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
-				wd_d->bsize, wd_d->dsize, "rsa d");
-	if (ret)
-		return ret;
-	wd_d->dsize = wd_d->bsize;
-
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa n");
 	if (ret)
 		return ret;
 	wd_n->dsize = wd_n->bsize;
+
+	ret = crypto_bin_to_hpre_bin(wd_d->data, (const char *)wd_d->data,
+				wd_d->bsize, wd_d->dsize, "rsa d");
+	if (ret)
+		return ret;
+	wd_d->dsize = wd_d->bsize;
 
 	*data = wd_d->data;
 
@@ -292,20 +291,19 @@ static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 	int ret;
 
 	wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
-	ret = crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
-				wd_e->bsize, wd_e->dsize, "rsa e");
-	if (ret)
-		return ret;
-	wd_e->dsize = wd_e->bsize;
-
 	ret = crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa n");
 	if (ret)
 		return ret;
 	wd_n->dsize = wd_n->bsize;
 
-	*data = wd_e->data;
+	ret = crypto_bin_to_hpre_bin(wd_e->data, (const char *)wd_e->data,
+				wd_e->bsize, wd_e->dsize, "rsa e");
+	if (ret)
+		return ret;
+	wd_e->dsize = wd_e->bsize;
 
+	*data = wd_e->data;
 	return WD_SUCCESS;
 }
 
@@ -315,19 +313,18 @@ static int fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
 	int ret;
 
 	wd_rsa_get_kg_in_params(genkey, &e, &q, &p);
+	ret = crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
+				p.bsize, p.dsize, "rsa kg p");
+	if (ret)
+		return ret;
 
 	ret = crypto_bin_to_hpre_bin(e.data, (const char *)e.data,
 				e.bsize, e.dsize, "rsa kg e");
 	if (ret)
 		return ret;
 
-	ret = crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
+	return crypto_bin_to_hpre_bin(q.data, (const char *)q.data,
 				q.bsize, q.dsize, "rsa kg q");
-	if (ret)
-		return ret;
-
-	return crypto_bin_to_hpre_bin(p.data, (const char *)p.data,
-				p.bsize, p.dsize, "rsa kg p");
 }
 
 static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
@@ -365,7 +362,7 @@ static int hpre_tri_bin_transfer(struct wd_dtb *bin0, struct wd_dtb *bin1,
 }
 
 static int rsa_out_transfer(struct wd_rsa_msg *msg,
-			    struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
+				struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
 {
 	struct wd_rsa_req *req = &msg->req;
 	struct wd_rsa_kg_out *key = req->dst;
@@ -375,8 +372,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 	void *data;
 	int ret;
 
-	if (hw_msg->alg == HPRE_ALG_KG_CRT || hw_msg->alg == HPRE_ALG_KG_STD) {
-		/* async */
+	if (hw_msg->alg == HW_ALG_KG_CRT || hw_msg->alg == HW_ALG_KG_STD) {
 		if (qp_mode == CTX_MODE_ASYNC) {
 			data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 			key = container_of(data, struct wd_rsa_kg_out, data);
@@ -386,7 +382,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 	}
 
 	msg->result = WD_SUCCESS;
-	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
+	if (hw_msg->alg == HW_ALG_KG_CRT) {
 		req->dst_bytes = CRT_GEN_PARAMS_SZ(kbytes);
 		wd_rsa_get_kg_out_crt_params(key, &qinv, &dq, &dp);
 		ret = hpre_tri_bin_transfer(&qinv, &dq, &dp);
@@ -397,7 +393,7 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 
 		wd_rsa_set_kg_out_crt_psz(key, qinv.dsize,
 					       dq.dsize, dp.dsize);
-	} else if (hw_msg->alg == HPRE_ALG_KG_STD) {
+	} else if (hw_msg->alg == HW_ALG_KG_STD) {
 		req->dst_bytes = GEN_PARAMS_SZ(kbytes);
 
 		wd_rsa_get_kg_out_params(key, &d, &n);
@@ -423,7 +419,7 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 	int ret;
 
 	if (req->op_type == WD_RSA_SIGN) {
-		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
+		if (hw_msg->alg == HW_ALG_NC_CRT) {
 			ret = fill_rsa_crt_prikey2((void *)msg->key, &data);
 			if (ret)
 				return ret;
@@ -431,13 +427,13 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 			ret = fill_rsa_prikey1((void *)msg->key, &data);
 			if (ret)
 				return ret;
-			hw_msg->alg = HPRE_ALG_NC_NCRT;
+			hw_msg->alg = HW_ALG_NC_NCRT;
 		}
 	} else if (req->op_type == WD_RSA_VERIFY) {
 		ret = fill_rsa_pubkey((void *)msg->key, &data);
 		if (ret)
 			return ret;
-		hw_msg->alg = HPRE_ALG_NC_NCRT;
+		hw_msg->alg = HW_ALG_NC_NCRT;
 	} else if (req->op_type == WD_RSA_GENKEY) {
 		ret = fill_rsa_genkey_in((void *)msg->key);
 		if (ret)
@@ -447,10 +443,10 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 			WD_ERR("failed to get rsa gen key data!\n");
 			return ret;
 		}
-		if (hw_msg->alg == HPRE_ALG_NC_CRT)
-			hw_msg->alg = HPRE_ALG_KG_CRT;
+		if (hw_msg->alg == HW_ALG_NC_CRT)
+			hw_msg->alg = HW_ALG_KG_CRT;
 		else
-			hw_msg->alg = HPRE_ALG_KG_STD;
+			hw_msg->alg = HW_ALG_KG_STD;
 	} else {
 		WD_ERR("invalid: rsa operatin type %u is error!\n", req->op_type);
 		return -WD_EINVAL;
@@ -525,11 +521,11 @@ out:
 	return -WD_EINVAL;
 }
 
-static int hpre_rsa_dh_init(struct wd_alg_driver *drv, void *conf)
+static int hpre_rsa_dh_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_hpre_ctx *priv;
 	int ret;
 
 	if (!config->ctx_num) {
@@ -537,27 +533,19 @@ static int hpre_rsa_dh_init(struct wd_alg_driver *drv, void *conf)
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_hpre_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
-	ret = hpre_init_qm_priv(config, priv, &qm_priv);
-	if (ret) {
-		free(priv);
+	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
+	if (ret)
 		return ret;
-	}
-
-	drv->priv = priv;
 
 	return WD_SUCCESS;
 }
 
-static int hpre_ecc_init(struct wd_alg_driver *drv, void *conf)
+static int hpre_ecc_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_hpre_ctx *priv;
 	int ret;
 
 	if (!config->ctx_num) {
@@ -565,45 +553,28 @@ static int hpre_ecc_init(struct wd_alg_driver *drv, void *conf)
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_hpre_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
-	ret = hpre_init_qm_priv(config, priv, &qm_priv);
-	if (ret) {
-		free(priv);
+	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
+	if (ret)
 		return ret;
-	}
-
-	drv->priv = priv;
 
 	return WD_SUCCESS;
 }
 
-static void hpre_exit(struct wd_alg_driver *drv)
+static void hpre_exit(void *priv)
 {
-	struct hisi_hpre_ctx *priv = (struct hisi_hpre_ctx *)drv->priv;
-	struct wd_ctx_config_internal *config;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
+	struct wd_ctx_config_internal *config = &hpre_ctx->config;
 	handle_t h_qp;
 	__u32 i;
 
-	if (!priv) {
-		/* return if already exit */
-		return;
-	}
-
-	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-
-	free(priv);
-	drv->priv = NULL;
 }
 
-static int rsa_send(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
+static int rsa_send(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_rsa_msg *msg = rsa_msg;
@@ -615,9 +586,9 @@ static int rsa_send(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 
 	if (msg->key_type == WD_RSA_PRIKEY1 ||
 	msg->key_type == WD_RSA_PUBKEY)
-		hw_msg.alg = HPRE_ALG_NC_NCRT;
+		hw_msg.alg = HW_ALG_NC_NCRT;
 	else if (msg->key_type == WD_RSA_PRIKEY2)
-		hw_msg.alg = HPRE_ALG_NC_CRT;
+		hw_msg.alg = HW_ALG_NC_CRT;
 	else
 		return -WD_EINVAL;
 
@@ -659,14 +630,15 @@ static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
 	}
 }
 
-static int rsa_recv(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
+static int rsa_recv(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_hpre_sqe hw_msg = {0};
 	struct wd_rsa_msg *msg = rsa_msg;
 	struct wd_rsa_msg *temp_msg;
+	struct hisi_qp *qp;
 	__u16 recv_cnt = 0;
+	__u64 tag;
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
@@ -677,12 +649,14 @@ static int rsa_recv(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 	if (ret)
 		return ret;
 
-	msg->tag = LW_U16(hw_msg.low_tag);
+	qp = (struct hisi_qp *)h_qp;
+	tag = LW_U16(hw_msg.low_tag);
+	msg->tag = tag;
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_rsa_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_rsa_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
-			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
-				qp->q_info.idx, msg->tag);
+			WD_ERR("failed to get send msg! idx = %u, tag = %llu.\n",
+				qp->q_info.idx, tag);
 			return -WD_EINVAL;
 		}
 	} else {
@@ -741,7 +715,6 @@ static int dh_out_transfer(struct wd_dh_msg *msg,
 	void *out;
 	int ret;
 
-	/* async */
 	if (qp_mode == CTX_MODE_ASYNC)
 		out = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 	else
@@ -757,7 +730,7 @@ static int dh_out_transfer(struct wd_dh_msg *msg,
 	return WD_SUCCESS;
 }
 
-static int dh_send(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
+static int dh_send(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_dh_msg *msg = dh_msg;
@@ -769,9 +742,9 @@ static int dh_send(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 	memset(&hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 
 	if (msg->is_g2 && req->op_type != WD_DH_PHASE2)
-		hw_msg.alg = HPRE_ALG_DH_G2;
+		hw_msg.alg = HW_ALG_DH_G2;
 	else
-		hw_msg.alg = HPRE_ALG_DH;
+		hw_msg.alg = HW_ALG_DH;
 
 	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
@@ -802,14 +775,15 @@ static int dh_send(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
-static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
+static int dh_recv(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_dh_msg *msg = dh_msg;
 	struct hisi_hpre_sqe hw_msg = {0};
 	struct wd_dh_msg *temp_msg;
+	struct hisi_qp *qp;
 	__u16 recv_cnt = 0;
+	__u64 tag;
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
@@ -820,12 +794,14 @@ static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 	if (ret)
 		return ret;
 
-	msg->tag = LW_U16(hw_msg.low_tag);
+	qp = (struct hisi_qp *)h_qp;
+	tag = LW_U16(hw_msg.low_tag);
+	msg->tag = tag;
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_dh_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_dh_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
-			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
-				qp->q_info.idx, msg->tag);
+			WD_ERR("failed to get send msg! idx = %u, tag = %llu.\n",
+				qp->q_info.idx, tag);
 			return -WD_EINVAL;
 		}
 	} else {
@@ -852,34 +828,34 @@ static int ecc_prepare_alg(struct wd_ecc_msg *msg,
 {
 	switch (msg->req.op_type) {
 	case WD_SM2_SIGN:
-		hw_msg->alg = HPRE_ALG_SM2_SIGN;
+		hw_msg->alg = HW_ALG_SM2_SIGN;
 		break;
 	case WD_ECDSA_SIGN:
-		hw_msg->alg = HPRE_ALG_ECDSA_SIGN;
+		hw_msg->alg = HW_ALG_ECDSA_SIGN;
 		break;
 	case WD_SM2_VERIFY:
-		hw_msg->alg = HPRE_ALG_SM2_VERF;
+		hw_msg->alg = HW_ALG_SM2_VERF;
 		break;
 	case WD_ECDSA_VERIFY:
-		hw_msg->alg = HPRE_ALG_ECDSA_VERF;
+		hw_msg->alg = HW_ALG_ECDSA_VERF;
 		break;
 	case WD_SM2_ENCRYPT:
-		hw_msg->alg = HPRE_ALG_SM2_ENC;
+		hw_msg->alg = HW_ALG_SM2_ENC;
 		break;
 	case WD_SM2_DECRYPT:
-		hw_msg->alg = HPRE_ALG_SM2_DEC;
+		hw_msg->alg = HW_ALG_SM2_DEC;
 		break;
 	case WD_SM2_KG:
-		hw_msg->alg = HPRE_ALG_SM2_KEY_GEN;
+		hw_msg->alg = HW_ALG_SM2_KEY_GEN;
 		break;
 	case WD_ECXDH_GEN_KEY: /* fall through */
 	case HPRE_SM2_ENC: /* fall through */
 	case HPRE_SM2_DEC: /* fall through */
 	case WD_ECXDH_COMPUTE_KEY:
 		if (msg->curve_id == WD_X448 || msg->curve_id == WD_X25519)
-			hw_msg->alg = HPRE_ALG_X_DH_MULTIPLY;
+			hw_msg->alg = HW_ALG_X_DH_MULTIPLY;
 		else
-			hw_msg->alg = HPRE_ALG_ECDH_MULTIPLY;
+			hw_msg->alg = HW_ALG_ECDH_MULTIPLY;
 		break;
 	default:
 		return -WD_EINVAL;
@@ -957,8 +933,8 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 	ret = memcmp(d->data + shift, n->data + shift, n->dsize);
 	if (ret < 0)
 		return true;
-	else
-		return false;
+
+	return false;
 }
 
 static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
@@ -1100,16 +1076,16 @@ static int ecc_prepare_key(struct wd_ecc_msg *msg,
 static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
 			      size_t *olen)
 {
-	if (atype == HPRE_ALG_ECDH_MULTIPLY) {
+	if (atype == HW_ALG_ECDH_MULTIPLY) {
 		*olen = ECDH_OUT_PARAMS_SZ(hsz);
 		*ilen = *olen;
-	} else if (atype == HPRE_ALG_X_DH_MULTIPLY) {
+	} else if (atype == HW_ALG_X_DH_MULTIPLY) {
 		*olen = X_DH_OUT_PARAMS_SZ(hsz);
 		*ilen = *olen;
-	} else if (atype == HPRE_ALG_ECDSA_SIGN) {
+	} else if (atype == HW_ALG_ECDSA_SIGN) {
 		*olen = ECC_SIGN_OUT_PARAMS_SZ(hsz);
 		*ilen = ECC_SIGN_IN_PARAMS_SZ(hsz);
-	} else if (atype == HPRE_ALG_ECDSA_VERF) {
+	} else if (atype == HW_ALG_ECDSA_VERF) {
 		*olen = ECC_VERF_OUT_PARAMS_SZ;
 		*ilen = ECC_VERF_IN_PARAMS_SZ(hsz);
 	} else {
@@ -1561,7 +1537,11 @@ static int set_prikey(struct wd_ecc_prikey *prikey,
 	struct wd_sm2_enc_in *ein = msg->req.src;
 	int ret;
 
-	ret = set_param(&prikey->p, &pubkey->p, "p");
+	ret = set_param(&prikey->g.x, &pubkey->g.x, "gx");
+	if (unlikely(ret))
+		return ret;
+
+	ret = set_param(&prikey->b, &pubkey->b, "b");
 	if (unlikely(ret))
 		return ret;
 
@@ -1573,19 +1553,15 @@ static int set_prikey(struct wd_ecc_prikey *prikey,
 	if (unlikely(ret))
 		return ret;
 
-	ret = set_param(&prikey->b, &pubkey->b, "b");
+	ret = set_param(&prikey->g.y, &pubkey->g.y, "gy");
+	if (ret)
+		return ret;
+
+	ret = set_param(&prikey->p, &pubkey->p, "p");
 	if (unlikely(ret))
 		return ret;
 
-	ret = set_param(&prikey->n, &pubkey->n, "n");
-	if (unlikely(ret))
-		return ret;
-
-	ret = set_param(&prikey->g.x, &pubkey->g.x, "gx");
-	if (unlikely(ret))
-		return ret;
-
-	return set_param(&prikey->g.y, &pubkey->g.y, "gy");
+	return set_param(&prikey->n, &pubkey->n, "n");
 }
 
 static struct wd_ecc_out *create_ecdh_out(struct wd_ecc_msg *msg)
@@ -1759,7 +1735,6 @@ static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 	hw_msg->etype = 0x0;
 	hw_msg->low_tag = msg->tag;
 	hw_msg->task_len1 = hw_sz / BYTE_BITS - 0x1;
-
 	return ret;
 }
 
@@ -1893,7 +1868,7 @@ free_dst:
 	return ret;
 }
 
-static int ecc_send(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
+static int ecc_send(handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_ecc_msg *msg = ecc_msg;
@@ -1920,7 +1895,7 @@ static int ecdh_out_transfer(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_ms
 
 	wd_ecxdh_get_out_params(out, &key);
 
-	if (hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY)
+	if (hw_msg->alg == HW_ALG_ECDH_MULTIPLY)
 		y = &key->y;
 
 	ret = hpre_tri_bin_transfer(&key->x, y, NULL);
@@ -2012,26 +1987,25 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 	int ret = -WD_EINVAL;
 	void *va;
 
-	/* async */
 	if (qp_mode == CTX_MODE_ASYNC) {
 		va = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
 		msg->req.dst = container_of(va, struct wd_ecc_out, data);
 	}
 
-	if (hw_msg->alg == HPRE_ALG_SM2_SIGN ||
-		hw_msg->alg == HPRE_ALG_ECDSA_SIGN)
+	if (hw_msg->alg == HW_ALG_SM2_SIGN ||
+		hw_msg->alg == HW_ALG_ECDSA_SIGN)
 		ret = ecc_sign_out_transfer(msg, hw_msg);
-	else if (hw_msg->alg == HPRE_ALG_SM2_VERF ||
-		hw_msg->alg == HPRE_ALG_ECDSA_VERF)
+	else if (hw_msg->alg == HW_ALG_SM2_VERF ||
+		hw_msg->alg == HW_ALG_ECDSA_VERF)
 		ret = ecc_verf_out_transfer(msg, hw_msg);
-	else if (hw_msg->alg == HPRE_ALG_SM2_ENC)
+	else if (hw_msg->alg == HW_ALG_SM2_ENC)
 		ret = sm2_enc_out_transfer(msg, hw_msg);
-	else if (hw_msg->alg == HPRE_ALG_SM2_DEC)
+	else if (hw_msg->alg == HW_ALG_SM2_DEC)
 		ret = 0;
-	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
+	else if (hw_msg->alg == HW_ALG_SM2_KEY_GEN)
 		ret = sm2_kg_out_transfer(msg, hw_msg);
-	else if	(hw_msg->alg == HPRE_ALG_ECDH_MULTIPLY ||
-		 hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
+	else if	(hw_msg->alg == HW_ALG_ECDH_MULTIPLY ||
+		 hw_msg->alg == HW_ALG_X_DH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
 	else
 		WD_ERR("invalid: algorithm type %u is error!\n", hw_msg->alg);
@@ -2039,6 +2013,15 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 	return ret;
 }
 
+static void msg_pack(char *dst, __u64 *out_len,
+		     const void *src, __u32 src_len)
+{
+	if (unlikely(!src || !src_len))
+		return;
+
+	memcpy(dst + *out_len, src, src_len);
+	*out_len += src_len;
+}
 
 static __u32 get_hash_bytes(__u8 type)
 {
@@ -2073,14 +2056,13 @@ static __u32 get_hash_bytes(__u8 type)
 	return val;
 }
 
-static void msg_pack(char *dst, __u64 *out_len,
-		     const void *src, __u32 src_len)
+static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 {
-	if (unlikely(!src || !src_len))
-		return;
+	__u32 i;
 
-	memcpy(dst + *out_len, src, src_len);
-	*out_len += src_len;
+	for (i = 0; i < val1->dsize; ++i)
+		val1->data[i] = (char)((__u8)val1->data[i] ^
+			(__u8)val2->data[i]);
 }
 
 static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
@@ -2143,15 +2125,6 @@ static int sm2_kdf(struct wd_dtb *out, struct wd_ecc_point *x2y2,
 	free(p_in);
 
 	return ret;
-}
-
-static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
-{
-	__u32 i;
-
-	for (i = 0; i < val1->dsize; ++i)
-		val1->data[i] = (char)((__u8)val1->data[i] ^
-			(__u8)val2->data[i]);
 }
 
 static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
@@ -2309,14 +2282,17 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 			 struct hisi_hpre_sqe *hw_msg)
 {
 	struct wd_ecc_msg *temp_msg;
+	__u64 tag;
 	int ret;
 
-	msg->tag = LW_U16(hw_msg->low_tag);
+	tag = LW_U16(hw_msg->low_tag);
+	msg->tag = tag;
+
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_ecc_get_msg(qp->q_info.idx, msg->tag);
+		temp_msg = wd_ecc_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
-			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
-				qp->q_info.idx, msg->tag);
+			WD_ERR("failed to get send msg! idx = %u, tag = %llu.\n",
+				qp->q_info.idx, tag);
 			return -WD_EINVAL;
 		}
 	} else {
@@ -2326,19 +2302,19 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 	hpre_result_check(hw_msg, &msg->result);
 	if (msg->result) {
 		ret = -msg->result;
-		goto dump_err_msg;
+		goto err;
 	}
 
 	ret = ecc_out_transfer(msg, hw_msg, qp->q_info.qp_mode);
 	if (ret) {
 		msg->result = WD_OUT_EPARA;
 		WD_ERR("failed to transfer out ecc BD, ret = %d!\n", ret);
-		goto dump_err_msg;
+		goto err;
 	}
 
 	return ret;
 
-dump_err_msg:
+err:
 	dump_hpre_msg(temp_msg, WD_ECC);
 
 	return ret;
@@ -2373,6 +2349,7 @@ static int parse_second_sqe(handle_t h_qp,
 	hsz = (hw_msg.task_len1 + 1) * BYTE_BITS;
 	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
 		hsz * ECDH_OUT_PARAM_NUM);
+
 	ret = ecc_sqe_parse((struct hisi_qp *)h_qp, dst, &hw_msg);
 	msg->result = dst->result;
 	*second = dst;
@@ -2380,8 +2357,8 @@ static int parse_second_sqe(handle_t h_qp,
 	return ret;
 }
 
-static int sm2_enc_parse(handle_t h_qp, struct wd_ecc_msg *msg,
-			 struct hisi_hpre_sqe *hw_msg)
+static int sm2_enc_parse(handle_t h_qp,
+			 struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 {
 	__u16 tag = LW_U16(hw_msg->low_tag);
 	struct wd_ecc_msg *second = NULL;
@@ -2464,7 +2441,7 @@ fail:
 	return ret;
 }
 
-static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
+static int ecc_recv(handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_ecc_msg *msg = ecc_msg;
@@ -2480,10 +2457,10 @@ static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
 	if (ret)
 		return ret;
 
-	if (hw_msg.alg == HPRE_ALG_ECDH_MULTIPLY &&
+	if (hw_msg.alg == HW_ALG_ECDH_MULTIPLY &&
 		hw_msg.sm2_mlen == HPRE_SM2_ENC)
 		return sm2_enc_parse(h_qp, msg, &hw_msg);
-	else if (hw_msg.alg == HPRE_ALG_ECDH_MULTIPLY &&
+	else if (hw_msg.alg == HW_ALG_ECDH_MULTIPLY &&
 		hw_msg.sm2_mlen == HPRE_SM2_DEC)
 		return sm2_dec_parse(h_qp, msg, &hw_msg);
 
@@ -2501,6 +2478,7 @@ static int hpre_get_usage(void *param)
 	.alg_name = (hpre_alg_name),\
 	.calc_type = UADK_ALG_HW,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hisi_hpre_ctx),\
 	.queue_num = HPRE_CTX_Q_NUM_DEF,\
 	.op_type_num = 1,\
 	.fallback = 0,\
@@ -2524,6 +2502,7 @@ static struct wd_alg_driver hpre_rsa_driver = {
 	.alg_name = "rsa",
 	.calc_type = UADK_ALG_HW,
 	.priority = 100,
+	.priv_size = sizeof(struct hisi_hpre_ctx),
 	.queue_num = HPRE_CTX_Q_NUM_DEF,
 	.op_type_num = 1,
 	.fallback = 0,
@@ -2539,6 +2518,7 @@ static struct wd_alg_driver hpre_dh_driver = {
 	.alg_name = "dh",
 	.calc_type = UADK_ALG_HW,
 	.priority = 100,
+	.priv_size = sizeof(struct hisi_hpre_ctx),
 	.queue_num = HPRE_CTX_Q_NUM_DEF,
 	.op_type_num = 1,
 	.fallback = 0,
@@ -2566,7 +2546,7 @@ static void __attribute__((constructor)) hisi_hpre_probe(void)
 
 	ret = wd_alg_driver_register(&hpre_dh_driver);
 	if (ret && ret != -WD_ENODEV)
-		WD_ERR("failed to register HPRE dh driver!\n");
+		WD_ERR("failed to register HPRE rsa driver!\n");
 
 	for (i = 0; i < alg_num; i++) {
 		ret = wd_alg_driver_register(&hpre_ecc_driver[i]);

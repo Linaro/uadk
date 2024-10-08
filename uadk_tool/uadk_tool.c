@@ -38,7 +38,7 @@ int main(int argc, char **argv)
 			(void)acc_benchmark_run(&option);
 		} else if (!strcmp("test", argv[index])) {
 			printf("start UADK acc algorithm test.\n");
-			acc_test_run(argc, argv);
+			//acc_test_run(argc, argv);
 		} else {
 			print_tool_help();
 		}

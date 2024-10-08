@@ -9,7 +9,9 @@
 
 #include <stdlib.h>
 #include <errno.h>
+#include <asm/types.h>
 
+#include "wd.h"
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus

@@ -56,7 +56,8 @@ static int init_trng_wd_queue(struct acc_option *options)
 					PATH_STR_SIZE, "%s", options->device);
 			if (ret < 0) {
 				WD_ERR("failed to copy dev file path!\n");
-				return -WD_EINVAL;
+				ret = -WD_EINVAL;
+				goto free_mem;
 			}
 		}
 

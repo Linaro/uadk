@@ -7,12 +7,13 @@
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
-#include <stdlib.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <dlfcn.h>
 
+#include "wd_util.h"
 #include "include/drv/wd_ecc_drv.h"
 #include "include/wd_ecc_curve.h"
 #include "wd_ecc.h"
@@ -65,6 +66,7 @@ static struct wd_ecc_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_ecc_setting;
@@ -203,7 +205,8 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_ecc_setting.config,
-				 wd_ecc_setting.driver);
+				 wd_ecc_setting.driver,
+				 &wd_ecc_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -220,11 +223,10 @@ out_clear_ctx_config:
 
 static int wd_ecc_common_uninit(void)
 {
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_ecc_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!wd_ecc_setting.priv) {
+		WD_ERR("invalid: repeat uninit ecc!\n");
 		return -WD_EINVAL;
+	}
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
@@ -232,7 +234,8 @@ static int wd_ecc_common_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_ecc_setting.sched);
 	wd_alg_uninit_driver(&wd_ecc_setting.config,
-			     wd_ecc_setting.driver);
+			     wd_ecc_setting.driver,
+			     &wd_ecc_setting.priv);
 
 	return WD_SUCCESS;
 }
@@ -296,7 +299,7 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
-	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
+	     task_type < 0 || task_type >= TASK_MAX_TYPE) {
 		WD_ERR("invalid: input param is wrong!\n");
 		goto out_clear_init;
 	}
@@ -1197,7 +1200,7 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 	sess->sched_key = (void *)wd_ecc_setting.sched.sched_init(
 		     wd_ecc_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init session schedule key!\n");
+		WD_ERR("failed to init ecc session schedule key!\n");
 		goto sched_err;
 	}
 
@@ -1504,7 +1507,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 	void *key = NULL;
 
 	memcpy(&msg->req, req, sizeof(msg->req));
-	msg->hash = sess->setup.hash;
+	memcpy(&msg->hash, &sess->setup.hash, sizeof(msg->hash));
 	msg->key_bytes = sess->key_size;
 	msg->curve_id = sess->setup.cv.cfg.id;
 	msg->result = WD_EINVAL;
@@ -1590,8 +1593,8 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	msg_handle.recv = wd_ecc_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_ecc_setting.driver, &msg_handle, ctx->ctx, &msg,
-				 &balance, wd_ecc_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_ecc_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -1655,10 +1658,10 @@ static int set_sign_in_param(struct wd_ecc_sign_in *sin,
 
 static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 {
-	struct wd_rand_mt rand_t = sess->setup.rand;
+	struct wd_rand_mt *rand_t = &sess->setup.rand;
 	int ret;
 
-	ret = rand_t.cb(k->data, k->dsize, rand_t.usr);
+	ret = rand_t->cb(k->data, k->dsize, rand_t->usr);
 	if (ret)
 		WD_ERR("failed to do rand cb, ret = %d!\n", ret);
 
@@ -2278,7 +2281,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_ecc_setting.driver, ctx->ctx, msg);
+	ret = wd_ecc_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send ecc BD, hw is err!\n");
@@ -2327,7 +2330,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_ecc_setting.driver, ctx->ctx, &recv_msg);
+		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

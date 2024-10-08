@@ -338,8 +338,7 @@ static void fill_buf_sgl_skip(struct hisi_zip_sqe *sqe, __u32 src_skip,
 }
 
 static int fill_buf_deflate_slg_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
-					struct wd_comp_msg *msg, const char *head,
-					int head_size)
+					struct wd_comp_msg *msg, const char *head, int head_size)
 {
 	struct wd_comp_req *req = &msg->req;
 	__u32 out_size = msg->avail_out;
@@ -510,6 +509,8 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	fill_buf_type_sgl(sqe);
 
 	seq_start = get_seq_start_list(req);
+	if (unlikely(!seq_start))
+		return -WD_EINVAL;
 
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
@@ -700,7 +701,7 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
 	struct wd_lz77_zstd_data *data = recv_msg->req.priv;
 	void *ctx_buf = recv_msg->ctx_buf;
 
-	if (unlikely(!data))
+	if (!data)
 		return;
 
 	data->lit_num = sqe->comp_data_length;
@@ -785,11 +786,11 @@ static void hisi_zip_sqe_ops_adapt(handle_t h_qp)
 	}
 }
 
-static int hisi_zip_init(struct wd_alg_driver *drv, void *conf)
+static int hisi_zip_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
+	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_zip_ctx *priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
 	__u32 i, j;
@@ -799,13 +800,11 @@ static int hisi_zip_init(struct wd_alg_driver *drv, void *conf)
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_zip_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
+	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
+		if (config->ctxs[i].ctx_type != UADK_CTX_HW)
+			continue;
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;
@@ -821,7 +820,6 @@ static int hisi_zip_init(struct wd_alg_driver *drv, void *conf)
 	}
 
 	hisi_zip_sqe_ops_adapt(h_qp);
-	drv->priv = priv;
 
 	return 0;
 out:
@@ -829,29 +827,20 @@ out:
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-	free(priv);
 	return -WD_EINVAL;
 }
 
-static void hisi_zip_exit(struct wd_alg_driver *drv)
+static void hisi_zip_exit(void *priv)
 {
-	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
-	struct wd_ctx_config_internal *config;
+	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
+	struct wd_ctx_config_internal *config = &zip_ctx->config;
 	handle_t h_qp;
 	__u32 i;
 
-	if (!priv) {
-		/* return if already exit */
-		return;
-	}
-
-	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-	free(priv);
-	drv->priv = NULL;
 }
 
 static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
@@ -931,7 +920,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	}
 }
 
-static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
+static int hisi_zip_comp_send(handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	struct wd_comp_msg *msg = comp_msg;
@@ -1001,14 +990,13 @@ static void get_ctx_buf(struct hisi_zip_sqe *sqe,
 }
 
 static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
-			 struct wd_comp_msg *msg)
+			 struct wd_comp_msg *recv_msg)
 {
 	__u32 buf_type = (sqe->dw9 & HZ_BUF_TYPE_MASK) >> BUF_TYPE_SHIFT;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
-	struct wd_comp_msg *recv_msg = msg;
 	bool need_debug = wd_need_debug();
 	int alg_type, ret;
 	__u32 tag;
@@ -1045,7 +1033,6 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	}
 
 	ops[alg_type].get_data_size(sqe, qp->q_info.qc_type, recv_msg);
-
 	get_ctx_buf(sqe, recv_msg);
 
 	/* last block no space, need resend null size req */
@@ -1054,7 +1041,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	if (need_debug)
 		WD_DEBUG("zip recv lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u!\n",
-		 lstblk, ctx_st, status, type);
+			 lstblk, ctx_st, status, type);
 	if (lstblk && (status == HZ_DECOMP_END))
 		recv_msg->req.status = WD_STREAM_END;
 
@@ -1071,7 +1058,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	return 0;
 }
 
-static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
+static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	struct wd_comp_msg *recv_msg = comp_msg;
@@ -1093,6 +1080,7 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	.alg_name = (zip_alg_name),\
 	.calc_type = UADK_ALG_HW,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hisi_zip_ctx),\
 	.queue_num = ZIP_CTX_Q_NUM_DEF,\
 	.op_type_num = 2,\
 	.fallback = 0,\
@@ -1105,7 +1093,6 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 static struct wd_alg_driver zip_alg_driver[] = {
 	GEN_ZIP_ALG_DRIVER("zlib"),
 	GEN_ZIP_ALG_DRIVER("gzip"),
-
 	GEN_ZIP_ALG_DRIVER("deflate"),
 	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
 };

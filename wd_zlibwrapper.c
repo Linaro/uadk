@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
- * Copyright 2022 Huawei Technologies Co.,Ltd. All rights reserved.
+ * Copyright 2023 Huawei Technologies Co.,Ltd. All rights reserved.
  */
 
 /* ===   Dependencies   === */
@@ -102,23 +102,27 @@ static int wd_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
 	static const int WBINS_ZLIB_4K = 12;
 	static const int WBINS_GZIP_4K = 27;
 	static const int WBINS_DEFLATE_4K = -12;
+	int ret = Z_STREAM_ERROR;
 
 	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
 		*alg = WD_ZLIB;
 		*windowsize = max(windowbits - WBINS_ZLIB_4K, WD_COMP_WS_4K);
+		ret = Z_OK;
 	} else if ((windowbits >= GZIP_MIN_WBITS) && (windowbits <= GZIP_MAX_WBITS)) {
 		*alg = WD_GZIP;
 		*windowsize = max(windowbits - WBINS_GZIP_4K, WD_COMP_WS_4K);
+		ret = Z_OK;
 	} else if ((windowbits >= DEFLATE_MIN_WBITS) && (windowbits <= DEFLATE_MAX_WBITS)) {
 		*alg = WD_DEFLATE;
 		*windowsize = max(windowbits - WBINS_DEFLATE_4K, WD_COMP_WS_4K);
+		ret = Z_OK;
 	} else {
-		return Z_STREAM_ERROR;
+		return ret;
 	}
 
 	*windowsize = *windowsize == WD_COMP_WS_24K ? WD_COMP_WS_32K : *windowsize;
 
-	return Z_OK;
+	return ret;
 }
 
 static int wd_zlib_alloc_sess(z_streamp strm, int level, int windowbits, enum wd_comp_op_type type)
@@ -160,9 +164,6 @@ static int wd_zlib_init(z_streamp strm, int level, int windowbits, enum wd_comp_
 {
 	int ret;
 
-	if (unlikely(!strm))
-		return Z_STREAM_ERROR;
-
 	pthread_mutex_lock(&wd_zlib_mutex);
 	ret = wd_zlib_uadk_init();
 	if (unlikely(ret < 0))
@@ -192,9 +193,6 @@ out_unlock:
 static int wd_zlib_uninit(z_streamp strm)
 {
 	int ret;
-
-	if (unlikely(!strm))
-		return Z_STREAM_ERROR;
 
 	wd_zlib_free_sess(strm);
 
@@ -257,6 +255,9 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 /* ===   Compression   === */
 int wd_deflate_init(z_streamp strm, int level, int windowbits)
 {
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	pthread_atfork(NULL, NULL, wd_zlib_unlock);
 
 	return wd_zlib_init(strm, level, windowbits, WD_DIR_COMPRESS);
@@ -272,7 +273,7 @@ int wd_deflate(z_streamp strm, int flush)
 
 int wd_deflate_reset(z_streamp strm)
 {
-	if (unlikely(!strm))
+	if (!strm)
 		return Z_STREAM_ERROR;
 
 	wd_comp_reset_sess((handle_t)strm->reserved);
@@ -285,13 +286,17 @@ int wd_deflate_reset(z_streamp strm)
 
 int wd_deflate_end(z_streamp strm)
 {
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	return wd_zlib_uninit(strm);
 }
 
 /* ===   Decompression   === */
 int wd_inflate_init(z_streamp strm, int  windowbits)
 {
-	pthread_atfork(NULL, NULL, wd_zlib_unlock);
+	if (!strm)
+		return Z_STREAM_ERROR;
 
 	return wd_zlib_init(strm, 0, windowbits, WD_DIR_DECOMPRESS);
 }
@@ -319,5 +324,8 @@ int wd_inflate_reset(z_streamp strm)
 
 int wd_inflate_end(z_streamp strm)
 {
+	if (!strm)
+		return Z_STREAM_ERROR;
+
 	return wd_zlib_uninit(strm);
 }

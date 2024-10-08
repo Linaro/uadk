@@ -7,11 +7,12 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <limits.h>
+#include "wd_util.h"
 #include "include/drv/wd_digest_drv.h"
 #include "wd_digest.h"
 
 #define GMAC_IV_LEN		16
-#define MAX_BLOCK_SIZE		128
+#define MAX_BLOCK_SIZE		128U
 
 static __u32 g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -40,8 +41,8 @@ struct wd_digest_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_digest_setting;
@@ -82,20 +83,16 @@ static void wd_digest_close_driver(int init_type)
 	}
 
 	if (wd_digest_setting.dlhandle) {
-		wd_release_drv(wd_digest_setting.driver);
 		dlclose(wd_digest_setting.dlhandle);
 		wd_digest_setting.dlhandle = NULL;
 	}
 #else
-	wd_release_drv(wd_digest_setting.driver);
 	hisi_sec2_remove();
 #endif
 }
 
 static int wd_digest_open_driver(int init_type)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "sm3";
 #ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
@@ -129,14 +126,6 @@ static int wd_digest_open_driver(int init_type)
 	if (init_type == WD_TYPE_V2)
 		return WD_SUCCESS;
 #endif
-	driver = wd_request_drv(alg_name, false);
-	if (!driver) {
-		wd_digest_close_driver(WD_TYPE_V1);
-		WD_ERR("failed to get %s driver support\n", alg_name);
-		return -WD_EINVAL;
-	}
-
-	wd_digest_setting.driver = driver;
 
 	return WD_SUCCESS;
 }
@@ -209,7 +198,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	sess->alg_name = wd_digest_alg_name[setup->alg];
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
-	ret = wd_drv_alg_support(sess->alg_name, wd_digest_setting.driver);
+	ret = wd_drv_alg_support(sess->alg_name, wd_digest_setting.config.ctxs[0].drv);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
@@ -256,6 +245,7 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 {
 	int ret;
 
+	WD_ERR("debug: call function: %s!\n", __func__);
 	ret = wd_set_epoll_en("WD_DIGEST_EPOLL_EN",
 			      &wd_digest_setting.config.epoll_en);
 	if (ret < 0)
@@ -276,21 +266,23 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_digest_setting.config,
-				 wd_digest_setting.driver);
-	if (ret)
-		goto out_clear_pool;
+	wd_digest_setting.priv = (void *)0x1;
 
 	return 0;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_digest_setting.sched);
 out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_digest_setting.config);
 
 	return ret;
+}
+
+static void wd_digest_uninit_nolock(void)
+{
+	wd_uninit_async_request_pool(&wd_digest_setting.pool);
+	wd_clear_sched(&wd_digest_setting.sched);
+	wd_digest_setting.priv = NULL;
 }
 
 int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
@@ -315,10 +307,23 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_close_driver;
 
+	WD_ERR("v1 ctxs numbers: %u.\n", wd_digest_setting.config.ctx_num);
+	ret = wd_ctx_drv_config("sm3", &wd_digest_setting.config);
+	if (ret)
+		goto out_uninit_nolock;
+
+	ret = wd_alg_init_driver(&wd_digest_setting.config);
+	if (ret)
+		goto out_drv_deconfig;
+
 	wd_alg_set_init(&wd_digest_setting.status);
 
 	return 0;
 
+out_drv_deconfig:
+	wd_ctx_drv_deconfig(&wd_digest_setting.config);
+out_uninit_nolock:
+	wd_digest_uninit_nolock();
 out_close_driver:
 	wd_digest_close_driver(WD_TYPE_V1);
 out_clear_init:
@@ -326,29 +331,15 @@ out_clear_init:
 	return ret;
 }
 
-static int wd_digest_uninit_nolock(void)
-{
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_digest_setting.status, &status);
-	if (status == WD_UNINIT)
-		return -WD_EINVAL;
-
-	wd_uninit_async_request_pool(&wd_digest_setting.pool);
-	wd_clear_sched(&wd_digest_setting.sched);
-	wd_alg_uninit_driver(&wd_digest_setting.config,
-			     wd_digest_setting.driver);
-	return 0;
-}
-
 void wd_digest_uninit(void)
 {
-	int ret;
-
-	ret = wd_digest_uninit_nolock();
-	if (ret)
+	if (!wd_digest_setting.priv)
 		return;
 
+	wd_alg_uninit_driver(&wd_digest_setting.config);
+	wd_ctx_drv_deconfig(&wd_digest_setting.config);
+
+	wd_digest_uninit_nolock();
 	wd_digest_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
@@ -391,40 +382,29 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 	if (state)
 		goto out_uninit;
 
-
 	while (ret != 0) {
 		memset(&wd_digest_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-		/* Get alg driver and dev name */
-		wd_digest_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_digest_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
-			goto out_dlopen;
-		}
-
+		/* Init ctx param and prepare for ctx request */
 		digest_ctx_params.ctx_set_num = &digest_ctx_num;
 		ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
-					wd_digest_setting.driver, WD_DIGEST_TYPE, 1);
+					alg, task_type, WD_DIGEST_TYPE, 1);
 		if (ret) {
 			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_digest_setting.driver);
-				wd_alg_drv_unbind(wd_digest_setting.driver);
 				continue;
 			}
-			goto out_driver;
+			goto out_dlclose;
 		}
 
 		wd_digest_init_attrs.alg = alg;
 		wd_digest_init_attrs.sched_type = sched_type;
-		wd_digest_init_attrs.driver = wd_digest_setting.driver;
+		wd_digest_init_attrs.task_type = task_type;
 		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
 		wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
 		wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_digest_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_digest_setting.driver);
-				wd_alg_drv_unbind(wd_digest_setting.driver);
 				wd_ctx_param_uninit(&digest_ctx_params);
 				continue;
 			}
@@ -432,16 +412,30 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_params_uninit;
 		}
 	}
+
+	
+	WD_ERR("ctxs numbers: %u.\n", wd_digest_setting.config.ctx_num);
+	ret = wd_ctx_drv_config(alg, &wd_digest_setting.config);
+	if (ret)
+		goto out_uninit_nolock;
+
+	ret = wd_alg_init_driver(&wd_digest_setting.config);
+	if (ret)
+		goto out_drv_deconfig;
+
 	wd_alg_set_init(&wd_digest_setting.status);
 	wd_ctx_param_uninit(&digest_ctx_params);
 
 	return 0;
 
+out_drv_deconfig:
+	wd_ctx_drv_deconfig(&wd_digest_setting.config);
+out_uninit_nolock:
+	wd_digest_uninit_nolock();
+	wd_alg_attrs_uninit(&wd_digest_init_attrs);
 out_params_uninit:
 	wd_ctx_param_uninit(&digest_ctx_params);
-out_driver:
-	wd_alg_drv_unbind(wd_digest_setting.driver);
-out_dlopen:
+out_dlclose:
 	wd_digest_close_driver(WD_TYPE_V2);
 out_uninit:
 	wd_alg_clear_init(&wd_digest_setting.status);
@@ -450,14 +444,12 @@ out_uninit:
 
 void wd_digest_uninit2(void)
 {
-	int ret;
-
-	ret = wd_digest_uninit_nolock();
-	if (ret)
+	if (!wd_digest_setting.priv)
 		return;
 
+	wd_ctx_drv_deconfig(&wd_digest_setting.config);
+	wd_digest_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
-	wd_alg_drv_unbind(wd_digest_setting.driver);
 	wd_digest_close_driver(WD_TYPE_V2);
 	wd_digest_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_digest_setting.status);
@@ -548,23 +540,17 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
+	ret = wd_check_src_dst(req->in, req->in_bytes, req->out, req->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: in/out addr is NULL when in/out size is non-zero!\n");
+		return -WD_EINVAL;
+	}
+
 	if (req->data_fmt == WD_SGL_BUF) {
 		ret = wd_check_datalist(req->list_in, req->in_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the src datalist, size = %u\n",
 				req->in_bytes);
-			return -WD_EINVAL;
-		}
-
-		ret = wd_check_src_dst(NULL, 0, req->out, req->out_bytes);
-		if (unlikely(ret)) {
-			WD_ERR("invalid: out addr is NULL when out size is non-zero!\n");
-			return -WD_EINVAL;
-		}
-	} else {
-		ret = wd_check_src_dst(req->in, req->in_bytes, req->out, req->out_bytes);
-		if (unlikely(ret)) {
-			WD_ERR("invalid: in/out addr is NULL when in/out size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 	}
@@ -614,13 +600,13 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	struct wd_msg_handle msg_handle;
 	int ret;
 
-	msg_handle.send = wd_digest_setting.driver->send;
-	msg_handle.recv = wd_digest_setting.driver->recv;
+	msg_handle.send = ctx->drv->send;
+	msg_handle.recv = ctx->drv->recv;
 
-	wd_ctx_spin_lock(ctx, wd_digest_setting.driver->calc_type);
-	ret = wd_handle_msg_sync(wd_digest_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, wd_digest_setting.config.epoll_en);
-	wd_ctx_spin_unlock(ctx, wd_digest_setting.driver->calc_type);
+	wd_ctx_spin_lock(ctx, UADK_ALG_HW);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+				 NULL, wd_digest_setting.config.epoll_en);
+	wd_ctx_spin_unlock(ctx, UADK_ALG_HW);
 	if (unlikely(ret))
 		return ret;
 
@@ -706,14 +692,14 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, idx,
 				   (void **)&msg);
 	if (unlikely(msg_id < 0)) {
-		WD_ERR("failed to get msg from pool!\n");
-		return msg_id;
+		//WD_ERR("busy, failed to get msg from pool!\n");
+		return -WD_EBUSY;
 	}
 
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(wd_digest_setting.driver, ctx->ctx, msg);
+	ret = ctx->drv->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -762,11 +748,11 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_digest_setting.driver, ctx->ctx, &recv_msg);
+		ret = ctx->drv->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
-			WD_ERR("wd recv err!\n");
+			WD_ERR("wd recv err! ctx type: %u\n", ctx->ctx_type);
 			return ret;
 		}
 
@@ -788,6 +774,8 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 				   recv_msg.tag);
 		*count = recv_cnt;
 	} while (--tmp);
+
+	*count += wd_msg_recv_fb((handle_t)ctx);
 
 	return ret;
 }
