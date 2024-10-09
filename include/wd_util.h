@@ -56,6 +56,8 @@ struct wd_ctx_range {
 	__u32 size;
 };
 
+struct uadk_adapter_worker;
+
 struct wd_env_config_per_numa {
 	/* Config begin */
 	int node;
@@ -465,8 +467,9 @@ void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params);
  *
  * Return device if succeed and other error number if fail.
  */
-int wd_alg_attrs_init(struct wd_init_attrs *attrs);
-void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
+int wd_alg_attrs_init(struct uadk_adapter_worker *worker,
+		      struct wd_init_attrs *attrs);
+void wd_alg_attrs_uninit(struct uadk_adapter_worker *worker);
 
 /**
  * wd_alg_drv_bind() - Request the ctxs and initialize the sched_domain

@@ -80,8 +80,6 @@ static inline enum hash_block_type get_hash_block_type(struct wd_digest_msg *msg
 		return HASH_SINGLE_BLOCK;
 }
 
-struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag);
-
 #ifdef __cplusplus
 }
 #endif

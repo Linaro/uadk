@@ -34,7 +34,8 @@ struct sched_params {
 	__u32 end;
 };
 
-typedef int (*user_poll_func)(__u32 pos, __u32 expect, __u32 *count);
+typedef int (*user_poll_func)(struct wd_sched *sched, __u32 pos,
+			      __u32 expect, __u32 *count);
 
 /*
  * wd_sched_rr_instance - Instante the schedule min region.

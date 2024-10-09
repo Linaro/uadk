@@ -202,6 +202,7 @@ __u32 wd_rsa_poll(void);
  * specific ctx, this function should be used.
  */
 int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_rsa_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 
 /**
  * wd_rsa_env_init() - Init ctx and schedule resources according to wd rsa
