@@ -10,6 +10,7 @@
 #define CONFIG_FILE_ENV "UADK_CONF"
 #define DRIVER_NAME_KEY "driver_name"
 #define MODE_KEY "mode"
+#define WORKERS_NB 8
 
 static int read_value_int(char *conf, const char *key)
 {
@@ -82,9 +83,10 @@ static void read_config_entries(char *conf, struct uadk_adapter *adapter, char *
 int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 {
 	char *conf = getenv(CONFIG_FILE_ENV);
-	struct uadk_adapter_worker *worker;
+	struct uadk_adapter_worker workers[WORKERS_NB];
+	struct uadk_adapter_worker worker;
 	struct wd_alg_driver *drv;
-	int idx = 0;
+	int idx = 0, i, j;
 
 	if (conf != NULL) {
 		/* if env UADK_CONF exist, parse config first */
@@ -94,35 +96,37 @@ int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 			return 0;
 	}
 
-	/* Then parse system drivers */
+	/* Then parse all system drivers to workers */
 	do {
 		drv = wd_find_drv(NULL, alg, idx);
 		if (!drv)
 			break;
 
-		worker = &adapter->workers[idx];
-		worker->driver = drv;
-		worker->idx = idx;
-		adapter->workers_nb++;
+		workers[idx++].driver = drv;
 
-		if (++idx >= UADK_MAX_NB_WORKERS)
+		if (idx >= WORKERS_NB)
 			break;
 	} while (drv);
 
-	/* sorted as priority */
-	for (int i = 0; i < adapter->workers_nb; i++) {
-		for (int j = i; j < adapter->workers_nb; j++) {
-			if (adapter->workers[i].driver->priority <
-			    adapter->workers[j].driver->priority) {
-				struct uadk_adapter_worker tmp_worker;
-
-				tmp_worker.driver = adapter->workers[i].driver;
-				adapter->workers[i].driver = adapter->workers[j].driver;
-				adapter->workers[i].idx = i;
-				adapter->workers[j].driver = tmp_worker.driver;
-				adapter->workers[j].idx = j;
+	/* Sorted as priority */
+	for (i = 0; i < idx; i++) {
+		for (j = i; j < idx; j++) {
+			if (workers[i].driver->priority <
+			    workers[j].driver->priority) {
+				worker.driver = workers[i].driver;
+				workers[i].driver = workers[j].driver;
+				workers[j].driver = worker.driver;
 			}
 		}
+	}
+
+	for (i = 0; i < idx; i++) {
+		adapter->workers[i].driver = workers[i].driver;
+		adapter->workers[i].idx = i;
+		adapter->workers_nb++;
+
+		if (adapter->workers_nb >= UADK_MAX_NB_WORKERS)
+			break;
 	}
 
 	return (adapter->workers_nb == 0);
