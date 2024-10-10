@@ -1504,7 +1504,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 	void *key = NULL;
 
 	memcpy(&msg->req, req, sizeof(msg->req));
-	msg->hash = sess->setup.hash;
+	memcpy(&msg->hash, &sess->setup.hash, sizeof(msg->hash));
 	msg->key_bytes = sess->key_size;
 	msg->curve_id = sess->setup.cv.cfg.id;
 	msg->result = WD_EINVAL;
@@ -1655,10 +1655,10 @@ static int set_sign_in_param(struct wd_ecc_sign_in *sin,
 
 static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 {
-	struct wd_rand_mt rand_t = sess->setup.rand;
+	struct wd_rand_mt *rand_t = &sess->setup.rand;
 	int ret;
 
-	ret = rand_t.cb(k->data, k->dsize, rand_t.usr);
+	ret = rand_t->cb(k->data, k->dsize, rand_t->usr);
 	if (ret)
 		WD_ERR("failed to do rand cb, ret = %d!\n", ret);
 

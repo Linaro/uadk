@@ -510,6 +510,8 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	fill_buf_type_sgl(sqe);
 
 	seq_start = get_seq_start_list(req);
+	if (unlikely(!seq_start))
+		return -WD_EINVAL;
 
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
