@@ -53,10 +53,10 @@ static int isa_ce_init(struct wd_alg_driver *drv, void *conf)
 
 static void isa_ce_exit(struct wd_alg_driver *drv)
 {
-	struct sm4_ce_drv_ctx *sctx = (struct sm4_ce_drv_ctx *)drv->priv;
-
-	if (!sctx)
+	if(!drv || !drv->priv)
 		return;
+
+	struct sm4_ce_drv_ctx *sctx = (struct sm4_ce_drv_ctx *)drv->priv;
 
 	free(sctx);
 	drv->priv = NULL;
