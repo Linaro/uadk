@@ -510,6 +510,8 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	fill_buf_type_sgl(sqe);
 
 	seq_start = get_seq_start_list(req);
+	if (unlikely(!seq_start))
+		return -WD_EINVAL;
 
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
@@ -835,15 +837,13 @@ out:
 
 static void hisi_zip_exit(struct wd_alg_driver *drv)
 {
+	if(!drv || !drv->priv)
+		return;
+
 	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
-
-	if (!priv) {
-		/* return if already exit */
-		return;
-	}
 
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {

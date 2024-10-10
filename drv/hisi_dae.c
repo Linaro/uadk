@@ -1604,13 +1604,13 @@ out:
 
 static void dae_exit(struct wd_alg_driver *drv)
 {
+	if(!drv || !drv->priv)
+		return;
+
 	struct hisi_dae_ctx *priv = (struct hisi_dae_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
-
-	if (!priv)
-		return;
 
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {

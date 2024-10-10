@@ -421,8 +421,15 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 			  int ctx_idx, __u32 tag)
 {
-	struct msg_pool *p = &pool->pools[ctx_idx];
-	__u32 msg_num = p->msg_num;
+	struct msg_pool *p;
+	__u32 msg_num;
+
+	if ((__u32)ctx_idx > pool->pool_num) {
+		WD_ERR("invalid: message ctx id index is %d!\n", ctx_idx);
+		return NULL;
+	}
+	p = &pool->pools[ctx_idx];
+	msg_num = p->msg_num;
 
 	/* tag value start from 1 */
 	if (tag == 0 || tag > msg_num) {

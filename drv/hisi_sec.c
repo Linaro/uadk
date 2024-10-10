@@ -2647,8 +2647,17 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 static bool soft_compute_check(struct hisi_qp *qp, struct wd_aead_msg *msg)
 {
 	/* Asynchronous mode does not use the sent message, so ignores it */
-	if (msg->cmode == WD_CIPHER_GCM)
-		return (msg->msg_state == AEAD_MSG_END) && qp->q_info.qp_mode == CTX_MODE_SYNC;
+	if (qp->q_info.qp_mode == CTX_MODE_ASYNC)
+		return false;
+	/*
+	 * For aead gcm stream mode, due to some hardware limitations,
+	 * the final message was not sent to hardware if the qm is
+	 * not higher than v3 version or the input length of the
+	 * message is 0, the software calculation has been executed.
+	 */
+	if (msg->msg_state == AEAD_MSG_END && msg->cmode == WD_CIPHER_GCM &&
+	    (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes))
+		return true;
 
 	return false;
 }
@@ -3102,15 +3111,13 @@ out:
 
 static void hisi_sec_exit(struct wd_alg_driver *drv)
 {
+	if(!drv || !drv->priv)
+		return;
+
 	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
-
-	if (!priv) {
-		/* return if already exit */
-		return;
-	}
 
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
