@@ -733,11 +733,14 @@ static void ctr_iv_inc(__u8 *counter, __u32 len)
 
 static void update_iv(struct wd_cipher_msg *msg)
 {
+	__u8 i;
+
 	switch (msg->mode) {
 	case WD_CIPHER_CBC:
 	case WD_CIPHER_CBC_CS1:
 	case WD_CIPHER_CBC_CS2:
 	case WD_CIPHER_CBC_CS3:
+	case WD_CIPHER_CFB:
 		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
 		    msg->out_bytes >= msg->iv_bytes)
 			memcpy(msg->iv, msg->out + msg->out_bytes -
@@ -748,14 +751,15 @@ static void update_iv(struct wd_cipher_msg *msg)
 				msg->iv_bytes, msg->iv_bytes);
 		break;
 	case WD_CIPHER_OFB:
-	case WD_CIPHER_CFB:
-		if (msg->out_bytes >= msg->iv_bytes)
-			memcpy(msg->iv, msg->out + msg->out_bytes -
-				msg->iv_bytes, msg->iv_bytes);
+		if (msg->in_bytes < msg->iv_bytes)
+			break;
+		/* The iv_bytes has been checked and it is not greater than AES_BLOCK_SIZE. */
+		for (i = 0; i < msg->iv_bytes; i++)
+			msg->iv[i] = *((__u8 *)msg->in + msg->in_bytes - msg->iv_bytes + i) ^
+				     *((__u8 *)msg->out + msg->out_bytes - msg->iv_bytes + i);
 		break;
 	case WD_CIPHER_CTR:
-			ctr_iv_inc(msg->iv, msg->iv_bytes >>
-				CTR_MODE_LEN_SHIFT);
+		ctr_iv_inc(msg->iv, msg->in_bytes >> CTR_MODE_LEN_SHIFT);
 		break;
 	default:
 		break;
@@ -764,8 +768,16 @@ static void update_iv(struct wd_cipher_msg *msg)
 
 static void update_iv_sgl(struct wd_cipher_msg *msg)
 {
+	__u8 out[AES_BLOCK_SIZE] = {0};
+	__u8 in[AES_BLOCK_SIZE] = {0};
+	__u8 i;
+
 	switch (msg->mode) {
 	case WD_CIPHER_CBC:
+	case WD_CIPHER_CBC_CS1:
+	case WD_CIPHER_CBC_CS2:
+	case WD_CIPHER_CBC_CS3:
+	case WD_CIPHER_CFB:
 		if (msg->op_type == WD_CIPHER_ENCRYPTION &&
 		    msg->out_bytes >= msg->iv_bytes)
 			hisi_qm_sgl_copy(msg->iv, msg->out,
@@ -780,16 +792,20 @@ static void update_iv_sgl(struct wd_cipher_msg *msg)
 
 		break;
 	case WD_CIPHER_OFB:
-	case WD_CIPHER_CFB:
-		if (msg->out_bytes >= msg->iv_bytes)
-			hisi_qm_sgl_copy(msg->iv, msg->out,
+		/* The iv_bytes has been checked and it is not greater than AES_BLOCK_SIZE. */
+		if (msg->in_bytes >= msg->iv_bytes) {
+			hisi_qm_sgl_copy(in, msg->in,
+					 msg->in_bytes - msg->iv_bytes,
+					 msg->iv_bytes, COPY_SGL_TO_PBUFF);
+			hisi_qm_sgl_copy(out, msg->out,
 					 msg->out_bytes - msg->iv_bytes,
 					 msg->iv_bytes, COPY_SGL_TO_PBUFF);
-
+			for (i = 0; i < msg->iv_bytes; i++)
+				msg->iv[i] = *(in + i) ^ *(out + i);
+		}
 		break;
 	case WD_CIPHER_CTR:
-			ctr_iv_inc(msg->iv, msg->iv_bytes >>
-				CTR_MODE_LEN_SHIFT);
+		ctr_iv_inc(msg->iv, msg->in_bytes >> CTR_MODE_LEN_SHIFT);
 		break;
 	default:
 		break;
