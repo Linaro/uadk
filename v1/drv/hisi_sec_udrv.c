@@ -253,30 +253,76 @@ static void update_iv_from_res(__u8 *dst, __u8 *src, size_t offset, __u16 bytes,
 	}
 }
 
-static void update_iv(struct wcrypto_cipher_msg *msg)
+static int update_iv_ofb(struct wcrypto_cipher_msg *msg, size_t offset)
 {
+	__u8 out[AES_BLOCK_SIZE] = {0};
+	__u8 in[AES_BLOCK_SIZE] = {0};
+	__u8 iv[AES_BLOCK_SIZE] = {0};
+	int ret;
+	__u8 i;
+
+	/* The iv_bytes is not greater than AES_BLOCK_SIZE. */
+	if (msg->data_fmt == WD_SGL_BUF) {
+		ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)msg->out, offset,
+					(void *)out, msg->iv_bytes);
+		if (unlikely(ret))
+			return ret;
+		ret = wd_sgl_cp_to_pbuf((struct wd_sgl *)msg->in, offset,
+					(void *)in, msg->iv_bytes);
+		if (unlikely(ret))
+			return ret;
+		for (i = 0; i < msg->iv_bytes; i++)
+			iv[i] = in[i] ^ out[i];
+
+		return wd_sgl_cp_from_pbuf((struct wd_sgl *)msg->iv, 0,
+					   (void *)iv, msg->iv_bytes);
+	}
+
+	for (i = 0; i < msg->iv_bytes; i++)
+		msg->iv[i] = *((__u8 *)msg->in + offset + i) ^
+			     *((__u8 *)msg->out + offset + i);
+
+	return 0;
+}
+
+static void update_iv(struct wcrypto_cipher_msg *msg, int bd_type)
+{
+	size_t offset;
+	int ret;
+
 	switch (msg->mode) {
 	case WCRYPTO_CIPHER_CBC:
 	case WCRYPTO_CIPHER_CBC_CS1:
 	case WCRYPTO_CIPHER_CBC_CS2:
 	case WCRYPTO_CIPHER_CBC_CS3:
-		if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION &&
-			msg->out_bytes >= msg->iv_bytes)
-			update_iv_from_res(msg->iv, msg->out,
-					   msg->out_bytes - msg->iv_bytes,
+	case WCRYPTO_CIPHER_CFB:
+		/* The out_bytes is equal to the in_bytes. */
+		if (msg->out_bytes < msg->iv_bytes)
+			break;
+
+		offset = msg->out_bytes - msg->iv_bytes;
+		if (msg->op_type == WCRYPTO_CIPHER_ENCRYPTION)
+			update_iv_from_res(msg->iv, msg->out, offset,
 					   msg->iv_bytes, msg->data_fmt);
-		if (msg->op_type == WCRYPTO_CIPHER_DECRYPTION &&
-			msg->in_bytes >= msg->iv_bytes)
-			update_iv_from_res(msg->iv, msg->in,
-					   msg->in_bytes - msg->iv_bytes,
+		else
+			update_iv_from_res(msg->iv, msg->in, offset,
 					   msg->iv_bytes, msg->data_fmt);
 		break;
 	case WCRYPTO_CIPHER_OFB:
-	case WCRYPTO_CIPHER_CFB:
-		if (msg->out_bytes >= msg->iv_bytes)
-			update_iv_from_res(msg->iv, msg->out,
-					   msg->out_bytes - msg->iv_bytes,
+		/* The out_bytes is equal to the in_bytes. */
+		if (msg->out_bytes < msg->iv_bytes)
+			break;
+
+		offset = msg->out_bytes - msg->iv_bytes;
+		/* BD2 does not support the ofb mode, it works with cipher_ofb_data_handle. */
+		if (bd_type == BD_TYPE2) {
+			update_iv_from_res(msg->iv, msg->out, offset,
 					   msg->iv_bytes, msg->data_fmt);
+		} else if (bd_type == BD_TYPE3) {
+			ret = update_iv_ofb(msg, offset);
+			if (unlikely(ret))
+				WD_ERR("failed to update ofb iv!\n");
+		}
 		break;
 	case WCRYPTO_CIPHER_CTR:
 		ctr_iv_inc(msg->iv, msg->in_bytes >> CTR_MODE_LEN_SHIFT,
@@ -680,8 +726,8 @@ static int cipher_param_check(struct wcrypto_cipher_msg *msg)
 	int ret;
 
 	if (unlikely(msg->in_bytes > MAX_CIPHER_LENGTH ||
-	    !msg->in_bytes)) {
-		WD_ERR("input cipher len is too large!\n");
+		     !msg->in_bytes || msg->in_bytes != msg->out_bytes)) {
+		WD_ERR("failed to check input cipher len(%u)!\n", msg->in_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -1849,7 +1895,7 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 			   sqe->type2.c_ivin_addr_l, sqe->type2.c_ivin_addr_h,
 			   cipher_msg->data_fmt);
 
-	update_iv(cipher_msg);
+	update_iv(cipher_msg, BD_TYPE2);
 
 	if (cipher_msg->mode == WCRYPTO_CIPHER_OFB)
 		cipher_ofb_data_handle(cipher_msg);
@@ -1883,7 +1929,7 @@ static void parse_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 			   sqe->ipsec_scene.c_ivin_addr_h,
 			   cipher_msg->data_fmt);
 
-	update_iv(cipher_msg);
+	update_iv(cipher_msg, BD_TYPE3);
 }
 
 /*
