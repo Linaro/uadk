@@ -646,6 +646,12 @@ static int wd_cipher_check_params(handle_t h_sess,
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(req->in_bytes != req->out_bytes)) {
+		WD_ERR("cipher set out_bytes is error, size = %u\n",
+			req->out_bytes);
+		return -WD_EINVAL;
+	}
+
 	ret = cipher_in_len_check(h_sess, req);
 	if (unlikely(ret))
 		return ret;
