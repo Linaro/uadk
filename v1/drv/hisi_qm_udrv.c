@@ -582,20 +582,10 @@ void qm_uninit_queue(struct wd_queue *q)
 	qinfo->priv = NULL;
 }
 
-int qm_tx_update(struct qm_queue_info *info, __u32 num)
+void qm_tx_update(struct qm_queue_info *info, __u32 num)
 {
-	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
-		WD_ERR("wd queue hw error happened before qm send!\n");
-		return -WD_HW_EACCESS;
-	}
-
-	/* make sure the request is all in memory before doorbell */
-	mb();
-
 	info->db(info, DOORBELL_CMD_SQ, info->sq_tail_index, 0);
 	__atomic_add_fetch(&info->used, num, __ATOMIC_RELAXED);
-
-	return WD_SUCCESS;
 }
 
 int qm_send(struct wd_queue *q, void **req, __u32 num)
@@ -604,6 +594,11 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 	struct qm_queue_info *info = qinfo->priv;
 	int ret;
 	__u32 i;
+
+	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
+		WD_ERR("wd queue hw error happened before qm send!\n");
+		return -WD_HW_EACCESS;
+	}
 
 	wd_spinlock(&info->sd_lock);
 	if (unlikely((__u32)__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
@@ -628,10 +623,19 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 			info->sq_tail_index++;
 	}
 
-	ret = qm_tx_update(info, num);
+	/* make sure the request is all in memory before doorbell */
+	mb();
+	qm_tx_update(info, num);
 	wd_unspinlock(&info->sd_lock);
 
-	return ret;
+	return WD_SUCCESS;
+}
+
+void qm_rx_update(struct qm_queue_info *info, __u32 num)
+{
+	/* set c_flag to enable interrupt when use poll */
+	info->db(info, DOORBELL_CMD_CQ, info->cq_head_index, info->is_poll);
+	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
 }
 
 void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
@@ -671,24 +675,6 @@ static int check_ds_rx_base(struct qm_queue_info *info,
 	}
 
 	return -WD_HW_EACCESS;
-}
-
-int qm_rx_update(struct qm_queue_info *info, __u32 num)
-{
-	int ret;
-
-	ret = check_ds_rx_base(info, NULL, 0, 0);
-	if (unlikely(ret))
-		return ret;
-
-	/* make sure queue status check is complete. */
-	rmb();
-
-	/* set c_flag to enable interrupt when use poll */
-	info->db(info, DOORBELL_CMD_CQ, info->cq_head_index, info->is_poll);
-	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
-
-	return WD_SUCCESS;
 }
 
 int qm_recv(struct wd_queue *q, void **resp, __u32 num)
@@ -741,15 +727,15 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		}
 	}
 
-	if (i) {
-		ret = qm_rx_update(info, i);
-		if (!ret)
-			ret = i;
-	}
+	if (i)
+		qm_rx_update(info, i);
 
 	wd_unspinlock(&info->rc_lock);
+	ret = check_ds_rx_base(info, resp, num, 0);
+	if (unlikely(ret))
+		return ret;
 
-	return ret;
+	return i;
 }
 
 static int hw_type_check(struct wd_queue *q, const char *hw_type)

@@ -191,8 +191,8 @@ int qm_init_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
 int qm_uninit_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
 int qm_merge_hwsgl(struct wd_queue *q, void *pool,
 		   struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl);
-int qm_tx_update(struct qm_queue_info *info, __u32 num);
-int qm_rx_update(struct qm_queue_info *info, __u32 num);
+void qm_tx_update(struct qm_queue_info *info, __u32 num);
+void qm_rx_update(struct qm_queue_info *info, __u32 num);
 void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num);
 
 #define HISI_QM_API_VER_BASE "hisi_qm_v1"
