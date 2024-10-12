@@ -29,7 +29,7 @@ struct rng_queue_info {
 	void *req_cache[TRNG_Q_DEPTH];
 	__u8  send_idx;
 	__u8 recv_idx;
-	pthread_spinlock_t lock;
+	struct wd_lock lock;
 };
 
 int rng_init_queue(struct wd_queue *q);
