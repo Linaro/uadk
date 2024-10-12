@@ -727,8 +727,12 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		}
 	}
 
-	if (i)
+	if (i) {
 		qm_rx_update(info, i);
+	} else {
+		wd_unspinlock(&info->rc_lock);
+		return 0;
+	}
 
 	wd_unspinlock(&info->rc_lock);
 	ret = check_ds_rx_base(info, resp, num, 0);
