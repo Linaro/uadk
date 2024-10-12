@@ -26,6 +26,7 @@
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include "v1/wd_util.h"
 #include "v1/wd_comp.h"
@@ -56,6 +57,10 @@
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
 #define REPCODE_SIZE			12
+
+/* Error status 0xe indicates that dest_avail_out insufficient */
+#define ERR_DSTLEN_OUT			0xe
+#define PRINT_TIME_INTERVAL		21600
 
 #define CTX_PRIV1_OFFSET		4
 #define CTX_PRIV2_OFFSET		8
@@ -94,6 +99,35 @@ struct zip_fill_sqe_ops {
 			     struct wd_queue *q);
 	void (*fill_sqe_hw_info)(void *ssqe, struct wcrypto_comp_msg *msg);
 };
+
+static unsigned int g_err_print_enable = 1;
+
+static void zip_err_print_alarm_end(int sig)
+{
+	if (sig == SIGALRM) {
+		g_err_print_enable = 1;
+		alarm(0);
+	}
+}
+
+static void zip_err_print_time_start(void)
+{
+	g_err_print_enable = 0;
+	signal(SIGALRM, zip_err_print_alarm_end);
+	alarm(PRINT_TIME_INTERVAL);
+}
+
+static void zip_err_bd_print(__u16 ctx_st, __u32 status, __u32 type)
+{
+	if (status != ERR_DSTLEN_OUT) {
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
+			ctx_st, status, type);
+	} else if (g_err_print_enable == 1) {
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
+			ctx_st, status, type);
+		zip_err_print_time_start();
+	}
+}
 
 static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
 				struct wcrypto_comp_msg *msg)
@@ -274,8 +308,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 
 	if (status != 0 && status != HW_NEGACOMPRESS &&
 	    status != HW_CRC_ERR && status != HW_DECOMP_END) {
-		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
-		       ctx_st, status, type);
+		zip_err_bd_print(ctx_st, status, type);
 		recv_msg->status = WD_IN_EPARA;
 	} else {
 		recv_msg->status = 0;
@@ -707,8 +740,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 		return 0;
 
 	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END) {
-		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
-		       ctx_st, status, type);
+		zip_err_bd_print(ctx_st, status, type);
 		recv_msg->status = WD_IN_EPARA;
 	} else {
 		recv_msg->status = 0;

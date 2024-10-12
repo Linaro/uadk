@@ -29,6 +29,9 @@
 
 #define ZSTD_MAX_SIZE			(1 << 17)
 
+/* Error status 0xe indicates that dest_avail_out insufficient */
+#define ERR_DSTLEN_OUT			0xe
+
 #define swab32(x) \
 	((((x) & 0x000000ff) << 24) | \
 	(((x) & 0x0000ff00) <<  8) | \
@@ -1039,8 +1042,12 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	if (unlikely(status != 0 && status != HZ_NEGACOMPRESS &&
 		     status != HZ_CRC_ERR && status != HZ_DECOMP_END)) {
-		WD_ERR("bad request(ctx_st = 0x%x, status = 0x%x, algorithm type = %u)!\n",
-		       ctx_st, status, type);
+		if (status == ERR_DSTLEN_OUT)
+			WD_DEBUG("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
+				ctx_st, status, type);
+		else
+			WD_ERR("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
+				ctx_st, status, type);
 		recv_msg->req.status = WD_IN_EPARA;
 	}
 
