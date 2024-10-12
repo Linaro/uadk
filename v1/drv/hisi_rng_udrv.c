@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <pthread.h>
 #include <sys/mman.h>
 #include <string.h>
 #include <stdint.h>
@@ -34,6 +35,7 @@ int rng_init_queue(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info;
+	int ret;
 
 	info = calloc(1, sizeof(*info));
 	if (!info) {
@@ -41,12 +43,20 @@ int rng_init_queue(struct wd_queue *q)
 		return -ENOMEM;
 	}
 
+	ret = pthread_spin_init(&info->lock, PTHREAD_PROCESS_PRIVATE);
+	if (ret) {
+		free(info);
+		WD_ERR("failed to init rng qinfo lock!\n");
+		return ret;
+	}
+
 	qinfo->priv = info;
 	info->mmio_base = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_MMIO, 0);
 	if (info->mmio_base == MAP_FAILED) {
 		info->mmio_base = NULL;
-		free(qinfo->priv);
 		qinfo->priv = NULL;
+		pthread_spin_destroy(&info->lock);
+		free(info);
 		WD_ERR("mmap trng mmio fail\n");
 		return -ENOMEM;
 	}
@@ -63,6 +73,7 @@ void rng_uninit_queue(struct wd_queue *q)
 
 	free(qinfo->priv);
 	qinfo->priv = NULL;
+	pthread_spin_destroy(&info->lock);
 }
 
 int rng_send(struct wd_queue *q, void **req, __u32 num)
@@ -70,14 +81,14 @@ int rng_send(struct wd_queue *q, void **req, __u32 num)
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info = qinfo->priv;
 
-	wd_spinlock(&info->lock);
+	pthread_spin_lock(&info->lock);
 	if (!info->req_cache[info->send_idx]) {
 		info->req_cache[info->send_idx] = req[0];
 		info->send_idx++;
-		wd_unspinlock(&info->lock);
+		pthread_spin_unlock(&info->lock);
 		return 0;
 	}
-	wd_unspinlock(&info->lock);
+	pthread_spin_unlock(&info->lock);
 
 	WD_ERR("queue is full!\n");
 	return -WD_EBUSY;
@@ -128,16 +139,16 @@ int rng_recv(struct wd_queue *q, void **resp, __u32 num)
 	struct wcrypto_cb_tag *tag;
 	__u32 currsize = 0;
 
-	wd_spinlock(&info->lock);
+	pthread_spin_lock(&info->lock);
 	msg = info->req_cache[info->recv_idx];
 	if (!msg) {
-		wd_unspinlock(&info->lock);
+		pthread_spin_unlock(&info->lock);
 		return 0;
 	}
 
 	info->req_cache[info->recv_idx] = NULL;
 	info->recv_idx++;
-	wd_unspinlock(&info->lock);
+	pthread_spin_unlock(&info->lock);
 
 	tag = (void *)(uintptr_t)msg->usr_tag;
 	if (usr && tag->ctx_id != usr)
