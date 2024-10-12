@@ -1930,10 +1930,10 @@ static int fill_sm2_enc_sqe(void *msg, struct qm_queue_info *info, __u16 idx)
 		goto fail_fill_sqe;
 	}
 
+	/* make sure the request is all in memory before doorbell */
+	mb();
 	info->sq_tail_index = i;
-	ret = qm_tx_update(info, 1);
-	if (unlikely(ret))
-		goto fail_fill_sqe;
+	qm_tx_update(info, 1);
 
 	return ret;
 
@@ -2083,9 +2083,7 @@ static int parse_first_sqe(void *hw_msg, struct qm_queue_info *info, __u16 idx,
 		WD_ERR("first BD error = %u\n", msg->result);
 
 	info->cq_head_index = i;
-	ret = qm_rx_update(info, 1);
-	if (unlikely(ret))
-		return ret;
+	qm_rx_update(info, 1);
 
 	return 1;
 }
