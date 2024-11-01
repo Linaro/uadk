@@ -751,7 +751,7 @@ static void update_iv(struct wd_cipher_msg *msg)
 				msg->iv_bytes, msg->iv_bytes);
 		break;
 	case WD_CIPHER_OFB:
-		if (msg->in_bytes < msg->iv_bytes)
+		if (msg->in_bytes < msg->iv_bytes || msg->out_bytes < msg->iv_bytes)
 			break;
 		/* The iv_bytes has been checked and it is not greater than AES_BLOCK_SIZE. */
 		for (i = 0; i < msg->iv_bytes; i++)
@@ -793,7 +793,7 @@ static void update_iv_sgl(struct wd_cipher_msg *msg)
 		break;
 	case WD_CIPHER_OFB:
 		/* The iv_bytes has been checked and it is not greater than AES_BLOCK_SIZE. */
-		if (msg->in_bytes >= msg->iv_bytes) {
+		if (msg->in_bytes >= msg->iv_bytes && msg->out_bytes >= msg->iv_bytes) {
 			hisi_qm_sgl_copy(in, msg->in,
 					 msg->in_bytes - msg->iv_bytes,
 					 msg->iv_bytes, COPY_SGL_TO_PBUFF);
