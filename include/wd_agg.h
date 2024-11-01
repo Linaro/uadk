@@ -8,7 +8,6 @@
 
 #include <dlfcn.h>
 #include <asm/types.h>
-#include "wd_util.h"
 #include "wd_dae.h"
 
 #ifdef __cplusplus

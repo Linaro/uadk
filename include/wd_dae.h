@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 #include <stdbool.h>
 #include <asm/types.h>
+#include "wd_alg_common.h"
 #include "wd.h"
 
 #ifdef __cplusplus
