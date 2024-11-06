@@ -58,6 +58,7 @@ void wd_dh_free_sess(handle_t sess);
 int wd_do_dh_async(handle_t sess, struct wd_dh_req *req);
 int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req);
 int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_dh_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 int wd_dh_poll(__u32 expt, __u32 *count);
 int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched);
 void wd_dh_uninit(void);

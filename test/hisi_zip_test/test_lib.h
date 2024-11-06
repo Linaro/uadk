@@ -267,7 +267,7 @@ int hizip_verify_random_output(struct test_options *opts,
 void *mmap_alloc(size_t len);
 int mmap_free(void *addr, size_t len);
 
-int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
+int lib_poll_func(struct wd_sched *sched, __u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 
 /* for block interface */

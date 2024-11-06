@@ -436,7 +436,7 @@ static __u32 sva_sched_pick_next_ctx(handle_t h_sched_ctx,
         return index;
 }
 
-static int sva_sched_poll_policy(handle_t h_sched_ctx, __u32 expect,
+static int sva_sched_poll_policy(struct wd_sched *sched, __u32 expect,
                                  __u32 *count)
 {
         int recv = 0;

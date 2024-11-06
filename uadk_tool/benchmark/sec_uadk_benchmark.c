@@ -686,13 +686,13 @@ static int init_ctx_config(struct acc_option *options)
 
 	switch(subtype) {
 	case CIPHER_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_cipher_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_cipher_poll_ctx_);
 		break;
 	case AEAD_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_aead_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_aead_poll_ctx_);
 		break;
 	case DIGEST_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_digest_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_digest_poll_ctx_);
 		break;
 	default:
 		SEC_TST_PRT("failed to parse alg subtype!\n");
@@ -1205,7 +1205,6 @@ recv_error:
 
 	return NULL;
 }
-
 
 static void *sec_uadk_cipher_async(void *arg)
 {
