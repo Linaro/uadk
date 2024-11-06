@@ -55,5 +55,9 @@ global:
 	wd_sched_rr_alloc;
 	wd_sched_rr_release;
 	wd_find_msg_in_pool;
+
+	uadk_adapter_add_workers;
+	uadk_adapter_choose_worker;
+	uadk_adapter_switch_worker;
 local: *;
 };
