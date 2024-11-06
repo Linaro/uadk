@@ -592,6 +592,8 @@ static int wd_agg_alg_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		goto out_clear_sched;
 
+	wd_agg_setting.config.pool = &wd_agg_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_agg_setting.config, wd_agg_setting.driver);
 	if (ret)
 		goto out_clear_pool;
@@ -1502,11 +1504,6 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 
 	__atomic_store_n(&sess->state, WD_AGG_SESS_INPUT, __ATOMIC_RELEASE);
 	return WD_SUCCESS;
-}
-
-struct wd_agg_msg *wd_agg_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_agg_setting.pool, idx, tag);
 }
 
 static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count)

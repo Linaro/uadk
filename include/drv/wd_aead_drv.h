@@ -70,8 +70,6 @@ struct wd_aead_msg {
 	enum wd_aead_msg_state msg_state;
 };
 
-struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag);
-
 #ifdef __cplusplus
 }
 #endif

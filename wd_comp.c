@@ -165,6 +165,8 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_sched;
 
+	wd_comp_setting.config.pool = &wd_comp_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_comp_setting.config,
 					wd_comp_setting.driver);
 	if (ret)
@@ -345,11 +347,6 @@ void wd_comp_uninit2(void)
 	wd_comp_close_driver(WD_TYPE_V2);
 	wd_comp_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_comp_setting.status);
-}
-
-struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_comp_setting.pool, idx, tag);
 }
 
 int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)

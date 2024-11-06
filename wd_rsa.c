@@ -179,6 +179,8 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_sched;
 
+	wd_rsa_setting.config.pool = &wd_rsa_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_rsa_setting.config,
 				 wd_rsa_setting.driver);
 	if (ret)
@@ -511,11 +513,6 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, mid);
 	return ret;
-}
-
-struct wd_rsa_msg *wd_rsa_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_rsa_setting.pool, idx, tag);
 }
 
 int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
