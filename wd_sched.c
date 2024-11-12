@@ -244,9 +244,10 @@ static __u32 session_sched_pick_next_ctx(handle_t h_sched_ctx, void *sched_key,
 	return key->async_ctxid;
 }
 
-static int session_poll_region(struct wd_sched_ctx *sched_ctx, __u32 begin,
+static int session_poll_region(struct wd_sched *sched, __u32 begin,
 			       __u32 end, __u32 expect, __u32 *count)
 {
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 	__u32 poll_num = 0;
 	__u32 i;
 	int ret;
@@ -257,7 +258,7 @@ static int session_poll_region(struct wd_sched_ctx *sched_ctx, __u32 begin,
 		 * RR schedule, one time poll one package,
 		 * poll_num is always not more than one here.
 		 */
-		ret = sched_ctx->poll_func(i, 1, &poll_num);
+		ret = sched_ctx->poll_func(sched, i, 1, &poll_num);
 		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
 		else if (ret == -EAGAIN)
@@ -270,9 +271,10 @@ static int session_poll_region(struct wd_sched_ctx *sched_ctx, __u32 begin,
 	return 0;
 }
 
-static int session_poll_policy_rr(struct wd_sched_ctx *sched_ctx, int numa_id,
+static int session_poll_policy_rr(struct wd_sched *sched, int numa_id,
 				  __u32 expect, __u32 *count)
 {
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 	struct sched_ctx_region **region = sched_ctx->sched_info[numa_id].ctx_region;
 	__u32 begin, end;
 	__u32 i;
@@ -284,7 +286,7 @@ static int session_poll_policy_rr(struct wd_sched_ctx *sched_ctx, int numa_id,
 
 		begin = region[SCHED_MODE_ASYNC][i].begin;
 		end = region[SCHED_MODE_ASYNC][i].end;
-		ret = session_poll_region(sched_ctx, begin, end, expect, count);
+		ret = session_poll_region(sched, begin, end, expect, count);
 		if (unlikely(ret))
 			return ret;
 	}
@@ -294,7 +296,7 @@ static int session_poll_policy_rr(struct wd_sched_ctx *sched_ctx, int numa_id,
 
 /*
  * session_poll_policy - The polling policy matches the pick next ctx.
- * @sched_ctx: Schedule ctx, reference the struct sample_sched_ctx.
+ * @sched: Schedule.
  * @cfg: The global resoure info.
  * @expect: User expect poll msg num.
  * @count: The actually poll num.
@@ -302,11 +304,10 @@ static int session_poll_policy_rr(struct wd_sched_ctx *sched_ctx, int numa_id,
  * The user must init the schedule info through wd_sched_rr_instance, the
  * func interval will not check the valid, becouse it will affect performance.
  */
-static int session_sched_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
+static int session_sched_poll_policy(struct wd_sched *sched, __u32 expect, __u32 *count)
 {
-	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 	struct wd_sched_info *sched_info;
-	__u32 loop_time = 0;
 	__u32 last_count = 0;
 	__u16 i;
 	int ret;
@@ -323,34 +324,27 @@ static int session_sched_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *
 
 	sched_info = sched_ctx->sched_info;
 
-	/*
-	 * Try different numa's ctx if we can't receive any
-	 * package last time, it is more efficient. In most
-	 * bad situation, poll ends after MAX_POLL_TIMES loop.
-	 */
-	while (++loop_time < MAX_POLL_TIMES) {
-		for (i = 0; i < sched_ctx->numa_num;) {
-			/* If current numa is not valid, find next. */
-			if (!sched_info[i].valid) {
-				i++;
-				continue;
-			}
-
-			last_count = *count;
-			ret = session_poll_policy_rr(sched_ctx, i, expect, count);
-			if (unlikely(ret))
-				return ret;
-
-			if (expect == *count)
-				return 0;
-
-			/*
-			 * If no package is received, find next numa,
-			 * otherwise, keep receiving packets at this node.
-			 */
-			if (last_count == *count)
-				i++;
+	for (i = 0; i < sched_ctx->numa_num;) {
+		/* If current numa is not valid, find next. */
+		if (!sched_info[i].valid) {
+			i++;
+			continue;
 		}
+
+		last_count = *count;
+		ret = session_poll_policy_rr(sched, i, expect, count);
+		if (unlikely(ret))
+			return ret;
+
+		if (expect == *count)
+			return 0;
+
+		/*
+		 * If no package is received, find next numa,
+		 * otherwise, keep receiving packets at this node.
+		 */
+		if (last_count == *count)
+			i++;
 	}
 
 	return 0;
@@ -367,11 +361,10 @@ static __u32 sched_none_pick_next_ctx(handle_t sched_ctx,
 	return 0;
 }
 
-static int sched_none_poll_policy(handle_t h_sched_ctx,
+static int sched_none_poll_policy(struct wd_sched *sched,
 				  __u32 expect, __u32 *count)
 {
-	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
-	__u32 loop_times = MAX_POLL_TIMES + expect;
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 	__u32 poll_num = 0;
 	int ret;
 
@@ -380,19 +373,12 @@ static int sched_none_poll_policy(handle_t h_sched_ctx,
 		return -WD_EINVAL;
 	}
 
-	while (loop_times > 0) {
-		/* Default use ctx 0 */
-		loop_times--;
-		ret = sched_ctx->poll_func(0, 1, &poll_num);
-		if ((ret < 0) && (ret != -EAGAIN))
-			return ret;
-		else if (ret == -EAGAIN)
-			continue;
+	/* Default use ctx 0 */
+	ret = sched_ctx->poll_func(sched, 0, 1, &poll_num);
+	if (ret < 0)
+		return ret;
 
-		*count += poll_num;
-		if (*count == expect)
-			break;
-	}
+	*count += poll_num;
 
 	return 0;
 }
@@ -414,11 +400,10 @@ static __u32 sched_single_pick_next_ctx(handle_t sched_ctx,
 		return CTX_SYNC;
 }
 
-static int sched_single_poll_policy(handle_t h_sched_ctx,
+static int sched_single_poll_policy(struct wd_sched *sched,
 				    __u32 expect, __u32 *count)
 {
-	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
-	__u32 loop_times = MAX_POLL_TIMES + expect;
+	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)sched->h_sched_ctx;
 	__u32 poll_num = 0;
 	int ret;
 
@@ -427,19 +412,12 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 		return -WD_EINVAL;
 	}
 
-	while (loop_times > 0) {
-		/* Default async mode use ctx 1 */
-		loop_times--;
-		ret = sched_ctx->poll_func(1, 1, &poll_num);
-		if ((ret < 0) && (ret != -EAGAIN))
-			return ret;
-		else if (ret == -EAGAIN)
-			continue;
+	/* Default async mode use ctx 1 */
+	ret = sched_ctx->poll_func(sched, 1, 1, &poll_num);
+	if (ret < 0)
+		return ret;
 
-		*count += poll_num;
-		if (*count == expect)
-			break;
-	}
+	*count += poll_num;
 
 	return 0;
 }

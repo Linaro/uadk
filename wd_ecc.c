@@ -341,7 +341,7 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 		wd_ecc_init_attrs.driver = wd_ecc_setting.driver;
 		wd_ecc_init_attrs.ctx_params = &ecc_ctx_params;
 		wd_ecc_init_attrs.alg_init = wd_ecc_common_init;
-		wd_ecc_init_attrs.alg_poll_ctx = wd_ecc_poll_ctx;
+		wd_ecc_init_attrs.alg_poll_ctx = wd_ecc_poll_ctx_;
 		ret = wd_alg_attrs_init(&wd_ecc_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
@@ -2300,7 +2300,7 @@ fail_with_msg:
 	return ret;
 }
 
-int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+int wd_ecc_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
 	struct wd_ecc_msg recv_msg, *msg;
@@ -2353,16 +2353,19 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	return ret;
 }
 
+int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+{
+	return wd_ecc_poll_ctx_(NULL, idx, expt, count);
+}
+
 int wd_ecc_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_sched_sess = wd_ecc_setting.sched.h_sched_ctx;
-
 	if (unlikely(!count)) {
 		WD_ERR("invalid: ecc poll param count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return wd_ecc_setting.sched.poll_policy(h_sched_sess, expt, count);
+	return wd_ecc_setting.sched.poll_policy(&wd_ecc_setting.sched, expt, count);
 }
 
 static const struct wd_config_variable table[] = {

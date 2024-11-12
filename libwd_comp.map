@@ -11,6 +11,7 @@ global:
 	wd_do_comp_strm;
 	wd_do_comp_async;
 	wd_comp_poll_ctx;
+	wd_comp_poll_ctx_;
 	wd_comp_poll;
 	wd_do_comp_sync2;
 	wd_comp_env_init;

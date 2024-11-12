@@ -485,7 +485,7 @@ int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_p
 		wd_cipher_init_attrs.driver = wd_cipher_setting.driver;
 		wd_cipher_init_attrs.ctx_params = &cipher_ctx_params;
 		wd_cipher_init_attrs.alg_init = wd_cipher_common_init;
-		wd_cipher_init_attrs.alg_poll_ctx = wd_cipher_poll_ctx;
+		wd_cipher_init_attrs.alg_poll_ctx = wd_cipher_poll_ctx_;
 		ret = wd_alg_attrs_init(&wd_cipher_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
@@ -784,7 +784,7 @@ fail_with_msg:
 	return ret;
 }
 
-int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+int wd_cipher_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
 	struct wd_ctx_internal *ctx;
@@ -837,9 +837,13 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	return ret;
 }
 
+int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+{
+	return wd_cipher_poll_ctx_(NULL, idx, expt, count);
+}
+
 int wd_cipher_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_ctx = wd_cipher_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_cipher_setting.sched;
 
 	if (unlikely(!count)) {
@@ -847,7 +851,7 @@ int wd_cipher_poll(__u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
-	return sched->poll_policy(h_ctx, expt, count);
+	return sched->poll_policy(sched, expt, count);
 }
 
 static const struct wd_config_variable table[] = {
