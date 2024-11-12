@@ -316,7 +316,7 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 		wd_rsa_init_attrs.driver = wd_rsa_setting.driver;
 		wd_rsa_init_attrs.ctx_params = &rsa_ctx_params;
 		wd_rsa_init_attrs.alg_init = wd_rsa_common_init;
-		wd_rsa_init_attrs.alg_poll_ctx = wd_rsa_poll_ctx;
+		wd_rsa_init_attrs.alg_poll_ctx = wd_rsa_poll_ctx_;
 		ret = wd_alg_attrs_init(&wd_rsa_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
@@ -515,7 +515,7 @@ fail_with_msg:
 	return ret;
 }
 
-int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+int wd_rsa_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
 	struct wd_ctx_internal *ctx;
@@ -567,16 +567,19 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	return ret;
 }
 
+int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+{
+	return wd_rsa_poll_ctx_(NULL, idx, expt, count);
+}
+
 int wd_rsa_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_sched_ctx = wd_rsa_setting.sched.h_sched_ctx;
-
 	if (unlikely(!count)) {
 		WD_ERR("invalid: rsa poll count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return wd_rsa_setting.sched.poll_policy(h_sched_ctx, expt, count);
+	return wd_rsa_setting.sched.poll_policy(&wd_rsa_setting.sched, expt, count);
 }
 
 int wd_rsa_kg_in_data(struct wd_rsa_kg_in *ki, char **data)

@@ -276,7 +276,7 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 		wd_dh_init_attrs.driver = wd_dh_setting.driver;
 		wd_dh_init_attrs.ctx_params = &dh_ctx_params;
 		wd_dh_init_attrs.alg_init = wd_dh_common_init;
-		wd_dh_init_attrs.alg_poll_ctx = wd_dh_poll_ctx;
+		wd_dh_init_attrs.alg_poll_ctx = wd_dh_poll_ctx_;
 		ret = wd_alg_attrs_init(&wd_dh_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
@@ -455,7 +455,7 @@ fail_with_msg:
 	return ret;
 }
 
-int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+int wd_dh_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
 	struct wd_ctx_internal *ctx;
@@ -509,16 +509,19 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	return ret;
 }
 
+int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+{
+	return wd_dh_poll_ctx_(NULL, idx, expt, count);
+}
+
 int wd_dh_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_sched_ctx = wd_dh_setting.sched.h_sched_ctx;
-
 	if (unlikely(!count)) {
 		WD_ERR("invalid: dh poll count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return wd_dh_setting.sched.poll_policy(h_sched_ctx, expt, count);
+	return wd_dh_setting.sched.poll_policy(&wd_dh_setting.sched, expt, count);
 }
 
 int wd_dh_get_mode(handle_t sess, __u8 *alg_mode)

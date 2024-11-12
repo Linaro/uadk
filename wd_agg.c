@@ -71,7 +71,7 @@ struct wd_agg_sess {
 
 static char *wd_agg_alg_name = "hashagg";
 static struct wd_init_attrs wd_agg_init_attrs;
-static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 
 static void wd_agg_close_driver(void)
 {
@@ -1506,7 +1506,7 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 	return WD_SUCCESS;
 }
 
-static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_agg_setting.config;
 	struct wd_agg_msg resp_msg, *msg;
@@ -1557,7 +1557,6 @@ static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 int wd_agg_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_ctx = wd_agg_setting.sched.h_sched_ctx;
 	struct wd_sched *sched = &wd_agg_setting.sched;
 
 	if (unlikely(!expt || !count)) {
@@ -1565,5 +1564,5 @@ int wd_agg_poll(__u32 expt, __u32 *count)
 		return -WD_EINVAL;
 	}
 
-	return sched->poll_policy(h_ctx, expt, count);
+	return sched->poll_policy(sched, expt, count);
 }

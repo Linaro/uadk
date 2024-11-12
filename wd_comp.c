@@ -304,7 +304,7 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 		wd_comp_init_attrs.driver = wd_comp_setting.driver;
 		wd_comp_init_attrs.ctx_params = &comp_ctx_params;
 		wd_comp_init_attrs.alg_init = wd_comp_init_nolock;
-		wd_comp_init_attrs.alg_poll_ctx = wd_comp_poll_ctx;
+		wd_comp_init_attrs.alg_poll_ctx = wd_comp_poll_ctx_;
 		ret = wd_alg_attrs_init(&wd_comp_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
@@ -349,7 +349,7 @@ void wd_comp_uninit2(void)
 	wd_alg_clear_init(&wd_comp_setting.status);
 }
 
-int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+int wd_comp_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_ctx_internal *ctx;
@@ -401,6 +401,11 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	} while (--tmp);
 
 	return ret;
+}
+
+int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
+{
+	return wd_comp_poll_ctx_(NULL, idx, expt, count);
 }
 
 static int wd_comp_check_sess_params(struct wd_comp_sess_setup *setup)
@@ -884,18 +889,14 @@ fail_with_msg:
 
 int wd_comp_poll(__u32 expt, __u32 *count)
 {
-	handle_t h_sched_ctx;
-	struct wd_sched *sched;
+	struct wd_sched *sched = &wd_comp_setting.sched;
 
 	if (unlikely(!count)) {
 		WD_ERR("invalid: comp poll count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	h_sched_ctx = wd_comp_setting.sched.h_sched_ctx;
-	sched = &wd_comp_setting.sched;
-
-	return sched->poll_policy(h_sched_ctx, expt, count);
+	return sched->poll_policy(sched, expt, count);
 }
 
 static const struct wd_config_variable table[] = {
