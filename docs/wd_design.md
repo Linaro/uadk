@@ -82,6 +82,7 @@
 |         |                |   sample_sched is moved from user space into UADK |
 |         |                |   framework. |
 |  1.4    |                |1) Update *wd_alg_init* reentrancy. |
+|  1.5    |                |1) Added driver dynamic loading function. |
 
 
 ## Terminology
