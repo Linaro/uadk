@@ -144,21 +144,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		       struct wd_ctx_config *cfg);
 
 /*
- * wd_init_sched() - Init internal scheduler configuration.
- * @in: Scheduler configuration in global setting.
- * @from: Scheduler configuration input by user.
- *
- * Return 0 if successful or less than 0 otherwise.
- */
-int wd_init_sched(struct wd_sched *in, struct wd_sched *from);
-
-/*
- * wd_clear_sched() - Clear internal scheduler configuration.
- * @in: Scheduler configuration in global setting.
- */
-void wd_clear_sched(struct wd_sched *in);
-
-/*
  * wd_clear_ctx_config() - Clear internal ctx configuration.
  * @in: ctx configuration in global setting.
  */
@@ -461,12 +446,14 @@ void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params);
 /**
  * wd_alg_attrs_init() - Request the ctxs and initialize the sched_domain
  *                     with the given devices list, ctxs number and numa mask.
+ * @worker: uadk_adapter_worker.
  * @attrs: the algorithm initialization parameters.
  *
  * Return device if succeed and other error number if fail.
  */
-int wd_alg_attrs_init(struct wd_init_attrs *attrs);
-void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
+int wd_alg_attrs_init(struct uadk_adapter_worker *worker,
+		      struct wd_init_attrs *attrs);
+void wd_alg_attrs_uninit(struct uadk_adapter_worker *worker);
 
 /**
  * wd_alg_drv_bind() - Request the ctxs and initialize the sched_domain

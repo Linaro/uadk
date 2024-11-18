@@ -15,6 +15,7 @@
 
 #include "include/drv/wd_ecc_drv.h"
 #include "include/wd_ecc_curve.h"
+#include "adapter.h"
 #include "wd_ecc.h"
 
 #define ECC_MAX_HW_BITS			521
@@ -49,7 +50,10 @@ struct wd_ecc_sess {
 	__u32 key_size;
 	struct wd_ecc_key key;
 	struct wd_ecc_sess_setup setup;
-	void *sched_key;
+	void **sched_key;
+	struct uadk_adapter_worker *worker;
+	pthread_spinlock_t worker_lock;
+	int worker_looptime;
 };
 
 struct wd_ecc_curve_list {
@@ -61,12 +65,9 @@ struct wd_ecc_curve_list {
 
 static struct wd_ecc_setting {
 	enum wd_status status;
-	struct wd_ctx_config_internal config;
-	struct wd_sched sched;
-	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
 	void *dlhandle;
 	void *dlh_list;
+	struct uadk_adapter *adapter;
 } wd_ecc_setting;
 
 struct wd_env_config wd_ecc_env_config;
@@ -106,19 +107,15 @@ static void wd_ecc_close_driver(int init_type)
 	if (!wd_ecc_setting.dlhandle)
 		return;
 
-	wd_release_drv(wd_ecc_setting.driver);
 	dlclose(wd_ecc_setting.dlhandle);
 	wd_ecc_setting.dlhandle = NULL;
 #else
-	wd_release_drv(wd_ecc_setting.driver);
 	hisi_hpre_remove();
 #endif
 }
 
 static int wd_ecc_open_driver(int init_type)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "sm2";
 #ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
@@ -152,15 +149,6 @@ static int wd_ecc_open_driver(int init_type)
 	if (init_type == WD_TYPE_V2)
 		return WD_SUCCESS;
 #endif
-	driver = wd_request_drv(alg_name, false);
-	if (!driver) {
-		wd_ecc_close_driver(WD_TYPE_V1);
-		WD_ERR("failed to get %s driver support\n", alg_name);
-		return -WD_EINVAL;
-	}
-
-	wd_ecc_setting.driver = driver;
-
 	return WD_SUCCESS;
 }
 
@@ -179,68 +167,66 @@ static void wd_ecc_clear_status(void)
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
 
-static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_ecc_common_init(struct uadk_adapter_worker *worker, struct wd_sched *sched)
 {
 	int ret;
 
 	ret = wd_set_epoll_en("WD_ECC_EPOLL_EN",
-			      &wd_ecc_setting.config.epoll_en);
+			      &worker->config.epoll_en);
 	if (ret < 0)
 		return ret;
 
-	ret = wd_init_ctx_config(&wd_ecc_setting.config, config);
+	ret = wd_init_ctx_config(&worker->config, worker->ctx_config);
 	if (ret < 0)
 		return ret;
 
-	ret = wd_init_sched(&wd_ecc_setting.sched, sched);
+	worker->config.pool = &worker->pool;
+	sched->worker = worker;
+	worker->sched = sched;
+
+	ret = wd_init_async_request_pool(&worker->pool,
+					 worker->ctx_config, WD_POOL_MAX_ENTRIES,
+					 sizeof(struct wd_ecc_msg));
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	ret = wd_init_async_request_pool(&wd_ecc_setting.pool,
-					 config, WD_POOL_MAX_ENTRIES,
-					 sizeof(struct wd_ecc_msg));
-	if (ret < 0)
-		goto out_clear_sched;
-
-	wd_ecc_setting.config.pool = &wd_ecc_setting.pool;
-
-	ret = wd_alg_init_driver(&wd_ecc_setting.config,
-				 wd_ecc_setting.driver);
+	ret = wd_alg_init_driver(&worker->config, worker->driver);
 	if (ret)
 		goto out_clear_pool;
 
 	return WD_SUCCESS;
 
 out_clear_pool:
-	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
-out_clear_sched:
-	wd_clear_sched(&wd_ecc_setting.sched);
+	wd_uninit_async_request_pool(&worker->pool);
 out_clear_ctx_config:
-	wd_clear_ctx_config(&wd_ecc_setting.config);
+	wd_clear_ctx_config(&worker->config);
 	return ret;
 }
 
 static int wd_ecc_common_uninit(void)
 {
+	struct uadk_adapter_worker *worker;
 	enum wd_status status;
 
 	wd_alg_get_init(&wd_ecc_setting.status, &status);
 	if (status == WD_UNINIT)
 		return -WD_EINVAL;
 
-	/* uninit async request pool */
-	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
+	for (int i = 0; i < wd_ecc_setting.adapter->workers_nb; i++) {
+		worker = &wd_ecc_setting.adapter->workers[i];
 
-	/* unset config, sched, driver */
-	wd_clear_sched(&wd_ecc_setting.sched);
-	wd_alg_uninit_driver(&wd_ecc_setting.config,
-			     wd_ecc_setting.driver);
+		wd_uninit_async_request_pool(&worker->pool);
+		wd_alg_uninit_driver(&worker->config, worker->driver);
+	}
 
 	return WD_SUCCESS;
 }
 
 int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
+	struct uadk_adapter_worker *worker;
+	struct uadk_adapter *adapter = NULL;
+	char *alg = "sm2";
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
@@ -253,11 +239,24 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
+	adapter = calloc(1, sizeof(*adapter));
+	if (adapter == NULL)
+		goto out_clear_init;
+
+	wd_ecc_setting.adapter = adapter;
+
 	ret = wd_ecc_open_driver(WD_TYPE_V1);
 	if (ret)
 		goto out_clear_init;
 
-	ret = wd_ecc_common_init(config, sched);
+	ret = uadk_adapter_add_workers(adapter, alg);
+	if (ret)
+		goto out_close_driver;
+
+	worker = &adapter->workers[0];
+	worker->ctx_config = config;
+
+	ret = wd_ecc_common_init(worker, sched);
 	if (ret)
 		goto out_close_driver;
 
@@ -268,6 +267,7 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 out_close_driver:
 	wd_ecc_close_driver(WD_TYPE_V1);
 out_clear_init:
+	free(adapter);
 	wd_alg_clear_init(&wd_ecc_setting.status);
 	return ret;
 }
@@ -280,6 +280,7 @@ void wd_ecc_uninit(void)
 	if (ret)
 		return;
 
+	free(wd_ecc_setting.adapter);
 	wd_ecc_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
@@ -288,8 +289,11 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 {
 	struct wd_ctx_nums ecc_ctx_num[WD_EC_OP_MAX] = {0};
 	struct wd_ctx_params ecc_ctx_params = {0};
+	struct uadk_adapter_worker *worker;
+	struct uadk_adapter *adapter = NULL;
 	int state, ret = -WD_EINVAL;
 	bool flag;
+	int i;
 
 	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
 
@@ -309,61 +313,46 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 		goto out_clear_init;
 	}
 
+	adapter = calloc(1, sizeof(*adapter));
+	if (adapter == NULL)
+		goto out_clear_init;
+	wd_ecc_setting.adapter = adapter;
+
 	state = wd_ecc_open_driver(WD_TYPE_V2);
 	if (state)
 		goto out_clear_init;
 
-	while (ret) {
-		memset(&wd_ecc_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+	ret = uadk_adapter_add_workers(adapter, alg);
+	if (ret)
+		goto out_dlopen;
 
-		/* Get alg driver and dev name */
-		wd_ecc_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_ecc_setting.driver) {
-			WD_ERR("failed to bind a valid driver!\n");
-			ret = -WD_EINVAL;
+	for (i = 0; i < adapter->workers_nb; i++) {
+		worker = &adapter->workers[i];
+
+		ecc_ctx_params.ctx_set_num = ecc_ctx_num;
+		ret = wd_ctx_param_init(&ecc_ctx_params, ctx_params, worker->driver,
+					WD_ECC_TYPE, WD_EC_OP_MAX);
+		if (ret) {
+			WD_ERR("fail to init ctx param\n");
 			goto out_dlopen;
 		}
 
-		ecc_ctx_params.ctx_set_num = ecc_ctx_num;
-		ret = wd_ctx_param_init(&ecc_ctx_params, ctx_params,
-					wd_ecc_setting.driver, WD_ECC_TYPE, WD_EC_OP_MAX);
-		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_ecc_setting.driver);
-				wd_alg_drv_unbind(wd_ecc_setting.driver);
-				continue;
-			}
-			goto out_driver;
-		}
-
 		wd_ecc_init_attrs.alg = alg;
-		wd_ecc_init_attrs.sched_type = sched_type;
-		wd_ecc_init_attrs.driver = wd_ecc_setting.driver;
 		wd_ecc_init_attrs.ctx_params = &ecc_ctx_params;
 		wd_ecc_init_attrs.alg_init = wd_ecc_common_init;
 		wd_ecc_init_attrs.alg_poll_ctx = wd_ecc_poll_ctx_;
-		ret = wd_alg_attrs_init(&wd_ecc_init_attrs);
+		ret = wd_alg_attrs_init(worker, &wd_ecc_init_attrs);
+		wd_ctx_param_uninit(&ecc_ctx_params);
 		if (ret) {
-			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_ecc_setting.driver);
-				wd_alg_drv_unbind(wd_ecc_setting.driver);
-				wd_ctx_param_uninit(&ecc_ctx_params);
-				continue;
-			}
 			WD_ERR("failed to init alg attrs!\n");
-			goto out_params_uninit;
+			goto out_dlopen;
 		}
 	}
 
 	wd_alg_set_init(&wd_ecc_setting.status);
-	wd_ctx_param_uninit(&ecc_ctx_params);
 
 	return WD_SUCCESS;
 
-out_params_uninit:
-	wd_ctx_param_uninit(&ecc_ctx_params);
-out_driver:
-	wd_alg_drv_unbind(wd_ecc_setting.driver);
 out_dlopen:
 	wd_ecc_close_driver(WD_TYPE_V2);
 out_clear_init:
@@ -373,14 +362,19 @@ out_clear_init:
 
 void wd_ecc_uninit2(void)
 {
+	struct uadk_adapter_worker *worker;
 	int ret;
 
 	ret = wd_ecc_common_uninit();
 	if (ret)
 		return;
 
-	wd_alg_attrs_uninit(&wd_ecc_init_attrs);
-	wd_alg_drv_unbind(wd_ecc_setting.driver);
+	for (int i = 0; i < wd_ecc_setting.adapter->workers_nb; i++) {
+		worker = &wd_ecc_setting.adapter->workers[i];
+		wd_alg_attrs_uninit(worker);
+	}
+
+	free(wd_ecc_setting.adapter);
 	wd_ecc_close_driver(WD_TYPE_V2);
 	wd_ecc_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_ecc_setting.status);
@@ -1170,21 +1164,27 @@ static void del_sess_key(struct wd_ecc_sess *sess)
 
 handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 {
+	struct uadk_adapter_worker *worker;
 	struct wd_ecc_sess *sess;
-	int ret;
+	int nb = wd_ecc_setting.adapter->workers_nb;
+	int ret, i;
 
 	if (setup_param_check(setup))
 		return (handle_t)0;
 
-	ret = wd_drv_alg_support(setup->alg, wd_ecc_setting.driver);
-	if (!ret) {
-		WD_ERR("failed to support this algorithm: %s!\n", setup->alg);
-		return (handle_t)0;
-	}
-
 	sess = calloc(1, sizeof(struct wd_ecc_sess));
 	if (!sess)
 		return (handle_t)0;
+
+	worker = sess->worker = &wd_ecc_setting.adapter->workers[0];
+	worker->valid = true;
+	sess->worker_looptime = 0;
+
+	ret = wd_drv_alg_support(setup->alg, worker->driver);
+	if (!ret) {
+		WD_ERR("failed to support this algorithm: %s!\n", setup->alg);
+		goto sess_err;
+	}
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
@@ -1195,12 +1195,16 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 		goto sess_err;
 	}
 
-	/* Some simple scheduler don't need scheduling parameters */
-	sess->sched_key = (void *)wd_ecc_setting.sched.sched_init(
-		     wd_ecc_setting.sched.h_sched_ctx, setup->sched_param);
-	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init session schedule key!\n");
-		goto sched_err;
+	sess->sched_key = (void **)calloc(nb, sizeof(void *));
+	for (i = 0; i < nb; i++) {
+		worker = &wd_ecc_setting.adapter->workers[i];
+
+		sess->sched_key[i] = (void *)worker->sched->sched_init(
+				worker->sched->h_sched_ctx, setup->sched_param);
+		if (WD_IS_ERR(sess->sched_key[i])) {
+			WD_ERR("failed to init session schedule key!\n");
+			goto sched_err;
+		}
 	}
 
 	return (handle_t)sess;
@@ -1208,6 +1212,11 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 sched_err:
 	del_sess_key(sess);
 sess_err:
+	if (sess->sched_key) {
+		for (i = 0; i < nb; i++)
+			free(sess->sched_key[i]);
+		free(sess->sched_key);
+	}
 	free(sess);
 	return (handle_t)0;
 }
@@ -1221,8 +1230,11 @@ void wd_ecc_free_sess(handle_t sess)
 		return;
 	}
 
-	if (sess_t->sched_key)
+	if (sess_t->sched_key) {
+		for (int i = 0; i < wd_ecc_setting.adapter->workers_nb; i++)
+			free(sess_t->sched_key[i]);
 		free(sess_t->sched_key);
+	}
 	del_sess_key(sess_t);
 	free(sess_t);
 }
@@ -1559,9 +1571,8 @@ static void msg_pack(char *dst, __u64 *out_len,
 
 int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 {
-	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
-	handle_t h_sched_ctx = wd_ecc_setting.sched.h_sched_ctx;
 	struct wd_ecc_sess *sess = (struct wd_ecc_sess *)h_sess;
+	struct uadk_adapter_worker *worker;
 	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
 	struct wd_ecc_msg msg;
@@ -1573,27 +1584,31 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx,
-							    sess->sched_key,
-							    CTX_MODE_SYNC);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+
+	idx = worker->sched->pick_next_ctx(
+		     worker->sched->h_sched_ctx,
+		     sess->sched_key[worker->idx], CTX_MODE_SYNC);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_SYNC, idx);
 	if (ret)
 		return ret;
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
-	ctx = config->ctxs + idx;
+	wd_dfx_msg_cnt(&worker->config, WD_CTX_CNT_NUM, idx);
+	ctx = worker->config.ctxs + idx;
 
 	memset(&msg, 0, sizeof(struct wd_ecc_msg));
 	ret = fill_ecc_msg(&msg, req, sess);
 	if (unlikely(ret))
 		return ret;
 
-	msg_handle.send = wd_ecc_setting.driver->send;
-	msg_handle.recv = wd_ecc_setting.driver->recv;
+	msg_handle.send = worker->driver->send;
+	msg_handle.recv = worker->driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_ecc_setting.driver, &msg_handle, ctx->ctx, &msg,
-				 &balance, wd_ecc_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(worker->driver, &msg_handle, ctx->ctx, &msg,
+				 &balance, worker->config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -2245,11 +2260,10 @@ struct wd_ecc_in *wd_ecdsa_new_verf_in(handle_t sess,
 	return new_verf_in(sess, dgst, r, s, NULL, 1);
 }
 
-int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
+int wd_do_ecc_async(handle_t h_sess, struct wd_ecc_req *req)
 {
-	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
-	handle_t h_sched_ctx = wd_ecc_setting.sched.h_sched_ctx;
-	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
+	struct wd_ecc_sess *sess = (struct wd_ecc_sess *)h_sess;
+	struct uadk_adapter_worker *worker;
 	struct wd_ecc_msg *msg = NULL;
 	struct wd_ctx_internal *ctx;
 	int ret, mid;
@@ -2260,16 +2274,20 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_ecc_setting.sched.pick_next_ctx(h_sched_ctx,
-						 sess_t->sched_key,
-						 CTX_MODE_ASYNC);
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+
+	idx = worker->sched->pick_next_ctx(
+		     worker->sched->h_sched_ctx,
+		     sess->sched_key[worker->idx], CTX_MODE_ASYNC);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
 
-	ctx = config->ctxs + idx;
+	ctx = worker->config.ctxs + idx;
 
-	mid = wd_get_msg_from_pool(&wd_ecc_setting.pool, idx, (void **)&msg);
+	mid = wd_get_msg_from_pool(&worker->pool, idx, (void **)&msg);
 	if (unlikely(mid < 0)) {
 		WD_ERR("failed to get msg from pool!\n");
 		return mid;
@@ -2280,7 +2298,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_ecc_setting.driver, ctx->ctx, msg);
+	ret = wd_alg_driver_send(worker->driver, ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send ecc BD, hw is err!\n");
@@ -2288,7 +2306,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	}
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(&worker->config, WD_CTX_CNT_NUM, idx);
 	ret = wd_add_task_to_async_queue(&wd_ecc_env_config, idx);
 	if (ret)
 		goto fail_with_msg;
@@ -2296,13 +2314,13 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	return WD_SUCCESS;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, mid);
+	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
 	return ret;
 }
 
 int wd_ecc_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
-	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
+	struct uadk_adapter_worker *worker;
 	struct wd_ecc_msg recv_msg, *msg;
 	struct wd_ctx_internal *ctx;
 	struct wd_ecc_req *req;
@@ -2315,28 +2333,33 @@ int wd_ecc_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count
 		return -WD_EINVAL;
 	}
 
+	/* back-compatible with init1 api */
+	if (sched == NULL)
+		worker = &wd_ecc_setting.adapter->workers[0];
+	else
+		worker = sched->worker;
+
 	*count = 0;
 
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
 
-	ctx = config->ctxs + idx;
+	ctx = worker->config.ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_ecc_setting.driver, ctx->ctx, &recv_msg);
+		ret = wd_alg_driver_recv(worker->driver, ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_ecc_setting.pool, idx,
+			wd_put_msg_to_pool(&worker->pool, idx,
 					   recv_msg.tag);
 			return ret;
 		}
 		rcv_cnt++;
-		msg = wd_find_msg_in_pool(&wd_ecc_setting.pool, idx,
-					  recv_msg.tag);
+		msg = wd_find_msg_in_pool(&worker->pool, idx, recv_msg.tag);
 		if (!msg) {
 			WD_ERR("failed to find msg from pool!\n");
 			return -WD_EINVAL;
@@ -2346,7 +2369,7 @@ int wd_ecc_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count
 		msg->req.status = recv_msg.result;
 		req = &msg->req;
 		req->cb(req);
-		wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, recv_msg.tag);
+		wd_put_msg_to_pool(&worker->pool, idx, recv_msg.tag);
 		*count = rcv_cnt;
 	} while (--tmp);
 
@@ -2360,12 +2383,33 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 
 int wd_ecc_poll(__u32 expt, __u32 *count)
 {
+	struct uadk_adapter_worker *worker;
+	__u32 recv = 0;
+	int ret = WD_SUCCESS;
+
 	if (unlikely(!count)) {
 		WD_ERR("invalid: ecc poll param count is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return wd_ecc_setting.sched.poll_policy(&wd_ecc_setting.sched, expt, count);
+	for (int i = 0; i < wd_ecc_setting.adapter->workers_nb; i++) {
+		worker = &wd_ecc_setting.adapter->workers[i];
+
+		if (worker->valid) {
+			struct wd_sched *sched = worker->sched;
+
+			ret = worker->sched->poll_policy(sched, expt, &recv);
+			if (ret)
+				return ret;
+
+			*count += recv;
+			expt -= recv;
+
+			if (expt == 0)
+				break;
+		}
+	}
+	return ret;
 }
 
 static const struct wd_config_variable table[] = {

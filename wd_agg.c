@@ -8,6 +8,7 @@
 #include <sched.h>
 #include <limits.h>
 #include "include/drv/wd_agg_drv.h"
+#include "adapter.h"
 #include "wd_agg.h"
 
 #define DECIMAL_PRECISION_OFFSET	8
@@ -29,13 +30,10 @@ enum wd_agg_sess_state {
 
 struct wd_agg_setting {
 	enum wd_status status;
-	struct wd_ctx_config_internal config;
-	struct wd_sched sched;
-	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
 	void *priv;
 	void *dlhandle;
 	void *dlh_list;
+	struct uadk_adapter *adapter;
 } wd_agg_setting;
 
 struct wd_agg_sess_key_conf {
@@ -59,7 +57,7 @@ struct wd_agg_sess {
 	wd_dev_mask_t *dev_mask;
 	struct wd_alg_agg *drv;
 	void *priv;
-	void *sched_key;
+	void **sched_key;
 	enum wd_agg_sess_state state;
 	struct wd_agg_ops ops;
 	struct wd_agg_sess_key_conf key_conf;
@@ -67,6 +65,9 @@ struct wd_agg_sess {
 	struct wd_dae_charset charset_info;
 	struct wd_dae_hash_table hash_table;
 	struct wd_dae_hash_table rehash_table;
+	struct uadk_adapter_worker *worker;
+	pthread_spinlock_t worker_lock;
+	int worker_looptime;
 };
 
 static char *wd_agg_alg_name = "hashagg";
@@ -78,7 +79,6 @@ static void wd_agg_close_driver(void)
 #ifndef WD_STATIC_DRV
 	wd_dlclose_drv(wd_agg_setting.dlh_list);
 #else
-	wd_release_drv(wd_agg_setting.driver);
 	hisi_dae_remove();
 #endif
 }
@@ -384,9 +384,11 @@ static int wd_agg_init_sess_priv(struct wd_agg_sess *sess, struct wd_agg_sess_se
 
 handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 {
+	struct uadk_adapter_worker *worker;
+	int nb = wd_agg_setting.adapter->workers_nb;
 	__u32 out_agg_cols_num = 0;
 	struct wd_agg_sess *sess;
-	int ret;
+	int ret, i;
 
 	ret = wd_agg_check_sess_params(setup, &out_agg_cols_num);
 	if (ret)
@@ -400,22 +402,30 @@ handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 	memset(sess, 0, sizeof(struct wd_agg_sess));
 	sess->agg_conf.out_cols_num = out_agg_cols_num;
 
+	worker = sess->worker = &wd_agg_setting.adapter->workers[0];
+	worker->valid = true;
+	sess->worker_looptime = 0;
+
 	sess->alg_name = wd_agg_alg_name;
-	ret = wd_drv_alg_support(sess->alg_name, wd_agg_setting.driver);
+	ret = wd_drv_alg_support(sess->alg_name, worker->driver);
 	if (!ret) {
 		WD_ERR("failed to support agg algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
 
-	/* Some simple scheduler don't need scheduling parameters */
-	sess->sched_key = (void *)wd_agg_setting.sched.sched_init(
-		wd_agg_setting.sched.h_sched_ctx, setup->sched_param);
-	if (WD_IS_ERR(sess->sched_key)) {
-		WD_ERR("failed to init agg session schedule key!\n");
-		goto err_sess;
+	sess->sched_key = (void **)calloc(nb, sizeof(void *));
+	for (i = 0; i < nb; i++) {
+		worker = &wd_agg_setting.adapter->workers[i];
+
+		sess->sched_key[i] = (void *)worker->sched->sched_init(
+				worker->sched->h_sched_ctx, setup->sched_param);
+		if (WD_IS_ERR(sess->sched_key[i])) {
+			WD_ERR("failed to init session schedule key!\n");
+			goto err_sess;
+		}
 	}
 
-	ret = wd_agg_setting.driver->get_extend_ops(&sess->ops);
+	ret = worker->driver->get_extend_ops(&sess->ops);
 	if (ret) {
 		WD_ERR("failed to get agg extend ops!\n");
 		goto err_sess;
@@ -437,8 +447,11 @@ uninit_priv:
 	if (sess->ops.sess_uninit)
 		sess->ops.sess_uninit(sess->priv);
 err_sess:
-	if (sess->sched_key)
+	if (sess->sched_key) {
+		for (i = 0; i < nb; i++)
+			free(sess->sched_key[i]);
 		free(sess->sched_key);
+	}
 	free(sess);
 	return (handle_t)0;
 }
@@ -458,8 +471,11 @@ void wd_agg_free_sess(handle_t h_sess)
 
 	if (sess->ops.sess_uninit)
 		sess->ops.sess_uninit(sess->priv);
-	if (sess->sched_key)
+	if (sess->sched_key) {
+		for (int i = 0; i < wd_agg_setting.adapter->workers_nb; i++)
+			free(sess->sched_key[i]);
 		free(sess->sched_key);
+	}
 
 	free(sess);
 }
@@ -570,69 +586,50 @@ static void wd_agg_clear_status(void)
 	wd_alg_clear_init(&wd_agg_setting.status);
 }
 
-static int wd_agg_alg_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_agg_alg_init(struct uadk_adapter_worker *worker, struct wd_sched *sched)
 {
 	int ret;
 
-	ret = wd_set_epoll_en("WD_AGG_EPOLL_EN", &wd_agg_setting.config.epoll_en);
+	ret = wd_set_epoll_en("WD_AGG_EPOLL_EN", &worker->config.epoll_en);
 	if (ret < 0)
 		return ret;
 
-	ret = wd_init_ctx_config(&wd_agg_setting.config, config);
+	ret = wd_init_ctx_config(&worker->config, worker->ctx_config);
 	if (ret < 0)
 		return ret;
 
-	ret = wd_init_sched(&wd_agg_setting.sched, sched);
+	worker->config.pool = &worker->pool;
+	sched->worker = worker;
+	worker->sched = sched;
+
+	/* Allocate async pool for every ctx */
+	ret = wd_init_async_request_pool(&worker->pool,
+					 worker->ctx_config, WD_POOL_MAX_ENTRIES,
+					 sizeof(struct wd_agg_msg));
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* Allocate async pool for every ctx */
-	ret = wd_init_async_request_pool(&wd_agg_setting.pool, config, WD_POOL_MAX_ENTRIES,
-					 sizeof(struct wd_agg_msg));
-	if (ret < 0)
-		goto out_clear_sched;
-
-	wd_agg_setting.config.pool = &wd_agg_setting.pool;
-
-	ret = wd_alg_init_driver(&wd_agg_setting.config, wd_agg_setting.driver);
+	ret = wd_alg_init_driver(&worker->config, worker->driver);
 	if (ret)
 		goto out_clear_pool;
 
 	return WD_SUCCESS;
 
 out_clear_pool:
-	wd_uninit_async_request_pool(&wd_agg_setting.pool);
-out_clear_sched:
-	wd_clear_sched(&wd_agg_setting.sched);
+	wd_uninit_async_request_pool(&worker->pool);
 out_clear_ctx_config:
-	wd_clear_ctx_config(&wd_agg_setting.config);
+	wd_clear_ctx_config(&worker->config);
 	return ret;
-}
-
-static int wd_agg_alg_uninit(void)
-{
-	void *priv = wd_agg_setting.priv;
-
-	if (!priv)
-		return -WD_EINVAL;
-
-	/* Uninit async request pool */
-	wd_uninit_async_request_pool(&wd_agg_setting.pool);
-
-	/* Unset config, sched, driver */
-	wd_clear_sched(&wd_agg_setting.sched);
-
-	wd_alg_uninit_driver(&wd_agg_setting.config, wd_agg_setting.driver);
-
-	return WD_SUCCESS;
 }
 
 int wd_agg_init(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
 {
 	struct wd_ctx_params agg_ctx_params = {0};
 	struct wd_ctx_nums agg_ctx_num = {0};
+	struct uadk_adapter_worker *worker;
+	struct uadk_adapter *adapter = NULL;
 	int ret = -WD_EINVAL;
-	int state;
+	int state, i;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_agg_clear_status);
@@ -653,60 +650,46 @@ int wd_agg_init(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params
 		goto out_uninit;
 	}
 
+	adapter = calloc(1, sizeof(*adapter));
+	if (adapter == NULL)
+		goto out_uninit;
+	wd_agg_setting.adapter = adapter;
+
 	state = wd_agg_open_driver();
 	if (state)
 		goto out_uninit;
 
-	while (ret != 0) {
-		memset(&wd_agg_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+	ret = uadk_adapter_add_workers(adapter, alg);
+	if (ret)
+		goto out_dlopen;
 
-		/* Get alg driver and dev name */
-		wd_agg_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_agg_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
+	for (i = 0; i < adapter->workers_nb; i++) {
+		worker = &adapter->workers[i];
+
+		agg_ctx_params.ctx_set_num = &agg_ctx_num;
+		ret = wd_ctx_param_init(&agg_ctx_params, ctx_params, worker->driver,
+					WD_AGG_TYPE, 1);
+		if (ret) {
+			WD_ERR("fail to init ctx param\n");
 			goto out_dlopen;
 		}
 
-		agg_ctx_params.ctx_set_num = &agg_ctx_num;
-		ret = wd_ctx_param_init(&agg_ctx_params, ctx_params, wd_agg_setting.driver,
-					WD_AGG_TYPE, 1);
-		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_agg_setting.driver);
-				wd_alg_drv_unbind(wd_agg_setting.driver);
-				continue;
-			}
-			goto out_driver;
-		}
-
 		wd_agg_init_attrs.alg = alg;
-		wd_agg_init_attrs.sched_type = sched_type;
-		wd_agg_init_attrs.driver = wd_agg_setting.driver;
 		wd_agg_init_attrs.ctx_params = &agg_ctx_params;
 		wd_agg_init_attrs.alg_init = wd_agg_alg_init;
 		wd_agg_init_attrs.alg_poll_ctx = wd_agg_poll_ctx;
-		ret = wd_alg_attrs_init(&wd_agg_init_attrs);
+		ret = wd_alg_attrs_init(worker, &wd_agg_init_attrs);
+		wd_ctx_param_uninit(&agg_ctx_params);
 		if (ret) {
-			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_agg_setting.driver);
-				wd_alg_drv_unbind(wd_agg_setting.driver);
-				wd_ctx_param_uninit(&agg_ctx_params);
-				continue;
-			}
 			WD_ERR("fail to init alg attrs.\n");
-			goto out_params_uninit;
+			goto out_dlopen;
 		}
 	}
 
 	wd_alg_set_init(&wd_agg_setting.status);
-	wd_ctx_param_uninit(&agg_ctx_params);
 
 	return WD_SUCCESS;
 
-out_params_uninit:
-	wd_ctx_param_uninit(&agg_ctx_params);
-out_driver:
-	wd_alg_drv_unbind(wd_agg_setting.driver);
 out_dlopen:
 	wd_agg_close_driver();
 out_uninit:
@@ -716,14 +699,15 @@ out_uninit:
 
 void wd_agg_uninit(void)
 {
-	int ret;
+	struct uadk_adapter_worker *worker;
 
-	ret = wd_agg_alg_uninit();
-	if (ret)
-		return;
+	for (int i = 0; i < wd_agg_setting.adapter->workers_nb; i++) {
+		worker = &wd_agg_setting.adapter->workers[i];
+		wd_alg_attrs_uninit(worker);
+		wd_uninit_async_request_pool(&worker->pool);
+		wd_alg_uninit_driver(&worker->config, worker->driver);
+	}
 
-	wd_alg_attrs_uninit(&wd_agg_init_attrs);
-	wd_alg_drv_unbind(wd_agg_setting.driver);
 	wd_agg_close_driver();
 	wd_agg_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_agg_setting.status);
@@ -1078,30 +1062,30 @@ static int wd_agg_check_rehash_params(struct wd_agg_sess *sess, struct wd_agg_re
 	return ret;
 }
 
-static int wd_agg_sync_job(struct wd_agg_sess *sess, struct wd_agg_req *req,
-			   struct wd_agg_msg *msg)
+static int wd_agg_sync_job(struct uadk_adapter_worker *worker, struct wd_agg_sess *sess,
+			   struct wd_agg_req *req, struct wd_agg_msg *msg)
 {
-	struct wd_ctx_config_internal *config = &wd_agg_setting.config;
 	struct wd_msg_handle msg_handle;
 	struct wd_ctx_internal *ctx;
 	__u32 idx;
 	int ret;
 
-	idx = wd_agg_setting.sched.pick_next_ctx(wd_agg_setting.sched.h_sched_ctx,
-						 sess->sched_key, CTX_MODE_SYNC);
-	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
+	idx = worker->sched->pick_next_ctx(worker->sched->h_sched_ctx,
+					   sess->sched_key[worker->idx],
+					   CTX_MODE_SYNC);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
-	ctx = config->ctxs + idx;
+	wd_dfx_msg_cnt(&worker->config, WD_CTX_CNT_NUM, idx);
+	ctx = worker->config.ctxs + idx;
 
-	msg_handle.send = wd_agg_setting.driver->send;
-	msg_handle.recv = wd_agg_setting.driver->recv;
+	msg_handle.send = worker->driver->send;
+	msg_handle.recv = worker->driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_agg_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, config->epoll_en);
+	ret = wd_handle_msg_sync(worker->driver, &msg_handle, ctx->ctx,
+				 msg, NULL, worker->config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -1146,6 +1130,7 @@ int wd_agg_add_input_sync(handle_t h_sess, struct wd_agg_req *req)
 {
 	struct wd_agg_sess *sess = (struct wd_agg_sess *)h_sess;
 	enum wd_agg_sess_state expected = WD_AGG_SESS_INIT;
+	struct uadk_adapter_worker *worker;
 	struct wd_agg_msg msg;
 	int ret;
 
@@ -1159,11 +1144,15 @@ int wd_agg_add_input_sync(handle_t h_sess, struct wd_agg_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+
 	memset(&msg, 0, sizeof(struct wd_agg_msg));
 	fill_request_msg_input(&msg, req, sess, false);
 	req->state = 0;
 
-	ret = wd_agg_sync_job(sess, req, &msg);
+	ret = wd_agg_sync_job(worker, sess, req, &msg);
 	if (unlikely(ret)) {
 		if (expected == WD_AGG_SESS_INIT)
 			__atomic_store_n(&sess->state, expected, __ATOMIC_RELEASE);
@@ -1179,20 +1168,26 @@ int wd_agg_add_input_sync(handle_t h_sess, struct wd_agg_req *req)
 
 static int wd_agg_async_job(struct wd_agg_sess *sess, struct wd_agg_req *req, bool is_input)
 {
-	struct wd_ctx_config_internal *config = &wd_agg_setting.config;
+	struct uadk_adapter_worker *worker;
 	struct wd_ctx_internal *ctx;
 	__u32 idx;
 	int msg_id, ret;
 	struct wd_agg_msg *msg;
 
-	idx = wd_agg_setting.sched.pick_next_ctx(wd_agg_setting.sched.h_sched_ctx,
-						 sess->sched_key, CTX_MODE_ASYNC);
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+
+	idx = worker->sched->pick_next_ctx(worker->sched->h_sched_ctx,
+					   sess->sched_key[worker->idx], CTX_MODE_ASYNC);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (unlikely(ret))
 		return ret;
 
-	ctx = config->ctxs + idx;
-	msg_id = wd_get_msg_from_pool(&wd_agg_setting.pool, idx, (void **)&msg);
+	ctx = worker->config.ctxs + idx;
+
+	msg_id = wd_get_msg_from_pool(&worker->pool, idx,
+				   (void **)&msg);
 	if (unlikely(msg_id < 0)) {
 		WD_ERR("failed to get agg msg from pool!\n");
 		return msg_id;
@@ -1203,7 +1198,7 @@ static int wd_agg_async_job(struct wd_agg_sess *sess, struct wd_agg_req *req, bo
 	else
 		fill_request_msg_output(msg, req, sess, false);
 	msg->tag = msg_id;
-	ret = wd_alg_driver_send(wd_agg_setting.driver, ctx->ctx, msg);
+	ret = wd_alg_driver_send(worker->driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd agg async send err!\n");
@@ -1211,12 +1206,12 @@ static int wd_agg_async_job(struct wd_agg_sess *sess, struct wd_agg_req *req, bo
 		goto fail_with_msg;
 	}
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(&worker->config, WD_CTX_CNT_NUM, idx);
 
 	return WD_SUCCESS;
 
 fail_with_msg:
-	wd_put_msg_to_pool(&wd_agg_setting.pool, idx, msg->tag);
+	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
 	return ret;
 }
 
@@ -1265,6 +1260,7 @@ int wd_agg_get_output_sync(handle_t h_sess, struct wd_agg_req *req)
 {
 	struct wd_agg_sess *sess = (struct wd_agg_sess *)h_sess;
 	enum wd_agg_sess_state expected = WD_AGG_SESS_INPUT;
+	struct uadk_adapter_worker *worker;
 	struct wd_agg_msg msg;
 	int ret;
 
@@ -1278,11 +1274,15 @@ int wd_agg_get_output_sync(handle_t h_sess, struct wd_agg_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+
 	memset(&msg, 0, sizeof(struct wd_agg_msg));
 	fill_request_msg_output(&msg, req, sess, false);
 	req->state = 0;
 
-	ret = wd_agg_sync_job(sess, req, &msg);
+	ret = wd_agg_sync_job(worker, sess, req, &msg);
 	if (unlikely(ret)) {
 		if (expected == WD_AGG_SESS_INPUT)
 			__atomic_store_n(&sess->state, expected, __ATOMIC_RELEASE);
@@ -1407,7 +1407,9 @@ static int wd_agg_set_col_size(struct wd_agg_sess *sess, struct wd_agg_req *req,
 	return WD_SUCCESS;
 }
 
-static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req *req)
+static int wd_agg_rehash_sync_inner(struct uadk_adapter_worker *worker,
+				    struct wd_agg_sess *sess,
+				    struct wd_agg_req *req)
 {
 	struct wd_agg_msg msg = {0};
 	bool output_done;
@@ -1416,7 +1418,7 @@ static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req 
 	fill_request_msg_output(&msg, req, sess, true);
 	req->state = 0;
 
-	ret = wd_agg_sync_job(sess, req, &msg);
+	ret = wd_agg_sync_job(worker, sess, req, &msg);
 	if (unlikely(ret))
 		return ret;
 
@@ -1441,7 +1443,7 @@ static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req 
 	memset(&msg, 0, sizeof(struct wd_agg_msg));
 	fill_request_msg_input(&msg, req, sess, true);
 
-	ret = wd_agg_sync_job(sess, req, &msg);
+	ret = wd_agg_sync_job(worker, sess, req, &msg);
 	if (unlikely(ret))
 		return ret;
 
@@ -1473,6 +1475,7 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 {
 	struct wd_agg_sess *sess = (struct wd_agg_sess *)h_sess;
 	enum wd_agg_sess_state expected = WD_AGG_SESS_RESET;
+	struct uadk_adapter_worker *worker;
 	struct wd_agg_req src_req;
 	__u64 cnt = 0;
 	__u64 max_cnt;
@@ -1488,10 +1491,14 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 	if (unlikely(ret))
 		return ret;
 
+	pthread_spin_lock(&sess->worker_lock);
+	worker = sess->worker;
+	pthread_spin_unlock(&sess->worker_lock);
+
 	memcpy(&src_req, req, sizeof(struct wd_agg_req));
 	max_cnt = MAX_HASH_TABLE_ROW_NUM / req->out_row_count;
 	while (cnt < max_cnt) {
-		ret = wd_agg_rehash_sync_inner(sess, &src_req);
+		ret = wd_agg_rehash_sync_inner(worker, sess, &src_req);
 		if (ret) {
 			__atomic_store_n(&sess->state, WD_AGG_SESS_RESET, __ATOMIC_RELEASE);
 			WD_ERR("failed to do agg rehash task!\n");
@@ -1508,7 +1515,7 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 
 static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count)
 {
-	struct wd_ctx_config_internal *config = &wd_agg_setting.config;
+	struct uadk_adapter_worker *worker = sched->worker;
 	struct wd_agg_msg resp_msg, *msg;
 	struct wd_ctx_internal *ctx;
 	struct wd_agg_req *req;
@@ -1518,14 +1525,14 @@ static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 
 
 	*count = 0;
 
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (unlikely(ret))
 		return ret;
 
-	ctx = config->ctxs + idx;
+	ctx = worker->config.ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_agg_setting.driver, ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(worker->driver, ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (unlikely(ret < 0)) {
@@ -1533,7 +1540,7 @@ static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 
 			return ret;
 		}
 		recv_count++;
-		msg = wd_find_msg_in_pool(&wd_agg_setting.pool, idx, resp_msg.tag);
+		msg = wd_find_msg_in_pool(&worker->pool, idx, resp_msg.tag);
 		if (unlikely(!msg)) {
 			WD_ERR("failed to get agg msg from pool!\n");
 			return -WD_EINVAL;
@@ -1548,7 +1555,7 @@ static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 
 
 		req->cb(req, req->cb_param);
 		/* Free msg cache to msg_pool */
-		wd_put_msg_to_pool(&wd_agg_setting.pool, idx, resp_msg.tag);
+		wd_put_msg_to_pool(&worker->pool, idx, resp_msg.tag);
 		*count = recv_count;
 	} while (--tmp);
 
@@ -1557,12 +1564,31 @@ static int wd_agg_poll_ctx(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 
 
 int wd_agg_poll(__u32 expt, __u32 *count)
 {
-	struct wd_sched *sched = &wd_agg_setting.sched;
+	struct uadk_adapter_worker *worker;
+	__u32 recv = 0;
+	int ret = WD_SUCCESS;
 
 	if (unlikely(!expt || !count)) {
 		WD_ERR("invalid: agg poll input param is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	return sched->poll_policy(sched, expt, count);
+	for (int i = 0; i < wd_agg_setting.adapter->workers_nb; i++) {
+		worker = &wd_agg_setting.adapter->workers[i];
+
+		if (worker->valid) {
+			struct wd_sched *sched = worker->sched;
+
+			ret = worker->sched->poll_policy(sched, expt, &recv);
+			if (ret)
+				return ret;
+
+			*count += recv;
+			expt -= recv;
+
+			if (expt == 0)
+				break;
+		}
+	}
+	return ret;
 }
