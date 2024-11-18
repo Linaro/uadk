@@ -71,6 +71,19 @@ struct wd_digest_sess {
 	int worker_looptime;
 };
 
+void wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
+{
+	struct uadk_adapter_worker *worker;
+
+	pthread_spin_lock(&sess->worker_lock);
+	worker = uadk_adapter_switch_worker(wd_digest_setting.adapter,
+					    sess->worker, para);
+	if (worker)
+		sess->worker = worker;
+	sess->worker_looptime = 0;
+	pthread_spin_unlock(&sess->worker_lock);
+}
+
 struct wd_env_config wd_digest_env_config;
 static struct wd_init_attrs wd_digest_init_attrs;
 
@@ -693,6 +706,19 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	ret = send_recv_sync(worker, ctx, dsess, &msg);
 	req->state = msg.result;
 
+	if (ret) {
+		wd_digest_switch_worker(dsess, 1);
+		dsess->worker_looptime++;
+		return ret;
+	}
+
+	if ((dsess->worker_looptime != 0) ||
+	    (wd_digest_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		dsess->worker_looptime++;
+
+	if (dsess->worker_looptime >= wd_digest_setting.adapter->looptime)
+		wd_digest_switch_worker(dsess, 0);
+
 	return ret;
 }
 
@@ -750,10 +776,19 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	if (ret)
 		goto fail_with_msg;
 
+	if ((dsess->worker_looptime != 0) ||
+	    (wd_digest_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		dsess->worker_looptime++;
+
+	if (dsess->worker_looptime >= wd_digest_setting.adapter->looptime)
+		wd_digest_switch_worker(dsess, 0);
+
 	return 0;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
+	wd_digest_switch_worker(dsess, 1);
+	dsess->worker_looptime++;
 	return ret;
 }
 
