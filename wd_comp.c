@@ -55,6 +55,19 @@ struct wd_comp_setting {
 struct wd_env_config wd_comp_env_config;
 static struct wd_init_attrs wd_comp_init_attrs;
 
+void wd_comp_switch_worker(struct wd_comp_sess *sess, int para)
+{
+	struct uadk_adapter_worker *worker;
+
+	pthread_spin_lock(&sess->worker_lock);
+	worker = uadk_adapter_switch_worker(wd_comp_setting.adapter,
+					    sess->worker, para);
+	if (worker)
+		sess->worker = worker;
+	sess->worker_looptime = 0;
+	pthread_spin_unlock(&sess->worker_lock);
+}
+
 static void wd_comp_close_driver(int init_type)
 {
 #ifndef WD_STATIC_DRV
@@ -639,6 +652,20 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 				 msg, NULL, worker->config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
+	if (ret) {
+		wd_comp_switch_worker(sess, 1);
+		sess->worker_looptime++;
+		return ret;
+	}
+
+	if ((sess->worker_looptime != 0) ||
+	    (wd_comp_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN)) {
+		sess->worker_looptime++;
+	}
+
+	if (sess->worker_looptime >= wd_comp_setting.adapter->looptime)
+		wd_comp_switch_worker(sess, 0);
+
 	return ret;
 }
 
@@ -904,11 +931,19 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	if (unlikely(ret))
 		goto fail_with_msg;
 
+	if ((sess->worker_looptime != 0) ||
+	    (wd_comp_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		sess->worker_looptime++;
+
+	if (sess->worker_looptime >= wd_comp_setting.adapter->looptime)
+		wd_comp_switch_worker(sess, 0);
+
 	return 0;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
-
+	wd_comp_switch_worker(sess, 1);
+	sess->worker_looptime++;
 	return ret;
 }
 

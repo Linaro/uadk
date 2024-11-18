@@ -73,6 +73,19 @@ struct wd_cipher_sess {
 struct wd_env_config wd_cipher_env_config;
 static struct wd_init_attrs wd_cipher_init_attrs;
 
+void wd_cipher_switch_worker(struct wd_cipher_sess *sess, int para)
+{
+	struct uadk_adapter_worker *worker;
+
+	pthread_spin_lock(&sess->worker_lock);
+	worker = uadk_adapter_switch_worker(wd_cipher_setting.adapter,
+					    sess->worker, para);
+	if (worker)
+		sess->worker = worker;
+	sess->worker_looptime = 0;
+	pthread_spin_unlock(&sess->worker_lock);
+}
+
 static void wd_cipher_close_driver(int init_type)
 {
 #ifndef WD_STATIC_DRV
@@ -742,6 +755,20 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	ret = send_recv_sync(worker, ctx, &msg);
 	req->state = msg.result;
 
+	if (ret) {
+		wd_cipher_switch_worker(sess, 1);
+		sess->worker_looptime++;
+		return ret;
+	}
+
+	if ((sess->worker_looptime != 0) ||
+	    (wd_cipher_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN)) {
+		sess->worker_looptime++;
+	}
+
+	if (sess->worker_looptime >= wd_cipher_setting.adapter->looptime)
+		wd_cipher_switch_worker(sess, 0);
+
 	return ret;
 }
 
@@ -795,10 +822,19 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	if (ret)
 		goto fail_with_msg;
 
+	if ((sess->worker_looptime != 0) ||
+	    (wd_cipher_setting.adapter->mode == UADK_ADAPT_MODE_ROUNDROBIN))
+		sess->worker_looptime++;
+
+	if (sess->worker_looptime >= wd_cipher_setting.adapter->looptime)
+		wd_cipher_switch_worker(sess, 0);
+
 	return 0;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&worker->pool, idx, msg->tag);
+	wd_cipher_switch_worker(sess, 1);
+	sess->worker_looptime++;
 	return ret;
 }
 
