@@ -10,6 +10,7 @@
 #define CONFIG_FILE_ENV "UADK_CONF"
 #define DRIVER_NAME_KEY "driver_name"
 #define MODE_KEY "mode"
+#define LOOP_KEY "looptime"
 #define WORKERS_NB 8
 
 static int read_value_int(char *conf, const char *key)
@@ -91,8 +92,14 @@ int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 	adapter->looptime = UADK_WORKER_LOOPTIME;
 
 	if (conf != NULL) {
+		int looptime = 0;
+
 		/* if env UADK_CONF exist, parse config first */
 		adapter->mode = read_value_int(conf, MODE_KEY);
+		looptime = read_value_int(conf, LOOP_KEY);
+		if (looptime != 0)
+			adapter->looptime = looptime;
+
 		read_config_entries(conf, adapter, alg);
 		if (adapter->workers_nb != 0)
 			return 0;
