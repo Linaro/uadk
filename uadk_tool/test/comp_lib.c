@@ -343,7 +343,7 @@ void free_chunk_list(chunk_list_t *list)
  * Deflate a data block with compressed header.
  */
 static int chunk_deflate(void *in, size_t in_sz, void *out, size_t *out_sz,
-			  struct test_options *opts)
+			 struct test_options *opts)
 {
 	int alg_type = opts->alg_type;
 	z_stream strm;
@@ -405,7 +405,7 @@ static int chunk_deflate(void *in, size_t in_sz, void *out, size_t *out_sz,
  * produces compression header.
  */
 static int chunk_inflate(void *in, size_t in_sz, void *out, size_t *out_sz,
-			  struct test_options *opts)
+			 struct test_options *opts)
 {
 	z_stream strm;
 	int ret;
@@ -449,15 +449,14 @@ out:
  * in_list & out_list should be formated first.
  */
 int sw_deflate(chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts)
+	       chunk_list_t *out_list,
+	       struct test_options *opts)
 {
 	chunk_list_t *p, *q;
 	int ret = -EINVAL;
 
 	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
-		ret = chunk_deflate(p->addr, p->size, q->addr, &q->size,
-				     opts);
+		ret = chunk_deflate(p->addr, p->size, q->addr, &q->size, opts);
 		if (ret)
 			return ret;
 	}
@@ -469,7 +468,7 @@ int sw_deflate(chunk_list_t *in_list,
  * in_list & out_list should be formated first.
  */
 int sw_inflate(chunk_list_t *in_list, chunk_list_t *out_list,
-		struct test_options *opts)
+	       struct test_options *opts)
 {
 	chunk_list_t *p, *q;
 	int ret = -EINVAL;
@@ -488,10 +487,10 @@ int sw_inflate(chunk_list_t *in_list, chunk_list_t *out_list,
  * in_list & out_list should be formated first.
  */
 int hw_deflate(handle_t h_dfl,
-		chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts,
-		sem_t *sem)
+	       chunk_list_t *in_list,
+	       chunk_list_t *out_list,
+	       struct test_options *opts,
+	       sem_t *sem)
 {
 	struct wd_comp_req *reqs;
 	chunk_list_t *p = in_list, *q = out_list;
@@ -549,10 +548,10 @@ out:
  * in_list & out_list should be formated first.
  */
 int hw_inflate(handle_t h_ifl,
-		chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts,
-		sem_t *sem)
+	       chunk_list_t *in_list,
+	       chunk_list_t *out_list,
+	       struct test_options *opts,
+	       sem_t *sem)
 {
 	struct wd_comp_req *reqs;
 	chunk_list_t *p, *q;
@@ -641,7 +640,7 @@ static int create_send_tdata(struct test_options *opts,
 	if (opts->option & TEST_THP) {
 		ret = madvise(info->in_buf, info->in_size, MADV_HUGEPAGE);
 		if (ret) {
-			COMP_TST_PRT("failed to madvise(MADV_HUGEPAGE) src_buf(%ld)!\n", info->in_size);
+			COMP_TST_PRT("failed to madvise(MADV_HUGEPAGE) src_buf(%zu)!\n", info->in_size);
 			goto out_ilist;
 		}
 	}
@@ -660,7 +659,7 @@ static int create_send_tdata(struct test_options *opts,
 		if (opts->option & TEST_THP) {
 			ret = madvise(tdata->dst, tdata->dst_sz, MADV_HUGEPAGE);
 			if (ret) {
-				COMP_TST_PRT("failed to madvise(MADV_HUGEPAGE) dst_buf(%ld)!\n", tdata->dst_sz);
+				COMP_TST_PRT("failed to madvise(MADV_HUGEPAGE) dst_buf(%zu)!\n", tdata->dst_sz);
 				goto out_dst;
 			}
 		}
@@ -790,9 +789,9 @@ void free_threads_tdata(struct hizip_test_info *info)
 }
 
 int attach_threads(struct test_options *opts,
-		    struct hizip_test_info *info,
-		    void *(*send_thread_func)(void *arg),
-		    void *(*poll_thread_func)(void *arg))
+		   struct hizip_test_info *info,
+		   void *(*send_thread_func)(void *arg),
+		   void *(*poll_thread_func)(void *arg))
 {
 	int i, j, ret, num;
 	void *tret;
@@ -816,15 +815,14 @@ int attach_threads(struct test_options *opts,
 					     &info->tdatas[i]);
 			if (ret < 0) {
 				COMP_TST_PRT("Fail to create poll thread %d (%d)\n",
-					i, ret);
+					     i, ret);
 				goto out_poll;
 			}
 		}
 		for (i = 0; i < info->poll_tnum; i++) {
 			ret = pthread_join(info->poll_tds[i], &tret);
 			if (ret < 0) {
-				COMP_TST_PRT( "Fail on poll thread with %d\n",
-					ret);
+				COMP_TST_PRT("Fail on poll thread with %d\n", ret);
 				goto out_poll;
 			}
 		}
@@ -832,7 +830,7 @@ int attach_threads(struct test_options *opts,
 	for (i = 0; i < info->send_tnum; i++) {
 		ret = pthread_join(info->send_tds[i], &tret);
 		if (ret < 0) {
-			COMP_TST_PRT( "Fail on send thread with %d\n", ret);
+			COMP_TST_PRT("Fail on send thread with %d\n", ret);
 			goto out_poll;
 		}
 	}
@@ -946,7 +944,6 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	struct sched_params param;
 	int i, j, ret = -EINVAL;
 	int q_num = opts->q_num;
-
 
 	__atomic_store_n(&sum_pend, 0, __ATOMIC_RELEASE);
 	__atomic_store_n(&sum_thread_end, 0, __ATOMIC_RELEASE);
@@ -1120,7 +1117,7 @@ int parse_common_option(int argc, char *argv[],
 		{"thread",	required_argument,	0, 13 },
 		{"mode",	required_argument,	0, 14 },
 		{"sgl",		no_argument,		0, 15 },
-		/* still keep these  proprietary cmds listd below*/
+		/* still keep these proprietary cmds listd below*/
 		{"sformat",	required_argument,	0, 20 },
 		{"option",	required_argument,	0, 21 },
 		{"fork",	required_argument,	0, 22 },
@@ -1138,15 +1135,14 @@ int parse_common_option(int argc, char *argv[],
 		case 1:
 			opts->self = 1;
 			break;
-		case 2:		/* input file */
+		case 2:	/* input file */
 			if (optarg) {
 				opts->fd_in = open(optarg, O_RDONLY);
 				if (opts->fd_in < 0) {
-					COMP_TST_PRT("Fail to open %s\n",
-						optarg);
+					COMP_TST_PRT("Fail to open %s\n", optarg);
 					return 1;
-				} else
-					opts->is_file = true;
+				}
+				opts->is_file = true;
 			} else {
 				COMP_TST_PRT("Input file is missing!\n");
 				return 1;
@@ -1156,18 +1152,17 @@ int parse_common_option(int argc, char *argv[],
 				return 1;
 			}
 			break;
-		case 3:		/* output file */
+		case 3:	/* output file */
 			if (optarg) {
 				opts->fd_out = open(optarg,
-							O_CREAT | O_WRONLY,
-							S_IWUSR | S_IRGRP |
-							S_IROTH);
+						    O_CREAT | O_WRONLY,
+						    S_IWUSR | S_IRGRP |
+						    S_IROTH);
 				if (opts->fd_out < 0) {
-					COMP_TST_PRT("Fail to open %s\n",
-						optarg);
+					COMP_TST_PRT("Fail to open %s\n", optarg);
 					return 1;
-				} else
-					opts->is_file = true;
+				}
+				opts->is_file = true;
 			} else {
 				COMP_TST_PRT("Output file is missing!\n");
 				return 1;
@@ -1177,7 +1172,7 @@ int parse_common_option(int argc, char *argv[],
 				return 1;
 			}
 			break;
-		case 4:		/* env */
+		case 4: /* environment variable */
 			opts->use_env = true;
 			break;
 		case 5:

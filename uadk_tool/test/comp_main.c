@@ -56,14 +56,14 @@ struct hizip_stats {
 	double v[NUM_STATS];
 };
 
-extern int perf_event_open(struct perf_event_attr *attr,
-			   pid_t pid, int cpu, int group_fd,
-			   unsigned long flags);
-extern int perf_event_get(const char *event_name, int **perf_fds, int *nr_fds);
-extern unsigned long long perf_event_put(int *perf_fds, int nr_fds);
-extern void stat_setup(struct hizip_test_info *info);
-extern void stat_start(struct hizip_test_info *info);
-extern void stat_end(struct hizip_test_info *info);
+int perf_event_open(struct perf_event_attr *attr,
+		    pid_t pid, int cpu, int group_fd,
+		    unsigned long flags);
+int perf_event_get(const char *event_name, int **perf_fds, int *nr_fds);
+unsigned long long perf_event_put(int *perf_fds, int nr_fds);
+void stat_setup(struct hizip_test_info *info);
+void stat_start(struct hizip_test_info *info);
+void stat_end(struct hizip_test_info *info);
 
 static size_t count_chunk_list_sz(chunk_list_t *list)
 {
@@ -146,8 +146,8 @@ static void *sw_dfl_hw_ifl(void *arg)
 			}
 			ret = cmp_md5(&tdata->md5, &final_md5);
 			if (ret) {
-				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
-					"thread %d\n", ret, i, tdata->tid);
+				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on thread %d\n",
+					     ret, i, tdata->tid);
 				goto out_strm;
 			}
 		}
@@ -157,8 +157,8 @@ static void *sw_dfl_hw_ifl(void *arg)
 	}
 
 	/* BLOCK mode */
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_DECOMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = WD_DIR_DECOMPRESS;
 
 	param.type = setup.op_type;
 	param.numa_id = 0;
@@ -173,7 +173,7 @@ static void *sw_dfl_hw_ifl(void *arg)
 			info->in_chunk_sz);
 	for (i = 0; i < opts->compact_run_num; i++) {
 		init_chunk_list(tlist, tbuf, tbuf_sz,
-			        info->in_chunk_sz * EXPANSION_RATIO);
+				info->in_chunk_sz * EXPANSION_RATIO);
 		init_chunk_list(tdata->out_list, tdata->dst, tdata->dst_sz,
 				info->out_chunk_sz);
 		ret = sw_deflate(tdata->in_list, tlist, opts);
@@ -182,7 +182,7 @@ static void *sw_dfl_hw_ifl(void *arg)
 			goto out_run;
 		}
 		ret = hw_inflate(h_ifl, tlist, tdata->out_list, opts,
-				  &tdata->sem);
+				 &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out_run;
@@ -199,8 +199,8 @@ static void *sw_dfl_hw_ifl(void *arg)
 		}
 		ret = cmp_md5(&tdata->md5, &final_md5);
 		if (ret) {
-			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
-				"thread %d\n", ret, i, tdata->tid);
+			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on thread %d\n",
+				     ret, i, tdata->tid);
 			goto out_run;
 		}
 	}
@@ -291,8 +291,8 @@ static void *hw_dfl_sw_ifl(void *arg)
 			}
 			ret = cmp_md5(&tdata->md5, &final_md5);
 			if (ret) {
-				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
-					"thread %d\n", ret, i, tdata->tid);
+				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on thread %d\n",
+					     ret, i, tdata->tid);
 				goto out_strm;
 			}
 		}
@@ -302,8 +302,8 @@ static void *hw_dfl_sw_ifl(void *arg)
 	}
 
 	/* BLOCK mode */
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = WD_DIR_COMPRESS;
 	param.type = setup.op_type;
 	param.numa_id = 0;
 	setup.sched_param = &param;
@@ -317,11 +317,11 @@ static void *hw_dfl_sw_ifl(void *arg)
 			info->in_chunk_sz);
 	for (i = 0; i < opts->compact_run_num; i++) {
 		init_chunk_list(tlist, tbuf, tbuf_sz,
-			        opts->block_size * EXPANSION_RATIO);
+				opts->block_size * EXPANSION_RATIO);
 		init_chunk_list(tdata->out_list, tdata->dst, tdata->dst_sz,
 				info->out_chunk_sz);
 		ret = hw_deflate(h_dfl, tdata->in_list, tlist, opts,
-				  &tdata->sem);
+				 &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out_run;
@@ -343,8 +343,8 @@ static void *hw_dfl_sw_ifl(void *arg)
 		}
 		ret = cmp_md5(&tdata->md5, &final_md5);
 		if (ret) {
-			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
-				"thread %d\n", ret, i, tdata->tid);
+			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on thread %d\n",
+				     ret, i, tdata->tid);
 			goto out_run;
 		}
 	}
@@ -426,8 +426,8 @@ static void *hw_dfl_hw_ifl(void *arg)
 			}
 			ret = cmp_md5(&tdata->md5, &final_md5);
 			if (ret) {
-				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
-					"thread %d\n", ret, i, tdata->tid);
+				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on thread %d\n",
+					     ret, i, tdata->tid);
 				goto out;
 			}
 		}
@@ -443,8 +443,8 @@ static void *hw_dfl_hw_ifl(void *arg)
 		goto out;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = WD_DIR_COMPRESS;
 	param.type = setup.op_type;
 	param.numa_id = 0;
 	setup.sched_param = &param;
@@ -465,18 +465,18 @@ static void *hw_dfl_hw_ifl(void *arg)
 
 	for (i = 0; i < opts->compact_run_num; i++) {
 		init_chunk_list(tlist, tbuf, tbuf_sz,
-			        opts->block_size * EXPANSION_RATIO);
+				opts->block_size * EXPANSION_RATIO);
 		init_chunk_list(tdata->out_list, tdata->dst,
 				tdata->dst_sz,
 				info->out_chunk_sz);
 		ret = hw_deflate(h_dfl, tdata->in_list, tlist, opts,
-				  &tdata->sem);
+				 &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out_run;
 		}
 		ret = hw_inflate(h_ifl, tlist, tdata->out_list, opts,
-				  &tdata->sem);
+				 &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out_run;
@@ -493,8 +493,8 @@ static void *hw_dfl_hw_ifl(void *arg)
 		}
 		ret = cmp_md5(&tdata->md5, &final_md5);
 		if (ret) {
-			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
-				"thread %d\n", ret, i, tdata->tid);
+			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on thread %d\n",
+				     ret, i, tdata->tid);
 			goto out_run;
 		}
 	}
@@ -552,8 +552,8 @@ static void *hw_dfl_perf(void *arg)
 		return NULL;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = WD_DIR_COMPRESS;
 	param.type = setup.op_type;
 	param.numa_id = 0;
 	setup.sched_param = &param;
@@ -566,7 +566,7 @@ static void *hw_dfl_perf(void *arg)
 				tdata->dst_sz,
 				info->out_chunk_sz);
 		ret = hw_deflate(h_dfl, tdata->in_list, tdata->out_list, opts,
-				  &tdata->sem);
+				 &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by HW(blk): %d\n", ret);
 			goto out;
@@ -617,8 +617,8 @@ static void *hw_ifl_perf(void *arg)
 		return NULL;
 	}
 
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_DECOMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = WD_DIR_DECOMPRESS;
 	param.type = setup.op_type;
 	param.numa_id = 0;
 	setup.sched_param = &param;
@@ -631,7 +631,7 @@ static void *hw_ifl_perf(void *arg)
 				tdata->dst_sz,
 				info->out_chunk_sz);
 		ret = hw_inflate(h_ifl, tdata->in_list, tdata->out_list, opts,
-				  &tdata->sem);
+				 &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out;
@@ -656,9 +656,8 @@ int load_file_data(struct hizip_test_info *info)
 
 	file_sz = read(opts->fd_in, info->in_buf, info->in_size);
 	if (file_sz < info->in_size) {
-		COMP_TST_PRT("Expect to read %ld bytes. "
-		       "But only read %ld bytes!\n",
-		       info->in_size, file_sz);
+		COMP_TST_PRT("Expect to read %zu bytes, but only read %zu bytes!\n",
+			     info->in_size, file_sz);
 		return -EFAULT;
 	}
 	return (int)file_sz;
@@ -678,13 +677,14 @@ int store_file(struct hizip_test_info *info, char *model)
 	if (!opts->is_stream) {
 		COMP_TST_PRT("Invalid, file need stream mode!\n");
 		return -EINVAL;
-	} else {
-		p = tdata->out_list;
-		file_sz = write(opts->fd_out, p->addr, p->size);
-		if (file_sz < p->size)
-			return -EFAULT;
-		sum = file_sz;
 	}
+
+	p = tdata->out_list;
+	file_sz = write(opts->fd_out, p->addr, p->size);
+	if (file_sz < p->size)
+		return -EFAULT;
+	sum = file_sz;
+
 	return (int)sum;
 }
 
@@ -719,17 +719,17 @@ static void uadk_res_uninit(struct test_options *opts,
 	wd_free_list_accels(info->list);
 }
 
-static bool event_unavailable = false;
+static bool event_unavailable;
 
 static int prepare_src_data(struct test_options *opts, struct hizip_test_info *info, int direction)
 {
+	thread_data_t *tdata = info->tdatas;
 	chunk_list_t *tlist = NULL;
 	size_t tbuf_sz = 0;
 	void *tbuf = NULL;
 	int ret;
 
 	if (direction) { /* if is inflate, need prepare the compressed data by sw */
-		thread_data_t *tdata = info->tdatas;
 		tbuf_sz = info->in_size / EXPANSION_RATIO;
 		tbuf = mmap_alloc(tbuf_sz);
 		if (!tbuf) {
@@ -758,7 +758,7 @@ static int prepare_src_data(struct test_options *opts, struct hizip_test_info *i
 }
 
 static void perfdata_print(struct test_options *opts, struct hizip_test_info *info,
-		    int zbuf_idx, char *zbuf, char *model)
+			   int zbuf_idx, char *zbuf, char *model)
 {
 	double ilen, usec, speed;
 
@@ -785,10 +785,10 @@ static void perfdata_print(struct test_options *opts, struct hizip_test_info *in
 
 	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf")) {
 		COMP_TST_PRT("%s at %.2fMB/s in %f usec (BLK:%d)..\n",
-		       zbuf, speed, usec, opts->block_size);
+			     zbuf, speed, usec, opts->block_size);
 	} else {
 		COMP_TST_PRT("%s in %f usec (BLK:%d)...\n",
-		       zbuf, usec, opts->block_size);
+			     zbuf, usec, opts->block_size);
 	}
 
 }
@@ -922,7 +922,7 @@ static int test_hw(struct test_options *opts, char *model)
 		}
 		/* A warning if the parameters might produce false positives */
 		if (opts->total_len > 0x54000)
-			COMP_TST_PRT( "NOTE: test might trash the TLB\n");
+			COMP_TST_PRT("NOTE: test might trash the TLB\n");
 	}
 
 	stat_start(&info);
@@ -1034,7 +1034,7 @@ int run_self_test(struct test_options *opts)
 				"async-comp:8@0,async-decomp:8@0");
 			setenv("WD_COMP_CTX_NUM", poll_str, 1);
 			memset(poll_str, 0, POLL_STRING_LEN);
-			sprintf(poll_str, "%d@0", opts->poll_num),
+			sprintf(poll_str, "%d@0", opts->poll_num);
 			setenv("WD_COMP_ASYNC_POLL_NUM", poll_str, 1);
 		}
 		f_ret |= test_hw(opts, "sw_dfl_hw_ifl");
@@ -1127,8 +1127,7 @@ int run_cmd(struct test_options *opts)
 			if (WIFEXITED(status)) {
 				ret = WEXITSTATUS(status);
 				if (ret) {
-					COMP_TST_PRT("child %d returned with %d\n",
-					       pid, ret);
+					COMP_TST_PRT("child %d returned with %d\n", pid, ret);
 					success = false;
 				}
 			} else if (WIFSIGNALED(status)) {
@@ -1145,14 +1144,16 @@ int run_cmd(struct test_options *opts)
 			if (!ret)
 				ret = -EINVAL;
 		}
-	} else
+	} else {
 		ret = run_one_cmd(opts);
+	}
+
 	return ret;
 }
 
 int perf_event_open(struct perf_event_attr *attr,
-			   pid_t pid, int cpu, int group_fd,
-			   unsigned long flags)
+		    pid_t pid, int cpu, int group_fd,
+		    unsigned long flags)
 {
 	return syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);
 }
@@ -1294,27 +1295,27 @@ void stat_end(struct hizip_test_info *info)
 
 	stats->v[ST_SETUP_TIME] = (info->tv.start_time.tv_sec -
 				   info->tv.setup_time.tv_sec) * 1000000000 +
-				  info->tv.start_time.tv_nsec -
-				  info->tv.setup_time.tv_nsec;
+				   info->tv.start_time.tv_nsec -
+				   info->tv.setup_time.tv_nsec;
 	stats->v[ST_RUN_TIME] = (info->tv.end_time.tv_sec -
 				 info->tv.start_time.tv_sec) * 1000000000 +
-				info->tv.end_time.tv_nsec -
-				info->tv.start_time.tv_nsec;
+				 info->tv.end_time.tv_nsec -
+				 info->tv.start_time.tv_nsec;
 
 	stats->v[ST_CPU_TIME] = (info->tv.end_cputime.tv_sec -
 				 info->tv.setup_cputime.tv_sec) * 1000000000 +
-				info->tv.end_cputime.tv_nsec -
-				info->tv.setup_cputime.tv_nsec;
+				 info->tv.end_cputime.tv_nsec -
+				 info->tv.setup_cputime.tv_nsec;
 	stats->v[ST_USER_TIME] = (info->tv.end_rusage.ru_utime.tv_sec -
 				  info->tv.setup_rusage.ru_utime.tv_sec) *
-				 1000000 +
-				 info->tv.end_rusage.ru_utime.tv_usec -
-				 info->tv.setup_rusage.ru_utime.tv_usec;
+				  1000000 +
+				  info->tv.end_rusage.ru_utime.tv_usec -
+				  info->tv.setup_rusage.ru_utime.tv_usec;
 	stats->v[ST_SYSTEM_TIME] = (info->tv.end_rusage.ru_stime.tv_sec -
 				    info->tv.setup_rusage.ru_stime.tv_sec) *
-				   1000000 +
-				   info->tv.end_rusage.ru_stime.tv_usec -
-				   info->tv.setup_rusage.ru_stime.tv_usec;
+				    1000000 +
+				    info->tv.end_rusage.ru_stime.tv_usec -
+				    info->tv.setup_rusage.ru_stime.tv_usec;
 
 	stats->v[ST_MINFLT] = info->tv.end_rusage.ru_minflt -
 			      info->tv.setup_rusage.ru_minflt;
@@ -1331,12 +1332,12 @@ void stat_end(struct hizip_test_info *info)
 
 	/* check last loop is enough, same as below hizip_verify_output */
 	stats->v[ST_COMPRESSION_RATIO] = (double)opts->total_len /
-					 total_out * 100;
+					  total_out * 100;
 
 	total_len = opts->total_len * opts->compact_run_num;
 	/* ST_RUN_TIME records nanoseconds */
 	stats->v[ST_SPEED] = (total_len * opts->thread_num * 1000) /
-				(1.024 * 1.024 * stats->v[ST_RUN_TIME]);
+			     (1.024 * 1.024 * stats->v[ST_RUN_TIME]);
 
 	stats->v[ST_TOTAL_SPEED] = (total_len * opts->thread_num * 1000) /
 				   ((stats->v[ST_RUN_TIME] +
@@ -1350,7 +1351,7 @@ void stat_end(struct hizip_test_info *info)
 static void handle_sigbus(int sig)
 {
 	    COMP_TST_PRT("SIGBUS!\n");
-	        _exit(0);
+	    _exit(0);
 }
 
 int test_comp_entry(int argc, char *argv[])
