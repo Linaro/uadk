@@ -454,7 +454,7 @@ void free_chunk_list(chunk_list_t *list)
 /*
  * Deflate a data block with compressed header.
  */
-static int chunk_deflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
+static int chunk_deflate(void *in, size_t in_sz, void *out, size_t *out_sz,
 			  struct test_options *opts)
 {
 	int alg_type = opts->alg_type;
@@ -516,7 +516,7 @@ static int chunk_deflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
  * This function is used in BLOCK mode. Each compressing in BLOCK mode
  * produces compression header.
  */
-static int chunk_inflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
+static int chunk_inflate(void *in, size_t in_sz, void *out, size_t *out_sz,
 			  struct test_options *opts)
 {
 	z_stream strm;
@@ -560,7 +560,7 @@ out:
  * Compress a list of chunk data and produce a list of chunk data by software.
  * in_list & out_list should be formated first.
  */
-int sw_deflate2(chunk_list_t *in_list,
+int sw_deflate(chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts)
 {
@@ -568,7 +568,7 @@ int sw_deflate2(chunk_list_t *in_list,
 	int ret = -EINVAL;
 
 	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
-		ret = chunk_deflate2(p->addr, p->size, q->addr, &q->size,
+		ret = chunk_deflate(p->addr, p->size, q->addr, &q->size,
 				     opts);
 		if (ret)
 			return ret;
@@ -577,17 +577,17 @@ int sw_deflate2(chunk_list_t *in_list,
 }
 
 /*
- * Compress a list of chunk data and produce a list of chunk data by software.
+ * Deompress a list of chunk data and produce a list of chunk data by software.
  * in_list & out_list should be formated first.
  */
-int sw_inflate2(chunk_list_t *in_list, chunk_list_t *out_list,
+int sw_inflate(chunk_list_t *in_list, chunk_list_t *out_list,
 		struct test_options *opts)
 {
 	chunk_list_t *p, *q;
 	int ret = -EINVAL;
 
 	for (p = in_list, q = out_list; p && q; p = p->next, q = q->next) {
-		ret = chunk_inflate2(p->addr, p->size, q->addr, &q->size,
+		ret = chunk_inflate(p->addr, p->size, q->addr, &q->size,
 				     opts);
 		if (ret)
 			return ret;
@@ -595,7 +595,11 @@ int sw_inflate2(chunk_list_t *in_list, chunk_list_t *out_list,
 	return ret;
 }
 
-int hw_deflate4(handle_t h_dfl,
+/*
+ * Compress a list of chunk data and produce a list of chunk data by hardware.
+ * in_list & out_list should be formated first.
+ */
+int hw_deflate(handle_t h_dfl,
 		chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts,
@@ -649,7 +653,11 @@ out:
 	return ret;
 }
 
-int hw_inflate4(handle_t h_ifl,
+/*
+ * Decompress a list of chunk data and produce a list of chunk data by hardware.
+ * in_list & out_list should be formated first.
+ */
+int hw_inflate(handle_t h_ifl,
 		chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts,
@@ -966,7 +974,7 @@ out:
  * Free source and destination buffer contained in sending threads.
  * Free sending threads and polling threads.
  */
-void free2_threads(struct hizip_test_info *info)
+void free_threads_tdata(struct hizip_test_info *info)
 {
 	thread_data_t *tdatas = info->tdatas;
 	int i;
@@ -989,7 +997,7 @@ void free2_threads(struct hizip_test_info *info)
 	mmap_free(info->in_buf, info->in_size);
 }
 
-int attach2_threads(struct test_options *opts,
+int attach_threads(struct test_options *opts,
 		    struct hizip_test_info *info,
 		    void *(*send_thread_func)(void *arg),
 		    void *(*poll_thread_func)(void *arg))

@@ -197,26 +197,28 @@ void *poll_thread_func(void *arg);
 void gen_random_data(void *buf, size_t len);
 int calculate_md5(comp_md5_t *md5, const void *buf, size_t len);
 int cmp_md5(comp_md5_t *orig, comp_md5_t *final);
+
 void init_chunk_list(chunk_list_t *list, void *buf, size_t buf_sz,
 		     size_t chunk_sz);
 chunk_list_t *create_chunk_list(void *buf, size_t buf_sz, size_t chunk_sz);
 void free_chunk_list(chunk_list_t *list);
-int sw_deflate2(chunk_list_t *in_list,
+int sw_deflate(chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts);
-int sw_inflate2(chunk_list_t *in_list,
+int sw_inflate(chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts);
-int hw_deflate4(handle_t h_dfl,
+int hw_deflate(handle_t h_dfl,
 		chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts,
 		sem_t *sem);
-int hw_inflate4(handle_t h_ifl,
+int hw_inflate(handle_t h_ifl,
 		chunk_list_t *in_list,
 		chunk_list_t *out_list,
 		struct test_options *opts,
 		sem_t *sem);
+
 int hw_deflate5(handle_t h_dfl,
 		chunk_list_t *in_list,
 		chunk_list_t *out_list,
@@ -230,8 +232,8 @@ int create_send_tdata(struct test_options *opts,
 int create_poll_tdata(struct test_options *opts,
 		      struct hizip_test_info *info,
 		      int poll_num);
-void free2_threads(struct hizip_test_info *info);
-int attach2_threads(struct test_options *opts,
+void free_threads_tdata(struct hizip_test_info *info);
+int attach_threads(struct test_options *opts,
 		    struct hizip_test_info *info,
 		    void *(*send_thread_func)(void *arg),
 		    void *(*poll_thread_func)(void *arg));
