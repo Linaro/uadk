@@ -531,6 +531,12 @@ static void *hw_dfl_perf(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tout_sz = tdata->dst_sz;
+			if (opts->option & TEST_ZLIB) {
+				ret = zlib_deflate(info->out_buf, info->out_size,
+						   info->in_buf, info->in_size,
+						   &tdata->sum, opts->alg_type);
+				continue;
+			}
 			ret = hw_stream_compress(opts,
 						 tdata->dst,
 						 &tout_sz,
@@ -590,6 +596,12 @@ static void *hw_ifl_perf(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tout_sz = tdata->dst_sz;
+			if (opts->option & TEST_ZLIB) {
+				ret = zlib_deflate(info->out_buf, info->out_size,
+						   info->in_buf, info->in_size,
+						   &tdata->sum, opts->alg_type);
+				continue;
+			}
 			ret = hw_stream_compress(opts,
 						 tdata->dst,
 						 &tout_sz,

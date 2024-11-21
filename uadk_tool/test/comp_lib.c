@@ -22,7 +22,6 @@ struct check_rand_ctx {
 };
 
 static pthread_spinlock_t lock;
-static int count = 0;
 
 int sum_pend = 0, sum_thread_end = 0;
 
@@ -209,13 +208,16 @@ int hw_stream_compress(struct test_options *opts,
 		wd_comp_free_sess(h_sess);
 		return ret;
 	}
-
 	if (req.status) {
 		COMP_TST_PRT("fail to do comp sync(status = %u)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
 	}
+
+	if (opts->faults & INJECT_SIG_WORK)
+		kill(getpid(), SIGTERM);
+
 	*dstlen = req.dst_len;
 
 	dbg("%s:output req: src:%p, dst:%p,src_len: %u, dst_len:%u\n",
@@ -224,103 +226,6 @@ int hw_stream_compress(struct test_options *opts,
 	wd_comp_free_sess(h_sess);
 
 	return ret;
-}
-
-static void *async_cb(struct wd_comp_req *req, void *data)
-{
-	return NULL;
-}
-
-void *send_thread_func(void *arg)
-{
-	thread_data_t *tdata = (thread_data_t *)arg;
-	struct hizip_test_info *info = tdata->info;
-	struct test_options *opts = info->opts;
-	size_t src_block_size, dst_block_size;
-	struct wd_comp_sess_setup setup;
-	struct sched_params param = {0};
-	handle_t h_sess;
-	int j, ret;
-	size_t left;
-
-	if (opts->op_type == WD_DIR_COMPRESS) {
-		src_block_size = opts->block_size;
-		dst_block_size = opts->block_size * EXPANSION_RATIO;
-	} else {
-		src_block_size = opts->block_size * EXPANSION_RATIO;
-		dst_block_size = opts->block_size;
-	}
-
-	memset(&setup, 0, sizeof(struct wd_comp_sess_setup));
-	setup.alg_type = opts->alg_type;
-	setup.op_type = opts->op_type;
-	setup.comp_lv = WD_COMP_L8;
-	setup.win_sz = WD_COMP_WS_8K;
-	param.type = setup.op_type;
-	param.numa_id = 0;
-	setup.sched_param = &param;
-	h_sess = wd_comp_alloc_sess(&setup);
-	if (!h_sess)
-		return NULL;
-
-	for (j = 0; j < opts->compact_run_num; j++) {
-		if (opts->option & TEST_ZLIB) {
-			ret = zlib_deflate(info->out_buf, info->out_size,
-					   info->in_buf, info->in_size,
-					   &tdata->sum, opts->alg_type);
-			continue;
-		}
-		/* not TEST_ZLIB */
-		left = opts->total_len;
-		tdata->req.op_type = opts->op_type;
-		tdata->req.src = info->in_buf;
-		tdata->req.dst = info->out_buf;
-		tdata->sum = 0;
-		while (left > 0) {
-			tdata->req.src_len = src_block_size;
-			tdata->req.dst_len = dst_block_size;
-			tdata->req.cb_param = &tdata->req;
-			if (opts->sync_mode) {
-				tdata->req.cb = async_cb;
-				count++;
-				ret = wd_do_comp_async(h_sess, &tdata->req);
-			} else {
-				tdata->req.cb = NULL;
-				ret = wd_do_comp_sync(h_sess, &tdata->req);
-				if (info->opts->faults & INJECT_SIG_WORK)
-					kill(getpid(), SIGTERM);
-			}
-			if (ret < 0) {
-				COMP_TST_PRT("do comp test fail with %d\n", ret);
-				return (void *)(uintptr_t)ret;
-			} else if (tdata->req.status) {
-				return (void *)(uintptr_t)tdata->req.status;
-			}
-			if (opts->op_type == WD_DIR_COMPRESS)
-				left -= src_block_size;
-			else
-				left -= dst_block_size;
-			tdata->req.src += src_block_size;
-			/*
-			 * It's BLOCK (STATELESS) mode, so user needs to
-			 * combine output buffer by himself.
-			 */
-			tdata->req.dst += dst_block_size;
-			tdata->sum += tdata->req.dst_len;
-			if (tdata->sum > info->out_size) {
-				COMP_TST_PRT(
-					"%s: exceed OUT limits (%ld > %ld)\n",
-					__func__,
-					tdata->sum, info->out_size);
-				break;
-			}
-		}
-		/* info->total_out are accessed by multiple threads */
-		__atomic_add_fetch(&info->total_out, tdata->sum,
-				   __ATOMIC_RELEASE);
-	}
-	wd_comp_free_sess(h_sess);
-	return NULL;
 }
 
 static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
@@ -382,7 +287,7 @@ int cmp_md5(comp_md5_t *orig, comp_md5_t *final)
 	return 0;
 }
 
-static void *async2_cb(struct wd_comp_req *req, void *data)
+static void *async_cb(struct wd_comp_req *req, void *data)
 {
 	sem_t *sem = (sem_t *)data;
 
@@ -606,7 +511,7 @@ int hw_deflate(handle_t h_dfl,
 		reqs[i].op_type = WD_DIR_COMPRESS;
 
 		if (opts->sync_mode) {
-			reqs[i].cb = async2_cb;
+			reqs[i].cb = async_cb;
 			reqs[i].cb_param = sem;
 		}
 		do {
@@ -617,8 +522,11 @@ int hw_deflate(handle_t h_dfl,
 							   __ATOMIC_ACQ_REL);
 					sem_wait(sem);
 				}
-			} else
+			} else {
 				ret = wd_do_comp_sync(h_dfl, &reqs[i]);
+				if (opts->faults & INJECT_SIG_WORK)
+					kill(getpid(), SIGTERM);
+			}
 		} while (ret == -WD_EBUSY);
 		if (ret)
 			goto out;
@@ -660,7 +568,7 @@ int hw_inflate(handle_t h_ifl,
 		reqs[i].dst_len = q->size;
 		reqs[i].op_type = WD_DIR_DECOMPRESS;
 		if (opts->sync_mode) {
-			reqs[i].cb = async2_cb;
+			reqs[i].cb = async_cb;
 			reqs[i].cb_param = sem;
 		}
 		do {
