@@ -19,7 +19,8 @@ uadk_tool_SOURCES=uadk_tool.c dfx/uadk_dfx.c dfx/uadk_dfx.h \
 		benchmark/zip_wd_benchmark.c benchmark/zip_wd_benchmark.h \
 		benchmark/trng_wd_benchmark.c benchmark/trng_wd_benchmark.h \
 		test/uadk_test.c test/uadk_test.h \
-		test/test_sec.c test/test_sec.h test/sec_template_tv.h
+		test/test_sec.c test/test_sec.h test/sec_template_tv.h \
+		test/comp_main.c test/comp_main.h test/comp_lib.c test/comp_lib.h
 
 if WD_STATIC_DRV
 AM_CFLAGS+=-Bstatic
@@ -34,6 +35,14 @@ uadk_tool_LDADD=$(libwd_la_OBJECTS) \
 else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 		-l:libwd_comp.so.2 -lnuma
+endif
+
+# For statistics
+uadk_tool_LDADD+=-lm
+
+if HAVE_ZLIB
+uadk_tool_LDADD+=-lz
+uadk_tool_CPPFLAGS=-DUSE_ZLIB
 endif
 
 if WITH_ZLIB_FSE_DIR

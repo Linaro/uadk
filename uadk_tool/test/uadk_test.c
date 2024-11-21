@@ -11,6 +11,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#include "comp_main.h"
 #include "test_sec.h"
 
 enum uadk_test_op_type {
@@ -19,11 +20,6 @@ enum uadk_test_op_type {
 };
 
 int test_hpre_entry(int argc, char *argv[])
-{
-	return 0;
-}
-
-int test_zip_entry(int argc, char *argv[])
 {
 	return 0;
 }
@@ -67,7 +63,7 @@ void acc_test_run(int argc, char *argv[])
 			} else if (!strcmp(input_module, "sec")) {
 				(void)test_sec_entry(argc, argv);
 			} else if (!strcmp(input_module, "zip")) {
-				(void)test_zip_entry(argc, argv);
+				(void)test_comp_entry(argc, argv);
 			} else {
 				print_test_help();
 				printf("failed to parse module parameter!\n");
