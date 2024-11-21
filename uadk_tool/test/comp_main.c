@@ -118,7 +118,7 @@ static void *sw_dfl_hw_ifl(void *arg)
 			init_chunk_list(tlist, tbuf, tbuf_sz, tbuf_sz);
 			init_chunk_list(tdata->out_list, tdata->dst,
 					tdata->dst_sz, tdata->dst_sz);
-			ret = sw_deflate2(tdata->in_list, tlist, opts);
+			ret = sw_deflate(tdata->in_list, tlist, opts);
 			if (ret) {
 				COMP_TST_PRT("Fail to deflate by zlib: %d\n", ret);
 				goto out_strm;
@@ -177,12 +177,12 @@ static void *sw_dfl_hw_ifl(void *arg)
 			        info->in_chunk_sz * EXPANSION_RATIO);
 		init_chunk_list(tdata->out_list, tdata->dst, tdata->dst_sz,
 				info->out_chunk_sz);
-		ret = sw_deflate2(tdata->in_list, tlist, opts);
+		ret = sw_deflate(tdata->in_list, tlist, opts);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by zlib: %d\n", ret);
 			goto out_run;
 		}
-		ret = hw_inflate4(h_ifl, tlist, tdata->out_list, opts,
+		ret = hw_inflate(h_ifl, tlist, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
@@ -273,7 +273,7 @@ static void *hw_dfl_sw_ifl(void *arg)
 				goto out_strm;
 			}
 			tlist->size = tmp_sz;	// write back
-			ret = sw_inflate2(tlist, tdata->out_list, opts);
+			ret = sw_inflate(tlist, tdata->out_list, opts);
 			if (ret) {
 				COMP_TST_PRT("Fail to inflate by zlib: %d\n", ret);
 				goto out_strm;
@@ -321,13 +321,13 @@ static void *hw_dfl_sw_ifl(void *arg)
 			        opts->block_size * EXPANSION_RATIO);
 		init_chunk_list(tdata->out_list, tdata->dst, tdata->dst_sz,
 				info->out_chunk_sz);
-		ret = hw_deflate4(h_dfl, tdata->in_list, tlist, opts,
+		ret = hw_deflate(h_dfl, tdata->in_list, tlist, opts,
 				  &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out_run;
 		}
-		ret = sw_inflate2(tlist, tdata->out_list, opts);
+		ret = sw_inflate(tlist, tdata->out_list, opts);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by zlib: %d\n", ret);
 			goto out_run;
@@ -470,13 +470,13 @@ static void *hw_dfl_hw_ifl(void *arg)
 		init_chunk_list(tdata->out_list, tdata->dst,
 				tdata->dst_sz,
 				info->out_chunk_sz);
-		ret = hw_deflate4(h_dfl, tdata->in_list, tlist, opts,
+		ret = hw_deflate(h_dfl, tdata->in_list, tlist, opts,
 				  &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out_run;
 		}
-		ret = hw_inflate4(h_ifl, tlist, tdata->out_list, opts,
+		ret = hw_inflate(h_ifl, tlist, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
@@ -560,7 +560,7 @@ static void *hw_dfl_perf(void *arg)
 		init_chunk_list(tdata->out_list, tdata->dst,
 				tdata->dst_sz,
 				info->out_chunk_sz);
-		ret = hw_deflate4(h_dfl, tdata->in_list, tdata->out_list, opts,
+		ret = hw_deflate(h_dfl, tdata->in_list, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to deflate by HW(blk): %d\n", ret);
@@ -619,7 +619,7 @@ static void *hw_ifl_perf(void *arg)
 		init_chunk_list(tdata->out_list, tdata->dst,
 				tdata->dst_sz,
 				info->out_chunk_sz);
-		ret = hw_inflate4(h_ifl, tdata->in_list, tdata->out_list, opts,
+		ret = hw_inflate(h_ifl, tdata->in_list, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
 			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
@@ -996,7 +996,7 @@ int test_hw(struct test_options *opts, char *model)
 			init_chunk_list(tlist, tbuf, tbuf_sz,
 					opts->block_size / EXPANSION_RATIO);
 			gen_random_data(tbuf, tbuf_sz);
-			ret = sw_deflate2(tlist, tdata[0].in_list, opts);
+			ret = sw_deflate(tlist, tdata[0].in_list, opts);
 			if (ret) {
 				free_chunk_list(tlist);
 				mmap_free(tbuf, tbuf_sz);
@@ -1026,7 +1026,7 @@ int test_hw(struct test_options *opts, char *model)
 			COMP_TST_PRT( "NOTE: test might trash the TLB\n");
 	}
 	stat_start(&info);
-	ret = attach2_threads(opts, &info, func, poll_thread_func);
+	ret = attach_threads(opts, &info, func, poll_thread_func);
 	if (ret)
 		goto out_buf;
 	stat_end(&info);
@@ -1059,7 +1059,7 @@ int test_hw(struct test_options *opts, char *model)
 		COMP_TST_PRT("%s in %f usec (BLK:%d, Bnum:%d).\n",
 		       zbuf, usec, opts->block_size, opts->batch_num);
 	}
-	free2_threads(&info);
+	free_threads_tdata(&info);
 	if (opts->use_env)
 		wd_comp_env_uninit();
 	else
@@ -1068,7 +1068,7 @@ int test_hw(struct test_options *opts, char *model)
 	return 0;
 out_buf:
 out_poll:
-	free2_threads(&info);
+	free_threads_tdata(&info);
 	if (opts->use_env)
 		wd_comp_env_uninit();
 	else
