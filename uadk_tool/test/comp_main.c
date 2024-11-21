@@ -689,11 +689,14 @@ int store_file(struct hizip_test_info *info, char *model)
 	return (int)sum;
 }
 
-static int nonenv_resource_init(struct test_options *opts,
-				struct hizip_test_info *info,
-				struct wd_sched **sched)
+static int uadk_res_init(struct test_options *opts,
+			 struct hizip_test_info *info,
+			 struct wd_sched **sched)
 {
 	int ret;
+
+	if (opts->use_env)
+		return wd_comp_env_init(NULL);
 
 	info->list = get_dev_list(opts, 1);
 	if (!info->list)
@@ -706,33 +709,105 @@ static int nonenv_resource_init(struct test_options *opts,
 	return 0;
 }
 
-static void nonenv_resource_uninit(struct test_options *opts,
-				   struct hizip_test_info *info,
-				   struct wd_sched *sched)
+static void uadk_res_uninit(struct test_options *opts,
+			    struct hizip_test_info *info,
+			    struct wd_sched *sched)
 {
+	if (opts->use_env)
+		return wd_comp_env_uninit();
+
 	uninit_config(info, sched);
 	wd_free_list_accels(info->list);
 }
 
 static bool event_unavailable = false;
 
-int test_hw(struct test_options *opts, char *model)
+static int prepare_src_data(struct test_options *opts, struct hizip_test_info *info, int direction)
+{
+	chunk_list_t *tlist = NULL;
+	size_t tbuf_sz = 0;
+	void *tbuf = NULL;
+	int ret;
+
+	if (direction) { /* if is inflate, need prepare the compressed data by sw */
+		thread_data_t *tdata = info->tdatas;
+		tbuf_sz = info->in_size / EXPANSION_RATIO;
+		tbuf = mmap_alloc(tbuf_sz);
+		if (!tbuf) {
+			ret = -ENOMEM;
+			return ret;
+		}
+		tlist = create_chunk_list(tbuf, tbuf_sz,
+					opts->block_size /
+					EXPANSION_RATIO);
+		init_chunk_list(tlist, tbuf, tbuf_sz,
+				opts->block_size / EXPANSION_RATIO);
+		gen_random_data(tbuf, tbuf_sz);
+		ret = sw_deflate(tlist, tdata[0].in_list, opts);
+		if (ret) {
+			free_chunk_list(tlist);
+			mmap_free(tbuf, tbuf_sz);
+			return ret;
+		}
+		free_chunk_list(tlist);
+		mmap_free(tbuf, tbuf_sz);
+	} else { /* if is deflate, get the random data directly */
+		gen_random_data(info->in_buf, info->in_size);
+	}
+
+	return ret;
+}
+
+static void perfdata_print(struct test_options *opts, struct hizip_test_info *info,
+		    int zbuf_idx, char *zbuf, char *model)
+{
+	double ilen, usec, speed;
+
+	usec = info->stats->v[ST_RUN_TIME] / 1000;
+
+	if (opts->op_type == WD_DIR_DECOMPRESS)
+		ilen = (float)count_chunk_list_sz(info->tdatas[0].out_list);
+	else
+		ilen = opts->total_len;
+
+	ilen *= opts->thread_num * opts->compact_run_num;
+	speed = ilen * 1000 * 1000 / 1024 / 1024 / usec;
+
+	if (opts->sync_mode) {
+		zbuf_idx += sprintf(zbuf + zbuf_idx,
+				    " with %d send + %d poll threads",
+				    opts->thread_num,
+				    opts->poll_num);
+	} else {
+		zbuf_idx += sprintf(zbuf + zbuf_idx,
+				    " with %d send threads",
+				    opts->thread_num);
+	}
+
+	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf")) {
+		COMP_TST_PRT("%s at %.2fMB/s in %f usec (BLK:%d)..\n",
+		       zbuf, speed, usec, opts->block_size);
+	} else {
+		COMP_TST_PRT("%s in %f usec (BLK:%d)...\n",
+		       zbuf, usec, opts->block_size);
+	}
+
+}
+
+static int test_hw(struct test_options *opts, char *model)
 {
 	struct hizip_test_info info = {0};
 	struct wd_sched *sched = NULL;
-	double ilen, usec, speed;
-	char zbuf[120];
-	int ret, zbuf_idx, ifl_flag = 0;
-	void *(*func)(void *);
-	size_t tbuf_sz = 0;
-	void *tbuf = NULL;
-	struct stat statbuf;
-	chunk_list_t *tlist = NULL;
-	__u32 num;
-	__u8 enable;
-	int nr_fds = 0;
-	int *perf_fds = NULL;
 	struct hizip_stats stats;
+	int *perf_fds = NULL;
+	void *(*func)(void *);
+	struct stat statbuf;
+	int ifl_flag = 0;
+	int ret, zbuf_idx;
+	char zbuf[120];
+	int nr_fds = 0;
+	__u8 enable;
+	__u32 num;
 
 	if (!opts || !model) {
 		ret = -EINVAL;
@@ -741,8 +816,7 @@ int test_hw(struct test_options *opts, char *model)
 	info.opts = opts;
 	info.stats = &stats;
 
-	if (!event_unavailable &&
-	    perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
+	if (!event_unavailable && perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
 		COMP_TST_PRT("IOPF statistic unavailable\n");
 		/* No need to retry and print an error on every run */
 		event_unavailable = true;
@@ -750,36 +824,22 @@ int test_hw(struct test_options *opts, char *model)
 	stat_setup(&info);
 
 	memset(zbuf, 0, 120);
+	info.in_size = opts->total_len;
+	info.out_size = opts->total_len;
+	info.in_chunk_sz = opts->block_size;
+	info.out_chunk_sz = opts->block_size;
 	if (!strcmp(model, "sw_dfl_hw_ifl")) {
 		func = sw_dfl_hw_ifl;
-		info.in_size = opts->total_len;
-		if (opts->is_stream)
-			info.out_size = opts->total_len;
-		else
-			info.out_size = opts->total_len;
-		info.in_chunk_sz = opts->block_size;
-		info.out_chunk_sz = opts->block_size;
 		zbuf_idx = sprintf(zbuf, "Mix SW deflate and HW %s %s inflate",
 				   opts->sync_mode ? "ASYNC" : "SYNC",
 				   opts->is_stream ? "STREAM" : "BLOCK");
 	} else if (!strcmp(model, "hw_dfl_sw_ifl")) {
 		func = hw_dfl_sw_ifl;
-		info.in_size = opts->total_len;
-		info.out_size = opts->total_len;
-		info.in_chunk_sz = opts->block_size;
-		info.out_chunk_sz = opts->block_size;
 		zbuf_idx = sprintf(zbuf, "Mix HW %s %s deflate and SW inflate",
 				   opts->sync_mode ? "ASYNC" : "SYNC",
 				   opts->is_stream ? "STREAM" : "BLOCK");
 	} else if (!strcmp(model, "hw_dfl_hw_ifl")) {
 		func = hw_dfl_hw_ifl;
-		info.in_size = opts->total_len;
-		if (opts->is_stream)
-			info.out_size = opts->total_len;
-		else
-			info.out_size = opts->total_len;
-		info.in_chunk_sz = opts->block_size;
-		info.out_chunk_sz = opts->block_size;
 		zbuf_idx = sprintf(zbuf,
 				   "Mix HW %s %s deflate and HW %s %s inflate",
 				   opts->sync_mode ? "ASYNC" : "SYNC",
@@ -788,18 +848,14 @@ int test_hw(struct test_options *opts, char *model)
 				   opts->is_stream ? "STREAM" : "BLOCK");
 	} else if (!strcmp(model, "hw_dfl_perf")) {
 		func = hw_dfl_perf;
-		info.in_size = opts->total_len;
 		info.out_size = opts->total_len * EXPANSION_RATIO;
-		info.in_chunk_sz = opts->block_size;
 		info.out_chunk_sz = opts->block_size * EXPANSION_RATIO;
 		zbuf_idx = sprintf(zbuf, "HW %s %s deflate",
 				   opts->sync_mode ? "ASYNC" : "SYNC",
 				   opts->is_stream ? "STREAM" : "BLOCK");
 	} else if (!strcmp(model, "hw_ifl_perf")) {
 		func = hw_ifl_perf;
-		info.in_size = opts->total_len;
 		info.out_size = opts->total_len * INFLATION_RATIO;
-		info.in_chunk_sz = opts->block_size;
 		info.out_chunk_sz = opts->block_size * INFLATION_RATIO;
 		zbuf_idx = sprintf(zbuf, "HW %s %s inflate",
 				   opts->sync_mode ? "ASYNC" : "SYNC",
@@ -811,10 +867,7 @@ int test_hw(struct test_options *opts, char *model)
 		goto out;
 	}
 
-	if (opts->use_env)
-		ret = wd_comp_env_init(NULL);
-	else
-		ret = nonenv_resource_init(opts, &info, &sched);
+	ret = uadk_res_init(opts, &info, &sched);
 	if (ret < 0)
 		goto out;
 
@@ -822,7 +875,8 @@ int test_hw(struct test_options *opts, char *model)
 		kill(getpid(), SIGTERM);
 
 	if (opts->use_env) {
-		ret = wd_comp_get_env_param(0, opts->op_type, opts->sync_mode, &num, &enable);
+		ret = wd_comp_get_env_param(0, opts->op_type, opts->sync_mode,
+					    &num, &enable);
 		if (ret < 0)
 			goto out;
 	}
@@ -839,43 +893,20 @@ int test_hw(struct test_options *opts, char *model)
 			info.out_size = opts->total_len * EXPANSION_RATIO;
 	}
 
-	ret = create_send_tdata(opts, &info);
+	ret = create_threads_tdata(opts, &info);
 	if (ret)
 		goto out_src;
-	ret = create_poll_tdata(opts, &info, opts->poll_num);
-	if (ret)
-		goto out_poll;
+
 	if (opts->is_file) {
-		/* in_list is created by create_send3_threads(). */
 		ret = load_file_data(&info);
 		if (ret < 0)
 			goto out_buf;
 	} else {
-		if (ifl_flag) {
-			thread_data_t *tdata = info.tdatas;
-			tbuf_sz = info.in_size / EXPANSION_RATIO;
-			tbuf = mmap_alloc(tbuf_sz);
-			if (!tbuf) {
-				ret = -ENOMEM;
-				goto out_buf;
-			}
-			tlist = create_chunk_list(tbuf, tbuf_sz,
-						  opts->block_size /
-						  EXPANSION_RATIO);
-			init_chunk_list(tlist, tbuf, tbuf_sz,
-					opts->block_size / EXPANSION_RATIO);
-			gen_random_data(tbuf, tbuf_sz);
-			ret = sw_deflate(tlist, tdata[0].in_list, opts);
-			if (ret) {
-				free_chunk_list(tlist);
-				mmap_free(tbuf, tbuf_sz);
-				goto out_buf;
-			}
-			free_chunk_list(tlist);
-			mmap_free(tbuf, tbuf_sz);
-		} else
-			gen_random_data(info.in_buf, info.in_size);
+		ret = prepare_src_data(opts, &info, ifl_flag);
+		if (ret < 0)
+			goto out_buf;
 	}
+
 	if (opts->faults & INJECT_TLB_FAULT) {
 		/*
 		 * Now unmap the buffers and retry the access. Normally we
@@ -894,61 +925,30 @@ int test_hw(struct test_options *opts, char *model)
 		if (opts->total_len > 0x54000)
 			COMP_TST_PRT( "NOTE: test might trash the TLB\n");
 	}
+
 	stat_start(&info);
 	ret = attach_threads(opts, &info, func, poll_thread_func);
 	if (ret)
 		goto out_buf;
 	stat_end(&info);
+
 	info.stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
 	if (opts->is_file)
 		(void)store_file(&info, model);
 
-	usec = info.stats->v[ST_RUN_TIME] / 1000;
-	if (opts->op_type == WD_DIR_DECOMPRESS)
-		ilen = (float)count_chunk_list_sz(info.tdatas[0].out_list);
-	else
-		ilen = opts->total_len;
-	ilen *= opts->thread_num * opts->compact_run_num;
-	speed = ilen * 1000 * 1000 / 1024 / 1024 / usec;
-	if (opts->sync_mode) {
-		zbuf_idx += sprintf(zbuf + zbuf_idx,
-				    " with %d send + %d poll threads",
-				    opts->thread_num,
-				    opts->poll_num);
-	} else {
-		zbuf_idx += sprintf(zbuf + zbuf_idx,
-				    " with %d send threads",
-				    opts->thread_num);
-	}
-	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf")) {
-		COMP_TST_PRT("%s at %.2fMB/s in %f usec (BLK:%d).\n",
-		       zbuf, speed, usec, opts->block_size);
-	} else {
-		COMP_TST_PRT("%s in %f usec (BLK:%d).\n",
-		       zbuf, usec, opts->block_size);
-	}
+	perfdata_print(opts, &info, zbuf_idx, zbuf, model);
+
 	free_threads_tdata(&info);
-	if (opts->use_env)
-		wd_comp_env_uninit();
-	else
-		nonenv_resource_uninit(opts, &info, sched);
+
+	uadk_res_uninit(opts, &info, sched);
+
 	usleep(1000);
+
 	return 0;
 out_buf:
-out_poll:
 	free_threads_tdata(&info);
-	if (opts->use_env)
-		wd_comp_env_uninit();
-	else
-		nonenv_resource_uninit(opts, &info, sched);
-	COMP_TST_PRT("Fail to run %s() (%d)!\n", model, ret);
-	return ret;
-
 out_src:
-	if (opts->use_env)
-		wd_comp_env_uninit();
-	else
-		nonenv_resource_uninit(opts, &info, sched);
+	uadk_res_uninit(opts, &info, sched);
 out:
 	COMP_TST_PRT("Fail to run %s() (%d)!\n", model, ret);
 	return ret;
