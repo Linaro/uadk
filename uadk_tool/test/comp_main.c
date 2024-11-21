@@ -124,13 +124,11 @@ static void *sw_dfl_hw_ifl(void *arg)
 				goto out_strm;
 			}
 			tout_sz = tdata->dst_sz;
-			ret = hw_stream_decompress(opts->alg_type,
-						   opts->block_size,
-						   opts->data_fmt,
-						   tdata->dst,
-						   &tout_sz,
-						   tlist->addr,
-						   tlist->size);
+			ret = hw_stream_compress(opts,
+						 tdata->dst,
+						 &tout_sz,
+						 tlist->addr,
+						 tlist->size);
 			if (ret) {
 				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				goto out_strm;
@@ -265,9 +263,7 @@ static void *hw_dfl_sw_ifl(void *arg)
 			init_chunk_list(tdata->out_list, tdata->dst,
 					tdata->dst_sz, tdata->dst_sz);
 			tmp_sz = tbuf_sz;
-			ret = hw_stream_compress(opts->alg_type,
-						 opts->block_size,
-						 opts->data_fmt,
+			ret = hw_stream_compress(opts,
 						 tlist->addr,
 						 &tmp_sz,
 						 tdata->src,
@@ -399,9 +395,7 @@ static void *hw_dfl_hw_ifl(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tmp_sz = tbuf_sz;
-			ret = hw_stream_compress(opts->alg_type,
-						 opts->block_size,
-						 opts->data_fmt,
+			ret = hw_stream_compress(opts,
 						 tbuf,
 						 &tmp_sz,
 						 tdata->src,
@@ -411,13 +405,11 @@ static void *hw_dfl_hw_ifl(void *arg)
 				goto out;
 			}
 			tout_sz = tdata->dst_sz;
-			ret = hw_stream_decompress(opts->alg_type,
-						   opts->block_size,
-						   opts->data_fmt,
-						   tdata->dst,
-						   &tout_sz,
-						   tbuf,
-						   tmp_sz);
+			ret = hw_stream_compress(opts,
+						 tdata->dst,
+						 &tout_sz,
+						 tbuf,
+						 tmp_sz);
 			if (ret) {
 				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				goto out;
@@ -539,9 +531,7 @@ static void *hw_dfl_perf(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tout_sz = tdata->dst_sz;
-			ret = hw_stream_compress(opts->alg_type,
-						 opts->block_size,
-						 opts->data_fmt,
+			ret = hw_stream_compress(opts,
 						 tdata->dst,
 						 &tout_sz,
 						 tdata->src,
@@ -600,13 +590,11 @@ static void *hw_ifl_perf(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tout_sz = tdata->dst_sz;
-			ret = hw_stream_decompress(opts->alg_type,
-						   opts->block_size,
-						   opts->data_fmt,
-						   tdata->dst,
-						   &tout_sz,
-						   tdata->in_list->addr,
-						   tdata->in_list->size);
+			ret = hw_stream_compress(opts,
+						 tdata->dst,
+						 &tout_sz,
+						 tdata->in_list->addr,
+						 tdata->in_list->size);
 			if (ret) {
 				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;
@@ -662,9 +650,7 @@ void *hw_dfl_perf3(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tout_sz = tdata->dst_sz;
-			ret = hw_stream_compress(opts->alg_type,
-						 opts->block_size,
-						 opts->data_fmt,
+			ret = hw_stream_compress(opts,
 						 tdata->dst,
 						 &tout_sz,
 						 tdata->src,
@@ -724,13 +710,11 @@ void *hw_ifl_perf3(void *arg)
 	if (opts->is_stream) {
 		for (i = 0; i < opts->compact_run_num; i++) {
 			tout_sz = tdata->dst_sz;
-			ret = hw_stream_decompress(opts->alg_type,
-						   opts->block_size,
-						   opts->data_fmt,
-						   tdata->dst,
-						   &tout_sz,
-						   tdata->src,
-						   tdata->src_sz);
+			ret = hw_stream_compress(opts,
+						 tdata->dst,
+						 &tout_sz,
+						 tdata->src,
+						 tdata->src_sz);
 			if (ret) {
 				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;

@@ -249,23 +249,15 @@ int mmap_free(void *addr, size_t len);
 
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 
-/* for block interface */
-int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
+/* for block memory interface */
+int hw_blk_compress(struct test_options *opts, void *priv,
 		    unsigned char *dst, __u32 *dstlen,
 		    unsigned char *src, __u32 srclen);
 
-int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
-		      unsigned char *dst, __u32 *dstlen,
-		      unsigned char *src, __u32 srclen);
-
 /* for stream memory interface */
-int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
+int hw_stream_compress(struct test_options *opts,
 		       unsigned char *dst, __u32 *dstlen,
 		       unsigned char *src, __u32 srclen);
-
-int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
-		         unsigned char *dst, __u32 *dstlen,
-		         unsigned char *src, __u32 srclen);
 
 #ifdef USE_ZLIB
 int hizip_check_output(void *buf, size_t size, size_t *checked,
