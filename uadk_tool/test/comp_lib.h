@@ -80,12 +80,6 @@ struct test_options {
 	int poll_num;
 	/* 0: sync mode, 1: async mode */
 	int sync_mode;
-	/*
-	 * positive value: the number of messages are sent at a time.
-	 * 0: batch mode is disabled.
-	 * batch mode is only valid for ASYNC operations.
-	 */
-	int batch_num;
 	/* input file */
 	int fd_in;
 	/* output file */
@@ -143,15 +137,6 @@ typedef struct _thread_data_t {
 	size_t dst_sz;
 	size_t sum;	/* produced bytes for OUT */
 	int tid;	/* thread ID */
-	int bcnt;	/* batch mode: count */
-	int pcnt;	/* batch mode: poll count */
-	int flush_bcnt;	/* batch mode: flush count that is less batch_num */
-	/*
-	 * batch mode: set flag and wait batch end in sending thread.
-	 * Clear batch flag if pcnt == bcnt in polling thread.
-	 * batch_flag could replace flush_bcnt.
-	 */
-	int batch_flag;
 	sem_t sem;
 	chunk_list_t *in_list;
 	chunk_list_t *out_list;
@@ -219,14 +204,6 @@ int hw_inflate(handle_t h_ifl,
 		struct test_options *opts,
 		sem_t *sem);
 
-int hw_deflate5(handle_t h_dfl,
-		chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		thread_data_t *tdata);
-int hw_inflate5(handle_t h_ifl,
-		chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		thread_data_t *tdata);
 int create_send_tdata(struct test_options *opts,
 		      struct hizip_test_info *info);
 int create_poll_tdata(struct test_options *opts,
