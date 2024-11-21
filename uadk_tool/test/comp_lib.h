@@ -66,6 +66,9 @@ struct test_options {
 	int alg_type;
 	int op_type;
 
+	/* self-test */
+	int self;
+
 	/* bytes of data for a request */
 	int block_size;
 	int q_num;
@@ -264,23 +267,43 @@ static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
 
 #define COMMON_OPTSTRING "hb:q:l:Ss:Vzt:m:dacLZ"
 
-#define COMMON_HELP "%s [opts]\n"					\
-	"  -b <size>     block size\n"					\
-	"  -q <num>      number of queues\n"				\
-	"  -l <num>      number of compact runs\n"			\
-	"  -S            stream mode, default block mode\n"		\
-	"  -s <size>     total size\n"					\
-	"  -V            verify output\n"				\
-	"  -a            test deflate algorithm, default gzip\n"	\
-	"  -z            test zlib algorithm, default gzip\n"		\
-	"  -t <num>      number of thread per process\n"		\
-	"  -m <mode>     mode of queues: 0 sync, 1 async\n"		\
-	"  -d		 test decompression, default compression\n"	\
-	"  -c		 use cpu to do zlib\n"				\
-	"  -L		 test sgl type buffer, default pbuffer\n"	\
-	"  -Z		 test lz77_zstd algorithm, default gzip\n"	\
-	"\n\n"
+#define COMMON_HELP	"%s test --m zip [opts]\n\n"			\
+	"	--self        run self test\n"				\
+	"	--blksize     single block size, default 128000\n"	\
+	"	--qnum        number of queues, default 1\n"		\
+	"	--loop        loop count of test runs, default 1\n"	\
+	"	--stream      stream mode, default block mode\n"	\
+	"	--size        total data size, default 10 * blksize\n"	\
+	"	--verify      verify output\n"				\
+	"	--thread      number of thread per process\n"		\
+	"	--mode        mode of queues: default sync\n"		\
+	"		      '0' sync, '1' async\n"			\
+	"	--inf         test decompression, default compression\n"\
+	"	--sgl	      test sgl type buffer, default pbuffer\n"	\
+	"	--alg	      test algorithm, default gzip\n"		\
+	"		      '0' deflate\n"				\
+	"		      '1' zlib\n"				\
+	"		      '2' gzip\n"				\
+	"		      '3' lz77_zstd\n"				\
+	"	--in          intput file to be compressed\n"		\
+	"	--out         output file after compressed\n"		\
+	"	--env	      enable environment variable settings\n"	\
+	"	--sformat     output format for the statistics\n"	\
+	"		      'none' do not output statistics\n"	\
+	"		      'pretty' human readable format\n"		\
+	"		      'csv' raw, machine readable\n"		\
+	"	--option      options\n"				\
+	"		      'p' prefaults the output pages\n"	\
+	"		      't' try to enable transparent huge pages\n"\
+	"		      'c' use cpu software zlib\n"		\
+	"	--fork	      number of children to create\n"		\
+	"	--kill	      kill thread\n"				\
+	"		      'b' kills the process after bind\n"	\
+	"		      't' tries to access an unmapped buffer\n" \
+	"		      'w' kills the process while the queue is working\n" \
+	"	--help        command help \n\n"
 
-int parse_common_option(const char opt, const char *optarg,
+int parse_common_option(int argc, char *argv[],
 			struct test_options *opts);
+
 #endif /* TEST_LIB_H_ */
