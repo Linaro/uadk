@@ -21,7 +21,6 @@ struct check_rand_ctx {
 	unsigned short state[3];
 };
 
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_spinlock_t lock;
 static int count = 0;
 
@@ -332,44 +331,6 @@ static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 	if (ret < 0)
 		return ret;
 	return 0;
-}
-
-void *poll_thread_func(void *arg)
-{
-	struct hizip_test_info *info = (struct hizip_test_info *)arg;
-	int ret = 0, total = 0;
-	__u32 expected = 0, received;
-
-	if (!info->opts->sync_mode)
-		return NULL;
-	while (1) {
-		if (info->opts->faults & INJECT_SIG_WORK)
-			kill(getpid(), SIGTERM);
-
-		pthread_mutex_lock(&mutex);
-		if (!expected)
-			expected = 1;
-		if (count == 0) {
-			pthread_mutex_unlock(&mutex);
-			usleep(10);
-			continue;
-		}
-		expected = 1;
-		received = 0;
-		ret = wd_comp_poll(expected, &received);
-		if (ret == 0)
-			total += received;
-		if (count == total) {
-			pthread_mutex_unlock(&mutex);
-			break;
-		} else {
-			if (count > total)
-				expected = count - total;
-			pthread_mutex_unlock(&mutex);
-			usleep(10);
-		}
-	}
-	pthread_exit(NULL);
 }
 
 void gen_random_data(void *buf, size_t len)
@@ -1088,7 +1049,7 @@ out:
 	return ret;
 }
 
-void *poll2_thread_func(void *arg)
+void *poll_thread_func(void *arg)
 {
 	thread_data_t *tdata = (thread_data_t *)arg;
 	struct hizip_test_info *info = tdata->info;
@@ -1100,6 +1061,9 @@ void *poll2_thread_func(void *arg)
 
 	gettimeofday(&start_tvl, NULL);
 	while (1) {
+		if (info->opts->faults & INJECT_SIG_WORK)
+			kill(getpid(), SIGTERM);
+
 		end_threads = __atomic_load_n(&sum_thread_end,
 					      __ATOMIC_ACQUIRE);
 		pending = __atomic_load_n(&sum_pend, __ATOMIC_ACQUIRE);
