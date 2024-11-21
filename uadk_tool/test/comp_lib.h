@@ -33,6 +33,14 @@ do { \
 	} \
 } while (0)
 
+#ifdef DEBUG_LOG
+#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
+#else
+#define dbg(msg, ...)
+#endif
+
+#define COMP_TST_PRT printf
+
 enum mode {
 	MODE_BLOCK,
 	MODE_STREAM,
