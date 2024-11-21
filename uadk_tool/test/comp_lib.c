@@ -99,12 +99,9 @@ static struct wd_datalist *get_datalist(void *addr, __u32 size)
 }
 
 /**
- * compress() - compress memory buffer.
- * @alg_type: alg_type.
- *
- * This function compress memory buffer.
+ * hw_blk_compress() - compress memory buffer.
  */
-int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
+int hw_blk_compress(struct test_options *opts, void *priv,
 		    unsigned char *dst, __u32 *dstlen,
 		    unsigned char *src, __u32 srclen)
 {
@@ -112,11 +109,11 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 	struct wd_comp_sess_setup setup;
 	struct sched_params param = {0};
 	struct wd_datalist *list;
-	struct wd_comp_req req;
+	struct wd_comp_req req = {0};
 	int ret = 0;
 
-	setup.alg_type = alg_type;
-	setup.op_type = WD_DIR_COMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = opts->op_type;
 	setup.comp_lv = WD_COMP_L8;
 	setup.win_sz = WD_COMP_WS_8K;
 	param.type = setup.op_type;
@@ -128,8 +125,8 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 		return -EINVAL;
 	}
 
-	if (data_fmt) {
-		COMP_TST_PRT("now sge size is %u\n", SGE_SIZE);
+	if (opts->data_fmt) {
+		COMP_TST_PRT("now sge size is %d\n", SGE_SIZE);
 		list = get_datalist(src, (__u32)srclen);
 		req.list_src = list;
 		list = get_datalist(dst, (__u32)*dstlen);
@@ -141,94 +138,29 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 
 	req.src_len = srclen;
 	req.dst_len = *dstlen;
-	req.op_type = WD_DIR_COMPRESS;
+	req.op_type = opts->op_type;
 	req.cb = NULL;
-	req.data_fmt = data_fmt;
+	req.data_fmt = opts->data_fmt;
 	req.priv = priv;
 
-	dbg("%s:input req: src_len: %d, dst_len:%d, data_fmt:%d\n",
-	    __func__, req.src_len, req.dst_len, req.data_fmt);
-
-	ret = wd_do_comp_sync(h_sess, &req);
-	if (ret < 0) {
-		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
-		return ret;
-	}
-
-	if (req.status) {
-		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
-		req.status);
-		wd_comp_free_sess(h_sess);
-		return req.status;
-	}
-	*dstlen = req.dst_len;
-
-	dbg("%s:input req: src_len: %d, dst_len:%d, data_fmt:%d\n",
-	    __func__, req.src_len, req.dst_len, req.data_fmt);
-
-	wd_comp_free_sess(h_sess);
-
-	return ret;
-}
-
-int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
-		      unsigned char *dst, __u32 *dstlen,
-		      unsigned char *src, __u32 srclen)
-{
-	handle_t h_sess;
-	struct wd_comp_sess_setup setup;
-	struct sched_params param = {0};
-	struct wd_datalist *list;
-	struct wd_comp_req req;
-	int ret = 0;
-
-	setup.alg_type = alg_type;
-	setup.op_type = WD_DIR_DECOMPRESS;
-	param.type = setup.op_type;
-	param.numa_id = 0;
-	setup.sched_param = &param;
-	h_sess = wd_comp_alloc_sess(&setup);
-	if (!h_sess) {
-		COMP_TST_PRT("fail to alloc comp sess!\n");
-		return -EINVAL;
-	}
-
-	if (data_fmt) {
-		COMP_TST_PRT("now sge size is %u\n", SGE_SIZE);
-		list = get_datalist(src, (__u32)srclen);
-		req.list_src = list;
-		list = get_datalist(dst, (__u32)*dstlen);
-		req.list_dst = list;
-	} else {
-		req.src = src;
-		req.dst = dst;
-	}
-
-	req.src_len = srclen;
-	req.dst_len = *dstlen;
-	req.op_type = WD_DIR_DECOMPRESS;
-	req.cb = NULL;
-	req.data_fmt = data_fmt;
-
-	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	dbg("%s:input req: src:%p, dst:%p, src_len: %u, dst_len:%u\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
-
 	ret = wd_do_comp_sync(h_sess, &req);
 	if (ret < 0) {
 		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
+		wd_comp_free_sess(h_sess);
 		return ret;
 	}
-
 	if (req.status) {
-		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
+		COMP_TST_PRT("fail to do comp sync(status = %u)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
 	}
 	*dstlen = req.dst_len;
 
-	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	dbg("%s:output req: src:%p, dst:%p,src_len: %u, dst_len:%u\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
 	wd_comp_free_sess(h_sess);
@@ -236,18 +168,21 @@ int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 	return ret;
 }
 
-int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
+/**
+ * hw_stream_compress() - compress memory buffer.
+ */
+int hw_stream_compress(struct test_options *opts,
 		       unsigned char *dst, __u32 *dstlen,
 		       unsigned char *src, __u32 srclen)
 {
 	handle_t h_sess;
 	struct wd_comp_sess_setup setup;
 	struct sched_params param = {0};
-	struct wd_comp_req req;
+	struct wd_comp_req req = {0};
 	int ret = 0;
 
-	setup.alg_type = alg_type;
-	setup.op_type = WD_DIR_COMPRESS;
+	setup.alg_type = opts->alg_type;
+	setup.op_type = opts->op_type;
 	setup.comp_lv = WD_COMP_L8;
 	setup.win_sz = WD_COMP_WS_8K;
 	param.type = setup.op_type;
@@ -262,83 +197,29 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 	req.src_len = srclen;
 	req.dst = dst;
 	req.dst_len = *dstlen;
-	req.op_type = WD_DIR_COMPRESS;
+	req.op_type = opts->op_type;
 	req.cb = NULL;
-	req.data_fmt = data_fmt;
+	req.data_fmt = opts->data_fmt;
 
-	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	dbg("%s:input req: src:%p, dst:%p, src_len: %u, dst_len:%u\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
 	ret = wd_do_comp_sync2(h_sess, &req);
 	if (ret < 0) {
 		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
+		wd_comp_free_sess(h_sess);
 		return ret;
 	}
 
 	if (req.status) {
-		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
+		COMP_TST_PRT("fail to do comp sync(status = %u)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
 	}
 	*dstlen = req.dst_len;
 
-	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
-	    __func__, req.src, req.dst, req.src_len, req.dst_len);
-
-	wd_comp_free_sess(h_sess);
-
-	return ret;
-}
-
-int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
-		       unsigned char *dst, __u32 *dstlen,
-		       unsigned char *src, __u32 srclen)
-{
-	handle_t h_sess;
-	struct wd_comp_sess_setup setup;
-	struct sched_params param = {0};
-	struct wd_comp_req req;
-	int ret = 0;
-
-
-	setup.alg_type = alg_type;
-	setup.op_type = WD_DIR_DECOMPRESS;
-	param.type = setup.op_type;
-	param.numa_id = 0;
-	setup.sched_param = &param;
-	h_sess = wd_comp_alloc_sess(&setup);
-	if (!h_sess) {
-		COMP_TST_PRT("fail to alloc comp sess!\n");
-		return -EINVAL;
-	}
-	req.src = src;
-	req.src_len = srclen;
-	req.dst = dst;
-	req.dst_len = *dstlen;
-	req.op_type = WD_DIR_DECOMPRESS;
-	req.cb = NULL;
-	req.data_fmt = data_fmt;
-
-	dbg("%s:input req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
-	    __func__, req.src, req.dst, req.src_len, req.dst_len);
-
-
-	ret = wd_do_comp_sync2(h_sess, &req);
-	if (ret < 0) {
-		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
-		return ret;
-	}
-
-	if (req.status) {
-		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
-		req.status);
-		wd_comp_free_sess(h_sess);
-		return req.status;
-	}
-	*dstlen = req.dst_len;
-
-	dbg("%s:output req: src:%p, dst:%p,src_len: %d, dst_len:%d\n",
+	dbg("%s:output req: src:%p, dst:%p,src_len: %u, dst_len:%u\n",
 	    __func__, req.src, req.dst, req.src_len, req.dst_len);
 
 	wd_comp_free_sess(h_sess);
