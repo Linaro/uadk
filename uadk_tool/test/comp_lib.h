@@ -204,12 +204,9 @@ int hw_inflate(handle_t h_ifl,
 		struct test_options *opts,
 		sem_t *sem);
 
-int create_send_tdata(struct test_options *opts,
-		      struct hizip_test_info *info);
-int create_poll_tdata(struct test_options *opts,
-		      struct hizip_test_info *info,
-		      int poll_num);
+int create_threads_tdata(struct test_options *opts, struct hizip_test_info *info);
 void free_threads_tdata(struct hizip_test_info *info);
+
 int attach_threads(struct test_options *opts,
 		    struct hizip_test_info *info,
 		    void *(*send_thread_func)(void *arg),

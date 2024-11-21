@@ -602,7 +602,7 @@ out:
  * Thread 0 shares info->out_buf. Other threads need to create its own
  * dst buffer.
  */
-int create_send_tdata(struct test_options *opts,
+static int create_send_tdata(struct test_options *opts,
 		      struct hizip_test_info *info)
 {
 	thread_data_t *tdata;
@@ -708,34 +708,71 @@ out:
 	return ret;
 }
 
-int create_poll_tdata(struct test_options *opts,
-		      struct hizip_test_info *info,
-		      int poll_num)
+static void free_send_tdata(struct hizip_test_info *info)
+{
+	thread_data_t *tdatas = info->tdatas;
+	int i;
+
+	free(info->send_tds);
+
+	/* src address is shared among threads */
+	free_chunk_list(tdatas[0].in_list);
+	for (i = 0; i < info->send_tnum; i++) {
+		free_chunk_list(tdatas[i].out_list);
+		free(tdatas[i].reqs);
+	}
+
+	/* info->out_buf is bound to tdatas[0].dst */
+	for (i = 0; i < info->send_tnum; i++)
+		mmap_free(tdatas[i].dst, tdatas[i].dst_sz);
+
+	free(info->tdatas);
+	mmap_free(info->in_buf, info->in_size);
+}
+
+static int create_poll_tdata(struct test_options *opts, struct hizip_test_info *info)
 {
 	thread_data_t *tdatas;
 	int i, ret;
 
 	if (opts->sync_mode == 0)
 		return 0;
-	else if (poll_num <= 0)
+
+	if (opts->poll_num <= 0)
 		return -EINVAL;
-	info->poll_tnum = poll_num;
-	info->poll_tds = calloc(1, sizeof(pthread_t) * poll_num);
+
+	info->poll_tnum = opts->poll_num;
+	info->poll_tds = calloc(1, sizeof(pthread_t) * opts->poll_num);
 	if (!info->poll_tds)
 		return -ENOMEM;
-	info->p_tdatas = calloc(1, sizeof(thread_data_t) * poll_num);
+	info->p_tdatas = calloc(1, sizeof(thread_data_t) * opts->poll_num);
 	if (!info->p_tdatas) {
 		ret = -ENOMEM;
 		goto out;
 	}
 	tdatas = info->p_tdatas;
-	for (i = 0; i < poll_num; i++) {
+	for (i = 0; i < opts->poll_num; i++) {
 		tdatas[i].tid = i;
 		tdatas[i].info = info;
 	}
+
 	return 0;
 out:
 	free(info->poll_tds);
+	return ret;
+}
+
+int create_threads_tdata(struct test_options *opts, struct hizip_test_info *info)
+{
+	int ret;
+
+	ret = create_send_tdata(opts, info);
+	if (ret)
+		return ret;
+	ret = create_poll_tdata(opts, info);
+	if (ret)
+		free_send_tdata(info);
+
 	return ret;
 }
 
@@ -745,28 +782,10 @@ out:
  */
 void free_threads_tdata(struct hizip_test_info *info)
 {
-	thread_data_t *tdatas = info->tdatas;
-	int i;
+	free(info->poll_tds);
+	free(info->p_tdatas);
 
-	if (info->send_tds)
-		free(info->send_tds);
-
-	if (info->poll_tds) {
-		free(info->poll_tds);
-		free(info->p_tdatas);
-	}
-
-	free_chunk_list(tdatas[0].in_list);	/* src address is shared among threads */
-	for (i = 0; i < info->send_tnum; i++) {
-		free_chunk_list(tdatas[i].out_list);
-		free(tdatas[i].reqs);
-	}
-	/* info->out_buf is bound to tdatas[0].dst */
-	for (i = 0; i < info->send_tnum; i++)
-		mmap_free(tdatas[i].dst, tdatas[i].dst_sz);
-
-	free(info->tdatas);
-	mmap_free(info->in_buf, info->in_size);
+	free_send_tdata(info);
 }
 
 int attach_threads(struct test_options *opts,
