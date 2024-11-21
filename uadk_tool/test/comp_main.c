@@ -635,126 +635,6 @@ out:
 	return (void *)(uintptr_t)(ret);
 }
 
-/* BATCH mode is used */
-void *hw_dfl_perf3(void *arg)
-{
-	thread_data_t *tdata = (thread_data_t *)arg;
-	struct hizip_test_info *info = tdata->info;
-	struct test_options *opts = info->opts;
-	struct wd_comp_sess_setup setup = {0};
-	struct sched_params param = {0};
-	handle_t h_dfl;
-	int i, ret;
-	uint32_t tout_sz;
-
-	if (opts->is_stream) {
-		for (i = 0; i < opts->compact_run_num; i++) {
-			tout_sz = tdata->dst_sz;
-			ret = hw_stream_compress(opts,
-						 tdata->dst,
-						 &tout_sz,
-						 tdata->src,
-						 tdata->src_sz);
-			if (ret) {
-				COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
-				return (void *)(uintptr_t)ret;
-			}
-		}
-		tdata->out_list->addr = tdata->dst;
-		tdata->out_list->size = tout_sz;
-		tdata->out_list->next = NULL;
-		return NULL;
-	}
-
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_COMPRESS;
-	param.type = setup.op_type;
-	param.numa_id = 0;
-	setup.sched_param = &param;
-	h_dfl = wd_comp_alloc_sess(&setup);
-	if (!h_dfl)
-		return (void *)(uintptr_t)(-EINVAL);
-
-	for (i = 0; i < opts->compact_run_num; i++) {
-		init_chunk_list(tdata->out_list, tdata->dst,
-				tdata->dst_sz,
-				info->out_chunk_sz);
-		ret = hw_deflate5(h_dfl, tdata->in_list, tdata->out_list,
-				  tdata);
-		if (ret) {
-			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
-			goto out;
-		}
-	}
-	wd_comp_free_sess(h_dfl);
-	/* mark sending thread to end */
-	__atomic_add_fetch(&sum_thread_end, 1, __ATOMIC_ACQ_REL);
-	return NULL;
-out:
-	wd_comp_free_sess(h_dfl);
-	return (void *)(uintptr_t)(ret);
-}
-
-/* BATCH mode is used */
-void *hw_ifl_perf3(void *arg)
-{
-	thread_data_t *tdata = (thread_data_t *)arg;
-	struct hizip_test_info *info = tdata->info;
-	struct test_options *opts = info->opts;
-	struct wd_comp_sess_setup setup = {0};
-	struct sched_params param = {0};
-	handle_t h_ifl;
-	int i, ret;
-	uint32_t tout_sz;
-
-	if (opts->is_stream) {
-		for (i = 0; i < opts->compact_run_num; i++) {
-			tout_sz = tdata->dst_sz;
-			ret = hw_stream_compress(opts,
-						 tdata->dst,
-						 &tout_sz,
-						 tdata->src,
-						 tdata->src_sz);
-			if (ret) {
-				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
-				return (void *)(uintptr_t)ret;
-			}
-			tdata->out_list->addr = tdata->dst;
-			tdata->out_list->size = tout_sz;
-			tdata->out_list->next = NULL;
-		}
-		return NULL;
-	}
-
-        setup.alg_type = opts->alg_type;
-        setup.op_type = WD_DIR_DECOMPRESS;
-	param.type = setup.op_type;
-	param.numa_id = 0;
-	setup.sched_param = &param;
-	h_ifl = wd_comp_alloc_sess(&setup);
-	if (!h_ifl)
-		return (void *)(uintptr_t)(-EINVAL);
-
-	for (i = 0; i < opts->compact_run_num; i++) {
-		init_chunk_list(tdata->out_list, tdata->dst,
-				tdata->dst_sz,
-				info->out_chunk_sz);
-		ret = hw_inflate5(h_ifl, tdata->in_list, tdata->out_list,
-				  tdata);
-		if (ret) {
-			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
-			goto out;
-		}
-	}
-	wd_comp_free_sess(h_ifl);
-	/* mark sending thread to end */
-	__atomic_add_fetch(&sum_thread_end, 1, __ATOMIC_ACQ_REL);
-	return NULL;
-out:
-	wd_comp_free_sess(h_ifl);
-	return (void *)(uintptr_t)(ret);
-}
-
 /*
  * Load compression/decompression content.
  */
@@ -903,29 +783,10 @@ int test_hw(struct test_options *opts, char *model)
 		zbuf_idx = sprintf(zbuf, "HW %s %s deflate",
 				   opts->sync_mode ? "ASYNC" : "SYNC",
 				   opts->is_stream ? "STREAM" : "BLOCK");
-	} else if (!strcmp(model, "hw_dfl_perf3")) {
-		func = hw_dfl_perf3;
-		info.in_size = opts->total_len;
-		info.out_size = opts->total_len * EXPANSION_RATIO;
-		info.in_chunk_sz = opts->block_size;
-		info.out_chunk_sz = opts->block_size * EXPANSION_RATIO;
-		zbuf_idx = sprintf(zbuf, "HW %s %s deflate",
-				   opts->sync_mode ? "ASYNC" : "SYNC",
-				   opts->is_stream ? "STREAM" : "BLOCK");
 	} else if (!strcmp(model, "hw_ifl_perf")) {
 		func = hw_ifl_perf;
 		info.in_size = opts->total_len;
 		info.out_size = opts->total_len * INFLATION_RATIO;
-		info.in_chunk_sz = opts->block_size;
-		info.out_chunk_sz = opts->block_size * INFLATION_RATIO;
-		zbuf_idx = sprintf(zbuf, "HW %s %s inflate",
-				   opts->sync_mode ? "ASYNC" : "SYNC",
-				   opts->is_stream ? "STREAM" : "BLOCK");
-		ifl_flag = 1;
-	} else if (!strcmp(model, "hw_ifl_perf3")) {
-		func = hw_ifl_perf3;
-		info.in_size = opts->total_len * EXPANSION_RATIO;
-		info.out_size = opts->total_len;
 		info.in_chunk_sz = opts->block_size;
 		info.out_chunk_sz = opts->block_size * INFLATION_RATIO;
 		zbuf_idx = sprintf(zbuf, "HW %s %s inflate",
@@ -1051,13 +912,12 @@ int test_hw(struct test_options *opts, char *model)
 				    " with %d send threads",
 				    opts->thread_num);
 	}
-	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf") ||
-	    !strcmp(model, "hw_dfl_perf3") || !strcmp(model, "hw_ifl_perf3")) {
-		COMP_TST_PRT("%s at %.2fMB/s in %f usec (BLK:%d, Bnum:%d).\n",
-		       zbuf, speed, usec, opts->block_size, opts->batch_num);
+	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf")) {
+		COMP_TST_PRT("%s at %.2fMB/s in %f usec (BLK:%d).\n",
+		       zbuf, speed, usec, opts->block_size);
 	} else {
-		COMP_TST_PRT("%s in %f usec (BLK:%d, Bnum:%d).\n",
-		       zbuf, usec, opts->block_size, opts->batch_num);
+		COMP_TST_PRT("%s in %f usec (BLK:%d).\n",
+		       zbuf, usec, opts->block_size);
 	}
 	free_threads_tdata(&info);
 	if (opts->use_env)
