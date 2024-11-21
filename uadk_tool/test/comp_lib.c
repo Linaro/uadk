@@ -5,6 +5,7 @@
  */
 
 #include <pthread.h>
+#include <getopt.h>
 #include <signal.h>
 #include <math.h>
 #include <sys/mman.h>
@@ -640,7 +641,7 @@ static int create_send_tdata(struct test_options *opts,
 	if (opts->option & TEST_THP) {
 		ret = madvise(info->in_buf, info->in_size, MADV_HUGEPAGE);
 		if (ret) {
-			COMP_TST_PRT("madvise(MADV_HUGEPAGE)");
+			COMP_TST_PRT("failed to madvise(MADV_HUGEPAGE) src_buf(%ld)!\n", info->in_size);
 			goto out_ilist;
 		}
 	}
@@ -659,7 +660,7 @@ static int create_send_tdata(struct test_options *opts,
 		if (opts->option & TEST_THP) {
 			ret = madvise(tdata->dst, tdata->dst_sz, MADV_HUGEPAGE);
 			if (ret) {
-				COMP_TST_PRT("madvise(MADV_HUGEPAGE)");
+				COMP_TST_PRT("failed to madvise(MADV_HUGEPAGE) dst_buf(%ld)!\n", tdata->dst_sz);
 				goto out_dst;
 			}
 		}
@@ -1060,63 +1061,225 @@ void uninit_config(void *priv, struct wd_sched *sched)
 	wd_sched_rr_release(sched);
 }
 
-int parse_common_option(const char opt, const char *optarg,
+static void set_thp(struct test_options *opts)
+{
+#define MAX_BUFF_SIZE	14
+	char *p;
+	char s[MAX_BUFF_SIZE];
+	FILE *file;
+
+	file = fopen("/sys/kernel/mm/transparent_hugepage/enabled", "r");
+	if (!file)
+		goto out_err;
+	p = fgets(s, MAX_BUFF_SIZE, file);
+	fclose(file);
+	if (!p)
+		goto out_err;
+
+	if (strcmp(s, "never") == 0) {
+		COMP_TST_PRT("Cannot test THP with enable=never\n");
+		return;
+	}
+
+	file = fopen("/sys/kernel/mm/transparent_hugepage/defrag", "r");
+	if (!file)
+		goto out_err;
+	p = fgets(s, MAX_BUFF_SIZE, file);
+	fclose(file);
+	if (!p)
+		goto out_err;
+
+	if (strcmp(s, "defer") == 0 || strcmp(s, "never") == 0) {
+		COMP_TST_PRT("Cannot test THP with defrag=%s\n", s);
+		return;
+	}
+
+	return;
+out_err:
+	COMP_TST_PRT("THP unsupported?\n");
+}
+
+int parse_common_option(int argc, char *argv[],
 			struct test_options *opts)
 {
-	switch (opt) {
-	case 'b':
-		opts->block_size = strtol(optarg, NULL, 0);
-		if (opts->block_size <= 0)
+	int opt, option_idx;
+	struct option long_options[] = {
+		{"help",	no_argument,		0, 0 },
+		{"self",	no_argument,		0, 1 },
+		{"in",		required_argument,	0, 2 },
+		{"out",		required_argument,	0, 3 },
+		{"env",		no_argument,		0, 4 },
+		{"blksize",	required_argument,	0, 5 },
+		{"qnum",	required_argument,	0, 6 },
+		{"loop",	required_argument,	0, 7 },
+		{"stream",	no_argument,		0, 8 },
+		{"size",	required_argument,	0, 9 },
+		{"verify",	no_argument,		0, 10 },
+		{"alg",		required_argument,	0, 11 },
+		{"inf",		no_argument,		0, 12 },
+		{"thread",	required_argument,	0, 13 },
+		{"mode",	required_argument,	0, 14 },
+		{"sgl",		no_argument,		0, 15 },
+		/* still keep these  proprietary cmds listd below*/
+		{"sformat",	required_argument,	0, 20 },
+		{"option",	required_argument,	0, 21 },
+		{"fork",	required_argument,	0, 22 },
+		{"kill",	required_argument,	0, 23 },
+		{0, 0, 0, 24 },
+	};
+
+	opts->fd_in = -1;
+	opts->fd_out = -1;
+	opts->alg_type = WD_COMP_ALG_MAX;
+	while ((opt = getopt_long(argc, argv, "", long_options, &option_idx)) != -1) {
+		switch (opt) {
+		case 0:
 			return 1;
-		break;
-	case 'l':
-		opts->compact_run_num = strtol(optarg, NULL, 0);
-		if (opts->compact_run_num <= 0)
+		case 1:
+			opts->self = 1;
+			break;
+		case 2:		/* input file */
+			if (optarg) {
+				opts->fd_in = open(optarg, O_RDONLY);
+				if (opts->fd_in < 0) {
+					COMP_TST_PRT("Fail to open %s\n",
+						optarg);
+					return 1;
+				} else
+					opts->is_file = true;
+			} else {
+				COMP_TST_PRT("Input file is missing!\n");
+				return 1;
+			}
+			if (lseek(opts->fd_in, 0, SEEK_SET) < 0) {
+				COMP_TST_PRT("Fail on lseek()!\n");
+				return 1;
+			}
+			break;
+		case 3:		/* output file */
+			if (optarg) {
+				opts->fd_out = open(optarg,
+							O_CREAT | O_WRONLY,
+							S_IWUSR | S_IRGRP |
+							S_IROTH);
+				if (opts->fd_out < 0) {
+					COMP_TST_PRT("Fail to open %s\n",
+						optarg);
+					return 1;
+				} else
+					opts->is_file = true;
+			} else {
+				COMP_TST_PRT("Output file is missing!\n");
+				return 1;
+			}
+			if (lseek(opts->fd_out, 0, SEEK_SET) < 0) {
+				COMP_TST_PRT("Fail on lseek()!\n");
+				return 1;
+			}
+			break;
+		case 4:		/* env */
+			opts->use_env = true;
+			break;
+		case 5:
+			opts->block_size = strtol(optarg, NULL, 0);
+			if (opts->block_size <= 0)
+				return 1;
+			break;
+		case 6:
+			opts->q_num = strtol(optarg, NULL, 0);
+			if (opts->q_num <= 0)
+				return 1;
+			break;
+		case 7:
+			opts->compact_run_num = strtol(optarg, NULL, 0);
+			if (opts->compact_run_num <= 0)
+				return 1;
+			break;
+		case 8:
+			opts->is_stream = MODE_STREAM;
+			break;
+		case 9:
+			opts->total_len = strtol(optarg, NULL, 0);
+			SYS_ERR_COND(opts->total_len <= 0, "invalid size '%s'\n",
+				     optarg);
+			break;
+		case 10:
+			opts->verify = true;
+			break;
+		case 11:
+			opts->alg_type = strtol(optarg, NULL, 0);
+			if (opts->alg_type >= WD_COMP_ALG_MAX)
+				return 1;
+			break;
+		case 12:
+			opts->op_type = WD_DIR_DECOMPRESS;
+			break;
+		case 13:
+			opts->thread_num = strtol(optarg, NULL, 0);
+			SYS_ERR_COND(opts->thread_num < 0, "invalid thread num '%s'\n",
+				     optarg);
+			break;
+		case 14:
+			opts->sync_mode = strtol(optarg, NULL, 0);
+			SYS_ERR_COND(opts->sync_mode < 0 || opts->sync_mode > 1,
+				     "invalid sync mode '%s'\n", optarg);
+			break;
+		case 15: /* reserved */
+			opts->data_fmt = WD_SGL_BUF;
+			break;
+		case 20:
+			if (strcmp(optarg, "none") == 0) {
+				opts->display_stats = STATS_NONE;
+			} else if (strcmp(optarg, "csv") == 0) {
+				opts->display_stats = STATS_CSV;
+			} else if (strcmp(optarg, "pretty") == 0) {
+				opts->display_stats = STATS_PRETTY;
+			} else {
+				SYS_ERR_COND(1, "invalid argument to --sformat: '%s'\n", optarg);
+				break;
+			}
+			break;
+		case 21:
+			switch (optarg[0]) {
+			case 'p':
+				opts->option |= PERFORMANCE;
+				break;
+			case 't':
+				opts->option |= TEST_THP;
+				set_thp(opts);
+				break;
+			case 'c':
+				opts->option |= TEST_ZLIB;
+				break;
+			default:
+				SYS_ERR_COND(1, "invalid argument to --option: '%s'\n", optarg);
+				break;
+			}
+			break;
+		case 22:
+			opts->children = strtol(optarg, NULL, 0);
+			if (opts->children < 0)
+				return 1;
+			break;
+		case 23:
+			switch (optarg[0]) {
+			case 'b':
+				opts->faults |= INJECT_SIG_BIND;
+				break;
+			case 't':
+				opts->faults |= INJECT_TLB_FAULT;
+				break;
+			case 'w':
+				opts->faults |= INJECT_SIG_WORK;
+				break;
+			default:
+				SYS_ERR_COND(1, "invalid argument to --kill: '%s'\n", optarg);
+				return 1;
+			}
+			break;
+		default:
 			return 1;
-		break;
-	case 'q':
-		opts->q_num = strtol(optarg, NULL, 0);
-		if (opts->q_num <= 0)
-			return 1;
-		break;
-	case 'd':
-		opts->op_type = WD_DIR_DECOMPRESS;
-		break;
-	case 'S':
-		opts->is_stream = MODE_STREAM;
-		break;
-	case 's':
-		opts->total_len = strtol(optarg, NULL, 0);
-		SYS_ERR_COND(opts->total_len <= 0, "invalid size '%s'\n",
-			     optarg);
-		break;
-	case 't':
-		opts->thread_num = strtol(optarg, NULL, 0);
-		SYS_ERR_COND(opts->thread_num < 0, "invalid thread num '%s'\n",
-			     optarg);
-		break;
-	case 'm':
-		opts->sync_mode = strtol(optarg, NULL, 0);
-		SYS_ERR_COND(opts->sync_mode < 0 || opts->sync_mode > 1,
-			     "invalid sync mode '%s'\n", optarg);
-		break;
-	case 'V':
-		opts->verify = true;
-		break;
-	case 'a':
-		opts->alg_type = WD_DEFLATE;
-		break;
-	case 'z':
-		opts->alg_type = WD_ZLIB;
-		break;
-	case 'L':
-		opts->data_fmt = WD_SGL_BUF;
-		break;
-	case 'Z':
-		opts->alg_type = WD_LZ77_ZSTD;
-		break;
-	default:
-		return 1;
+		}
 	}
 
 	return 0;

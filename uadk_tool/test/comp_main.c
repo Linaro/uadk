@@ -6,7 +6,6 @@
 #include <linux/perf_event.h>
 #include <asm/unistd.h>	/* For __NR_perf_event_open */
 #include <fenv.h>
-#include <getopt.h>
 #include <inttypes.h>
 #include <math.h>
 #include <signal.h>
@@ -1052,13 +1051,9 @@ int run_self_test(struct test_options *opts)
 static int set_default_opts(struct test_options *opts)
 {
 	if (!opts->block_size)
-		opts->block_size = 8192;
-	if (!opts->total_len) {
-		if (opts->block_size)
-			opts->total_len = opts->block_size * 10;
-		else
-			opts->total_len = 8192 * 10;
-	}
+		opts->block_size = 128000;
+	if (!opts->total_len)
+		opts->total_len = opts->block_size * 10;
 	if (!opts->thread_num)
 		opts->thread_num = 1;
 	if (!opts->q_num)
@@ -1098,6 +1093,10 @@ int run_cmd(struct test_options *opts)
 	bool success = true;
 
 	set_default_opts(opts);
+
+	if (opts->self)
+		return run_self_test(opts);
+
 	if (opts->children) {
 		pids = calloc(opts->children, sizeof(pid_t));
 		if (!pids)
@@ -1266,43 +1265,6 @@ unsigned long long perf_event_put(int *perf_fds, int nr_fds)
 	return total;
 }
 
-static void set_thp(struct test_options *opts)
-{
-	char *p;
-	char s[14];
-	FILE *file;
-
-	file = fopen("/sys/kernel/mm/transparent_hugepage/enabled", "r");
-	if (!file)
-		goto out_err;
-	p = fgets(s, 14, file);
-	fclose(file);
-	if (!p)
-		goto out_err;
-
-	if (strcmp(s, "never") == 0) {
-		COMP_TST_PRT("Cannot test THP with enable=never\n");
-		return;
-	}
-
-	file = fopen("/sys/kernel/mm/transparent_hugepage/defrag", "r");
-	if (!file)
-		goto out_err;
-	p = fgets(s, 14, file);
-	fclose(file);
-	if (!p)
-		goto out_err;
-
-	if (strcmp(s, "defer") == 0 || strcmp(s, "never") == 0) {
-		COMP_TST_PRT("Cannot test THP with defrag=%s\n", s);
-		return;
-	}
-
-	return;
-out_err:
-	COMP_TST_PRT("THP unsupported?\n");
-}
-
 void stat_setup(struct hizip_test_info *info)
 {
 	clock_gettime(CLOCK_MONOTONIC_RAW, &info->tv.setup_time);
@@ -1393,15 +1355,17 @@ static void handle_sigbus(int sig)
 
 int test_comp_entry(int argc, char *argv[])
 {
+	int show_help = 0;
 	struct test_options opts = {
 		.alg_type		= WD_GZIP,
 		.op_type		= WD_DIR_COMPRESS,
+		.self			= 0,
 		.q_num			= 1,
 		.compact_run_num	= 1,
 		.thread_num		= 1,
 		.sync_mode		= 0,
-		.block_size		= 512000,
-		.total_len		= opts.block_size * 10,
+		.block_size		= 0,
+		.total_len		= 0,
 		.verify			= false,
 		.is_decomp		= false,
 		.is_stream		= false,
@@ -1411,155 +1375,18 @@ int test_comp_entry(int argc, char *argv[])
 		.faults			= 0,
 		.data_fmt		= 0,
 	};
-	struct option long_options[] = {
-		{"self",	no_argument,	0, 0 },
-		{"in",		required_argument,	0, 0 },
-		{"out",		required_argument,	0, 0 },
-		{"env",		no_argument,	0, 0 },
-		{0,		0,		0, 0 },
-	};
-	int show_help = 0;
-	int opt, option_idx;
-	int self = 0;
 
 	opts.fd_in = -1;
 	opts.fd_out = -1;
 	opts.alg_type = WD_COMP_ALG_MAX;
-	while ((opt = getopt_long(argc, argv, COMMON_OPTSTRING "f:o:w:k:r:",
-				  long_options, &option_idx)) != -1) {
-		switch (opt) {
-		case 0:
-			switch (option_idx) {
-			case 0:		/* self */
-				self = 1;
-				break;
-			case 1:		/* in */
-				if (optarg) {
-					opts.fd_in = open(optarg, O_RDONLY);
-					if (opts.fd_in < 0) {
-						COMP_TST_PRT("Fail to open %s\n",
-							optarg);
-						show_help = 1;
-					} else
-						opts.is_file = true;
-				} else {
-					COMP_TST_PRT("Input file is missing!\n");
-					show_help = 1;
-				}
-				if (lseek(opts.fd_in, 0, SEEK_SET) < 0) {
-					COMP_TST_PRT("Fail on lseek()!\n");
-					show_help = 1;
-				}
-				break;
-			case 2:		/* out */
-				if (optarg) {
-					opts.fd_out = open(optarg,
-							   O_CREAT | O_WRONLY,
-							   S_IWUSR | S_IRGRP |
-							   S_IROTH);
-					if (opts.fd_out < 0) {
-						COMP_TST_PRT("Fail to open %s\n",
-							optarg);
-						show_help = 1;
-					} else
-						opts.is_file = true;
-				} else {
-					COMP_TST_PRT("Output file is missing!\n");
-					show_help = 1;
-				}
-				if (lseek(opts.fd_out, 0, SEEK_SET) < 0) {
-					COMP_TST_PRT("Fail on lseek()!\n");
-					show_help = 1;
-				}
-				break;
-			case 3:		/* env */
-				opts.use_env = true;
-				break;
-			default:
-				show_help = 1;
-				break;
-			}
-			break;
-		case 'f':
-			if (strcmp(optarg, "none") == 0) {
-				opts.display_stats = STATS_NONE;
-			} else if (strcmp(optarg, "csv") == 0) {
-				opts.display_stats = STATS_CSV;
-			} else if (strcmp(optarg, "pretty") == 0) {
-				opts.display_stats = STATS_PRETTY;
-			} else {
-				SYS_ERR_COND(1, "invalid argument to -f: '%s'\n", optarg);
-				break;
-			}
-			break;
-		case 'o':
-			switch (optarg[0]) {
-			case 'p':
-				opts.option |= PERFORMANCE;
-				break;
-			case 't':
-				opts.option |= TEST_THP;
-				set_thp(&opts);
-				break;
-			default:
-				SYS_ERR_COND(1, "invalid argument to -o: '%s'\n", optarg);
-				break;
-			}
-			break;
-		case 'c':
-			opts.option |= TEST_ZLIB;
-			break;
-		case 'r':
-			opts.children = strtol(optarg, NULL, 0);
-			if (opts.children < 0)
-				show_help = 1;
-			break;
-		case 'k':
-			switch (optarg[0]) {
-			case 'b':
-				opts.faults |= INJECT_SIG_BIND;
-				break;
-			case 't':
-				opts.faults |= INJECT_TLB_FAULT;
-				break;
-			case 'w':
-				opts.faults |= INJECT_SIG_WORK;
-				break;
-			default:
-				SYS_ERR_COND(1, "invalid argument to -k: '%s'\n", optarg);
-				break;
-			}
-			break;
-		default:
-			show_help = parse_common_option(opt, optarg, &opts);
-			break;
-		}
-	}
+	show_help = parse_common_option(argc, argv, &opts);
 
 	signal(SIGBUS, handle_sigbus);
 
-	if (!show_help) {
-		if (self)
-			return run_self_test(&opts);
-		return run_cmd(&opts);
+	if (show_help) {
+		SYS_ERR_COND(show_help || optind > argc, COMMON_HELP, argv[0]);
+		return 0;
 	}
 
-	SYS_ERR_COND(show_help || optind > argc,
-		     COMMON_HELP
-		     "  -f <format>   output format for the statistics\n"
-		     "                  'none'   do not output statistics\n"
-		     "                  'pretty' human readable format\n"
-		     "                  'csv'    raw, machine readable\n"
-		     "  -o <mode>     options\n"
-		     "                  'perf' prefaults the output pages\n"
-		     "                  'thp' try to enable transparent huge pages\n"
-		     "                  'zlib' use zlib instead of the device\n"
-		     "  -r <children> number of children to create\n"
-		     "  -k <mode>     kill thread\n"
-		     "                  'bind' kills the process after bind\n"
-		     "                  'tlb' tries to access an unmapped buffer\n"
-		     "                  'work' kills the process while the queue is working\n",
-		     argv[0]
-		    );
-	return 0;
+	return run_cmd(&opts);
 }
