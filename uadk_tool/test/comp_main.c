@@ -1693,8 +1693,6 @@ int test_comp_entry(int argc, char *argv[])
 		return run_cmd(&opts);
 	}
 
-	hizip_test_adjust_len(&opts);
-
 	SYS_ERR_COND(show_help || optind > argc,
 		     COMMON_HELP
 		     "  -f <format>   output format for the statistics\n"

@@ -25,8 +25,6 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_spinlock_t lock;
 static int count = 0;
 
-static struct wd_ctx_config *g_conf;
-
 int sum_pend = 0, sum_thread_end = 0;
 
 __attribute__((constructor))
@@ -69,40 +67,6 @@ int mmap_free(void *addr, size_t len)
 	}
 
 	return munmap(addr, len);
-}
-
-static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
-{
-	int i;
-	int *j;
-	__u32 n;
-	struct check_rand_ctx *rand_ctx = opaque;
-
-	j = &rand_ctx->off;
-	for (i = 0; i < size; i += 4) {
-		if (*j) {
-			/* Something left from a previous run */
-			n = rand_ctx->last;
-		} else {
-			n = nrand48(rand_ctx->state);
-			rand_ctx->last = n;
-		}
-		for (; *j < 4 && i + *j < size; (*j)++) {
-			char expected = (n >> (8 * *j)) & 0xff;
-			char actual = buf[i + *j];
-
-			if (expected != actual) {
-				COMP_TST_PRT("Invalid decompressed char at offset %lu: expected 0x%x != 0x%x\n",
-				       rand_ctx->global_off + i + *j, expected,
-				       actual);
-				return -EINVAL;
-			}
-		}
-		if (*j == 4)
-			*j = 0;
-	}
-	rand_ctx->global_off += size;
-	return 0;
 }
 
 static struct wd_datalist *get_datalist(void *addr, __u32 size)
@@ -382,114 +346,6 @@ int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 	return ret;
 }
 
-void hizip_prepare_random_input_data(char *buf, size_t len, size_t block_size)
-{
-	__u32 seed = 0;
-	unsigned short rand_state[3] = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e};
-
-	unsigned long remain_size;
-	__u32 size;
-	size_t i, j;
-
-	/*
-	 * TODO: change state for each buffer, to make sure there is no TLB
-	 * aliasing.
-	 */
-	remain_size = len;
-
-	while (remain_size > 0) {
-		if (remain_size > block_size)
-			size = block_size;
-		else
-			size = remain_size;
-		/*
-		 * Prepare the input buffer with a reproducible sequence of
-		 * numbers. nrand48() returns a pseudo-random number in the
-		 * interval [0; 2^31). It's not really possible to compress a
-		 * pseudo-random stream using deflate, since it can't find any
-		 * string repetition. As a result the output size is bigger,
-		 * with a ratio of 1.041.
-		 */
-		for (i = 0; i < size; i += 4) {
-			__u64 n = nrand48(rand_state);
-
-			for (j = 0; j < 4 && i + j < size; j++)
-				buf[i + j] = (n >> (8 * j)) & 0xff;
-		}
-
-		buf += size;
-		remain_size -= size;
-	}
-}
-
-int hizip_prepare_random_compressed_data(char *buf, size_t out_len, size_t in_len,
-					 size_t *produced,
-					 struct test_options *opts)
-{
-	off_t off;
-	int ret = -EINVAL;
-	void *init_buf = mmap_alloc(in_len);
-	size_t in_block_size = opts->block_size;
-	size_t out_block_size = 2 * in_block_size;
-
-	if (!init_buf)
-		return -ENOMEM;
-
-	hizip_prepare_random_input_data(init_buf, in_len, opts->block_size);
-
-	/* Compress each chunk separately since we're working in stateless mode */
-	for (off = 0; off < in_len; off += in_block_size) {
-		ret = zlib_deflate(buf, out_block_size, init_buf + off,
-				   in_block_size, produced, opts->alg_type);
-		if (ret)
-			break;
-		buf += out_block_size;
-	}
-
-	munmap(init_buf, in_len);
-	return ret;
-}
-
-int hizip_verify_random_output(struct test_options *opts,
-			       struct hizip_test_info *info,
-			       size_t out_sz)
-{
-	int ret;
-	int seed = 0;
-	off_t off = 0;
-	size_t checked = 0;
-	size_t total_checked = 0;
-	struct check_rand_ctx rand_ctx = {
-		.state = {(seed >> 16) & 0xffff, seed & 0xffff, 0x330e},
-	};
-
-	if (!opts->verify)
-		return 0;
-
-	if (opts->op_type == WD_DIR_DECOMPRESS)
-		/* Check plain output */
-		return hizip_check_rand((void *)info->out_buf, out_sz,
-					&rand_ctx);
-
-	do {
-		ret = hizip_check_output(info->out_buf + off, out_sz,
-					 &checked, hizip_check_rand, &rand_ctx);
-		if (ret) {
-			COMP_TST_PRT("Check output failed with %d\n", ret);
-			return ret;
-		}
-		total_checked += checked;
-		off += opts->block_size * EXPANSION_RATIO;
-	} while (!ret && total_checked < opts->total_len);
-
-	if (rand_ctx.global_off != opts->total_len) {
-		COMP_TST_PRT("Invalid output size %lu != %lu\n",
-		       rand_ctx.global_off, opts->total_len);
-		return -EINVAL;
-	}
-	return 0;
-}
-
 static void *async_cb(struct wd_comp_req *req, void *data)
 {
 	return NULL;
@@ -587,7 +443,7 @@ void *send_thread_func(void *arg)
 	return NULL;
 }
 
-int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
+static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
 {
 	int ret;
 
@@ -635,110 +491,6 @@ void *poll_thread_func(void *arg)
 	pthread_exit(NULL);
 }
 
-int create_send_threads(struct test_options *opts,
-			struct hizip_test_info *info,
-			void *(*send_thread_func)(void *arg))
-{
-	pthread_attr_t attr;
-	thread_data_t *tdatas;
-	int i, j, num, ret;
-
-	num = opts->thread_num;
-	info->send_tds = calloc(1, sizeof(pthread_t) * num);
-	if (!info->send_tds)
-		return -ENOMEM;
-	info->send_tnum = num;
-	tdatas = calloc(1, sizeof(thread_data_t) * num);
-	if (!tdatas) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-	for (i = 0; i < num; i++) {
-		tdatas[i].info = info;
-		ret = pthread_create(&info->send_tds[i], &attr,
-				     send_thread_func, &tdatas[i]);
-		if (ret < 0) {
-			COMP_TST_PRT( "Fail to create send thread %d (%d)\n",
-				i, ret);
-			goto out_thd;
-		}
-	}
-	pthread_attr_destroy(&attr);
-	g_conf = &info->ctx_conf;
-	return 0;
-out_thd:
-	for (j = 0; j < i; j++)
-		pthread_cancel(info->send_tds[j]);
-	free(tdatas);
-out:
-	free(info->send_tds);
-	return ret;
-}
-
-int create_poll_threads(struct hizip_test_info *info,
-			void *(*poll_thread_func)(void *arg),
-			int num)
-{
-	struct test_options *opts = info->opts;
-	pthread_attr_t attr;
-	int i, ret;
-
-	if (!opts->sync_mode)
-		return 0;
-	info->poll_tds = calloc(1, sizeof(pthread_t) * num);
-	if (!info->poll_tds)
-		return -ENOMEM;
-	info->poll_tnum = num;
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-	for (i = 0; i < num; i++) {
-		ret = pthread_create(&info->poll_tds[i], &attr,
-				     poll_thread_func, info);
-		if (ret < 0) {
-			COMP_TST_PRT( "Fail to create send thread %d (%d)\n",
-				i, ret);
-			goto out;
-		}
-	}
-	pthread_attr_destroy(&attr);
-	count = 0;
-	return 0;
-out:
-	free(info->poll_tds);
-	return ret;
-}
-
-void free_threads(struct hizip_test_info *info)
-{
-	if (info->send_tds)
-		free(info->send_tds);
-	if (info->poll_tds)
-		free(info->poll_tds);
-}
-
-int attach_threads(struct test_options *opts, struct hizip_test_info *info)
-{
-	int i, ret;
-	void *tret;
-
-	if (opts->sync_mode) {
-		for (i = 0; i < info->poll_tnum; i++) {
-			ret = pthread_join(info->poll_tds[i], NULL);
-			if (ret < 0)
-				COMP_TST_PRT( "Fail on poll thread with %d\n",
-					ret);
-		}
-	}
-	for (i = 0; i < info->send_tnum; i++) {
-		ret = pthread_join(info->send_tds[i], &tret);
-		if (ret < 0)
-			COMP_TST_PRT( "Fail on send thread with %d\n", ret);
-	}
-	return (int)(uintptr_t)tret;
-}
-
 void gen_random_data(void *buf, size_t len)
 {
 	int i;
@@ -761,7 +513,7 @@ int calculate_md5(comp_md5_t *md5, const void *buf, size_t len)
 	return 0;
 }
 
-void dump_md5(comp_md5_t *md5)
+static void dump_md5(comp_md5_t *md5)
 {
 	int i;
 

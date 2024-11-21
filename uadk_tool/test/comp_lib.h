@@ -193,20 +193,9 @@ extern int sum_pend, sum_thread_end;
 
 void *send_thread_func(void *arg);
 void *poll_thread_func(void *arg);
-void *sw_dfl_sw_ifl(void *arg);
-int create_send_threads(struct test_options *opts,
-			struct hizip_test_info *info,
-			void *(*send_thread_func)(void *arg));
-int create_poll_threads(struct hizip_test_info *info,
-			void *(*poll_thread_func)(void *arg),
-			int num);
-void free_threads(struct hizip_test_info *info);
-int attach_threads(struct test_options *opts,
-		   struct hizip_test_info *info);
 
 void gen_random_data(void *buf, size_t len);
 int calculate_md5(comp_md5_t *md5, const void *buf, size_t len);
-void dump_md5(comp_md5_t *md5);
 int cmp_md5(comp_md5_t *orig, comp_md5_t *final);
 void init_chunk_list(chunk_list_t *list, void *buf, size_t buf_sz,
 		     size_t chunk_sz);
@@ -247,8 +236,7 @@ int attach2_threads(struct test_options *opts,
 		    void *(*send_thread_func)(void *arg),
 		    void *(*poll_thread_func)(void *arg));
 void *poll2_thread_func(void *arg);
-int run_self_test(struct test_options *opts);
-int run_cmd(struct test_options *opts);
+
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
 		    struct wd_sched **sched
@@ -256,19 +244,9 @@ int init_ctx_config(struct test_options *opts,
 void uninit_config(void *priv, struct wd_sched *sched);
 struct uacce_dev_list *get_dev_list(struct test_options *opts, int children);
 
-void hizip_prepare_random_input_data(char *buf, size_t len, size_t block_size);
-int hizip_prepare_random_compressed_data(char *buf, size_t out_len,
-					 size_t in_len, size_t *produced,
-					 struct test_options *opts);
-
-int hizip_verify_random_output(struct test_options *opts,
-			       struct hizip_test_info *info,
-			       size_t out_sz);
-
 void *mmap_alloc(size_t len);
 int mmap_free(void *addr, size_t len);
 
-int lib_poll_func(__u32 pos, __u32 expect, __u32 *count);
 typedef int (*check_output_fn)(unsigned char *buf, unsigned int size, void *opaque);
 
 /* for block interface */
@@ -316,15 +294,6 @@ static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
 	return -ENOSYS;
 }
 #endif
-
-static inline void hizip_test_adjust_len(struct test_options *opts)
-{
-	/*
-	 * Align size to the next block. We allow non-power-of-two block sizes.
-	 */
-	opts->total_len = (opts->total_len + opts->block_size - 1) /
-		opts->block_size * opts->block_size;
-}
 
 #define COMMON_OPTSTRING "hb:q:l:Ss:Vzt:m:dacLZ"
 
