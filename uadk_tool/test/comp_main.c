@@ -838,14 +838,10 @@ int test_hw(struct test_options *opts, char *model)
 		else
 			info.out_size = opts->total_len * EXPANSION_RATIO;
 	}
-	info.in_buf = mmap_alloc(info.in_size);
-	if (!info.in_buf) {
-		ret = -ENOMEM;
-		goto out_src;
-	}
+
 	ret = create_send_tdata(opts, &info);
 	if (ret)
-		goto out_send;
+		goto out_src;
 	ret = create_poll_tdata(opts, &info, opts->poll_num);
 	if (ret)
 		goto out_poll;
@@ -947,8 +943,7 @@ out_poll:
 		nonenv_resource_uninit(opts, &info, sched);
 	COMP_TST_PRT("Fail to run %s() (%d)!\n", model, ret);
 	return ret;
-out_send:
-	mmap_free(info.in_buf, info.in_size);
+
 out_src:
 	if (opts->use_env)
 		wd_comp_env_uninit();

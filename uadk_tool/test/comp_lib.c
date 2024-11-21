@@ -607,44 +607,48 @@ int create_send_tdata(struct test_options *opts,
 {
 	thread_data_t *tdata;
 	chunk_list_t *in_list, *out_list;
-	int i, j, num, ret;
+	int i, j, ret;
 
 	if (!opts || !info || !info->in_chunk_sz || !info->out_chunk_sz)
 		return -EINVAL;
-	num = opts->thread_num;
-	info->send_tds = calloc(1, sizeof(pthread_t) * num);
+
+	info->send_tds = calloc(1, sizeof(pthread_t) * opts->thread_num);
 	if (!info->send_tds)
 		return -ENOMEM;
-	info->send_tnum = num;
-	info->tdatas = calloc(1, sizeof(thread_data_t) * num);
+	info->send_tnum = opts->thread_num;
+	info->tdatas = calloc(1, sizeof(thread_data_t) * opts->thread_num);
 	if (!info->tdatas) {
 		ret = -ENOMEM;
 		goto out;
 	}
-	if (opts->is_stream) {
-		in_list = create_chunk_list(info->in_buf, info->in_size,
-					    info->in_size);
-	} else {
-		in_list = create_chunk_list(info->in_buf, info->in_size,
-					    info->in_chunk_sz);
-	}
-	if (!in_list) {
-		ret = -EINVAL;
+
+	info->in_buf = mmap_alloc(info->in_size);
+	if (!info->in_buf) {
+		ret = -ENOMEM;
 		goto out_in;
 	}
+
+	if (opts->is_stream)
+		in_list = create_chunk_list(info->in_buf, info->in_size, info->in_size);
+	else
+		in_list = create_chunk_list(info->in_buf, info->in_size, info->in_chunk_sz);
+	if (!in_list) {
+		ret = -EINVAL;
+		goto out_ilist;
+	}
+
 	if (opts->option & TEST_THP) {
 		ret = madvise(info->in_buf, info->in_size, MADV_HUGEPAGE);
 		if (ret) {
 			COMP_TST_PRT("madvise(MADV_HUGEPAGE)");
-			goto out_in;
+			goto out_ilist;
 		}
 	}
-	for (i = 0; i < num; i++) {
+	for (i = 0; i < opts->thread_num; i++) {
 		tdata = &info->tdatas[i];
-		/* src address is shared among threads */
 		tdata->tid = i;
 		tdata->src_sz = info->in_size;
-		tdata->src = info->in_buf;
+		tdata->src = info->in_buf;	/* src address is shared among threads */
 		tdata->in_list = in_list;
 		tdata->dst_sz = info->out_size;
 		tdata->dst = mmap_alloc(tdata->dst_sz);
@@ -676,25 +680,27 @@ int create_send_tdata(struct test_options *opts,
 		tdata->out_list = out_list;
 		if (!tdata->out_list) {
 			ret = -EINVAL;
-			goto out_list;
+			goto out_olist;
 		}
 		calculate_md5(&tdata->md5, tdata->src, tdata->src_sz);
 		tdata->reqs = malloc(sizeof(struct wd_comp_req));
 		if (!tdata->reqs)
-			goto out_list;
+			goto out_olist;
 		sem_init(&tdata->sem, 0, 0);
 		tdata->info = info;
 	}
+
 	return 0;
-out_list:
+out_olist:
 	mmap_free(tdata->dst, tdata->dst_sz);
 out_dst:
 	for (j = 0; j < i; j++) {
-		pthread_cancel(info->send_tds[j]);
 		free_chunk_list(info->tdatas[j].out_list);
 		mmap_free(info->tdatas[j].dst, info->tdatas[j].dst_sz);
 	}
 	free_chunk_list(in_list);
+out_ilist:
+	mmap_free(info->in_buf, info->in_size);
 out_in:
 	free(info->tdatas);
 out:
@@ -744,11 +750,13 @@ void free_threads_tdata(struct hizip_test_info *info)
 
 	if (info->send_tds)
 		free(info->send_tds);
+
 	if (info->poll_tds) {
 		free(info->poll_tds);
 		free(info->p_tdatas);
 	}
-	free_chunk_list(tdatas[0].in_list);
+
+	free_chunk_list(tdatas[0].in_list);	/* src address is shared among threads */
 	for (i = 0; i < info->send_tnum; i++) {
 		free_chunk_list(tdatas[i].out_list);
 		free(tdatas[i].reqs);
@@ -756,6 +764,7 @@ void free_threads_tdata(struct hizip_test_info *info)
 	/* info->out_buf is bound to tdatas[0].dst */
 	for (i = 0; i < info->send_tnum; i++)
 		mmap_free(tdatas[i].dst, tdatas[i].dst_sz);
+
 	free(info->tdatas);
 	mmap_free(info->in_buf, info->in_size);
 }
