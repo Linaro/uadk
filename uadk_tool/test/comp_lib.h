@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved.
  * Copyright 2020-2021 Linaro ltd.
@@ -190,35 +190,26 @@ void init_chunk_list(chunk_list_t *list, void *buf, size_t buf_sz,
 		     size_t chunk_sz);
 chunk_list_t *create_chunk_list(void *buf, size_t buf_sz, size_t chunk_sz);
 void free_chunk_list(chunk_list_t *list);
-int sw_deflate(chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts);
-int sw_inflate(chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts);
-int hw_deflate(handle_t h_dfl,
-		chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts,
-		sem_t *sem);
-int hw_inflate(handle_t h_ifl,
-		chunk_list_t *in_list,
-		chunk_list_t *out_list,
-		struct test_options *opts,
-		sem_t *sem);
+int sw_deflate(chunk_list_t *in_list, chunk_list_t *out_list,
+	       struct test_options *opts);
+int sw_inflate(chunk_list_t *in_list, chunk_list_t *out_list,
+	       struct test_options *opts);
+int hw_deflate(handle_t h_dfl, chunk_list_t *in_list, chunk_list_t *out_list,
+	       struct test_options *opts, sem_t *sem);
+int hw_inflate(handle_t h_ifl, chunk_list_t *in_list, chunk_list_t *out_list,
+	       struct test_options *opts, sem_t *sem);
 
 int create_threads_tdata(struct test_options *opts, struct hizip_test_info *info);
 void free_threads_tdata(struct hizip_test_info *info);
 
 int attach_threads(struct test_options *opts,
-		    struct hizip_test_info *info,
-		    void *(*send_thread_func)(void *arg),
-		    void *(*poll_thread_func)(void *arg));
+		   struct hizip_test_info *info,
+		   void *(*send_thread_func)(void *arg),
+		   void *(*poll_thread_func)(void *arg));
 
 int init_ctx_config(struct test_options *opts,
 		    void *priv,
-		    struct wd_sched **sched
-		    );
+		    struct wd_sched **sched);
 void uninit_config(void *priv, struct wd_sched *sched);
 struct uacce_dev_list *get_dev_list(struct test_options *opts, int children);
 
@@ -248,7 +239,7 @@ static inline int hizip_check_output(void *buf, size_t size, size_t *checked,
 				     check_output_fn check_output,
 				     void *opaque)
 {
-	static bool printed = false;
+	static bool printed;
 
 	if (!printed) {
 		WD_ERR("no zlib available, output buffer won't be checked\n");
@@ -301,7 +292,7 @@ static inline int zlib_deflate(void *output, unsigned int out_size, void *input,
 	"		      'b' kills the process after bind\n"	\
 	"		      't' tries to access an unmapped buffer\n" \
 	"		      'w' kills the process while the queue is working\n" \
-	"	--help        command help \n\n"
+	"	--help	      command help\n\n"
 
 int parse_common_option(int argc, char *argv[],
 			struct test_options *opts);
