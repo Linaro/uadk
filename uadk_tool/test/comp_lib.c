@@ -21,8 +21,6 @@ struct check_rand_ctx {
 	unsigned short state[3];
 };
 
-#define dbg(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
-
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_spinlock_t lock;
 static int count = 0;
@@ -56,7 +54,7 @@ void *mmap_alloc(size_t len)
 	p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
 		 -1, 0);
 	if (p == MAP_FAILED)
-		WD_ERR("Failed to allocate %zu bytes\n", len);
+		COMP_TST_PRT("Failed to allocate %zu bytes\n", len);
 
 	return p == MAP_FAILED ? NULL : p;
 }
@@ -94,7 +92,7 @@ static int hizip_check_rand(unsigned char *buf, unsigned int size, void *opaque)
 			char actual = buf[i + *j];
 
 			if (expected != actual) {
-				WD_ERR("Invalid decompressed char at offset %lu: expected 0x%x != 0x%x\n",
+				COMP_TST_PRT("Invalid decompressed char at offset %lu: expected 0x%x != 0x%x\n",
 				       rand_ctx->global_off + i + *j, expected,
 				       actual);
 				return -EINVAL;
@@ -115,7 +113,7 @@ static struct wd_datalist *get_datalist(void *addr, __u32 size)
 
 	head = calloc(1, sizeof(struct wd_datalist));
 	if (!head) {
-		WD_ERR("failed to alloc datalist head\n");
+		COMP_TST_PRT("failed to alloc datalist head\n");
 		return NULL;
 	}
 
@@ -162,12 +160,12 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 	setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
-		fprintf(stderr,"fail to alloc comp sess!\n");
+		COMP_TST_PRT("fail to alloc comp sess!\n");
 		return -EINVAL;
 	}
 
 	if (data_fmt) {
-		WD_ERR("now sge size is %u\n", SGE_SIZE);
+		COMP_TST_PRT("now sge size is %u\n", SGE_SIZE);
 		list = get_datalist(src, (__u32)srclen);
 		req.list_src = list;
 		list = get_datalist(dst, (__u32)*dstlen);
@@ -189,12 +187,12 @@ int hw_blk_compress(int alg_type, int blksize, __u8 data_fmt, void *priv,
 
 	ret = wd_do_comp_sync(h_sess, &req);
 	if (ret < 0) {
-		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
 		return ret;
 	}
 
 	if (req.status) {
-		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
@@ -227,12 +225,12 @@ int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 	setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
-		fprintf(stderr,"fail to alloc comp sess!\n");
+		COMP_TST_PRT("fail to alloc comp sess!\n");
 		return -EINVAL;
 	}
 
 	if (data_fmt) {
-		WD_ERR("now sge size is %u\n", SGE_SIZE);
+		COMP_TST_PRT("now sge size is %u\n", SGE_SIZE);
 		list = get_datalist(src, (__u32)srclen);
 		req.list_src = list;
 		list = get_datalist(dst, (__u32)*dstlen);
@@ -254,12 +252,12 @@ int hw_blk_decompress(int alg_type, int blksize, __u8 data_fmt,
 
 	ret = wd_do_comp_sync(h_sess, &req);
 	if (ret < 0) {
-		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
 		return ret;
 	}
 
 	if (req.status) {
-		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
@@ -293,7 +291,7 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 	setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
-		fprintf(stderr,"fail to alloc comp sess!\n");
+		COMP_TST_PRT("fail to alloc comp sess!\n");
 		return -EINVAL;
 	}
 	req.src = src;
@@ -309,12 +307,12 @@ int hw_stream_compress(int alg_type, int blksize, __u8 data_fmt,
 
 	ret = wd_do_comp_sync2(h_sess, &req);
 	if (ret < 0) {
-		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
 		return ret;
 	}
 
 	if (req.status) {
-		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
@@ -347,7 +345,7 @@ int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 	setup.sched_param = &param;
 	h_sess = wd_comp_alloc_sess(&setup);
 	if (!h_sess) {
-		fprintf(stderr,"fail to alloc comp sess!\n");
+		COMP_TST_PRT("fail to alloc comp sess!\n");
 		return -EINVAL;
 	}
 	req.src = src;
@@ -364,12 +362,12 @@ int hw_stream_decompress(int alg_type, int blksize, __u8 data_fmt,
 
 	ret = wd_do_comp_sync2(h_sess, &req);
 	if (ret < 0) {
-		fprintf(stderr,"fail to do comp sync(ret = %d)!\n", ret);
+		COMP_TST_PRT("fail to do comp sync(ret = %d)!\n", ret);
 		return ret;
 	}
 
 	if (req.status) {
-		fprintf(stderr,"fail to do comp sync(status = %d)!\n",
+		COMP_TST_PRT("fail to do comp sync(status = %d)!\n",
 		req.status);
 		wd_comp_free_sess(h_sess);
 		return req.status;
@@ -477,7 +475,7 @@ int hizip_verify_random_output(struct test_options *opts,
 		ret = hizip_check_output(info->out_buf + off, out_sz,
 					 &checked, hizip_check_rand, &rand_ctx);
 		if (ret) {
-			WD_ERR("Check output failed with %d\n", ret);
+			COMP_TST_PRT("Check output failed with %d\n", ret);
 			return ret;
 		}
 		total_checked += checked;
@@ -485,7 +483,7 @@ int hizip_verify_random_output(struct test_options *opts,
 	} while (!ret && total_checked < opts->total_len);
 
 	if (rand_ctx.global_off != opts->total_len) {
-		WD_ERR("Invalid output size %lu != %lu\n",
+		COMP_TST_PRT("Invalid output size %lu != %lu\n",
 		       rand_ctx.global_off, opts->total_len);
 		return -EINVAL;
 	}
@@ -557,7 +555,7 @@ void *send_thread_func(void *arg)
 					kill(getpid(), SIGTERM);
 			}
 			if (ret < 0) {
-				WD_ERR("do comp test fail with %d\n", ret);
+				COMP_TST_PRT("do comp test fail with %d\n", ret);
 				return (void *)(uintptr_t)ret;
 			} else if (tdata->req.status) {
 				return (void *)(uintptr_t)tdata->req.status;
@@ -574,7 +572,7 @@ void *send_thread_func(void *arg)
 			tdata->req.dst += dst_block_size;
 			tdata->sum += tdata->req.dst_len;
 			if (tdata->sum > info->out_size) {
-				fprintf(stderr,
+				COMP_TST_PRT(
 					"%s: exceed OUT limits (%ld > %ld)\n",
 					__func__,
 					tdata->sum, info->out_size);
@@ -662,7 +660,7 @@ int create_send_threads(struct test_options *opts,
 		ret = pthread_create(&info->send_tds[i], &attr,
 				     send_thread_func, &tdatas[i]);
 		if (ret < 0) {
-			fprintf(stderr, "Fail to create send thread %d (%d)\n",
+			COMP_TST_PRT( "Fail to create send thread %d (%d)\n",
 				i, ret);
 			goto out_thd;
 		}
@@ -699,7 +697,7 @@ int create_poll_threads(struct hizip_test_info *info,
 		ret = pthread_create(&info->poll_tds[i], &attr,
 				     poll_thread_func, info);
 		if (ret < 0) {
-			fprintf(stderr, "Fail to create send thread %d (%d)\n",
+			COMP_TST_PRT( "Fail to create send thread %d (%d)\n",
 				i, ret);
 			goto out;
 		}
@@ -729,14 +727,14 @@ int attach_threads(struct test_options *opts, struct hizip_test_info *info)
 		for (i = 0; i < info->poll_tnum; i++) {
 			ret = pthread_join(info->poll_tds[i], NULL);
 			if (ret < 0)
-				fprintf(stderr, "Fail on poll thread with %d\n",
+				COMP_TST_PRT( "Fail on poll thread with %d\n",
 					ret);
 		}
 	}
 	for (i = 0; i < info->send_tnum; i++) {
 		ret = pthread_join(info->send_tds[i], &tret);
 		if (ret < 0)
-			fprintf(stderr, "Fail on send thread with %d\n", ret);
+			COMP_TST_PRT( "Fail on send thread with %d\n", ret);
 	}
 	return (int)(uintptr_t)tret;
 }
@@ -768,8 +766,8 @@ void dump_md5(comp_md5_t *md5)
 	int i;
 
 	for (i = 0; i < MD5_DIGEST_LENGTH - 1; i++)
-		printf("%02x-", md5->md[i]);
-	printf("%02x\n", md5->md[i]);
+		COMP_TST_PRT("%02x-", md5->md[i]);
+	COMP_TST_PRT("%02x\n", md5->md[i]);
 }
 
 int cmp_md5(comp_md5_t *orig, comp_md5_t *final)
@@ -780,9 +778,9 @@ int cmp_md5(comp_md5_t *orig, comp_md5_t *final)
 		return -EINVAL;
 	for (i = 0; i < MD5_DIGEST_LENGTH; i++) {
 		if (orig->md[i] != final->md[i]) {
-			printf("Original MD5: ");
+			COMP_TST_PRT("Original MD5: ");
 			dump_md5(orig);
-			printf("Final MD5: ");
+			COMP_TST_PRT("Final MD5: ");
 			dump_md5(final);
 			return -EINVAL;
 		}
@@ -881,7 +879,7 @@ static int chunk_deflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
 		windowBits = 15 + 16;
 		break;
 	default:
-		printf("algorithm %d unsupported by zlib\n", alg_type);
+		COMP_TST_PRT("algorithm %d unsupported by zlib\n", alg_type);
 		return -EINVAL;
 	}
 	memset(&strm, 0, sizeof(z_stream));
@@ -893,23 +891,23 @@ static int chunk_deflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
 	ret = deflateInit2(&strm, Z_BEST_SPEED, Z_DEFLATED, windowBits,
 			   8, Z_DEFAULT_STRATEGY);
 	if (ret != Z_OK) {
-		printf("deflateInit2: %d\n", ret);
+		COMP_TST_PRT("deflateInit2: %d\n", ret);
 		return -EINVAL;
 	}
 
 	do {
 		ret = deflate(&strm, Z_FINISH);
 		if ((ret == Z_STREAM_ERROR) || (ret == Z_BUF_ERROR)) {
-			printf("defalte error %d - %s\n", ret, strm.msg);
+			COMP_TST_PRT("defalte error %d - %s\n", ret, strm.msg);
 			ret = -ENOSR;
 			break;
 		} else if (!strm.avail_in) {
 			if (ret != Z_STREAM_END)
-				printf("deflate unexpected return: %d\n", ret);
+				COMP_TST_PRT("deflate unexpected return: %d\n", ret);
 			ret = 0;
 			break;
 		} else if (!strm.avail_out) {
-			printf("deflate out of memory\n");
+			COMP_TST_PRT("deflate out of memory\n");
 			ret = -ENOSPC;
 			break;
 		}
@@ -934,7 +932,7 @@ static int chunk_inflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
 	/* Window size of 15, +32 for auto-decoding gzip/zlib */
 	ret = inflateInit2(&strm, 15 + 32);
 	if (ret != Z_OK) {
-		printf("zlib inflateInit: %d\n", ret);
+		COMP_TST_PRT("zlib inflateInit: %d\n", ret);
 		return -EINVAL;
 	}
 
@@ -945,13 +943,13 @@ static int chunk_inflate2(void *in, size_t in_sz, void *out, size_t *out_sz,
 	do {
 		ret = inflate(&strm, Z_NO_FLUSH);
 		if ((ret < 0) || (ret == Z_NEED_DICT)) {
-			printf("zlib error %d - %s\n", ret, strm.msg);
+			COMP_TST_PRT("zlib error %d - %s\n", ret, strm.msg);
 			goto out;
 		}
 		if (!strm.avail_out) {
 			if (!strm.avail_in || (ret == Z_STREAM_END))
 				break;
-			printf("%s: avail_out is empty!\n", __func__);
+			COMP_TST_PRT("%s: avail_out is empty!\n", __func__);
 			goto out;
 		}
 	} while (strm.avail_in && (ret != Z_STREAM_END));
@@ -1271,7 +1269,7 @@ int create_send_tdata(struct test_options *opts,
 	if (opts->option & TEST_THP) {
 		ret = madvise(info->in_buf, info->in_size, MADV_HUGEPAGE);
 		if (ret) {
-			printf("madvise(MADV_HUGEPAGE)");
+			COMP_TST_PRT("madvise(MADV_HUGEPAGE)");
 			goto out_in;
 		}
 	}
@@ -1291,7 +1289,7 @@ int create_send_tdata(struct test_options *opts,
 		if (opts->option & TEST_THP) {
 			ret = madvise(tdata->dst, tdata->dst_sz, MADV_HUGEPAGE);
 			if (ret) {
-				printf("madvise(MADV_HUGEPAGE)");
+				COMP_TST_PRT("madvise(MADV_HUGEPAGE)");
 				goto out_dst;
 			}
 		}
@@ -1413,7 +1411,7 @@ int attach2_threads(struct test_options *opts,
 		ret = pthread_create(&info->send_tds[i], &attr,
 				     send_thread_func, &info->tdatas[i]);
 		if (ret < 0) {
-			printf("Fail to create send thread %d (%d)\n", i, ret);
+			COMP_TST_PRT("Fail to create send thread %d (%d)\n", i, ret);
 			goto out;
 		}
 	}
@@ -1423,7 +1421,7 @@ int attach2_threads(struct test_options *opts,
 					     poll_thread_func,
 					     &info->tdatas[i]);
 			if (ret < 0) {
-				printf("Fail to create poll thread %d (%d)\n",
+				COMP_TST_PRT("Fail to create poll thread %d (%d)\n",
 					i, ret);
 				goto out_poll;
 			}
@@ -1431,7 +1429,7 @@ int attach2_threads(struct test_options *opts,
 		for (i = 0; i < info->poll_tnum; i++) {
 			ret = pthread_join(info->poll_tds[i], &tret);
 			if (ret < 0) {
-				fprintf(stderr, "Fail on poll thread with %d\n",
+				COMP_TST_PRT( "Fail on poll thread with %d\n",
 					ret);
 				goto out_poll;
 			}
@@ -1440,7 +1438,7 @@ int attach2_threads(struct test_options *opts,
 	for (i = 0; i < info->send_tnum; i++) {
 		ret = pthread_join(info->send_tds[i], &tret);
 		if (ret < 0) {
-			fprintf(stderr, "Fail on send thread with %d\n", ret);
+			COMP_TST_PRT( "Fail on send thread with %d\n", ret);
 			goto out_poll;
 		}
 	}
@@ -1522,7 +1520,7 @@ struct uacce_dev_list *get_dev_list(struct test_options *opts,
 	}
 
 	if (!p) {
-		WD_ERR("Request too much contexts: %d\n",
+		COMP_TST_PRT("Request too much contexts: %d\n",
 		       opts->q_num * 4 * children);
 		goto out;
 	}
@@ -1557,7 +1555,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	__atomic_store_n(&sum_thread_end, 0, __ATOMIC_RELEASE);
 	*sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
 	if (!*sched) {
-		WD_ERR("wd_sched_rr_alloc fail\n");
+		COMP_TST_PRT("wd_sched_rr_alloc fail\n");
 		goto out_sched;
 	}
 
@@ -1567,14 +1565,14 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	ctx_conf->ctx_num = q_num * 4;
 	ctx_conf->ctxs = calloc(1, q_num * 4 * sizeof(struct wd_ctx));
 	if (!ctx_conf->ctxs) {
-		WD_ERR("Not enough memory to allocate contexts.\n");
+		COMP_TST_PRT("Not enough memory to allocate contexts.\n");
 		ret = -ENOMEM;
 		goto out_ctx;
 	}
 	for (i = 0; i < ctx_conf->ctx_num; i++) {
 		ctx_conf->ctxs[i].ctx = wd_request_ctx(info->list->dev);
 		if (!ctx_conf->ctxs[i].ctx) {
-			WD_ERR("Fail to allocate context #%d\n", i);
+			COMP_TST_PRT("Fail to allocate context #%d\n", i);
 			ret = -EINVAL;
 			goto out_req;
 		}
@@ -1594,7 +1592,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	param.end = q_num - 1;
 	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
+		COMP_TST_PRT("Fail to fill sched region.\n");
 		goto out_fill;
 	}
 	for (i = q_num; i < q_num * 2; i++) {
@@ -1607,7 +1605,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	param.end = q_num * 2 - 1;
 	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
+		COMP_TST_PRT("Fail to fill sched region.\n");
 		goto out_fill;
 	}
 	for (i = q_num * 2; i < q_num * 3; i++) {
@@ -1620,7 +1618,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	param.end = q_num * 3 - 1;
 	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
+		COMP_TST_PRT("Fail to fill sched region.\n");
 		goto out_fill;
 	}
 	for (i = q_num * 3; i < q_num * 4; i++) {
@@ -1633,7 +1631,7 @@ int init_ctx_config(struct test_options *opts, void *priv,
 	param.end = q_num * 4 - 1;
 	ret = wd_sched_rr_instance((const struct wd_sched *)*sched, &param);
 	if (ret < 0) {
-		WD_ERR("Fail to fill sched region.\n");
+		COMP_TST_PRT("Fail to fill sched region.\n");
 		goto out_fill;
 	}
 
@@ -1772,7 +1770,7 @@ int hizip_check_output(void *buf, size_t size, size_t *checked,
 	/* Window size of 15, +32 for auto-decoding gzip/zlib */
 	ret = inflateInit2(&stream, 15 + 32);
 	if (ret != Z_OK) {
-		WD_ERR("zlib inflateInit: %d\n", ret);
+		COMP_TST_PRT("zlib inflateInit: %d\n", ret);
 		ret = -EINVAL;
 		goto out_free_buf;
 	}
@@ -1780,7 +1778,7 @@ int hizip_check_output(void *buf, size_t size, size_t *checked,
 	do {
 		ret = inflate(&stream, Z_NO_FLUSH);
 		if (ret < 0 || ret == Z_NEED_DICT) {
-			WD_ERR("zlib error %d - %s\n", ret, stream.msg);
+			COMP_TST_PRT("zlib error %d - %s\n", ret, stream.msg);
 			ret = -ENOSR;
 			break;
 		}
@@ -1834,31 +1832,31 @@ int zlib_deflate(void *output, unsigned int out_size,
 		windowBits = 15 + 16;
 		break;
 	default:
-		WD_ERR("algorithm %d unsupported by zlib\n", alg_type);
+		COMP_TST_PRT("algorithm %d unsupported by zlib\n", alg_type);
 		return -EINVAL;
 	}
 
 	ret = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, windowBits, 9,
 			   Z_DEFAULT_STRATEGY);
 	if (ret != Z_OK) {
-		WD_ERR("zlib deflateInit: %d\n", ret);
+		COMP_TST_PRT("zlib deflateInit: %d\n", ret);
 		return -EINVAL;
 	}
 
 	do {
 		ret = deflate(&stream, Z_FINISH);
 		if (ret == Z_STREAM_ERROR || ret == Z_BUF_ERROR) {
-			WD_ERR("zlib error %d - %s\n", ret, stream.msg);
+			COMP_TST_PRT("zlib error %d - %s\n", ret, stream.msg);
 			ret = -ENOSR;
 			break;
 		} else if (!stream.avail_in) {
 			if (ret != Z_STREAM_END)
-				WD_ERR("unexpected deflate return value %d\n", ret);
+				COMP_TST_PRT("unexpected deflate return value %d\n", ret);
 			*produced = stream.total_out;
 			ret = 0;
 			break;
 		} else if (!stream.avail_out) {
-			WD_ERR("No more output available\n");
+			COMP_TST_PRT("No more output available\n");
 			ret = -ENOSPC;
 			break;
 		}

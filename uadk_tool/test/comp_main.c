@@ -120,7 +120,7 @@ static void *sw_dfl_hw_ifl(void *arg)
 					tdata->dst_sz, tdata->dst_sz);
 			ret = sw_deflate2(tdata->in_list, tlist, opts);
 			if (ret) {
-				printf("Fail to deflate by zlib: %d\n", ret);
+				COMP_TST_PRT("Fail to deflate by zlib: %d\n", ret);
 				goto out_strm;
 			}
 			tout_sz = tdata->dst_sz;
@@ -132,24 +132,24 @@ static void *sw_dfl_hw_ifl(void *arg)
 						   tlist->addr,
 						   tlist->size);
 			if (ret) {
-				printf("Fail to inflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				goto out_strm;
 			}
 			ret = calculate_md5(&tdata->md5, tdata->in_list->addr,
 					    tdata->in_list->size);
 			if (ret) {
-				printf("Fail to generate MD5 (%d)\n", ret);
+				COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 				goto out_strm;
 			}
 			ret = calculate_md5(&final_md5, tdata->out_list->addr,
 					    tout_sz);
 			if (ret) {
-				printf("Fail to generate MD5 (%d)\n", ret);
+				COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 				goto out_strm;
 			}
 			ret = cmp_md5(&tdata->md5, &final_md5);
 			if (ret) {
-				printf("MD5 is unmatched (%d) at %dth times on "
+				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
 					"thread %d\n", ret, i, tdata->tid);
 				goto out_strm;
 			}
@@ -181,28 +181,28 @@ static void *sw_dfl_hw_ifl(void *arg)
 				info->out_chunk_sz);
 		ret = sw_deflate2(tdata->in_list, tlist, opts);
 		if (ret) {
-			printf("Fail to deflate by zlib: %d\n", ret);
+			COMP_TST_PRT("Fail to deflate by zlib: %d\n", ret);
 			goto out_run;
 		}
 		ret = hw_inflate4(h_ifl, tlist, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
-			printf("Fail to inflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out_run;
 		}
 		ret = calculate_md5(&tdata->md5, tdata->src, tdata->src_sz);
 		if (ret) {
-			printf("Fail to generate MD5 (%d)\n", ret);
+			COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 			goto out_run;
 		}
 		ret = calculate_md5(&final_md5, tdata->dst, tdata->dst_sz);
 		if (ret) {
-			printf("Fail to generate MD5 (%d)\n", ret);
+			COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 			goto out_run;
 		}
 		ret = cmp_md5(&tdata->md5, &final_md5);
 		if (ret) {
-			printf("MD5 is unmatched (%d) at %dth times on "
+			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
 				"thread %d\n", ret, i, tdata->tid);
 			goto out_run;
 		}
@@ -273,30 +273,30 @@ static void *hw_dfl_sw_ifl(void *arg)
 						 tdata->src,
 						 tdata->src_sz);
 			if (ret) {
-				printf("Fail to deflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 				goto out_strm;
 			}
 			tlist->size = tmp_sz;	// write back
 			ret = sw_inflate2(tlist, tdata->out_list, opts);
 			if (ret) {
-				printf("Fail to inflate by zlib: %d\n", ret);
+				COMP_TST_PRT("Fail to inflate by zlib: %d\n", ret);
 				goto out_strm;
 			}
 			ret = calculate_md5(&tdata->md5, tdata->in_list->addr,
 					    tdata->in_list->size);
 			if (ret) {
-				printf("Fail to generate MD5 (%d)\n", ret);
+				COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 				goto out_strm;
 			}
 			ret = calculate_md5(&final_md5, tdata->out_list->addr,
 					    tdata->out_list->size);
 			if (ret) {
-				printf("Fail to generate MD5 (%d)\n", ret);
+				COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 				goto out_strm;
 			}
 			ret = cmp_md5(&tdata->md5, &final_md5);
 			if (ret) {
-				printf("MD5 is unmatched (%d) at %dth times on "
+				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
 					"thread %d\n", ret, i, tdata->tid);
 				goto out_strm;
 			}
@@ -328,27 +328,27 @@ static void *hw_dfl_sw_ifl(void *arg)
 		ret = hw_deflate4(h_dfl, tdata->in_list, tlist, opts,
 				  &tdata->sem);
 		if (ret) {
-			printf("Fail to deflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out_run;
 		}
 		ret = sw_inflate2(tlist, tdata->out_list, opts);
 		if (ret) {
-			printf("Fail to inflate by zlib: %d\n", ret);
+			COMP_TST_PRT("Fail to inflate by zlib: %d\n", ret);
 			goto out_run;
 		}
 		ret = calculate_md5(&tdata->md5, tdata->src, tdata->src_sz);
 		if (ret) {
-			printf("Fail to generate MD5 (%d)\n", ret);
+			COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 			goto out_run;
 		}
 		ret = calculate_md5(&final_md5, tdata->dst, tdata->dst_sz);
 		if (ret) {
-			printf("Fail to generate MD5 (%d)\n", ret);
+			COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 			goto out_run;
 		}
 		ret = cmp_md5(&tdata->md5, &final_md5);
 		if (ret) {
-			printf("MD5 is unmatched (%d) at %dth times on "
+			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
 				"thread %d\n", ret, i, tdata->tid);
 			goto out_run;
 		}
@@ -407,7 +407,7 @@ static void *hw_dfl_hw_ifl(void *arg)
 						 tdata->src,
 						 tdata->src_sz);
 			if (ret) {
-				printf("Fail to deflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 				goto out;
 			}
 			tout_sz = tdata->dst_sz;
@@ -419,23 +419,23 @@ static void *hw_dfl_hw_ifl(void *arg)
 						   tbuf,
 						   tmp_sz);
 			if (ret) {
-				printf("Fail to inflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				goto out;
 			}
 			ret = calculate_md5(&tdata->md5, tdata->in_list->addr,
 					    tdata->in_list->size);
 			if (ret) {
-				printf("Fail to generate MD5 (%d)\n", ret);
+				COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 				goto out;
 			}
 			ret = calculate_md5(&final_md5, tdata->dst, tout_sz);
 			if (ret) {
-				printf("Fail to generate MD5 (%d)\n", ret);
+				COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 				goto out;
 			}
 			ret = cmp_md5(&tdata->md5, &final_md5);
 			if (ret) {
-				printf("MD5 is unmatched (%d) at %dth times on "
+				COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
 					"thread %d\n", ret, i, tdata->tid);
 				goto out;
 			}
@@ -481,28 +481,28 @@ static void *hw_dfl_hw_ifl(void *arg)
 		ret = hw_deflate4(h_dfl, tdata->in_list, tlist, opts,
 				  &tdata->sem);
 		if (ret) {
-			printf("Fail to deflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out_run;
 		}
 		ret = hw_inflate4(h_ifl, tlist, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
-			printf("Fail to inflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out_run;
 		}
 		ret = calculate_md5(&tdata->md5, tdata->src, tdata->src_sz);
 		if (ret) {
-			printf("Fail to generate MD5 (%d)\n", ret);
+			COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 			goto out_run;
 		}
 		ret = calculate_md5(&final_md5, tdata->dst, tdata->dst_sz);
 		if (ret) {
-			printf("Fail to generate MD5 (%d)\n", ret);
+			COMP_TST_PRT("Fail to generate MD5 (%d)\n", ret);
 			goto out_run;
 		}
 		ret = cmp_md5(&tdata->md5, &final_md5);
 		if (ret) {
-			printf("MD5 is unmatched (%d) at %dth times on "
+			COMP_TST_PRT("MD5 is unmatched (%d) at %dth times on "
 				"thread %d\n", ret, i, tdata->tid);
 			goto out_run;
 		}
@@ -547,7 +547,7 @@ static void *hw_dfl_perf(void *arg)
 						 tdata->src,
 						 tdata->src_sz);
 			if (ret) {
-				printf("Fail to deflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;
 			}
 		}
@@ -573,7 +573,7 @@ static void *hw_dfl_perf(void *arg)
 		ret = hw_deflate4(h_dfl, tdata->in_list, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
-			printf("Fail to deflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out;
 		}
 	}
@@ -608,7 +608,7 @@ static void *hw_ifl_perf(void *arg)
 						   tdata->in_list->addr,
 						   tdata->in_list->size);
 			if (ret) {
-				printf("Fail to inflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;
 			}
 			tdata->out_list->addr = tdata->dst;
@@ -634,7 +634,7 @@ static void *hw_ifl_perf(void *arg)
 		ret = hw_inflate4(h_ifl, tdata->in_list, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
-			printf("Fail to inflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out;
 		}
 	}
@@ -670,7 +670,7 @@ void *hw_dfl_perf3(void *arg)
 						 tdata->src,
 						 tdata->src_sz);
 			if (ret) {
-				printf("Fail to deflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;
 			}
 		}
@@ -696,7 +696,7 @@ void *hw_dfl_perf3(void *arg)
 		ret = hw_deflate5(h_dfl, tdata->in_list, tdata->out_list,
 				  tdata);
 		if (ret) {
-			printf("Fail to deflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
 			goto out;
 		}
 	}
@@ -732,7 +732,7 @@ void *hw_ifl_perf3(void *arg)
 						   tdata->src,
 						   tdata->src_sz);
 			if (ret) {
-				printf("Fail to inflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 				return (void *)(uintptr_t)ret;
 			}
 			tdata->out_list->addr = tdata->dst;
@@ -758,7 +758,7 @@ void *hw_ifl_perf3(void *arg)
 		ret = hw_inflate5(h_ifl, tdata->in_list, tdata->out_list,
 				  tdata);
 		if (ret) {
-			printf("Fail to inflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to inflate by HW: %d\n", ret);
 			goto out;
 		}
 	}
@@ -786,7 +786,7 @@ int load_ilist(struct hizip_test_info *info, char *model)
 	if (!strcmp(model, "hw_ifl_perf")) {
 		if (!opts->is_stream) {
 			if (opts->fd_ilist < 0) {
-				printf("Missing IN list file!\n");
+				COMP_TST_PRT("Missing IN list file!\n");
 				return -EINVAL;
 			}
 			p = tdata->in_list;
@@ -818,7 +818,7 @@ int load_file_data(struct hizip_test_info *info)
 
 	file_sz = read(opts->fd_in, info->in_buf, info->in_size);
 	if (file_sz < info->in_size) {
-		printf("Expect to read %ld bytes. "
+		COMP_TST_PRT("Expect to read %ld bytes. "
 		       "But only read %ld bytes!\n",
 		       info->in_size, file_sz);
 		return -EFAULT;
@@ -930,7 +930,7 @@ int test_hw(struct test_options *opts, char *model)
 
 	if (!event_unavailable &&
 	    perf_event_get("iommu/dev_fault", &perf_fds, &nr_fds)) {
-		printf("IOPF statistic unavailable\n");
+		COMP_TST_PRT("IOPF statistic unavailable\n");
 		/* No need to retry and print an error on every run */
 		event_unavailable = true;
 	}
@@ -1012,7 +1012,7 @@ int test_hw(struct test_options *opts, char *model)
 				   opts->is_stream ? "STREAM" : "BLOCK");
 		ifl_flag = 1;
 	} else {
-		printf("Wrong model is specified:%s\n", model);
+		COMP_TST_PRT("Wrong model is specified:%s\n", model);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1114,12 +1114,12 @@ int test_hw(struct test_options *opts, char *model)
 		 */
 		ret = munmap(info.in_buf, info.in_size);
 		if (ret) {
-			printf("Failed to unmap.");
+			COMP_TST_PRT("Failed to unmap.");
 			goto out_buf;
 		}
 		/* A warning if the parameters might produce false positives */
 		if (opts->total_len > 0x54000)
-			fprintf(stderr, "NOTE: test might trash the TLB\n");
+			COMP_TST_PRT( "NOTE: test might trash the TLB\n");
 	}
 	stat_start(&info);
 	ret = attach2_threads(opts, &info, func, poll2_thread_func);
@@ -1149,10 +1149,10 @@ int test_hw(struct test_options *opts, char *model)
 	}
 	if (!strcmp(model, "hw_dfl_perf") || !strcmp(model, "hw_ifl_perf") ||
 	    !strcmp(model, "hw_dfl_perf3") || !strcmp(model, "hw_ifl_perf3")) {
-		printf("%s at %.2fMB/s in %f usec (BLK:%d, Bnum:%d).\n",
+		COMP_TST_PRT("%s at %.2fMB/s in %f usec (BLK:%d, Bnum:%d).\n",
 		       zbuf, speed, usec, opts->block_size, opts->batch_num);
 	} else {
-		printf("%s in %f usec (BLK:%d, Bnum:%d).\n",
+		COMP_TST_PRT("%s in %f usec (BLK:%d, Bnum:%d).\n",
 		       zbuf, usec, opts->block_size, opts->batch_num);
 	}
 	free2_threads(&info);
@@ -1169,7 +1169,7 @@ out_poll:
 		wd_comp_env_uninit();
 	else
 		nonenv_resource_uninit(opts, &info, sched);
-	printf("Fail to run %s() (%d)!\n", model, ret);
+	COMP_TST_PRT("Fail to run %s() (%d)!\n", model, ret);
 	return ret;
 out_send:
 	mmap_free(info.in_buf, info.in_size);
@@ -1179,7 +1179,7 @@ out_src:
 	else
 		nonenv_resource_uninit(opts, &info, sched);
 out:
-	printf("Fail to run %s() (%d)!\n", model, ret);
+	COMP_TST_PRT("Fail to run %s() (%d)!\n", model, ret);
 	return ret;
 }
 
@@ -1188,7 +1188,7 @@ int run_self_test(struct test_options *opts)
 	int i, f_ret = 0;
 	char poll_str[POLL_STRING_LEN];
 
-	printf("Start to run self test!\n");
+	COMP_TST_PRT("Start to run self test!\n");
 	opts->alg_type = WD_ZLIB;
 	opts->data_fmt = WD_FLAT_BUF;
 	opts->sync_mode = 0;
@@ -1274,7 +1274,7 @@ int run_self_test(struct test_options *opts)
 		f_ret |= test_hw(opts, "hw_ifl_perf");
 	}
 	if (!f_ret)
-		printf("Run self test successfully!\n");
+		COMP_TST_PRT("Run self test successfully!\n");
 	return f_ret;
 }
 
@@ -1334,7 +1334,7 @@ int run_cmd(struct test_options *opts)
 		for (i = 0; i < opts->children; i++) {
 			pid = fork();
 			if (pid < 0) {
-				printf("cannot fork: %d\n", errno);
+				COMP_TST_PRT("cannot fork: %d\n", errno);
 				success = false;
 				break;
 			} else if (pid > 0) {
@@ -1350,28 +1350,28 @@ int run_cmd(struct test_options *opts)
 			pid = pids[i];
 			ret = waitpid(pid, &status, 0);
 			if (ret < 0) {
-				printf("wait(pid=%d) error %d\n", pid, errno);
+				COMP_TST_PRT("wait(pid=%d) error %d\n", pid, errno);
 				success = false;
 				continue;
 			}
 			if (WIFEXITED(status)) {
 				ret = WEXITSTATUS(status);
 				if (ret) {
-					printf("child %d returned with %d\n",
+					COMP_TST_PRT("child %d returned with %d\n",
 					       pid, ret);
 					success = false;
 				}
 			} else if (WIFSIGNALED(status)) {
 				ret = WTERMSIG(status);
-				printf("child %d killed by sig %d\n", pid, ret);
+				COMP_TST_PRT("child %d killed by sig %d\n", pid, ret);
 				success = false;
 			} else {
-				printf("unexpected status for child %d\n", pid);
+				COMP_TST_PRT("unexpected status for child %d\n", pid);
 				success = false;
 			}
 		}
 		if (success == false) {
-			printf("Failed to run spawn test!\n");
+			COMP_TST_PRT("Failed to run spawn test!\n");
 			if (!ret)
 				ret = -EINVAL;
 		}
@@ -1510,7 +1510,7 @@ static void set_thp(struct test_options *opts)
 		goto out_err;
 
 	if (strcmp(s, "never") == 0) {
-		printf("Cannot test THP with enable=never\n");
+		COMP_TST_PRT("Cannot test THP with enable=never\n");
 		return;
 	}
 
@@ -1523,13 +1523,13 @@ static void set_thp(struct test_options *opts)
 		goto out_err;
 
 	if (strcmp(s, "defer") == 0 || strcmp(s, "never") == 0) {
-		printf("Cannot test THP with defrag=%s\n", s);
+		COMP_TST_PRT("Cannot test THP with defrag=%s\n", s);
 		return;
 	}
 
 	return;
 out_err:
-	printf("THP unsupported?\n");
+	COMP_TST_PRT("THP unsupported?\n");
 }
 
 void stat_setup(struct hizip_test_info *info)
@@ -1616,7 +1616,7 @@ void stat_end(struct hizip_test_info *info)
 
 static void handle_sigbus(int sig)
 {
-	    printf("SIGBUS!\n");
+	    COMP_TST_PRT("SIGBUS!\n");
 	        _exit(0);
 }
 
@@ -1672,17 +1672,17 @@ int test_comp_entry(int argc, char *argv[])
 				if (optarg) {
 					opts.fd_in = open(optarg, O_RDONLY);
 					if (opts.fd_in < 0) {
-						printf("Fail to open %s\n",
+						COMP_TST_PRT("Fail to open %s\n",
 							optarg);
 						show_help = 1;
 					} else
 						opts.is_file = true;
 				} else {
-					printf("Input file is missing!\n");
+					COMP_TST_PRT("Input file is missing!\n");
 					show_help = 1;
 				}
 				if (lseek(opts.fd_in, 0, SEEK_SET) < 0) {
-					printf("Fail on lseek()!\n");
+					COMP_TST_PRT("Fail on lseek()!\n");
 					show_help = 1;
 				}
 				break;
@@ -1693,42 +1693,42 @@ int test_comp_entry(int argc, char *argv[])
 							   S_IWUSR | S_IRGRP |
 							   S_IROTH);
 					if (opts.fd_out < 0) {
-						printf("Fail to open %s\n",
+						COMP_TST_PRT("Fail to open %s\n",
 							optarg);
 						show_help = 1;
 					} else
 						opts.is_file = true;
 				} else {
-					printf("Output file is missing!\n");
+					COMP_TST_PRT("Output file is missing!\n");
 					show_help = 1;
 				}
 				if (lseek(opts.fd_out, 0, SEEK_SET) < 0) {
-					printf("Fail on lseek()!\n");
+					COMP_TST_PRT("Fail on lseek()!\n");
 					show_help = 1;
 				}
 				break;
 			case 3:		/* ilist */
 				if (!optarg) {
-					printf("IN list file is missing!\n");
+					COMP_TST_PRT("IN list file is missing!\n");
 					show_help = 1;
 					break;
 				}
 				opts.fd_ilist = open(optarg, O_RDONLY);
 				if (opts.fd_ilist < 0) {
-					printf("Fail to open %s\n", optarg);
+					COMP_TST_PRT("Fail to open %s\n", optarg);
 					show_help = 1;
 					break;
 				}
 				opts.is_file = true;
 				if (lseek(opts.fd_ilist, 0, SEEK_SET) < 0) {
-					printf("Fail on lseek()!\n");
+					COMP_TST_PRT("Fail on lseek()!\n");
 					show_help = 1;
 					break;
 				}
 				break;
 			case 4:		/* olist */
 				if (!optarg) {
-					printf("OUT list file is missing!\n");
+					COMP_TST_PRT("OUT list file is missing!\n");
 					show_help = 1;
 					break;
 				}
@@ -1737,13 +1737,13 @@ int test_comp_entry(int argc, char *argv[])
 						     S_IWUSR | S_IRGRP |
 						     S_IROTH);
 				if (opts.fd_olist < 0) {
-					printf("Fail to open %s\n", optarg);
+					COMP_TST_PRT("Fail to open %s\n", optarg);
 					show_help = 1;
 					break;
 				}
 				opts.is_file = true;
 				if (lseek(opts.fd_olist, 0, SEEK_SET) < 0) {
-					printf("Fail on lseek()!\n");
+					COMP_TST_PRT("Fail on lseek()!\n");
 					show_help = 1;
 					break;
 				}
