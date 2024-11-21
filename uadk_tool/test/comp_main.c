@@ -772,43 +772,6 @@ out:
 }
 
 /*
- * Load both ilist file.
- */
-int load_ilist(struct hizip_test_info *info, char *model)
-{
-	struct test_options *opts = info->opts;
-	thread_data_t *tdata = &info->tdatas[0];
-	chunk_list_t *p;
-	size_t sum = 0;
-	ssize_t file_sz = 0;
-	void *addr;
-
-	if (!strcmp(model, "hw_ifl_perf")) {
-		if (!opts->is_stream) {
-			if (opts->fd_ilist < 0) {
-				COMP_TST_PRT("Missing IN list file!\n");
-				return -EINVAL;
-			}
-			p = tdata->in_list;
-			addr = info->in_buf;
-			while (p) {
-				file_sz = read(opts->fd_ilist, p,
-						sizeof(chunk_list_t));
-				if (file_sz < 0)
-					return -EFAULT;
-				p->addr = addr;
-				sum += file_sz;
-				if (p->next)
-					p->next = p + 1;
-				addr += p->size;
-				p = p->next;
-			}
-		}
-	}
-	return (int)sum;
-}
-
-/*
  * Load compression/decompression content.
  */
 int load_file_data(struct hizip_test_info *info)
@@ -827,9 +790,9 @@ int load_file_data(struct hizip_test_info *info)
 }
 
 /*
- * Store both olist file. opts->is_file must be enabled first.
+ * Store both output file. opts->is_file must be enabled first.
  */
-int store_olist(struct hizip_test_info *info, char *model)
+int store_file(struct hizip_test_info *info, char *model)
 {
 	struct test_options *opts = info->opts;
 	thread_data_t *tdata = &info->tdatas[0];
@@ -838,34 +801,9 @@ int store_olist(struct hizip_test_info *info, char *model)
 	ssize_t file_sz = 0;
 
 	if (!opts->is_stream) {
-		if (opts->fd_olist >= 0) {
-			/* compress with BLOCK */
-			p = tdata->out_list;
-			while (p) {
-				file_sz = write(opts->fd_olist, p,
-						sizeof(chunk_list_t));
-				if (file_sz < sizeof(chunk_list_t))
-					return -EFAULT;
-				file_sz = write(opts->fd_out, p->addr,
-						p->size);
-				if (file_sz < p->size)
-					return -EFAULT;
-				p = p->next;
-				sum += file_sz;
-			}
-		} else {
-			/* decompress with BLOCK */
-			p = tdata->out_list;
-			while (p) {
-				file_sz = write(opts->fd_out, p->addr,
-						p->size);
-				if (file_sz < p->size)
-					return -EFAULT;
-				p = p->next;
-				sum += file_sz;
-			}
-		}
-	} else if (opts->is_stream) {
+		COMP_TST_PRT("Invalid, file need stream mode!\n");
+		return -EINVAL;
+	} else {
 		p = tdata->out_list;
 		file_sz = write(opts->fd_out, p->addr, p->size);
 		if (file_sz < p->size)
@@ -914,7 +852,6 @@ int test_hw(struct test_options *opts, char *model)
 	void *tbuf = NULL;
 	struct stat statbuf;
 	chunk_list_t *tlist = NULL;
-	int div;
 	__u32 num;
 	__u8 enable;
 	int nr_fds = 0;
@@ -1043,20 +980,6 @@ int test_hw(struct test_options *opts, char *model)
 			info.out_size = opts->total_len * INFLATION_RATIO;
 		else
 			info.out_size = opts->total_len * EXPANSION_RATIO;
-		/*
-		 * If fd_ilist exists, it's inflation.
-		 * Make sure block inflation has enough room.
-		 */
-		if (opts->fd_ilist >= 0) {
-			ret = fstat(opts->fd_ilist, &statbuf);
-			if (!ret) {
-				div = statbuf.st_size / sizeof(chunk_list_t);
-				info.in_chunk_sz = (info.in_size + div - 1) /
-						   div;
-				info.out_chunk_sz = (info.out_size + div - 1) /
-						    div;
-			}
-		}
 	}
 	info.in_buf = mmap_alloc(info.in_size);
 	if (!info.in_buf) {
@@ -1072,9 +995,6 @@ int test_hw(struct test_options *opts, char *model)
 	if (opts->is_file) {
 		/* in_list is created by create_send3_threads(). */
 		ret = load_file_data(&info);
-		if (ret < 0)
-			goto out_buf;
-		ret = load_ilist(&info, model);
 		if (ret < 0)
 			goto out_buf;
 	} else {
@@ -1128,7 +1048,7 @@ int test_hw(struct test_options *opts, char *model)
 	stat_end(&info);
 	info.stats->v[ST_IOPF] = perf_event_put(perf_fds, nr_fds);
 	if (opts->is_file)
-		store_olist(&info, model);
+		(void)store_file(&info, model);
 
 	usec = info.stats->v[ST_RUN_TIME] / 1000;
 	if (opts->op_type == WD_DIR_DECOMPRESS)
@@ -1644,8 +1564,6 @@ int test_comp_entry(int argc, char *argv[])
 		{"self",	no_argument,	0, 0 },
 		{"in",		required_argument,	0, 0 },
 		{"out",		required_argument,	0, 0 },
-		{"ilist",	required_argument,	0, 0 },
-		{"olist",	required_argument,	0, 0 },
 		{"env",		no_argument,	0, 0 },
 		{0,		0,		0, 0 },
 	};
@@ -1655,8 +1573,6 @@ int test_comp_entry(int argc, char *argv[])
 
 	opts.fd_in = -1;
 	opts.fd_out = -1;
-	opts.fd_ilist = -1;
-	opts.fd_olist = -1;
 	opts.alg_type = WD_COMP_ALG_MAX;
 	while ((opt = getopt_long(argc, argv, COMMON_OPTSTRING "f:o:w:k:r:",
 				  long_options, &option_idx)) != -1) {
@@ -1705,48 +1621,7 @@ int test_comp_entry(int argc, char *argv[])
 					show_help = 1;
 				}
 				break;
-			case 3:		/* ilist */
-				if (!optarg) {
-					COMP_TST_PRT("IN list file is missing!\n");
-					show_help = 1;
-					break;
-				}
-				opts.fd_ilist = open(optarg, O_RDONLY);
-				if (opts.fd_ilist < 0) {
-					COMP_TST_PRT("Fail to open %s\n", optarg);
-					show_help = 1;
-					break;
-				}
-				opts.is_file = true;
-				if (lseek(opts.fd_ilist, 0, SEEK_SET) < 0) {
-					COMP_TST_PRT("Fail on lseek()!\n");
-					show_help = 1;
-					break;
-				}
-				break;
-			case 4:		/* olist */
-				if (!optarg) {
-					COMP_TST_PRT("OUT list file is missing!\n");
-					show_help = 1;
-					break;
-				}
-				opts.fd_olist = open(optarg,
-						     O_CREAT | O_WRONLY,
-						     S_IWUSR | S_IRGRP |
-						     S_IROTH);
-				if (opts.fd_olist < 0) {
-					COMP_TST_PRT("Fail to open %s\n", optarg);
-					show_help = 1;
-					break;
-				}
-				opts.is_file = true;
-				if (lseek(opts.fd_olist, 0, SEEK_SET) < 0) {
-					COMP_TST_PRT("Fail on lseek()!\n");
-					show_help = 1;
-					break;
-				}
-				break;
-			case 5:		/* env */
+			case 3:		/* env */
 				opts.use_env = true;
 				break;
 			default:
