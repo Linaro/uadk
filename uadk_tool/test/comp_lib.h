@@ -71,8 +71,6 @@ struct test_options {
 	int q_num;
 	unsigned long total_len;
 
-#define MAX_RUNS	1024
-	int run_num;
 	/* tasks running in parallel */
 	int compact_run_num;
 
@@ -101,7 +99,6 @@ struct test_options {
 	__u8 data_fmt;
 
 	bool verify;
-	bool verbose;
 	bool is_decomp;
 	bool is_stream;
 	bool is_file;
@@ -333,18 +330,15 @@ static inline void hizip_test_adjust_len(struct test_options *opts)
 		opts->block_size * opts->block_size;
 }
 
-#define COMMON_OPTSTRING "hb:n:q:l:FSs:Vvzt:m:dacLZ"
+#define COMMON_OPTSTRING "hb:q:l:Ss:Vzt:m:dacLZ"
 
 #define COMMON_HELP "%s [opts]\n"					\
 	"  -b <size>     block size\n"					\
-	"  -n <num>      number of runs\n"				\
 	"  -q <num>      number of queues\n"				\
 	"  -l <num>      number of compact runs\n"			\
-	"  -F            input file, default no input\n"		\
 	"  -S            stream mode, default block mode\n"		\
 	"  -s <size>     total size\n"					\
 	"  -V            verify output\n"				\
-	"  -v            display detailed performance information\n"	\
 	"  -a            test deflate algorithm, default gzip\n"	\
 	"  -z            test zlib algorithm, default gzip\n"		\
 	"  -t <num>      number of thread per process\n"		\

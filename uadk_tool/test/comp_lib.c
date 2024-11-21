@@ -1678,13 +1678,6 @@ int parse_common_option(const char opt, const char *optarg,
 		if (opts->compact_run_num <= 0)
 			return 1;
 		break;
-	case 'n':
-		opts->run_num = strtol(optarg, NULL, 0);
-		SYS_ERR_COND(opts->run_num > MAX_RUNS,
-			     "No more than %d runs supported\n", MAX_RUNS);
-		if (opts->run_num <= 0)
-			return 1;
-		break;
 	case 'q':
 		opts->q_num = strtol(optarg, NULL, 0);
 		if (opts->q_num <= 0)
@@ -1692,9 +1685,6 @@ int parse_common_option(const char opt, const char *optarg,
 		break;
 	case 'd':
 		opts->op_type = WD_DIR_DECOMPRESS;
-		break;
-	case 'F':
-		opts->is_file = true;
 		break;
 	case 'S':
 		opts->is_stream = MODE_STREAM;
@@ -1716,9 +1706,6 @@ int parse_common_option(const char opt, const char *optarg,
 		break;
 	case 'V':
 		opts->verify = true;
-		break;
-	case 'v':
-		opts->verbose = true;
 		break;
 	case 'a':
 		opts->alg_type = WD_DEFLATE;
