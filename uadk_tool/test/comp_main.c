@@ -537,7 +537,7 @@ static void *hw_dfl_perf(void *arg)
 						 tdata->src,
 						 tdata->src_sz);
 			if (ret) {
-				COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
+				COMP_TST_PRT("Fail to deflate by HW(stm): %d\n", ret);
 				return (void *)(uintptr_t)ret;
 			}
 		}
@@ -563,7 +563,7 @@ static void *hw_dfl_perf(void *arg)
 		ret = hw_deflate4(h_dfl, tdata->in_list, tdata->out_list, opts,
 				  &tdata->sem);
 		if (ret) {
-			COMP_TST_PRT("Fail to deflate by HW: %d\n", ret);
+			COMP_TST_PRT("Fail to deflate by HW(blk): %d\n", ret);
 			goto out;
 		}
 	}
@@ -1026,7 +1026,7 @@ int test_hw(struct test_options *opts, char *model)
 			COMP_TST_PRT( "NOTE: test might trash the TLB\n");
 	}
 	stat_start(&info);
-	ret = attach2_threads(opts, &info, func, poll2_thread_func);
+	ret = attach2_threads(opts, &info, func, poll_thread_func);
 	if (ret)
 		goto out_buf;
 	stat_end(&info);
