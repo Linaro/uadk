@@ -1,4 +1,11 @@
 
+# UADK Release v2.8 Dec 2024
+
+## Features:
+- Support DAE accelerator device
+- Supports hash-agg algorithm type, including SUM and COUNT operation
+- uadk_tool add comp algorithm test
+
 # UADK Release v2.7 June 2024
 
 ## Features:
