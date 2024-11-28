@@ -62,8 +62,10 @@ void acc_test_run(int argc, char *argv[])
 				(void)test_hpre_entry(argc, argv);
 			} else if (!strcmp(input_module, "sec")) {
 				(void)test_sec_entry(argc, argv);
+#ifdef HAVE_CRYPTO
 			} else if (!strcmp(input_module, "zip")) {
 				(void)test_comp_entry(argc, argv);
+#endif
 			} else {
 				print_test_help();
 				printf("failed to parse module parameter!\n");

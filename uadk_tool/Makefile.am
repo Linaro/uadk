@@ -19,8 +19,7 @@ uadk_tool_SOURCES=uadk_tool.c dfx/uadk_dfx.c dfx/uadk_dfx.h \
 		benchmark/zip_wd_benchmark.c benchmark/zip_wd_benchmark.h \
 		benchmark/trng_wd_benchmark.c benchmark/trng_wd_benchmark.h \
 		test/uadk_test.c test/uadk_test.h \
-		test/test_sec.c test/test_sec.h test/sec_template_tv.h \
-		test/comp_main.c test/comp_main.h test/comp_lib.c test/comp_lib.h
+		test/test_sec.c test/test_sec.h test/sec_template_tv.h
 
 if WD_STATIC_DRV
 AM_CFLAGS+=-Bstatic
@@ -51,6 +50,7 @@ uadk_tool_LDADD+= $(with_zlib_fse_dir)/libfse.a
 endif
 
 if HAVE_CRYPTO
-uadk_tool_SOURCES+=benchmark/sec_soft_benchmark.c benchmark/sec_soft_benchmark.h
+uadk_tool_SOURCES+=benchmark/sec_soft_benchmark.c benchmark/sec_soft_benchmark.h \
+		   test/comp_main.c test/comp_main.h test/comp_lib.c test/comp_lib.h
 uadk_tool_LDADD+=$(libcrypto_LIBS)
 endif
