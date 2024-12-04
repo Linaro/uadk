@@ -139,6 +139,8 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret)
 		goto out_clear_sched;
 
+	wd_dh_setting.config.pool = &wd_dh_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_dh_setting.config,
 				 wd_dh_setting.driver);
 	if (ret)
@@ -451,11 +453,6 @@ fail_with_msg:
 	wd_put_msg_to_pool(&wd_dh_setting.pool, idx, mid);
 
 	return ret;
-}
-
-struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_dh_setting.pool, idx, tag);
 }
 
 int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
