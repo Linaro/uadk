@@ -207,6 +207,7 @@ int wd_aead_get_maxauthsize(handle_t h_sess);
  * @count: how many respondences this poll has to get.
  */
 int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_aead_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 
 /**
  * wd_aead_poll() Poll finished request.

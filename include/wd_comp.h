@@ -199,6 +199,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req);
  * specific ctx, this function should be used.
  */
 int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_comp_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 
 int wd_comp_poll(__u32 expt, __u32 *count);
 
