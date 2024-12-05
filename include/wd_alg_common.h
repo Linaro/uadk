@@ -151,6 +151,7 @@ struct wd_ctx_config_internal {
 	void *priv;
 	bool epoll_en;
 	unsigned long *msg_cnt;
+	struct wd_async_msg_pool *pool;
 };
 
 /*
