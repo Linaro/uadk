@@ -2132,7 +2132,7 @@ static int fill_aead_bd3_alg(struct wcrypto_aead_msg *msg,
 	sqe->a_key_len = msg->akey_bytes / SEC_SQE_LEN_RATE;
 
 	if (msg->dalg == WCRYPTO_SHA1 || msg->dalg == WCRYPTO_SHA256 ||
-		msg->dalg == WCRYPTO_SHA512) {
+	    msg->dalg == WCRYPTO_SHA512 || msg->dalg == WCRYPTO_SM3) {
 		sqe->a_alg = g_hmac_a_alg[msg->dalg];
 	} else {
 		WD_ERR("Invalid digest type!\n");
