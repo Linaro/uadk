@@ -55,7 +55,7 @@ struct wd_agg_sess_agg_conf {
 };
 
 struct wd_agg_sess {
-	char *alg_name;
+	const char *alg_name;
 	wd_dev_mask_t *dev_mask;
 	struct wd_alg_agg *drv;
 	void *priv;
@@ -69,7 +69,7 @@ struct wd_agg_sess {
 	struct wd_dae_hash_table rehash_table;
 };
 
-static char *wd_agg_alg_name = "hashagg";
+static const char *wd_agg_alg_name = "hashagg";
 static struct wd_init_attrs wd_agg_init_attrs;
 static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
 
@@ -155,7 +155,7 @@ static int check_col_data_info(enum wd_dae_data_type type, __u16 col_data_info)
 		}
 		break;
 	default:
-		WD_ERR("invalid: agg data type is %d!\n", type);
+		WD_ERR("invalid: agg data type is %u!\n", type);
 		return -WD_EINVAL;
 	}
 
@@ -240,7 +240,7 @@ static int check_agg_cols_info(struct wd_agg_sess_setup *setup, __u32 *out_agg_c
 			}
 			alg = info[i].output_col_algs[j];
 			if (alg >= WD_AGG_ALG_TYPE_MAX || alg_cnt[alg]) {
-				WD_ERR("invalid agg output col alg type: %d, col idx: %u\n",
+				WD_ERR("invalid agg output col alg type: %u, col idx: %u\n",
 				       alg, i);
 				return -WD_EINVAL;
 			}
@@ -497,7 +497,7 @@ static int wd_agg_check_sess_state(struct wd_agg_sess *sess, enum wd_agg_sess_st
 	ret = __atomic_compare_exchange_n(&sess->state, expected, next,
 					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 	if (!ret) {
-		WD_ERR("invalid: agg sess state is %d!\n", *expected);
+		WD_ERR("invalid: agg sess state is %u!\n", *expected);
 		return -WD_EINVAL;
 	}
 
@@ -1113,7 +1113,7 @@ static int wd_agg_input_try_init(struct wd_agg_sess *sess, enum wd_agg_sess_stat
 					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 	state = __atomic_load_n(&sess->state, __ATOMIC_RELAXED);
 	if (unlikely(state != WD_AGG_SESS_INPUT)) {
-		WD_ERR("failed to set agg input sess state: %d!\n", state);
+		WD_ERR("failed to set agg input sess state: %u!\n", state);
 		return -WD_EINVAL;
 	}
 
@@ -1251,7 +1251,7 @@ static int wd_agg_output_try_init(struct wd_agg_sess *sess, enum wd_agg_sess_sta
 					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 	state = __atomic_load_n(&sess->state, __ATOMIC_RELAXED);
 	if (unlikely(state != WD_AGG_SESS_OUTPUT)) {
-		WD_ERR("failed to set agg output sess state: %d!\n", state);
+		WD_ERR("failed to set agg output sess state: %u!\n", state);
 		return -WD_EINVAL;
 	}
 
@@ -1459,7 +1459,7 @@ static int wd_agg_rehash_try_init(struct wd_agg_sess *sess, enum wd_agg_sess_sta
 	ret = __atomic_compare_exchange_n(&sess->state, expected, WD_AGG_SESS_REHASH,
 					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 	if (!ret) {
-		WD_ERR("invalid: agg rehash sess state is %d!\n", *expected);
+		WD_ERR("invalid: agg rehash sess state is %u!\n", *expected);
 		return -WD_EINVAL;
 	}
 

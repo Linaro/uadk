@@ -21,7 +21,7 @@ static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 };
 
 /* These algs's name need correct match with alg/mode type */
-static char *wd_aead_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
+static const char *wd_aead_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
 	{"", "authenc(hmac(sha256),cbc(sm4))", "", "", "", "", "", "", "",
 	"ccm(sm4)", "gcm(sm4)"},
 	{"", "authenc(hmac(sha256),cbc(aes))", "", "", "", "", "", "", "",
@@ -39,7 +39,7 @@ struct wd_aead_setting {
 } wd_aead_setting;
 
 struct wd_aead_sess {
-	char			*alg_name;
+	const char		*alg_name;
 	enum wd_cipher_alg	calg;
 	enum wd_cipher_mode	cmode;
 	enum wd_digest_type	dalg;
@@ -155,7 +155,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 		ret = aes_key_len_check(length);
 		break;
 	default:
-		WD_ERR("failed to set the cipher alg, alg = %d\n", alg);
+		WD_ERR("failed to set the cipher alg, alg = %u\n", alg);
 		return -WD_EINVAL;
 	}
 

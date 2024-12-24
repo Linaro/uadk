@@ -26,7 +26,7 @@
 
 #define cpu_to_be32(x) swap_byte(x)
 
-static char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
+static const char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
 	"zlib", "gzip", "deflate", "lz77_zstd"
 };
 
@@ -409,12 +409,12 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 static int wd_comp_check_sess_params(struct wd_comp_sess_setup *setup)
 {
 	if (setup->alg_type >= WD_COMP_ALG_MAX)  {
-		WD_ERR("invalid: alg_type is %d!\n", setup->alg_type);
+		WD_ERR("invalid: alg_type is %u!\n", setup->alg_type);
 		return -WD_EINVAL;
 	}
 
 	if (setup->op_type >= WD_DIR_MAX)  {
-		WD_ERR("invalid: op_type is %d!\n", setup->op_type);
+		WD_ERR("invalid: op_type is %u!\n", setup->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -422,12 +422,12 @@ static int wd_comp_check_sess_params(struct wd_comp_sess_setup *setup)
 		return WD_SUCCESS;
 
 	if (setup->comp_lv > WD_COMP_L15) {
-		WD_ERR("invalid: comp_lv is %d!\n", setup->comp_lv);
+		WD_ERR("invalid: comp_lv is %u!\n", setup->comp_lv);
 		return -WD_EINVAL;
 	}
 
 	if (setup->win_sz > WD_COMP_WS_32K) {
-		WD_ERR("invalid: win_sz is %d!\n", setup->win_sz);
+		WD_ERR("invalid: win_sz is %u!\n", setup->win_sz);
 		return -WD_EINVAL;
 	}
 
@@ -554,7 +554,7 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 	}
 
 	if (unlikely(req->data_fmt > WD_SGL_BUF)) {
-		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
+		WD_ERR("invalid: data_fmt is %u!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
 
@@ -564,7 +564,7 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 
 	if (unlikely(req->op_type != WD_DIR_COMPRESS &&
 		     req->op_type != WD_DIR_DECOMPRESS)) {
-		WD_ERR("invalid: op_type is %d!\n", req->op_type);
+		WD_ERR("invalid: op_type is %u!\n", req->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -793,7 +793,7 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		return ret;
 
 	if (unlikely(req->data_fmt > WD_FLAT_BUF)) {
-		WD_ERR("invalid: data_fmt is %d!\n", req->data_fmt);
+		WD_ERR("invalid: data_fmt is %u!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
 

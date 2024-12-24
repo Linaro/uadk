@@ -646,10 +646,10 @@ static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
 	if (hw_msg->done != HPRE_HW_TASK_DONE ||
 			hw_msg->etype || hw_msg->etype1) {
 		WD_ERR("failed to do hpre task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
-			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype, (__u32)hw_msg->etype1);
 		if (hw_msg->etype1 & HPRE_HW_SVA_ERROR)
 			WD_ERR("failed to SVA prefetch: status=%u!\n",
-				hw_msg->sva_status);
+				(__u32)hw_msg->sva_status);
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			*result = WD_EINVAL;
 		else
@@ -2032,7 +2032,7 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 		 hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("invalid: algorithm type %u is error!\n", hw_msg->alg);
+		WD_ERR("invalid: algorithm type %u is error!\n", (__u32)hw_msg->alg);
 
 	return ret;
 }

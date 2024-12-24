@@ -893,7 +893,7 @@ handle_t wd_mempool_create(size_t size, int node)
 	int ret;
 
 	if (!tmp || node < 0 || node > numa_max_node()) {
-		WD_ERR("invalid: numa node is %d, size is %ld!\n", node, tmp);
+		WD_ERR("invalid: numa node is %d, size is %zu!\n", node, tmp);
 		return (handle_t)(-WD_EINVAL);
 	}
 

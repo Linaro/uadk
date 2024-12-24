@@ -41,7 +41,7 @@
  * a sge size: 1B ~ 8M;
  * data in little-endian in sgl;
  */
-int qm_hw_sgl_info(struct hw_sgl_info *sgl_info)
+static int qm_hw_sgl_info(struct hw_sgl_info *sgl_info)
 {
 	sgl_info->sge_sz = sizeof(struct hisi_sge);
 	sgl_info->sge_align_sz = HISI_SGL_SGE_ALIGN_SZ;
@@ -75,7 +75,7 @@ static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 }
 
 /* 'num' starts from 1 */
-void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+static void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 			  int num, struct wd_mm_br *br, __u32 buf_sz)
 {
 	void *buf;
@@ -88,7 +88,7 @@ void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 		       buf, buf_sz);
 }
 
-int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
+static int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
 {
 	int buf_num = wd_get_sgl_buf_num(sgl);
 	int sge_num = wd_get_sgl_sge_num(sgl);
@@ -148,7 +148,7 @@ sgl_sge_init_err:
 	return ret;
 }
 
-void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
+static void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
 {
 	struct hisi_sgl *hisi_sgl = drv_get_sgl_pri(sgl);
 	int buf_num = wd_get_sgl_buf_num(sgl);
@@ -181,7 +181,7 @@ void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
 	br->free(br->usr, hisi_sgl);
 }
 
-int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
+static int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 {
 	struct hisi_sgl *d = drv_get_sgl_pri(dst_sgl);
 	struct hisi_sgl *s = drv_get_sgl_pri(src_sgl);
@@ -201,7 +201,7 @@ int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 	return WD_SUCCESS;
 }
 
-int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
+static int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
 	       __u16 idx, __u8 priority)
 {
 	void *base = q->doorbell_base;

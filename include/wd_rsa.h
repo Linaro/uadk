@@ -161,8 +161,6 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup);
  */
 void wd_rsa_free_sess(handle_t sess);
 
-int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req);
-
 int wd_rsa_poll(__u32 expt, __u32 *count);
 
 /**
