@@ -854,14 +854,8 @@ static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
 
 static int trans_d_to_hpre_bin(struct wd_dtb *d)
 {
-	int ret;
-
-	ret = qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
+	return qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
 					d->bsize, d->dsize, "ecc d");
-	if (unlikely(ret))
-		return ret;
-
-	return 0;
 }
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
