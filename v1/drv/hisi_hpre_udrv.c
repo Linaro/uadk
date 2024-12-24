@@ -533,7 +533,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	kbytes = rsa_msg->key_bytes;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
-			hw_msg->done, hw_msg->etype);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			rsa_msg->result = WD_EINVAL;
 		} else { /* Need to identify which hw err happened */
@@ -740,7 +740,7 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 		return 0;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
-			hw_msg->done, hw_msg->etype);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			dh_msg->result = WD_EINVAL;
 			ret = -WD_EINVAL;
@@ -1639,7 +1639,7 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
 		ret = sm2_kg_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
+		WD_ERR("ecc out trans fail alg %u error!\n", (__u32)hw_msg->alg);
 
 	return ret;
 }
@@ -2032,7 +2032,7 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 	if (hw_msg->done != HPRE_HW_TASK_DONE ||
 			hw_msg->etype || hw_msg->etype1) {
 		WD_ERR("HPRE do ecc fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
-			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype, (__u32)hw_msg->etype1);
 
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			ecc_msg->result = WD_EINVAL;

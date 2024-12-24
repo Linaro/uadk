@@ -106,13 +106,13 @@ static int create_ctx_para_check(struct wd_queue *q,
 	}
 
 	if (setup->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
-		WD_ERR("invalid: the alg %d does not support!\n", setup->alg);
+		WD_ERR("invalid: the alg %u does not support!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
 	if (setup->mode == WCRYPTO_DIGEST_NORMAL &&
 	    setup->alg >= WCRYPTO_AES_XCBC_MAC_96) {
-		WD_ERR("invalid: the alg %d does not support normal mode!\n", setup->alg);
+		WD_ERR("invalid: the alg %u does not support normal mode!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
@@ -292,7 +292,7 @@ static int digest_hmac_key_check(enum wcrypto_digest_alg alg, __u16 key_len)
 		}
 		break;
 	default:
-		WD_ERR("failed to check digest key bytes, invalid alg type = %d\n", alg);
+		WD_ERR("failed to check digest key bytes, invalid alg type = %u\n", alg);
 		return -WD_EINVAL;
 	}
 

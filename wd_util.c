@@ -92,8 +92,8 @@ struct drv_lib_list {
 };
 
 struct acc_alg_item {
-	char *name;
-	char *algtype;
+	const char *name;
+	const char *algtype;
 };
 
 struct wd_ce_ctx {
@@ -2181,7 +2181,7 @@ static void dladdr_empty(void)
 {
 }
 
-int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
+int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 {
 	char file_path[PATH_MAX] = {0};
 	char path[PATH_MAX] = {0};
@@ -2300,7 +2300,7 @@ free_list:
 	return NULL;
 }
 
-struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name)
 {
 	struct wd_alg_driver *set_driver = NULL;
 	struct wd_alg_driver *drv;
@@ -2395,7 +2395,7 @@ static __u32 wd_get_ctx_numbers(struct wd_ctx_params ctx_params, int end)
 	return count;
 }
 
-struct uacce_dev_list *wd_get_usable_list(struct uacce_dev_list *list, struct bitmask *bmp)
+static struct uacce_dev_list *wd_get_usable_list(struct uacce_dev_list *list, struct bitmask *bmp)
 {
 	struct uacce_dev_list *p, *node, *result = NULL;
 	struct uacce_dev *dev;
@@ -2736,7 +2736,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
 	int driver_type = UADK_ALG_HW;
-	char *alg = attrs->alg;
+	const char *alg = attrs->alg;
 	int ret = -WD_EINVAL;
 
 	if (!attrs->ctx_params)

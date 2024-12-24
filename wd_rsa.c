@@ -1128,21 +1128,19 @@ static int rsa_prikey2_param_set(struct wd_rsa_prikey2 *pkey2,
 	case WD_CRT_PRIKEY_DQ:
 		ret = rsa_set_param(&pkey2->dq, param);
 		break;
-
 	case WD_CRT_PRIKEY_DP:
 		ret = rsa_set_param(&pkey2->dp, param);
 		break;
-
 	case WD_CRT_PRIKEY_QINV:
 		ret = rsa_set_param(&pkey2->qinv, param);
 		break;
-
 	case WD_CRT_PRIKEY_P:
 		ret = rsa_set_param(&pkey2->p, param);
 		break;
-
 	case WD_CRT_PRIKEY_Q:
 		ret = rsa_set_param(&pkey2->q, param);
+		break;
+	default:
 		break;
 	}
 
