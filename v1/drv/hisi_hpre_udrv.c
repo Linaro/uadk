@@ -889,7 +889,7 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
-	char bsize, dsize;
+	__u32 bsize, dsize;
 	char *dat;
 	int ret;
 
@@ -902,6 +902,10 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	ret = trans_d_to_hpre_bin(d);
 	if (unlikely(ret))
 		return ret;
+
+	/* X448 will do specific offset */
+	if (id != WCRYPTO_X448)
+		d->dsize = d->bsize;
 
 	dat = d->data;
 	bsize = d->bsize;
@@ -926,12 +930,6 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	} else if (id == WCRYPTO_X448) {
 		dat[55 + bsize - dsize] &= 252;
 		dat[0 + bsize - dsize] |= 128;
-	}
-
-	if (id != WCRYPTO_X25519 && id != WCRYPTO_X448 &&
-	    !less_than_latter(d, n)) {
-		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
-		return -WD_EINVAL;
 	}
 
 	*data = p->data;
