@@ -143,8 +143,8 @@ static struct acc_alg_item alg_options[] = {
 	{"gcm(aes)", "aead"},
 	{"ccm(sm4)", "aead"},
 	{"gcm(sm4)", "aead"},
-	{"authenc(hmac(sha256),cbc(aes))", "aead"},
-	{"authenc(hmac(sha256),cbc(sm4))", "aead"},
+	{"authenc(generic,cbc(aes))", "aead"},
+	{"authenc(generic,cbc(sm4))", "aead"},
 
 	{"sm3", "digest"},
 	{"md5", "digest"},

@@ -110,10 +110,10 @@ char *digest_names[MAX_ALGO_PER_TYPE] = {
 char *aead_names[MAX_ALGO_PER_TYPE] = {
 	"ccm(aes)",
 	"gcm(aes)",
-	"authenc(hmac(sha256),cbc(aes))",
+	"authenc(generic,cbc(aes))",
 	"ccm(sm4)",
 	"gcm(sm4)",
-	"authenc(hmac(sha256),cbc(sm4))",
+	"authenc(generic,cbc(sm4))",
 	"sm3", /*--aead 6: for error alg test */
 	"authenc(hmac(sha3),cbc(aes))", /* --aead 7: for error alg test */
 };
