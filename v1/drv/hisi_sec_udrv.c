@@ -2715,9 +2715,18 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 
 static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 {
+	__u64 total;
 	int ret;
 
-	if (unlikely(msg->in_bytes + msg->assoc_bytes > MAX_CIPHER_LENGTH)) {
+	if (msg->msg_state == WCRYPTO_AEAD_MSG_MIDDLE) {
+		if (!msg->in_bytes || (msg->in_bytes & (AES_BLOCK_SIZE - 1))) {
+			WD_ERR("invalid: middle bd input size is 0 or not 16 bytes aligned!\n");
+			return -WD_EINVAL;
+		}
+	}
+
+	total = msg->in_bytes + msg->assoc_bytes;
+	if (unlikely(total > MAX_CIPHER_LENGTH)) {
 		WD_ERR("fail to check input data length!\n");
 		return -WD_EINVAL;
 	}
