@@ -3388,6 +3388,9 @@ int qm_fill_aead_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	uintptr_t temp;
 	int ret;
 
+	/* The hardware only uses the block mode. */
+	msg->msg_state = WCRYPTO_AEAD_MSG_BLOCK;
+
 	ret = aead_comb_param_check(msg);
 	if (ret) {
 		WD_ERR("Invalid aead cipher alg = %hhu and mode = %hhu combination\n",
