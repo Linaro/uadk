@@ -2634,8 +2634,13 @@ static int fill_aead_stream_bd3(struct wd_queue *q, struct wcrypto_aead_msg *msg
 
 	switch (msg->msg_state) {
 	case WCRYPTO_AEAD_MSG_FIRST:
-		if (msg->cmode == WCRYPTO_CIPHER_GCM)
+		if (msg->cmode == WCRYPTO_CIPHER_GCM) {
+			if (unlikely(!msg->assoc_bytes)) {
+				WD_ERR("invalid: first bd assoc bytes is 0!\n");
+				return -WD_EINVAL;
+			}
 			fill_gcm_first_bd3(msg, sqe);
+		}
 		break;
 	case WCRYPTO_AEAD_MSG_MIDDLE:
 		if (msg->cmode == WCRYPTO_CIPHER_GCM)
