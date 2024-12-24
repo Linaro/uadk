@@ -495,7 +495,7 @@ static int wd_agg_check_sess_state(struct wd_agg_sess *sess, enum wd_agg_sess_st
 	}
 
 	ret = __atomic_compare_exchange_n(&sess->state, expected, next,
-					  true, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 	if (!ret) {
 		WD_ERR("invalid: agg sess state is %d!\n", *expected);
 		return -WD_EINVAL;
@@ -1107,14 +1107,13 @@ static int wd_agg_sync_job(struct wd_agg_sess *sess, struct wd_agg_req *req,
 
 static int wd_agg_input_try_init(struct wd_agg_sess *sess, enum wd_agg_sess_state *expected)
 {
+	enum wd_agg_sess_state state;
+
 	(void)__atomic_compare_exchange_n(&sess->state, expected, WD_AGG_SESS_INPUT,
-					  true, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
-	switch (*expected) {
-	case WD_AGG_SESS_INIT:
-	case WD_AGG_SESS_INPUT:
-		break;
-	default:
-		WD_ERR("invalid: agg input sess state is %d!\n", *expected);
+					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+	state = __atomic_load_n(&sess->state, __ATOMIC_RELAXED);
+	if (unlikely(state != WD_AGG_SESS_INPUT)) {
+		WD_ERR("failed to set agg input sess state: %d!\n", state);
 		return -WD_EINVAL;
 	}
 
@@ -1246,16 +1245,16 @@ int wd_agg_add_input_async(handle_t h_sess, struct wd_agg_req *req)
 
 static int wd_agg_output_try_init(struct wd_agg_sess *sess, enum wd_agg_sess_state *expected)
 {
+	enum wd_agg_sess_state state;
+
 	(void)__atomic_compare_exchange_n(&sess->state, expected, WD_AGG_SESS_OUTPUT,
-					  true, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
-	switch (*expected) {
-	case WD_AGG_SESS_OUTPUT:
-	case WD_AGG_SESS_INPUT:
-		break;
-	default:
-		WD_ERR("invalid: agg output sess state is %d!\n", *expected);
+					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+	state = __atomic_load_n(&sess->state, __ATOMIC_RELAXED);
+	if (unlikely(state != WD_AGG_SESS_OUTPUT)) {
+		WD_ERR("failed to set agg output sess state: %d!\n", state);
 		return -WD_EINVAL;
 	}
+
 	return WD_SUCCESS;
 }
 
@@ -1458,7 +1457,7 @@ static int wd_agg_rehash_try_init(struct wd_agg_sess *sess, enum wd_agg_sess_sta
 	int ret;
 
 	ret = __atomic_compare_exchange_n(&sess->state, expected, WD_AGG_SESS_REHASH,
-					  true, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+					  false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 	if (!ret) {
 		WD_ERR("invalid: agg rehash sess state is %d!\n", *expected);
 		return -WD_EINVAL;
