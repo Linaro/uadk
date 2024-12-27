@@ -535,24 +535,11 @@ static int qm_set_queue_info(struct wd_queue *q)
 		goto err_with_regions;
 	}
 
-	ret = pthread_spin_init(&info->sd_lock, PTHREAD_PROCESS_PRIVATE);
-	if (ret) {
-		WD_ERR("failed to init qinfo sd_lock!\n");
-		goto free_cache;
-	}
-
-	ret = pthread_spin_init(&info->rc_lock, PTHREAD_PROCESS_PRIVATE);
-	if (ret) {
-		WD_ERR("failed to init qinfo rc_lock!\n");
-		goto uninit_lock;
-	}
+	wd_fair_init(&info->sd_lock);
+	wd_fair_init(&info->rc_lock);
 
 	return 0;
 
-uninit_lock:
-	pthread_spin_destroy(&info->sd_lock);
-free_cache:
-	free(info->req_cache);
 err_with_regions:
 	qm_unset_queue_regions(q);
 	return ret;
@@ -593,8 +580,6 @@ void qm_uninit_queue(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	pthread_spin_destroy(&info->rc_lock);
-	pthread_spin_destroy(&info->sd_lock);
 	free(info->req_cache);
 	qm_unset_queue_regions(q);
 	free(qinfo->priv);
@@ -624,10 +609,10 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 	int ret;
 	__u32 i;
 
-	pthread_spin_lock(&info->sd_lock);
+	wd_fair_lock(&info->sd_lock);
 	if (unlikely((__u32)__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
 		     info->sq_depth - num - 1)) {
-		pthread_spin_unlock(&info->sd_lock);
+		wd_fair_unlock(&info->sd_lock);
 		WD_ERR("queue is full!\n");
 		return -WD_EBUSY;
 	}
@@ -636,7 +621,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 		ret = info->sqe_fill[qinfo->atype](req[i], qinfo->priv,
 				info->sq_tail_index);
 		if (unlikely(ret != WD_SUCCESS)) {
-			pthread_spin_unlock(&info->sd_lock);
+			wd_fair_unlock(&info->sd_lock);
 			WD_ERR("sqe fill error, ret %d!\n", ret);
 			return -WD_EINVAL;
 		}
@@ -648,7 +633,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 	}
 
 	ret = qm_tx_update(info, num);
-	pthread_spin_unlock(&info->sd_lock);
+	wd_fair_unlock(&info->sd_lock);
 
 	return ret;
 }
@@ -681,9 +666,9 @@ static int check_ds_rx_base(struct qm_queue_info *info,
 		return 0;
 
 	if (before) {
-		pthread_spin_lock(&info->rc_lock);
+		wd_fair_lock(&info->rc_lock);
 		qm_rx_from_cache(info, resp, num);
-		pthread_spin_unlock(&info->rc_lock);
+		wd_fair_unlock(&info->rc_lock);
 		WD_ERR("wd queue hw error happened before qm receive!\n");
 	} else {
 		WD_ERR("wd queue hw error happened after qm receive!\n");
@@ -724,7 +709,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 	if (unlikely(ret))
 		return ret;
 
-	pthread_spin_lock(&info->rc_lock);
+	wd_fair_lock(&info->rc_lock);
 	for (i = 0; i < num; i++) {
 		cqe = info->cq_base + info->cq_head_index * sizeof(struct cqe);
 		if (info->cqc_phase != CQE_PHASE(cqe))
@@ -733,7 +718,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		mb(); /* make sure the data is all in memory before read */
 		sq_head = CQE_SQ_HEAD_INDEX(cqe);
 		if (unlikely(sq_head >= info->sq_depth)) {
-			pthread_spin_unlock(&info->rc_lock);
+			wd_fair_unlock(&info->rc_lock);
 			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", sq_head);
 			return -WD_EIO;
 		}
@@ -745,7 +730,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		if (!ret) {
 			break;
 		} else if (ret < 0) {
-			pthread_spin_unlock(&info->rc_lock);
+			wd_fair_unlock(&info->rc_lock);
 			WD_ERR("recv sqe error %u\n", sq_head);
 			return ret;
 		}
@@ -766,7 +751,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 			ret = i;
 	}
 
-	pthread_spin_unlock(&info->rc_lock);
+	wd_fair_unlock(&info->rc_lock);
 
 	return ret;
 }
