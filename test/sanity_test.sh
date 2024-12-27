@@ -15,6 +15,7 @@
 
 #VALGRIND=valgrind
 
+set -x
 have_hisi_zip=0
 have_hisi_sec=0
 have_hisi_hpre=0
