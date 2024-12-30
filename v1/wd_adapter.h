@@ -37,7 +37,7 @@ struct hw_sgl_info {
 
 struct wd_drv_dio_if {
 	/* vendor tag which is used to select right vendor driver */
-	char *hw_type;
+	const char *hw_type;
 	/* user space WD queue initialize */
 	int (*open)(struct wd_queue *q);
 	/* user space WD queue uninitialize */

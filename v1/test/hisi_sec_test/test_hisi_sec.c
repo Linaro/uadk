@@ -163,7 +163,7 @@ static bool is_exit(struct test_sec_pthread_dt *pdata)
 	return false;
 }
 
-void hexdump(char *buf, int num)
+void hexdump(const char *buf, int num)
 {
 	int i;
 
@@ -1053,7 +1053,7 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 	    setup.block_num = MAX_BLOCK_NM;
 	    setup.align_size = SQE_SIZE;
 
-	    SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
+	    SEC_TST_PRT("create pool memory: %u\n", MAX_BLOCK_NM * setup.block_size);
 	    pool[j] = wd_blkpool_create(&q[j], &setup);
 	    if (!pool[j]) {
 			SEC_TST_PRT("%s(): create %dth pool fail!\n", __func__, j);

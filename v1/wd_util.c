@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -21,6 +22,7 @@
 #include "v1/wd_util.h"
 
 #define BYTE_TO_BIT		8
+#define LOCK_TRY_CNT		(0x800000000U)
 
 void wd_spinlock(struct wd_lock *lock)
 {
@@ -41,6 +43,35 @@ void wd_spinlock(struct wd_lock *lock)
 void wd_unspinlock(struct wd_lock *lock)
 {
 	__atomic_store_n(&lock->lock, 0, __ATOMIC_RELEASE);
+}
+
+void wd_fair_init(struct wd_fair_lock *lock)
+{
+	atomic_exchange_explicit(&lock->ticket, 0, memory_order_acq_rel);
+	atomic_exchange_explicit(&lock->serving, 0, memory_order_acq_rel);
+}
+
+void wd_fair_lock(struct wd_fair_lock *lock)
+{
+	__u32 my_ticket = atomic_fetch_add_explicit(&lock->ticket, 1,
+						  memory_order_acq_rel);
+	__u32 val = atomic_load_explicit(&lock->serving, memory_order_acquire);
+	__u64 cnt = 0;
+
+	if (val == my_ticket)
+		return;
+
+	do {
+		if (++cnt == LOCK_TRY_CNT)
+			WD_ERR("failed to get lock with %lu times\n", LOCK_TRY_CNT);
+
+		val = atomic_load_explicit(&lock->serving, memory_order_acquire);
+	} while (val != my_ticket);
+}
+
+void wd_fair_unlock(struct wd_fair_lock *lock)
+{
+	atomic_fetch_add_explicit(&lock->serving, 1, memory_order_acq_rel);
 }
 
 void *drv_iova_map(struct wd_queue *q, void *va, size_t sz)

@@ -1324,19 +1324,6 @@ int wd_ecc_get_pubkey(struct wd_ecc_key *ecc_key,
 	return WD_SUCCESS;
 }
 
-int wd_ecc_get_curve(struct wd_ecc_key *ecc_key,
-		     struct wd_ecc_curve **cv)
-{
-	if (!ecc_key || !cv) {
-		WD_ERR("invalid: get ecc pubkey parameter err!\n");
-		return -WD_EINVAL;
-	}
-
-	*cv = ecc_key->cv;
-
-	return WD_SUCCESS;
-}
-
 void wd_ecc_get_prikey_params(struct wd_ecc_key *key,
 			      struct wd_dtb **p, struct wd_dtb **a,
 			      struct wd_dtb **b, struct wd_dtb **n,

@@ -30,7 +30,7 @@ static __u32 g_digest_mac_full_len[WD_DIGEST_TYPE_MAX] = {
 };
 
 /* These algs's name need correct match with digest alg type */
-static char *wd_digest_alg_name[WD_DIGEST_TYPE_MAX] = {
+static const char *wd_digest_alg_name[WD_DIGEST_TYPE_MAX] = {
 	"sm3", "md5", "sha1", "sha256", "sha224", "sha384",
 	"sha512", "sha512-224", "sha512-256", "xcbc-mac-96(aes)",
 	"xcbc-prf-128(aes)", "cmac(aes)", "gmac(aes)"
@@ -60,7 +60,7 @@ struct wd_digest_stream_data {
 };
 
 struct wd_digest_sess {
-	char			*alg_name;
+	const char		*alg_name;
 	enum wd_digest_type	alg;
 	enum wd_digest_mode	mode;
 	void			*priv;
@@ -471,7 +471,7 @@ static int wd_aes_hmac_length_check(struct wd_digest_sess *sess,
 	case WD_DIGEST_AES_XCBC_PRF_128:
 	case WD_DIGEST_AES_CMAC:
 		if (!req->in_bytes) {
-			WD_ERR("failed to check 0 packet length, alg = %d\n",
+			WD_ERR("failed to check 0 packet length, alg = %u\n",
 				sess->alg);
 			return -WD_EINVAL;
 		}
@@ -487,7 +487,7 @@ static int wd_mac_length_check(struct wd_digest_sess *sess,
 			       struct wd_digest_req *req)
 {
 	if (unlikely(req->out_bytes == 0)) {
-		WD_ERR("invalid: digest alg:%d mac length is 0.\n", sess->alg);
+		WD_ERR("invalid: digest alg:%u mac length is 0.\n", sess->alg);
 		return -WD_EINVAL;
 	}
 
@@ -495,7 +495,7 @@ static int wd_mac_length_check(struct wd_digest_sess *sess,
 	case WD_DIGEST_END:
 	case WD_DIGEST_STREAM_END:
 		if (unlikely(req->out_bytes > g_digest_mac_len[sess->alg])) {
-			WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
+			WD_ERR("invalid: digest mac length, alg = %u, out_bytes = %u\n",
 			       sess->alg, req->out_bytes);
 			return -WD_EINVAL;
 		}
@@ -504,7 +504,7 @@ static int wd_mac_length_check(struct wd_digest_sess *sess,
 	case WD_DIGEST_STREAM_DOING:
 		/* User need to input full mac buffer in first and middle hash */
 		if (unlikely(req->out_bytes != g_digest_mac_full_len[sess->alg])) {
-			WD_ERR("invalid: digest mac full length, alg = %d, out_bytes = %u\n",
+			WD_ERR("invalid: digest mac full length, alg = %u, out_bytes = %u\n",
 			       sess->alg, req->out_bytes);
 			return -WD_EINVAL;
 		}
@@ -533,7 +533,7 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 	}
 
 	if (unlikely(sess->alg >= WD_DIGEST_TYPE_MAX)) {
-		WD_ERR("invalid: check digest type, alg = %d\n", sess->alg);
+		WD_ERR("invalid: check digest type, alg = %u\n", sess->alg);
 		return -WD_EINVAL;
 	}
 

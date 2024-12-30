@@ -78,7 +78,7 @@ struct wcrypto_ecc_ctx {
 
 struct wcrypto_ecc_curve_list {
 	__u32 id;
-	char *name;
+	const char *name;
 	__u32 key_bits;
 	__u8 data[MAX_CURVE_SIZE];
 };
@@ -1318,7 +1318,7 @@ int wcrypto_get_ecc_pubkey(struct wcrypto_ecc_key *ecc_key,
 	return WD_SUCCESS;
 }
 
-int wcrypto_get_ecc_curve(struct wcrypto_ecc_key *ecc_key,
+static int wcrypto_get_ecc_curve(struct wcrypto_ecc_key *ecc_key,
 			   struct wcrypto_ecc_curve **cv)
 {
 	if (unlikely(!ecc_key || !cv || !ecc_key->cv)) {
@@ -1670,7 +1670,7 @@ int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
 		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY)) {
-		WD_ERR("do ecxdh: op_type = %d error!\n", opdata->op_type);
+		WD_ERR("do ecxdh: op_type = %u error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -2189,7 +2189,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECDSA_SIGN &&
 	    opdata->op_type != WCRYPTO_ECDSA_VERIFY)) {
-		WD_ERR("do ecdsa: op_type = %d error!\n", opdata->op_type);
+		WD_ERR("do ecdsa: op_type = %u error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -2479,7 +2479,7 @@ int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 		opdata->op_type != WCRYPTO_SM2_KG &&
 		opdata->op_type != WCRYPTO_SM2_ENCRYPT &&
 		opdata->op_type != WCRYPTO_SM2_DECRYPT)) {
-		WD_ERR("do sm2: op_type = %d error!\n", opdata->op_type);
+		WD_ERR("do sm2: op_type = %u error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 

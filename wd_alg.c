@@ -141,6 +141,8 @@ static bool wd_alg_check_available(int calc_type, const char *dev_name)
 	case UADK_ALG_HW:
 		ret = wd_check_accel_dev(dev_name);
 		break;
+	default:
+		break;
 	}
 
 	return ret;

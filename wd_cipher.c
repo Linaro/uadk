@@ -37,7 +37,7 @@ static const unsigned char des_weak_keys[DES_WEAK_KEY_NUM][DES_KEY_SIZE] = {
 	{0xFE, 0xE0, 0xFE, 0xE0, 0xFE, 0xF1, 0xFE, 0xF1}
 };
 
-static char *wd_cipher_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
+static const char *wd_cipher_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
 	{"ecb(sm4)", "cbc(sm4)", "ctr(sm4)", "xts(sm4)", "ofb(sm4)",
 	 "cfb(sm4)", "cbc-cs1(sm4)", "cbc-cs2(sm4)", "cbc-cs3(sm4)",
 	 "", "", "xts(sm4)"},
@@ -58,7 +58,7 @@ struct wd_cipher_setting {
 } wd_cipher_setting;
 
 struct wd_cipher_sess {
-	char			*alg_name;
+	const char		*alg_name;
 	enum wd_cipher_alg	alg;
 	enum wd_cipher_mode	mode;
 	wd_dev_mask_t		*dev_mask;
@@ -199,7 +199,7 @@ static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("cipher input alg err, alg = %d\n", sess->alg);
+		WD_ERR("cipher input alg err, alg = %u\n", sess->alg);
 		return -WD_EINVAL;
 	}
 
