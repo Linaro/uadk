@@ -60,6 +60,8 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd_bmm.c v1/wd_bmm.h	\
 		 v1/wd_ecc.c v1/wd_ecc.h	\
 		 v1/wd_sgl.c v1/wd_sgl.h	\
+		 aes.h sm4.h galois.h	\
+		 lib/crypto/aes.c lib/crypto/sm4.c lib/crypto/galois.c \
 		 v1/drv/hisi_qm_udrv.c v1/drv/hisi_qm_udrv.h \
 		 v1/drv/hisi_zip_udrv.c v1/drv/hisi_zip_udrv.h \
 		 v1/drv/hisi_hpre_udrv.c v1/drv/hisi_hpre_udrv.h \
@@ -86,8 +88,8 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd.c wd.h
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
-		lib/crypto/aes.c lib/crypto/galois.c \
-		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h aes.h galois.h
+		lib/crypto/aes.c lib/crypto/sm4.c lib/crypto/galois.c \
+		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h aes.h sm4.h galois.h
 
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h

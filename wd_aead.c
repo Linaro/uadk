@@ -22,9 +22,9 @@ static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 
 /* These algs's name need correct match with alg/mode type */
 static const char *wd_aead_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
-	{"", "authenc(hmac(sha256),cbc(sm4))", "", "", "", "", "", "", "",
+	{"", "authenc(generic,cbc(sm4))", "", "", "", "", "", "", "",
 	"ccm(sm4)", "gcm(sm4)"},
-	{"", "authenc(hmac(sha256),cbc(aes))", "", "", "", "", "", "", "",
+	{"", "authenc(generic,cbc(aes))", "", "", "", "", "", "", "",
 	"ccm(aes)", "gcm(aes)"}
 };
 

@@ -28,6 +28,14 @@
 extern "C" {
 #endif
 
+enum wcrypto_aead_msg_state {
+	WCRYPTO_AEAD_MSG_BLOCK = 0x0,
+	WCRYPTO_AEAD_MSG_FIRST,
+	WCRYPTO_AEAD_MSG_MIDDLE,
+	WCRYPTO_AEAD_MSG_END,
+	WCRYPTO_AEAD_MSG_INVALID,
+};
+
 enum wcrypto_aead_op_type {
 	WCRYPTO_CIPHER_ENCRYPTION_DIGEST,
 	WCRYPTO_CIPHER_DECRYPTION_DIGEST,
@@ -98,6 +106,7 @@ struct wcrypto_aead_op_data {
 	__u16 iv_bytes;
 	__u16 assoc_size;
 	void *priv;
+	enum wcrypto_aead_msg_state state;
 };
 
 /* AEAD message format of Warpdrive */
@@ -126,6 +135,9 @@ struct wcrypto_aead_msg {
 	__u8 *in;		/* Input data VA pointer, should be DMA buffer */
 	__u8 *out;		/* Output data VA pointer, should be DMA buffer */
 	__u64 usr_data;		/* user identifier: struct wcrypto_cb_tag */
+	__u8 *mac;
+	__u64 long_data_len;
+	enum wcrypto_aead_msg_state msg_state;
 };
 
 /**

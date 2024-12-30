@@ -37,7 +37,7 @@ struct hisi_sec_sqe_type1 {
 	__u32 c_key_type:2;
 	__u32 a_key_type:2;
 	__u32 rsvd0:10;
-	__u32 inveld:1;
+	__u32 invalid:1;
 	__u32 mac_len:5;
 	__u32 a_key_len:6;
 	__u32 a_alg:6;
@@ -116,7 +116,7 @@ struct hisi_sec_sqe_type2 {
 	__u32 cal_iv_addr_en:1;
 	__u32 tls_up:1;
 	__u32 rsvd0:5;
-	__u32 inveld:1;
+	__u32 invalid:1;
 	__u32 mac_len:5;
 	__u32 a_key_len:6;
 	__u32 a_alg:6;
@@ -328,7 +328,7 @@ struct bd3_tls_type_back {
 /* the hw v2 sence */
 struct hisi_sec_bd3_sqe {
 	__u32 type:4;
-	__u32 inveld:1;
+	__u32 invalid:1;
 	__u32 scene:4;
 	__u32 de:2;
 	__u32 src_addr_type:3;
@@ -445,7 +445,8 @@ enum A_ALG {
 	A_ALG_AES_CMAC = 0x21,
 	A_ALG_AES_GMAC = 0x22,
 	A_ALG_SM3	   = 0x25,
-	A_ALG_HMAC_SM3 = 0x26
+	A_ALG_HMAC_SM3 = 0x26,
+	A_ALG_SM4_GMAC = 0x31,
 };
 
 enum C_MODE {

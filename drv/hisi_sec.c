@@ -661,7 +661,8 @@ static struct wd_alg_driver digest_alg_driver[] = {
 static struct wd_alg_driver aead_alg_driver[] = {
 	GEN_SEC_ALG_DRIVER("ccm(aes)", aead),
 	GEN_SEC_ALG_DRIVER("gcm(aes)", aead),
-	GEN_SEC_ALG_DRIVER("authenc(hmac(sha256),cbc(aes))", aead),
+	GEN_SEC_ALG_DRIVER("authenc(generic,cbc(aes))", aead),
+	GEN_SEC_ALG_DRIVER("authenc(generic,cbc(sm4))", aead),
 	GEN_SEC_ALG_DRIVER("ccm(sm4)", aead),
 	GEN_SEC_ALG_DRIVER("gcm(sm4)", aead),
 };
@@ -2754,6 +2755,9 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 		break;
 	case WD_DIGEST_SHA512:
 		d_alg = A_ALG_HMAC_SHA512 << SEC_AUTH_ALG_OFFSET_V3;
+		break;
+	case WD_DIGEST_SM3:
+		d_alg = A_ALG_HMAC_SM3 << SEC_AUTH_ALG_OFFSET_V3;
 		break;
 	default:
 		WD_ERR("failed to check aead dalg type, dalg = %u\n",

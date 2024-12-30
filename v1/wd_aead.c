@@ -52,6 +52,9 @@ struct wcrypto_aead_ctx {
 	__u16 iv_blk_size;
 	struct wd_queue *q;
 	struct wcrypto_aead_ctx_setup setup;
+	__u64 long_data_len;
+	__u8 *civ;
+	__u8 *mac;
 };
 
 static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
@@ -83,6 +86,10 @@ static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
 			br->free(br->usr, ctx->ckey);
 		if (ctx->akey)
 			br->free(br->usr, ctx->akey);
+		if (ctx->civ)
+			br->free(br->usr, ctx->civ);
+		if (ctx->mac)
+			br->free(br->usr, ctx->mac);
 	}
 }
 
@@ -228,17 +235,30 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	ctx->akey = setup->br.alloc(setup->br.usr, MAX_AEAD_KEY_SIZE);
 	if (!ctx->akey) {
 		WD_ERR("fail to alloc authenticate ctx key!\n");
-		setup->br.free(setup->br.usr, ctx->ckey);
 		goto free_ctx_ckey;
+	}
+	ctx->civ = setup->br.alloc(setup->br.usr, AES_BLOCK_SIZE);
+	if (!ctx->civ) {
+		WD_ERR("fail to alloc civ for aead ctx!\n");
+		goto free_ctx_akey;
+	}
+	ctx->mac = setup->br.alloc(setup->br.usr, MAX_AEAD_AUTH_SIZE);
+	if (!ctx->mac) {
+		WD_ERR("fail to alloc mac for aead ctx!\n");
+		goto free_ctx_civ;
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->cmode);
 	ret = init_aead_cookie(ctx, setup);
 	if (ret)
-		goto free_ctx_akey;
+		goto free_ctx_mac;
 
 	return ctx;
 
+free_ctx_mac:
+	setup->br.free(setup->br.usr, ctx->mac);
+free_ctx_civ:
+	setup->br.free(setup->br.usr, ctx->civ);
 free_ctx_akey:
 	setup->br.free(setup->br.usr, ctx->akey);
 free_ctx_ckey:
@@ -430,8 +450,49 @@ static int check_op_data(struct wcrypto_aead_op_data **op,
 			return -WD_EINVAL;
 		}
 	}
+	if (unlikely(op[idx]->state >= WCRYPTO_AEAD_MSG_INVALID)) {
+		WD_ERR("fail to check message state: %d, idx: %u!\n",
+		       op[idx]->state, idx);
+		return -WD_EINVAL;
+	} else if (idx && op[idx]->state != WCRYPTO_AEAD_MSG_BLOCK) {
+		WD_ERR("fail to send multiple messages for stream mode!\n");
+		return -WD_EINVAL;
+	}
 
 	return 0;
+}
+
+static void fill_stream_msg(struct wcrypto_aead_msg *req,
+			    struct wcrypto_aead_op_data *op,
+			    struct wcrypto_aead_ctx *ctx)
+{
+	req->msg_state = op->state;
+	req->mac = ctx->mac;
+	switch (op->state) {
+	case WCRYPTO_AEAD_MSG_FIRST:
+		if (req->cmode == WCRYPTO_CIPHER_GCM) {
+			req->iv = ctx->civ;
+			memset(ctx->civ, 0, WCRYPTO_CCM_GCM_LEN);
+			memcpy(ctx->civ, op->iv, op->iv_bytes);
+		}
+		break;
+	case WCRYPTO_AEAD_MSG_MIDDLE:
+		if (req->cmode == WCRYPTO_CIPHER_GCM) {
+			req->iv = ctx->civ;
+			ctx->long_data_len += op->in_bytes;
+			req->long_data_len = ctx->long_data_len;
+		}
+		break;
+	case WCRYPTO_AEAD_MSG_END:
+		if (req->cmode == WCRYPTO_CIPHER_GCM) {
+			req->iv = ctx->civ;
+			req->long_data_len = ctx->long_data_len + op->in_bytes;
+			ctx->long_data_len = 0;
+		}
+		break;
+	default:
+		return;
+	}
 }
 
 static int aead_requests_init(struct wcrypto_aead_msg **req,
@@ -472,6 +533,8 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 			goto err_uninit_requests;
 		}
 	}
+
+	fill_stream_msg(req[0], op[0], ctx);
 
 	return WD_SUCCESS;
 
