@@ -427,6 +427,8 @@ static int hash_do_partial(struct hash_mb_poll_queue *poll_queue,
 			total_len += HASH_BLOCK_SIZE;
 		hash_signle_block_process(d_msg, job, total_len);
 		break;
+	default:
+		break;
 	}
 
 	return ret;
@@ -480,6 +482,8 @@ static void hash_mb_init_iv(struct hash_mb_poll_queue *poll_queue,
 		job->buffer = key_ipad;
 		memcpy(job->result_digest, poll_queue->ops->iv_data, poll_queue->ops->iv_bytes);
 		poll_queue->ops->asimd_x1(job, 1);
+		break;
+	default:
 		break;
 	}
 }

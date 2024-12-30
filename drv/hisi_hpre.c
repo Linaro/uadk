@@ -646,10 +646,10 @@ static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
 	if (hw_msg->done != HPRE_HW_TASK_DONE ||
 			hw_msg->etype || hw_msg->etype1) {
 		WD_ERR("failed to do hpre task! done=0x%x, etype=0x%x, etype1=0x%x!\n",
-			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype, (__u32)hw_msg->etype1);
 		if (hw_msg->etype1 & HPRE_HW_SVA_ERROR)
 			WD_ERR("failed to SVA prefetch: status=%u!\n",
-				hw_msg->sva_status);
+				(__u32)hw_msg->sva_status);
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			*result = WD_EINVAL;
 		else
@@ -967,7 +967,7 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
-	char bsize, dsize;
+	__u32 bsize, dsize;
 	char *dat;
 	int ret;
 
@@ -980,6 +980,10 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 	ret = trans_d_to_hpre_bin(d);
 	if (ret)
 		return ret;
+
+	/* X448 will do specific offset */
+	if (id != WD_X448)
+		d->dsize = d->bsize;
 
 	/*
 	 * This is a pretreatment of X25519/X448, as described in RFC 7748:
@@ -1007,12 +1011,6 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 
 	if (!big_than_one(dat, bsize)) {
 		WD_ERR("failed to prepare ecc prikey: d <= 1!\n");
-		return -WD_EINVAL;
-	}
-
-	if (id != WD_X25519 && id != WD_X448 &&
-		!less_than_latter(d, n)) {
-		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2032,7 +2030,7 @@ static int ecc_out_transfer(struct wd_ecc_msg *msg,
 		 hw_msg->alg == HPRE_ALG_X_DH_MULTIPLY)
 		ret = ecdh_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("invalid: algorithm type %u is error!\n", hw_msg->alg);
+		WD_ERR("invalid: algorithm type %u is error!\n", (__u32)hw_msg->alg);
 
 	return ret;
 }

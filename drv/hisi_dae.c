@@ -303,6 +303,8 @@ static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe)
 	case WD_AGG_REHASH_OUTPUT:
 		sqe->task_type_ext = DAE_HASHAGG_OUTPUT;
 		break;
+	default:
+		break;
 	}
 }
 
@@ -351,6 +353,8 @@ static void fill_hashagg_table_data(struct dae_sqe *sqe, struct dae_addr_list *a
 	case WD_AGG_REHASH_OUTPUT:
 		hw_table = &addr_list->src_table;
 		table_data = &agg_ctx->rehash_table;
+		break;
+	default:
 		break;
 	}
 
@@ -472,6 +476,8 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 		usr_agg_addr = msg->req.out_agg_cols;
 		agg_col_num = cols_data->output_num;
 		fill_hashagg_normal_info(sqe, ext_sqe, cols_data, cols_data->input_num);
+		break;
+	default:
 		break;
 	}
 
@@ -640,7 +646,7 @@ static void fill_hashagg_msg_task_err(struct dae_sqe *sqe, struct wd_agg_msg *ms
 		break;
 	default:
 		WD_ERR("failed to do hashagg task! done_flag=0x%x, etype=0x%x, ext_type = 0x%x!\n",
-			sqe->done_flag, sqe->err_type, sqe->ext_err_type);
+			(__u32)sqe->done_flag, (__u32)sqe->err_type, (__u32)sqe->ext_err_type);
 		msg->result = WD_AGG_PARSE_ERROR;
 		break;
 	}
@@ -751,7 +757,7 @@ static int agg_get_output_num(enum wd_dae_data_type type,
 		(*size16)++;
 		break;
 	default:
-		WD_ERR("invalid: output data type %d not support!\n", type);
+		WD_ERR("invalid: output data type %u not support!\n", type);
 		return -WD_EINVAL;
 	}
 
@@ -808,7 +814,7 @@ static int hashagg_init_param_check(struct wd_agg_sess_setup *setup)
 	}
 
 	if (setup->is_count_all && setup->count_all_data_type != WD_DAE_LONG) {
-		WD_ERR("invalid: count all output data type %d error,  only support long!\n",
+		WD_ERR("invalid: count all output data type %u error,  only support long!\n",
 			setup->count_all_data_type);
 		return -WD_EINVAL;
 	}
@@ -834,6 +840,8 @@ static __u32 hashagg_get_data_type_size(enum dae_data_type type, __u16 data_info
 		return ALIGN(data_info, DAE_CHAR_ALIGN_SIZE);
 	case DAE_VCHAR:
 		return data_info;
+	default:
+		break;
 	}
 
 	return 0;
@@ -873,7 +881,7 @@ static int transfer_key_col_info(struct wd_key_col_info *key_cols,
 			key_data[i].hw_type = DAE_SINT32;
 			break;
 		default:
-			WD_ERR("invalid: unsupport key col %u data type %d!\n",
+			WD_ERR("invalid: unsupport key col %u data type %u!\n",
 				i, key_cols[i].input_data_type);
 			return -WD_EINVAL;
 		}
@@ -948,7 +956,7 @@ static int hashagg_check_sum_info(struct wd_agg_col_info *agg_col,
 	switch (agg_col->input_data_type) {
 	case WD_DAE_LONG:
 		if (agg_col->output_data_types[index] != WD_DAE_LONG) {
-			WD_ERR("invalid: long type do sum output data type %d error!\n",
+			WD_ERR("invalid: long type do sum output data type %u error!\n",
 				agg_col->output_data_types[index]);
 			return -WD_EINVAL;
 		}
@@ -971,7 +979,7 @@ static int hashagg_check_sum_info(struct wd_agg_col_info *agg_col,
 			user_input_data->sum_outtype = DECIMAL64_TO_DECIMAL128;
 			user_output_data->hw_type = DAE_DECIMAL128;
 		} else {
-			WD_ERR("invalid: short decimal do sum output data type %d error!\n",
+			WD_ERR("invalid: short decimal do sum output data type %u error!\n",
 				agg_col->output_data_types[index]);
 			return -WD_EINVAL;
 		}
@@ -979,7 +987,7 @@ static int hashagg_check_sum_info(struct wd_agg_col_info *agg_col,
 		break;
 	case WD_DAE_LONG_DECIMAL:
 		if (agg_col->output_data_types[index] != WD_DAE_LONG_DECIMAL) {
-			WD_ERR("invalid: long decimal do sum output data type %d error!\n",
+			WD_ERR("invalid: long decimal do sum output data type %u error!\n",
 				agg_col->output_data_types[index]);
 			return -WD_EINVAL;
 		}
@@ -990,7 +998,7 @@ static int hashagg_check_sum_info(struct wd_agg_col_info *agg_col,
 		user_output_data->hw_type = DAE_DECIMAL128;
 		break;
 	default:
-		WD_ERR("invalid: device not support col data type %d do sum!\n",
+		WD_ERR("invalid: device not support col data type %u do sum!\n",
 			agg_col->input_data_type);
 		return -WD_EINVAL;
 	}
@@ -1002,12 +1010,12 @@ static int hashagg_check_count_info(enum wd_dae_data_type input_type,
 				    enum wd_dae_data_type output_type)
 {
 	if (input_type > WD_DAE_VARCHAR) {
-		WD_ERR("invalid: device not support agg col data type %d do count!\n", input_type);
+		WD_ERR("invalid: device not support agg col data type %u do count!\n", input_type);
 		return -WD_EINVAL;
 	}
 
 	if (output_type != WD_DAE_LONG) {
-		WD_ERR("invalid: input data type %d do count output data type %d error!\n",
+		WD_ERR("invalid: input data type %u do count output data type %u error!\n",
 			input_type, output_type);
 		return -WD_EINVAL;
 	}
@@ -1039,7 +1047,7 @@ static int hashagg_check_input_data(struct wd_agg_col_info *agg_col,
 		user_output_data->optype = DAE_COUNT;
 		break;
 	default:
-		WD_ERR("invalid: device not support alg %d!\n", agg_col->output_col_algs[index]);
+		WD_ERR("invalid: device not support alg %u!\n", agg_col->output_col_algs[index]);
 		return -WD_EINVAL;
 	}
 	user_output_data->data_info = agg_col->col_data_info;
@@ -1487,7 +1495,7 @@ static int dae_std_table_init(struct hash_table_data *hw_table,
 		return -WD_EINVAL;
 	}
 
-	hw_table->table_width = log2(row_num);
+	hw_table->table_width = (__u32)log2(row_num);
 	if (hw_table->table_width < HASH_TABLE_MIN_WIDTH ||
 	    hw_table->table_width > HASH_TABLE_MAX_WIDTH) {
 		WD_ERR("invalid: standard table width %u is out of device support range %d~%d!\n",
@@ -1495,7 +1503,7 @@ static int dae_std_table_init(struct hash_table_data *hw_table,
 		return -WD_EINVAL;
 	}
 
-	row_num = pow(HASH_TABLE_WITDH_POWER, hw_table->table_width);
+	row_num = (__u64)pow(HASH_TABLE_WITDH_POWER, hw_table->table_width);
 	hw_table->std_table_size = row_num * row_size;
 	memset(hw_table->std_table, 0, hw_table->std_table_size);
 

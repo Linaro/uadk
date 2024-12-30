@@ -2518,7 +2518,7 @@ static int fill_aead_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 	return 0;
 }
 
-int aead_msg_state_check(struct wd_aead_msg *msg)
+static int aead_msg_state_check(struct wd_aead_msg *msg)
 {
 	if (msg->cmode == WD_CIPHER_GCM) {
 		if (unlikely(msg->msg_state >= AEAD_MSG_INVALID)) {

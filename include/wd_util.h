@@ -98,12 +98,12 @@ struct wd_env_config {
 
 struct wd_config_variable {
 	const char *name;
-	char *def_val;
+	const char *def_val;
 	int (*parse_fn)(struct wd_env_config *, const char *);
 };
 
 struct wd_alg_ops {
-	char *alg_name;
+	const char *alg_name;
 	__u8 op_type_num;
 	int (*alg_init)(struct wd_ctx_config *, struct wd_sched *);
 	void (*alg_uninit)(void);
@@ -124,7 +124,7 @@ struct wd_msg_handle {
 
 struct wd_init_attrs {
 	__u32 sched_type;
-	char *alg;
+	const char *alg;
 	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
@@ -476,7 +476,7 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
  *
  * Return device driver if succeed and other NULL if fail.
  */
-struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name);
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name);
 void wd_alg_drv_unbind(struct wd_alg_driver *drv);
 
 /**
@@ -506,7 +506,7 @@ void wd_dlclose_drv(void *dlh_list);
  * @lib_path: the found dynamic library file path.
  * @is_dir: Specify whether to query the file dir or the file path.
  */
-int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir);
+int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx

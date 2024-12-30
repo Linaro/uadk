@@ -194,7 +194,7 @@ struct hisi_zip_ctx {
 static void dump_zip_msg(struct wd_comp_msg *msg)
 {
 	WD_ERR("dump zip message after a task error occurs.\n");
-	WD_ERR("avali_out:%u in_cons:%u produced:%u data_fmt:%d.\n",
+	WD_ERR("avali_out:%u in_cons:%u produced:%u data_fmt:%u.\n",
 		msg->avail_out, msg->in_cons, msg->produced, msg->data_fmt);
 }
 
@@ -653,7 +653,7 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 		sqe->dw9 = val;
 		break;
 	default:
-		WD_ERR("invalid: comp_lv(%d) is unsupport!\n", comp_lv);
+		WD_ERR("invalid: comp_lv(%u) is unsupport!\n", comp_lv);
 		return -WD_EINVAL;
 	}
 
@@ -870,7 +870,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 
 	if (unlikely((hw_type <= HISI_QM_API_VER2_BASE && alg_type > WD_GZIP) ||
 		     (hw_type >= HISI_QM_API_VER3_BASE && alg_type >= WD_COMP_ALG_MAX))) {
-		WD_ERR("invalid: algorithm type is %d!\n", alg_type);
+		WD_ERR("invalid: algorithm type is %u!\n", alg_type);
 		return -WD_EINVAL;
 	}
 

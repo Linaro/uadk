@@ -297,7 +297,7 @@ static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("cipher input alg err, alg is %d.\n", setup->alg);
+		WD_ERR("cipher input alg err, alg is %u.\n", setup->alg);
 		return -WD_EINVAL;
 	}
 

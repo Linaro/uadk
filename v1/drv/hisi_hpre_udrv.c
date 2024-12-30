@@ -533,7 +533,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	kbytes = rsa_msg->key_bytes;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
-			hw_msg->done, hw_msg->etype);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			rsa_msg->result = WD_EINVAL;
 		} else { /* Need to identify which hw err happened */
@@ -740,7 +740,7 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 		return 0;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
-			hw_msg->done, hw_msg->etype);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			dh_msg->result = WD_EINVAL;
 			ret = -WD_EINVAL;
@@ -854,14 +854,8 @@ static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
 
 static int trans_d_to_hpre_bin(struct wd_dtb *d)
 {
-	int ret;
-
-	ret = qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
+	return qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
 					d->bsize, d->dsize, "ecc d");
-	if (unlikely(ret))
-		return ret;
-
-	return 0;
 }
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
@@ -889,7 +883,7 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
-	char bsize, dsize;
+	__u32 bsize, dsize;
 	char *dat;
 	int ret;
 
@@ -902,6 +896,10 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	ret = trans_d_to_hpre_bin(d);
 	if (unlikely(ret))
 		return ret;
+
+	/* X448 will do specific offset */
+	if (id != WCRYPTO_X448)
+		d->dsize = d->bsize;
 
 	dat = d->data;
 	bsize = d->bsize;
@@ -926,12 +924,6 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	} else if (id == WCRYPTO_X448) {
 		dat[55 + bsize - dsize] &= 252;
 		dat[0 + bsize - dsize] |= 128;
-	}
-
-	if (id != WCRYPTO_X25519 && id != WCRYPTO_X448 &&
-	    !less_than_latter(d, n)) {
-		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
-		return -WD_EINVAL;
 	}
 
 	*data = p->data;
@@ -1639,7 +1631,7 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
 		ret = sm2_kg_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
+		WD_ERR("ecc out trans fail alg %u error!\n", (__u32)hw_msg->alg);
 
 	return ret;
 }
@@ -2032,7 +2024,7 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 	if (hw_msg->done != HPRE_HW_TASK_DONE ||
 			hw_msg->etype || hw_msg->etype1) {
 		WD_ERR("HPRE do ecc fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
-			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype, (__u32)hw_msg->etype1);
 
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			ecc_msg->result = WD_EINVAL;

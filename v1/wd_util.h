@@ -111,6 +111,11 @@ struct wd_lock {
 	__u8 lock;
 };
 
+struct wd_fair_lock {
+	__u32 ticket;
+	__u32 serving;
+};
+
 struct wd_ss_region {
 	void *va;
 	unsigned long long pa;
@@ -392,6 +397,9 @@ static inline uint32_t wd_reg_read(void *reg_addr)
 
 void wd_spinlock(struct wd_lock *lock);
 void wd_unspinlock(struct wd_lock *lock);
+void wd_fair_init(struct wd_fair_lock *lock);
+void wd_fair_lock(struct wd_fair_lock *lock);
+void wd_fair_unlock(struct wd_fair_lock *lock);
 void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size);
 void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 		       enum uacce_qfrt qfrt, size_t size);

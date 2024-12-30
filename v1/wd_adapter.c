@@ -150,7 +150,7 @@ void drv_free_slice(struct wd_queue *q)
 	}
 }
 
-void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
+static void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rg;
@@ -167,7 +167,7 @@ void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 	TAILQ_INSERT_TAIL(&qinfo->ss_list, rgn, next);
 }
 
-void drv_show_ss_slices(struct wd_queue *q)
+static void drv_show_ss_slices(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rgn;

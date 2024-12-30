@@ -1356,6 +1356,12 @@ static void *sec_uadk_aead_async(void *arg)
 			break;
 		try_cnt = 0;
 		i = count % MAX_POOL_LENTH;
+
+		if (i == 0 && count > 0) {
+			count++;
+			continue;
+		}
+
 		areq.src = uadk_pool->bds[i].src;
 		areq.dst = uadk_pool->bds[i].dst;
 		areq.mac = uadk_pool->bds[i].mac;
