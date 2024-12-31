@@ -807,6 +807,9 @@ static int hisi_zip_init(void *conf, void *priv)
 	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
+		if (config->ctxs[i].ctx_type != UADK_CTX_HW ||
+		     !config->ctxs[i].ctx)
+			continue;
 		h_ctx = config->ctxs[i].ctx;
 		qm_priv.sqe_size = sizeof(struct hisi_zip_sqe);
 		qm_priv.op_type = config->ctxs[i].op_type;

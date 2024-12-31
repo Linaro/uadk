@@ -561,6 +561,10 @@ static inline void wd_ctx_spin_unlock(struct wd_ctx_internal *ctx, int type)
 	pthread_spin_unlock(&ctx->lock);
 }
 
+int wd_queue_is_busy(struct wd_soft_ctx *sctx);
+int wd_get_sqe_from_queue(struct wd_soft_ctx *sctx, __u32 tag_id);
+int wd_put_sqe_to_queue(struct wd_soft_ctx *sctx, __u32 *tag_id, __u8 *result);
+
 #ifdef __cplusplus
 }
 #endif

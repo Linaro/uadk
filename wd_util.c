@@ -3077,3 +3077,68 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
 	free(ctx_config);
 	wd_sched_rr_release(alg_sched);
 }
+
+int wd_queue_is_busy(struct wd_soft_ctx *sctx)
+{
+	/* The queue is not used */
+	if (sctx->run_num >= MAX_SOFT_QUEUE_LENGTH - 1)
+		return -WD_EBUSY;
+
+	return 0;
+}
+
+int wd_get_sqe_from_queue(struct wd_soft_ctx *sctx, __u32 tag_id)
+{
+	struct wd_soft_sqe *sqe = NULL;
+
+	pthread_spin_lock(&sctx->slock);
+	sqe = &sctx->qfifo[sctx->head];
+	if (!sqe->used && !sqe->complete) { // find the next not used sqe
+		sctx->head++;
+		if (unlikely(sctx->head == MAX_SOFT_QUEUE_LENGTH))
+			sctx->head = 0;
+
+		sqe->used = 1;
+		sqe->complete = 1;
+		sqe->id = tag_id;
+		sqe->result = 0;
+		__atomic_fetch_add(&sctx->run_num, 0x1, __ATOMIC_ACQUIRE);
+		pthread_spin_unlock(&sctx->slock);
+	} else {
+		pthread_spin_unlock(&sctx->slock);
+		return -WD_EBUSY;
+	}
+
+	return 0;
+}
+
+int wd_put_sqe_to_queue(struct wd_soft_ctx *sctx, __u32 *tag_id, __u8 *result)
+{
+	struct wd_soft_sqe *sqe = NULL;
+
+	/* The queue is not used */
+	if (sctx->run_num < 1)
+		return -WD_EAGAIN;
+
+	if (pthread_spin_trylock(&sctx->rlock))
+		return -WD_EAGAIN;
+	sqe = &sctx->qfifo[sctx->tail];
+	if (sqe->used && sqe->complete) { // find a used sqe
+		sctx->tail++;
+		if (unlikely(sctx->tail == MAX_SOFT_QUEUE_LENGTH))
+			sctx->tail = 0;
+
+		*tag_id = sqe->id;
+		*result = sqe->result;
+ 		sqe->used = 0x0;
+ 		sqe->complete = 0x0;
+ 		__atomic_fetch_sub(&sctx->run_num, 0x1, __ATOMIC_ACQUIRE);
+		pthread_spin_unlock(&sctx->rlock);
+	} else {
+		pthread_spin_unlock(&sctx->rlock);
+		return -WD_EAGAIN;
+	}
+
+	return 0;
+}
+

@@ -3095,6 +3095,9 @@ static int hisi_sec_init(void *conf, void *priv)
 	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
+		if (config->ctxs[i].ctx_type != UADK_CTX_HW ||
+		     !config->ctxs[i].ctx)
+			continue;
 		h_ctx = config->ctxs[i].ctx;
 		/* setting the type is 0 for sqc_type */
 		qm_priv.op_type = 0;
