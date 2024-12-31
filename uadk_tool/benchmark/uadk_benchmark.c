@@ -423,9 +423,10 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = DIGEST_TYPE;
 			option->acctype = SEC_TYPE;
 			if (option->modetype == INSTR_MODE) {
-				option->sched_type = SCHED_POLICY_NONE;
+				option->subtype = DIGEST_INSTR_TYPE;
 				option->task_type = TASK_INSTR;
 			} else if (option->modetype == MULTIBUF_MODE) {
+				option->subtype = DIGEST_INSTR_TYPE;
 				option->sched_type = SCHED_POLICY_SINGLE;
 				option->task_type = TASK_INSTR;
 			}

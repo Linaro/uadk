@@ -785,6 +785,7 @@ static void uninit_ctx_config2(int subtype)
 		wd_aead_uninit2();
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		wd_digest_uninit2();
 		break;
 	default:
@@ -793,13 +794,15 @@ static void uninit_ctx_config2(int subtype)
 	}
 }
 
+struct wd_ctx_nums ctx_set_num[2];
+struct wd_ctx_nums ce_ctx_set_num[2];
+struct wd_cap_config cap;
+
 static int init_ctx_config2(struct acc_option *options)
 {
-	struct wd_ctx_params cparams = {0};
-	struct wd_ctx_nums *ctx_set_num;
 	int subtype = options->subtype;
-	int mode = options->syncmode;
 	char alg_name[MAX_ALG_NAME];
+	struct wd_ctx_params ctx_params = {0};
 	int ret;
 
 	ret = get_alg_name(options->algtype, alg_name);
@@ -808,61 +811,68 @@ static int init_ctx_config2(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
-	if (!ctx_set_num) {
-		WD_ERR("failed to alloc ctx_set_size!\n");
-		return -WD_ENOMEM;
-	}
+	cap.ctx_msg_num = 1024;
+	// HW ctx set
+	ctx_set_num[0].sync_ctx_num = options->ctxnums;
+	ctx_set_num[0].async_ctx_num = options->ctxnums;
+	ctx_set_num[1].sync_ctx_num = options->ctxnums;
+	ctx_set_num[1].async_ctx_num = options->ctxnums;
+	// CE ctx set
+	ce_ctx_set_num[0].sync_ctx_num = options->ctxnums;
+	ce_ctx_set_num[0].async_ctx_num = options->ctxnums;
+	ce_ctx_set_num[0].ctx_prop = UADK_CTX_CE_INS;
+	ce_ctx_set_num[0].other_ctx = NULL;
+	ce_ctx_set_num[1].sync_ctx_num = options->ctxnums;
+	ce_ctx_set_num[1].async_ctx_num = options->ctxnums;
+	ce_ctx_set_num[1].ctx_prop = UADK_CTX_CE_INS;
+	ce_ctx_set_num[1].other_ctx = NULL;
 
-	cparams.op_type_num = 1;
-	cparams.ctx_set_num = ctx_set_num;
-	cparams.bmp = numa_allocate_nodemask();
-	if (!cparams.bmp) {
-		WD_ERR("failed to create nodemask!\n");
-		ret = -WD_ENOMEM;
-		goto out_freectx;
-	}
+	ctx_set_num[0].other_ctx = &ce_ctx_set_num[0];
+	ctx_set_num[1].other_ctx = &ce_ctx_set_num[1];
 
-	numa_bitmask_setall(cparams.bmp);
-
-	if (mode == CTX_MODE_SYNC)
-		ctx_set_num->sync_ctx_num = g_ctxnum;
-	else
-		ctx_set_num->async_ctx_num = g_ctxnum;
+	ctx_params.op_type_num = 2;
+	ctx_params.bmp = numa_allocate_nodemask();
+	numa_bitmask_setbit(ctx_params.bmp, 0);
+	numa_bitmask_setbit(ctx_params.bmp, 1);
+	ctx_params.cap = &cap;
+	ctx_params.ctx_set_num = &ctx_set_num[0];
 
 	/* init */
 	switch(subtype) {
 	case CIPHER_TYPE:
-		ret = wd_cipher_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_cipher_init2_(alg_name, SCHED_POLICY_HUNGRY, TASK_MIX, &ctx_params);
 		if (ret)
 			SEC_TST_PRT("failed to do cipher init2!\n");
 		break;
 	case CIPHER_INSTR_TYPE:
-		ret = wd_cipher_init2(alg_name, SCHED_POLICY_NONE, TASK_INSTR);
+		ret = wd_cipher_init2_(alg_name, SCHED_POLICY_INSTR, TASK_INSTR, &ctx_params);
 		if (ret)
 			SEC_TST_PRT("failed to do cipher intruction init2!\n");
 		break;
 	case AEAD_TYPE:
-		ret = wd_aead_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_aead_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &ctx_params);
 		if (ret)
 			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
-		ret = wd_digest_init2_(alg_name, options->sched_type, options->task_type, &cparams);
+		ctx_params.op_type_num = 1;
+		ret = wd_digest_init2_(alg_name, SCHED_POLICY_HUNGRY, TASK_MIX, &ctx_params);
 		if (ret)
 			SEC_TST_PRT("failed to do digest init2!\n");
 		break;
+	case DIGEST_INSTR_TYPE:
+		ctx_params.op_type_num = 1;
+		ret = wd_digest_init2_(alg_name, SCHED_POLICY_INSTR, TASK_INSTR, &ctx_params);
+		if (ret)
+			SEC_TST_PRT("failed to do digest intruction init2!\n");
+		break;
 	}
 	if (ret) {
-		SEC_TST_PRT("failed to do cipher init2!\n");
+		SEC_TST_PRT("failed to do sec init2!\n");
 		return ret;
 	}
 
-out_freectx:
-	free(ctx_set_num);
-
 	return ret;
-
 }
 
 static void get_aead_data(u8 *addr, u32 size)
@@ -1180,6 +1190,12 @@ static void *sec_uadk_poll2(void *data)
 		uadk_poll_policy = wd_aead_poll;
 		break;
 	case DIGEST_TYPE:
+		uadk_poll_policy = wd_digest_poll;
+		break;
+	case CIPHER_INSTR_TYPE:
+		uadk_poll_policy = wd_cipher_poll;
+		break;
+	case DIGEST_INSTR_TYPE:
 		uadk_poll_policy = wd_digest_poll;
 		break;
 	default:
@@ -1689,6 +1705,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		uadk_sec_sync_run = sec_uadk_aead_sync;
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		uadk_sec_sync_run = sec_uadk_digest_sync;
 		break;
 	default:
@@ -1744,12 +1761,14 @@ int sec_uadk_async_threads(struct acc_option *options)
 
 	switch (options->subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		uadk_sec_async_run = sec_uadk_cipher_async;
 		break;
 	case AEAD_TYPE:
 		uadk_sec_async_run = sec_uadk_aead_async;
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		uadk_sec_async_run = sec_uadk_digest_async;
 		break;
 	}

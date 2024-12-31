@@ -109,6 +109,7 @@ enum alg_type {
 	X25519_TYPE,
 	X448_TYPE,
 	CIPHER_INSTR_TYPE,
+	DIGEST_INSTR_TYPE,
 };
 
 enum sync_type {
