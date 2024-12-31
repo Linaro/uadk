@@ -32,6 +32,7 @@ struct sched_params {
 	__u8 mode;
 	__u32 begin;
 	__u32 end;
+	int ctx_prop;
 };
 
 typedef int (*user_poll_func)(__u32 pos, __u32 expect, __u32 *count);

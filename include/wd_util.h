@@ -124,13 +124,14 @@ struct wd_msg_handle {
 
 struct wd_init_attrs {
 	__u32 sched_type;
-	const char *alg;
-	struct wd_alg_driver *driver;
+	__u32 task_type;
+	char *alg;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
 	struct wd_ctx_config *ctx_config;
 	wd_alg_init alg_init;
 	wd_alg_poll_ctx alg_poll_ctx;
+	struct wd_alg_driver *driver; //stub for old code
 };
 
 /*
@@ -170,6 +171,9 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in);
  * @size: the data length.
  */
 void wd_memset_zero(void *data, __u32 size);
+
+int wd_ctx_drv_config(char *alg_name,	struct wd_ctx_config_internal *ctx_config);
+void wd_ctx_drv_deconfig(struct wd_ctx_config_internal *ctx_config);
 
 /*
  * wd_init_async_request_pool() - Init async message pools.
@@ -450,6 +454,10 @@ static inline void wd_alg_clear_init(enum wd_status *status)
  *
  * Return 0 if succeed and other error number if fail.
  */
+int wd_ctx_param_init_nw(struct wd_ctx_params *ctx_params,
+		      struct wd_ctx_params *user_ctx_params,
+		      char *alg, int task_type, enum wd_type type,
+		      int max_op_type);
 int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		      struct wd_ctx_params *user_ctx_params,
 		      struct wd_alg_driver *driver,
@@ -470,12 +478,12 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
 /**
  * wd_alg_drv_bind() - Request the ctxs and initialize the sched_domain
  *                     with the given devices list, ctxs number and numa mask.
- * @task_type: the type of task specified by the current algorithm.
+ * @ctx_type: the type of ctx specified by the current algorithm.
  * @alg_name: the name of the algorithm specified by the task.
  *
  * Return device driver if succeed and other NULL if fail.
  */
-struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name);
+struct wd_alg_driver *wd_alg_drv_bind(__u8 ctx_prop, char *alg_name);
 void wd_alg_drv_unbind(struct wd_alg_driver *drv);
 
 /**
@@ -487,6 +495,8 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv);
  *
  * Return 0 if succeed and other error number if fail.
  */
+int wd_alg_init_driver_nw(struct wd_ctx_config_internal *config);
+void wd_alg_uninit_driver_nw(struct wd_ctx_config_internal *config);
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 	struct wd_alg_driver *driver, void **drv_priv);
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,

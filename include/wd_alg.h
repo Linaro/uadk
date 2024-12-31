@@ -62,14 +62,23 @@ extern "C" {
 # define HWCAP2_RNG             (1 << 16)
 #endif
 
-enum alg_dev_type {
-	UADK_ALG_SOFT = 0x0,
+enum alg_priority {
+	UADK_ALG_HW = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,
 	UADK_ALG_SVE_INSTR = 0x2,
-	UADK_ALG_HW = 0x3
+	UADK_ALG_SOFT = 0x3
 };
 
-/*
+enum alg_drv_type {
+	ALG_DRV_HW = 0x0,
+	ALG_DRV_CE_INS,
+	ALG_DRV_SVE_INS,
+	ALG_DRV_SOFT,
+	ALG_DRV_INS,
+	ALG_DRV_FB,
+};
+
+/**
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
  * @priority: priority of the type of algorithm supported by the driver
@@ -107,6 +116,7 @@ struct wd_alg_driver {
 	int	op_type_num;
 	int	priv_size;
 	handle_t fallback;
+	int	init_state;
 
 	int (*init)(void *conf, void *priv);
 	void (*exit)(void *priv);
@@ -155,7 +165,7 @@ struct wd_alg_list {
  *
  * Returns the applied algorithm driver, non means error.
  */
-struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
+struct wd_alg_driver *wd_request_drv(const char *alg_name, int drv_type);
 void wd_release_drv(struct wd_alg_driver *drv);
 
 /*
@@ -165,8 +175,7 @@ void wd_release_drv(struct wd_alg_driver *drv);
  *
  * Return check result.
  */
-bool wd_drv_alg_support(const char *alg_name,
-	struct wd_alg_driver *drv);
+bool wd_drv_alg_support(const char *alg_name, void *param);
 
 /*
  * wd_enable_drv() - Re-enable use of the current device driver.

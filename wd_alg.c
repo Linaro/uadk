@@ -12,7 +12,7 @@
 #include <sys/auxv.h>
 
 #include "wd.h"
-#include "wd_alg.h"
+#include "wd_alg_common.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 #define SVA_FILE_NAME			"flags"
@@ -271,21 +271,26 @@ struct wd_alg_list *wd_get_alg_head(void)
 	return &alg_list_head;
 }
 
-bool wd_drv_alg_support(const char *alg_name,
-			struct wd_alg_driver *drv)
+bool wd_drv_alg_support(const char *alg_name, void *param)
 {
+	struct wd_ctx_config_internal *config = param;
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
+	struct wd_alg_driver *drv;
+	__u32 i;
 
-	if (!alg_name || !drv)
+	if (!alg_name || !config)
 		return false;
 
-	while (pnext) {
-		if (!strcmp(alg_name, pnext->alg_name) &&
-		     !strcmp(drv->drv_name, pnext->drv_name)) {
-			return true;
+	for (i = 0; i < config->ctx_num; i++) {
+		drv = config->ctxs[i].drv;
+		while (pnext) {
+			if (!strcmp(alg_name, pnext->alg_name) &&
+			     !strcmp(drv->drv_name, pnext->drv_name)) {
+				return true;
+			}
+			pnext = pnext->next;
 		}
-		pnext = pnext->next;
 	}
 
 	return false;
@@ -331,7 +336,7 @@ void wd_disable_drv(struct wd_alg_driver *drv)
 	pthread_mutex_unlock(&mutex);
 }
 
-struct wd_alg_driver *wd_request_drv(const char *alg_name, bool hw_mask)
+struct wd_alg_driver *wd_request_drv(const char *alg_name, int drv_type)
 {
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
@@ -352,18 +357,32 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, bool hw_mask)
 	/* Check the list to get an best driver */
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
-		/* hw_mask true mean not to used hardware dev */
-		if ((hw_mask && pnext->drv->calc_type == UADK_ALG_HW) ||
-		    (!hw_mask && pnext->drv->calc_type != UADK_ALG_HW)) {
-			pnext = pnext->next;
-			continue;
-		}
+		if (!strcmp(alg_name, pnext->alg_name) && pnext->available) {
+			/* HW driver   mean to used hardware dev */
+			if (drv_type == ALG_DRV_HW && pnext->drv->calc_type == UADK_ALG_HW)
+				select_node = pnext;
+			/* CE driver   mean to used CE dev */
+			else if (drv_type == ALG_DRV_CE_INS && pnext->drv->calc_type == UADK_ALG_CE_INSTR)
+				select_node = pnext;
+			/* SVE driver   mean to used SVE dev */
+			else if (drv_type == ALG_DRV_SVE_INS && pnext->drv->calc_type == UADK_ALG_SVE_INSTR)
+				select_node = pnext;
+			/* INS driver mean to used CE and SVE dev */
+			else if (drv_type == ALG_DRV_INS && (pnext->drv->calc_type == UADK_ALG_CE_INSTR ||
+				   pnext->drv->calc_type == UADK_ALG_SVE_INSTR))
+				select_node = pnext;
+			/* Soft driver mean to used Soft, CE and SVE dev */
+			else if (drv_type == ALG_DRV_SOFT && pnext->drv->calc_type != UADK_ALG_HW)
+				select_node = pnext;
+			/* Fallback driver mean to used Soft or CE dev */
+			else if (drv_type == ALG_DRV_FB && (pnext->drv->calc_type == UADK_ALG_SOFT ||
+				    pnext->drv->calc_type == UADK_ALG_CE_INSTR))
+				select_node = pnext;
 
-		if (!strcmp(alg_name, pnext->alg_name) && pnext->available &&
-		    pnext->drv->priority > tmp_priority) {
-			tmp_priority = pnext->drv->priority;
-			select_node = pnext;
-			drv = pnext->drv;
+			if (select_node && select_node->drv->priority > tmp_priority) {
+				drv = select_node->drv;
+				tmp_priority = select_node->drv->priority;
+			}
 		}
 		pnext = pnext->next;
 	}
