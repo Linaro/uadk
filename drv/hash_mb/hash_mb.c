@@ -186,52 +186,41 @@ free_mb_queue:
 	return ret;
 }
 
-static int hash_mb_init(struct wd_alg_driver *drv, void *conf)
+static int hash_mb_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct hash_mb_ctx *priv;
-	int ret;
+	struct hash_mb_ctx *mb_ctx = priv;
 
 	/* Fallback init is NULL */
-	if (!drv || !conf)
+	if (!conf || !priv)
 		return 0;
-
-	priv = malloc(sizeof(struct hash_mb_ctx));
-	if (!priv)
-		return -WD_ENOMEM;
 
 	/* multibuff does not use epoll. */
 	config->epoll_en = 0;
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
+	memcpy(&mb_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 
-	ret = hash_mb_queue_init(config);
-	if (ret) {
-		free(priv);
-		return ret;
-	}
-
-	drv->priv = priv;
-
-	return WD_SUCCESS;
+	return hash_mb_queue_init(config);
 }
 
-static void hash_mb_exit(struct wd_alg_driver *drv)
+static void hash_mb_exit(void *priv)
 {
-	if(!drv || !drv->priv)
+	struct hash_mb_ctx *mb_ctx = priv;
+	struct wd_ctx_config_internal *config;
+
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
 		return;
+	}
 
-	struct hash_mb_ctx *priv = (struct hash_mb_ctx *)drv->priv;
-
-	hash_mb_queue_uninit(&priv->config, priv->config.ctx_num);
-	free(priv);
-	drv->priv = NULL;
+	config = &mb_ctx->config;
+	hash_mb_queue_uninit(config, config->ctx_num);
 }
 
 static void hash_mb_pad_data(struct hash_pad *hash_pad, __u8 *in, __u32 partial,
 		     __u64 total_len, bool transfer)
 {
-	__u64 size = total_len << BYTES_TO_BITS_OFFSET;
 	__u8 *buffer = hash_pad->pad;
+	__u64 size = total_len << 3;
 
 	if (partial)
 		memcpy(buffer, in, partial);
@@ -266,7 +255,7 @@ static inline void hash_xor(__u8 *key_out, __u8 *key_in, __u32 key_len, __u8 xor
 		if (i < key_len)
 			key_out[i] = key_in[i] ^ xor_value;
 		else
-			key_out[i] = xor_value;
+			key_out[i] = 0x0 ^ xor_value;
 	}
 }
 
@@ -554,7 +543,7 @@ static int hash_mb_check_param(struct hash_mb_queue *mb_queue, struct wd_digest_
 	return WD_SUCCESS;
 }
 
-static int hash_mb_send(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
+static int hash_mb_send(handle_t ctx, void *drv_msg)
 {
 	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)ctx;
 	struct hash_mb_queue *mb_queue = s_ctx->priv;
@@ -775,7 +764,7 @@ static int hash_mb_do_jobs(struct hash_mb_queue *mb_queue)
 	return WD_SUCCESS;
 }
 
-static int hash_mb_recv(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
+static int hash_mb_recv(handle_t ctx, void *drv_msg)
 {
 	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)ctx;
 	struct hash_mb_queue *mb_queue = s_ctx->priv;
@@ -809,6 +798,7 @@ static int hash_mb_get_usage(void *param)
 	.alg_name = (hash_alg_name),\
 	.calc_type = UADK_ALG_SVE_INSTR,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hash_mb_ctx),\
 	.queue_num = 1,\
 	.op_type_num = 1,\
 	.fallback = 0,\

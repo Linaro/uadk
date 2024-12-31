@@ -1821,8 +1821,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 	return 0;
 }
 
-int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
-		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en)
+int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
+		       void *msg, __u64 *balance, bool epoll_en)
 {
 	__u64 timeout = WD_RECV_MAX_CNT_NOSLEEP;
 	__u64 rx_cnt = 0;
@@ -1831,7 +1831,7 @@ int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_hand
 	if (balance)
 		timeout = WD_RECV_MAX_CNT_SLEEP;
 
-	ret = msg_handle->send(drv, ctx, msg);
+	ret = msg_handle->send(ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send msg to hw, ret = %d!\n", ret);
 		return ret;
@@ -1844,7 +1844,7 @@ int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_hand
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
 		}
 
-		ret = msg_handle->recv(drv, ctx, msg);
+		ret = msg_handle->recv(ctx, msg);
 		if (ret != -WD_EAGAIN) {
 			if (unlikely(ret < 0)) {
 				WD_ERR("failed to recv msg: error = %d!\n", ret);
@@ -1953,9 +1953,20 @@ static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
 }
 
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-		       struct wd_alg_driver *driver)
+	struct wd_alg_driver *driver, void **drv_priv)
 {
+	void *priv;
 	int ret;
+
+	if (!driver->priv_size) {
+		WD_ERR("invalid: driver priv ctx size is zero!\n");
+		return -WD_EINVAL;
+	}
+
+	/* Init ctx related resources in specific driver */
+	priv = calloc(1, driver->priv_size);
+	if (!priv)
+		return -WD_ENOMEM;
 
 	if (!driver->init) {
 		driver->fallback = 0;
@@ -1964,7 +1975,7 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 		goto err_alloc;
 	}
 
-	ret = driver->init(driver, config);
+	ret = driver->init(config, priv);
 	if (ret < 0) {
 		WD_ERR("driver init failed.\n");
 		goto err_alloc;
@@ -1977,23 +1988,31 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 			WD_ERR("soft alg driver init failed.\n");
 		}
 	}
+	*drv_priv = priv;
 
 	return 0;
 
 err_alloc:
+	free(priv);
 	return ret;
 }
 
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-			  struct wd_alg_driver *driver)
+	struct wd_alg_driver *driver, void **drv_priv)
 {
+	void *priv = *drv_priv;
 
-	driver->exit(driver);
+	driver->exit(priv);
 	/* Ctx config just need clear once */
 	wd_clear_ctx_config(config);
 
 	if (driver->fallback)
 		wd_alg_uninit_fallback((struct wd_alg_driver *)driver->fallback);
+
+	if (priv) {
+		free(priv);
+		*drv_priv = NULL;
+	}
 }
 
 void wd_dlclose_drv(void *dlh_list)

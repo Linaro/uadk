@@ -524,7 +524,7 @@ static int check_hashagg_param(struct wd_agg_msg *msg)
 	return WD_SUCCESS;
 }
 
-static int hashagg_send(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_msg)
+static int hashagg_send(handle_t ctx, void *hashagg_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -657,7 +657,7 @@ static void fill_hashagg_msg_task_err(struct dae_sqe *sqe, struct wd_agg_msg *ms
 	}
 }
 
-static int hashagg_recv(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_msg)
+static int hashagg_recv(handle_t ctx, void *hashagg_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -1554,11 +1554,11 @@ update_table:
 	return ret;
 }
 
-static int dae_init(struct wd_alg_driver *drv, void *conf)
+static int dae_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
+	struct hisi_dae_ctx *dae_ctx = priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_dae_ctx *priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
 	__u32 i, j;
@@ -1568,10 +1568,6 @@ static int dae_init(struct wd_alg_driver *drv, void *conf)
 		WD_ERR("invalid: dae init config is null or ctx num is 0!\n");
 		return -WD_EINVAL;
 	}
-
-	priv = malloc(sizeof(struct hisi_dae_ctx));
-	if (!priv)
-		return -WD_ENOMEM;
 
 	qm_priv.op_type = DAE_HASH_AGG_TYPE;
 	qm_priv.sqe_size = sizeof(struct dae_sqe);
@@ -1593,10 +1589,9 @@ static int dae_init(struct wd_alg_driver *drv, void *conf)
 		if (ret)
 			goto free_h_qp;
 	}
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
+	memcpy(&dae_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 
-	return WD_SUCCESS;
+	return 0;
 
 free_h_qp:
 	hisi_qm_free_qp(h_qp);
@@ -1606,29 +1601,27 @@ out:
 		dae_uninit_qp_priv(h_qp);
 		hisi_qm_free_qp(h_qp);
 	}
-	free(priv);
 	return ret;
 }
 
-static void dae_exit(struct wd_alg_driver *drv)
+static void dae_exit(void *priv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct hisi_dae_ctx *priv = (struct hisi_dae_ctx *)drv->priv;
+	struct hisi_dae_ctx *dae_ctx = priv;
 	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
 
-	config = &priv->config;
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
+		return;
+	}
+
+	config = &dae_ctx->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		dae_uninit_qp_priv(h_qp);
 		hisi_qm_free_qp(h_qp);
 	}
-
-	free(priv);
-	drv->priv = NULL;
 }
 
 static int dae_get_usage(void *param)
@@ -1656,6 +1649,7 @@ static struct wd_alg_driver hashagg_driver = {
 	.alg_name = "hashagg",
 	.calc_type = UADK_ALG_HW,
 	.priority = 100,
+	.priv_size = sizeof(struct hisi_dae_ctx),
 	.queue_num = DAE_CTX_Q_NUM_DEF,
 	.op_type_num = 1,
 	.fallback = 0,

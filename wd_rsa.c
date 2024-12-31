@@ -75,6 +75,7 @@ static struct wd_rsa_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_rsa_setting;
@@ -180,7 +181,8 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_rsa_setting.config,
-				 wd_rsa_setting.driver);
+				 wd_rsa_setting.driver,
+				 &wd_rsa_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -197,11 +199,10 @@ out_clear_ctx_config:
 
 static int wd_rsa_common_uninit(void)
 {
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_rsa_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!wd_rsa_setting.priv) {
+		WD_ERR("invalid: repeat uninit rsa!\n");
 		return -WD_EINVAL;
+	}
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
@@ -209,7 +210,8 @@ static int wd_rsa_common_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_rsa_setting.sched);
 	wd_alg_uninit_driver(&wd_rsa_setting.config,
-			     wd_rsa_setting.driver);
+			     wd_rsa_setting.driver,
+			     &wd_rsa_setting.priv);
 
 	return WD_SUCCESS;
 }
@@ -446,8 +448,8 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	msg_handle.recv = wd_rsa_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_rsa_setting.driver, &msg_handle, ctx->ctx, &msg,
-				 &balance, wd_rsa_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_rsa_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -493,7 +495,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_rsa_setting.driver, ctx->ctx, msg);
+	ret = wd_rsa_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send rsa BD, hw is err!\n");
@@ -542,7 +544,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_rsa_setting.driver, ctx->ctx, &recv_msg);
+		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

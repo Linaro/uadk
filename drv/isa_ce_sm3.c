@@ -22,10 +22,10 @@
 typedef void (sm3_ce_block_fn)(__u32 word_reg[SM3_STATE_WORDS],
 				const unsigned char *src, size_t blocks);
 
-static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf);
-static void sm3_ce_drv_exit(struct wd_alg_driver *drv);
-static int sm3_ce_drv_send(struct wd_alg_driver *drv, handle_t ctx, void *digest_msg);
-static int sm3_ce_drv_recv(struct wd_alg_driver *drv, handle_t ctx, void *digest_msg);
+static int sm3_ce_drv_init(void *conf, void *priv);
+static void sm3_ce_drv_exit(void *priv);
+static int sm3_ce_drv_send(handle_t ctx, void *digest_msg);
+static int sm3_ce_drv_recv(handle_t ctx, void *digest_msg);
 static int sm3_ce_get_usage(void *param);
 
 static struct wd_alg_driver sm3_ce_alg_driver = {
@@ -33,6 +33,7 @@ static struct wd_alg_driver sm3_ce_alg_driver = {
 	.alg_name = "sm3",
 	.calc_type = UADK_ALG_CE_INSTR,
 	.priority = 200,
+	.priv_size = sizeof(struct sm3_ce_drv_ctx),
 	.queue_num = 1,
 	.op_type_num = 1,
 	.fallback = 0,
@@ -337,7 +338,7 @@ static int do_hmac_sm3_ce(struct wd_digest_msg *msg, __u8 *out_hmac)
 	return WD_SUCCESS;
 }
 
-static int sm3_ce_drv_send(struct wd_alg_driver *drv, handle_t ctx, void *digest_msg)
+static int sm3_ce_drv_send(handle_t ctx, void *digest_msg)
 {
 	struct wd_digest_msg *msg = (struct wd_digest_msg *)digest_msg;
 	__u8 digest[SM3_DIGEST_SIZE] = {0};
@@ -365,38 +366,26 @@ static int sm3_ce_drv_send(struct wd_alg_driver *drv, handle_t ctx, void *digest
 	return ret;
 }
 
-static int sm3_ce_drv_recv(struct wd_alg_driver *drv, handle_t ctx, void *digest_msg)
+static int sm3_ce_drv_recv(handle_t ctx, void *digest_msg)
 {
 	return WD_SUCCESS;
 }
 
-static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf)
+static int sm3_ce_drv_init(void *conf, void *priv)
 {
-	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
-	struct sm3_ce_drv_ctx *priv;
+	struct wd_ctx_config_internal *config = conf;
+	struct sm3_ce_drv_ctx *sctx = priv;
 
 	/* Fallback init is NULL */
-	if (!drv || !conf)
+	if (!conf || !priv)
 		return 0;
 
-	priv = malloc(sizeof(struct sm3_ce_drv_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	config->epoll_en = 0;
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
+	memcpy(&sctx->config, config, sizeof(struct wd_ctx_config_internal));
 
 	return WD_SUCCESS;
 }
 
-static void sm3_ce_drv_exit(struct wd_alg_driver *drv)
+static void sm3_ce_drv_exit(void *priv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct sm3_ce_drv_ctx *sctx = (struct sm3_ce_drv_ctx *)drv->priv;
-
-	free(sctx);
-	drv->priv = NULL;
 }

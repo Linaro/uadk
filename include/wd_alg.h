@@ -84,7 +84,8 @@ enum alg_dev_type {
  *		 execute the algorithm task
  * @op_type_num: number of modes in which the device executes the
  *		 algorithm business and requires queues to be executed separately
- * @priv: pointer of priv ctx
+ * @priv_size: parameter memory size passed between the internal
+ *		 interfaces of the driver
  * @fallback: soft calculation driver handle when performing soft
  *		 calculation supplement
  * @init: callback interface for initializing device drivers
@@ -104,38 +105,18 @@ struct wd_alg_driver {
 	int	calc_type;
 	int	queue_num;
 	int	op_type_num;
-	void	*priv;
+	int	priv_size;
 	handle_t fallback;
 
-	int (*init)(struct wd_alg_driver *drv, void *conf);
-	void (*exit)(struct wd_alg_driver *drv);
-	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
-	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*init)(void *conf, void *priv);
+	void (*exit)(void *priv);
+	int (*send)(handle_t ctx, void *drv_msg);
+	int (*recv)(handle_t ctx, void *drv_msg);
 	int (*get_usage)(void *param);
 	int (*get_extend_ops)(void *ops);
 };
 
-inline int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
-{
-	return drv->init(drv, conf);
-}
-
-inline void wd_alg_driver_exit(struct wd_alg_driver *drv)
-{
-	drv->exit(drv);
-}
-
-inline int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
-{
-	return drv->send(drv, ctx, msg);
-}
-
-inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
-{
-	return drv->recv(drv, ctx, msg);
-}
-
-/*
+/**
  * wd_alg_driver_register() - Register a device driver.
  * @wd_alg_driver: a device driver that supports an algorithm.
  *

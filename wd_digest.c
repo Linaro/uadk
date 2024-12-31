@@ -42,6 +42,7 @@ struct wd_digest_setting {
 	struct wd_sched sched;
 	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_digest_setting;
@@ -277,7 +278,8 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_digest_setting.config,
-				 wd_digest_setting.driver);
+				 wd_digest_setting.driver,
+				 &wd_digest_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -326,29 +328,21 @@ out_clear_init:
 	return ret;
 }
 
-static int wd_digest_uninit_nolock(void)
+static void wd_digest_uninit_nolock(void)
 {
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_digest_setting.status, &status);
-	if (status == WD_UNINIT)
-		return -WD_EINVAL;
-
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 	wd_clear_sched(&wd_digest_setting.sched);
 	wd_alg_uninit_driver(&wd_digest_setting.config,
-			     wd_digest_setting.driver);
-	return 0;
+			     wd_digest_setting.driver,
+			     &wd_digest_setting.priv);
 }
 
 void wd_digest_uninit(void)
 {
-	int ret;
-
-	ret = wd_digest_uninit_nolock();
-	if (ret)
+	if (!wd_digest_setting.priv)
 		return;
 
+	wd_digest_uninit_nolock();
 	wd_digest_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
@@ -450,12 +444,10 @@ out_uninit:
 
 void wd_digest_uninit2(void)
 {
-	int ret;
-
-	ret = wd_digest_uninit_nolock();
-	if (ret)
+	if (!wd_digest_setting.priv)
 		return;
 
+	wd_digest_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
 	wd_alg_drv_unbind(wd_digest_setting.driver);
 	wd_digest_close_driver(WD_TYPE_V2);
@@ -618,8 +610,8 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	msg_handle.recv = wd_digest_setting.driver->recv;
 
 	wd_ctx_spin_lock(ctx, wd_digest_setting.driver->calc_type);
-	ret = wd_handle_msg_sync(wd_digest_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, wd_digest_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+				 NULL, wd_digest_setting.config.epoll_en);
 	wd_ctx_spin_unlock(ctx, wd_digest_setting.driver->calc_type);
 	if (unlikely(ret))
 		return ret;
@@ -713,7 +705,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(wd_digest_setting.driver, ctx->ctx, msg);
+	ret = wd_digest_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -762,7 +754,8 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_digest_setting.driver, ctx->ctx, &recv_msg);
+		ret = wd_digest_setting.driver->recv(ctx->ctx,
+							    &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

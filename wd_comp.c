@@ -47,6 +47,7 @@ struct wd_comp_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_comp_setting;
@@ -166,7 +167,8 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_comp_setting.config,
-					wd_comp_setting.driver);
+					wd_comp_setting.driver,
+					&wd_comp_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -183,10 +185,9 @@ out_clear_ctx_config:
 
 static int wd_comp_uninit_nolock(void)
 {
-	enum wd_status status;
+	void *priv = wd_comp_setting.priv;
 
-	wd_alg_get_init(&wd_comp_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!priv)
 		return -WD_EINVAL;
 
 	/* Uninit async request pool */
@@ -196,7 +197,8 @@ static int wd_comp_uninit_nolock(void)
 	wd_clear_sched(&wd_comp_setting.sched);
 
 	wd_alg_uninit_driver(&wd_comp_setting.config,
-			     wd_comp_setting.driver);
+		 wd_comp_setting.driver,
+		 &wd_comp_setting.priv);
 
 	return 0;
 }
@@ -377,7 +379,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_comp_setting.driver, ctx->ctx, &resp_msg);
+		ret = wd_comp_setting.driver->recv(ctx->ctx, &resp_msg);
 		if (unlikely(ret < 0)) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw error!\n");
@@ -611,8 +613,8 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	msg_handle.recv = wd_comp_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, config->epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+				 NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -866,7 +868,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
 
-	ret = wd_alg_driver_send(wd_comp_setting.driver, ctx->ctx, msg);
+	ret = wd_comp_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;

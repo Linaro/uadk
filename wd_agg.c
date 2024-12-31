@@ -592,7 +592,8 @@ static int wd_agg_alg_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_agg_setting.config, wd_agg_setting.driver);
+	ret = wd_alg_init_driver(&wd_agg_setting.config, wd_agg_setting.driver,
+				 &wd_agg_setting.priv);
 	if (ret)
 		goto out_clear_pool;
 
@@ -620,7 +621,8 @@ static int wd_agg_alg_uninit(void)
 	/* Unset config, sched, driver */
 	wd_clear_sched(&wd_agg_setting.sched);
 
-	wd_alg_uninit_driver(&wd_agg_setting.config, wd_agg_setting.driver);
+	wd_alg_uninit_driver(&wd_agg_setting.config, wd_agg_setting.driver,
+			     &wd_agg_setting.priv);
 
 	return WD_SUCCESS;
 }
@@ -1098,8 +1100,7 @@ static int wd_agg_sync_job(struct wd_agg_sess *sess, struct wd_agg_req *req,
 	msg_handle.recv = wd_agg_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_agg_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, config->epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -1200,7 +1201,7 @@ static int wd_agg_async_job(struct wd_agg_sess *sess, struct wd_agg_req *req, bo
 	else
 		fill_request_msg_output(msg, req, sess, false);
 	msg->tag = msg_id;
-	ret = wd_alg_driver_send(wd_agg_setting.driver, ctx->ctx, msg);
+	ret = wd_agg_setting.driver->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd agg async send err!\n");
@@ -1527,7 +1528,7 @@ static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_agg_setting.driver, ctx->ctx, &resp_msg);
+		ret = wd_agg_setting.driver->recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (unlikely(ret < 0)) {

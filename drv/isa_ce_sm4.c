@@ -31,35 +31,23 @@
 	((p)[0] = (__u8)((v) >> 24), (p)[1] = (__u8)((v) >> 16), \
 	 (p)[2] = (__u8)((v) >> 8), (p)[3] = (__u8)(v))
 
-static int isa_ce_init(struct wd_alg_driver *drv, void *conf)
+static int isa_ce_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct sm4_ce_drv_ctx *priv;
+	struct sm4_ce_drv_ctx *sctx = priv;
 
 	/* Fallback init is NULL */
-	if (!drv || !conf)
+	if (!conf || !priv)
 		return 0;
 
-	priv = malloc(sizeof(struct sm4_ce_drv_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	config->epoll_en = 0;
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
+	memcpy(&sctx->config, config, sizeof(struct wd_ctx_config_internal));
 
-	return WD_SUCCESS;
+	return 0;
 }
 
-static void isa_ce_exit(struct wd_alg_driver *drv)
+static void isa_ce_exit(void *priv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct sm4_ce_drv_ctx *sctx = (struct sm4_ce_drv_ctx *)drv->priv;
-
-	free(sctx);
-	drv->priv = NULL;
 }
 
 /* increment upper 96 bits of 128-bit counter by 1 */
@@ -333,7 +321,7 @@ static int sm4_xts_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey
 	return 0;
 }
 
-static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int isa_ce_cipher_send(handle_t ctx, void *wd_msg)
 {
 	struct wd_cipher_msg *msg = wd_msg;
 	struct SM4_KEY rkey;
@@ -399,19 +387,19 @@ static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 	return ret;
 }
 
-static int isa_ce_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int isa_ce_cipher_recv(handle_t ctx, void *wd_msg)
 {
 	return 0;
 }
 
-static int cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int cipher_send(handle_t ctx, void *msg)
 {
-	return isa_ce_cipher_send(drv, ctx, msg);
+	return isa_ce_cipher_send(ctx, msg);
 }
 
-static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int cipher_recv(handle_t ctx, void *msg)
 {
-	return isa_ce_cipher_recv(drv, ctx, msg);
+	return isa_ce_cipher_recv(ctx, msg);
 }
 
 #define GEN_CE_ALG_DRIVER(ce_alg_name, alg_type) \
@@ -420,6 +408,7 @@ static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 	.alg_name = (ce_alg_name),\
 	.calc_type = UADK_ALG_CE_INSTR,\
 	.priority = 200,\
+	.priv_size = sizeof(struct sm4_ce_drv_ctx),\
 	.op_type_num = 1,\
 	.fallback = 0,\
 	.init = isa_ce_init,\
