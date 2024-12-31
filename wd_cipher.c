@@ -345,6 +345,8 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 	if (ret < 0)
 		goto out_clear_sched;
 
+	wd_cipher_setting.config.pool = &wd_cipher_setting.pool;
+
 	ret = wd_alg_init_driver(&wd_cipher_setting.config,
 				 wd_cipher_setting.driver);
 	if (ret)
@@ -780,11 +782,6 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_cipher_setting.pool, idx, msg->tag);
 	return ret;
-}
-
-struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag)
-{
-	return wd_find_msg_in_pool(&wd_cipher_setting.pool, idx, tag);
 }
 
 int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)

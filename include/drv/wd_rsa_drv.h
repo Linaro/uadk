@@ -49,8 +49,6 @@ struct wd_rsa_msg {
 	__u8 *key; /* Input key VA pointer, should be DMA buffer */
 };
 
-struct wd_rsa_msg *wd_rsa_get_msg(__u32 idx, __u32 tag);
-
 #ifdef __cplusplus
 }
 #endif
