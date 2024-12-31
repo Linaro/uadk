@@ -496,7 +496,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_uninit_nolock;
 
-	ret = wd_alg_init_driver_nw(&wd_aead_setting.config);
+	ret = wd_alg_init_driver(&wd_aead_setting.config);
 	if (ret)
 		goto out_drv_deconfig;
 	wd_alg_set_init(&wd_aead_setting.status);
@@ -519,7 +519,7 @@ void wd_aead_uninit(void)
 	if (!wd_aead_setting.priv)
 		return;
 
-	wd_alg_uninit_driver_nw(&wd_aead_setting.config);
+	wd_alg_uninit_driver(&wd_aead_setting.config);
 	wd_ctx_drv_deconfig(&wd_aead_setting.config);
 
 	wd_aead_uninit_nolock();
@@ -573,7 +573,7 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 		memset(&wd_aead_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 		/* Init ctx param and prepare for ctx request */
 		aead_ctx_params.ctx_set_num = aead_ctx_num;
-		ret = wd_ctx_param_init_nw(&aead_ctx_params, ctx_params,
+		ret = wd_ctx_param_init(&aead_ctx_params, ctx_params,
 					alg, task_type, WD_AEAD_TYPE, WD_DIGEST_CIPHER_DECRYPTION + 1);
 		if (ret) {
 			if (ret == -WD_EAGAIN) {
@@ -602,7 +602,7 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 	if (ret)
 		goto out_uninit_nolock;
 
-	ret = wd_alg_init_driver_nw(&wd_aead_setting.config);
+	ret = wd_alg_init_driver(&wd_aead_setting.config);
 	if (ret)
 		goto out_drv_deconfig;
 
@@ -785,10 +785,8 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 
 	msg_id = wd_get_msg_from_pool(&wd_aead_setting.pool,
 				     idx, (void **)&msg);
-	if (unlikely(msg_id < 0)) {
-		WD_ERR("failed to get msg from pool!\n");
+	if (unlikely(msg_id < 0))
 		return -WD_EBUSY;
-	}
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;

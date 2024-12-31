@@ -672,7 +672,7 @@ int wd_agg_init(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params
 
 		/* Init ctx param and prepare for ctx request */
 		agg_ctx_params.ctx_set_num = &agg_ctx_num;
-		ret = wd_ctx_param_init_nw(&agg_ctx_params, ctx_params, alg, task_type,
+		ret = wd_ctx_param_init(&agg_ctx_params, ctx_params, alg, task_type,
 					WD_AGG_TYPE, 1);
 		if (ret) {
 			if (ret == -WD_EAGAIN) {
@@ -701,7 +701,7 @@ int wd_agg_init(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params
 	if (ret)
 		goto out_uninit_nolock;
 
-	ret = wd_alg_init_driver_nw(&wd_agg_setting.config);
+	ret = wd_alg_init_driver(&wd_agg_setting.config);
 	if (ret)
 		goto out_drv_deconfig;
 
@@ -732,7 +732,7 @@ void wd_agg_uninit(void)
 	if (ret)
 		return;
 
-	wd_alg_uninit_driver_nw(&wd_agg_setting.config);
+	wd_alg_uninit_driver(&wd_agg_setting.config);
 	wd_ctx_drv_deconfig(&wd_agg_setting.config);
 
 	wd_agg_close_driver();
@@ -1202,10 +1202,8 @@ static int wd_agg_async_job(struct wd_agg_sess *sess, struct wd_agg_req *req, bo
 
 	ctx = config->ctxs + idx;
 	msg_id = wd_get_msg_from_pool(&wd_agg_setting.pool, idx, (void **)&msg);
-	if (unlikely(msg_id < 0)) {
-		WD_ERR("failed to get agg msg from pool!\n");
-		return msg_id;
-	}
+	if (unlikely(msg_id < 0))
+		return -WD_EBUSY;
 
 	if (is_input)
 		fill_request_msg_input(msg, req, sess, false);
