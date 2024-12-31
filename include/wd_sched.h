@@ -23,6 +23,12 @@ enum sched_policy_type {
 	SCHED_POLICY_NONE,
 	/* requests will need a fixed ctx */
 	SCHED_POLICY_SINGLE,
+	/* Hard calculation and soft calculation interval loop call */
+	SCHED_POLICY_LOOP,
+	/* Perform heterogeneous calculations through ctx of session key */
+	SCHED_POLICY_HUNGRY,
+	/* Instructions to accelerate heterogeneous computing */
+	SCHED_POLICY_INSTR,
 	SCHED_POLICY_BUTT,
 };
 
