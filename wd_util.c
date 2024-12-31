@@ -2066,13 +2066,7 @@ static void wd_ctx_uninit_driver(struct wd_ctx_config_internal *config,
 	}
 }
 
-int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv)
-{
-	return 0;
-}
-
-int wd_alg_init_driver_nw(struct wd_ctx_config_internal *config)
+int wd_alg_init_driver(struct wd_ctx_config_internal *config)
 {
 	__u32 i, j;
 	int ret;
@@ -2095,12 +2089,7 @@ init_err:
 	return ret;
 }
 
-void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv)
-{
-}
-
-void wd_alg_uninit_driver_nw(struct wd_ctx_config_internal *config)
+void wd_alg_uninit_driver(struct wd_ctx_config_internal *config)
 {
 	__u32 i;
 
@@ -2231,14 +2220,6 @@ void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params)
 }
 
 int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
-		      struct wd_ctx_params *user_ctx_params,
-		      struct wd_alg_driver *driver,
-		      enum wd_type type, int max_op_type)
-{
-	return 0;
-}
-
-int wd_ctx_param_init_nw(struct wd_ctx_params *ctx_params,
 		      struct wd_ctx_params *user_ctx_params,
 		      char *alg, int task_type, enum wd_type type,
 		      int max_op_type)

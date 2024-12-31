@@ -131,7 +131,6 @@ struct wd_init_attrs {
 	struct wd_ctx_config *ctx_config;
 	wd_alg_init alg_init;
 	wd_alg_poll_ctx alg_poll_ctx;
-	struct wd_alg_driver *driver; //stub for old code
 };
 
 /*
@@ -454,14 +453,10 @@ static inline void wd_alg_clear_init(enum wd_status *status)
  *
  * Return 0 if succeed and other error number if fail.
  */
-int wd_ctx_param_init_nw(struct wd_ctx_params *ctx_params,
+int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		      struct wd_ctx_params *user_ctx_params,
 		      char *alg, int task_type, enum wd_type type,
 		      int max_op_type);
-int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
-		      struct wd_ctx_params *user_ctx_params,
-		      struct wd_alg_driver *driver,
-		      enum wd_type type, int max_op_type);
 
 void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params);
 
@@ -495,12 +490,8 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv);
  *
  * Return 0 if succeed and other error number if fail.
  */
-int wd_alg_init_driver_nw(struct wd_ctx_config_internal *config);
-void wd_alg_uninit_driver_nw(struct wd_ctx_config_internal *config);
-int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
-void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
+int wd_alg_init_driver(struct wd_ctx_config_internal *config);
+void wd_alg_uninit_driver(struct wd_ctx_config_internal *config);
 
 /**
  * wd_dlopen_drv() - Open the dynamic library file of the device driver.
