@@ -41,6 +41,14 @@ extern "C" {
 
 /* Key size of digest */
 #define MAX_HMAC_KEY_SIZE	128U
+#define MAX_SOFT_QUEUE_LENGTH	1024U
+
+/*
+ * The maximum number of queue types
+ * required for similar algorithms
+ */
+#define MAX_CTX_OP_TYPE 4U
+#define STATUS_ENABLE	(void *)0x1
 
 enum alg_task_type {
 	TASK_MIX = 0x0,
@@ -60,7 +68,27 @@ enum wd_init_type {
 	WD_TYPE_V2,
 };
 
-/*
+struct wd_soft_sqe {
+	__u8 used;
+	__u8 result;
+	__u8 complete;
+	__u32 id;
+};
+
+/**
+ * default queue length set to 1024
+ */
+struct wd_soft_ctx {
+	pthread_spinlock_t slock;
+	__u32 head;
+	struct wd_soft_sqe qfifo[MAX_SOFT_QUEUE_LENGTH];
+	pthread_spinlock_t rlock;
+	__u32 tail;
+	__u32 run_num;
+	void *priv;
+};
+
+/**
  * struct wd_ctx - Define one ctx and related type.
  * @ctx:	The ctx itself.
  * @op_type:	Define the operation type of this specific ctx.
@@ -72,6 +100,7 @@ struct wd_ctx {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	__u8 ctx_type;
 };
 
 /*
@@ -103,16 +132,31 @@ struct wd_ctx_config {
 	struct wd_cap_config *cap;
 };
 
-/*
+/* 0x0 mean calloc init value */
+enum wd_ctx_property {
+	UADK_CTX_HW = 0x0,
+	UADK_CTX_CE_INS = 0x1,
+	UADK_CTX_SVE_INS = 0x2,
+	UADK_CTX_SOFT = 0x3,
+	UADK_CTX_MAX
+};
+
+/**
  * struct wd_ctx_nums - Define the ctx sets numbers.
  * @sync_ctx_num: The ctx numbers which are used for sync mode for each
  * ctx sets.
  * @async_ctx_num: The ctx numbers which are used for async mode for each
  * ctx sets.
+ * @ctx_prop: Indicates the properties of the current queue
+ * @ctx_begin: The encoding starting position of the current device ctx
+ * @other_ctx: Other types of queues configured
  */
 struct wd_ctx_nums {
 	__u32 sync_ctx_num;
 	__u32 async_ctx_num;
+	__u8 ctx_prop;
+	__u16 ctx_begin;
+	struct wd_ctx_nums *other_ctx;
 };
 
 /*
@@ -132,16 +176,16 @@ struct wd_ctx_params {
 	struct wd_cap_config *cap;
 };
 
-struct wd_soft_ctx {
-	void *priv;
-};
-
 struct wd_ctx_internal {
-	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	__u8 ctx_type;
+	__u8 ctx_used;
+	handle_t ctx;	// if ctx is first will cause problem
 	__u16 sqn;
 	pthread_spinlock_t lock;
+	struct wd_alg_driver *drv;
+	void *drv_priv;
 };
 
 struct wd_ctx_config_internal {
