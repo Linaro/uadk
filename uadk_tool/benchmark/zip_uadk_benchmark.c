@@ -490,7 +490,7 @@ static int init_ctx_config(struct acc_option *options)
 		goto free_ctxs;
 	}
 
-	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, max_node, wd_comp_poll_ctx);
+	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, max_node, wd_comp_poll_ctx_);
 	if (!g_sched) {
 		ZIP_TST_PRT("failed to alloc sched!\n");
 		ret = -ENOMEM;

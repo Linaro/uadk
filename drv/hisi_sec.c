@@ -921,9 +921,10 @@ static void fill_cipher_bd2_addr(struct wd_cipher_msg *msg,
 	sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->key;
 }
 
-static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
-			     struct wd_cipher_msg *recv_msg)
+static void parse_cipher_bd2(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			     struct hisi_sec_sqe *sqe, struct wd_cipher_msg *recv_msg)
 {
+	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_cipher_msg *temp_msg;
 	__u16 done;
 	__u32 tag;
@@ -945,7 +946,7 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
 		recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
-		temp_msg = wd_cipher_get_msg(qp->q_info.idx, tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -1219,7 +1220,7 @@ static int hisi_sec_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *w
 	if (ret)
 		return ret;
 
-	parse_cipher_bd2((struct hisi_qp *)h_qp, &sqe, recv_msg);
+	parse_cipher_bd2(drv, (struct hisi_qp *)h_qp, &sqe, recv_msg);
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
@@ -1406,9 +1407,10 @@ static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	return 0;
 }
 
-static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
-			     struct wd_cipher_msg *recv_msg)
+static void parse_cipher_bd3(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			     struct hisi_sec_sqe3 *sqe, struct wd_cipher_msg *recv_msg)
 {
+	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_cipher_msg *temp_msg;
 	__u16 done;
 	__u32 tag;
@@ -1430,7 +1432,7 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
 		recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
-		temp_msg = wd_cipher_get_msg(qp->q_info.idx, tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -1467,7 +1469,7 @@ static int hisi_sec_cipher_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	if (ret)
 		return ret;
 
-	parse_cipher_bd3((struct hisi_qp *)h_qp, &sqe, recv_msg);
+	parse_cipher_bd3(drv, (struct hisi_qp *)h_qp, &sqe, recv_msg);
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
@@ -1577,9 +1579,10 @@ static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
 	return 0;
 }
 
-static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
-			     struct wd_digest_msg *recv_msg)
+static void parse_digest_bd2(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			     struct hisi_sec_sqe *sqe, struct wd_digest_msg *recv_msg)
 {
+	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_digest_msg *temp_msg;
 	__u16 done;
 
@@ -1598,7 +1601,7 @@ static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		recv_msg->alg_type = WD_DIGEST;
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
-		temp_msg = wd_digest_get_msg(qp->q_info.idx, recv_msg->tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -1788,7 +1791,7 @@ static int hisi_sec_digest_recv(struct wd_alg_driver *drv, handle_t ctx, void *w
 	if (ret)
 		return ret;
 
-	parse_digest_bd2((struct hisi_qp *)h_qp, &sqe, recv_msg);
+	parse_digest_bd2(drv, (struct hisi_qp *)h_qp, &sqe, recv_msg);
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
@@ -2011,9 +2014,10 @@ put_sgl:
 	return ret;
 }
 
-static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
-				struct wd_digest_msg *recv_msg)
+static void parse_digest_bd3(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			     struct hisi_sec_sqe3 *sqe, struct wd_digest_msg *recv_msg)
 {
+	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_digest_msg *temp_msg;
 	__u16 done;
 
@@ -2032,7 +2036,7 @@ static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		recv_msg->alg_type = WD_DIGEST;
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
-		temp_msg = wd_digest_get_msg(qp->q_info.idx, recv_msg->tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -2064,7 +2068,7 @@ static int hisi_sec_digest_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	if (ret)
 		return ret;
 
-	parse_digest_bd3((struct hisi_qp *)h_qp, &sqe, recv_msg);
+	parse_digest_bd3(drv, (struct hisi_qp *)h_qp, &sqe, recv_msg);
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp,  recv_msg->alg_type, recv_msg->in,
@@ -2619,9 +2623,10 @@ static void update_stream_counter(struct wd_aead_msg *recv_msg)
 	}
 }
 
-static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
-	struct wd_aead_msg *recv_msg)
+static void parse_aead_bd2(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			   struct hisi_sec_sqe *sqe, struct wd_aead_msg *recv_msg)
 {
+	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_aead_msg *temp_msg;
 	__u16 done, icv;
 
@@ -2643,7 +2648,7 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
 		recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
-		temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -2698,7 +2703,7 @@ static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 	if (ret)
 		return ret;
 
-	parse_aead_bd2((struct hisi_qp *)h_qp, &sqe, recv_msg);
+	parse_aead_bd2(drv, (struct hisi_qp *)h_qp, &sqe, recv_msg);
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
@@ -3010,9 +3015,10 @@ put_sgl:
 	return ret;
 }
 
-static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
-	struct wd_aead_msg *recv_msg)
+static void parse_aead_bd3(struct wd_alg_driver *drv, struct hisi_qp *qp,
+			   struct hisi_sec_sqe3 *sqe, struct wd_aead_msg *recv_msg)
 {
+	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_aead_msg *temp_msg;
 	__u16 done, icv;
 
@@ -3035,7 +3041,7 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
 		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
 		recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
-		temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
+		temp_msg = wd_find_msg_in_pool(priv->config.pool, qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
@@ -3072,7 +3078,7 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 	if (ret)
 		return ret;
 
-	parse_aead_bd3((struct hisi_qp *)h_qp, &sqe, recv_msg);
+	parse_aead_bd3(drv, (struct hisi_qp *)h_qp, &sqe, recv_msg);
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type,

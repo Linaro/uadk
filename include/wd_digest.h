@@ -230,6 +230,7 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len);
  * @count: recv poll nums.
  */
 int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count);
+int wd_digest_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 
 /**
  * wd_digest_poll() - Poll operation for asynchronous operation.

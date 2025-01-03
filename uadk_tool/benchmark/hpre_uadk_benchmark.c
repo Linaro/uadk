@@ -486,17 +486,17 @@ static int init_hpre_ctx_config(struct acc_option *options)
 
 	switch(subtype) {
 	case RSA_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_rsa_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_rsa_poll_ctx_);
 		break;
 	case DH_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_dh_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_dh_poll_ctx_);
 		break;
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_ecc_poll_ctx);
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_ecc_poll_ctx_);
 		break;
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype!\n");

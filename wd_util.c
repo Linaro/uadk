@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include "wd_sched.h"
 #include "wd_util.h"
+#include "adapter.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024
@@ -261,36 +262,6 @@ err_out:
 err_shm_del:
 	wd_shm_delete(in);
 	return ret;
-}
-
-int wd_init_sched(struct wd_sched *in, struct wd_sched *from)
-{
-	if (!from->name || !from->sched_init ||
-	    !from->pick_next_ctx || !from->poll_policy) {
-		WD_ERR("invalid: member of wd_sched is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	in->h_sched_ctx = from->h_sched_ctx;
-	in->name = strdup(from->name);
-	in->sched_init = from->sched_init;
-	in->pick_next_ctx = from->pick_next_ctx;
-	in->poll_policy = from->poll_policy;
-
-	return 0;
-}
-
-void wd_clear_sched(struct wd_sched *in)
-{
-	char *name = (char *)in->name;
-
-	if (name)
-		free(name);
-	in->h_sched_ctx = 0;
-	in->name = NULL;
-	in->sched_init = NULL;
-	in->pick_next_ctx = NULL;
-	in->poll_policy = NULL;
 }
 
 void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
@@ -2271,6 +2242,9 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 
 		node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
 		if (!node->dlhandle) {
+			char *error = dlerror();
+
+			fprintf(stderr, "%s\n", error);
 			free(node);
 			/* there are many other files need to skip */
 			continue;
@@ -2638,9 +2612,9 @@ out_freelist:
 	return ret;
 }
 
-static int wd_alg_ce_ctx_init(struct wd_init_attrs *attrs)
+static int wd_alg_ce_ctx_init(struct uadk_adapter_worker *worker)
 {
-	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	struct wd_ctx_config *ctx_config = worker->ctx_config;
 
 	ctx_config->ctx_num = 1;
 	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
@@ -2727,11 +2701,11 @@ static void wd_alg_uninit_sve_ctx(struct wd_ctx_config *ctx_config)
 	free(ctx_config->ctxs);
 }
 
-int wd_alg_attrs_init(struct wd_init_attrs *attrs)
+int wd_alg_attrs_init(struct uadk_adapter_worker *worker,
+		      struct wd_init_attrs *attrs)
 {
 	wd_alg_poll_ctx alg_poll_func = attrs->alg_poll_ctx;
 	wd_alg_init alg_init_func = attrs->alg_init;
-	__u32 sched_type = attrs->sched_type;
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
@@ -2742,8 +2716,8 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	if (!attrs->ctx_params)
 		return -WD_EINVAL;
 
-	if (attrs->driver)
-		driver_type = attrs->driver->calc_type;
+	if (worker->driver)
+		driver_type = worker->driver->calc_type;
 
 	switch (driver_type) {
 	case UADK_ALG_SOFT:
@@ -2753,7 +2727,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 			WD_ERR("fail to alloc ctx config\n");
 			return -WD_ENOMEM;
 		}
-		attrs->ctx_config = ctx_config;
+		worker->ctx_config = ctx_config;
 
 		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_NONE, 1, 1, alg_poll_func);
@@ -2762,15 +2736,15 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 			goto out_ctx_config;
 		}
 
-		attrs->sched = alg_sched;
+		worker->sched = alg_sched;
 
-		ret = wd_alg_ce_ctx_init(attrs);
+		ret = wd_alg_ce_ctx_init(worker);
 		if (ret) {
 			WD_ERR("fail to init ce ctx\n");
 			goto out_freesched;
 		}
 
-		ret = alg_init_func(ctx_config, alg_sched);
+		ret = alg_init_func(worker, alg_sched);
 		if (ret)
 			goto out_pre_init;
 
@@ -2782,14 +2756,14 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 			WD_ERR("fail to alloc scheduler\n");
 			return -WD_EINVAL;
 		}
-		attrs->sched = alg_sched;
+		worker->sched = alg_sched;
 
 		ctx_config = calloc(1, sizeof(*ctx_config));
 		if (!ctx_config) {
 			WD_ERR("fail to alloc ctx config\n");
 			goto out_freesched;
 		}
-		attrs->ctx_config = ctx_config;
+		worker->ctx_config = ctx_config;
 
 		ret = wd_alg_init_sve_ctx(ctx_config);
 		if (ret) {
@@ -2798,7 +2772,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 
 		ctx_config->cap = attrs->ctx_params->cap;
-		ret = alg_init_func(ctx_config, alg_sched);
+		ret = alg_init_func(worker, alg_sched);
 		if (ret) {
 			wd_alg_uninit_sve_ctx(ctx_config);
 			goto out_freesched;
@@ -2814,14 +2788,17 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 			return -WD_ENOMEM;
 		}
 		attrs->ctx_config = ctx_config;
+		worker->ctx_config = ctx_config;
 
-		alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+		/* Use default sched_type to alloc scheduler */
+		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, attrs->ctx_params->op_type_num,
 						  numa_max_node() + 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to instance scheduler\n");
 			goto out_ctx_config;
 		}
 		attrs->sched = alg_sched;
+		worker->sched = alg_sched;
 
 		ret = wd_alg_ctx_init(attrs);
 		if (ret) {
@@ -2830,7 +2807,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 
 		ctx_config->cap = attrs->ctx_params->cap;
-		ret = alg_init_func(ctx_config, alg_sched);
+		ret = alg_init_func(worker, alg_sched);
 		if (ret)
 			goto out_pre_init;
 		break;
@@ -2854,11 +2831,11 @@ out_ctx_config:
 	return ret;
 }
 
-void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
+void wd_alg_attrs_uninit(struct uadk_adapter_worker *worker)
 {
-	struct wd_ctx_config *ctx_config = attrs->ctx_config;
-	struct wd_sched *alg_sched = attrs->sched;
-	int driver_type = attrs->driver->calc_type;
+	struct wd_ctx_config *ctx_config = worker->ctx_config;
+	struct wd_sched *alg_sched = worker->sched;
+	int driver_type = worker->driver->calc_type;
 
 	if (!ctx_config) {
 		wd_sched_rr_release(alg_sched);
