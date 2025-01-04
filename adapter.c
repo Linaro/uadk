@@ -64,6 +64,7 @@ static void read_config_entries(char *conf, struct uadk_adapter *adapter, char *
 			worker = &adapter->workers[i];
 			worker->driver = drv;
 			worker->idx = i;
+			pthread_mutex_init(&worker->mutex, NULL);
 			adapter->workers_nb++;
 			if (drv_name) {
 				free(drv_name);
@@ -133,6 +134,7 @@ int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 		adapter->workers[i].driver = workers[i].driver;
 		adapter->workers[i].idx = i;
 		adapter->workers_nb++;
+		pthread_mutex_init(&adapter->workers[i].mutex, NULL);
 
 		if (adapter->workers_nb >= UADK_MAX_NB_WORKERS)
 			break;
@@ -178,4 +180,11 @@ struct uadk_adapter_worker *uadk_adapter_switch_worker(
 	new_worker->valid = true;
 
 	return new_worker;
+}
+
+void uadk_adapter_free(struct uadk_adapter *adapter)
+{
+	for (int i = 0; i < adapter->workers_nb; i++)
+		pthread_mutex_destroy(&adapter->workers[i].mutex);
+	free(adapter);
 }

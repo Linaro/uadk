@@ -59,5 +59,6 @@ global:
 	uadk_adapter_add_workers;
 	uadk_adapter_choose_worker;
 	uadk_adapter_switch_worker;
+	uadk_adapter_free;
 local: *;
 };

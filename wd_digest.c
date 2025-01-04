@@ -745,6 +745,17 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	worker = dsess->worker;
 	pthread_spin_unlock(&dsess->worker_lock);
 
+	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
+		ret = wd_do_digest_sync(h_sess, req);
+		if (!ret) {
+			pthread_mutex_lock(&worker->mutex);
+			worker->async_recv++;
+			pthread_mutex_unlock(&worker->mutex);
+			req->cb(req);
+		}
+		return ret;
+	}
+
 	idx = worker->sched->pick_next_ctx(
 		worker->sched->h_sched_ctx,
 		dsess->sched_key[worker->idx], CTX_MODE_ASYNC);
@@ -815,6 +826,16 @@ int wd_digest_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *co
 	}
 
 	*count = 0;
+
+	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
+		pthread_mutex_lock(&worker->mutex);
+		if (worker->async_recv > 0) {
+			*count = worker->async_recv > expt ? expt : worker->async_recv;
+			worker->async_recv -= *count;
+		}
+		pthread_mutex_unlock(&worker->mutex);
+		return 0;
+	}
 
 	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)

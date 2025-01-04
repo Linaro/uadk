@@ -382,6 +382,16 @@ int wd_comp_poll_ctx_(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *coun
 
 	*count = 0;
 
+	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
+		pthread_mutex_lock(&worker->mutex);
+		if (worker->async_recv > 0) {
+			*count = worker->async_recv > expt ? expt : worker->async_recv;
+			worker->async_recv -= *count;
+		}
+		pthread_mutex_unlock(&worker->mutex);
+		return 0;
+	}
+
 	ret = wd_check_ctx(&worker->config, CTX_MODE_ASYNC, idx);
 	if (unlikely(ret))
 		return ret;
@@ -609,11 +619,6 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 
 	if (unlikely(mode == CTX_MODE_ASYNC && !req->cb_param)) {
 		WD_ERR("invalid: async comp cb param is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	if (unlikely(mode == CTX_MODE_SYNC && req->cb)) {
-		WD_ERR("invalid: sync comp cb should be NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -902,6 +907,16 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	worker = sess->worker;
 	pthread_spin_unlock(&sess->worker_lock);
 
+	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
+		ret = wd_do_comp_sync(h_sess, req);
+		if (!ret) {
+			pthread_mutex_lock(&worker->mutex);
+			worker->async_recv++;
+			pthread_mutex_unlock(&worker->mutex);
+			req->cb(req, req->cb_param);
+		}
+		return ret;
+	}
 	idx = worker->sched->pick_next_ctx(
 		     worker->sched->h_sched_ctx,
 		     sess->sched_key[worker->idx], CTX_MODE_ASYNC);

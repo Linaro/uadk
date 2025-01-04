@@ -26,6 +26,8 @@ struct uadk_adapter_worker {
 	struct wd_async_msg_pool pool;
 	bool valid;
 	int idx;
+	__u64 async_recv;
+	pthread_mutex_t mutex;
 };
 
 struct uadk_adapter {
@@ -47,4 +49,6 @@ struct uadk_adapter_worker *uadk_adapter_switch_worker(
 	struct uadk_adapter_worker *worker,
 	int para
 );
+
+void uadk_adapter_free(struct uadk_adapter *adapter);
 #endif

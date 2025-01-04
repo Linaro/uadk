@@ -69,6 +69,11 @@ enum alg_dev_type {
 	UADK_ALG_HW = 0x3
 };
 
+enum alg_drv_mode {
+	UADK_DRV_NORMAL = 0x0,
+	UADK_DRV_SYNCONLY = 0x1,
+};
+
 /*
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
@@ -102,6 +107,7 @@ struct wd_alg_driver {
 	const char	*alg_name;
 	int	priority;
 	int	calc_type;
+	int	mode;
 	int	queue_num;
 	int	op_type_num;
 	void	*priv;
