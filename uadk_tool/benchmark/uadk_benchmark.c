@@ -635,7 +635,7 @@ int acc_default_case(struct acc_option *option)
 	return acc_benchmark_run(option);
 }
 
-static void print_help(void)
+void print_benchmark_help(void)
 {
 	ACC_TST_PRT("NAME\n");
 	ACC_TST_PRT("    benchmark: test UADK acc performance,etc\n");
@@ -728,7 +728,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 
 		switch (c) {
 		case 0:
-			print_help();
+			print_benchmark_help();
 			goto to_exit;
 		case 1:
 			option->algtype = get_alg_type(optarg);
@@ -791,7 +791,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");
-			print_help();
+			print_benchmark_help();
 			goto to_exit;
 		}
 	}
