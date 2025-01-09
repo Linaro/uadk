@@ -11,6 +11,7 @@
 #define DRIVER_NAME_KEY "driver_name"
 #define MODE_KEY "mode"
 #define LOOP_KEY "looptime"
+#define THRESHOLD_KEY "threshold"
 #define WORKERS_NB 8
 
 static int read_value_int(char *conf, const char *key)
@@ -91,15 +92,21 @@ int uadk_adapter_add_workers(struct uadk_adapter *adapter, char *alg)
 	int idx = 0, i, j;
 
 	adapter->looptime = UADK_WORKER_LOOPTIME;
+	adapter->threshold = UADK_PKT_THRESHOLD;
 
 	if (conf != NULL) {
 		int looptime = 0;
+		int threshold = 0;
 
 		/* if env UADK_CONF exist, parse config first */
 		adapter->mode = read_value_int(conf, MODE_KEY);
 		looptime = read_value_int(conf, LOOP_KEY);
 		if (looptime != 0)
 			adapter->looptime = looptime;
+
+		threshold = read_value_int(conf, THRESHOLD_KEY);
+		if (threshold != 0)
+			adapter->threshold = threshold;
 
 		read_config_entries(conf, adapter, alg);
 		if (adapter->workers_nb != 0)

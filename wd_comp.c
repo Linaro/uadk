@@ -66,12 +66,21 @@ static void wd_comp_switch_worker(struct wd_comp_sess *sess, int para)
 	sess->worker_looptime = 0;
 }
 
-static struct uadk_adapter_worker *wd_comp_get_worker(struct wd_comp_sess *sess)
+static struct uadk_adapter_worker *
+wd_comp_get_worker(struct wd_comp_sess *sess, struct wd_comp_req *req)
 {
 	if (sess->adapter_mode != wd_comp_setting.adapter->mode) {
 		sess->worker = &wd_comp_setting.adapter->workers[0];
 		sess->worker_looptime = 0;
 		sess->adapter_mode = wd_comp_setting.adapter->mode;
+	}
+
+	if (sess->adapter_mode == UADK_ADAPT_MODE_THRESHOLD &&
+	    wd_comp_setting.adapter->workers_nb == 2) {
+		if (req->src_len >= wd_comp_setting.adapter->threshold)
+			sess->worker = &wd_comp_setting.adapter->workers[0];
+		else
+			sess->worker = &wd_comp_setting.adapter->workers[1];
 	}
 
 	return sess->worker;
@@ -645,7 +654,7 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	__u32 idx;
 	int ret;
 
-	worker = wd_comp_get_worker(sess);
+	worker = wd_comp_get_worker(sess, req);
 
 	idx = worker->sched->pick_next_ctx(
 		     worker->sched->h_sched_ctx,
@@ -911,7 +920,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 		return -WD_EINVAL;
 	}
 
-	worker = wd_comp_get_worker(sess);
+	worker = wd_comp_get_worker(sess, req);
 
 	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
 		ret = wd_do_comp_sync(h_sess, req);

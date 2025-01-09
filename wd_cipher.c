@@ -84,12 +84,21 @@ static void wd_cipher_switch_worker(struct wd_cipher_sess *sess, int para)
 	sess->worker_looptime = 0;
 }
 
-static struct uadk_adapter_worker *wd_cipher_get_worker(struct wd_cipher_sess *sess)
+static struct uadk_adapter_worker *
+wd_cipher_get_worker(struct wd_cipher_sess *sess, struct wd_cipher_req *req)
 {
 	if (sess->adapter_mode != wd_cipher_setting.adapter->mode) {
 		sess->worker = &wd_cipher_setting.adapter->workers[0];
 		sess->worker_looptime = 0;
 		sess->adapter_mode = wd_cipher_setting.adapter->mode;
+	}
+
+	if (sess->adapter_mode == UADK_ADAPT_MODE_THRESHOLD &&
+	    wd_cipher_setting.adapter->workers_nb == 2) {
+		if (req->in_bytes >= wd_cipher_setting.adapter->threshold)
+			sess->worker = &wd_cipher_setting.adapter->workers[0];
+		else
+			sess->worker = &wd_cipher_setting.adapter->workers[1];
 	}
 
 	return sess->worker;
@@ -744,7 +753,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
-	worker = wd_cipher_get_worker(sess);
+	worker = wd_cipher_get_worker(sess, req);
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
@@ -795,8 +804,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
-	worker = wd_cipher_get_worker(sess);
-
+	worker = wd_cipher_get_worker(sess, req);
 	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
 		ret = wd_do_cipher_sync(h_sess, req);
 		if (!ret) {

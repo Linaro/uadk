@@ -82,12 +82,21 @@ static void wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
 	sess->worker_looptime = 0;
 }
 
-static struct uadk_adapter_worker *wd_digest_get_worker(struct wd_digest_sess *sess)
+static struct uadk_adapter_worker *
+wd_digest_get_worker(struct wd_digest_sess *sess, struct wd_digest_req *req)
 {
 	if (sess->adapter_mode != wd_digest_setting.adapter->mode) {
 		sess->worker = &wd_digest_setting.adapter->workers[0];
 		sess->worker_looptime = 0;
 		sess->adapter_mode = wd_digest_setting.adapter->mode;
+	}
+
+	if (sess->adapter_mode == UADK_ADAPT_MODE_THRESHOLD &&
+	    wd_digest_setting.adapter->workers_nb == 2) {
+		if (req->in_bytes >= wd_digest_setting.adapter->threshold)
+			sess->worker = &wd_digest_setting.adapter->workers[0];
+		else
+			sess->worker = &wd_digest_setting.adapter->workers[1];
 	}
 
 	return sess->worker;
@@ -697,7 +706,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
-	worker = wd_digest_get_worker(dsess);
+	worker = wd_digest_get_worker(dsess, req);
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
@@ -749,7 +758,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	worker = wd_digest_get_worker(dsess);
+	worker = wd_digest_get_worker(dsess, req);
 
 	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
 		ret = wd_do_digest_sync(h_sess, req);

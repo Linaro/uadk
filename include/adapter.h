@@ -12,10 +12,12 @@
 
 #define UADK_MAX_NB_WORKERS  (2)
 #define UADK_WORKER_LOOPTIME (10)
+#define UADK_PKT_THRESHOLD 8192
 
 enum uadk_adapter_mode {
 	UADK_ADAPT_MODE_PRIMARY,
 	UADK_ADAPT_MODE_ROUNDROBIN,
+	UADK_ADAPT_MODE_THRESHOLD,
 };
 
 struct uadk_adapter_worker {
@@ -33,6 +35,7 @@ struct uadk_adapter_worker {
 struct uadk_adapter {
 	unsigned int workers_nb;
 	unsigned int looptime;
+	unsigned int threshold;
 	enum uadk_adapter_mode mode;
 	struct uadk_adapter_worker workers[UADK_MAX_NB_WORKERS];
 };
