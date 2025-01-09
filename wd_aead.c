@@ -262,7 +262,6 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 		}
 	} else {
 		if (sess->dalg >= WD_DIGEST_TYPE_MAX || !authsize ||
-		    authsize & (WD_AEAD_CCM_GCM_MAX - 1) ||
 		    authsize > g_aead_mac_len[sess->dalg]) {
 			WD_ERR("failed to check aead mac authsize, size = %u\n",
 				authsize);
