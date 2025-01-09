@@ -208,13 +208,10 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 {
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
-	if (unlikely(!key || !sess)) {
+	if (!sess || (key_len && !key)) {
 		WD_ERR("failed to check authenticate key param!\n");
 		return -WD_EINVAL;
 	}
-
-	if (key_len == 0)
-		goto err_key_len;
 
 	/*
 	 * Here dalg only supports sha1, sha256, sha512,
@@ -229,7 +226,8 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	}
 
 	sess->akey_bytes = key_len;
-	memcpy(sess->akey, key, key_len);
+	if (key_len)
+		memcpy(sess->akey, key, key_len);
 
 	return 0;
 
