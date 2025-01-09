@@ -15,7 +15,7 @@
 #define SEC_DIGEST_ALG_OFFSET	11
 #define WORD_ALIGNMENT_MASK	0x3
 #define CTR_MODE_LEN_SHIFT	4
-#define WORD_BYTES		4
+#define BYTES_TO_WORDS(bcount)	((bcount) >> 2)
 #define BYTE_BITS		8
 #define SQE_BYTES_NUMS		128
 #define SEC_FLAG_OFFSET		7
@@ -34,7 +34,6 @@
 #define SEC_CMODE_OFFSET	  12
 #define SEC_CKEY_OFFSET		  9
 #define SEC_CIPHER_OFFSET	  4
-#define XTS_MODE_KEY_DIVISOR	  2
 #define SEC_CTR_CNT_OFFSET	  25
 #define SEC_CTR_CNT_ROLLOVER	  2
 
@@ -834,7 +833,7 @@ static int get_aes_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 
 	len = msg->key_bytes;
 	if (msg->mode == WD_CIPHER_XTS)
-		len = len / XTS_MODE_KEY_DIVISOR;
+		len = len >> 1;
 
 	switch (len) {
 	case AES_KEYSIZE_128:
@@ -1489,7 +1488,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	 * the output full length.
 	 */
 	if (!msg->has_next)
-		sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
+		sqe->type2.mac_key_alg = BYTES_TO_WORDS(msg->out_bytes);
 
 	/* SM3 can't config 0 in normal mode */
 	if (msg->has_next && msg->mode == WD_DIGEST_NORMAL &&
@@ -1508,8 +1507,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 			       msg->key_bytes);
 			return -WD_EINVAL;
 		}
-		sqe->type2.mac_key_alg |= (__u32)(msg->key_bytes /
-			WORD_BYTES) << MAC_LEN_OFFSET;
+		sqe->type2.mac_key_alg |= (__u32)BYTES_TO_WORDS(msg->key_bytes) << MAC_LEN_OFFSET;
 		sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->key;
 
 		sqe->type2.mac_key_alg |=
@@ -1836,8 +1834,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 	 * the output full length.
 	 */
 	if (!msg->has_next)
-		sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
-				SEC_MAC_OFFSET_V3;
+		sqe->auth_mac_key |= BYTES_TO_WORDS(msg->out_bytes) << SEC_MAC_OFFSET_V3;
 
 	/* SM3 can't config 0 in normal mode */
 	if (msg->has_next && msg->mode == WD_DIGEST_NORMAL &&
@@ -1857,8 +1854,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		if (ret)
 			return ret;
 
-		sqe->auth_mac_key |= (__u32)(msg->key_bytes /
-			WORD_BYTES) << SEC_AKEY_OFFSET_V3;
+		sqe->auth_mac_key |= (__u32)BYTES_TO_WORDS(msg->key_bytes) << SEC_AKEY_OFFSET_V3;
 		sqe->a_key_addr = (__u64)(uintptr_t)msg->key;
 		sqe->auth_mac_key |=
 		g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
@@ -2094,11 +2090,17 @@ static int aead_get_aes_key_len(struct wd_aead_msg *msg, __u8 *key_len)
 	return 0;
 }
 
-static int aead_akey_len_check(struct wd_aead_msg *msg)
+static int aead_auth_spec_check(struct wd_aead_msg *msg)
 {
 	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
 		WD_ERR("failed to check aead auth key bytes, size = %u\n",
 		       msg->akey_bytes);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("failed to check aead auth bytes, size = %u\n",
+		       msg->auth_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -2130,14 +2132,12 @@ static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	sqe->type2.mac_key_alg = msg->auth_bytes / WORD_BYTES;
-
-	ret = aead_akey_len_check(msg);
+	ret = aead_auth_spec_check(msg);
 	if (ret)
 		return ret;
 
-	sqe->type2.mac_key_alg |= (__u32)(msg->akey_bytes /
-		WORD_BYTES) << MAC_LEN_OFFSET;
+	sqe->type2.mac_key_alg = BYTES_TO_WORDS(msg->auth_bytes);
+	sqe->type2.mac_key_alg |= (__u32)BYTES_TO_WORDS(msg->akey_bytes) << MAC_LEN_OFFSET;
 
 	switch (msg->dalg) {
 	case WD_DIGEST_SHA1:
@@ -2736,15 +2736,13 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	ret = aead_akey_len_check(msg);
+	ret = aead_auth_spec_check(msg);
 	if (ret)
 		return ret;
 
-	sqe->auth_mac_key |= (msg->auth_bytes /
-		WORD_BYTES) << SEC_MAC_OFFSET_V3;
+	sqe->auth_mac_key |= BYTES_TO_WORDS(msg->auth_bytes) << SEC_MAC_OFFSET_V3;
 
-	sqe->auth_mac_key |= (msg->akey_bytes /
-		WORD_BYTES) << SEC_AKEY_OFFSET_V3;
+	sqe->auth_mac_key |= (__u32)BYTES_TO_WORDS(msg->akey_bytes) << SEC_AKEY_OFFSET_V3;
 
 	switch (msg->dalg) {
 	case WD_DIGEST_SHA1:
