@@ -2732,26 +2732,13 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 	}
 
 	if (msg->cmode == WCRYPTO_CIPHER_CCM) {
-		if (unlikely(msg->auth_bytes < WORD_BYTES ||
-			     msg->auth_bytes > AES_BLOCK_SIZE ||
-			     msg->auth_bytes % (WORD_BYTES >> 1))) {
-			WD_ERR("Invalid aead ccm mode auth_bytes!\n");
-			return -WD_EINVAL;
-		}
 		if (unlikely(msg->assoc_bytes > MAX_CCM_AAD_LEN)) {
 			WD_ERR("aead ccm mode aasoc_bytes is too long!\n");
 			return -WD_EINVAL;
 		}
 		return WD_SUCCESS;
-	}
-	if (msg->cmode == WCRYPTO_CIPHER_GCM) {
-		if (unlikely(msg->auth_bytes < U64_DATA_BYTES ||
-			     msg->auth_bytes > AES_BLOCK_SIZE)) {
-			WD_ERR("Invalid aead gcm mode auth_bytes!\n");
-			return -WD_EINVAL;
-		}
+	} else if (msg->cmode == WCRYPTO_CIPHER_GCM)
 		return WD_SUCCESS;
-	}
 
 	/* CCM/GCM support 0 in_bytes, but others not support */
 	if (unlikely(msg->in_bytes == 0)) {
@@ -2759,8 +2746,7 @@ static int aead_comb_param_check(struct wcrypto_aead_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->auth_bytes != AES_BLOCK_SIZE &&
-	    msg->auth_bytes != AES_BLOCK_SIZE << 1)) {
+	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
 		WD_ERR("Invalid aead auth_bytes!\n");
 		return -WD_EINVAL;
 	}
