@@ -444,7 +444,7 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 			return -WD_EINVAL;
 		}
 
-		if (d_opdata[i]->has_next)
+		if (d_opdata[i]->has_next == WCRYPTO_DIGEST_DOING)
 			ret = stream_mode_param_check(d_ctx, d_opdata[i], num);
 		else
 			ret = block_mode_param_check(d_ctx, d_opdata[i]);
@@ -461,6 +461,24 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 		WD_ERR("invalid: digest ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	return WD_SUCCESS;
+}
+
+static int append_tag_restore_status(struct wcrypto_digest_ctx *ctxt,
+				     struct wcrypto_digest_op_data **opdata,
+				     struct wcrypto_digest_msg **req, __u32 ind)
+{
+	if (opdata[ind]->has_next == WCRYPTO_DIGEST_STREAM_END)
+		opdata[ind]->has_next = WCRYPTO_DIGEST_END;
+	else if (opdata[ind]->has_next == WCRYPTO_DIGEST_STREAM_DOING)
+		opdata[ind]->has_next = WCRYPTO_DIGEST_DOING;
+	else
+		return -WD_EINVAL;
+
+	ctxt->io_bytes = *(__u64 *)opdata[ind]->priv;
+	req[ind]->iv_bytes = opdata[ind]->out_bytes;
+	opdata[ind]->priv = NULL;
 
 	return WD_SUCCESS;
 }
@@ -482,8 +500,15 @@ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
 		return ret;
 
 	for (i = 0; i < num; i++) {
-		cookies[i]->tag.priv = opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
+
+		if (opdata[i]->has_next > WCRYPTO_DIGEST_DOING) {
+			ret = append_tag_restore_status(ctxt, opdata, req, i);
+			if (unlikely(ret))
+				goto fail_with_cookies;
+		}
+
+		cookies[i]->tag.priv = opdata[i]->priv;
 		if (tag)
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}
