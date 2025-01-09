@@ -387,13 +387,10 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_aead_ctx *ctxt = ctx;
 
-	if (!ctx || !key) {
-		WD_ERR("input param is NULL!\n");
+	if (!ctx || (key_len && !key)) {
+		WD_ERR("failed to check authenticate key param!\n");
 		return -WD_EINVAL;
 	}
-
-	if (key_len == 0)
-		goto err_key_len;
 
 	if (ctxt->setup.dalg > WCRYPTO_SHA256) {
 		if (key_len > MAX_HMAC_KEY_SIZE)
@@ -405,6 +402,9 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 
 	ctxt->akey_bytes = key_len;
 
+	if (!key_len)
+		return WD_SUCCESS;
+
 	if (ctxt->setup.data_fmt == WD_SGL_BUF)
 		wd_sgl_cp_from_pbuf(ctxt->akey, 0, key, key_len);
 	else
@@ -413,7 +413,7 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 	return WD_SUCCESS;
 
 err_key_len:
-	WD_ERR("fail to check key length!\n");
+	WD_ERR("failed to check authenticate key length, size = %u\n", key_len);
 	return -WD_EINVAL;
 }
 
