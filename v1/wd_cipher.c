@@ -309,7 +309,7 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 	struct wcrypto_cipher_ctx *ctxt = ctx;
 	int ret;
 
-	if (!ctx || !key) {
+	if (!ctx || !ctxt->key || !key) {
 		WD_ERR("%s: input param err!\n", __func__);
 		return -WD_EINVAL;
 	}

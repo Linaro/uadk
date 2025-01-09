@@ -308,7 +308,7 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 	struct wcrypto_digest_ctx *ctxt = ctx;
 	int ret;
 
-	if (!ctx || (key_len && !key)) {
+	if (!ctx || !ctxt->key || (key_len && !key)) {
 		WD_ERR("%s(): input param err!\n", __func__);
 		return -WD_EINVAL;
 	}
