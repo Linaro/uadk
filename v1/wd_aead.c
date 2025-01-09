@@ -28,6 +28,8 @@
 
 #define MAX_AEAD_AUTH_SIZE		64
 #define MAX_AEAD_RETRY_CNT		20000000
+#define AEAD_CCM_GCM_MIN		4U
+#define AEAD_CCM_GCM_MAX		16
 
 static int g_aead_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_SM3_LEN, WCRYPTO_MD5_LEN, WCRYPTO_SHA1_LEN,
@@ -283,9 +285,28 @@ int wcrypto_aead_setauthsize(void *ctx, __u16 authsize)
 		return -WD_EINVAL;
 	}
 
-	if (authsize > MAX_AEAD_AUTH_SIZE) {
-		WD_ERR("fail to check authsize!\n");
-		return -WD_EINVAL;
+	if (ctxt->setup.cmode == WCRYPTO_CIPHER_CCM) {
+		if (authsize < AEAD_CCM_GCM_MIN ||
+		    authsize > AEAD_CCM_GCM_MAX ||
+		    authsize % (AEAD_CCM_GCM_MIN >> 1)) {
+			WD_ERR("failed to check aead CCM authsize, size = %u\n",
+				authsize);
+			return -WD_EINVAL;
+		}
+	} else if (ctxt->setup.cmode == WCRYPTO_CIPHER_GCM) {
+		if (authsize < AEAD_CCM_GCM_MIN << 1 ||
+		    authsize > AEAD_CCM_GCM_MAX) {
+			WD_ERR("failed to check aead GCM authsize, size = %u\n",
+				authsize);
+			return -WD_EINVAL;
+		}
+	} else {
+		if (ctxt->setup.dalg >= WCRYPTO_MAX_DIGEST_TYPE || !authsize ||
+		    authsize > g_aead_mac_len[ctxt->setup.dalg]) {
+			WD_ERR("failed to check aead mac authsize, size = %u\n",
+				authsize);
+			return -WD_EINVAL;
+		}
 	}
 
 	ctxt->auth_size = authsize;
