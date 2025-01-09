@@ -274,6 +274,10 @@ static int digest_hmac_key_check(enum wcrypto_digest_alg alg, __u16 key_len)
 		}
 		break;
 	case WCRYPTO_SHA384 ... WCRYPTO_SHA512_256:
+		if (key_len > MAX_HMAC_KEY_SIZE) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
 		break;
 	case WCRYPTO_AES_XCBC_MAC_96:
 	case WCRYPTO_AES_XCBC_PRF_128:
@@ -304,13 +308,8 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 	struct wcrypto_digest_ctx *ctxt = ctx;
 	int ret;
 
-	if (!ctx || !key) {
+	if (!ctx || (key_len && !key)) {
 		WD_ERR("%s(): input param err!\n", __func__);
-		return -WD_EINVAL;
-	}
-
-	if (key_len == 0 || key_len > MAX_HMAC_KEY_SIZE) {
-		WD_ERR("%s: input key length err, key_len = %u!\n", __func__, key_len);
 		return -WD_EINVAL;
 	}
 
@@ -319,6 +318,8 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 		return ret;
 
 	ctxt->key_bytes = key_len;
+	if (!key_len)
+		return WD_SUCCESS;
 
 	if (ctxt->setup.data_fmt == WD_SGL_BUF)
 		wd_sgl_cp_from_pbuf(ctxt->key, 0, key, key_len);
