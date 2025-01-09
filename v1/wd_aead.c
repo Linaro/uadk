@@ -362,7 +362,7 @@ int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len)
 	struct wcrypto_aead_ctx *ctxt = ctx;
 	int ret;
 
-	if (!ctx || !key) {
+	if (!ctx || !ctxt->ckey || !key) {
 		WD_ERR("input param is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -387,7 +387,7 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_aead_ctx *ctxt = ctx;
 
-	if (!ctx || (key_len && !key)) {
+	if (!ctx || !ctxt->akey || (key_len && !key)) {
 		WD_ERR("failed to check authenticate key param!\n");
 		return -WD_EINVAL;
 	}
