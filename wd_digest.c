@@ -67,21 +67,30 @@ struct wd_digest_sess {
 	void			**sched_key;
 	struct wd_digest_stream_data stream_data;
 	struct uadk_adapter_worker *worker;
-	pthread_spinlock_t worker_lock;
 	int worker_looptime;
+	enum uadk_adapter_mode adapter_mode;
 };
 
-void wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
+static void wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
 {
 	struct uadk_adapter_worker *worker;
 
-	pthread_spin_lock(&sess->worker_lock);
 	worker = uadk_adapter_switch_worker(wd_digest_setting.adapter,
 					    sess->worker, para);
 	if (worker)
 		sess->worker = worker;
 	sess->worker_looptime = 0;
-	pthread_spin_unlock(&sess->worker_lock);
+}
+
+static struct uadk_adapter_worker *wd_digest_get_worker(struct wd_digest_sess *sess)
+{
+	if (sess->adapter_mode != wd_digest_setting.adapter->mode) {
+		sess->worker = &wd_digest_setting.adapter->workers[0];
+		sess->worker_looptime = 0;
+		sess->adapter_mode = wd_digest_setting.adapter->mode;
+	}
+
+	return sess->worker;
 }
 
 struct wd_env_config wd_digest_env_config;
@@ -216,6 +225,7 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	sess->alg_name = wd_digest_alg_name[setup->alg];
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
+	sess->adapter_mode = wd_digest_setting.adapter->mode;
 
 	ret = wd_drv_alg_support(sess->alg_name, worker->driver);
 	if (!ret) {
@@ -687,9 +697,7 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 	if (unlikely(ret))
 		return -WD_EINVAL;
 
-	pthread_spin_lock(&dsess->worker_lock);
-	worker = dsess->worker;
-	pthread_spin_unlock(&dsess->worker_lock);
+	worker = wd_digest_get_worker(dsess);
 
 	memset(&msg, 0, sizeof(struct wd_digest_msg));
 	fill_request_msg(&msg, req, dsess);
@@ -741,9 +749,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	pthread_spin_lock(&dsess->worker_lock);
-	worker = dsess->worker;
-	pthread_spin_unlock(&dsess->worker_lock);
+	worker = wd_digest_get_worker(dsess);
 
 	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
 		ret = wd_do_digest_sync(h_sess, req);
@@ -972,4 +978,9 @@ int wd_digest_get_env_param(__u32 node, __u32 type, __u32 mode,
 
 	return wd_alg_get_env_param(&wd_digest_env_config,
 				    ctx_attr, num, is_enable);
+}
+
+void wd_digest_set_adapter_mode(enum uadk_adapter_mode mode)
+{
+	wd_digest_setting.adapter->mode = mode;
 }

@@ -66,24 +66,33 @@ struct wd_cipher_sess {
 	__u32			key_bytes;
 	void			**sched_key;
 	struct uadk_adapter_worker *worker;
-	pthread_spinlock_t worker_lock;
 	int worker_looptime;
+	enum uadk_adapter_mode adapter_mode;
 };
 
 struct wd_env_config wd_cipher_env_config;
 static struct wd_init_attrs wd_cipher_init_attrs;
 
-void wd_cipher_switch_worker(struct wd_cipher_sess *sess, int para)
+static void wd_cipher_switch_worker(struct wd_cipher_sess *sess, int para)
 {
 	struct uadk_adapter_worker *worker;
 
-	pthread_spin_lock(&sess->worker_lock);
 	worker = uadk_adapter_switch_worker(wd_cipher_setting.adapter,
 					    sess->worker, para);
 	if (worker)
 		sess->worker = worker;
 	sess->worker_looptime = 0;
-	pthread_spin_unlock(&sess->worker_lock);
+}
+
+static struct uadk_adapter_worker *wd_cipher_get_worker(struct wd_cipher_sess *sess)
+{
+	if (sess->adapter_mode != wd_cipher_setting.adapter->mode) {
+		sess->worker = &wd_cipher_setting.adapter->workers[0];
+		sess->worker_looptime = 0;
+		sess->adapter_mode = wd_cipher_setting.adapter->mode;
+	}
+
+	return sess->worker;
 }
 
 static void wd_cipher_close_driver(int init_type)
@@ -289,6 +298,7 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	}
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
+	sess->adapter_mode = wd_cipher_setting.adapter->mode;
 
 	sess->sched_key = (void **)calloc(nb, sizeof(void *));
 	for (i = 0; i < nb; i++) {
@@ -734,9 +744,7 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
-	pthread_spin_lock(&sess->worker_lock);
-	worker = sess->worker;
-	pthread_spin_unlock(&sess->worker_lock);
+	worker = wd_cipher_get_worker(sess);
 
 	memset(&msg, 0, sizeof(struct wd_cipher_msg));
 	fill_request_msg(&msg, req, sess);
@@ -787,9 +795,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 		return ret;
 	}
 
-	pthread_spin_lock(&sess->worker_lock);
-	worker = sess->worker;
-	pthread_spin_unlock(&sess->worker_lock);
+	worker = wd_cipher_get_worker(sess);
 
 	if (worker->driver->mode == UADK_DRV_SYNCONLY) {
 		ret = wd_do_cipher_sync(h_sess, req);
@@ -1016,4 +1022,9 @@ int wd_cipher_get_env_param(__u32 node, __u32 type, __u32 mode,
 
 	return wd_alg_get_env_param(&wd_cipher_env_config,
 				    ctx_attr, num, is_enable);
+}
+
+void wd_cipher_set_adapter_mode(enum uadk_adapter_mode mode)
+{
+	wd_cipher_setting.adapter->mode = mode;
 }
