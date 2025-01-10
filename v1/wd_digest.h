@@ -77,6 +77,21 @@ enum wcrypto_digest_mode {
 };
 
 /**
+ * wcrypto_digest_msg_state - Message state of digest
+ * @WCRYPTO_DIGEST_END: Final message or single block message
+ * @WCRYPTO_DIGEST_DOING: First message or middle message
+ * @WCRYPTO_DIGEST_STREAM_END: Final message for appending tag mode
+ * @WCRYPTO_DIGEST_STREAM_DOING: Middle message for appending tag mode
+ */
+enum wcrypto_digest_msg_state {
+	WCRYPTO_DIGEST_END = 0x0,
+	WCRYPTO_DIGEST_DOING,
+	WCRYPTO_DIGEST_STREAM_END,
+	WCRYPTO_DIGEST_STREAM_DOING,
+	WCRYPTO_DIGEST_MSG_STATE_MAX,
+};
+
+/**
  * different contexts for different users/threads
  * @cb: call back functions of user
  * @alg: digest algorithm type; denoted by enum wcrypto_digest_alg
@@ -100,7 +115,7 @@ struct wcrypto_digest_ctx_setup {
  * @out_bytes:output data size
  * @priv:reserved data field segment
  * @status:I/O operation return status
- * @has_next: is there next data block
+ * @has_next:  message state, all types are defined in enum wcrypto_digest_msg_state
  * @iv: initialization verctor data address
  * @iv_bytes:initialization verctor data size
  */
@@ -111,7 +126,7 @@ struct wcrypto_digest_op_data {
 	__u32 out_bytes;
 	void *priv;
 	int status;
-	bool has_next;
+	int has_next;
 	void *iv;
 	__u32 iv_bytes;
 };
