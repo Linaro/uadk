@@ -293,11 +293,6 @@ static int do_hmac_sm3_ce(struct wd_digest_msg *msg, __u8 *out_hmac)
 	/* Use last output as the iv in current cycle */
 	iv = msg->out;
 
-	if (!key_len) {
-		WD_ERR("invalid hmac key_len is 0!\n");
-		return -WD_EINVAL;
-	}
-
 	block_type = get_hash_block_type(msg);
 	switch(block_type) {
 	case HASH_SINGLE_BLOCK:

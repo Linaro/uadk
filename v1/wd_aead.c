@@ -28,6 +28,8 @@
 
 #define MAX_AEAD_AUTH_SIZE		64
 #define MAX_AEAD_RETRY_CNT		20000000
+#define AEAD_CCM_GCM_MIN		4U
+#define AEAD_CCM_GCM_MAX		16
 
 static int g_aead_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_SM3_LEN, WCRYPTO_MD5_LEN, WCRYPTO_SHA1_LEN,
@@ -283,9 +285,28 @@ int wcrypto_aead_setauthsize(void *ctx, __u16 authsize)
 		return -WD_EINVAL;
 	}
 
-	if (authsize > MAX_AEAD_AUTH_SIZE) {
-		WD_ERR("fail to check authsize!\n");
-		return -WD_EINVAL;
+	if (ctxt->setup.cmode == WCRYPTO_CIPHER_CCM) {
+		if (authsize < AEAD_CCM_GCM_MIN ||
+		    authsize > AEAD_CCM_GCM_MAX ||
+		    authsize % (AEAD_CCM_GCM_MIN >> 1)) {
+			WD_ERR("failed to check aead CCM authsize, size = %u\n",
+				authsize);
+			return -WD_EINVAL;
+		}
+	} else if (ctxt->setup.cmode == WCRYPTO_CIPHER_GCM) {
+		if (authsize < AEAD_CCM_GCM_MIN << 1 ||
+		    authsize > AEAD_CCM_GCM_MAX) {
+			WD_ERR("failed to check aead GCM authsize, size = %u\n",
+				authsize);
+			return -WD_EINVAL;
+		}
+	} else {
+		if (ctxt->setup.dalg >= WCRYPTO_MAX_DIGEST_TYPE || !authsize ||
+		    authsize > g_aead_mac_len[ctxt->setup.dalg]) {
+			WD_ERR("failed to check aead mac authsize, size = %u\n",
+				authsize);
+			return -WD_EINVAL;
+		}
 	}
 
 	ctxt->auth_size = authsize;
@@ -362,7 +383,7 @@ int wcrypto_set_aead_ckey(void *ctx, __u8 *key, __u16 key_len)
 	struct wcrypto_aead_ctx *ctxt = ctx;
 	int ret;
 
-	if (!ctx || !key) {
+	if (!ctx || !ctxt->ckey || !key) {
 		WD_ERR("input param is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -387,13 +408,10 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_aead_ctx *ctxt = ctx;
 
-	if (!ctx || !key) {
-		WD_ERR("input param is NULL!\n");
+	if (!ctx || !ctxt->akey || (key_len && !key)) {
+		WD_ERR("failed to check authenticate key param!\n");
 		return -WD_EINVAL;
 	}
-
-	if (key_len == 0)
-		goto err_key_len;
 
 	if (ctxt->setup.dalg > WCRYPTO_SHA256) {
 		if (key_len > MAX_HMAC_KEY_SIZE)
@@ -405,6 +423,9 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 
 	ctxt->akey_bytes = key_len;
 
+	if (!key_len)
+		return WD_SUCCESS;
+
 	if (ctxt->setup.data_fmt == WD_SGL_BUF)
 		wd_sgl_cp_from_pbuf(ctxt->akey, 0, key, key_len);
 	else
@@ -413,7 +434,7 @@ int wcrypto_set_aead_akey(void *ctx, __u8 *key, __u16 key_len)
 	return WD_SUCCESS;
 
 err_key_len:
-	WD_ERR("fail to check key length!\n");
+	WD_ERR("failed to check authenticate key length, size = %u\n", key_len);
 	return -WD_EINVAL;
 }
 

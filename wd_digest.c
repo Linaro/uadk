@@ -158,14 +158,13 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 	int ret;
 
-	if (!key || !sess) {
-		WD_ERR("invalid: failed to check input param, sess or key is NULL!\n");
+	if (!sess || (key_len && !key)) {
+		WD_ERR("invalid: digest session or key is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	if ((sess->alg <= WD_DIGEST_SHA224 && key_len >
-		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
-		key_len > MAX_HMAC_KEY_SIZE) {
+	if ((sess->alg <= WD_DIGEST_SHA224 && key_len > MAX_HMAC_KEY_SIZE >> 1) ||
+	    key_len > MAX_HMAC_KEY_SIZE) {
 		WD_ERR("failed to check digest key length, size = %u\n",
 			key_len);
 		return -WD_EINVAL;
@@ -181,7 +180,8 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	}
 
 	sess->key_bytes = key_len;
-	memcpy(sess->key, key, key_len);
+	if (key_len)
+		memcpy(sess->key, key, key_len);
 
 	return 0;
 }
