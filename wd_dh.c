@@ -33,7 +33,7 @@ static struct wd_dh_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_dh_setting;
@@ -52,19 +52,15 @@ static void wd_dh_close_driver(int init_type)
 	if (!wd_dh_setting.dlhandle)
 		return;
 
-	wd_release_drv(wd_dh_setting.driver);
 	dlclose(wd_dh_setting.dlhandle);
 	wd_dh_setting.dlhandle = NULL;
 #else
-	wd_release_drv(wd_dh_setting.driver);
 	hisi_hpre_remove();
 #endif
 }
 
 static int wd_dh_open_driver(int init_type)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "dh";
 #ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
@@ -98,14 +94,6 @@ static int wd_dh_open_driver(int init_type)
 	if (init_type == WD_TYPE_V2)
 		return WD_SUCCESS;
 #endif
-	driver = wd_request_drv(alg_name, false);
-	if (!driver) {
-		wd_dh_close_driver(WD_TYPE_V1);
-		WD_ERR("failed to get %s driver support\n", alg_name);
-		return -WD_EINVAL;
-	}
-
-	wd_dh_setting.driver = driver;
 
 	return WD_SUCCESS;
 }
@@ -139,15 +127,10 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_dh_setting.config,
-				 wd_dh_setting.driver);
-	if (ret)
-		goto out_clear_pool;
+	wd_dh_setting.priv = STATUS_ENABLE;
 
 	return WD_SUCCESS;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_dh_setting.sched);
 out_clear_ctx_config:
@@ -157,19 +140,17 @@ out_clear_ctx_config:
 
 static int wd_dh_common_uninit(void)
 {
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_dh_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!wd_dh_setting.priv) {
+		WD_ERR("invalid: repeat uninit dh!\n");
 		return -WD_EINVAL;
+	}
 
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_dh_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_dh_setting.sched);
-	wd_alg_uninit_driver(&wd_dh_setting.config,
-			     wd_dh_setting.driver);
+	wd_dh_setting.priv = NULL;
 
 	return WD_SUCCESS;
 }
@@ -196,10 +177,22 @@ int wd_dh_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_close_driver;
 
+	ret = wd_ctx_drv_config("dh", &wd_dh_setting.config);
+	if (ret)
+		goto out_uninit_nolock;
+
+	ret = wd_alg_init_driver(&wd_dh_setting.config);
+	if (ret)
+		goto out_drv_deconfig;
+
 	wd_alg_set_init(&wd_dh_setting.status);
 
 	return WD_SUCCESS;
 
+out_drv_deconfig:
+	wd_ctx_drv_deconfig(&wd_dh_setting.config);
+out_uninit_nolock:
+	wd_dh_common_uninit();
 out_close_driver:
 	wd_dh_close_driver(WD_TYPE_V1);
 out_clear_init:
@@ -214,6 +207,9 @@ void wd_dh_uninit(void)
 	ret = wd_dh_common_uninit();
 	if (ret)
 		return;
+
+	wd_alg_uninit_driver(&wd_dh_setting.config);
+	wd_ctx_drv_deconfig(&wd_dh_setting.config);
 
 	wd_dh_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_dh_setting.status);
@@ -249,37 +245,25 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 	while (ret) {
 		memset(&wd_dh_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-		/* Get alg driver and dev name */
-		wd_dh_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_dh_setting.driver) {
-			WD_ERR("fail to bind a valid driver.\n");
-			ret = -WD_EINVAL;
-			goto out_dlopen;
-		}
-
+		/* Init ctx param and prepare for ctx request */
 		dh_ctx_params.ctx_set_num = dh_ctx_num;
 		ret = wd_ctx_param_init(&dh_ctx_params, ctx_params,
-					wd_dh_setting.driver, WD_DH_TYPE, WD_DH_PHASE2);
+					alg, task_type, WD_DH_TYPE, WD_DH_PHASE2);
 		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_dh_setting.driver);
-				wd_alg_drv_unbind(wd_dh_setting.driver);
+			if (ret == -WD_EAGAIN)
 				continue;
-			}
 			goto out_driver;
 		}
 
 		wd_dh_init_attrs.alg = alg;
 		wd_dh_init_attrs.sched_type = sched_type;
-		wd_dh_init_attrs.driver = wd_dh_setting.driver;
+		wd_dh_init_attrs.task_type = task_type;
 		wd_dh_init_attrs.ctx_params = &dh_ctx_params;
 		wd_dh_init_attrs.alg_init = wd_dh_common_init;
 		wd_dh_init_attrs.alg_poll_ctx = wd_dh_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_dh_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_dh_setting.driver);
-				wd_alg_drv_unbind(wd_dh_setting.driver);
 				wd_ctx_param_uninit(&dh_ctx_params);
 				continue;
 			}
@@ -288,16 +272,27 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 		}
 	}
 
+	ret = wd_ctx_drv_config(alg, &wd_dh_setting.config);
+	if (ret)
+		goto out_uninit_nolock;
+
+	ret = wd_alg_init_driver(&wd_dh_setting.config);
+	if (ret)
+		goto out_drv_deconfig;
+
 	wd_alg_set_init(&wd_dh_setting.status);
 	wd_ctx_param_uninit(&dh_ctx_params);
 
 	return WD_SUCCESS;
 
+out_drv_deconfig:
+	wd_ctx_drv_deconfig(&wd_dh_setting.config);
+out_uninit_nolock:
+	wd_dh_common_uninit();
+	wd_alg_attrs_uninit(&wd_dh_init_attrs);
 out_params_uninit:
 	wd_ctx_param_uninit(&dh_ctx_params);
 out_driver:
-	wd_alg_drv_unbind(wd_dh_setting.driver);
-out_dlopen:
 	wd_dh_close_driver(WD_TYPE_V2);
 out_clear_init:
 	wd_alg_clear_init(&wd_dh_setting.status);
@@ -312,8 +307,8 @@ void wd_dh_uninit2(void)
 	if (ret)
 		return;
 
+	wd_ctx_drv_deconfig(&wd_dh_setting.config);
 	wd_alg_attrs_uninit(&wd_dh_init_attrs);
-	wd_alg_drv_unbind(wd_dh_setting.driver);
 	wd_dh_close_driver(WD_TYPE_V2);
 	wd_dh_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_dh_setting.status);
@@ -381,12 +376,12 @@ int wd_do_dh_sync(handle_t sess, struct wd_dh_req *req)
 	if (unlikely(ret))
 		return ret;
 
-	msg_handle.send = wd_dh_setting.driver->send;
-	msg_handle.recv = wd_dh_setting.driver->recv;
+	msg_handle.send = ctx->drv->send;
+	msg_handle.recv = ctx->drv->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_dh_setting.driver, &msg_handle, ctx->ctx,
-				 &msg, &balance, wd_dh_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
+				 wd_dh_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -422,17 +417,15 @@ int wd_do_dh_async(handle_t sess, struct wd_dh_req *req)
 	ctx = config->ctxs + idx;
 
 	mid = wd_get_msg_from_pool(&wd_dh_setting.pool, idx, (void **)&msg);
-	if (unlikely(mid < 0)) {
-		WD_ERR("failed to get msg from pool!\n");
-		return mid;
-	}
+	if (unlikely(mid < 0))
+		return -WD_EBUSY;
 
 	ret = fill_dh_msg(msg, req, (struct wd_dh_sess *)sess);
 	if (ret)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_dh_setting.driver, ctx->ctx, msg);
+	ret = ctx->drv->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send dh BD, hw is err!\n");
@@ -483,7 +476,7 @@ int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_dh_setting.driver, ctx->ctx, &rcv_msg);
+		ret = ctx->drv->recv(ctx->ctx, &rcv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (unlikely(ret)) {

@@ -62,14 +62,23 @@ extern "C" {
 # define HWCAP2_RNG             (1 << 16)
 #endif
 
-enum alg_dev_type {
-	UADK_ALG_SOFT = 0x0,
+enum alg_priority {
+	UADK_ALG_HW = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,
 	UADK_ALG_SVE_INSTR = 0x2,
-	UADK_ALG_HW = 0x3
+	UADK_ALG_SOFT = 0x3
 };
 
-/*
+enum alg_drv_type {
+	ALG_DRV_HW = 0x0,
+	ALG_DRV_CE_INS,
+	ALG_DRV_SVE_INS,
+	ALG_DRV_SOFT,
+	ALG_DRV_INS,
+	ALG_DRV_FB,
+};
+
+/**
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
  * @priority: priority of the type of algorithm supported by the driver
@@ -84,7 +93,8 @@ enum alg_dev_type {
  *		 execute the algorithm task
  * @op_type_num: number of modes in which the device executes the
  *		 algorithm business and requires queues to be executed separately
- * @priv: pointer of priv ctx
+ * @priv_size: parameter memory size passed between the internal
+ *		 interfaces of the driver
  * @fallback: soft calculation driver handle when performing soft
  *		 calculation supplement
  * @init: callback interface for initializing device drivers
@@ -104,38 +114,19 @@ struct wd_alg_driver {
 	int	calc_type;
 	int	queue_num;
 	int	op_type_num;
-	void	*priv;
+	int	priv_size;
 	handle_t fallback;
+	int	init_state;
 
-	int (*init)(struct wd_alg_driver *drv, void *conf);
-	void (*exit)(struct wd_alg_driver *drv);
-	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
-	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*init)(void *conf, void *priv);
+	void (*exit)(void *priv);
+	int (*send)(handle_t ctx, void *drv_msg);
+	int (*recv)(handle_t ctx, void *drv_msg);
 	int (*get_usage)(void *param);
 	int (*get_extend_ops)(void *ops);
 };
 
-inline int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
-{
-	return drv->init(drv, conf);
-}
-
-inline void wd_alg_driver_exit(struct wd_alg_driver *drv)
-{
-	drv->exit(drv);
-}
-
-inline int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
-{
-	return drv->send(drv, ctx, msg);
-}
-
-inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
-{
-	return drv->recv(drv, ctx, msg);
-}
-
-/*
+/**
  * wd_alg_driver_register() - Register a device driver.
  * @wd_alg_driver: a device driver that supports an algorithm.
  *
@@ -174,7 +165,7 @@ struct wd_alg_list {
  *
  * Returns the applied algorithm driver, non means error.
  */
-struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
+struct wd_alg_driver *wd_request_drv(const char *alg_name, int drv_type);
 void wd_release_drv(struct wd_alg_driver *drv);
 
 /*
@@ -184,8 +175,7 @@ void wd_release_drv(struct wd_alg_driver *drv);
  *
  * Return check result.
  */
-bool wd_drv_alg_support(const char *alg_name,
-	struct wd_alg_driver *drv);
+bool wd_drv_alg_support(const char *alg_name, void *param);
 
 /*
  * wd_enable_drv() - Re-enable use of the current device driver.

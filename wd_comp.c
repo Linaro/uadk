@@ -46,7 +46,7 @@ struct wd_comp_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
+	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_comp_setting;
@@ -63,20 +63,16 @@ static void wd_comp_close_driver(int init_type)
 	}
 
 	if (wd_comp_setting.dlhandle) {
-		wd_release_drv(wd_comp_setting.driver);
 		dlclose(wd_comp_setting.dlhandle);
 		wd_comp_setting.dlhandle = NULL;
 	}
 #else
-	wd_release_drv(wd_comp_setting.driver);
 	hisi_zip_remove();
 #endif
 }
 
 static int wd_comp_open_driver(int init_type)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "zlib";
 #ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
@@ -110,14 +106,6 @@ static int wd_comp_open_driver(int init_type)
 	if (init_type == WD_TYPE_V2)
 		return WD_SUCCESS;
 #endif
-	driver = wd_request_drv(alg_name, false);
-	if (!driver) {
-		wd_comp_close_driver(WD_TYPE_V1);
-		WD_ERR("failed to get %s driver support\n", alg_name);
-		return -WD_EINVAL;
-	}
-
-	wd_comp_setting.driver = driver;
 
 	return WD_SUCCESS;
 }
@@ -165,15 +153,10 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_comp_setting.config,
-					wd_comp_setting.driver);
-	if (ret)
-		goto out_clear_pool;
+	wd_comp_setting.priv = STATUS_ENABLE;
 
 	return 0;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_comp_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_comp_setting.sched);
 out_clear_ctx_config:
@@ -183,10 +166,9 @@ out_clear_ctx_config:
 
 static int wd_comp_uninit_nolock(void)
 {
-	enum wd_status status;
+	void *priv = wd_comp_setting.priv;
 
-	wd_alg_get_init(&wd_comp_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (!priv)
 		return -WD_EINVAL;
 
 	/* Uninit async request pool */
@@ -195,8 +177,7 @@ static int wd_comp_uninit_nolock(void)
 	/* Unset config, sched, driver */
 	wd_clear_sched(&wd_comp_setting.sched);
 
-	wd_alg_uninit_driver(&wd_comp_setting.config,
-			     wd_comp_setting.driver);
+	wd_comp_setting.priv = NULL;
 
 	return 0;
 }
@@ -223,10 +204,22 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_driver;
 
+	ret = wd_ctx_drv_config("zlib", &wd_comp_setting.config);
+	if (ret)
+		goto out_uninit_nolock;
+
+	ret = wd_alg_init_driver(&wd_comp_setting.config);
+	if (ret)
+		goto out_drv_deconfig;
+
 	wd_alg_set_init(&wd_comp_setting.status);
 
 	return 0;
 
+out_drv_deconfig:
+	wd_ctx_drv_deconfig(&wd_comp_setting.config);
+out_uninit_nolock:
+	wd_comp_uninit_nolock();
 out_clear_driver:
 	wd_comp_close_driver(WD_TYPE_V1);
 out_clear_init:
@@ -237,6 +230,9 @@ out_clear_init:
 void wd_comp_uninit(void)
 {
 	int ret;
+
+	wd_alg_uninit_driver(&wd_comp_setting.config);
+	wd_ctx_drv_deconfig(&wd_comp_setting.config);
 
 	ret = wd_comp_uninit_nolock();
 	if (ret)
@@ -278,36 +274,26 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 	while (ret != 0) {
 		memset(&wd_comp_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-		/* Get alg driver and dev name */
-		wd_comp_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_comp_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
-			goto out_dlclose;
-		}
-
+		/* Init ctx param and prepare for ctx request */
 		comp_ctx_params.ctx_set_num = comp_ctx_num;
 		ret = wd_ctx_param_init(&comp_ctx_params, ctx_params,
-					wd_comp_setting.driver, WD_COMP_TYPE, WD_DIR_MAX);
+					alg, task_type, WD_COMP_TYPE, WD_DIR_MAX);
 		if (ret) {
 			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_comp_setting.driver);
-				wd_alg_drv_unbind(wd_comp_setting.driver);
 				continue;
 			}
-			goto out_unbind_drv;
+			goto out_dlclose;
 		}
 
 		wd_comp_init_attrs.alg = alg;
 		wd_comp_init_attrs.sched_type = sched_type;
-		wd_comp_init_attrs.driver = wd_comp_setting.driver;
+		wd_comp_init_attrs.task_type = task_type;
 		wd_comp_init_attrs.ctx_params = &comp_ctx_params;
 		wd_comp_init_attrs.alg_init = wd_comp_init_nolock;
 		wd_comp_init_attrs.alg_poll_ctx = wd_comp_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_comp_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_comp_setting.driver);
-				wd_alg_drv_unbind(wd_comp_setting.driver);
 				wd_ctx_param_uninit(&comp_ctx_params);
 				continue;
 			}
@@ -316,15 +302,26 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 		}
 	}
 
+	ret = wd_ctx_drv_config(alg, &wd_comp_setting.config);
+	if (ret)
+		goto out_uninit_nolock;
+
+	ret = wd_alg_init_driver(&wd_comp_setting.config);
+	if (ret)
+		goto out_drv_deconfig;
+
 	wd_alg_set_init(&wd_comp_setting.status);
 	wd_ctx_param_uninit(&comp_ctx_params);
 
 	return 0;
 
+out_drv_deconfig:
+	wd_ctx_drv_deconfig(&wd_comp_setting.config);
+out_uninit_nolock:
+	wd_comp_uninit_nolock();
+	wd_alg_attrs_uninit(&wd_comp_init_attrs);
 out_params_uninit:
 	wd_ctx_param_uninit(&comp_ctx_params);
-out_unbind_drv:
-	wd_alg_drv_unbind(wd_comp_setting.driver);
 out_dlclose:
 	wd_comp_close_driver(WD_TYPE_V2);
 out_uninit:
@@ -336,12 +333,13 @@ void wd_comp_uninit2(void)
 {
 	int ret;
 
+	wd_ctx_drv_deconfig(&wd_comp_setting.config);
 	ret = wd_comp_uninit_nolock();
 	if (ret)
 		return;
 
 	wd_alg_attrs_uninit(&wd_comp_init_attrs);
-	wd_alg_drv_unbind(wd_comp_setting.driver);
+
 	wd_comp_close_driver(WD_TYPE_V2);
 	wd_comp_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_comp_setting.status);
@@ -377,7 +375,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_comp_setting.driver, ctx->ctx, &resp_msg);
+		ret = ctx->drv->recv(ctx->ctx, &resp_msg);
 		if (unlikely(ret < 0)) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw error!\n");
@@ -607,12 +605,12 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
-	msg_handle.send = wd_comp_setting.driver->send;
-	msg_handle.recv = wd_comp_setting.driver->recv;
+	msg_handle.send = ctx->drv->send;
+	msg_handle.recv = ctx->drv->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, config->epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
+				 NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -858,15 +856,14 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	ctx = config->ctxs + idx;
 
 	tag = wd_get_msg_from_pool(&wd_comp_setting.pool, idx, (void **)&msg);
-	if (unlikely(tag < 0)) {
-		WD_ERR("failed to get msg from pool!\n");
-		return tag;
-	}
+	if (unlikely(tag < 0))
+		return -WD_EBUSY;
+
 	fill_comp_msg(sess, msg, req);
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
 
-	ret = wd_alg_driver_send(wd_comp_setting.driver, ctx->ctx, msg);
+	ret = ctx->drv->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;
