@@ -50,8 +50,6 @@ struct wd_cipher_msg {
 	__u8 *out;
 };
 
-struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag);
-
 #ifdef __cplusplus
 }
 #endif

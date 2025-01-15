@@ -151,6 +151,7 @@ struct wd_ctx_config_internal {
 	void *priv;
 	bool epoll_en;
 	unsigned long *msg_cnt;
+	struct wd_async_msg_pool *pool;
 };
 
 /*
@@ -170,16 +171,17 @@ struct wd_ctx_config_internal {
 struct wd_sched {
 	const char *name;
 	int sched_policy;
+	struct uadk_adapter_worker *worker;
 	handle_t (*sched_init)(handle_t h_sched_ctx, void *sched_param);
 	__u32 (*pick_next_ctx)(handle_t h_sched_ctx,
 				  void *sched_key,
 				  const int sched_mode);
-	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
+	int (*poll_policy)(struct wd_sched *sched, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
 };
 
-typedef int (*wd_alg_init)(struct wd_ctx_config *config, struct wd_sched *sched);
-typedef int (*wd_alg_poll_ctx)(__u32 idx, __u32 expt, __u32 *count);
+typedef int (*wd_alg_init)(struct uadk_adapter_worker *worker, struct wd_sched *sched);
+typedef int (*wd_alg_poll_ctx)(struct wd_sched *sched, __u32 idx, __u32 expt, __u32 *count);
 
 struct wd_datalist {
 	void *data;

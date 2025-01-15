@@ -42,6 +42,7 @@
 
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched *g_sched;
+static struct wd_sched g_sched_test;
 
 static long long int g_times;
 static unsigned int g_thread_num;
@@ -593,7 +594,7 @@ int get_cipher_resource(struct cipher_testvec **alg_tv, int* alg, int* mode)
 	return 0;
 }
 
-static int sched_single_poll_policy(handle_t h_sched_ctx,
+static int sched_single_poll_policy(struct wd_sched *sched,
 				    __u32 expect, __u32 *count)
 {
 	return 0;
@@ -618,7 +619,7 @@ static int init_ctx_config(int type, int mode)
 
 	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1,
 				    numa_max_node() + 1,
-				    wd_cipher_poll_ctx);
+				    wd_cipher_poll_ctx_);
 	if (!g_sched) {
 		printf("Fail to alloc sched!\n");
 		goto out;
@@ -1226,7 +1227,7 @@ static void *poll_func(void *arg)
 	int expt = g_times * g_thread_num;
 
 	while (1) {
-		ret = g_sched->poll_policy(g_sched->h_sched_ctx, 1, &count);
+		ret = g_sched->poll_policy(g_sched, 1, &count);
 		if (ret != -EAGAIN && ret < 0) {
 			SEC_TST_PRT("poll ctx is error----------->\n");
 			break;
@@ -1416,7 +1417,6 @@ static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx,
 static int digest_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	struct wd_sched sched;
 	int ret;
 
 	if (g_use_env)
@@ -1443,12 +1443,12 @@ static int digest_init1(int type, int mode)
 	g_ctx_cfg.ctxs[0].op_type = type;
 	g_ctx_cfg.ctxs[0].ctx_mode = mode;
 
-	sched.name = SCHED_SINGLE;
-	sched.pick_next_ctx = sched_digest_pick_next_ctx;
-	sched.poll_policy = sched_single_poll_policy;
-	sched.sched_init = sched_digest_init;
+	g_sched_test.name = SCHED_SINGLE;
+	g_sched_test.pick_next_ctx = sched_digest_pick_next_ctx;
+	g_sched_test.poll_policy = sched_single_poll_policy;
+	g_sched_test.sched_init = sched_digest_init;
 	/* digest init */
-	ret = wd_digest_init(&g_ctx_cfg, &sched);
+	ret = wd_digest_init(&g_ctx_cfg, &g_sched_test);
 	if (ret) {
 		SEC_TST_PRT("Fail to digest ctx!\n");
 		goto out;
@@ -2685,7 +2685,6 @@ static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx,
 static int aead_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	struct wd_sched sched;
 	int ret;
 
 	if (g_use_env)
@@ -2712,12 +2711,12 @@ static int aead_init1(int type, int mode)
 	g_ctx_cfg.ctxs[0].op_type = type;
 	g_ctx_cfg.ctxs[0].ctx_mode = mode;
 
-	sched.name = SCHED_SINGLE;
-	sched.pick_next_ctx = sched_aead_pick_next_ctx;
-	sched.poll_policy = sched_single_poll_policy;
-	sched.sched_init = sched_aead_init;
+	g_sched_test.name = SCHED_SINGLE;
+	g_sched_test.pick_next_ctx = sched_aead_pick_next_ctx;
+	g_sched_test.poll_policy = sched_single_poll_policy;
+	g_sched_test.sched_init = sched_aead_init;
 	/* aead init*/
-	ret = wd_aead_init(&g_ctx_cfg, &sched);
+	ret = wd_aead_init(&g_ctx_cfg, &g_sched_test);
 	if (ret) {
 		SEC_TST_PRT("Fail to aead ctx!\n");
 		goto out;

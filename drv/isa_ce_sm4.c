@@ -419,6 +419,7 @@ static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 	.drv_name = "isa_ce_sm4",\
 	.alg_name = (ce_alg_name),\
 	.calc_type = UADK_ALG_CE_INSTR,\
+	.mode = UADK_DRV_SYNCONLY,\
 	.priority = 200,\
 	.op_type_num = 1,\
 	.fallback = 0,\

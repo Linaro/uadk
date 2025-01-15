@@ -229,7 +229,8 @@ int hw_stream_compress(struct test_options *opts,
 	return ret;
 }
 
-static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
+static int lib_poll_func(struct wd_sched *sched, __u32 pos,
+			 __u32 expect, __u32 *count)
 {
 	int ret;
 

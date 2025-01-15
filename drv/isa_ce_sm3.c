@@ -32,6 +32,7 @@ static struct wd_alg_driver sm3_ce_alg_driver = {
 	.drv_name = "isa_ce_sm3",
 	.alg_name = "sm3",
 	.calc_type = UADK_ALG_CE_INSTR,
+	.mode = UADK_DRV_SYNCONLY,
 	.priority = 200,
 	.queue_num = 1,
 	.op_type_num = 1,
