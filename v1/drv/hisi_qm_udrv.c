@@ -768,13 +768,16 @@ static int hw_type_check(struct wd_queue *q, const char *hw_type)
 
 int hisi_qm_inject_op_register(struct wd_queue *q, struct hisi_qm_inject_op *op)
 {
-	struct q_info *qinfo = q->qinfo;
-	struct qm_queue_info *info = qinfo->priv;
+	struct qm_queue_info *info;
+	struct q_info *qinfo;
 
-	if (!op || !op->sqe_fill_priv || !op->sqe_parse_priv) {
+	if (!q || !q->qinfo || !op || !op->sqe_fill_priv ||
+	    !op->sqe_parse_priv) {
 		WD_ERR("inject option is invalid!\n");
 		return -WD_EINVAL;
 	}
+	qinfo = q->qinfo;
+	info = qinfo->priv;
 
 	if (hw_type_check(q, op->hw_type)) {
 		WD_ERR("inject option hw compare error!\n");

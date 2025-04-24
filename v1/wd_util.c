@@ -143,7 +143,7 @@ int wd_init_cookie_pool(struct wd_cookie_pool *pool,
 
 void wd_uninit_cookie_pool(struct wd_cookie_pool *pool)
 {
-	if (pool->cookies) {
+	if (pool && pool->cookies) {
 		free(pool->cookies);
 		pool->cookies = NULL;
 	}

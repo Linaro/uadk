@@ -1026,6 +1026,8 @@ void wd_sgl_memset(struct wd_sgl *sgl, int ch)
 		return;
 	}
 
-	for (i = 0; i < sgl->buf_num; i++)
-		memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
+	for (i = 0; i < sgl->buf_num; i++) {
+		if (sgl->sge[i].buf)
+			memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
+	}
 }
