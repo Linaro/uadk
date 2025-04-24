@@ -1891,7 +1891,7 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 
 static void wd_get_alg_type(const char *alg_name, char *alg_type)
 {
-	int i;
+	__u64 i;
 
 	for (i = 0; i < ARRAY_SIZE(alg_options); i++) {
 		if (strcmp(alg_name, alg_options[i].name) == 0) {
