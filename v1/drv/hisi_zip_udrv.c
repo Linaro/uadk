@@ -73,6 +73,15 @@
 #define lower_32_bits(phy)		((__u32)((__u64)(phy)))
 #define upper_32_bits(phy)		((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
 
+/* 200 * 1.125 + GZIP_HEADER_SZ, align with 4 byte */
+#define STORE_BUF_SIZE			236
+/* The hardware requires at least 200byte output buffers */
+#define SW_STOREBUF_TH			200
+/* The 38KB + CTX_BUFFER_OFFSET offset in ctx_buf is used as the internal buffer */
+#define CTX_STOREBUF_OFFSET		0x9840
+/* When the available output length is less than 0x10, hw will ignores the request */
+#define BYPASS_DEST_LEN			0x10
+
 enum {
 	BD_TYPE,
 	BD_TYPE3 = 3,
@@ -82,6 +91,21 @@ enum lz77_compress_status {
 	UNCOMP_BLK,
 	RLE_BLK,
 	COMP_BLK,
+};
+
+struct hisi_zip_buf {
+	/* Denoted internal store buf */
+	__u8 dst[STORE_BUF_SIZE];
+	/* Denoted whether the output is copied from the storage buffer */
+	__u8 skip_hw;
+	/* Denoted data size left in store buf */
+	__u32 pending_out;
+	/* Size that have been copied */
+	__u32 output_offset;
+	/* Input data consumption when all data copies are complete */
+	__u32 fallback_size;
+	/* Store end flag return by HW */
+	__u32 status;
 };
 
 struct hisi_zip_sqe_addr {
@@ -129,6 +153,77 @@ static void zip_err_bd_print(__u16 ctx_st, __u32 status, __u32 type)
 	}
 }
 
+static __u32 copy_to_out(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf,
+			 __u32 pending_out)
+{
+	__u32 copy_len;
+
+	/*
+	 * msg->avail_out which inputed by user, is the size of user's dst buf,
+	 * and there will ensure that the copy length will not exceed the
+	 * available output length.
+	 */
+	copy_len = pending_out > msg->avail_out ? msg->avail_out : pending_out;
+	memcpy(msg->dst, buf->dst + buf->output_offset, copy_len);
+
+	return copy_len;
+}
+
+static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf)
+{
+	__u32 copy_len;
+
+	if (!msg->in_size && buf->fallback_size) {
+		WD_ERR("Couldn't handle, input size is 0!\n");
+		return;
+	}
+
+	/*
+	 * After hw processing, pending_out is the length of the hardware output.
+	 * After hw is skipped, pending_out is the remaining length in the buf.
+	 */
+	if (!buf->skip_hw)
+		buf->pending_out = msg->produced;
+
+	copy_len = copy_to_out(msg, buf, buf->pending_out);
+	buf->pending_out -= copy_len;
+	msg->produced = copy_len;
+
+	if (!buf->pending_out) {
+		/* All data copied to output, reset the buf status */
+		if (buf->skip_hw) {
+			buf->skip_hw = 0;
+			msg->in_cons = buf->fallback_size;
+			msg->status = buf->status == WCRYPTO_DECOMP_END ?
+					WCRYPTO_DECOMP_END : WD_SUCCESS;
+		}
+
+		buf->fallback_size = 0;
+		buf->output_offset = 0;
+	} else {
+		/* Still data need to be copied */
+		buf->output_offset += copy_len;
+		buf->skip_hw = 0;
+
+		/* Feedback to users that a maximum of 1 byte of data is not consumed */
+		if (msg->in_cons > 1) {
+			buf->fallback_size = 1;
+			msg->in_cons--;
+		} else {
+			msg->in_cons = 0;
+		}
+
+		/*
+		 * The end flag is cached. It can be output only
+		 * after the data is completely copied to the output.
+		 */
+		if (msg->status == WCRYPTO_DECOMP_END) {
+			buf->status = WCRYPTO_DECOMP_END;
+			msg->status = WD_SUCCESS;
+		}
+	}
+}
+
 static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
 				struct wcrypto_comp_msg *msg)
 {
@@ -150,30 +245,41 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 					struct wcrypto_comp_msg *msg,
 					struct wd_queue *q, bool is_lz77)
 {
+	struct hisi_zip_buf *buf;
 	uintptr_t phy_ctxbuf = 0;
 	uintptr_t phy_out = 0;
 	uintptr_t phy_in;
-
-	phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
-	if (!phy_in) {
-		WD_ERR("Get zip in buf dma address fail!\n");
-		return -WD_ENOMEM;
-	}
-
-	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF)) {
-		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
-		if (!phy_out) {
-			WD_ERR("Get zip out buf dma address fail!\n");
-			goto unmap_phy_in;
-		}
-	}
 
 	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL) {
 		phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf,
 						     MAX_CTX_RSV_SIZE);
 		if (!phy_ctxbuf) {
 			WD_ERR("Get zip ctx buf dma address fail!\n");
-			goto unmap_phy_out;
+			return -WD_ENOMEM;
+		}
+
+		buf = (struct hisi_zip_buf *)(msg->ctx_buf + CTX_STOREBUF_OFFSET);
+		if (buf->pending_out) {
+			/* skip hw and output from internal buf */
+			buf->skip_hw = 1;
+		} else if (msg->avail_out <= SW_STOREBUF_TH && msg->data_fmt != WD_SGL_BUF) {
+			/* Enable internal buf to replace the user output buffer. */
+			phy_out = phy_ctxbuf + CTX_STOREBUF_OFFSET;
+			buf->pending_out = STORE_BUF_SIZE;
+		}
+	}
+
+	phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
+	if (!phy_in) {
+		WD_ERR("Get zip in buf dma address fail!\n");
+		goto unmap_phy_ctx;
+	}
+
+	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF) && !phy_out) {
+		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
+		if (!phy_out) {
+			WD_ERR("Get zip out buf dma address fail!\n");
+			goto unmap_phy_in;
 		}
 	}
 
@@ -183,11 +289,12 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 
 	return WD_SUCCESS;
 
-unmap_phy_out:
-	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF))
-		drv_iova_unmap(q, msg->dst, (void *)phy_out, msg->avail_out);
 unmap_phy_in:
 	drv_iova_unmap(q, msg->src, (void *)phy_in, msg->in_size);
+unmap_phy_ctx:
+	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
+		drv_iova_unmap(q, msg->ctx_buf, (void *)phy_ctxbuf,
+			       MAX_CTX_RSV_SIZE);
 
 	return -WD_ENOMEM;
 }
@@ -382,6 +489,7 @@ static int fill_zip_comp_alg_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg)
 {
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	struct hisi_zip_buf *buf;
 
 	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
 		     msg->in_size > MAX_BUFFER_SIZE)) {
@@ -398,6 +506,17 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
+	if (msg->ctx_buf) {
+		buf = (struct hisi_zip_buf *)(msg->ctx_buf + CTX_STOREBUF_OFFSET);
+		if (buf->skip_hw) {
+			/* Change dest_avail_out to BYPASS_DEST_LEN to skip hw */
+			sqe->dest_avail_out = BYPASS_DEST_LEN;
+			sqe->input_data_length = 0;
+		} else if (buf->pending_out == STORE_BUF_SIZE) {
+			/* Change dest_avail_out to STORE_BUF_SIZE when enable internal buf.*/
+			sqe->dest_avail_out = STORE_BUF_SIZE;
+		}
+	}
 
 	return WD_SUCCESS;
 }
@@ -640,12 +759,6 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 		return ret;
 	}
 
-	ret = ops[msg->alg_type].fill_sqe_buffer_size(sqe, msg);
-	if (unlikely(ret)) {
-		WD_ERR("The buffer size is invalid!\n");
-		return ret;
-	}
-
 	ret = ops[msg->alg_type].fill_sqe_window_size(sqe, msg);
 	if (unlikely(ret)) {
 		WD_ERR("The window size is invalid!\n");
@@ -655,6 +768,12 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 	ret = ops[msg->alg_type].fill_sqe_addr(sqe, msg, q);
 	if (unlikely(ret))
 		return ret;
+
+	ret = ops[msg->alg_type].fill_sqe_buffer_size(sqe, msg);
+	if (unlikely(ret)) {
+		WD_ERR("The buffer size is invalid!\n");
+		return ret;
+	}
 
 	flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
 		      HZ_SYNC_FLUSH;
@@ -728,6 +847,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 	uintptr_t phy_in, phy_out, phy_ctxbuf;
+	struct hisi_zip_buf *buf = NULL;
 	struct wd_queue *q = info->q;
 	struct wcrypto_comp_tag *tag;
 
@@ -739,12 +859,6 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	if (usr && sqe->tag_l != usr)
 		return 0;
 
-	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END) {
-		zip_err_bd_print(ctx_st, status, type);
-		recv_msg->status = WD_IN_EPARA;
-	} else {
-		recv_msg->status = 0;
-	}
 	recv_msg->in_cons = sqe->consumed;
 	recv_msg->produced = sqe->produced;
 	if (recv_msg->ctx_buf) {
@@ -757,16 +871,35 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 
 	phy_in = DMA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
 	drv_iova_unmap(q, recv_msg->src, (void *)phy_in, recv_msg->in_size);
-	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
-	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
 	if (recv_msg->ctx_buf) {
+		buf = (struct hisi_zip_buf *)(recv_msg->ctx_buf + CTX_STOREBUF_OFFSET);
 		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l) -
 			     CTX_BUFFER_OFFSET;
 		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
 			       MAX_CTX_RSV_SIZE);
 	}
 
+	/*
+	 * The output mapping address needs to be released only when the internal buffer
+	 * is not enabled or hw is skipped.
+	 */
+	if (!buf || !buf->pending_out || buf->skip_hw) {
+		phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+		drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
+	}
+
+	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END &&
+	    (!buf || !buf->skip_hw)) {
+		zip_err_bd_print(ctx_st, status, type);
+		recv_msg->status = WD_IN_EPARA;
+	} else {
+		recv_msg->status = 0;
+	}
+
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+
+	if (buf && buf->pending_out)
+		copy_from_buf(recv_msg, buf);
 
 	tag = (void *)(uintptr_t)recv_msg->udata;
 	if (tag && tag->priv && !info->sqe_fill_priv)
