@@ -688,6 +688,10 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 
 		ret = wd_do_comp_strm(h_sess, &strm_req);
 		if (unlikely(ret < 0 || strm_req.status == WD_IN_EPARA)) {
+			req->status = strm_req.status;
+			if (!ret)
+				ret = -WD_EINVAL;
+
 			WD_ERR("wd comp, invalid or incomplete data! ret = %d, status = %u!\n",
 			       ret, strm_req.status);
 			return ret;
@@ -784,7 +788,7 @@ static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	struct wd_comp_msg msg;
+	struct wd_comp_msg msg = {0};
 	__u32 src_len;
 	int ret;
 

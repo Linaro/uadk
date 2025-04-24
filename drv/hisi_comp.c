@@ -340,7 +340,7 @@ static void fill_buf_sgl_skip(struct hisi_zip_sqe *sqe, __u32 src_skip,
 	sqe->dw8 = val;
 }
 
-static int fill_buf_deflate_slg_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
+static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 					struct wd_comp_msg *msg, const char *head,
 					int head_size)
 {
@@ -376,19 +376,19 @@ static int fill_buf_deflate_slg_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 static int fill_buf_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				struct wd_comp_msg *msg)
 {
-	return fill_buf_deflate_slg_generic(h_qp, sqe, msg, NULL, 0);
+	return fill_buf_deflate_sgl_generic(h_qp, sqe, msg, NULL, 0);
 }
 
 static int fill_buf_zlib_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			     struct wd_comp_msg *msg)
 {
-	return fill_buf_deflate_slg_generic(h_qp, sqe, msg, ZLIB_HEADER, ZLIB_HEADER_SZ);
+	return fill_buf_deflate_sgl_generic(h_qp, sqe, msg, ZLIB_HEADER, ZLIB_HEADER_SZ);
 }
 
 static int fill_buf_gzip_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			     struct wd_comp_msg *msg)
 {
-	return fill_buf_deflate_slg_generic(h_qp, sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
+	return fill_buf_deflate_sgl_generic(h_qp, sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
 }
 
 static void fill_buf_size_lz77_zstd(struct hisi_zip_sqe *sqe, __u32 in_size,
