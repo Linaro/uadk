@@ -205,6 +205,7 @@ static void wd_shm_delete(struct wd_ctx_config_internal *in)
 		return;
 
 	/* deleted shared memory */
+	shmdt(in->msg_cnt);
 	shmctl(in->shmid, IPC_RMID, NULL);
 
 	in->shmid = 0;
