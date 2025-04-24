@@ -856,6 +856,10 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 
 	switch (comp_lv) {
 	case WD_COMP_L8:
+	/*
+	 * L8 indicates that the price mode is disabled.
+	 * By default, the price mode is disabled.
+	 */
 		break;
 	case WD_COMP_L9:
 		val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
