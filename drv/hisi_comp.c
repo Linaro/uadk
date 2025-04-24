@@ -423,10 +423,10 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 	}
 
 	/*
-	 * When the output buffer is smaller than the 1.125*input len in STATEFUL,
+	 * When the output buffer is smaller than the 1.125*input len in STATEFUL compression,
 	 * shrink the input len.
 	 */
-	if (msg->stream_mode == WD_COMP_STATEFUL &&
+	if (msg->stream_mode == WD_COMP_STATEFUL && msg->req.op_type == WD_DIR_COMPRESS &&
 	    (__u64)out_size < min_out_buf_size(in_size)) {
 		in_size = max_in_data_size(out_size);
 		msg->req.last = 0;
@@ -567,10 +567,10 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	}
 
 	/*
-	 * When the output buffer is smaller than the 1.125*input len in STATEFUL,
+	 * When the output buffer is smaller than the 1.125*input len in STATEFUL compression,
 	 * shrink the input len.
 	 */
-	if (msg->stream_mode == WD_COMP_STATEFUL &&
+	if (msg->stream_mode == WD_COMP_STATEFUL && msg->req.op_type == WD_DIR_COMPRESS &&
 	    (__u64)out_size < min_out_buf_size(in_size)) {
 		in_size = max_in_data_size(out_size);
 		msg->req.last = 0;
