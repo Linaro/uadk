@@ -1480,7 +1480,6 @@ static void *async_poll_process_func(void *args)
 			goto out;
 	}
 out:
-	pthread_exit(NULL);
 	return NULL;
 }
 
@@ -1987,7 +1986,6 @@ err_alloc:
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
 			  struct wd_alg_driver *driver)
 {
-
 	driver->exit(driver);
 	/* Ctx config just need clear once */
 	wd_clear_ctx_config(config);

@@ -31,8 +31,8 @@ enum {
 #define UACCE_API_VER_NOIOMMU_SUBFIX	"_noiommu"
 
 enum uacce_qfrt {
-	UACCE_QFRT_MMIO = 0,	/* device mmio region */
-	UACCE_QFRT_DUS = 1,	/* device user share */
+	UACCE_QFRT_MMIO = 0, /* device mmio region */
+	UACCE_QFRT_DUS = 1, /* device user share */
 	UACCE_QFRT_MAX,
 };
 
