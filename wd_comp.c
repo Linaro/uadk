@@ -502,7 +502,9 @@ int wd_comp_reset_sess(handle_t h_sess)
 	}
 
 	sess->stream_pos = WD_COMP_STREAM_NEW;
-	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	if (sess->ctx_buf)
+		memset(sess->ctx_buf, 0, HW_CTX_SIZE);
 
 	return 0;
 }
