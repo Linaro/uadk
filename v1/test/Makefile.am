@@ -7,7 +7,6 @@ SUBDIRS+=hisi_zip_test
 endif
 
 SUBDIRS+=hisi_zip_test_sgl
-SUBDIRS+=hisi_trng_test
 
 if HAVE_CRYPTO
 SUBDIRS+=hisi_hpre_test

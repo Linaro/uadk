@@ -17,7 +17,6 @@ uadk_tool_SOURCES=uadk_tool.c dfx/uadk_dfx.c dfx/uadk_dfx.h \
 		benchmark/hpre_wd_benchmark.c hpre_wd_benchmark.h \
 		benchmark/zip_uadk_benchmark.c benchmark/zip_uadk_benchmark.h \
 		benchmark/zip_wd_benchmark.c benchmark/zip_wd_benchmark.h \
-		benchmark/trng_wd_benchmark.c benchmark/trng_wd_benchmark.h \
 		test/uadk_test.c test/uadk_test.h \
 		test/test_sec.c test/test_sec.h test/sec_template_tv.h
 

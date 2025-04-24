@@ -87,7 +87,6 @@ enum acc_type {
 	SEC_TYPE,
 	HPRE_TYPE,
 	ZIP_TYPE,
-	TRNG_TYPE,
 };
 
 enum acc_init_type {
