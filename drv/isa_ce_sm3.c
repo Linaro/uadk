@@ -57,6 +57,7 @@ static void __attribute__((constructor)) sm3_ce_probe(void)
 
 static void __attribute__((destructor)) sm3_ce_remove(void)
 {
+	WD_INFO("Info: unregister SM3 CE alg drivers!\n");
 	wd_alg_driver_unregister(&sm3_ce_alg_driver);
 }
 
