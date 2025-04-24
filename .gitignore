@@ -175,6 +175,15 @@ v1/test/hisi_zip_test/wd_zip_test
 v1/test/hisi_zip_test_sgl/sgl_test
 v1/test/hisi_zip_test_sgl/wd_zip_test_sgl
 v1/test/test_mm/test_wd_mem
+v1/test/bmm_test/bmm_test
+v1/test/hisi_hpre_test/hpre_test_tools_v1
+v1/test/hisi_hpre_test/test_hisi_hpre_times_v1
+v1/test/hisi_hpre_test/test_hisi_hpre_v1
+v1/test/hisi_sec_test/test_hisi_sec_v1
+v1/test/hisi_sec_test_sgl/test_hisi_sec_sgl_v1
+v1/test/hisi_trng_test/test_hisi_trngk_v1
+v1/test/hisi_trng_test/test_hisi_trngp_v1
+v1/test/hisi_trng_test/test_hisi_trngu_v1
 *.gcda
 *.ut
 *.eml
