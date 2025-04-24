@@ -88,10 +88,10 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		run_cmd zip_sva_perf --in $1 --out $2 --olist /tmp/gzip_list.bin $@
+		run_cmd uadk_tool test --m zip --in $1 --out $2 $@
 		;;
 	"zlib")
-		run_cmd zip_sva_perf -z --in $1 --out $2 --olist /tmp/zlib_list.bin $@
+		run_cmd uadk_tool test --m zip --alg 1 --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -105,10 +105,10 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd zip_sva_perf -d --in $1 --out $2 --ilist /tmp/gzip_list.bin $@
+		run_cmd uadk_tool test --m zip --inf --in $1 --out $2 $@
 		;;
 	"zlib")
-		run_cmd zip_sva_perf -z -d --in $1 --out $2 --ilist /tmp/zlib_list.bin $@
+		run_cmd uadk_tool test --m zip --alg 1 --inf --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -122,10 +122,10 @@ hw_strm_deflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd zip_sva_perf -S --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 $@
 		;;
 	"zlib")
-		run_cmd zip_sva_perf -z -S --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -139,10 +139,10 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd zip_sva_perf -S -d --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
 		;;
 	"zlib")
-		run_cmd zip_sva_perf -z -S -d --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -234,12 +234,12 @@ hw_dfl_sw_ifl()
 	prepare_src_file random 1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192 --env
+	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_blk_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192 --env
+	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
@@ -249,7 +249,7 @@ hw_dfl_sw_ifl()
 	md5sum origin > ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192 --env
+	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
@@ -259,13 +259,13 @@ hw_dfl_sw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192 --env
+	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_blk_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 
 	# This case fails.
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192 --env
+	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
 	md5sum -c ori.md5
 }
@@ -282,13 +282,13 @@ sw_dfl_hw_ifl()
 
 	# Only gzip compress and hardware decompress
 	sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
 	md5sum -c ori.md5
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
 	md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
 	md5sum -c ori.md5
 
 	# Generate random data with 500MB size
@@ -298,7 +298,7 @@ sw_dfl_hw_ifl()
 
 	${RM} -f /tmp/ori.gz
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
 	md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
@@ -308,11 +308,11 @@ sw_dfl_hw_ifl()
 	md5sum origin > ori.md5
 
 	#sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	#hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	#hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
 	#md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
 	md5sum -c ori.md5
 }
 
@@ -326,13 +326,13 @@ hw_dfl_hw_ifl()
 	prepare_src_file random 1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192
+	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
 	md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192
 	md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
@@ -341,13 +341,13 @@ hw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	#hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
-	#hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	#hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192
+	#hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
 	#md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192
+	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192
+	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192
 	md5sum -c ori.md5
 }
 
@@ -358,17 +358,17 @@ run_zip_test_v2()
 	export WD_COMP_ASYNC_POLL_EN=1
 	export WD_COMP_ASYNC_POLL_NUM="4@0"
 	# test without environment variables
-	# limit test file in 64MB
+	# limit test file in 8MB
 	rm -fr /tmp/syslog
-	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=16 >& /dev/null
+	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=8 >& /dev/null
 	sw_dfl_hw_ifl /tmp/syslog
 	hw_dfl_sw_ifl /tmp/syslog
 	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
 	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
-	#run_cmd zip_sva_perf -b 8192 -s 81920 -l 1000 --self
+	#run_cmd uadk_tool test --m zip --blksize 8192 --size 81920 --loop 1000 --self
 	# test with environment variables
-	#run_cmd zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
+	#run_cmd uadk_tool test --m zip --blksize 8192 --size 81920 --loop 1000 --self --env
 }
 
 # Accept more paraterms
