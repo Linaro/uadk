@@ -555,10 +555,8 @@ int wd_dh_set_g(handle_t sess, struct wd_dtb *g)
 		return -WD_EINVAL;
 	}
 
-	if (g->dsize &&
-		g->bsize <= sess_t->g.bsize &&
-		g->dsize <= sess_t->g.bsize) {
-		memset(sess_t->g.data, 0, g->bsize);
+	if (g->dsize && g->data && g->dsize <= sess_t->g.bsize) {
+		memset(sess_t->g.data, 0, sess_t->g.bsize);
 		memcpy(sess_t->g.data, g->data, g->dsize);
 		sess_t->g.dsize = g->dsize;
 		if (*g->data != WD_DH_G2 && sess_t->setup.is_g2)
