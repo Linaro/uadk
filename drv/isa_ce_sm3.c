@@ -19,6 +19,8 @@
 #include "wd_digest.h"
 #include "wd_util.h"
 
+#define SM3_ALIGN_MASK 63U
+
 typedef void (sm3_ce_block_fn)(__u32 word_reg[SM3_STATE_WORDS],
 				const unsigned char *src, size_t blocks);
 
@@ -346,6 +348,13 @@ static int sm3_ce_drv_send(struct wd_alg_driver *drv, handle_t ctx, void *digest
 	if (msg->data_fmt == WD_SGL_BUF) {
 		WD_ERR("invalid: SM3 CE driver do not support sgl data format!\n");
 		return -WD_EINVAL;
+	}
+
+	if (msg->has_next) {
+		if (msg->in_bytes & SM3_ALIGN_MASK) {
+			WD_ERR("input data isn't aligned, size = %u\n", msg->in_bytes);
+			return -WD_EINVAL;
+		}
 	}
 
 	if (msg->mode == WD_DIGEST_NORMAL) {
