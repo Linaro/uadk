@@ -1713,7 +1713,6 @@ void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
 	get_sign_out_params(out, r, s);
 }
 
-
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
 	int ret, shift;

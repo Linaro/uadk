@@ -110,7 +110,10 @@ struct wd_mm_br {
 	wd_bufsize get_bufsize; /* optional */
 };
 
-/* Warpdrive data buffer */
+/*
+ * Warpdrive data buffer. If the actual size of data is inconsistent
+ * with dsize, undefined behavior occurs.
+ */
 struct wd_dtb {
 	char *data; /* data/buffer start address */
 	__u32 dsize; /* data size */
