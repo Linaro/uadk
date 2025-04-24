@@ -201,7 +201,7 @@ static inline void *WD_ERR_PTR(uintptr_t error)
 
 static inline long WD_PTR_ERR(const void *ptr)
 {
-	return (long)ptr;
+	return (intptr_t)ptr;
 }
 
 /**
