@@ -387,11 +387,12 @@ static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf)
 
 static void sm3_ce_drv_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
+	struct sm3_ce_drv_ctx *sctx;
+
+	if (!drv || !drv->priv)
 		return;
 
-	struct sm3_ce_drv_ctx *sctx = (struct sm3_ce_drv_ctx *)drv->priv;
-
+	sctx = (struct sm3_ce_drv_ctx *)drv->priv;
 	free(sctx);
 	drv->priv = NULL;
 }
