@@ -66,6 +66,11 @@
 #define lower_32_bits(addr)		((__u32)((uintptr_t)(addr)))
 #define upper_32_bits(addr)		((__u32)((uintptr_t)(addr) >> HZ_HADDR_SHIFT))
 
+/* the min output buffer size is (input size * 1.125) */
+#define min_out_buf_size(inl)		((((__u64)inl * 9) + 7) >> 3)
+/* the max input size is (output buffer size * 8 / 9) and align with 4 byte */
+#define max_in_data_size(outl)		((__u32)(((__u64)outl << 3) / 9) & 0xfffffffc)
+
 #define HZ_MAX_SIZE			(8 * 1024 * 1024)
 
 #define RSV_OFFSET			64
@@ -417,6 +422,16 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 		}
 	}
 
+	/*
+	 * When the output buffer is smaller than the 1.125*input len in STATEFUL,
+	 * shrink the input len.
+	 */
+	if (msg->stream_mode == WD_COMP_STATEFUL &&
+	    (__u64)out_size < min_out_buf_size(in_size)) {
+		in_size = max_in_data_size(out_size);
+		msg->req.last = 0;
+	}
+
 	ret = buf_size_check_deflate(&in_size, &out_size);
 	if (unlikely(ret))
 		return ret;
@@ -549,6 +564,16 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	} else if (head != NULL && msg->req.op_type == WD_DIR_DECOMPRESS) {
 		src_skip = head_size;
 		in_size -= head_size;
+	}
+
+	/*
+	 * When the output buffer is smaller than the 1.125*input len in STATEFUL,
+	 * shrink the input len.
+	 */
+	if (msg->stream_mode == WD_COMP_STATEFUL &&
+	    (__u64)out_size < min_out_buf_size(in_size)) {
+		in_size = max_in_data_size(out_size);
+		msg->req.last = 0;
 	}
 
 	fill_buf_sgl_skip(sqe, src_skip, dst_skip);
