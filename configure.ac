@@ -95,7 +95,6 @@ AC_CONFIG_FILES([Makefile
 		 lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
 		 test/Makefile
 		 test/hisi_hpre_test/Makefile
-		 test/hisi_zip_test/Makefile
 		 uadk_tool/Makefile
 		 sample/Makefile
 		 v1/test/Makefile
