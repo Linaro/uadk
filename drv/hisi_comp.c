@@ -79,7 +79,8 @@
 #define CTX_REPCODE1_OFFSET		12
 #define CTX_REPCODE2_OFFSET		24
 #define CTX_HW_REPCODE_OFFSET		784
-#define OVERFLOW_DATA_SIZE		2
+#define OVERFLOW_DATA_SIZE		8
+#define SEQ_DATA_SIZE_SHIFT		3
 #define ZSTD_FREQ_DATA_SIZE		784
 #define ZSTD_LIT_RESV_SIZE		16
 #define REPCODE_SIZE			12
@@ -926,7 +927,8 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
 	data->seq_num = sqe->produced;
 	data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
 	data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
-	data->freq = data->sequences_start + data->seq_num + OVERFLOW_DATA_SIZE;
+	data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
+		     OVERFLOW_DATA_SIZE;
 
 	if (ctx_buf) {
 		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
