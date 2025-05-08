@@ -610,7 +610,7 @@ static int init_wd_queue(struct acc_option *options)
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
-		g_thread_queue.bd_res[i].queue = malloc(sizeof(struct wd_queue));
+		g_thread_queue.bd_res[i].queue = calloc(1, sizeof(struct wd_queue));
 		memset(g_thread_queue.bd_res[i].queue, 0, sizeof(struct wd_queue));
 		g_thread_queue.bd_res[i].queue->capa.alg = options->algclass;
 		// 0 is ENC, 1 is DEC
