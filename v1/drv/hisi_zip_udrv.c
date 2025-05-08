@@ -39,7 +39,7 @@
 #define STREAM_POS_SHIFT		2
 #define STREAM_MODE_SHIFT		1
 #define WINDOWS_SIZE_SHIFT		12
-#define SEQUENCE_SZIE			8
+#define SEQ_DATA_SIZE_SHIFT		3
 
 #define HW_NEGACOMPRESS			0x0d
 #define HW_CRC_ERR			0x10
@@ -57,6 +57,7 @@
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
 #define REPCODE_SIZE			12
+#define OVERFLOW_DATA_SIZE		8
 
 /* Error status 0xe indicates that dest_avail_out insufficient */
 #define ERR_DSTLEN_OUT			0xe
@@ -798,8 +799,8 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 }
 
 /*
- * Checksum[31:24] equals LitLength_Overflow_Pos;
- * Checksum[23:0] equals Freq_Literal_Overflow_cnt;
+ * Checksum[31:24] equals Freq_Literal_Overflow_cnt;
+ * Checksum[23:0] equals LitLength_Overflow_Pos;
  */
 #define LILL_OVERFLOW_POS 	0x00ffffff
 #define LILL_OVERFLOW_CNT_OFFSET 24
@@ -814,8 +815,8 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 	format->lit_num = sqe->comp_data_length;
 	format->seq_num = sqe->produced;
 
-	format->lit_length_overflow_cnt = sqe->checksum & LILL_OVERFLOW_POS;
-	format->lit_length_overflow_pos = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
+	format->lit_length_overflow_pos = sqe->checksum & LILL_OVERFLOW_POS;
+	format->lit_length_overflow_cnt = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
 					  LILL_OVERFLOW_CNT_OFFSET;
 
 	if (recv_msg->data_fmt == WD_SGL_BUF) {
@@ -825,7 +826,8 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 	} else {
 		format->literals_start = recv_msg->dst;
 		format->sequences_start = recv_msg->dst + recv_msg->in_size + ZSTD_LIT_RSV_SIZE;
-		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
+		format->freq = format->sequences_start + (format->seq_num << SEQ_DATA_SIZE_SHIFT) +
+			       OVERFLOW_DATA_SIZE;
 	}
 
 	if (ctx_buf) {
