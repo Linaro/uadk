@@ -54,6 +54,8 @@
 #define SEC_AI_GEN_OFFSET_V3	2
 #define SEC_SEQ_OFFSET_V3	6
 #define SEC_AUTH_MASK_V3	0xFFFFFFFC
+#define SEC_BD3_IVLD_OFFSET	0x4
+#define SEC_BD2_IVLD_OFFSET	0x7
 
 #define SEC_SGL_MODE_MASK_V3 0x4800
 #define SEC_PBUFF_MODE_MASK_V3 0x800
@@ -2440,7 +2442,7 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 
 	msg->result = WD_SUCCESS;
 
-	return WD_SOFT_COMPUTING;
+	return WD_SUCCESS;
 }
 
 static int fill_stream_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
@@ -2460,6 +2462,8 @@ static int fill_stream_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 		if (msg->cmode == WD_CIPHER_GCM) {
 			gcm_auth_ivin(msg);
 			ret = gcm_do_soft_mac(msg);
+			/* Make the bd invalid to avoid recalculation of the data. */
+			sqe->iv_tls_ld = 0x1 << SEC_BD2_IVLD_OFFSET;
 		}
 		break;
 	default:
@@ -2577,12 +2581,8 @@ static int hisi_sec_aead_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 	fill_aead_bd2_addr(msg, &sqe);
 
 	ret = fill_stream_bd2(msg, &sqe);
-	if (ret == WD_SOFT_COMPUTING) {
-		ret = 0;
+	if (unlikely(ret))
 		goto put_sgl;
-	} else if (unlikely(ret)) {
-		goto put_sgl;
-	}
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
@@ -2661,24 +2661,6 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		dump_sec_msg(temp_msg, "aead");
 }
 
-static bool soft_compute_check(struct hisi_qp *qp, struct wd_aead_msg *msg)
-{
-	/* Asynchronous mode does not use the sent message, so ignores it */
-	if (qp->q_info.qp_mode == CTX_MODE_ASYNC)
-		return false;
-	/*
-	 * For aead gcm stream mode, due to some hardware limitations,
-	 * the final message was not sent to hardware if the qm is
-	 * not higher than v3 version or the input length of the
-	 * message is 0, the software calculation has been executed.
-	 */
-	if (msg->msg_state == AEAD_MSG_END && msg->cmode == WD_CIPHER_GCM &&
-	    (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes))
-		return true;
-
-	return false;
-}
-
 static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
@@ -2686,9 +2668,6 @@ static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
-
-	if (soft_compute_check((struct hisi_qp *)h_qp, recv_msg))
-		return 0;
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
@@ -2886,10 +2865,13 @@ static int fill_stream_bd3(handle_t h_qp, struct wd_aead_msg *msg, struct hisi_s
 		if (msg->cmode == WD_CIPHER_GCM) {
 			gcm_auth_ivin(msg);
 			/* Due to hardware limitations, software compute is required. */
-			if (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes)
+			if (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes) {
 				ret = gcm_do_soft_mac(msg);
-			else
+				/* Make the bd invalid to avoid recalculation of the data. */
+				sqe->bd_param |= 0x1 << SEC_BD3_IVLD_OFFSET;
+			} else {
 				fill_gcm_final_bd3(msg, sqe);
+			}
 		}
 		break;
 	default:
@@ -2982,12 +2964,8 @@ static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 
 	fill_aead_bd3_addr(msg, &sqe);
 	ret = fill_stream_bd3(h_qp, msg, &sqe);
-	if (ret == WD_SOFT_COMPUTING) {
-		ret = 0;
+	if (unlikely(ret))
 		goto put_sgl;
-	} else if (unlikely(ret)) {
-		goto put_sgl;
-	}
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = msg->tag;
@@ -3059,9 +3037,6 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 	__u16 count = 0;
 	int ret;
 
-	if (soft_compute_check((struct hisi_qp *)h_qp, recv_msg))
-		return 0;
-
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
 		return ret;
@@ -3129,14 +3104,15 @@ out:
 
 static void hisi_sec_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
+	struct hisi_sec_ctx *priv;
 	handle_t h_qp;
 	__u32 i;
 
+	if (!drv || !drv->priv)
+		return;
+
+	priv = (struct hisi_sec_ctx *)drv->priv;
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);

@@ -243,10 +243,8 @@ int wcrypto_set_dh_g(void *ctx, struct wd_dtb *g)
 		return -WD_EINVAL;
 	}
 
-	if (g->dsize
-		&& g->bsize <= cx->g.bsize
-		&& g->dsize <= cx->g.bsize) {
-		memset(cx->g.data, 0, g->bsize);
+	if (g->dsize && g->data && g->dsize <= cx->g.bsize) {
+		memset(cx->g.data, 0, cx->g.bsize);
 		memcpy(cx->g.data, g->data, g->dsize);
 		cx->g.dsize = g->dsize;
 		if (*g->data != WD_DH_G2 && cx->setup.is_g2)

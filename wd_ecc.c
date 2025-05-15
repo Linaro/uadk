@@ -1654,7 +1654,6 @@ static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
 
 static int sm2_compute_za_hash(__u8 *za, __u32 *len, struct wd_dtb *id,
 			       struct wd_ecc_sess *sess)
-
 {
 	__u32 key_size = BITS_TO_BYTES(sess->setup.key_bits);
 	struct wd_hash_mt *hash = &sess->setup.hash;

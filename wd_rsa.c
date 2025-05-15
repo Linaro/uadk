@@ -623,15 +623,17 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 		return NULL;
 	}
 
-	if (!e->dsize || e->dsize > c->key_size) {
+	if (!e->dsize || e->dsize > c->key_size || !e->data) {
 		WD_ERR("invalid: e para err at create kg in!\n");
 		return NULL;
 	}
-	if (!p->dsize || p->dsize > CRT_PARAM_SZ(c->key_size)) {
+
+	if (!p->dsize || p->dsize > CRT_PARAM_SZ(c->key_size) || !p->data) {
 		WD_ERR("invalid: p para err at create kg in!\n");
 		return NULL;
 	}
-	if (!q->dsize || q->dsize > CRT_PARAM_SZ(c->key_size)) {
+
+	if (!q->dsize || q->dsize > CRT_PARAM_SZ(c->key_size) || !q->data) {
 		WD_ERR("invalid: q para err at create kg in!\n");
 		return NULL;
 	}
@@ -1105,7 +1107,7 @@ void wd_rsa_get_prikey_params(struct wd_rsa_prikey *pvk, struct wd_dtb **d,
 
 static int rsa_set_param(struct wd_dtb *src, struct wd_dtb *dst)
 {
-	if (!src || !dst || dst->dsize > src->bsize)
+	if (dst->dsize > src->bsize)
 		return -WD_EINVAL;
 
 	src->dsize = dst->dsize;
@@ -1121,7 +1123,7 @@ static int rsa_prikey2_param_set(struct wd_rsa_prikey2 *pkey2,
 {
 	int ret = -WD_EINVAL;
 
-	if (param->dsize > pkey2->key_size || !param->data)
+	if (!param->dsize || !param->data)
 		return -WD_EINVAL;
 
 	switch (type) {

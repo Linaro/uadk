@@ -217,11 +217,12 @@ static int hash_mb_init(struct wd_alg_driver *drv, void *conf)
 
 static void hash_mb_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
+	struct hash_mb_ctx *priv;
+
+	if (!drv || !drv->priv)
 		return;
 
-	struct hash_mb_ctx *priv = (struct hash_mb_ctx *)drv->priv;
-
+	priv = (struct hash_mb_ctx *)drv->priv;
 	hash_mb_queue_uninit(&priv->config, priv->config.ctx_num);
 	free(priv);
 	drv->priv = NULL;

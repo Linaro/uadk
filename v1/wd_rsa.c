@@ -161,15 +161,17 @@ static int kg_in_param_check(void *ctx, struct wd_dtb *e,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(e->dsize > c->key_size)) {
+	if (unlikely(!e->dsize || e->dsize > c->key_size || !e->data)) {
 		WD_ERR("e para err at create kg in!\n");
 		return -WD_EINVAL;
 	}
-	if (unlikely(p->dsize > CRT_PARAM_SZ(c->key_size))) {
+
+	if (unlikely(!p->dsize || p->dsize > CRT_PARAM_SZ(c->key_size) || !p->data)) {
 		WD_ERR("p para err at create kg in!\n");
 		return -WD_EINVAL;
 	}
-	if (unlikely(q->dsize > CRT_PARAM_SZ(c->key_size))) {
+
+	if (unlikely(!q->dsize || q->dsize > CRT_PARAM_SZ(c->key_size) || !q->data)) {
 		WD_ERR("q para err at create kg in!\n");
 		return -WD_EINVAL;
 	}
@@ -762,7 +764,7 @@ void wcrypto_get_rsa_prikey_params(struct wcrypto_rsa_prikey *pvk, struct wd_dtb
 
 static int rsa_set_param(struct wd_dtb *src, struct wd_dtb *dst)
 {
-	if (!src || !dst || dst->dsize > src->bsize)
+	if (dst->dsize > src->bsize)
 		return -WD_EINVAL;
 
 	src->dsize = dst->dsize;
@@ -778,7 +780,7 @@ static int rsa_prikey2_param_set(struct wcrypto_rsa_prikey2 *pkey2,
 {
 	int ret;
 
-	if (param->dsize > pkey2->key_size || !param->data)
+	if (!param->dsize || !param->data)
 		return -WD_EINVAL;
 
 	switch (type) {

@@ -472,7 +472,7 @@ static int check_op_data(struct wcrypto_aead_op_data **op,
 		}
 	}
 	if (unlikely(op[idx]->state >= WCRYPTO_AEAD_MSG_INVALID)) {
-		WD_ERR("fail to check message state: %d, idx: %u!\n",
+		WD_ERR("fail to check message state: %u, idx: %u!\n",
 		       op[idx]->state, idx);
 		return -WD_EINVAL;
 	} else if (idx && op[idx]->state != WCRYPTO_AEAD_MSG_BLOCK) {

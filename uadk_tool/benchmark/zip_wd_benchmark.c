@@ -311,7 +311,7 @@ static int init_zip_wd_queue(struct acc_option *options)
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
-		g_thread_queue.bd_res[i].queue = malloc(sizeof(struct wd_queue));
+		g_thread_queue.bd_res[i].queue = calloc(1, sizeof(struct wd_queue));
 		g_thread_queue.bd_res[i].queue->capa.alg = options->algclass;
 		// 0 is compress, 1 is decompress
 		g_thread_queue.bd_res[i].queue->capa.priv.direction = op_type;
