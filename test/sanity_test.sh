@@ -88,10 +88,10 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		run_cmd uadk_tool test --m zip --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 $@
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --alg 1 --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -105,10 +105,10 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --inf --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --alg 1 --inf --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -158,7 +158,7 @@ sw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		python test/list_loader.py --in $1 --out $2 --olist /tmp/gzip_list.bin -b $4
+		python test/list_loader.py --in $1 --out $2 -b $4
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -172,7 +172,7 @@ sw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		python test/list_loader.py --in $1 --out $2 --ilist /tmp/gzip_list.bin
+		python test/list_loader.py --in $1 --out $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -366,9 +366,9 @@ run_zip_test_v2()
 	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
 	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
-	#run_cmd uadk_tool test --m zip --blksize 8192 --size 81920 --loop 1000 --self
+	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self
 	# test with environment variables
-	#run_cmd uadk_tool test --m zip --blksize 8192 --size 81920 --loop 1000 --self --env
+	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self --env
 }
 
 # Accept more paraterms
