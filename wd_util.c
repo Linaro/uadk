@@ -2116,7 +2116,12 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 	} else {
 		/* environment variable is not set, try to use user_ctx_params first */
 		if (user_ctx_params) {
-			copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
+			if (user_ctx_params->bmp) {
+				copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
+			} else {
+				/* default value */
+				numa_bitmask_setall(ctx_params->bmp);
+			}
 			ctx_params->cap = user_ctx_params->cap;
 			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
 			ctx_params->op_type_num = user_ctx_params->op_type_num;
