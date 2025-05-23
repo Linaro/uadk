@@ -631,14 +631,6 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 
 	cparams.op_type_num = 1;
 	cparams.ctx_set_num = ctx_set_num;
-	cparams.bmp = numa_allocate_nodemask();
-	if (!cparams.bmp) {
-		WD_ERR("failed to create nodemask!\n");
-		ret = -WD_ENOMEM;
-		goto out_freectx;
-	}
-
-	numa_bitmask_setall(cparams.bmp);
 
 	if (mode == CTX_MODE_SYNC)
 		ctx_set_num->sync_ctx_num = g_ctxnum;
@@ -648,23 +640,24 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 	/* init2 */
 	switch (subtype) {
 	case RSA_TYPE:
-		return wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		break;
 	case DH_TYPE:
-		return wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		break;
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
-		return wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		ret = wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		break;
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
-out_freectx:
 	free(ctx_set_num);
-
 	return ret;
 }
 
