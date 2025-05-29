@@ -16,8 +16,4 @@ SUBDIRS = .
 if HAVE_CRYPTO
 SUBDIRS += hisi_hpre_test
 
-if HAVE_ZLIB
-SUBDIRS += hisi_zip_test
-endif
-
 endif

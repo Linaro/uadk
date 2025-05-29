@@ -11,6 +11,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#include "config.h"
 #include "comp_main.h"
 #include "test_sec.h"
 
