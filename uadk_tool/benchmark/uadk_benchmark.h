@@ -87,7 +87,6 @@ enum acc_type {
 	SEC_TYPE,
 	HPRE_TYPE,
 	ZIP_TYPE,
-	TRNG_TYPE,
 };
 
 enum acc_init_type {
@@ -225,5 +224,6 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);
 int acc_option_convert(struct acc_option *option);
 int acc_benchmark_run(struct acc_option *option);
+void print_benchmark_help(void);
 
 #endif /* UADK_BENCHMARK_H */

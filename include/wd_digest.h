@@ -144,9 +144,9 @@ struct wd_digest_req {
 };
 
 struct wd_cb_tag {
-	void *ctx;	/* user: context or other user relatives */
-	void *tag;	/* to store user tag */
-	int ctx_id;	/* user id: context ID or other user identifier */
+	void *ctx; /* user: context or other user relatives */
+	void *tag; /* to store user tag */
+	int ctx_id; /* user id: context ID or other user identifier */
 };
 
 /* Digest tag format */

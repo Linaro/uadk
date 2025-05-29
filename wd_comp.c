@@ -356,7 +356,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
 	struct wd_ctx_internal *ctx;
-	struct wd_comp_msg resp_msg;
+	struct wd_comp_msg resp_msg = {0};
 	struct wd_comp_msg *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
@@ -502,7 +502,9 @@ int wd_comp_reset_sess(handle_t h_sess)
 	}
 
 	sess->stream_pos = WD_COMP_STREAM_NEW;
-	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	if (sess->ctx_buf)
+		memset(sess->ctx_buf, 0, HW_CTX_SIZE);
 
 	return 0;
 }
@@ -688,6 +690,10 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 
 		ret = wd_do_comp_strm(h_sess, &strm_req);
 		if (unlikely(ret < 0 || strm_req.status == WD_IN_EPARA)) {
+			req->status = strm_req.status;
+			if (!ret)
+				ret = -WD_EINVAL;
+
 			WD_ERR("wd comp, invalid or incomplete data! ret = %d, status = %u!\n",
 			       ret, strm_req.status);
 			return ret;
@@ -784,7 +790,7 @@ static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	struct wd_comp_msg msg;
+	struct wd_comp_msg msg = {0};
 	__u32 src_len;
 	int ret;
 

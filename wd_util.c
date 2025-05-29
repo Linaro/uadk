@@ -205,6 +205,7 @@ static void wd_shm_delete(struct wd_ctx_config_internal *in)
 		return;
 
 	/* deleted shared memory */
+	shmdt(in->msg_cnt);
 	shmctl(in->shmid, IPC_RMID, NULL);
 
 	in->shmid = 0;
@@ -1480,7 +1481,6 @@ static void *async_poll_process_func(void *args)
 			goto out;
 	}
 out:
-	pthread_exit(NULL);
 	return NULL;
 }
 
@@ -1891,7 +1891,7 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 
 static void wd_get_alg_type(const char *alg_name, char *alg_type)
 {
-	int i;
+	__u64 i;
 
 	for (i = 0; i < ARRAY_SIZE(alg_options); i++) {
 		if (strcmp(alg_name, alg_options[i].name) == 0) {
@@ -1899,35 +1899,6 @@ static void wd_get_alg_type(const char *alg_name, char *alg_type)
 			break;
 		}
 	}
-}
-
-/**
- * There are many other .so files in this file directory (/root/lib/),
- * and it is necessary to screen out valid uadk driver files
- * through this function.
- */
-static int file_check_valid(char *lib_file)
-{
-#define FILE_HEAD_SZ	4
-#define FILE_TAIL_SZ	4
-	int file_len = strlen(lib_file);
-	char file_head[FILE_HEAD_SZ] = "lib";
-	char file_tail[FILE_TAIL_SZ] = ".so";
-	int i, j;
-
-	/* Lib file name is libxx_xxx.so */
-	for (i = 0; i < FILE_HEAD_SZ - 1; i++) {
-		if (lib_file[i] != file_head[i])
-			return -EINVAL;
-	}
-
-	for (i = file_len - (FILE_TAIL_SZ - 1), j = 0;
-	      i < file_len && j < FILE_TAIL_SZ; i++, j++) {
-		if (lib_file[i] != file_tail[j])
-			return -EINVAL;
-	}
-
-	return 0;
 }
 
 static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
@@ -1987,7 +1958,6 @@ err_alloc:
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
 			  struct wd_alg_driver *driver)
 {
-
 	driver->exit(driver);
 	/* Ctx config just need clear once */
 	wd_clear_ctx_config(config);
@@ -2223,6 +2193,34 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 	return 0;
 }
 
+/**
+ * There are many other .so files in this file directory (/root/lib/),
+ * and it is necessary to screen out valid uadk driver files
+ * through this function.
+ */
+static int file_check_valid(const char *lib_file)
+{
+#define MIN_FILE_LEN 6
+#define FILE_TAIL_LEN 3
+	const char *dot = strrchr(lib_file, '.');
+	size_t len;
+
+	/* Check if the filename length is sufficient. */
+	len = strlen(lib_file);
+	if (len < MIN_FILE_LEN)
+		return -EINVAL;
+
+	/* Check if it starts with "lib". */
+	if (strncmp(lib_file, "lib", FILE_TAIL_LEN) != 0)
+		return -EINVAL;
+
+	/* Check if it ends with ".so". */
+	if (!dot || strcmp(dot, ".so") != 0)
+		return -EINVAL;
+
+	return 0;
+}
+
 void *wd_dlopen_drv(const char *cust_lib_dir)
 {
 	typedef int (*alg_ops)(struct wd_alg_driver *drv);
@@ -2244,6 +2242,7 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 			return NULL;
 		}
 		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
+		lib_dir_path[PATH_MAX - 1] = '\0';
 	}
 
 	wd_dir = opendir(lib_dir_path);

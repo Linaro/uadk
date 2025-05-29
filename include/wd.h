@@ -115,6 +115,10 @@ enum wd_alg_type {
 	WD_AEAD,
 };
 
+/*
+ * If the actual size of data is inconsistent
+ * with dsize, undefined behavior occurs.
+ */
 struct wd_dtb {
 	/* data/buffer start address */
 	char *data;
@@ -201,7 +205,7 @@ static inline void *WD_ERR_PTR(uintptr_t error)
 
 static inline long WD_PTR_ERR(const void *ptr)
 {
-	return (long)ptr;
+	return (intptr_t)ptr;
 }
 
 /**

@@ -583,14 +583,15 @@ static int hpre_ecc_init(struct wd_alg_driver *drv, void *conf)
 
 static void hpre_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct hisi_hpre_ctx *priv = (struct hisi_hpre_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
+	struct hisi_hpre_ctx *priv;
 	handle_t h_qp;
 	__u32 i;
 
+	if (!drv || !drv->priv)
+		return;
+
+	priv = (struct hisi_hpre_ctx *)drv->priv;
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);

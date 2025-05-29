@@ -19,6 +19,8 @@
 #include "wd_digest.h"
 #include "wd_util.h"
 
+#define SM3_ALIGN_MASK 63U
+
 typedef void (sm3_ce_block_fn)(__u32 word_reg[SM3_STATE_WORDS],
 				const unsigned char *src, size_t blocks);
 
@@ -55,6 +57,7 @@ static void __attribute__((constructor)) sm3_ce_probe(void)
 
 static void __attribute__((destructor)) sm3_ce_remove(void)
 {
+	WD_INFO("Info: unregister SM3 CE alg drivers!\n");
 	wd_alg_driver_unregister(&sm3_ce_alg_driver);
 }
 
@@ -293,11 +296,6 @@ static int do_hmac_sm3_ce(struct wd_digest_msg *msg, __u8 *out_hmac)
 	/* Use last output as the iv in current cycle */
 	iv = msg->out;
 
-	if (!key_len) {
-		WD_ERR("invalid hmac key_len is 0!\n");
-		return -WD_EINVAL;
-	}
-
 	block_type = get_hash_block_type(msg);
 	switch(block_type) {
 	case HASH_SINGLE_BLOCK:
@@ -353,6 +351,13 @@ static int sm3_ce_drv_send(struct wd_alg_driver *drv, handle_t ctx, void *digest
 		return -WD_EINVAL;
 	}
 
+	if (msg->has_next) {
+		if (msg->in_bytes & SM3_ALIGN_MASK) {
+			WD_ERR("input data isn't aligned, size = %u\n", msg->in_bytes);
+			return -WD_EINVAL;
+		}
+	}
+
 	if (msg->mode == WD_DIGEST_NORMAL) {
 		ret = do_sm3_ce(msg, digest);
 	} else if (msg->mode == WD_DIGEST_HMAC) {
@@ -392,11 +397,12 @@ static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf)
 
 static void sm3_ce_drv_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
+	struct sm3_ce_drv_ctx *sctx;
+
+	if (!drv || !drv->priv)
 		return;
 
-	struct sm3_ce_drv_ctx *sctx = (struct sm3_ce_drv_ctx *)drv->priv;
-
+	sctx = (struct sm3_ce_drv_ctx *)drv->priv;
 	free(sctx);
 	drv->priv = NULL;
 }

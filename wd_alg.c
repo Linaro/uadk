@@ -91,19 +91,28 @@ static bool wd_check_accel_dev(const char *dev_name)
 	return false;
 }
 
-static bool wd_check_ce_support(const char *dev_name)
+static bool wd_check_ce_support(const char *alg_name)
 {
 	unsigned long hwcaps = 0;
+	const char *alg_tail;
+	size_t tail_len;
+	size_t alg_len;
 
 	#if defined(__arm__) || defined(__arm)
 		hwcaps = getauxval(AT_HWCAP2);
 	#elif defined(__aarch64__)
 		hwcaps = getauxval(AT_HWCAP);
 	#endif
-	if (!strcmp("isa_ce_sm3", dev_name) && (hwcaps & HWCAP_CE_SM3))
+	if (!strcmp("sm3", alg_name) && (hwcaps & HWCAP_CE_SM3))
 		return true;
 
-	if (!strcmp("isa_ce_sm4", dev_name) && (hwcaps & HWCAP_CE_SM4))
+	alg_len = strlen(alg_name);
+	tail_len = strlen("(sm4)");
+	if (alg_len <= tail_len)
+		return false;
+
+	alg_tail = alg_name + (alg_len - tail_len);
+	if (!strcmp("(sm4)", alg_tail) && (hwcaps & HWCAP_CE_SM4))
 		return true;
 
 	return false;
@@ -122,7 +131,8 @@ static bool wd_check_sve_support(void)
 	return false;
 }
 
-static bool wd_alg_check_available(int calc_type, const char *dev_name)
+static bool wd_alg_check_available(int calc_type,
+	const char *alg_name, const char *dev_name)
 {
 	bool ret = false;
 
@@ -131,7 +141,7 @@ static bool wd_alg_check_available(int calc_type, const char *dev_name)
 		break;
 	/* Should find the CPU if not support CE */
 	case UADK_ALG_CE_INSTR:
-		ret = wd_check_ce_support(dev_name);
+		ret = wd_check_ce_support(alg_name);
 		break;
 	/* Should find the CPU if not support SVE */
 	case UADK_ALG_SVE_INSTR:
@@ -217,7 +227,8 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 	new_alg->refcnt = 0;
 	new_alg->next = NULL;
 
-	new_alg->available = wd_alg_check_available(drv->calc_type, drv->drv_name);
+	new_alg->available = wd_alg_check_available(drv->calc_type,
+			     drv->alg_name, drv->drv_name);
 	if (!new_alg->available) {
 		free(new_alg);
 		return -WD_ENODEV;
@@ -307,7 +318,8 @@ void wd_enable_drv(struct wd_alg_driver *drv)
 	}
 
 	if (pnext)
-		pnext->available = wd_alg_check_available(drv->calc_type, drv->drv_name);
+		pnext->available = wd_alg_check_available(drv->calc_type,
+				   drv->alg_name, drv->drv_name);
 	pthread_mutex_unlock(&mutex);
 }
 

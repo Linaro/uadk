@@ -200,7 +200,8 @@ static void *br_alloc(struct wd_mm_br *br, __u64 size)
 	}
 
 	if (br->get_bufsize && br->get_bufsize(br->usr) < size) {
-		WD_ERR("Blk_size < need_size<0x%llx>.\n", size);
+		WD_ERR("Blk_size<0x%x> < need_size<0x%llx>.\n",
+			br->get_bufsize(br->usr), size);
 		return NULL;
 	}
 
@@ -1712,7 +1713,6 @@ void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
 	get_sign_out_params(out, r, s);
 }
 
-
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
 	int ret, shift;
@@ -2199,7 +2199,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 int wcrypto_ecdsa_poll(struct wd_queue *q, unsigned int num)
 {
 	if (unlikely(!q || strcmp(q->capa.alg, "ecdsa"))) {
-		WD_ERR("sm2 poll: input parameter error!\n");
+		WD_ERR("ecdsa poll: input parameter error!\n");
 		return -WD_EINVAL;
 	}
 

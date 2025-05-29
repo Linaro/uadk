@@ -294,6 +294,10 @@ static void put_ext_addr(struct dae_extend_addr *ext_addr, int idx)
 
 static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe)
 {
+	/*
+	 * The variable 'pos' is enumeration type, and the case branches
+	 * cover all values.
+	 */
 	switch (msg->pos) {
 	case WD_AGG_REHASH_INPUT:
 	case WD_AGG_STREAM_INPUT:
@@ -302,8 +306,6 @@ static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe)
 	case WD_AGG_STREAM_OUTPUT:
 	case WD_AGG_REHASH_OUTPUT:
 		sqe->task_type_ext = DAE_HASHAGG_OUTPUT;
-		break;
-	default:
 		break;
 	}
 }
@@ -337,9 +339,13 @@ static void fill_hashagg_table_data(struct dae_sqe *sqe, struct dae_addr_list *a
 				 struct wd_agg_msg *msg)
 {
 	struct hashagg_ctx *agg_ctx = (struct hashagg_ctx *)msg->priv;
-	struct hash_table_data *table_data = NULL;
-	struct dae_table_addr *hw_table = NULL;
+	struct hash_table_data *table_data = &agg_ctx->table_data;
+	struct dae_table_addr *hw_table = &addr_list->src_table;
 
+	/*
+	 * The variable 'pos' is enumeration type, and the case branches
+	 * cover all values.
+	 */
 	switch (msg->pos) {
 	case WD_AGG_STREAM_INPUT:
 	case WD_AGG_REHASH_INPUT:
@@ -347,14 +353,10 @@ static void fill_hashagg_table_data(struct dae_sqe *sqe, struct dae_addr_list *a
 		table_data = &agg_ctx->table_data;
 		break;
 	case WD_AGG_STREAM_OUTPUT:
-		hw_table = &addr_list->src_table;
-		table_data = &agg_ctx->table_data;
 		break;
 	case WD_AGG_REHASH_OUTPUT:
 		hw_table = &addr_list->src_table;
 		table_data = &agg_ctx->rehash_table;
-		break;
-	default:
 		break;
 	}
 
@@ -454,6 +456,10 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 	__u32 agg_col_num = 0;
 	__u32 i, usr_col_idx;
 
+	/*
+	 * The variable 'pos' is enumeration type, and the case branches
+	 * cover all values.
+	 */
 	switch (msg->pos) {
 	case WD_AGG_STREAM_INPUT:
 		agg_data = cols_data->input_data;
@@ -476,8 +482,6 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 		usr_agg_addr = msg->req.out_agg_cols;
 		agg_col_num = cols_data->output_num;
 		fill_hashagg_normal_info(sqe, ext_sqe, cols_data, cols_data->input_num);
-		break;
-	default:
 		break;
 	}
 
@@ -1612,14 +1616,15 @@ out:
 
 static void dae_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct hisi_dae_ctx *priv = (struct hisi_dae_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
+	struct hisi_dae_ctx *priv;
 	handle_t h_qp;
 	__u32 i;
 
+	if (!drv || !drv->priv)
+		return;
+
+	priv = (struct hisi_dae_ctx *)drv->priv;
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);

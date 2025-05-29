@@ -16,8 +16,6 @@
 #include "zip_uadk_benchmark.h"
 #include "zip_wd_benchmark.h"
 
-#include "trng_wd_benchmark.h"
-
 #define TABLE_SPACE_SIZE	8
 
 /*----------------------------------------head struct--------------------------------------------------------*/
@@ -153,7 +151,6 @@ static struct acc_alg_item alg_options[] = {
 	{"sha512",		"sha512",		SHA512_ALG},
 	{"sha512-224",		"sha512-224",		SHA512_224},
 	{"sha512-256",		"sha512-256",		SHA512_256},
-	{"trng",		"trng",			TRNG},
 	{"",			"",			ALG_MAX}
 };
 
@@ -385,11 +382,6 @@ static void parse_alg_param(struct acc_option *option)
 		option->acctype = HPRE_TYPE;
 		option->subtype = X448_TYPE;
 		break;
-	case TRNG:
-		snprintf(option->algclass, MAX_ALG_NAME, "%s", "trng");
-		option->acctype = TRNG_TYPE;
-		option->subtype = DEFAULT_TYPE;
-		break;
 	default:
 		if (option->algtype <= RSA_4096_CRT) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "rsa");
@@ -518,13 +510,6 @@ static int benchmark_run(struct acc_option *option)
 			ret = zip_wd_benchmark(option);
 		}
 		break;
-	case TRNG_TYPE:
-		if (option->modetype == SVA_MODE)
-			ACC_TST_PRT("TRNG not support sva mode..\n");
-		else if (option->modetype == NOSVA_MODE)
-			ret = trng_wd_benchmark(option);
-
-		break;
 	}
 
 	return ret;
@@ -635,7 +620,7 @@ int acc_default_case(struct acc_option *option)
 	return acc_benchmark_run(option);
 }
 
-static void print_help(void)
+void print_benchmark_help(void)
 {
 	ACC_TST_PRT("NAME\n");
 	ACC_TST_PRT("    benchmark: test UADK acc performance,etc\n");
@@ -728,7 +713,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 
 		switch (c) {
 		case 0:
-			print_help();
+			print_benchmark_help();
 			goto to_exit;
 		case 1:
 			option->algtype = get_alg_type(optarg);
@@ -791,7 +776,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");
-			print_help();
+			print_benchmark_help();
 			goto to_exit;
 		}
 	}

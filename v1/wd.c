@@ -868,14 +868,18 @@ void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 		       enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
+	int ret;
 
 	if (!addr)
 		return;
 
 	if (qfrt != WD_UACCE_QFRT_SS)
-		munmap(addr, qinfo->qfrs_offset[qfrt]);
+		ret = munmap(addr, qinfo->qfrs_offset[qfrt]);
 	else
-		munmap(addr, size);
+		ret = munmap(addr, size);
+
+	if (ret)
+		WD_ERR("wd qfr unmap failed!\n");
 }
 
 int wd_register_log(wd_log log)
@@ -890,6 +894,11 @@ int wd_register_log(wd_log log)
 		return -WD_EINVAL;
 	}
 
+	/*
+	 * No exceptions are generated during concurrency.
+	 * Users are required to ensure the order of configuration
+	 * operations
+	 */
 	log_out = log;
 	dbg("log register\n");
 

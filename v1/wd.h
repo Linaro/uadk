@@ -110,7 +110,10 @@ struct wd_mm_br {
 	wd_bufsize get_bufsize; /* optional */
 };
 
-/* Warpdrive data buffer */
+/*
+ * Warpdrive data buffer. If the actual size of data is inconsistent
+ * with dsize, undefined behavior occurs.
+ */
 struct wd_dtb {
 	char *data; /* data/buffer start address */
 	__u32 dsize; /* data size */
@@ -181,7 +184,7 @@ struct wd_capa {
 	 * Other capabilities.
 	 * 0~15 bits: number of cookies that the user wants to allocate.
 	 * Optional, user can set value based on the number of requests and system memory,
-	 * 1~1024 is valid. If the value is not set or invalid, the default value 64 (rng is 256)
+	 * 1~1024 is valid. If the value is not set or invalid, the default value 64
 	 * is used to initialize cookies.
 	 */
 	__u32 flags;
