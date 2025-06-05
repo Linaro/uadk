@@ -22,13 +22,13 @@ endif	# WITH_LOG_FILE
 # y = minor
 # z = revision
 MAJOR = 2
-MINOR = 8
+MINOR = 9
 REVISION = 0
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
-DAY = 1
-MONTH = Dec
-YEAR = 2024
+DAY = 6
+MONTH = June
+YEAR = 2025
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"UADK version: ${MAJOR}.${MINOR}.${REVISION}\""
 AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 
