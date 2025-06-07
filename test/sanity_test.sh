@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 #
 # This is a sanity test about uadk algorithms.
 #
