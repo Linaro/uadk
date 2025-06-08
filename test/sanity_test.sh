@@ -61,13 +61,26 @@ check_uacce_mode()
 
 run_cmd()
 {
-	exit_code=0
+	local exit_code=0
+	local output=""
+	# The first parameter is always comment. So remove it.
+	local comment="$1"
+	shift
+	echo $@
+
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
 		# It could prevent bash to stop scripts when error occurs.
-		$@ || exit_code=$?
+		output=$("$@" 2>&1) || exit_code=$?
 	else
-		${VALGRIND} $@
+		output=$("${VALGRIND} $@" 2>&1)
+	fi
+	echo "$output"
+	if [ $exit_code -eq 0 ]; then
+		echo "Test passed (CMD: $comment)."
+	else
+		echo "Test failed (CMD: $comment)."
+		echo "Command result: $exit_code"
 	fi
 	return $exit_code
 }
@@ -75,10 +88,10 @@ run_cmd()
 run_zip_test_v1()
 {
 	dd if=/dev/urandom of=origin bs=512K count=1 >& /dev/null
-	run_cmd test_hisi_zip -z < origin > hw.zlib
+	run_cmd "HW compress 512K file for zlib format" test_hisi_zip -z < origin > hw.zlib
 
 	dd if=/dev/urandom of=origin bs=512K count=1 >& /dev/null
-	run_cmd test_hisi_zip -g < origin > hw.gz
+	run_cmd "HW compress 512K file for gzip format" test_hisi_zip -g < origin > hw.gz
 }
 
 # arg1: source file, arg2: destination file, arg3: algorithm type
@@ -87,10 +100,12 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		run_cmd uadk_tool test --m zip --alg 2 --in $1 --out $2 ${@:4}
+		run_cmd "HW compress for gzip format in block mode" \
+			uadk_tool test --m zip --alg 2 --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --alg 1 --in $1 --out $2 ${@:4}
+		run_cmd "HW compress for zlib format in block mode" \
+			uadk_tool test --m zip --alg 1 --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -104,10 +119,12 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --alg 2 --inf --in $1 --out $2 ${@:4}
+		run_cmd "HW decompress for gzip format in block mode" \
+			uadk_tool test --m zip --alg 2 --inf --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --alg 1 --inf --in $1 --out $2 ${@:4}
+		run_cmd "HW decompress for zlib format in block mode" \
+			uadk_tool test --m zip --alg 1 --inf --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -121,10 +138,12 @@ hw_strm_deflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --alg 2 --in $1 --out $2 ${@:4}
+		run_cmd "HW compress for gzip format in stream mode" \
+			uadk_tool test --m zip --stream --alg 2 --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 ${@:4}
+		run_cmd "HW compress for zlib format in stream mode" \
+			uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -138,10 +157,12 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --alg 2 --inf --in $1 --out $2 ${@:4}
+		run_cmd "HW decompress for gzip format in stream mode" \
+			uadk_tool test --m zip --stream --alg 2 --inf --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 ${@:4}
+		run_cmd "HW decompress for zlib format in stream mode" \
+			uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -365,25 +386,31 @@ run_zip_test_v2()
 	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/textfile
 	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/textfile
 	# test without environment variables
-	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self
+	#run_cmd "compress performance test without environment variables" \
+	#	uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self
 	# test with environment variables
-	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self --env
+	#run_cmd "compress performance test with environment variables" \
+	#	uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self --env
 }
 
 # Accept more paraterms
 # failed: return 1; success: return 0
 run_sec_test_v2()
 {
-	run_cmd uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "sec test in sync mode" \
+		uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "sec test in async mode" \
+		uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 
-	run_cmd uadk_tool test --m sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "digest test in sync mode" \
+		uadk_tool test --m sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd uadk_tool test --m sec test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "digest test in async mode" \
+		uadk_tool test --m sec test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 }
 
@@ -391,9 +418,11 @@ run_sec_test_v2()
 run_hpre_test_v2()
 {
 	dev_path=$(ls -1 /dev/hisi_hpre-* | head -1)
-	run_cmd test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
+	run_cmd "hpre test in sync mode" \
+		test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
 
-	run_cmd test_hisi_hpre --trd_mode=async --dev_path=$dev_path
+	run_cmd "hpre test in async mode" \
+		test_hisi_hpre --trd_mode=async --dev_path=$dev_path
 }
 
 # failed: return 1; success: return 0
