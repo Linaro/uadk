@@ -88,10 +88,10 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -105,10 +105,10 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -122,10 +122,10 @@ hw_strm_deflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -139,10 +139,10 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 ${@:4}
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
+		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 ${@:4}
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
