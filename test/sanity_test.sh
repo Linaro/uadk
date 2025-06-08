@@ -357,13 +357,13 @@ run_zip_test_v2()
 	export WD_COMP_ASYNC_POLL_EN=1
 	export WD_COMP_ASYNC_POLL_NUM="4@0"
 	# test without environment variables
-	# limit test file in 8MB
-	rm -fr /tmp/syslog
-	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=8 >& /dev/null
-	sw_dfl_hw_ifl /tmp/syslog
-	hw_dfl_sw_ifl /tmp/syslog
-	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
-	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
+	# limit test text file in 8MB
+	rm -fr /tmp/textfile
+	dd if=/dev/urandom bs=1M count=8 | tr -dc '[:print:]\n' | head -c 8M > /tmp/textfile
+	sw_dfl_hw_ifl /tmp/textfile
+	hw_dfl_sw_ifl /tmp/textfile
+	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/textfile
+	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/textfile
 	# test without environment variables
 	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self
 	# test with environment variables
