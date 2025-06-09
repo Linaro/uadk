@@ -26,6 +26,9 @@ RM="rm"
 CP="cp"
 CHMOD="chmod"
 
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+
 # arg1: zip/sec/hpre
 # Return UACCE mode. Return -1 if UACCE module is invalid.
 check_uacce_mode()
@@ -77,8 +80,38 @@ run_cmd()
 	fi
 	echo "$output"
 	if [ $exit_code -eq 0 ]; then
+		((SUCCESS_COUNT++))
 		echo -e "\tCommand passed (CMD: $comment)."
 	else
+		((FAIL_COUNT++))
+		echo -e "\tCommand failed (CMD: $comment)."
+		echo -e "\tCommand result: $exit_code"
+	fi
+	return $exit_code
+}
+
+run_cmd_quiet()
+{
+	local exit_code=0
+	local output=""
+	# The first parameter is always comment. So remove it.
+	local comment="$1"
+	shift
+	echo "Command: $@"
+
+	if [ -z ${VALGRIND} ]; then
+		# "|| exit_code=$?" is used to capature the return value.
+		# It could prevent bash to stop scripts when error occurs.
+		output=$("$@" 2>&1) || exit_code=$?
+	else
+		output=$("${VALGRIND} $@" 2>&1)
+	fi
+	if [ $exit_code -eq 0 ]; then
+		((SUCCESS_COUNT++))
+		echo -e "\tCommand passed (CMD: $comment)."
+	else
+		((FAIL_COUNT++))
+		echo "$output"
 		echo -e "\tCommand failed (CMD: $comment)."
 		echo -e "\tCommand result: $exit_code"
 	fi
@@ -323,13 +356,13 @@ hw_dfl_hw_ifl()
 
 	hw_blk_deflate origin /tmp/ori.gz gzip
 	hw_blk_inflate /tmp/ori.gz origin gzip
-	run_cmd "Check MD5 after HW block compress & HW block decompress on 1MB random data" \
+	run_cmd_quiet "Check MD5 after HW block compress & HW block decompress on 1MB random data" \
 		md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip
 	hw_strm_inflate /tmp/ori.gz origin gzip
-	run_cmd "Check MD5 after HW stream compress & HW stream decompress on 1MB random data" \
+	run_cmd_quiet "Check MD5 after HW stream compress & HW stream decompress on 1MB random data" \
 		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
@@ -340,13 +373,13 @@ hw_dfl_hw_ifl()
 
 	#hw_blk_deflate origin /tmp/ori.gz gzip
 	#hw_blk_inflate /tmp/ori.gz origin gzip
-	#run_cmd "Check MD5 after HW block compress & HW block decompress on text data" \
+	#run_cmd_quiet "Check MD5 after HW block compress & HW block decompress on text data" \
 	#	md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip
 	hw_strm_inflate /tmp/ori.gz origin gzip
-	run_cmd "Check MD5 after HW stream compress & HW stream decompress on text data" \
+	run_cmd_quiet "Check MD5 after HW stream compress & HW stream decompress on text data" \
 		md5sum -c ori.md5
 }
 
@@ -432,12 +465,12 @@ output_result()
 		echo "---> hisi_hpre test is failed!"
 	fi
 
-	if [ $zip_result -ne 1 -a $sec_result -ne 1 -a $hpre_result -ne 1 ]; then
-		echo "===> tests for exited device are all passed!"
-		return 0
+	echo "Passed ${SUCCESS_COUNT} test. Failed ${FAIL_COUNT} test."
+	if [ ${FAIL_COUNT} -ne 0 ]; then
+		return 1
 	fi
 
-	return 1
+	return 0
 }
 
 # start to test
