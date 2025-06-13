@@ -36,18 +36,13 @@ enum alg_win_bits {
 	GZIP_MAX_WBITS = 31,
 };
 
-struct wd_zlibwrapper_config {
-	int count;
-	int status;
-};
-
 static pthread_mutex_t wd_zlib_mutex = PTHREAD_MUTEX_INITIALIZER;
-static struct wd_zlibwrapper_config zlib_config = {0};
+static int zlib_status;
 
 static void wd_zlib_unlock(void)
 {
+	zlib_status = WD_ZLIB_UNINIT;
 	pthread_mutex_unlock(&wd_zlib_mutex);
-	zlib_config.status = WD_ZLIB_UNINIT;
 }
 
 static int wd_zlib_uadk_init(void)
@@ -56,7 +51,7 @@ static int wd_zlib_uadk_init(void)
 	struct wd_ctx_nums *ctx_set_num;
 	int ret, i;
 
-	if (zlib_config.status == WD_ZLIB_INIT)
+	if (zlib_status == WD_ZLIB_INIT)
 		return 0;
 
 	ctx_set_num = calloc(WD_DIR_MAX, sizeof(*ctx_set_num));
@@ -86,7 +81,7 @@ static int wd_zlib_uadk_init(void)
 	}
 
 	ret = 0;
-	zlib_config.status = WD_ZLIB_INIT;
+	zlib_status = WD_ZLIB_INIT;
 
 out_freebmp:
 	numa_free_nodemask(cparams.bmp);
@@ -100,7 +95,7 @@ out_freectx:
 static void wd_zlib_uadk_uninit(void)
 {
 	wd_comp_uninit2();
-	zlib_config.status = WD_ZLIB_UNINIT;
+	zlib_status = WD_ZLIB_UNINIT;
 }
 
 static int wd_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
@@ -176,16 +171,6 @@ static int wd_zlib_init(z_streamp strm, int level, int windowbits, enum wd_comp_
 	strm->total_out = 0;
 
 	ret = wd_zlib_alloc_sess(strm, level, windowbits, type);
-	if (unlikely(ret < 0))
-		goto out_uninit;
-
-	__atomic_add_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
-	pthread_mutex_unlock(&wd_zlib_mutex);
-
-	return Z_OK;
-
-out_uninit:
-	wd_zlib_uadk_uninit();
 
 out_unlock:
 	pthread_mutex_unlock(&wd_zlib_mutex);
@@ -195,23 +180,10 @@ out_unlock:
 
 static int wd_zlib_uninit(z_streamp strm)
 {
-	int ret;
-
 	if (unlikely(!strm))
 		return Z_STREAM_ERROR;
 
 	wd_zlib_free_sess(strm);
-
-	pthread_mutex_lock(&wd_zlib_mutex);
-
-	ret = __atomic_sub_fetch(&zlib_config.count, 1, __ATOMIC_RELAXED);
-	if (ret != 0)
-		goto out_unlock;
-
-	wd_zlib_uadk_uninit();
-
-out_unlock:
-	pthread_mutex_unlock(&wd_zlib_mutex);
 
 	return Z_OK;
 }
@@ -324,4 +296,9 @@ int wd_inflate_reset(z_streamp strm)
 int wd_inflate_end(z_streamp strm)
 {
 	return wd_zlib_uninit(strm);
+}
+
+__attribute__ ((destructor)) static void wd_zlibwrapper_destory(void)
+{
+	wd_zlib_uadk_uninit();
 }
