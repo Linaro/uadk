@@ -124,7 +124,7 @@ struct wd_msg_handle {
 
 struct wd_init_attrs {
 	__u32 sched_type;
-	const char *alg;
+	char alg[CRYPTO_MAX_ALG_NAME];
 	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;

@@ -225,8 +225,6 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	return (handle_t)sess;
 
 err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
 	free(sess);
 	return (handle_t)0;
 }
@@ -414,7 +412,7 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_driver;
 		}
 
-		wd_digest_init_attrs.alg = alg;
+		(void)strcpy(wd_digest_init_attrs.alg, alg);
 		wd_digest_init_attrs.sched_type = sched_type;
 		wd_digest_init_attrs.driver = wd_digest_setting.driver;
 		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
