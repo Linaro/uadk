@@ -309,7 +309,7 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 			goto out_driver;
 		}
 
-		wd_rsa_init_attrs.alg = alg;
+		(void)strcpy(wd_rsa_init_attrs.alg, alg);
 		wd_rsa_init_attrs.sched_type = sched_type;
 		wd_rsa_init_attrs.driver = wd_rsa_setting.driver;
 		wd_rsa_init_attrs.ctx_params = &rsa_ctx_params;

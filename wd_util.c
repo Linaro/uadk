@@ -1166,8 +1166,10 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 		ctx_config->ctxs[i].ctx = h_ctx;
 		ctx_config->ctxs[i].ctx_mode = get_ctx_mode(config, i);
 		ret = get_op_type(config, i, ctx_config->ctxs[i].ctx_mode);
-		if (ret < 0)
+		if (ret < 0) {
+			wd_release_ctx(ctx_config->ctxs[i].ctx);
 			goto free_ctx;
+		}
 
 		ctx_config->ctxs[i].op_type = ret;
 	}
@@ -2805,7 +2807,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		break;
 	case UADK_ALG_HW:
 		wd_get_alg_type(alg, alg_type);
-		attrs->alg = alg_type;
+		(void)strcpy(attrs->alg, alg_type);
 
 		ctx_config = calloc(1, sizeof(*ctx_config));
 		if (!ctx_config) {

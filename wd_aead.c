@@ -344,9 +344,8 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 	}
 
 	return (handle_t)sess;
+
 err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
 	free(sess);
 	return (handle_t)0;
 }
@@ -604,7 +603,7 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_driver;
 		}
 
-		wd_aead_init_attrs.alg = alg;
+		(void)strcpy(wd_aead_init_attrs.alg, alg);
 		wd_aead_init_attrs.sched_type = sched_type;
 		wd_aead_init_attrs.driver = wd_aead_setting.driver;
 		wd_aead_init_attrs.ctx_params = &aead_ctx_params;

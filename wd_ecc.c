@@ -337,7 +337,7 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 			goto out_driver;
 		}
 
-		wd_ecc_init_attrs.alg = alg;
+		(void)strcpy(wd_ecc_init_attrs.alg, alg);
 		wd_ecc_init_attrs.sched_type = sched_type;
 		wd_ecc_init_attrs.driver = wd_ecc_setting.driver;
 		wd_ecc_init_attrs.ctx_params = &ecc_ctx_params;

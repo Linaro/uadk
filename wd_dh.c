@@ -269,7 +269,7 @@ int wd_dh_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_param
 			goto out_driver;
 		}
 
-		wd_dh_init_attrs.alg = alg;
+		(void)strcpy(wd_dh_init_attrs.alg, alg);
 		wd_dh_init_attrs.sched_type = sched_type;
 		wd_dh_init_attrs.driver = wd_dh_setting.driver;
 		wd_dh_init_attrs.ctx_params = &dh_ctx_params;
