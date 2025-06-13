@@ -11,8 +11,7 @@
 #include "include/wd_ecc.h"
 #include "include/wd_sched.h"
 
-#define ECC_CURVE_SECP256K1	0x3 /* def set with secp256k1 */
-#define ECC_CURVE_SECP256R1	0x7 /* optional set with secp256r1 */
+#define ECC_CURVE_SECP256R1	0x3 /* default set with secp256r1 */
 #define HPRE_TST_PRT 		printf
 #define ERR_OPTYPE		0xFF
 #define SM2_DG_SZ		1024
@@ -218,9 +217,6 @@ static void get_ecc_param(u32 algtype, u32 *keysize)
 {
 	switch(algtype) {
 	case ECDH_256:
-		*keysize = 256;
-		break;
-	case ECDH_256R1:
 		*keysize = 256;
 		break;
 	case ECDH_384:
@@ -1029,9 +1025,9 @@ static int get_ecc_curve(struct hpre_ecc_setup *setup, u32 cid)
 		setup->nid = 712;
 		setup->curve_id = WD_SECP224R1;
 		break;
-	case 3: // secp256K1
-		setup->nid = 714;
-		setup->curve_id = WD_SECP256K1;
+	case 3: // secp256R1
+		setup->nid = 415;
+		setup->curve_id = WD_SECP256R1;
 		break;
 	case 4: // brainpoolP320R1
 		setup->nid = 929;
@@ -1044,10 +1040,6 @@ static int get_ecc_curve(struct hpre_ecc_setup *setup, u32 cid)
 	case 6: // secp521R1
 		setup->nid = 716;
 		setup->curve_id = WD_SECP521R1;
-		break;
-	case 7: // secp256R1
-		setup->nid = 415;
-		setup->curve_id = WD_SECP256R1;
 		break;
 	default:
 		HPRE_TST_PRT("failed to get ecc curve id!\n");
@@ -2254,6 +2246,7 @@ static void *ecc_uadk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	u32 cid = ECC_CURVE_SECP256R1;
 	u32 subtype = pdata->subtype;
 	struct wd_ecc_sess_setup sess_setup;
 	struct hpre_ecc_setup setup;
@@ -2264,7 +2257,6 @@ static void *ecc_uadk_sync_run(void *arg)
 	struct wd_ecc_point pbk;
 	struct wd_dtb prk;
 	struct wd_ecc_req req;
-	u32 cid;
 	handle_t h_sess;
 	u32 count = 0;
 	int ret;
@@ -2274,11 +2266,6 @@ static void *ecc_uadk_sync_run(void *arg)
 	memset(&req, 0, sizeof(req));
 
 	memset(&setup, 0, sizeof(setup));
-
-	if (pdata->algtype == ECDH_256R1)
-		cid = ECC_CURVE_SECP256R1;
-	else
-		cid = ECC_CURVE_SECP256K1;
 
 	ret = get_ecc_curve(&setup, cid);
 	if (ret)
@@ -2415,6 +2402,7 @@ static void *ecc_uadk_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	u32 cid = ECC_CURVE_SECP256R1;
 	u32 subtype = pdata->subtype;
 	struct wd_ecc_sess_setup sess_setup;
 	struct rsa_async_tag *tag;
@@ -2426,7 +2414,6 @@ static void *ecc_uadk_async_run(void *arg)
 	struct wd_ecc_point pbk;
 	struct wd_ecc_req req;
 	struct wd_dtb prk;
-	u32 cid;
 	handle_t h_sess;
 	int try_cnt = 0;
 	u32 count = 0;
@@ -2437,11 +2424,6 @@ static void *ecc_uadk_async_run(void *arg)
 	memset(&req, 0, sizeof(req));
 
 	memset(&setup, 0, sizeof(setup));
-
-	if (pdata->algtype == ECDH_256R1)
-		cid = ECC_CURVE_SECP256R1;
-	else
-		cid = ECC_CURVE_SECP256K1;
 
 	ret = get_ecc_curve(&setup, cid);
 	if (ret)
