@@ -1189,8 +1189,10 @@ static int wd_ecc_sess_eops_init(struct wd_ecc_sess *sess)
 
 static void wd_ecc_sess_eops_uninit(struct wd_ecc_sess *sess)
 {
-	if (sess->eops.sess_uninit)
+	if (sess->eops.sess_uninit) {
 		sess->eops.sess_uninit(sess->eops.params);
+		sess->eops.params = NULL;
+	}
 }
 
 static void wd_ecc_sess_eops_cfg(struct wd_ecc_sess_setup *setup,
@@ -1274,7 +1276,7 @@ void wd_ecc_free_sess(handle_t sess)
 	if (sess_t->sched_key)
 		free(sess_t->sched_key);
 	del_sess_key(sess_t);
-	wd_ecc_sess_eops_uninit(sess);
+	wd_ecc_sess_eops_uninit(sess_t);
 	free(sess_t);
 }
 
