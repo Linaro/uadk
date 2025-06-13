@@ -2269,22 +2269,20 @@ static void *ecc_uadk_sync_run(void *arg)
 	u32 count = 0;
 	int ret;
 
-	memset(&sess_setup,     0, sizeof(sess_setup));
-	memset(&param,     0, sizeof(param));
-	memset(&req,     0, sizeof(req));
+	memset(&sess_setup, 0, sizeof(sess_setup));
+	memset(&param, 0, sizeof(param));
+	memset(&req, 0, sizeof(req));
 
-	memset(&setup,     0, sizeof(setup));
+	memset(&setup, 0, sizeof(setup));
 
 	if (pdata->algtype == ECDH_256R1)
 		cid = ECC_CURVE_SECP256R1;
 	else
 		cid = ECC_CURVE_SECP256K1;
 
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
-		ret = get_ecc_curve(&setup, cid);
-		if (ret)
-			return NULL;
-	}
+	ret = get_ecc_curve(&setup, cid);
+	if (ret)
+		return NULL;
 
 	sess_setup.key_bits = pdata->keybits;
 	if (subtype == ECDH_TYPE || subtype == ECDSA_TYPE) {
@@ -2434,22 +2432,20 @@ static void *ecc_uadk_async_run(void *arg)
 	u32 count = 0;
 	int i, ret;
 
-	memset(&sess_setup,	0, sizeof(sess_setup));
-	memset(&param,	   0, sizeof(param));
-	memset(&req,	 0, sizeof(req));
+	memset(&sess_setup, 0, sizeof(sess_setup));
+	memset(&param, 0, sizeof(param));
+	memset(&req, 0, sizeof(req));
 
-	memset(&setup,	   0, sizeof(setup));
+	memset(&setup, 0, sizeof(setup));
 
 	if (pdata->algtype == ECDH_256R1)
 		cid = ECC_CURVE_SECP256R1;
 	else
 		cid = ECC_CURVE_SECP256K1;
 
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
-		ret = get_ecc_curve(&setup, cid);
-		if (ret)
-			return NULL;
-	}
+	ret = get_ecc_curve(&setup, cid);
+	if (ret)
+		return NULL;
 
 	sess_setup.key_bits = pdata->keybits;
 	if (subtype == ECDH_TYPE || subtype == ECDSA_TYPE) {
