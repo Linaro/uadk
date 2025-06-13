@@ -103,8 +103,6 @@ struct hisi_zip_buf {
 	__u32 pending_out;
 	/* Size that have been copied */
 	__u32 output_offset;
-	/* Input data consumption when all data copies are complete */
-	__u32 fallback_size;
 	/* Store end flag return by HW */
 	__u32 status;
 };
@@ -174,11 +172,6 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 {
 	__u32 copy_len;
 
-	if (!msg->in_size && buf->fallback_size) {
-		WD_ERR("Couldn't handle, input size is 0!\n");
-		return;
-	}
-
 	/*
 	 * After hw processing, pending_out is the length of the hardware output.
 	 * After hw is skipped, pending_out is the remaining length in the buf.
@@ -194,25 +187,15 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		/* All data copied to output, reset the buf status */
 		if (buf->skip_hw) {
 			buf->skip_hw = 0;
-			msg->in_cons = buf->fallback_size;
 			msg->status = buf->status == WCRYPTO_DECOMP_END ?
 					WCRYPTO_DECOMP_END : WD_SUCCESS;
 		}
 
-		buf->fallback_size = 0;
 		buf->output_offset = 0;
 	} else {
 		/* Still data need to be copied */
 		buf->output_offset += copy_len;
 		buf->skip_hw = 0;
-
-		/* Feedback to users that a maximum of 1 byte of data is not consumed */
-		if (msg->in_cons > 1) {
-			buf->fallback_size = 1;
-			msg->in_cons--;
-		} else {
-			msg->in_cons = 0;
-		}
 
 		/*
 		 * The end flag is cached. It can be output only
@@ -220,7 +203,7 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		 */
 		if (msg->status == WCRYPTO_DECOMP_END) {
 			buf->status = WCRYPTO_DECOMP_END;
-			msg->status = WD_SUCCESS;
+			msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 		}
 	}
 }

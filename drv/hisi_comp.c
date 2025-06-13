@@ -132,8 +132,6 @@ struct hisi_comp_buf {
 	__u32 pending_out;
 	/* Size that have been copied */
 	__u32 output_offset;
-	/* Input data consumption when all data copies are complete */
-	__u32 fallback_size;
 	/* Store end flag return by HW */
 	__u32 status;
 	/* Denoted internal store sgl */
@@ -285,11 +283,6 @@ static int check_store_buf(struct wd_comp_msg *msg)
 	if (!buf->pending_out)
 		return 0;
 
-	if (!req->src_len && buf->fallback_size) {
-		WD_ERR("Couldn't handle, input size is 0!\n");
-		return -WD_EINVAL;
-	}
-
 	copy_len = copy_to_out(msg, buf, buf->pending_out);
 	buf->pending_out -= copy_len;
 	msg->produced = copy_len;
@@ -297,8 +290,6 @@ static int check_store_buf(struct wd_comp_msg *msg)
 
 	if (!buf->pending_out) {
 		/* All data copied to output */
-		msg->in_cons = buf->fallback_size;
-		buf->fallback_size = 0;
 		buf->output_offset = 0;
 		memset(buf->dst, 0, STORE_BUF_SIZE);
 		req->status = buf->status == WD_STREAM_END ? WD_STREAM_END : WD_SUCCESS;
@@ -322,21 +313,11 @@ static void copy_from_hw(struct wd_comp_msg *msg, struct hisi_comp_buf *buf)
 
 	if (!buf->pending_out) {
 		/* All data copied to output */
-		buf->fallback_size = 0;
 		buf->output_offset = 0;
 		memset(buf->dst, 0, STORE_BUF_SIZE);
 	} else {
 		/* Still data need to be copied */
 		buf->output_offset += copy_len;
-
-		/* Feedback to users that a maximum of 1 byte of data is not consumed */
-		if (msg->in_cons > 1) {
-			buf->fallback_size = 1;
-			msg->in_cons--;
-		} else {
-			buf->fallback_size = msg->in_cons;
-			msg->in_cons = 0;
-		}
 
 		/*
 		 * The end flag is cached. It can be output only
@@ -344,7 +325,7 @@ static void copy_from_hw(struct wd_comp_msg *msg, struct hisi_comp_buf *buf)
 		 */
 		if (req->status == WD_STREAM_END) {
 			buf->status = WD_STREAM_END;
-			req->status = WD_SUCCESS;
+			req->status = WD_EAGAIN;
 		}
 	}
 }
