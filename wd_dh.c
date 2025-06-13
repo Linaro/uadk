@@ -461,8 +461,8 @@ struct wd_dh_msg *wd_dh_get_msg(__u32 idx, __u32 tag)
 int wd_dh_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_dh_setting.config;
+	struct wd_dh_msg rcv_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_dh_msg rcv_msg;
 	struct wd_dh_req *req;
 	struct wd_dh_msg *msg;
 	__u32 rcv_cnt = 0;

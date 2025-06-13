@@ -2349,8 +2349,9 @@ struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag)
 int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_ecc_setting.config;
-	struct wd_ecc_msg recv_msg, *msg;
+	struct wd_ecc_msg recv_msg = {0};
 	struct wd_ctx_internal *ctx;
+	struct wd_ecc_msg *msg;
 	struct wd_ecc_req *req;
 	__u32 rcv_cnt = 0;
 	__u32 tmp = expt;

@@ -1512,8 +1512,9 @@ struct wd_agg_msg *wd_agg_get_msg(__u32 idx, __u32 tag)
 static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_agg_setting.config;
-	struct wd_agg_msg resp_msg, *msg;
+	struct wd_agg_msg resp_msg = {0};
 	struct wd_ctx_internal *ctx;
+	struct wd_agg_msg *msg;
 	struct wd_agg_req *req;
 	__u64 recv_count = 0;
 	__u32 tmp = expt;

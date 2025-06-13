@@ -739,8 +739,9 @@ struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag)
 int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
+	struct wd_digest_msg recv_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_digest_msg recv_msg, *msg;
+	struct wd_digest_msg *msg;
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
 	__u32 tmp = expt;
