@@ -57,7 +57,6 @@ struct wd_agg_sess_agg_conf {
 struct wd_agg_sess {
 	const char *alg_name;
 	wd_dev_mask_t *dev_mask;
-	struct wd_alg_agg *drv;
 	void *priv;
 	void *sched_key;
 	enum wd_agg_sess_state state;
@@ -415,10 +414,12 @@ handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 		goto free_sess;
 	}
 
-	ret = wd_agg_setting.driver->get_extend_ops(&sess->ops);
-	if (ret) {
-		WD_ERR("failed to get agg extend ops!\n");
-		goto free_key;
+	if (wd_agg_setting.driver->get_extend_ops) {
+		ret = wd_agg_setting.driver->get_extend_ops(&sess->ops);
+		if (ret) {
+			WD_ERR("failed to get agg extend ops!\n");
+			goto free_key;
+		}
 	}
 
 	ret = wd_agg_init_sess_priv(sess, setup);
