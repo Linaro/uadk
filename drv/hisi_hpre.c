@@ -2537,7 +2537,6 @@ static void ecc_sess_eops_uninit(void *params)
 	}
 
 	free(params);
-	params = NULL;
 }
 
 static void ecc_sess_eops_params_cfg(struct wd_ecc_sess_setup *setup,
