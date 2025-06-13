@@ -178,10 +178,11 @@ struct wd_ecc_out {
 
 struct wd_ecc_extend_ops {
 	void *params; /* the params are passed to the following ops */
-	void (*eops_params_cfg)(struct wd_ecc_sess_setup *setup,
-			       struct wd_ecc_curve *cv, void *params);
-	int (*sess_init)(void **params);
-	void (*sess_uninit)(void *params);
+	void (*eops_params_cfg)(struct wd_alg_driver *drv,
+				struct wd_ecc_sess_setup *setup,
+				struct wd_ecc_curve *cv, void *params);
+	int (*sess_init)(struct wd_alg_driver *drv, void **params);
+	void (*sess_uninit)(struct wd_alg_driver *drv, void *params);
 };
 
 struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag);

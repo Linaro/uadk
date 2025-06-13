@@ -2506,7 +2506,7 @@ static int hpre_get_usage(void *param)
 	return WD_SUCCESS;
 }
 
-static int ecc_sess_eops_init(void **params)
+static int ecc_sess_eops_init(struct wd_alg_driver *drv, void **params)
 {
 	struct hpre_ecc_ctx *ecc_ctx;
 
@@ -2529,7 +2529,7 @@ static int ecc_sess_eops_init(void **params)
 	return WD_SUCCESS;
 }
 
-static void ecc_sess_eops_uninit(void *params)
+static void ecc_sess_eops_uninit(struct wd_alg_driver *drv, void *params)
 {
 	if (!params) {
 		WD_ERR("invalid: extend ops uninit params is NULL!\n");
@@ -2539,13 +2539,32 @@ static void ecc_sess_eops_uninit(void *params)
 	free(params);
 }
 
-static void ecc_sess_eops_params_cfg(struct wd_ecc_sess_setup *setup,
+static bool is_valid_hw_type(struct wd_alg_driver *drv)
+{
+	struct hisi_hpre_ctx *hpre_ctx;
+	struct hisi_qp *qp;
+
+	if (unlikely(!drv || !drv->priv))
+		return false;
+
+	hpre_ctx = (struct hisi_hpre_ctx *)drv->priv;
+	qp = (struct hisi_qp *)wd_ctx_get_priv(hpre_ctx->config.ctxs[0].ctx);
+	if (qp->q_info.hw_type < HISI_QM_API_VER3_BASE)
+		return false;
+	return true;
+}
+
+static void ecc_sess_eops_params_cfg(struct wd_alg_driver *drv,
+				     struct wd_ecc_sess_setup *setup,
 				     struct wd_ecc_curve *cv, void *params)
 {
 	__u8 data[SECP256R1_PARAM_SIZE] = SECG_P256_R1_PARAM;
 	struct hpre_ecc_ctx *ecc_ctx = params;
 	__u32 key_size;
-	int ret = 0;
+	int ret;
+
+	if (!is_valid_hw_type(drv))
+		return;
 
 	if (!ecc_ctx) {
 		WD_INFO("Info: eops config exits, but params is NULL!\n");

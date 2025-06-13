@@ -1178,7 +1178,7 @@ static int wd_ecc_sess_eops_init(struct wd_ecc_sess *sess)
 			WD_ERR("failed to get extend ops in session!\n");
 			return -WD_EINVAL;
 		}
-		ret = sess->eops.sess_init(&sess->eops.params);
+		ret = sess->eops.sess_init(wd_ecc_setting.driver, &sess->eops.params);
 		if (ret) {
 			WD_ERR("failed to init extend ops params in session!\n");
 			return ret;
@@ -1190,7 +1190,7 @@ static int wd_ecc_sess_eops_init(struct wd_ecc_sess *sess)
 static void wd_ecc_sess_eops_uninit(struct wd_ecc_sess *sess)
 {
 	if (sess->eops.sess_uninit) {
-		sess->eops.sess_uninit(sess->eops.params);
+		sess->eops.sess_uninit(wd_ecc_setting.driver, sess->eops.params);
 		sess->eops.params = NULL;
 	}
 }
@@ -1200,7 +1200,8 @@ static void wd_ecc_sess_eops_cfg(struct wd_ecc_sess_setup *setup,
 {
 	if (sess->eops.sess_init && sess->eops.eops_params_cfg) {
 		/* the config result does not impact task sucesss or failure */
-		sess->eops.eops_params_cfg(setup, sess->key.cv, sess->eops.params);
+		sess->eops.eops_params_cfg(wd_ecc_setting.driver, setup, sess->key.cv,
+								   sess->eops.params);
 	}
 }
 
