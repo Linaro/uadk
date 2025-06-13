@@ -28,6 +28,7 @@
 #define SM2_KEY_SIZE			32
 #define GET_NEGATIVE(val)		(0 - (val))
 #define ZA_PARAM_NUM  			6
+#define WD_SECP256R1			0x18 /* consistent with enum wd_ecc_curve_id */
 
 static __thread __u64 balance;
 
@@ -49,6 +50,7 @@ struct wd_ecc_sess {
 	__u32 key_size;
 	struct wd_ecc_key key;
 	struct wd_ecc_sess_setup setup;
+	struct wd_ecc_extend_ops eops;
 	void *sched_key;
 };
 
@@ -84,7 +86,8 @@ static const struct wd_ecc_curve_list curve_list[] = {
 	{ WD_BRAINPOOLP384R1, "bpP384r1", 384, BRAINPOOL_P384_R1_PARAM },
 	{ WD_SECP384R1, "secp384r1", 384, SECG_P384_R1_PARAM },
 	{ WD_SECP521R1, "secp521r1", 521, SECG_P521_R1_PARAM },
-	{ WD_SM2P256, "sm2", 256, SM2_P256_V1_PARAM }
+	{ WD_SM2P256, "sm2", 256, SM2_P256_V1_PARAM },
+	{ WD_SECP256R1, "secp256r1", 256, SECG_P256_R1_PARAM },
 };
 
 static const struct curve_param_desc curve_pram_list[] = {
@@ -1166,6 +1169,39 @@ static void del_sess_key(struct wd_ecc_sess *sess)
 	}
 }
 
+static int wd_ecc_sess_eops_init(struct wd_ecc_sess *sess)
+{
+	int ret;
+
+	if (sess->eops.sess_init) {
+		if (!sess->eops.sess_uninit) {
+			WD_ERR("failed to get extend ops in session!\n");
+			return -WD_EINVAL;
+		}
+		ret = sess->eops.sess_init(&sess->eops.params);
+		if (ret) {
+			WD_ERR("failed to init extend ops params in session!\n");
+			return ret;
+		}
+	}
+	return WD_SUCCESS;
+}
+
+static void wd_ecc_sess_eops_uninit(struct wd_ecc_sess *sess)
+{
+	if (sess->eops.sess_uninit)
+		sess->eops.sess_uninit(sess->eops.params);
+}
+
+static void wd_ecc_sess_eops_cfg(struct wd_ecc_sess_setup *setup,
+				 struct wd_ecc_sess *sess)
+{
+	if (sess->eops.sess_init && sess->eops.eops_params_cfg) {
+		/* the config result does not impact task sucesss or failure */
+		sess->eops.eops_params_cfg(setup, sess->key.cv, sess->eops.params);
+	}
+}
+
 handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 {
 	struct wd_ecc_sess *sess;
@@ -1187,11 +1223,25 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
 
-	ret = create_sess_key(setup, sess);
+	ret = wd_ecc_setting.driver->get_extend_ops(&sess->eops);
 	if (ret) {
-		WD_ERR("failed to creat ecc sess keys!\n");
+		WD_ERR("failed to get ecc sess extend ops!\n");
 		goto sess_err;
 	}
+
+	ret = wd_ecc_sess_eops_init(sess);
+	if (ret) {
+		WD_ERR("failed to init ecc sess extend eops!\n");
+		goto sess_err;
+	}
+
+	ret = create_sess_key(setup, sess);
+	if (ret) {
+		WD_ERR("failed to create ecc sess keys!\n");
+		goto eops_err;
+	}
+
+	wd_ecc_sess_eops_cfg(setup, sess);
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_ecc_setting.sched.sched_init(
@@ -1205,6 +1255,8 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 sched_err:
 	del_sess_key(sess);
+eops_err:
+	wd_ecc_sess_eops_uninit(sess);
 sess_err:
 	free(sess);
 	return (handle_t)0;
@@ -1222,6 +1274,7 @@ void wd_ecc_free_sess(handle_t sess)
 	if (sess_t->sched_key)
 		free(sess_t->sched_key);
 	del_sess_key(sess_t);
+	wd_ecc_sess_eops_uninit(sess);
 	free(sess_t);
 }
 
@@ -1494,6 +1547,7 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 	memcpy(&msg->hash, &sess->setup.hash, sizeof(msg->hash));
 	msg->key_bytes = sess->key_size;
 	msg->curve_id = sess->setup.cv.cfg.id;
+	msg->drv_cfg = sess->eops.params;
 	msg->result = WD_EINVAL;
 
 	switch (req->op_type) {

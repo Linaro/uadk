@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include "hisi_qm_udrv.h"
+#include "../include/wd_ecc_curve.h"
 #include "../include/drv/wd_rsa_drv.h"
 #include "../include/drv/wd_dh_drv.h"
 #include "../include/drv/wd_ecc_drv.h"
@@ -41,6 +42,10 @@
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 
 #define WD_TRANS_FAIL  0
+
+#define CURVE_PARAM_NUM			6
+#define SECP256R1_KEY_SIZE		32
+#define SECP256R1_PARAM_SIZE		(CURVE_PARAM_NUM * SECP256R1_KEY_SIZE)
 
 enum hpre_alg_type {
 	HPRE_ALG_NC_NCRT = 0x0,
@@ -108,6 +113,10 @@ struct hisi_hpre_sqe {
 
 struct hisi_hpre_ctx {
 	struct wd_ctx_config_internal	config;
+};
+
+struct hpre_ecc_ctx {
+	__u32 enable_hpcore;
 };
 
 static void dump_hpre_msg(void *msg, int alg)
@@ -1359,6 +1368,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 static int ecc_prepare_in(struct wd_ecc_msg *msg,
 			  struct hisi_hpre_sqe *hw_msg, void **data)
 {
+	struct hpre_ecc_ctx *ecc_ctx = msg->drv_cfg;
 	int ret = -WD_EINVAL;
 
 	switch (msg->req.op_type) {
@@ -1367,11 +1377,15 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 		/* driver to identify sm2 algorithm when async receive */
 		hw_msg->sm2_mlen = msg->req.op_type;
 		hw_msg->bd_rsv2 = 1; /* fall through */
-	case WD_SM2_KG: /* fall through */
+	case WD_SM2_KG:
+		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
+		break;
 	case WD_ECXDH_GEN_KEY:
+		hw_msg->bd_rsv2 = ecc_ctx->enable_hpcore;
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
 		break;
 	case WD_ECXDH_COMPUTE_KEY:
+		hw_msg->bd_rsv2 = ecc_ctx->enable_hpcore;
 		ret = ecc_prepare_dh_compute_in(msg, hw_msg, data);
 		if (!ret && (msg->curve_id == WD_X25519 ||
 		    msg->curve_id == WD_X448))
@@ -2492,6 +2506,79 @@ static int hpre_get_usage(void *param)
 	return WD_SUCCESS;
 }
 
+static int ecc_sess_eops_init(void **params)
+{
+	struct hpre_ecc_ctx *ecc_ctx;
+
+	if (!params) {
+		WD_ERR("invalid: extend ops init params address is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (*params) {
+		WD_ERR("invalid: extend ops init params repeatedly!\n");
+		return -WD_EINVAL;
+	}
+
+	ecc_ctx = calloc(1, sizeof(struct hpre_ecc_ctx));
+	if (!ecc_ctx)
+		return -WD_ENOMEM;
+
+	*params = ecc_ctx;
+
+	return WD_SUCCESS;
+}
+
+static void ecc_sess_eops_uninit(void *params)
+{
+	if (!params) {
+		WD_ERR("invalid: extend ops uninit params is NULL!\n");
+		return;
+	}
+
+	free(params);
+	params = NULL;
+}
+
+static void ecc_sess_eops_params_cfg(struct wd_ecc_sess_setup *setup,
+				     struct wd_ecc_curve *cv, void *params)
+{
+	__u8 data[SECP256R1_PARAM_SIZE] = SECG_P256_R1_PARAM;
+	struct hpre_ecc_ctx *ecc_ctx = params;
+	__u32 key_size;
+	int ret = 0;
+
+	if (!ecc_ctx) {
+		WD_INFO("Info: eops config exits, but params is NULL!\n");
+		return;
+	}
+
+	if (strcmp(setup->alg, "ecdh"))
+		return;
+
+	key_size = BITS_TO_BYTES(setup->key_bits);
+	if (key_size != SECP256R1_KEY_SIZE)
+		return;
+
+	ret = memcmp(data, cv->p.data, SECP256R1_PARAM_SIZE);
+	if (!ret)
+		ecc_ctx->enable_hpcore = 1;
+}
+
+static int hpre_ecc_get_extend_ops(void *ops)
+{
+	struct wd_ecc_extend_ops *ecc_ops = ops;
+
+	if (!ecc_ops)
+		return -WD_EINVAL;
+
+	ecc_ops->params = NULL;
+	ecc_ops->sess_init = ecc_sess_eops_init;
+	ecc_ops->eops_params_cfg = ecc_sess_eops_params_cfg;
+	ecc_ops->sess_uninit = ecc_sess_eops_uninit;
+	return WD_SUCCESS;
+}
+
 #define GEN_HPRE_ALG_DRIVER(hpre_alg_name) \
 {\
 	.drv_name = "hisi_hpre",\
@@ -2506,6 +2593,7 @@ static int hpre_get_usage(void *param)
 	.send = ecc_send,\
 	.recv = ecc_recv,\
 	.get_usage = hpre_get_usage,\
+	.get_extend_ops = hpre_ecc_get_extend_ops,\
 }
 
 static struct wd_alg_driver hpre_ecc_driver[] = {
