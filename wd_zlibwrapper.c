@@ -24,6 +24,18 @@ enum uadk_init_status {
 	WD_ZLIB_INIT,
 };
 
+enum alg_win_bits {
+	DEFLATE_MIN_WBITS = -15,
+	DEFLATE_4K_WBITS = 12,
+	DEFLATE_MAX_WBITS = -8,
+	ZLIB_MIN_WBITS = 8,
+	ZLIB_4K_WBITS = 12,
+	ZLIB_MAX_WBITS = 15,
+	GZIP_MIN_WBITS = 24,
+	GZIP_4K_WBITS = 28,
+	GZIP_MAX_WBITS = 31,
+};
+
 struct wd_zlibwrapper_config {
 	int count;
 	int status;
@@ -78,27 +90,19 @@ static void wd_zlib_uadk_uninit(void)
 
 static int wd_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
 {
-	static const int ZLIB_MAX_WBITS = 15;
-	static const int ZLIB_MIN_WBITS = 8;
-	static const int GZIP_MAX_WBITS = 31;
-	static const int GZIP_MIN_WBITS = 24;
-	static const int DEFLATE_MAX_WBITS = -8;
-	static const int DEFLATE_MIN_WBITS = -15;
-	static const int WBINS_ZLIB_4K = 12;
-	static const int WBINS_GZIP_4K = 27;
-	static const int WBINS_DEFLATE_4K = -12;
-
-	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
-		*alg = WD_ZLIB;
-		*windowsize = max(windowbits - WBINS_ZLIB_4K, WD_COMP_WS_4K);
-	} else if ((windowbits >= GZIP_MIN_WBITS) && (windowbits <= GZIP_MAX_WBITS)) {
-		*alg = WD_GZIP;
-		*windowsize = max(windowbits - WBINS_GZIP_4K, WD_COMP_WS_4K);
-	} else if ((windowbits >= DEFLATE_MIN_WBITS) && (windowbits <= DEFLATE_MAX_WBITS)) {
-		*alg = WD_DEFLATE;
-		*windowsize = max(windowbits - WBINS_DEFLATE_4K, WD_COMP_WS_4K);
-	} else {
-		return Z_STREAM_ERROR;
+	switch (windowbits) {
+		case DEFLATE_MIN_WBITS ... DEFLATE_MAX_WBITS:
+			*alg = WD_DEFLATE;
+			windowbits = -windowbits;
+			*windowsize = max(windowbits - DEFLATE_4K_WBITS, WD_COMP_WS_4K);
+		case GZIP_MIN_WBITS ... GZIP_MAX_WBITS:
+			*alg = WD_GZIP;
+			*windowsize = max(windowbits - GZIP_4K_WBITS, WD_COMP_WS_4K);
+		case ZLIB_MIN_WBITS ... ZLIB_MAX_WBITS:
+			*alg = WD_ZLIB;
+			*windowsize = max(windowbits - ZLIB_4K_WBITS, WD_COMP_WS_4K);
+		default:
+			return Z_STREAM_ERROR;
 	}
 
 	*windowsize = *windowsize == WD_COMP_WS_24K ? WD_COMP_WS_32K : *windowsize;
@@ -119,7 +123,7 @@ static int wd_zlib_alloc_sess(z_streamp strm, int level, int windowbits, enum wd
 		return ret;
 	}
 
-	setup.comp_lv = level;
+	setup.comp_lv = level == Z_DEFAULT_COMPRESSION ? WD_COMP_L6 : level;
 	setup.alg_type = alg;
 	setup.win_sz = windowsize;
 	setup.op_type = type;
