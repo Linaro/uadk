@@ -85,6 +85,7 @@ static struct acc_alg_item alg_options[] = {
 	{"dh",			"dh-3072",		DH_3072},
 	{"dh",			"dh-4096",		DH_4096},
 	{"ecdh",		"ecdh-256",		ECDH_256},
+	{"ecdh",		"ecdh-256r1",		ECDH_256R1},
 	{"ecdh",		"ecdh-384",		ECDH_384},
 	{"ecdh",		"ecdh-521",		ECDH_521},
 	{"ecdsa",		"ecdsa-256",		ECDSA_256},
@@ -647,7 +648,7 @@ void print_benchmark_help(void)
 	ACC_TST_PRT("        specify numa nodes for cpu and memory\n");
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
-	ACC_TST_PRT("        The name of the algorithm for benchmarking\n");
+	ACC_TST_PRT("        The name of the algorithm for benchmarking, note that alg ecdh-256r1 means ecdh with secp256r1\n");
 	ACC_TST_PRT("    [--mode sva/nosva/soft/sva-soft/nosva-soft/instr/multibuff]: start UADK or Warpdrive or Openssl or Instruction mode test\n");
 	ACC_TST_PRT("    [--sync/--async]: start asynchronous/synchronous mode test\n");
 	ACC_TST_PRT("    [--opt 0,1,2,3,4,5]:\n");
