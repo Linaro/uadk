@@ -39,7 +39,7 @@ extern "C" {
 #define Z_BUF_ERROR		(-5)
 #define Z_VERSION_ERROR		(-6)
 
-#define Z_DEFLATED		0
+#define Z_DEFAULT_COMPRESSION	(-1)
 #define MAX_WBITS		15
 #define DEF_MEM_LEVEL		0
 #define Z_DEFAULT_STRATEGY	0
