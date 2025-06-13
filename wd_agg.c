@@ -609,9 +609,10 @@ out_clear_ctx_config:
 
 static int wd_agg_alg_uninit(void)
 {
-	void *priv = wd_agg_setting.priv;
+	enum wd_status status;
 
-	if (!priv)
+	wd_alg_get_init(&wd_agg_setting.status, &status);
+	if (status == WD_UNINIT)
 		return -WD_EINVAL;
 
 	/* Uninit async request pool */
