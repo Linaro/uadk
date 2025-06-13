@@ -62,7 +62,6 @@ struct wd_cipher_sess {
 	enum wd_cipher_alg	alg;
 	enum wd_cipher_mode	mode;
 	wd_dev_mask_t		*dev_mask;
-	struct wd_alg_cipher	*drv;
 	void			*priv;
 	unsigned char		key[MAX_CIPHER_KEY_SIZE];
 	__u32			key_bytes;

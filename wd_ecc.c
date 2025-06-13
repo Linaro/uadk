@@ -1226,10 +1226,12 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
 
-	ret = wd_ecc_setting.driver->get_extend_ops(&sess->eops);
-	if (ret) {
-		WD_ERR("failed to get ecc sess extend ops!\n");
-		goto sess_err;
+	if (wd_ecc_setting.driver->get_extend_ops) {
+		ret = wd_ecc_setting.driver->get_extend_ops(&sess->eops);
+		if (ret) {
+			WD_ERR("failed to get ecc sess extend ops!\n");
+			goto sess_err;
+		}
 	}
 
 	ret = wd_ecc_sess_eops_init(sess);
