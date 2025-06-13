@@ -521,9 +521,10 @@ struct wd_rsa_msg *wd_rsa_get_msg(__u32 idx, __u32 tag)
 int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_rsa_setting.config;
+	struct wd_rsa_msg recv_msg = {0};
 	struct wd_ctx_internal *ctx;
 	struct wd_rsa_req *req;
-	struct wd_rsa_msg recv_msg, *msg;
+	struct wd_rsa_msg *msg;
 	__u32 rcv_cnt = 0;
 	__u32 tmp = expt;
 	int ret;

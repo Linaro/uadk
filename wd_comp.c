@@ -355,8 +355,8 @@ struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag)
 int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
-	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg resp_msg = {0};
+	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
