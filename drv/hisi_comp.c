@@ -3,6 +3,7 @@
 
 #include <asm/types.h>
 #include "drv/wd_comp_drv.h"
+#include "drv/hisi_comp_huf.h"
 #include "hisi_qm_udrv.h"
 
 #define	ZLIB				0
@@ -48,6 +49,7 @@
 #define LITLEN_OVERFLOW_POS_MASK	0xffffff
 
 #define HZ_DECOMP_NO_SPACE		0x01
+#define HZ_DECOMP_BLK_NOSTART		0x03
 #define HZ_NEGACOMPRESS			0x0d
 #define HZ_CRC_ERR			0x10
 #define HZ_DECOMP_END			0x13
@@ -93,6 +95,12 @@
 #define SW_STOREBUF_TH			200
 /* The 38KB offset in ctx_buf is used as the internal buffer */
 #define CTX_STOREBUF_OFFSET		0x9800
+
+#define CTX_BLOCKST_OFFSET		0xc00
+#define CTX_WIN_LEN_MASK		0xffff
+#define CTX_HEAD_BIT_CNT_SHIFT		0xa
+#define CTX_HEAD_BIT_CNT_MASK		0xfC00
+#define WIN_LEN_ALIGN(len)		((len + 15) & ~(__u32)0x0F)
 
 enum alg_type {
 	HW_DEFLATE = 0x1,
@@ -1210,14 +1218,16 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 			 struct wd_comp_msg *msg)
 {
 	__u32 buf_type = (sqe->dw9 & HZ_BUF_TYPE_MASK) >> BUF_TYPE_SHIFT;
+	__u32 ctx_win_len = sqe->ctx_dw2 & CTX_WIN_LEN_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 	struct wd_comp_msg *recv_msg = msg;
 	bool need_debug = wd_need_debug();
+	__u32 bit_cnt, tag;
 	int alg_type, ret;
-	__u32 tag;
+	void *cache_data;
 
 	alg_type = get_alg_type(type);
 	if (unlikely(alg_type < 0)) {
@@ -1261,6 +1271,27 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	/* last block no space, need resend null size req */
 	if (ctx_st == HZ_DECOMP_NO_SPACE)
 		recv_msg->req.status = WD_EAGAIN;
+
+	/*
+	 * It need to analysis the data cache by hardware.
+	 * If the cache data is a complete huffman block,
+	 * the drv send WD_EAGAIN to user to continue
+	 * sending a request for clearing the cache.
+	 */
+	bit_cnt = (sqe->ctx_dw0 & CTX_HEAD_BIT_CNT_MASK) >> CTX_HEAD_BIT_CNT_SHIFT;
+	if (!recv_msg->req.status && bit_cnt && ctx_st == HZ_DECOMP_BLK_NOSTART &&
+	    recv_msg->alg_type == WD_DEFLATE) {
+		/* ctx_win_len need to aligned with 16 */
+		ctx_win_len = WIN_LEN_ALIGN(ctx_win_len);
+		cache_data = recv_msg->ctx_buf + RSV_OFFSET + CTX_BLOCKST_OFFSET + ctx_win_len;
+		ret = check_bfinal_complete_block(cache_data, bit_cnt);
+		if (ret < 0) {
+			WD_ERR("invalid: unable to parse data!\n");
+			recv_msg->req.status = WD_IN_EPARA;
+		} else if (ret) {
+			recv_msg->req.status = WD_EAGAIN;
+		}
+	}
 
 	if (need_debug)
 		WD_DEBUG("zip recv lst =%hu, ctx_st=0x%x, status=0x%x, alg=%u!\n",

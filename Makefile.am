@@ -75,6 +75,7 @@ libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h \
 		      wd_sched.c wd_sched.h wd.c wd.h wd_zlibwrapper.c
 
 libhisi_zip_la_SOURCES=drv/hisi_comp.c hisi_comp.h drv/hisi_qm_udrv.c \
+		drv/hisi_comp_huf.c drv/hisi_comp_huf.h \
 		hisi_qm_udrv.h wd_comp_drv.h
 
 libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
