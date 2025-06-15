@@ -371,10 +371,10 @@ hw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	#hw_blk_deflate origin /tmp/ori.gz gzip
-	#hw_blk_inflate /tmp/ori.gz origin gzip
-	#run_cmd_quiet "Check MD5 after HW block compress & HW block decompress on text data" \
-	#	md5sum -c ori.md5
+	hw_blk_deflate origin /tmp/ori.gz gzip
+	hw_blk_inflate /tmp/ori.gz origin gzip
+	run_cmd_quiet "Check MD5 after HW block compress & HW block decompress on text data" \
+		md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip
