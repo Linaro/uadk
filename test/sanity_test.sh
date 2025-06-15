@@ -256,12 +256,14 @@ hw_dfl_sw_ifl()
 
 	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_blk_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW block compress & SW decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & SW decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	# Generate random data with 500MB size
 	echo "with 500MB random data"
@@ -271,7 +273,8 @@ hw_dfl_sw_ifl()
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & SW decompress on 500MB random data" \
+		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
 	echo "with text file $1"
@@ -281,13 +284,15 @@ hw_dfl_sw_ifl()
 
 	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_blk_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW block compress & SW decompress on text data" \
+		md5sum -c ori.md5
 
 	# This case fails.
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & SW decompress on text data" \
+		md5sum -c ori.md5
 }
 
 # arg1: existed text file
@@ -303,13 +308,16 @@ sw_dfl_hw_ifl()
 	# Only gzip compress and hardware decompress
 	sw_blk_deflate origin /tmp/ori.gz gzip 8192
 	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after SW compress & HW block decompress on 1MB random data without environment variables" \
+		md5sum -c ori.md5
 	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after SW compress & HW block decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after SW compress & HW stream decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	# Generate random data with 500MB size
 	echo "with 500MB random data"
@@ -319,7 +327,8 @@ sw_dfl_hw_ifl()
 	${RM} -f /tmp/ori.gz
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after SW compress & HW stream decompress on 500MB random data" \
+		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
 	echo "with text file $1"
@@ -329,11 +338,13 @@ sw_dfl_hw_ifl()
 
 	#sw_blk_deflate origin /tmp/ori.gz gzip 8192
 	#hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	#md5sum -c ori.md5
+	#run_cmd "Check MD5 after SW compress & HW block decompress on text data" \
+	#	md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after SW compress & HW stream decompress on text data" \
+		md5sum -c ori.md5
 }
 
 # arg1: existed text file
@@ -348,12 +359,14 @@ hw_dfl_hw_ifl()
 
 	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192
 	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW block compress & HW block decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & HW stream decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
 	echo "with text file $1"
@@ -363,12 +376,14 @@ hw_dfl_hw_ifl()
 
 	#hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192
 	#hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
-	#md5sum -c ori.md5
+	#run_cmd "Check MD5 after HW block compress & HW block decompress on text data" \
+	#	md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & HW stream decompress on text data" \
+		md5sum -c ori.md5
 }
 
 # failed: return 1; success: return 0
