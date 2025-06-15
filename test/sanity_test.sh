@@ -66,7 +66,7 @@ run_cmd()
 	# The first parameter is always comment. So remove it.
 	local comment="$1"
 	shift
-	echo $@
+	echo "Command: $@"
 
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
@@ -77,12 +77,18 @@ run_cmd()
 	fi
 	echo "$output"
 	if [ $exit_code -eq 0 ]; then
-		echo "Test passed (CMD: $comment)."
+		echo -e "\tCommand passed (CMD: $comment)."
 	else
-		echo "Test failed (CMD: $comment)."
-		echo "Command result: $exit_code"
+		echo -e "\tCommand failed (CMD: $comment)."
+		echo -e "\tCommand result: $exit_code"
 	fi
 	return $exit_code
+}
+
+show_file_size()
+{
+	echo -e "\tsrc [$1]: $(stat -c %s $1)"
+	echo -e "\tdst [$2]: $(stat -c %s $2)"
 }
 
 run_zip_test_v1()
@@ -102,10 +108,12 @@ hw_blk_deflate()
 		${RM} -f /tmp/gzip_list.bin
 		run_cmd "HW compress for gzip format in block mode" \
 			uadk_tool test --m zip --alg 2 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
 		run_cmd "HW compress for zlib format in block mode" \
 			uadk_tool test --m zip --alg 1 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -121,10 +129,12 @@ hw_blk_inflate()
 	"gzip")
 		run_cmd "HW decompress for gzip format in block mode" \
 			uadk_tool test --m zip --alg 2 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
 		run_cmd "HW decompress for zlib format in block mode" \
 			uadk_tool test --m zip --alg 1 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -140,10 +150,12 @@ hw_strm_deflate()
 	"gzip")
 		run_cmd "HW compress for gzip format in stream mode" \
 			uadk_tool test --m zip --stream --alg 2 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
 		run_cmd "HW compress for zlib format in stream mode" \
 			uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -159,10 +171,12 @@ hw_strm_inflate()
 	"gzip")
 		run_cmd "HW decompress for gzip format in stream mode" \
 			uadk_tool test --m zip --stream --alg 2 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
 		run_cmd "HW decompress for zlib format in stream mode" \
 			uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -179,6 +193,8 @@ sw_blk_deflate()
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
 		python test/list_loader.py --in $1 --out $2 -b $4
+		echo "SW block compress"
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -193,6 +209,8 @@ sw_blk_inflate()
 	case $3 in
 	"gzip")
 		python test/list_loader.py --in $1 --out $2
+		echo "SW block decompress"
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -207,6 +225,8 @@ sw_strm_deflate()
 	case $3 in
 	"gzip")
 		gzip -c --fast < $1 > $2 || exit_code=$?
+		echo "SW stream compress"
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -221,6 +241,8 @@ sw_strm_inflate()
 	case $3 in
 	"gzip")
 		gunzip < $1 > $2 || exit_code=$?
+		echo "SW stream decompress"
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
