@@ -135,7 +135,7 @@ enum test_alg {
 	DH_2048,
 	DH_3072,
 	DH_4096,
-	ECDH_256, // ecdh
+	ECDH_256, // ecdh with secp256r1 curve
 	ECDH_384,
 	ECDH_521,
 	ECDSA_256, // ecdsa

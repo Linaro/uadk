@@ -62,7 +62,6 @@ struct wd_cipher_sess {
 	enum wd_cipher_alg	alg;
 	enum wd_cipher_mode	mode;
 	wd_dev_mask_t		*dev_mask;
-	struct wd_alg_cipher	*drv;
 	void			*priv;
 	unsigned char		key[MAX_CIPHER_KEY_SIZE];
 	__u32			key_bytes;
@@ -270,14 +269,14 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	if (setup->alg >= WD_CIPHER_ALG_TYPE_MAX ||
 	     setup->mode >= WD_CIPHER_MODE_TYPE_MAX) {
 		WD_ERR("failed to check algorithm!\n");
-		goto err_sess;
+		goto free_sess;
 	}
 
 	sess->alg_name = wd_cipher_alg_name[setup->alg][setup->mode];
 	ret = wd_drv_alg_support(sess->alg_name, wd_cipher_setting.driver);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
-		goto err_sess;
+		goto free_sess;
 	}
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
@@ -287,14 +286,12 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		wd_cipher_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto err_sess;
+		goto free_sess;
 	}
 
 	return (handle_t)sess;
 
-err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
+free_sess:
 	free(sess);
 	return (handle_t)0;
 }
@@ -478,7 +475,7 @@ int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_p
 			goto out_driver;
 		}
 
-		wd_cipher_init_attrs.alg = alg;
+		(void)strcpy(wd_cipher_init_attrs.alg, alg);
 		wd_cipher_init_attrs.sched_type = sched_type;
 		wd_cipher_init_attrs.driver = wd_cipher_setting.driver;
 		wd_cipher_init_attrs.ctx_params = &cipher_ctx_params;
@@ -790,8 +787,9 @@ struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag)
 int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+	struct wd_cipher_msg resp_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_cipher_msg resp_msg, *msg;
+	struct wd_cipher_msg *msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
 	__u32 tmp = expt;

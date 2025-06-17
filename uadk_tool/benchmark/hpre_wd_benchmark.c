@@ -2107,19 +2107,17 @@ static void *ecc_wd_sync_run(void *arg)
 	u32 count = 0;
 	int ret;
 
-	memset(&ctx_setup,	0, sizeof(ctx_setup));
-	memset(&param,	   0, sizeof(param));
-	memset(&opdata,	 0, sizeof(opdata));
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
+	memset(&param, 0, sizeof(param));
+	memset(&opdata, 0, sizeof(opdata));
 
 	pool = g_thread_queue.bd_res[pdata->td_id].pool;
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
-	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
-		ret = get_ecc_curve(&setup, cid);
-		if (ret)
-			return NULL;
-	}
+	memset(&setup, 0, sizeof(setup));
+	ret = get_ecc_curve(&setup, cid);
+	if (ret)
+		return NULL;
 
 	ctx_setup.br.alloc = (void *)wd_alloc_blk;
 	ctx_setup.br.free = (void *)wd_free_blk;
@@ -2265,19 +2263,17 @@ static void *ecc_wd_async_run(void *arg)
 	u32 count = 0;
 	int i, ret;
 
-	memset(&ctx_setup,	0, sizeof(ctx_setup));
-	memset(&param,	   0, sizeof(param));
-	memset(&opdata,  0, sizeof(opdata));
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
+	memset(&param, 0, sizeof(param));
+	memset(&opdata, 0, sizeof(opdata));
 
 	pool = g_thread_queue.bd_res[pdata->td_id].pool;
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
-	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
-		ret = get_ecc_curve(&setup, cid);
-		if (ret)
-			return NULL;
-	}
+	memset(&setup, 0, sizeof(setup));
+	ret = get_ecc_curve(&setup, cid);
+	if (ret)
+		return NULL;
 
 	ctx_setup.cb = (void *)ecc_async_cb;
 	ctx_setup.br.alloc = (void *)wd_alloc_blk;

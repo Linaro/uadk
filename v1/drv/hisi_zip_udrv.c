@@ -32,6 +32,7 @@
 #include "v1/wd_comp.h"
 #include "v1/wd_cipher.h"
 #include "v1/drv/hisi_zip_udrv.h"
+#include "v1/drv/hisi_zip_huf.h"
 #include "v1/wd_sgl.h"
 
 #define BD_TYPE_SHIFT			28
@@ -83,6 +84,12 @@
 /* When the available output length is less than 0x10, hw will ignores the request */
 #define BYPASS_DEST_LEN			0x10
 
+#define CTX_BLOCKST_OFFSET		0xc00
+#define CTX_WIN_LEN_MASK		0xffff
+#define CTX_HEAD_BIT_CNT_SHIFT		0xa
+#define CTX_HEAD_BIT_CNT_MASK		0xfC00
+#define WIN_LEN_ALIGN(len)		((len + 15) & ~(__u32)0x0F)
+
 enum {
 	BD_TYPE,
 	BD_TYPE3 = 3,
@@ -103,8 +110,6 @@ struct hisi_zip_buf {
 	__u32 pending_out;
 	/* Size that have been copied */
 	__u32 output_offset;
-	/* Input data consumption when all data copies are complete */
-	__u32 fallback_size;
 	/* Store end flag return by HW */
 	__u32 status;
 };
@@ -174,11 +179,6 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 {
 	__u32 copy_len;
 
-	if (!msg->in_size && buf->fallback_size) {
-		WD_ERR("Couldn't handle, input size is 0!\n");
-		return;
-	}
-
 	/*
 	 * After hw processing, pending_out is the length of the hardware output.
 	 * After hw is skipped, pending_out is the remaining length in the buf.
@@ -194,25 +194,15 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		/* All data copied to output, reset the buf status */
 		if (buf->skip_hw) {
 			buf->skip_hw = 0;
-			msg->in_cons = buf->fallback_size;
 			msg->status = buf->status == WCRYPTO_DECOMP_END ?
 					WCRYPTO_DECOMP_END : WD_SUCCESS;
 		}
 
-		buf->fallback_size = 0;
 		buf->output_offset = 0;
 	} else {
 		/* Still data need to be copied */
 		buf->output_offset += copy_len;
 		buf->skip_hw = 0;
-
-		/* Feedback to users that a maximum of 1 byte of data is not consumed */
-		if (msg->in_cons > 1) {
-			buf->fallback_size = 1;
-			msg->in_cons--;
-		} else {
-			msg->in_cons = 0;
-		}
 
 		/*
 		 * The end flag is cached. It can be output only
@@ -220,7 +210,7 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		 */
 		if (msg->status == WCRYPTO_DECOMP_END) {
 			buf->status = WCRYPTO_DECOMP_END;
-			msg->status = WD_SUCCESS;
+			msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 		}
 	}
 }
@@ -844,6 +834,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe_v3 *sqe = hw_msg;
+	__u32 ctx_win_len = sqe->ctx_dw2 & CTX_WIN_LEN_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
@@ -852,6 +843,9 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	struct hisi_zip_buf *buf = NULL;
 	struct wd_queue *q = info->q;
 	struct wcrypto_comp_tag *tag;
+	void *cache_data;
+	__u32 bit_cnt;
+	int ret;
 
 	if (unlikely(!recv_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
@@ -899,6 +893,28 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	}
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+
+	/*
+	 * It need to analysis the data cache by hardware.
+	 * If the cache data is a complete huffman block,
+	 * the drv send WCRYPTO_DECOMP_BLK_NOSTART to user
+	 * to sending a request for clearing the cache.
+	 */
+	bit_cnt = (sqe->ctx_dw0 & CTX_HEAD_BIT_CNT_MASK) >> CTX_HEAD_BIT_CNT_SHIFT;
+	if (!recv_msg->status && bit_cnt && ctx_st == HW_DECOMP_BLK_NOSTART &&
+	    recv_msg->alg_type == WCRYPTO_RAW_DEFLATE) {
+		/* ctx_win_len need to aligned with 16 */
+		ctx_win_len = WIN_LEN_ALIGN(ctx_win_len);
+		cache_data = recv_msg->ctx_buf + CTX_BUFFER_OFFSET +
+			     CTX_BLOCKST_OFFSET + ctx_win_len;
+		ret = check_huffman_block_integrity(cache_data, bit_cnt);
+		if (ret < 0) {
+			WD_ERR("invalid: unable to parse data!\n");
+			recv_msg->status = WD_IN_EPARA;
+		} else if (ret) {
+			recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
+		}
+	}
 
 	if (buf && buf->pending_out)
 		copy_from_buf(recv_msg, buf);

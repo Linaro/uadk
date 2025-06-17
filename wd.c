@@ -955,8 +955,8 @@ struct wd_capability *wd_get_alg_cap(void)
 			goto alloc_err;
 		}
 
-		strcpy(cap_node->alg_name, pnext->alg_name);
-		strcpy(cap_node->drv_name, pnext->drv_name);
+		(void)strcpy(cap_node->alg_name, pnext->alg_name);
+		(void)strcpy(cap_node->drv_name, pnext->drv_name);
 		cap_node->available = pnext->available;
 		cap_node->priority = pnext->priority;
 		cap_node->calc_type = pnext->calc_type;
