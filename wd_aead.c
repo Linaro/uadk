@@ -344,9 +344,8 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 	}
 
 	return (handle_t)sess;
+
 err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
 	free(sess);
 	return (handle_t)0;
 }
@@ -604,7 +603,7 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_driver;
 		}
 
-		wd_aead_init_attrs.alg = alg;
+		(void)strcpy(wd_aead_init_attrs.alg, alg);
 		wd_aead_init_attrs.sched_type = sched_type;
 		wd_aead_init_attrs.driver = wd_aead_setting.driver;
 		wd_aead_init_attrs.ctx_params = &aead_ctx_params;
@@ -836,8 +835,9 @@ struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag)
 int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
+	struct wd_aead_msg resp_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_aead_msg resp_msg, *msg;
+	struct wd_aead_msg *msg;
 	struct wd_aead_req *req;
 	__u64 recv_count = 0;
 	__u32 tmp = expt;

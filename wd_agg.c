@@ -57,7 +57,6 @@ struct wd_agg_sess_agg_conf {
 struct wd_agg_sess {
 	const char *alg_name;
 	wd_dev_mask_t *dev_mask;
-	struct wd_alg_agg *drv;
 	void *priv;
 	void *sched_key;
 	enum wd_agg_sess_state state;
@@ -374,7 +373,7 @@ static int wd_agg_init_sess_priv(struct wd_agg_sess *sess, struct wd_agg_sess_se
 			if (sess->ops.sess_uninit)
 				sess->ops.sess_uninit(sess->priv);
 			WD_ERR("failed to get hash table row size: %d!\n", ret);
-			return ret;
+			return -WD_EINVAL;
 		}
 		sess->hash_table.table_row_size = ret;
 	}
@@ -404,7 +403,7 @@ handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 	ret = wd_drv_alg_support(sess->alg_name, wd_agg_setting.driver);
 	if (!ret) {
 		WD_ERR("failed to support agg algorithm: %s!\n", sess->alg_name);
-		goto err_sess;
+		goto free_sess;
 	}
 
 	/* Some simple scheduler don't need scheduling parameters */
@@ -412,18 +411,20 @@ handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 		wd_agg_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init agg session schedule key!\n");
-		goto err_sess;
+		goto free_sess;
 	}
 
-	ret = wd_agg_setting.driver->get_extend_ops(&sess->ops);
-	if (ret) {
-		WD_ERR("failed to get agg extend ops!\n");
-		goto err_sess;
+	if (wd_agg_setting.driver->get_extend_ops) {
+		ret = wd_agg_setting.driver->get_extend_ops(&sess->ops);
+		if (ret) {
+			WD_ERR("failed to get agg extend ops!\n");
+			goto free_key;
+		}
 	}
 
 	ret = wd_agg_init_sess_priv(sess, setup);
 	if (ret)
-		goto err_sess;
+		goto free_key;
 
 	ret = fill_agg_session(sess, setup);
 	if (ret) {
@@ -436,9 +437,9 @@ handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 uninit_priv:
 	if (sess->ops.sess_uninit)
 		sess->ops.sess_uninit(sess->priv);
-err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
+free_key:
+	free(sess->sched_key);
+free_sess:
 	free(sess);
 	return (handle_t)0;
 }
@@ -609,9 +610,10 @@ out_clear_ctx_config:
 
 static int wd_agg_alg_uninit(void)
 {
-	void *priv = wd_agg_setting.priv;
+	enum wd_status status;
 
-	if (!priv)
+	wd_alg_get_init(&wd_agg_setting.status, &status);
+	if (status == WD_UNINIT)
 		return -WD_EINVAL;
 
 	/* Uninit async request pool */
@@ -677,7 +679,7 @@ int wd_agg_init(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params
 			goto out_driver;
 		}
 
-		wd_agg_init_attrs.alg = alg;
+		(void)strcpy(wd_agg_init_attrs.alg, alg);
 		wd_agg_init_attrs.sched_type = sched_type;
 		wd_agg_init_attrs.driver = wd_agg_setting.driver;
 		wd_agg_init_attrs.ctx_params = &agg_ctx_params;
@@ -1511,8 +1513,9 @@ struct wd_agg_msg *wd_agg_get_msg(__u32 idx, __u32 tag)
 static int wd_agg_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_agg_setting.config;
-	struct wd_agg_msg resp_msg, *msg;
+	struct wd_agg_msg resp_msg = {0};
 	struct wd_ctx_internal *ctx;
+	struct wd_agg_msg *msg;
 	struct wd_agg_req *req;
 	__u64 recv_count = 0;
 	__u32 tmp = expt;

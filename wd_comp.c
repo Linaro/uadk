@@ -297,7 +297,7 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 			goto out_unbind_drv;
 		}
 
-		wd_comp_init_attrs.alg = alg;
+		(void)strcpy(wd_comp_init_attrs.alg, alg);
 		wd_comp_init_attrs.sched_type = sched_type;
 		wd_comp_init_attrs.driver = wd_comp_setting.driver;
 		wd_comp_init_attrs.ctx_params = &comp_ctx_params;
@@ -355,8 +355,8 @@ struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag)
 int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
-	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg resp_msg = {0};
+	struct wd_ctx_internal *ctx;
 	struct wd_comp_msg *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
@@ -537,7 +537,7 @@ static int wd_comp_check_buffer(struct wd_comp_req *req)
 	}
 
 	if (!req->dst_len) {
-		WD_ERR("invalid: dst_len is NULL!\n");
+		WD_ERR("invalid: dst_len is 0!\n");
 		return -WD_EINVAL;
 	}
 
