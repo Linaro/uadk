@@ -26,6 +26,7 @@ RM="rm"
 CP="cp"
 CHMOD="chmod"
 
+CASE_COUNT=0
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 
@@ -69,7 +70,8 @@ run_cmd()
 	# The first parameter is always comment. So remove it.
 	local comment="$1"
 	shift
-	echo "Command: $@"
+	((CASE_COUNT++))
+	echo "Command [$CASE_COUNT]: $@"
 
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
@@ -97,7 +99,8 @@ run_cmd_quiet()
 	# The first parameter is always comment. So remove it.
 	local comment="$1"
 	shift
-	echo "Command: $@"
+	((CASE_COUNT++))
+	echo "Command [$CASE_COUNT]: $@"
 
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
