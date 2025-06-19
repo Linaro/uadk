@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 #
 # This is a sanity test about uadk algorithms.
 #
@@ -25,6 +25,10 @@ hpre_result=-1
 RM="rm"
 CP="cp"
 CHMOD="chmod"
+
+CASE_COUNT=0
+SUCCESS_COUNT=0
+FAIL_COUNT=0
 
 # arg1: zip/sec/hpre
 # Return UACCE mode. Return -1 if UACCE module is invalid.
@@ -61,24 +65,75 @@ check_uacce_mode()
 
 run_cmd()
 {
-	exit_code=0
+	local exit_code=0
+	local output=""
+	# The first parameter is always comment. So remove it.
+	local comment="$1"
+	shift
+	((CASE_COUNT++))
+	echo "Command [$CASE_COUNT]: $@"
+
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
 		# It could prevent bash to stop scripts when error occurs.
-		$@ || exit_code=$?
+		output=$("$@" 2>&1) || exit_code=$?
 	else
-		${VALGRIND} $@
+		output=$("${VALGRIND} $@" 2>&1)
+	fi
+	echo "$output"
+	if [ $exit_code -eq 0 ]; then
+		((SUCCESS_COUNT++))
+		echo -e "\tCommand passed (CMD: $comment)."
+	else
+		((FAIL_COUNT++))
+		echo -e "\tCommand failed (CMD: $comment)."
+		echo -e "\tCommand result: $exit_code"
 	fi
 	return $exit_code
+}
+
+run_cmd_quiet()
+{
+	local exit_code=0
+	local output=""
+	# The first parameter is always comment. So remove it.
+	local comment="$1"
+	shift
+	((CASE_COUNT++))
+	echo "Command [$CASE_COUNT]: $@"
+
+	if [ -z ${VALGRIND} ]; then
+		# "|| exit_code=$?" is used to capature the return value.
+		# It could prevent bash to stop scripts when error occurs.
+		output=$("$@" 2>&1) || exit_code=$?
+	else
+		output=$("${VALGRIND} $@" 2>&1)
+	fi
+	if [ $exit_code -eq 0 ]; then
+		((SUCCESS_COUNT++))
+		echo -e "\tCommand passed (CMD: $comment)."
+	else
+		((FAIL_COUNT++))
+		echo "$output"
+		echo -e "\tCommand failed (CMD: $comment)."
+		echo -e "\tCommand result: $exit_code"
+	fi
+	return $exit_code
+}
+
+show_file_size()
+{
+	echo -e "\tsrc [$1]: $(stat -c %s $1)"
+	echo -e "\tdst [$2]: $(stat -c %s $2)"
 }
 
 run_zip_test_v1()
 {
 	dd if=/dev/urandom of=origin bs=512K count=1 >& /dev/null
-	run_cmd test_hisi_zip -z < origin > hw.zlib
+	run_cmd "HW compress 512K file for zlib format" test_hisi_zip -z < origin > hw.zlib
 
 	dd if=/dev/urandom of=origin bs=512K count=1 >& /dev/null
-	run_cmd test_hisi_zip -g < origin > hw.gz
+	run_cmd "HW compress 512K file for gzip format" test_hisi_zip -g < origin > hw.gz
 }
 
 # arg1: source file, arg2: destination file, arg3: algorithm type
@@ -87,10 +142,14 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 $@
+		run_cmd "HW compress for gzip format in block mode" \
+			uadk_tool test --m zip --alg 2 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 $@
+		run_cmd "HW compress for zlib format in block mode" \
+			uadk_tool test --m zip --alg 1 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -104,10 +163,14 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
+		run_cmd "HW decompress for gzip format in block mode" \
+			uadk_tool test --m zip --alg 2 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 $@
+		run_cmd "HW decompress for zlib format in block mode" \
+			uadk_tool test --m zip --alg 1 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -121,10 +184,14 @@ hw_strm_deflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --in $1 --out $2 $@
+		run_cmd "HW compress for gzip format in stream mode" \
+			uadk_tool test --m zip --stream --alg 2 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 $@
+		run_cmd "HW compress for zlib format in stream mode" \
+			uadk_tool test --m zip --stream --alg 1 --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -138,40 +205,14 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
-		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
+		run_cmd "HW decompress for gzip format in stream mode" \
+			uadk_tool test --m zip --stream --alg 2 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	"zlib")
-		run_cmd uadk_tool test --m zip --stream --inf --in $1 --out $2 $@
-		;;
-	*)
-		echo "Unsupported algorithm type: $3"
-		return -1
-		;;
-	esac
-}
-
-# arg1: source file, arg2: destination file, arg3: algorithm type,
-# arg4: block size
-sw_blk_deflate()
-{
-	case $3 in
-	"gzip")
-		${RM} -f /tmp/gzip_list.bin
-		python test/list_loader.py --in $1 --out $2 -b $4
-		;;
-	*)
-		echo "Unsupported algorithm type: $3"
-		return -1
-		;;
-	esac
-}
-
-# arg1: source file, arg2: destination file, arg3: algorithm type
-sw_blk_inflate()
-{
-	case $3 in
-	"gzip")
-		python test/list_loader.py --in $1 --out $2
+		run_cmd "HW decompress for zlib format in stream mode" \
+			uadk_tool test --m zip --stream --alg 1 --inf --in $1 --out $2 ${@:4}
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -186,6 +227,8 @@ sw_strm_deflate()
 	case $3 in
 	"gzip")
 		gzip -c --fast < $1 > $2 || exit_code=$?
+		echo "SW stream compress"
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -200,6 +243,8 @@ sw_strm_inflate()
 	case $3 in
 	"gzip")
 		gunzip < $1 > $2 || exit_code=$?
+		echo "SW stream decompress"
+		show_file_size $1 $2
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -233,14 +278,11 @@ hw_dfl_sw_ifl()
 	prepare_src_file random 1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
-	sw_blk_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
-
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
+	hw_strm_deflate origin /tmp/ori.gz gzip --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & SW decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	# Generate random data with 500MB size
 	echo "with 500MB random data"
@@ -248,9 +290,10 @@ hw_dfl_sw_ifl()
 	md5sum origin > ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
+	hw_strm_deflate origin /tmp/ori.gz gzip --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & SW decompress on 500MB random data" \
+		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
 	echo "with text file $1"
@@ -258,15 +301,12 @@ hw_dfl_sw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
-	sw_blk_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
-
 	# This case fails.
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192 --env
+	hw_strm_deflate origin /tmp/ori.gz gzip --env
 	sw_strm_inflate /tmp/ori.gz origin gzip
-	md5sum -c ori.md5
+	run_cmd "Check MD5 after HW stream compress & SW decompress on text data" \
+		md5sum -c ori.md5
 }
 
 # arg1: existed text file
@@ -279,16 +319,10 @@ sw_dfl_hw_ifl()
 	prepare_src_file random 1
 	md5sum origin > ori.md5
 
-	# Only gzip compress and hardware decompress
-	sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
-	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
-
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	hw_strm_inflate /tmp/ori.gz origin gzip --env
+	run_cmd "Check MD5 after SW compress & HW stream decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	# Generate random data with 500MB size
 	echo "with 500MB random data"
@@ -297,8 +331,9 @@ sw_dfl_hw_ifl()
 
 	${RM} -f /tmp/ori.gz
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	hw_strm_inflate /tmp/ori.gz origin gzip --env
+	run_cmd "Check MD5 after SW compress & HW stream decompress on 500MB random data" \
+		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
 	echo "with text file $1"
@@ -306,13 +341,10 @@ sw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	#sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	#hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	#md5sum -c ori.md5
-
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192 --env
-	md5sum -c ori.md5
+	hw_strm_inflate /tmp/ori.gz origin gzip --env
+	run_cmd "Check MD5 after SW compress & HW stream decompress on text data" \
+		md5sum -c ori.md5
 }
 
 # arg1: existed text file
@@ -325,14 +357,16 @@ hw_dfl_hw_ifl()
 	prepare_src_file random 1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	hw_blk_deflate origin /tmp/ori.gz gzip
+	hw_blk_inflate /tmp/ori.gz origin gzip
+	run_cmd_quiet "Check MD5 after HW block compress & HW block decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	hw_strm_deflate origin /tmp/ori.gz gzip
+	hw_strm_inflate /tmp/ori.gz origin gzip
+	run_cmd_quiet "Check MD5 after HW stream compress & HW stream decompress on 1MB random data" \
+		md5sum -c ori.md5
 
 	# Use existed text file. It's not in alignment.
 	echo "with text file $1"
@@ -340,14 +374,16 @@ hw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	#hw_blk_deflate origin /tmp/ori.gz gzip --blksize 8192
-	#hw_blk_inflate /tmp/ori.gz origin gzip --blksize 8192
-	#md5sum -c ori.md5
+	hw_blk_deflate origin /tmp/ori.gz gzip
+	hw_blk_inflate /tmp/ori.gz origin gzip
+	run_cmd_quiet "Check MD5 after HW block compress & HW block decompress on text data" \
+		md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
-	hw_strm_deflate origin /tmp/ori.gz gzip --blksize 8192
-	hw_strm_inflate /tmp/ori.gz origin gzip --blksize 8192
-	md5sum -c ori.md5
+	hw_strm_deflate origin /tmp/ori.gz gzip
+	hw_strm_inflate /tmp/ori.gz origin gzip
+	run_cmd_quiet "Check MD5 after HW stream compress & HW stream decompress on text data" \
+		md5sum -c ori.md5
 }
 
 # failed: return 1; success: return 0
@@ -357,33 +393,39 @@ run_zip_test_v2()
 	export WD_COMP_ASYNC_POLL_EN=1
 	export WD_COMP_ASYNC_POLL_NUM="4@0"
 	# test without environment variables
-	# limit test file in 8MB
-	rm -fr /tmp/syslog
-	dd if=/var/log/syslog of=/tmp/syslog bs=1M count=8 >& /dev/null
-	sw_dfl_hw_ifl /tmp/syslog
-	hw_dfl_sw_ifl /tmp/syslog
-	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
-	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
+	# limit test text file in 8MB
+	rm -fr /tmp/textfile
+	dd if=/dev/urandom bs=1M count=8 | tr -dc '[:print:]\n' | head -c 8M > /tmp/textfile
+	sw_dfl_hw_ifl /tmp/textfile
+	hw_dfl_sw_ifl /tmp/textfile
+	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/textfile
+	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/textfile
 	# test without environment variables
-	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self
+	#run_cmd "compress performance test without environment variables" \
+	#	uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self
 	# test with environment variables
-	#run_cmd uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self --env
+	#run_cmd "compress performance test with environment variables" \
+	#	uadk_tool test --m zip --stream --blksize 8192 --size 81920 --loop 1000 --self --env
 }
 
 # Accept more paraterms
 # failed: return 1; success: return 0
 run_sec_test_v2()
 {
-	run_cmd uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "sec test in sync mode" \
+		uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "sec test in async mode" \
+		uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 
-	run_cmd uadk_tool test --m sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "digest test in sync mode" \
+		uadk_tool test --m sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd uadk_tool test --m sec test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd "digest test in async mode" \
+		uadk_tool test --m sec test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 }
 
@@ -391,9 +433,11 @@ run_sec_test_v2()
 run_hpre_test_v2()
 {
 	dev_path=$(ls -1 /dev/hisi_hpre-* | head -1)
-	run_cmd test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
+	run_cmd "hpre test in sync mode" \
+		test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
 
-	run_cmd test_hisi_hpre --trd_mode=async --dev_path=$dev_path
+	run_cmd "hpre test in async mode" \
+		test_hisi_hpre --trd_mode=async --dev_path=$dev_path
 }
 
 # failed: return 1; success: return 0
@@ -424,12 +468,12 @@ output_result()
 		echo "---> hisi_hpre test is failed!"
 	fi
 
-	if [ $zip_result -ne 1 -a $sec_result -ne 1 -a $hpre_result -ne 1 ]; then
-		echo "===> tests for exited device are all passed!"
-		return 0
+	echo "Passed ${SUCCESS_COUNT} test. Failed ${FAIL_COUNT} test."
+	if [ ${FAIL_COUNT} -ne 0 ]; then
+		return 1
 	fi
 
-	return 1
+	return 0
 }
 
 # start to test

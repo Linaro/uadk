@@ -674,11 +674,6 @@ int store_file(struct hizip_test_info *info, char *model)
 	size_t sum = 0;
 	ssize_t file_sz = 0;
 
-	if (!opts->is_stream) {
-		COMP_TST_PRT("Invalid, file need stream mode!\n");
-		return -EINVAL;
-	}
-
 	p = tdata->out_list;
 	file_sz = write(opts->fd_out, p->addr, p->size);
 	if (file_sz < p->size)

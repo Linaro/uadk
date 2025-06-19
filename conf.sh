@@ -11,8 +11,8 @@ if [[ $1 && $1 = "--static" ]] || [[ $2 && $2 = "--static" ]]; then
 	COMPILE_TYPE="--enable-static --disable-shared --with-static_drv"
 fi
 
-
-ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure -v \
 	--enable-perf=yes \
 	--host aarch64-linux-gnu \
 	--target aarch64-linux-gnu \
