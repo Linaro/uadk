@@ -1,4 +1,12 @@
 
+# UADK Release v2.9 June 2025
+
+## Features:
+- Support hmac(sm3)-cbc(sm4) algorithm
+- Add a high-performance mode for the ECC algorithm
+- Removed trng algorithm
+- Update CI testing tools
+
 # UADK Release v2.8 Dec 2024
 
 ## Features:
