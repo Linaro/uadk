@@ -86,18 +86,21 @@ static void wd_zlib_uadk_uninit(void)
 static int wd_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
 {
 	switch (windowbits) {
-		case DEFLATE_MIN_WBITS ... DEFLATE_MAX_WBITS:
-			*alg = WD_DEFLATE;
-			windowbits = -windowbits;
-			*windowsize = max(windowbits - DEFLATE_4K_WBITS, WD_COMP_WS_4K);
-		case GZIP_MIN_WBITS ... GZIP_MAX_WBITS:
-			*alg = WD_GZIP;
-			*windowsize = max(windowbits - GZIP_4K_WBITS, WD_COMP_WS_4K);
-		case ZLIB_MIN_WBITS ... ZLIB_MAX_WBITS:
-			*alg = WD_ZLIB;
-			*windowsize = max(windowbits - ZLIB_4K_WBITS, WD_COMP_WS_4K);
-		default:
-			return Z_STREAM_ERROR;
+	case DEFLATE_MIN_WBITS ... DEFLATE_MAX_WBITS:
+		*alg = WD_DEFLATE;
+		windowbits = -windowbits;
+		*windowsize = max(windowbits - DEFLATE_4K_WBITS, WD_COMP_WS_4K);
+		break;
+	case GZIP_MIN_WBITS ... GZIP_MAX_WBITS:
+		*alg = WD_GZIP;
+		*windowsize = max(windowbits - GZIP_4K_WBITS, WD_COMP_WS_4K);
+		break;
+	case ZLIB_MIN_WBITS ... ZLIB_MAX_WBITS:
+		*alg = WD_ZLIB;
+		*windowsize = max(windowbits - ZLIB_4K_WBITS, WD_COMP_WS_4K);
+		break;
+	default:
+		return Z_STREAM_ERROR;
 	}
 
 	*windowsize = *windowsize == WD_COMP_WS_24K ? WD_COMP_WS_32K : *windowsize;
