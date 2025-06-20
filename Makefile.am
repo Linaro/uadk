@@ -158,7 +158,7 @@ libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL) -lpthread
 libwd_crypto_la_DEPENDENCIES= libwd.la
 
-libwd_dae_la_LIBADD= -lwd -ldl -lnuma
+libwd_dae_la_LIBADD= -lwd -ldl -lnuma -lm
 libwd_dae_la_LDFLAGS=$(UADK_VERSION) $(UADK_DAE_SYMBOL)
 libwd_dae_la_DEPENDENCIES= libwd.la
 
