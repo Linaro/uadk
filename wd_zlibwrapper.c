@@ -288,5 +288,6 @@ int wd_inflate_end(z_streamp strm)
 
 __attribute__ ((destructor)) static void wd_zlibwrapper_destory(void)
 {
-	wd_zlib_uadk_uninit();
+	if (zlib_status == WD_ZLIB_INIT)
+		wd_zlib_uadk_uninit();
 }
