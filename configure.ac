@@ -44,6 +44,14 @@ AC_ARG_ENABLE([perf],
   [perf=false]
 )
 
+AC_CANONICAL_HOST
+AS_IF([test "$host_cpu" = "aarch64"],[
+     arch_arm64="true"
+])
+AM_CONDITIONAL([ARCH_ARM64], [test "x$arch_arm64" = "xtrue"])
+
+AC_MSG_NOTICE([Detected host_cpu: $host_cpu])
+
 AC_CHECK_LIB(z, zlibVersion,
 	     [ AC_DEFINE(HAVE_ZLIB, 1, [Have zlib])
 	       have_zlib=true ],
