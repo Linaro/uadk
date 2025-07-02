@@ -96,6 +96,7 @@ libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h
 
+if ARCH_ARM64
 libisa_ce_la_SOURCES=arm_arch_ce.h drv/isa_ce_sm3.c drv/isa_ce_sm3_armv8.S isa_ce_sm3.h \
 		drv/isa_ce_sm4.c drv/isa_ce_sm4_armv8.S drv/isa_ce_sm4.h
 
@@ -104,6 +105,7 @@ libisa_sve_la_SOURCES=drv/hash_mb/hash_mb.c wd_digest_drv.h drv/hash_mb/hash_mb.
 		drv/hash_mb/sm3_mb_asimd_x4.S drv/hash_mb/sm3_mb_sve.S \
 		drv/hash_mb/md5_sve_common.S drv/hash_mb/md5_mb_asimd_x1.S \
 		drv/hash_mb/md5_mb_asimd_x4.S drv/hash_mb/md5_mb_sve.S
+endif
 
 libhisi_dae_la_SOURCES=drv/hisi_dae.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h
@@ -158,7 +160,7 @@ libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL) -lpthread
 libwd_crypto_la_DEPENDENCIES= libwd.la
 
-libwd_dae_la_LIBADD= -lwd -ldl -lnuma
+libwd_dae_la_LIBADD= -lwd -ldl -lnuma -lm
 libwd_dae_la_LDFLAGS=$(UADK_VERSION) $(UADK_DAE_SYMBOL)
 libwd_dae_la_DEPENDENCIES= libwd.la
 
