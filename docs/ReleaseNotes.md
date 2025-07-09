@@ -1,4 +1,9 @@
 
+# UADK Release v2.9.1 July 2025
+
+## Fixes:
+- Fix x86 build issues
+
 # UADK Release v2.9 June 2025
 
 ## Features:
