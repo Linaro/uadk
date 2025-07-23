@@ -99,8 +99,8 @@
 ## Overview
 
 UADK is a framework for user application to access hardware accelerator
-in a unified, secure, and efficient way. UADK is comprised of UACCE,
-libwd and many other algorithm libraries for different applications.
+in a unified, secure, and efficient way. UADK is comprised of libwd,
+user-space driver and many other algorithm libraries for different applications.
 
 ![overview](./wd_overview.png)
 
