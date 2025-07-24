@@ -9,6 +9,7 @@
 
 #include "hisi_qm_udrv.h"
 #include "wd_util.h"
+#include "wd_bmm.h"
 
 #define QM_DBELL_CMD_SQ		0
 #define QM_DBELL_CMD_CQ		1
@@ -842,7 +843,8 @@ static void hisi_qm_dump_sgl(void *sgl)
 	}
 }
 
-void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
+void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl,
+			void *blkpool)
 {
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool *)sgl_pool;
 	struct wd_datalist *tmp = sgl;
@@ -872,7 +874,10 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 			goto err_out;
 		}
 
-		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
+		if (blkpool)
+			cur->sge_entries[i].buff = (uintptr_t)wd_blkpool_phy(blkpool, tmp->data);
+		else
+			cur->sge_entries[i].buff = (uintptr_t)tmp->data;
 		cur->sge_entries[i].len = tmp->len;
 		cur->entry_sum_in_sgl++;
 		cur->entry_size_in_sgl += tmp->len;
@@ -890,7 +895,10 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 				WD_ERR("invalid: the sgl pool is not enough!\n");
 				goto err_out;
 			}
-			cur->next_dma = (uintptr_t)next;
+			if (blkpool)
+				cur->next_dma = (uintptr_t)wd_blkpool_phy(blkpool, next);
+			else
+				cur->next_dma = (uintptr_t)next;
 			cur = next;
 			head->entry_sum_in_chain += pool->sge_num;
 			/* In the new sgl chain, the subscript must be reset */
