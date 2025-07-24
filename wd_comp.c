@@ -588,6 +588,27 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 	return 0;
 }
 
+void *wd_comp_setup_blkpool(struct wd_blkpool_setup *setup)
+{
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs;
+	int ret;
+
+	if (setup->block_size < HW_CTX_SIZE)
+		setup->block_size = HW_CTX_SIZE;
+
+	ret = wd_blkpool_setup(ctx->blkpool, setup);
+	if (ret)
+		return NULL;
+
+	ctx->blkpool_mode = BLKPOOL_MODE_USER;
+	pthread_spin_lock(&ctx->lock);
+	if (ctx->h_sgl_pool == 0)
+		ctx->h_sgl_pool = wd_blkpool_create_sglpool(ctx->blkpool);
+	pthread_spin_unlock(&ctx->lock);
+	return ctx->blkpool;
+}
+
 static int wd_comp_sync_job(struct wd_comp_sess *sess,
 			    struct wd_comp_req *req,
 			    struct wd_comp_msg *msg)
