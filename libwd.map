@@ -49,5 +49,15 @@ global:
 	wd_enable_drv;
 	wd_disable_drv;
 	wd_get_alg_head;
+
+	wd_blkpool_new;
+	wd_blkpool_delete;
+	wd_blkpool_phy;
+	wd_blkpool_alloc;
+	wd_blkpool_free;
+	wd_blkpool_setup;
+	wd_blkpool_destroy_mem;
+	wd_blkpool_create_sglpool;
+	wd_blkpool_destroy_sglpool;
 local: *;
 };
