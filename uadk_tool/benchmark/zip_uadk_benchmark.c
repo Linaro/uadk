@@ -8,6 +8,8 @@
 #include "include/wd_sched.h"
 #include "include/fse.h"
 
+#define HW_CTX_SIZE                     (64 * 1024)
+
 #define ZIP_TST_PRT			printf
 #define PATH_SIZE			64
 #define ZIP_FILE			"./zip"
@@ -22,6 +24,8 @@ struct uadk_bd {
 	u8 *dst;
 	u32 src_len;
 	u32 dst_len;
+	void *pool_src;
+	void *pool_dst;
 };
 
 struct bd_pool {
@@ -31,6 +35,8 @@ struct bd_pool {
 struct thread_pool {
 	struct bd_pool *pool;
 } g_zip_pool;
+
+void *g_blkpool;
 
 enum ZIP_OP_MODE {
 	BLOCK_MODE,
@@ -62,6 +68,7 @@ typedef struct uadk_thread_res {
 	struct zip_async_tag *tag;
 	COMP_TUPLE_TAG *ftuple;
 	char *hw_buff_out;
+	bool sgl;
 } thread_data;
 
 struct zip_file_head {
@@ -145,7 +152,11 @@ static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 
 	// write data for one buffer one buffer to file line.
 	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-		size = write(fd, g_zip_pool.pool[0].bds[j].dst,
+		if (g_blkpool)
+			size = write(fd, g_zip_pool.pool[0].bds[j].pool_dst,
+				fhead->blk_sz[j]);
+		else
+			size = write(fd, g_zip_pool.pool[0].bds[j].dst,
 				fhead->blk_sz[j]);
 		if (size < 0) {
 			ZIP_TST_PRT("compress write data error size: %lu!\n", size);
@@ -297,6 +308,17 @@ static void uninit_ctx_config2(void)
 	wd_comp_uninit2();
 }
 
+static void init_blkpool(struct acc_option *options)
+{
+	struct wd_blkpool_setup setup;
+
+	memset(&setup, 0, sizeof(setup));
+	setup.block_size = HW_CTX_SIZE;
+	setup.block_num = DEFAULT_BLOCK_NM;
+	setup.align_size = DEFAULT_ALIGN_SIZE;
+	g_blkpool = wd_comp_setup_blkpool(&setup);
+}
+
 static int init_ctx_config2(struct acc_option *options)
 {
 	struct wd_ctx_params cparams = {0};
@@ -333,6 +355,10 @@ static int init_ctx_config2(struct acc_option *options)
 		ZIP_TST_PRT("failed to do comp init2!\n");
 
 	free(ctx_set_num);
+
+	if (options->user || options->sgl)
+		init_blkpool(options);
+
 	return ret;
 }
 
@@ -506,6 +532,8 @@ static int init_ctx_config(struct acc_option *options)
 		goto free_sched;
 	}
 
+	if (options->user || options->sgl)
+		init_blkpool(options);
 	return 0;
 
 free_sched:
@@ -614,6 +642,13 @@ static void free_uadk_bd_pool(void)
 			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 				free(g_zip_pool.pool[i].bds[j].src);
 				free(g_zip_pool.pool[i].bds[j].dst);
+
+				if (g_blkpool) {
+					wd_blkpool_free(g_blkpool,
+						g_zip_pool.pool[i].bds[j].pool_src);
+					wd_blkpool_free(g_blkpool,
+						g_zip_pool.pool[i].bds[j].pool_dst);
+				}
 			}
 		}
 		free(g_zip_pool.pool[i].bds);
@@ -975,6 +1010,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
+	struct wd_datalist *list_src = NULL, *list_dst = NULL;
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
 	handle_t h_sess;
@@ -1003,23 +1039,71 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	if (pdata->sgl)
+		creq.data_fmt = WD_SGL_BUF;
+	else
+		creq.data_fmt = 0;
 	creq.priv = 0;
 	creq.status = 0;
 
+	if (pdata->sgl) {
+		struct wd_datalist *src, *dst;
+
+		list_src = calloc(MAX_POOL_LENTH_COMP, sizeof(struct wd_datalist));
+		list_dst = calloc(MAX_POOL_LENTH_COMP, sizeof(struct wd_datalist));
+
+		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
+			src = &list_src[i];
+			dst = &list_dst[i];
+			if (g_blkpool) {
+				src->data = uadk_pool->bds[i].pool_src;
+				dst->data = uadk_pool->bds[i].pool_dst;
+			} else {
+				src->data = uadk_pool->bds[i].src;
+				dst->data = uadk_pool->bds[i].dst;
+			}
+			src->len = uadk_pool->bds[i].src_len;
+			dst->len = uadk_pool->bds[i].dst_len;
+			src->next = (i < MAX_POOL_LENTH_COMP-1) ? &list_src[i+1] : NULL;
+			dst->next = (i < MAX_POOL_LENTH_COMP-1) ? &list_dst[i+1] : NULL;
+		}
+	}
+
 	while(1) {
-		i = count % MAX_POOL_LENTH_COMP;
-		creq.src = uadk_pool->bds[i].src;
-		creq.dst = uadk_pool->bds[i].dst;
-		creq.src_len = uadk_pool->bds[i].src_len;
-		creq.dst_len = out_len;
+		if (pdata->sgl) {
+			creq.list_src = list_src;
+			creq.list_dst = list_dst;
 
-		ret = wd_do_comp_sync(h_sess, &creq);
-		if (ret || creq.status)
-			break;
+			creq.src_len = uadk_pool->bds[0].src_len * MAX_POOL_LENTH_COMP;
+			creq.dst_len = out_len * MAX_POOL_LENTH_COMP;
 
-		count++;
-		uadk_pool->bds[i].dst_len = creq.dst_len;
+			ret = wd_do_comp_sync(h_sess, &creq);
+			if (ret || creq.status)
+				break;
+			count++;
+			uadk_pool->bds[0].dst_len = creq.dst_len;
+			if (get_run_state() == 0)
+				break;
+
+		} else {
+			i = count % MAX_POOL_LENTH_COMP;
+			if (g_blkpool) {
+				creq.src = uadk_pool->bds[i].pool_src;
+				creq.dst = uadk_pool->bds[i].pool_dst;
+			} else {
+				creq.src = uadk_pool->bds[i].src;
+				creq.dst = uadk_pool->bds[i].dst;
+			}
+			creq.src_len = uadk_pool->bds[i].src_len;
+			creq.dst_len = out_len;
+
+			ret = wd_do_comp_sync(h_sess, &creq);
+			if (ret || creq.status)
+				break;
+
+			count++;
+			uadk_pool->bds[i].dst_len = creq.dst_len;
+		}
 		if (get_run_state() == 0)
 			break;
 	}
@@ -1028,6 +1112,10 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	cal_avg_latency(count);
 	add_recv_data(count, g_pktlen);
 
+	if (pdata->sgl) {
+		free(list_src);
+		free(list_dst);
+	}
 	return NULL;
 }
 
@@ -1099,6 +1187,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
+	struct wd_datalist *list_src = NULL, *list_dst = NULL;
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
 	handle_t h_sess;
@@ -1128,35 +1217,94 @@ static void *zip_uadk_blk_async_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = zip_async_cb;
-	creq.data_fmt = 0;
+	if (pdata->sgl)
+		creq.data_fmt = WD_SGL_BUF;
+	else
+		creq.data_fmt = 0;
 	creq.priv = 0;
 	creq.status = 0;
+
+	if (pdata->sgl) {
+		struct wd_datalist *src, *dst;
+
+		list_src = calloc(MAX_POOL_LENTH_COMP, sizeof(struct wd_datalist));
+		list_dst = calloc(MAX_POOL_LENTH_COMP, sizeof(struct wd_datalist));
+
+		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
+			src = &list_src[i];
+			dst = &list_dst[i];
+			if (g_blkpool) {
+				src->data = uadk_pool->bds[i].pool_src;
+				dst->data = uadk_pool->bds[i].pool_dst;
+			} else {
+				src->data = uadk_pool->bds[i].src;
+				dst->data = uadk_pool->bds[i].dst;
+			}
+			src->len = uadk_pool->bds[i].src_len;
+			dst->len = uadk_pool->bds[i].dst_len;
+			src->next = (i < MAX_POOL_LENTH_COMP-1) ? &list_src[i+1] : NULL;
+			dst->next = (i < MAX_POOL_LENTH_COMP-1) ? &list_dst[i+1] : NULL;
+		}
+	}
 
 	while(1) {
 		if (get_run_state() == 0)
 			break;
 
-		i = count % MAX_POOL_LENTH_COMP;
-		creq.src = uadk_pool->bds[i].src;
-		creq.dst = uadk_pool->bds[i].dst;
-		creq.src_len = uadk_pool->bds[i].src_len;
-		creq.dst_len = out_len;
+		if (pdata->sgl) {
+			creq.list_src = list_src;
+			creq.list_dst = list_dst;
 
-		pdata->tag[i].td_id = pdata->td_id;
-		pdata->tag[i].bd_idx = i;
-		creq.cb_param = &pdata->tag[i];
+			creq.src_len = uadk_pool->bds[0].src_len * MAX_POOL_LENTH_COMP;
+			creq.dst_len = out_len * MAX_POOL_LENTH_COMP;
 
-		ret = wd_do_comp_async(h_sess, &creq);
-		if (ret == -WD_EBUSY) {
-			usleep(SEND_USLEEP * try_cnt);
-			try_cnt++;
-			if (try_cnt > MAX_TRY_CNT) {
-				ZIP_TST_PRT("Test compress send fail %d times!\n", MAX_TRY_CNT);
-				try_cnt = 0;
+			pdata->tag[0].td_id = pdata->td_id;
+			pdata->tag[0].bd_idx = i;
+			creq.cb_param = &pdata->tag[0];
+
+			ret = wd_do_comp_async(h_sess, &creq);
+			if (ret == -WD_EBUSY) {
+				usleep(SEND_USLEEP * try_cnt);
+				try_cnt++;
+				if (try_cnt > MAX_TRY_CNT) {
+					ZIP_TST_PRT("Test compress send fail %d times!\n",
+						    MAX_TRY_CNT);
+					try_cnt = 0;
+				}
+				continue;
+			} else if (ret || creq.status) {
+				break;
 			}
-			continue;
-		} else if (ret || creq.status) {
-			break;
+			uadk_pool->bds[0].dst_len = creq.dst_len;
+		} else {
+			i = count % MAX_POOL_LENTH_COMP;
+			if (g_blkpool) {
+				creq.src = uadk_pool->bds[i].pool_src;
+				creq.dst = uadk_pool->bds[i].pool_dst;
+			} else {
+				creq.src = uadk_pool->bds[i].src;
+				creq.dst = uadk_pool->bds[i].dst;
+			}
+			creq.src_len = uadk_pool->bds[i].src_len;
+			creq.dst_len = out_len;
+
+			pdata->tag[i].td_id = pdata->td_id;
+			pdata->tag[i].bd_idx = i;
+			creq.cb_param = &pdata->tag[i];
+
+			ret = wd_do_comp_async(h_sess, &creq);
+			if (ret == -WD_EBUSY) {
+				usleep(SEND_USLEEP * try_cnt);
+				try_cnt++;
+				if (try_cnt > MAX_TRY_CNT) {
+					ZIP_TST_PRT("Test compress send fail %d times!\n",
+						    MAX_TRY_CNT);
+					try_cnt = 0;
+				}
+				continue;
+			} else if (ret || creq.status) {
+				break;
+			}
 		}
 		try_cnt = 0;
 		count++;
@@ -1202,6 +1350,7 @@ static int zip_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].win_sz = threads_option.win_sz;
 		threads_args[i].comp_lv = threads_option.comp_lv;
+		threads_args[i].sgl = options->sgl;
 		threads_args[i].td_id = i;
 		ret = pthread_create(&tdid[i], NULL, uadk_zip_sync_run, &threads_args[i]);
 		if (ret) {
@@ -1293,6 +1442,7 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		}
 		threads_args[i].tag->recv_cnt = 0;
 		threads_args[i].send_cnt = 0;
+		threads_args[i].sgl = options->sgl;
 		ret = pthread_create(&tdid[i], NULL, uadk_zip_async_run, &threads_args[i]);
 		if (ret) {
 			ZIP_TST_PRT("Create async thread fail!\n");
@@ -1344,6 +1494,35 @@ async_error:
 	return ret;
 }
 
+static int load_blkpool_data(void)
+{
+	int i, j;
+	int src_len, dst_len;
+
+	if (!g_blkpool)
+		return 0;
+
+	for (i = 0; i < g_thread_num; i++) {
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+			src_len = g_zip_pool.pool[i].bds[j].src_len;
+			g_zip_pool.pool[i].bds[j].pool_src =
+				wd_blkpool_alloc(g_blkpool, src_len);
+
+			dst_len = g_zip_pool.pool[i].bds[j].dst_len;
+			g_zip_pool.pool[i].bds[j].pool_dst =
+				wd_blkpool_alloc(g_blkpool, dst_len);
+
+			if (!g_zip_pool.pool[i].bds[j].pool_src ||
+			    !g_zip_pool.pool[i].bds[j].pool_dst)
+				return -EINVAL;
+
+			memcpy(g_zip_pool.pool[i].bds[j].pool_src,
+			       g_zip_pool.pool[0].bds[j].src, src_len);
+		}
+	}
+	return 0;
+}
+
 int zip_uadk_benchmark(struct acc_option *options)
 {
 	u32 ptime;
@@ -1372,6 +1551,10 @@ int zip_uadk_benchmark(struct acc_option *options)
 		return ret;
 
 	ret = load_file_data(options->algname, options->pktlen, options->optype);
+	if (ret)
+		return ret;
+
+	ret = load_blkpool_data();
 	if (ret)
 		return ret;
 
