@@ -12,6 +12,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "wd_sched.h"
+#include "wd_bmm.h"
 #include "wd_util.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
@@ -247,6 +248,7 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 			WD_ERR("failed to init ctxs lock!\n");
 			goto err_out;
 		}
+		ctxs[i].blkpool = wd_blkpool_new(ctxs[i].ctx);
 	}
 
 	in->ctxs = ctxs;
@@ -298,8 +300,13 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
 	__u32 i;
 
-	for (i = 0; i < in->ctx_num; i++)
+	for (i = 0; i < in->ctx_num; i++) {
+		if (in->ctxs[i].blkpool) {
+			wd_blkpool_destroy_sglpool(in->ctxs[i].blkpool, in->ctxs[i].h_sgl_pool);
+			wd_blkpool_delete(in->ctxs[i].blkpool);
+		}
 		pthread_spin_destroy(&in->ctxs[i].lock);
+	}
 
 	in->priv = NULL;
 	in->ctx_num = 0;
