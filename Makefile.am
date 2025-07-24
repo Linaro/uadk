@@ -60,6 +60,7 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd_bmm.c v1/wd_bmm.h	\
 		 v1/wd_ecc.c v1/wd_ecc.h	\
 		 v1/wd_sgl.c v1/wd_sgl.h	\
+		 wd_bmm.c \
 		 aes.h sm4.h galois.h	\
 		 lib/crypto/aes.c lib/crypto/sm4.c lib/crypto/galois.c \
 		 v1/drv/hisi_qm_udrv.c v1/drv/hisi_qm_udrv.h \

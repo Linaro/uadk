@@ -718,6 +718,8 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		{"complevel",	required_argument,	0, 16},
 		{"init2",	no_argument,		0, 17},
 		{"device",	required_argument,	0, 18},
+		{"user",	no_argument,		0, 19},
+		{"sgl",		no_argument,		0, 20},
 		{0, 0, 0, 0}
 	};
 
@@ -788,6 +790,12 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 				goto to_exit;
 			}
 			strcpy(option->device, optarg);
+			break;
+		case 19:
+			option->user = true;
+			break;
+		case 20:
+			option->sgl = true;
 			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");

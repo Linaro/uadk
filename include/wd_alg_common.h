@@ -136,12 +136,21 @@ struct wd_soft_ctx {
 	void *priv;
 };
 
+enum wd_blkpool_mode {
+	BLKPOOL_MODE_MEMCPY,
+	BLKPOOL_MODE_USER,
+	BLKPOOL_MODE_MAX,
+};
+
 struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
 	__u16 sqn;
 	pthread_spinlock_t lock;
+	void *blkpool;
+	__u8 blkpool_mode;
+	handle_t h_sgl_pool;
 };
 
 struct wd_ctx_config_internal {

@@ -23,47 +23,6 @@ static struct wd_alg_list alg_list_head;
 static struct wd_alg_list *alg_list_tail = &alg_list_head;
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-
-static bool wd_check_dev_sva(const char *dev_name)
-{
-	char dev_path[PATH_MAX] = {'\0'};
-	char buf[DEV_SVA_SIZE] = {'\0'};
-	unsigned int val;
-	ssize_t ret;
-	int fd;
-
-	ret = snprintf(dev_path, PATH_STR_SIZE, "%s/%s/%s", SYS_CLASS_DIR,
-			  dev_name, SVA_FILE_NAME);
-	if (ret < 0) {
-		WD_ERR("failed to snprintf, device name: %s!\n", dev_name);
-		return false;
-	}
-
-	/**
-	 * The opened file is the specified device driver file.
-	 * no need for realpath processing.
-	 */
-	fd = open(dev_path, O_RDONLY, 0);
-	if (fd < 0) {
-		WD_ERR("failed to open %s(%d)!\n", dev_path, -errno);
-		return false;
-	}
-
-	ret = read(fd, buf, DEV_SVA_SIZE - 1);
-	if (ret <= 0) {
-		WD_ERR("failed to read anything at %s!\n", dev_path);
-		close(fd);
-		return false;
-	}
-	close(fd);
-
-	val = strtol(buf, NULL, STR_DECIMAL);
-	if (val & UACCE_DEV_SVA)
-		return true;
-
-	return false;
-}
-
 static bool wd_check_accel_dev(const char *dev_name)
 {
 	struct dirent *dev_dir;
@@ -80,8 +39,7 @@ static bool wd_check_accel_dev(const char *dev_name)
 		     !strncmp(dev_dir->d_name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 
-		if (!strncmp(dev_dir->d_name, dev_name, strlen(dev_name)) &&
-		     wd_check_dev_sva(dev_dir->d_name)) {
+		if (!strncmp(dev_dir->d_name, dev_name, strlen(dev_name))) {
 			closedir(wd_class);
 			return true;
 		}
