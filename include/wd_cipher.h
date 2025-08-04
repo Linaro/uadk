@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <asm/types.h>
 #include "wd_alg_common.h"
+#include "wd_bmm.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -220,6 +221,7 @@ void wd_cipher_ctx_num_uninit(void);
 int wd_cipher_get_env_param(__u32 node, __u32 type, __u32 mode,
 			    __u32 *num, __u8 *is_enable);
 
+void *wd_cipher_setup_blkpool(struct wd_blkpool_setup *setup);
 #ifdef __cplusplus
 }
 #endif

@@ -20,6 +20,7 @@ global:
 	wd_cipher_set_driver;
 	wd_cipher_get_driver;
 	wd_cipher_get_msg;
+	wd_cipher_setup_blkpool;
 
 	wd_aead_init;
 	wd_aead_uninit;
@@ -66,6 +67,7 @@ global:
 	wd_digest_set_driver;
 	wd_digest_get_driver;
 	wd_digest_get_msg;
+	wd_digest_setup_blkpool;
 
 	wd_rsa_is_crt;
 	wd_rsa_get_key_bits;
