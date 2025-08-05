@@ -68,6 +68,9 @@ struct wd_digest_sess {
 	__u32			key_bytes;
 	void			*sched_key;
 	struct wd_digest_stream_data stream_data;
+	void			*blkpool;
+	unsigned char		*pool_key;
+	handle_t		h_sgl_pool;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -180,14 +183,38 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	}
 
 	sess->key_bytes = key_len;
-	if (key_len)
-		memcpy(sess->key, key, key_len);
+	if (key_len) {
+		if (sess->pool_key)
+			memcpy(sess->pool_key, key, key_len);
+		else
+			memcpy(sess->key, key, key_len);
+	}
 
 	return 0;
 }
 
+void *wd_digest_setup_blkpool(struct wd_blkpool_setup *setup)
+{
+	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs;
+	int ret;
+
+	ret = wd_blkpool_setup(ctx->blkpool, setup);
+	if (ret)
+		return NULL;
+
+	ctx->blkpool_mode = BLKPOOL_MODE_USER;
+	pthread_spin_lock(&ctx->lock);
+	if (ctx->h_sgl_pool == 0)
+		ctx->h_sgl_pool = wd_blkpool_create_sglpool(ctx->blkpool);
+	pthread_spin_unlock(&ctx->lock);
+	return ctx->blkpool;
+}
+
 handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 {
+	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs;
 	struct wd_digest_sess *sess = NULL;
 	bool ret;
 
@@ -220,6 +247,15 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
 		goto err_sess;
+	}
+
+	if (ctx->blkpool) {
+		sess->blkpool = ctx->blkpool;
+		sess->h_sgl_pool = ctx->h_sgl_pool;
+
+		sess->pool_key = wd_blkpool_alloc(sess->blkpool, MAX_HMAC_KEY_SIZE);
+		if (!sess->pool_key)
+			goto err_sess;
 	}
 
 	return (handle_t)sess;
@@ -589,7 +625,10 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->alg_type = WD_DIGEST;
 	msg->alg = sess->alg;
 	msg->mode = sess->mode;
-	msg->key = sess->key;
+	if (sess->blkpool)
+		msg->key = sess->pool_key;
+	else
+		msg->key = sess->key;
 	msg->key_bytes = sess->key_bytes;
 	msg->iv = req->iv;
 	msg->in = req->in;

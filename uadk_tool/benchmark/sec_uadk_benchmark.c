@@ -29,6 +29,9 @@ struct uadk_bd {
 	u8 *src;
 	u8 *dst;
 	u8 mac[SEC_MAX_MAC_LEN];
+	u8 *pool_src;
+	u8 *pool_dst;
+	u8 *pool_mac;
 };
 
 struct bd_pool {
@@ -40,7 +43,11 @@ struct thread_pool {
 	u8 **iv;
 	u8 **key;
 	u8 **hash;
+	u8 **pool_iv;
+	u8 **pool_hash;
 } g_uadk_pool;
+
+void *g_blkpool;
 
 typedef struct uadk_thread_res {
 	u32 subtype;
@@ -656,6 +663,27 @@ free_ctx:
 	return ret;
 }
 
+static void init_blkpool(int subtype)
+{
+	struct wd_blkpool_setup setup;
+
+	memset(&setup, 0, sizeof(setup));
+	setup.block_size = DEFAULT_BLOCK_SIZE;
+	setup.block_num = DEFAULT_BLOCK_NM;
+	setup.align_size = DEFAULT_ALIGN_SIZE;
+
+	switch (subtype) {
+	case CIPHER_TYPE:
+		g_blkpool = wd_cipher_setup_blkpool(&setup);
+		break;
+	case DIGEST_TYPE:
+		g_blkpool = wd_digest_setup_blkpool(&setup);
+		break;
+	default:
+		break;
+	}
+}
+
 static int init_ctx_config(struct acc_option *options)
 {
 	struct sched_params param = {0};
@@ -731,6 +759,8 @@ static int init_ctx_config(struct acc_option *options)
 		SEC_TST_PRT("failed to init sec ctx!\n");
 		goto free_sched;
 	}
+
+	init_blkpool(subtype);
 
 	return 0;
 
@@ -849,6 +879,8 @@ static int init_ctx_config2(struct acc_option *options)
 		ret = -EINVAL;
 	}
 
+	init_blkpool(subtype);
+
 	free(ctx_set_num);
 
 	return ret;
@@ -954,8 +986,38 @@ static int init_ivkey_source(void)
 		memcpy(g_uadk_pool.hash[m], aead_key, SEC_PERF_KEY_LEN);
 	}
 
+	if (!g_blkpool)
+		return 0;
+
+	g_uadk_pool.pool_iv = malloc(sizeof(char *) * g_thread_num);
+	memset(g_uadk_pool.pool_iv, 0, sizeof(char *) * g_thread_num);
+	for (i = 0; i < g_thread_num; i++) {
+		g_uadk_pool.pool_iv[i] = wd_blkpool_alloc(g_blkpool,
+				MAX_IVK_LENTH * sizeof(char));
+		if (!g_uadk_pool.pool_iv[i])
+			goto free_pool_iv;
+	}
+	g_uadk_pool.pool_hash = malloc(sizeof(char *) * g_thread_num);
+	memset(g_uadk_pool.pool_hash, 0, sizeof(char *) * g_thread_num);
+	for (m = 0; m < g_thread_num; m++) {
+		g_uadk_pool.pool_hash[m] = wd_blkpool_alloc(g_blkpool,
+				MAX_IVK_LENTH * sizeof(char));
+		if (!g_uadk_pool.pool_hash[m])
+			goto free_pool_hash;
+
+		memcpy(g_uadk_pool.pool_hash[m], aead_key, SEC_PERF_KEY_LEN);
+	}
 	return 0;
 
+free_pool_hash:
+	for (idx = m - 1; idx >= 0; idx--)
+		wd_blkpool_free(g_blkpool, g_uadk_pool.pool_hash[idx]);
+	free(g_uadk_pool.pool_hash);
+free_pool_iv:
+	for (idx = i - 1; idx >= 0; idx--)
+		wd_blkpool_free(g_blkpool, g_uadk_pool.pool_iv[idx]);
+
+	free(g_uadk_pool.pool_iv);
 free_hash:
 	for (idx = m - 1; idx >= 0; idx--)
 		free(g_uadk_pool.hash[idx]);
@@ -983,11 +1045,17 @@ static void free_ivkey_source(void)
 		free(g_uadk_pool.hash[i]);
 		free(g_uadk_pool.key[i]);
 		free(g_uadk_pool.iv[i]);
+		if (g_blkpool) {
+			wd_blkpool_free(g_blkpool, g_uadk_pool.pool_hash[i]);
+			wd_blkpool_free(g_blkpool, g_uadk_pool.pool_iv[i]);
+		}
 	}
 
 	free(g_uadk_pool.hash);
 	free(g_uadk_pool.key);
 	free(g_uadk_pool.iv);
+	free(g_uadk_pool.pool_hash);
+	free(g_uadk_pool.pool_iv);
 }
 
 static int init_uadk_bd_pool(void)
@@ -1043,6 +1111,23 @@ static int init_uadk_bd_pool(void)
 						memcpy(g_uadk_pool.pool[i].bds[j].mac, g_save_mac, SEC_MAX_MAC_LEN);
 					}
 				}
+				if (!g_blkpool)
+					continue;
+
+				g_uadk_pool.pool[i].bds[j].pool_src =
+					wd_blkpool_alloc(g_blkpool, step);
+				g_uadk_pool.pool[i].bds[j].pool_dst =
+					wd_blkpool_alloc(g_blkpool, step);
+				g_uadk_pool.pool[i].bds[j].pool_mac =
+					wd_blkpool_alloc(g_blkpool, SEC_MAX_MAC_LEN);
+				if (!g_uadk_pool.pool[i].bds[j].pool_src ||
+				    !g_uadk_pool.pool[i].bds[j].pool_dst ||
+				    !g_uadk_pool.pool[i].bds[j].pool_mac)
+					goto malloc_error3;
+				memcpy(g_uadk_pool.pool[i].bds[j].pool_src,
+				       g_uadk_pool.pool[i].bds[j].src, step);
+				memcpy(g_uadk_pool.pool[i].bds[j].pool_mac,
+				       g_uadk_pool.pool[i].bds[j].mac, SEC_MAX_MAC_LEN);
 			}
 		}
 	}
@@ -1089,6 +1174,14 @@ static void free_uadk_bd_pool(void)
 			for (j = 0; j < MAX_POOL_LENTH; j++) {
 				free(g_uadk_pool.pool[i].bds[j].src);
 				free(g_uadk_pool.pool[i].bds[j].dst);
+				if (g_blkpool) {
+					wd_blkpool_free(g_blkpool,
+						g_uadk_pool.pool[i].bds[j].pool_src);
+					wd_blkpool_free(g_blkpool,
+						g_uadk_pool.pool[i].bds[j].pool_dst);
+					wd_blkpool_free(g_blkpool,
+						g_uadk_pool.pool[i].bds[j].pool_mac);
+				}
 			}
 		}
 		free(g_uadk_pool.pool[i].bds);
@@ -1213,7 +1306,10 @@ static void *sec_uadk_cipher_async(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	if (g_blkpool)
+		priv_iv = g_uadk_pool.pool_iv[pdata->td_id];
+	else
+		priv_iv = g_uadk_pool.iv[pdata->td_id];
 	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -1246,8 +1342,13 @@ static void *sec_uadk_cipher_async(void *arg)
 			break;
 		try_cnt = 0;
 		i = count % MAX_POOL_LENTH;
-		creq.src = uadk_pool->bds[i].src;
-		creq.dst = uadk_pool->bds[i].dst;
+		if (g_blkpool) {
+			creq.src = uadk_pool->bds[i].pool_src;
+			creq.dst = uadk_pool->bds[i].pool_dst;
+		} else {
+			creq.src = uadk_pool->bds[i].src;
+			creq.dst = uadk_pool->bds[i].dst;
+		}
 
 		ret = wd_do_cipher_async(h_sess, &creq);
 		if (ret < 0) {
@@ -1391,7 +1492,10 @@ static void *sec_uadk_digest_async(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	if (g_blkpool)
+		priv_iv = g_uadk_pool.pool_iv[pdata->td_id];
+	else
+		priv_iv = g_uadk_pool.iv[pdata->td_id];
 	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -1423,8 +1527,13 @@ static void *sec_uadk_digest_async(void *arg)
 			break;
 		try_cnt = 0;
 		i = count % MAX_POOL_LENTH;
-		dreq.in = uadk_pool->bds[i].src;
-		dreq.out = uadk_pool->bds[i].dst;
+		if (g_blkpool) {
+			dreq.in = uadk_pool->bds[i].pool_src;
+			dreq.out = uadk_pool->bds[i].pool_dst;
+		} else {
+			dreq.in = uadk_pool->bds[i].src;
+			dreq.out = uadk_pool->bds[i].dst;
+		}
 
 		ret = wd_do_digest_async(h_sess, &dreq);
 		if (ret < 0) {
@@ -1460,9 +1569,13 @@ static void *sec_uadk_cipher_sync(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = g_uadk_pool.iv[pdata->td_id];
-	priv_key = g_uadk_pool.key[pdata->td_id];
 
+	if (g_blkpool)
+		priv_iv = g_uadk_pool.pool_iv[pdata->td_id];
+	else
+		priv_iv = g_uadk_pool.iv[pdata->td_id];
+
+	priv_key = g_uadk_pool.key[pdata->td_id];
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
 	memset(priv_key, DEF_IVK_DATA, MAX_IVK_LENTH);
 
@@ -1489,8 +1602,14 @@ static void *sec_uadk_cipher_sync(void *arg)
 
 	while(1) {
 		i = count % MAX_POOL_LENTH;
-		creq.src = uadk_pool->bds[i].src;
-		creq.dst = uadk_pool->bds[i].dst;
+		if (g_blkpool) {
+			creq.src = uadk_pool->bds[i].pool_src;
+			creq.dst = uadk_pool->bds[i].pool_dst;
+		} else {
+			creq.src = uadk_pool->bds[i].src;
+			creq.dst = uadk_pool->bds[i].dst;
+		}
+
 		ret = wd_do_cipher_sync(h_sess, &creq);
 		if ((ret < 0 && ret != -WD_EBUSY) || creq.state)
 			break;
@@ -1611,7 +1730,10 @@ static void *sec_uadk_digest_sync(void *arg)
 		return NULL;
 
 	uadk_pool = &g_uadk_pool.pool[pdata->td_id];
-	priv_iv = g_uadk_pool.iv[pdata->td_id];
+	if (g_blkpool)
+		priv_iv = g_uadk_pool.pool_iv[pdata->td_id];
+	else
+		priv_iv = g_uadk_pool.iv[pdata->td_id];
 	priv_key = g_uadk_pool.key[pdata->td_id];
 
 	memset(priv_iv, DEF_IVK_DATA, MAX_IVK_LENTH);
@@ -1639,8 +1761,13 @@ static void *sec_uadk_digest_sync(void *arg)
 
 	while(1) {
 		i = count % MAX_POOL_LENTH;
-		dreq.in = uadk_pool->bds[i].src;
-		dreq.out = uadk_pool->bds[i].dst;
+		if (g_blkpool) {
+			dreq.in = uadk_pool->bds[i].pool_src;
+			dreq.out = uadk_pool->bds[i].pool_dst;
+		} else {
+			dreq.in = uadk_pool->bds[i].src;
+			dreq.out = uadk_pool->bds[i].dst;
+		}
 		ret = wd_do_digest_sync(h_sess, &dreq);
 		if (ret || dreq.state)
 			break;

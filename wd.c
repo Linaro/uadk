@@ -235,10 +235,6 @@ static int get_dev_info(struct uacce_dev *dev)
 	ret = get_int_attr(dev, "flags", &dev->flags);
 	if (ret < 0)
 		return ret;
-	else if (!((unsigned int)dev->flags & UACCE_DEV_SVA)) {
-		WD_ERR("skip none sva uacce device!\n");
-		return -WD_ENODEV;
-	}
 
 	ret = get_int_attr(dev, "region_mmio_size", &value);
 	if (ret < 0)
@@ -580,6 +576,19 @@ int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 		return -errno;
 
 	return ret;
+}
+
+int wd_is_noiommu(handle_t h_ctx)
+{
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+
+	if (!ctx || !ctx->dev)
+		return -WD_EINVAL;
+
+	if ((unsigned int)ctx->dev->flags & UACCE_DEV_NOIOMMU)
+		return 1;
+
+	return 0;
 }
 
 int wd_is_sva(handle_t h_ctx)
@@ -978,3 +987,20 @@ alloc_err:
 	return NULL;
 }
 
+void *wd_reserve_mem(handle_t h_ctx, size_t size)
+{
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+	void *ptr;
+
+	if (!ctx)
+		return NULL;
+
+	ptr = mmap(0, size, PROT_READ | PROT_WRITE,
+		    MAP_SHARED, ctx->fd, UACCE_QFRT_SS * getpagesize());
+	if (ptr == MAP_FAILED) {
+		WD_ERR("wd drv mmap fail!(err = %d)\n", errno);
+		return NULL;
+	}
+
+	return ptr;
+}

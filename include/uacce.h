@@ -15,6 +15,7 @@ extern "C" {
 
 #define UACCE_CMD_START         _IO('W', 0)
 #define UACCE_CMD_PUT_Q         _IO('W', 1)
+#define UACCE_CMD_GET_SS_DMA	_IOR('W', 3, unsigned long)
 
 /**
  * UACCE Device flags:
@@ -25,7 +26,9 @@ extern "C" {
  */
 
 enum {
-        UACCE_DEV_SVA = 0x1,
+	UACCE_DEV_SVA = 0x1,
+	UACCE_DEV_NOIOMMU = 0x2,
+	UACCE_DEV_IOMMUU = 0x80,
 };
 
 #define UACCE_API_VER_NOIOMMU_SUBFIX	"_noiommu"
@@ -33,6 +36,7 @@ enum {
 enum uacce_qfrt {
 	UACCE_QFRT_MMIO = 0, /* device mmio region */
 	UACCE_QFRT_DUS = 1, /* device user share */
+	UACCE_QFRT_SS,     /* static share memory */
 	UACCE_QFRT_MAX,
 };
 

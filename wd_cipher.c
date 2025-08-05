@@ -66,6 +66,9 @@ struct wd_cipher_sess {
 	unsigned char		key[MAX_CIPHER_KEY_SIZE];
 	__u32			key_bytes;
 	void			*sched_key;
+	void			*blkpool;
+	unsigned char		*pool_key;
+	handle_t		h_sgl_pool;
 };
 
 struct wd_env_config wd_cipher_env_config;
@@ -244,13 +247,36 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	}
 
 	sess->key_bytes = key_len;
-	memcpy(sess->key, key, key_len);
+	if (sess->pool_key)
+		memcpy(sess->pool_key, key, key_len);
+	else
+		memcpy(sess->key, key, key_len);
 
 	return 0;
 }
 
+void *wd_cipher_setup_blkpool(struct wd_blkpool_setup *setup)
+{
+	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs;
+	int ret;
+
+	ret = wd_blkpool_setup(ctx->blkpool, setup);
+	if (ret)
+		return NULL;
+
+	ctx->blkpool_mode = BLKPOOL_MODE_USER;
+	pthread_spin_lock(&ctx->lock);
+	if (ctx->h_sgl_pool == 0)
+		ctx->h_sgl_pool = wd_blkpool_create_sglpool(ctx->blkpool);
+	pthread_spin_unlock(&ctx->lock);
+	return ctx->blkpool;
+}
+
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
+	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs;
 	struct wd_cipher_sess *sess = NULL;
 	bool ret;
 
@@ -287,6 +313,15 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
 		goto free_sess;
+	}
+
+	if (ctx->blkpool) {
+		sess->blkpool = ctx->blkpool;
+		sess->h_sgl_pool = ctx->h_sgl_pool;
+
+		sess->pool_key = wd_blkpool_alloc(sess->blkpool, MAX_CIPHER_KEY_SIZE);
+		if (!sess->pool_key)
+			goto free_sess;
 	}
 
 	return (handle_t)sess;
@@ -539,7 +574,10 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 	msg->in_bytes = req->in_bytes;
 	msg->out = req->dst;
 	msg->out_bytes = req->out_bytes;
-	msg->key = sess->key;
+	if (sess->blkpool)
+		msg->key = sess->pool_key;
+	else
+		msg->key = sess->key;
 	msg->key_bytes = sess->key_bytes;
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
@@ -719,6 +757,11 @@ int wd_do_cipher_sync(handle_t h_sess, struct wd_cipher_req *req)
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
+	if (sess->blkpool) {
+		msg.blkpool = sess->blkpool;
+		msg.h_sgl_pool = sess->h_sgl_pool;
+	}
+
 	ret = send_recv_sync(ctx, &msg);
 	req->state = msg.result;
 
@@ -758,6 +801,11 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
+
+	if (sess->blkpool) {
+		msg->blkpool = sess->blkpool;
+		msg->h_sgl_pool = sess->h_sgl_pool;
+	}
 
 	ret = wd_alg_driver_send(wd_cipher_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {

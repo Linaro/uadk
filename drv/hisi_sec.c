@@ -916,10 +916,17 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg,
 static void fill_cipher_bd2_addr(struct wd_cipher_msg *msg,
 				 struct hisi_sec_sqe *sqe)
 {
-	sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
-	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->key;
+	if (msg->blkpool) {
+		sqe->type2.data_src_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->in);
+		sqe->type2.data_dst_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->out);
+		sqe->type2.c_ivin_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->iv);
+		sqe->type2.c_key_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->key);
+	} else {
+		sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
+		sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->key;
+	}
 }
 
 static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
@@ -944,8 +951,6 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_CIPHER;
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
-		recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
 		temp_msg = wd_cipher_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -953,6 +958,8 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 				qp->q_info.idx, tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->out = temp_msg->out;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
@@ -1050,7 +1057,7 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 **in, __u8 **out,
 		return -WD_EINVAL;
 	}
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in));
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in), NULL);
 	if (!hw_sgl_in) {
 		WD_ERR("failed to get sgl in for hw_v2!\n");
 		return -WD_EINVAL;
@@ -1060,7 +1067,7 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 **in, __u8 **out,
 		hw_sgl_out = *out;
 	} else {
 		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool,
-						(struct wd_datalist *)(*out));
+						(struct wd_datalist *)(*out), NULL);
 		if (!hw_sgl_out) {
 			WD_ERR("failed to get hw sgl out for hw_v2!\n");
 			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
@@ -1090,7 +1097,7 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 **in, __u8 **out,
 		return -WD_EINVAL;
 	}
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in));
+	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in), NULL);
 	if (!hw_sgl_in) {
 		WD_ERR("failed to get sgl in for hw_v3!\n");
 		return -WD_EINVAL;
@@ -1101,7 +1108,7 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 **in, __u8 **out,
 		sqe->bd_param |= SEC_PBUFF_MODE_MASK_V3;
 	} else {
 		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool,
-						(struct wd_datalist *)(*out));
+						(struct wd_datalist *)(*out), NULL);
 		if (!hw_sgl_out) {
 			WD_ERR("failed to get hw sgl out for hw_v3!\n");
 			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
@@ -1318,10 +1325,17 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 static void fill_cipher_bd3_addr(struct wd_cipher_msg *msg,
 		struct hisi_sec_sqe3 *sqe)
 {
-	sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
-	sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->c_key_addr = (__u64)(uintptr_t)msg->key;
+	if (msg->blkpool) {
+		sqe->data_src_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->in);
+		sqe->data_dst_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->out);
+		sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->iv);
+		sqe->c_key_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->key);
+	} else {
+		sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
+		sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		sqe->c_key_addr = (__u64)(uintptr_t)msg->key;
+	}
 }
 
 static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
@@ -1429,8 +1443,6 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_CIPHER;
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
-		recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
 		temp_msg = wd_cipher_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -1438,6 +1450,8 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 				qp->q_info.idx, tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->out = temp_msg->out;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
@@ -1597,7 +1611,6 @@ static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_DIGEST;
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
 		temp_msg = wd_digest_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -1742,8 +1755,13 @@ static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 
 	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
-	sqe.type2.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe.type2.mac_addr = (__u64)(uintptr_t)msg->out;
+	if (msg->blkpool) {
+		sqe.type2.data_src_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->in);
+		sqe.type2.mac_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->out);
+	} else {
+		sqe.type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe.type2.mac_addr = (__u64)(uintptr_t)msg->out;
+	}
 
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret)
@@ -1977,8 +1995,13 @@ static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	}
 
 	sqe.a_len_key = (__u32)msg->in_bytes;
-	sqe.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe.mac_addr = (__u64)(uintptr_t)msg->out;
+	if (msg->blkpool) {
+		sqe.data_src_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->in);
+		sqe.mac_addr = (__u64)(uintptr_t)wd_blkpool_phy(msg->blkpool, msg->out);
+	} else {
+		sqe.data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe.mac_addr = (__u64)(uintptr_t)msg->out;
+	}
 
 	ret = fill_digest_bd3_alg(msg, &sqe);
 	if (ret)
