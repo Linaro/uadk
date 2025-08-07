@@ -1472,9 +1472,9 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 {
 	struct wd_agg_sess *sess = (struct wd_agg_sess *)h_sess;
 	enum wd_agg_sess_state expected = WD_AGG_SESS_RESET;
+	struct wd_dae_col_addr *cols;
 	struct wd_agg_req src_req;
-	__u64 cnt = 0;
-	__u64 max_cnt;
+	__u64 max_cnt, key_len, agg_len, cnt = 0;
 	int ret;
 
 	ret = wd_agg_check_rehash_params(sess, req);
@@ -1488,12 +1488,24 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 		return ret;
 
 	memcpy(&src_req, req, sizeof(struct wd_agg_req));
+
+	key_len = req->out_key_cols_num * sizeof(struct wd_dae_col_addr);
+	agg_len = req->out_agg_cols_num * sizeof(struct wd_dae_col_addr);
+	cols = malloc(key_len + agg_len);
+	if (unlikely(!cols))
+		return -WD_ENOMEM;
+	src_req.out_key_cols = cols;
+	src_req.out_agg_cols = cols + req->out_key_cols_num;
+
 	max_cnt = MAX_HASH_TABLE_ROW_NUM / req->out_row_count;
 	while (cnt < max_cnt) {
+		memcpy(src_req.out_key_cols, req->out_key_cols, key_len);
+		memcpy(src_req.out_agg_cols, req->out_agg_cols, agg_len);
 		ret = wd_agg_rehash_sync_inner(sess, &src_req);
 		if (ret) {
 			__atomic_store_n(&sess->state, WD_AGG_SESS_RESET, __ATOMIC_RELEASE);
 			WD_ERR("failed to do agg rehash task!\n");
+			free(cols);
 			return ret;
 		}
 		if (src_req.output_done)
@@ -1502,6 +1514,7 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 	}
 
 	__atomic_store_n(&sess->state, WD_AGG_SESS_INPUT, __ATOMIC_RELEASE);
+	free(cols);
 	return WD_SUCCESS;
 }
 
