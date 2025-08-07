@@ -1,19 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Copyright 2025 Huawei Technologies Co.,Ltd. All rights reserved. */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/epoll.h>
-#include <sys/eventfd.h>
-#include <sys/mman.h>
-#include <sys/types.h>
 #include "hisi_qm_udrv.h"
+#include "hisi_dae.h"
 #include "../include/drv/wd_join_gather_drv.h"
 
-#define DAE_SQC_ALG_TYPE	2
 #define DAE_EXT_SQE_SIZE	128
 #define DAE_CTX_Q_NUM_DEF	1
 
@@ -28,36 +19,17 @@
 #define PROBE_INDEX_ROW_SIZE	4
 
 /* align size */
-#define DAE_CHAR_ALIGN_SIZE	4
 #define DAE_KEY_ALIGN_SIZE	8
-#define DAE_TABLE_ALIGN_SIZE	128
-#define DAE_ADDR_ALIGN_SIZE	128
 #define DAE_BREAKPOINT_SIZE	81920
 #define DAE_ADDR_INDEX_SHIFT	1
 
 /* hash table */
-#define HASH_EXT_TABLE_INVALID_OFFSET	5
-#define HASH_EXT_TABLE_VALID	0x80
 #define HASH_TABLE_HEAD_TAIL_SIZE	8
 #define HASH_TABLE_INDEX_NUM		1
 #define HASH_TABLE_MAX_INDEX_NUM	15
 #define HASH_TABLE_INDEX_SIZE		12
 #define HASH_TABLE_EMPTY_SIZE	4
 #define GATHER_ROW_BATCH_EMPTY_SIZE	2
-#define HASH_TABLE_WITDH_POWER		2
-#define HASH_TABLE_MIN_WIDTH	10
-#define HASH_TABLE_MAX_WIDTH	43
-#define HASH_TABLE_OFFSET_3ROW		3
-#define HASH_TABLE_OFFSET_1ROW		1
-
-#define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
-#define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
-#define PTR_ALIGN(p, a)	((typeof(p))ALIGN((uintptr_t)(p), (a)))
-
-#define BIT(nr)		(1UL << (nr))
-#define BITS_PER_LONG	(__SIZEOF_LONG__ * 8)
-#define GENMASK(h, l) \
-	(((~0UL) << (l)) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
 
 /* DAE hardware protocol data */
 enum dae_join_stage {
@@ -74,149 +46,6 @@ enum dae_gather_stage {
 enum dae_task_type {
 	DAE_HASH_JOIN = 0x1,
 	DAE_GATHER = 0x2,
-};
-
-enum dae_done_flag {
-	DAE_HW_TASK_NOT_PROCESS = 0x0,
-	DAE_HW_TASK_DONE = 0x1,
-	DAE_HW_TASK_ERR = 0x2,
-};
-
-enum dae_error_type {
-	DAE_TASK_SUCCESS = 0x0,
-	DAE_TASK_BD_ERROR_MIN = 0x1,
-	DAE_TASK_BD_ERROR_MAX = 0x7f,
-	DAE_HASH_TABLE_NEED_REHASH = 0x82,
-	DAE_HASH_TABLE_INVALID = 0x83,
-	DAE_JOIN_GATHER_BUS_ERROR = 0x86,
-};
-
-enum dae_data_type {
-	DAE_SINT32 = 0x0,
-	DAE_SINT64 = 0x2,
-	DAE_DECIMAL64 = 0x9,
-	DAE_DECIMAL128 = 0xA,
-	DAE_CHAR = 0xC,
-	DAE_VCHAR = 0xD,
-};
-
-enum dae_date_type_size {
-	SINT32_SIZE = 4,
-	SINT64_SIZE = 8,
-	DECIMAL128_SIZE = 16,
-	DEFAULT_VCHAR_SIZE = 30,
-};
-
-enum dae_table_row_size {
-	ROW_SIZE32 = 32,
-	ROW_SIZE64 = 64,
-	ROW_SIZE128 = 128,
-	ROW_SIZE256 = 256,
-	ROW_SIZE512 = 512,
-};
-
-enum dae_bd_type {
-	DAE_BD_TYPE_V2 = 0x1,
-};
-
-struct dae_sqe {
-	__u32 bd_type : 6;
-	__u32 resv1 : 2;
-	__u32 task_type : 6;
-	__u32 resv2 : 2;
-	__u32 task_type_ext : 6;
-	__u32 resv3 : 9;
-	__u32 bd_invlid : 1;
-	__u16 table_row_size;
-	__u16 resv4;
-	__u32 batch_num;
-	__u32 low_tag;
-	__u32 hi_tag;
-	__u32 data_row_num;
-	__u32 init_row_num;
-	__u32 src_table_width : 6;
-	__u32 dst_table_width : 6;
-	__u32 key_out_en : 1;
-	__u32 break_point_en : 1;
-	__u32 multi_batch_en : 1;
-	__u32 sva_prefetch_en : 1;
-	__u32 counta_vld : 1;
-	__u32 index_num : 5;
-	__u32 resv5 : 8;
-	__u32 index_batch_type : 1;
-	__u32 resv6 : 1;
-	/*
-	 * high 4bits: compare mode if data type is char/vchar,
-	 *             out type if operation is sum.
-	 * low 4bits: input value type.
-	 */
-	__u8 key_data_type[16];
-	__u32 resv7[10];
-	__u64 addr_ext;
-	__u16 key_col_bitmap;
-	__u16 has_empty;
-	__u32 resv8;
-	__u64 addr_list;
-	__u32 done_flag : 3;
-	__u32 output_end : 1;
-	__u32 ext_err_type : 12;
-	__u32 err_type : 8;
-	__u32 wtype : 8;
-	__u32 out_raw_num;
-	__u32 next_init_row_num;
-	__u32 resv9;
-};
-
-struct dae_ext_sqe {
-	/*
-	 * If date type is char/vchar, data info fill data type size
-	 * If data type is decimal64/decimal128, data info fill data precision
-	 */
-	__u16 key_data_info[16];
-	__u16 resv1[16];
-	__u64 resv2[2];
-	__u32 resv3[12];
-};
-
-struct dae_col_addr {
-	__u64 empty_addr;
-	__u64 empty_size;
-	__u64 value_addr;
-	__u64 value_size;
-};
-
-struct dae_table_addr {
-	__u64 std_table_addr;
-	__u64 std_table_size;
-	__u64 ext_table_addr;
-	__u64 ext_table_size;
-};
-
-struct dae_probe_info_addr {
-	__u64 batch_num_index;
-	__u64 batch_addr_index;
-	__u64 probe_index_addr;
-	__u64 resv1;
-	__u64 break_point_addr;
-	__u64 resv2;
-};
-
-struct dae_addr_list {
-	__u64 ext_sqe_addr;
-	__u64 ext_sqe_size;
-	struct dae_table_addr src_table;
-	struct dae_table_addr dst_table;
-	struct dae_probe_info_addr probe_info;
-	struct dae_col_addr input_addr[32];
-	struct dae_col_addr output_addr[32];
-};
-
-struct dae_extend_addr {
-	struct dae_ext_sqe *ext_sqe;
-	struct dae_addr_list *addr_list;
-	__u8 *addr_status;
-	__u16 addr_num;
-	__u16 tail;
 };
 
 static enum dae_data_type hw_data_type_order[] = {
@@ -242,14 +71,6 @@ struct join_gather_col_data {
 	__u8 index_num;
 };
 
-struct hash_table_data {
-	void *std_table;
-	void *ext_table;
-	__u64 std_table_size;
-	__u64 ext_table_size;
-	__u32 table_width;
-};
-
 struct join_gather_ctx {
 	struct join_gather_col_data cols_data;
 	struct hash_table_data table_data;
@@ -258,34 +79,6 @@ struct join_gather_ctx {
 	__u32 hash_table_row_size;
 	__u32 batch_row_size[DAE_MAX_TABLE_NUM];
 };
-
-struct hisi_dae_ctx {
-	struct wd_ctx_config_internal config;
-};
-
-static int get_free_ext_addr(struct dae_extend_addr *ext_addr)
-{
-	__u16 addr_num = ext_addr->addr_num;
-	__u16 idx = ext_addr->tail;
-	__u16 cnt = 0;
-
-	/* The addr_num is equal to sq_depth(1024). */
-	while (__atomic_test_and_set(&ext_addr->addr_status[idx], __ATOMIC_ACQUIRE)) {
-		idx = (idx + 1) % addr_num;
-		cnt++;
-		if (cnt == addr_num)
-			return -WD_EBUSY;
-	}
-
-	ext_addr->tail = (idx + 1) % addr_num;
-
-	return idx;
-}
-
-static void put_ext_addr(struct dae_extend_addr *ext_addr, int idx)
-{
-	__atomic_clear(&ext_addr->addr_status[idx], __ATOMIC_RELEASE);
-}
 
 static void fill_join_gather_misc_field(struct wd_join_gather_msg *msg,
 					struct dae_sqe *sqe)
@@ -339,9 +132,8 @@ static void fill_join_gather_misc_field(struct wd_join_gather_msg *msg,
 }
 
 static void fill_join_table_data(struct dae_sqe *sqe, struct dae_addr_list *addr_list,
-				 struct wd_join_gather_msg *msg)
+				 struct wd_join_gather_msg *msg, struct join_gather_ctx *ctx)
 {
-	struct join_gather_ctx *ctx = (struct join_gather_ctx *)msg->priv;
 	struct dae_table_addr *hw_table_src = &addr_list->src_table;
 	struct dae_table_addr *hw_table_dst = &addr_list->dst_table;
 	struct hash_table_data *table_data_src, *table_data_dst;
@@ -384,10 +176,9 @@ static void fill_join_table_data(struct dae_sqe *sqe, struct dae_addr_list *addr
 
 static void fill_join_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 			       struct dae_addr_list *addr_list,
-			       struct wd_join_gather_msg *msg)
+			       struct wd_join_gather_msg *msg, struct join_gather_ctx *ctx)
 {
 	struct dae_probe_info_addr *info = &addr_list->probe_info;
-	struct join_gather_ctx *ctx = msg->priv;
 	struct hw_join_gather_data *key_data = ctx->cols_data.key_data;
 	struct wd_dae_col_addr *usr_key, *out_usr_key = NULL;
 	struct dae_col_addr *hw_key, *out_hw_key = NULL;
@@ -454,10 +245,9 @@ static void fill_join_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 
 static void fill_gather_col_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 				 struct dae_addr_list *addr_list,
-				 struct wd_join_gather_msg *msg)
+				 struct wd_join_gather_msg *msg, struct join_gather_ctx *ctx)
 {
 	struct dae_probe_info_addr *info = &addr_list->probe_info;
-	struct join_gather_ctx *ctx = msg->priv;
 	struct join_gather_col_data *cols_data = &ctx->cols_data;
 	struct wd_gather_req *gather_req = &msg->req.gather_req;
 	__u32 table_index = gather_req->table_index;
@@ -530,6 +320,8 @@ static void fill_join_gather_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_s
 				  struct dae_addr_list *addr_list,
 				  struct wd_join_gather_msg *msg)
 {
+	struct join_gather_ctx *ctx = (struct join_gather_ctx *)msg->priv;
+
 	fill_join_gather_ext_addr(sqe, ext_sqe, addr_list);
 	sqe->bd_type = DAE_BD_TYPE_V2;
 
@@ -537,12 +329,12 @@ static void fill_join_gather_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_s
 	case WD_JOIN_BUILD_HASH:
 	case WD_JOIN_PROBE:
 	case WD_JOIN_REHASH:
-		fill_join_table_data(sqe, addr_list, msg);
-		fill_join_key_data(sqe, ext_sqe, addr_list, msg);
+		fill_join_table_data(sqe, addr_list, msg, ctx);
+		fill_join_key_data(sqe, ext_sqe, addr_list, msg, ctx);
 		break;
 	case WD_GATHER_CONVERT:
 	case WD_GATHER_COMPLETE:
-		fill_gather_col_data(sqe, ext_sqe, addr_list, msg);
+		fill_gather_col_data(sqe, ext_sqe, addr_list, msg, ctx);
 		break;
 	default:
 		break;
@@ -551,15 +343,17 @@ static void fill_join_gather_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_s
 
 static int check_join_gather_param(struct wd_join_gather_msg *msg)
 {
-	struct wd_probe_out_info *output = &msg->req.join_req.probe_output;
-	struct wd_gather_req *greq = &msg->req.gather_req;
-	__u64 row_num;
-	__u64 size;
+	struct wd_probe_out_info *output;
+	struct wd_gather_req *greq;
+	__u64 row_num, size;
 
 	if (!msg) {
 		WD_ERR("invalid: input join gather msg is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	output = &msg->req.join_req.probe_output;
+	greq = &msg->req.gather_req;
 
 	switch (msg->op_type) {
 	case WD_JOIN_BUILD_HASH:
@@ -686,13 +480,11 @@ static int join_gather_send(struct wd_alg_driver *drv, handle_t ctx, void *send_
 	return WD_SUCCESS;
 }
 
-static void fill_join_gather_task_done(struct dae_sqe *sqe, struct wd_join_gather_msg *msg,
-				       struct wd_join_gather_msg *temp_msg,
-				       struct join_gather_ctx *ctx)
+static void fill_join_gather_task_done(struct dae_sqe *sqe, struct wd_join_gather_msg *msg)
 {
 	if (sqe->task_type == DAE_HASH_JOIN) {
 		if (sqe->task_type_ext == DAE_JOIN_PROBE) {
-			msg->consumed_row_num = sqe->next_init_row_num;
+			msg->consumed_row_num = sqe->data_row_offset;
 			msg->produced_row_num = sqe->out_raw_num;
 			msg->output_done = sqe->output_end;
 		} else if (sqe->task_type_ext == DAE_JOIN_REHASH) {
@@ -701,9 +493,7 @@ static void fill_join_gather_task_done(struct dae_sqe *sqe, struct wd_join_gathe
 	}
 }
 
-static void fill_join_gather_task_err(struct dae_sqe *sqe, struct wd_join_gather_msg *msg,
-				      struct wd_join_gather_msg *temp_msg,
-				      struct join_gather_ctx *ctx)
+static void fill_join_gather_task_err(struct dae_sqe *sqe, struct wd_join_gather_msg *msg)
 {
 	switch (sqe->err_type) {
 	case DAE_TASK_BD_ERROR_MIN ... DAE_TASK_BD_ERROR_MAX:
@@ -716,7 +506,7 @@ static void fill_join_gather_task_err(struct dae_sqe *sqe, struct wd_join_gather
 	case DAE_HASH_TABLE_INVALID:
 		msg->result = WD_JOIN_GATHER_INVALID_HASH_TABLE;
 		break;
-	case DAE_JOIN_GATHER_BUS_ERROR:
+	case DAE_TASK_BUS_ERROR:
 		WD_ERR("failed to do join gather task, bus error %u!\n", sqe->err_type);
 		msg->result = WD_JOIN_GATHER_BUS_ERROR;
 		break;
@@ -729,7 +519,7 @@ static void fill_join_gather_task_err(struct dae_sqe *sqe, struct wd_join_gather
 
 	if (sqe->task_type == DAE_HASH_JOIN && sqe->task_type_ext == DAE_JOIN_PROBE) {
 		msg->produced_row_num = sqe->out_raw_num;
-		msg->consumed_row_num = sqe->next_init_row_num;
+		msg->consumed_row_num = sqe->data_row_offset;
 		msg->output_done = sqe->output_end;
 	}
 }
@@ -740,8 +530,7 @@ static int join_gather_recv(struct wd_alg_driver *drv, handle_t hctx, void *recv
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct dae_extend_addr *ext_addr = qp->priv;
 	struct wd_join_gather_msg *msg = recv_msg;
-	struct wd_join_gather_msg *temp_msg = msg;
-	struct join_gather_ctx *ctx;
+	struct wd_join_gather_msg *send_msg;
 	struct dae_sqe sqe = {0};
 	__u16 recv_cnt = 0;
 	int ret;
@@ -756,8 +545,8 @@ static int join_gather_recv(struct wd_alg_driver *drv, handle_t hctx, void *recv
 
 	msg->tag = sqe.low_tag;
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_join_gather_get_msg(qp->q_info.idx, msg->tag);
-		if (!temp_msg) {
+		send_msg = wd_join_gather_get_msg(qp->q_info.idx, msg->tag);
+		if (!send_msg) {
 			msg->result = WD_JOIN_GATHER_IN_EPARA;
 			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
 			       qp->q_info.idx, msg->tag);
@@ -766,14 +555,13 @@ static int join_gather_recv(struct wd_alg_driver *drv, handle_t hctx, void *recv
 		}
 	}
 
-	ctx = (struct join_gather_ctx *)temp_msg->priv;
 	msg->result = WD_JOIN_GATHER_TASK_DONE;
 	msg->consumed_row_num = 0;
 
 	if (likely(sqe.done_flag == DAE_HW_TASK_DONE)) {
-		fill_join_gather_task_done(&sqe, msg, temp_msg, ctx);
+		fill_join_gather_task_done(&sqe, msg);
 	} else if (sqe.done_flag == DAE_HW_TASK_ERR) {
-		fill_join_gather_task_err(&sqe, msg, temp_msg, ctx);
+		fill_join_gather_task_err(&sqe, msg);
 	} else {
 		msg->result = WD_JOIN_GATHER_PARSE_ERROR;
 		WD_ERR("failed to do join gather task, hardware doesn't process the task!\n");
@@ -787,6 +575,7 @@ out:
 static int join_check_params(struct wd_join_gather_col_info *key_info, __u32 cols_num)
 {
 	__u32 i;
+	int ret;
 
 	if (cols_num > DAE_MAX_KEY_COLS) {
 		WD_ERR("invalid: join key cols num %u is more than device support %d!\n",
@@ -796,6 +585,16 @@ static int join_check_params(struct wd_join_gather_col_info *key_info, __u32 col
 
 	for (i = 0; i < cols_num; i++) {
 		switch (key_info[i].data_type) {
+		case WD_DAE_SHORT_DECIMAL:
+			ret = dae_decimal_precision_check(key_info[i].data_info, false);
+			if (ret)
+				return ret;
+			break;
+		case WD_DAE_LONG_DECIMAL:
+			ret = dae_decimal_precision_check(key_info[i].data_info, true);
+			if (ret)
+				return ret;
+			break;
 		case WD_DAE_CHAR:
 		case WD_DAE_VARCHAR:
 			WD_ERR("invalid: key col %u, char or varchar isn't supported!\n", i);
@@ -813,6 +612,7 @@ static int gather_check_params(struct wd_join_gather_sess_setup *setup)
 	struct wd_gather_table_info *table = setup->gather_tables;
 	struct wd_join_gather_col_info *col;
 	__u32 i, j;
+	int ret;
 
 	if (setup->gather_table_num > DAE_MAX_TABLE_NUM) {
 		WD_ERR("invalid: gather table num %u is more than device support %d!\n",
@@ -829,6 +629,16 @@ static int gather_check_params(struct wd_join_gather_sess_setup *setup)
 		}
 		for (j = 0; j < table[i].cols_num; i++) {
 			switch (col[j].data_type) {
+			case WD_DAE_SHORT_DECIMAL:
+				ret = dae_decimal_precision_check(col[j].data_info, false);
+				if (ret)
+					return ret;
+				break;
+			case WD_DAE_LONG_DECIMAL:
+				ret = dae_decimal_precision_check(col[j].data_info, true);
+				if (ret)
+					return ret;
+				break;
 			case WD_DAE_CHAR:
 				if (col[j].data_info > DAE_MAX_CHAR_SIZE) {
 					WD_ERR("gather col %u, char size isn't supported!\n", i);
@@ -847,7 +657,7 @@ static int gather_check_params(struct wd_join_gather_sess_setup *setup)
 	return WD_SUCCESS;
 }
 
-static int join_gather_param_check(struct wd_join_gather_sess_setup *setup, __u16 hw_type)
+static int join_gather_param_check(struct wd_join_gather_sess_setup *setup)
 {
 	int ret;
 
@@ -867,25 +677,6 @@ static int join_gather_param_check(struct wd_join_gather_sess_setup *setup, __u1
 	default:
 		return -WD_EINVAL;
 	}
-}
-
-static __u32 get_data_type_size(enum dae_data_type type, __u16 data_info)
-{
-	switch (type) {
-	case DAE_SINT32:
-		return SINT32_SIZE;
-	case DAE_SINT64:
-	case DAE_DECIMAL64:
-		return SINT64_SIZE;
-	case DAE_DECIMAL128:
-		return DECIMAL128_SIZE;
-	case DAE_CHAR:
-		return ALIGN(data_info, DAE_CHAR_ALIGN_SIZE);
-	default:
-		break;
-	}
-
-	return 0;
 }
 
 static int transfer_col_info(struct wd_join_gather_col_info *cols,
@@ -920,35 +711,46 @@ static int transfer_col_info(struct wd_join_gather_col_info *cols,
 	return WD_SUCCESS;
 }
 
+static int transfer_cols_to_hw_type(struct wd_join_gather_col_info *cols,
+				    struct hw_join_gather_data *hw_data, __u32 cols_num)
+{
+	struct hw_join_gather_data tmp_data[DAE_MAX_KEY_COLS] = {0};
+	__u32 type_num = ARRAY_SIZE(hw_data_type_order);
+	__u32 i, j, k = 0;
+	int ret;
+
+	ret = transfer_col_info(cols, tmp_data, cols_num);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < type_num; i++) {
+		for (j = 0; j < cols_num; j++) {
+			if (hw_data_type_order[i] != tmp_data[j].hw_type)
+				continue;
+			hw_data[k].usr_col_idx = j;
+			hw_data[k].hw_type = tmp_data[j].hw_type;
+			hw_data[k++].data_info = tmp_data[j].data_info;
+		}
+	}
+
+	return WD_SUCCESS;
+}
+
 static int transfer_data_to_hw_type(struct join_gather_col_data *cols_data,
 				    struct wd_join_gather_sess_setup *setup)
 {
-	struct hw_join_gather_data tmp_data[DAE_MAX_KEY_COLS] = {0};
 	struct wd_gather_table_info *tables = setup->gather_tables;
 	struct wd_join_gather_col_info *gather_cols;
 	struct hw_join_gather_data *hw_data;
-	__u32 type_num = ARRAY_SIZE(hw_data_type_order);
-	__u32 n, i, j, k = 0;
+	__u32 n, j;
 	int ret;
 
 	for (n = 0; n < setup->gather_table_num; n++) {
 		gather_cols = tables[n].cols;
 		hw_data = cols_data->gather_data[n];
-		/* Set k to 0 for each table. */
-		k = 0;
-		ret = transfer_col_info(gather_cols, tmp_data, tables[n].cols_num);
+		ret = transfer_cols_to_hw_type(gather_cols, hw_data, tables[n].cols_num);
 		if (ret)
 			return ret;
-
-		for (i = 0; i < type_num; i++) {
-			for (j = 0; j < tables[n].cols_num; j++) {
-				if (hw_data_type_order[i] != tmp_data[j].hw_type)
-					continue;
-				hw_data[k].usr_col_idx = j;
-				hw_data[k].hw_type = tmp_data[j].hw_type;
-				hw_data[k++].data_info = tmp_data[j].data_info;
-			}
-		}
 
 		cols_data->gather_cols_num[n] = tables[n].cols_num;
 		for (j = 0; j < tables[n].cols_num; j++)
@@ -963,26 +765,13 @@ static int transfer_key_to_hw_type(struct join_gather_col_data *cols_data,
 				   struct wd_join_gather_sess_setup *setup)
 {
 	struct wd_join_gather_col_info *key_cols = setup->join_table.build_key_cols;
-	struct hw_join_gather_data tmp_key_data[DAE_MAX_KEY_COLS] = {0};
 	struct hw_join_gather_data *hw_key_data = cols_data->key_data;
 	__u32 cols_num = setup->join_table.build_key_cols_num;
-	__u32 type_num = ARRAY_SIZE(hw_data_type_order);
-	__u32 i, j, k = 0;
 	int ret;
 
-	ret = transfer_col_info(key_cols, tmp_key_data, cols_num);
+	ret = transfer_cols_to_hw_type(key_cols, hw_key_data, cols_num);
 	if (ret)
 		return ret;
-
-	for (i = 0; i < type_num; i++) {
-		for (j = 0; j < cols_num; j++) {
-			if (hw_data_type_order[i] != tmp_key_data[j].hw_type)
-				continue;
-			hw_key_data[k].usr_col_idx = j;
-			hw_key_data[k].hw_type = tmp_key_data[j].hw_type;
-			hw_key_data[k++].data_info = tmp_key_data[j].data_info;
-		}
-	}
 
 	cols_data->key_num = cols_num;
 
@@ -1102,11 +891,7 @@ static void join_gather_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 static int join_gather_sess_priv_init(struct wd_alg_driver *drv,
 				      struct wd_join_gather_sess_setup *setup, void **priv)
 {
-	struct wd_ctx_config_internal *config;
-	struct hisi_dae_ctx *dae_priv;
 	struct join_gather_ctx *ctx;
-	struct hisi_qp *qp;
-	handle_t h_qp;
 	int ret;
 
 	if (!drv || !drv->priv) {
@@ -1119,12 +904,7 @@ static int join_gather_sess_priv_init(struct wd_alg_driver *drv,
 		return -WD_EINVAL;
 	}
 
-	dae_priv = (struct hisi_dae_ctx *)drv->priv;
-	config = &dae_priv->config;
-	h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[0].ctx);
-	qp = (struct hisi_qp *)h_qp;
-
-	ret = join_gather_param_check(setup, qp->q_info.hw_type);
+	ret = join_gather_param_check(setup);
 	if (ret)
 		return -WD_EINVAL;
 
@@ -1146,57 +926,6 @@ static int join_gather_sess_priv_init(struct wd_alg_driver *drv,
 
 free_ctx:
 	free(ctx);
-	return ret;
-}
-
-static void dae_uninit_qp_priv(handle_t h_qp)
-{
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct dae_extend_addr *ext_addr = (struct dae_extend_addr *)qp->priv;
-
-	free(ext_addr->addr_list);
-	free(ext_addr->addr_status);
-	free(ext_addr->ext_sqe);
-	free(ext_addr);
-	qp->priv = NULL;
-}
-
-static int dae_init_qp_priv(handle_t h_qp)
-{
-	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	__u16 sq_depth = qp->q_info.sq_depth;
-	struct dae_extend_addr *ext_addr;
-	int ret = -WD_ENOMEM;
-
-	ext_addr = calloc(1, sizeof(struct dae_extend_addr));
-	if (!ext_addr)
-		return ret;
-
-	ext_addr->ext_sqe = aligned_alloc(DAE_ADDR_ALIGN_SIZE, DAE_EXT_SQE_SIZE * sq_depth);
-	if (!ext_addr->ext_sqe)
-		goto free_ext_addr;
-
-	ext_addr->addr_status = calloc(1, sizeof(__u8) * sq_depth);
-	if (!ext_addr->addr_status)
-		goto free_ext_sqe;
-
-	ext_addr->addr_list = aligned_alloc(DAE_ADDR_ALIGN_SIZE,
-					    sizeof(struct dae_addr_list) * sq_depth);
-	if (!ext_addr->addr_list)
-		goto free_addr_status;
-
-	ext_addr->addr_num = sq_depth;
-	qp->priv = ext_addr;
-
-	return WD_SUCCESS;
-
-free_addr_status:
-	free(ext_addr->addr_status);
-free_ext_sqe:
-	free(ext_addr->ext_sqe);
-free_ext_addr:
-	free(ext_addr);
-
 	return ret;
 }
 
@@ -1226,264 +955,16 @@ static int gather_get_batch_row_size(struct wd_alg_driver *drv, void *param,
 	return 0;
 }
 
-static __u32 dae_ext_table_rownum(void **ext_table, struct wd_dae_hash_table *table,
-				  __u32 row_size)
-{
-	__u64 tlb_size, tmp_size, row_num;
-	void *tmp_table;
-
-	/*
-	 * The first row of the extended hash table stores the hash table information,
-	 * and the second row stores the aggregated data. The 128-bytes aligned address
-	 * in the second row provides the optimal performance.
-	 */
-	tmp_table = PTR_ALIGN(table->ext_table, DAE_TABLE_ALIGN_SIZE);
-	tlb_size = (__u64)table->table_row_size * table->ext_table_row_num;
-	tmp_size = (__u64)(uintptr_t)tmp_table - (__u64)(uintptr_t)table->ext_table;
-	if (tmp_size >= tlb_size)
-		return 0;
-
-	row_num = (tlb_size - tmp_size) / row_size;
-	if (row_size == ROW_SIZE32) {
-		if (tmp_size >= row_size) {
-			tmp_table = (__u8 *)tmp_table - row_size;
-			row_num += 1;
-		} else {
-			/*
-			 * When row size is 32 bytes, the first 96 bytes are not used.
-			 * Ensure that the address of the second row is 128 bytes aligned.
-			 */
-			if (row_num <= HASH_TABLE_OFFSET_3ROW)
-				return 0;
-
-			tmp_table = (__u8 *)tmp_table + HASH_TABLE_OFFSET_3ROW * row_size;
-			row_num -= HASH_TABLE_OFFSET_3ROW;
-		}
-	} else if (row_size == ROW_SIZE64) {
-		if (tmp_size >= row_size) {
-			tmp_table = (__u8 *)tmp_table - row_size;
-			row_num += 1;
-		} else {
-			/*
-			 * When row size is 64 bytes, the first 64 bytes are not used.
-			 * Ensure that the address of the second row is 128 bytes aligned.
-			 */
-			if (row_num <= HASH_TABLE_OFFSET_1ROW)
-				return 0;
-
-			tmp_table = (__u8 *)tmp_table + HASH_TABLE_OFFSET_1ROW * row_size;
-			row_num -= HASH_TABLE_OFFSET_1ROW;
-		}
-	}
-
-	*ext_table = tmp_table;
-
-	return row_num;
-}
-
-static int dae_ext_table_init(struct join_gather_ctx *ctx,
-			      struct wd_dae_hash_table *table, bool is_rehash)
-{
-	struct hash_table_data *hw_table = &ctx->table_data;
-	__u64 ext_size = hw_table->ext_table_size;
-	__u32 row_size = ctx->hash_table_row_size;
-	__u64 tlb_size, row_num;
-	void *ext_table;
-	__u8 *ext_valid;
-	__u64 *ext_row;
-
-	row_num = dae_ext_table_rownum(&ext_table, table, row_size);
-	if (row_num <= 1) {
-		WD_ERR("invalid: extend table row num is less than device need!\n");
-		return -WD_EINVAL;
-	}
-
-	tlb_size = row_num * row_size;
-	if (is_rehash && tlb_size <= ext_size) {
-		WD_ERR("rehash extend table size %llu is not longer than current %llu!\n",
-			tlb_size, ext_size);
-		return -WD_EINVAL;
-	}
-
-	/*
-	 * If table has been initialized, save the previous data
-	 * before replacing the new table.
-	 */
-	if (is_rehash)
-		memcpy(&ctx->rehash_table, hw_table, sizeof(struct hash_table_data));
-
-	/* Initialize the extend table value. */
-	memset(ext_table, 0, tlb_size);
-	ext_valid = (__u8 *)ext_table + HASH_EXT_TABLE_INVALID_OFFSET;
-	*ext_valid = HASH_EXT_TABLE_VALID;
-	ext_row = (__u64 *)ext_table + 1;
-	*ext_row = row_num - 1;
-
-	hw_table->ext_table = ext_table;
-	hw_table->ext_table_size = tlb_size;
-
-	return WD_SUCCESS;
-}
-
-static int dae_std_table_init(struct hash_table_data *hw_table,
-			      struct wd_dae_hash_table *table, __u32 row_size)
-{
-	__u64 tlb_size, row_num, tmp_size;
-
-	/*
-	 * Hash table address must be 128-bytes aligned, and the number
-	 * of rows in a standard hash table must be a power of 2.
-	 */
-	hw_table->std_table = PTR_ALIGN(table->std_table, DAE_TABLE_ALIGN_SIZE);
-	tlb_size = (__u64)table->table_row_size * table->std_table_row_num;
-	tmp_size = (__u64)(uintptr_t)hw_table->std_table - (__u64)(uintptr_t)table->std_table;
-	if (tmp_size >= tlb_size) {
-		WD_ERR("invalid: after aligned, standard table size is less than 0!\n");
-		return -WD_EINVAL;
-	}
-
-	row_num = (tlb_size - tmp_size) / row_size;
-	if (!row_num) {
-		WD_ERR("invalid: standard table row num is 0!\n");
-		return -WD_EINVAL;
-	}
-
-	hw_table->table_width = (__u32)log2(row_num);
-	if (hw_table->table_width < HASH_TABLE_MIN_WIDTH ||
-	    hw_table->table_width > HASH_TABLE_MAX_WIDTH) {
-		WD_ERR("standard table width %u is out of device support range %d~%d!\n",
-			hw_table->table_width, HASH_TABLE_MIN_WIDTH, HASH_TABLE_MAX_WIDTH);
-		return -WD_EINVAL;
-	}
-
-	row_num = (__u64)pow(HASH_TABLE_WITDH_POWER, hw_table->table_width);
-	hw_table->std_table_size = row_num * row_size;
-	memset(hw_table->std_table, 0, hw_table->std_table_size);
-
-	return WD_SUCCESS;
-}
-
 static int join_hash_table_init(struct wd_alg_driver *drv,
 				struct wd_dae_hash_table *table, void *priv)
 {
 	struct join_gather_ctx *ctx = priv;
-	struct hash_table_data *hw_table;
-	bool is_rehash = false;
-	int ret;
 
 	if (!ctx || !table)
 		return -WD_EINVAL;
 
-	if (!ctx->hash_table_row_size || ctx->hash_table_row_size > table->table_row_size) {
-		WD_ERR("invalid: row size %u is error, device need %u!\n",
-			table->table_row_size, ctx->hash_table_row_size);
-		return -WD_EINVAL;
-	}
-
-	/* hash_std_table is checked by caller */
-	if (!table->ext_table || !table->ext_table_row_num) {
-		WD_ERR("invalid: hash extend table is null!\n");
-		return -WD_EINVAL;
-	}
-
-	hw_table = &ctx->table_data;
-	if (hw_table->std_table_size)
-		is_rehash = true;
-
-	ret = dae_ext_table_init(ctx, table, is_rehash);
-	if (ret)
-		return ret;
-
-	ret = dae_std_table_init(hw_table, table, ctx->hash_table_row_size);
-	if (ret)
-		goto update_table;
-
-	return WD_SUCCESS;
-
-update_table:
-	if (is_rehash)
-		memcpy(hw_table, &ctx->rehash_table, sizeof(struct hash_table_data));
-	else
-		memset(hw_table, 0, sizeof(struct hash_table_data));
-	return ret;
-}
-
-static int dae_init(struct wd_alg_driver *drv, void *conf)
-{
-	struct wd_ctx_config_internal *config = conf;
-	struct hisi_qm_priv qm_priv;
-	struct hisi_dae_ctx *priv;
-	handle_t h_qp = 0;
-	handle_t h_ctx;
-	__u32 i, j;
-	int ret;
-
-	if (!config || !config->ctx_num) {
-		WD_ERR("invalid: dae init config is null or ctx num is 0!\n");
-		return -WD_EINVAL;
-	}
-
-	priv = malloc(sizeof(struct hisi_dae_ctx));
-	if (!priv)
-		return -WD_ENOMEM;
-
-	qm_priv.op_type = DAE_SQC_ALG_TYPE;
-	qm_priv.sqe_size = sizeof(struct dae_sqe);
-	/* Allocate qp for each context */
-	for (i = 0; i < config->ctx_num; i++) {
-		h_ctx = config->ctxs[i].ctx;
-		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
-		/* Setting the epoll en to 0 for ASYNC ctx */
-		qm_priv.epoll_en = (qm_priv.qp_mode == CTX_MODE_SYNC) ?
-				   config->epoll_en : 0;
-		qm_priv.idx = i;
-		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
-		if (!h_qp) {
-			ret = -WD_ENOMEM;
-			goto out;
-		}
-		config->ctxs[i].sqn = qm_priv.sqn;
-		ret = dae_init_qp_priv(h_qp);
-		if (ret)
-			goto free_h_qp;
-	}
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
-
-	return WD_SUCCESS;
-
-free_h_qp:
-	hisi_qm_free_qp(h_qp);
-out:
-	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
-		dae_uninit_qp_priv(h_qp);
-		hisi_qm_free_qp(h_qp);
-	}
-	free(priv);
-	return ret;
-}
-
-static void dae_exit(struct wd_alg_driver *drv)
-{
-	struct wd_ctx_config_internal *config;
-	struct hisi_dae_ctx *priv;
-	handle_t h_qp;
-	__u32 i;
-
-	if (!drv || !drv->priv)
-		return;
-
-	priv = (struct hisi_dae_ctx *)drv->priv;
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
-		dae_uninit_qp_priv(h_qp);
-		hisi_qm_free_qp(h_qp);
-	}
-
-	free(priv);
-	drv->priv = NULL;
+	return dae_hash_table_init(&ctx->table_data, &ctx->rehash_table,
+				   table, ctx->hash_table_row_size);
 }
 
 static int join_gather_get_extend_ops(void *ops)

@@ -111,8 +111,8 @@ libisa_sve_la_SOURCES=drv/hash_mb/hash_mb.c wd_digest_drv.h drv/hash_mb/hash_mb.
 		drv/hash_mb/md5_mb_asimd_x4.S drv/hash_mb/md5_mb_sve.S
 endif
 
-libhisi_dae_la_SOURCES=drv/hisi_dae.c drv/hisi_qm_udrv.c \
-		hisi_qm_udrv.h drv/hisi_dae_join_gather.c
+libhisi_dae_la_SOURCES=drv/hisi_dae.c hisi_dae.h drv/hisi_qm_udrv.c \
+		hisi_qm_udrv.h drv/hisi_dae_join_gather.c drv/hisi_dae_common.c
 
 libhisi_udma_la_SOURCES=drv/hisi_udma.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h
