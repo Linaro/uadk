@@ -1,4 +1,4 @@
-UADK_CRYPTO_2.0 {
+UADK_DAE_2.0 {
 global:
 	wd_agg_alloc_sess;
 	wd_agg_free_sess;
@@ -13,6 +13,19 @@ global:
 	wd_agg_rehash_sync;
 	wd_agg_get_msg;
 	wd_agg_poll;
+
+	wd_sched_rr_instance;
+	wd_sched_rr_alloc;
+	wd_sched_rr_release;
+
+	wd_udma_alloc_sess;
+	wd_udma_free_sess;
+	wd_udma_init;
+	wd_udma_uninit;
+	wd_do_udma_sync;
+	wd_do_udma_async;
+	wd_udma_poll;
+	wd_udma_get_msg;
 
 	wd_sched_rr_instance;
 	wd_sched_rr_alloc;

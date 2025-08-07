@@ -42,6 +42,7 @@ enum wd_type {
 	WD_DH_TYPE,
 	WD_ECC_TYPE,
 	WD_AGG_TYPE,
+	WD_UDMA_TYPE,
 	WD_TYPE_MAX,
 };
 
