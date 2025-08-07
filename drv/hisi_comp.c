@@ -513,7 +513,7 @@ static void fill_buf_addr_lz4(struct hisi_zip_sqe *sqe, void *src, void *dst)
 	sqe->dest_addr_h = upper_32_bits(dst);
 }
 
-static int check_lz4_msg(struct wd_comp_msg *msg)
+static int check_lz4_msg(struct wd_comp_msg *msg, enum wd_buff_type buf_type)
 {
 	/* LZ4 only support for compress and block mode */
 	if (unlikely(msg->req.op_type != WD_DIR_COMPRESS)) {
@@ -525,6 +525,9 @@ static int check_lz4_msg(struct wd_comp_msg *msg)
 		WD_ERR("invalid: lz4 does not support the stream mode!\n");
 		return -WD_EINVAL;
 	}
+
+	if (buf_type != WD_FLAT_BUF)
+		return 0;
 
 	if (unlikely(msg->req.src_len == 0 || msg->req.src_len > HZ_MAX_SIZE)) {
 		WD_ERR("invalid: lz4 input size can't be zero or more than 8M size max!\n");
@@ -544,7 +547,7 @@ static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	void *dst = msg->req.dst;
 	int ret;
 
-	ret = check_lz4_msg(msg);
+	ret = check_lz4_msg(msg, WD_FLAT_BUF);
 	if (unlikely(ret))
 		return ret;
 
@@ -716,7 +719,7 @@ static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
 
 	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
 		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
-			return -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
@@ -1022,7 +1025,7 @@ static int fill_buf_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	struct wd_datalist *list_dst = msg->req.list_dst;
 	int ret;
 
-	ret = check_lz4_msg(msg);
+	ret = check_lz4_msg(msg, WD_SGL_BUF);
 	if (unlikely(ret))
 		return ret;
 
