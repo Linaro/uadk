@@ -70,6 +70,7 @@ static struct acc_alg_item alg_options[] = {
 	{"gzip",		"gzip",			GZIP},
 	{"deflate",		"deflate",		DEFLATE},
 	{"lz77_zstd",		"lz77_zstd",		LZ77_ZSTD},
+	{"lz77_only",		"lz77_only",		LZ77_ONLY},
 	{"rsa",			"rsa-1024",		RSA_1024},
 	{"rsa",			"rsa-2048",		RSA_2048},
 	{"rsa",			"rsa-3072",		RSA_3072},
@@ -367,6 +368,11 @@ static void parse_alg_param(struct acc_option *option)
 		break;
 	case LZ77_ZSTD:
 		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz77_zstd");
+		option->acctype = ZIP_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
+	case LZ77_ONLY:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz77_only");
 		option->acctype = ZIP_TYPE;
 		option->subtype = DEFAULT_TYPE;
 		break;
