@@ -14,7 +14,7 @@
 #define EMPTY_STORE_BLOCK_VAL		0xffff0000L
 #define BLOCK_IS_COMPLETE		1
 #define BLOCK_IS_INCOMPLETE		0
-#define LEN_NLEN_CHECK(data)		((data & 0xffff) != ((data >> 16) ^ 0xffff))
+#define LEN_NLEN_CHECK(data)		(((data) & 0xffff) != (((data) >> 16) ^ 0xffff))
 
 /* Constants related to the Huffman code table */
 #define LIT_LEN_7BIT_THRESHOLD		7

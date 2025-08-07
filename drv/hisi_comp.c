@@ -69,9 +69,9 @@
 #define upper_32_bits(addr)		((__u32)((uintptr_t)(addr) >> HZ_HADDR_SHIFT))
 
 /* the min output buffer size is (input size * 1.125) */
-#define min_out_buf_size(inl)		((((__u64)inl * 9) + 7) >> 3)
+#define min_out_buf_size(inl)		((((__u64)(inl) * 9) + 7) >> 3)
 /* the max input size is (output buffer size * 8 / 9) and align with 4 byte */
-#define max_in_data_size(outl)		((__u32)(((__u64)outl << 3) / 9) & 0xfffffffc)
+#define max_in_data_size(outl)		((__u32)(((__u64)(outl) << 3) / 9) & 0xfffffffc)
 
 #define HZ_MAX_SIZE			(8 * 1024 * 1024)
 
@@ -100,7 +100,7 @@
 #define CTX_WIN_LEN_MASK		0xffff
 #define CTX_HEAD_BIT_CNT_SHIFT		0xa
 #define CTX_HEAD_BIT_CNT_MASK		0xfC00
-#define WIN_LEN_ALIGN(len)		((len + 15) & ~(__u32)0x0F)
+#define WIN_LEN_ALIGN(len)		(((len) + 15) & ~(__u32)0x0F)
 
 enum alg_type {
 	HW_DEFLATE = 0x1,
