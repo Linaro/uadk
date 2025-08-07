@@ -226,7 +226,7 @@ static int check_key_cols_info(struct wd_join_gather_sess_setup *setup)
 	for (i = 0; i < table->build_key_cols_num; i++) {
 		if (!build[i].has_empty) {
 			WD_ERR("invalid: key col has no empty data! col: %u\n", i);
-			return ret;
+			return -WD_EINVAL;
 		}
 		ret = check_col_data_info(build[i].data_type, build[i].data_info);
 		if (ret) {
