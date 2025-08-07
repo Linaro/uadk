@@ -1763,7 +1763,8 @@ struct wd_join_gather_msg *wd_join_gather_get_msg(__u32 idx, __u32 tag)
 static int wd_join_gather_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_join_gather_setting.config;
-	struct wd_join_gather_msg resp_msg, *msg;
+	struct wd_join_gather_msg resp_msg = {0};
+	struct wd_join_gather_msg *msg;
 	struct wd_ctx_internal *ctx;
 	struct wd_join_gather_req *req;
 	__u64 recv_count = 0;
