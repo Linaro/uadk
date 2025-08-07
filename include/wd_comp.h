@@ -20,6 +20,7 @@ enum wd_comp_alg_type {
 	WD_ZLIB,
 	WD_GZIP,
 	WD_LZ77_ZSTD,
+	WD_LZ77_ONLY,
 	WD_COMP_ALG_MAX,
 };
 
