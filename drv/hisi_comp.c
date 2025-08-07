@@ -535,7 +535,6 @@ static int check_lz4_msg(struct wd_comp_msg *msg)
 		msg->avail_out = HZ_MAX_SIZE;
 
 	return 0;
-
 }
 
 static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
@@ -989,7 +988,6 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	ret = get_sgl_from_pool(h_qp, &c_sgl);
 	if (unlikely(ret))
 		return ret;
-
 
 	fill_buf_addr_lz77_zstd(sqe, c_sgl.in, c_sgl.out,
 				c_sgl.out_seq, NULL);
