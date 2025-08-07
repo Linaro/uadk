@@ -755,7 +755,7 @@ static int lz77_only_buf_check(struct wd_comp_msg *msg)
 
 	/* lits_size need to be less than 8M when use pbuffer */
 	if (unlikely(lits_size > HZ_MAX_SIZE)) {
-		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
+		WD_ERR("invalid: in_len(%u) of lz77_only is out of range!\n", in_size);
 		return -WD_EINVAL;
 	}
 
@@ -1436,7 +1436,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	hw_sgl_out = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
 
-	if (alg_type == WD_LZ77_ZSTD) {
+	if (alg_type == WD_LZ77_ZSTD || alg_type == WD_LZ77_ONLY) {
 		hw_sgl_out = VA_ADDR(sqe->literals_addr_h,
 				     sqe->literals_addr_l);
 		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
