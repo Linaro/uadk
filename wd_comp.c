@@ -524,34 +524,40 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->req.last = 1;
 }
 
-static int wd_check_alg_buff_size(__u32 dst_len, __u32 src_len,
-				  enum wd_comp_alg_type alg_type, enum wd_comp_op_type op_type)
+static int wd_check_alg_buff_size(struct wd_comp_req *req, struct wd_comp_sess *sess)
 {
-	if (!dst_len) {
+	if (!req->dst_len) {
 		WD_ERR("invalid: dst_len is 0!\n");
 		return -WD_EINVAL;
 	}
 
-	if (alg_type == WD_ZLIB) {
-		if (dst_len <= WD_ZLIB_HEADER_SZ && op_type == WD_DIR_COMPRESS) {
-			WD_ERR("invalid: zlib dst_len(%u) is too samll!\n", dst_len);
+	/*
+	 * Only the first package needs to be checked,
+	 * the middle and last packages do not need to be checked
+	 */
+	if (sess->stream_pos != WD_COMP_STREAM_NEW)
+		return 0;
+
+	if (sess->alg_type == WD_ZLIB) {
+		if (req->dst_len <= WD_ZLIB_HEADER_SZ && req->op_type == WD_DIR_COMPRESS) {
+			WD_ERR("invalid: zlib dst_len(%u) is too samll!\n", req->dst_len);
 			return -WD_EINVAL;
 		}
 
-		if (src_len <= WD_ZLIB_HEADER_SZ && op_type == WD_DIR_DECOMPRESS) {
-			WD_ERR("invalid: zlib src_len(%u) is too samll!\n", src_len);
+		if (req->src_len <= WD_ZLIB_HEADER_SZ && req->op_type == WD_DIR_DECOMPRESS) {
+			WD_ERR("invalid: zlib src_len(%u) is too samll!\n", req->src_len);
 			return -WD_EINVAL;
 		}
 	}
 
-	if (alg_type == WD_GZIP) {
-		if (dst_len <= WD_GZIP_HEADER_SZ && op_type == WD_DIR_COMPRESS) {
-			WD_ERR("invalid: gzip dst_len(%u) is too samll!\n", dst_len);
+	if (sess->alg_type == WD_GZIP) {
+		if (req->dst_len <= WD_GZIP_HEADER_SZ && req->op_type == WD_DIR_COMPRESS) {
+			WD_ERR("invalid: gzip dst_len(%u) is too samll!\n", req->dst_len);
 			return -WD_EINVAL;
 		}
 
-		if (src_len <= WD_GZIP_HEADER_SZ && op_type == WD_DIR_DECOMPRESS) {
-			WD_ERR("invalid: gzip src_len(%u) is too samll!\n", src_len);
+		if (req->src_len <= WD_GZIP_HEADER_SZ && req->op_type == WD_DIR_DECOMPRESS) {
+			WD_ERR("invalid: gzip src_len(%u) is too samll!\n", req->src_len);
 			return -WD_EINVAL;
 		}
 	}
@@ -559,7 +565,7 @@ static int wd_check_alg_buff_size(__u32 dst_len, __u32 src_len,
 	return 0;
 }
 
-static int wd_comp_check_buffer(struct wd_comp_req *req, enum wd_comp_alg_type alg_type)
+static int wd_comp_check_buffer(struct wd_comp_req *req, struct wd_comp_sess *sess)
 {
 	if (req->data_fmt == WD_FLAT_BUF) {
 		if (unlikely(!req->src || !req->dst)) {
@@ -573,7 +579,7 @@ static int wd_comp_check_buffer(struct wd_comp_req *req, enum wd_comp_alg_type a
 		}
 	}
 
-	return wd_check_alg_buff_size(req->dst_len, req->src_len, alg_type, req->op_type);
+	return wd_check_alg_buff_size(req, sess);
 }
 
 static int wd_comp_check_params(struct wd_comp_sess *sess,
@@ -592,7 +598,7 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_comp_check_buffer(req, sess->alg_type);
+	ret = wd_comp_check_buffer(req, sess);
 	if (unlikely(ret))
 		return ret;
 
