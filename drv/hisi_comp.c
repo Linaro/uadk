@@ -346,7 +346,7 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 	if (msg->stream_pos != WD_COMP_STREAM_NEW && out_size > SW_STOREBUF_TH)
 		return 0;
 
-	if (msg->stream_pos == WD_COMP_STREAM_NEW &&
+	if (msg->stream_pos == WD_COMP_STREAM_NEW && msg->req.op_type == WD_DIR_COMPRESS &&
 	    out_size - head_size > SW_STOREBUF_TH)
 		return 0;
 
@@ -1152,7 +1152,7 @@ static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *com
 	/* Skip hardware, if the store buffer need to be copied to output */
 	ret = check_store_buf(msg);
 	if (ret)
-		return ret < 0 ? ret : 0;
+		return 0;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
@@ -1322,7 +1322,7 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	__u16 count = 0;
 	int ret;
 
-	if (recv_msg && recv_msg->ctx_buf) {
+	if (recv_msg->ctx_buf) {
 		buf = (struct hisi_comp_buf *)(recv_msg->ctx_buf + CTX_STOREBUF_OFFSET);
 		/*
 		 * The output has been copied from the storage buffer,
