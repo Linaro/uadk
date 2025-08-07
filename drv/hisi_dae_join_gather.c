@@ -627,7 +627,7 @@ static int gather_check_params(struct wd_join_gather_sess_setup *setup)
 			       table[i].cols_num, DAE_MAX_KEY_COLS);
 			return -WD_EINVAL;
 		}
-		for (j = 0; j < table[i].cols_num; i++) {
+		for (j = 0; j < table[i].cols_num; j++) {
 			switch (col[j].data_type) {
 			case WD_DAE_SHORT_DECIMAL:
 				ret = dae_decimal_precision_check(col[j].data_info, false);
@@ -641,12 +641,12 @@ static int gather_check_params(struct wd_join_gather_sess_setup *setup)
 				break;
 			case WD_DAE_CHAR:
 				if (col[j].data_info > DAE_MAX_CHAR_SIZE) {
-					WD_ERR("gather col %u, char size isn't supported!\n", i);
+					WD_ERR("gather col %u, char size isn't supported!\n", j);
 					return -WD_EINVAL;
 				}
 				break;
 			case WD_DAE_VARCHAR:
-				WD_ERR("invalid: gather col %u, varchar isn't supported!\n", i);
+				WD_ERR("invalid: gather col %u, varchar isn't supported!\n", j);
 				return -WD_EINVAL;
 			default:
 				break;
