@@ -552,12 +552,13 @@ int wd_gather_get_batch_rowsize(handle_t h_sess, __u8 table_index)
 	struct wd_join_gather_sess *sess = (struct wd_join_gather_sess *)h_sess;
 
 	if (!sess || !sess->gather_conf.batch_row_size) {
-		WD_ERR("invalid: gather input sess is NULL!\n");
+		WD_ERR("invalid: gather sess or batch_row_size is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	if (table_index >= sess->gather_conf.table_num) {
-		WD_ERR("invalid: gather input sess is NULL!\n");
+		WD_ERR("invalid: gather table index(%u) is larger than %u!\n",
+		       table_index, sess->gather_conf.table_num);
 		return -WD_EINVAL;
 	}
 
