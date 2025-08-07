@@ -277,6 +277,12 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 			ZIP_TST_PRT("Zip LZ77_ZSTD just support compress!\n");
 		optype = WD_DIR_COMPRESS;
 		break;
+	case LZ4:
+		alg = WD_LZ4;
+		if (optype == WD_DIR_DECOMPRESS)
+			ZIP_TST_PRT("Zip LZ4 just support compress!\n");
+		optype = WD_DIR_COMPRESS;
+		break;
 	case LZ77_ONLY:
 		alg = WD_LZ77_ONLY;
 		if (optype == WD_DIR_DECOMPRESS)
