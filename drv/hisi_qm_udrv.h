@@ -41,7 +41,8 @@ enum hisi_qm_sgl_copy_dir {
 enum hisi_hw_type {
 	HISI_QM_API_VER_BASE = 1,
 	HISI_QM_API_VER2_BASE,
-	HISI_QM_API_VER3_BASE
+	HISI_QM_API_VER3_BASE,
+	HISI_QM_API_VER5_BASE = 5,
 };
 
 struct hisi_qm_priv {

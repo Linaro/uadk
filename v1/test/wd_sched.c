@@ -22,93 +22,39 @@
 #define EXTRA_SIZE		4096
 #define WD_WAIT_MS		1000
 
-static int __init_cache(struct wd_scheduler *sched)
+static int wd_sched_pre_uninit(struct wd_scheduler *sched)
 {
-	int i;
-	int ret = -ENOMEM;
+	unsigned int flags = 0;
 	struct q_info *qinfo;
 	void *pool;
+	int  i;
 
-	sched->msgs = calloc(sched->msg_cache_num, sizeof(*sched->msgs));
-	if (!sched->msgs) {
-		WD_ERR("calloc for sched->msgs fail!\n");
-		return ret;
-	}
-	sched->stat = calloc(sched->q_num, sizeof(*sched->stat));
-	if (!sched->stat) {
-		WD_ERR("calloc for sched->stat fail!\n");
-		goto err_with_msgs;
-	}
 	qinfo = sched->qs[0].qinfo;
-	pool = qinfo->br.usr;
-	for (i = 0; i < sched->msg_cache_num; i++) {
-		sched->msgs[i].data_in = wd_alloc_blk(pool);
-		sched->msgs[i].data_out = wd_alloc_blk(pool);
-		if (!sched->msgs[i].data_in || !sched->msgs[i].data_out) {
-			dbg("not enough data ss_region memory "
-			    "for cache %d (bs=%d)\n", i, sched->msg_data_size);
-			goto err_with_stat;
+	flags = qinfo->dev_flags;
+	if (flags & WD_UACCE_DEV_PASID) {
+		if (sched->ss_region) {
+			free(sched->ss_region);
+			sched->ss_region = NULL;
 		}
+		return 0;
+	}
 
-		if (sched->init_cache)
-			sched->init_cache(sched, i);
+	for (i = 0; i < sched->q_num; i++) {
+		wd_release_queue(&sched->qs[i]);
+		qinfo = sched->qs[i].qinfo;
+		wd_blkpool_destroy(qinfo->br.usr);
 	}
 
 	return 0;
-
-err_with_stat:
-	free(sched->stat);
-	sched->stat = NULL;
-err_with_msgs:
-	free(sched->msgs);
-	sched->msgs = NULL;
-	return ret;
-}
-
-static void __fini_cache(struct wd_scheduler *sched)
-{
-	struct q_info *qinfo = sched->qs[0].qinfo;
-	unsigned int flags = qinfo->dev_flags;
-	void *pool;
-	int i;
-
-	if (sched->stat) {
-		free(sched->stat);
-		sched->stat = NULL;
-	}
-	if (!(flags & WD_UACCE_DEV_PASID)) {
-		pool = qinfo->br.usr;
-		if (pool) {
-			for (i = 0; i < sched->msg_cache_num; i++) {
-				if (sched->msgs[i].data_in)
-					wd_free_blk(pool, sched->msgs[i].data_in);
-				if (sched->msgs[i].data_out)
-					wd_free_blk(pool, sched->msgs[i].data_out);
-				}
-			wd_blkpool_destroy(pool);
-		}
-	}
-	if (sched->msgs) {
-		free(sched->msgs);
-		sched->msgs = NULL;
-	}
 }
 
 static int wd_sched_preinit(struct wd_scheduler *sched)
 {
-	int ret, i, j;
+	struct wd_blkpool_setup mm_setup;
 	unsigned int flags = 0;
 	struct q_info *qinfo;
-	struct wd_blkpool_setup mm_setup;
+	int ret, i, j;
 	void *pool;
-
-	for (i = 0; i < sched->q_num; i++) {
-		ret = wd_request_queue(&sched->qs[i]);
-		if (ret) {
-			WD_ERR("fail to request queue!\n");
-			goto out_with_queues;
-		}
-	}
 
 	if (!sched->ss_region_size)
 		sched->ss_region_size = EXTRA_SIZE + /* add 1 page extra */
@@ -120,18 +66,29 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 		sched->ss_region = malloc(sched->ss_region_size);
 		if (!sched->ss_region) {
 			WD_ERR("fail to alloc sched ss region mem!\n");
+			return -ENOMEM;
+		}
+		return 0;
+	}
+
+	memset(&mm_setup, 0, sizeof(mm_setup));
+	mm_setup.block_size = sched->msg_data_size;
+	mm_setup.block_num = sched->msg_cache_num << 0x1; /* in and out */
+	mm_setup.align_size = 128;
+	for (i = 0; i < sched->q_num; i++) {
+		ret = wd_request_queue(&sched->qs[i]);
+		if (ret) {
+			WD_ERR("fail to request queue!\n");
 			ret = -ENOMEM;
 			goto out_with_queues;
 		}
-	} else {
-		memset(&mm_setup, 0, sizeof(mm_setup));
-		mm_setup.block_size = sched->msg_data_size;
-		mm_setup.block_num = sched->msg_cache_num << 0x1; /* in and out */
-		mm_setup.align_size = 128;
-		pool = wd_blkpool_create(&sched->qs[0], &mm_setup);
+
+		qinfo = sched->qs[i].qinfo;
+		pool = wd_blkpool_create(&sched->qs[i], &mm_setup);
 		if (!pool) {
 			WD_ERR("%s(): create pool fail!\n", __func__);
 			ret = -ENOMEM;
+			wd_release_queue(&sched->qs[i]);
 			goto out_with_queues;
 		}
 		qinfo->br.alloc = (void *)wd_alloc_blk;
@@ -144,79 +101,135 @@ static int wd_sched_preinit(struct wd_scheduler *sched)
 	return 0;
 
 out_with_queues:
+	for (j = i-1; j >= 0; j--) {
+		wd_release_queue(&sched->qs[j]);
+		qinfo = sched->qs[j].qinfo;
+		wd_blkpool_destroy(qinfo->br.usr);
+	}
+
 	if (flags & WD_UACCE_DEV_PASID) {
 		if (sched->ss_region) {
 			free(sched->ss_region);
 			sched->ss_region = NULL;
 		}
 	}
-	for (j = i-1; j >= 0; j--)
-		wd_release_queue(&sched->qs[j]);
+
 	return ret;
 }
 
+static void __fini_cache(struct wd_scheduler *sched)
+{
+	struct q_info *qinfo = sched->qs[0].qinfo;
+	unsigned int flags = qinfo->dev_flags;
+	void *pool;
+	int i, j;
+
+	if (sched->stat) {
+		free(sched->stat);
+		sched->stat = NULL;
+	}
+
+	if (sched->msgs) {
+		free(sched->msgs);
+		sched->msgs = NULL;
+	}
+
+	if (!(flags & WD_UACCE_DEV_PASID)) {
+		for (j = 0; j < sched->q_num; j++) {
+			qinfo = sched->qs[j].qinfo;
+			pool = qinfo->br.usr;
+			if (!pool)
+				continue;
+
+			for (i = 0; i < sched->msg_cache_num; i++) {
+				if (sched->msgs[i].data_in)
+					wd_free_blk(pool, sched->msgs[i].data_in);
+				if (sched->msgs[i].data_out)
+					wd_free_blk(pool, sched->msgs[i].data_out);
+			}
+		}
+	}
+}
+
+static int __init_cache(struct wd_scheduler *sched)
+{
+	struct q_info *qinfo;
+	unsigned int flags;
+	int ret = -ENOMEM;
+	int i, j;
+	void *pool;
+
+	sched->msgs = calloc(sched->msg_cache_num, sizeof(*sched->msgs));
+	if (!sched->msgs) {
+		WD_ERR("calloc for sched->msgs fail!\n");
+		return ret;
+	}
+	sched->stat = calloc(sched->q_num, sizeof(*sched->stat));
+	if (!sched->stat) {
+		WD_ERR("calloc for sched->stat fail!\n");
+		goto err_with_msgs;
+	}
+
+	qinfo = sched->qs[0].qinfo;
+	pool = qinfo->br.usr;
+	flags = qinfo->dev_flags;
+	if ((flags & WD_UACCE_DEV_PASID))
+		return 0;
+
+	for (i = 0; i < sched->q_num; i++) {
+		qinfo = sched->qs[i].qinfo;
+		pool = qinfo->br.usr;
+		for (j = 0; j < sched->msg_cache_num; j++) {
+			sched->msgs[j].data_in = wd_alloc_blk(pool);
+			sched->msgs[j].data_out = wd_alloc_blk(pool);
+			if (!sched->msgs[j].data_in || !sched->msgs[j].data_out) {
+				dbg("not enough data ss_region memory "
+				    "for cache %d (bs=%d)\n", j, sched->msg_data_size);
+				goto err_with_alloc;
+			}
+
+			if (sched->init_cache)
+				sched->init_cache(sched, j);
+		}
+	}
+
+	return 0;
+
+err_with_alloc:
+	free(sched->stat);
+	sched->stat = NULL;
+	__fini_cache(sched);
+err_with_msgs:
+	if (sched->msgs) {
+		free(sched->msgs);
+		sched->msgs = NULL;
+	}
+	return ret;
+}
 
 int wd_sched_init(struct wd_scheduler *sched)
 {
-	int ret, j, k;
-	unsigned int flags;
-	struct q_info *qinfo;
+	int ret;
 
 	ret = wd_sched_preinit(sched);
 	if (ret < 0)
 		return -EINVAL;
 
-	qinfo = sched->qs[0].qinfo;
-	flags = qinfo->dev_flags;
-	if (!(flags & WD_UACCE_DEV_PASID)) {
-		for (k = 1; k < sched->q_num; k++) {
-			ret = wd_share_reserved_memory(&sched->qs[0],
-						       &sched->qs[k]);
-			if (ret) {
-				WD_ERR("fail to share queue reserved mem!\n");
-				goto out_with_queues;
-			}
-		}
-	}
-
 	sched->cl = sched->msg_cache_num;
-
 	ret = __init_cache(sched);
 	if (ret) {
 		WD_ERR("fail to init caches!\n");
-		goto out_with_queues;
+		wd_sched_pre_uninit(sched);
+		return -EINVAL;
 	}
 
 	return 0;
-
-out_with_queues:
-	if (flags & WD_UACCE_DEV_PASID) {
-		if (sched->ss_region) {
-			free(sched->ss_region);
-			sched->ss_region = NULL;
-		}
-	}
-	for (j = sched->q_num - 1; j >= 0; j--)
-		wd_release_queue(&sched->qs[j]);
-	return ret;
 }
 
 void wd_sched_fini(struct wd_scheduler *sched)
 {
-	int i;
-	struct q_info *qinfo = sched->qs[0].qinfo;
-	unsigned int flags = qinfo->dev_flags;
-
 	__fini_cache(sched);
-	if (flags & WD_UACCE_DEV_PASID) {
-		if (sched->ss_region) {
-			free(sched->ss_region);
-			sched->ss_region = NULL;
-		}
-	}
-
-	for (i = sched->q_num - 1; i >= 0; i--)
-		wd_release_queue(&sched->qs[i]);
+	wd_sched_pre_uninit(sched);
 }
 
 static int __sync_send(struct wd_scheduler *sched)
