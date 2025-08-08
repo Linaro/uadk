@@ -79,7 +79,6 @@ enum uacce_qfrt {
  * Optimization method since close fd may delay
  */
 #define WD_UACCE_CMD_PUT_Q		_IO('W', 1)
-#define WD_UACCE_CMD_SHARE_SVAS		_IO('W', 2)
 #define WD_UACCE_CMD_GET_SS_DMA		_IOR('W', 3, unsigned long)
 
 #endif
