@@ -88,7 +88,7 @@
 #define CTX_WIN_LEN_MASK		0xffff
 #define CTX_HEAD_BIT_CNT_SHIFT		0xa
 #define CTX_HEAD_BIT_CNT_MASK		0xfC00
-#define WIN_LEN_ALIGN(len)		((len + 15) & ~(__u32)0x0F)
+#define WIN_LEN_ALIGN(len)		(((len) + 15) & ~(__u32)0x0F)
 
 enum {
 	BD_TYPE,
