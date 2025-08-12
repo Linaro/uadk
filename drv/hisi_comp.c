@@ -232,6 +232,15 @@ struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
+struct comp_sgl {
+	void *in;
+	void *out;
+	void *out_seq;
+	struct wd_datalist *list_src;
+	struct wd_datalist *list_dst;
+	struct wd_datalist *seq_start;
+};
+
 static void dump_zip_msg(struct wd_comp_msg *msg)
 {
 	WD_ERR("dump zip message after a task error occurs.\n");
@@ -246,11 +255,8 @@ static int buf_size_check_deflate(__u32 *in_size, __u32 *out_size)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(*out_size > HZ_MAX_SIZE)) {
-		WD_ERR("warning: avail_out(%u) is out of range, will set 8MB size max!\n",
-		       *out_size);
+	if (unlikely(*out_size > HZ_MAX_SIZE))
 		*out_size = HZ_MAX_SIZE;
-	}
 
 	return 0;
 }
@@ -358,7 +364,46 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 	return 0;
 }
 
-static void fill_buf_size_deflate(struct hisi_zip_sqe *sqe, __u32 in_size,
+static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl)
+{
+	handle_t h_sgl_pool;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (unlikely(!h_sgl_pool)) {
+		WD_ERR("failed to get sglpool!\n");
+		return -WD_EINVAL;
+	}
+
+	c_sgl->in = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_src);
+	if (unlikely(!c_sgl->in)) {
+		WD_ERR("failed to get hw sgl in!\n");
+		return -WD_ENOMEM;
+	}
+
+	c_sgl->out = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_dst);
+	if (unlikely(!c_sgl->out)) {
+		WD_ERR("failed to get hw sgl out!\n");
+		goto err_free_sgl_in;
+	}
+
+	if (c_sgl->seq_start) {
+		c_sgl->out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->seq_start);
+		if (unlikely(!c_sgl->out_seq)) {
+			WD_ERR("failed to get hw sgl out for sequences!\n");
+			goto err_free_sgl_out;
+		}
+	}
+
+	return 0;
+
+err_free_sgl_out:
+	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->out);
+err_free_sgl_in:
+	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->in);
+	return -WD_ENOMEM;
+}
+
+static void fill_comp_buf_size(struct hisi_zip_sqe *sqe, __u32 in_size,
 				  __u32 out_size)
 {
 	sqe->input_data_length = in_size;
@@ -430,7 +475,7 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 	if (unlikely(ret))
 		return ret;
 
-	fill_buf_size_deflate(sqe, in_size, out_size);
+	fill_comp_buf_size(sqe, in_size, out_size);
 
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
@@ -471,29 +516,18 @@ static int fill_buf_addr_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				     struct wd_datalist	*list_src,
 				     struct wd_datalist *list_dst)
 {
-	void *hw_sgl_in, *hw_sgl_out;
-	handle_t h_sgl_pool;
+	struct comp_sgl c_sgl;
+	int ret;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (unlikely(!h_sgl_pool)) {
-		WD_ERR("failed to get sglpool!\n");
-		return -WD_EINVAL;
-	}
+	c_sgl.list_src = list_src;
+	c_sgl.list_dst = list_dst;
+	c_sgl.seq_start = NULL;
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, list_src);
-	if (unlikely(!hw_sgl_in)) {
-		WD_ERR("failed to get hw sgl in!\n");
-		return -WD_ENOMEM;
-	}
+	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	if (unlikely(ret))
+		return ret;
 
-	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, list_dst);
-	if (unlikely(!hw_sgl_out)) {
-		WD_ERR("failed to get hw sgl out!\n");
-		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-		return -WD_ENOMEM;
-	}
-
-	fill_buf_addr_deflate(sqe, hw_sgl_in, hw_sgl_out, NULL);
+	fill_buf_addr_deflate(sqe, c_sgl.in, c_sgl.out, NULL);
 
 	return 0;
 }
@@ -572,7 +606,7 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_sgl_skip(sqe, src_skip, dst_skip);
 
-	fill_buf_size_deflate(sqe, in_size, out_size);
+	fill_comp_buf_size(sqe, in_size, out_size);
 
 	return 0;
 }
@@ -729,11 +763,8 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (ret)
 		return ret;
 
-	if (unlikely(seq_avail_out > HZ_MAX_SIZE)) {
-		WD_ERR("warning: sequence avail_out(%u) is out of range , will set 8MB size max!\n",
-		       seq_avail_out);
+	if (unlikely(seq_avail_out > HZ_MAX_SIZE))
 		seq_avail_out = HZ_MAX_SIZE;
-	}
 
 	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
@@ -867,13 +898,12 @@ static int lz77_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				  struct wd_comp_msg *msg)
 {
-	void *hw_sgl_in, *hw_sgl_out_lit, *hw_sgl_out_seq;
 	struct wd_comp_req *req = &msg->req;
 	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
 	struct wd_datalist *seq_start;
-	handle_t h_sgl_pool;
+	struct comp_sgl c_sgl;
 	__u32 lits_size;
 	int ret;
 
@@ -899,42 +929,19 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (unlikely(!h_sgl_pool)) {
-		WD_ERR("failed to get sglpool!\n");
-		return -WD_EINVAL;
-	}
+	c_sgl.list_src = req->list_src;
+	c_sgl.list_dst = req->list_dst;
+	c_sgl.seq_start = seq_start;
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_src);
-	if (unlikely(!hw_sgl_in)) {
-		WD_ERR("failed to get hw sgl in!\n");
-		return -WD_ENOMEM;
-	}
+	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	if (unlikely(ret))
+		return ret;
 
-	hw_sgl_out_lit = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_dst);
-	if (unlikely(!hw_sgl_out_lit)) {
-		WD_ERR("failed to get hw sgl out for literals!\n");
-		ret = -WD_ENOMEM;
-		goto err_free_sgl_in;
-	}
 
-	hw_sgl_out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, seq_start);
-	if (unlikely(!hw_sgl_out_seq)) {
-		WD_ERR("failed to get hw sgl out for sequences!\n");
-		ret = -WD_ENOMEM;
-		goto err_free_sgl_out_lit;
-	}
-
-	fill_buf_addr_lz77_zstd(sqe, hw_sgl_in, hw_sgl_out_lit,
-				hw_sgl_out_seq, NULL);
+	fill_buf_addr_lz77_zstd(sqe, c_sgl.in, c_sgl.out,
+				c_sgl.out_seq, NULL);
 
 	return 0;
-
-err_free_sgl_out_lit:
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out_lit);
-err_free_sgl_in:
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-	return ret;
 }
 
 static void fill_sqe_type_v1(struct hisi_zip_sqe *sqe)
@@ -1005,7 +1012,7 @@ static void fill_tag_v3(struct hisi_zip_sqe *sqe, __u32 tag)
 	sqe->dw26 = tag;
 }
 
-static int fill_comp_level_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
+static int fill_comp_level(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
 {
 	return 0;
 }
@@ -1038,7 +1045,7 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 	return 0;
 }
 
-static void get_data_size_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
+static void get_comp_data_size(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 				  struct wd_comp_msg *recv_msg)
 {
 	recv_msg->in_cons = sqe->consumed;
@@ -1122,22 +1129,22 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_sqe_type = fill_sqe_type_v3,
 		.fill_alg = fill_alg_deflate,
 		.fill_tag = fill_tag_v3,
-		.fill_comp_level = fill_comp_level_deflate,
-		.get_data_size = get_data_size_deflate,
+		.fill_comp_level = fill_comp_level,
+		.get_data_size = get_comp_data_size,
 		.get_tag = get_tag_v3,
 	}, {
 		.alg_name = "zlib",
 		.fill_buf[WD_FLAT_BUF] = fill_buf_zlib,
 		.fill_buf[WD_SGL_BUF] = fill_buf_zlib_sgl,
 		.fill_alg = fill_alg_zlib,
-		.fill_comp_level = fill_comp_level_deflate,
+		.fill_comp_level = fill_comp_level,
 		.get_data_size = get_data_size_zlib,
 	}, {
 		.alg_name = "gzip",
 		.fill_buf[WD_FLAT_BUF] = fill_buf_gzip,
 		.fill_buf[WD_SGL_BUF] = fill_buf_gzip_sgl,
 		.fill_alg = fill_alg_gzip,
-		.fill_comp_level = fill_comp_level_deflate,
+		.fill_comp_level = fill_comp_level,
 		.get_data_size = get_data_size_gzip,
 	}, {
 		.alg_name = "lz77_zstd",
