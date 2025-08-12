@@ -109,6 +109,7 @@ enum alg_type {
 	HW_DEFLATE = 0x1,
 	HW_ZLIB,
 	HW_GZIP,
+	HW_LZ4,
 	HW_LZ77_ZSTD_PRICE = 0x42,
 	HW_LZ77_ZSTD,
 	HW_LZ77_ONLY = 0x40,
@@ -503,6 +504,59 @@ static int fill_buf_gzip(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	return fill_buf_deflate_generic(sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
 }
 
+static void fill_buf_addr_lz4(struct hisi_zip_sqe *sqe, void *src, void *dst)
+{
+	sqe->source_addr_l = lower_32_bits(src);
+	sqe->source_addr_h = upper_32_bits(src);
+	sqe->dest_addr_l = lower_32_bits(dst);
+	sqe->dest_addr_h = upper_32_bits(dst);
+}
+
+static int check_lz4_msg(struct wd_comp_msg *msg, enum wd_buff_type buf_type)
+{
+	/* LZ4 only support for compress and block mode */
+	if (unlikely(msg->req.op_type != WD_DIR_COMPRESS)) {
+		WD_ERR("invalid: lz4 only support compress!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL)) {
+		WD_ERR("invalid: lz4 does not support the stream mode!\n");
+		return -WD_EINVAL;
+	}
+
+	if (buf_type != WD_FLAT_BUF)
+		return 0;
+
+	if (unlikely(msg->req.src_len == 0 || msg->req.src_len > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: lz4 input size can't be zero or more than 8M size max!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > HZ_MAX_SIZE))
+		msg->avail_out = HZ_MAX_SIZE;
+
+	return 0;
+}
+
+static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			struct wd_comp_msg *msg)
+{
+	void *src = msg->req.src;
+	void *dst = msg->req.dst;
+	int ret;
+
+	ret = check_lz4_msg(msg, WD_FLAT_BUF);
+	if (unlikely(ret))
+		return ret;
+
+	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
+
+	fill_buf_addr_lz4(sqe, src, dst);
+
+	return 0;
+}
+
 static void fill_buf_type_sgl(struct hisi_zip_sqe *sqe)
 {
 	__u32 val;
@@ -664,7 +718,7 @@ static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
 
 	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
 		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
-			return -WD_EINVAL;
+		return -WD_EINVAL;
 	}
 
 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
@@ -937,11 +991,48 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (unlikely(ret))
 		return ret;
 
-
 	fill_buf_addr_lz77_zstd(sqe, c_sgl.in, c_sgl.out,
 				c_sgl.out_seq, NULL);
 
 	return 0;
+}
+
+static int fill_buf_addr_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+				     struct wd_datalist	*list_src,
+				     struct wd_datalist *list_dst)
+{
+	struct comp_sgl c_sgl;
+	int ret;
+
+	c_sgl.list_src = list_src;
+	c_sgl.list_dst = list_dst;
+	c_sgl.seq_start = NULL;
+
+	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	if (unlikely(ret))
+		return ret;
+
+	fill_buf_addr_lz4(sqe, c_sgl.in, c_sgl.out);
+
+	return 0;
+}
+
+static int fill_buf_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			struct wd_comp_msg *msg)
+{
+	struct wd_datalist *list_src = msg->req.list_src;
+	struct wd_datalist *list_dst = msg->req.list_dst;
+	int ret;
+
+	ret = check_lz4_msg(msg, WD_SGL_BUF);
+	if (unlikely(ret))
+		return ret;
+
+	fill_buf_type_sgl(sqe);
+
+	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
+
+	return fill_buf_addr_lz4_sgl(h_qp, sqe, list_src, list_dst);
 }
 
 static void fill_sqe_type_v1(struct hisi_zip_sqe *sqe)
@@ -999,6 +1090,15 @@ static void fill_alg_lz77_only(struct hisi_zip_sqe *sqe)
 
 	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
 	val |= HW_LZ77_ONLY;
+	sqe->dw9 = val;
+}
+
+static void fill_alg_lz4(struct hisi_zip_sqe *sqe)
+{
+	__u32 val;
+
+	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+	val |= HW_LZ4;
 	sqe->dw9 = val;
 }
 
@@ -1155,6 +1255,16 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_tag = fill_tag_v3,
 		.fill_comp_level = fill_comp_level_lz77_zstd,
 		.get_data_size = get_data_size_lz77_zstd,
+		.get_tag = get_tag_v3,
+	}, {
+		.alg_name = "lz4",
+		.fill_buf[WD_FLAT_BUF] = fill_buf_lz4,
+		.fill_buf[WD_SGL_BUF] = fill_buf_lz4_sgl,
+		.fill_sqe_type = fill_sqe_type_v3,
+		.fill_alg = fill_alg_lz4,
+		.fill_tag = fill_tag_v3,
+		.fill_comp_level = fill_comp_level,
+		.get_data_size = get_comp_data_size,
 		.get_tag = get_tag_v3,
 	}, {
 		.alg_name = "lz77_only",
@@ -1382,6 +1492,9 @@ static int get_alg_type(__u32 type)
 	case HW_GZIP:
 		alg_type = WD_GZIP;
 		break;
+	case HW_LZ4:
+		alg_type = WD_LZ4;
+		break;
 	case HW_LZ77_ZSTD:
 	case HW_LZ77_ZSTD_PRICE:
 		alg_type = WD_LZ77_ZSTD;
@@ -1569,7 +1682,8 @@ static struct wd_alg_driver zip_alg_driver[] = {
 
 	GEN_ZIP_ALG_DRIVER("deflate"),
 	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
-	GEN_ZIP_ALG_DRIVER("lz77_only"),
+	GEN_ZIP_ALG_DRIVER("lz4"),
+	GEN_ZIP_ALG_DRIVER("lz77_only")
 };
 
 #ifdef WD_STATIC_DRV
