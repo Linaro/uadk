@@ -734,8 +734,9 @@ static void fill_hashagg_msg_task_done(struct dae_sqe *sqe, struct wd_agg_msg *m
 		msg->out_row_count = sqe->out_raw_num;
 		msg->output_done = sqe->output_end;
 	} else if (sqe->task_type_ext == DAE_HASHAGG_MERGE) {
-		msg->out_row_count = temp_msg->row_count;
 		msg->output_done = sqe->output_end;
+		if (!msg->output_done)
+			msg->out_row_count = temp_msg->row_count;
 	} else {
 		msg->in_row_count = temp_msg->row_count;
 	}
