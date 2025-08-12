@@ -68,7 +68,7 @@ static void wd_parse_log_level(void)
 		goto close_file;
 	}
 
-	if (file_info.st_size > FILE_MAX_SIZE) {
+	if (file_info.st_size <= 0 || file_info.st_size > FILE_MAX_SIZE) {
 		WD_ERR("failed to check rsyslog.conf size.\n");
 		goto close_file;
 	}
