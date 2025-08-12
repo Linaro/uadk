@@ -210,8 +210,6 @@ int wd_recv(struct wd_queue *q, void **resp);
 int wd_wait(struct wd_queue *q, __u16 ms);
 int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
 void *wd_reserve_memory(struct wd_queue *q, size_t size);
-int wd_share_reserved_memory(struct wd_queue *q,
-				    struct wd_queue *target_q);
 int wd_get_available_dev_num(const char *algorithm);
 int wd_get_node_id(struct wd_queue *q);
 void *wd_iova_map(struct wd_queue *q, void *va, size_t sz);
