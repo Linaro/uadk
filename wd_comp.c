@@ -27,7 +27,7 @@
 #define cpu_to_be32(x) swap_byte(x)
 
 static const char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
-	"zlib", "gzip", "deflate", "lz77_zstd", "lz77_only"
+	"zlib", "gzip", "deflate", "lz77_zstd", "lz4", "lz77_only"
 };
 
 struct wd_comp_sess {
