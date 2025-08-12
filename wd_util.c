@@ -63,6 +63,7 @@ static const char *wd_env_name[WD_TYPE_MAX] = {
 	"WD_DH_CTX_NUM",
 	"WD_ECC_CTX_NUM",
 	"WD_AGG_CTX_NUM",
+	"WD_UDMA_CTX_NUM",
 };
 
 struct async_task {
@@ -107,6 +108,7 @@ static struct acc_alg_item alg_options[] = {
 	{"deflate", "deflate"},
 	{"lz77_zstd", "lz77_zstd"},
 	{"hashagg", "hashagg"},
+	{"udma", "udma"},
 
 	{"rsa", "rsa"},
 	{"dh", "dh"},
