@@ -208,10 +208,10 @@ void *mmt_sys_test_thread(void *data)
 		return NULL;
 	}
 
-	ret = wd_share_reserved_memory(pdata->qinfo1.q, &rsa_q);
+	ret = wd_request_queue(&pdata->qinfo1.q);
 	if (ret) {
 		wd_release_queue(&rsa_q);
-		MMT_PRT("Proc-%d, thrd-%d:share mem on rsa queue fail!\n",
+		MMT_PRT("Proc-%d, thrd-%d:rsa queue fail!\n",
 			pid, thread_id);
 		return NULL;
 	}
@@ -226,9 +226,9 @@ void *mmt_sys_test_thread(void *data)
 
 		return NULL;
 	}
-	ret = wd_share_reserved_memory(pdata->qinfo2.q, &zlib_q);
+	ret = wd_request_queue(&pdata->qinfo2.q);
 	if (ret) {
-		MMT_PRT("Proc-%d, thrd-%d:share mem on zlib queue fail!\n",
+		MMT_PRT("Proc-%d, thrd-%d:zlib queue fail!\n",
 			pid, thread_id);
 
 		goto fail_release;
