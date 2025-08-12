@@ -277,6 +277,12 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 			ZIP_TST_PRT("Zip LZ77_ZSTD just support compress!\n");
 		optype = WD_DIR_COMPRESS;
 		break;
+	case LZ77_ONLY:
+		alg = WD_LZ77_ONLY;
+		if (optype == WD_DIR_DECOMPRESS)
+			ZIP_TST_PRT("Zip LZ77_ONLY just support compress!\n");
+		optype = WD_DIR_COMPRESS;
+		break;
 	default:
 		ZIP_TST_PRT("failed to set zip alg\n");
 		return -EINVAL;
@@ -1200,12 +1206,12 @@ static int zip_uadk_sync_threads(struct acc_option *options)
 
 	threads_option.optype = options->optype;
 	if (threads_option.mode == 1) {// stream mode
-		if (threads_option.alg == LZ77_ZSTD)
+		if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY)
 			uadk_zip_sync_run = zip_uadk_stm_lz77_sync_run;
 		else
 			uadk_zip_sync_run = zip_uadk_stm_sync_run;
 	} else {
-		if (threads_option.alg == LZ77_ZSTD)
+		if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY)
 			uadk_zip_sync_run = zip_uadk_blk_lz77_sync_run;
 		else
 			uadk_zip_sync_run = zip_uadk_blk_sync_run;
@@ -1257,7 +1263,7 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		return 0;
 	}
 
-	if (threads_option.alg == LZ77_ZSTD)
+	if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY)
 		uadk_zip_async_run = zip_uadk_blk_lz77_async_run;
 	else
 		uadk_zip_async_run = zip_uadk_blk_async_run;
@@ -1282,7 +1288,7 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		threads_args[i].win_sz = threads_option.win_sz;
 		threads_args[i].comp_lv = threads_option.comp_lv;
 		threads_args[i].td_id = i;
-		if (threads_option.alg == LZ77_ZSTD) {
+		if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY) {
 			struct bd_pool *uadk_pool = &g_zip_pool.pool[i];
 			u32 out_len = uadk_pool->bds[0].dst_len;
 
@@ -1345,7 +1351,7 @@ tag_free:
 			free(threads_args[i].tag);
 	}
 lz77_free:
-	if (threads_option.alg == LZ77_ZSTD) {
+	if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY) {
 		for (i = 0; i < g_thread_num; i++) {
 			if (threads_args[i].ftuple)
 				free(threads_args[i].ftuple);
