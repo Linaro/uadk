@@ -18,8 +18,6 @@
 #define DAE_CTX_Q_NUM_DEF	1
 
 /* will remove in next version */
-#define DAE_HASHAGG_SUM		0x1
-#define DAE_HASHAGG_COUNT	0x2
 #define DAE_HASH_COUNT_ALL	0x1
 
 /* column information */
@@ -60,6 +58,9 @@
 #define HASH_TABLE_OFFSET_3ROW		3
 #define HASH_TABLE_OFFSET_1ROW		1
 
+/* hash agg operations col max num */
+#define DAE_AGG_COL_ALG_MAX_NUM		2
+
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
 #define PTR_ALIGN(p, a)	((typeof(p))ALIGN((uintptr_t)(p), (a)))
@@ -73,10 +74,14 @@
 enum dae_stage {
 	DAE_HASH_AGGREGATE = 0x0,
 	DAE_HASHAGG_OUTPUT = 0x7,
+	/* new platform rehash new operation */
+	DAE_HASHAGG_MERGE = 0x6,
 };
 
 enum dae_op_type {
 	DAE_COUNT = 0x1,
+	DAE_MAX = 0x3,
+	DAE_MIN = 0x4,
 	DAE_SUM = 0x5,
 };
 
@@ -125,6 +130,18 @@ enum dae_table_row_size {
 enum dae_sum_optype {
 	DECIMAL64_TO_DECIMAL64 = 0x2,
 	DECIMAL64_TO_DECIMAL128 = 0x3,
+};
+
+enum dae_alg_optype {
+	DAE_HASHAGG_SUM = 0x1,
+	DAE_HASHAGG_COUNT = 0x2,
+	DAE_HASHAGG_MAX = 0x4,
+	DAE_HASHAGG_MIN = 0x8,
+};
+
+enum dae_bd_type {
+	DAE_BD_TYPE_V1 = 0x0,
+	DAE_BD_TYPE_V2 = 0x1,
 };
 
 struct dae_sqe {
@@ -292,7 +309,7 @@ static void put_ext_addr(struct dae_extend_addr *ext_addr, int idx)
 	__atomic_clear(&ext_addr->addr_status[idx], __ATOMIC_RELEASE);
 }
 
-static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe)
+static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe, __u16 hw_type)
 {
 	/*
 	 * The variable 'pos' is enumeration type, and the case branches
@@ -304,8 +321,13 @@ static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe)
 		sqe->task_type_ext = DAE_HASH_AGGREGATE;
 		break;
 	case WD_AGG_STREAM_OUTPUT:
-	case WD_AGG_REHASH_OUTPUT:
 		sqe->task_type_ext = DAE_HASHAGG_OUTPUT;
+		break;
+	case WD_AGG_REHASH_OUTPUT:
+		if (hw_type >= HISI_QM_API_VER5_BASE)
+			sqe->task_type_ext = DAE_HASHAGG_MERGE;
+		else
+			sqe->task_type_ext = DAE_HASHAGG_OUTPUT;
 		break;
 	}
 }
@@ -335,8 +357,26 @@ static void fill_hashagg_output_order(struct dae_sqe *sqe, struct dae_ext_sqe *e
 	}
 }
 
+static void fill_hashagg_merge_output_order(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
+					    struct wd_agg_msg *msg)
+{
+	struct hashagg_ctx *agg_ctx = msg->priv;
+	struct hashagg_col_data *cols_data = &agg_ctx->cols_data;
+	struct hashagg_output_src *output_src;
+	__u32 offset = 0;
+	__u32 i;
+
+	output_src = cols_data->rehash_output;
+
+	for (i = 0; i < cols_data->output_num; i++) {
+		ext_sqe->out_from_in_idx |= (__u64)output_src[i].out_from_in_idx << offset;
+		ext_sqe->out_optype |= (__u64)output_src[i].out_optype << offset;
+		offset += DAE_COL_BIT_NUM;
+	}
+}
+
 static void fill_hashagg_table_data(struct dae_sqe *sqe, struct dae_addr_list *addr_list,
-				 struct wd_agg_msg *msg)
+				    struct wd_agg_msg *msg)
 {
 	struct hashagg_ctx *agg_ctx = (struct hashagg_ctx *)msg->priv;
 	struct hash_table_data *table_data = &agg_ctx->table_data;
@@ -368,6 +408,31 @@ static void fill_hashagg_table_data(struct dae_sqe *sqe, struct dae_addr_list *a
 	hw_table->std_table_size = table_data->std_table_size;
 	hw_table->ext_table_addr = (__u64)(uintptr_t)table_data->ext_table;
 	hw_table->ext_table_size = table_data->ext_table_size;
+}
+
+static void fill_hashagg_merge_table_data(struct dae_sqe *sqe,
+					  struct dae_addr_list *addr_list,
+					  struct wd_agg_msg *msg)
+{
+	struct hashagg_ctx *agg_ctx = (struct hashagg_ctx *)msg->priv;
+	struct hash_table_data *table_data_src = &agg_ctx->rehash_table;
+	struct hash_table_data *table_data_dst = &agg_ctx->table_data;
+	struct dae_table_addr *hw_table_src = &addr_list->src_table;
+	struct dae_table_addr *hw_table_dst = &addr_list->dst_table;
+
+	sqe->table_row_size = agg_ctx->row_size;
+	sqe->src_table_width = table_data_src->table_width;
+	sqe->dst_table_width = table_data_dst->table_width;
+
+	hw_table_dst->std_table_addr = (__u64)(uintptr_t)table_data_dst->std_table;
+	hw_table_dst->std_table_size = table_data_dst->std_table_size;
+	hw_table_dst->ext_table_addr = (__u64)(uintptr_t)table_data_dst->ext_table;
+	hw_table_dst->ext_table_size = table_data_dst->ext_table_size;
+
+	hw_table_src->std_table_addr = (__u64)(uintptr_t)table_data_src->std_table;
+	hw_table_src->std_table_size = table_data_src->std_table_size;
+	hw_table_src->ext_table_addr = (__u64)(uintptr_t)table_data_src->ext_table;
+	hw_table_src->ext_table_size = table_data_src->ext_table_size;
 }
 
 static void fill_hashagg_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
@@ -413,6 +478,21 @@ static void fill_hashagg_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_s
 			if (!hw_key_addr[i].value_size)
 				hw_key_addr[i].value_size = 1;
 		}
+	}
+}
+
+static void fill_hashagg_merge_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
+					struct dae_addr_list *addr_list, struct wd_agg_msg *msg)
+{
+	struct hashagg_ctx *agg_ctx = msg->priv;
+	struct hw_agg_data *key_data = agg_ctx->cols_data.key_data;
+	__u32 i;
+
+	sqe->key_col_bitmap = GENMASK(msg->key_cols_num - 1, 0);
+
+	for (i = 0; i < msg->key_cols_num; i++) {
+		sqe->key_data_type[i] = key_data[i].hw_type;
+		ext_sqe->key_data_info[i] = key_data[i].data_info;
 	}
 }
 
@@ -501,6 +581,15 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 	}
 }
 
+static void fill_hashagg_merge_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
+					  struct dae_addr_list *addr_list, struct wd_agg_msg *msg)
+{
+	struct hashagg_ctx *agg_ctx = msg->priv;
+	struct hashagg_col_data *cols_data = &agg_ctx->cols_data;
+
+	fill_hashagg_rehash_info(sqe, ext_sqe, cols_data->output_data, msg->agg_cols_num);
+}
+
 static void fill_hashagg_ext_addr(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 				  struct dae_addr_list *addr_list)
 {
@@ -511,10 +600,43 @@ static void fill_hashagg_ext_addr(struct dae_sqe *sqe, struct dae_ext_sqe *ext_s
 	addr_list->ext_sqe_size = DAE_EXT_SQE_SIZE;
 }
 
+static void fill_hashagg_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
+			      struct dae_addr_list *addr_list, struct wd_agg_msg *msg,
+			      __u16 hw_type)
+{
+	fill_hashagg_ext_addr(sqe, ext_sqe, addr_list);
+
+	if (hw_type >= HISI_QM_API_VER5_BASE)
+		sqe->bd_type = DAE_BD_TYPE_V2;
+
+	if (sqe->task_type_ext == DAE_HASHAGG_MERGE) {
+		fill_hashagg_merge_table_data(sqe, addr_list, msg);
+		fill_hashagg_merge_key_data(sqe, ext_sqe, addr_list, msg);
+		fill_hashagg_merge_input_data(sqe, ext_sqe, addr_list, msg);
+		fill_hashagg_merge_output_order(sqe, ext_sqe, msg);
+	} else {
+		fill_hashagg_table_data(sqe, addr_list, msg);
+		fill_hashagg_key_data(sqe, ext_sqe, addr_list, msg);
+		fill_hashagg_input_data(sqe, ext_sqe, addr_list, msg);
+		fill_hashagg_output_order(sqe, ext_sqe, msg);
+	}
+}
+
 static int check_hashagg_param(struct wd_agg_msg *msg)
 {
+	struct hashagg_col_data *cols_data;
+	struct hashagg_ctx *agg_ctx;
+
 	if (!msg) {
 		WD_ERR("invalid: input hashagg msg is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	agg_ctx = msg->priv;
+	cols_data = &agg_ctx->cols_data;
+	if (cols_data->output_num > DAE_MAX_OUTPUT_COLS) {
+		WD_ERR("invalid: input hashagg output num %u is more than %d!\n",
+			cols_data->output_num, DAE_MAX_OUTPUT_COLS);
 		return -WD_EINVAL;
 	}
 
@@ -544,7 +666,11 @@ static int hashagg_send(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_m
 	if (ret)
 		return ret;
 
-	fill_hashagg_task_type(msg, &sqe);
+	if (qp->q_info.hw_type >= HISI_QM_API_VER5_BASE &&
+	    qp->q_info.qp_mode == CTX_MODE_SYNC && msg->pos == WD_AGG_REHASH_INPUT)
+		return WD_SUCCESS;
+
+	fill_hashagg_task_type(msg, &sqe, qp->q_info.hw_type);
 	sqe.row_num = msg->row_count;
 
 	idx = get_free_ext_addr(ext_addr);
@@ -553,11 +679,7 @@ static int hashagg_send(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_m
 	addr_list = &ext_addr->addr_list[idx];
 	ext_sqe = &ext_addr->ext_sqe[idx];
 
-	fill_hashagg_ext_addr(&sqe, ext_sqe, addr_list);
-	fill_hashagg_table_data(&sqe, addr_list, msg);
-	fill_hashagg_key_data(&sqe, ext_sqe, addr_list, msg);
-	fill_hashagg_input_data(&sqe, ext_sqe, addr_list, msg);
-	fill_hashagg_output_order(&sqe, ext_sqe, msg);
+	fill_hashagg_info(&sqe, ext_sqe, addr_list, msg, qp->q_info.hw_type);
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.low_tag = msg->tag;
@@ -610,6 +732,9 @@ static void fill_hashagg_msg_task_done(struct dae_sqe *sqe, struct wd_agg_msg *m
 {
 	if (sqe->task_type_ext == DAE_HASHAGG_OUTPUT) {
 		msg->out_row_count = sqe->out_raw_num;
+		msg->output_done = sqe->output_end;
+	} else if (sqe->task_type_ext == DAE_HASHAGG_MERGE) {
+		msg->out_row_count = temp_msg->row_count;
 		msg->output_done = sqe->output_end;
 	} else {
 		msg->in_row_count = temp_msg->row_count;
@@ -672,6 +797,12 @@ static int hashagg_recv(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_m
 	struct dae_sqe sqe = {0};
 	__u16 recv_cnt = 0;
 	int ret;
+
+	if (qp->q_info.hw_type >= HISI_QM_API_VER5_BASE &&
+	    qp->q_info.qp_mode == CTX_MODE_SYNC && msg->pos == WD_AGG_REHASH_INPUT) {
+		msg->result = WD_AGG_TASK_DONE;
+		return WD_SUCCESS;
+	}
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &recv_cnt);
 	if (ret)
@@ -768,7 +899,8 @@ static int agg_get_output_num(enum wd_dae_data_type type,
 	return WD_SUCCESS;
 }
 
-static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num, bool is_count_all)
+static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num,
+				bool is_count_all, __u16 hw_type)
 {
 	__u32 size8 = 0, size16 = 0;
 	__u32 i, j, count_num;
@@ -786,11 +918,13 @@ static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num
 	if (is_count_all)
 		size8++;
 
-	if (size8 > DAE_MAX_8B_COLS_NUM || size16 > DAE_MAX_16B_COLS_NUM) {
+	if (hw_type < HISI_QM_API_VER5_BASE &&
+	    (size8 > DAE_MAX_8B_COLS_NUM || size16 > DAE_MAX_16B_COLS_NUM)) {
 		WD_ERR("invalid: output col num 8B-16B %u-%u is more than support %d-%d !\n",
 			size8, size16, DAE_MAX_8B_COLS_NUM, DAE_MAX_16B_COLS_NUM);
 		return -WD_EINVAL;
 	}
+
 	count_num = size8 + size16;
 	if (count_num > DAE_MAX_OUTPUT_COLS) {
 		WD_ERR("invalid: agg output cols num %u is more than device support %d!\n",
@@ -801,7 +935,7 @@ static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num
 	return WD_SUCCESS;
 }
 
-static int hashagg_init_param_check(struct wd_agg_sess_setup *setup)
+static int hashagg_init_param_check(struct wd_agg_sess_setup *setup, __u16 hw_type)
 {
 	int ret;
 
@@ -827,7 +961,8 @@ static int hashagg_init_param_check(struct wd_agg_sess_setup *setup)
 	if (ret)
 		return -WD_EINVAL;
 
-	return agg_output_num_check(setup->agg_cols_info, setup->agg_cols_num, setup->is_count_all);
+	return agg_output_num_check(setup->agg_cols_info, setup->agg_cols_num,
+				    setup->is_count_all, hw_type);
 }
 
 static __u32 hashagg_get_data_type_size(enum dae_data_type type, __u16 data_info)
@@ -1027,9 +1162,35 @@ static int hashagg_check_count_info(enum wd_dae_data_type input_type,
 	return WD_SUCCESS;
 }
 
+static int hashagg_check_max_min_info(struct wd_agg_col_info *agg_col,
+				      struct hw_agg_data *user_input_data,
+				      struct hw_agg_data *user_output_data)
+{
+	switch (agg_col->input_data_type) {
+	case WD_DAE_LONG:
+		user_input_data->hw_type = DAE_SINT64;
+		user_output_data->hw_type = DAE_SINT64;
+		break;
+	case WD_DAE_SHORT_DECIMAL:
+		user_input_data->hw_type = DAE_DECIMAL64;
+		user_output_data->hw_type = DAE_DECIMAL64;
+		break;
+	case WD_DAE_LONG_DECIMAL:
+		user_input_data->hw_type = DAE_DECIMAL128;
+		user_output_data->hw_type = DAE_DECIMAL128;
+		break;
+	default:
+		WD_ERR("invalid: device not support col data type %u do max or min!\n",
+			agg_col->input_data_type);
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
 static int hashagg_check_input_data(struct wd_agg_col_info *agg_col,
-					struct hw_agg_data *user_input_data,
-					struct hw_agg_data *user_output_data, __u32 index)
+				    struct hw_agg_data *user_input_data,
+				    struct hw_agg_data *user_output_data, __u32 index)
 {
 	int ret;
 
@@ -1050,6 +1211,20 @@ static int hashagg_check_input_data(struct wd_agg_col_info *agg_col,
 		user_output_data->hw_type = DAE_SINT64;
 		user_output_data->optype = DAE_COUNT;
 		break;
+	case WD_AGG_MAX:
+		ret = hashagg_check_max_min_info(agg_col, user_input_data, user_output_data);
+		if (ret)
+			return ret;
+		user_input_data->optype |= DAE_HASHAGG_MAX;
+		user_output_data->optype = DAE_MAX;
+		break;
+	case WD_AGG_MIN:
+		ret = hashagg_check_max_min_info(agg_col, user_input_data, user_output_data);
+		if (ret)
+			return ret;
+		user_input_data->optype |= DAE_HASHAGG_MIN;
+		user_output_data->optype = DAE_MIN;
+		break;
 	default:
 		WD_ERR("invalid: device not support alg %u!\n", agg_col->output_col_algs[index]);
 		return -WD_EINVAL;
@@ -1068,6 +1243,11 @@ static int transfer_input_col_info(struct wd_agg_col_info *agg_cols,
 	int ret;
 
 	for (i = 0; i < cols_num; i++) {
+		if (agg_cols[i].col_alg_num > DAE_AGG_COL_ALG_MAX_NUM) {
+			WD_ERR("invalid: col alg num(%u) more than 2!\n", agg_cols[i].col_alg_num);
+			return -WD_EINVAL;
+		}
+
 		for (j = 0; j < agg_cols[i].col_alg_num; j++) {
 			ret = hashagg_check_input_data(&agg_cols[i], &user_input_data[i],
 						       &user_output_data[k], j);
@@ -1102,8 +1282,8 @@ static void hashagg_swap_out_index(struct hw_agg_data *user_output_data,
 }
 
 static void transfer_input_to_hw_order(struct hashagg_col_data *cols_data,
-				      struct hw_agg_data *user_input_data,
-				      struct hw_agg_data *user_output_data)
+				       struct hw_agg_data *user_input_data,
+				       struct hw_agg_data *user_output_data)
 {
 	struct hw_agg_data *input_data = cols_data->input_data;
 	__u32 type_num = ARRAY_SIZE(hw_data_type_order);
@@ -1282,15 +1462,29 @@ static void hashagg_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 static int hashagg_sess_priv_init(struct wd_alg_driver *drv,
 				  struct wd_agg_sess_setup *setup, void **priv)
 {
+	struct wd_ctx_config_internal *config;
+	struct hisi_dae_ctx *dae_priv;
 	struct hashagg_ctx *agg_ctx;
+	struct hisi_qp *qp;
+	handle_t h_qp;
 	int ret;
+
+	if (!drv || !drv->priv) {
+		WD_ERR("invalid: dae drv is NULL!\n");
+		return -WD_EINVAL;
+	}
 
 	if (!setup || !priv) {
 		WD_ERR("invalid: dae sess priv is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	ret = hashagg_init_param_check(setup);
+	dae_priv = (struct hisi_dae_ctx *)drv->priv;
+	config = &dae_priv->config;
+	h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[0].ctx);
+	qp = (struct hisi_qp *)h_qp;
+
+	ret = hashagg_init_param_check(setup, qp->q_info.hw_type);
 	if (ret)
 		return -WD_EINVAL;
 
