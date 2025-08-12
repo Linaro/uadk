@@ -84,6 +84,9 @@
 #define OVERFLOW_DATA_SIZE		8
 #define SEQ_DATA_SIZE_SHIFT		3
 #define ZSTD_FREQ_DATA_SIZE		784
+#define ZSTD_MIN_OUT_SIZE		1000
+#define LZ77_MIN_OUT_SIZE		200
+#define PRICE_MIN_OUT_SIZE		4096
 #define ZSTD_LIT_RESV_SIZE		16
 #define REPCODE_SIZE			12
 
@@ -108,6 +111,8 @@ enum alg_type {
 	HW_GZIP,
 	HW_LZ77_ZSTD_PRICE = 0x42,
 	HW_LZ77_ZSTD,
+	HW_LZ77_ONLY = 0x40,
+	HW_LZ77_ONLY_PRICE,
 };
 
 enum hw_state {
@@ -616,31 +621,30 @@ static void fill_buf_addr_lz77_zstd(struct hisi_zip_sqe *sqe,
 	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
 }
 
-static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			      struct wd_comp_msg *msg)
+static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
 {
-	struct wd_comp_req *req = &msg->req;
-	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
-	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
 	__u32 out_size = msg->avail_out;
-	void *ctx_buf = NULL;
-
-	if (unlikely(!data)) {
-		WD_ERR("invalid: wd_lz77_zstd_data address is NULL!\n");
-		return -WD_EINVAL;
-	}
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 seq_avail_out = out_size - lits_size;
 
 	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
-		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n",
-		       in_size);
+		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
+			return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		     seq_avail_out <= ZSTD_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+			out_size, ZSTD_MIN_OUT_SIZE + lits_size);
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(out_size > HZ_MAX_SIZE)) {
-		WD_ERR("warning: avail_out(%u) is out of range , will set 8MB size max!\n",
-		       out_size);
-		out_size = HZ_MAX_SIZE;
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
 	}
 
 	/*
@@ -653,14 +657,92 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 		return -WD_EINVAL;
 	}
 
+	return 0;
+}
+
+static int lz77_only_buf_check(struct wd_comp_msg *msg)
+{
+	__u32 in_size = msg->req.src_len;
+	__u32 out_size = msg->avail_out;
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 seq_avail_out = out_size - lits_size;
+
+	/* lits_size need to be less than 8M when use pbuffer */
+	if (unlikely(lits_size > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: in_len(%u) of lz77_only is out of range!\n", in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		     seq_avail_out <= LZ77_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+		       out_size, LZ77_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	/* For lz77_only, the hardware needs 32 Bytes buffer to output the dfx information */
+	if (unlikely(out_size < ZSTD_LIT_RESV_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough, %u bytes are minimum!\n",
+			ZSTD_LIT_RESV_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int lz77_buf_check(struct wd_comp_msg *msg)
+{
+	enum wd_comp_alg_type alg_type = msg->alg_type;
+
+	if (alg_type == WD_LZ77_ZSTD)
+		return lz77_zstd_buf_check(msg);
+	else if (alg_type == WD_LZ77_ONLY)
+		return lz77_only_buf_check(msg);
+
+	return 0;
+}
+
+static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			      struct wd_comp_msg *msg)
+{
+	struct wd_comp_req *req = &msg->req;
+	struct wd_lz77_zstd_data *data = req->priv;
+	__u32 in_size = msg->req.src_len;
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 seq_avail_out = msg->avail_out - lits_size;
+	void *ctx_buf = NULL;
+	int ret;
+
+	if (unlikely(!data)) {
+		WD_ERR("invalid: wd_lz77_zstd_data address is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = lz77_buf_check(msg);
+	if (ret)
+		return ret;
+
+	if (unlikely(seq_avail_out > HZ_MAX_SIZE)) {
+		WD_ERR("warning: sequence avail_out(%u) is out of range , will set 8MB size max!\n",
+		       seq_avail_out);
+		seq_avail_out = HZ_MAX_SIZE;
+	}
+
 	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-		if (data->blk_type != COMP_BLK)
+		if (msg->alg_type == WD_LZ77_ZSTD && data->blk_type != COMP_BLK)
 			memcpy(ctx_buf + CTX_HW_REPCODE_OFFSET,
 			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
 	}
 
-	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
+	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, seq_avail_out);
 
 	fill_buf_addr_lz77_zstd(sqe, req->src, req->dst, req->dst + lits_size, ctx_buf);
 
@@ -685,6 +767,103 @@ static struct wd_datalist *get_seq_start_list(struct wd_comp_req *req)
 	return cur;
 }
 
+static int lz77_zstd_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
+{
+	__u32 in_size = msg->req.src_len;
+	__u32 out_size = msg->avail_out;
+	__u32 seq_avail_out;
+
+	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
+		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
+		return -WD_EINVAL;
+	}
+
+	/*
+	 * For lz77_zstd, the hardware needs 784 Bytes buffer to output
+	 * the frequency information about input data. The sequences
+	 * and frequency data need to be written to an independent sgl
+	 * splited from list_dst.
+	 */
+	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size);
+		return -WD_EINVAL;
+	} else if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size - out_size);
+		return -WD_EINVAL;
+	}
+
+	seq_avail_out = out_size - lits_size;
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		     seq_avail_out <= ZSTD_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+			out_size, ZSTD_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+			out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int lz77_only_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
+{
+	__u32 in_size = msg->req.src_len;
+	__u32 out_size = msg->avail_out;
+	__u32 seq_avail_out;
+
+	/*
+	 * For lz77_only, the hardware needs 32 Bytes buffer to output
+	 * the dfx information. The literals and sequences data need to be written
+	 * to an independent sgl splited from list_dst.
+	 */
+	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
+		       ZSTD_LIT_RESV_SIZE + lits_size);
+		return -WD_EINVAL;
+	} else if (unlikely(out_size < ZSTD_LIT_RESV_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
+		       ZSTD_LIT_RESV_SIZE + lits_size - out_size);
+		return -WD_EINVAL;
+	}
+
+	seq_avail_out = out_size - lits_size;
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		seq_avail_out <= LZ77_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+		       out_size, LZ77_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+
+static int lz77_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
+{
+	enum wd_comp_alg_type alg_type = msg->alg_type;
+
+	if (alg_type == WD_LZ77_ZSTD)
+		return lz77_zstd_buf_check_sgl(msg, lits_size);
+	else if (alg_type == WD_LZ77_ONLY)
+		return lz77_only_buf_check_sgl(msg, lits_size);
+
+	return 0;
+}
+
 static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				  struct wd_comp_msg *msg)
 {
@@ -698,12 +877,6 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	__u32 lits_size;
 	int ret;
 
-	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
-		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n",
-		       in_size);
-		return -WD_EINVAL;
-	}
-
 	if (unlikely(!data)) {
 		WD_ERR("invalid: wd_lz77_zstd_data address is NULL!\n");
 		return -WD_EINVAL;
@@ -715,25 +888,14 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (unlikely(!seq_start))
 		return -WD_EINVAL;
 
+	lits_size = hisi_qm_get_list_size(req->list_dst, seq_start);
+
+	ret = lz77_buf_check_sgl(msg, lits_size);
+	if (ret)
+		return ret;
+
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
-
-	/*
-	 * For lz77_zstd, the hardware needs 784 Bytes buffer to output
-	 * the frequency information about input data. The sequences
-	 * and frequency data need to be written to an independent sgl
-	 * splited from list_dst.
-	 */
-	lits_size = hisi_qm_get_list_size(req->list_dst, seq_start);
-	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
-		WD_ERR("invalid: output is not enough for literals, %u bytes are minimum!\n",
-		       ZSTD_FREQ_DATA_SIZE + lits_size);
-		return -WD_EINVAL;
-	} else if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lits_size)) {
-		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
-		       ZSTD_FREQ_DATA_SIZE + lits_size - out_size);
-		return -WD_EINVAL;
-	}
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
@@ -824,6 +986,15 @@ static void fill_alg_lz77_zstd(struct hisi_zip_sqe *sqe)
 	sqe->dw9 = val;
 }
 
+static void fill_alg_lz77_only(struct hisi_zip_sqe *sqe)
+{
+	__u32 val;
+
+	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+	val |= HW_LZ77_ONLY;
+	sqe->dw9 = val;
+}
+
 static void fill_tag_v1(struct hisi_zip_sqe *sqe, __u32 tag)
 {
 	sqe->dw13 = tag;
@@ -841,7 +1012,7 @@ static int fill_comp_level_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_level 
 
 static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
 {
-	__u32 val;
+	__u32 val, alg;
 
 	switch (comp_lv) {
 	case WD_COMP_L8:
@@ -851,8 +1022,12 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 	 */
 		break;
 	case WD_COMP_L9:
+		alg = sqe->dw9 & HZ_REQ_TYPE_MASK;
 		val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
-		val |= HW_LZ77_ZSTD_PRICE;
+		if (alg == HW_LZ77_ZSTD)
+			val |= HW_LZ77_ZSTD_PRICE;
+		else if (alg == HW_LZ77_ONLY)
+			val |= HW_LZ77_ONLY_PRICE;
 		sqe->dw9 = val;
 		break;
 	default:
@@ -911,18 +1086,22 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
 	if (unlikely(!data))
 		return;
 
+	recv_msg->in_cons = sqe->consumed;
 	data->lit_num = sqe->comp_data_length;
 	data->seq_num = sqe->produced;
-	data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
-	data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
-	data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
-		     OVERFLOW_DATA_SIZE;
 
-	if (ctx_buf) {
-		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
-		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
-		       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, REPCODE_SIZE);
+	if (recv_msg->alg_type == WD_LZ77_ZSTD) {
+		data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
+		data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
+		data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
+			     OVERFLOW_DATA_SIZE;
+
+		if (ctx_buf) {
+			memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
+			       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+			memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
+			       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, REPCODE_SIZE);
+		}
 	}
 }
 
@@ -966,6 +1145,16 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_buf[WD_SGL_BUF] = fill_buf_lz77_zstd_sgl,
 		.fill_sqe_type = fill_sqe_type_v3,
 		.fill_alg = fill_alg_lz77_zstd,
+		.fill_tag = fill_tag_v3,
+		.fill_comp_level = fill_comp_level_lz77_zstd,
+		.get_data_size = get_data_size_lz77_zstd,
+		.get_tag = get_tag_v3,
+	}, {
+		.alg_name = "lz77_only",
+		.fill_buf[WD_FLAT_BUF] = fill_buf_lz77_zstd,
+		.fill_buf[WD_SGL_BUF] = fill_buf_lz77_zstd_sgl,
+		.fill_sqe_type = fill_sqe_type_v3,
+		.fill_alg = fill_alg_lz77_only,
 		.fill_tag = fill_tag_v3,
 		.fill_comp_level = fill_comp_level_lz77_zstd,
 		.get_data_size = get_data_size_lz77_zstd,
@@ -1079,10 +1268,6 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
-	if (unlikely(ret))
-		return ret;
-
 	ret = ops[alg_type].fill_buf[msg->req.data_fmt]((handle_t)qp, sqe, msg);
 	if (unlikely(ret))
 		return ret;
@@ -1090,6 +1275,10 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	ops[alg_type].fill_sqe_type(sqe);
 
 	ops[alg_type].fill_alg(sqe);
+
+	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
+	if (unlikely(ret))
+		return ret;
 
 	ops[alg_type].fill_tag(sqe, msg->tag);
 
@@ -1132,7 +1321,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	hw_sgl_out = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
 
-	if (alg_type == WD_LZ77_ZSTD) {
+	if (alg_type == WD_LZ77_ZSTD || alg_type == WD_LZ77_ONLY) {
 		hw_sgl_out = VA_ADDR(sqe->literals_addr_h,
 				     sqe->literals_addr_l);
 		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
@@ -1189,6 +1378,10 @@ static int get_alg_type(__u32 type)
 	case HW_LZ77_ZSTD:
 	case HW_LZ77_ZSTD_PRICE:
 		alg_type = WD_LZ77_ZSTD;
+		break;
+	case HW_LZ77_ONLY:
+	case HW_LZ77_ONLY_PRICE:
+		alg_type = WD_LZ77_ONLY;
 		break;
 	default:
 		break;
@@ -1369,6 +1562,7 @@ static struct wd_alg_driver zip_alg_driver[] = {
 
 	GEN_ZIP_ALG_DRIVER("deflate"),
 	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
+	GEN_ZIP_ALG_DRIVER("lz77_only"),
 };
 
 #ifdef WD_STATIC_DRV
