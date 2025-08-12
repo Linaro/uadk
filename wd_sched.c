@@ -192,7 +192,8 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 	if (!param) {
 		memset(skey, 0, sizeof(struct sched_key));
 		skey->numa_id = sched_ctx->numa_map[node];
-		WD_INFO("session don't set scheduler parameters!\n");
+		if (wd_need_debug())
+			WD_DEBUG("session don't set scheduler parameters!\n");
 	} else if (param->numa_id < 0) {
 		skey->type = param->type;
 		skey->numa_id = sched_ctx->numa_map[node];
