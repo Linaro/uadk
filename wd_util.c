@@ -106,6 +106,7 @@ static struct acc_alg_item alg_options[] = {
 	{"gzip", "gzip"},
 	{"deflate", "deflate"},
 	{"lz77_zstd", "lz77_zstd"},
+	{"lz77_only", "lz77_only"},
 	{"hashagg", "hashagg"},
 
 	{"rsa", "rsa"},
