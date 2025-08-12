@@ -16,7 +16,7 @@
 #define MAX_POOL_LENTH_COMP		1
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define CHUNK_SIZE			(128 * 1024)
-#define MAX_UNRECV_PACKET_NUM		2
+#define MAX_UNRECV_PACKET_NUM		1
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
