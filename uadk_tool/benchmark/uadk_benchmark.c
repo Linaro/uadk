@@ -140,6 +140,8 @@ static struct acc_alg_item alg_options[] = {
 	{"authenc(generic,cbc(aes))", "aes-128-cbc-sha256-hmac", AES_128_CBC_SHA256_HMAC},
 	{"authenc(generic,cbc(aes))", "aes-192-cbc-sha256-hmac", AES_192_CBC_SHA256_HMAC},
 	{"authenc(generic,cbc(aes))", "aes-256-cbc-sha256-hmac", AES_256_CBC_SHA256_HMAC},
+	{"authenc(generic,cbc(aes))", "aes-128-cbc-sha1-hmac", AES_128_CBC_SHA1_HMAC},
+	{"authenc(generic,cbc(sm4))", "sm4-cbc-sm3-hmac", SM4_CBC_SM3_HMAC},
 	{"ccm(sm4)",		"sm4-128-ccm",		SM4_128_CCM},
 	{"gcm(sm4)",		"sm4-128-gcm",		SM4_128_GCM},
 	{"sm3",			"sm3",			SM3_ALG},
