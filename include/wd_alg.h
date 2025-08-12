@@ -204,11 +204,13 @@ void hisi_sec2_probe(void);
 void hisi_hpre_probe(void);
 void hisi_zip_probe(void);
 void hisi_dae_probe(void);
+void hisi_udma_probe(void);
 
 void hisi_sec2_remove(void);
 void hisi_hpre_remove(void);
 void hisi_zip_remove(void);
 void hisi_dae_remove(void);
+void hisi_udma_remove(void);
 
 #endif
 
