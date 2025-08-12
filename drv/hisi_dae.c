@@ -1266,7 +1266,7 @@ static int hashagg_fill_agg_ctx(struct hashagg_ctx *agg_ctx, struct wd_agg_sess_
 	return WD_SUCCESS;
 }
 
-static void hashagg_sess_priv_uninit(void *priv)
+static void hashagg_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 {
 	struct hashagg_ctx *agg_ctx = priv;
 
@@ -1279,7 +1279,8 @@ static void hashagg_sess_priv_uninit(void *priv)
 	free(agg_ctx);
 }
 
-static int hashagg_sess_priv_init(struct wd_agg_sess_setup *setup, void **priv)
+static int hashagg_sess_priv_init(struct wd_alg_driver *drv,
+				  struct wd_agg_sess_setup *setup, void **priv)
 {
 	struct hashagg_ctx *agg_ctx;
 	int ret;
@@ -1365,7 +1366,7 @@ free_ext_addr:
 	return ret;
 }
 
-static int dae_get_row_size(void *param)
+static int dae_get_row_size(struct wd_alg_driver *drv, void *param)
 {
 	struct hashagg_ctx *agg_ctx = param;
 
@@ -1514,7 +1515,8 @@ static int dae_std_table_init(struct hash_table_data *hw_table,
 	return WD_SUCCESS;
 }
 
-static int dae_hash_table_init(struct wd_dae_hash_table *hash_table, void *priv)
+static int dae_hash_table_init(struct wd_alg_driver *drv,
+			       struct wd_dae_hash_table *hash_table, void *priv)
 {
 	struct hashagg_ctx *agg_ctx = priv;
 	struct hash_table_data *hw_table;
