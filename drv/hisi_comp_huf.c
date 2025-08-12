@@ -96,15 +96,10 @@ static int check_store_huffman_block(struct bit_reader *br)
 	/* go to a byte boundary */
 	pad = bit_len & BYTE_ALIGN_MASK;
 	bit_len -= pad;
-	data = read_bits(br, pad);
-	if (data < 0)
-		return BLOCK_IS_INCOMPLETE;
-
-	data = read_bits(br, bit_len);
-	if (data < 0)
-		return BLOCK_IS_INCOMPLETE;
+	br->cur_pos += pad;
 
 	/* check len and nlen */
+	data = read_bits(br, bit_len);
 	if (LEN_NLEN_CHECK(data))
 		return -WD_EINVAL;
 
