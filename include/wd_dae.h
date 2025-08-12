@@ -58,6 +58,18 @@ struct wd_dae_col_addr {
 };
 
 /**
+ * wd_dae_row_addr - information of row memory.
+ * @addr: The start address of row memory.
+ * @row_size: Memory size occupied by a row.
+ * @row_num: Total number of rows.
+ */
+struct wd_dae_row_addr {
+	void *addr;
+	__u32 row_size;
+	__u32 row_num;
+};
+
+/**
  * wd_dae_hash_table - Hash table information of DAE.
  * @std_table: Address of standard hash table.
  * @ext_table: Address of external hash table.

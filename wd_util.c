@@ -66,6 +66,7 @@ static const char *wd_env_name[WD_TYPE_MAX] = {
 	"WD_ECC_CTX_NUM",
 	"WD_AGG_CTX_NUM",
 	"WD_UDMA_CTX_NUM",
+	"WD_JOIN_GATHER_CTX_NUM",
 };
 
 struct async_task {
@@ -111,6 +112,9 @@ static struct acc_alg_item alg_options[] = {
 	{"lz77_zstd", "lz77_zstd"},
 	{"hashagg", "hashagg"},
 	{"udma", "udma"},
+	{"hashjoin", "hashjoin"},
+	{"gather", "gather"},
+	{"join-gather", "hashjoin"},
 
 	{"rsa", "rsa"},
 	{"dh", "dh"},
@@ -2606,7 +2610,7 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 
 	list = wd_get_accel_list(attrs->alg);
 	if (!list) {
-		WD_ERR("failed to get devices!\n");
+		WD_ERR("failed to get devices for alg: %s\n", attrs->alg);
 		return -WD_ENODEV;
 	}
 
