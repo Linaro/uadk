@@ -20,6 +20,8 @@ extern "C" {
 enum wd_agg_alg {
 	WD_AGG_SUM,
 	WD_AGG_COUNT,
+	WD_AGG_MAX,
+	WD_AGG_MIN,
 	WD_AGG_ALG_TYPE_MAX,
 };
 
@@ -141,10 +143,9 @@ struct wd_agg_req {
 };
 
 /**
- * wd_agg_init() - A simplify interface to initializate uadk
- * encryption and decryption. This interface keeps most functions of
- * wd_agg_init(). Users just need to descripe the deployment of
- * business scenarios. Then the initialization will request appropriate
+ * wd_agg_init() - A simplify interface to initializate uadk hash agg.
+ * Users just need to descripe the deployment of business scenarios.
+ * Then the initialization will request appropriate
  * resources to support the business scenarios.
  * To make the initializate simpler, ctx_params support set NULL.
  * And then the function will set them as driver's default.

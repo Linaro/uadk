@@ -36,16 +36,17 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
 		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h \
-		  include/wd_zlibwrapper.h include/wd_dae.h include/wd_agg.h
+		  include/wd_zlibwrapper.h include/wd_dae.h include/wd_agg.h \
+		  include/wd_udma.h include/wd_join_gather.h
 
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
-lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la
+lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la libwd_udma.la
 
 uadk_driversdir=$(libdir)/uadk
 uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
-			 libisa_ce.la libisa_sve.la libhisi_dae.la
+			 libisa_ce.la libisa_sve.la libhisi_dae.la libhisi_udma.la
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
@@ -69,7 +70,10 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/drv/hisi_sec_udrv.c v1/drv/hisi_sec_udrv.h \
 		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
 
-libwd_dae_la_SOURCES=wd_dae.h wd_agg.h wd_agg_drv.h wd_agg.c \
+libwd_udma_la_SOURCES=wd_udma.h wd_udma_drv.h wd_udma.c \
+		     wd_util.c wd_util.h wd_sched.c wd_sched.h wd.c wd.h
+
+libwd_dae_la_SOURCES=wd_dae.h wd_agg.h wd_agg_drv.h wd_agg.c wd_join_gather.h wd_join_gather_drv.h wd_join_gather.c \
 		     wd_util.c wd_util.h wd_sched.c wd_sched.h wd.c wd.h
 
 libwd_comp_la_SOURCES=wd_comp.c wd_comp.h wd_comp_drv.h wd_util.c wd_util.h \
@@ -107,7 +111,10 @@ libisa_sve_la_SOURCES=drv/hash_mb/hash_mb.c wd_digest_drv.h drv/hash_mb/hash_mb.
 		drv/hash_mb/md5_mb_asimd_x4.S drv/hash_mb/md5_mb_sve.S
 endif
 
-libhisi_dae_la_SOURCES=drv/hisi_dae.c drv/hisi_qm_udrv.c \
+libhisi_dae_la_SOURCES=drv/hisi_dae.c hisi_dae.h drv/hisi_qm_udrv.c \
+		hisi_qm_udrv.h drv/hisi_dae_join_gather.c drv/hisi_dae_common.c
+
+libhisi_udma_la_SOURCES=drv/hisi_udma.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h
 
 if WD_STATIC_DRV
@@ -124,6 +131,9 @@ libhisi_zip_la_LIBADD = -ldl
 libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_crypto_la_DEPENDENCIES = libwd.la
 
+libwd_udma_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma -lm -lpthread
+libwd_udma_la_DEPENDENCIES = libwd.la
+
 libwd_dae_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_dae_la_DEPENDENCIES = libwd.la
 
@@ -138,6 +148,9 @@ libisa_ce_la_DEPENDENCIES = libwd.la libwd_crypto.la
 
 libisa_sve_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_crypto_la_OBJECTS)
 libisa_sve_la_DEPENDENCIES = libwd.la libwd_crypto.la
+
+libhisi_udma_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_udma_la_OBJECTS)
+libhisi_udma_la_DEPENDENCIES = libwd.la libwd_udma.la
 
 libhisi_dae_la_LIBADD = $(libwd_la_OBJECTS) $(libwd_dae_la_OBJECTS)
 libhisi_dae_la_DEPENDENCIES = libwd.la libwd_dae.la
@@ -159,6 +172,10 @@ libwd_comp_la_DEPENDENCIES= libwd.la
 libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL) -lpthread
 libwd_crypto_la_DEPENDENCIES= libwd.la
+
+libwd_udma_la_LIBADD= -lwd -ldl -lnuma -lm -lpthread
+libwd_udma_la_LDFLAGS=$(UADK_VERSION) $(UADK_DAE_SYMBOL)
+libwd_udma_la_DEPENDENCIES= libwd.la
 
 libwd_dae_la_LIBADD= -lwd -ldl -lnuma -lm
 libwd_dae_la_LDFLAGS=$(UADK_VERSION) $(UADK_DAE_SYMBOL)
@@ -183,6 +200,10 @@ libisa_ce_la_DEPENDENCIES= libwd.la libwd_crypto.la
 libisa_sve_la_LIBADD= -lwd -lwd_crypto
 libisa_sve_la_LDFLAGS=$(UADK_VERSION)
 libisa_sve_la_DEPENDENCIES= libwd.la libwd_crypto.la
+
+libhisi_udma_la_LIBADD= -lwd -lwd_udma
+libhisi_udma_la_LDFLAGS=$(UADK_VERSION)
+libhisi_udma_la_DEPENDENCIES= libwd.la libwd_udma.la
 
 libhisi_dae_la_LIBADD= -lwd -lwd_dae
 libhisi_dae_la_LDFLAGS=$(UADK_VERSION)

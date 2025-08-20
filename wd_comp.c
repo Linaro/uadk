@@ -17,6 +17,8 @@
 
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
+#define WD_ZLIB_HEADER_SZ		2
+#define WD_GZIP_HEADER_SZ		10
 
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
@@ -27,7 +29,7 @@
 #define cpu_to_be32(x) swap_byte(x)
 
 static const char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
-	"zlib", "gzip", "deflate", "lz77_zstd"
+	"zlib", "gzip", "deflate", "lz77_zstd", "lz4", "lz77_only"
 };
 
 struct wd_comp_sess {
@@ -522,7 +524,48 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->req.last = 1;
 }
 
-static int wd_comp_check_buffer(struct wd_comp_req *req)
+static int wd_check_alg_buff_size(struct wd_comp_req *req, struct wd_comp_sess *sess)
+{
+	if (!req->dst_len) {
+		WD_ERR("invalid: dst_len is 0!\n");
+		return -WD_EINVAL;
+	}
+
+	/*
+	 * Only the first package needs to be checked,
+	 * the middle and last packages do not need to be checked
+	 */
+	if (sess->stream_pos != WD_COMP_STREAM_NEW)
+		return 0;
+
+	if (sess->alg_type == WD_ZLIB) {
+		if (req->dst_len <= WD_ZLIB_HEADER_SZ && req->op_type == WD_DIR_COMPRESS) {
+			WD_ERR("invalid: zlib dst_len(%u) is too small!\n", req->dst_len);
+			return -WD_EINVAL;
+		}
+
+		if (req->src_len <= WD_ZLIB_HEADER_SZ && req->op_type == WD_DIR_DECOMPRESS) {
+			WD_ERR("invalid: zlib src_len(%u) is too small!\n", req->src_len);
+			return -WD_EINVAL;
+		}
+	}
+
+	if (sess->alg_type == WD_GZIP) {
+		if (req->dst_len <= WD_GZIP_HEADER_SZ && req->op_type == WD_DIR_COMPRESS) {
+			WD_ERR("invalid: gzip dst_len(%u) is too small!\n", req->dst_len);
+			return -WD_EINVAL;
+		}
+
+		if (req->src_len <= WD_GZIP_HEADER_SZ && req->op_type == WD_DIR_DECOMPRESS) {
+			WD_ERR("invalid: gzip src_len(%u) is too small!\n", req->src_len);
+			return -WD_EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int wd_comp_check_buffer(struct wd_comp_req *req, struct wd_comp_sess *sess)
 {
 	if (req->data_fmt == WD_FLAT_BUF) {
 		if (unlikely(!req->src || !req->dst)) {
@@ -536,12 +579,7 @@ static int wd_comp_check_buffer(struct wd_comp_req *req)
 		}
 	}
 
-	if (!req->dst_len) {
-		WD_ERR("invalid: dst_len is 0!\n");
-		return -WD_EINVAL;
-	}
-
-	return 0;
+	return wd_check_alg_buff_size(req, sess);
 }
 
 static int wd_comp_check_params(struct wd_comp_sess *sess,
@@ -560,7 +598,7 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_comp_check_buffer(req);
+	ret = wd_comp_check_buffer(req, sess);
 	if (unlikely(ret))
 		return ret;
 

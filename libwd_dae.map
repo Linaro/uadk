@@ -1,5 +1,24 @@
-UADK_CRYPTO_2.0 {
+UADK_DAE_2.0 {
 global:
+	wd_join_gather_alloc_sess;
+	wd_join_gather_free_sess;
+	wd_join_get_table_rowsize;
+	wd_gather_get_batch_rowsize;
+	wd_join_set_hash_table;
+	wd_join_gather_init;
+	wd_join_gather_uninit;
+	wd_join_build_hash_sync;
+	wd_join_build_hash_async;
+	wd_join_probe_sync;
+	wd_join_probe_async;
+	wd_join_rehash_sync;
+	wd_join_gather_get_msg;
+	wd_join_gather_poll;
+	wd_gather_convert_sync;
+	wd_gather_complete_sync;
+	wd_gather_convert_async;
+	wd_gather_complete_async;
+
 	wd_agg_alloc_sess;
 	wd_agg_free_sess;
 	wd_agg_get_table_rowsize;
@@ -13,6 +32,19 @@ global:
 	wd_agg_rehash_sync;
 	wd_agg_get_msg;
 	wd_agg_poll;
+
+	wd_sched_rr_instance;
+	wd_sched_rr_alloc;
+	wd_sched_rr_release;
+
+	wd_udma_alloc_sess;
+	wd_udma_free_sess;
+	wd_udma_init;
+	wd_udma_uninit;
+	wd_do_udma_sync;
+	wd_do_udma_async;
+	wd_udma_poll;
+	wd_udma_get_msg;
 
 	wd_sched_rr_instance;
 	wd_sched_rr_alloc;

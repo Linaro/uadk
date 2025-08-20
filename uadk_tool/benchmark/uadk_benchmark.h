@@ -121,6 +121,8 @@ enum test_alg {
 	GZIP, // gzip
 	DEFLATE, // deflate
 	LZ77_ZSTD, // lz77_zstd
+	LZ4,
+	LZ77_ONLY,
 	RSA_1024, // rsa
 	RSA_2048,
 	RSA_3072,
@@ -193,6 +195,8 @@ enum test_alg {
 	AES_128_CBC_SHA256_HMAC,
 	AES_192_CBC_SHA256_HMAC,
 	AES_256_CBC_SHA256_HMAC,
+	AES_128_CBC_SHA1_HMAC,
+	SM4_CBC_SM3_HMAC,
 	SM4_128_CCM,
 	SM4_128_GCM,
 	SM3_ALG, // digest

@@ -80,8 +80,24 @@ static struct aead_alg_info wd_aead_info[] = {
 		.name = "AES_128_GCM",
 		.mac_len = 16,
 	}, {
+		.index = AES_256_GCM,
+		.name = "AES_256_GCM",
+		.mac_len = 16,
+	}, {
 		.index = AES_128_CBC_SHA256_HMAC,
 		.name = "AES_128_CBC_SHA256_HMAC",
+		.mac_len = 32,
+	}, {
+		.index = AES_256_CBC_SHA256_HMAC,
+		.name = "AES_256_CBC_SHA256_HMAC",
+		.mac_len = 32,
+	}, {
+		.index = AES_128_CBC_SHA1_HMAC,
+		.name = "AES_128_CBC_SHA1_HMAC",
+		.mac_len = 20,
+	}, {
+		.index = SM4_CBC_SM3_HMAC,
+		.name = "SM4_CBC_SM3_HMAC",
 		.mac_len = 32,
 	}, {
 		.index = SM4_128_GCM,
@@ -521,6 +537,24 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		alg = WCRYPTO_CIPHER_AES;
 		is_union = true;
 		dalg = WCRYPTO_SHA256;
+		dmode = WCRYPTO_DIGEST_HMAC;
+		break;
+	case AES_128_CBC_SHA1_HMAC:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC;
+		alg = WCRYPTO_CIPHER_AES;
+		is_union = true;
+		dalg = WCRYPTO_SHA1;
+		dmode = WCRYPTO_DIGEST_HMAC;
+		break;
+	case SM4_CBC_SM3_HMAC:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC;
+		alg = WCRYPTO_CIPHER_SM4;
+		is_union = true;
+		dalg = WCRYPTO_SM3;
 		dmode = WCRYPTO_DIGEST_HMAC;
 		break;
 	case SM4_128_CCM:

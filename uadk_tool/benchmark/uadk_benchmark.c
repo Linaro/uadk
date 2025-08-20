@@ -70,6 +70,8 @@ static struct acc_alg_item alg_options[] = {
 	{"gzip",		"gzip",			GZIP},
 	{"deflate",		"deflate",		DEFLATE},
 	{"lz77_zstd",		"lz77_zstd",		LZ77_ZSTD},
+	{"lz4",			"lz4",			LZ4},
+	{"lz77_only",		"lz77_only",		LZ77_ONLY},
 	{"rsa",			"rsa-1024",		RSA_1024},
 	{"rsa",			"rsa-2048",		RSA_2048},
 	{"rsa",			"rsa-3072",		RSA_3072},
@@ -142,6 +144,8 @@ static struct acc_alg_item alg_options[] = {
 	{"authenc(generic,cbc(aes))", "aes-128-cbc-sha256-hmac", AES_128_CBC_SHA256_HMAC},
 	{"authenc(generic,cbc(aes))", "aes-192-cbc-sha256-hmac", AES_192_CBC_SHA256_HMAC},
 	{"authenc(generic,cbc(aes))", "aes-256-cbc-sha256-hmac", AES_256_CBC_SHA256_HMAC},
+	{"authenc(generic,cbc(aes))", "aes-128-cbc-sha1-hmac", AES_128_CBC_SHA1_HMAC},
+	{"authenc(generic,cbc(sm4))", "sm4-cbc-sm3-hmac", SM4_CBC_SM3_HMAC},
 	{"ccm(sm4)",		"sm4-128-ccm",		SM4_128_CCM},
 	{"gcm(sm4)",		"sm4-128-gcm",		SM4_128_GCM},
 	{"sm3",			"sm3",			SM3_ALG},
@@ -367,6 +371,16 @@ static void parse_alg_param(struct acc_option *option)
 		break;
 	case LZ77_ZSTD:
 		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz77_zstd");
+		option->acctype = ZIP_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
+	case LZ4:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz4");
+		option->acctype = ZIP_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
+	case LZ77_ONLY:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz77_only");
 		option->acctype = ZIP_TYPE;
 		option->subtype = DEFAULT_TYPE;
 		break;
