@@ -1,9 +1,15 @@
 ACLOCAL_AMFLAGS = -I m4 -I./include
 AUTOMAKE_OPTIONS = foreign subdir-objects
+
+# get UADK build time
+BUILD_DATETIME := $(shell date -u +"%Y-%m-%d_%H:%M:%S")
+
 AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/benchmark/include \
 			-pthread
 AM_CFLAGS += -fPIC -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
 -O2 -ftrapv -Wl,-z,now -Wl,-s
+
+AM_CFLAGS += -DUADK_BUILD_DATETIME=\"$(BUILD_DATETIME)\"
 
 #AUTOMAKE_OPTIONS = subdir-objects
 

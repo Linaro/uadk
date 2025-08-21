@@ -14,7 +14,11 @@
 #include "include/wd.h"
 #include "uadk_dfx.h"
 
-#define uadk_build_date()	printf("built on: %s %s\n", __DATE__, __TIME__)
+#ifndef UADK_BUILD_DATETIME
+#define UADK_BUILD_DATETIME "unknown"
+#endif
+
+#define uadk_build_date()	printf("built on: %s\n", UADK_BUILD_DATETIME)
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 #define PRIVILEGE_FLAG		0666
 
