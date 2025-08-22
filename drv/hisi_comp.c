@@ -69,9 +69,9 @@
 #define upper_32_bits(addr)		((__u32)((uintptr_t)(addr) >> HZ_HADDR_SHIFT))
 
 /* the min output buffer size is (input size * 1.125) */
-#define min_out_buf_size(inl)		((((__u64)inl * 9) + 7) >> 3)
+#define min_out_buf_size(inl)		((((__u64)(inl) * 9) + 7) >> 3)
 /* the max input size is (output buffer size * 8 / 9) and align with 4 byte */
-#define max_in_data_size(outl)		((__u32)(((__u64)outl << 3) / 9) & 0xfffffffc)
+#define max_in_data_size(outl)		((__u32)(((__u64)(outl) << 3) / 9) & 0xfffffffc)
 
 #define HZ_MAX_SIZE			(8 * 1024 * 1024)
 
@@ -84,6 +84,9 @@
 #define OVERFLOW_DATA_SIZE		8
 #define SEQ_DATA_SIZE_SHIFT		3
 #define ZSTD_FREQ_DATA_SIZE		784
+#define ZSTD_MIN_OUT_SIZE		1000
+#define LZ77_MIN_OUT_SIZE		200
+#define PRICE_MIN_OUT_SIZE		4096
 #define ZSTD_LIT_RESV_SIZE		16
 #define REPCODE_SIZE			12
 
@@ -100,14 +103,17 @@
 #define CTX_WIN_LEN_MASK		0xffff
 #define CTX_HEAD_BIT_CNT_SHIFT		0xa
 #define CTX_HEAD_BIT_CNT_MASK		0xfC00
-#define WIN_LEN_ALIGN(len)		((len + 15) & ~(__u32)0x0F)
+#define WIN_LEN_ALIGN(len)		(((len) + 15) & ~(__u32)0x0F)
 
 enum alg_type {
 	HW_DEFLATE = 0x1,
 	HW_ZLIB,
 	HW_GZIP,
+	HW_LZ4,
 	HW_LZ77_ZSTD_PRICE = 0x42,
 	HW_LZ77_ZSTD,
+	HW_LZ77_ONLY = 0x40,
+	HW_LZ77_ONLY_PRICE,
 };
 
 enum hw_state {
@@ -227,6 +233,15 @@ struct hisi_zip_ctx {
 	struct wd_ctx_config_internal	config;
 };
 
+struct comp_sgl {
+	void *in;
+	void *out;
+	void *out_seq;
+	struct wd_datalist *list_src;
+	struct wd_datalist *list_dst;
+	struct wd_datalist *seq_start;
+};
+
 static void dump_zip_msg(struct wd_comp_msg *msg)
 {
 	WD_ERR("dump zip message after a task error occurs.\n");
@@ -241,11 +256,8 @@ static int buf_size_check_deflate(__u32 *in_size, __u32 *out_size)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(*out_size > HZ_MAX_SIZE)) {
-		WD_ERR("warning: avail_out(%u) is out of range, will set 8MB size max!\n",
-		       *out_size);
+	if (unlikely(*out_size > HZ_MAX_SIZE))
 		*out_size = HZ_MAX_SIZE;
-	}
 
 	return 0;
 }
@@ -343,18 +355,56 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 	if (msg->stream_mode != WD_COMP_STATEFUL)
 		return 0;
 
-	if (msg->stream_pos != WD_COMP_STREAM_NEW && out_size > SW_STOREBUF_TH)
-		return 0;
+	if (msg->stream_pos == WD_COMP_STREAM_NEW && msg->req.op_type == WD_DIR_COMPRESS &&
+	    out_size - head_size <= SW_STOREBUF_TH)
+		return 1;
 
-	if (msg->stream_pos == WD_COMP_STREAM_NEW &&
-	    out_size - head_size > SW_STOREBUF_TH)
-		return 0;
+	if (out_size <= SW_STOREBUF_TH)
+		return 1;
 
-	/* 1 mean it need store buf */
-	return 1;
+	return 0;
 }
 
-static void fill_buf_size_deflate(struct hisi_zip_sqe *sqe, __u32 in_size,
+static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl)
+{
+	handle_t h_sgl_pool;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	if (unlikely(!h_sgl_pool)) {
+		WD_ERR("failed to get sglpool!\n");
+		return -WD_EINVAL;
+	}
+
+	c_sgl->in = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_src);
+	if (unlikely(!c_sgl->in)) {
+		WD_ERR("failed to get hw sgl in!\n");
+		return -WD_ENOMEM;
+	}
+
+	c_sgl->out = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_dst);
+	if (unlikely(!c_sgl->out)) {
+		WD_ERR("failed to get hw sgl out!\n");
+		goto err_free_sgl_in;
+	}
+
+	if (c_sgl->seq_start) {
+		c_sgl->out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->seq_start);
+		if (unlikely(!c_sgl->out_seq)) {
+			WD_ERR("failed to get hw sgl out for sequences!\n");
+			goto err_free_sgl_out;
+		}
+	}
+
+	return 0;
+
+err_free_sgl_out:
+	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->out);
+err_free_sgl_in:
+	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->in);
+	return -WD_ENOMEM;
+}
+
+static void fill_comp_buf_size(struct hisi_zip_sqe *sqe, __u32 in_size,
 				  __u32 out_size)
 {
 	sqe->input_data_length = in_size;
@@ -386,7 +436,7 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 
 	/*
 	 * When the output buffer is smaller than the SW_STOREBUF_TH in STATEFUL,
-	 * the internal buffer is used.
+	 * the internal buffer is used. It requires a storage buffer when returning 1.
 	 */
 	ret = check_enable_store_buf(msg, out_size, head_size);
 	if (ret) {
@@ -426,7 +476,7 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 	if (unlikely(ret))
 		return ret;
 
-	fill_buf_size_deflate(sqe, in_size, out_size);
+	fill_comp_buf_size(sqe, in_size, out_size);
 
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
@@ -454,6 +504,59 @@ static int fill_buf_gzip(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	return fill_buf_deflate_generic(sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
 }
 
+static void fill_buf_addr_lz4(struct hisi_zip_sqe *sqe, void *src, void *dst)
+{
+	sqe->source_addr_l = lower_32_bits(src);
+	sqe->source_addr_h = upper_32_bits(src);
+	sqe->dest_addr_l = lower_32_bits(dst);
+	sqe->dest_addr_h = upper_32_bits(dst);
+}
+
+static int check_lz4_msg(struct wd_comp_msg *msg, enum wd_buff_type buf_type)
+{
+	/* LZ4 only support for compress and block mode */
+	if (unlikely(msg->req.op_type != WD_DIR_COMPRESS)) {
+		WD_ERR("invalid: lz4 only support compress!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL)) {
+		WD_ERR("invalid: lz4 does not support the stream mode!\n");
+		return -WD_EINVAL;
+	}
+
+	if (buf_type != WD_FLAT_BUF)
+		return 0;
+
+	if (unlikely(msg->req.src_len == 0 || msg->req.src_len > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: lz4 input size can't be zero or more than 8M size max!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->avail_out > HZ_MAX_SIZE))
+		msg->avail_out = HZ_MAX_SIZE;
+
+	return 0;
+}
+
+static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			struct wd_comp_msg *msg)
+{
+	void *src = msg->req.src;
+	void *dst = msg->req.dst;
+	int ret;
+
+	ret = check_lz4_msg(msg, WD_FLAT_BUF);
+	if (unlikely(ret))
+		return ret;
+
+	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
+
+	fill_buf_addr_lz4(sqe, src, dst);
+
+	return 0;
+}
+
 static void fill_buf_type_sgl(struct hisi_zip_sqe *sqe)
 {
 	__u32 val;
@@ -467,29 +570,18 @@ static int fill_buf_addr_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				     struct wd_datalist	*list_src,
 				     struct wd_datalist *list_dst)
 {
-	void *hw_sgl_in, *hw_sgl_out;
-	handle_t h_sgl_pool;
+	struct comp_sgl c_sgl;
+	int ret;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (unlikely(!h_sgl_pool)) {
-		WD_ERR("failed to get sglpool!\n");
-		return -WD_EINVAL;
-	}
+	c_sgl.list_src = list_src;
+	c_sgl.list_dst = list_dst;
+	c_sgl.seq_start = NULL;
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, list_src);
-	if (unlikely(!hw_sgl_in)) {
-		WD_ERR("failed to get hw sgl in!\n");
-		return -WD_ENOMEM;
-	}
+	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	if (unlikely(ret))
+		return ret;
 
-	hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool, list_dst);
-	if (unlikely(!hw_sgl_out)) {
-		WD_ERR("failed to get hw sgl out!\n");
-		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-		return -WD_ENOMEM;
-	}
-
-	fill_buf_addr_deflate(sqe, hw_sgl_in, hw_sgl_out, NULL);
+	fill_buf_addr_deflate(sqe, c_sgl.in, c_sgl.out, NULL);
 
 	return 0;
 }
@@ -524,7 +616,7 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	/*
 	 * When the output buffer is smaller than the SW_STOREBUF_TH in STATEFUL,
-	 * the internal buffer is used.
+	 * the internal buffer is used. It requires a storage buffer when returning 1.
 	 */
 	ret = check_enable_store_buf(msg, out_size, head_size);
 	if (ret) {
@@ -568,7 +660,7 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_sgl_skip(sqe, src_skip, dst_skip);
 
-	fill_buf_size_deflate(sqe, in_size, out_size);
+	fill_comp_buf_size(sqe, in_size, out_size);
 
 	return 0;
 }
@@ -617,31 +709,30 @@ static void fill_buf_addr_lz77_zstd(struct hisi_zip_sqe *sqe,
 	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
 }
 
-static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			      struct wd_comp_msg *msg)
+static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
 {
-	struct wd_comp_req *req = &msg->req;
-	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
-	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
 	__u32 out_size = msg->avail_out;
-	void *ctx_buf = NULL;
-
-	if (unlikely(!data)) {
-		WD_ERR("invalid: wd_lz77_zstd_data address is NULL!\n");
-		return -WD_EINVAL;
-	}
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 seq_avail_out = out_size - lits_size;
 
 	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
-		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n",
-		       in_size);
+		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(out_size > HZ_MAX_SIZE)) {
-		WD_ERR("warning: avail_out(%u) is out of range , will set 8MB size max!\n",
-		       out_size);
-		out_size = HZ_MAX_SIZE;
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		     seq_avail_out <= ZSTD_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+			out_size, ZSTD_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
 	}
 
 	/*
@@ -654,14 +745,89 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 		return -WD_EINVAL;
 	}
 
+	return 0;
+}
+
+static int lz77_only_buf_check(struct wd_comp_msg *msg)
+{
+	__u32 in_size = msg->req.src_len;
+	__u32 out_size = msg->avail_out;
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 seq_avail_out = out_size - lits_size;
+
+	/* lits_size need to be less than 8M when use pbuffer */
+	if (unlikely(lits_size > HZ_MAX_SIZE)) {
+		WD_ERR("invalid: in_len(%u) of lz77_only is out of range!\n", in_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		     seq_avail_out <= LZ77_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+		       out_size, LZ77_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	/* For lz77_only, the hardware needs 32 Bytes buffer to output the dfx information */
+	if (unlikely(out_size < ZSTD_LIT_RESV_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough, %u bytes are minimum!\n",
+			ZSTD_LIT_RESV_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int lz77_buf_check(struct wd_comp_msg *msg)
+{
+	enum wd_comp_alg_type alg_type = msg->alg_type;
+
+	if (alg_type == WD_LZ77_ZSTD)
+		return lz77_zstd_buf_check(msg);
+	else if (alg_type == WD_LZ77_ONLY)
+		return lz77_only_buf_check(msg);
+
+	return 0;
+}
+
+static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			      struct wd_comp_msg *msg)
+{
+	struct wd_comp_req *req = &msg->req;
+	struct wd_lz77_zstd_data *data = req->priv;
+	__u32 in_size = msg->req.src_len;
+	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+	__u32 seq_avail_out = msg->avail_out - lits_size;
+	void *ctx_buf = NULL;
+	int ret;
+
+	if (unlikely(!data)) {
+		WD_ERR("invalid: wd_lz77_zstd_data address is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = lz77_buf_check(msg);
+	if (ret)
+		return ret;
+
+	if (unlikely(seq_avail_out > HZ_MAX_SIZE))
+		seq_avail_out = HZ_MAX_SIZE;
+
 	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-		if (data->blk_type != COMP_BLK)
+		if (msg->alg_type == WD_LZ77_ZSTD && data->blk_type != COMP_BLK)
 			memcpy(ctx_buf + CTX_HW_REPCODE_OFFSET,
 			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
 	}
 
-	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
+	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, seq_avail_out);
 
 	fill_buf_addr_lz77_zstd(sqe, req->src, req->dst, req->dst + lits_size, ctx_buf);
 
@@ -686,24 +852,114 @@ static struct wd_datalist *get_seq_start_list(struct wd_comp_req *req)
 	return cur;
 }
 
+static int lz77_zstd_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
+{
+	__u32 in_size = msg->req.src_len;
+	__u32 out_size = msg->avail_out;
+	__u32 seq_avail_out;
+
+	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
+		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n", in_size);
+		return -WD_EINVAL;
+	}
+
+	/*
+	 * For lz77_zstd, the hardware needs 784 Bytes buffer to output
+	 * the frequency information about input data. The sequences
+	 * and frequency data need to be written to an independent sgl
+	 * splited from list_dst.
+	 */
+	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size);
+		return -WD_EINVAL;
+	} else if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
+		       ZSTD_FREQ_DATA_SIZE + lits_size - out_size);
+		return -WD_EINVAL;
+	}
+
+	seq_avail_out = out_size - lits_size;
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		     seq_avail_out <= ZSTD_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+			out_size, ZSTD_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+			out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int lz77_only_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
+{
+	__u32 in_size = msg->req.src_len;
+	__u32 out_size = msg->avail_out;
+	__u32 seq_avail_out;
+
+	/*
+	 * For lz77_only, the hardware needs 32 Bytes buffer to output
+	 * the dfx information. The literals and sequences data need to be written
+	 * to an independent sgl splited from list_dst.
+	 */
+	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
+		       ZSTD_LIT_RESV_SIZE + lits_size);
+		return -WD_EINVAL;
+	} else if (unlikely(out_size < ZSTD_LIT_RESV_SIZE + lits_size)) {
+		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
+		       ZSTD_LIT_RESV_SIZE + lits_size - out_size);
+		return -WD_EINVAL;
+	}
+
+	seq_avail_out = out_size - lits_size;
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv < WD_COMP_L9 &&
+		seq_avail_out <= LZ77_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum!\n",
+		       out_size, LZ77_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+		seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+
+static int lz77_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
+{
+	enum wd_comp_alg_type alg_type = msg->alg_type;
+
+	if (alg_type == WD_LZ77_ZSTD)
+		return lz77_zstd_buf_check_sgl(msg, lits_size);
+	else if (alg_type == WD_LZ77_ONLY)
+		return lz77_only_buf_check_sgl(msg, lits_size);
+
+	return 0;
+}
+
 static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				  struct wd_comp_msg *msg)
 {
-	void *hw_sgl_in, *hw_sgl_out_lit, *hw_sgl_out_seq;
 	struct wd_comp_req *req = &msg->req;
 	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
 	struct wd_datalist *seq_start;
-	handle_t h_sgl_pool;
+	struct comp_sgl c_sgl;
 	__u32 lits_size;
 	int ret;
-
-	if (unlikely(in_size > ZSTD_MAX_SIZE)) {
-		WD_ERR("invalid: in_len(%u) of lz77_zstd is out of range!\n",
-		       in_size);
-		return -WD_EINVAL;
-	}
 
 	if (unlikely(!data)) {
 		WD_ERR("invalid: wd_lz77_zstd_data address is NULL!\n");
@@ -716,64 +972,67 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (unlikely(!seq_start))
 		return -WD_EINVAL;
 
+	lits_size = hisi_qm_get_list_size(req->list_dst, seq_start);
+
+	ret = lz77_buf_check_sgl(msg, lits_size);
+	if (ret)
+		return ret;
+
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
 
-	/*
-	 * For lz77_zstd, the hardware needs 784 Bytes buffer to output
-	 * the frequency information about input data. The sequences
-	 * and frequency data need to be written to an independent sgl
-	 * splited from list_dst.
-	 */
-	lits_size = hisi_qm_get_list_size(req->list_dst, seq_start);
-	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
-		WD_ERR("invalid: output is not enough for literals, %u bytes are minimum!\n",
-		       ZSTD_FREQ_DATA_SIZE + lits_size);
-		return -WD_EINVAL;
-	} else if (unlikely(out_size < ZSTD_FREQ_DATA_SIZE + lits_size)) {
-		WD_ERR("invalid: output is not enough for sequences, at least %u bytes more!\n",
-		       ZSTD_FREQ_DATA_SIZE + lits_size - out_size);
-		return -WD_EINVAL;
-	}
-
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (unlikely(!h_sgl_pool)) {
-		WD_ERR("failed to get sglpool!\n");
-		return -WD_EINVAL;
-	}
+	c_sgl.list_src = req->list_src;
+	c_sgl.list_dst = req->list_dst;
+	c_sgl.seq_start = seq_start;
 
-	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_src);
-	if (unlikely(!hw_sgl_in)) {
-		WD_ERR("failed to get hw sgl in!\n");
-		return -WD_ENOMEM;
-	}
+	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	if (unlikely(ret))
+		return ret;
 
-	hw_sgl_out_lit = hisi_qm_get_hw_sgl(h_sgl_pool, req->list_dst);
-	if (unlikely(!hw_sgl_out_lit)) {
-		WD_ERR("failed to get hw sgl out for literals!\n");
-		ret = -WD_ENOMEM;
-		goto err_free_sgl_in;
-	}
-
-	hw_sgl_out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, seq_start);
-	if (unlikely(!hw_sgl_out_seq)) {
-		WD_ERR("failed to get hw sgl out for sequences!\n");
-		ret = -WD_ENOMEM;
-		goto err_free_sgl_out_lit;
-	}
-
-	fill_buf_addr_lz77_zstd(sqe, hw_sgl_in, hw_sgl_out_lit,
-				hw_sgl_out_seq, NULL);
+	fill_buf_addr_lz77_zstd(sqe, c_sgl.in, c_sgl.out,
+				c_sgl.out_seq, NULL);
 
 	return 0;
+}
 
-err_free_sgl_out_lit:
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out_lit);
-err_free_sgl_in:
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-	return ret;
+static int fill_buf_addr_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+				     struct wd_datalist	*list_src,
+				     struct wd_datalist *list_dst)
+{
+	struct comp_sgl c_sgl;
+	int ret;
+
+	c_sgl.list_src = list_src;
+	c_sgl.list_dst = list_dst;
+	c_sgl.seq_start = NULL;
+
+	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	if (unlikely(ret))
+		return ret;
+
+	fill_buf_addr_lz4(sqe, c_sgl.in, c_sgl.out);
+
+	return 0;
+}
+
+static int fill_buf_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			struct wd_comp_msg *msg)
+{
+	struct wd_datalist *list_src = msg->req.list_src;
+	struct wd_datalist *list_dst = msg->req.list_dst;
+	int ret;
+
+	ret = check_lz4_msg(msg, WD_SGL_BUF);
+	if (unlikely(ret))
+		return ret;
+
+	fill_buf_type_sgl(sqe);
+
+	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
+
+	return fill_buf_addr_lz4_sgl(h_qp, sqe, list_src, list_dst);
 }
 
 static void fill_sqe_type_v1(struct hisi_zip_sqe *sqe)
@@ -825,6 +1084,24 @@ static void fill_alg_lz77_zstd(struct hisi_zip_sqe *sqe)
 	sqe->dw9 = val;
 }
 
+static void fill_alg_lz77_only(struct hisi_zip_sqe *sqe)
+{
+	__u32 val;
+
+	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+	val |= HW_LZ77_ONLY;
+	sqe->dw9 = val;
+}
+
+static void fill_alg_lz4(struct hisi_zip_sqe *sqe)
+{
+	__u32 val;
+
+	val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
+	val |= HW_LZ4;
+	sqe->dw9 = val;
+}
+
 static void fill_tag_v1(struct hisi_zip_sqe *sqe, __u32 tag)
 {
 	sqe->dw13 = tag;
@@ -835,14 +1112,14 @@ static void fill_tag_v3(struct hisi_zip_sqe *sqe, __u32 tag)
 	sqe->dw26 = tag;
 }
 
-static int fill_comp_level_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
+static int fill_comp_level(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
 {
 	return 0;
 }
 
 static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_level comp_lv)
 {
-	__u32 val;
+	__u32 val, alg;
 
 	switch (comp_lv) {
 	case WD_COMP_L8:
@@ -852,8 +1129,12 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 	 */
 		break;
 	case WD_COMP_L9:
+		alg = sqe->dw9 & HZ_REQ_TYPE_MASK;
 		val = sqe->dw9 & ~HZ_REQ_TYPE_MASK;
-		val |= HW_LZ77_ZSTD_PRICE;
+		if (alg == HW_LZ77_ZSTD)
+			val |= HW_LZ77_ZSTD_PRICE;
+		else if (alg == HW_LZ77_ONLY)
+			val |= HW_LZ77_ONLY_PRICE;
 		sqe->dw9 = val;
 		break;
 	default:
@@ -864,7 +1145,7 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 	return 0;
 }
 
-static void get_data_size_deflate(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
+static void get_comp_data_size(struct hisi_zip_sqe *sqe, enum wd_comp_op_type op_type,
 				  struct wd_comp_msg *recv_msg)
 {
 	recv_msg->in_cons = sqe->consumed;
@@ -912,18 +1193,22 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
 	if (unlikely(!data))
 		return;
 
+	recv_msg->in_cons = sqe->consumed;
 	data->lit_num = sqe->comp_data_length;
 	data->seq_num = sqe->produced;
-	data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
-	data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
-	data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
-		     OVERFLOW_DATA_SIZE;
 
-	if (ctx_buf) {
-		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
-		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
-		       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, REPCODE_SIZE);
+	if (recv_msg->alg_type == WD_LZ77_ZSTD) {
+		data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
+		data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
+		data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
+			     OVERFLOW_DATA_SIZE;
+
+		if (ctx_buf) {
+			memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
+			       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+			memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
+			       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, REPCODE_SIZE);
+		}
 	}
 }
 
@@ -944,22 +1229,22 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_sqe_type = fill_sqe_type_v3,
 		.fill_alg = fill_alg_deflate,
 		.fill_tag = fill_tag_v3,
-		.fill_comp_level = fill_comp_level_deflate,
-		.get_data_size = get_data_size_deflate,
+		.fill_comp_level = fill_comp_level,
+		.get_data_size = get_comp_data_size,
 		.get_tag = get_tag_v3,
 	}, {
 		.alg_name = "zlib",
 		.fill_buf[WD_FLAT_BUF] = fill_buf_zlib,
 		.fill_buf[WD_SGL_BUF] = fill_buf_zlib_sgl,
 		.fill_alg = fill_alg_zlib,
-		.fill_comp_level = fill_comp_level_deflate,
+		.fill_comp_level = fill_comp_level,
 		.get_data_size = get_data_size_zlib,
 	}, {
 		.alg_name = "gzip",
 		.fill_buf[WD_FLAT_BUF] = fill_buf_gzip,
 		.fill_buf[WD_SGL_BUF] = fill_buf_gzip_sgl,
 		.fill_alg = fill_alg_gzip,
-		.fill_comp_level = fill_comp_level_deflate,
+		.fill_comp_level = fill_comp_level,
 		.get_data_size = get_data_size_gzip,
 	}, {
 		.alg_name = "lz77_zstd",
@@ -967,6 +1252,26 @@ struct hisi_zip_sqe_ops ops[] = { {
 		.fill_buf[WD_SGL_BUF] = fill_buf_lz77_zstd_sgl,
 		.fill_sqe_type = fill_sqe_type_v3,
 		.fill_alg = fill_alg_lz77_zstd,
+		.fill_tag = fill_tag_v3,
+		.fill_comp_level = fill_comp_level_lz77_zstd,
+		.get_data_size = get_data_size_lz77_zstd,
+		.get_tag = get_tag_v3,
+	}, {
+		.alg_name = "lz4",
+		.fill_buf[WD_FLAT_BUF] = fill_buf_lz4,
+		.fill_buf[WD_SGL_BUF] = fill_buf_lz4_sgl,
+		.fill_sqe_type = fill_sqe_type_v3,
+		.fill_alg = fill_alg_lz4,
+		.fill_tag = fill_tag_v3,
+		.fill_comp_level = fill_comp_level,
+		.get_data_size = get_comp_data_size,
+		.get_tag = get_tag_v3,
+	}, {
+		.alg_name = "lz77_only",
+		.fill_buf[WD_FLAT_BUF] = fill_buf_lz77_zstd,
+		.fill_buf[WD_SGL_BUF] = fill_buf_lz77_zstd_sgl,
+		.fill_sqe_type = fill_sqe_type_v3,
+		.fill_alg = fill_alg_lz77_only,
 		.fill_tag = fill_tag_v3,
 		.fill_comp_level = fill_comp_level_lz77_zstd,
 		.get_data_size = get_data_size_lz77_zstd,
@@ -1080,10 +1385,6 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
-	if (unlikely(ret))
-		return ret;
-
 	ret = ops[alg_type].fill_buf[msg->req.data_fmt]((handle_t)qp, sqe, msg);
 	if (unlikely(ret))
 		return ret;
@@ -1091,6 +1392,10 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	ops[alg_type].fill_sqe_type(sqe);
 
 	ops[alg_type].fill_alg(sqe);
+
+	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
+	if (unlikely(ret))
+		return ret;
 
 	ops[alg_type].fill_tag(sqe, msg->tag);
 
@@ -1133,7 +1438,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	hw_sgl_out = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
 
-	if (alg_type == WD_LZ77_ZSTD) {
+	if (alg_type == WD_LZ77_ZSTD || alg_type == WD_LZ77_ONLY) {
 		hw_sgl_out = VA_ADDR(sqe->literals_addr_h,
 				     sqe->literals_addr_l);
 		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
@@ -1152,7 +1457,7 @@ static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *com
 	/* Skip hardware, if the store buffer need to be copied to output */
 	ret = check_store_buf(msg);
 	if (ret)
-		return ret < 0 ? ret : 0;
+		return 0;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
@@ -1187,9 +1492,16 @@ static int get_alg_type(__u32 type)
 	case HW_GZIP:
 		alg_type = WD_GZIP;
 		break;
+	case HW_LZ4:
+		alg_type = WD_LZ4;
+		break;
 	case HW_LZ77_ZSTD:
 	case HW_LZ77_ZSTD_PRICE:
 		alg_type = WD_LZ77_ZSTD;
+		break;
+	case HW_LZ77_ONLY:
+	case HW_LZ77_ONLY_PRICE:
+		alg_type = WD_LZ77_ONLY;
 		break;
 	default:
 		break;
@@ -1322,7 +1634,7 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	__u16 count = 0;
 	int ret;
 
-	if (recv_msg && recv_msg->ctx_buf) {
+	if (recv_msg->ctx_buf) {
 		buf = (struct hisi_comp_buf *)(recv_msg->ctx_buf + CTX_STOREBUF_OFFSET);
 		/*
 		 * The output has been copied from the storage buffer,
@@ -1370,6 +1682,8 @@ static struct wd_alg_driver zip_alg_driver[] = {
 
 	GEN_ZIP_ALG_DRIVER("deflate"),
 	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
+	GEN_ZIP_ALG_DRIVER("lz4"),
+	GEN_ZIP_ALG_DRIVER("lz77_only")
 };
 
 #ifdef WD_STATIC_DRV

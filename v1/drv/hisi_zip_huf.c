@@ -14,7 +14,7 @@
 #define EMPTY_STORE_BLOCK_VAL		0xffff0000L
 #define HF_BLOCK_IS_COMPLETE		1
 #define HF_BLOCK_IS_INCOMPLETE		0
-#define LEN_NLEN_CHECK(data)		((data & 0xffff) != ((data >> 16) ^ 0xffff))
+#define LEN_NLEN_CHECK(data)		(((data) & 0xffff) != (((data) >> 16) ^ 0xffff))
 
 /* Constants related to the Huffman code table */
 #define LIT_LEN_7BITS_THRESHOLD		7
@@ -96,15 +96,10 @@ static int check_store_huffman_block(struct bit_reader *br)
 	/* go to a byte boundary */
 	pad = bits & BYTE_ALIGN_MASK;
 	bits -= pad;
-	data = read_bits(br, pad);
-	if (data < 0)
-		return HF_BLOCK_IS_INCOMPLETE;
-
-	data = read_bits(br, bits);
-	if (data < 0)
-		return HF_BLOCK_IS_INCOMPLETE;
+	br->cur_pos += pad;
 
 	/* check len and nlen */
+	data = read_bits(br, bits);
 	if (LEN_NLEN_CHECK(data))
 		return -WD_EINVAL;
 

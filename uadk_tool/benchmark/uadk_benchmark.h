@@ -120,6 +120,8 @@ enum test_alg {
 	GZIP, // gzip
 	DEFLATE, // deflate
 	LZ77_ZSTD, // lz77_zstd
+	LZ4,
+	LZ77_ONLY,
 	RSA_1024, // rsa
 	RSA_2048,
 	RSA_3072,
