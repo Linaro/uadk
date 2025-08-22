@@ -58,7 +58,6 @@ struct dev_info {
 	int node_id;
 	int numa_dis;
 	int flags;
-	int ref;
 	int available_instances;
 	int iommu_type;
 	unsigned int weight;
@@ -531,7 +530,6 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 	qinfo->iommu_type = dev->iommu_type;
 	qinfo->dev_info = dev;
 	qinfo->head = &qinfo->ss_list;
-	__atomic_clear(&qinfo->ref, __ATOMIC_RELEASE);
 	TAILQ_INIT(&qinfo->ss_list);
 	memcpy(qinfo->qfrs_offset, dev->qfrs_offset,
 				sizeof(qinfo->qfrs_offset));
@@ -618,23 +616,14 @@ err_with_dev:
 
 void wd_release_queue(struct wd_queue *q)
 {
-	struct wd_ss_region_list *head;
-	struct q_info *qinfo, *sqinfo;
+	struct q_info *qinfo;
 
 	if (!q || !q->qinfo) {
 		WD_ERR("release queue parameter error!\n");
 		return;
 	}
-	qinfo = q->qinfo;
-	if (__atomic_load_n(&qinfo->ref, __ATOMIC_RELAXED)) {
-		WD_ERR("q(%s) is busy, release fail!\n", q->capa.alg);
-		return;
-	}
-	head = qinfo->head;
-	sqinfo = container_of(head, struct q_info, ss_list);
-	if (sqinfo != qinfo) /* q_share */
-		__atomic_sub_fetch(&sqinfo->ref, 1, __ATOMIC_RELAXED);
 
+	qinfo = q->qinfo;
 	if (ioctl(qinfo->fd, WD_UACCE_CMD_PUT_Q))
 		WD_ERR("failed to put queue!\n");
 
@@ -719,48 +708,6 @@ void *wd_reserve_memory(struct wd_queue *q, size_t size)
 	}
 
 	return drv_reserve_mem(q, size);
-}
-
-int wd_share_reserved_memory(struct wd_queue *q,
-			struct wd_queue *target_q)
-{
-	const struct dev_info *info, *tgt_info;
-	struct q_info *qinfo, *tqinfo;
-	int ret;
-
-	if (!q || !target_q || !q->qinfo || !target_q->qinfo) {
-		WD_ERR("wd share reserved memory: parameter err!\n");
-		return -WD_EINVAL;
-	}
-
-	qinfo = q->qinfo;
-	tqinfo = target_q->qinfo;
-	tgt_info = tqinfo->dev_info;
-	info = qinfo->dev_info;
-
-	/* Just share DMA memory from 'q' in NO-IOMMU mode */
-	if (qinfo->iommu_type) {
-		WD_ERR("IOMMU opened, not support share mem!\n");
-		return -WD_EINVAL;
-	}
-
-	if (qinfo->iommu_type != tqinfo->iommu_type) {
-		WD_ERR("IOMMU type mismatching as share mem!\n");
-		return -WD_EINVAL;
-	}
-	if (info->node_id != tgt_info->node_id)
-		WD_ERR("Warn: the 2 queues is not at the same node!\n");
-
-	ret = ioctl(qinfo->fd, WD_UACCE_CMD_SHARE_SVAS, tqinfo->fd);
-	if (ret) {
-		WD_ERR("ioctl share dma memory fail!\n");
-		return ret;
-	}
-
-	tqinfo->head = qinfo->head;
-	__atomic_add_fetch(&qinfo->ref, 1, __ATOMIC_RELAXED);
-
-	return 0;
 }
 
 int wd_get_available_dev_num(const char *algorithm)
