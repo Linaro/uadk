@@ -34,6 +34,8 @@
 
 #define WD_DRV_LIB_DIR			"uadk"
 
+#define WD_PATH_DIR_NUM			2
+
 struct msg_pool {
 	/* message array allocated dynamically */
 	void *msgs;
@@ -63,6 +65,8 @@ static const char *wd_env_name[WD_TYPE_MAX] = {
 	"WD_DH_CTX_NUM",
 	"WD_ECC_CTX_NUM",
 	"WD_AGG_CTX_NUM",
+	"WD_UDMA_CTX_NUM",
+	"WD_JOIN_GATHER_CTX_NUM",
 };
 
 struct async_task {
@@ -107,6 +111,10 @@ static struct acc_alg_item alg_options[] = {
 	{"deflate", "deflate"},
 	{"lz77_zstd", "lz77_zstd"},
 	{"hashagg", "hashagg"},
+	{"udma", "udma"},
+	{"hashjoin", "hashjoin"},
+	{"gather", "gather"},
+	{"join-gather", "hashjoin"},
 
 	{"rsa", "rsa"},
 	{"dh", "dh"},
@@ -2160,8 +2168,7 @@ static void dladdr_empty(void)
 
 int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 {
-	char file_path[PATH_MAX] = {0};
-	char path[PATH_MAX] = {0};
+	char *path_buf, *path, *file_path;
 	Dl_info file_info;
 	int len, rc, i;
 
@@ -2171,6 +2178,14 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 		WD_ERR("fail to get lib file path.\n");
 		return -WD_EINVAL;
 	}
+
+	path_buf = calloc(WD_PATH_DIR_NUM, sizeof(char) * PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to calloc path_buf.\n");
+		return -WD_ENOMEM;
+	}
+	file_path = path_buf;
+	path = path_buf + PATH_MAX;
 	strncpy(file_path, file_info.dli_fname, PATH_MAX - 1);
 
 	/* Clear the file path's tail file name */
@@ -2185,19 +2200,24 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 	if (is_dir) {
 		len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, WD_DRV_LIB_DIR);
 		if (len >= PATH_MAX)
-			return -WD_EINVAL;
+			goto free_path;
 	} else {
 		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s", file_path, WD_DRV_LIB_DIR, lib_file);
 		if (len >= PATH_MAX)
-			return -WD_EINVAL;
+			goto free_path;
 	}
 
 	if (realpath(lib_path, path) == NULL) {
 		WD_ERR("invalid: %s: no such file or directory!\n", path);
-		return -WD_EINVAL;
+		goto free_path;
 	}
+	free(path_buf);
 
 	return 0;
+
+free_path:
+	free(path_buf);
+	return -WD_EINVAL;
 }
 
 /**
@@ -2590,7 +2610,7 @@ static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 
 	list = wd_get_accel_list(attrs->alg);
 	if (!list) {
-		WD_ERR("failed to get devices!\n");
+		WD_ERR("failed to get devices for alg: %s\n", attrs->alg);
 		return -WD_ENODEV;
 	}
 

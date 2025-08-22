@@ -360,7 +360,7 @@ static int wd_agg_init_sess_priv(struct wd_agg_sess *sess, struct wd_agg_sess_se
 			WD_ERR("failed to get session uninit ops!\n");
 			return -WD_EINVAL;
 		}
-		ret = sess->ops.sess_init(setup, &sess->priv);
+		ret = sess->ops.sess_init(wd_agg_setting.driver, setup, &sess->priv);
 		if (ret) {
 			WD_ERR("failed to init session priv!\n");
 			return ret;
@@ -368,10 +368,10 @@ static int wd_agg_init_sess_priv(struct wd_agg_sess *sess, struct wd_agg_sess_se
 	}
 
 	if (sess->ops.get_row_size) {
-		ret = sess->ops.get_row_size(sess->priv);
+		ret = sess->ops.get_row_size(wd_agg_setting.driver, sess->priv);
 		if (ret <= 0) {
 			if (sess->ops.sess_uninit)
-				sess->ops.sess_uninit(sess->priv);
+				sess->ops.sess_uninit(wd_agg_setting.driver, sess->priv);
 			WD_ERR("failed to get hash table row size: %d!\n", ret);
 			return -WD_EINVAL;
 		}
@@ -436,7 +436,7 @@ handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 
 uninit_priv:
 	if (sess->ops.sess_uninit)
-		sess->ops.sess_uninit(sess->priv);
+		sess->ops.sess_uninit(wd_agg_setting.driver, sess->priv);
 free_key:
 	free(sess->sched_key);
 free_sess:
@@ -458,7 +458,7 @@ void wd_agg_free_sess(handle_t h_sess)
 	free(sess->key_conf.data_size);
 
 	if (sess->ops.sess_uninit)
-		sess->ops.sess_uninit(sess->priv);
+		sess->ops.sess_uninit(wd_agg_setting.driver, sess->priv);
 	if (sess->sched_key)
 		free(sess->sched_key);
 
@@ -551,7 +551,7 @@ int wd_agg_set_hash_table(handle_t h_sess, struct wd_dae_hash_table *info)
 	memcpy(hash_table, info, sizeof(struct wd_dae_hash_table));
 
 	if (sess->ops.hash_table_init) {
-		ret = sess->ops.hash_table_init(hash_table, sess->priv);
+		ret = sess->ops.hash_table_init(wd_agg_setting.driver, hash_table, sess->priv);
 		if (ret) {
 			memcpy(hash_table, rehash_table, sizeof(struct wd_dae_hash_table));
 			memset(rehash_table, 0, sizeof(struct wd_dae_hash_table));
@@ -1406,16 +1406,16 @@ static int wd_agg_set_col_size(struct wd_agg_sess *sess, struct wd_agg_req *req,
 	return WD_SUCCESS;
 }
 
-static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req *req)
+static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req *in_req,
+				    struct wd_agg_req *out_req)
 {
+	struct wd_agg_msg in_msg = {0};
 	struct wd_agg_msg msg = {0};
-	bool output_done;
 	int ret;
 
-	fill_request_msg_output(&msg, req, sess, true);
-	req->state = 0;
+	fill_request_msg_output(&msg, out_req, sess, true);
 
-	ret = wd_agg_sync_job(sess, req, &msg);
+	ret = wd_agg_sync_job(sess, out_req, &msg);
 	if (unlikely(ret))
 		return ret;
 
@@ -1423,33 +1423,26 @@ static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req 
 	if (unlikely(ret))
 		return ret;
 
-	req->real_out_row_count = msg.out_row_count;
-	output_done = msg.output_done;
 	if (!msg.out_row_count) {
-		req->output_done = true;
+		out_req->output_done = true;
 		return WD_SUCCESS;
 	}
 
-	req->key_cols = req->out_key_cols;
-	req->agg_cols = req->out_agg_cols;
-	req->key_cols_num = req->out_key_cols_num;
-	req->agg_cols_num = req->out_agg_cols_num;
-	wd_agg_set_col_size(sess, req, req->real_out_row_count);
-	req->in_row_count = req->real_out_row_count;
+	out_req->real_out_row_count = msg.out_row_count;
+	wd_agg_set_col_size(sess, in_req, out_req->real_out_row_count);
+	in_req->in_row_count = out_req->real_out_row_count;
 
-	memset(&msg, 0, sizeof(struct wd_agg_msg));
-	fill_request_msg_input(&msg, req, sess, true);
+	fill_request_msg_input(&in_msg, in_req, sess, true);
 
-	ret = wd_agg_sync_job(sess, req, &msg);
+	ret = wd_agg_sync_job(sess, in_req, &in_msg);
 	if (unlikely(ret))
 		return ret;
 
-	ret = wd_agg_check_msg_result(msg.result);
+	ret = wd_agg_check_msg_result(in_msg.result);
 	if (unlikely(ret))
 		return ret;
 
-	req->state = msg.result;
-	req->output_done = output_done;
+	out_req->output_done = msg.output_done;
 
 	return WD_SUCCESS;
 }
@@ -1472,9 +1465,9 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 {
 	struct wd_agg_sess *sess = (struct wd_agg_sess *)h_sess;
 	enum wd_agg_sess_state expected = WD_AGG_SESS_RESET;
-	struct wd_agg_req src_req;
-	__u64 cnt = 0;
-	__u64 max_cnt;
+	struct wd_dae_col_addr *cols;
+	struct wd_agg_req in_req;
+	__u64 max_cnt, key_len, agg_len, cnt = 0;
 	int ret;
 
 	ret = wd_agg_check_rehash_params(sess, req);
@@ -1487,21 +1480,39 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 	if (unlikely(ret))
 		return ret;
 
-	memcpy(&src_req, req, sizeof(struct wd_agg_req));
+	memcpy(&in_req, req, sizeof(struct wd_agg_req));
+
+	key_len = req->out_key_cols_num * sizeof(struct wd_dae_col_addr);
+	agg_len = req->out_agg_cols_num * sizeof(struct wd_dae_col_addr);
+	cols = malloc(key_len + agg_len);
+	if (unlikely(!cols))
+		return -WD_ENOMEM;
+
+	/* The input task uses the address of the output task as input address. */
+	in_req.key_cols = cols;
+	in_req.agg_cols = cols + req->out_key_cols_num;
+	in_req.key_cols_num = req->out_key_cols_num;
+	in_req.agg_cols_num = req->out_agg_cols_num;
+	memcpy(in_req.key_cols, req->out_key_cols, key_len);
+	memcpy(in_req.agg_cols, req->out_agg_cols, agg_len);
+
 	max_cnt = MAX_HASH_TABLE_ROW_NUM / req->out_row_count;
+
 	while (cnt < max_cnt) {
-		ret = wd_agg_rehash_sync_inner(sess, &src_req);
+		ret = wd_agg_rehash_sync_inner(sess, &in_req, req);
 		if (ret) {
 			__atomic_store_n(&sess->state, WD_AGG_SESS_RESET, __ATOMIC_RELEASE);
 			WD_ERR("failed to do agg rehash task!\n");
+			free(cols);
 			return ret;
 		}
-		if (src_req.output_done)
+		if (req->output_done)
 			break;
 		cnt++;
 	}
 
 	__atomic_store_n(&sess->state, WD_AGG_SESS_INPUT, __ATOMIC_RELEASE);
+	free(cols);
 	return WD_SUCCESS;
 }
 
