@@ -48,6 +48,7 @@
 #define SEC_SM4_XTS_GB_V3	0x1
 #define SEC_AUTH_ALG_OFFSET_V3	15
 #define SEC_SVA_PREFETCH_OFFSET	27
+#define SEC_SVA_PREFETCH_MAX_LEN	0x6000
 #define SEC_ENABLE_SVA_PREFETCH	0x1
 #define SEC_CIPHER_AUTH_V3	0xbf
 #define SEC_AUTH_CIPHER_V3	0x40
@@ -1357,14 +1358,20 @@ static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 		return ret;
 	}
 
-	sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
-
 	return 0;
+}
+
+static void fill_sec_prefetch(__u8 data_fmt, __u32 len, __u16 hw_type, struct hisi_sec_sqe3 *sqe)
+{
+	if (hw_type >= HISI_QM_API_VER5_BASE ||
+	    (data_fmt == WD_FLAT_BUF && len <= SEC_SVA_PREFETCH_MAX_LEN))
+		sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 }
 
 static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
@@ -1379,6 +1386,8 @@ static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	ret = fill_cipher_bd3(msg, &sqe);
 	if (ret)
 		return ret;
+
+	fill_sec_prefetch(msg->data_fmt, msg->in_bytes, qp->q_info.hw_type, &sqe);
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
@@ -1950,6 +1959,7 @@ static void fill_digest_v3_scene(struct hisi_sec_sqe3 *sqe,
 static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_digest_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
@@ -1990,7 +2000,8 @@ static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
-	sqe.auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
+
+	fill_sec_prefetch(msg->data_fmt, msg->in_bytes, qp->q_info.hw_type, &sqe);
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -2912,7 +2923,6 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	sqe->c_len_ivin = msg->in_bytes;
 	sqe->cipher_src_offset = msg->assoc_bytes;
 	sqe->a_len_key = msg->in_bytes + msg->assoc_bytes;
-	sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 
 	ret = fill_aead_bd3_alg(msg, sqe);
 	if (ret) {
@@ -2932,6 +2942,7 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_aead_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
 	__u16 count = 0;
@@ -2954,6 +2965,9 @@ static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 	ret = fill_aead_bd3(msg, &sqe);
 	if (unlikely(ret))
 		return ret;
+
+	fill_sec_prefetch(msg->data_fmt, msg->in_bytes + msg->assoc_bytes,
+			  qp->q_info.hw_type, &sqe);
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
