@@ -386,7 +386,7 @@ static int sm3_ce_drv_init(struct wd_alg_driver *drv, void *conf)
 
 	priv = malloc(sizeof(struct sm3_ce_drv_ctx));
 	if (!priv)
-		return -WD_EINVAL;
+		return -WD_ENOMEM;
 
 	config->epoll_en = 0;
 	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
