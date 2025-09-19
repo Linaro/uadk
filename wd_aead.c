@@ -67,6 +67,7 @@ static void wd_aead_close_driver(int init_type)
 #ifndef WD_STATIC_DRV
 	if (init_type == WD_TYPE_V2) {
 		wd_dlclose_drv(wd_aead_setting.dlh_list);
+		wd_aead_setting.dlh_list = NULL;
 		return;
 	}
 
@@ -648,7 +649,6 @@ void wd_aead_uninit2(void)
 	wd_alg_attrs_uninit(&wd_aead_init_attrs);
 	wd_alg_drv_unbind(wd_aead_setting.driver);
 	wd_aead_close_driver(WD_TYPE_V2);
-	wd_aead_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
 
