@@ -103,6 +103,7 @@ static void wd_ecc_close_driver(int init_type)
 #ifndef WD_STATIC_DRV
 	if (init_type == WD_TYPE_V2) {
 		wd_dlclose_drv(wd_ecc_setting.dlh_list);
+		wd_ecc_setting.dlh_list = NULL;
 		return;
 	}
 
@@ -383,7 +384,6 @@ void wd_ecc_uninit2(void)
 	wd_alg_attrs_uninit(&wd_ecc_init_attrs);
 	wd_alg_drv_unbind(wd_ecc_setting.driver);
 	wd_ecc_close_driver(WD_TYPE_V2);
-	wd_ecc_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_ecc_setting.status);
 }
 
