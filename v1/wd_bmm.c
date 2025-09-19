@@ -116,12 +116,13 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 	p->act_mem_sz = (p->act_hd_sz + p->act_blk_sz) *
 			 (unsigned long)sp->block_num + asz;
 
-	/* When we use WD reserve memory and the blk_sz is larger than 1M,
+	/*
+	 * When we use WD reserve memory and the blk_sz is larger than 1M,
 	 * in order to ensure the mem_pool to be success,
-	 * we should to reserve more memory
+	 * ensure that the allocated memory is an integer multiple of 1M.
 	 */
 	if (!sp->br.alloc && !qinfo->iommu_type)
-		p->act_mem_sz *= (1 + p->act_blk_sz / BLK_BALANCE_SZ);
+		p->act_mem_sz = (p->act_mem_sz + BLK_BALANCE_SZ - 1) & ~(BLK_BALANCE_SZ - 1);
 
 	return WD_SUCCESS;
 }
