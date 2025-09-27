@@ -24,6 +24,7 @@
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
+#define WD_MAX_NOIOMMU_ID	2
 
 static const struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.hw_type = HISI_QM_API_VER_BASE WD_UACCE_API_VER_NOIOMMU_SUBFIX,
@@ -94,6 +95,7 @@ int drv_open(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
 	__u32 type_size = MAX_HW_TYPE;
+	char *type;
 	__u32 i;
 
 	/* try to find another device if the user driver is not available */
@@ -104,9 +106,18 @@ int drv_open(struct wd_queue *q)
 			return hw_dio_tbl[qinfo->hw_type_id].open(q);
 		}
 	}
-	WD_ERR("No matched driver to use (%s)!\n", qinfo->hw_type);
-	errno = ENODEV;
-	return -ENODEV;
+
+	/*
+	 * If the device version is greater than the current version supported by wd,
+	 * use the latest version of wd.
+	 */
+	type = strstr(qinfo->hw_type, WD_UACCE_API_VER_NOIOMMU_SUBFIX);
+	if (!type)
+		qinfo->hw_type_id = i - 1;
+	else
+		qinfo->hw_type_id = WD_MAX_NOIOMMU_ID;
+
+	return hw_dio_tbl[qinfo->hw_type_id].open(q);
 }
 
 void drv_close(struct wd_queue *q)

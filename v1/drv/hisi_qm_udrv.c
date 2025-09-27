@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
+#include <limits.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
 #include <string.h>
@@ -25,6 +25,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include "v1/drv/hisi_zip_udrv.h"
 #include "v1/drv/hisi_hpre_udrv.h"
@@ -34,6 +35,13 @@
 #define HISI_SGL_SGE_NUM_MAX	255
 #define HISI_SGL_ALIGN_SZ	64
 #define HISI_SGL_SGE_ALIGN_SZ	32
+#define HISI_VERSION_ID_SHIFT	9
+
+enum {
+	HISI_QM_V1 = 1,
+	HISI_QM_V2 = 2,
+	HISI_QM_V3 = 3,
+};
 
 /* get hisi hardware sgl information, like sge_size, sgl_size, and its align size.
  * sgl numbers in a chain : 256 at most;
@@ -324,7 +332,7 @@ static bool hpre_alg_info_init(struct wd_queue *q, const char *alg)
 	return is_found;
 }
 
-static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
+static bool sec_alg_info_init(struct q_info *qinfo, const char *alg, unsigned long ver)
 {
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_found = true;
@@ -332,30 +340,30 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 	if (!strcmp(alg, "cipher")) {
 		qinfo->atype = WCRYPTO_CIPHER;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+		if (ver == HISI_QM_V2) {
 			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_sqe;
 			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_sqe;
-		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+		} else if (ver >= HISI_QM_V3) {
 			info->sqe_fill[WCRYPTO_CIPHER] = qm_fill_cipher_bd3_sqe;
 			info->sqe_parse[WCRYPTO_CIPHER] = qm_parse_cipher_bd3_sqe;
 		}
 	} else if (!strcmp(alg, "digest")) {
 		qinfo->atype = WCRYPTO_DIGEST;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+		if (ver == HISI_QM_V2) {
 			info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_sqe;
 			info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_sqe;
-		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+		} else if (ver >= HISI_QM_V3) {
 			info->sqe_fill[WCRYPTO_DIGEST] = qm_fill_digest_bd3_sqe;
 			info->sqe_parse[WCRYPTO_DIGEST] = qm_parse_digest_bd3_sqe;
 		}
 	} else if (!strcmp(alg, "aead")) {
 		qinfo->atype = WCRYPTO_AEAD;
 		info->sqe_size = QM_SEC_BD_SIZE;
-		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+		if (ver == HISI_QM_V2) {
 			info->sqe_fill[WCRYPTO_AEAD] = qm_fill_aead_sqe;
 			info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_sqe;
-		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+		} else if (ver >= HISI_QM_V3) {
 			info->sqe_fill[WCRYPTO_AEAD] = qm_fill_aead_bd3_sqe;
 			info->sqe_parse[WCRYPTO_AEAD] = qm_parse_aead_bd3_sqe;
 		}
@@ -373,7 +381,7 @@ static bool sec_alg_info_init(struct q_info *qinfo, const char *alg)
 	return is_found;
 }
 
-static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
+static bool zip_alg_info_init(struct q_info *qinfo, const char *alg, unsigned long ver)
 {
 	struct qm_queue_info *info = qinfo->priv;
 	bool is_found = false;
@@ -384,10 +392,10 @@ static bool zip_alg_info_init(struct q_info *qinfo, const char *alg)
 	    !strcmp(alg, "lz77_zstd")) {
 		qinfo->atype = WCRYPTO_COMP;
 		info->sqe_size = QM_ZIP_BD_SIZE;
-		if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE)) {
+		if (ver == HISI_QM_V2) {
 			info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe;
 			info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe;
-		} else if (strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
+		} else if (ver >= HISI_QM_V3) {
 			info->sqe_fill[WCRYPTO_COMP] = qm_fill_zip_sqe_v3;
 			info->sqe_parse[WCRYPTO_COMP] = qm_parse_zip_sqe_v3;
 		}
@@ -408,12 +416,24 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	struct qm_queue_info *info = qinfo->priv;
 	struct wcrypto_paras *priv = &q->capa.priv;
 	int ret = -WD_EINVAL;
+	unsigned long ver;
+
+	if (strlen(qinfo->hw_type) <= HISI_VERSION_ID_SHIFT) {
+		WD_ERR("invalid: hw_type is %s!\n", qinfo->hw_type);
+		return ret;
+	}
+
+	ver = strtoul(qinfo->hw_type + HISI_VERSION_ID_SHIFT, NULL, 10);
+	if (!ver || ver == ULONG_MAX) {
+		WD_ERR("failed to strtoul, ver = %lu!\n", ver);
+		return ret;
+	}
 
 	if (hpre_alg_info_init(q, alg)) {
 		ret = WD_SUCCESS;
-	} else if (zip_alg_info_init(qinfo, alg)) {
+	} else if (zip_alg_info_init(qinfo, alg, ver)) {
 		ret = WD_SUCCESS;
-	} else if (sec_alg_info_init(qinfo, alg)) {
+	} else if (sec_alg_info_init(qinfo, alg, ver)) {
 		/* setting the type is 0 for sqc_type */
 		priv->direction = 0;
 		ret = WD_SUCCESS;
@@ -431,23 +451,17 @@ static int qm_set_queue_alg_info(struct wd_queue *q)
 	return ret;
 }
 
-static int qm_set_db_info(struct q_info *qinfo)
+static void qm_set_db_info(struct q_info *qinfo)
 {
 	struct qm_queue_info *info = qinfo->priv;
 
-	if (strstr(qinfo->hw_type, HISI_QM_API_VER2_BASE) ||
-	    strstr(qinfo->hw_type, HISI_QM_API_VER3_BASE)) {
-		info->db = qm_db_v2;
-		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
-	} else if (strstr(qinfo->hw_type, HISI_QM_API_VER_BASE)) {
+	if (strstr(qinfo->hw_type, HISI_QM_API_VER_BASE)) {
 		info->db = qm_db_v1;
 		info->doorbell_base = info->mmio_base + QM_DOORBELL_OFFSET;
 	} else {
-		WD_ERR("hw version mismatch!\n");
-		return -WD_EINVAL;
+		info->db = qm_db_v2;
+		info->doorbell_base = info->mmio_base + QM_V2_DOORBELL_OFFSET;
 	}
-
-	return 0;
 }
 
 static int qm_init_queue_info(struct wd_queue *q)
@@ -525,9 +539,7 @@ static int qm_set_queue_info(struct wd_queue *q)
 	info->ds_tx_base = info->sq_base + qinfo->qfrs_offset[WD_UACCE_QFRT_DUS] -
 		sizeof(uint32_t);
 	info->ds_rx_base = info->ds_tx_base - sizeof(uint32_t);
-	ret = qm_set_db_info(qinfo);
-	if (ret)
-		goto err_with_regions;
+	qm_set_db_info(qinfo);
 
 	info->req_cache = calloc(info->sq_depth, sizeof(void *));
 	if (!info->req_cache) {
