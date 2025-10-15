@@ -76,7 +76,7 @@ static long read_bits(struct bit_reader *br, __u32 n)
 	if (br->cur_pos + n > br->total_bits)
 		return -WD_EINVAL;
 
-	ret = (br->data >> br->cur_pos) & ((1L << n) - 1L);
+	ret = (br->data >> br->cur_pos) & ((1UL << n) - 1UL);
 	br->cur_pos += n;
 
 	return ret;
@@ -85,7 +85,7 @@ static long read_bits(struct bit_reader *br, __u32 n)
 static int check_store_huffman_block(struct bit_reader *br)
 {
 	__u32 pad, bits;
-	long data;
+	unsigned long data;
 
 	bits = br->total_bits - br->cur_pos;
 
@@ -111,7 +111,8 @@ static int check_store_huffman_block(struct bit_reader *br)
 
 static int check_fix_huffman_block(struct bit_reader *br)
 {
-	long bit, len_idx, dist_code, extra, code;
+	long bit, len_idx, dist_code, extra;
+	unsigned long code, ubit;
 	__u32 bits;
 
 	while (br->cur_pos < br->total_bits) {
@@ -123,7 +124,8 @@ static int check_fix_huffman_block(struct bit_reader *br)
 			if (bit < 0)
 				return HF_BLOCK_IS_INCOMPLETE;
 
-			code = (code << 1) | bit;
+			ubit = bit;
+			code = (code << 1) | ubit;
 			bits++;
 
 			/*

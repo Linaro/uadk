@@ -76,6 +76,7 @@ static void wd_agg_close_driver(void)
 {
 #ifndef WD_STATIC_DRV
 	wd_dlclose_drv(wd_agg_setting.dlh_list);
+	wd_agg_setting.dlh_list = NULL;
 #else
 	wd_release_drv(wd_agg_setting.driver);
 	hisi_dae_remove();
@@ -725,7 +726,6 @@ void wd_agg_uninit(void)
 	wd_alg_attrs_uninit(&wd_agg_init_attrs);
 	wd_alg_drv_unbind(wd_agg_setting.driver);
 	wd_agg_close_driver();
-	wd_agg_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_agg_setting.status);
 }
 

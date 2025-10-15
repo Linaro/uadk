@@ -77,6 +77,7 @@ static void wd_join_gather_close_driver(void)
 {
 #ifndef WD_STATIC_DRV
 	wd_dlclose_drv(wd_join_gather_setting.dlh_list);
+	wd_join_gather_setting.dlh_list = NULL;
 #else
 	wd_release_drv(wd_join_gather_setting.driver);
 	hisi_dae_join_gather_remove();
@@ -831,7 +832,6 @@ void wd_join_gather_uninit(void)
 	wd_alg_attrs_uninit(&wd_join_gather_init_attrs);
 	wd_alg_drv_unbind(wd_join_gather_setting.driver);
 	wd_join_gather_close_driver();
-	wd_join_gather_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_join_gather_setting.status);
 }
 

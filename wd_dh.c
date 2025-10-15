@@ -46,6 +46,7 @@ static void wd_dh_close_driver(int init_type)
 #ifndef WD_STATIC_DRV
 	if (init_type == WD_TYPE_V2) {
 		wd_dlclose_drv(wd_dh_setting.dlh_list);
+		wd_dh_setting.dlh_list = NULL;
 		return;
 	}
 
@@ -315,7 +316,6 @@ void wd_dh_uninit2(void)
 	wd_alg_attrs_uninit(&wd_dh_init_attrs);
 	wd_alg_drv_unbind(wd_dh_setting.driver);
 	wd_dh_close_driver(WD_TYPE_V2);
-	wd_dh_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_dh_setting.status);
 }
 
