@@ -201,11 +201,11 @@ void dfx_cmd_parse(int argc, char *argv[])
 	int opt;
 
 	static struct option long_options[] = {
-		{"version", no_argument, 0,  2},
-		{"dir",     no_argument, 0,  4},
-		{"env",     required_argument, 0,  5},
-		{"count",   no_argument, 0,  6},
-		{"help",    no_argument, 0,  7},
+		{"version", no_argument, 0,  DISPLAY_VERSION},
+		{"dir",     no_argument, 0,  DISPLAY_DIR},
+		{"env",     required_argument, 0,  DISPLAY_ENV},
+		{"count",   no_argument, 0,  DISPLAY_COUNT},
+		{"help",    no_argument, 0,  DISPLAY_HELP},
 		{0, 0, 0, 0}
 	};
 
