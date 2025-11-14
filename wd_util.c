@@ -35,6 +35,7 @@
 #define WD_SOFT_ASYNC_CTX		1
 
 #define WD_DRV_LIB_DIR			"uadk"
+#define WD_DRV_CONF_FILE		"uadk.cnf"
 
 #define WD_PATH_DIR_NUM			2
 
@@ -2279,11 +2280,64 @@ static void dladdr_empty(void)
 {
 }
 
+static int line_check_valid(char *line)
+{
+	line[strcspn(line, "\n")] = 0;
+	if (line[0] == '\0' || line[0] == '#')
+		return 0;
+
+	if (!strstr(line, ".so"))
+		return 0;
+
+	return 1;
+}
+
+static int check_uadk_config_file(const char *wd_dir, const char *lib_file)
+{
+	char *path_buf, *uadk_cnf_path, *line;
+	int ret = -WD_EINVAL;
+	FILE *fp;
+
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to alloc memery for path_buf.\n");
+		return -WD_ENOMEM;
+	}
+
+	uadk_cnf_path = path_buf;
+	line = path_buf + PATH_MAX;
+
+	snprintf(uadk_cnf_path, PATH_MAX, "%s/%s/%s", wd_dir, WD_DRV_LIB_DIR,
+		 WD_DRV_CONF_FILE);
+	fp = fopen(uadk_cnf_path, "r");
+	if (!fp) {
+		ret = 0;
+		goto free_buf;
+	}
+
+	while (fgets(line, PATH_MAX, fp)) {
+		if (!line_check_valid(line))
+			continue;
+
+		if (strstr(line, lib_file)) {
+			ret = 0;
+			goto close_fp;
+		}
+	}
+
+close_fp:
+	fclose(fp);
+free_buf:
+	free(path_buf);
+	return ret;
+}
+
 int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 {
 	char *path_buf, *path, *file_path;
 	Dl_info file_info;
 	int len, rc, i;
+	int ret = 0;
 
 	/* Get libwd.so file's system path */
 	rc = dladdr(dladdr_empty, &file_info);
@@ -2292,7 +2346,7 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 		return -WD_EINVAL;
 	}
 
-	path_buf = calloc(WD_PATH_DIR_NUM, sizeof(char) * PATH_MAX);
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
 	if (!path_buf) {
 		WD_ERR("fail to calloc path_buf.\n");
 		return -WD_ENOMEM;
@@ -2312,28 +2366,32 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 
 	if (is_dir) {
 		len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, WD_DRV_LIB_DIR);
-		if (len >= PATH_MAX)
-			goto free_path;
 	} else {
-		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s", file_path, WD_DRV_LIB_DIR, lib_file);
-		if (len >= PATH_MAX)
+		/* Confirm whether the corresponding file exists in uadk.cnf */
+		ret = check_uadk_config_file(file_path, lib_file);
+		if (ret)
 			goto free_path;
+
+		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s",
+			       file_path, WD_DRV_LIB_DIR, lib_file);
 	}
 
-	if (realpath(lib_path, path) == NULL) {
-		WD_ERR("invalid: %s: no such file or directory!\n", path);
+	if (len >= PATH_MAX) {
+		ret = -WD_EINVAL;
 		goto free_path;
 	}
-	free(path_buf);
 
-	return 0;
+	if (!realpath(lib_path, path)) {
+		WD_ERR("invalid: %s: no such file or directory!\n", path);
+		ret = -WD_EINVAL;
+	}
 
 free_path:
 	free(path_buf);
-	return -WD_EINVAL;
+	return ret;
 }
 
-/**
+/*
  * There are many other .so files in this file directory (/root/lib/),
  * and it is necessary to screen out valid uadk driver files
  * through this function.
@@ -2361,35 +2419,92 @@ static int file_check_valid(const char *lib_file)
 	return 0;
 }
 
-void *wd_dlopen_drv(const char *cust_lib_dir)
+static void create_lib_to_list(const char *lib_path, struct drv_lib_list **head)
 {
 	typedef int (*alg_ops)(struct wd_alg_driver *drv);
-	struct drv_lib_list *node, *head = NULL;
-	char lib_dir_path[PATH_MAX] = {0};
-	char lib_path[PATH_MAX] = {0};
-	struct dirent *lib_dir;
-	alg_ops dl_func = NULL;
-	DIR *wd_dir;
+	struct drv_lib_list *node;
+	alg_ops dl_func;
+
+	node = calloc(1, sizeof(*node));
+	if (!node)
+		return;
+
+	node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
+	if (!node->dlhandle) {
+		WD_ERR("failed to open lib file: %s, skipped\n", lib_path);
+		free(node);
+		return;
+	}
+
+	dl_func = dlsym(node->dlhandle, "wd_alg_driver_register");
+	if (!dl_func) {
+		WD_ERR("dlsym failed for %s: %s\n", lib_path, dlerror());
+		dlclose(node->dlhandle);
+		free(node);
+		return;
+	}
+
+	if (!*head) {
+		*head = node;
+		return;
+	}
+	add_lib_to_list(*head, node);
+}
+
+static struct drv_lib_list *load_libraries_from_config(const char *config_path,
+						       const char *lib_dir_path)
+{
+	char *path_buf, *lib_path, *line;
+	struct drv_lib_list *head = NULL;
+	FILE *config_file;
 	int ret;
 
-	if (!cust_lib_dir) {
-		ret = wd_get_lib_file_path(NULL, lib_dir_path, true);
-		if (ret)
-			return NULL;
-	} else {
-		if (realpath(cust_lib_dir, lib_path) == NULL) {
-			WD_ERR("invalid: %s: no such file or directory!\n", lib_path);
-			return NULL;
-		}
-		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
-		lib_dir_path[PATH_MAX - 1] = '\0';
-	}
-
-	wd_dir = opendir(lib_dir_path);
-	if (!wd_dir) {
-		WD_ERR("UADK driver lib dir: %s not exist!\n", lib_dir_path);
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to alloc memery for path_buf.\n");
 		return NULL;
 	}
+	lib_path = path_buf;
+	line = path_buf + PATH_MAX;
+
+	config_file = fopen(config_path, "r");
+	if (!config_file) {
+		WD_ERR("Failed to open config file: %s\n", config_path);
+		free(path_buf);
+		return NULL;
+	}
+
+	/* Read config file line by line */
+	while (fgets(line, PATH_MAX, config_file)) {
+		if (!line_check_valid(line))
+			continue;
+
+		ret = snprintf(lib_path, PATH_MAX, "%s/%s", lib_dir_path, line);
+		if (ret < 0)
+			break;
+
+		create_lib_to_list(lib_path, &head);
+	}
+
+	free(path_buf);
+	fclose(config_file);
+	return head;
+}
+
+static struct drv_lib_list *load_all_libraries(DIR *wd_dir, const char *lib_dir_path)
+{
+	struct drv_lib_list *head = NULL;
+	struct dirent *lib_dir;
+	char *lib_path;
+	int ret;
+
+	lib_path = calloc(1, PATH_MAX);
+	if (!lib_path) {
+		WD_ERR("fail to alloc memery for lib_path.\n");
+		return NULL;
+	}
+
+	rewinddir(wd_dir); /* Ensure we're at the start of the directory */
 
 	while ((lib_dir = readdir(wd_dir)) != NULL) {
 		if (!strncmp(lib_dir->d_name, ".", LINUX_CRTDIR_SIZE) ||
@@ -2400,43 +2515,74 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (ret)
 			continue;
 
-		node = calloc(1, sizeof(*node));
-		if (!node)
-			goto free_list;
-
 		ret = snprintf(lib_path, PATH_MAX, "%s/%s", lib_dir_path, lib_dir->d_name);
 		if (ret < 0)
-			goto free_node;
+			break;
 
-		node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
-		if (!node->dlhandle) {
-			free(node);
-			/* there are many other files need to skip */
-			continue;
-		}
-
-		dl_func = dlsym(node->dlhandle, "wd_alg_driver_register");
-		if (dl_func == NULL) {
-			dlclose(node->dlhandle);
-			free(node);
-			continue;
-		}
-
-		if (!head)
-			head = node;
-		else
-			add_lib_to_list(head, node);
+		create_lib_to_list(lib_path, &head);
 	}
-	closedir(wd_dir);
 
+	free(lib_path);
+	return head;
+}
+
+void *wd_dlopen_drv(const char *cust_lib_dir)
+{
+	char *path_buf, *lib_dir_path, *config_path, *lib_path;
+	struct drv_lib_list *head = NULL;
+	int ret, len;
+	DIR *wd_dir;
+
+	path_buf = calloc(WD_PATH_DIR_NUM + 1, PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to alloc memory for path buffers.\n");
+		return NULL;
+	}
+
+	lib_dir_path = path_buf;
+	config_path = path_buf + PATH_MAX;
+	lib_path = config_path + PATH_MAX;
+
+	if (!cust_lib_dir) {
+		ret = wd_get_lib_file_path(NULL, lib_dir_path, true);
+		if (ret)
+			goto free_path;
+	} else {
+		if (!realpath(cust_lib_dir, lib_path)) {
+			WD_ERR("invalid: %s: no such file or directory!\n", lib_path);
+			goto free_path;
+		}
+
+		len = snprintf(lib_dir_path, PATH_MAX, "%s", cust_lib_dir);
+		if (len < 0 || len >= PATH_MAX)
+			goto free_path;
+
+		lib_dir_path[PATH_MAX - 1] = '\0';
+	}
+
+	wd_dir = opendir(lib_dir_path);
+	if (!wd_dir) {
+		WD_ERR("UADK driver lib dir: %s not exist!\n", lib_dir_path);
+		goto free_path;
+	}
+
+	len = snprintf(config_path, PATH_MAX, "%s/%s", lib_dir_path, WD_DRV_CONF_FILE);
+	if (len < 0 || len >= PATH_MAX)
+		goto close_dir;
+
+	ret = access(config_path, F_OK);
+	if (!ret)
+		/* Load specified libraries from config file */
+		head = load_libraries_from_config(config_path, lib_dir_path);
+	else
+		/* Load all valid .so files */
+		head = load_all_libraries(wd_dir, lib_dir_path);
+
+close_dir:
+	closedir(wd_dir);
+free_path:
+	free(path_buf);
 	return (void *)head;
-
-free_node:
-	free(node);
-free_list:
-	closedir(wd_dir);
-	wd_dlclose_drv(head);
-	return NULL;
 }
 
 struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name)
