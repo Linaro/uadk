@@ -58,6 +58,7 @@
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
 #define REPCODE_SIZE			12
+#define SEQ_LIT_LEN_SIZE		4
 #define OVERFLOW_DATA_SIZE		8
 
 /* Error status 0xe indicates that dest_avail_out insufficient */
@@ -694,6 +695,10 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 			else
 				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
 				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+
+			/* The literal length info of each bd needs to be cleared.  */
+			memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
+			       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 		}
 	}
 
