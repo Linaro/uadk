@@ -10,12 +10,17 @@
 #include "include/wd_dh.h"
 #include "include/wd_ecc.h"
 #include "include/wd_sched.h"
+#include "include/wd_bmm.h"
+#include "include/wd_sched.h"
 
 #define ECC_CURVE_SECP256R1	0x3 /* default set with secp256r1 */
 #define HPRE_TST_PRT 		printf
 #define ERR_OPTYPE		0xFF
 #define SM2_DG_SZ		1024
 #define WD_SECP256R1		0x18 /* consistent with wd_ecc.c */
+#define SQE_SIZE		128
+#define POOL_MULTIPLY_FACTOR	2
+#define HPRE_OP_TYPE_MAX	6
 
 struct hpre_rsa_key_in {
 	void *e;
@@ -87,6 +92,10 @@ struct hpre_ecc_setup {
 
 //----------------------------------ECC param-------------------------------------//
 
+struct thread_pool {
+	void *rsv_pool;
+} hpre_uadk_pool;
+
 typedef struct uadk_thread_res {
 	u32 subtype;
 	u32 keybits;
@@ -94,12 +103,14 @@ typedef struct uadk_thread_res {
 	u32 optype;
 	u32 td_id;
 	u32 algtype;
+	int mm_type;
 } thread_data;
 
 static struct wd_ctx_config g_ctx_cfg;
 static struct wd_sched *g_sched;
 static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
+static unsigned int g_dev_id;
 
 static const char* const alg_operations[] = {
 	"GenKey", "ShareKey", "Encrypt", "Decrypt", "Sign", "Verify",
@@ -340,6 +351,7 @@ static int hpre_uadk_param_parse(thread_data *tddata, struct acc_option *options
 	tddata->kmode = mode;
 	tddata->optype = optype;
 	tddata->algtype = algtype;
+	tddata->mm_type = options->mem_type;
 
 	HPRE_TST_PRT("%s to run %s task!\n", options->algclass,
 			alg_operations[options->optype]);
@@ -404,6 +416,7 @@ static int specified_device_request_ctx(struct acc_option *options)
 		g_ctx_cfg.ctxs[i].op_type = 0;
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 	}
+	g_dev_id = uadk_parse_dev_id(dev->char_dev_path);
 
 	wd_free_list_accels(list);
 	return 0;
@@ -446,7 +459,7 @@ static int non_specified_device_request_ctx(struct acc_option *options)
 			g_ctx_cfg.ctxs[i].op_type = 0;
 			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 		}
-
+		g_dev_id = uadk_parse_dev_id(dev->char_dev_path);
 		free(dev);
 	}
 
@@ -489,17 +502,32 @@ static int init_hpre_ctx_config(struct acc_option *options)
 
 	switch(subtype) {
 	case RSA_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_rsa_poll_ctx);
+		if (options->mem_type == UADK_AUTO)
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, HPRE_OP_TYPE_MAX,
+						    max_node, wd_rsa_poll_ctx);
+		else
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, HPRE_OP_TYPE_MAX,
+						    max_node, wd_rsa_poll_ctx);
 		break;
 	case DH_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_dh_poll_ctx);
+		if (options->mem_type == UADK_AUTO)
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, HPRE_OP_TYPE_MAX,
+						    max_node, wd_dh_poll_ctx);
+		else
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, HPRE_OP_TYPE_MAX,
+						    max_node, wd_dh_poll_ctx);
 		break;
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_ecc_poll_ctx);
+		if (options->mem_type == UADK_AUTO)
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, HPRE_OP_TYPE_MAX,
+						    max_node, wd_ecc_poll_ctx);
+		else
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, HPRE_OP_TYPE_MAX,
+						    max_node, wd_ecc_poll_ctx);
 		break;
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype!\n");
@@ -516,6 +544,7 @@ static int init_hpre_ctx_config(struct acc_option *options)
 	param.mode = mode;
 	param.begin = 0;
 	param.end = g_ctxnum - 1;
+	param.dev_id = g_dev_id;
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
 		HPRE_TST_PRT("failed to fill hpre sched data!\n");
@@ -643,18 +672,24 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 	/* init2 */
 	switch (subtype) {
 	case RSA_TYPE:
-		ret = wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
-		break;
+		if (options->mem_type == UADK_AUTO)
+			return wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		else
+			return wd_rsa_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 	case DH_TYPE:
-		ret = wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
-		break;
+		if (options->mem_type == UADK_AUTO)
+			return wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		else
+			return wd_dh_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
-		ret = wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
-		break;
+		if (options->mem_type == UADK_AUTO)
+			return wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		else
+			return wd_ecc_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
 		ret = -EINVAL;
@@ -664,6 +699,108 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 	return ret;
 }
 
+static int hpre_uadk_get_block(u32 algtype)
+{
+	int block_size = 512;
+
+	switch (algtype) {
+	case RSA_1024:
+		block_size = 1280;
+		break;
+	case RSA_2048:
+		block_size = 2560;
+		break;
+	case RSA_3072:
+		block_size = 3840;
+		break;
+	case RSA_4096:
+		block_size = 5120;
+		break;
+	case RSA_1024_CRT:
+		block_size = 1280;
+		break;
+	case RSA_2048_CRT:
+		block_size = 2560;
+		break;
+	case RSA_3072_CRT:
+		block_size = 3840;
+		break;
+	case RSA_4096_CRT:
+		block_size = 5120;
+		break;
+	case DH_768:
+		block_size = 1536;
+		break;
+	case DH_1024:
+		block_size = 2048;
+		break;
+	case DH_1536:
+		block_size = 3072;
+		break;
+	case DH_2048:
+		block_size = 4096;
+		break;
+	case DH_3072:
+		block_size = 6144;
+		break;
+	case DH_4096:
+		block_size = 8192;
+		break;
+	default:
+		block_size = 576;
+		break;
+	}
+
+	return block_size;
+}
+
+static int init_uadk_rsv_pool(struct acc_option *options)
+{
+	struct wd_mempool_setup pool_setup;
+	char *alg = options->algclass;
+	handle_t h_ctx;
+	unsigned long step;
+
+	/* ctxs is NULL */
+	h_ctx = wd_find_ctx(alg);
+	if (!h_ctx) {
+		HPRE_TST_PRT("Failed to find a ctx for alg:%s\n", options->algname);
+		return -EINVAL;
+	}
+	g_ctx_cfg.priv = (void *)h_ctx;
+
+	step = hpre_uadk_get_block(options->algtype);
+
+	pool_setup.block_size = step;
+	pool_setup.block_num = g_thread_num * MAX_POOL_LENTH * POOL_MULTIPLY_FACTOR;
+	pool_setup.align_size = SQE_SIZE;
+	pool_setup.ops.alloc = NULL;
+	pool_setup.ops.free = NULL;
+
+	hpre_uadk_pool.rsv_pool = wd_mempool_alloc(h_ctx, &pool_setup);
+	if (!hpre_uadk_pool.rsv_pool) {
+		HPRE_TST_PRT("Failed to create block pool\n");
+		return -ENOMEM;
+	}
+
+	pool_setup.ops.alloc = (void *)wd_mem_alloc;
+	pool_setup.ops.free = (void *)wd_mem_free;
+	pool_setup.ops.iova_map = (void *)wd_mem_map;
+	pool_setup.ops.iova_unmap = (void *)wd_mem_unmap;
+	pool_setup.ops.get_bufsize = (void *)wd_get_bufsize;
+	pool_setup.ops.usr = hpre_uadk_pool.rsv_pool;
+
+	return 0;
+}
+
+static void free_uadk_rsv_pool(struct acc_option *option)
+{
+	handle_t h_ctx = (handle_t)g_ctx_cfg.priv;
+
+	if (hpre_uadk_pool.rsv_pool)
+		wd_mempool_free(h_ctx, hpre_uadk_pool.rsv_pool);
+	hpre_uadk_pool.rsv_pool = NULL;
+}
 /*-------------------------------uadk benchmark main code-------------------------------------*/
 
 void *hpre_uadk_poll(void *data)
@@ -1042,7 +1179,7 @@ static int get_ecc_curve(struct hpre_ecc_setup *setup, u32 cid)
 	return 0;
 }
 
-static int    get_ecc_key_param(struct wd_ecc_curve *param, u32 key_bits)
+static int get_ecc_key_param(struct wd_ecc_curve *param, u32 key_bits)
 {
 	u32 key_size = (key_bits + 7) / 8;
 
@@ -1181,12 +1318,22 @@ static int get_ecc_param_from_sample(struct hpre_ecc_setup *setup,
 			setup->sign_size = sizeof(sm2_sign_data);
 
 		} else {
-			/* x448, x25519 and ecdh-256 can share same private key of ecdh_da_secp256k1*/
-			setup->priv_key = ecdh_da_secp256k1;
+			/*
+			 * x25519 and ecdh-256 can share same 32-bytes private key of
+			 * ecdh_da_secp256k1, while x448 should use 56-byte private key
+			 * to get accurate performance.
+			 */
+			if (subtype == X448_TYPE)
+				setup->priv_key = x448_da;
+			else
+				setup->priv_key = ecdh_da_secp256k1;
 			setup->except_pub_key = ecdh_except_b_pubkey_secp256k1;
 			setup->pub_key = ecdh_cp_pubkey_secp256k1;
 			setup->share_key = ecdh_cp_sharekey_secp256k1;
-			setup->priv_key_size = sizeof(ecdh_da_secp256k1);
+			if (subtype == X448_TYPE)
+				setup->priv_key_size = sizeof(x448_da);
+			else
+				setup->priv_key_size = sizeof(ecdh_da_secp256k1);
 			setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp256k1);
 			setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp256k1);
 			setup->share_key_size = sizeof(ecdh_cp_sharekey_secp256k1);
@@ -1333,6 +1480,7 @@ static void *rsa_uadk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	struct sched_params sc_param = {0};
 	struct wd_rsa_sess_setup setup;
 	struct wd_rsa_req req;
 	void *key_info = NULL;
@@ -1342,8 +1490,21 @@ static void *rsa_uadk_sync_run(void *arg)
 
 	memset(&setup, 0, sizeof(setup));
 	memset(&req, 0, sizeof(req));
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (hpre_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(hpre_uadk_pool.rsv_pool);
+	setup.sched_param = (void *)&sc_param;
 	setup.key_bits = pdata->keybits;
 	setup.is_crt = pdata->kmode;
+	setup.mm_type = pdata->mm_type;
+	setup.mm_ops.usr = hpre_uadk_pool.rsv_pool;
+	setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	setup.mm_ops.free = (void *)wd_mem_free;
+	setup.mm_ops.iova_map = (void *)wd_mem_map;
+	setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 
 	h_sess = wd_rsa_alloc_sess(&setup);
 	if (!h_sess)
@@ -1365,7 +1526,7 @@ static void *rsa_uadk_sync_run(void *arg)
 	rsa_key_in->p = rsa_key_in->e + key_size;
 	rsa_key_in->q = rsa_key_in->p + (key_size >> 1);
 
-	ret = get_rsa_key_from_sample(h_sess,    	key_info, key_info,
+	ret = get_rsa_key_from_sample(h_sess, key_info, key_info,
 					pdata->keybits, pdata->kmode);
 	if (ret) {
 		HPRE_TST_PRT("failed to get sample key data!\n");
@@ -1382,14 +1543,14 @@ static void *rsa_uadk_sync_run(void *arg)
 			goto sample_release;
 		}
 	} else {
-		req.src = malloc(key_size);
+		req.src = setup.mm_ops.alloc(setup.mm_ops.usr, key_size);
 		if (!req.src) {
 			HPRE_TST_PRT("failed to alloc rsa in buffer!\n");
 			goto sample_release;
 		}
 		memset(req.src, 0, req.src_bytes);
-                memcpy(req.src + key_size - sizeof(rsa_m), rsa_m, sizeof(rsa_m));
-		req.dst = malloc(key_size);
+		memcpy(req.src + key_size - sizeof(rsa_m), rsa_m, sizeof(rsa_m));
+		req.dst = setup.mm_ops.alloc(setup.mm_ops.usr, key_size);
 		if (!req.dst) {
 			HPRE_TST_PRT("failed to alloc rsa out buffer!\n");
 			goto src_release;
@@ -1428,10 +1589,10 @@ static void *rsa_uadk_sync_run(void *arg)
 
 dst_release:
 	if (req.dst)
-		free(req.dst);
+		setup.mm_ops.free(setup.mm_ops.usr, req.dst);
 src_release:
 	if (req.src)
-		free(req.src);
+		setup.mm_ops.free(setup.mm_ops.usr, req.src);
 sample_release:
 	free(rsa_key_in);
 key_release:
@@ -1453,6 +1614,7 @@ static void *rsa_uadk_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	struct sched_params sc_param = {0};
 	struct rsa_async_tag *tag;
 	struct wd_rsa_sess_setup setup;
 	struct wd_rsa_req req;
@@ -1464,8 +1626,21 @@ static void *rsa_uadk_async_run(void *arg)
 
 	memset(&setup, 0, sizeof(setup));
 	memset(&req, 0, sizeof(req));
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (hpre_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(hpre_uadk_pool.rsv_pool);
+	setup.sched_param = (void *)&sc_param;
 	setup.key_bits = pdata->keybits;
 	setup.is_crt = pdata->kmode;
+	setup.mm_type = pdata->mm_type;
+	setup.mm_ops.usr = hpre_uadk_pool.rsv_pool;
+	setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	setup.mm_ops.free = (void *)wd_mem_free;
+	setup.mm_ops.iova_map = (void *)wd_mem_map;
+	setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 
 	h_sess = wd_rsa_alloc_sess(&setup);
 	if (!h_sess)
@@ -1511,14 +1686,14 @@ static void *rsa_uadk_async_run(void *arg)
 			goto tag_release;
 		}
 	} else {
-		req.src = malloc(key_size);
+		req.src = setup.mm_ops.alloc(setup.mm_ops.usr, key_size);
 		if (!req.src) {
 			HPRE_TST_PRT("failed to alloc rsa in buffer!\n");
 			goto tag_release;
 		}
 		memset(req.src, 0, req.src_bytes);
-                memcpy(req.src + key_size - sizeof(rsa_m), rsa_m, sizeof(rsa_m));
-		req.dst = malloc(key_size);
+		memcpy(req.src + key_size - sizeof(rsa_m), rsa_m, sizeof(rsa_m));
+		req.dst = setup.mm_ops.alloc(setup.mm_ops.usr, key_size);
 		if (!req.dst) {
 			HPRE_TST_PRT("failed to alloc rsa out buffer!\n");
 			goto src_release;
@@ -1574,10 +1749,10 @@ static void *rsa_uadk_async_run(void *arg)
 	}
 
 	if (req.dst)
-		free(req.dst);
+		setup.mm_ops.free(setup.mm_ops.usr, req.dst);
 src_release:
 	if (req.src)
-		free(req.src);
+		setup.mm_ops.free(setup.mm_ops.usr, req.src);
 tag_release:
 	free(tag);
 key_in_release:
@@ -1684,27 +1859,27 @@ static int get_dh_param_from_sample(struct hpre_dh_param *setup,
 	return 0;
 }
 
-static int get_dh_opdata_param(handle_t h_sess, struct wd_dh_req *req,
-	struct hpre_dh_param *setup, int key_size)
+static int get_dh_opdata_param(struct wd_dh_sess_setup *dh_setup, handle_t h_sess,
+		struct wd_dh_req *req, struct hpre_dh_param *setup, int key_size)
 {
 	unsigned char *ag_bin = NULL;
 	struct wd_dtb ctx_g;
 	int ret;
 
-	ag_bin = malloc(2 * key_size);
+	ag_bin = dh_setup->mm_ops.alloc(dh_setup->mm_ops.usr, 2 * key_size);
 	if (!ag_bin)
 		return -ENOMEM;
 
 	memset(ag_bin, 0, 2 * key_size);
 	req->pv = ag_bin;
 
-	req->x_p = malloc(2 * key_size);
+	req->x_p = dh_setup->mm_ops.alloc(dh_setup->mm_ops.usr, 2 * key_size);
 	if (!req->x_p)
 		goto ag_error;
 
 	memset(req->x_p, 0, 2 * key_size);
 
-	req->pri = malloc(2 * key_size);
+	req->pri = dh_setup->mm_ops.alloc(dh_setup->mm_ops.usr, 2 * key_size);
 	if (!req->pri)
 		goto xp_error;
 
@@ -1741,11 +1916,11 @@ static int get_dh_opdata_param(handle_t h_sess, struct wd_dh_req *req,
 	return 0;
 
 ctx_release:
-	free(req->pri);
+	dh_setup->mm_ops.free(dh_setup->mm_ops.usr, req->pri);
 xp_error:
-	free(req->x_p);
+	dh_setup->mm_ops.free(dh_setup->mm_ops.usr, req->x_p);
 ag_error:
-	free(req->pv);
+	dh_setup->mm_ops.free(dh_setup->mm_ops.usr, req->pv);
 
 	return -ENOMEM;
 }
@@ -1759,6 +1934,7 @@ static void *dh_uadk_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	struct sched_params sc_param = {0};
 	struct wd_dh_sess_setup dh_setup;
 	struct rsa_async_tag *tag;
 	struct hpre_dh_param param;
@@ -1770,6 +1946,19 @@ static void *dh_uadk_async_run(void *arg)
 
 	memset(&dh_setup, 0, sizeof(dh_setup));
 	memset(&req, 0, sizeof(req));
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (hpre_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(hpre_uadk_pool.rsv_pool);
+	dh_setup.sched_param = (void *)&sc_param;
+	dh_setup.mm_type = pdata->mm_type;
+	dh_setup.mm_ops.usr = hpre_uadk_pool.rsv_pool;
+	dh_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	dh_setup.mm_ops.free = (void *)wd_mem_free;
+	dh_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	dh_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	dh_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 	dh_setup.key_bits = pdata->keybits;
 	if (pdata->optype == WD_DH_PHASE2)
 		dh_setup.is_g2 = true; // G1 is 0; G2 is 1;
@@ -1784,7 +1973,7 @@ static void *dh_uadk_async_run(void *arg)
 
 	param.optype = pdata->optype;
 	req.op_type = pdata->optype;
-	ret = get_dh_opdata_param(h_sess, &req, &param, key_size);
+	ret = get_dh_opdata_param(&dh_setup, h_sess, &req, &param, key_size);
 	if (ret){
 		HPRE_TST_PRT("failed to fill dh key gen req!\n");
 		goto sess_release;
@@ -1840,9 +2029,9 @@ static void *dh_uadk_async_run(void *arg)
 
 	free(tag);
 param_release:
-	free(req.x_p);
-	free(req.pv);
-	free(req.pri);
+	dh_setup.mm_ops.free(dh_setup.mm_ops.usr, req.pri);
+	dh_setup.mm_ops.free(dh_setup.mm_ops.usr, req.x_p);
+	dh_setup.mm_ops.free(dh_setup.mm_ops.usr, req.pv);
 sess_release:
 	wd_dh_free_sess(h_sess);
 	add_send_complete();
@@ -1854,6 +2043,7 @@ static void *dh_uadk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	struct sched_params sc_param = {0};
 	struct wd_dh_sess_setup dh_setup;
 	struct hpre_dh_param setup;
 	struct wd_dh_req req;
@@ -1863,6 +2053,19 @@ static void *dh_uadk_sync_run(void *arg)
 
 	memset(&dh_setup, 0, sizeof(dh_setup));
 	memset(&req, 0, sizeof(req));
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (hpre_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(hpre_uadk_pool.rsv_pool);
+	dh_setup.sched_param = (void *)&sc_param;
+	dh_setup.mm_type = pdata->mm_type;
+	dh_setup.mm_ops.usr = hpre_uadk_pool.rsv_pool;
+	dh_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	dh_setup.mm_ops.free = (void *)wd_mem_free;
+	dh_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	dh_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	dh_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 	dh_setup.key_bits = pdata->keybits;
 	if (pdata->optype == WD_DH_PHASE2)
 		dh_setup.is_g2 = true; // G1 is 0; G2 is 1;
@@ -1877,7 +2080,7 @@ static void *dh_uadk_sync_run(void *arg)
 
 	setup.optype = pdata->optype;
 	req.op_type = pdata->optype;
-	ret = get_dh_opdata_param(h_sess, &req, &setup, key_size);
+	ret = get_dh_opdata_param(&dh_setup, h_sess, &req, &setup, key_size);
 	if (ret){
 		HPRE_TST_PRT("failed to fill dh key gen req!\n");
 		goto param_release;
@@ -1896,9 +2099,9 @@ static void *dh_uadk_sync_run(void *arg)
 	} while(true);
 
 param_release:
-	free(req.x_p);
-	free(req.pv);
-	free(req.pri);
+	dh_setup.mm_ops.free(dh_setup.mm_ops.usr, req.pri);
+	dh_setup.mm_ops.free(dh_setup.mm_ops.usr, req.x_p);
+	dh_setup.mm_ops.free(dh_setup.mm_ops.usr, req.pv);
 sess_release:
 	wd_dh_free_sess(h_sess);
 	cal_avg_latency(count);
@@ -2240,6 +2443,7 @@ static void *ecc_uadk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	struct sched_params sc_param = {0};
 	u32 cid = ECC_CURVE_SECP256R1;
 	u32 subtype = pdata->subtype;
 	struct wd_ecc_sess_setup sess_setup;
@@ -2297,8 +2501,21 @@ static void *ecc_uadk_sync_run(void *arg)
 	}
 
 	// set def setting;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (hpre_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(hpre_uadk_pool.rsv_pool);
+	sess_setup.sched_param = (void *)&sc_param;
 	sess_setup.hash.cb = hpre_compute_hash;
-	sess_setup.hash.type = WD_HASH_SHA256;
+	sess_setup.hash.type = 0;
+	sess_setup.mm_type = pdata->mm_type;
+	sess_setup.mm_ops.usr = hpre_uadk_pool.rsv_pool;
+	sess_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	sess_setup.mm_ops.free = (void *)wd_mem_free;
+	sess_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	sess_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	sess_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
@@ -2396,6 +2613,7 @@ static void *ecc_uadk_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	int key_size = pdata->keybits >> 3;
+	struct sched_params sc_param = {0};
 	u32 cid = ECC_CURVE_SECP256R1;
 	u32 subtype = pdata->subtype;
 	struct wd_ecc_sess_setup sess_setup;
@@ -2457,6 +2675,19 @@ static void *ecc_uadk_async_run(void *arg)
 	// set def setting;
 	sess_setup.hash.cb = hpre_compute_hash;
 	sess_setup.hash.type = WD_HASH_SHA256;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (hpre_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(hpre_uadk_pool.rsv_pool);
+	sess_setup.sched_param = (void *)&sc_param;
+	sess_setup.mm_type = pdata->mm_type;
+	sess_setup.mm_ops.usr = hpre_uadk_pool.rsv_pool;
+	sess_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	sess_setup.mm_ops.free = (void *)wd_mem_free;
+	sess_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	sess_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	sess_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
@@ -2623,6 +2854,7 @@ static int hpre_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
 		threads_args[i].algtype = threads_option.algtype;
+		threads_args[i].mm_type = threads_option.mm_type;
 		ret = pthread_create(&tdid[i], NULL, uadk_hpre_sync_run, &threads_args[i]);
 		if (ret) {
 			HPRE_TST_PRT("Create sync thread fail!\n");
@@ -2700,6 +2932,7 @@ static int hpre_uadk_async_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
 		threads_args[i].algtype = threads_option.algtype;
+		threads_args[i].mm_type = threads_option.mm_type;
 		ret = pthread_create(&tdid[i], NULL, uadk_hpre_async_run, &threads_args[i]);
 		if (ret) {
 			HPRE_TST_PRT("Create async thread fail!\n");
@@ -2751,6 +2984,12 @@ int hpre_uadk_benchmark(struct acc_option *options)
 		return ret;
 	}
 
+	if (options->mem_type != UADK_AUTO) {
+		ret = init_uadk_rsv_pool(options);
+		if (ret)
+			return ret;
+	}
+
 	get_pid_cpu_time(&ptime);
 	time_start(options->times);
 	if (options->syncmode)
@@ -2760,6 +2999,9 @@ int hpre_uadk_benchmark(struct acc_option *options)
 	cal_perfermance_data(options, ptime);
 	if (ret)
 		return ret;
+
+	if (options->mem_type != UADK_AUTO)
+		free_uadk_rsv_pool(options);
 
 	if (options->inittype == INIT2_TYPE)
 		uninit_hpre_ctx_config2(options->subtype);
