@@ -41,6 +41,8 @@ struct wd_aead_sess_setup {
 	enum wd_digest_type dalg;
 	enum wd_digest_mode dmode;
 	void *sched_param;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 /**
