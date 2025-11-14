@@ -49,6 +49,10 @@ global:
 	wd_enable_drv;
 	wd_disable_drv;
 	wd_get_alg_head;
+	wd_alg_driver_init;
+	wd_alg_driver_exit;
+	wd_alg_driver_send;
+	wd_alg_driver_recv;
 
 	wd_find_ctx;
 	wd_get_dev_id;
