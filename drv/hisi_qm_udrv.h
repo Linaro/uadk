@@ -81,6 +81,7 @@ struct hisi_qm_queue_info {
 	pthread_spinlock_t rv_lock;
 	unsigned long region_size[UACCE_QFRT_MAX];
 	bool epoll_en;
+	pthread_spinlock_t sgl_lock;
 };
 
 struct hisi_qp {
@@ -89,6 +90,7 @@ struct hisi_qp {
 	handle_t h_ctx;
 	/* Private area for driver use, point to queue specifial data */
 	void *priv;
+	handle_t h_nosva_sgl_pool;
 };
 
 /* Capabilities */
@@ -148,7 +150,7 @@ void hisi_set_msg_id(handle_t h_qp, __u32 *tag);
  *
  * Fixed me: the sge buff's size now is Fixed.
  */
-handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num);
+handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num, struct wd_mm_ops *mm_ops);
 
 /**
  * hisi_qm_destroy_sglpool - Destroy sgl pool in qm.
@@ -176,7 +178,7 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl);
  * hisi_qm_get_sglpool - Get the qp's hw sgl pool handle
  * @h_qp: Handle of the qp.
  */
-handle_t hisi_qm_get_sglpool(handle_t h_qp);
+handle_t hisi_qm_get_sglpool(handle_t h_qp, struct wd_mm_ops *mm_ops);
 
 /**
  * hisi_qm_sgl_copy: Buffer copying from hw sgl to pbuff or pbuff to sgl
