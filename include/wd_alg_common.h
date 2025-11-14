@@ -12,6 +12,7 @@
 #include <numa.h>
 #include "wd.h"
 #include "wd_alg.h"
+#include "wd_internal.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,7 +25,6 @@ extern "C" {
 #define BITS_TO_BYTES(bits)	(((bits) + 7) >> 3)
 #define BYTES_TO_BITS(bytes)	((bytes) << 3)
 
-#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 #define MAX_STR_LEN		256
 #define CTX_TYPE_INVALID	9999
 #define POLL_TIME		1000
@@ -58,6 +58,13 @@ enum wd_ctx_mode {
 enum wd_init_type {
 	WD_TYPE_V1,
 	WD_TYPE_V2,
+};
+
+enum wd_mem_type {
+	UADK_MEM_AUTO,
+	UADK_MEM_USER,
+	UADK_MEM_PROXY,
+	UADK_MEM_MAX,
 };
 
 /*
@@ -132,27 +139,6 @@ struct wd_ctx_params {
 	struct wd_cap_config *cap;
 };
 
-struct wd_soft_ctx {
-	void *priv;
-};
-
-struct wd_ctx_internal {
-	handle_t ctx;
-	__u8 op_type;
-	__u8 ctx_mode;
-	__u16 sqn;
-	pthread_spinlock_t lock;
-};
-
-struct wd_ctx_config_internal {
-	__u32 ctx_num;
-	int shmid;
-	struct wd_ctx_internal *ctxs;
-	void *priv;
-	bool epoll_en;
-	unsigned long *msg_cnt;
-};
-
 /*
  * struct wd_comp_sched - Define a scheduler.
  * @name:		Name of this scheduler.
@@ -180,12 +166,6 @@ struct wd_sched {
 
 typedef int (*wd_alg_init)(struct wd_ctx_config *config, struct wd_sched *sched);
 typedef int (*wd_alg_poll_ctx)(__u32 idx, __u32 expt, __u32 *count);
-
-struct wd_datalist {
-	void *data;
-	__u32 len;
-	struct wd_datalist *next;
-};
 
 #ifdef __cplusplus
 }
