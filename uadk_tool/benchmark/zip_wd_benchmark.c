@@ -16,7 +16,6 @@
 #define WCRYPTO_DIR_MAX	(WCRYPTO_INFLATE + 1)
 #define ALIGN_SIZE		64
 
-#define COMP_LEN_RATE		2
 #define DECOMP_LEN_RATE		2
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define MAX_POOL_LENTH_COMP	512
@@ -311,21 +310,18 @@ static int init_zip_wd_queue(struct acc_option *options)
 {
 	struct wd_blkpool_setup blksetup;
 	struct wd_bd *bds = NULL;
+	u32 insize = g_pktlen;
 	void *pool = NULL;
 	u32 outsize;
-	u32 insize;
 	u8 op_type;
 	int i, j, k;
 	int ret = 0;
 
 	op_type = options->optype % WCRYPTO_DIR_MAX;
-	if (op_type == WCRYPTO_DEFLATE) {//compress
-		insize = g_pktlen;
-		outsize = g_pktlen * COMP_LEN_RATE;
-	} else { // decompress
-		insize = g_pktlen;
+	if (options->algtype != LZ77_ZSTD)
+		outsize = g_pktlen + ALIGN_SIZE;
+	else
 		outsize = g_pktlen * DECOMP_LEN_RATE;
-	}
 
 	g_thread_queue.bd_res = malloc(g_thread_num * sizeof(struct thread_bd_res));
 	if (!g_thread_queue.bd_res) {
@@ -873,7 +869,7 @@ static void *zip_wd_blk_sync_run(void *arg)
 
 static void *zip_wd_stm_sync_run(void *arg)
 {
-	u32 in_len, out_len, total_out, count = 0;
+	u32 in_len, out_len, total_out, total_avail_out;
 	thread_data *pdata = (thread_data *)arg;
 	struct wcrypto_comp_ctx_setup comp_setup;
 	struct wcrypto_comp_op_data opdata;
@@ -881,6 +877,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 	struct wd_queue *queue;
 	struct wd_bd *bd_pool;
 	void *src, *dst;
+	u32 count = 0;
 	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
@@ -911,13 +908,14 @@ static void *zip_wd_stm_sync_run(void *arg)
 	opdata.alg_type = pdata->alg;
 	opdata.priv = NULL;
 	opdata.status = 0;
+	total_avail_out = bd_pool[0].dst_len;
 
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
 		src = bd_pool[i].src;
 		dst = bd_pool[i].dst;
 		in_len = bd_pool[i].src_len;
-		out_len = g_pktlen * DECOMP_LEN_RATE;
+		out_len = total_avail_out;
 		total_out = 0;
 		opdata.stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
@@ -926,7 +924,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 			opdata.avail_out = out_len > 2 * CHUNK_SIZE ? 2 * CHUNK_SIZE : out_len;
 			opdata.in = src;
 			opdata.out = dst;
-			opdata.flush = in_len ? WCRYPTO_SYNC_FLUSH : WCRYPTO_FINISH;
+			opdata.flush = in_len > CHUNK_SIZE ? WCRYPTO_SYNC_FLUSH : WCRYPTO_FINISH;
 
 			ret = wcrypto_do_comp(ctx, &opdata, NULL);
 			if (ret || opdata.status == WCRYPTO_DECOMP_END_NOSPACE ||
