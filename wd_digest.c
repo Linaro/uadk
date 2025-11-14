@@ -260,6 +260,7 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 	if (ret < 0)
 		return ret;
 
+	wd_digest_setting.config.alg_name = "digest";
 	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
 	if (ret < 0)
 		return ret;

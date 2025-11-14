@@ -154,6 +154,7 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		return ret;
 
+	wd_comp_setting.config.alg_name = "zlib gzip deflate lz77_zstd lz4 lz77_only";
 	ret = wd_init_ctx_config(&wd_comp_setting.config, config);
 	if (ret < 0)
 		return ret;
