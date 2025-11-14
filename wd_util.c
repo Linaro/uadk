@@ -13,6 +13,8 @@
 #include <ctype.h>
 #include "wd_sched.h"
 #include "wd_util.h"
+#include "wd_alg.h"
+#include "wd_bmm.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024
@@ -100,11 +102,6 @@ struct acc_alg_item {
 	const char *algtype;
 };
 
-struct wd_ce_ctx {
-	char *drv_name;
-	void *priv;
-};
-
 static struct acc_alg_item alg_options[] = {
 	{"zlib", "zlib"},
 	{"gzip", "gzip"},
@@ -171,6 +168,93 @@ static struct acc_alg_item alg_options[] = {
 	{"xcbc-prf-128(aes)", "digest"},
 	{"", ""}
 };
+
+static void *wd_internal_alloc(void *usr, size_t size)
+{
+	if (size != 0)
+		return malloc(size);
+	else
+		return NULL;
+}
+
+static void wd_internal_free(void *usr, void *va)
+{
+	if (va != NULL)
+		free(va);
+}
+
+static __u32 wd_mem_bufsize(void *usr)
+{
+	/* Malloc memory min size is 1 Byte */
+	return 1;
+}
+
+int wd_mem_ops_init(handle_t h_ctx, struct wd_mm_ops *mm_ops, int mem_type)
+{
+	int ret;
+
+	ret = wd_is_sva(h_ctx);
+	if (ret == UACCE_DEV_SVA || ret == -WD_HW_EACCESS) {
+		/*
+		 * In software queue scenario, all memory is handled as virtual memory
+		 * and processed in the same way as SVA mode
+		 */
+		mm_ops->sva_mode = true;
+	} else if (!ret) {
+		mm_ops->sva_mode = false;
+	} else {
+		WD_ERR("failed to check ctx!\n");
+		return ret;
+	}
+
+	/*
+	 * Under SVA mode, there is no need to consider the memory type;
+	 * directly proceed with virtual memory handling
+	 */
+	if (mm_ops->sva_mode) {
+		mm_ops->alloc = (void *)wd_internal_alloc;
+		mm_ops->free = (void *)wd_internal_free;
+		mm_ops->iova_map = NULL;
+		mm_ops->iova_unmap = NULL;
+		mm_ops->get_bufsize = (void *)wd_mem_bufsize;
+		mm_ops->usr = NULL;
+		return 0;
+	}
+
+	switch (mem_type) {
+	case UADK_MEM_AUTO:
+		/*
+		 * The memory pool needs to be allocated according to
+		 * the block size when it is first executed in the UADK
+		 */
+		mm_ops->usr = NULL;
+		WD_ERR("automatic under No-SVA mode is not supported!\n");
+		return -WD_EINVAL;
+	case UADK_MEM_USER:
+		if (!mm_ops->alloc || !mm_ops->free || !mm_ops->iova_map ||
+		    !mm_ops->iova_unmap || !mm_ops->usr) { // The user create a memory pool
+			WD_ERR("failed to check memory ops, some ops function is NULL!\n");
+			return -WD_EINVAL;
+		}
+		break;
+	case UADK_MEM_PROXY:
+		if (!mm_ops->usr) {
+			WD_ERR("failed to check memory pool!\n");
+			return -WD_EINVAL;
+		}
+		mm_ops->alloc = (void *)wd_mem_alloc;
+		mm_ops->free = (void *)wd_mem_free;
+		mm_ops->iova_map = (void *)wd_mem_map;
+		mm_ops->iova_unmap = (void *)wd_mem_unmap;
+		mm_ops->get_bufsize = (void *)wd_get_bufsize;
+		break;
+	default:
+		WD_ERR("failed to check memory type!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
 
 static void clone_ctx_to_internal(struct wd_ctx *ctx,
 				  struct wd_ctx_internal *ctx_in)
@@ -257,6 +341,12 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 			WD_ERR("failed to init ctxs lock!\n");
 			goto err_out;
 		}
+
+		ret = wd_insert_ctx_list(cfg->ctxs[i].ctx, in->alg_name);
+		if (ret) {
+			WD_ERR("failed to add ctx to mem list!\n");
+			goto err_out;
+		}
 	}
 
 	in->ctxs = ctxs;
@@ -318,6 +408,7 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 		in->ctxs = NULL;
 	}
 
+	wd_remove_ctx_list();
 	wd_shm_delete(in);
 }
 
@@ -2485,7 +2576,7 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 
 	/* If the ctx set number is 0, the initialization is skipped. */
 	if (!ctx_set_num)
-		return 0;
+		return -WD_ENOPROC;
 
 	dev = wd_find_dev_by_numa(list, numa_id);
 	if (WD_IS_ERR(dev))
@@ -2573,7 +2664,9 @@ static int wd_init_ctx_and_sched(struct wd_init_attrs *attrs, struct bitmask *bm
 		for (j = 0; j < op_type_num; j++) {
 			ctx_nums = ctx_params->ctx_set_num[j];
 			ret = wd_init_ctx_set(attrs, list, idx, i, j);
-			if (ret)
+			if (ret == -WD_ENOPROC)
+				continue;
+			else if (ret)
 				goto free_ctxs;
 			ret = wd_instance_sched_set(attrs->sched, ctx_nums, idx, i, j);
 			if (ret)

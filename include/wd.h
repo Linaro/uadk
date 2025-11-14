@@ -38,6 +38,7 @@ typedef unsigned long long __u64;
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 #define handle_t uintptr_t
 typedef struct wd_dev_mask wd_dev_mask_t;
@@ -113,6 +114,28 @@ enum wd_alg_type {
 	WD_CIPHER,
 	WD_DIGEST,
 	WD_AEAD,
+};
+
+/* Memory APIs for UADK API Layer */
+typedef void *(*wd_alloc)(void *usr, size_t size);
+typedef void (*wd_free)(void *usr, void *va);
+
+ /* Memory VA to DMA address map and unmap */
+typedef void *(*wd_map)(void *usr, void *va, size_t sz);
+typedef void (*wd_unmap)(void *usr, void *va, void *dma, size_t sz);
+typedef __u32 (*wd_bufsize)(void *usr);
+
+/* Memory from user, it is given at ctx creating. */
+struct wd_mm_ops {
+	wd_alloc alloc; /* Memory allocation */
+	wd_free free; /* Memory free */
+	wd_map iova_map; /* Get iova from user space VA */
+
+	/* Destroy the mapping between the PA of VA and iova */
+	wd_unmap iova_unmap;
+	wd_bufsize get_bufsize; /* Optional */
+	void *usr; /* Data for the above operations */
+	bool sva_mode; /* Record whether the OS is SVA or No-SVA mode */
 };
 
 /*
