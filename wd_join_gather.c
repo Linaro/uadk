@@ -684,6 +684,7 @@ static int wd_join_gather_alg_init(struct wd_ctx_config *config, struct wd_sched
 	if (ret < 0)
 		return ret;
 
+	wd_join_gather_setting.config.alg_name = "hashjoin gather";
 	ret = wd_init_ctx_config(&wd_join_gather_setting.config, config);
 	if (ret < 0)
 		return ret;
