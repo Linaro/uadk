@@ -89,6 +89,7 @@
 #define PRICE_MIN_OUT_SIZE		4096
 #define ZSTD_LIT_RESV_SIZE		16
 #define REPCODE_SIZE			12
+#define SEQ_LIT_LEN_SIZE		4
 
 #define BUF_TYPE			2
 
@@ -830,6 +831,10 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			else
 				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
 				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+
+			/* The literal length info of each bd needs to be cleared.  */
+			memset(ctx_buf + CTX_HW_REPCODE_OFFSET + REPCODE_SIZE, 0,
+			       SEQ_LIT_LEN_SIZE);
 		}
 	}
 
