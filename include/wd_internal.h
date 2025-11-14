@@ -13,7 +13,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+#define NOSVA_DEVICE_MAX		16
 #define DECIMAL_NUMBER		10
 #define MAX_FD_NUM	65535
 
