@@ -2964,7 +2964,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 
 		if (sched_type == SCHED_POLICY_DEV)
 			alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
-						  NOSVA_DEVICE_MAX, alg_poll_func);
+						  DEVICE_REGION_MAX, alg_poll_func);
 		else
 			alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
 						  numa_max_node() + 1, alg_poll_func);
