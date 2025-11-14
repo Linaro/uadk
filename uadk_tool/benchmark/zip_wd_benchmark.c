@@ -22,6 +22,7 @@
 #define MAX_POOL_LENTH_COMP	512
 #define CHUNK_SIZE		(128 * 1024)
 #define MAX_UNRECV_PACKET_NUM		2
+#define MAX_POOL_CREATE_FAIL_TIME	10
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -284,6 +285,28 @@ static int zip_wd_param_parse(thread_data *tddata, struct acc_option *options)
 	return 0;
 }
 
+static int zip_wd_create_single_blkpool(struct thread_bd_res *bd_res,
+					struct wd_blkpool_setup blksetup)
+{
+	int retry_cnt = 0;
+	int ret;
+
+	while (retry_cnt++ <= MAX_POOL_CREATE_FAIL_TIME) {
+		bd_res->pool = wd_blkpool_create(bd_res->queue, &blksetup);
+		if (bd_res->pool)
+			return 0;
+
+		wd_release_queue(bd_res->queue);
+		ret = wd_request_queue(bd_res->queue);
+		if (ret) {
+			ZIP_TST_PRT("retry to request queue fail!\n");
+			return ret;
+		}
+	}
+
+	return -ENOMEM;
+}
+
 static int init_zip_wd_queue(struct acc_option *options)
 {
 	struct wd_blkpool_setup blksetup;
@@ -343,12 +366,12 @@ static int init_zip_wd_queue(struct acc_option *options)
 	blksetup.align_size = ALIGN_SIZE;
 
 	for (j = 0; j < g_thread_num; j++) {
-		g_thread_queue.bd_res[j].pool = wd_blkpool_create(g_thread_queue.bd_res[j].queue, &blksetup);
-		if (!g_thread_queue.bd_res[j].pool) {
+		ret = zip_wd_create_single_blkpool(&g_thread_queue.bd_res[j], blksetup);
+		if (ret) {
 			ZIP_TST_PRT("create %dth pool fail!\n", j);
-			ret = -ENOMEM;
 			goto pool_err;
 		}
+
 		pool = g_thread_queue.bd_res[j].pool;
 
 		g_thread_queue.bd_res[j].bds = malloc(sizeof(struct wd_bd) * MAX_POOL_LENTH_COMP);
