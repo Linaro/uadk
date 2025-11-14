@@ -15,6 +15,12 @@ extern "C" {
 
 #define UACCE_CMD_START         _IO('W', 0)
 #define UACCE_CMD_PUT_Q         _IO('W', 1)
+#define UACCE_CMD_GET_SS_DMA		_IOR('W', 3, unsigned long)
+
+/* Pass DMA SS region slice size by granularity 64KB */
+#define UACCE_GRAN_SIZE		0x10000ull
+#define UACCE_GRAN_SHIFT		16
+#define UACCE_GRAN_NUM_MASK		0xfffull
 
 /**
  * UACCE Device flags:
@@ -33,6 +39,7 @@ enum {
 enum uacce_qfrt {
 	UACCE_QFRT_MMIO = 0, /* device mmio region */
 	UACCE_QFRT_DUS = 1, /* device user share */
+	UACCE_QFRT_SS,		/* static share memory */
 	UACCE_QFRT_MAX,
 };
 
