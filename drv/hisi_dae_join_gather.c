@@ -29,7 +29,7 @@
 #define HASH_TABLE_MAX_INDEX_NUM	15
 #define HASH_TABLE_INDEX_SIZE		12
 #define HASH_TABLE_EMPTY_SIZE	4
-#define GATHER_ROW_BATCH_EMPTY_SIZE	2
+#define GATHER_ROW_BATCH_EMPTY_SIZE	4
 
 /* DAE hardware protocol data */
 enum dae_join_stage {
