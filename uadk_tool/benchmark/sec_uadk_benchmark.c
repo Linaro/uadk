@@ -8,6 +8,7 @@
 #include "include/wd_digest.h"
 #include "include/wd_aead.h"
 #include "include/wd_sched.h"
+#include "include/wd_bmm.h"
 
 #define SEC_TST_PRT printf
 #define MAX_IVK_LENTH		64
@@ -17,6 +18,8 @@
 #define SEC_MAX_MAC_LEN		64
 #define SEC_SAVE_FILE_LEN	64
 #define SEC_PERF_AUTH_SIZE	16
+#define SQE_SIZE		128
+#define SEC_OP_TYPE_MAX		2
 
 char aead_key[] = "\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
 		  "\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf";
@@ -28,7 +31,7 @@ char g_save_mac[SEC_MAX_MAC_LEN];
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
-	u8 mac[SEC_MAX_MAC_LEN];
+	u8 *mac;
 };
 
 struct bd_pool {
@@ -40,6 +43,7 @@ struct thread_pool {
 	u8 **iv;
 	u8 **key;
 	u8 **hash;
+	void *rsv_pool;
 } g_uadk_pool;
 
 typedef struct uadk_thread_res {
@@ -54,6 +58,7 @@ typedef struct uadk_thread_res {
 	u32 dalg;
 	u32 dmode;
 	u32 d_outbytes;
+	int mm_type;
 } thread_data;
 
 static struct wd_ctx_config g_ctx_cfg;
@@ -66,6 +71,7 @@ static unsigned int g_alg;
 static unsigned int g_algtype;
 static unsigned int g_optype;
 static unsigned int g_maclen;
+static unsigned int g_dev_id;
 
 struct aead_alg_info {
 	int index;
@@ -635,6 +641,7 @@ static int specified_device_request_ctx(struct acc_option *options)
 		g_ctx_cfg.ctxs[i].op_type = 0;
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 	}
+	g_dev_id = uadk_parse_dev_id(dev->char_dev_path);
 
 	wd_free_list_accels(list);
 	return 0;
@@ -677,6 +684,7 @@ static int non_specified_device_request_ctx(struct acc_option *options)
 			g_ctx_cfg.ctxs[i].op_type = 0;
 			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 		}
+		g_dev_id = uadk_parse_dev_id(dev->char_dev_path);
 
 		free(dev);
 	}
@@ -718,15 +726,31 @@ static int init_ctx_config(struct acc_option *options)
 		goto free_ctxs;
 	}
 
+
 	switch(subtype) {
 	case CIPHER_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_cipher_poll_ctx);
+		if (options->mem_type == UADK_AUTO)
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, SEC_OP_TYPE_MAX,
+						    max_node, wd_cipher_poll_ctx);
+		else
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, SEC_OP_TYPE_MAX,
+						    max_node, wd_cipher_poll_ctx);
 		break;
 	case AEAD_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_aead_poll_ctx);
+		if (options->mem_type == UADK_AUTO)
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, SEC_OP_TYPE_MAX,
+						    max_node, wd_aead_poll_ctx);
+		else
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, SEC_OP_TYPE_MAX,
+						    max_node, wd_aead_poll_ctx);
 		break;
 	case DIGEST_TYPE:
-		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 1, max_node, wd_digest_poll_ctx);
+		if (options->mem_type == UADK_AUTO)
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, SEC_OP_TYPE_MAX,
+						    max_node, wd_digest_poll_ctx);
+		else
+			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, SEC_OP_TYPE_MAX,
+						    max_node, wd_digest_poll_ctx);
 		break;
 	default:
 		SEC_TST_PRT("failed to parse alg subtype!\n");
@@ -743,6 +767,7 @@ static int init_ctx_config(struct acc_option *options)
 	param.mode = mode;
 	param.begin = 0;
 	param.end = g_ctxnum - 1;
+	param.dev_id = g_dev_id;
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
 		SEC_TST_PRT("failed to fill sched data!\n");
@@ -867,7 +892,10 @@ static int init_ctx_config2(struct acc_option *options)
 	/* init */
 	switch(subtype) {
 	case CIPHER_TYPE:
-		ret = wd_cipher_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		if (options->mem_type == UADK_AUTO)
+			ret = wd_cipher_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		else
+			ret = wd_cipher_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 		if (ret)
 			SEC_TST_PRT("failed to do cipher init2!\n");
 		break;
@@ -877,12 +905,18 @@ static int init_ctx_config2(struct acc_option *options)
 			SEC_TST_PRT("failed to do cipher intruction init2!\n");
 		break;
 	case AEAD_TYPE:
-		ret = wd_aead_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		if (options->mem_type == UADK_AUTO)
+			ret = wd_aead_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+		else
+			ret = wd_aead_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 		if (ret)
 			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
-		ret = wd_digest_init2_(alg_name, options->sched_type, options->task_type, &cparams);
+		if (options->mem_type == UADK_AUTO)
+			ret = wd_digest_init2_(alg_name, SCHED_POLICY_RR, options->task_type, &cparams);
+		else
+			ret = wd_digest_init2_(alg_name, SCHED_POLICY_DEV, options->task_type, &cparams);
 		if (ret)
 			SEC_TST_PRT("failed to do digest init2!\n");
 		break;
@@ -1071,6 +1105,10 @@ static int init_uadk_bd_pool(void)
 				memset(g_uadk_pool.pool[i].bds[j].dst, 0, step);
 				if (!g_uadk_pool.pool[i].bds[j].dst)
 					goto malloc_error3;
+				g_uadk_pool.pool[i].bds[j].mac = malloc(SEC_MAX_MAC_LEN);
+				memset(g_uadk_pool.pool[i].bds[j].mac, 0, SEC_MAX_MAC_LEN);
+				if (!g_uadk_pool.pool[i].bds[j].mac)
+					goto malloc_error4;
 
 				if (g_alg != AEAD_TYPE) {
 					get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
@@ -1093,18 +1131,22 @@ static int init_uadk_bd_pool(void)
 
 	return 0;
 
+malloc_error4:
+	free(g_uadk_pool.pool[i].bds[j].dst);
 malloc_error3:
 	free(g_uadk_pool.pool[i].bds[j].src);
 malloc_error2:
 	for (j--; j >= 0; j--) {
 		free(g_uadk_pool.pool[i].bds[j].src);
 		free(g_uadk_pool.pool[i].bds[j].dst);
+		free(g_uadk_pool.pool[i].bds[j].mac);
 	}
 malloc_error1:
 	for (i--; i >= 0; i--) {
 		for (j = 0; j < MAX_POOL_LENTH; j++) {
 			free(g_uadk_pool.pool[i].bds[j].src);
 			free(g_uadk_pool.pool[i].bds[j].dst);
+			free(g_uadk_pool.pool[i].bds[j].mac);
 		}
 		free(g_uadk_pool.pool[i].bds);
 		g_uadk_pool.pool[i].bds = NULL;
@@ -1133,6 +1175,7 @@ static void free_uadk_bd_pool(void)
 			for (j = 0; j < MAX_POOL_LENTH; j++) {
 				free(g_uadk_pool.pool[i].bds[j].src);
 				free(g_uadk_pool.pool[i].bds[j].dst);
+				free(g_uadk_pool.pool[i].bds[j].mac);
 			}
 		}
 		free(g_uadk_pool.pool[i].bds);
@@ -1144,6 +1187,322 @@ static void free_uadk_bd_pool(void)
 	free_ivkey_source();
 }
 
+static void free_rsv_ivkey(void *pool)
+{
+	int i;
+
+	/* release the hash block for each thread  */
+	for (i = 0; i < g_thread_num; i++) {
+		if (g_uadk_pool.hash[i])
+			wd_mem_free(pool, g_uadk_pool.hash[i]);
+	}
+
+	/* release the key block for each thread  */
+	for (i = 0; i < g_thread_num; i++) {
+		if (g_uadk_pool.key[i])
+			wd_mem_free(pool, g_uadk_pool.key[i]);
+	}
+
+	/* release the IV block for each thread  */
+	for (i = 0; i < g_thread_num; i++) {
+		if (g_uadk_pool.iv[i])
+			wd_mem_free(pool, g_uadk_pool.iv[i]);
+	}
+
+	/* release a pointer array */
+	free(g_uadk_pool.hash);
+	free(g_uadk_pool.key);
+	free(g_uadk_pool.iv);
+
+	/* the memory pool is managed externally */
+}
+
+static int init_rsv_ivkey(handle_t h_ctx, void *pool)
+{
+	int i, j, m, idx;
+
+	/* Check if the incoming memory pool is valid */
+	if (!pool) {
+		SEC_TST_PRT("Invalid pool parameter\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * Allocate a pointer array
+	 * (still using malloc, as the structure is small)
+	 */
+	g_uadk_pool.iv = malloc(g_thread_num * sizeof(char *));
+	if (!g_uadk_pool.iv) {
+		SEC_TST_PRT("Failed to alloc IV pointers\n");
+		goto error;
+	}
+	memset(g_uadk_pool.iv, 0, g_thread_num * sizeof(char *));
+
+	g_uadk_pool.key = malloc(g_thread_num * sizeof(char *));
+	if (!g_uadk_pool.key) {
+		SEC_TST_PRT("Failed to alloc Key pointers\n");
+		goto free_iv_pointers;
+	}
+	memset(g_uadk_pool.key, 0, g_thread_num * sizeof(char *));
+
+	g_uadk_pool.hash = malloc(g_thread_num * sizeof(char *));
+	if (!g_uadk_pool.hash) {
+		SEC_TST_PRT("Failed to alloc Hash pointers\n");
+		goto free_key_pointers;
+	}
+	memset(g_uadk_pool.hash, 0, g_thread_num * sizeof(char *));
+
+	/* Allocate IV blocks for each thread */
+	for (i = 0; i < g_thread_num; i++) {
+		g_uadk_pool.iv[i] = wd_mem_alloc(pool, g_pktlen);
+		if (!g_uadk_pool.iv[i]) {
+			SEC_TST_PRT("Failed to alloc IV block\n");
+			goto free_iv_blocks;
+		}
+		memset(g_uadk_pool.iv[i], 0, MAX_IVK_LENTH);
+	}
+
+	/* Allocate KEY blocks for each thread */
+	for (j = 0; j < g_thread_num; j++) {
+		g_uadk_pool.key[j] = wd_mem_alloc(pool, g_pktlen);
+		if (!g_uadk_pool.key[j]) {
+			SEC_TST_PRT("Failed to alloc Key block\n");
+			goto free_key_blocks;
+		}
+		memcpy(g_uadk_pool.key[j], aead_key, SEC_PERF_KEY_LEN);
+	}
+
+	/* Allocate HASH blocks for each thread */
+	for (m = 0; m < g_thread_num; m++) {
+		g_uadk_pool.hash[m] = wd_mem_alloc(pool, g_pktlen);
+		if (!g_uadk_pool.hash[m]) {
+			SEC_TST_PRT("Failed to alloc Hash block\n");
+			goto free_hash_blocks;
+		}
+		memcpy(g_uadk_pool.hash[m], aead_key, SEC_PERF_KEY_LEN);
+	}
+
+	return 0;
+
+free_hash_blocks:
+	for (idx = m - 1; idx >= 0; idx--) {
+		if (g_uadk_pool.hash[idx])
+			wd_mem_free(pool, g_uadk_pool.hash[idx]);
+	}
+free_key_blocks:
+	for (idx = j - 1; idx >= 0; idx--) {
+		if (g_uadk_pool.key[idx])
+			wd_mem_free(pool, g_uadk_pool.key[idx]);
+	}
+free_iv_blocks:
+	for (idx = i - 1; idx >= 0; idx--) {
+		if (g_uadk_pool.iv[idx])
+			wd_mem_free(pool, g_uadk_pool.iv[idx]);
+	}
+	free(g_uadk_pool.hash);
+free_key_pointers:
+	free(g_uadk_pool.key);
+free_iv_pointers:
+	free(g_uadk_pool.iv);
+error:
+	return -ENOMEM;
+}
+
+static int init_uadk_rsv_pool(struct acc_option *option)
+{
+	struct wd_mempool_setup pool_setup;
+	char *alg = option->algclass;
+	unsigned long step, len;
+	/*
+	 * Assuming that h_ctx exists globally,
+	 * it needs to be obtained based on actual conditions.
+	 */
+	handle_t h_ctx;
+	int i, j;
+	int ret;
+
+	h_ctx = wd_find_ctx(alg);
+	if (!h_ctx) {
+		SEC_TST_PRT("Failed to find a ctx for alg:%s\n", option->algname);
+		return -EINVAL;
+	}
+	g_ctx_cfg.priv = (void *)h_ctx;
+
+	if (g_alg != AEAD_TYPE)
+		step = sizeof(char) * g_pktlen;
+	else
+		step = sizeof(char) * g_pktlen * 2;
+
+	/* Create a memory pool for managing memory blocks of src and dst */
+	pool_setup.block_size = step;
+	/*
+	 * Each thread requires two blocks (src and dst) for each uadk_bd,
+	 * along with the IV, KEY, and MAC sections,
+	 * thus necessitating five times the data.
+	 */
+	pool_setup.block_num = g_thread_num * MAX_POOL_LENTH * 8;
+	pool_setup.align_size = SQE_SIZE;
+	pool_setup.ops.alloc = NULL;
+	pool_setup.ops.free = NULL;
+
+	g_uadk_pool.rsv_pool = wd_mempool_alloc(h_ctx, &pool_setup);
+	if (!g_uadk_pool.rsv_pool) {
+		SEC_TST_PRT("Failed to create block pool\n");
+		return -ENOMEM;
+	}
+
+	/* Initialize the memory for iv and key */
+	ret = init_rsv_ivkey(h_ctx, g_uadk_pool.rsv_pool);
+	if (ret) {
+		SEC_TST_PRT("init uadk ivkey resource failed!\n");
+		goto free_pool;
+	}
+
+	if (g_alg != AEAD_TYPE)
+		len = sizeof(char) * g_pktlen;
+	else
+		len = sizeof(char) * g_pktlen * 2;
+	/*
+	 * Allocate thread pool structure
+	 * (still using malloc, as the structure is small)
+	 */
+	g_uadk_pool.pool = calloc(1, g_thread_num * sizeof(struct bd_pool));
+	if (!g_uadk_pool.pool) {
+		SEC_TST_PRT("init uadk pool alloc thread failed!\n");
+		goto free_ivkey;
+	}
+
+	for (i = 0; i < g_thread_num; i++) {
+		g_uadk_pool.pool[i].bds = calloc(1, MAX_POOL_LENTH * sizeof(struct uadk_bd));
+		if (!g_uadk_pool.pool[i].bds) {
+			SEC_TST_PRT("init uadk bds alloc failed!\n");
+			goto malloc_error1;
+		}
+
+		for (j = 0; j < MAX_POOL_LENTH; j++) {
+			/* Allocate memory blocks for src and dst from the memory pool */
+			g_uadk_pool.pool[i].bds[j].src = wd_mem_alloc(g_uadk_pool.rsv_pool, len);
+			if (!g_uadk_pool.pool[i].bds[j].src) {
+				SEC_TST_PRT("Failed to alloc src block\n");
+				goto malloc_error3;
+			}
+
+			g_uadk_pool.pool[i].bds[j].dst = wd_mem_alloc(g_uadk_pool.rsv_pool, len);
+			if (!g_uadk_pool.pool[i].bds[j].dst) {
+				SEC_TST_PRT("Failed to alloc dst block\n");
+				goto malloc_error3;
+			}
+
+			g_uadk_pool.pool[i].bds[j].mac = wd_mem_alloc(g_uadk_pool.rsv_pool, SEC_MAX_MAC_LEN);
+			if (!g_uadk_pool.pool[i].bds[j].mac) {
+				SEC_TST_PRT("Failed to alloc mac block\n");
+				goto malloc_error3;
+			}
+
+			memset(g_uadk_pool.pool[i].bds[j].src, 0, len);
+			memset(g_uadk_pool.pool[i].bds[j].dst, 0, len);
+			memset(g_uadk_pool.pool[i].bds[j].mac, 0, step);
+
+			if (g_alg != AEAD_TYPE) {
+				get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
+				if (g_prefetch)
+					get_rand_data(g_uadk_pool.pool[i].bds[j].dst, g_pktlen);
+			} else {
+				if (!g_optype)
+					get_aead_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen + SEC_AEAD_LEN);
+				else {
+					read_aead_dst_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen + SEC_AEAD_LEN);
+					memcpy(g_uadk_pool.pool[i].bds[j].mac, g_save_mac, SEC_MAX_MAC_LEN);
+				}
+			}
+		}
+	}
+	SEC_TST_PRT("Init uadk rsv block pool OK.\n");
+
+	return 0;
+
+malloc_error3:
+	/* Release the allocated src and dst blocks */
+	if (g_uadk_pool.pool[i].bds[j].mac)
+		wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].mac);
+	if (g_uadk_pool.pool[i].bds[j].src)
+		wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].src);
+	if (g_uadk_pool.pool[i].bds[j].dst)
+		wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].dst);
+	goto malloc_error2;
+
+malloc_error2:
+	for (j--; j >= 0; j--) {
+		if (g_uadk_pool.pool[i].bds[j].src)
+			wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].src);
+		if (g_uadk_pool.pool[i].bds[j].dst)
+			wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].dst);
+		if (g_uadk_pool.pool[i].bds[j].mac)
+			wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].mac);
+	}
+malloc_error1:
+	for (i--; i >= 0; i--) {
+		for (j = 0; j < MAX_POOL_LENTH; j++) {
+			if (g_uadk_pool.pool[i].bds[j].src)
+				wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].src);
+			if (g_uadk_pool.pool[i].bds[j].dst)
+				wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].dst);
+			if (g_uadk_pool.pool[i].bds[j].mac)
+				wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].mac);
+		}
+		free(g_uadk_pool.pool[i].bds);
+		g_uadk_pool.pool[i].bds = NULL;
+	}
+	free(g_uadk_pool.pool);
+	g_uadk_pool.pool = NULL;
+
+free_ivkey:
+	free_rsv_ivkey(g_uadk_pool.rsv_pool);
+
+free_pool:
+	wd_mempool_free(h_ctx, g_uadk_pool.rsv_pool);
+	g_uadk_pool.rsv_pool = NULL;
+
+	SEC_TST_PRT("init uadk bd pool alloc failed!\n");
+	return -ENOMEM;
+}
+
+static void free_uadk_rsv_pool(struct acc_option *option)
+{
+	handle_t h_ctx = (handle_t)g_ctx_cfg.priv;
+	int i, j;
+
+	/* save aad + ctext + mac */
+	if (g_alg == AEAD_TYPE && !g_optype)
+		save_aead_dst_data(g_uadk_pool.pool[0].bds[0].dst,
+				   g_pktlen + SEC_AEAD_LEN);
+
+	for (i = 0; i < g_thread_num; i++) {
+		if (g_uadk_pool.pool[i].bds) {
+			for (j = 0; j < MAX_POOL_LENTH; j++) {
+				/* Use wd_mem_free to release the block */
+				if (g_uadk_pool.pool[i].bds[j].src)
+					wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].src);
+				if (g_uadk_pool.pool[i].bds[j].dst)
+					wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].dst);
+				if (g_uadk_pool.pool[i].bds[j].mac)
+					wd_mem_free(g_uadk_pool.rsv_pool, g_uadk_pool.pool[i].bds[j].mac);
+			}
+		}
+		free(g_uadk_pool.pool[i].bds);
+		g_uadk_pool.pool[i].bds = NULL;
+	}
+	free(g_uadk_pool.pool);
+	g_uadk_pool.pool = NULL;
+
+	/* Destroy IV and key */
+	free_rsv_ivkey(g_uadk_pool.rsv_pool);
+
+	/* Destroy memory pool */
+	if (g_uadk_pool.rsv_pool)
+		wd_mempool_free(h_ctx, g_uadk_pool.rsv_pool);
+	g_uadk_pool.rsv_pool = NULL;
+}
 /*-------------------------------uadk benchmark main code-------------------------------------*/
 
 static void *sec_uadk_poll(void *data)
@@ -1245,6 +1604,7 @@ static void *sec_uadk_cipher_async(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_cipher_sess_setup cipher_setup = {0};
+	struct sched_params sc_param = {0};
 	struct wd_cipher_req creq;
 	struct bd_pool *uadk_pool;
 	u8 *priv_iv, *priv_key;
@@ -1265,6 +1625,20 @@ static void *sec_uadk_cipher_async(void *arg)
 
 	cipher_setup.alg = pdata->alg;
 	cipher_setup.mode = pdata->mode;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0;
+	if (g_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_uadk_pool.rsv_pool);
+	cipher_setup.sched_param = (void *)&sc_param;
+
+	cipher_setup.mm_type = pdata->mm_type;
+	cipher_setup.mm_ops.usr = g_uadk_pool.rsv_pool;
+	cipher_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	cipher_setup.mm_ops.free = (void *)wd_mem_free;
+	cipher_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	cipher_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	cipher_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 	h_sess = wd_cipher_alloc_sess(&cipher_setup);
 	if (!h_sess)
 		return NULL;
@@ -1305,6 +1679,22 @@ static void *sec_uadk_cipher_async(void *arg)
 		}
 		count++;
 	}
+
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				SEC_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+	}
+	/* Wait for the device to complete the tasks. */
+	usleep(SEND_USLEEP * MAX_TRY_CNT);
+
 	wd_cipher_free_sess(h_sess);
 
 	add_send_complete();
@@ -1316,6 +1706,7 @@ static void *sec_uadk_aead_async(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_aead_sess_setup aead_setup = {0};
+	struct sched_params sc_param = {0};
 	u8 *priv_iv, *priv_key, *priv_hash;
 	u32 auth_size = SEC_PERF_AUTH_SIZE;
 	struct wd_aead_req areq = {0};
@@ -1338,6 +1729,21 @@ static void *sec_uadk_aead_async(void *arg)
 
 	aead_setup.calg = pdata->alg;
 	aead_setup.cmode = pdata->mode;
+	aead_setup.mm_type = pdata->mm_type;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0; // sync mode
+	if (g_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_uadk_pool.rsv_pool);
+	aead_setup.sched_param = (void *)&sc_param;
+
+	aead_setup.mm_ops.usr = g_uadk_pool.rsv_pool;
+	aead_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	aead_setup.mm_ops.free = (void *)wd_mem_free;
+	aead_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	aead_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	aead_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
+
 	if (pdata->is_union) {
 		aead_setup.dalg = pdata->dalg;
 		aead_setup.dmode = pdata->dmode;
@@ -1412,6 +1818,22 @@ static void *sec_uadk_aead_async(void *arg)
 		}
 		count++;
 	}
+
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				SEC_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+	}
+	/* Wait for the device to complete the tasks. */
+	usleep(SEND_USLEEP * MAX_TRY_CNT);
+
 	wd_aead_free_sess(h_sess);
 
 	add_send_complete();
@@ -1423,6 +1845,7 @@ static void *sec_uadk_digest_async(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_digest_sess_setup digest_setup = {0};
+	struct sched_params sc_param = {0};
 	struct wd_digest_req dreq;
 	struct bd_pool *uadk_pool;
 	u8 *priv_iv, *priv_key;
@@ -1443,6 +1866,21 @@ static void *sec_uadk_digest_async(void *arg)
 
 	digest_setup.alg = pdata->alg;
 	digest_setup.mode = pdata->mode; // digest mode is optype
+	digest_setup.mm_type = pdata->mm_type;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0; // sync mode
+	if (g_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_uadk_pool.rsv_pool);
+	digest_setup.sched_param = (void *)&sc_param;
+
+	digest_setup.mm_ops.usr = g_uadk_pool.rsv_pool;
+	digest_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	digest_setup.mm_ops.free = (void *)wd_mem_free;
+	digest_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	digest_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	digest_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
+
 	h_sess = wd_digest_alloc_sess(&digest_setup);
 	if (!h_sess)
 		return NULL;
@@ -1482,6 +1920,22 @@ static void *sec_uadk_digest_async(void *arg)
 		}
 		count++;
 	}
+
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				SEC_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+	}
+	/* Wait for the device to complete the tasks. */
+	usleep(SEND_USLEEP * MAX_TRY_CNT);
+
 	wd_digest_free_sess(h_sess);
 
 	add_send_complete();
@@ -1493,6 +1947,7 @@ static void *sec_uadk_cipher_sync(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_cipher_sess_setup cipher_setup = {0};
+	struct sched_params sc_param = {0};
 	struct wd_cipher_req creq;
 	struct bd_pool *uadk_pool;
 	u8 *priv_iv, *priv_key;
@@ -1512,6 +1967,20 @@ static void *sec_uadk_cipher_sync(void *arg)
 
 	cipher_setup.alg = pdata->alg;
 	cipher_setup.mode = pdata->mode;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0; // sync mode
+	if (g_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_uadk_pool.rsv_pool);
+	cipher_setup.sched_param = (void *)&sc_param;
+
+	cipher_setup.mm_type = pdata->mm_type;
+	cipher_setup.mm_ops.usr = g_uadk_pool.rsv_pool;
+	cipher_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	cipher_setup.mm_ops.free = (void *)wd_mem_free;
+	cipher_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	cipher_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	cipher_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 	h_sess = wd_cipher_alloc_sess(&cipher_setup);
 	if (!h_sess)
 		return NULL;
@@ -1554,6 +2023,7 @@ static void *sec_uadk_aead_sync(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_aead_sess_setup aead_setup = {0};
+	struct sched_params sc_param = {0};
 	u8 *priv_iv, *priv_key, *priv_hash;
 	u32 auth_size = SEC_PERF_AUTH_SIZE;
 	struct wd_aead_req areq = {0};
@@ -1576,6 +2046,20 @@ static void *sec_uadk_aead_sync(void *arg)
 
 	aead_setup.calg = pdata->alg;
 	aead_setup.cmode = pdata->mode;
+	aead_setup.mm_type = pdata->mm_type;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0; // sync mode
+	if (g_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_uadk_pool.rsv_pool);
+	aead_setup.sched_param = (void *)&sc_param;
+
+	aead_setup.mm_ops.usr = g_uadk_pool.rsv_pool;
+	aead_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	aead_setup.mm_ops.free = (void *)wd_mem_free;
+	aead_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	aead_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	aead_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 	if (pdata->is_union) {
 		aead_setup.dalg = pdata->dalg;
 		aead_setup.dmode = pdata->dmode;
@@ -1644,6 +2128,7 @@ static void *sec_uadk_digest_sync(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_digest_sess_setup digest_setup = {0};
+	struct sched_params sc_param = {0};
 	struct wd_digest_req dreq;
 	struct bd_pool *uadk_pool;
 	u8 *priv_iv, *priv_key;
@@ -1663,6 +2148,20 @@ static void *sec_uadk_digest_sync(void *arg)
 
 	digest_setup.alg = pdata->alg;
 	digest_setup.mode = pdata->mode; // digest mode is optype
+	digest_setup.mm_type = pdata->mm_type;
+	sc_param.numa_id = 0;
+	sc_param.type = 0;
+	sc_param.mode = 0; // sync mode
+	if (g_uadk_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_uadk_pool.rsv_pool);
+	digest_setup.sched_param = (void *)&sc_param;
+
+	digest_setup.mm_ops.usr = g_uadk_pool.rsv_pool;
+	digest_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	digest_setup.mm_ops.free = (void *)wd_mem_free;
+	digest_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	digest_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	digest_setup.mm_ops.get_bufsize = (void *)wd_get_bufsize;
 	h_sess = wd_digest_alloc_sess(&digest_setup);
 	if (!h_sess)
 		return NULL;
@@ -1741,6 +2240,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
 		threads_args[i].d_outbytes = threads_option.d_outbytes;
+		threads_args[i].mm_type = options->mem_type;
 		ret = pthread_create(&tdid[i], NULL, uadk_sec_sync_run, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create sync thread fail!\n");
@@ -1813,6 +2313,7 @@ int sec_uadk_async_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].td_id = i;
 		threads_args[i].d_outbytes = threads_option.d_outbytes;
+		threads_args[i].mm_type = options->mem_type;
 		ret = pthread_create(&tdid[i], NULL, uadk_sec_async_run, &threads_args[i]);
 		if (ret) {
 			SEC_TST_PRT("Create async thread fail!\n");
@@ -1875,7 +2376,11 @@ int sec_uadk_benchmark(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	ret = init_uadk_bd_pool();
+	if (options->mem_type == UADK_AUTO) // SVA memory
+		ret = init_uadk_bd_pool();
+	else
+		ret = init_uadk_rsv_pool(options); // In the test scenario, the user uses the uadk interface to apply for memory
+
 	if (ret)
 		return ret;
 
@@ -1889,7 +2394,11 @@ int sec_uadk_benchmark(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	free_uadk_bd_pool();
+	if (options->mem_type == UADK_AUTO)
+		free_uadk_bd_pool();
+	else
+		free_uadk_rsv_pool(options);
+
 	if (options->inittype == INIT2_TYPE)
 		uninit_ctx_config2(options->subtype);
 	else
