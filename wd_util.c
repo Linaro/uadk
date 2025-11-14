@@ -256,6 +256,31 @@ int wd_mem_ops_init(handle_t h_ctx, struct wd_mm_ops *mm_ops, int mem_type)
 	return 0;
 }
 
+static int wd_parse_dev_id(handle_t h_ctx)
+{
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+	char *dev_path = ctx->dev_path;
+	char *last_str = NULL;
+	char *endptr;
+	int dev_id;
+
+	if (!dev_path)
+		return -WD_EINVAL;
+
+	/* Find the last '-' in the string. */
+	last_str = strrchr(dev_path, '-');
+	if (!last_str || *(last_str + 1) == '\0')
+		return -WD_EINVAL;
+
+	/* Parse the following number */
+	dev_id = strtol(last_str + 1, &endptr, DECIMAL_NUMBER);
+	/* Check whether it is truly all digits */
+	if (*endptr != '\0' || dev_id < 0)
+		return -WD_EINVAL;
+
+	return dev_id;
+}
+
 static void clone_ctx_to_internal(struct wd_ctx *ctx,
 				  struct wd_ctx_internal *ctx_in)
 {
@@ -2619,15 +2644,21 @@ static void wd_release_ctx_set(struct wd_ctx_config *ctx_config)
 		}
 }
 
-static int wd_instance_sched_set(struct wd_sched *sched, struct wd_ctx_nums ctx_nums,
+static int wd_instance_sched_set(struct wd_init_attrs *attrs, struct wd_ctx_nums ctx_nums,
 				 int idx, int numa_id, int op_type)
 {
+	struct wd_sched *sched = attrs->sched;
 	struct sched_params sparams;
-	int i, end, ret = 0;
+	int i, end, dev_id, ret = 0;
+
+	dev_id = wd_parse_dev_id(attrs->ctx_config->ctxs[idx].ctx);
+	if (dev_id < 0)
+		return -WD_EINVAL;
 
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		sparams.numa_id = numa_id;
 		sparams.type = op_type;
+		sparams.dev_id = dev_id;
 		sparams.mode = i;
 		sparams.begin = idx + ctx_nums.sync_ctx_num * i;
 		end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
@@ -2663,7 +2694,7 @@ static int wd_init_ctx_and_sched(struct wd_init_attrs *attrs, struct bitmask *bm
 				continue;
 			else if (ret)
 				goto free_ctxs;
-			ret = wd_instance_sched_set(attrs->sched, ctx_nums, idx, i, j);
+			ret = wd_instance_sched_set(attrs, ctx_nums, idx, i, j);
 			if (ret)
 				goto free_ctxs;
 			idx += (ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num);
@@ -2931,7 +2962,11 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 		attrs->ctx_config = ctx_config;
 
-		alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+		if (sched_type == SCHED_POLICY_DEV)
+			alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+						  NOSVA_DEVICE_MAX, alg_poll_func);
+		else
+			alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
 						  numa_max_node() + 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to instance scheduler\n");
