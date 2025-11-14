@@ -1,0 +1,26 @@
+# UADK Driver Configuration File
+# =============================
+#
+# This file specifies which UADK driver shared libraries (.so) should be loaded.
+#
+# Usage Guidelines:
+# 1. Place this file (uadk.cnf) in the same directory as your driver .so files
+# 2. List one driver library per line (e.g., "libhisi_zip.so")
+#
+# Example Configuration:
+# libhisi_zip.so
+# libhisi_sec.so
+# # libhisi_hpre.so  (commented out - will not load)
+#
+# Note:
+# UADK will not load any .so files that are not explicitly listed here.
+# If a non-existent so is specified, it will be skipped, and info user by log.
+# If uadk.cnf is not present, load the libraries (.so) by default methods.
+
+libhisi_zip.so
+libhisi_sec.so
+libhisi_hpre.so
+libisa_ce.so
+libisa_sve.so
+libhisi_dae.so
+libhisi_udma.so
