@@ -580,6 +580,7 @@ static int wd_agg_alg_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		return ret;
 
+	wd_agg_setting.config.alg_name = "hashagg";
 	ret = wd_init_ctx_config(&wd_agg_setting.config, config);
 	if (ret < 0)
 		return ret;
