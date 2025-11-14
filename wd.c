@@ -238,10 +238,6 @@ static int get_dev_info(struct uacce_dev *dev)
 	ret = get_int_attr(dev, "flags", &dev->flags);
 	if (ret < 0)
 		return ret;
-	else if (!((unsigned int)dev->flags & UACCE_DEV_SVA)) {
-		WD_ERR("skip none sva uacce device!\n");
-		return -WD_ENODEV;
-	}
 
 	ret = get_int_attr(dev, "region_mmio_size", &value);
 	if (ret < 0)
