@@ -292,7 +292,7 @@ static int init_zip_wd_queue(struct acc_option *options)
 	u32 outsize;
 	u32 insize;
 	u8 op_type;
-	int i, j;
+	int i, j, k;
 	int ret = 0;
 
 	op_type = options->optype % WCRYPTO_DIR_MAX;
@@ -356,22 +356,22 @@ static int init_zip_wd_queue(struct acc_option *options)
 			goto bds_error;
 		bds = g_thread_queue.bd_res[j].bds;
 
-		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
-			bds[i].src = wd_alloc_blk(pool);
-			if (!bds[i].src) {
+		for (k = 0; k < MAX_POOL_LENTH_COMP; k++) {
+			bds[k].src = wd_alloc_blk(pool);
+			if (!bds[k].src) {
 				ret = -ENOMEM;
 				goto blk_error2;
 			}
-			bds[i].src_len = insize;
+			bds[k].src_len = insize;
 
-			bds[i].dst = wd_alloc_blk(pool);
-			if (!bds[i].dst) {
+			bds[k].dst = wd_alloc_blk(pool);
+			if (!bds[k].dst) {
 				ret = -ENOMEM;
 				goto blk_error3;
 			}
-			bds[i].dst_len = outsize;
+			bds[k].dst_len = outsize;
 
-			get_rand_data(bds[i].src, insize * COMPRESSION_RATIO_FACTOR);
+			get_rand_data(bds[k].src, insize * COMPRESSION_RATIO_FACTOR);
 		}
 
 	}
@@ -379,11 +379,11 @@ static int init_zip_wd_queue(struct acc_option *options)
 	return 0;
 
 blk_error3:
-	wd_free_blk(pool, bds[i].src);
+	wd_free_blk(pool, bds[k].src);
 blk_error2:
-	for (i--; i >= 0; i--) {
-		wd_free_blk(pool, bds[i].src);
-		wd_free_blk(pool, bds[i].dst);
+	for (k--; k >= 0; k--) {
+		wd_free_blk(pool, bds[k].src);
+		wd_free_blk(pool, bds[k].dst);
 	}
 bds_error:
 	wd_blkpool_destroy(g_thread_queue.bd_res[j].pool);
@@ -391,9 +391,9 @@ pool_err:
 	for (j--; j >= 0; j--) {
 		pool = g_thread_queue.bd_res[j].pool;
 		bds = g_thread_queue.bd_res[j].bds;
-		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
-			wd_free_blk(pool, bds[i].src);
-			wd_free_blk(pool, bds[i].dst);
+		for (k = 0; k < MAX_POOL_LENTH_COMP; k++) {
+			wd_free_blk(pool, bds[k].src);
+			wd_free_blk(pool, bds[k].dst);
 		}
 		free(bds);
 		wd_blkpool_destroy(pool);
@@ -404,6 +404,7 @@ queue_out:
 		free(g_thread_queue.bd_res[i].queue);
 	}
 	free(g_thread_queue.bd_res);
+	g_thread_queue.bd_res = NULL;
 	return ret;
 }
 
@@ -412,6 +413,9 @@ static void uninit_zip_wd_queue(void)
 	struct wd_bd *bds = NULL;
 	void *pool = NULL;
 	int j, i;
+
+	if (!g_thread_queue.bd_res)
+		return;
 
 	for (j = 0; j < g_thread_num; j++) {
 		pool = g_thread_queue.bd_res[j].pool;
