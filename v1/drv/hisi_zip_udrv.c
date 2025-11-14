@@ -687,9 +687,14 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
 		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
 		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
-		if (format->blk_type != COMP_BLK)
-			memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
-			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+		if (msg->alg_type == WCRYPTO_LZ77_ZSTD) {
+			if (format->blk_type != COMP_BLK)
+				memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+			else
+				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+		}
 	}
 
 	sqe->isize = msg->isize;
@@ -820,13 +825,10 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 			       OVERFLOW_DATA_SIZE;
 	}
 
-	if (ctx_buf) {
-		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+	if (ctx_buf)
 		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
 		       ctx_buf + CTX_BUFFER_OFFSET + CTX_HW_REPCODE_OFFSET,
 		       REPCODE_SIZE);
-	}
 }
 
 int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,

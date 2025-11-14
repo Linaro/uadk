@@ -823,9 +823,14 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	if (msg->ctx_buf) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
-		if (msg->alg_type == WD_LZ77_ZSTD && data->blk_type != COMP_BLK)
-			memcpy(ctx_buf + CTX_HW_REPCODE_OFFSET,
-			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+		if (msg->alg_type == WD_LZ77_ZSTD) {
+			if (data->blk_type != COMP_BLK)
+				memcpy(ctx_buf + CTX_HW_REPCODE_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+			else
+				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+		}
 	}
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, seq_avail_out);
@@ -1204,12 +1209,9 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
 		data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
 			     OVERFLOW_DATA_SIZE;
 
-		if (ctx_buf) {
-			memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-			       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+		if (ctx_buf)
 			memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
 			       ctx_buf + RSV_OFFSET + CTX_HW_REPCODE_OFFSET, REPCODE_SIZE);
-		}
 	}
 }
 
