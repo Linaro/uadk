@@ -120,6 +120,7 @@ struct hisi_zip_sqe_v3 {
 #define HZ_REF_VTYPE_SHIFT 12
 #define HZ_BLK_SIZE_SHIFT 16
 #define HZ_CTX_ST_MASK 0x000f
+#define HZ_CTX_BFINAL_MASK 0x80
 #define HZ_LSTBLK_MASK 0x0100
 #define HZ_STATUS_MASK 0xff
 #define HZ_REQ_TYPE_MASK 0xff
