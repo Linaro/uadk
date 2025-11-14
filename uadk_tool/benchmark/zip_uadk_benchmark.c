@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <numa.h>
+#include <math.h>
 #include "uadk_benchmark.h"
 
 #include "zip_uadk_benchmark.h"
@@ -84,6 +85,7 @@ static unsigned int g_pktlen;
 static unsigned int g_prefetch;
 static unsigned int g_state;
 static unsigned int g_dev_id;
+static unsigned int g_data_fmt;
 
 #ifndef ZLIB_FSE
 static ZSTD_CCtx* zstd_soft_fse_init(unsigned    int level)
@@ -175,8 +177,15 @@ fd_error:
 static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 {
 	struct zip_file_head *fhead = NULL;
+	struct wd_datalist *src_curr = NULL;
+	struct wd_datalist *dst_curr = NULL;
 	char file_path[PATH_SIZE];
+	size_t total_read = 0;
+	size_t total_len = 0;
+	size_t remaining = 0;
 	ssize_t size = 0xff;
+	size_t copied = 0;
+	size_t len = 0;
 	int i, j, fd;
 	int ret;
 
@@ -216,30 +225,63 @@ static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 
 	// read data for one buffer one buffer from file line
 	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-		memset(g_zip_pool.pool[0].bds[j].src, 0x0,
-			g_zip_pool.pool[0].bds[j].src_len);
-		if (size != 0) { // zero size buffer no need to read;
-			size = read(fd, g_zip_pool.pool[0].bds[j].src,
-					fhead->blk_sz[j]);
-			if (size < 0) {
-				ZIP_TST_PRT("Decompress read data error size: %lu!\n", size);
-				ret = -EINVAL;
-				goto read_err;
-			} else if (size == 0) {
-				ZIP_TST_PRT("Read file to the end!");
+		if (g_data_fmt == 0) {
+			if (fhead->blk_sz[j] != 0) {
+				size = read(fd, g_zip_pool.pool[0].bds[j].src, fhead->blk_sz[j]);
+				if (size < 0) {
+					ZIP_TST_PRT("Decompress read data error size: %ld!\n", size);
+					ret = -EINVAL;
+					goto read_err;
+				}
+				g_zip_pool.pool[0].bds[j].src_len = size;
+			} else {
+				g_zip_pool.pool[0].bds[j].src_len = 0;
 			}
+		} else {
+			src_curr = (struct wd_datalist *)g_zip_pool.pool[0].bds[j].src;
+			remaining = fhead->blk_sz[j];
+			total_read = 0;
+			while (src_curr && remaining > 0) {
+				len = fmin(remaining, src_curr->len);
+				size = read(fd, src_curr->data, len);
+				if (size < 0) {
+					ZIP_TST_PRT("Decompress read data error at block %d!\n", j);
+					ret = -EINVAL;
+					goto read_err;
+				}
+				total_read += size;
+				remaining -= size;
+				src_curr = src_curr->next;
+			}
+			g_zip_pool.pool[0].bds[j].src_len = total_read;
 		}
-		g_zip_pool.pool[0].bds[j].src_len = size;
 	}
 
 	for (i = 1; i < g_thread_num; i++) {
 		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-			if (g_zip_pool.pool[0].bds[j].src_len)
+			if (g_zip_pool.pool[0].bds[j].src_len == 0)
+				continue;
+
+			if (g_data_fmt == 0) {
 				memcpy(g_zip_pool.pool[i].bds[j].src,
 					g_zip_pool.pool[0].bds[j].src,
 					g_zip_pool.pool[0].bds[j].src_len);
-			g_zip_pool.pool[i].bds[j].src_len =
-				g_zip_pool.pool[0].bds[j].src_len;
+				g_zip_pool.pool[i].bds[j].src_len = g_zip_pool.pool[0].bds[j].src_len;
+			} else {
+				src_curr = (struct wd_datalist *)g_zip_pool.pool[0].bds[j].src;
+				dst_curr = (struct wd_datalist *)g_zip_pool.pool[i].bds[j].src;
+				total_len = g_zip_pool.pool[0].bds[j].src_len;
+				copied = 0;
+				while (src_curr && dst_curr && copied < total_len) {
+					len = fmin(src_curr->len, dst_curr->len);
+					len = fmin(len, total_len - copied);
+					memcpy(dst_curr->data, src_curr->data, len);
+					copied += len;
+					src_curr = src_curr->next;
+					dst_curr = dst_curr->next;
+				}
+				g_zip_pool.pool[i].bds[j].src_len = total_len;
+			}
 		}
 	}
 
@@ -575,8 +617,98 @@ static void uninit_ctx_config(void)
 	wd_sched_rr_release(g_sched);
 }
 
+/*
+ * Calculate SGL unit size.
+ */
+static inline size_t cal_unit_sz(size_t sz)
+{
+	return (sz + SGL_ALIGNED_BYTES - 1) & ~(SGL_ALIGNED_BYTES - 1);
+}
+
+/*
+ * Create SGL or common memory buffer.
+ */
+static void *create_buf(int sgl, size_t sz, size_t unit_sz)
+{
+	struct wd_datalist *head, *p, *q;
+	int i, tail_sz, sgl_num;
+	void *buf;
+
+	buf = malloc(sz);
+	if (!buf) {
+		ZIP_TST_PRT("Fail to allocate buffer %ld size!\n", sz);
+		return NULL;
+	}
+
+	memset_buf(buf, sz);
+
+	if (sgl == WD_FLAT_BUF)
+		return buf;
+
+	if (sz == g_pktlen) {
+		get_rand_data(buf, sz * COMPRESSION_RATIO_FACTOR);
+	} else {
+		if (g_prefetch)
+			get_rand_data(buf, sz);
+	}
+	tail_sz = sz % unit_sz;
+	sgl_num = sz / unit_sz;	/* the number with unit_sz bytes */
+
+	/* the additional slot is for tail_sz */
+	head = calloc(sgl_num + 1, sizeof(struct wd_datalist));
+	if (!head) {
+		ZIP_TST_PRT("Fail to allocate memory for SGL head!\n");
+		goto out;
+	}
+
+	q = NULL;
+	for (i = 0; i < sgl_num; i++) {
+		p = &head[i];
+		p->data = buf + i * unit_sz;
+		p->len = unit_sz;
+		if (q)
+			q->next = p;
+		q = p;
+	}
+
+	if (tail_sz) {
+		p = &head[i];
+		p->data = buf + i * unit_sz;
+		p->len = tail_sz;
+		if (q)
+			q->next = p;
+		q = p;
+	}
+
+	if (q)
+		q->next = NULL;
+
+	return head;
+out:
+	free(buf);
+	return NULL;
+}
+
+static void free_buf(int sgl, void *buf)
+{
+	struct wd_datalist *p;
+
+	if (!buf)
+		return;
+	if (sgl == WD_FLAT_BUF) {
+		free(buf);
+		return;
+	}
+	p = (struct wd_datalist *)buf;
+	/* free the whole data buffer of SGL */
+	free(p->data);
+	/* free SGL headers */
+	free(buf);
+}
+
 static int init_uadk_bd_pool(u32 optype)
 {
+	int unit_sz;
 	u32 outsize;
 	u32 insize;
 	int i, j;
@@ -605,37 +737,40 @@ static int init_uadk_bd_pool(u32 optype)
 			goto malloc_error1;
 		}
 		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-			g_zip_pool.pool[i].bds[j].src = calloc(1, insize);
+			unit_sz = cal_unit_sz(insize);
+			g_zip_pool.pool[i].bds[j].src = create_buf(g_data_fmt, insize, unit_sz);
 			if (!g_zip_pool.pool[i].bds[j].src)
 				goto malloc_error2;
 			g_zip_pool.pool[i].bds[j].src_len = insize;
 
-			g_zip_pool.pool[i].bds[j].dst = malloc(outsize);
+			unit_sz = cal_unit_sz(outsize);
+			g_zip_pool.pool[i].bds[j].dst = create_buf(g_data_fmt, outsize, unit_sz);
 			if (!g_zip_pool.pool[i].bds[j].dst)
 				goto malloc_error3;
 			g_zip_pool.pool[i].bds[j].dst_len = outsize;
 
-			get_rand_data(g_zip_pool.pool[i].bds[j].src,
-				      insize * COMPRESSION_RATIO_FACTOR);
-			if (g_prefetch)
-				get_rand_data(g_zip_pool.pool[i].bds[j].dst, outsize);
+			if (g_data_fmt == WD_FLAT_BUF) {
+				get_rand_data(g_zip_pool.pool[i].bds[j].src, insize * COMPRESSION_RATIO_FACTOR);
+				if (g_prefetch)
+					get_rand_data(g_zip_pool.pool[i].bds[j].dst, outsize);
+			}
 		}
 	}
 
 	return 0;
 
 malloc_error3:
-	free(g_zip_pool.pool[i].bds[j].src);
+	free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
 malloc_error2:
 	for (j--; j >= 0; j--) {
-		free(g_zip_pool.pool[i].bds[j].src);
-		free(g_zip_pool.pool[i].bds[j].dst);
+		free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
+		free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].dst);
 	}
 malloc_error1:
 	for (i--; i >= 0; i--) {
 		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-			free(g_zip_pool.pool[i].bds[j].src);
-			free(g_zip_pool.pool[i].bds[j].dst);
+			free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
+			free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].dst);
 		}
 		free(g_zip_pool.pool[i].bds);
 		g_zip_pool.pool[i].bds = NULL;
@@ -654,8 +789,8 @@ static void free_uadk_bd_pool(void)
 	for (i = 0; i < g_thread_num; i++) {
 		if (g_zip_pool.pool[i].bds) {
 			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-				free(g_zip_pool.pool[i].bds[j].src);
-				free(g_zip_pool.pool[i].bds[j].dst);
+				free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
+				free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].dst);
 			}
 		}
 		free(g_zip_pool.pool[i].bds);
@@ -938,7 +1073,7 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.status = 0;
 
 	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
@@ -1048,7 +1183,7 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.status = 0;
 
 	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
@@ -1153,7 +1288,7 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = zip_lz77_async_cb;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.status = 0;
 
 	while(1) {
@@ -1242,7 +1377,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.priv = 0;
 	creq.status = 0;
 
@@ -1317,7 +1452,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.priv = 0;
 	creq.status = 0;
 
@@ -1397,7 +1532,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = zip_async_cb;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.priv = 0;
 	creq.status = 0;
 
@@ -1634,6 +1769,7 @@ int zip_uadk_benchmark(struct acc_option *options)
 	g_pktlen = options->pktlen;
 	g_ctxnum = options->ctxnums;
 	g_prefetch = options->prefetch;
+	g_data_fmt = options->data_fmt;
 
 	if (options->optype >= WD_DIR_MAX * 2) {
 		ZIP_TST_PRT("ZIP optype error: %u\n", options->optype);
