@@ -390,6 +390,7 @@ static int wd_udma_alg_init(struct wd_ctx_config *config, struct wd_sched *sched
 	if (ret < 0)
 		return ret;
 
+	wd_udma_setting.config.alg_name = "udma";
 	ret = wd_init_ctx_config(&wd_udma_setting.config, config);
 	if (ret < 0)
 		return ret;

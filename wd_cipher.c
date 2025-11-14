@@ -328,6 +328,7 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 	if (ret < 0)
 		return ret;
 
+	wd_cipher_setting.config.alg_name = "cipher";
 	ret = wd_init_ctx_config(&wd_cipher_setting.config, config);
 	if (ret < 0)
 		return ret;
