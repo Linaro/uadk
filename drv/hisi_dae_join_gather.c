@@ -138,6 +138,7 @@ static void fill_join_gather_misc_field(struct wd_join_gather_msg *msg,
 		sqe->task_type_ext = DAE_GATHER_COMPLETE;
 		sqe->multi_batch_en = msg->multi_batch_en;
 		sqe->data_row_num = msg->req.output_row_num;
+		sqe->batch_num = msg->req.gather_req.row_batchs.batch_num;
 		if (msg->index_type == WD_BATCH_ADDR_INDEX)
 			sqe->index_batch_type = DAE_GATHER_BATCH_ADDR_INDEX;
 		else
