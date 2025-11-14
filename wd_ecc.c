@@ -192,6 +192,7 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		return ret;
 
+	wd_ecc_setting.config.alg_name = "sm2 x448 x25519 ecdsa ecdh";
 	ret = wd_init_ctx_config(&wd_ecc_setting.config, config);
 	if (ret < 0)
 		return ret;

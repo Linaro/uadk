@@ -125,6 +125,7 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret < 0)
 		return ret;
 
+	wd_dh_setting.config.alg_name = "dh";
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret)
 		return ret;
