@@ -156,6 +156,13 @@ struct hisi_comp_buf {
 	struct wd_datalist list_dst;
 };
 
+struct hisi_comp_sqe_addr {
+	void *src_addr;
+	void *dst_addr;
+	void *lit_addr;
+	void *ctx_addr;
+};
+
 struct hisi_zip_sqe {
 	__u32 consumed;
 	__u32 produced;
@@ -234,7 +241,7 @@ struct hisi_zip_sqe_ops {
 };
 
 struct hisi_zip_ctx {
-	struct wd_ctx_config_internal	config;
+	struct wd_ctx_config_internal config;
 };
 
 struct comp_sgl {
@@ -416,21 +423,29 @@ static void fill_comp_buf_size(struct hisi_zip_sqe *sqe, __u32 in_size,
 	sqe->dest_avail_out = out_size;
 }
 
-static void fill_buf_addr_deflate(struct hisi_zip_sqe *sqe, void *src,
-				  void *dst, void *ctx_buf)
+static void fill_buf_addr(struct hisi_zip_sqe *sqe, struct hisi_comp_sqe_addr *addr)
 {
-	sqe->source_addr_l = lower_32_bits(src);
-	sqe->source_addr_h = upper_32_bits(src);
-	sqe->dest_addr_l = lower_32_bits(dst);
-	sqe->dest_addr_h = upper_32_bits(dst);
-	sqe->stream_ctx_addr_l = lower_32_bits(ctx_buf);
-	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
+	sqe->source_addr_l = lower_32_bits(addr->src_addr);
+	sqe->source_addr_h = upper_32_bits(addr->src_addr);
+	sqe->dest_addr_l = lower_32_bits(addr->dst_addr);
+	sqe->dest_addr_h = upper_32_bits(addr->dst_addr);
+
+	if (addr->lit_addr) {
+		sqe->literals_addr_l = lower_32_bits(addr->lit_addr);
+		sqe->literals_addr_h = upper_32_bits(addr->lit_addr);
+	}
+
+	if (addr->ctx_addr) {
+		sqe->stream_ctx_addr_l = lower_32_bits(addr->ctx_addr);
+		sqe->stream_ctx_addr_h = upper_32_bits(addr->ctx_addr);
+	}
 }
 
 static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 				    struct wd_comp_msg *msg,
 				    const char *head, int head_size)
 {
+	struct hisi_comp_sqe_addr addr = {0};
 	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
 	struct hisi_comp_buf *buf;
@@ -486,7 +501,10 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
 
-	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
+	addr.src_addr = src;
+	addr.dst_addr = dst;
+	addr.ctx_addr = ctx_buf;
+	fill_buf_addr(sqe, &addr);
 
 	return 0;
 }
@@ -507,14 +525,6 @@ static int fill_buf_gzip(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			 struct wd_comp_msg *msg)
 {
 	return fill_buf_deflate_generic(sqe, msg, GZIP_HEADER, GZIP_HEADER_SZ);
-}
-
-static void fill_buf_addr_lz4(struct hisi_zip_sqe *sqe, void *src, void *dst)
-{
-	sqe->source_addr_l = lower_32_bits(src);
-	sqe->source_addr_h = upper_32_bits(src);
-	sqe->dest_addr_l = lower_32_bits(dst);
-	sqe->dest_addr_h = upper_32_bits(dst);
 }
 
 static int check_lz4_msg(struct wd_comp_msg *msg, enum wd_buff_type buf_type)
@@ -547,6 +557,7 @@ static int check_lz4_msg(struct wd_comp_msg *msg, enum wd_buff_type buf_type)
 static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			struct wd_comp_msg *msg)
 {
+	struct hisi_comp_sqe_addr addr = {0};
 	void *src = msg->req.src;
 	void *dst = msg->req.dst;
 	int ret;
@@ -557,7 +568,9 @@ static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
 
-	fill_buf_addr_lz4(sqe, src, dst);
+	addr.src_addr = src;
+	addr.dst_addr = dst;
+	fill_buf_addr(sqe, &addr);
 
 	return 0;
 }
@@ -571,10 +584,10 @@ static void fill_buf_type_sgl(struct hisi_zip_sqe *sqe)
 	sqe->dw9 = val;
 }
 
-static int fill_buf_addr_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-				     struct wd_datalist	*list_src,
-				     struct wd_datalist *list_dst)
+static int fill_buf_addr_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
+			     struct wd_datalist *list_src, struct wd_datalist *list_dst)
 {
+	struct hisi_comp_sqe_addr addr = {0};
 	struct comp_sgl c_sgl;
 	int ret;
 
@@ -586,7 +599,9 @@ static int fill_buf_addr_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (unlikely(ret))
 		return ret;
 
-	fill_buf_addr_deflate(sqe, c_sgl.in, c_sgl.out, NULL);
+	addr.src_addr = c_sgl.in;
+	addr.dst_addr = c_sgl.out;
+	fill_buf_addr(sqe, &addr);
 
 	return 0;
 }
@@ -640,7 +655,7 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_type_sgl(sqe);
 
-	ret = fill_buf_addr_deflate_sgl(h_qp, sqe, list_src, list_dst);
+	ret = fill_buf_addr_sgl(h_qp, sqe, list_src, list_dst);
 	if (unlikely(ret))
 		return ret;
 
@@ -698,20 +713,6 @@ static void fill_buf_size_lz77_zstd(struct hisi_zip_sqe *sqe, __u32 in_size,
 
 	/* fill the sequences output size */
 	sqe->dest_avail_out = seqs_size;
-}
-
-static void fill_buf_addr_lz77_zstd(struct hisi_zip_sqe *sqe,
-				    void *src, void *lits_start,
-				    void *seqs_start, void *ctx_buf)
-{
-	sqe->source_addr_l = lower_32_bits(src);
-	sqe->source_addr_h = upper_32_bits(src);
-	sqe->dest_addr_l = lower_32_bits(seqs_start);
-	sqe->dest_addr_h = upper_32_bits(seqs_start);
-	sqe->literals_addr_l = lower_32_bits(lits_start);
-	sqe->literals_addr_h = upper_32_bits(lits_start);
-	sqe->stream_ctx_addr_l = lower_32_bits(ctx_buf);
-	sqe->stream_ctx_addr_h = upper_32_bits(ctx_buf);
 }
 
 static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
@@ -805,6 +806,7 @@ static int lz77_buf_check(struct wd_comp_msg *msg)
 static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			      struct wd_comp_msg *msg)
 {
+	struct hisi_comp_sqe_addr addr = {0};
 	struct wd_comp_req *req = &msg->req;
 	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
@@ -843,10 +845,14 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, seq_avail_out);
 
-	fill_buf_addr_lz77_zstd(sqe, req->src, req->dst, req->dst + lits_size, ctx_buf);
-
 	data->literals_start = req->dst;
 	data->sequences_start = req->dst + lits_size;
+
+	addr.src_addr = req->src;
+	addr.dst_addr = req->dst + lits_size;
+	addr.lit_addr = req->dst;
+	addr.ctx_addr = ctx_buf;
+	fill_buf_addr(sqe, &addr);
 
 	return 0;
 }
@@ -966,6 +972,7 @@ static int lz77_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				  struct wd_comp_msg *msg)
 {
+	struct hisi_comp_sqe_addr addr = {0};
 	struct wd_comp_req *req = &msg->req;
 	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
@@ -1005,28 +1012,10 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (unlikely(ret))
 		return ret;
 
-	fill_buf_addr_lz77_zstd(sqe, c_sgl.in, c_sgl.out,
-				c_sgl.out_seq, NULL);
-
-	return 0;
-}
-
-static int fill_buf_addr_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-				     struct wd_datalist	*list_src,
-				     struct wd_datalist *list_dst)
-{
-	struct comp_sgl c_sgl;
-	int ret;
-
-	c_sgl.list_src = list_src;
-	c_sgl.list_dst = list_dst;
-	c_sgl.seq_start = NULL;
-
-	ret = get_sgl_from_pool(h_qp, &c_sgl);
-	if (unlikely(ret))
-		return ret;
-
-	fill_buf_addr_lz4(sqe, c_sgl.in, c_sgl.out);
+	addr.src_addr = c_sgl.in;
+	addr.dst_addr = c_sgl.out_seq;
+	addr.lit_addr = c_sgl.out;
+	fill_buf_addr(sqe, &addr);
 
 	return 0;
 }
@@ -1046,7 +1035,7 @@ static int fill_buf_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
 
-	return fill_buf_addr_lz4_sgl(h_qp, sqe, list_src, list_dst);
+	return fill_buf_addr_sgl(h_qp, sqe, list_src, list_dst);
 }
 
 static void fill_sqe_type_v1(struct hisi_zip_sqe *sqe)
