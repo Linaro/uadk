@@ -203,6 +203,29 @@ void set_run_state(int state)
 	g_run_state = state;
 }
 
+int uadk_parse_dev_id(char *dev_name)
+{
+	char *last_dash = NULL;
+	char *endptr;
+	int dev_id;
+
+	if (!dev_name)
+		return -WD_EINVAL;
+
+	/* Find the last '-' in the string. */
+	last_dash = strrchr(dev_name, '-');
+	if (!last_dash || *(last_dash + 1) == '\0')
+		return -WD_EINVAL;
+
+	/* Parse the following number */
+	dev_id = strtol(last_dash + 1, &endptr, 10);
+	/* Check whether it is truly all digits */
+	if (*endptr != '\0' || dev_id < 0)
+		return -WD_EINVAL;
+
+	return dev_id;
+}
+
 static int get_alg_type(const char *alg_name)
 {
 	int alg = ALG_MAX;
@@ -732,6 +755,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		{"complevel",	required_argument,	0, 16},
 		{"init2",	no_argument,		0, 17},
 		{"device",	required_argument,	0, 18},
+		{"memory",	required_argument,	0, 19},
 		{0, 0, 0, 0}
 	};
 
@@ -802,6 +826,9 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 				goto to_exit;
 			}
 			strcpy(option->device, optarg);
+			break;
+		case 19:
+			option->mem_type = strtol(optarg, NULL, 0);
 			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");
@@ -876,6 +903,12 @@ int acc_option_convert(struct acc_option *option)
 
 	if (option->inittype == INIT2_TYPE && option->modetype != SVA_MODE) {
 		ACC_TST_PRT("uadk benchmark No-SVA mode can't use init2\n");
+		goto param_err;
+	}
+
+	/* Memory mode is only valid in SVA mode */
+	if (option->mem_type > UADK_PROXY) {
+		ACC_TST_PRT("uadk benchmark memory type set error!\n");
 		goto param_err;
 	}
 
