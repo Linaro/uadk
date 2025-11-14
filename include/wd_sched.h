@@ -23,6 +23,8 @@ enum sched_policy_type {
 	SCHED_POLICY_NONE,
 	/* requests will need a fixed ctx */
 	SCHED_POLICY_SINGLE,
+	/* requests will be sent to ctxs and dev_id */
+	SCHED_POLICY_DEV,
 	SCHED_POLICY_BUTT,
 };
 
@@ -32,6 +34,7 @@ struct sched_params {
 	__u8 mode;
 	__u32 begin;
 	__u32 end;
+	__u32 dev_id;
 };
 
 typedef int (*user_poll_func)(__u32 pos, __u32 expect, __u32 *count);
