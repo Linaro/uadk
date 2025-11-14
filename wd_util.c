@@ -1984,11 +1984,6 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 		return -WD_EINVAL;
 	}
 
-	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("invalid: the mode is non sva, please check system!\n");
-		return -WD_EINVAL;
-	}
-
 	return 0;
 }
 
