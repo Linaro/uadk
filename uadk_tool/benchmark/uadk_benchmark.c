@@ -370,6 +370,15 @@ void segmentfault_handler(int sig)
 	exit(1);
 }
 
+void memset_buf(void *buf, size_t sz)
+{
+	char *ch = (char *)buf;
+	size_t i;
+
+	for (i = 0; i < sz; i++)
+		ch[i] = 0;
+}
+
 /*-------------------------------------main code------------------------------------------------------*/
 static void parse_alg_param(struct acc_option *option)
 {
@@ -741,6 +750,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		{"init2",	no_argument,		0, 17},
 		{"device",	required_argument,	0, 18},
 		{"memory",	required_argument,	0, 19},
+		{"sgl",		no_argument,		0, 20},
 		{0, 0, 0, 0}
 	};
 
@@ -814,6 +824,9 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 		case 19:
 			option->mem_type = strtol(optarg, NULL, 0);
+			break;
+		case 20:
+			option->data_fmt = WD_SGL_BUF;
 			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");

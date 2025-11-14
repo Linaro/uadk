@@ -72,6 +72,7 @@ static unsigned int g_algtype;
 static unsigned int g_optype;
 static unsigned int g_maclen;
 static unsigned int g_dev_id;
+static unsigned int g_data_fmt;
 
 struct aead_alg_info {
 	int index;
@@ -970,6 +971,9 @@ static void save_aead_dst_data(u8 *addr, u32 size)
 static void read_aead_dst_data(u8 *addr, u32 len)
 {
 	char file_name[SEC_SAVE_FILE_LEN] = {0};
+	struct wd_datalist *current;
+	size_t bytes_to_read = 0;
+	size_t bytes_read = 0;
 	char *alg_name;
 	FILE *fp;
 	int size;
@@ -992,10 +996,29 @@ static void read_aead_dst_data(u8 *addr, u32 len)
 	size = ftell(fp);
 
 	rewind(fp);
-	size = fread(addr, 1, size, fp);
-	addr[size] = '\0';
 
-	memcpy(g_save_mac, (char *)addr + len, SEC_MAX_MAC_LEN);
+	if (!g_data_fmt) {
+		size = fread(addr, 1, size, fp);
+		addr[size] = '\0';
+
+		memcpy(g_save_mac, (char *)addr + len, SEC_MAX_MAC_LEN);
+	} else {
+		current = (struct wd_datalist *)addr;
+		while (current && size > 0) {
+			bytes_to_read = current->len;
+			if (bytes_to_read > size)
+				bytes_to_read = size;
+			bytes_read = fread(current->data, 1, bytes_to_read, fp);
+
+			if (bytes_read != bytes_to_read) {
+				SEC_TST_PRT("partial read: expected %zu, got %zu\n", bytes_to_read, bytes_read);
+				fclose(fp);
+				return;
+			}
+			size -= bytes_read;
+			current = current->next;
+		}
+	}
 
 	fclose(fp);
 }
@@ -1068,14 +1091,114 @@ static void free_ivkey_source(void)
 	free(g_uadk_pool.iv);
 }
 
+/*
+ * Calculate SGL unit size.
+ */
+static inline size_t cal_unit_sz(size_t sz)
+{
+	return (sz + SGL_ALIGNED_BYTES - 1) & ~(SGL_ALIGNED_BYTES - 1);
+}
+
+/*
+ * Create SGL or common memory buffer.
+ */
+static void *create_buf(int sgl, size_t sz, size_t unit_sz)
+{
+	struct wd_datalist *head, *p, *q;
+	int i, tail_sz, sgl_num;
+	void *buf;
+
+	buf = malloc(sz);
+	if (!buf) {
+		SEC_TST_PRT("Fail to allocate buffer %ld size!\n", sz);
+		return NULL;
+	}
+
+	memset_buf(buf, sz);
+
+	if (sgl == WD_FLAT_BUF)
+		return buf;
+
+	if (g_alg != AEAD_TYPE) {
+		get_rand_data(buf, g_pktlen);
+	} else {
+		if (!g_optype)
+			get_aead_data(buf, g_pktlen + SEC_AEAD_LEN);
+	}
+
+	tail_sz = sz % unit_sz;
+	sgl_num = sz / unit_sz;	/* the number with unit_sz bytes */
+
+	/* the additional slot is for tail_sz */
+	head = calloc(sgl_num + (tail_sz ? 1 : 0), sizeof(struct wd_datalist));
+	if (!head) {
+		SEC_TST_PRT("Fail to allocate memory for SGL head!\n");
+		goto out;
+	}
+
+	q = NULL;
+	for (i = 0; i < sgl_num; i++) {
+		p = &head[i];
+		p->data = buf + i * unit_sz;
+		p->len = unit_sz;
+		if (q)
+			q->next = p;
+		q = p;
+	}
+
+	if (tail_sz) {
+		p = &head[i];
+		p->data = buf + i * unit_sz;
+		p->len = tail_sz;
+		if (q)
+			q->next = p;
+		q = p;
+	}
+
+	if (q)
+		q->next = NULL;
+
+	return head;
+out:
+	free(buf);
+	return NULL;
+}
+
+static void free_buf(int sgl, void *buf)
+{
+	struct wd_datalist *head = buf;
+	struct wd_datalist *p = head;
+	void *data_buf = NULL;
+
+	if (!buf)
+		return;
+
+	if (sgl == WD_FLAT_BUF) {
+		free(buf);
+		return;
+	}
+
+	if (head)
+		data_buf = head->data;
+
+	/* free the whole data buffer of SGL */
+	if (data_buf)
+		free(p->data);
+
+	/* free SGL headers */
+	free(buf);
+}
+
 static int init_uadk_bd_pool(void)
 {
 	unsigned long step;
+	int unit_sz;
 	int i, j;
 	int ret;
 
 	// make the block not align to 4K
 	step = sizeof(char) * g_pktlen * 2;
+	unit_sz = cal_unit_sz(step);
 
 	ret = init_ivkey_source();
 	if (ret) {
@@ -1097,12 +1220,13 @@ static int init_uadk_bd_pool(void)
 				goto malloc_error1;
 			}
 			for (j = 0; j < MAX_POOL_LENTH; j++) {
-				g_uadk_pool.pool[i].bds[j].src = malloc(step);
-				memset(g_uadk_pool.pool[i].bds[j].src, 0, step);
+				g_uadk_pool.pool[i].bds[j].src = create_buf(g_data_fmt, step, unit_sz);
 				if (!g_uadk_pool.pool[i].bds[j].src)
 					goto malloc_error2;
-				g_uadk_pool.pool[i].bds[j].dst = malloc(step);
-				memset(g_uadk_pool.pool[i].bds[j].dst, 0, step);
+				if (g_alg == DIGEST_TYPE)
+					g_uadk_pool.pool[i].bds[j].dst = malloc(step);
+				else
+					g_uadk_pool.pool[i].bds[j].dst = create_buf(g_data_fmt, step, unit_sz);
 				if (!g_uadk_pool.pool[i].bds[j].dst)
 					goto malloc_error3;
 				g_uadk_pool.pool[i].bds[j].mac = malloc(SEC_MAX_MAC_LEN);
@@ -1110,19 +1234,29 @@ static int init_uadk_bd_pool(void)
 				if (!g_uadk_pool.pool[i].bds[j].mac)
 					goto malloc_error4;
 
-				if (g_alg != AEAD_TYPE) {
-					get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
-					if (g_prefetch)
-						get_rand_data(g_uadk_pool.pool[i].bds[j].dst,
-							      g_pktlen);
-				} else {
-					if (!g_optype)
-						get_aead_data(g_uadk_pool.pool[i].bds[j].src,
-							      g_pktlen + SEC_AEAD_LEN);
-					else {
+				if (g_data_fmt == WD_FLAT_BUF) {
+					if (g_alg != AEAD_TYPE) {
+						get_rand_data(g_uadk_pool.pool[i].bds[j].src, g_pktlen);
+						if (g_prefetch)
+							get_rand_data(g_uadk_pool.pool[i].bds[j].dst,
+									g_pktlen);
+					} else {
+						if (!g_optype)
+							get_aead_data(g_uadk_pool.pool[i].bds[j].src,
+									g_pktlen + SEC_AEAD_LEN);
+						else {
+							read_aead_dst_data(g_uadk_pool.pool[i].bds[j].src,
+									g_pktlen + SEC_AEAD_LEN);
+							memcpy(g_uadk_pool.pool[i].bds[j].mac, g_save_mac, SEC_MAX_MAC_LEN);
+						}
+					}
+				} else if (g_data_fmt == WD_SGL_BUF) {
+					if (g_optype && g_alg == AEAD_TYPE) {
 						read_aead_dst_data(g_uadk_pool.pool[i].bds[j].src,
-								   g_pktlen + SEC_AEAD_LEN);
+									g_pktlen + SEC_AEAD_LEN);
 						memcpy(g_uadk_pool.pool[i].bds[j].mac, g_save_mac, SEC_MAX_MAC_LEN);
+					} else if (g_prefetch && g_alg == DIGEST_TYPE) {
+						get_rand_data(g_uadk_pool.pool[i].bds[j].dst, g_pktlen);
 					}
 				}
 			}
@@ -1132,20 +1266,23 @@ static int init_uadk_bd_pool(void)
 	return 0;
 
 malloc_error4:
-	free(g_uadk_pool.pool[i].bds[j].dst);
+	if (g_alg == DIGEST_TYPE)
+		free(g_uadk_pool.pool[i].bds[j].dst);
+	else
+		free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].dst);
 malloc_error3:
-	free(g_uadk_pool.pool[i].bds[j].src);
+	free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].src);
 malloc_error2:
 	for (j--; j >= 0; j--) {
-		free(g_uadk_pool.pool[i].bds[j].src);
-		free(g_uadk_pool.pool[i].bds[j].dst);
+		free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].src);
+		free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].dst);
 		free(g_uadk_pool.pool[i].bds[j].mac);
 	}
 malloc_error1:
 	for (i--; i >= 0; i--) {
 		for (j = 0; j < MAX_POOL_LENTH; j++) {
-			free(g_uadk_pool.pool[i].bds[j].src);
-			free(g_uadk_pool.pool[i].bds[j].dst);
+			free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].src);
+			free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].dst);
 			free(g_uadk_pool.pool[i].bds[j].mac);
 		}
 		free(g_uadk_pool.pool[i].bds);
@@ -1173,8 +1310,11 @@ static void free_uadk_bd_pool(void)
 	for (i = 0; i < g_thread_num; i++) {
 		if (g_uadk_pool.pool[i].bds) {
 			for (j = 0; j < MAX_POOL_LENTH; j++) {
-				free(g_uadk_pool.pool[i].bds[j].src);
-				free(g_uadk_pool.pool[i].bds[j].dst);
+				free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].src);
+				if (g_alg == DIGEST_TYPE)
+					free(g_uadk_pool.pool[i].bds[j].dst);
+				else
+					free_buf(g_data_fmt, g_uadk_pool.pool[i].bds[j].dst);
 				free(g_uadk_pool.pool[i].bds[j].mac);
 			}
 		}
@@ -1655,7 +1795,7 @@ static void *sec_uadk_cipher_async(void *arg)
 	creq.in_bytes = g_pktlen;
 	creq.out_bytes = g_pktlen;
 	creq.out_buf_bytes = g_pktlen;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.state = 0;
 	creq.cb = cipher_async_cb;
 
@@ -1787,7 +1927,7 @@ static void *sec_uadk_aead_async(void *arg)
 	else
 		areq.out_bytes = g_pktlen + 32; // aadsize + authsize = 32;
 
-	areq.data_fmt = 0;
+	areq.data_fmt = g_data_fmt;
 	areq.state = 0;
 	areq.cb = aead_async_cb;
 
@@ -1895,7 +2035,7 @@ static void *sec_uadk_digest_async(void *arg)
 	dreq.in_bytes = g_pktlen;
 	dreq.out_bytes = pdata->d_outbytes;
 	dreq.out_buf_bytes = pdata->d_outbytes;
-	dreq.data_fmt = 0;
+	dreq.data_fmt = g_data_fmt;
 	dreq.state = 0;
 	dreq.has_next = 0;
 	dreq.cb = digest_async_cb;
@@ -1997,7 +2137,7 @@ static void *sec_uadk_cipher_sync(void *arg)
 	creq.in_bytes = g_pktlen;
 	creq.out_bytes = g_pktlen;
 	creq.out_buf_bytes = g_pktlen;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.state = 0;
 
 	while(1) {
@@ -2101,7 +2241,7 @@ static void *sec_uadk_aead_sync(void *arg)
 	else
 		areq.out_bytes = g_pktlen + 32; // aadsize + authsize = 32;
 
-	areq.data_fmt = 0;
+	areq.data_fmt = g_data_fmt;
 	areq.state = 0;
 
 	while(1) {
@@ -2176,7 +2316,7 @@ static void *sec_uadk_digest_sync(void *arg)
 	dreq.in_bytes = g_pktlen;
 	dreq.out_bytes = pdata->d_outbytes;
 	dreq.out_buf_bytes = pdata->d_outbytes;
-	dreq.data_fmt = 0;
+	dreq.data_fmt = g_data_fmt;
 	dreq.state = 0;
 	dreq.has_next = 0;
 
@@ -2355,6 +2495,7 @@ int sec_uadk_benchmark(struct acc_option *options)
 	g_alg = options->subtype;
 	g_optype = options->optype;
 	g_algtype = options->algtype;
+	g_data_fmt = options->data_fmt;
 
 	if (g_alg == AEAD_TYPE) {
 		g_maclen = get_aead_mac_len(g_algtype);
