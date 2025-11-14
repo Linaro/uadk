@@ -166,6 +166,7 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		return ret;
 
+	wd_rsa_setting.config.alg_name = "rsa";
 	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
 	if (ret < 0)
 		return ret;

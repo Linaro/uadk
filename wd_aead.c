@@ -446,6 +446,7 @@ static int wd_aead_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		return ret;
 
+	wd_aead_setting.config.alg_name = "aead";
 	ret = wd_init_ctx_config(&wd_aead_setting.config, config);
 	if (ret)
 		return ret;
