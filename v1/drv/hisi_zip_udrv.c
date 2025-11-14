@@ -49,6 +49,7 @@
 #define HW_UNCOMP_DIF_CHECK_ERR		0x12
 
 #define HW_DECOMP_NO_SPACE		0x01
+#define HW_DECOMPING_NO_SPACE		0x02
 #define HW_DECOMP_BLK_NOSTART		0x03
 #define HW_DECOMP_NO_CRC		0x04
 #define ZIP_DIF_LEN			8
@@ -388,6 +389,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
+	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
@@ -437,6 +439,9 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		info->sqe_parse_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+	    ctx_bfinal)
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	return 1;
 }
@@ -841,6 +846,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe_v3 *sqe = hw_msg;
+	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
 	__u32 ctx_win_len = sqe->ctx_dw2 & CTX_WIN_LEN_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
@@ -900,6 +906,9 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	}
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+	    ctx_bfinal)
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	/*
 	 * It need to analysis the data cache by hardware.
