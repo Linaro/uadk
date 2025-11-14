@@ -369,7 +369,7 @@ static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl)
 {
 	handle_t h_sgl_pool;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
 	if (unlikely(!h_sgl_pool)) {
 		WD_ERR("failed to get sglpool!\n");
 		return -WD_EINVAL;
@@ -1426,7 +1426,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	void *hw_sgl_in, *hw_sgl_out;
 	handle_t h_sgl_pool;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
 	if (unlikely(!h_sgl_pool)) {
 		WD_ERR("failed to get sglpool to free hw sgl!\n");
 		return;
