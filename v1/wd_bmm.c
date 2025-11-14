@@ -122,7 +122,7 @@ static int wd_pool_pre_layout(struct wd_queue *q,
 	 * ensure that the allocated memory is an integer multiple of 1M.
 	 */
 	if (!sp->br.alloc && !qinfo->iommu_type)
-		p->act_mem_sz = (p->act_mem_sz + BLK_BALANCE_SZ - 1) & ~(BLK_BALANCE_SZ - 1);
+		p->act_mem_sz = ((p->act_mem_sz + BLK_BALANCE_SZ - 1) & ~(BLK_BALANCE_SZ - 1)) << 1;
 
 	return WD_SUCCESS;
 }
