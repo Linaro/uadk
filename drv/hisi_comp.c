@@ -49,12 +49,14 @@
 #define LITLEN_OVERFLOW_POS_MASK	0xffffff
 
 #define HZ_DECOMP_NO_SPACE		0x01
+#define HZ_DECOMPING_NO_SPACE		0x02
 #define HZ_DECOMP_BLK_NOSTART		0x03
 #define HZ_NEGACOMPRESS			0x0d
 #define HZ_CRC_ERR			0x10
 #define HZ_DECOMP_END			0x13
 
 #define HZ_CTX_ST_MASK			0x000f
+#define HZ_CTX_BFINAL_MASK		0x80
 #define HZ_LSTBLK_MASK			0x0100
 #define HZ_STATUS_MASK			0xff
 #define HZ_REQ_TYPE_MASK		0xff
@@ -1590,6 +1592,11 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	/* last block no space, need resend null size req */
 	if (ctx_st == HZ_DECOMP_NO_SPACE)
+		recv_msg->req.status = WD_EAGAIN;
+
+	/* last block no space when decomping, need resend null size req */
+	if (ctx_st == HZ_DECOMPING_NO_SPACE && recv_msg->req.src_len == recv_msg->in_cons &&
+	    (sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK))
 		recv_msg->req.status = WD_EAGAIN;
 
 	/*
