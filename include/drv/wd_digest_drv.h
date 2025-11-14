@@ -59,6 +59,8 @@ struct wd_digest_msg {
 	__u8 *partial_block;
 	/* total of data for stream mode */
 	__u64 long_data_len;
+	struct wd_mm_ops *mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 static inline enum hash_block_type get_hash_block_type(struct wd_digest_msg *msg)

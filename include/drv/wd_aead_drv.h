@@ -54,9 +54,7 @@ struct wd_aead_msg {
 	/* input iv pointer */
 	__u8 *iv;
 	/* input auth iv pointer */
-	__u8 aiv[MAX_IV_SIZE];
-	/* input auth iv pointer for stream mode */
-	__u8 aiv_stream[AIV_STREAM_LEN];
+	__u8 *aiv;
 	/* input data pointer */
 	__u8 *in;
 	/* output data pointer */
@@ -68,6 +66,25 @@ struct wd_aead_msg {
 	/* total of data for stream mode */
 	__u64 long_data_len;
 	enum wd_aead_msg_state msg_state;
+	struct wd_mm_ops *mm_ops;
+	enum wd_mem_type mm_type;
+	void *drv_cfg; /* internal driver configuration */
+};
+
+struct wd_aead_aiv_addr {
+	__u8 *aiv;
+	__u8 *aiv_status;
+	__u8 *aiv_nosva;
+};
+
+struct wd_aead_extend_ops {
+	void *params;
+	int (*eops_aiv_init)(struct wd_alg_driver *drv,
+			     struct wd_mm_ops *mm_ops,
+			     void **params);
+	void (*eops_aiv_uninit)(struct wd_alg_driver *drv,
+				struct wd_mm_ops *mm_ops,
+				void *params);
 };
 
 struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag);
