@@ -48,6 +48,8 @@ struct wd_cipher_msg {
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
+	struct wd_mm_ops *mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag);
