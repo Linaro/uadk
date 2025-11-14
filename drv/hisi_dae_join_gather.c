@@ -86,7 +86,6 @@ struct join_gather_ctx {
 	struct join_gather_col_data cols_data;
 	struct hash_table_data table_data;
 	struct hash_table_data rehash_table;
-	pthread_spinlock_t lock;
 	__u32 hash_table_row_size;
 	__u32 batch_row_size[DAE_MAX_TABLE_NUM];
 };
@@ -365,7 +364,8 @@ static int check_join_gather_param(struct wd_join_gather_msg *msg)
 {
 	struct wd_probe_out_info *output;
 	struct wd_gather_req *greq;
-	__u64 row_num, size;
+	__u32 row_num;
+	__u64 size;
 
 	if (!msg) {
 		WD_ERR("invalid: input join gather msg is NULL!\n");
@@ -398,10 +398,10 @@ static int check_join_gather_param(struct wd_join_gather_msg *msg)
 			return -WD_EINVAL;
 		}
 		if (msg->index_type == WD_BATCH_ADDR_INDEX) {
-			row_num = msg->req.output_row_num << DAE_ADDR_INDEX_SHIFT;
-			if (output->build_index.row_num < row_num) {
-				WD_ERR("build index row number is less than: %llu\n",
-				       row_num);
+			row_num = output->build_index.row_num >> DAE_ADDR_INDEX_SHIFT;
+			if (row_num < msg->req.output_row_num) {
+				WD_ERR("build index row number(%u) is less than needed\n",
+				       output->build_index.row_num);
 				return -WD_EINVAL;
 			}
 		}
@@ -438,10 +438,10 @@ static int check_join_gather_param(struct wd_join_gather_msg *msg)
 				return -WD_EINVAL;
 			}
 		} else {
-			row_num = msg->req.output_row_num << DAE_ADDR_INDEX_SHIFT;
-			if (greq->index.row_num < row_num) {
-				WD_ERR("build index row number is less than: %llu\n",
-				       row_num);
+			row_num = greq->index.row_num >> DAE_ADDR_INDEX_SHIFT;
+			if (row_num < msg->req.output_row_num) {
+				WD_ERR("build index row number(%u) is less than needed\n",
+				       greq->index.row_num);
 				return -WD_EINVAL;
 			}
 		}
@@ -898,7 +898,6 @@ static void join_gather_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 		return;
 	}
 
-	pthread_spin_destroy(&ctx->lock);
 	free(ctx);
 }
 
@@ -927,10 +926,6 @@ static int join_gather_sess_priv_init(struct wd_alg_driver *drv,
 		return -WD_ENOMEM;
 
 	ret = join_gather_fill_ctx(ctx, setup);
-	if (ret)
-		goto free_ctx;
-
-	ret = pthread_spin_init(&ctx->lock, PTHREAD_PROCESS_SHARED);
 	if (ret)
 		goto free_ctx;
 
