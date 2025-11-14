@@ -913,7 +913,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	ret = wd_alg_driver_send(wd_comp_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
-		WD_ERR("wd comp send error, ret = %d!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("wd comp send error, ret = %d!\n", ret);
+
 		goto fail_with_msg;
 	}
 
