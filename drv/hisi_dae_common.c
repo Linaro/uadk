@@ -357,8 +357,10 @@ free_h_qp:
 out:
 	for (j = 0; j < i; j++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
-		dae_uninit_qp_priv(h_qp);
-		hisi_qm_free_qp(h_qp);
+		if (h_qp) {
+			dae_uninit_qp_priv(h_qp);
+			hisi_qm_free_qp(h_qp);
+		}
 	}
 	free(priv);
 	return ret;
@@ -378,8 +380,10 @@ void dae_exit(struct wd_alg_driver *drv)
 	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
-		dae_uninit_qp_priv(h_qp);
-		hisi_qm_free_qp(h_qp);
+		if (h_qp) {
+			dae_uninit_qp_priv(h_qp);
+			hisi_qm_free_qp(h_qp);
+		}
 	}
 
 	free(priv);
