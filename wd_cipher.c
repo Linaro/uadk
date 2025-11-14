@@ -63,9 +63,11 @@ struct wd_cipher_sess {
 	enum wd_cipher_mode	mode;
 	wd_dev_mask_t		*dev_mask;
 	void			*priv;
-	unsigned char		key[MAX_CIPHER_KEY_SIZE];
+	unsigned char		*key;
 	__u32			key_bytes;
 	void			*sched_key;
+	struct wd_mm_ops	mm_ops;
+	enum wd_mem_type	mm_type;
 };
 
 struct wd_env_config wd_cipher_env_config;
@@ -250,6 +252,31 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	return 0;
 }
 
+static int cipher_setup_memory_and_buffers(struct wd_cipher_sess *sess,
+					   struct wd_cipher_sess_setup *setup)
+{
+	int ret;
+
+	ret = wd_mem_ops_init(wd_cipher_setting.config.ctxs[0].ctx,
+			      &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("cipher failed to init memory ops!\n");
+		return ret;
+	}
+
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
+
+	sess->key = sess->mm_ops.alloc(sess->mm_ops.usr, MAX_CIPHER_KEY_SIZE);
+	if (!sess->key) {
+		WD_ERR("cipher failed to alloc key memory!\n");
+		return -WD_ENOMEM;
+	}
+	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
+
+	return 0;
+}
+
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
@@ -282,16 +309,22 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
 
+	/* Memory type set */
+	if (cipher_setup_memory_and_buffers(sess, setup))
+		goto free_sess;
+
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_cipher_setting.sched.sched_init(
 		wd_cipher_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto free_sess;
+		goto free_key;
 	}
 
 	return (handle_t)sess;
 
+free_key:
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 free_sess:
 	free(sess);
 	return (handle_t)0;
@@ -307,6 +340,7 @@ void wd_cipher_free_sess(handle_t h_sess)
 	}
 
 	wd_memset_zero(sess->key, sess->key_bytes);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
@@ -545,6 +579,8 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
 	msg->data_fmt = req->data_fmt;
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
 }
 
 static int cipher_iv_len_check(struct wd_cipher_req *req,

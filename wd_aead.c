@@ -44,19 +44,22 @@ struct wd_aead_sess {
 	enum wd_cipher_mode	cmode;
 	enum wd_digest_type	dalg;
 	enum wd_digest_mode	dmode;
-	unsigned char		ckey[MAX_CIPHER_KEY_SIZE];
-	unsigned char		akey[MAX_HMAC_KEY_SIZE];
+	unsigned char		*ckey;
+	unsigned char		*akey;
 	/* Mac data pointer for decrypto as stream mode */
-	unsigned char		mac_bak[WD_AEAD_CCM_GCM_MAX];
+	unsigned char		*mac_bak;
 	__u16			ckey_bytes;
 	__u16			akey_bytes;
 	__u16			auth_bytes;
 	void			*priv;
 	void			*sched_key;
 	/* Stored the counter for gcm stream mode */
-	__u8			iv[MAX_IV_SIZE];
+	__u8			*iv;
 	/* Total of data for stream mode */
 	__u64			long_data_len;
+	struct wd_mm_ops	mm_ops;
+	enum wd_mem_type	mm_type;
+	struct wd_aead_extend_ops eops;
 };
 
 struct wd_env_config wd_aead_env_config;
@@ -302,26 +305,26 @@ int wd_aead_get_maxauthsize(handle_t h_sess)
 	return g_aead_mac_len[sess->dalg];
 }
 
-handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
+static struct wd_aead_sess *check_and_init_sess(struct wd_aead_sess_setup *setup)
 {
-	struct wd_aead_sess *sess = NULL;
+	struct wd_aead_sess *sess;
 	bool ret;
 
 	if (unlikely(!setup)) {
 		WD_ERR("failed to check session input parameter!\n");
-		return (handle_t)0;
+		return NULL;
 	}
 
 	if (setup->calg >= WD_CIPHER_ALG_TYPE_MAX ||
-	     setup->cmode >= WD_CIPHER_MODE_TYPE_MAX) {
+	    setup->cmode >= WD_CIPHER_MODE_TYPE_MAX) {
 		WD_ERR("failed to check algorithm setup!\n");
-		return (handle_t)0;
+		return NULL;
 	}
 
 	sess = malloc(sizeof(struct wd_aead_sess));
 	if (!sess) {
 		WD_ERR("failed to alloc session memory!\n");
-		return (handle_t)0;
+		return NULL;
 	}
 	memset(sess, 0, sizeof(struct wd_aead_sess));
 
@@ -330,24 +333,160 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 	sess->cmode = setup->cmode;
 	sess->dalg = setup->dalg;
 	sess->dmode = setup->dmode;
+
 	ret = wd_drv_alg_support(sess->alg_name, wd_aead_setting.driver);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
-		goto err_sess;
+		free(sess);
+		return NULL;
 	}
 
-	/* Some simple scheduler don't need scheduling parameters */
+	return sess;
+}
+
+static int aead_setup_memory_and_buffers(struct wd_aead_sess *sess,
+					 struct wd_aead_sess_setup *setup)
+{
+	wd_alloc aead_alloc_func;
+	wd_free aead_free_func;
+	void *mempool;
+	int ret;
+
+	ret = wd_mem_ops_init(wd_aead_setting.config.ctxs[0].ctx,
+			      &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		return -WD_EINVAL;
+	}
+
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
+
+	aead_alloc_func = sess->mm_ops.alloc;
+	aead_free_func = sess->mm_ops.free;
+	mempool = sess->mm_ops.usr;
+
+	sess->mac_bak = aead_alloc_func(mempool, WD_AEAD_CCM_GCM_MAX);
+	if (!sess->mac_bak) {
+		WD_ERR("aead failed to calloc mac_bak memory!\n");
+		return -WD_ENOMEM;
+	}
+	memset(sess->mac_bak, 0, WD_AEAD_CCM_GCM_MAX);
+
+	sess->iv = aead_alloc_func(mempool, MAX_IV_SIZE);
+	if (!sess->iv) {
+		WD_ERR("failed to alloc iv memory!\n");
+		goto iv_err;
+	}
+	memset(sess->iv, 0, MAX_IV_SIZE);
+
+	sess->ckey = aead_alloc_func(mempool, MAX_CIPHER_KEY_SIZE);
+	if (!sess->ckey) {
+		WD_ERR("failed to alloc ckey memory!\n");
+		goto ckey_err;
+	}
+	memset(sess->ckey, 0, MAX_CIPHER_KEY_SIZE);
+
+	sess->akey = aead_alloc_func(mempool, MAX_HMAC_KEY_SIZE);
+	if (!sess->akey) {
+		WD_ERR("failed to alloc akey memory!\n");
+		goto akey_err;
+	}
+	memset(sess->akey, 0, MAX_HMAC_KEY_SIZE);
+
+	return 0;
+
+akey_err:
+	aead_free_func(mempool, sess->ckey);
+ckey_err:
+	aead_free_func(mempool, sess->iv);
+iv_err:
+	aead_free_func(mempool, sess->mac_bak);
+
+	return -WD_ENOMEM;
+}
+
+static void cleanup_session(struct wd_aead_sess *sess)
+{
+	sess->mm_ops.free(sess->mm_ops.usr, sess->mac_bak);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->iv);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->ckey);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->akey);
+
+	if (sess)
+		free(sess);
+}
+
+static int wd_aead_sess_eops_init(struct wd_aead_sess *sess)
+{
+	int ret;
+
+	if (sess->eops.eops_aiv_init) {
+		if (!sess->eops.eops_aiv_uninit) {
+			WD_ERR("failed to get aead extend ops free in session!\n");
+			return -WD_EINVAL;
+		}
+		ret = sess->eops.eops_aiv_init(wd_aead_setting.driver, &sess->mm_ops,
+					       &sess->eops.params);
+		if (ret) {
+			WD_ERR("failed to init aead extend ops params in session!\n");
+			return ret;
+		}
+	}
+
+	return WD_SUCCESS;
+}
+
+static void wd_aead_sess_eops_uninit(struct wd_aead_sess *sess)
+{
+	if (sess->eops.eops_aiv_uninit) {
+		sess->eops.eops_aiv_uninit(wd_aead_setting.driver, &sess->mm_ops,
+					   sess->eops.params);
+		sess->eops.params = NULL;
+	}
+}
+
+handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
+{
+	struct wd_aead_sess *sess;
+	int ret;
+
+	sess = check_and_init_sess(setup);
+	if (!sess)
+		return (handle_t)0;
+
+	if (aead_setup_memory_and_buffers(sess, setup)) {
+		free(sess);
+		return (handle_t)0;
+	}
+
+	if (wd_aead_setting.driver->get_extend_ops) {
+		ret = wd_aead_setting.driver->get_extend_ops(&sess->eops);
+		if (ret) {
+			WD_ERR("failed to get aead sess extend ops!\n");
+			goto sess_err;
+		}
+	}
+
+	ret = wd_aead_sess_eops_init(sess);
+	if (ret) {
+		WD_ERR("failed to init aead sess extend eops!\n");
+		goto sess_err;
+	}
+
 	sess->sched_key = (void *)wd_aead_setting.sched.sched_init(
-			wd_aead_setting.sched.h_sched_ctx, setup->sched_param);
+			  wd_aead_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto err_sess;
+		goto sched_key_err;
 	}
 
 	return (handle_t)sess;
 
-err_sess:
-	free(sess);
+sched_key_err:
+	wd_aead_sess_eops_uninit(sess);
+sess_err:
+	cleanup_session(sess);
 	return (handle_t)0;
 }
 
@@ -365,7 +504,8 @@ void wd_aead_free_sess(handle_t h_sess)
 
 	if (sess->sched_key)
 		free(sess->sched_key);
-	free(sess);
+	wd_aead_sess_eops_uninit(sess);
+	cleanup_session(sess);
 }
 
 static int wd_aead_param_check(struct wd_aead_sess *sess,
@@ -717,8 +857,11 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 	msg->mac = req->mac;
 	msg->auth_bytes = sess->auth_bytes;
 	msg->data_fmt = req->data_fmt;
-
 	msg->msg_state = req->msg_state;
+
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
+	msg->drv_cfg = sess->eops.params;
 	fill_stream_msg(msg, req, sess);
 }
 
