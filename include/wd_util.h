@@ -553,6 +553,8 @@ static inline void wd_ctx_spin_unlock(struct wd_ctx_internal *ctx, int type)
 	pthread_spin_unlock(&ctx->lock);
 }
 
+int wd_mem_ops_init(handle_t h_ctx, struct wd_mm_ops *mm_ops, int mem_type);
+
 #ifdef __cplusplus
 }
 #endif
