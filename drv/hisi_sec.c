@@ -1028,7 +1028,7 @@ static void hisi_sec_put_sgl(handle_t h_qp, __u8 alg_type, void *in, void *out)
 {
 	handle_t h_sgl_pool;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
 	if (!h_sgl_pool)
 		return;
 
@@ -1045,7 +1045,7 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 **in, __u8 **out,
 	void *hw_sgl_in;
 	void *hw_sgl_out;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
 	if (!h_sgl_pool) {
 		WD_ERR("failed to get sglpool for hw_v2!\n");
 		return -WD_EINVAL;
@@ -1085,7 +1085,7 @@ static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 **in, __u8 **out,
 	void *hw_sgl_in;
 	void *hw_sgl_out;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
 	if (!h_sgl_pool) {
 		WD_ERR("failed to get sglpool for hw_v3!\n");
 		return -WD_EINVAL;
