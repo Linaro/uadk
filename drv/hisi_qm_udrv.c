@@ -473,7 +473,7 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_qm_queue_info *q_info;
-	__u16 free_num, send_num;
+	__u16 free_num;
 	__u16 tail;
 
 	if (unlikely(!qp || !req || !count))
@@ -488,11 +488,14 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 		return -WD_EBUSY;
 	}
 
-	send_num = expect > free_num ? free_num : expect;
+	if (expect > free_num) {
+		pthread_spin_unlock(&q_info->sd_lock);
+		return -WD_EBUSY;
+	}
 
 	tail = q_info->sq_tail_index;
-	hisi_qm_fill_sqe(req, q_info, tail, send_num);
-	tail = (tail + send_num) % q_info->sq_depth;
+	hisi_qm_fill_sqe(req, q_info, tail, expect);
+	tail = (tail + expect) % q_info->sq_depth;
 
 	/*
 	 * Before sending doorbell, check the queue status,
@@ -510,9 +513,9 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	q_info->sq_tail_index = tail;
 
 	/* Make sure used_num is changed before the next thread gets free sqe. */
-	__atomic_add_fetch(&q_info->used_num, send_num, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&q_info->used_num, expect, __ATOMIC_RELAXED);
 	pthread_spin_unlock(&q_info->sd_lock);
-	*count = send_num;
+	*count = expect;
 
 	return 0;
 }

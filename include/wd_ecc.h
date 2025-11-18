@@ -116,6 +116,8 @@ struct wd_ecc_sess_setup {
 	struct wd_rand_mt rand; /* rand method from user */
 	struct wd_hash_mt hash; /* hash method from user */
 	void *sched_param;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 struct wd_ecc_req {
