@@ -77,6 +77,7 @@
 #define max_in_data_size(outl)		((__u32)(((__u64)(outl) << 3) / 9) & 0xfffffffc)
 
 #define HZ_MAX_SIZE			(8 * 1024 * 1024)
+#define HW_CTX_SIZE			0x10000
 
 #define RSV_OFFSET			64
 #define CTX_DW1_OFFSET			4
@@ -244,15 +245,6 @@ struct hisi_zip_ctx {
 	struct wd_ctx_config_internal config;
 };
 
-struct comp_sgl {
-	void *in;
-	void *out;
-	void *out_seq;
-	struct wd_datalist *list_src;
-	struct wd_datalist *list_dst;
-	struct wd_datalist *seq_start;
-};
-
 static void dump_zip_msg(struct wd_comp_msg *msg)
 {
 	WD_ERR("dump zip message after a task error occurs.\n");
@@ -377,11 +369,11 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 	return 0;
 }
 
-static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl)
+static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
 {
 	handle_t h_sgl_pool;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, mm_ops);
 	if (unlikely(!h_sgl_pool)) {
 		WD_ERR("failed to get sglpool!\n");
 		return -WD_EINVAL;
@@ -416,6 +408,23 @@ err_free_sgl_in:
 	return -WD_ENOMEM;
 }
 
+static void free_hw_sgl(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
+{
+	handle_t h_sgl_pool;
+
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, mm_ops);
+	if (unlikely(!h_sgl_pool)) {
+		WD_ERR("failed to get sglpool!\n");
+		return;
+	}
+
+	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->in);
+	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->out);
+
+	if (c_sgl->seq_start)
+		hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->out_seq);
+}
+
 static void fill_comp_buf_size(struct hisi_zip_sqe *sqe, __u32 in_size,
 				  __u32 out_size)
 {
@@ -423,8 +432,124 @@ static void fill_comp_buf_size(struct hisi_zip_sqe *sqe, __u32 in_size,
 	sqe->dest_avail_out = out_size;
 }
 
-static void fill_buf_addr(struct hisi_zip_sqe *sqe, struct hisi_comp_sqe_addr *addr)
+static int zip_mem_map(struct wd_mm_ops *mm_ops, struct hisi_zip_sqe *sqe,
+		       struct hisi_comp_sqe_addr *addr)
 {
+	void *phy_dst, *phy_ctx, *mempool;
+	void *phy_lit = NULL;
+	void *phy_src = NULL;
+
+	mempool = mm_ops->usr;
+	/* When the src len is 0, map is not required */
+	if (sqe->input_data_length) {
+		phy_src = mm_ops->iova_map(mempool, addr->src_addr, sqe->input_data_length);
+		if (!phy_src) {
+			WD_ERR("get zip src dma address fail!\n");
+			return -WD_ENOMEM;
+		}
+
+		sqe->source_addr_l = lower_32_bits(phy_src);
+		sqe->source_addr_h = upper_32_bits(phy_src);
+	}
+
+	if (addr->lit_addr) {
+		phy_lit = mm_ops->iova_map(mempool, addr->lit_addr, sqe->dw13);
+		if (!phy_lit) {
+			WD_ERR("get zip lits dma address fail!\n");
+			goto unmap_src;
+		}
+
+		sqe->literals_addr_l = lower_32_bits(phy_lit);
+		sqe->literals_addr_h = upper_32_bits(phy_lit);
+	}
+
+	phy_dst = mm_ops->iova_map(mempool, addr->dst_addr, sqe->dest_avail_out);
+	if (!phy_dst) {
+		WD_ERR("get zip dst dma address fail!\n");
+		goto unmap_lit;
+	}
+
+	sqe->dest_addr_l = lower_32_bits(phy_dst);
+	sqe->dest_addr_h = upper_32_bits(phy_dst);
+
+	/* The source addr needs to be filled with a valid address when length is 0 */
+	if (!sqe->input_data_length) {
+		sqe->source_addr_l = sqe->dest_addr_l;
+		sqe->source_addr_h = sqe->dest_addr_h;
+	}
+
+	if (addr->ctx_addr) {
+		phy_ctx = mm_ops->iova_map(mempool, addr->ctx_addr, HW_CTX_SIZE);
+		if (!phy_ctx) {
+			WD_ERR("get zip ctx dma address fail!\n");
+			goto unmap_dst;
+		}
+
+		sqe->stream_ctx_addr_l = lower_32_bits(phy_ctx);
+		sqe->stream_ctx_addr_h = upper_32_bits(phy_ctx);
+	}
+
+	return 0;
+
+unmap_dst:
+	mm_ops->iova_unmap(mempool, addr->dst_addr, phy_dst, sqe->dest_avail_out);
+unmap_lit:
+	if (addr->lit_addr)
+		mm_ops->iova_unmap(mempool, addr->lit_addr, phy_lit, sqe->dw13);
+unmap_src:
+	if (sqe->input_data_length)
+		mm_ops->iova_unmap(mempool, addr->src_addr, phy_src, sqe->input_data_length);
+	return -WD_ENOMEM;
+}
+
+static void zip_mem_unmap(struct wd_comp_msg *msg, struct hisi_zip_sqe *sqe)
+{
+	void *dma_addr, *src_addr, *seq_addr, *lit_addr;
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	struct wd_comp_req *req = &msg->req;
+	void *mempool = mm_ops->usr;
+
+	if (msg->data_fmt == WD_SGL_BUF)
+		src_addr = msg->c_sgl.in;
+	else
+		src_addr = req->src;
+
+	if (sqe->input_data_length) {
+		dma_addr = VA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
+		mm_ops->iova_unmap(mempool, src_addr, dma_addr, sqe->input_data_length);
+	}
+
+	if (msg->alg_type == WD_LZ77_ZSTD || msg->alg_type == WD_LZ77_ONLY) {
+		if (msg->data_fmt == WD_SGL_BUF) {
+			seq_addr = msg->c_sgl.out_seq;
+			lit_addr = msg->c_sgl.out;
+		} else {
+			seq_addr = req->dst + sqe->dw13;
+			lit_addr = req->dst;
+		}
+
+		dma_addr = VA_ADDR(sqe->literals_addr_h, sqe->literals_addr_l);
+		mm_ops->iova_unmap(mempool, lit_addr, dma_addr, sqe->dw13);
+		dma_addr = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+		mm_ops->iova_unmap(mempool, seq_addr, dma_addr, sqe->dest_avail_out);
+	} else {
+		dma_addr = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+		mm_ops->iova_unmap(mempool, req->dst, dma_addr, sqe->dest_avail_out);
+	}
+
+	if (msg->stream_mode == WD_COMP_STATEFUL) {
+		dma_addr = VA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l);
+		mm_ops->iova_unmap(mempool, msg->ctx_buf, dma_addr, HW_CTX_SIZE);
+	}
+}
+
+static int fill_buf_addr(struct hisi_zip_sqe *sqe, struct hisi_comp_sqe_addr *addr,
+			 struct wd_mm_ops *mm_ops)
+{
+	/* No-SVA mode and Memory is USER mode or PROXY mode */
+	if (!mm_ops->sva_mode)
+		return zip_mem_map(mm_ops, sqe, addr);
+
 	sqe->source_addr_l = lower_32_bits(addr->src_addr);
 	sqe->source_addr_h = upper_32_bits(addr->src_addr);
 	sqe->dest_addr_l = lower_32_bits(addr->dst_addr);
@@ -439,6 +564,8 @@ static void fill_buf_addr(struct hisi_zip_sqe *sqe, struct hisi_comp_sqe_addr *a
 		sqe->stream_ctx_addr_l = lower_32_bits(addr->ctx_addr);
 		sqe->stream_ctx_addr_h = upper_32_bits(addr->ctx_addr);
 	}
+
+	return 0;
 }
 
 static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
@@ -498,15 +625,13 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 
 	fill_comp_buf_size(sqe, in_size, out_size);
 
-	if (msg->ctx_buf)
+	if (msg->stream_mode == WD_COMP_STATEFUL)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
 
 	addr.src_addr = src;
 	addr.dst_addr = dst;
 	addr.ctx_addr = ctx_buf;
-	fill_buf_addr(sqe, &addr);
-
-	return 0;
+	return fill_buf_addr(sqe, &addr, msg->mm_ops);
 }
 
 static int fill_buf_deflate(handle_t h_qp, struct hisi_zip_sqe *sqe,
@@ -570,9 +695,7 @@ static int fill_buf_lz4(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	addr.src_addr = src;
 	addr.dst_addr = dst;
-	fill_buf_addr(sqe, &addr);
-
-	return 0;
+	return fill_buf_addr(sqe, &addr, msg->mm_ops);
 }
 
 static void fill_buf_type_sgl(struct hisi_zip_sqe *sqe)
@@ -585,25 +708,28 @@ static void fill_buf_type_sgl(struct hisi_zip_sqe *sqe)
 }
 
 static int fill_buf_addr_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			     struct wd_datalist *list_src, struct wd_datalist *list_dst)
+			     struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
 {
 	struct hisi_comp_sqe_addr addr = {0};
-	struct comp_sgl c_sgl;
 	int ret;
 
-	c_sgl.list_src = list_src;
-	c_sgl.list_dst = list_dst;
-	c_sgl.seq_start = NULL;
-
-	ret = get_sgl_from_pool(h_qp, &c_sgl);
+	ret = get_sgl_from_pool(h_qp, c_sgl, mm_ops);
 	if (unlikely(ret))
 		return ret;
 
-	addr.src_addr = c_sgl.in;
-	addr.dst_addr = c_sgl.out;
-	fill_buf_addr(sqe, &addr);
+	addr.src_addr = c_sgl->in;
+	if (c_sgl->seq_start) {
+		addr.lit_addr = c_sgl->out;
+		addr.dst_addr = c_sgl->out_seq;
+	} else {
+		addr.dst_addr = c_sgl->out;
+	}
 
-	return 0;
+	ret = fill_buf_addr(sqe, &addr, mm_ops);
+	if (unlikely(ret))
+		free_hw_sgl(h_qp, c_sgl, mm_ops);
+
+	return ret;
 }
 
 static void fill_buf_sgl_skip(struct hisi_zip_sqe *sqe, __u32 src_skip,
@@ -625,7 +751,6 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 					int head_size)
 {
 	struct wd_comp_req *req = &msg->req;
-	struct wd_datalist *list_src = req->list_src;
 	struct wd_datalist *list_dst = req->list_dst;
 	__u32 out_size = msg->avail_out;
 	__u32 in_size = req->src_len;
@@ -655,10 +780,6 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_type_sgl(sqe);
 
-	ret = fill_buf_addr_sgl(h_qp, sqe, list_src, list_dst);
-	if (unlikely(ret))
-		return ret;
-
 	if (head != NULL && msg->req.op_type == WD_DIR_COMPRESS) {
 		memcpy(req->list_dst->data, head, head_size);
 		dst_skip = head_size;
@@ -682,7 +803,10 @@ static int fill_buf_deflate_sgl_generic(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_comp_buf_size(sqe, in_size, out_size);
 
-	return 0;
+	msg->c_sgl.list_src = req->list_src;
+	msg->c_sgl.list_dst = list_dst;
+	msg->c_sgl.seq_start = NULL;
+	return fill_buf_addr_sgl(h_qp, sqe, &msg->c_sgl, msg->mm_ops);
 }
 
 static int fill_buf_deflate_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
@@ -827,7 +951,7 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	if (unlikely(seq_avail_out > HZ_MAX_SIZE))
 		seq_avail_out = HZ_MAX_SIZE;
 
-	if (msg->ctx_buf) {
+	if (msg->stream_mode == WD_COMP_STATEFUL) {
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
 		if (msg->alg_type == WD_LZ77_ZSTD) {
 			if (data->blk_type != COMP_BLK)
@@ -852,9 +976,7 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	addr.dst_addr = req->dst + lits_size;
 	addr.lit_addr = req->dst;
 	addr.ctx_addr = ctx_buf;
-	fill_buf_addr(sqe, &addr);
-
-	return 0;
+	return fill_buf_addr(sqe, &addr, msg->mm_ops);
 }
 
 static struct wd_datalist *get_seq_start_list(struct wd_comp_req *req)
@@ -972,13 +1094,11 @@ static int lz77_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 				  struct wd_comp_msg *msg)
 {
-	struct hisi_comp_sqe_addr addr = {0};
 	struct wd_comp_req *req = &msg->req;
 	struct wd_lz77_zstd_data *data = req->priv;
 	__u32 in_size = msg->req.src_len;
 	__u32 out_size = msg->avail_out;
 	struct wd_datalist *seq_start;
-	struct comp_sgl c_sgl;
 	__u32 lits_size;
 	int ret;
 
@@ -1004,27 +1124,15 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, out_size - lits_size);
 
-	c_sgl.list_src = req->list_src;
-	c_sgl.list_dst = req->list_dst;
-	c_sgl.seq_start = seq_start;
-
-	ret = get_sgl_from_pool(h_qp, &c_sgl);
-	if (unlikely(ret))
-		return ret;
-
-	addr.src_addr = c_sgl.in;
-	addr.dst_addr = c_sgl.out_seq;
-	addr.lit_addr = c_sgl.out;
-	fill_buf_addr(sqe, &addr);
-
-	return 0;
+	msg->c_sgl.list_src = req->list_src;
+	msg->c_sgl.list_dst = req->list_dst;
+	msg->c_sgl.seq_start = seq_start;
+	return fill_buf_addr_sgl(h_qp, sqe, &msg->c_sgl, msg->mm_ops);
 }
 
 static int fill_buf_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			struct wd_comp_msg *msg)
 {
-	struct wd_datalist *list_src = msg->req.list_src;
-	struct wd_datalist *list_dst = msg->req.list_dst;
 	int ret;
 
 	ret = check_lz4_msg(msg, WD_SGL_BUF);
@@ -1035,7 +1143,10 @@ static int fill_buf_lz4_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 
 	fill_comp_buf_size(sqe, msg->req.src_len, msg->avail_out);
 
-	return fill_buf_addr_sgl(h_qp, sqe, list_src, list_dst);
+	msg->c_sgl.list_src = msg->req.list_src;
+	msg->c_sgl.list_dst = msg->req.list_dst;
+	msg->c_sgl.seq_start = NULL;
+	return fill_buf_addr_sgl(h_qp, sqe, &msg->c_sgl, msg->mm_ops);
 }
 
 static void fill_sqe_type_v1(struct hisi_zip_sqe *sqe)
@@ -1420,31 +1531,6 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	return 0;
 }
 
-static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
-			enum wd_comp_alg_type alg_type)
-{
-	void *hw_sgl_in, *hw_sgl_out;
-	handle_t h_sgl_pool;
-
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp, NULL);
-	if (unlikely(!h_sgl_pool)) {
-		WD_ERR("failed to get sglpool to free hw sgl!\n");
-		return;
-	}
-
-	hw_sgl_in = VA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-
-	hw_sgl_out = VA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
-	hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
-
-	if (alg_type == WD_LZ77_ZSTD || alg_type == WD_LZ77_ONLY) {
-		hw_sgl_out = VA_ADDR(sqe->literals_addr_h,
-				     sqe->literals_addr_l);
-		hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_out);
-	}
-}
-
 static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
@@ -1468,7 +1554,7 @@ static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *com
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (unlikely(ret < 0)) {
 		if (msg->req.data_fmt == WD_SGL_BUF)
-			free_hw_sgl(h_qp, &sqe, msg->alg_type);
+			free_hw_sgl(h_qp, &msg->c_sgl, msg->mm_ops);
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send to hardware, ret = %d!\n", ret);
 
@@ -1620,8 +1706,11 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	recv_msg->checksum = sqe->dw31;
 	recv_msg->alg_type = alg_type;
 
+	if (recv_msg->mm_ops && !recv_msg->mm_ops->sva_mode)
+		zip_mem_unmap(recv_msg, sqe);
+
 	if (buf_type == WD_SGL_BUF)
-		free_hw_sgl((handle_t)qp, sqe, alg_type);
+		free_hw_sgl((handle_t)qp, &recv_msg->c_sgl, recv_msg->mm_ops);
 
 	if (unlikely(recv_msg->req.status == WD_IN_EPARA))
 		dump_zip_msg(recv_msg);
