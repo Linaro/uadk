@@ -15,7 +15,7 @@
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 
-#define HW_CTX_SIZE			(64 * 1024)
+#define HW_CTX_SIZE			0x10000
 #define STREAM_CHUNK			(128 * 1024)
 #define WD_ZLIB_HEADER_SZ		2
 #define WD_GZIP_HEADER_SZ		10
@@ -41,6 +41,8 @@ struct wd_comp_sess {
 	__u32 checksum;
 	__u8 *ctx_buf;
 	void *sched_key;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 struct wd_comp_setting {
@@ -437,6 +439,24 @@ static int wd_comp_check_sess_params(struct wd_comp_sess_setup *setup)
 	return WD_SUCCESS;
 }
 
+static int wd_alloc_ctx_buf(struct wd_mm_ops *mm_ops, struct wd_comp_sess *sess)
+{
+
+	sess->ctx_buf = mm_ops->alloc(mm_ops->usr, HW_CTX_SIZE);
+	if (!sess->ctx_buf)
+		return -WD_ENOMEM;
+
+	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	return WD_SUCCESS;
+}
+
+static void wd_free_ctx_buf(struct wd_mm_ops *mm_ops, struct wd_comp_sess *sess)
+{
+	mm_ops->free(mm_ops->usr, sess->ctx_buf);
+	sess->ctx_buf = NULL;
+}
+
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
 	struct wd_comp_sess *sess;
@@ -453,14 +473,24 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	if (!sess)
 		return (handle_t)0;
 
-	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
-	if (!sess->ctx_buf)
+	/* Memory type set */
+	ret = wd_mem_ops_init(wd_comp_setting.config.ctxs[0].ctx, &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		goto sess_err;
+	}
+
+	ret = wd_alloc_ctx_buf(&setup->mm_ops, sess);
+	if (ret)
 		goto sess_err;
 
 	sess->alg_type = setup->alg_type;
 	sess->comp_lv = setup->comp_lv;
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
+
+	sess->mm_type = setup->mm_type;
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
@@ -473,7 +503,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	return (handle_t)sess;
 
 sched_err:
-	free(sess->ctx_buf);
+	wd_free_ctx_buf(&setup->mm_ops, sess);
 sess_err:
 	free(sess);
 	return (handle_t)0;
@@ -487,7 +517,7 @@ void wd_comp_free_sess(handle_t h_sess)
 		return;
 
 	if (sess->ctx_buf)
-		free(sess->ctx_buf);
+		wd_free_ctx_buf(&sess->mm_ops, sess);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
@@ -521,6 +551,9 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->comp_lv = sess->comp_lv;
 	msg->win_sz = sess->win_sz;
 	msg->avail_out = req->dst_len;
+
+	msg->mm_type = sess->mm_type;
+	msg->mm_ops = &sess->mm_ops;
 
 	msg->req.last = 1;
 }
