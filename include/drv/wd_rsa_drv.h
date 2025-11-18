@@ -42,11 +42,14 @@ struct wd_rsa_kg_out {
 /* RSA message format */
 struct wd_rsa_msg {
 	struct wd_rsa_req req;
+	struct wd_mm_ops *mm_ops;
+	enum wd_mem_type mm_type;
 	__u32 tag; /* User-defined request identifier */
 	__u16 key_bytes; /* Input key bytes */
 	__u8 key_type; /* Denoted by enum wd_rsa_key_type */
 	__u8 result; /* Data format, denoted by WD error code */
 	__u8 *key; /* Input key VA pointer, should be DMA buffer */
+	__u8 *rsv_out; /* reserved output data pointer */
 };
 
 struct wd_rsa_msg *wd_rsa_get_msg(__u32 idx, __u32 tag);
