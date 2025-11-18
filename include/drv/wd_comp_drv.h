@@ -24,9 +24,22 @@ enum wd_comp_state {
 	WD_COMP_STATELESS,
 };
 
+struct comp_sgl {
+	void *in;
+	void *out;
+	void *out_seq;
+	struct wd_datalist *list_src;
+	struct wd_datalist *list_dst;
+	struct wd_datalist *seq_start;
+};
+
 /* fixme wd_comp_msg */
 struct wd_comp_msg {
 	struct wd_comp_req req;
+	struct wd_mm_ops *mm_ops;
+	enum wd_mem_type mm_type;
+	/* Store sgl addr for nosva */
+	struct comp_sgl c_sgl;
 	/* Denoted HW ctx cache, for stream mode */
 	void *ctx_buf;
 	/* Denoted by enum wd_comp_alg_type */
