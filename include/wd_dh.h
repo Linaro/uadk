@@ -27,6 +27,8 @@ struct wd_dh_sess_setup {
 	__u16 key_bits; /* DH key bites */
 	bool is_g2; /* is g2 mode or not */
 	void *sched_param;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 struct wd_dh_req {
