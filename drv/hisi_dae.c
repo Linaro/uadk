@@ -26,7 +26,7 @@
 #define DAE_VCHAR_OFFSET_SIZE	2
 #define DAE_COL_BIT_NUM		4
 #define DAE_AGG_START_COL	16
-#define DAE_HASHAGG_MAX_ROW_NUN	50000
+#define DAE_HASHAGG_MAX_ROW_NUM	50000
 
 /* align size */
 #define DAE_CHAR_ALIGN_SIZE	4
@@ -294,23 +294,8 @@ static void fill_hashagg_merge_key_data(struct dae_sqe *sqe, struct dae_ext_sqe 
 	}
 }
 
-static void fill_hashagg_normal_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
-				     struct hashagg_col_data *cols_data, __u32 agg_cols_num)
-{
-	struct hw_agg_data *agg_data = cols_data->input_data;
-	__u32 i;
-
-	for (i = 0; i < agg_cols_num; i++) {
-		sqe->agg_data_type[i] = agg_data[i].hw_type;
-		sqe->agg_data_type[i] |= agg_data[i].sum_outtype << DAE_COL_BIT_NUM;
-		ext_sqe->agg_data_info[i] = agg_data[i].data_info;
-	}
-
-	sqe->agg_col_bitmap = GENMASK(agg_cols_num + DAE_AGG_START_COL - 1, DAE_AGG_START_COL);
-}
-
-static void fill_hashagg_rehash_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
-				     struct hw_agg_data *agg_data, __u32 agg_cols_num)
+static void fill_hashagg_data_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
+				   struct hw_agg_data *agg_data, __u32 agg_cols_num)
 {
 	__u32 i;
 
@@ -344,14 +329,14 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 		hw_agg_addr = &addr_list->input_addr[DAE_AGG_START_COL];
 		usr_agg_addr = msg->req.agg_cols;
 		agg_col_num = msg->agg_cols_num;
-		fill_hashagg_normal_info(sqe, ext_sqe, cols_data, agg_col_num);
+		fill_hashagg_data_info(sqe, ext_sqe, agg_data, agg_col_num);
 		break;
 	case WD_AGG_REHASH_INPUT:
 		agg_data = cols_data->output_data;
 		hw_agg_addr = &addr_list->input_addr[DAE_AGG_START_COL];
 		usr_agg_addr = msg->req.agg_cols;
 		agg_col_num = cols_data->output_num;
-		fill_hashagg_rehash_info(sqe, ext_sqe, agg_data, agg_col_num);
+		fill_hashagg_data_info(sqe, ext_sqe, agg_data, agg_col_num);
 		break;
 	case WD_AGG_STREAM_OUTPUT:
 	case WD_AGG_REHASH_OUTPUT:
@@ -359,7 +344,7 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 		hw_agg_addr = &addr_list->output_addr[DAE_AGG_START_COL];
 		usr_agg_addr = msg->req.out_agg_cols;
 		agg_col_num = cols_data->output_num;
-		fill_hashagg_normal_info(sqe, ext_sqe, cols_data, cols_data->input_num);
+		fill_hashagg_data_info(sqe, ext_sqe, cols_data->input_data, cols_data->input_num);
 		break;
 	}
 
@@ -385,7 +370,7 @@ static void fill_hashagg_merge_input_data(struct dae_sqe *sqe, struct dae_ext_sq
 	struct hashagg_ctx *agg_ctx = msg->priv;
 	struct hashagg_col_data *cols_data = &agg_ctx->cols_data;
 
-	fill_hashagg_rehash_info(sqe, ext_sqe, cols_data->output_data, msg->agg_cols_num);
+	fill_hashagg_data_info(sqe, ext_sqe, cols_data->output_data, msg->agg_cols_num);
 }
 
 static void fill_hashagg_ext_addr(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
@@ -422,26 +407,15 @@ static void fill_hashagg_info(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 
 static int check_hashagg_param(struct wd_agg_msg *msg)
 {
-	struct hashagg_col_data *cols_data;
-	struct hashagg_ctx *agg_ctx;
-
 	if (!msg) {
 		WD_ERR("invalid: input hashagg msg is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	agg_ctx = msg->priv;
-	cols_data = &agg_ctx->cols_data;
-	if (cols_data->output_num > DAE_MAX_OUTPUT_COLS) {
-		WD_ERR("invalid: input hashagg output num %u is more than %d!\n",
-			cols_data->output_num, DAE_MAX_OUTPUT_COLS);
-		return -WD_EINVAL;
-	}
-
 	if ((msg->pos == WD_AGG_STREAM_INPUT || msg->pos == WD_AGG_REHASH_INPUT) &&
-	     msg->row_count > DAE_HASHAGG_MAX_ROW_NUN) {
+	     msg->row_count > DAE_HASHAGG_MAX_ROW_NUM) {
 		WD_ERR("invalid: input hashagg row count %u is more than %d!\n",
-			msg->row_count, DAE_HASHAGG_MAX_ROW_NUN);
+			msg->row_count, DAE_HASHAGG_MAX_ROW_NUM);
 		return -WD_EINVAL;
 	}
 
@@ -1005,6 +979,7 @@ static int transfer_input_col_info(struct wd_agg_col_info *agg_cols,
 				   struct hw_agg_data *user_output_data,
 				   __u32 cols_num, __u32 *output_num)
 {
+	__u32 tmp = *output_num;
 	__u32 i, j, k = 0;
 	int ret;
 
@@ -1013,7 +988,15 @@ static int transfer_input_col_info(struct wd_agg_col_info *agg_cols,
 			WD_ERR("invalid: col alg num(%u) more than 2!\n", agg_cols[i].col_alg_num);
 			return -WD_EINVAL;
 		}
+		tmp += agg_cols[i].col_alg_num;
+	}
 
+	if (tmp > DAE_MAX_OUTPUT_COLS) {
+		WD_ERR("invalid: output col num is more than %d!\n", DAE_MAX_OUTPUT_COLS);
+		return -WD_EINVAL;
+	}
+
+	for (i = 0; i < cols_num; i++) {
 		for (j = 0; j < agg_cols[i].col_alg_num; j++) {
 			ret = hashagg_check_input_data(&agg_cols[i], &user_input_data[i],
 						       &user_output_data[k], j);
@@ -1136,6 +1119,9 @@ static int transfer_data_to_hw_type(struct hashagg_col_data *cols_data,
 	struct hw_agg_data user_output_data[DAE_MAX_OUTPUT_COLS] = {0};
 	struct wd_agg_col_info *agg_cols = setup->agg_cols_info;
 	int ret;
+
+	if (setup->is_count_all)
+		cols_data->output_num++;
 
 	ret = transfer_input_col_info(agg_cols, user_input_data, user_output_data,
 					setup->agg_cols_num, &cols_data->output_num);
