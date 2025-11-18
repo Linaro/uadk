@@ -3047,7 +3047,6 @@ static int aead_msg_state_check(struct wd_aead_msg *msg)
 static void destroy_aead_bd2_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 {
 	struct wd_mm_ops *mm_ops = msg->mm_ops;
-	__u64 dma_addr;
 	void *mempool;
 
 	aead_free_aiv_addr(msg);

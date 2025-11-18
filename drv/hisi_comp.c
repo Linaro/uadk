@@ -267,7 +267,8 @@ static __u32 copy_to_out(struct wd_comp_msg *msg, struct hisi_comp_buf *buf, __u
 	struct wd_comp_req *req = &msg->req;
 	struct wd_datalist *node = req->list_dst;
 	__u32 sgl_restlen, copy_len;
-	__u32 len = 0, sgl_cplen = 0;
+	__u32 sgl_cplen = 0;
+	__u32 len = 0;
 
 	copy_len = total_len > req->dst_len ?
 		   req->dst_len : total_len;
