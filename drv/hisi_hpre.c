@@ -34,14 +34,17 @@
 #define SM2_PONIT_SIZE			64
 #define MAX_HASH_LENS			BITS_TO_BYTES(521)
 #define HW_PLAINTEXT_BYTES_MAX		BITS_TO_BYTES(4096)
-#define HPRE_CTX_Q_NUM_DEF	1
+#define HPRE_CTX_Q_NUM_DEF		1
+#define	MAP_PAIR_NUM_MAX		6
 
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
 #define GEN_PARAMS_SZ(key_size)		((key_size) << 1)
 #define CRT_PARAM_SZ(key_size)		((key_size) >> 1)
 
-#define WD_TRANS_FAIL  0
+#define GEN_PARAMS_SZ_UL(key_size)	((unsigned long)(key_size) << 1)
+#define DMA_ADDR(hi, lo)		((__u64)(((__u64)(hi) << 32) | (__u64)(lo)))
+#define WD_TRANS_FAIL			0
 
 #define CURVE_PARAM_NUM			6
 #define SECP256R1_KEY_SIZE		32
@@ -76,6 +79,21 @@ enum hpre_alg_name {
 	WD_RSA,
 	WD_DH,
 	WD_ECC
+};
+
+enum hpre_hw_msg_field {
+	HW_MSG_IN,
+	HW_MSG_OUT,
+	HW_MSG_KEY,
+};
+
+struct map_info_cache {
+	struct map_pair {
+		void *addr;
+		uintptr_t pa;
+		size_t size;
+	} pairs[MAP_PAIR_NUM_MAX];
+	size_t cnt;
 };
 
 /* put vendor hardware message as a user interface is not suitable here */
@@ -113,11 +131,121 @@ struct hisi_hpre_sqe {
 
 struct hisi_hpre_ctx {
 	struct wd_ctx_config_internal	config;
+	struct wd_mm_ops *mm_ops;
+	handle_t rsv_mem_ctx;
 };
 
 struct hpre_ecc_ctx {
 	__u32 enable_hpcore;
 };
+
+static void add_map_info(struct map_info_cache *cache, void *addr, uintptr_t dma, size_t size)
+{
+	/* The cnt is guaranteed not to exceed MAP_PAIR_NUM_MAX within hpre. */
+	cache->pairs[cache->cnt].addr = addr;
+	cache->pairs[cache->cnt].pa = dma;
+	cache->pairs[cache->cnt].size = size;
+	cache->cnt++;
+}
+
+static void unmap_addr_in_cache(struct wd_mm_ops *mm_ops, struct map_info_cache *cache)
+{
+	size_t i;
+
+	if (mm_ops->sva_mode)
+		return;
+
+	/* The cnt is guaranteed not to exceed MAP_PAIR_NUM_MAX within hpre. */
+	for (i = 0; i < cache->cnt; i++)
+		mm_ops->iova_unmap(mm_ops->usr, cache->pairs[i].addr,
+				   (void *)cache->pairs[i].pa, cache->pairs[i].size);
+}
+
+static void unsetup_hw_msg_addr(struct wd_mm_ops *mm_ops, enum hpre_hw_msg_field t_type,
+				struct hisi_hpre_sqe *hw_msg, void *va, size_t data_sz)
+{
+	void *addr;
+
+	if (!mm_ops || mm_ops->sva_mode || !va || !data_sz)
+		return;
+
+	switch (t_type) {
+	case HW_MSG_KEY:
+		addr = VA_ADDR(hw_msg->hi_key, hw_msg->low_key);
+		break;
+	case HW_MSG_IN:
+		addr =  VA_ADDR(hw_msg->hi_in, hw_msg->low_in);
+		break;
+	case HW_MSG_OUT:
+		addr = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
+		break;
+	default:
+		return;
+	}
+
+	if (!addr)
+		return;
+
+	mm_ops->iova_unmap(mm_ops->usr, va, (void *)addr, data_sz);
+}
+
+static uintptr_t select_addr_by_sva_mode(struct wd_mm_ops *mm_ops, void *data,
+					size_t data_sz, struct map_info_cache *cache)
+{
+	uintptr_t addr;
+
+	if (!mm_ops->sva_mode) {
+		addr = (uintptr_t)mm_ops->iova_map(mm_ops->usr, data, data_sz);
+		if (!addr) {
+			WD_ERR("Failed to get mappped DMA address for hardware.\n");
+			return 0;
+		}
+		add_map_info(cache, data, addr, data_sz);
+	} else {
+		addr = (uintptr_t)data;
+	}
+
+	return addr;
+}
+
+static void fill_hw_msg_addr(enum hpre_hw_msg_field t_type, struct hisi_hpre_sqe *hw_msg,
+			     uintptr_t addr)
+{
+	switch (t_type) {
+	case HW_MSG_KEY:
+		hw_msg->low_key = LW_U32(addr);
+		hw_msg->hi_key = HI_U32(addr);
+		break;
+	case HW_MSG_IN:
+		hw_msg->low_in = LW_U32(addr);
+		hw_msg->hi_in = HI_U32(addr);
+		break;
+	case HW_MSG_OUT:
+		hw_msg->low_out = LW_U32(addr);
+		hw_msg->hi_out = HI_U32(addr);
+		break;
+	default:
+		return;
+	}
+}
+
+static int check_hpre_mem_params(struct wd_mm_ops *mm_ops, enum wd_mem_type mm_type)
+{
+	if (!mm_ops) {
+		WD_ERR("Memory operation functions are null.\n");
+		return -WD_EINVAL;
+	}
+
+	if (mm_type == UADK_MEM_AUTO && !mm_ops->sva_mode) {
+		WD_ERR("No-SVA in auto mode is not supported yet.\n");
+		return -WD_EINVAL;
+	} else if (mm_type > UADK_MEM_PROXY) {
+		WD_ERR("failed to check memory type.\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
 
 static void dump_hpre_msg(void *msg, int alg)
 {
@@ -269,7 +397,8 @@ static int fill_rsa_crt_prikey2(struct wd_rsa_prikey *prikey,
 
 	*data = wd_dq->data;
 
-	return WD_SUCCESS;
+	return (int)(wd_dq->bsize + wd_qinv->bsize + wd_p->bsize +
+		     wd_q->bsize + wd_dp->bsize);
 }
 
 static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
@@ -292,7 +421,7 @@ static int fill_rsa_prikey1(struct wd_rsa_prikey *prikey, void **data)
 
 	*data = wd_d->data;
 
-	return WD_SUCCESS;
+	return (int)(wd_n->bsize + wd_d->bsize);
 }
 
 static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
@@ -315,7 +444,7 @@ static int fill_rsa_pubkey(struct wd_rsa_pubkey *pubkey, void **data)
 
 	*data = wd_e->data;
 
-	return WD_SUCCESS;
+	return (int)(wd_n->bsize + wd_e->bsize);
 }
 
 static int fill_rsa_genkey_in(struct wd_rsa_kg_in *genkey)
@@ -378,21 +507,20 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 {
 	struct wd_rsa_req *req = &msg->req;
 	struct wd_rsa_kg_out *key = req->dst;
+	struct wd_rsa_msg *target_msg;
 	__u16 kbytes = msg->key_bytes;
 	struct wd_dtb qinv, dq, dp;
 	struct wd_dtb d, n;
-	void *data;
 	int ret;
 
-	if (hw_msg->alg == HPRE_ALG_KG_CRT || hw_msg->alg == HPRE_ALG_KG_STD) {
-		/* async */
-		if (qp_mode == CTX_MODE_ASYNC) {
-			data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
-			key = container_of(data, struct wd_rsa_kg_out, data);
-		} else {
-			key = req->dst;
-		}
+	target_msg = (struct wd_rsa_msg *)VA_ADDR(hw_msg->hi_tag, hw_msg->low_tag);
+	if (!target_msg) {
+		WD_ERR("failed to get correct rsa send msg from hardware!\n");
+		return -WD_ADDR_ERR;
 	}
+
+	if (hw_msg->alg == HPRE_ALG_KG_CRT || hw_msg->alg == HPRE_ALG_KG_STD)
+		key = target_msg->req.dst;
 
 	msg->result = WD_SUCCESS;
 	if (hw_msg->alg == HPRE_ALG_KG_CRT) {
@@ -424,37 +552,38 @@ static int rsa_out_transfer(struct wd_rsa_msg *msg,
 	return WD_SUCCESS;
 }
 
-static int rsa_prepare_key(struct wd_rsa_msg *msg,
-			      struct hisi_hpre_sqe *hw_msg)
+static int rsa_prepare_key(struct wd_rsa_msg *msg, struct hisi_hpre_sqe *hw_msg,
+			   struct map_info_cache *cache)
 {
 	struct wd_rsa_req *req = &msg->req;
+	uintptr_t addr;
+	int ret, len;
 	void *data;
-	int ret;
 
 	if (req->op_type == WD_RSA_SIGN) {
 		if (hw_msg->alg == HPRE_ALG_NC_CRT) {
-			ret = fill_rsa_crt_prikey2((void *)msg->key, &data);
-			if (ret)
-				return ret;
+			len = fill_rsa_crt_prikey2((void *)msg->key, &data);
+			if (len <= 0)
+				return -WD_EINVAL;
 		} else {
-			ret = fill_rsa_prikey1((void *)msg->key, &data);
-			if (ret)
-				return ret;
+			len = fill_rsa_prikey1((void *)msg->key, &data);
+			if (len <= 0)
+				return -WD_EINVAL;
 			hw_msg->alg = HPRE_ALG_NC_NCRT;
 		}
 	} else if (req->op_type == WD_RSA_VERIFY) {
-		ret = fill_rsa_pubkey((void *)msg->key, &data);
-		if (ret)
-			return ret;
+		len = fill_rsa_pubkey((void *)msg->key, &data);
+		if (len <= 0)
+			return -WD_EINVAL;
 		hw_msg->alg = HPRE_ALG_NC_NCRT;
 	} else if (req->op_type == WD_RSA_GENKEY) {
 		ret = fill_rsa_genkey_in((void *)msg->key);
 		if (ret)
 			return ret;
-		ret = wd_rsa_kg_in_data((void *)msg->key, (char **)&data);
-		if (ret < 0) {
+		len = wd_rsa_kg_in_data((void *)msg->key, (char **)&data);
+		if (len < 0) {
 			WD_ERR("failed to get rsa gen key data!\n");
-			return ret;
+			return -WD_EINVAL;
 		}
 		if (hw_msg->alg == HPRE_ALG_NC_CRT)
 			hw_msg->alg = HPRE_ALG_KG_CRT;
@@ -465,36 +594,53 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg,
 		return -WD_EINVAL;
 	}
 
-	hw_msg->low_key = LW_U32((uintptr_t)data);
-	hw_msg->hi_key = HI_U32((uintptr_t)data);
+	addr = select_addr_by_sva_mode(msg->mm_ops, data, len, cache);
+	if (!addr)
+		return -WD_ENOMEM;
+	fill_hw_msg_addr(HW_MSG_KEY, hw_msg, addr);
 
-	return WD_SUCCESS;
+	return ret;
 }
 
-static int rsa_prepare_iot(struct wd_rsa_msg *msg,
-			      struct hisi_hpre_sqe *hw_msg)
+static int rsa_prepare_iot(struct wd_rsa_msg *msg, struct hisi_hpre_sqe *hw_msg,
+			   struct map_info_cache *cache)
 {
 	struct wd_rsa_req *req = &msg->req;
 	struct wd_rsa_kg_out *kout = req->dst;
 	int ret = WD_SUCCESS;
-	void *out = NULL;
+	uintptr_t phy, out;
 
 	if (req->op_type != WD_RSA_GENKEY) {
-		hw_msg->low_in = LW_U32((uintptr_t)req->src);
-		hw_msg->hi_in = HI_U32((uintptr_t)req->src);
-		out = req->dst;
+		phy = select_addr_by_sva_mode(msg->mm_ops, req->src, req->src_bytes, cache);
+		if (!phy)
+			return -WD_ENOMEM;
+		fill_hw_msg_addr(HW_MSG_IN, hw_msg, phy);
+		phy = select_addr_by_sva_mode(msg->mm_ops, req->dst, req->dst_bytes, cache);
+		if (!phy)
+			return -WD_ENOMEM;
+		fill_hw_msg_addr(HW_MSG_OUT, hw_msg, phy);
 	} else {
 		hw_msg->low_in = 0;
 		hw_msg->hi_in = 0;
 		ret = wd_rsa_kg_out_data(kout, (char **)&out);
 		if (ret < 0)
 			return ret;
+
+		if (!msg->mm_ops->sva_mode) {
+			phy = (uintptr_t)msg->mm_ops->iova_map(msg->mm_ops->usr, kout, ret);
+			if (!phy) {
+				WD_ERR("Failed to get DMA address for rsa output!\n");
+				return -WD_ENOMEM;
+			}
+			add_map_info(cache, kout, phy, ret);
+			out = phy + out - (uintptr_t)kout;
+		}
+
+		hw_msg->low_out = LW_U32(out);
+		hw_msg->hi_out = HI_U32(out);
 	}
 
-	hw_msg->low_out = LW_U32((uintptr_t)out);
-	hw_msg->hi_out = HI_U32((uintptr_t)out);
-
-	return ret;
+	return WD_SUCCESS;
 }
 
 static int hpre_init_qm_priv(struct wd_ctx_config_internal *config,
@@ -615,9 +761,16 @@ static int rsa_send(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_rsa_msg *msg = rsa_msg;
+	struct map_info_cache cache = {0};
 	struct hisi_hpre_sqe hw_msg;
 	__u16 send_cnt = 0;
 	int ret;
+
+	ret = check_hpre_mem_params(msg->mm_ops, msg->mm_type);
+	if (ret) {
+		WD_ERR("rsa memory parmas is err, and ret is %d!\n", ret);
+		return ret;
+	}
 
 	memset(&hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 
@@ -631,21 +784,30 @@ static int rsa_send(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 
 	hw_msg.task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
-	ret = rsa_prepare_key(msg, &hw_msg);
-	if (ret < 0)
-		return ret;
+	ret = rsa_prepare_key(msg, &hw_msg, &cache);
+	if (ret)
+		goto rsa_fail;
 
 	/* prepare in/out put */
-	ret = rsa_prepare_iot(msg, &hw_msg);
-	if (ret < 0)
-		return ret;
+	ret = rsa_prepare_iot(msg, &hw_msg, &cache);
+	if (ret)
+		goto rsa_fail;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	hw_msg.done = 0x1;
 	hw_msg.etype = 0x0;
-	hw_msg.low_tag = msg->tag;
+	hw_msg.low_tag = LW_U32((uintptr_t)msg);
+	hw_msg.hi_tag = HI_U32((uintptr_t)msg);
 
-	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+	ret = hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+	if (unlikely(ret))
+		goto rsa_fail;
+
+	return ret;
+
+rsa_fail:
+	unmap_addr_in_cache(msg->mm_ops, &cache);
+	return ret;
 }
 
 static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
@@ -671,32 +833,29 @@ static int rsa_recv(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct hisi_hpre_sqe hw_msg = {0};
+	struct wd_rsa_msg *target_msg;
 	struct wd_rsa_msg *msg = rsa_msg;
-	struct wd_rsa_msg *temp_msg;
+	struct hisi_hpre_sqe hw_msg = {0};
+	size_t ilen = 0, olen = 0;
 	__u16 recv_cnt = 0;
+	__u16 kbytes;
 	int ret;
 
 	ret = hisi_qm_recv(h_qp, &hw_msg, 1, &recv_cnt);
 	if (ret < 0)
 		return ret;
 
-	ret = hisi_check_bd_id(h_qp, msg->tag, hw_msg.low_tag);
+	target_msg = (struct wd_rsa_msg *)VA_ADDR(hw_msg.hi_tag, hw_msg.low_tag);
+	if (!target_msg) {
+		WD_ERR("failed to get correct send msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
+
+	ret = hisi_check_bd_id(h_qp, msg->tag, target_msg->tag);
 	if (ret)
 		return ret;
 
-	msg->tag = LW_U16(hw_msg.low_tag);
-	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_rsa_get_msg(qp->q_info.idx, msg->tag);
-		if (!temp_msg) {
-			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
-				qp->q_info.idx, msg->tag);
-			return -WD_EINVAL;
-		}
-	} else {
-		temp_msg = msg;
-	}
-
+	msg->tag = target_msg->tag;
 	hpre_result_check(&hw_msg, &msg->result);
 	if (!msg->result) {
 		ret = rsa_out_transfer(msg, &hw_msg, qp->q_info.qp_mode);
@@ -707,15 +866,36 @@ static int rsa_recv(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
 	}
 
 	if (unlikely(msg->result != WD_SUCCESS))
-		dump_hpre_msg(temp_msg, WD_RSA);
+		dump_hpre_msg(target_msg, WD_RSA);
+
+	if (!target_msg->mm_ops->sva_mode) {
+		kbytes = target_msg->key_bytes;
+		if (hw_msg.alg == HPRE_ALG_KG_CRT) {
+			olen = CRT_GEN_PARAMS_SZ(kbytes);
+			ilen = GEN_PARAMS_SZ_UL(kbytes);
+		} else if (hw_msg.alg == HPRE_ALG_KG_STD) {
+			olen = GEN_PARAMS_SZ_UL(kbytes);
+			ilen = GEN_PARAMS_SZ_UL(kbytes);
+		} else {
+			olen = kbytes;
+			ilen = kbytes;
+		}
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_IN, &hw_msg,
+				    target_msg->req.src, ilen);
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_OUT, &hw_msg,
+				    target_msg->req.dst, olen);
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_KEY, &hw_msg,
+				    target_msg->key, target_msg->key_bytes);
+	}
 
 	return WD_SUCCESS;
 }
 
-static int fill_dh_xp_params(struct wd_dh_msg *msg,
-			     struct hisi_hpre_sqe *hw_msg)
+static int fill_dh_xp_params(struct wd_dh_msg *msg, struct hisi_hpre_sqe *hw_msg,
+			     struct map_info_cache *cache)
 {
 	struct wd_dh_req *req = &msg->req;
+	uintptr_t addr;
 	void *x, *p;
 	int ret;
 
@@ -735,26 +915,30 @@ static int fill_dh_xp_params(struct wd_dh_msg *msg,
 		return ret;
 	}
 
-	hw_msg->low_key = LW_U32((uintptr_t)x);
-	hw_msg->hi_key = HI_U32((uintptr_t)x);
+	addr = select_addr_by_sva_mode(msg->mm_ops, x, GEN_PARAMS_SZ_UL(msg->key_bytes), cache);
+	if (!addr)
+		return -WD_ENOMEM;
+	fill_hw_msg_addr(HW_MSG_KEY, hw_msg, addr);
 
-	return WD_SUCCESS;
+	return ret;
 }
 
-static int dh_out_transfer(struct wd_dh_msg *msg,
-			   struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
+static int dh_out_transfer(struct wd_dh_msg *msg, struct hisi_hpre_sqe *hw_msg,
+			   __u8 qp_mode)
 {
 	__u16 key_bytes = (hw_msg->task_len1 + 1) * BYTE_BITS;
 	struct wd_dh_req *req = &msg->req;
+	struct wd_dh_msg *target_msg;
 	void *out;
 	int ret;
 
-	/* async */
-	if (qp_mode == CTX_MODE_ASYNC)
-		out = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
-	else
-		out = req->pri;
+	target_msg = (struct wd_dh_msg *)VA_ADDR(hw_msg->hi_tag, hw_msg->low_tag);
+	if (!target_msg) {
+		WD_ERR("failed to get correct send msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
 
+	out = target_msg->req.pri;
 	ret = hpre_bin_to_crypto_bin((char *)out,
 		(const char *)out, key_bytes, "dh out");
 	if (!ret)
@@ -768,11 +952,19 @@ static int dh_out_transfer(struct wd_dh_msg *msg,
 static int dh_send(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct map_info_cache cache = {0};
 	struct wd_dh_msg *msg = dh_msg;
 	struct wd_dh_req *req = &msg->req;
 	struct hisi_hpre_sqe hw_msg;
 	__u16 send_cnt = 0;
+	uintptr_t addr;
 	int ret;
+
+	ret = check_hpre_mem_params(msg->mm_ops, msg->mm_type);
+	if (ret) {
+		WD_ERR("dh memory parmas is err, and ret is %d!\n", ret);
+		return ret;
+	}
 
 	memset(&hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 
@@ -791,32 +983,50 @@ static int dh_send(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 			WD_ERR("failed to transfer dh g para format to hpre bin!\n");
 			return ret;
 		}
-
-		hw_msg.low_in = LW_U32((uintptr_t)msg->g);
-		hw_msg.hi_in = HI_U32((uintptr_t)msg->g);
+		addr = select_addr_by_sva_mode(msg->mm_ops, msg->g, msg->key_bytes, &cache);
+		if (!addr)
+			return -WD_ENOMEM;
+		fill_hw_msg_addr(HW_MSG_IN, &hw_msg, addr);
 	}
 
-	ret = fill_dh_xp_params(msg, &hw_msg);
-	if (ret)
-		return ret;
+	ret = fill_dh_xp_params(msg, &hw_msg, &cache);
+	if (ret) {
+		WD_ERR("failed to fill dh x or p para!\n");
+		goto dh_fail;
+	}
 
 	hisi_set_msg_id(h_qp, &msg->tag);
-	hw_msg.low_out = LW_U32((uintptr_t)req->pri);
-	hw_msg.hi_out = HI_U32((uintptr_t)req->pri);
 	hw_msg.done = 0x1;
 	hw_msg.etype = 0x0;
-	hw_msg.low_tag = msg->tag;
 
-	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+	hw_msg.low_tag = LW_U32((uintptr_t)msg);
+	hw_msg.hi_tag = HI_U32((uintptr_t)msg);
+
+	addr = select_addr_by_sva_mode(msg->mm_ops, req->pri, req->pri_bytes, &cache);
+	if (!addr) {
+		ret = -WD_ENOMEM;
+		goto dh_fail;
+	}
+	fill_hw_msg_addr(HW_MSG_OUT, &hw_msg, addr);
+
+	ret = hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
+	if (unlikely(ret))
+		goto dh_fail;
+
+	return ret;
+
+dh_fail:
+	unmap_addr_in_cache(msg->mm_ops, &cache);
+	return ret;
 }
 
 static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
-	struct wd_dh_msg *msg = dh_msg;
 	struct hisi_hpre_sqe hw_msg = {0};
-	struct wd_dh_msg *temp_msg;
+	struct wd_dh_msg *msg = dh_msg;
+	struct wd_dh_msg *target_msg;
 	__u16 recv_cnt = 0;
 	int ret;
 
@@ -824,22 +1034,17 @@ static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 	if (ret < 0)
 		return ret;
 
-	ret = hisi_check_bd_id(h_qp, msg->tag, hw_msg.low_tag);
+	target_msg = (struct wd_dh_msg *)VA_ADDR(hw_msg.hi_tag, hw_msg.low_tag);
+	if (!target_msg) {
+		WD_ERR("failed to get correct send msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
+
+	ret = hisi_check_bd_id(h_qp, msg->tag, target_msg->tag);
 	if (ret)
 		return ret;
 
-	msg->tag = LW_U16(hw_msg.low_tag);
-	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_dh_get_msg(qp->q_info.idx, msg->tag);
-		if (!temp_msg) {
-			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
-				qp->q_info.idx, msg->tag);
-			return -WD_EINVAL;
-		}
-	} else {
-		temp_msg = msg;
-	}
-
+	msg->tag = target_msg->tag;
 	hpre_result_check(&hw_msg, &msg->result);
 	if (!msg->result) {
 		ret = dh_out_transfer(msg, &hw_msg, qp->q_info.qp_mode);
@@ -850,7 +1055,16 @@ static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
 	}
 
 	if (unlikely(msg->result != WD_SUCCESS))
-		dump_hpre_msg(temp_msg, WD_DH);
+		dump_hpre_msg(target_msg, WD_DH);
+
+	if (!target_msg->mm_ops->sva_mode) {
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_OUT, &hw_msg,
+				    target_msg->req.pri, target_msg->req.pri_bytes);
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_KEY, &hw_msg,
+				    target_msg->req.x_p, GEN_PARAMS_SZ_UL(target_msg->key_bytes));
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_IN, &hw_msg,
+				    target_msg->g, target_msg->key_bytes);
+	}
 
 	return WD_SUCCESS;
 }
@@ -1081,30 +1295,49 @@ static bool is_prikey_used(__u8 op_type)
 	       op_type == HPRE_SM2_DEC;
 }
 
-static int ecc_prepare_key(struct wd_ecc_msg *msg,
-			   struct hisi_hpre_sqe *hw_msg)
+static __u32 ecc_get_prikey_size(struct wd_ecc_msg *msg)
+{
+	if (msg->req.op_type == WD_SM2_SIGN ||
+		msg->req.op_type == WD_ECDSA_SIGN ||
+		msg->req.op_type == WD_SM2_DECRYPT)
+		return ECC_PRIKEY_SZ(msg->key_bytes);
+	else if (msg->curve_id == WD_X25519 ||
+		msg->curve_id == WD_X448)
+		return X_DH_HW_KEY_SZ(msg->key_bytes);
+	else
+		return ECDH_HW_KEY_SZ(msg->key_bytes);
+}
+
+static int ecc_prepare_key(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg,
+			   struct map_info_cache *cache)
 {
 	void *data = NULL;
+	uintptr_t addr;
+	size_t ksz;
 	int ret;
 
 	if (is_prikey_used(msg->req.op_type)) {
+		ksz = ecc_get_prikey_size(msg);
 		ret = ecc_prepare_prikey((void *)msg->key, &data, msg->curve_id);
 		if (ret)
 			return ret;
 	} else {
+		ksz = ECC_PUBKEY_SZ(msg->key_bytes);
 		ret = ecc_prepare_pubkey((void *)msg->key, &data);
 		if (ret)
 			return ret;
 	}
 
-	hw_msg->low_key = LW_U32((uintptr_t)data);
-	hw_msg->hi_key = HI_U32((uintptr_t)data);
+	addr = select_addr_by_sva_mode(msg->mm_ops, data, ksz, cache);
+	if (!addr)
+		return -WD_ENOMEM;
+	fill_hw_msg_addr(HW_MSG_KEY, hw_msg, addr);
 
-	return WD_SUCCESS;
+	return ret;
 }
 
-static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
-			      size_t *olen)
+static void ecc_get_io_len(__u32 atype, __u32 hsz,
+			   size_t *ilen, size_t *olen)
 {
 	if (atype == HPRE_ALG_ECDH_MULTIPLY) {
 		*olen = ECDH_OUT_PARAMS_SZ(hsz);
@@ -1467,12 +1700,12 @@ static int ecc_prepare_out(struct wd_ecc_msg *msg, void **data)
 }
 
 /* prepare in/out hw message */
-static int ecc_prepare_iot(struct wd_ecc_msg *msg,
-			   struct hisi_hpre_sqe *hw_msg)
+static int ecc_prepare_iot(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg,
+			   struct map_info_cache *cache)
 {
+	size_t i_sz, o_sz;
 	void *data = NULL;
-	size_t i_sz = 0;
-	size_t o_sz = 0;
+	uintptr_t addr;
 	__u16 kbytes;
 	int ret;
 
@@ -1483,8 +1716,11 @@ static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 		WD_ERR("failed to prepare ecc in!\n");
 		return ret;
 	}
-	hw_msg->low_in = LW_U32((uintptr_t)data);
-	hw_msg->hi_in = HI_U32((uintptr_t)data);
+
+	addr = select_addr_by_sva_mode(msg->mm_ops,  data, i_sz, cache);
+	if (!addr)
+		return -WD_ENOMEM;
+	fill_hw_msg_addr(HW_MSG_IN, hw_msg, addr);
 
 	ret = ecc_prepare_out(msg, &data);
 	if (ret) {
@@ -1496,8 +1732,10 @@ static int ecc_prepare_iot(struct wd_ecc_msg *msg,
 	if (!data)
 		return WD_SUCCESS;
 
-	hw_msg->low_out = LW_U32((uintptr_t)data);
-	hw_msg->hi_out = HI_U32((uintptr_t)data);
+	addr = select_addr_by_sva_mode(msg->mm_ops,  data, o_sz, cache);
+	if (!addr)
+		return -WD_ENOMEM;
+	fill_hw_msg_addr(HW_MSG_OUT, hw_msg, addr);
 
 	return WD_SUCCESS;
 }
@@ -1613,7 +1851,7 @@ static struct wd_ecc_out *create_ecdh_out(struct wd_ecc_msg *msg)
 		return NULL;
 	}
 
-	out = malloc(len);
+	out = msg->mm_ops->alloc(msg->mm_ops->usr, len);
 	if (!out) {
 		WD_ERR("failed to alloc out memory, sz = %u!\n", len);
 		return NULL;
@@ -1677,7 +1915,7 @@ static struct wd_ecc_msg *create_req(struct wd_ecc_msg *src, __u8 req_idx)
 
 	prikey = (struct wd_ecc_prikey *)(ecc_key + 1);
 	ecc_key->prikey = prikey;
-	prikey->data = malloc(ECC_PRIKEY_SZ(src->key_bytes));
+	prikey->data = src->mm_ops->alloc(src->mm_ops->usr, ECC_PRIKEY_SZ(src->key_bytes));
 	if (unlikely(!prikey->data)) {
 		WD_ERR("failed to alloc prikey data!\n");
 		goto fail_alloc_key_data;
@@ -1696,7 +1934,7 @@ static struct wd_ecc_msg *create_req(struct wd_ecc_msg *src, __u8 req_idx)
 	return dst;
 
 fail_set_prikey:
-	free(prikey->data);
+	src->mm_ops->free(src->mm_ops->usr, prikey->data);
 fail_alloc_key_data:
 	free(ecc_key);
 fail_alloc_key:
@@ -1709,9 +1947,9 @@ static void free_req(struct wd_ecc_msg *msg)
 {
 	struct wd_ecc_key *key = (void *)msg->key;
 
-	free(key->prikey->data);
+	msg->mm_ops->free(msg->mm_ops->usr, key->prikey->data);
 	free(key);
-	free(msg->req.dst);
+	msg->mm_ops->free(msg->mm_ops->usr, msg->req.dst);
 	free(msg);
 }
 
@@ -1732,7 +1970,8 @@ static int split_req(struct wd_ecc_msg *src, struct wd_ecc_msg **dst)
 	return WD_SUCCESS;
 }
 
-static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
+static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg,
+		    struct map_info_cache *cache)
 {
 	__u32 hw_sz = get_hw_keysz(msg->key_bytes);
 	__u8 op_type = msg->req.op_type;
@@ -1757,39 +1996,42 @@ static int ecc_fill(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
 		return ret;
 
 	/* prepare key */
-	ret = ecc_prepare_key(msg, hw_msg);
+	ret = ecc_prepare_key(msg, hw_msg, cache);
 	if (ret)
 		return ret;
 
 	/* prepare in/out put */
-	ret = ecc_prepare_iot(msg, hw_msg);
+	ret = ecc_prepare_iot(msg, hw_msg, cache);
 	if (ret)
 		return ret;
 
 	hw_msg->done = 0x1;
 	hw_msg->etype = 0x0;
-	hw_msg->low_tag = msg->tag;
+
+	hw_msg->low_tag = LW_U32((uintptr_t)msg);
+	hw_msg->hi_tag = HI_U32((uintptr_t)msg);
 	hw_msg->task_len1 = hw_sz / BYTE_BITS - 0x1;
 
 	return ret;
 }
 
-static int ecc_general_send(handle_t ctx, struct wd_ecc_msg *msg)
+static int ecc_general_send(handle_t ctx, struct wd_ecc_msg *msg,
+			    struct map_info_cache *cache)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_hpre_sqe hw_msg;
 	__u16 send_cnt = 0;
 	int ret;
 
-	ret = ecc_fill(msg, &hw_msg);
+	ret = ecc_fill(msg, &hw_msg, cache);
 	if (ret)
 		return ret;
 
 	return hisi_qm_send(h_qp, &hw_msg, 1, &send_cnt);
 }
 
-
-static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
+static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg,
+			struct map_info_cache *cache)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_sm2_enc_in *ein = msg->req.src;
@@ -1801,7 +2043,7 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 
 	if (ein->plaintext.dsize <= HW_PLAINTEXT_BYTES_MAX &&
 		hash->type == WD_HASH_SM3)
-		return ecc_general_send(ctx, msg);
+		return ecc_general_send(ctx, msg, cache);
 
 	if (unlikely(!ein->k_set)) {
 		WD_ERR("invalid: k not set!\n");
@@ -1824,13 +2066,13 @@ static int sm2_enc_send(handle_t ctx, struct wd_ecc_msg *msg)
 		return ret;
 	}
 
-	ret = ecc_fill(msg_dst[0], &hw_msg[0]);
+	ret = ecc_fill(msg_dst[0], &hw_msg[0], cache);
 	if (unlikely(ret)) {
 		WD_ERR("failed to fill 1th sqe, ret = %d!\n", ret);
 		goto fail_fill_sqe;
 	}
 
-	ret = ecc_fill(msg_dst[1], &hw_msg[1]);
+	ret = ecc_fill(msg_dst[1], &hw_msg[1], cache);
 	if (unlikely(ret)) {
 		WD_ERR("failed to fill 2th sqe, ret = %d!\n", ret);
 		goto fail_fill_sqe;
@@ -1855,7 +2097,8 @@ fail_fill_sqe:
 	return ret;
 }
 
-static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
+static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg,
+			struct map_info_cache *cache)
 {
 	struct wd_sm2_dec_in *din = (void *)msg->req.src;
 	struct wd_hash_mt *hash = &msg->hash;
@@ -1865,7 +2108,7 @@ static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
 	/* c2 data lens <= 4096 bit */
 	if (din->c2.dsize <= BITS_TO_BYTES(4096) &&
 		hash->type == WD_HASH_SM3)
-		return ecc_general_send(ctx, msg);
+		return ecc_general_send(ctx, msg, cache);
 
 	if (unlikely(!hash->cb || hash->type >= WD_HASH_MAX)) {
 		WD_ERR("invalid: input hash type %u is error!\n", hash->type);
@@ -1891,14 +2134,14 @@ static int sm2_dec_send(handle_t ctx, struct wd_ecc_msg *msg)
 		goto free_dst;
 	}
 
-	ret = ecc_general_send(ctx, dst);
+	ret = ecc_general_send(ctx, dst, cache);
 	if (unlikely(ret))
 		goto free_req_dst;
 
 	return ret;
 
 free_req_dst:
-	free(dst->req.dst);
+	msg->mm_ops->free(msg->mm_ops->usr, dst->req.dst);
 free_dst:
 	free(dst);
 	return ret;
@@ -1908,14 +2151,37 @@ static int ecc_send(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_ecc_msg *msg = ecc_msg;
+	struct map_info_cache cache = {0};
+	int ret;
+
+	ret = check_hpre_mem_params(msg->mm_ops, msg->mm_type);
+	if (ret) {
+		WD_ERR("ecc memory parmas is err, and ret is %d!\n", ret);
+		return ret;
+	}
 
 	hisi_set_msg_id(h_qp, &msg->tag);
-	if (msg->req.op_type == WD_SM2_ENCRYPT)
-		return sm2_enc_send(ctx, msg);
-	else if (msg->req.op_type == WD_SM2_DECRYPT)
-		return sm2_dec_send(ctx, msg);
+	if (msg->req.op_type == WD_SM2_ENCRYPT) {
+		ret = sm2_enc_send(ctx, msg, &cache);
+		if (ret)
+			goto ecc_fail;
+		return ret;
+	} else if (msg->req.op_type == WD_SM2_DECRYPT) {
+		ret = sm2_dec_send(ctx, msg, &cache);
+		if (ret)
+			goto ecc_fail;
+		return ret;
+	}
 
-	return ecc_general_send(ctx, msg);
+	ret = ecc_general_send(ctx, msg, &cache);
+	if (ret)
+		goto ecc_fail;
+
+	return ret;
+
+ecc_fail:
+	unmap_addr_in_cache(msg->mm_ops, &cache);
+	return ret;
 }
 
 static int ecdh_out_transfer(struct wd_ecc_msg *msg, struct hisi_hpre_sqe *hw_msg)
@@ -2020,14 +2286,14 @@ static int sm2_enc_out_transfer(struct wd_ecc_msg *msg,
 static int ecc_out_transfer(struct wd_ecc_msg *msg,
 			    struct hisi_hpre_sqe *hw_msg, __u8 qp_mode)
 {
+	struct wd_ecc_msg *target_msg;
 	int ret = -WD_EINVAL;
-	void *va;
+
+	target_msg = (struct wd_ecc_msg *)VA_ADDR(hw_msg->hi_tag, hw_msg->low_tag);
 
 	/* async */
-	if (qp_mode == CTX_MODE_ASYNC) {
-		va = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
-		msg->req.dst = container_of(va, struct wd_ecc_out, data);
-	}
+	if (qp_mode == CTX_MODE_ASYNC)
+		msg->req.dst = target_msg->req.dst;
 
 	if (hw_msg->alg == HPRE_ALG_SM2_SIGN ||
 		hw_msg->alg == HPRE_ALG_ECDSA_SIGN)
@@ -2319,19 +2585,16 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 			 struct hisi_hpre_sqe *hw_msg)
 {
-	struct wd_ecc_msg *temp_msg;
+	struct wd_ecc_msg *target_msg;
+	size_t ilen = 0;
+	size_t olen = 0;
+	__u16 kbytes;
 	int ret;
 
-	msg->tag = LW_U16(hw_msg->low_tag);
-	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
-		temp_msg = wd_ecc_get_msg(qp->q_info.idx, msg->tag);
-		if (!temp_msg) {
-			WD_ERR("failed to get send msg! idx = %u, tag = %u.\n",
-				qp->q_info.idx, msg->tag);
-			return -WD_EINVAL;
-		}
-	} else {
-		temp_msg = msg;
+	target_msg = (struct wd_ecc_msg *)VA_ADDR(hw_msg->hi_tag, hw_msg->low_tag);
+	if (!target_msg) {
+		WD_ERR("failed to get correct ecc send msg from hardware!\n");
+		return -WD_ADDR_ERR;
 	}
 
 	hpre_result_check(hw_msg, &msg->result);
@@ -2347,10 +2610,20 @@ static int ecc_sqe_parse(struct hisi_qp *qp, struct wd_ecc_msg *msg,
 		goto dump_err_msg;
 	}
 
-	return ret;
+	return WD_SUCCESS;
 
 dump_err_msg:
-	dump_hpre_msg(temp_msg, WD_ECC);
+	kbytes = target_msg->key_bytes;
+	if (!target_msg->mm_ops->sva_mode) {
+		ecc_get_io_len(hw_msg->alg, kbytes, &ilen, &olen);
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_OUT, hw_msg,
+				    target_msg->req.dst, olen);
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_KEY, hw_msg,
+				    target_msg->key, kbytes);
+		unsetup_hw_msg_addr(target_msg->mm_ops, HW_MSG_IN, hw_msg,
+				    target_msg->req.src, ilen);
+	}
+	dump_hpre_msg(target_msg, WD_ECC);
 
 	return ret;
 }
@@ -2363,8 +2636,6 @@ static int parse_second_sqe(handle_t h_qp,
 	struct wd_ecc_msg *dst;
 	__u16 recv_cnt = 0;
 	int cnt = 0;
-	void *data;
-	__u32 hsz;
 	int ret;
 
 	while (1) {
@@ -2380,10 +2651,12 @@ static int parse_second_sqe(handle_t h_qp,
 		break;
 	}
 
-	data = VA_ADDR(hw_msg.hi_out, hw_msg.low_out);
-	hsz = (hw_msg.task_len1 + 1) * BYTE_BITS;
-	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
-		hsz * ECDH_OUT_PARAM_NUM);
+	dst = (struct wd_ecc_msg *)VA_ADDR(hw_msg.hi_tag, hw_msg.low_tag);
+	if (!dst) {
+		WD_ERR("failed to get correct sm2 enc second send msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
+
 	ret = ecc_sqe_parse((struct hisi_qp *)h_qp, dst, &hw_msg);
 	msg->result = dst->result;
 	*second = dst;
@@ -2394,19 +2667,17 @@ static int parse_second_sqe(handle_t h_qp,
 static int sm2_enc_parse(handle_t h_qp, struct wd_ecc_msg *msg,
 			 struct hisi_hpre_sqe *hw_msg)
 {
-	__u16 tag = LW_U16(hw_msg->low_tag);
 	struct wd_ecc_msg *second = NULL;
 	struct wd_ecc_msg *first;
 	struct wd_ecc_msg src;
-	void *data;
-	__u32 hsz;
 	int ret;
 
-	msg->tag = tag;
-	data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
-	hsz = (hw_msg->task_len1 + 1) * BYTE_BITS;
-	first = *(struct wd_ecc_msg **)((uintptr_t)data +
-		hsz * ECDH_OUT_PARAM_NUM);
+	first = (struct wd_ecc_msg *)VA_ADDR(hw_msg->hi_tag, hw_msg->low_tag);
+	if (!first) {
+		WD_ERR("failed to get correct sm2 enc msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
+
 	memcpy(&src, first + 1, sizeof(src));
 
 	/* parse first sqe */
@@ -2440,17 +2711,15 @@ free_first:
 static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 			 struct hisi_hpre_sqe *hw_msg)
 {
-	__u16 tag = LW_U16(hw_msg->low_tag);
 	struct wd_ecc_msg *dst;
 	struct wd_ecc_msg src;
-	void *data;
-	__u32 hsz;
 	int ret;
 
-	data = VA_ADDR(hw_msg->hi_out, hw_msg->low_out);
-	hsz = (hw_msg->task_len1 + 1) * BYTE_BITS;
-	dst = *(struct wd_ecc_msg **)((uintptr_t)data +
-		hsz * ECDH_OUT_PARAM_NUM);
+	dst = (struct wd_ecc_msg *)VA_ADDR(hw_msg->hi_tag, hw_msg->low_tag);
+	if (!dst) {
+		WD_ERR("failed to get correct sm2 dec msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
 	memcpy(&src, dst + 1, sizeof(src));
 
 	/* parse first sqe */
@@ -2460,7 +2729,6 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 		goto fail;
 	}
 	msg->result = dst->result;
-	msg->tag = tag;
 
 	ret = sm2_convert_dec_out(&src, dst);
 	if (unlikely(ret)) {
@@ -2469,7 +2737,7 @@ static int sm2_dec_parse(handle_t ctx, struct wd_ecc_msg *msg,
 	}
 
 fail:
-	free(dst->req.dst);
+	dst->mm_ops->free(dst->mm_ops->usr, dst->req.dst);
 	free(dst);
 
 	return ret;
@@ -2479,6 +2747,7 @@ static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_ecc_msg *msg = ecc_msg;
+	struct wd_ecc_msg *target_msg;
 	struct hisi_hpre_sqe hw_msg;
 	__u16 recv_cnt = 0;
 	int ret;
@@ -2487,10 +2756,17 @@ static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
 	if (ret)
 		return ret;
 
-	ret = hisi_check_bd_id(h_qp, msg->tag, hw_msg.low_tag);
+	target_msg = (struct wd_ecc_msg *)VA_ADDR(hw_msg.hi_tag, hw_msg.low_tag);
+	if (!target_msg) {
+		WD_ERR("failed to get correct send msg from hardware!\n");
+		return -WD_ADDR_ERR;
+	}
+
+	ret = hisi_check_bd_id(h_qp, msg->tag, target_msg->tag);
 	if (ret)
 		return ret;
 
+	msg->tag = target_msg->tag;
 	if (hw_msg.alg == HPRE_ALG_ECDH_MULTIPLY &&
 		hw_msg.sm2_mlen == HPRE_SM2_ENC)
 		return sm2_enc_parse(h_qp, msg, &hw_msg);
@@ -2549,7 +2825,7 @@ static bool is_valid_hw_type(struct wd_alg_driver *drv)
 
 	hpre_ctx = (struct hisi_hpre_ctx *)drv->priv;
 	qp = (struct hisi_qp *)wd_ctx_get_priv(hpre_ctx->config.ctxs[0].ctx);
-	if (qp->q_info.hw_type < HISI_QM_API_VER3_BASE)
+	if (!qp || qp->q_info.hw_type < HISI_QM_API_VER3_BASE)
 		return false;
 	return true;
 }
