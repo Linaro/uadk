@@ -52,6 +52,8 @@ struct wd_ecc_sess {
 	struct wd_ecc_sess_setup setup;
 	struct wd_ecc_extend_ops eops;
 	void *sched_key;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 struct wd_ecc_curve_list {
@@ -192,6 +194,7 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		return ret;
 
+	wd_ecc_setting.config.alg_name = "sm2 x448 x25519 ecdsa ecdh";
 	ret = wd_init_ctx_config(&wd_ecc_setting.config, config);
 	if (ret < 0)
 		return ret;
@@ -493,7 +496,7 @@ static void release_ecc_prikey(struct wd_ecc_sess *sess)
 	struct wd_ecc_prikey *prikey = sess->key.prikey;
 
 	wd_memset_zero(prikey->data, prikey->size);
-	free(prikey->data);
+	sess->mm_ops.free(sess->mm_ops.usr, prikey->data);
 	free(prikey);
 	sess->key.prikey = NULL;
 }
@@ -502,7 +505,7 @@ static void release_ecc_pubkey(struct wd_ecc_sess *sess)
 {
 	struct wd_ecc_pubkey *pubkey = sess->key.pubkey;
 
-	free(pubkey->data);
+	sess->mm_ops.free(sess->mm_ops.usr, pubkey->data);
 	free(pubkey);
 	sess->key.pubkey = NULL;
 }
@@ -521,7 +524,7 @@ static struct wd_ecc_prikey *create_ecc_prikey(struct wd_ecc_sess *sess)
 	}
 
 	dsz = ECC_PRIKEY_SZ(hsz);
-	data = malloc(dsz);
+	data = sess->mm_ops.alloc(sess->mm_ops.usr, dsz);
 	if (!data) {
 		WD_ERR("failed to malloc prikey data, sz = %u!\n", dsz);
 		free(prikey);
@@ -550,7 +553,7 @@ static struct wd_ecc_pubkey *create_ecc_pubkey(struct wd_ecc_sess *sess)
 	}
 
 	dsz = ECC_PUBKEY_SZ(hsz);
-	data = malloc(dsz);
+	data = sess->mm_ops.alloc(sess->mm_ops.usr, dsz);
 	if (!data) {
 		WD_ERR("failed to malloc pubkey data, sz = %u!\n", dsz);
 		free(pubkey);
@@ -569,7 +572,7 @@ static void release_ecc_in(struct wd_ecc_sess *sess,
 			   struct wd_ecc_in *ecc_in)
 {
 	wd_memset_zero(ecc_in->data, ecc_in->size);
-	free(ecc_in);
+	sess->mm_ops.free(sess->mm_ops.usr, ecc_in);
 }
 
 static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess, __u32 num)
@@ -584,7 +587,7 @@ static struct wd_ecc_in *create_ecc_in(struct wd_ecc_sess *sess, __u32 num)
 
 	hsz = get_key_bsz(sess->key_size);
 	len = sizeof(struct wd_ecc_in) + hsz * num;
-	in = malloc(len);
+	in = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!in) {
 		WD_ERR("failed to malloc ecc in, sz = %u!\n", len);
 		return NULL;
@@ -612,7 +615,7 @@ static struct wd_ecc_in *create_sm2_sign_in(struct wd_ecc_sess *sess,
 
 	len = sizeof(struct wd_ecc_in)
 		+ ECC_SIGN_IN_PARAM_NUM * ksz + m_len;
-	in = malloc(len);
+	in = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!in) {
 		WD_ERR("failed to malloc sm2 sign in, sz = %llu!\n", len);
 		return NULL;
@@ -652,7 +655,7 @@ static struct wd_ecc_in *create_sm2_enc_in(struct wd_ecc_sess *sess,
 	}
 
 	len = sizeof(struct wd_ecc_in) + ksz + m_len;
-	in = malloc(len);
+	in = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!in) {
 		WD_ERR("failed to malloc sm2 enc in, sz = %llu!\n", len);
 		return NULL;
@@ -696,7 +699,7 @@ static void *create_sm2_ciphertext(struct wd_ecc_sess *sess, __u32 m_len,
 
 	*len = (__u64)st_sz + ECC_POINT_PARAM_NUM * (__u64)sess->key_size +
 		(__u64)m_len + (__u64)h_byts;
-	start = malloc(*len);
+	start = sess->mm_ops.alloc(sess->mm_ops.usr, *len);
 	if (unlikely(!start)) {
 		WD_ERR("failed to alloc start, sz = %llu!\n", *len);
 		return NULL;
@@ -744,7 +747,7 @@ static struct wd_ecc_out *create_ecc_out(struct wd_ecc_sess *sess, __u32 num)
 
 	hsz = get_key_bsz(sess->key_size);
 	len = sizeof(struct wd_ecc_out) + hsz * num;
-	out = malloc(len);
+	out = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!out) {
 		WD_ERR("failed to malloc out, sz = %u!\n", len);
 		return NULL;
@@ -1148,13 +1151,13 @@ static void del_sess_key(struct wd_ecc_sess *sess)
 {
 	if (sess->key.prikey) {
 		wd_memset_zero(sess->key.prikey->data, sess->key.prikey->size);
-		free(sess->key.prikey->data);
+		sess->mm_ops.free(sess->mm_ops.usr, sess->key.prikey->data);
 		free(sess->key.prikey);
 		sess->key.prikey = NULL;
 	}
 
 	if (sess->key.pubkey) {
-		free(sess->key.pubkey->data);
+		sess->mm_ops.free(sess->mm_ops.usr, sess->key.pubkey->data);
 		free(sess->key.pubkey);
 		sess->key.pubkey = NULL;
 	}
@@ -1225,6 +1228,15 @@ handle_t wd_ecc_alloc_sess(struct wd_ecc_sess_setup *setup)
 
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = BITS_TO_BYTES(setup->key_bits);
+
+	/* Memory type set */
+	ret = wd_mem_ops_init(wd_ecc_setting.config.ctxs[0].ctx, &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		goto sess_err;
+	}
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
 
 	if (wd_ecc_setting.driver->get_extend_ops) {
 		ret = wd_ecc_setting.driver->get_extend_ops(&sess->eops);
@@ -1507,9 +1519,10 @@ void wd_ecxdh_get_out_params(struct wd_ecc_out *out, struct wd_ecc_point **pbk)
 
 void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
 {
+	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 	__u32 bsz;
 
-	if (!in) {
+	if (!sess_t || !in) {
 		WD_ERR("invalid: del ecc in parameter error!\n");
 		return;
 	}
@@ -1521,14 +1534,15 @@ void wd_ecc_del_in(handle_t sess, struct wd_ecc_in *in)
 	}
 
 	wd_memset_zero(in->data, bsz);
-	free(in);
+	sess_t->mm_ops.free(sess_t->mm_ops.usr, in);
 }
 
-void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out)
+void wd_ecc_del_out(handle_t sess, struct wd_ecc_out *out)
 {
+	struct wd_ecc_sess *sess_t = (struct wd_ecc_sess *)sess;
 	__u32 bsz;
 
-	if (!out) {
+	if (!sess_t || !out) {
 		WD_ERR("invalid: del ecc out parameter error!\n");
 		return;
 	}
@@ -1540,7 +1554,7 @@ void wd_ecc_del_out(handle_t sess,  struct wd_ecc_out *out)
 	}
 
 	wd_memset_zero(out->data, bsz);
-	free(out);
+	sess_t->mm_ops.free(sess_t->mm_ops.usr, out);
 }
 
 static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
@@ -1550,6 +1564,8 @@ static int fill_ecc_msg(struct wd_ecc_msg *msg, struct wd_ecc_req *req,
 
 	memcpy(&msg->req, req, sizeof(msg->req));
 	memcpy(&msg->hash, &sess->setup.hash, sizeof(msg->hash));
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
 	msg->key_bytes = sess->key_size;
 	msg->curve_id = sess->setup.cv.cfg.id;
 	msg->drv_cfg = sess->eops.params;
@@ -1921,7 +1937,7 @@ static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
 	hsz = get_key_bsz(sess->key_size);
 	len = sizeof(struct wd_ecc_in) + ECC_VERF_IN_PARAM_NUM * hsz +
 		m_len;
-	in = malloc(len);
+	in = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!in) {
 		WD_ERR("failed to malloc sm2 verf in, sz = %llu!\n", len);
 		return NULL;
@@ -2210,7 +2226,7 @@ struct wd_ecc_out *wd_sm2_new_dec_out(handle_t sess, __u32 plaintext_len)
 	}
 
 	len = sizeof(*ecc_out) + plaintext_len;
-	ecc_out = malloc(len);
+	ecc_out = sess_t->mm_ops.alloc(sess_t->mm_ops.usr, len);
 	if (!ecc_out) {
 		WD_ERR("failed to malloc ecc_out, sz = %llu!\n", len);
 		return NULL;

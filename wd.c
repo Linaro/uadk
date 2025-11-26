@@ -20,6 +20,7 @@
 
 #include "wd.h"
 #include "wd_alg.h"
+#include "wd_internal.h"
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 #define FILE_MAX_SIZE			(8 << 20)
 
@@ -33,16 +34,18 @@ enum UADK_LOG_LEVEL {
 
 static int uadk_log_level = WD_LOG_INVALID;
 
-struct wd_ctx_h {
-	int fd;
-	char dev_path[MAX_DEV_NAME_LEN];
-	char *dev_name;
-	char *drv_name;
-	unsigned long qfrs_offs[UACCE_QFRT_MAX];
-	void *qfrs_base[UACCE_QFRT_MAX];
-	struct uacce_dev *dev;
-	void *priv;
-};
+static int wd_check_ctx_type(handle_t h_ctx)
+{
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+
+	/* A simple and efficient method to check the queue type */
+	if (ctx->fd < 0 || ctx->fd > MAX_FD_NUM) {
+		WD_INFO("Invalid: this ctx not HW ctx.\n");
+		return -WD_HW_EACCESS;
+	}
+
+	return 0;
+}
 
 static void wd_parse_log_level(void)
 {
@@ -235,10 +238,6 @@ static int get_dev_info(struct uacce_dev *dev)
 	ret = get_int_attr(dev, "flags", &dev->flags);
 	if (ret < 0)
 		return ret;
-	else if (!((unsigned int)dev->flags & UACCE_DEV_SVA)) {
-		WD_ERR("skip none sva uacce device!\n");
-		return -WD_ENODEV;
-	}
 
 	ret = get_int_attr(dev, "region_mmio_size", &value);
 	if (ret < 0)
@@ -446,7 +445,7 @@ void wd_release_ctx(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 
-	if (!ctx)
+	if (!ctx || wd_check_ctx_type(h_ctx))
 		return;
 
 	close(ctx->fd);
@@ -461,7 +460,7 @@ int wd_ctx_start(handle_t h_ctx)
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
 	int ret;
 
-	if (!ctx)
+	if (!ctx || wd_check_ctx_type(h_ctx))
 		return -WD_EINVAL;
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_START, NULL);
@@ -527,6 +526,7 @@ void wd_ctx_unmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 unsigned long wd_ctx_get_region_size(handle_t h_ctx, enum uacce_qfrt qfrt)
 {
 	struct wd_ctx_h *ctx = (struct wd_ctx_h *)h_ctx;
+
 	if (!ctx || qfrt >= UACCE_QFRT_MAX)
 			return 0;
 	return ctx->qfrs_offs[qfrt];
@@ -585,8 +585,16 @@ int wd_ctx_wait(handle_t h_ctx, __u16 ms)
 int wd_is_sva(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+	int ret;
 
-	if (!ctx || !ctx->dev)
+	if (!ctx)
+		return -WD_EINVAL;
+
+	ret = wd_check_ctx_type(h_ctx);
+	if (ret)
+		return ret;
+
+	if (!ctx->dev)
 		return -WD_EINVAL;
 
 	if ((unsigned int)ctx->dev->flags & UACCE_DEV_SVA)

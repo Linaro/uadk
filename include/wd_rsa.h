@@ -60,6 +60,8 @@ struct wd_rsa_sess_setup {
 	__u16 key_bits; /* RSA key bits */
 	bool is_crt; /* CRT mode or not */
 	void *sched_param;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 bool wd_rsa_is_crt(handle_t sess);

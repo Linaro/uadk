@@ -76,8 +76,7 @@ struct hisi_sge {
 	void *page_ctrl;
 	__le32 len;
 	__le32 pad;
-	__le32 pad0;
-	__le32 pad1;
+	uintptr_t vbuff;
 };
 
 /* use default hw sgl head size 64B, in little-endian */
@@ -91,7 +90,8 @@ struct hisi_sgl {
 	/* the sge num in this sgl */
 	__le16 entry_length_in_sgl;
 	__le16 pad0;
-	__le64 pad1[5];
+	__le64 pad1[4];
+	struct hisi_sgl *next;
 	/* valid sge buffs total size */
 	__le64 entry_size_in_sgl;
 	struct hisi_sge sge_entries[];
@@ -107,6 +107,7 @@ struct hisi_sgl_pool {
 	__u32 top;
 	__u32 sge_num;
 	__u32 sgl_num;
+	struct wd_mm_ops *mm_ops;
 	pthread_spinlock_t lock;
 };
 
@@ -357,8 +358,16 @@ static int hisi_qm_setup_info(struct hisi_qp *qp, struct hisi_qm_priv *config)
 		goto err_destroy_lock;
 	}
 
+	ret = pthread_spin_init(&q_info->sgl_lock, PTHREAD_PROCESS_SHARED);
+	if (ret) {
+		WD_DEV_ERR(qp->h_ctx, "failed to init qinfo sgl_lock!\n");
+		goto err_destroy_sd_lock;
+	}
+
 	return 0;
 
+err_destroy_sd_lock:
+	pthread_spin_destroy(&q_info->sd_lock);
 err_destroy_lock:
 	pthread_spin_destroy(&q_info->rv_lock);
 err_out:
@@ -370,6 +379,7 @@ static void hisi_qm_clear_info(struct hisi_qp *qp)
 {
 	struct hisi_qm_queue_info *q_info = &qp->q_info;
 
+	pthread_spin_destroy(&q_info->sgl_lock);
 	pthread_spin_destroy(&q_info->sd_lock);
 	pthread_spin_destroy(&q_info->rv_lock);
 	hisi_qm_unset_region(qp->h_ctx, q_info);
@@ -413,7 +423,7 @@ handle_t hisi_qm_alloc_qp(struct hisi_qm_priv *config, handle_t ctx)
 		goto out_qp;
 
 	qp->h_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD,
-						HISI_SGE_NUM_IN_SGL);
+						HISI_SGE_NUM_IN_SGL, NULL);
 	if (!qp->h_sgl_pool)
 		goto free_info;
 
@@ -451,6 +461,8 @@ void hisi_qm_free_qp(handle_t h_qp)
 	wd_release_ctx_force(qp->h_ctx);
 
 	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+	if (qp->h_nosva_sgl_pool)
+		hisi_qm_destroy_sglpool(qp->h_nosva_sgl_pool);
 
 	hisi_qm_clear_info(qp);
 
@@ -461,7 +473,7 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct hisi_qm_queue_info *q_info;
-	__u16 free_num, send_num;
+	__u16 free_num;
 	__u16 tail;
 
 	if (unlikely(!qp || !req || !count))
@@ -476,11 +488,14 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 		return -WD_EBUSY;
 	}
 
-	send_num = expect > free_num ? free_num : expect;
+	if (expect > free_num) {
+		pthread_spin_unlock(&q_info->sd_lock);
+		return -WD_EBUSY;
+	}
 
 	tail = q_info->sq_tail_index;
-	hisi_qm_fill_sqe(req, q_info, tail, send_num);
-	tail = (tail + send_num) % q_info->sq_depth;
+	hisi_qm_fill_sqe(req, q_info, tail, expect);
+	tail = (tail + expect) % q_info->sq_depth;
 
 	/*
 	 * Before sending doorbell, check the queue status,
@@ -498,9 +513,9 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	q_info->sq_tail_index = tail;
 
 	/* Make sure used_num is changed before the next thread gets free sqe. */
-	__atomic_add_fetch(&q_info->used_num, send_num, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&q_info->used_num, expect, __ATOMIC_RELAXED);
 	pthread_spin_unlock(&q_info->sd_lock);
-	*count = send_num;
+	*count = expect;
 
 	return 0;
 }
@@ -630,32 +645,46 @@ void hisi_set_msg_id(handle_t h_qp, __u32 *tag)
 	}
 }
 
-static void *hisi_qm_create_sgl(__u32 sge_num)
+static void *hisi_qm_create_sgl(__u32 sge_num, struct wd_mm_ops *mm_ops)
 {
 	void *sgl;
 	int size;
 
 	size = sizeof(struct hisi_sgl) +
 			sge_num * (sizeof(struct hisi_sge)) + HISI_SGL_ALIGE;
-	sgl = calloc(1, size);
-	if (!sgl) {
-		WD_ERR("failed to create sgl!\n");
-		return NULL;
-	}
+	if (mm_ops)
+		sgl = mm_ops->alloc(mm_ops->usr, size);
+	else
+		sgl = calloc(1, size);
+
+	if (!sgl)
+		WD_ERR("failed to alloc memory for the hisi qm sgl!\n");
 
 	return sgl;
 }
 
-static struct hisi_sgl *hisi_qm_align_sgl(const void *sgl, __u32 sge_num)
+static struct hisi_sgl *hisi_qm_align_sgl(const void *sgl, __u32 sge_num,
+					  struct wd_mm_ops *mm_ops)
 {
 	struct hisi_sgl *sgl_align;
+	uintptr_t iova, iova_align;
 
 	/* Hardware require the address must be 64 bytes aligned */
-	sgl_align = (struct hisi_sgl *)ADDR_ALIGN_64(sgl);
+	if (mm_ops) {
+		iova = (uintptr_t)mm_ops->iova_map(mm_ops->usr, (struct hisi_sgl *)sgl,
+						   sizeof(struct hisi_sgl));
+		if (!iova)
+			return NULL;
+		iova_align = ADDR_ALIGN_64(iova);
+		sgl_align = (struct hisi_sgl *)((uintptr_t)sgl + iova_align - iova);
+	} else {
+		sgl_align = (struct hisi_sgl *)ADDR_ALIGN_64(sgl);
+	}
 	sgl_align->entry_sum_in_chain = sge_num;
 	sgl_align->entry_sum_in_sgl = 0;
 	sgl_align->entry_length_in_sgl = sge_num;
 	sgl_align->next_dma = 0;
+	sgl_align->next = 0;
 
 	return sgl_align;
 }
@@ -665,18 +694,27 @@ static void hisi_qm_free_sglpool(struct hisi_sgl_pool *pool)
 	__u32 i;
 
 	if (pool->sgl) {
-		for (i = 0; i < pool->sgl_num; i++)
-			free(pool->sgl[i]);
+		if (pool->mm_ops && !pool->mm_ops->sva_mode) {
+			for (i = 0; i < pool->sgl_num; i++)
+				pool->mm_ops->free(pool->mm_ops->usr, pool->sgl[i]);
+		} else {
+			for (i = 0; i < pool->sgl_num; i++)
+				free(pool->sgl[i]);
+		}
 
 		free(pool->sgl);
 	}
 
 	if (pool->sgl_align)
 		free(pool->sgl_align);
+
+	if (pool->mm_ops)
+		free(pool->mm_ops);
+
 	free(pool);
 }
 
-handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
+handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num, struct wd_mm_ops *mm_ops)
 {
 	struct hisi_sgl_pool *sgl_pool;
 	int ret;
@@ -694,6 +732,16 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 		return 0;
 	}
 
+	if (mm_ops && !mm_ops->sva_mode && mm_ops->alloc && mm_ops->free &&
+	    mm_ops->iova_map && mm_ops->usr) {
+		sgl_pool->mm_ops = malloc(sizeof(struct wd_mm_ops));
+		if (!sgl_pool->mm_ops) {
+			WD_ERR("failed to alloc memory for sglpool mm_ops!\n");
+			goto err_out;
+		}
+		memcpy(sgl_pool->mm_ops, mm_ops, sizeof(struct wd_mm_ops));
+	}
+
 	sgl_pool->sgl = calloc(sgl_num, sizeof(void *));
 	if (!sgl_pool->sgl) {
 		WD_ERR("failed to alloc memory for sgl!\n");
@@ -708,14 +756,14 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
-		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
+		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num, sgl_pool->mm_ops);
 		if (!sgl_pool->sgl[i]) {
 			sgl_pool->sgl_num = i;
 			goto err_out;
 		}
 
 		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i],
-							   sge_num);
+							   sge_num, sgl_pool->mm_ops);
 	}
 
 	sgl_pool->sgl_num = sgl_num;
@@ -756,8 +804,8 @@ static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
 	pthread_spin_lock(&pool->lock);
 
 	if (pool->top == 0) {
-		WD_ERR("invalid: the sgl pool is empty!\n");
 		pthread_spin_unlock(&pool->lock);
+		WD_ERR("invalid: the sgl pool is empty!\n");
 		return NULL;
 	}
 
@@ -771,12 +819,13 @@ static int hisi_qm_sgl_push(struct hisi_sgl_pool *pool, struct hisi_sgl *hw_sgl)
 {
 	pthread_spin_lock(&pool->lock);
 	if (pool->top >= pool->depth) {
-		WD_ERR("invalid: the sgl pool is full!\n");
 		pthread_spin_unlock(&pool->lock);
+		WD_ERR("invalid: the sgl pool is full!\n");
 		return -WD_EINVAL;
 	}
 
 	hw_sgl->next_dma = 0;
+	hw_sgl->next = 0;
 	hw_sgl->entry_sum_in_sgl = 0;
 	hw_sgl->entry_sum_in_chain = pool->sge_num;
 	hw_sgl->entry_length_in_sgl = pool->sge_num;
@@ -800,7 +849,7 @@ void hisi_qm_put_hw_sgl(handle_t sgl_pool, void *hw_sgl)
 		return;
 
 	while (cur) {
-		next = (struct hisi_sgl *)cur->next_dma;
+		next = (struct hisi_sgl *)cur->next;
 		ret = hisi_qm_sgl_push(pool, cur);
 		if (ret)
 			break;
@@ -832,7 +881,7 @@ static void hisi_qm_dump_sgl(void *sgl)
 			WD_DEBUG("[sgl-%d]->sge_entries[%d].len: %u\n", k, i,
 			       tmp->sge_entries[i].len);
 
-		tmp = (struct hisi_sgl *)tmp->next_dma;
+		tmp = (struct hisi_sgl *)tmp->next;
 		k++;
 
 		if (!tmp) {
@@ -847,6 +896,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool *)sgl_pool;
 	struct wd_datalist *tmp = sgl;
 	struct hisi_sgl *head, *next, *cur;
+	struct wd_mm_ops *mm_ops;
 	__u32 i = 0;
 
 	if (!pool || !sgl) {
@@ -854,6 +904,12 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 		return NULL;
 	}
 
+	if (pool->mm_ops && !pool->mm_ops->iova_map) {
+		WD_ERR("invalid: mm_ops iova_map function is NULL!\n");
+		return NULL;
+	}
+
+	mm_ops = pool->mm_ops;
 	head = hisi_qm_sgl_pop(pool);
 	if (!head)
 		return NULL;
@@ -872,7 +928,18 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 			goto err_out;
 		}
 
-		cur->sge_entries[i].buff = (uintptr_t)tmp->data;
+		if (mm_ops)
+			cur->sge_entries[i].buff = (uintptr_t)mm_ops->iova_map(mm_ops->usr,
+									       tmp->data, tmp->len);
+		else
+			cur->sge_entries[i].buff = (uintptr_t)tmp->data;
+
+		if (!cur->sge_entries[i].buff) {
+			WD_ERR("invalid: the iova map addr of sge is NULL!\n");
+			goto err_out;
+		}
+
+		cur->sge_entries[i].vbuff = (uintptr_t)tmp->data;
 		cur->sge_entries[i].len = tmp->len;
 		cur->entry_sum_in_sgl++;
 		cur->entry_size_in_sgl += tmp->len;
@@ -890,7 +957,12 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 				WD_ERR("invalid: the sgl pool is not enough!\n");
 				goto err_out;
 			}
-			cur->next_dma = (uintptr_t)next;
+			if (mm_ops)
+				cur->next_dma = (uintptr_t)mm_ops->iova_map(mm_ops->usr,
+									    next, sizeof(*next));
+			else
+				cur->next_dma = (uintptr_t)next;
+			cur->next = next;
 			cur = next;
 			head->entry_sum_in_chain += pool->sge_num;
 			/* In the new sgl chain, the subscript must be reset */
@@ -912,9 +984,18 @@ err_out:
 	return NULL;
 }
 
-handle_t hisi_qm_get_sglpool(handle_t h_qp)
+handle_t hisi_qm_get_sglpool(handle_t h_qp, struct wd_mm_ops *mm_ops)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+
+	if (mm_ops && !mm_ops->sva_mode) {
+		pthread_spin_lock(&qp->q_info.sgl_lock);
+		if (!qp->h_nosva_sgl_pool)
+			qp->h_nosva_sgl_pool = hisi_qm_create_sglpool(HISI_SGL_NUM_IN_BD,
+								      HISI_SGE_NUM_IN_SGL, mm_ops);
+		pthread_spin_unlock(&qp->q_info.sgl_lock);
+		return qp->h_nosva_sgl_pool;
+	}
 
 	return qp->h_sgl_pool;
 }
@@ -927,7 +1008,7 @@ static void hisi_qm_sgl_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
 	__u32 offset;
 	void *src;
 
-	src = (void *)tmp->sge_entries[begin_sge].buff + sge_offset;
+	src = (void *)tmp->sge_entries[begin_sge].vbuff + sge_offset;
 	offset = tmp->sge_entries[begin_sge].len - sge_offset;
 	/* the first one is enough for copy size, copy and return */
 	if (offset >= size) {
@@ -939,7 +1020,7 @@ static void hisi_qm_sgl_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
 
 	while (tmp) {
 		for (; i < tmp->entry_sum_in_sgl; i++) {
-			src = (void *)tmp->sge_entries[i].buff;
+			src = (void *)tmp->sge_entries[i].vbuff;
 			if (offset + tmp->sge_entries[i].len >= size) {
 				memcpy(pbuff + offset, src, size - offset);
 				return;
@@ -949,7 +1030,7 @@ static void hisi_qm_sgl_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
 			offset += tmp->sge_entries[i].len;
 		}
 
-		tmp = (struct hisi_sgl *)tmp->next_dma;
+		tmp = (struct hisi_sgl *)tmp->next;
 		i = 0;
 	}
 }
@@ -964,14 +1045,14 @@ static void hisi_qm_pbuff_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
 	void *dst;
 
 	if (tmp->sge_entries[begin_sge].len - sge_offset >= size) {
-		dst = (void *)tmp->sge_entries[begin_sge].buff + sge_offset;
+		dst = (void *)tmp->sge_entries[begin_sge].vbuff + sge_offset;
 		memcpy(dst, pbuff, size);
 		return;
 	}
 
 	while (tmp) {
 		for (; i < tmp->entry_sum_in_sgl; i++) {
-			dst = (void *)tmp->sge_entries[i].buff;
+			dst = (void *)tmp->sge_entries[i].vbuff;
 			if (offset + tmp->sge_entries[i].len >= size) {
 				memcpy(dst, pbuff + offset, size - offset);
 				return;
@@ -981,7 +1062,7 @@ static void hisi_qm_pbuff_copy_inner(void *pbuff, struct hisi_sgl *hw_sgl,
 			offset += tmp->sge_entries[i].len;
 		}
 
-		tmp = (struct hisi_sgl *)tmp->next_dma;
+		tmp = (struct hisi_sgl *)tmp->next;
 		i = 0;
 	}
 }
@@ -1000,7 +1081,7 @@ void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset, __u32 size,
 	while (len + tmp->entry_size_in_sgl <= offset) {
 		len += tmp->entry_size_in_sgl;
 
-		tmp = (struct hisi_sgl *)tmp->next_dma;
+		tmp = (struct hisi_sgl *)tmp->next;
 		if (!tmp)
 			return;
 	}

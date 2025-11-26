@@ -67,6 +67,8 @@ struct wd_rsa_sess {
 	struct wd_rsa_prikey *prikey;
 	struct wd_rsa_sess_setup setup;
 	void *sched_key;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 static struct wd_rsa_setting {
@@ -166,6 +168,7 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		return ret;
 
+	wd_rsa_setting.config.alg_name = "rsa";
 	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
 	if (ret < 0)
 		return ret;
@@ -372,6 +375,8 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 	memcpy(&msg->req, req, sizeof(*req));
 	msg->key_bytes = sess->key_size;
 	msg->result = WD_EINVAL;
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
 
 	switch (msg->req.op_type) {
 	case WD_RSA_SIGN:
@@ -640,7 +645,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 	}
 
 	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
-	kg_in = malloc(kg_in_size + sizeof(*kg_in));
+	kg_in = c->mm_ops.alloc(c->mm_ops.usr, kg_in_size + sizeof(*kg_in));
 	if (!kg_in) {
 		WD_ERR("failed to malloc kg_in memory!\n");
 		return NULL;
@@ -680,19 +685,16 @@ void wd_rsa_get_kg_in_params(struct wd_rsa_kg_in *kin, struct wd_dtb *e,
 	p->data = (void *)kin->p;
 }
 
-static void del_kg(void *k)
+void wd_rsa_del_kg_in(handle_t sess, struct wd_rsa_kg_in *ki)
 {
-	if (!k) {
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
+
+	if (!c || !ki) {
 		WD_ERR("invalid: del key generate params err!\n");
 		return;
 	}
 
-	free(k);
-}
-
-void wd_rsa_del_kg_in(handle_t sess, struct wd_rsa_kg_in *ki)
-{
-	del_kg(ki);
+	c->mm_ops.free(c->mm_ops.usr, ki);
 }
 
 struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
@@ -718,7 +720,7 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	else
 		kg_out_size = (int)GEN_PARAMS_SZ(c->key_size);
 
-	kg_out = malloc(kg_out_size + sizeof(*kg_out));
+	kg_out = c->mm_ops.alloc(c->mm_ops.usr, kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
 		WD_ERR("failed to malloc kg_out memory!\n");
 		return NULL;
@@ -740,13 +742,15 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 
 void wd_rsa_del_kg_out(handle_t sess, struct wd_rsa_kg_out *kout)
 {
-	if (!kout) {
+	struct wd_rsa_sess *c = (struct wd_rsa_sess *)sess;
+
+	if (!c || !kout) {
 		WD_ERR("invalid: param null at del kg out!\n");
 		return;
 	}
 
 	wd_memset_zero(kout->data, kout->size);
-	del_kg(kout);
+	c->mm_ops.free(c->mm_ops.usr, kout);
 }
 
 void wd_rsa_get_kg_out_params(struct wd_rsa_kg_out *kout, struct wd_dtb *d,
@@ -803,6 +807,11 @@ void wd_rsa_set_kg_out_crt_psz(struct wd_rsa_kg_out *kout,
 			       size_t dq_sz,
 			       size_t dp_sz)
 {
+	if (!kout) {
+		WD_ERR("invalid: input null when set kg out crt psz!\n");
+		return;
+	}
+
 	kout->qinvbytes = qinv_sz;
 	kout->dqbytes = dq_sz;
 	kout->dpbytes = dp_sz;
@@ -812,6 +821,11 @@ void wd_rsa_set_kg_out_psz(struct wd_rsa_kg_out *kout,
 			   size_t d_sz,
 			   size_t n_sz)
 {
+	if (!kout) {
+		WD_ERR("invalid: input null when set kg out psz!\n");
+		return;
+	}
+
 	kout->dbytes = d_sz;
 	kout->nbytes = n_sz;
 }
@@ -861,7 +875,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 	if (setup->is_crt) {
 		len = sizeof(struct wd_rsa_prikey) +
 			(int)CRT_PARAMS_SZ(sess->key_size);
-		sess->prikey = malloc(len);
+		sess->prikey = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 		if (!sess->prikey) {
 			WD_ERR("failed to alloc sess prikey2!\n");
 			return -WD_ENOMEM;
@@ -872,7 +886,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 	} else {
 		len = sizeof(struct wd_rsa_prikey) +
 			(int)GEN_PARAMS_SZ(sess->key_size);
-		sess->prikey = malloc(len);
+		sess->prikey = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 		if (!sess->prikey) {
 			WD_ERR("failed to alloc sess prikey1!\n");
 			return -WD_ENOMEM;
@@ -884,7 +898,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 
 	len = sizeof(struct wd_rsa_pubkey) +
 		(int)GEN_PARAMS_SZ(sess->key_size);
-	sess->pubkey = malloc(len);
+	sess->pubkey = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!sess->pubkey) {
 		free(sess->prikey);
 		WD_ERR("failed to alloc sess pubkey!\n");
@@ -911,8 +925,8 @@ static void del_sess_key(struct wd_rsa_sess *sess)
 		wd_memset_zero(prk->pkey.pkey2.data, CRT_PARAMS_SZ(sess->key_size));
 	else
 		wd_memset_zero(prk->pkey.pkey1.data, GEN_PARAMS_SZ(sess->key_size));
-	free(sess->prikey);
-	free(sess->pubkey);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->prikey);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->pubkey);
 }
 
 static void del_sess(struct wd_rsa_sess *c)
@@ -947,6 +961,15 @@ handle_t wd_rsa_alloc_sess(struct wd_rsa_sess_setup *setup)
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
 
+	/* Memory type set */
+	ret = wd_mem_ops_init(wd_rsa_setting.config.ctxs[0].ctx, &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		goto sess_err;
+	}
+
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
 	ret = create_sess_key(setup, sess);
 	if (ret) {
 		WD_ERR("failed to create rsa sess keys!\n");

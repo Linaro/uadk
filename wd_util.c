@@ -13,6 +13,8 @@
 #include <ctype.h>
 #include "wd_sched.h"
 #include "wd_util.h"
+#include "wd_alg.h"
+#include "wd_bmm.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
 #define WD_ASYNC_DEF_QUEUE_DEPTH	1024
@@ -33,6 +35,7 @@
 #define WD_SOFT_ASYNC_CTX		1
 
 #define WD_DRV_LIB_DIR			"uadk"
+#define WD_DRV_CONF_FILE		"uadk.cnf"
 
 #define WD_PATH_DIR_NUM			2
 
@@ -98,11 +101,6 @@ struct drv_lib_list {
 struct acc_alg_item {
 	const char *name;
 	const char *algtype;
-};
-
-struct wd_ce_ctx {
-	char *drv_name;
-	void *priv;
 };
 
 static struct acc_alg_item alg_options[] = {
@@ -171,6 +169,118 @@ static struct acc_alg_item alg_options[] = {
 	{"xcbc-prf-128(aes)", "digest"},
 	{"", ""}
 };
+
+static void *wd_internal_alloc(void *usr, size_t size)
+{
+	if (size != 0)
+		return malloc(size);
+	else
+		return NULL;
+}
+
+static void wd_internal_free(void *usr, void *va)
+{
+	if (va != NULL)
+		free(va);
+}
+
+static __u32 wd_mem_bufsize(void *usr)
+{
+	/* Malloc memory min size is 1 Byte */
+	return 1;
+}
+
+int wd_mem_ops_init(handle_t h_ctx, struct wd_mm_ops *mm_ops, int mem_type)
+{
+	int ret;
+
+	ret = wd_is_sva(h_ctx);
+	if (ret == UACCE_DEV_SVA || ret == -WD_HW_EACCESS) {
+		/*
+		 * In software queue scenario, all memory is handled as virtual memory
+		 * and processed in the same way as SVA mode
+		 */
+		mm_ops->sva_mode = true;
+	} else if (!ret) {
+		mm_ops->sva_mode = false;
+	} else {
+		WD_ERR("failed to check ctx!\n");
+		return ret;
+	}
+
+	/*
+	 * Under SVA mode, there is no need to consider the memory type;
+	 * directly proceed with virtual memory handling
+	 */
+	if (mm_ops->sva_mode) {
+		mm_ops->alloc = (void *)wd_internal_alloc;
+		mm_ops->free = (void *)wd_internal_free;
+		mm_ops->iova_map = NULL;
+		mm_ops->iova_unmap = NULL;
+		mm_ops->get_bufsize = (void *)wd_mem_bufsize;
+		mm_ops->usr = NULL;
+		return 0;
+	}
+
+	switch (mem_type) {
+	case UADK_MEM_AUTO:
+		/*
+		 * The memory pool needs to be allocated according to
+		 * the block size when it is first executed in the UADK
+		 */
+		mm_ops->usr = NULL;
+		WD_ERR("automatic under No-SVA mode is not supported!\n");
+		return -WD_EINVAL;
+	case UADK_MEM_USER:
+		if (!mm_ops->alloc || !mm_ops->free || !mm_ops->iova_map ||
+		    !mm_ops->iova_unmap || !mm_ops->usr) { // The user create a memory pool
+			WD_ERR("failed to check memory ops, some ops function is NULL!\n");
+			return -WD_EINVAL;
+		}
+		break;
+	case UADK_MEM_PROXY:
+		if (!mm_ops->usr) {
+			WD_ERR("failed to check memory pool!\n");
+			return -WD_EINVAL;
+		}
+		mm_ops->alloc = (void *)wd_mem_alloc;
+		mm_ops->free = (void *)wd_mem_free;
+		mm_ops->iova_map = (void *)wd_mem_map;
+		mm_ops->iova_unmap = (void *)wd_mem_unmap;
+		mm_ops->get_bufsize = (void *)wd_get_bufsize;
+		break;
+	default:
+		WD_ERR("failed to check memory type!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+static int wd_parse_dev_id(handle_t h_ctx)
+{
+	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+	char *dev_path = ctx->dev_path;
+	char *last_str = NULL;
+	char *endptr;
+	int dev_id;
+
+	if (!dev_path)
+		return -WD_EINVAL;
+
+	/* Find the last '-' in the string. */
+	last_str = strrchr(dev_path, '-');
+	if (!last_str || *(last_str + 1) == '\0')
+		return -WD_EINVAL;
+
+	/* Parse the following number */
+	dev_id = strtol(last_str + 1, &endptr, DECIMAL_NUMBER);
+	/* Check whether it is truly all digits */
+	if (*endptr != '\0' || dev_id < 0)
+		return -WD_EINVAL;
+
+	return dev_id;
+}
 
 static void clone_ctx_to_internal(struct wd_ctx *ctx,
 				  struct wd_ctx_internal *ctx_in)
@@ -257,6 +367,12 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 			WD_ERR("failed to init ctxs lock!\n");
 			goto err_out;
 		}
+
+		ret = wd_insert_ctx_list(cfg->ctxs[i].ctx, in->alg_name);
+		if (ret) {
+			WD_ERR("failed to add ctx to mem list!\n");
+			goto err_out;
+		}
 	}
 
 	in->ctxs = ctxs;
@@ -318,6 +434,7 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 		in->ctxs = NULL;
 	}
 
+	wd_remove_ctx_list();
 	wd_shm_delete(in);
 }
 
@@ -1893,11 +2010,6 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 		return -WD_EINVAL;
 	}
 
-	if (!wd_is_sva(config->ctxs[0].ctx)) {
-		WD_ERR("invalid: the mode is non sva, please check system!\n");
-		return -WD_EINVAL;
-	}
-
 	return 0;
 }
 
@@ -2168,11 +2280,64 @@ static void dladdr_empty(void)
 {
 }
 
+static int line_check_valid(char *line)
+{
+	line[strcspn(line, "\n")] = 0;
+	if (line[0] == '\0' || line[0] == '#')
+		return 0;
+
+	if (!strstr(line, ".so"))
+		return 0;
+
+	return 1;
+}
+
+static int check_uadk_config_file(const char *wd_dir, const char *lib_file)
+{
+	char *path_buf, *uadk_cnf_path, *line;
+	int ret = -WD_EINVAL;
+	FILE *fp;
+
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to alloc memery for path_buf.\n");
+		return -WD_ENOMEM;
+	}
+
+	uadk_cnf_path = path_buf;
+	line = path_buf + PATH_MAX;
+
+	snprintf(uadk_cnf_path, PATH_MAX, "%s/%s/%s", wd_dir, WD_DRV_LIB_DIR,
+		 WD_DRV_CONF_FILE);
+	fp = fopen(uadk_cnf_path, "r");
+	if (!fp) {
+		ret = 0;
+		goto free_buf;
+	}
+
+	while (fgets(line, PATH_MAX, fp)) {
+		if (!line_check_valid(line))
+			continue;
+
+		if (strstr(line, lib_file)) {
+			ret = 0;
+			goto close_fp;
+		}
+	}
+
+close_fp:
+	fclose(fp);
+free_buf:
+	free(path_buf);
+	return ret;
+}
+
 int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 {
 	char *path_buf, *path, *file_path;
 	Dl_info file_info;
 	int len, rc, i;
+	int ret = 0;
 
 	/* Get libwd.so file's system path */
 	rc = dladdr(dladdr_empty, &file_info);
@@ -2181,7 +2346,7 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 		return -WD_EINVAL;
 	}
 
-	path_buf = calloc(WD_PATH_DIR_NUM, sizeof(char) * PATH_MAX);
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
 	if (!path_buf) {
 		WD_ERR("fail to calloc path_buf.\n");
 		return -WD_ENOMEM;
@@ -2201,28 +2366,32 @@ int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 
 	if (is_dir) {
 		len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, WD_DRV_LIB_DIR);
-		if (len >= PATH_MAX)
-			goto free_path;
 	} else {
-		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s", file_path, WD_DRV_LIB_DIR, lib_file);
-		if (len >= PATH_MAX)
+		/* Confirm whether the corresponding file exists in uadk.cnf */
+		ret = check_uadk_config_file(file_path, lib_file);
+		if (ret)
 			goto free_path;
+
+		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s",
+			       file_path, WD_DRV_LIB_DIR, lib_file);
 	}
 
-	if (realpath(lib_path, path) == NULL) {
-		WD_ERR("invalid: %s: no such file or directory!\n", path);
+	if (len >= PATH_MAX) {
+		ret = -WD_EINVAL;
 		goto free_path;
 	}
-	free(path_buf);
 
-	return 0;
+	if (!realpath(lib_path, path)) {
+		WD_ERR("invalid: %s: no such file or directory!\n", path);
+		ret = -WD_EINVAL;
+	}
 
 free_path:
 	free(path_buf);
-	return -WD_EINVAL;
+	return ret;
 }
 
-/**
+/*
  * There are many other .so files in this file directory (/root/lib/),
  * and it is necessary to screen out valid uadk driver files
  * through this function.
@@ -2250,35 +2419,92 @@ static int file_check_valid(const char *lib_file)
 	return 0;
 }
 
-void *wd_dlopen_drv(const char *cust_lib_dir)
+static void create_lib_to_list(const char *lib_path, struct drv_lib_list **head)
 {
 	typedef int (*alg_ops)(struct wd_alg_driver *drv);
-	struct drv_lib_list *node, *head = NULL;
-	char lib_dir_path[PATH_MAX] = {0};
-	char lib_path[PATH_MAX] = {0};
-	struct dirent *lib_dir;
-	alg_ops dl_func = NULL;
-	DIR *wd_dir;
+	struct drv_lib_list *node;
+	alg_ops dl_func;
+
+	node = calloc(1, sizeof(*node));
+	if (!node)
+		return;
+
+	node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
+	if (!node->dlhandle) {
+		WD_ERR("failed to open lib file: %s, skipped\n", lib_path);
+		free(node);
+		return;
+	}
+
+	dl_func = dlsym(node->dlhandle, "wd_alg_driver_register");
+	if (!dl_func) {
+		WD_ERR("dlsym failed for %s: %s\n", lib_path, dlerror());
+		dlclose(node->dlhandle);
+		free(node);
+		return;
+	}
+
+	if (!*head) {
+		*head = node;
+		return;
+	}
+	add_lib_to_list(*head, node);
+}
+
+static struct drv_lib_list *load_libraries_from_config(const char *config_path,
+						       const char *lib_dir_path)
+{
+	char *path_buf, *lib_path, *line;
+	struct drv_lib_list *head = NULL;
+	FILE *config_file;
 	int ret;
 
-	if (!cust_lib_dir) {
-		ret = wd_get_lib_file_path(NULL, lib_dir_path, true);
-		if (ret)
-			return NULL;
-	} else {
-		if (realpath(cust_lib_dir, lib_path) == NULL) {
-			WD_ERR("invalid: %s: no such file or directory!\n", lib_path);
-			return NULL;
-		}
-		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
-		lib_dir_path[PATH_MAX - 1] = '\0';
-	}
-
-	wd_dir = opendir(lib_dir_path);
-	if (!wd_dir) {
-		WD_ERR("UADK driver lib dir: %s not exist!\n", lib_dir_path);
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to alloc memery for path_buf.\n");
 		return NULL;
 	}
+	lib_path = path_buf;
+	line = path_buf + PATH_MAX;
+
+	config_file = fopen(config_path, "r");
+	if (!config_file) {
+		WD_ERR("Failed to open config file: %s\n", config_path);
+		free(path_buf);
+		return NULL;
+	}
+
+	/* Read config file line by line */
+	while (fgets(line, PATH_MAX, config_file)) {
+		if (!line_check_valid(line))
+			continue;
+
+		ret = snprintf(lib_path, PATH_MAX, "%s/%s", lib_dir_path, line);
+		if (ret < 0)
+			break;
+
+		create_lib_to_list(lib_path, &head);
+	}
+
+	free(path_buf);
+	fclose(config_file);
+	return head;
+}
+
+static struct drv_lib_list *load_all_libraries(DIR *wd_dir, const char *lib_dir_path)
+{
+	struct drv_lib_list *head = NULL;
+	struct dirent *lib_dir;
+	char *lib_path;
+	int ret;
+
+	lib_path = calloc(1, PATH_MAX);
+	if (!lib_path) {
+		WD_ERR("fail to alloc memery for lib_path.\n");
+		return NULL;
+	}
+
+	rewinddir(wd_dir); /* Ensure we're at the start of the directory */
 
 	while ((lib_dir = readdir(wd_dir)) != NULL) {
 		if (!strncmp(lib_dir->d_name, ".", LINUX_CRTDIR_SIZE) ||
@@ -2289,43 +2515,74 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (ret)
 			continue;
 
-		node = calloc(1, sizeof(*node));
-		if (!node)
-			goto free_list;
-
 		ret = snprintf(lib_path, PATH_MAX, "%s/%s", lib_dir_path, lib_dir->d_name);
 		if (ret < 0)
-			goto free_node;
+			break;
 
-		node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
-		if (!node->dlhandle) {
-			free(node);
-			/* there are many other files need to skip */
-			continue;
-		}
-
-		dl_func = dlsym(node->dlhandle, "wd_alg_driver_register");
-		if (dl_func == NULL) {
-			dlclose(node->dlhandle);
-			free(node);
-			continue;
-		}
-
-		if (!head)
-			head = node;
-		else
-			add_lib_to_list(head, node);
+		create_lib_to_list(lib_path, &head);
 	}
-	closedir(wd_dir);
 
+	free(lib_path);
+	return head;
+}
+
+void *wd_dlopen_drv(const char *cust_lib_dir)
+{
+	char *path_buf, *lib_dir_path, *config_path, *lib_path;
+	struct drv_lib_list *head = NULL;
+	int ret, len;
+	DIR *wd_dir;
+
+	path_buf = calloc(WD_PATH_DIR_NUM + 1, PATH_MAX);
+	if (!path_buf) {
+		WD_ERR("fail to alloc memory for path buffers.\n");
+		return NULL;
+	}
+
+	lib_dir_path = path_buf;
+	config_path = path_buf + PATH_MAX;
+	lib_path = config_path + PATH_MAX;
+
+	if (!cust_lib_dir) {
+		ret = wd_get_lib_file_path(NULL, lib_dir_path, true);
+		if (ret)
+			goto free_path;
+	} else {
+		if (!realpath(cust_lib_dir, lib_path)) {
+			WD_ERR("invalid: %s: no such file or directory!\n", lib_path);
+			goto free_path;
+		}
+
+		len = snprintf(lib_dir_path, PATH_MAX, "%s", cust_lib_dir);
+		if (len < 0 || len >= PATH_MAX)
+			goto free_path;
+
+		lib_dir_path[PATH_MAX - 1] = '\0';
+	}
+
+	wd_dir = opendir(lib_dir_path);
+	if (!wd_dir) {
+		WD_ERR("UADK driver lib dir: %s not exist!\n", lib_dir_path);
+		goto free_path;
+	}
+
+	len = snprintf(config_path, PATH_MAX, "%s/%s", lib_dir_path, WD_DRV_CONF_FILE);
+	if (len < 0 || len >= PATH_MAX)
+		goto close_dir;
+
+	ret = access(config_path, F_OK);
+	if (!ret)
+		/* Load specified libraries from config file */
+		head = load_libraries_from_config(config_path, lib_dir_path);
+	else
+		/* Load all valid .so files */
+		head = load_all_libraries(wd_dir, lib_dir_path);
+
+close_dir:
+	closedir(wd_dir);
+free_path:
+	free(path_buf);
 	return (void *)head;
-
-free_node:
-	free(node);
-free_list:
-	closedir(wd_dir);
-	wd_dlclose_drv(head);
-	return NULL;
 }
 
 struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name)
@@ -2485,7 +2742,7 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 
 	/* If the ctx set number is 0, the initialization is skipped. */
 	if (!ctx_set_num)
-		return 0;
+		return -WD_ENOPROC;
 
 	dev = wd_find_dev_by_numa(list, numa_id);
 	if (WD_IS_ERR(dev))
@@ -2533,15 +2790,21 @@ static void wd_release_ctx_set(struct wd_ctx_config *ctx_config)
 		}
 }
 
-static int wd_instance_sched_set(struct wd_sched *sched, struct wd_ctx_nums ctx_nums,
+static int wd_instance_sched_set(struct wd_init_attrs *attrs, struct wd_ctx_nums ctx_nums,
 				 int idx, int numa_id, int op_type)
 {
+	struct wd_sched *sched = attrs->sched;
 	struct sched_params sparams;
-	int i, end, ret = 0;
+	int i, end, dev_id, ret = 0;
+
+	dev_id = wd_parse_dev_id(attrs->ctx_config->ctxs[idx].ctx);
+	if (dev_id < 0)
+		return -WD_EINVAL;
 
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		sparams.numa_id = numa_id;
 		sparams.type = op_type;
+		sparams.dev_id = dev_id;
 		sparams.mode = i;
 		sparams.begin = idx + ctx_nums.sync_ctx_num * i;
 		end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
@@ -2573,9 +2836,11 @@ static int wd_init_ctx_and_sched(struct wd_init_attrs *attrs, struct bitmask *bm
 		for (j = 0; j < op_type_num; j++) {
 			ctx_nums = ctx_params->ctx_set_num[j];
 			ret = wd_init_ctx_set(attrs, list, idx, i, j);
-			if (ret)
+			if (ret == -WD_ENOPROC)
+				continue;
+			else if (ret)
 				goto free_ctxs;
-			ret = wd_instance_sched_set(attrs->sched, ctx_nums, idx, i, j);
+			ret = wd_instance_sched_set(attrs, ctx_nums, idx, i, j);
 			if (ret)
 				goto free_ctxs;
 			idx += (ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num);
@@ -2843,7 +3108,11 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 		attrs->ctx_config = ctx_config;
 
-		alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+		if (sched_type == SCHED_POLICY_DEV)
+			alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+						  DEVICE_REGION_MAX, alg_poll_func);
+		else
+			alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
 						  numa_max_node() + 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to instance scheduler\n");
