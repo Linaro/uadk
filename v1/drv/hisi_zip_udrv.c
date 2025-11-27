@@ -49,6 +49,7 @@
 #define HW_UNCOMP_DIF_CHECK_ERR		0x12
 
 #define HW_DECOMP_NO_SPACE		0x01
+#define HW_DECOMPING_NO_SPACE		0x02
 #define HW_DECOMP_BLK_NOSTART		0x03
 #define HW_DECOMP_NO_CRC		0x04
 #define ZIP_DIF_LEN			8
@@ -58,6 +59,7 @@
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
 #define REPCODE_SIZE			12
+#define SEQ_LIT_LEN_SIZE		4
 #define OVERFLOW_DATA_SIZE		8
 
 /* Error status 0xe indicates that dest_avail_out insufficient */
@@ -387,6 +389,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
+	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
@@ -436,6 +439,9 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		info->sqe_parse_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	return 1;
 }
@@ -687,9 +693,18 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
 		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
 		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
-		if (format->blk_type != COMP_BLK)
-			memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
-			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+		if (msg->alg_type == WCRYPTO_LZ77_ZSTD) {
+			if (format->blk_type != COMP_BLK)
+				memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+			else
+				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+
+			/* The literal length info of each bd needs to be cleared.  */
+			memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
+			       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
+		}
 	}
 
 	sqe->isize = msg->isize;
@@ -820,13 +835,10 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 			       OVERFLOW_DATA_SIZE;
 	}
 
-	if (ctx_buf) {
-		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+	if (ctx_buf)
 		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
 		       ctx_buf + CTX_BUFFER_OFFSET + CTX_HW_REPCODE_OFFSET,
 		       REPCODE_SIZE);
-	}
 }
 
 int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
@@ -834,6 +846,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe_v3 *sqe = hw_msg;
+	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
 	__u32 ctx_win_len = sqe->ctx_dw2 & CTX_WIN_LEN_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
@@ -893,6 +906,9 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	}
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	/*
 	 * It need to analysis the data cache by hardware.
