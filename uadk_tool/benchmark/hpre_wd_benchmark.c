@@ -1613,11 +1613,22 @@ static int get_ecc_param_from_sample(struct hpre_ecc_setup *setup,
 			setup->sign_size = sizeof(sm2_sign_data);
 
 		} else {
-			setup->priv_key = ecdh_da_secp256k1;
+			/*
+			 * x25519 and ecdh-256 can share same 32-bytes private key of
+			 * ecdh_da_secp256k1, while x448 should use 56-byte private key
+			 * to get accurate performance.
+			 */
+			if (subtype == X448_TYPE)
+				setup->priv_key = x448_da;
+			else
+				setup->priv_key = ecdh_da_secp256k1;
 			setup->except_pub_key = ecdh_except_b_pubkey_secp256k1;
 			setup->pub_key = ecdh_cp_pubkey_secp256k1;
 			setup->share_key = ecdh_cp_sharekey_secp256k1;
-			setup->priv_key_size = sizeof(ecdh_da_secp256k1);
+			if (subtype == X448_TYPE)
+				setup->priv_key_size = sizeof(x448_da);
+			else
+				setup->priv_key_size = sizeof(ecdh_da_secp256k1);
 			setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp256k1);
 			setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp256k1);
 			setup->share_key_size = sizeof(ecdh_cp_sharekey_secp256k1);
