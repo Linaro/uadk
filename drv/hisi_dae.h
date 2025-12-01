@@ -108,7 +108,7 @@ struct dae_sqe {
 	__u32 resv3 : 9;
 	__u32 bd_invlid : 1;
 	__u16 table_row_size;
-	__u16 resv4;
+	__u16 batch_row_size;
 	__u32 batch_num;
 	__u32 low_tag;
 	__u32 hi_tag;
@@ -122,12 +122,11 @@ struct dae_sqe {
 	__u32 sva_prefetch_en : 1;
 	__u32 counta_vld : 1;
 	__u32 index_num : 5;
-	__u32 resv5 : 8;
-	__u32 index_batch_type : 1;
-	__u32 resv6 : 1;
+	__u32 resv4 : 8;
+	__u32 index_batch_type : 2;
 	__u8 key_data_type[16];
 	__u8 agg_data_type[16];
-	__u32 resv9[6];
+	__u32 resv5[6];
 	__u64 addr_ext;
 	__u16 key_col_bitmap;
 	__u16 has_empty;
@@ -141,7 +140,7 @@ struct dae_sqe {
 	__u32 out_raw_num;
 	__u32 data_row_offset;
 	__u16 sum_overflow_cols;
-	__u16 resv10;
+	__u16 resv6;
 };
 
 struct dae_ext_sqe {

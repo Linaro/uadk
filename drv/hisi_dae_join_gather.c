@@ -43,6 +43,17 @@ enum dae_gather_stage {
 	DAE_GATHER_COMPLETE = 0x7,
 };
 
+enum dae_join_index_type {
+	DAE_JOIN_BATCH_ADDR_INDEX = 0x1,
+	DAE_JOIN_BATCH_NUM_INDEX = 0x2,
+	DAE_JOIN_BATCH_ALL_INDEX = 0x3,
+};
+
+enum dae_gather_index_type {
+	DAE_GATHER_BATCH_NUM_INDEX = 0x0,
+	DAE_GATHER_BATCH_ADDR_INDEX = 0x1,
+};
+
 enum dae_task_type {
 	DAE_HASH_JOIN = 0x1,
 	DAE_GATHER = 0x2,
@@ -106,7 +117,10 @@ static void fill_join_gather_misc_field(struct wd_join_gather_msg *msg,
 		sqe->index_num = cols_data->index_num;
 		sqe->key_out_en = msg->key_out_en;
 		sqe->break_point_en = sqe->init_row_num ? true : false;
-		sqe->index_batch_type = msg->index_type;
+		if (msg->index_type == WD_BATCH_ADDR_INDEX)
+			sqe->index_batch_type = DAE_JOIN_BATCH_ALL_INDEX;
+		else
+			sqe->index_batch_type = DAE_JOIN_BATCH_NUM_INDEX;
 		break;
 	case WD_JOIN_REHASH:
 		sqe->task_type = DAE_HASH_JOIN;
@@ -123,8 +137,11 @@ static void fill_join_gather_misc_field(struct wd_join_gather_msg *msg,
 		sqe->task_type = DAE_GATHER;
 		sqe->task_type_ext = DAE_GATHER_COMPLETE;
 		sqe->multi_batch_en = msg->multi_batch_en;
-		sqe->index_batch_type = msg->index_type;
 		sqe->data_row_num = msg->req.output_row_num;
+		if (msg->index_type == WD_BATCH_ADDR_INDEX)
+			sqe->index_batch_type = DAE_GATHER_BATCH_ADDR_INDEX;
+		else
+			sqe->index_batch_type = DAE_GATHER_BATCH_NUM_INDEX;
 		break;
 	default:
 		break;
@@ -199,8 +216,10 @@ static void fill_join_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 	case WD_JOIN_BUILD_HASH:
 		usr_key = req->key_cols;
 		hw_key = addr_list->input_addr;
-		if (msg->index_type == WD_BATCH_ADDR_INDEX)
+		if (msg->index_type == WD_BATCH_ADDR_INDEX) {
 			sqe->addr_ext = (__u64)(uintptr_t)req->build_batch_addr.addr;
+			sqe->batch_row_size = req->build_batch_addr.row_size;
+		}
 		break;
 	case WD_JOIN_PROBE:
 		usr_key = req->key_cols;
@@ -262,7 +281,7 @@ static void fill_gather_col_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sq
 
 	sqe->key_col_bitmap = GENMASK(cols_num - 1, 0);
 	sqe->has_empty = cols_data->has_empty[table_index];
-	sqe->table_row_size = ctx->batch_row_size[table_index];
+	sqe->batch_row_size = ctx->batch_row_size[table_index];
 
 	usr_data = gather_req->data_cols;
 	batch_addr = gather_req->row_batchs.batch_addr;
@@ -362,13 +381,7 @@ static int check_join_gather_param(struct wd_join_gather_msg *msg)
 			       msg->req.input_row_num, DAE_JOIN_MAX_ROW_NUN);
 			return -WD_EINVAL;
 		}
-		if (msg->index_type == WD_BATCH_NUMBER_INDEX) {
-			if (msg->req.join_req.build_batch_index >= DAE_JOIN_MAX_BATCH_NUM) {
-				WD_ERR("invalid: input join batch index is more than %d!\n",
-				       DAE_JOIN_MAX_BATCH_NUM - 1);
-				return -WD_EINVAL;
-			}
-		} else {
+		if (msg->index_type == WD_BATCH_ADDR_INDEX) {
 			if (!msg->req.join_req.build_batch_addr.addr ||
 			    !msg->req.join_req.build_batch_addr.row_num ||
 			    !msg->req.join_req.build_batch_addr.row_size) {

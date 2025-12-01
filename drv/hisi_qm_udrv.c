@@ -992,7 +992,7 @@ void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset, __u32 size,
 	struct hisi_sgl *tmp = hw_sgl;
 	int begin_sge = 0, i;
 	__u32 sge_offset = 0;
-	__u32 len = 0;
+	__u64 len = 0;
 
 	if (!pbuff || !size || !tmp)
 		return;
