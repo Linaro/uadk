@@ -78,6 +78,11 @@ struct wd_blkpool {
 	unsigned long act_mem_sz;
 	unsigned int dev_id;
 	struct wd_mempool_setup setup;
+
+	/* SVA mode for Hugepage */
+	bool sva_mode;
+	handle_t hp_mempool;
+	handle_t hp_blkpool;
 };
 
 struct mem_ctx_node {
@@ -253,6 +258,123 @@ static bool bitmap_test_bit(const unsigned char *bitmap, unsigned int bit_index)
 	return true;
 }
 
+static int wd_parse_dev_id(char *dev_name)
+{
+	char *last_dash;
+	char *endptr;
+	int dev_id;
+
+	if (!dev_name)
+		return -WD_EINVAL;
+
+	/* Find the last '-' in the string. */
+	last_dash = strrchr(dev_name, '-');
+	if (!last_dash || *(last_dash + 1) == '\0')
+		return -WD_EINVAL;
+
+	/* Parse the following number */
+	dev_id = strtol(last_dash + 1, &endptr, DECIMAL_NUMBER);
+	/* Check whether it is truly all digits */
+	if (*endptr != '\0' || dev_id < 0)
+		return -WD_EINVAL;
+
+	return dev_id;
+}
+
+/*----------------------------------SVA Hugepage memory pool---------------------------------*/
+static void *wd_hugepage_pool_create(handle_t h_ctx, struct wd_mempool_setup *setup)
+{
+	struct wd_ctx_h *ctx = (struct wd_ctx_h *)h_ctx;
+	struct wd_blkpool *pool = NULL;
+	size_t total_size;
+	int numa_id, ret;
+
+	pool = calloc(1, sizeof(*pool));
+	if (!pool) {
+		WD_ERR("failed to malloc pool.\n");
+		return NULL;
+	}
+
+	pool->sva_mode = true;
+	memcpy(&pool->setup, setup, sizeof(pool->setup));
+
+	total_size = setup->block_size * setup->block_num;
+	numa_id = ctx->dev->numa_id;
+
+	ret = wd_parse_dev_id(ctx->dev_path);
+	if (ret < 0) {
+		WD_ERR("failed to parse device id.\n");
+		goto error;
+	}
+	pool->dev_id = ret;
+
+	/* Create hugepage memory pool */
+	pool->hp_mempool = wd_mempool_create(total_size, numa_id);
+	if (WD_IS_ERR(pool->hp_mempool)) {
+		WD_ERR("failed to create hugepage mempool.\n");
+		goto error;
+	}
+
+	/* Create memory blocks */
+	pool->hp_blkpool = wd_blockpool_create(pool->hp_mempool,
+					       setup->block_size,
+					       setup->block_num);
+	if (WD_IS_ERR(pool->hp_blkpool)) {
+		WD_ERR("failed to create hugepage blockpool.\n");
+		wd_mempool_destroy(pool->hp_mempool);
+		goto error;
+	}
+
+	pool->free_blk_num = setup->block_num;
+	pool->act_blk_sz = setup->block_size;
+
+	return pool;
+error:
+	free(pool);
+	return NULL;
+}
+
+static void wd_hugepage_pool_destroy(struct wd_blkpool *p)
+{
+	if (p->hp_blkpool) {
+		wd_blockpool_destroy(p->hp_blkpool);
+		p->hp_blkpool = 0;
+	}
+
+	if (p->hp_mempool) {
+		wd_mempool_destroy(p->hp_mempool);
+		p->hp_mempool = 0;
+	}
+
+	free(p);
+}
+
+static void *wd_hugepage_blk_alloc(struct wd_blkpool *p, size_t size)
+{
+	if (size > p->act_blk_sz) {
+		WD_ERR("request size %zu > block size %u\n", size, p->act_blk_sz);
+		return NULL;
+	}
+
+	void *addr = wd_block_alloc(p->hp_blkpool);
+	if (!addr) {
+		p->alloc_failures++;
+		WD_ERR("failed to alloc block from hugepage pool.\n");
+		return NULL;
+	}
+
+	__atomic_fetch_sub(&p->free_blk_num, 1, __ATOMIC_RELAXED);
+	return addr;
+}
+
+static void wd_hugepage_blk_free(struct wd_blkpool *p, void *buf)
+{
+	/* The function call ensures that buf is not null */
+	wd_block_free(p->hp_blkpool, buf);
+	__atomic_fetch_add(&p->free_blk_num, 1, __ATOMIC_RELAXED);
+}
+
+/*----------------------------------No-SVA kernel memory pool--------------------------------*/
 static void *wd_mmap_qfr(struct ctx_info *cinfo, enum uacce_qfrt qfrt, size_t size)
 {
 	off_t off;
@@ -634,29 +756,6 @@ static int usr_pool_init(struct wd_blkpool *p)
 	return WD_SUCCESS;
 }
 
-static int wd_parse_dev_id(char *dev_name)
-{
-	char *last_dash = NULL;
-	char *endptr;
-	int dev_id;
-
-	if (!dev_name)
-		return -WD_EINVAL;
-
-	/* Find the last '-' in the string. */
-	last_dash = strrchr(dev_name, '-');
-	if (!last_dash || *(last_dash + 1) == '\0')
-		return -WD_EINVAL;
-
-	/* Parse the following number */
-	dev_id = strtol(last_dash + 1, &endptr, DECIMAL_NUMBER);
-	/* Check whether it is truly all digits */
-	if (*endptr != '\0' || dev_id < 0)
-		return -WD_EINVAL;
-
-	return dev_id;
-}
-
 static int wd_mempool_init(handle_t h_ctx, struct wd_blkpool *pool,
 				  struct wd_mempool_setup *setup)
 {
@@ -728,8 +827,8 @@ void *wd_mempool_alloc(handle_t h_ctx, struct wd_mempool_setup *setup)
 		WD_ERR("failed to check device ctx!\n");
 		return NULL;
 	} else if (ret == UACCE_DEV_SVA) {
-		WD_ERR("the device is SVA mode!\n");
-		return NULL;
+		WD_INFO("the device is SVA mode!\n");
+		return wd_hugepage_pool_create(h_ctx, setup);
 	}
 
 	pool = calloc(1, sizeof(*pool));
@@ -742,6 +841,7 @@ void *wd_mempool_alloc(handle_t h_ctx, struct wd_mempool_setup *setup)
 		goto err_pool_alloc;
 
 	memcpy(&pool->setup, setup, sizeof(pool->setup));
+	pool->sva_mode = false;
 
 	ret = wd_pool_pre_layout(h_ctx, pool, setup);
 	if (ret)
@@ -773,6 +873,11 @@ void wd_mempool_free(handle_t h_ctx, void *pool)
 
 	if (!p || !h_ctx) {
 		WD_ERR("pool destroy err, pool or ctx is NULL.\n");
+		return;
+	}
+
+	if (p->sva_mode) {
+		wd_hugepage_pool_destroy(p);
 		return;
 	}
 
@@ -816,6 +921,11 @@ void wd_mem_free(void *pool, void *buf)
 
 	if (unlikely(!p || !buf)) {
 		WD_ERR("free blk parameters err!\n");
+		return;
+	}
+
+	if (p->sva_mode) {
+		wd_hugepage_blk_free(p, buf);
 		return;
 	}
 
@@ -922,6 +1032,9 @@ void *wd_mem_alloc(void *pool, size_t size)
 		return NULL;
 	}
 
+	if (p->sva_mode)
+		return wd_hugepage_blk_alloc(p, size);
+
 	if (!p->act_blk_sz) {
 		WD_ERR("blk pool is error!\n");
 		return NULL;
@@ -971,6 +1084,10 @@ void *wd_mem_map(void *pool, void *buf, size_t sz)
 		WD_ERR("blk map err, pool is NULL!\n");
 		return NULL;
 	}
+
+	/* VA == IOVA in SVA mode */
+	if (p->sva_mode)
+		return buf;
 
 	if (!sz || (uintptr_t)buf < (uintptr_t)p->act_start) {
 		WD_ERR("map buf addr is error.\n");
