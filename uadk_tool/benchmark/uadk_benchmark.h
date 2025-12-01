@@ -81,6 +81,13 @@ struct acc_option {
 	bool latency;
 	u32 sched_type;
 	int task_type;
+	int mem_type;
+};
+
+enum uadk_mem_mode {
+	UADK_AUTO,		// SVA or No-SVA
+	UADK_MANUAL,		// No-SVA User manual
+	UADK_PROXY,		// No-SVA UADK API proxy
 };
 
 enum acc_type {
@@ -225,6 +232,7 @@ extern void cal_avg_latency(u32 count);
 extern int get_alg_name(int alg, char *alg_name);
 extern void segmentfault_handler(int sig);
 
+int uadk_parse_dev_id(char *dev_name);
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);
 int acc_option_convert(struct acc_option *option);

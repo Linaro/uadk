@@ -26,6 +26,8 @@ struct wd_dh_sess {
 	struct wd_dtb g;
 	struct wd_dh_sess_setup setup;
 	void  *sched_key;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 static struct wd_dh_setting {
@@ -125,6 +127,7 @@ static int wd_dh_common_init(struct wd_ctx_config *config, struct wd_sched *sche
 	if (ret < 0)
 		return ret;
 
+	wd_dh_setting.config.alg_name = "dh";
 	ret = wd_init_ctx_config(&wd_dh_setting.config, config);
 	if (ret)
 		return ret;
@@ -325,6 +328,8 @@ static int fill_dh_msg(struct wd_dh_msg *msg, struct wd_dh_req *req,
 	memcpy(&msg->req, req, sizeof(*req));
 	msg->result = WD_EINVAL;
 	msg->key_bytes = sess->key_size;
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
 
 	if (unlikely(req->pri_bytes < sess->key_size)) {
 		WD_ERR("invalid: req pri bytes %hu is error!\n", req->pri_bytes);
@@ -580,6 +585,7 @@ void wd_dh_get_g(handle_t sess, struct wd_dtb **g)
 handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 {
 	struct wd_dh_sess *sess;
+	int ret;
 
 	if (!setup) {
 		WD_ERR("invalid: alloc dh sess setup NULL!\n");
@@ -605,10 +611,19 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	memcpy(&sess->setup, setup, sizeof(*setup));
 	sess->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
 
-	sess->g.data = malloc(sess->key_size);
-	if (!sess->g.data)
+	ret = wd_mem_ops_init(wd_dh_setting.config.ctxs[0].ctx, &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
 		goto sess_err;
+	}
 
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
+	sess->g.data = sess->mm_ops.alloc(sess->mm_ops.usr, sess->key_size);
+	if (!sess->g.data) {
+		WD_ERR("failed to malloc sess g param memory!\n");
+		goto sess_err;
+	}
 	sess->g.bsize = sess->key_size;
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_dh_setting.sched.sched_init(
@@ -621,7 +636,7 @@ handle_t wd_dh_alloc_sess(struct wd_dh_sess_setup *setup)
 	return (handle_t)sess;
 
 sched_err:
-	free(sess->g.data);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->g.data);
 sess_err:
 	free(sess);
 	return (handle_t)0;
@@ -637,7 +652,7 @@ void wd_dh_free_sess(handle_t sess)
 	}
 
 	if (sess_t->g.data)
-		free(sess_t->g.data);
+		sess_t->mm_ops.free(sess_t->mm_ops.usr, sess_t->g.data);
 
 	if (sess_t->sched_key)
 		free(sess_t->sched_key);

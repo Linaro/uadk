@@ -64,10 +64,12 @@ struct wd_digest_sess {
 	enum wd_digest_type	alg;
 	enum wd_digest_mode	mode;
 	void			*priv;
-	unsigned char		key[MAX_HMAC_KEY_SIZE];
+	unsigned char		*key;
 	__u32			key_bytes;
 	void			*sched_key;
 	struct wd_digest_stream_data stream_data;
+	struct wd_mm_ops	mm_ops;
+	enum wd_mem_type	mm_type;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -187,6 +189,31 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	return 0;
 }
 
+static int digest_setup_memory_and_buffers(struct wd_digest_sess *sess,
+					   struct wd_digest_sess_setup *setup)
+{
+	int ret;
+
+	ret = wd_mem_ops_init(wd_digest_setting.config.ctxs[0].ctx,
+			      &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		return ret;
+	}
+
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
+
+	sess->key = sess->mm_ops.alloc(sess->mm_ops.usr, MAX_HMAC_KEY_SIZE);
+	if (!sess->key) {
+		WD_ERR("digest failed to alloc key memory!\n");
+		return -WD_ENOMEM;
+	}
+	memset(sess->key, 0, MAX_HMAC_KEY_SIZE);
+
+	return 0;
+}
+
 handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 {
 	struct wd_digest_sess *sess = NULL;
@@ -215,16 +242,23 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
+
+	/* Memory type set */
+	if (digest_setup_memory_and_buffers(sess, setup))
+		goto err_sess;
+
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_digest_setting.sched.sched_init(
 			wd_digest_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto err_sess;
+		goto err_key;
 	}
 
 	return (handle_t)sess;
 
+err_key:
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 err_sess:
 	free(sess);
 	return (handle_t)0;
@@ -240,6 +274,7 @@ void wd_digest_free_sess(handle_t h_sess)
 	}
 
 	wd_memset_zero(sess->key, sess->key_bytes);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 	if (sess->sched_key)
 		free(sess->sched_key);
 	free(sess);
@@ -260,6 +295,7 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 	if (ret < 0)
 		return ret;
 
+	wd_digest_setting.config.alg_name = "digest";
 	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
 	if (ret < 0)
 		return ret;
@@ -601,6 +637,9 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->long_data_len = sess->stream_data.long_data_len + req->in_bytes;
 	msg->partial_block = sess->stream_data.partial_block;
 	msg->partial_bytes = sess->stream_data.partial_bytes;
+
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
 
 	/* Use iv_bytes to store the stream message state */
 	msg->iv_bytes = sess->stream_data.msg_state;

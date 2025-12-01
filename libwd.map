@@ -49,5 +49,23 @@ global:
 	wd_enable_drv;
 	wd_disable_drv;
 	wd_get_alg_head;
+	wd_alg_driver_init;
+	wd_alg_driver_exit;
+	wd_alg_driver_send;
+	wd_alg_driver_recv;
+
+	wd_find_ctx;
+	wd_get_dev_id;
+	wd_remove_ctx_list;
+	wd_insert_ctx_list;
+	wd_mempool_alloc;
+	wd_mempool_free;
+	wd_mem_alloc;
+	wd_mem_free;
+	wd_mem_map;
+	wd_mem_unmap;
+	wd_get_free_num;
+	wd_get_fail_num;
+	wd_get_bufsize;
 local: *;
 };
