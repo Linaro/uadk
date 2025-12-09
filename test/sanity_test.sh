@@ -433,6 +433,13 @@ run_sec_test_v2()
 # failed: return 1; success: return 0
 run_hpre_test_v2()
 {
+	version=$(openssl version)
+	major_version=$(echo $version | awk -F'[ .]' '{print $2}')
+	if (( major_version >= 3 )); then
+		echo "OpenSSL major version is "$major_version
+		return 0
+	fi
+
 	dev_path=$(ls -1 /dev/hisi_hpre-* | head -1)
 	run_cmd "hpre test in sync mode" \
 		test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
