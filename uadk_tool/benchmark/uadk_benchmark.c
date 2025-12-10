@@ -311,39 +311,71 @@ int get_pid_cpu_time(u32 *ptime)
 	return 0;
 }
 
-static void alarm_end(int sig)
+static void alarm_end(int sig, siginfo_t *info, void *context)
 {
 	if (sig == SIGALRM) {
 		set_run_state(0);
 		alarm(0);
 	}
-	signal(SIGALRM, alarm_end);
-	alarm(1);
 }
 
 void time_start(u32 seconds)
 {
+	struct sigaction sa = {
+		.sa_sigaction = alarm_end,
+		.sa_flags = SA_SIGINFO | SA_RESETHAND
+	};
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGALRM, &sa, NULL);
+
 	set_run_state(1);
 	init_recv_data();
-	signal(SIGALRM, alarm_end);
+
 	alarm(seconds);
 }
 
 void get_rand_data(u8 *addr, u32 size)
 {
-	unsigned short rand_state[3] = {
-		(0xae >> 16) & 0xffff, 0xae & 0xffff, 0x330e};
-	static __thread u64 rand_seed = 0x330eabcd;
-	u64 rand48 = 0;
-	int i;
+	static __thread unsigned short rand_state[3] = {0};
+	static __thread int initialized = 0; 
 
-	// only 32bit valid, other 32bit is zero
-	for (i = 0; i < size >> 3; i++) {
-		rand_state[0] = (u16)rand_seed;
-		rand_state[1] = (u16)(rand_seed >> 16);
-		rand48 = nrand48(rand_state);
-		*((u64 *)addr + i) = rand48;
-		rand_seed = rand48;
+	static const uint32_t LCG_A = 1664525U;
+	static const uint32_t LCG_C = 1013904223U;
+	u32 remainder = size & 0x7;
+	u32 num_u64 = size >> 3;
+	u64 rand48_result = 0;
+	u8 *remainder_addr;
+	u32 init_seed;
+	u32 i;
+
+	if (!initialized) {
+		/* Use the data address value as the initial seed for the random number */
+		init_seed = (u32)(uintptr_t)addr ^ 0x9e370001U;
+		init_seed = LCG_A * init_seed + LCG_C;
+		rand_state[0] = (u16)(init_seed & 0xFFFF);
+		init_seed = LCG_A * init_seed + LCG_C;
+		rand_state[1] = (u16)(init_seed & 0xFFFF);
+		init_seed = LCG_A * init_seed + LCG_C;
+		rand_state[2] = (u16)(init_seed & 0xFFFF);
+
+		initialized = 1;
+	}
+
+	for (i = 0; i < num_u64; i++) {
+		/* Use nrand48£¬it will auto update rand_state */
+		rand48_result = nrand48(rand_state);
+		 *((u64 *)addr + i) = rand48_result;
+	}
+
+	if (remainder > 0) {
+		rand48_result = nrand48(rand_state);
+
+		remainder_addr = addr + (num_u64 << 3);
+		remainder_addr[0] = (u8)(rand48_result);
+		if (remainder > 1)
+			remainder_addr[1] = (u8)(rand48_result >> 8);
+		if (remainder > 2)
+			remainder_addr[2] = (u8)(rand48_result >> 16);
 	}
 }
 
