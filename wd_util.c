@@ -2459,19 +2459,22 @@ static struct drv_lib_list *load_libraries_from_config(const char *config_path,
 	FILE *config_file;
 	int ret;
 
-	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
-	if (!path_buf) {
-		WD_ERR("fail to alloc memery for path_buf.\n");
-		return NULL;
+	lib_path = calloc(1, PATH_MAX);
+	if (!lib_path) {
+		WD_ERR("Failed to alloc memery for lib_path.\n");
+		return head;
 	}
-	lib_path = path_buf;
-	line = path_buf + PATH_MAX;
+
+	line = calloc(1, PATH_MAX);
+	if (!line) {
+		WD_ERR("Failed to alloc memery for lib_line.\n");
+		goto free_path;
+	}
 
 	config_file = fopen(config_path, "r");
 	if (!config_file) {
 		WD_ERR("Failed to open config file: %s\n", config_path);
-		free(path_buf);
-		return NULL;
+		goto free_line;
 	}
 
 	/* Read config file line by line */
@@ -2486,8 +2489,12 @@ static struct drv_lib_list *load_libraries_from_config(const char *config_path,
 		create_lib_to_list(lib_path, &head);
 	}
 
-	free(path_buf);
 	fclose(config_file);
+
+free_line:
+	free(line);
+free_path:
+	free(lib_path);
 	return head;
 }
 
@@ -2533,15 +2540,21 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 	int ret, len;
 	DIR *wd_dir;
 
-	path_buf = calloc(WD_PATH_DIR_NUM + 1, PATH_MAX);
+	path_buf = calloc(WD_PATH_DIR_NUM, PATH_MAX);
 	if (!path_buf) {
-		WD_ERR("fail to alloc memory for path buffers.\n");
-		return NULL;
+		WD_ERR("Failed to alloc memory for path_buf buffers.\n");
+		return head;
+	}
+
+	config_path = calloc(1, PATH_MAX);
+	if (!config_path) {
+		WD_ERR("Failed to alloc memory for config_path buffers.\n");
+		free(path_buf);
+		return head;
 	}
 
 	lib_dir_path = path_buf;
-	config_path = path_buf + PATH_MAX;
-	lib_path = config_path + PATH_MAX;
+	lib_path = path_buf + PATH_MAX;
 
 	if (!cust_lib_dir) {
 		ret = wd_get_lib_file_path(NULL, lib_dir_path, true);
@@ -2582,6 +2595,7 @@ close_dir:
 	closedir(wd_dir);
 free_path:
 	free(path_buf);
+	free(config_path);
 	return (void *)head;
 }
 
