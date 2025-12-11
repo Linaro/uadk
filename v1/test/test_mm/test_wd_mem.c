@@ -208,7 +208,7 @@ void *mmt_sys_test_thread(void *data)
 		return NULL;
 	}
 
-	ret = wd_request_queue(&pdata->qinfo1.q);
+	ret = wd_request_queue(pdata->qinfo1.q);
 	if (ret) {
 		wd_release_queue(&rsa_q);
 		MMT_PRT("Proc-%d, thrd-%d:rsa queue fail!\n",
@@ -226,7 +226,7 @@ void *mmt_sys_test_thread(void *data)
 
 		return NULL;
 	}
-	ret = wd_request_queue(&pdata->qinfo2.q);
+	ret = wd_request_queue(pdata->qinfo2.q);
 	if (ret) {
 		MMT_PRT("Proc-%d, thrd-%d:zlib queue fail!\n",
 			pid, thread_id);
