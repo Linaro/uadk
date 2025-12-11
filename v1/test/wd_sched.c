@@ -26,7 +26,6 @@ static int wd_sched_pre_uninit(struct wd_scheduler *sched)
 {
 	unsigned int flags = 0;
 	struct q_info *qinfo;
-	void *pool;
 	int  i;
 
 	qinfo = sched->qs[0].qinfo;

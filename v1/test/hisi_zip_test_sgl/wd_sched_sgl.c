@@ -27,7 +27,6 @@ static int wd_sched_pre_uninit(struct wd_scheduler *sched, int data_fmt)
 {
 	unsigned int flags = 0;
 	struct q_info *qinfo;
-	void *pool;
 	int  i;
 
 	qinfo = sched->qs[0].qinfo;
@@ -54,12 +53,13 @@ static int wd_sched_pre_uninit(struct wd_scheduler *sched, int data_fmt)
 
 static int wd_sched_preinit(struct wd_scheduler *sched, int data_fmt)
 {
-	int ret, i, j;
 	unsigned int flags = 0;
 	struct q_info *qinfo;
 	struct wd_blkpool_setup mm_setup;
 	struct wd_sglpool_setup sp;
 	void *pool;
+	int ret, j;
+	int i = 0;
 
 	if (!sched->ss_region_size)
 		sched->ss_region_size = EXTRA_SIZE + /* add 1 page extra */
@@ -260,9 +260,7 @@ err_with_msgs:
 
 int wd_sched_init(struct wd_scheduler *sched, int data_fmt)
 {
-	int ret, j, k;
-	unsigned int flags;
-	struct q_info *qinfo;
+	int ret;
 
 	ret = wd_sched_preinit(sched, data_fmt);
 	if (ret < 0)
