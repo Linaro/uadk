@@ -31,6 +31,9 @@ CASE_COUNT=0
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 
+version=$(openssl version)
+major_version=$(echo $version | awk -F'[ .]' '{print $2}')
+
 # arg1: zip/sec/hpre
 # Return UACCE mode. Return -1 if UACCE module is invalid.
 check_uacce_mode()
@@ -390,6 +393,9 @@ hw_dfl_hw_ifl()
 # failed: return 1; success: return 0
 run_zip_test_v2()
 {
+	if (( major_version >= 3 )); then
+		return 0
+	fi
 	export WD_COMP_CTX_NUM="sync-comp:4@0,sync-decomp:4@0,async-comp:4@0,async-decomp:4@0"
 	export WD_COMP_ASYNC_POLL_EN=1
 	export WD_COMP_ASYNC_POLL_NUM="4@0"
@@ -433,10 +439,7 @@ run_sec_test_v2()
 # failed: return 1; success: return 0
 run_hpre_test_v2()
 {
-	version=$(openssl version)
-	major_version=$(echo $version | awk -F'[ .]' '{print $2}')
 	if (( major_version >= 3 )); then
-		echo "OpenSSL major version is "$major_version
 		return 0
 	fi
 
