@@ -1129,6 +1129,8 @@ static int wd_read_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 a
 
 int wd_get_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 alg_op_type)
 {
+	char *dev_name;
+	int ret;
 	if (!dev || !alg_name) {
 		WD_ERR("invalid: dev or alg name is NULL!\n");
 		return -WD_EINVAL;
@@ -1139,5 +1141,15 @@ int wd_get_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 alg_op_ty
 		return -WD_EINVAL;
 	}
 
-	return wd_read_dev_usage(dev, alg_name, alg_op_type);
+	dev_name = strrchr(dev->char_dev_path, '/');
+	if (!dev_name) {
+		WD_ERR("failed to get dev_nmae!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = wd_alg_get_dev_usage(dev_name + 1, alg_name, alg_op_type);
+	if (ret == -WD_EACCES)
+		return wd_read_dev_usage(dev, alg_name, alg_op_type);
+
+	return ret;
 }
