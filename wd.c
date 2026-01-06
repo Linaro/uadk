@@ -23,6 +23,7 @@
 #include "wd_internal.h"
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 #define FILE_MAX_SIZE			(8 << 20)
+#define WD_DEV_USAGE_SIZE		256
 
 enum UADK_LOG_LEVEL {
 	WD_LOG_NONE = 0,
@@ -33,6 +34,27 @@ enum UADK_LOG_LEVEL {
 };
 
 static int uadk_log_level = WD_LOG_INVALID;
+
+struct dev_usage_info {
+	const char *dev_name;
+	__u8 alg_op_type;
+	int (*usage_parse_fn)(char *buf, const char *alg_name, __u8 alg_op_type);
+};
+
+static const char * const hpre_ecc_algs[] = {
+	"sm2",
+	"ecdh",
+	"x448",
+	"x25519",
+	"ecdsa"
+};
+
+static const char * const zip_dae_algs[] = {
+	"udma",
+	"hashagg",
+	"hashjoin",
+	"gather",
+};
 
 static int wd_check_ctx_type(handle_t h_ctx)
 {
@@ -655,13 +677,14 @@ static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 
 static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
 {
+	char *str_end;
 	char *str;
 
 	str = strstr(dev_alg_name, alg_name);
 	if (!str)
 		return false;
-
-	if (*(str + strlen(alg_name)) == '\n' &&
+	str_end = str + strlen(alg_name);
+	if ((*str_end == '\n' || *str_end == '\0') &&
 	    ((str > dev_alg_name && *(str - 1) == '\n') || str == dev_alg_name))
 		return true;
 
@@ -986,3 +1009,135 @@ alloc_err:
 	return NULL;
 }
 
+static int wd_parse_usage_value(char *buf, const char *type_name)
+{
+	char *str;
+	int ret;
+
+	str = strstr(buf, type_name);
+	if (!str)
+		return -WD_EINVAL;
+
+	str += strlen(type_name);
+	ret = strtol(str, NULL, 10);
+	if (ret < 0)
+		WD_ERR("fail to get device usage value, ret %d!\n", ret);
+
+	return ret;
+}
+
+/*
+ * The format of the string obtained from sysfs is fixed
+ * and does not need to consider other scenarios.
+ */
+static int wd_zip_usage_parse_fn(char *buf, const char *alg_name, __u8 alg_op_type)
+{
+	size_t size = ARRAY_SIZE(zip_dae_algs);
+	size_t i;
+
+	for (i = 0; i < size; i++) {
+		if (!strcmp(alg_name, zip_dae_algs[i])) {
+			if (alg_op_type != 0) {
+				WD_ERR("invalid: alg_name %s alg_op_type error!\n", alg_name);
+				return -WD_EINVAL;
+			}
+			return wd_parse_usage_value(buf, "DAE: ");
+		}
+	}
+
+	if (alg_op_type == 0)
+		return wd_parse_usage_value(buf, "COMPRESS: ");
+
+	return wd_parse_usage_value(buf, "DECOMPRESS: ");
+}
+
+static int wd_sec_usage_parse_fn(char *buf, const char *alg_name, __u8 alg_op_type)
+{
+	return wd_parse_usage_value(buf, "SEC: ");
+}
+
+static int wd_hpre_usage_parse_fn(char *buf, const char *alg_name, __u8 alg_op_type)
+{
+	size_t size = ARRAY_SIZE(hpre_ecc_algs);
+	size_t i;
+
+	for (i = 0; i < size; i++) {
+		if (!strcmp(alg_name, hpre_ecc_algs[i]))
+			return wd_parse_usage_value(buf, "ECC: ");
+	}
+
+	return wd_parse_usage_value(buf, "RSA: ");
+}
+
+static const struct dev_usage_info dev_usage_parse[] = {
+	{
+		.dev_name = "hisi_zip",
+		.alg_op_type = 2,
+		.usage_parse_fn = wd_zip_usage_parse_fn
+	 }, {
+		.dev_name = "hisi_sec",
+		.alg_op_type = 1,
+		.usage_parse_fn = wd_sec_usage_parse_fn
+	 }, {
+		.dev_name = "hisi_hpre",
+		.alg_op_type = 1,
+		.usage_parse_fn = wd_hpre_usage_parse_fn
+	 },
+};
+
+static int wd_parse_dev_usage(struct uacce_dev *dev, char *buf,
+			      const char *alg_name, __u8 alg_op_type)
+{
+	size_t size = ARRAY_SIZE(dev_usage_parse);
+	size_t i;
+
+	for (i = 0; i < size; i++) {
+		if (strstr(dev->dev_root, dev_usage_parse[i].dev_name))
+			break;
+	}
+
+	if (i == size) {
+		WD_ERR("failed to find parse function!\n");
+		return -WD_EINVAL;
+	}
+
+	if (alg_op_type >= dev_usage_parse[i].alg_op_type) {
+		WD_ERR("invalid: alg_op_type %u is error!\n", alg_op_type);
+		return -WD_EINVAL;
+	}
+
+	return dev_usage_parse[i].usage_parse_fn(buf, alg_name, alg_op_type);
+}
+
+static int wd_read_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 alg_op_type)
+{
+	char buf[WD_DEV_USAGE_SIZE];
+	int ret;
+
+	ret = access_attr(dev->dev_root, "dev_usage", F_OK);
+	if (ret) {
+		WD_ERR("failed to access dev_usage!\n");
+		return ret;
+	}
+
+	ret = get_str_attr(dev, "dev_usage", buf, WD_DEV_USAGE_SIZE);
+	if (ret < 0)
+		return ret;
+
+	return wd_parse_dev_usage(dev, buf, alg_name, alg_op_type);
+}
+
+int wd_get_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 alg_op_type)
+{
+	if (!dev || !alg_name) {
+		WD_ERR("invalid: dev or alg name is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!dev_has_alg(dev->algs, alg_name)) {
+		WD_ERR("invalid: dev does not support alg %s!\n", alg_name);
+		return -WD_EINVAL;
+	}
+
+	return wd_read_dev_usage(dev, alg_name, alg_op_type);
+}
