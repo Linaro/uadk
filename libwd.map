@@ -53,6 +53,7 @@ global:
 	wd_alg_driver_exit;
 	wd_alg_driver_send;
 	wd_alg_driver_recv;
+	wd_get_alg_type;
 
 	wd_find_ctx;
 	wd_get_dev_id;

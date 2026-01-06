@@ -24,6 +24,97 @@ static struct wd_alg_list *alg_list_tail = &alg_list_head;
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+struct acc_alg_item {
+	const char *name;
+	const char *algtype;
+};
+
+static struct acc_alg_item alg_options[] = {
+	{"zlib", "zlib"},
+	{"gzip", "gzip"},
+	{"deflate", "deflate"},
+	{"lz77_zstd", "lz77_zstd"},
+	{"lz4", "lz4"},
+	{"lz77_only", "lz77_only"},
+	{"hashagg", "hashagg"},
+	{"udma", "udma"},
+	{"hashjoin", "hashjoin"},
+	{"gather", "gather"},
+	{"join-gather", "hashjoin"},
+
+	{"rsa", "rsa"},
+	{"dh", "dh"},
+	{"ecdh", "ecdh"},
+	{"x25519", "x25519"},
+	{"x448", "x448"},
+	{"ecdsa", "ecdsa"},
+	{"sm2", "sm2"},
+
+	{"ecb(aes)", "cipher"},
+	{"cbc(aes)", "cipher"},
+	{"xts(aes)", "cipher"},
+	{"ofb(aes)", "cipher"},
+	{"cfb(aes)", "cipher"},
+	{"ctr(aes)", "cipher"},
+	{"cbc-cs1(aes)", "cipher"},
+	{"cbc-cs2(aes)", "cipher"},
+	{"cbc-cs3(aes)", "cipher"},
+	{"ecb(sm4)", "cipher"},
+	{"xts(sm4)", "cipher"},
+	{"cbc(sm4)", "cipher"},
+	{"ofb(sm4)", "cipher"},
+	{"cfb(sm4)", "cipher"},
+	{"ctr(sm4)", "cipher"},
+	{"cbc-cs1(sm4)", "cipher"},
+	{"cbc-cs2(sm4)", "cipher"},
+	{"cbc-cs3(sm4)", "cipher"},
+	{"ecb(des)", "cipher"},
+	{"cbc(des)", "cipher"},
+	{"ecb(des3_ede)", "cipher"},
+	{"cbc(des3_ede)", "cipher"},
+
+	{"ccm(aes)", "aead"},
+	{"gcm(aes)", "aead"},
+	{"ccm(sm4)", "aead"},
+	{"gcm(sm4)", "aead"},
+	{"authenc(generic,cbc(aes))", "aead"},
+	{"authenc(generic,cbc(sm4))", "aead"},
+
+	{"sm3", "digest"},
+	{"md5", "digest"},
+	{"sha1", "digest"},
+	{"sha256", "digest"},
+	{"sha224", "digest"},
+	{"sha384", "digest"},
+	{"sha512", "digest"},
+	{"sha512-224", "digest"},
+	{"sha512-256", "digest"},
+	{"cmac(aes)", "digest"},
+	{"gmac(aes)", "digest"},
+	{"xcbc-mac-96(aes)", "digest"},
+	{"xcbc-prf-128(aes)", "digest"},
+	{"", ""}
+};
+
+int wd_get_alg_type(const char *alg_name, char *alg_type)
+{
+	__u64 i;
+
+	if (!alg_name || !alg_type) {
+		WD_ERR("invalid: alg_name or alg_type is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(alg_options); i++) {
+		if (strcmp(alg_name, alg_options[i].name) == 0) {
+			(void)strcpy(alg_type, alg_options[i].algtype);
+			return 0;
+		}
+	}
+
+	return -WD_EINVAL;
+}
+
 static bool wd_check_accel_dev(const char *dev_name)
 {
 	struct dirent *dev_dir;
@@ -182,6 +273,7 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 		return -WD_ENOMEM;
 	}
 
+	(void)wd_get_alg_type(drv->alg_name, new_alg->alg_type);
 	strncpy(new_alg->alg_name, drv->alg_name, ALG_NAME_SIZE - 1);
 	strncpy(new_alg->drv_name, drv->drv_name, DEV_NAME_LEN - 1);
 	new_alg->priority = drv->priority;
