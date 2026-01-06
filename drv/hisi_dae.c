@@ -673,7 +673,7 @@ static int agg_get_output_num(enum wd_dae_data_type type,
 }
 
 static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num,
-				bool is_count_all, __u16 hw_type)
+				bool is_count_all)
 {
 	__u32 size8 = 0, size16 = 0;
 	__u32 i, j, count_num;
@@ -691,8 +691,7 @@ static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num
 	if (is_count_all)
 		size8++;
 
-	if (hw_type < HISI_QM_API_VER5_BASE &&
-	    (size8 > DAE_MAX_8B_COLS_NUM || size16 > DAE_MAX_16B_COLS_NUM)) {
+	if (size8 > DAE_MAX_8B_COLS_NUM || size16 > DAE_MAX_16B_COLS_NUM) {
 		WD_ERR("invalid: output col num 8B-16B %u-%u is more than support %d-%d !\n",
 			size8, size16, DAE_MAX_8B_COLS_NUM, DAE_MAX_16B_COLS_NUM);
 		return -WD_EINVAL;
@@ -708,7 +707,7 @@ static int agg_output_num_check(struct wd_agg_col_info *agg_cols, __u32 cols_num
 	return WD_SUCCESS;
 }
 
-static int hashagg_init_param_check(struct wd_agg_sess_setup *setup, __u16 hw_type)
+static int hashagg_init_param_check(struct wd_agg_sess_setup *setup)
 {
 	int ret;
 
@@ -735,7 +734,7 @@ static int hashagg_init_param_check(struct wd_agg_sess_setup *setup, __u16 hw_ty
 		return -WD_EINVAL;
 
 	return agg_output_num_check(setup->agg_cols_info, setup->agg_cols_num,
-				    setup->is_count_all, hw_type);
+				    setup->is_count_all);
 }
 
 static int transfer_key_col_info(struct wd_key_col_info *key_cols,
@@ -1214,11 +1213,7 @@ static void hashagg_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 static int hashagg_sess_priv_init(struct wd_alg_driver *drv,
 				  struct wd_agg_sess_setup *setup, void **priv)
 {
-	struct wd_ctx_config_internal *config;
-	struct hisi_dae_ctx *dae_priv;
 	struct hashagg_ctx *agg_ctx;
-	struct hisi_qp *qp;
-	handle_t h_qp;
 	int ret;
 
 	if (!drv || !drv->priv) {
@@ -1231,12 +1226,7 @@ static int hashagg_sess_priv_init(struct wd_alg_driver *drv,
 		return -WD_EINVAL;
 	}
 
-	dae_priv = (struct hisi_dae_ctx *)drv->priv;
-	config = &dae_priv->config;
-	h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[0].ctx);
-	qp = (struct hisi_qp *)h_qp;
-
-	ret = hashagg_init_param_check(setup, qp->q_info.hw_type);
+	ret = hashagg_init_param_check(setup);
 	if (ret)
 		return -WD_EINVAL;
 
