@@ -521,7 +521,40 @@ static void udma_exit(struct wd_alg_driver *drv)
 
 static int udma_get_usage(void *param)
 {
-	return 0;
+	struct hisi_dev_usage *udma_usage = (struct hisi_dev_usage *)param;
+	struct wd_alg_driver *drv = udma_usage->drv;
+	struct wd_ctx_config_internal *config;
+	struct hisi_udma_ctx *priv;
+	char *ctx_dev_name;
+	handle_t ctx = 0;
+	handle_t qp = 0;
+	__u32 i;
+
+	if (udma_usage->alg_op_type >= drv->op_type_num) {
+		WD_ERR("invalid: alg_op_type %u is error!\n", udma_usage->alg_op_type);
+		return -WD_EINVAL;
+	}
+
+	priv = (struct hisi_udma_ctx *)drv->priv;
+	if (!priv)
+		return -WD_EACCES;
+
+	config = &priv->config;
+	for (i = 0; i < config->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+		if (!strcmp(udma_usage->dev_name, ctx_dev_name)) {
+			ctx = config->ctxs[i].ctx;
+			break;
+		}
+	}
+
+	if (ctx)
+		qp = (handle_t)wd_ctx_get_priv(ctx);
+
+	if (qp)
+		return hisi_qm_get_usage(qp, UDMA_ALG_TYPE);
+
+	return -WD_EACCES;
 }
 
 static struct wd_alg_driver udma_driver = {

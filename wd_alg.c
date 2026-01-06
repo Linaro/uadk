@@ -485,3 +485,37 @@ int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 	return drv->recv(drv, ctx, msg);
 }
 
+int wd_alg_get_dev_usage(const char *dev_name, const char *alg_type, __u8 alg_op_type)
+{
+	struct wd_alg_list *pnext = alg_list_head.next;
+	struct hisi_dev_usage dev_usage;
+	struct wd_alg_driver *drv;
+	size_t len;
+
+	if (!dev_name || !alg_type) {
+		WD_ERR("dev_name or alg_type is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	while (pnext) {
+		len = strlen(pnext->drv_name);
+		if (!strncmp(dev_name, pnext->drv_name, len) && *(dev_name + len) == '-' &&
+		    !strcmp(alg_type, pnext->alg_type) && pnext->drv->priv)
+			break;
+
+		pnext = pnext->next;
+	}
+
+	if (!pnext)
+		return -WD_EACCES;
+
+	drv = pnext->drv;
+	if (!drv->get_usage)
+		return -WD_EINVAL;
+
+	dev_usage.drv = drv;
+	dev_usage.alg_op_type = alg_op_type;
+	dev_usage.dev_name = dev_name;
+
+	return drv->get_usage(&dev_usage);
+}

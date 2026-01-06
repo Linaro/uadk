@@ -210,6 +210,7 @@ int hisi_qm_get_free_sqe_num(handle_t h_qp);
  */
 __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 			    struct wd_datalist *end_node);
+int hisi_qm_get_usage(handle_t h_qp, __u8 type);
 
 #ifdef __cplusplus
 }

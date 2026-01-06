@@ -1755,6 +1755,44 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	return 0;
 }
 
+static int hisi_zip_get_usage(void *param)
+{
+	struct hisi_dev_usage *zip_usage = (struct hisi_dev_usage *)param;
+	struct wd_alg_driver *drv = zip_usage->drv;
+	struct wd_ctx_config_internal *config;
+	struct hisi_zip_ctx *priv;
+	char *ctx_dev_name;
+	handle_t ctx = 0;
+	handle_t qp = 0;
+	__u32 i;
+
+	if (zip_usage->alg_op_type >= drv->op_type_num) {
+		WD_ERR("invalid: alg_op_type %u is error!\n", zip_usage->alg_op_type);
+		return -WD_EINVAL;
+	}
+
+	priv = (struct hisi_zip_ctx *)drv->priv;
+	if (!priv)
+		return -WD_EACCES;
+
+	config = &priv->config;
+	for (i = 0; i < config->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+		if (!strcmp(zip_usage->dev_name, ctx_dev_name)) {
+			ctx = config->ctxs[i].ctx;
+			break;
+		}
+	}
+
+	if (ctx)
+		qp = (handle_t)wd_ctx_get_priv(ctx);
+
+	if (qp)
+		return hisi_qm_get_usage(qp, zip_usage->alg_op_type);
+
+	return -WD_EACCES;
+}
+
 #define GEN_ZIP_ALG_DRIVER(zip_alg_name) \
 {\
 	.drv_name = "hisi_zip",\
@@ -1768,6 +1806,7 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	.exit = hisi_zip_exit,\
 	.send = hisi_zip_comp_send,\
 	.recv = hisi_zip_comp_recv,\
+	.get_usage = hisi_zip_get_usage, \
 }
 
 static struct wd_alg_driver zip_alg_driver[] = {

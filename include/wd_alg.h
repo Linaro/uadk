@@ -115,6 +115,12 @@ struct wd_alg_driver {
 	int (*get_extend_ops)(void *ops);
 };
 
+struct hisi_dev_usage {
+	struct wd_alg_driver *drv;
+	const char *dev_name;
+	__u8 alg_op_type;
+};
+
 /*
  * wd_alg_driver_register() - Register a device driver.
  * @wd_alg_driver: a device driver that supports an algorithm.
@@ -179,6 +185,7 @@ int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf);
 void wd_alg_driver_exit(struct wd_alg_driver *drv);
 int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg);
 int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg);
+int wd_alg_get_dev_usage(const char *dev_name, const char *alg_type, __u8 op_type);
 int wd_get_alg_type(const char *alg_name, char *alg_type);
 
 struct wd_alg_list *wd_get_alg_head(void);
