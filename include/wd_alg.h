@@ -145,6 +145,7 @@ struct wd_alg_list {
 
 	struct wd_alg_driver *drv;
 	struct wd_alg_list *next;
+	char alg_type[ALG_NAME_SIZE];
 };
 
 /*
@@ -178,6 +179,7 @@ int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf);
 void wd_alg_driver_exit(struct wd_alg_driver *drv);
 int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg);
 int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg);
+int wd_get_alg_type(const char *alg_name, char *alg_type);
 
 struct wd_alg_list *wd_get_alg_head(void);
 
