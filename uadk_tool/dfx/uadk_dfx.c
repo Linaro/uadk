@@ -17,6 +17,12 @@
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 #define PRIVILEGE_FLAG		0666
 
+enum dfx_usage_type {
+	DISPLAY_DEVICE = 0,
+	DISPLAY_ALG_NAME,
+	DISPLAY_OP_TYPE
+};
+
 struct uadk_env_var {
 	const char *module;
 	const char *alg;
@@ -37,6 +43,7 @@ enum dfx_op_type {
 	DISPLAY_DIR,
 	DISPLAY_ENV,
 	DISPLAY_COUNT,
+	DISPLAY_USAGE,
 	DISPLAY_HELP,
 };
 
@@ -177,6 +184,77 @@ static void uadk_exe_path(void)
 	printf("exe path: %s\n", dir);
 }
 
+static void uadk_dev_usage_read(int argc, char *argv[])
+{
+	char device[MAX_DEV_NAME_LEN] = "hisi_sec2-0";
+	char alg_name[MAX_ATTR_STR_SIZE] = "cipher";
+	struct uacce_dev_list *tmp = NULL;
+	struct uacce_dev_list *list;
+	struct uacce_dev *dev = NULL;
+	int option_index = 0;
+	int op_type = 0, ret;
+	char *dev_name;
+	int opt;
+
+	static struct option long_options[] = {
+		{"device", required_argument, 0, DISPLAY_DEVICE},
+		{"alg_name", required_argument, 0, DISPLAY_ALG_NAME},
+		{"op_type", required_argument, 0, DISPLAY_OP_TYPE},
+		{0, 0, 0, 0}
+	};
+
+	while (1) {
+		opt = getopt_long(argc, argv, "", long_options, &option_index);
+		if (opt == -1)
+			break;
+
+		switch (opt) {
+		case DISPLAY_DEVICE:
+			strcpy(device, optarg);
+			break;
+		case DISPLAY_ALG_NAME:
+			strcpy(alg_name, optarg);
+			break;
+		case DISPLAY_OP_TYPE:
+			op_type = strtol(optarg, NULL, 0);
+			break;
+		default:
+			printf("bad input parameter, exit!\n");
+			return;
+		}
+	}
+
+	list = wd_get_accel_list(alg_name);
+	if (!list) {
+		printf("no device support alg_name %s, exit!\n", alg_name);
+		return;
+	}
+
+	for (tmp = list; tmp != NULL; tmp = tmp->next) {
+		dev_name = strrchr(tmp->dev->dev_root, '/') + 1;
+		if (!strcmp(dev_name, device)) {
+			dev = tmp->dev;
+			break;
+		}
+	}
+
+	if (!dev) {
+		printf("no device name is %s, exit!\n", device);
+		goto free_list;
+	}
+
+	ret = wd_get_dev_usage(dev, alg_name, op_type);
+	if (ret < 0) {
+		printf("failed to get usage ret %d!\n", ret);
+		goto free_list;
+	}
+
+	printf("%s %s op type %d usage is %d\n", device, alg_name, op_type, ret);
+
+free_list:
+	wd_free_list_accels(list);
+}
+
 void print_dfx_help(void)
 {
 	printf("NAME\n");
@@ -186,11 +264,13 @@ void print_dfx_help(void)
 	printf("    uadk_tool dfx [--dir]     = Show library dir\n");
 	printf("    uadk_tool dfx [--env]     = Show environment variables\n");
 	printf("    uadk_tool dfx [--count]   = Show the ctx message count\n");
+	printf("    uadk_tool dfx [--usage]   = Show the device bandwidth utilization\n");
 	printf("    uadk_tool dfx [--help]    = usage\n");
 	printf("Example\n");
 	printf("    uadk_tool dfx --version\n");
 	printf("    uadk_tool dfx --env sec\n");
 	printf("    uadk_tool dfx --count\n");
+	printf("    uadk_tool dfx --usage --device hisi_sec2-0 --alg cipher --op_type 0\n");
 }
 
 void dfx_cmd_parse(int argc, char *argv[])
@@ -205,6 +285,7 @@ void dfx_cmd_parse(int argc, char *argv[])
 		{"dir",     no_argument, 0,  DISPLAY_DIR},
 		{"env",     required_argument, 0,  DISPLAY_ENV},
 		{"count",   no_argument, 0,  DISPLAY_COUNT},
+		{"usage",   no_argument, 0,  DISPLAY_USAGE},
 		{"help",    no_argument, 0,  DISPLAY_HELP},
 		{0, 0, 0, 0}
 	};
@@ -234,6 +315,9 @@ void dfx_cmd_parse(int argc, char *argv[])
 		case DISPLAY_COUNT:
 			uadk_shared_read();
 			break;
+		case DISPLAY_USAGE:
+			uadk_dev_usage_read(argc, argv);
+			return;
 		case DISPLAY_HELP:
 			print_dfx_help();
 			break;

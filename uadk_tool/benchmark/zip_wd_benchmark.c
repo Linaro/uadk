@@ -22,6 +22,8 @@
 #define CHUNK_SIZE		(128 * 1024)
 #define MAX_UNRECV_PACKET_NUM		2
 #define MAX_POOL_CREATE_FAIL_TIME	10
+#define MIN_CTX_BUF_SIZE		65536
+#define STREAM_MODE_TYPE		2
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -322,6 +324,10 @@ static int init_zip_wd_queue(struct acc_option *options)
 		outsize = g_pktlen + ALIGN_SIZE;
 	else
 		outsize = g_pktlen * DECOMP_LEN_RATE;
+
+	/* Stream mode block size should bigger than 64K */
+	if (options->optype >= STREAM_MODE_TYPE && outsize < MIN_CTX_BUF_SIZE)
+		outsize = MIN_CTX_BUF_SIZE;
 
 	g_thread_queue.bd_res = malloc(g_thread_num * sizeof(struct thread_bd_res));
 	if (!g_thread_queue.bd_res) {
