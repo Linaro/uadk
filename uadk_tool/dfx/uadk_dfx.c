@@ -14,7 +14,6 @@
 #include "include/wd.h"
 #include "uadk_dfx.h"
 
-#define uadk_build_date()	printf("built on: %s %s\n", __DATE__, __TIME__)
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 #define PRIVILEGE_FLAG		0666
 
@@ -35,7 +34,6 @@ struct uadk_env_table {
 
 enum dfx_op_type {
 	DISPLAY_VERSION = 2,
-	DISPLAY_DATE,
 	DISPLAY_DIR,
 	DISPLAY_ENV,
 	DISPLAY_COUNT,
@@ -185,7 +183,6 @@ void print_dfx_help(void)
 	printf("    uadk_tool dfx : uadk library dfx function, etc\n");
 	printf("USAGE\n");
 	printf("    uadk_tool dfx [--version] = Show library version\n");
-	printf("    uadk_tool dfx [--date]    = Show build date\n");
 	printf("    uadk_tool dfx [--dir]     = Show library dir\n");
 	printf("    uadk_tool dfx [--env]     = Show environment variables\n");
 	printf("    uadk_tool dfx [--count]   = Show the ctx message count\n");
@@ -204,12 +201,11 @@ void dfx_cmd_parse(int argc, char *argv[])
 	int opt;
 
 	static struct option long_options[] = {
-		{"version", no_argument, 0,  2},
-		{"date",    no_argument, 0,  3},
-		{"dir",     no_argument, 0,  4},
-		{"env",     required_argument, 0,  5},
-		{"count",   no_argument, 0,  6},
-		{"help",    no_argument, 0,  7},
+		{"version", no_argument, 0,  DISPLAY_VERSION},
+		{"dir",     no_argument, 0,  DISPLAY_DIR},
+		{"env",     required_argument, 0,  DISPLAY_ENV},
+		{"count",   no_argument, 0,  DISPLAY_COUNT},
+		{"help",    no_argument, 0,  DISPLAY_HELP},
 		{0, 0, 0, 0}
 	};
 
@@ -221,9 +217,6 @@ void dfx_cmd_parse(int argc, char *argv[])
 		switch (opt) {
 		case DISPLAY_VERSION:
 			wd_get_version();
-			break;
-		case DISPLAY_DATE:
-			uadk_build_date();
 			break;
 		case DISPLAY_DIR:
 			uadk_exe_path();
