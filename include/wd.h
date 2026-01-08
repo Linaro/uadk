@@ -627,6 +627,14 @@ struct wd_capability {
 struct wd_capability *wd_get_alg_cap(void);
 void wd_release_alg_cap(struct wd_capability *head);
 
+/**
+ * wd_get_dev_usage() - Get the device bandwidth usage.
+ * @dev: Indicate device.
+ * @alg_name: Indicates the intention to query the bandwidth usage of the algorithm on the device.
+ * @alg_op_type: algorithm type.
+ */
+int wd_get_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 alg_op_type);
+
 #ifdef __cplusplus
 }
 #endif

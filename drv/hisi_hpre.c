@@ -2777,9 +2777,68 @@ static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
 	return ecc_sqe_parse((struct hisi_qp *)h_qp, msg, &hw_msg);
 }
 
-static int hpre_get_usage(void *param)
+static handle_t hpre_find_dev_qp(struct wd_alg_driver *drv, const char *dev_name)
 {
-	return WD_SUCCESS;
+	struct wd_ctx_config_internal *config;
+	struct hisi_hpre_ctx *priv;
+	char *ctx_dev_name;
+	handle_t ctx = 0;
+	handle_t qp = 0;
+	__u32 i;
+
+	priv = (struct hisi_hpre_ctx *)drv->priv;
+	if (!priv)
+		return 0;
+
+	config = &priv->config;
+	for (i = 0; i < config->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+		if (!strcmp(ctx_dev_name, dev_name)) {
+			ctx = config->ctxs[i].ctx;
+			break;
+		}
+	}
+
+	if (ctx)
+		qp = (handle_t)wd_ctx_get_priv(ctx);
+
+	return qp;
+}
+
+static int hpre_ecc_get_usage(void *param)
+{
+	struct hisi_dev_usage *hpre_usage = (struct hisi_dev_usage *)param;
+	struct wd_alg_driver *drv = hpre_usage->drv;
+	handle_t qp;
+
+	if (hpre_usage->alg_op_type >= drv->op_type_num) {
+		WD_ERR("invalid: alg_op_type %u is error!\n", hpre_usage->alg_op_type);
+		return -WD_EINVAL;
+	}
+
+	qp = hpre_find_dev_qp(drv, hpre_usage->dev_name);
+	if (qp)
+		return hisi_qm_get_usage(qp, HPRE_HW_V3_ECC_ALG_TYPE);
+
+	return -WD_EACCES;
+}
+
+static int hpre_rsa_get_usage(void *param)
+{
+	struct hisi_dev_usage *hpre_usage = (struct hisi_dev_usage *)param;
+	struct wd_alg_driver *drv = hpre_usage->drv;
+	handle_t qp;
+
+	if (hpre_usage->alg_op_type >= drv->op_type_num) {
+		WD_ERR("invalid: alg_op_type %u is error!\n", hpre_usage->alg_op_type);
+		return -WD_EINVAL;
+	}
+
+	qp = hpre_find_dev_qp(drv, hpre_usage->dev_name);
+	if (qp)
+		return hisi_qm_get_usage(qp, HPRE_HW_V2_ALG_TYPE);
+
+	return -WD_EACCES;
 }
 
 static int ecc_sess_eops_init(struct wd_alg_driver *drv, void **params)
@@ -2886,7 +2945,7 @@ static int hpre_ecc_get_extend_ops(void *ops)
 	.exit = hpre_exit,\
 	.send = ecc_send,\
 	.recv = ecc_recv,\
-	.get_usage = hpre_get_usage,\
+	.get_usage = hpre_ecc_get_usage,\
 	.get_extend_ops = hpre_ecc_get_extend_ops,\
 }
 
@@ -2910,7 +2969,7 @@ static struct wd_alg_driver hpre_rsa_driver = {
 	.exit = hpre_exit,
 	.send = rsa_send,
 	.recv = rsa_recv,
-	.get_usage = hpre_get_usage,
+	.get_usage = hpre_rsa_get_usage,
 };
 
 static struct wd_alg_driver hpre_dh_driver = {
@@ -2925,7 +2984,7 @@ static struct wd_alg_driver hpre_dh_driver = {
 	.exit = hpre_exit,
 	.send = dh_send,
 	.recv = dh_recv,
-	.get_usage = hpre_get_usage,
+	.get_usage = hpre_rsa_get_usage,
 };
 
 #ifdef WD_STATIC_DRV

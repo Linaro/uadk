@@ -1007,6 +1007,7 @@ static int join_gather_get_extend_ops(void *ops)
 	.send = join_gather_send,\
 	.recv = join_gather_recv,\
 	.get_extend_ops = join_gather_get_extend_ops,\
+	.get_usage = dae_get_usage,\
 }
 
 static struct wd_alg_driver join_gather_driver[] = {

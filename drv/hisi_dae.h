@@ -220,6 +220,7 @@ int get_free_ext_addr(struct dae_extend_addr *ext_addr);
 void put_ext_addr(struct dae_extend_addr *ext_addr, int idx);
 __u32 get_data_type_size(enum dae_data_type type, __u16 data_info);
 int dae_decimal_precision_check(__u16 data_info, bool longdecimal);
+int dae_get_usage(void *param);
 
 #ifdef __cplusplus
 }

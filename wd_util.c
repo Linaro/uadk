@@ -98,78 +98,6 @@ struct drv_lib_list {
 	struct drv_lib_list *next;
 };
 
-struct acc_alg_item {
-	const char *name;
-	const char *algtype;
-};
-
-static struct acc_alg_item alg_options[] = {
-	{"zlib", "zlib"},
-	{"gzip", "gzip"},
-	{"deflate", "deflate"},
-	{"lz77_zstd", "lz77_zstd"},
-	{"lz4", "lz4"},
-	{"lz77_only", "lz77_only"},
-	{"hashagg", "hashagg"},
-	{"udma", "udma"},
-	{"hashjoin", "hashjoin"},
-	{"gather", "gather"},
-	{"join-gather", "hashjoin"},
-
-	{"rsa", "rsa"},
-	{"dh", "dh"},
-	{"ecdh", "ecdh"},
-	{"x25519", "x25519"},
-	{"x448", "x448"},
-	{"ecdsa", "ecdsa"},
-	{"sm2", "sm2"},
-
-	{"ecb(aes)", "cipher"},
-	{"cbc(aes)", "cipher"},
-	{"xts(aes)", "cipher"},
-	{"ofb(aes)", "cipher"},
-	{"cfb(aes)", "cipher"},
-	{"ctr(aes)", "cipher"},
-	{"cbc-cs1(aes)", "cipher"},
-	{"cbc-cs2(aes)", "cipher"},
-	{"cbc-cs3(aes)", "cipher"},
-	{"ecb(sm4)", "cipher"},
-	{"xts(sm4)", "cipher"},
-	{"cbc(sm4)", "cipher"},
-	{"ofb(sm4)", "cipher"},
-	{"cfb(sm4)", "cipher"},
-	{"ctr(sm4)", "cipher"},
-	{"cbc-cs1(sm4)", "cipher"},
-	{"cbc-cs2(sm4)", "cipher"},
-	{"cbc-cs3(sm4)", "cipher"},
-	{"ecb(des)", "cipher"},
-	{"cbc(des)", "cipher"},
-	{"ecb(des3_ede)", "cipher"},
-	{"cbc(des3_ede)", "cipher"},
-
-	{"ccm(aes)", "aead"},
-	{"gcm(aes)", "aead"},
-	{"ccm(sm4)", "aead"},
-	{"gcm(sm4)", "aead"},
-	{"authenc(generic,cbc(aes))", "aead"},
-	{"authenc(generic,cbc(sm4))", "aead"},
-
-	{"sm3", "digest"},
-	{"md5", "digest"},
-	{"sha1", "digest"},
-	{"sha256", "digest"},
-	{"sha224", "digest"},
-	{"sha384", "digest"},
-	{"sha512", "digest"},
-	{"sha512-224", "digest"},
-	{"sha512-256", "digest"},
-	{"cmac(aes)", "digest"},
-	{"gmac(aes)", "digest"},
-	{"xcbc-mac-96(aes)", "digest"},
-	{"xcbc-prf-128(aes)", "digest"},
-	{"", ""}
-};
-
 static void *wd_internal_alloc(void *usr, size_t size)
 {
 	if (size != 0)
@@ -2013,18 +1941,6 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 }
 
-static void wd_get_alg_type(const char *alg_name, char *alg_type)
-{
-	__u64 i;
-
-	for (i = 0; i < ARRAY_SIZE(alg_options); i++) {
-		if (strcmp(alg_name, alg_options[i].name) == 0) {
-			(void)strcpy(alg_type, alg_options[i].algtype);
-			break;
-		}
-	}
-}
-
 static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
 {
 	if (!fb_driver->init) {
@@ -2175,7 +2091,7 @@ static int wd_env_set_ctx_nums(const char *alg_name, const char *name, const cha
 	char *left, *section, *start;
 	struct uacce_dev_list *list;
 	int is_comp;
-	int ret = 0;
+	int ret;
 
 	/* COMP environment variable's format is different, mark it */
 	is_comp = strncmp(name, "WD_COMP_CTX_NUM", strlen(name)) ? 0 : 1;
@@ -2186,7 +2102,10 @@ static int wd_env_set_ctx_nums(const char *alg_name, const char *name, const cha
 	if (!start)
 		return -WD_ENOMEM;
 
-	wd_get_alg_type(alg_name, alg_type);
+	ret = wd_get_alg_type(alg_name, alg_type);
+	if (ret)
+		return ret;
+
 	list = wd_get_accel_list(alg_type);
 	if (!list) {
 		WD_ERR("failed to get devices!\n");
@@ -3112,7 +3031,8 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 		break;
 	case UADK_ALG_HW:
-		wd_get_alg_type(alg, alg_type);
+		if (wd_get_alg_type(alg, alg_type))
+			return -WD_EINVAL;
 		(void)strcpy(attrs->alg, alg_type);
 
 		ctx_config = calloc(1, sizeof(*ctx_config));
