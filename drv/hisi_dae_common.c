@@ -389,3 +389,41 @@ void dae_exit(struct wd_alg_driver *drv)
 	free(priv);
 	drv->priv = NULL;
 }
+
+int dae_get_usage(void *param)
+{
+	struct hisi_dev_usage *dae_usage = (struct hisi_dev_usage *)param;
+	struct wd_alg_driver *drv = dae_usage->drv;
+	struct wd_ctx_config_internal *config;
+	struct hisi_dae_ctx *priv;
+	char *ctx_dev_name;
+	handle_t ctx = 0;
+	handle_t qp = 0;
+	__u32 i;
+
+	if (dae_usage->alg_op_type >= drv->op_type_num) {
+		WD_ERR("invalid: alg_op_type %u is error!\n", dae_usage->alg_op_type);
+		return -WD_EINVAL;
+	}
+
+	priv = (struct hisi_dae_ctx *)drv->priv;
+	if (!priv)
+		return -WD_EACCES;
+
+	config = &priv->config;
+	for (i = 0; i < config->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+		if (!strcmp(dae_usage->dev_name, ctx_dev_name)) {
+			ctx = config->ctxs[i].ctx;
+			break;
+		}
+	}
+
+	if (ctx)
+		qp = (handle_t)wd_ctx_get_priv(ctx);
+
+	if (qp)
+		return hisi_qm_get_usage(qp, DAE_SQC_ALG_TYPE);
+
+	return -WD_EACCES;
+}
