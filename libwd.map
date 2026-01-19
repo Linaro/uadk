@@ -22,6 +22,7 @@ global:
 	wd_ctx_set_io_cmd;
 	wd_ctx_get_region_size;
 	wd_ctx_get_dev_name;
+	wd_get_dev_usage;
 
 	wd_block_alloc;
 	wd_block_free;
@@ -53,6 +54,8 @@ global:
 	wd_alg_driver_exit;
 	wd_alg_driver_send;
 	wd_alg_driver_recv;
+	wd_alg_get_dev_usage;
+	wd_get_alg_type;
 
 	wd_find_ctx;
 	wd_get_dev_id;

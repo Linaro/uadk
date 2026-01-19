@@ -1283,11 +1283,6 @@ static int agg_hash_table_init(struct wd_alg_driver *drv,
 				   hash_table, agg_ctx->row_size);
 }
 
-static int dae_get_usage(void *param)
-{
-	return 0;
-}
-
 static int dae_get_extend_ops(void *ops)
 {
 	struct wd_agg_ops *agg_ops = (struct wd_agg_ops *)ops;

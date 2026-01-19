@@ -42,6 +42,12 @@
 
 #define ADDR_ALIGN_64(addr) ((((uintptr_t)(addr) >> 6) + 1) << 6)
 
+#define QM_TYPE_USAGE_OFFSET	0x1100
+#define QM_DEV_USAGE_OFFSET	16
+#define QM_CHANNEL_ADDR_INTRVL	0x4
+#define QM_MAX_DEV_USAGE	100
+#define QM_DEV_USAGE_RATE	100
+
 struct hisi_qm_type {
 	__u16	qm_ver;
 	int	qm_db_offs;
@@ -153,6 +159,39 @@ static struct hisi_qm_type qm_type[] = {
 		.hacc_db	= hacc_db_v2,
 	}
 };
+
+int hisi_qm_get_usage(handle_t h_qp, __u8 type)
+{
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
+	struct hisi_qm_queue_info *q_info;
+	__u16 count;
+	__u32 val;
+	int usage;
+
+	if (!qp)
+		return -WD_EINVAL;
+
+	q_info = &qp->q_info;
+	if (q_info->hw_type < HISI_QM_API_VER5_BASE) {
+		WD_ERR("invalid: device not support get usage!\n");
+		return -WD_EINVAL;
+	}
+
+	val = wd_ioread32(q_info->mmio_base + QM_TYPE_USAGE_OFFSET +
+			  type * QM_CHANNEL_ADDR_INTRVL);
+	count = val >> QM_DEV_USAGE_OFFSET;
+	if (!count) {
+		WD_ERR("failed to get dev count usage!\n");
+		return -WD_EINVAL;
+	}
+
+	if (count <= (__u16)val)
+		return QM_MAX_DEV_USAGE;
+
+	usage = (int)((__u16)val) * QM_DEV_USAGE_RATE / count;
+
+	return usage;
+}
 
 static void hisi_qm_fill_sqe(const void *sqe, struct hisi_qm_queue_info *info,
 			     __u16 tail, __u16 num)
