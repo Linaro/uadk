@@ -859,9 +859,11 @@ static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
 	}
 
 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
-		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		     ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
-		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		       out_size, PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		       ZSTD_LIT_RESV_SIZE + lits_size);
 		return -WD_EINVAL;
 	}
 
@@ -885,8 +887,8 @@ static int lz77_only_buf_check(struct wd_comp_msg *msg)
 	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
 	__u32 seq_avail_out = out_size - lits_size;
 
-	/* lits_size need to be less than 8M when use pbuffer */
-	if (unlikely(lits_size > HZ_MAX_SIZE)) {
+	/* in_size need to be less than 8M minus the literal calculation reserved space */
+	if (unlikely(in_size > HZ_MAX_SIZE - ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: in_len(%u) of lz77_only is out of range!\n", in_size);
 		return -WD_EINVAL;
 	}
@@ -1030,9 +1032,11 @@ static int lz77_zstd_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 	}
 
 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
-		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		     ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
-			out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		       out_size, PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		       ZSTD_LIT_RESV_SIZE + lits_size);
 		return -WD_EINVAL;
 	}
 
@@ -1050,7 +1054,7 @@ static int lz77_only_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 	 * the dfx information. The literals and sequences data need to be written
 	 * to an independent sgl splited from list_dst.
 	 */
-	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+	if (unlikely(lits_size < (__u64)in_size + ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
 		       ZSTD_LIT_RESV_SIZE + lits_size);
 		return -WD_EINVAL;
@@ -1652,7 +1656,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	recv_msg->req.status = 0;
 
 	if (unlikely(status != 0 && status != HZ_NEGACOMPRESS &&
-		     status != HZ_CRC_ERR && status != HZ_DECOMP_END)) {
+				 status != HZ_DECOMP_END)) {
 		if (status == ERR_DSTLEN_OUT)
 			WD_DEBUG("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
 				ctx_st, status, type);
