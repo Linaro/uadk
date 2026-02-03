@@ -828,11 +828,16 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 {
 	struct uacce_dev_list *list, *head;
 	struct uacce_dev *dev = NULL, *target = NULL;
-	int cpu = sched_getcpu();
-	int node = numa_node_of_cpu(cpu);
+	unsigned int node;
 	int ctx_num, tmp;
 	int dis = 1024;
 	int max = 0;
+
+	/* Under default conditions in a VM, the node value is 0 */
+	if (getcpu(NULL, &node) || node == (unsigned int)NUMA_NO_NODE) {
+		WD_ERR("invalid: failed to get numa node id for uacce device!\n");
+		return NULL;
+	}
 
 	head = wd_get_accel_list(alg_name);
 	if (!head)
@@ -840,7 +845,7 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 
 	list = head;
 	while (list) {
-		tmp = numa_distance(node, list->dev->numa_id);
+		tmp = numa_distance((int)node, list->dev->numa_id);
 		ctx_num = wd_get_avail_ctx(list->dev);
 		if ((dis > tmp && ctx_num > 0) ||
 		    (dis == tmp && ctx_num > max)) {
