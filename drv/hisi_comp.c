@@ -372,6 +372,7 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
 {
 	handle_t h_sgl_pool;
+	int ret;
 
 	h_sgl_pool = hisi_qm_get_sglpool(h_qp, mm_ops);
 	if (unlikely(!h_sgl_pool)) {
@@ -380,21 +381,19 @@ static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm
 	}
 
 	c_sgl->in = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_src);
-	if (unlikely(!c_sgl->in)) {
-		WD_ERR("failed to get hw sgl in!\n");
-		return -WD_ENOMEM;
-	}
+	if (unlikely(WD_IS_ERR(c_sgl->in)))
+		return WD_PTR_ERR(c_sgl->in);
 
 	c_sgl->out = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_dst);
-	if (unlikely(!c_sgl->out)) {
-		WD_ERR("failed to get hw sgl out!\n");
+	if (unlikely(WD_IS_ERR(c_sgl->out))) {
+		ret = WD_PTR_ERR(c_sgl->out);
 		goto err_free_sgl_in;
 	}
 
 	if (c_sgl->seq_start) {
 		c_sgl->out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->seq_start);
-		if (unlikely(!c_sgl->out_seq)) {
-			WD_ERR("failed to get hw sgl out for sequences!\n");
+		if (unlikely(WD_IS_ERR(c_sgl->out_seq))) {
+			ret = WD_PTR_ERR(c_sgl->out_seq);
 			goto err_free_sgl_out;
 		}
 	}
@@ -405,7 +404,7 @@ err_free_sgl_out:
 	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->out);
 err_free_sgl_in:
 	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->in);
-	return -WD_ENOMEM;
+	return ret;
 }
 
 static void free_hw_sgl(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
@@ -1552,7 +1551,8 @@ static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *com
 	hisi_set_msg_id(h_qp, &msg->tag);
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
 	if (unlikely(ret < 0)) {
-		WD_ERR("failed to fill zip sqe, ret = %d!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("failed to fill zip sqe, ret = %d!\n", ret);
 		return ret;
 	}
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
