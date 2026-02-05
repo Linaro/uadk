@@ -54,6 +54,10 @@ static void fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 	msg->checksum = opdata->checksum;
 	msg->tag = ctx->ctx_id;
 	msg->status = 0;
+
+	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL &&
+	    opdata->stream_pos == WCRYPTO_COMP_STREAM_NEW && ctx->ctx_buf)
+		memset(ctx->ctx_buf, 0, MAX_CTX_RSV_SIZE);
 }
 
 static int ctx_params_check(struct wd_queue *q, struct wcrypto_comp_ctx_setup *setup)
@@ -94,7 +98,7 @@ static int ctx_params_check(struct wd_queue *q, struct wcrypto_comp_ctx_setup *s
 		return -WD_EINVAL;
 	}
 
-	if (setup->stream_mode > WCRYPTO_FINISH) {
+	if (setup->stream_mode > WCRYPTO_COMP_STATEFUL) {
 		WD_ERR("err: stream_mode is invalid!\n");
 		return -WD_EINVAL;
 	}

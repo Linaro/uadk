@@ -31,6 +31,7 @@ extern "C" {
 #define WD_CTX_CNT_NUM			1024
 #define WD_IPC_KEY			0x500011
 #define CRYPTO_MAX_ALG_NAME		128
+#define NUMA_NO_NODE			(-1)
 
 typedef unsigned char __u8;
 typedef unsigned int __u32;

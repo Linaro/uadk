@@ -372,6 +372,7 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
 {
 	handle_t h_sgl_pool;
+	int ret;
 
 	h_sgl_pool = hisi_qm_get_sglpool(h_qp, mm_ops);
 	if (unlikely(!h_sgl_pool)) {
@@ -380,21 +381,19 @@ static int get_sgl_from_pool(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm
 	}
 
 	c_sgl->in = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_src);
-	if (unlikely(!c_sgl->in)) {
-		WD_ERR("failed to get hw sgl in!\n");
-		return -WD_ENOMEM;
-	}
+	if (unlikely(WD_IS_ERR(c_sgl->in)))
+		return WD_PTR_ERR(c_sgl->in);
 
 	c_sgl->out = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->list_dst);
-	if (unlikely(!c_sgl->out)) {
-		WD_ERR("failed to get hw sgl out!\n");
+	if (unlikely(WD_IS_ERR(c_sgl->out))) {
+		ret = WD_PTR_ERR(c_sgl->out);
 		goto err_free_sgl_in;
 	}
 
 	if (c_sgl->seq_start) {
 		c_sgl->out_seq = hisi_qm_get_hw_sgl(h_sgl_pool, c_sgl->seq_start);
-		if (unlikely(!c_sgl->out_seq)) {
-			WD_ERR("failed to get hw sgl out for sequences!\n");
+		if (unlikely(WD_IS_ERR(c_sgl->out_seq))) {
+			ret = WD_PTR_ERR(c_sgl->out_seq);
 			goto err_free_sgl_out;
 		}
 	}
@@ -405,7 +404,7 @@ err_free_sgl_out:
 	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->out);
 err_free_sgl_in:
 	hisi_qm_put_hw_sgl(h_sgl_pool, c_sgl->in);
-	return -WD_ENOMEM;
+	return ret;
 }
 
 static void free_hw_sgl(handle_t h_qp, struct comp_sgl *c_sgl, struct wd_mm_ops *mm_ops)
@@ -859,9 +858,11 @@ static int lz77_zstd_buf_check(struct wd_comp_msg *msg)
 	}
 
 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
-		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		     ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
-		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		       out_size, PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		       ZSTD_LIT_RESV_SIZE + lits_size);
 		return -WD_EINVAL;
 	}
 
@@ -885,8 +886,8 @@ static int lz77_only_buf_check(struct wd_comp_msg *msg)
 	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
 	__u32 seq_avail_out = out_size - lits_size;
 
-	/* lits_size need to be less than 8M when use pbuffer */
-	if (unlikely(lits_size > HZ_MAX_SIZE)) {
+	/* in_size need to be less than 8M minus the literal calculation reserved space */
+	if (unlikely(in_size > HZ_MAX_SIZE - ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: in_len(%u) of lz77_only is out of range!\n", in_size);
 		return -WD_EINVAL;
 	}
@@ -1030,9 +1031,11 @@ static int lz77_zstd_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 	}
 
 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
-		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
+		     seq_avail_out <= PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		     ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
-			out_size, PRICE_MIN_OUT_SIZE + lits_size);
+		       out_size, PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
+		       ZSTD_LIT_RESV_SIZE + lits_size);
 		return -WD_EINVAL;
 	}
 
@@ -1050,7 +1053,7 @@ static int lz77_only_buf_check_sgl(struct wd_comp_msg *msg, __u32 lits_size)
 	 * the dfx information. The literals and sequences data need to be written
 	 * to an independent sgl splited from list_dst.
 	 */
-	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
+	if (unlikely(lits_size < (__u64)in_size + ZSTD_LIT_RESV_SIZE)) {
 		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
 		       ZSTD_LIT_RESV_SIZE + lits_size);
 		return -WD_EINVAL;
@@ -1548,7 +1551,8 @@ static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *com
 	hisi_set_msg_id(h_qp, &msg->tag);
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
 	if (unlikely(ret < 0)) {
-		WD_ERR("failed to fill zip sqe, ret = %d!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("failed to fill zip sqe, ret = %d!\n", ret);
 		return ret;
 	}
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
@@ -1652,7 +1656,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	recv_msg->req.status = 0;
 
 	if (unlikely(status != 0 && status != HZ_NEGACOMPRESS &&
-		     status != HZ_CRC_ERR && status != HZ_DECOMP_END)) {
+				 status != HZ_DECOMP_END)) {
 		if (status == ERR_DSTLEN_OUT)
 			WD_DEBUG("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
 				ctx_st, status, type);

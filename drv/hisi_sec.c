@@ -1305,20 +1305,17 @@ static int hisi_sec_fill_sgl(handle_t h_sgl_pool, __u8 **in, __u8 **out,
 	void *hw_sgl_out;
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in));
-	if (!hw_sgl_in) {
-		WD_ERR("failed to get sgl in for hw_v2!\n");
-		return -WD_EINVAL;
-	}
+	if (WD_IS_ERR(hw_sgl_in))
+		return WD_PTR_ERR(hw_sgl_in);
 
 	if (type == WD_DIGEST) {
 		hw_sgl_out = *out;
 	} else {
 		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool,
 						(struct wd_datalist *)(*out));
-		if (!hw_sgl_out) {
-			WD_ERR("failed to get hw sgl out for hw_v2!\n");
+		if (WD_IS_ERR(hw_sgl_out)) {
 			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-			return -WD_EINVAL;
+			return WD_PTR_ERR(hw_sgl_out);
 		}
 
 		sqe->sdm_addr_type |= SEC_SGL_SDM_MASK;
@@ -1338,10 +1335,8 @@ static int hisi_sec_fill_sgl_v3(handle_t h_sgl_pool, __u8 **in, __u8 **out,
 	void *hw_sgl_out;
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in));
-	if (!hw_sgl_in) {
-		WD_ERR("failed to get sgl in for hw_v3!\n");
-		return -WD_EINVAL;
-	}
+	if (WD_IS_ERR(hw_sgl_in))
+		return WD_PTR_ERR(hw_sgl_in);
 
 	if (type == WD_DIGEST) {
 		hw_sgl_out = *out;
@@ -1349,10 +1344,9 @@ static int hisi_sec_fill_sgl_v3(handle_t h_sgl_pool, __u8 **in, __u8 **out,
 	} else {
 		hw_sgl_out = hisi_qm_get_hw_sgl(h_sgl_pool,
 						(struct wd_datalist *)(*out));
-		if (!hw_sgl_out) {
-			WD_ERR("failed to get hw sgl out for hw_v3!\n");
+		if (WD_IS_ERR(hw_sgl_out)) {
 			hisi_qm_put_hw_sgl(h_sgl_pool, hw_sgl_in);
-			return -WD_EINVAL;
+			return WD_PTR_ERR(hw_sgl_out);
 		}
 
 		/*
