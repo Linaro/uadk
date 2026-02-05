@@ -100,9 +100,8 @@ handle_t wd_find_ctx(const char *alg_name)
 	struct mem_ctx_node *close_node = NULL;
 	struct mem_ctx_node *node;
 	int min_distance = 0xFFFF;
-	int cpu = sched_getcpu();
-	int nid = numa_node_of_cpu(cpu);
 	handle_t h_ctx = 0;
+	unsigned int nid;
 	int numa_dis;
 
 	if (!alg_name) {
@@ -110,17 +109,23 @@ handle_t wd_find_ctx(const char *alg_name)
 		return 0;
 	}
 
+	/* Under default conditions in a VM, the node value is 0 */
+	if (getcpu(NULL, &nid) || nid == (unsigned int)NUMA_NO_NODE) {
+		WD_ERR("invalid: failed to get numa node for memory pool!\n");
+		return 0;
+	}
+
 	pthread_mutex_lock(&g_mem_ctx_mutex);
 	TAILQ_FOREACH(node, &g_mem_ctx_list, list_node) {
 		if (node->used == false && strstr(node->alg_name, alg_name)) {
-			if (node->numa_id == nid) {
+			if (node->numa_id == (int)nid) {
 				h_ctx = node->h_ctx;
 				node->used = true;
 				break;
 			}
 
 			/* Query the queue with the shortest NUMA distance */
-			numa_dis = numa_distance(nid, node->numa_id);
+			numa_dis = numa_distance((int)nid, node->numa_id);
 			if (numa_dis < min_distance) {
 				min_distance = numa_dis;
 				close_node = node;

@@ -19,7 +19,7 @@
 #define PROBE_INDEX_ROW_SIZE	4
 
 /* align size */
-#define DAE_KEY_ALIGN_SIZE	8
+#define DAE_KEY_ALIGN_SIZE	4
 #define DAE_BREAKPOINT_SIZE	81920
 #define DAE_ADDR_INDEX_SHIFT	1
 
@@ -28,7 +28,6 @@
 #define HASH_TABLE_INDEX_NUM		1
 #define HASH_TABLE_MAX_INDEX_NUM	15
 #define HASH_TABLE_INDEX_SIZE		12
-#define HASH_TABLE_EMPTY_SIZE	4
 #define GATHER_ROW_BATCH_EMPTY_SIZE	4
 
 /* DAE hardware protocol data */
@@ -173,6 +172,9 @@ static void fill_join_table_data(struct dae_sqe *sqe, struct dae_addr_list *addr
 	}
 
 	sqe->table_row_size = ctx->hash_table_row_size;
+	/* Initialize these fields for hardware check*/
+	sqe->src_table_width = ctx->table_data.table_width;
+	sqe->dst_table_width = ctx->table_data.table_width;
 
 	if (table_data_src) {
 		sqe->src_table_width = table_data_src->table_width;
@@ -814,6 +816,7 @@ static int join_get_table_rowsize(struct join_gather_col_data *cols_data,
 	for (i = 0; i < key_num; i++)
 		row_count_size += get_data_type_size(key_data[i].hw_type, 0);
 
+	row_count_size += HASH_TABLE_EMPTY_SIZE;
 	row_count_size = ALIGN(row_count_size, DAE_KEY_ALIGN_SIZE);
 	row_count_size += HASH_TABLE_HEAD_TAIL_SIZE +
 			  cols_data->index_num * HASH_TABLE_INDEX_SIZE;

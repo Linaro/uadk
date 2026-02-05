@@ -844,7 +844,7 @@ static struct hisi_sgl *hisi_qm_sgl_pop(struct hisi_sgl_pool *pool)
 
 	if (pool->top == 0) {
 		pthread_spin_unlock(&pool->lock);
-		WD_ERR("invalid: the sgl pool is empty!\n");
+		WD_DEBUG("debug: the sgl pool is empty now!\n");
 		return NULL;
 	}
 
@@ -936,22 +936,23 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	struct wd_datalist *tmp = sgl;
 	struct hisi_sgl *head, *next, *cur;
 	struct wd_mm_ops *mm_ops;
+	void *ret = NULL;
 	__u32 i = 0;
 
 	if (!pool || !sgl) {
 		WD_ERR("invalid: hw sgl pool or sgl is NULL!\n");
-		return NULL;
+		return WD_ERR_PTR(-WD_EINVAL);
 	}
 
 	if (pool->mm_ops && !pool->mm_ops->iova_map) {
 		WD_ERR("invalid: mm_ops iova_map function is NULL!\n");
-		return NULL;
+		return WD_ERR_PTR(-WD_EINVAL);
 	}
 
 	mm_ops = pool->mm_ops;
 	head = hisi_qm_sgl_pop(pool);
 	if (!head)
-		return NULL;
+		return WD_ERR_PTR(-WD_EBUSY);
 
 	cur = head;
 	tmp = sgl;
@@ -964,6 +965,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 
 		if (tmp->len > HISI_MAX_SIZE_IN_SGE) {
 			WD_ERR("invalid: the data len is %u!\n", tmp->len);
+			ret = WD_ERR_PTR(-WD_EINVAL);
 			goto err_out;
 		}
 
@@ -975,6 +977,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 
 		if (!cur->sge_entries[i].buff) {
 			WD_ERR("invalid: the iova map addr of sge is NULL!\n");
+			ret = WD_ERR_PTR(-WD_EINVAL);
 			goto err_out;
 		}
 
@@ -993,7 +996,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 		if (i == pool->sge_num && tmp->next) {
 			next = hisi_qm_sgl_pop(pool);
 			if (!next) {
-				WD_ERR("invalid: the sgl pool is not enough!\n");
+				ret = WD_ERR_PTR(-WD_EBUSY);
 				goto err_out;
 			}
 			if (mm_ops)
@@ -1012,15 +1015,17 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	}
 
 	/* There is no data, recycle the hardware sgl head to pool */
-	if (!head->entry_sum_in_chain)
+	if (!head->entry_sum_in_chain) {
+		ret = WD_ERR_PTR(-WD_EINVAL);
 		goto err_out;
+	}
 
 	hisi_qm_dump_sgl(head);
 
 	return head;
 err_out:
 	hisi_qm_put_hw_sgl(sgl_pool, head);
-	return NULL;
+	return ret;
 }
 
 handle_t hisi_qm_get_sglpool(handle_t h_qp, struct wd_mm_ops *mm_ops)
