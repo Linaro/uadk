@@ -176,11 +176,14 @@ static handle_t session_sched_init(handle_t h_sched_ctx, void *sched_param)
 {
 	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
 	struct sched_params *param = (struct sched_params *)sched_param;
-	int cpu = sched_getcpu();
-	int node = numa_node_of_cpu(cpu);
 	struct sched_key *skey;
+	unsigned int node;
 
-	if (node < 0) {
+	if (getcpu(NULL, &node)) {
+		WD_ERR("failed to get node, errno %d!\n", errno);
+		return (handle_t)(-errno);
+	}
+	if (node == (unsigned int)NUMA_NO_NODE) {
 		WD_ERR("invalid: failed to get numa node!\n");
 		return (handle_t)(-WD_EINVAL);
 	}
@@ -538,12 +541,15 @@ static handle_t session_dev_sched_init(handle_t h_sched_ctx, void *sched_param)
 {
 	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
 	struct sched_params *param = (struct sched_params *)sched_param;
-	int cpu = sched_getcpu();
-	int node = numa_node_of_cpu(cpu);
 	struct sched_key *skey;
+	unsigned int node;
 
-	if (node < 0) {
-		WD_ERR("invalid: failed to get numa node!\n");
+	if (getcpu(NULL, &node)) {
+		WD_ERR("failed to get numa node, errno %d!\n", errno);
+		return (handle_t)(-errno);
+	}
+	if (node == (unsigned int)NUMA_NO_NODE) {
+		WD_ERR("invalid: failed to get numa node for dev sched init!\n");
 		return (handle_t)(-WD_EINVAL);
 	}
 

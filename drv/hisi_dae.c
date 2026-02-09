@@ -33,7 +33,6 @@
 
 /* hash table */
 #define HASH_TABLE_HEAD_TAIL_SIZE	8
-#define HASH_TABLE_EMPTY_SIZE	4
 
 /* hash agg operations col max num */
 #define DAE_AGG_COL_ALG_MAX_NUM		2
@@ -160,13 +159,18 @@ static void fill_hashagg_merge_output_order(struct dae_sqe *sqe, struct dae_ext_
 {
 	struct hashagg_ctx *agg_ctx = msg->priv;
 	struct hashagg_col_data *cols_data = &agg_ctx->cols_data;
+	__u32 out_cols_num = cols_data->output_num;
 	struct hashagg_output_src *output_src;
 	__u32 offset = 0;
 	__u32 i;
 
-	output_src = cols_data->rehash_output;
+	output_src = cols_data->normal_output;
+	if (cols_data->is_count_all) {
+		sqe->counta_vld = DAE_HASH_COUNT_ALL;
+		out_cols_num--;
+	}
 
-	for (i = 0; i < cols_data->output_num; i++) {
+	for (i = 0; i < out_cols_num; i++) {
 		ext_sqe->out_from_in_idx |= (__u64)output_src[i].out_from_in_idx << offset;
 		ext_sqe->out_optype |= (__u64)output_src[i].out_optype << offset;
 		offset += DAE_COL_BIT_NUM;
@@ -370,7 +374,7 @@ static void fill_hashagg_merge_input_data(struct dae_sqe *sqe, struct dae_ext_sq
 	struct hashagg_ctx *agg_ctx = msg->priv;
 	struct hashagg_col_data *cols_data = &agg_ctx->cols_data;
 
-	fill_hashagg_data_info(sqe, ext_sqe, cols_data->output_data, msg->agg_cols_num);
+	fill_hashagg_data_info(sqe, ext_sqe, cols_data->input_data, msg->agg_cols_num);
 }
 
 static void fill_hashagg_ext_addr(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,

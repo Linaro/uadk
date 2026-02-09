@@ -494,6 +494,11 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 		return -WD_EINVAL;
 	}
 
+	if (unlikely(!msg->avail_out)) {
+		WD_ERR("The avai_out is error (%u)!\n", msg->avail_out);
+		return -WD_EINVAL;
+	}
+
 	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
 		     msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
