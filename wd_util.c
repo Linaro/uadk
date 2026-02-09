@@ -2867,6 +2867,7 @@ out_freelist:
 static int wd_alg_ce_ctx_init(struct wd_init_attrs *attrs)
 {
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	struct wd_ce_ctx *ctx;
 
 	ctx_config->ctx_num = 1;
 	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
@@ -2875,11 +2876,13 @@ static int wd_alg_ce_ctx_init(struct wd_init_attrs *attrs)
 		return -WD_ENOMEM;
 	}
 
-	ctx_config->ctxs[0].ctx = (handle_t)calloc(1, sizeof(struct wd_ce_ctx));
-	if (!ctx_config->ctxs[0].ctx) {
+	ctx = calloc(1, sizeof(struct wd_ce_ctx));
+	if (!ctx) {
 		free(ctx_config->ctxs);
 		return -WD_ENOMEM;
 	}
+	ctx->fd = -1;
+	ctx_config->ctxs[0].ctx = (handle_t)ctx;
 
 	return WD_SUCCESS;
 }
@@ -2925,6 +2928,7 @@ static int wd_alg_init_sve_ctx(struct wd_ctx_config *ctx_config)
 	if (!ctx_sync)
 		goto free_ctxs;
 
+	ctx_sync->fd = -1;
 	ctx_config->ctxs[WD_SOFT_SYNC_CTX].op_type = 0;
 	ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx_mode = CTX_MODE_SYNC;
 	ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx = (handle_t)ctx_sync;
@@ -2933,6 +2937,7 @@ static int wd_alg_init_sve_ctx(struct wd_ctx_config *ctx_config)
 	if (!ctx_async)
 		goto free_ctx_sync;
 
+	ctx_async->fd = -1;
 	ctx_config->ctxs[WD_SOFT_ASYNC_CTX].op_type = 0;
 	ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx_mode = CTX_MODE_ASYNC;
 	ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx = (handle_t)ctx_async;
