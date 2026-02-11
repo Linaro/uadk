@@ -6,7 +6,7 @@
 #ifndef __WD_AGG_DRV_H
 #define __WD_AGG_DRV_H
 
-#include <asm/types.h>
+#include <linux/types.h>
 #include "wd_agg.h"
 #include "wd_util.h"
 

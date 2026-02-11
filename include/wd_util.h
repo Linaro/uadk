@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <asm/types.h>
+#include <linux/types.h>
 
 #include "wd.h"
 #include "wd_sched.h"

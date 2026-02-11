@@ -3,7 +3,7 @@
 #ifndef __WD_RSA_DRV_H
 #define __WD_RSA_DRV_H
 
-#include <asm/types.h>
+#include <linux/types.h>
 
 #include "../wd_rsa.h"
 #include "../wd_util.h"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Copyright 2020-2021 Huawei Technologies Co.,Ltd. All rights reserved. */
 
-#include <asm/types.h>
+#include <linux/types.h>
 #include "drv/wd_comp_drv.h"
 #include "drv/hisi_comp_huf.h"
 #include "hisi_qm_udrv.h"
