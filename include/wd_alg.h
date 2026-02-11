@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {

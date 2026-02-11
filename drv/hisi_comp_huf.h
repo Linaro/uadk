@@ -4,7 +4,7 @@
 #ifndef __HISI_COMP_HUF_H
 #define __HISI_COMP_HUF_H
 
-#include <asm/types.h>
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {
