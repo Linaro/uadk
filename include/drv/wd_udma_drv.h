@@ -4,7 +4,7 @@
 #ifndef __WD_UDMA_DRV_H
 #define __WD_UDMA_DRV_H
 
-#include <asm/types.h>
+#include <linux/types.h>
 
 #include "../wd_udma.h"
 #include "../wd_util.h"

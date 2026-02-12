@@ -6,7 +6,7 @@
 #ifndef __WD_JOIN_GATHER_DRV_H
 #define __WD_JOIN_GATHER_DRV_H
 
-#include <asm/types.h>
+#include <linux/types.h>
 #include "wd_join_gather.h"
 #include "wd_util.h"
 

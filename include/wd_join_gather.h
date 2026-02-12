@@ -7,7 +7,8 @@
 #define __WD_JOIN_GATHER_H
 
 #include <dlfcn.h>
-#include <asm/types.h>
+#include <linux/types.h>
+
 #include "wd_dae.h"
 
 #ifdef __cplusplus

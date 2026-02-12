@@ -5,7 +5,7 @@
 #define __WD_COMP_DRV_H
 
 #include <pthread.h>
-#include <asm/types.h>
+#include <linux/types.h>
 
 #include "../wd_comp.h"
 #include "../wd_util.h"
