@@ -4,7 +4,7 @@
 #ifndef __WD_DH_DRV_H
 #define __WD_DH_DRV_H
 
-#include <asm/types.h>
+#include <linux/types.h>
 
 #include "../wd_dh.h"
 #include "../wd_util.h"

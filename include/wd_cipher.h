@@ -8,7 +8,8 @@
 #define __WD_CIPHER_H
 
 #include <dlfcn.h>
-#include <asm/types.h>
+#include <linux/types.h>
+
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus

@@ -5,7 +5,7 @@
 #define __WD_ECC_DRV_H
 
 #include <stdint.h>
-#include <asm/types.h>
+#include <linux/types.h>
 
 #include "../wd_ecc.h"
 #include "../wd_util.h"
