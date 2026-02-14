@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.9], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.10], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
