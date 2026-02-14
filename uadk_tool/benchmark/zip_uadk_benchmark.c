@@ -395,7 +395,16 @@ static int init_ctx_config2(struct acc_option *options)
 		ZIP_TST_PRT("failed to do comp init2!\n");
 	else
 		ret = wd_comp_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+	if (ret) {
+		ZIP_TST_PRT("failed to do comp init2!\n");
+		return ret;
+	}
+
+	return 0;
+
+out_freectx:
 	free(ctx_set_num);
+
 	return ret;
 }
 
