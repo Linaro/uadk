@@ -692,7 +692,7 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 			return wd_ecc_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
-		ret = -EINVAL;
+		return -EINVAL;
 	}
 
 	free(ctx_set_num);
