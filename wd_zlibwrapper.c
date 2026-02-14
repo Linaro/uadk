@@ -67,7 +67,7 @@ static int wd_zlib_uadk_init(void)
 		ctx_set_num[i].sync_ctx_num = WD_DIR_MAX;
 
 	ret = wd_comp_init2_("zlib", 0, 0, &cparams);
-	if (ret && ret != -WD_EEXIST)
+	if (ret && ret != -WD_EEXIST) {
 		ret = Z_STREAM_ERROR;
 
 	zlib_status = WD_ZLIB_INIT;
