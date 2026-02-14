@@ -62,6 +62,14 @@ static int wd_zlib_uadk_init(void)
 
 	cparams.op_type_num = WD_DIR_MAX;
 	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = Z_MEM_ERROR;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
 
 	for (i = 0; i < WD_DIR_MAX; i++)
 		ctx_set_num[i].sync_ctx_num = WD_DIR_MAX;
@@ -69,9 +77,16 @@ static int wd_zlib_uadk_init(void)
 	ret = wd_comp_init2_("zlib", 0, 0, &cparams);
 	if (ret && ret != -WD_EEXIST) {
 		ret = Z_STREAM_ERROR;
+		goto out_freebmp;
+	}
 
+	ret = 0;
 	zlib_status = WD_ZLIB_INIT;
 
+out_freebmp:
+	numa_free_nodemask(cparams.bmp);
+
+out_freectx:
 	free(ctx_set_num);
 
 	return ret;
