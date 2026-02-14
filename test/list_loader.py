@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 #-*- coding: utf-8 -*-
 
 import os
@@ -20,7 +20,7 @@ class listcontent(object):
 
     def deflate(self, blk_sz):
         ifile_sz = os.path.getsize(self.ifile_nm)
-        count = (ifile_sz + int(blk_sz) - 1) / int(blk_sz)
+        count = (ifile_sz + int(blk_sz) - 1) // int(blk_sz)
         # Create array
         data = np.ndarray(count * 3, dtype=np.uint64)
         i = 0
