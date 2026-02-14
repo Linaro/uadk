@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.8], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.10], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -109,7 +109,6 @@ AC_CONFIG_FILES([Makefile
 		 v1/test/bmm_test/Makefile
 		 v1/test/test_mm/Makefile
 		 v1/test/hisi_hpre_test/Makefile
-		 v1/test/hisi_trng_test/Makefile
 		 v1/test/hisi_sec_test/Makefile
 		 v1/test/hisi_sec_test_sgl/Makefile
 		 v1/test/hisi_zip_test/Makefile

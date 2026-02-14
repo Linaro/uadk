@@ -22,13 +22,13 @@ endif	# WITH_LOG_FILE
 # y = minor
 # z = revision
 MAJOR = 2
-MINOR = 8
+MINOR = 10
 REVISION = 0
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
-DAY = 1
+DAY = 10
 MONTH = Dec
-YEAR = 2024
+YEAR = 2025
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"UADK version: ${MAJOR}.${MINOR}.${REVISION}\""
 AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 
@@ -49,9 +49,8 @@ uadk_driversdir=$(libdir)/uadk
 uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la \
 			 libisa_ce.la libisa_sve.la libhisi_dae.la libhisi_udma.la
 
-libwd_la_SOURCES=wd.c wd_mempool.c wd_bmm.c wd_bmm.h wd.h wd_alg.c wd_alg.h    \
+libwd_la_SOURCES=wd.c wd_mempool.c wd_bmm.c wd_bmm.h wd.h wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
-		 v1/wd_rng.c v1/wd_rng.h	\
 		 v1/wd_rsa.c v1/wd_rsa.h	\
 		 v1/wd_aead.c v1/wd_aead.h	\
 		 v1/wd_dh.c v1/wd_dh.h		\
@@ -68,8 +67,7 @@ libwd_la_SOURCES=wd.c wd_mempool.c wd_bmm.c wd_bmm.h wd.h wd_alg.c wd_alg.h    \
 		 v1/drv/hisi_zip_udrv.c v1/drv/hisi_zip_udrv.h \
 		 v1/drv/hisi_zip_huf.c v1/drv/hisi_zip_huf.h \
 		 v1/drv/hisi_hpre_udrv.c v1/drv/hisi_hpre_udrv.h \
-		 v1/drv/hisi_sec_udrv.c v1/drv/hisi_sec_udrv.h \
-		 v1/drv/hisi_rng_udrv.c v1/drv/hisi_rng_udrv.h
+		 v1/drv/hisi_sec_udrv.c v1/drv/hisi_sec_udrv.h
 
 libwd_udma_la_SOURCES=wd_udma.h wd_udma_drv.h wd_udma.c \
 		     wd_util.c wd_util.h wd_sched.c wd_sched.h wd.c wd.h
