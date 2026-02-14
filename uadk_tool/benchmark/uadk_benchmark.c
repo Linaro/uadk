@@ -337,7 +337,7 @@ void time_start(u32 seconds)
 void get_rand_data(u8 *addr, u32 size)
 {
 	static __thread unsigned short rand_state[3] = {0};
-	static __thread int initialized = 0; 
+	static __thread int initialized = 0;
 
 	static const uint32_t LCG_A = 1664525U;
 	static const uint32_t LCG_C = 1013904223U;

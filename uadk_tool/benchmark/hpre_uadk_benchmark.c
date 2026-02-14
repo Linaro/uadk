@@ -663,6 +663,14 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 
 	cparams.op_type_num = 1;
 	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
 
 	if (mode == CTX_MODE_SYNC)
 		ctx_set_num->sync_ctx_num = g_ctxnum;
@@ -695,7 +703,9 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 		return -EINVAL;
 	}
 
+out_freectx:
 	free(ctx_set_num);
+
 	return ret;
 }
 

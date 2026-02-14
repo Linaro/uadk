@@ -379,6 +379,14 @@ static int init_ctx_config2(struct acc_option *options)
 
 	cparams.op_type_num = WD_DIR_MAX;
 	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
 
 	for (int i = 0; i < WD_DIR_MAX; i++) {
 		if (mode == CTX_MODE_SYNC)
