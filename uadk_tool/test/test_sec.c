@@ -2749,6 +2749,14 @@ static int aead_init2(int type, int mode)
 
 	cparams.op_type_num = 1;
 	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
 
 	if (mode == CTX_MODE_SYNC)
 		ctx_set_num->sync_ctx_num = g_ctxnum;
@@ -2757,7 +2765,13 @@ static int aead_init2(int type, int mode)
 		ctx_set_num->async_ctx_num = g_ctxnum;
 
 	ret = wd_aead_init2_(aead_names[g_testalg], 0, 0, &cparams);
+	if (ret)
+		goto out_freebmp;
 
+out_freebmp:
+	numa_free_nodemask(cparams.bmp);
+
+out_freectx:
 	free(ctx_set_num);
 
 	return ret;
