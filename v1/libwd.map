@@ -133,11 +133,6 @@ global:
 	wcrypto_rsa_poll;
 	wcrypto_del_rsa_ctx;
 
-	wcrypto_create_rng_ctx;
-	wcrypto_del_rng_ctx;
-	wcrypto_do_rng;
-	wcrypto_rng_poll;
-
 	wd_sglpool_create;
 	wd_sglpool_destroy;
 	wd_alloc_sgl;

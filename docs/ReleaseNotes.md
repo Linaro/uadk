@@ -1,4 +1,39 @@
 
+# UADK Release v2.10 Dec 2025
+
+## Features:
+- New Algorithms: Added LZ4, LZ77_only, AEAD (AES_256_GCM, etc.)
+- Data Processing: Added data move (copy/init), hashagg max/min, and rehash operations
+- Hardware Acceleration: Support for hash-agg，hash-join and gather algorithms
+- NO-SVA Mode:
+  - Support for ZIP, SEC, and HPRE modules
+  - Unified memory pool for SVA/NO-SVA modes
+  - SGL memory support in NO-SVA mode
+- Support device internal queue scheduling functionality for No-SVA mode
+- Tooling: New SGL benchmarks, SVA/NO-SVA validation interfaces, and device ID tool
+- Configuration: Added uadk.cnf for driver library management
+
+## Fixes:
+- Memory: Fixed memory over-allocation and resource release issues
+- Compression: Fixed ZSTD repcode handling and stream mode flushing
+- Performance: Disabled SVA prefetch for packets >24KB
+- Stability: Improved memory pool retry and error handling
+- Code Quality: Fixed stack overflow, variable overflow, and cleanup warnings
+
+
+# UADK Release v2.9.1 July 2025
+
+## Fixes:
+- Fix x86 build issues
+
+# UADK Release v2.9 June 2025
+
+## Features:
+- Support hmac(sm3)-cbc(sm4) algorithm
+- Add a high-performance mode for the ECC algorithm
+- Removed trng algorithm
+- Update CI testing tools
+
 # UADK Release v2.8 Dec 2024
 
 ## Features:
