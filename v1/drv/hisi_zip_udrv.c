@@ -441,7 +441,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
 	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
-		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
+		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
 
 	return 1;
 }
@@ -913,7 +913,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
 	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
-		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
+		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
 
 	/*
 	 * It need to analysis the data cache by hardware.
