@@ -705,11 +705,10 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 			else
 				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
 				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
-
-			/* The literal length info of each bd needs to be cleared.  */
-			memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
-			       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 		}
+		/* The literal length info of each bd needs to be cleared. */
+		memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
+		       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 	}
 
 	sqe->isize = msg->isize;

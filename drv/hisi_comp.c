@@ -961,11 +961,10 @@ static int fill_buf_lz77_zstd(handle_t h_qp, struct hisi_zip_sqe *sqe,
 			else
 				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
 				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
-
-			/* The literal length info of each bd needs to be cleared.  */
-			memset(ctx_buf + CTX_HW_REPCODE_OFFSET + REPCODE_SIZE, 0,
-			       SEQ_LIT_LEN_SIZE);
 		}
+		/* The literal length info of each bd needs to be cleared. */
+		memset(ctx_buf + CTX_HW_REPCODE_OFFSET + REPCODE_SIZE, 0,
+		       SEQ_LIT_LEN_SIZE);
 	}
 
 	fill_buf_size_lz77_zstd(sqe, in_size, lits_size, seq_avail_out);
