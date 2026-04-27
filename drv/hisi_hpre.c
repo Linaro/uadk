@@ -1169,7 +1169,7 @@ static bool big_than_one(const char *data, __u32 data_sz)
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
 	unsigned char *d_data, *n_data;
-	int shift, i;
+	__u32 shift, i;
 
 	if (d->dsize > n->dsize)
 		return false;
@@ -1178,9 +1178,10 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 
 	/* d->dsize == n->dsize */
 	shift = n->bsize - n->dsize;
-	d_data = d->data + shift;
-	n_data = n->data + shift;
-	for (i = d->dsize - 1; i >= 0; i--) {
+	d_data = (unsigned char *)d->data + shift;
+	n_data = (unsigned char *)n->data + shift;
+	/* Task parameter data must be stored in big-endian format in DDR */
+	for (i = 0; i < d->dsize; i++) {
 		if (d_data[i] < n_data[i])
 			return true;
 		else if (d_data[i] > n_data[i])
