@@ -39,6 +39,8 @@
 	(((x) & 0x00ff0000) >>  8) | \
 	(((x) & 0xff000000) >> 24))
 
+#define cpu_to_be32(x) swab32(x)
+
 #define STREAM_FLUSH_SHIFT		25
 #define STREAM_POS_SHIFT		2
 #define STREAM_MODE_SHIFT		1
@@ -110,6 +112,9 @@
 #define CTX_HEAD_BIT_CNT_MASK		0xfC00
 #define WIN_LEN_ALIGN(len)		(((len) + 15) & ~(__u32)0x0F)
 
+#define STORE_BLOCK_SIZE		5
+static const unsigned char store_block[STORE_BLOCK_SIZE] = {0x1, 0x00, 0x00, 0xff, 0xff};
+
 enum alg_type {
 	HW_DEFLATE = 0x1,
 	HW_ZLIB,
@@ -143,8 +148,6 @@ enum lz77_compress_status {
 };
 
 struct hisi_comp_buf {
-	/* Denoted whether the output is copied from the storage buffer */
-	bool skip_hw;
 	/* Denoted internal store buf */
 	__u8 dst[STORE_BUF_SIZE];
 	/* Denoted data size left in uadk */
@@ -310,7 +313,7 @@ static int check_store_buf(struct wd_comp_msg *msg)
 	copy_len = copy_to_out(msg, buf, buf->pending_out);
 	buf->pending_out -= copy_len;
 	msg->produced = copy_len;
-	buf->skip_hw = true;
+	msg->skip_hw = true;
 
 	if (!buf->pending_out) {
 		/* All data copied to output */
@@ -365,6 +368,58 @@ static int check_enable_store_buf(struct wd_comp_msg *msg, __u32 out_size, int h
 
 	if (out_size <= SW_STOREBUF_TH)
 		return 1;
+
+	return 0;
+}
+
+static unsigned int bit_reverse(register unsigned int target)
+{
+	register unsigned int x = target;
+
+	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
+	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
+	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
+	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
+
+	return ((x >> 16) | (x << 16));
+}
+
+/**
+ * append_store_block() - output an fixed store block when input
+ * a empty block as last stream block. And supplement the packet
+ * tail according to the protocol.
+ * @msg:	The last msg which is empty.
+ */
+static int append_store_block(struct wd_comp_msg *msg)
+{
+	struct wd_comp_req *req = &msg->req;
+	__u32 checksum = msg->checksum;
+	__u32 isize = msg->isize;
+
+	if (msg->alg_type == WD_ZLIB) {
+		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE + sizeof(checksum)))
+			return -WD_EINVAL;
+		memcpy(req->dst, store_block, STORE_BLOCK_SIZE);
+		checksum = (__u32)cpu_to_be32(checksum);
+		/* if zlib, ADLER32 */
+		memcpy(req->dst + STORE_BLOCK_SIZE, &checksum, sizeof(checksum));
+		msg->produced = STORE_BLOCK_SIZE + sizeof(checksum);
+	} else if (msg->alg_type == WD_GZIP) {
+		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE +
+		    sizeof(checksum) + sizeof(isize)))
+			return -WD_EINVAL;
+		memcpy(req->dst, store_block, STORE_BLOCK_SIZE);
+		checksum = ~checksum;
+		checksum = bit_reverse(checksum);
+		/* if gzip, CRC32 and ISIZE */
+		memcpy(req->dst + STORE_BLOCK_SIZE, &checksum, sizeof(checksum));
+		memcpy(req->dst + STORE_BLOCK_SIZE + sizeof(checksum),
+		       &isize, sizeof(isize));
+		msg->produced = STORE_BLOCK_SIZE + sizeof(checksum) + sizeof(isize);
+	}
+
+	req->status = 0;
+	msg->skip_hw = true;
 
 	return 0;
 }
@@ -1547,6 +1602,10 @@ static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *com
 	if (ret)
 		return 0;
 
+	if (msg->stream_mode == WD_COMP_STATEFUL && msg->alg_type <= WD_GZIP &&
+	    msg->req.op_type == WD_DIR_COMPRESS && msg->req.last == 1 && msg->req.src_len == 0)
+		return append_store_block(msg);
+
 	hisi_set_msg_id(h_qp, &msg->tag);
 	ret = fill_zip_comp_sqe(qp, msg, &sqe);
 	if (unlikely(ret < 0)) {
@@ -1731,16 +1790,13 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 	__u16 count = 0;
 	int ret;
 
-	if (recv_msg->ctx_buf) {
-		buf = (struct hisi_comp_buf *)(recv_msg->ctx_buf + CTX_STOREBUF_OFFSET);
-		/*
-		 * The output has been copied from the storage buffer,
-		 * and no data need to be received.
-		 */
-		if (buf->skip_hw) {
-			buf->skip_hw = false;
-			return 0;
-		}
+	/*
+	 * The output has been copied from the storage buffer,
+	 * and no data need to be received.
+	 */
+	if (recv_msg->skip_hw) {
+		recv_msg->skip_hw = false;
+		return 0;
 	}
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
@@ -1752,8 +1808,11 @@ static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *com
 		return ret;
 
 	/* There are data in buf, copy to output */
-	if (buf && buf->pending_out)
-		copy_from_hw(recv_msg, buf);
+	if (recv_msg->ctx_buf) {
+		buf = (struct hisi_comp_buf *)(recv_msg->ctx_buf + CTX_STOREBUF_OFFSET);
+		if (buf->pending_out)
+			copy_from_hw(recv_msg, buf);
+	}
 
 	return 0;
 }
