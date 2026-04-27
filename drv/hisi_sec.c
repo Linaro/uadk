@@ -2958,7 +2958,7 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 		msg->mac[i] = g[i] ^ ctr_r[i];
 
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
-		ret = memcmp(msg->mac, msg->dec_mac, msg->auth_bytes);
+		ret = memcmp_consttime(msg->mac, msg->dec_mac, msg->auth_bytes);
 		if (ret) {
 			msg->result = WD_IN_EPARA;
 			WD_ERR("failed to do the gcm authentication!\n");

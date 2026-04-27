@@ -308,6 +308,7 @@ static int fill_agg_session(struct wd_agg_sess *sess, struct wd_agg_sess_setup *
 	sess->key_conf.cols_info = malloc(key_size);
 	if (!sess->key_conf.cols_info)
 		return -WD_ENOMEM;
+
 	sess->agg_conf.cols_info = malloc(agg_size);
 	if (!sess->agg_conf.cols_info)
 		goto out_key;
@@ -1504,8 +1505,7 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 		if (ret) {
 			__atomic_store_n(&sess->state, WD_AGG_SESS_RESET, __ATOMIC_RELEASE);
 			WD_ERR("failed to do agg rehash task!\n");
-			free(cols);
-			return ret;
+			goto free_cols;
 		}
 		if (req->output_done)
 			break;
@@ -1513,8 +1513,10 @@ int wd_agg_rehash_sync(handle_t h_sess, struct wd_agg_req *req)
 	}
 
 	__atomic_store_n(&sess->state, WD_AGG_SESS_INPUT, __ATOMIC_RELEASE);
+
+free_cols:
 	free(cols);
-	return WD_SUCCESS;
+	return ret;
 }
 
 struct wd_agg_msg *wd_agg_get_msg(__u32 idx, __u32 tag)

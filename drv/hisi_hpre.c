@@ -1176,7 +1176,7 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 		return true;
 
 	shift = n->bsize - n->dsize;
-	ret = memcmp(d->data + shift, n->data + shift, n->dsize);
+	ret = memcmp_consttime(d->data + shift, n->data + shift, n->dsize);
 	if (ret < 0)
 		return true;
 	else
@@ -2434,7 +2434,7 @@ static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 {
 	if (src->dsize == dst->dsize &&
-		!memcmp(src->data, dst->data, src->dsize)) {
+	    !memcmp_consttime(src->data, dst->data, src->dsize)) {
 		return 0;
 	}
 
@@ -2913,7 +2913,7 @@ static void ecc_sess_eops_params_cfg(struct wd_alg_driver *drv,
 	if (key_size != SECP256R1_KEY_SIZE)
 		return;
 
-	ret = memcmp(data, cv->p.data, SECP256R1_PARAM_SIZE);
+	ret = memcmp_consttime(data, cv->p.data, SECP256R1_PARAM_SIZE);
 	if (!ret)
 		ecc_ctx->enable_hpcore = 1;
 }

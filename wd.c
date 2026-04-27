@@ -56,6 +56,25 @@ static const char * const zip_dae_algs[] = {
 	"gather",
 };
 
+/**
+ * Constant-time memory comparison function (primarily used for equality verification)
+ * It only supports equality/inequality results rather than full comparison results,
+ * the main goal is to provide timing-safe equality checks
+ */
+int memcmp_consttime(const void *s1, const void *s2, size_t n)
+{
+	const unsigned char *p1 = (const unsigned char *)s1;
+	const unsigned char *p2 = (const unsigned char *)s2;
+	unsigned char diff = 0;
+	size_t i;
+
+	/* Constant-time byte-wise XOR accumulation */
+	for (i = 0; i < n; i++)
+		diff |= p1[i] ^ p2[i];
+
+	return diff;
+}
+
 static int wd_check_ctx_type(handle_t h_ctx)
 {
 	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;

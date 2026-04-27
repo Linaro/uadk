@@ -191,7 +191,7 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	int ret;
 
-	if (unlikely(!key || !sess)) {
+	if (unlikely(!key || !sess || !sess->ckey)) {
 		WD_ERR("failed to check cipher key input param!\n");
 		return -WD_EINVAL;
 	}
@@ -230,7 +230,7 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	}
 
 	sess->akey_bytes = key_len;
-	if (key_len)
+	if (key_len && sess->akey)
 		memcpy(sess->akey, key, key_len);
 
 	return 0;
