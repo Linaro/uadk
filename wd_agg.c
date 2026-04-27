@@ -163,25 +163,25 @@ static int check_col_data_info(enum wd_dae_data_type type, __u16 col_data_info)
 }
 
 static int get_col_data_type_size(enum wd_dae_data_type type, __u16 col_data_info,
-				  __u64 *col, __u32 idx)
+				  __u64 *size)
 {
 	switch (type) {
 	case WD_DAE_DATE:
 	case WD_DAE_INT:
-		col[idx] = DAE_INT_SIZE;
+		*size = DAE_INT_SIZE;
 		break;
 	case WD_DAE_LONG:
 	case WD_DAE_SHORT_DECIMAL:
-		col[idx] = DAE_LONG_SIZE;
+		*size = DAE_LONG_SIZE;
 		break;
 	case WD_DAE_LONG_DECIMAL:
-		col[idx] = DAE_LONG_DECIMAL_SIZE;
+		*size = DAE_LONG_DECIMAL_SIZE;
 		break;
 	case WD_DAE_CHAR:
-		col[idx] = col_data_info;
+		*size = col_data_info;
 		break;
 	case WD_DAE_VARCHAR:
-		col[idx] = 0;
+		*size = 0;
 		break;
 	default:
 		return -WD_EINVAL;
@@ -324,19 +324,19 @@ static int fill_agg_session(struct wd_agg_sess *sess, struct wd_agg_sess_setup *
 
 	for (i = 0; i < setup->key_cols_num; i++)
 		(void)get_col_data_type_size(key[i].input_data_type, key[i].col_data_info,
-					     sess->key_conf.data_size, i);
+					     &sess->key_conf.data_size[i]);
 
 	sess->agg_conf.data_size = sess->key_conf.data_size + setup->key_cols_num;
 	for (i = 0; i < setup->agg_cols_num; i++)
 		(void)get_col_data_type_size(agg[i].input_data_type, agg[i].col_data_info,
-					     sess->agg_conf.data_size, i);
+					     &sess->agg_conf.data_size[i]);
 
 	sess->agg_conf.out_data_size = sess->agg_conf.data_size + setup->agg_cols_num;
 	for (i = 0, k = 0; i < setup->agg_cols_num; i++)
 		for (j = 0; j < agg[i].col_alg_num; j++, k++)
 			(void)get_col_data_type_size(agg[i].output_data_types[j],
 						     agg[i].col_data_info,
-						     sess->agg_conf.out_data_size, k);
+						     &sess->agg_conf.out_data_size[k]);
 
 	sess->key_conf.cols_num = setup->key_cols_num;
 	sess->agg_conf.cols_num = setup->agg_cols_num;
@@ -1350,7 +1350,7 @@ static int wd_agg_set_keycol_size(struct wd_agg_sess *sess, struct wd_dae_col_ad
 	int ret;
 
 	for (i = 0; i < sess->key_conf.cols_num; i++) {
-		ret = set_col_size_inner(key + i, expt, row_count, sess->key_conf.data_size[i],
+		ret = set_col_size_inner(&key[i], expt, row_count, sess->key_conf.data_size[i],
 					 sess->key_conf.cols_info[i].input_data_type);
 		if (unlikely(ret))
 			return ret;
@@ -1368,7 +1368,7 @@ static int wd_agg_set_aggcol_size(struct wd_agg_sess *sess, struct wd_dae_col_ad
 
 	for (i = 0, k = 0; i < sess->agg_conf.cols_num; i++) {
 		for (j = 0; j < sess->agg_conf.cols_info[i].col_alg_num; j++, k++) {
-			ret = set_col_size_inner(agg + k, expt, row_count,
+			ret = set_col_size_inner(&agg[k], expt, row_count,
 						 sess->agg_conf.out_data_size[k],
 						 sess->agg_conf.cols_info[i].output_data_types[j]);
 			if (unlikely(ret))
@@ -1377,8 +1377,8 @@ static int wd_agg_set_aggcol_size(struct wd_agg_sess *sess, struct wd_dae_col_ad
 	}
 
 	if (sess->agg_conf.is_count_all) {
-		(void)get_col_data_type_size(sess->agg_conf.count_all_data_type, 0, &data_size, 0);
-		ret = set_col_size_inner(agg + k, expt, row_count, data_size,
+		(void)get_col_data_type_size(sess->agg_conf.count_all_data_type, 0, &data_size);
+		ret = set_col_size_inner(&agg[k], expt, row_count, data_size,
 					 sess->agg_conf.count_all_data_type);
 		if (unlikely(ret))
 			return ret;
