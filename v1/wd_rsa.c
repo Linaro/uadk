@@ -1031,7 +1031,9 @@ int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 	struct wcrypto_rsa_ctx *ctxt = ctx;
 	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_msg *req;
-	uint32_t rx_cnt = 0;
+	__u32 rx_cnt = 0;
+	__u64 slept = 0;
+	bool is_timeout;
 	int ret;
 
 	ret = do_rsa_prepare(ctxt, opdata, &cookie, &req, tag);
@@ -1051,14 +1053,14 @@ int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 		if (ret > 0) {
 			break;
 		} else if (!ret) {
-			if (unlikely(rx_cnt++ >= RSA_RECV_MAX_CNT)) {
-				WD_ERR("failed to recv: timeout!\n");
+			is_timeout = wd_adaptive_backoff_sleep(balance, RSA_BALANCE_THRHD,
+							       rx_cnt, &slept);
+			if (unlikely(rx_cnt++ >= RSA_RECV_MAX_CNT || is_timeout)) {
+				WD_ERR("rsa recv timeout: rx_cnt = %u, slept = %llu us\n",
+				       rx_cnt, slept);
 				ret = -WD_ETIMEDOUT;
 				goto fail_with_cookie;
 			}
-
-			if (balance > RSA_BALANCE_THRHD)
-				usleep(1);
 		} else {
 			WD_ERR("do rsa wd_recv err!\n");
 			goto fail_with_cookie;
