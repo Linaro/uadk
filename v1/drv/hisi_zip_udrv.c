@@ -210,10 +210,10 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		 * The end flag is cached. It can be output only
 		 * after the data is completely copied to the output.
 		 */
-		if (msg->status == WCRYPTO_DECOMP_END) {
-			buf->status = WCRYPTO_DECOMP_END;
-			msg->status = WCRYPTO_DECOMP_END_NOSPACE;
-		}
+		if (msg->status == WCRYPTO_DECOMP_END)
+			buf->status = msg->status;
+
+		msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 	}
 }
 

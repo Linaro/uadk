@@ -320,7 +320,7 @@ static int check_store_buf(struct wd_comp_msg *msg)
 	} else {
 		/* Still data need to be copied */
 		buf->output_offset += copy_len;
-		req->status = WD_SUCCESS;
+		req->status = WD_EAGAIN;
 	}
 
 	return 1;
@@ -347,10 +347,10 @@ static void copy_from_hw(struct wd_comp_msg *msg, struct hisi_comp_buf *buf)
 		 * The end flag is cached. It can be output only
 		 * after the data is completely copied to the output.
 		 */
-		if (req->status == WD_STREAM_END) {
-			buf->status = WD_STREAM_END;
-			req->status = WD_EAGAIN;
-		}
+		if (req->status == WD_STREAM_END)
+			buf->status = req->status;
+
+		req->status = WD_EAGAIN;
 	}
 }
 
