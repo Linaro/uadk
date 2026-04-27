@@ -1168,19 +1168,25 @@ static bool big_than_one(const char *data, __u32 data_sz)
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
-	int ret, shift;
+	unsigned char *d_data, *n_data;
+	int shift, i;
 
 	if (d->dsize > n->dsize)
 		return false;
 	else if (d->dsize < n->dsize)
 		return true;
 
+	/* d->dsize == n->dsize */
 	shift = n->bsize - n->dsize;
-	ret = memcmp_consttime(d->data + shift, n->data + shift, n->dsize);
-	if (ret < 0)
-		return true;
-	else
-		return false;
+	d_data = d->data + shift;
+	n_data = n->data + shift;
+	for (i = d->dsize - 1; i >= 0; i--) {
+		if (d_data[i] < n_data[i])
+			return true;
+		else if (d_data[i] > n_data[i])
+			return false;
+	}
+	return false;
 }
 
 static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
