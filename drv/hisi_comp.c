@@ -416,6 +416,11 @@ static int append_store_block(struct wd_comp_msg *msg)
 		memcpy(req->dst + STORE_BLOCK_SIZE + sizeof(checksum),
 		       &isize, sizeof(isize));
 		msg->produced = STORE_BLOCK_SIZE + sizeof(checksum) + sizeof(isize);
+	} else if (msg->alg_type == WD_DEFLATE) {
+		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE))
+			return -WD_EINVAL;
+		memcpy(req->dst, store_block, STORE_BLOCK_SIZE);
+		msg->produced = STORE_BLOCK_SIZE;
 	}
 
 	req->status = 0;
