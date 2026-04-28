@@ -64,6 +64,8 @@ struct wd_datalist {
 	struct wd_datalist *next;
 };
 
+int memcmp_consttime(const void *s1, const void *s2, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

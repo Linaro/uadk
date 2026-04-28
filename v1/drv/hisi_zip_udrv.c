@@ -210,10 +210,10 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		 * The end flag is cached. It can be output only
 		 * after the data is completely copied to the output.
 		 */
-		if (msg->status == WCRYPTO_DECOMP_END) {
-			buf->status = WCRYPTO_DECOMP_END;
-			msg->status = WCRYPTO_DECOMP_END_NOSPACE;
-		}
+		if (msg->status == WCRYPTO_DECOMP_END)
+			buf->status = msg->status;
+
+		msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 	}
 }
 
@@ -315,11 +315,9 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
-	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->avail_out > MAX_BUFFER_SIZE)) {
-		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-		       msg->avail_out);
+	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->avail_out > MAX_BUFFER_SIZE))
 		msg->avail_out = MAX_BUFFER_SIZE;
-	}
+
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
 
@@ -500,11 +498,8 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 	}
 
 	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->avail_out > MAX_BUFFER_SIZE)) {
-		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-		       msg->avail_out);
+		     msg->avail_out > MAX_BUFFER_SIZE))
 		msg->avail_out = MAX_BUFFER_SIZE;
-	}
 
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
@@ -547,11 +542,8 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 		/* fill the sequences output size */
 		sqe->dest_avail_out = zstd_out->seq_sz;
 	} else {
-		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
-			WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-			       msg->avail_out);
-			msg->avail_out = MAX_BUFFER_SIZE;
-		}
+		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE + lit_size))
+			msg->avail_out = MAX_BUFFER_SIZE + lit_size;
 
 		/*
 		 * For lz77_zstd, the hardware need 784 Bytes buffer to output
@@ -705,11 +697,10 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 			else
 				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
 				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
-
-			/* The literal length info of each bd needs to be cleared.  */
-			memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
-			       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 		}
+		/* The literal length info of each bd needs to be cleared. */
+		memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
+		       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 	}
 
 	sqe->isize = msg->isize;

@@ -147,7 +147,7 @@ static bool is_des_weak_key(const __u8 *key)
 	int i;
 
 	for (i = 0; i < DES_WEAK_KEY_NUM; i++) {
-		if (memcmp(des_weak_keys[i], key, DES_KEY_SIZE) == 0)
+		if (memcmp_consttime(des_weak_keys[i], key, DES_KEY_SIZE) == 0)
 			return true;
 	}
 

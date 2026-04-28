@@ -70,5 +70,6 @@ global:
 	wd_get_free_num;
 	wd_get_fail_num;
 	wd_get_bufsize;
+	memcmp_consttime;
 local: *;
 };

@@ -1168,19 +1168,26 @@ static bool big_than_one(const char *data, __u32 data_sz)
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
-	int ret, shift;
+	unsigned char *d_data, *n_data;
+	__u32 shift, i;
 
 	if (d->dsize > n->dsize)
 		return false;
 	else if (d->dsize < n->dsize)
 		return true;
 
+	/* d->dsize == n->dsize */
 	shift = n->bsize - n->dsize;
-	ret = memcmp(d->data + shift, n->data + shift, n->dsize);
-	if (ret < 0)
-		return true;
-	else
-		return false;
+	d_data = (unsigned char *)d->data + shift;
+	n_data = (unsigned char *)n->data + shift;
+	/* Task parameter data must be stored in big-endian format in DDR */
+	for (i = 0; i < d->dsize; i++) {
+		if (d_data[i] < n_data[i])
+			return true;
+		else if (d_data[i] > n_data[i])
+			return false;
+	}
+	return false;
 }
 
 static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
@@ -2434,7 +2441,7 @@ static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 {
 	if (src->dsize == dst->dsize &&
-		!memcmp(src->data, dst->data, src->dsize)) {
+	    !memcmp_consttime(src->data, dst->data, src->dsize)) {
 		return 0;
 	}
 
@@ -2913,7 +2920,7 @@ static void ecc_sess_eops_params_cfg(struct wd_alg_driver *drv,
 	if (key_size != SECP256R1_KEY_SIZE)
 		return;
 
-	ret = memcmp(data, cv->p.data, SECP256R1_PARAM_SIZE);
+	ret = memcmp_consttime(data, cv->p.data, SECP256R1_PARAM_SIZE);
 	if (!ret)
 		ecc_ctx->enable_hpcore = 1;
 }

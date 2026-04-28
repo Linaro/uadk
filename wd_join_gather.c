@@ -217,7 +217,7 @@ static int check_key_cols_info(struct wd_join_gather_sess_setup *setup)
 		return -WD_EINVAL;
 	}
 
-	ret = memcmp(table->build_key_cols, table->probe_key_cols,
+	ret = memcmp_consttime(table->build_key_cols, table->probe_key_cols,
 		     table->build_key_cols_num * sizeof(struct wd_join_gather_col_info));
 	if (ret) {
 		WD_ERR("invalid: build and probe table key infomation is not same!\n");

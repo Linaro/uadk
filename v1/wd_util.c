@@ -24,6 +24,37 @@
 #define BYTE_TO_BIT		8
 #define LOCK_TRY_CNT		(0x800000000U)
 
+#define MAX_SLEEP_SINGLE_US	1000000u
+#define MAX_SLEEP_TOTAL_US	60000000u
+
+#define EXPONENTIAL_BASE	1u
+#define BACKOFF_DIV_SHIFT	3
+#define MAX_SHIFT_LIMIT		15
+
+bool wd_adaptive_backoff_sleep(int balance, int threshold,
+			       __u32 cnt, __u64 *slept)
+{
+	__u32 shift;
+	__u32 delay;
+
+	if (likely(balance <= threshold))
+		return false;
+
+	shift = cnt >> BACKOFF_DIV_SHIFT;
+	if (unlikely(shift >= MAX_SHIFT_LIMIT))
+		delay = MAX_SLEEP_SINGLE_US;
+	else
+		delay = EXPONENTIAL_BASE << shift;
+
+	if (unlikely(*slept + delay > MAX_SLEEP_TOTAL_US))
+		return true;
+
+	usleep(delay);
+	*slept += delay;
+
+	return false;
+}
+
 void wd_spinlock(struct wd_lock *lock)
 {
 	int val = 0;

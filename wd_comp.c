@@ -20,14 +20,6 @@
 #define WD_ZLIB_HEADER_SZ		2
 #define WD_GZIP_HEADER_SZ		10
 
-#define swap_byte(x) \
-	((((x) & 0x000000ff) << 24) | \
-	(((x) & 0x0000ff00) <<  8) | \
-	(((x) & 0x00ff0000) >>  8) | \
-	(((x) & 0xff000000) >> 24))
-
-#define cpu_to_be32(x) swap_byte(x)
-
 static const char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
 	"zlib", "gzip", "deflate", "lz77_zstd", "lz4", "lz77_only"
 };
@@ -789,70 +781,12 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 	return 0;
 }
 
-static unsigned int bit_reverse(register unsigned int target)
-{
-	register unsigned int x = target;
-
-	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
-	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
-	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
-	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
-
-	return ((x >> 16) | (x << 16));
-}
-
-/**
- * append_store_block() - output an fixed store block when input
- * a empty block as last stream block. And supplement the packet
- * tail according to the protocol.
- * @sess:	The session which request will be sent to.
- * @req:	The last request which is empty.
- */
-static int append_store_block(struct wd_comp_sess *sess,
-			      struct wd_comp_req *req)
-{
-	unsigned char store_block[5] = {0x1, 0x00, 0x00, 0xff, 0xff};
-	int blocksize = ARRAY_SIZE(store_block);
-	__u32 checksum = sess->checksum;
-	__u32 isize = sess->isize;
-
-	if (sess->alg_type == WD_ZLIB) {
-		if (unlikely(req->dst_len < blocksize + sizeof(checksum)))
-			return -WD_EINVAL;
-		memcpy(req->dst, store_block, blocksize);
-		req->dst_len = blocksize;
-		checksum = (__u32) cpu_to_be32(checksum);
-		/* if zlib, ADLER32 */
-		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
-		req->dst_len += sizeof(checksum);
-	} else if (sess->alg_type == WD_GZIP) {
-		if (unlikely(req->dst_len < blocksize +
-		    sizeof(checksum) + sizeof(isize)))
-			return -WD_EINVAL;
-		memcpy(req->dst, store_block, blocksize);
-		req->dst_len = blocksize;
-		checksum = ~checksum;
-		checksum = bit_reverse(checksum);
-		/* if gzip, CRC32 and ISIZE */
-		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
-		memcpy(req->dst + blocksize + sizeof(checksum),
-		       &isize, sizeof(isize));
-		req->dst_len += sizeof(checksum);
-		req->dst_len += sizeof(isize);
-	}
-
-	req->status = 0;
-	sess->stream_pos = WD_COMP_STREAM_NEW;
-
-	return 0;
-}
-
 static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
 				      struct wd_comp_req *req,
 				      __u32 src_len)
 {
 	if (req->op_type == WD_DIR_COMPRESS && req->last == 1 &&
-	    req->src_len == src_len)
+	    req->src_len == src_len && req->status == WD_SUCCESS)
 		sess->stream_pos = WD_COMP_STREAM_NEW;
 	else if (req->op_type == WD_DIR_DECOMPRESS &&
 		 req->status == WD_STREAM_END)
@@ -874,10 +808,6 @@ int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 		WD_ERR("invalid: data_fmt is %u!\n", req->data_fmt);
 		return -WD_EINVAL;
 	}
-
-	if (sess->alg_type <= WD_GZIP && req->op_type == WD_DIR_COMPRESS &&
-	    req->last == 1 && req->src_len == 0)
-		return append_store_block(sess, req);
 
 	fill_comp_msg(sess, &msg, req);
 	msg.stream_pos = sess->stream_pos;

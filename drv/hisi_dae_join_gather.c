@@ -19,7 +19,7 @@
 #define PROBE_INDEX_ROW_SIZE	4
 
 /* align size */
-#define DAE_KEY_ALIGN_SIZE	4
+#define DAE_KEY_ALIGN_SIZE	8
 #define DAE_BREAKPOINT_SIZE	81920
 #define DAE_ADDR_INDEX_SHIFT	1
 
