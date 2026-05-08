@@ -599,7 +599,7 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg, struct hisi_hpre_sqe *hw_msg,
 		return -WD_ENOMEM;
 	fill_hw_msg_addr(HW_MSG_KEY, hw_msg, addr);
 
-	return ret;
+	return WD_SUCCESS;
 }
 
 static int rsa_prepare_iot(struct wd_rsa_msg *msg, struct hisi_hpre_sqe *hw_msg,
