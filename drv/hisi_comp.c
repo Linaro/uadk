@@ -397,7 +397,8 @@ static int append_store_block(struct wd_comp_msg *msg)
 	__u32 isize = msg->isize;
 
 	if (msg->alg_type == WD_ZLIB) {
-		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE + sizeof(checksum)))
+		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE + sizeof(checksum) ||
+		    req->dst_len < STORE_BLOCK_SIZE + sizeof(checksum)))
 			return -WD_EINVAL;
 		memcpy(req->dst, store_block, STORE_BLOCK_SIZE);
 		checksum = (__u32)cpu_to_be32(checksum);
@@ -406,7 +407,8 @@ static int append_store_block(struct wd_comp_msg *msg)
 		msg->produced = STORE_BLOCK_SIZE + sizeof(checksum);
 	} else if (msg->alg_type == WD_GZIP) {
 		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE +
-		    sizeof(checksum) + sizeof(isize)))
+		    sizeof(checksum) + sizeof(isize) ||
+		    req->dst_len < STORE_BLOCK_SIZE + sizeof(checksum) + sizeof(isize)))
 			return -WD_EINVAL;
 		memcpy(req->dst, store_block, STORE_BLOCK_SIZE);
 		checksum = ~checksum;
@@ -417,7 +419,8 @@ static int append_store_block(struct wd_comp_msg *msg)
 		       &isize, sizeof(isize));
 		msg->produced = STORE_BLOCK_SIZE + sizeof(checksum) + sizeof(isize);
 	} else if (msg->alg_type == WD_DEFLATE) {
-		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE))
+		if (unlikely(msg->avail_out < STORE_BLOCK_SIZE ||
+		    req->dst_len < STORE_BLOCK_SIZE))
 			return -WD_EINVAL;
 		memcpy(req->dst, store_block, STORE_BLOCK_SIZE);
 		msg->produced = STORE_BLOCK_SIZE;
