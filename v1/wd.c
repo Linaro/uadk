@@ -323,7 +323,7 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 
 	ret = access(buf, F_OK);
 	if (ret < 0) {
-		WD_ERR("failed to check file path %s, ret: %d\n", buf, ret);
+		dbg("failed to check file path %s, errno = %d, ret = %d !\n", buf, errno, ret);
 		return -WD_ENODEV;
 	}
 
