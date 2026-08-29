@@ -45,11 +45,16 @@ global:
 	wd_alg_driver_register;
 	wd_alg_driver_unregister;
 	wd_request_drv;
-	wd_release_drv;
 	wd_drv_alg_support;
 	wd_enable_drv;
 	wd_disable_drv;
 	wd_get_alg_head;
+	wd_alg_match_drv;
+	wd_get_drv_array;
+	wd_put_drv_array;
+	wd_alg_drv_ref_inc;
+	wd_alg_drv_ref_dec;
+
 	wd_alg_driver_init;
 	wd_alg_driver_exit;
 	wd_alg_driver_send;
@@ -70,5 +75,6 @@ global:
 	wd_get_free_num;
 	wd_get_fail_num;
 	wd_get_bufsize;
+	memcmp_consttime;
 local: *;
 };

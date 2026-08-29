@@ -20,7 +20,8 @@
 #define MAX_POOL_LENTH_COMP		1
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define CHUNK_SIZE			(128 * 1024)
-#define MAX_UNRECV_PACKET_NUM		1
+#define MAX_DRAIN_RETRY			10000
+#define ZIP_ASYNC_DRAIN_RETRY		MAX_DRAIN_RETRY
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
@@ -40,11 +41,6 @@ struct thread_pool {
 enum ZIP_OP_MODE {
 	BLOCK_MODE,
 	STREAM_MODE
-};
-
-enum ZIP_THREAD_STATE {
-	THREAD_PROCESSING,
-	THREAD_COMPLETED
 };
 
 struct zip_async_tag {
@@ -83,7 +79,6 @@ static unsigned int g_thread_num;
 static unsigned int g_ctxnum;
 static unsigned int g_pktlen;
 static unsigned int g_prefetch;
-static unsigned int g_state;
 static unsigned int g_dev_id;
 static unsigned int g_data_fmt;
 
@@ -397,10 +392,7 @@ static int init_ctx_config2(struct acc_option *options)
 
 	/* init */
 	if (options->mem_type == UADK_AUTO)
-		ret = wd_comp_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
-
-	if (ret)
-		ZIP_TST_PRT("failed to do comp init2!\n");
+		ret = wd_comp_init2_(alg_name, options->sched_type, options->task_type, &cparams);
 	else
 		ret = wd_comp_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 	if (ret) {
@@ -806,11 +798,18 @@ static void free_uadk_bd_pool(void)
 static int init_uadk_rsv_pool(struct acc_option *option)
 {
 	struct wd_mempool_setup pool_setup;
-	char *alg = option->algclass;
+	char alg[CRYPTO_MAX_ALG_NAME];
 	u32 insize = g_pktlen;
 	handle_t h_ctx;
 	u32 outsize;
 	int i, j;
+
+	if (option->optype == 1)
+		snprintf(alg, CRYPTO_MAX_ALG_NAME - 1, "%s-decomp",
+			 option->algclass);
+	else
+		snprintf(alg, CRYPTO_MAX_ALG_NAME - 1, "%s-comp",
+			 option->algclass);
 
 	h_ctx = wd_find_ctx(alg);
 	if (!h_ctx) {
@@ -978,18 +977,47 @@ static void *zip_uadk_poll(void *data)
 	u32 id = pdata->td_id;
 	u32 count = 0;
 	u32 recv = 0;
+	u32 drain_retry = 0;
 	int ret;
 
 	if (id > g_ctxnum)
 		return NULL;
 
-	while (g_state == THREAD_PROCESSING) {
+	while (1) {
 		ret = wd_comp_poll_ctx(id, expt, &recv);
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
 			ZIP_TST_PRT("poll ret: %d!\n", ret);
+			add_total_recv(count);
 			goto recv_error;
+		}
+		if (get_run_state() == 0) {
+			add_total_recv(count);
+			break;
+		}
+	}
+
+	while (get_send_stopped() != g_thread_num ||
+	       get_total_recv() < get_total_sent()) {
+		ret = wd_comp_poll_ctx(id, expt, &recv);
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			ZIP_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+		if (recv == 0) {
+			usleep(SEND_USLEEP);
+			drain_retry++;
+		} else {
+			add_total_recv(recv);
+			drain_retry = 0;
+			recv = 0;
+		}
+		if (drain_retry >= ZIP_ASYNC_DRAIN_RETRY) {
+			ZIP_TST_PRT("drain timeout: sent=%llu recv=%llu stopped=%llu/%u\n",
+				    get_total_sent(), get_total_recv(),
+				    get_send_stopped(), g_thread_num);
+			break;
 		}
 	}
 
@@ -1004,15 +1032,44 @@ static void *zip_uadk_poll2(void *data)
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
 	u32 count = 0;
 	u32 recv = 0;
+	u32 drain_retry = 0;
 	int  ret;
 
-	while (g_state == THREAD_PROCESSING) {
+	while (1) {
 		ret = wd_comp_poll(expt, &recv);
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
 			ZIP_TST_PRT("poll ret: %d!\n", ret);
+			add_total_recv(count);
 			goto recv_error;
+		}
+		if (get_run_state() == 0) {
+			add_total_recv(count);
+			break;
+		}
+	}
+
+	while (get_send_stopped() != g_thread_num ||
+	       get_total_recv() < get_total_sent()) {
+		ret = wd_comp_poll(expt, &recv);
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			ZIP_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+		if (recv == 0) {
+			usleep(SEND_USLEEP);
+			drain_retry++;
+		} else {
+			add_total_recv(recv);
+			drain_retry = 0;
+			recv = 0;
+		}
+		if (drain_retry >= ZIP_ASYNC_DRAIN_RETRY) {
+			ZIP_TST_PRT("drain timeout: sent=%llu recv=%llu stopped=%llu/%u\n",
+				    get_total_sent(), get_total_recv(),
+				    get_send_stopped(), g_thread_num);
+			break;
 		}
 	}
 
@@ -1327,6 +1384,15 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 		count++;
 		__atomic_add_fetch(&pdata->send_cnt, 1, __ATOMIC_RELAXED);
 	}
+
+	add_total_sent(count);
+	add_send_stopped();
+
+	if (count) {
+		while (get_recv_time() != g_ctxnum)
+			usleep(SEND_USLEEP);
+	}
+
 	wd_comp_free_sess(h_sess);
 	add_send_complete();
 
@@ -1570,6 +1636,14 @@ static void *zip_uadk_blk_async_run(void *arg)
 		__atomic_add_fetch(&pdata->send_cnt, 1, __ATOMIC_RELAXED);
 	}
 
+	add_total_sent(count);
+	add_send_stopped();
+
+	if (count) {
+		while (get_recv_time() != g_ctxnum)
+			usleep(SEND_USLEEP);
+	}
+
 	wd_comp_free_sess(h_sess);
 
 	add_send_complete();
@@ -1721,14 +1795,6 @@ static int zip_uadk_async_threads(struct acc_option *options)
 			goto tag_free;
 		}
 	}
-
-	/* wait for the poll to clear packets */
-	g_state = THREAD_PROCESSING;
-	for (i = 0; i < g_thread_num;) {
-		if (threads_args[i].send_cnt <= threads_args[i].tag->recv_cnt + MAX_UNRECV_PACKET_NUM)
-			i++;
-	}
-	g_state = THREAD_COMPLETED; // finish poll
 
 	for (i = 0; i < g_ctxnum; i++) {
 		ret = pthread_join(pollid[i], NULL);

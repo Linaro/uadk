@@ -363,6 +363,8 @@ int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 	struct wcrypto_dh_cookie *cookie;
 	struct wcrypto_dh_msg *req;
 	uint32_t rx_cnt = 0;
+	__u64 slept = 0;
+	bool is_timeout;
 	int ret;
 
 	ret = do_dh_prepare(opdata, &cookie, ctxt, &req, tag);
@@ -383,14 +385,14 @@ int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag)
 		if (ret > 0) {
 			break;
 		} else if (!ret) {
-			if (unlikely(rx_cnt++ >= DH_RECV_MAX_CNT)) {
-				WD_ERR("failed to receive: timeout!\n");
+			is_timeout = wd_adaptive_backoff_sleep(balance, DH_BALANCE_THRHD,
+							       rx_cnt, &slept);
+			if (unlikely(rx_cnt++ >= DH_RECV_MAX_CNT || is_timeout)) {
+				WD_ERR("dh recv timeout: rx_cnt = %u, slept = %llu us\n",
+				       rx_cnt, slept);
 				ret = -WD_ETIMEDOUT;
 				goto fail_with_cookie;
 			}
-
-			if (balance > DH_BALANCE_THRHD)
-				usleep(1);
 		} else {
 			WD_ERR("do dh wd_recv err!\n");
 			goto fail_with_cookie;

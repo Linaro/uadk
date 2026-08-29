@@ -397,8 +397,6 @@ run_zip_test_v2()
 		return 0
 	fi
 	export WD_COMP_CTX_NUM="sync-comp:4@0,sync-decomp:4@0,async-comp:4@0,async-decomp:4@0"
-	export WD_COMP_ASYNC_POLL_EN=1
-	export WD_COMP_ASYNC_POLL_NUM="4@0"
 	# test without environment variables
 	# limit test text file in 8MB
 	rm -fr /tmp/textfile

@@ -95,6 +95,46 @@ struct mem_ctx_node {
 static TAILQ_HEAD(, mem_ctx_node) g_mem_ctx_list = TAILQ_HEAD_INITIALIZER(g_mem_ctx_list);
 static pthread_mutex_t g_mem_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/*
+ * Fork child handler for the global ctx pool.
+ *
+ * After fork() the child is single-threaded; the inherited mutex state is
+ * unreliable (the holding thread, if any, does not exist in the child).
+ * POSIX allows reinitializing a statically-initialized mutex in the child
+ * fork handler, so do that unconditionally and skip lock/unlock below.
+ *
+ * Discard all inherited ctx nodes. Each node's h_ctx points to a wd_ctx_h
+ * whose fd and mmap regions are shared with the parent (fd via dup,
+ * MAP_SHARED mmap via shared physical pages). Using these ctx in the child
+ * would cause parent/child to contend on the same hardware queue. Free only
+ * the node shells (COW copies, safe to free in the child). Do NOT call
+ * wd_release_ctx: closing fd or munmapping regions in the child could
+ * interfere with the parent's shared resources. The kernel reclaims child
+ * fds and VMAs on exit.
+ */
+static void wd_bmm_atfork_child(void)
+{
+	struct mem_ctx_node *node;
+
+	pthread_mutex_init(&g_mem_ctx_mutex, NULL);
+
+	while ((node = TAILQ_FIRST(&g_mem_ctx_list)) != NULL) {
+		TAILQ_REMOVE(&g_mem_ctx_list, node, list_node);
+		free(node);
+	}
+	TAILQ_INIT(&g_mem_ctx_list);
+}
+
+/*
+ * Register the atfork handler once when libwd is loaded, before any user
+ * code (including fork) runs. The constructor attribute ensures single
+ * registration regardless of how many alg init calls happen later.
+ */
+static void __attribute__((constructor)) wd_bmm_ctor(void)
+{
+	pthread_atfork(NULL, NULL, wd_bmm_atfork_child);
+}
+
 handle_t wd_find_ctx(const char *alg_name)
 {
 	struct mem_ctx_node *close_node = NULL;
@@ -146,19 +186,27 @@ handle_t wd_find_ctx(const char *alg_name)
 	return h_ctx;
 }
 
-void wd_remove_ctx_list(void)
+void wd_remove_ctx_list(handle_t h_ctx)
 {
 	struct mem_ctx_node *node;
 
-	pthread_mutex_lock(&g_mem_ctx_mutex);
-	/* Free all list node */
-	while ((node = TAILQ_FIRST(&g_mem_ctx_list)) != NULL) {
-		/* Use TAILQ_REMOVE to remove list node */
-		TAILQ_REMOVE(&g_mem_ctx_list, node, list_node);
-		free(node);
-	}
+	if (!h_ctx)
+		return;
 
+	pthread_mutex_lock(&g_mem_ctx_mutex);
+	TAILQ_FOREACH(node, &g_mem_ctx_list, list_node) {
+		if (node->h_ctx == h_ctx) {
+			TAILQ_REMOVE(&g_mem_ctx_list, node, list_node);
+			free(node);
+			break;
+		}
+	}
 	pthread_mutex_unlock(&g_mem_ctx_mutex);
+}
+
+static inline bool wd_ctx_is_hw(handle_t h_ctx)
+{
+	return h_ctx && (*(__u8 *)h_ctx == UADK_ALG_HW);
 }
 
 int wd_insert_ctx_list(handle_t h_ctx, char *alg_name)
@@ -173,8 +221,8 @@ int wd_insert_ctx_list(handle_t h_ctx, char *alg_name)
 	}
 
 	/* A simple and efficient method to check the queue type */
-	if (ctx->fd < 0 || ctx->fd > MAX_FD_NUM) {
-		WD_INFO("Invalid ctx: this ctx not HW ctx.\n");
+	if (!wd_ctx_is_hw(h_ctx)) {
+		WD_INFO("Notes: this ctx not HW ctx.\n");
 		return 0;
 	}
 
@@ -568,7 +616,7 @@ static int wd_pool_pre_layout(handle_t h_ctx,
  * When IOMMU is disabled, the PA refers to the kernel's physical address, which
  * must be physically contiguous to be allocated by the kernel.
  * Therefore, the PA address can be obtained from the offset of the VA.
- * 
+ *
  */
 static void *wd_iova_map(struct ctx_info *cinfo, void *va, size_t sz)
 {
@@ -918,7 +966,7 @@ void wd_mem_free(void *pool, void *buf)
 	struct wd_blkpool *p = pool;
 	struct wd_blk_hd *current_hd;
 	struct wd_blk_hd *hd;
-	unsigned int current_idx;	
+	unsigned int current_idx;
 	unsigned int blk_idx;
 	unsigned long offset;
 	unsigned int i, num;
@@ -946,7 +994,7 @@ void wd_mem_free(void *pool, void *buf)
 	}
 
 	/* Calculate the block index. */
-	offset = (unsigned long)((uintptr_t)buf - (uintptr_t)p->act_start);	
+	offset = (unsigned long)((uintptr_t)buf - (uintptr_t)p->act_start);
 	blk_idx = offset / sz;
 
 	/* Check if the index is valid. */

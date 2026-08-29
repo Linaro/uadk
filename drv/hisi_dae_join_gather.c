@@ -19,7 +19,7 @@
 #define PROBE_INDEX_ROW_SIZE	4
 
 /* align size */
-#define DAE_KEY_ALIGN_SIZE	4
+#define DAE_KEY_ALIGN_SIZE	8
 #define DAE_BREAKPOINT_SIZE	81920
 #define DAE_ADDR_INDEX_SHIFT	1
 
@@ -455,7 +455,7 @@ static int check_join_gather_param(struct wd_join_gather_msg *msg)
 	return WD_SUCCESS;
 }
 
-static int join_gather_send(struct wd_alg_driver *drv, handle_t ctx, void *send_msg)
+static int join_gather_send(handle_t ctx, void *send_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -540,7 +540,7 @@ static void fill_join_gather_task_err(struct dae_sqe *sqe, struct wd_join_gather
 	}
 }
 
-static int join_gather_recv(struct wd_alg_driver *drv, handle_t hctx, void *recv_msg)
+static int join_gather_recv(handle_t hctx, void *recv_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(hctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -861,6 +861,17 @@ static void gather_get_batch_rowsize(struct join_gather_col_data *cols_data,
 							     gather_data[i].data_info);
 
 		batch_row_size[n] = row_count_size + GATHER_ROW_BATCH_EMPTY_SIZE;
+		/* Align batch_row_size for better gather performance:
+		 * 1-63B   -> 32B aligned
+		 * 64-127B -> 64B aligned
+		 * >=128B  -> 128B aligned
+		 */
+		if (batch_row_size[n] < ROW_SIZE64)
+			batch_row_size[n] = ALIGN(batch_row_size[n], ROW_SIZE32);
+		else if (batch_row_size[n] < ROW_SIZE128)
+			batch_row_size[n] = ALIGN(batch_row_size[n], ROW_SIZE64);
+		else
+			batch_row_size[n] = ALIGN(batch_row_size[n], ROW_SIZE128);
 	}
 }
 
@@ -892,7 +903,7 @@ static int join_gather_fill_ctx(struct join_gather_ctx *ctx,
 	return WD_SUCCESS;
 }
 
-static void join_gather_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
+static void join_gather_sess_priv_uninit(void *priv)
 {
 	struct join_gather_ctx *ctx = priv;
 
@@ -904,16 +915,10 @@ static void join_gather_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 	free(ctx);
 }
 
-static int join_gather_sess_priv_init(struct wd_alg_driver *drv,
-				      struct wd_join_gather_sess_setup *setup, void **priv)
+static int join_gather_sess_priv_init(struct wd_join_gather_sess_setup *setup, void **priv)
 {
 	struct join_gather_ctx *ctx;
 	int ret;
-
-	if (!drv || !drv->priv) {
-		WD_ERR("invalid: dae drv is NULL!\n");
-		return -WD_EINVAL;
-	}
 
 	if (!setup || !priv) {
 		WD_ERR("invalid: dae sess priv is NULL!\n");
@@ -941,7 +946,7 @@ free_ctx:
 	return ret;
 }
 
-static int join_get_table_row_size(struct wd_alg_driver *drv, void *param)
+static int join_get_table_row_size(void *param)
 {
 	struct join_gather_ctx *ctx = param;
 
@@ -951,7 +956,7 @@ static int join_get_table_row_size(struct wd_alg_driver *drv, void *param)
 	return ctx->hash_table_row_size;
 }
 
-static int gather_get_batch_row_size(struct wd_alg_driver *drv, void *param,
+static int gather_get_batch_row_size(void *param,
 				     __u32 *row_size, __u32 size)
 {
 	struct join_gather_ctx *ctx = param;
@@ -967,8 +972,7 @@ static int gather_get_batch_row_size(struct wd_alg_driver *drv, void *param,
 	return 0;
 }
 
-static int join_hash_table_init(struct wd_alg_driver *drv,
-				struct wd_dae_hash_table *table, void *priv)
+static int join_hash_table_init(struct wd_dae_hash_table *table, void *priv)
 {
 	struct join_gather_ctx *ctx = priv;
 
@@ -1002,6 +1006,8 @@ static int join_gather_get_extend_ops(void *ops)
 	.alg_name = (dae_alg_name),\
 	.calc_type = UADK_ALG_HW,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hisi_dae_ctx), \
+	.ops_size = sizeof(struct wd_join_gather_ops), \
 	.queue_num = DAE_CTX_Q_NUM_DEF,\
 	.op_type_num = 1,\
 	.fallback = 0,\
@@ -1011,6 +1017,8 @@ static int join_gather_get_extend_ops(void *ops)
 	.recv = join_gather_recv,\
 	.get_extend_ops = join_gather_get_extend_ops,\
 	.get_usage = dae_get_usage,\
+	.alloc_ctx = wd_hw_alloc_ctx,\
+	.free_ctx = wd_hw_free_ctx, \
 }
 
 static struct wd_alg_driver join_gather_driver[] = {

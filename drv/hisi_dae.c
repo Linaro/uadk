@@ -126,6 +126,8 @@ static void fill_hashagg_task_type(struct wd_agg_msg *msg, struct dae_sqe *sqe, 
 		else
 			sqe->task_type_ext = DAE_HASHAGG_OUTPUT;
 		break;
+	default:
+		break;
 	}
 }
 
@@ -199,6 +201,8 @@ static void fill_hashagg_table_data(struct dae_sqe *sqe, struct dae_addr_list *a
 	case WD_AGG_REHASH_OUTPUT:
 		hw_table = &addr_list->src_table;
 		table_data = &agg_ctx->rehash_table;
+		break;
+	default:
 		break;
 	}
 
@@ -282,7 +286,6 @@ static void fill_hashagg_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_s
 		}
 	}
 }
-
 static void fill_hashagg_merge_key_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext_sqe,
 					struct dae_addr_list *addr_list, struct wd_agg_msg *msg)
 {
@@ -349,6 +352,8 @@ static void fill_hashagg_input_data(struct dae_sqe *sqe, struct dae_ext_sqe *ext
 		usr_agg_addr = msg->req.out_agg_cols;
 		agg_col_num = cols_data->output_num;
 		fill_hashagg_data_info(sqe, ext_sqe, cols_data->input_data, cols_data->input_num);
+		break;
+	default:
 		break;
 	}
 
@@ -426,7 +431,7 @@ static int check_hashagg_param(struct wd_agg_msg *msg)
 	return WD_SUCCESS;
 }
 
-static int hashagg_send(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_msg)
+static int hashagg_send(handle_t ctx, void *hashagg_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -448,6 +453,10 @@ static int hashagg_send(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_m
 
 	fill_hashagg_task_type(msg, &sqe, qp->q_info.hw_type);
 	sqe.data_row_num = msg->row_count;
+	if (qp->q_info.hw_type >= HISI_QM_API_VER5_BASE && msg->pos == WD_AGG_STREAM_INPUT) {
+		sqe.init_row_num = msg->in_row_count;
+		sqe.break_point_en = sqe.init_row_num ? 1 : 0;
+	}
 
 	idx = get_free_ext_addr(ext_addr);
 	if (idx < 0)
@@ -504,7 +513,7 @@ static void fill_sum_overflow_cols(struct dae_sqe *sqe, struct wd_agg_msg *msg,
 }
 
 static void fill_hashagg_msg_task_done(struct dae_sqe *sqe, struct wd_agg_msg *msg,
-				       struct wd_agg_msg *temp_msg, struct hashagg_ctx *agg_ctx)
+				       struct wd_agg_msg *temp_msg, __u16 hw_type)
 {
 	if (sqe->task_type_ext == DAE_HASHAGG_OUTPUT) {
 		msg->out_row_count = sqe->out_raw_num;
@@ -515,11 +524,15 @@ static void fill_hashagg_msg_task_done(struct dae_sqe *sqe, struct wd_agg_msg *m
 			msg->out_row_count = temp_msg->row_count;
 	} else {
 		msg->in_row_count = temp_msg->row_count;
+		if (hw_type >= HISI_QM_API_VER5_BASE) {
+			if (!sqe->output_end)
+				msg->in_row_count = sqe->data_row_offset;
+		}
 	}
 }
 
 static void fill_hashagg_msg_task_err(struct dae_sqe *sqe, struct wd_agg_msg *msg,
-				      struct wd_agg_msg *temp_msg, struct hashagg_ctx *agg_ctx)
+				      struct wd_agg_msg *temp_msg, __u16 hw_type)
 {
 	switch (sqe->err_type) {
 	case DAE_TASK_BD_ERROR_MIN ... DAE_TASK_BD_ERROR_MAX:
@@ -541,6 +554,11 @@ static void fill_hashagg_msg_task_err(struct dae_sqe *sqe, struct wd_agg_msg *ms
 	case DAE_HASHAGG_RESULT_OVERFLOW:
 		msg->in_row_count = temp_msg->row_count;
 		msg->result = WD_AGG_SUM_OVERFLOW;
+		if (hw_type >= HISI_QM_API_VER5_BASE &&
+		    sqe->task_type_ext == DAE_HASH_AGGREGATE) {
+			if (!sqe->output_end)
+				msg->in_row_count = sqe->data_row_offset;
+		}
 		break;
 	case DAE_TASK_BUS_ERROR:
 		WD_ERR("failed to do hashagg task, bus error! etype %u!\n", sqe->err_type);
@@ -557,13 +575,14 @@ static void fill_hashagg_msg_task_err(struct dae_sqe *sqe, struct wd_agg_msg *ms
 		break;
 	}
 
-	if (sqe->task_type_ext == DAE_HASHAGG_OUTPUT) {
+	if (sqe->task_type_ext == DAE_HASHAGG_OUTPUT ||
+	    sqe->task_type_ext == DAE_HASHAGG_MERGE) {
 		msg->out_row_count = sqe->out_raw_num;
 		msg->output_done = sqe->output_end;
 	}
 }
 
-static int hashagg_recv(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_msg)
+static int hashagg_recv(handle_t ctx, void *hashagg_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -606,9 +625,9 @@ static int hashagg_recv(struct wd_alg_driver *drv, handle_t ctx, void *hashagg_m
 	msg->in_row_count = 0;
 
 	if (likely(sqe.done_flag == DAE_HW_TASK_DONE)) {
-		fill_hashagg_msg_task_done(&sqe, msg, temp_msg, agg_ctx);
+		fill_hashagg_msg_task_done(&sqe, msg, temp_msg, qp->q_info.hw_type);
 	} else if (sqe.done_flag == DAE_HW_TASK_ERR) {
-		fill_hashagg_msg_task_err(&sqe, msg, temp_msg, agg_ctx);
+		fill_hashagg_msg_task_err(&sqe, msg, temp_msg, qp->q_info.hw_type);
 	} else {
 		msg->result = WD_AGG_PARSE_ERROR;
 		WD_ERR("failed to do hashagg task, hardware does not process the task!\n");
@@ -1214,16 +1233,10 @@ static void hashagg_sess_priv_uninit(struct wd_alg_driver *drv, void *priv)
 	free(agg_ctx);
 }
 
-static int hashagg_sess_priv_init(struct wd_alg_driver *drv,
-				  struct wd_agg_sess_setup *setup, void **priv)
+static int hashagg_sess_priv_init(struct wd_agg_sess_setup *setup, void **priv)
 {
 	struct hashagg_ctx *agg_ctx;
 	int ret;
-
-	if (!drv || !drv->priv) {
-		WD_ERR("invalid: dae drv is NULL!\n");
-		return -WD_EINVAL;
-	}
 
 	if (!setup || !priv) {
 		WD_ERR("invalid: dae sess priv is NULL!\n");
@@ -1265,8 +1278,7 @@ static int agg_get_row_size(struct wd_alg_driver *drv, void *param)
 	return agg_ctx->row_size;
 }
 
-static int agg_hash_table_init(struct wd_alg_driver *drv,
-			       struct wd_dae_hash_table *hash_table, void *priv)
+static int agg_hash_table_init(struct wd_dae_hash_table *hash_table, void *priv)
 {
 	struct hashagg_ctx *agg_ctx = priv;
 
@@ -1297,6 +1309,8 @@ static struct wd_alg_driver hashagg_driver = {
 	.alg_name = "hashagg",
 	.calc_type = UADK_ALG_HW,
 	.priority = 100,
+	.priv_size = sizeof(struct hisi_dae_ctx),
+	.ops_size = sizeof(struct wd_agg_ops),
 	.queue_num = DAE_CTX_Q_NUM_DEF,
 	.op_type_num = 1,
 	.fallback = 0,
@@ -1306,6 +1320,8 @@ static struct wd_alg_driver hashagg_driver = {
 	.recv = hashagg_recv,
 	.get_usage = dae_get_usage,
 	.get_extend_ops = dae_get_extend_ops,
+	.alloc_ctx = wd_hw_alloc_ctx,
+	.free_ctx = wd_hw_free_ctx,
 };
 
 #ifdef WD_STATIC_DRV

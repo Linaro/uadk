@@ -1416,7 +1416,7 @@ static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx,
 static int digest_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	struct wd_sched sched;
+	struct wd_sched sched = {0};
 	int ret;
 
 	if (g_use_env)
@@ -2685,7 +2685,7 @@ static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx,
 static int aead_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
-	struct wd_sched sched;
+	struct wd_sched sched = {0};
 	int ret;
 
 	if (g_use_env)

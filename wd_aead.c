@@ -32,7 +32,6 @@ struct wd_aead_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
 	void *dlhandle;
 	void *dlh_list;
@@ -51,7 +50,7 @@ struct wd_aead_sess {
 	__u16			ckey_bytes;
 	__u16			akey_bytes;
 	__u16			auth_bytes;
-	void			*priv;
+	void			**priv;
 	void			*sched_key;
 	/* Stored the counter for gcm stream mode */
 	__u8			*iv;
@@ -59,7 +58,6 @@ struct wd_aead_sess {
 	__u64			long_data_len;
 	struct wd_mm_ops	mm_ops;
 	enum wd_mem_type	mm_type;
-	struct wd_aead_extend_ops eops;
 };
 
 struct wd_env_config wd_aead_env_config;
@@ -75,20 +73,16 @@ static void wd_aead_close_driver(int init_type)
 	}
 
 	if (wd_aead_setting.dlhandle) {
-		wd_release_drv(wd_aead_setting.driver);
 		dlclose(wd_aead_setting.dlhandle);
 		wd_aead_setting.dlhandle = NULL;
 	}
 #else
-	wd_release_drv(wd_aead_setting.driver);
 	hisi_sec2_remove();
 #endif
 }
 
 static int wd_aead_open_driver(int init_type)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "gcm(aes)";
 #ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
@@ -122,14 +116,6 @@ static int wd_aead_open_driver(int init_type)
 	if (init_type == WD_TYPE_V2)
 		return WD_SUCCESS;
 #endif
-	driver = wd_request_drv(alg_name, false);
-	if (!driver) {
-		wd_aead_close_driver(WD_TYPE_V1);
-		WD_ERR("failed to get %s driver support\n", alg_name);
-		return -WD_EINVAL;
-	}
-
-	wd_aead_setting.driver = driver;
 
 	return WD_SUCCESS;
 }
@@ -191,7 +177,7 @@ int wd_aead_set_ckey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 	int ret;
 
-	if (unlikely(!key || !sess)) {
+	if (unlikely(!key || !sess || !sess->ckey)) {
 		WD_ERR("failed to check cipher key input param!\n");
 		return -WD_EINVAL;
 	}
@@ -230,7 +216,7 @@ int wd_aead_set_akey(handle_t h_sess, const __u8 *key, __u16 key_len)
 	}
 
 	sess->akey_bytes = key_len;
-	if (key_len)
+	if (key_len && sess->akey)
 		memcpy(sess->akey, key, key_len);
 
 	return 0;
@@ -334,7 +320,7 @@ static struct wd_aead_sess *check_and_init_sess(struct wd_aead_sess_setup *setup
 	sess->dalg = setup->dalg;
 	sess->dmode = setup->dmode;
 
-	ret = wd_drv_alg_support(sess->alg_name, wd_aead_setting.driver);
+	ret = wd_drv_alg_support(sess->alg_name, &wd_aead_setting.config);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		free(sess);
@@ -368,7 +354,7 @@ static int aead_setup_memory_and_buffers(struct wd_aead_sess *sess,
 
 	sess->mac_bak = aead_alloc_func(mempool, WD_AEAD_CCM_GCM_MAX);
 	if (!sess->mac_bak) {
-		WD_ERR("aead failed to calloc mac_bak memory!\n");
+		WD_ERR("failed to calloc aead mac_bak memory!\n");
 		return -WD_ENOMEM;
 	}
 	memset(sess->mac_bak, 0, WD_AEAD_CCM_GCM_MAX);
@@ -413,25 +399,63 @@ static void cleanup_session(struct wd_aead_sess *sess)
 	sess->mm_ops.free(sess->mm_ops.usr, sess->ckey);
 	sess->mm_ops.free(sess->mm_ops.usr, sess->akey);
 
-	if (sess)
-		free(sess);
+	free(sess);
 }
 
 static int wd_aead_sess_eops_init(struct wd_aead_sess *sess)
 {
-	int ret;
+	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
+	struct wd_aead_extend_ops *eops;
+	struct wd_alg_driver *drv;
+	int ret, prev_idx;
+	int valid = 0;
+	__u32 i, j;
 
-	if (sess->eops.eops_aiv_init) {
-		if (!sess->eops.eops_aiv_uninit) {
-			WD_ERR("failed to get aead extend ops free in session!\n");
-			return -WD_EINVAL;
+	/* Allocate priv array like wd_agg does */
+	sess->priv = malloc(sizeof(void *) * config->ctx_num);
+	if (!sess->priv)
+		return -WD_ENOMEM;
+	memset(sess->priv, 0, sizeof(void *) * config->ctx_num);
+
+	for (i = 0; i < config->ctx_num; i++) {
+		drv = config->ctxs[i].drv;
+		/* the drv initial assignment is not NULL. */
+		if (!drv->get_extend_ops)
+			continue;
+
+		/* check if same driver was already initialized. */
+		prev_idx = -1;
+		for (j = 0; j < i; j++) {
+			if (!strcmp(config->ctxs[j].drv->drv_name, drv->drv_name)) {
+				prev_idx = j;
+				break;
+			}
 		}
-		ret = sess->eops.eops_aiv_init(wd_aead_setting.driver, &sess->mm_ops,
-					       &sess->eops.params);
-		if (ret) {
-			WD_ERR("failed to init aead extend ops params in session!\n");
-			return ret;
+		if (prev_idx >= 0) {
+			/* Reuse existing priv */
+			sess->priv[i] = sess->priv[prev_idx];
+			continue;
 		}
+
+		ret = drv->get_extend_ops(config->ctxs[i].drv->extend_ops);
+		if (!ret && config->ctxs[i].drv->extend_ops) {
+			eops = config->ctxs[i].drv->extend_ops;
+
+			if (!eops->eops_aiv_init || !eops->eops_aiv_uninit)
+				continue;
+			/* call eops_aiv_init and store in priv[i]. */
+			ret = eops->eops_aiv_init(drv, &sess->mm_ops, &sess->priv[i]);
+			if (ret) {
+				WD_ERR("failed to init aead extend ops params in session!\n");
+				return ret;
+			}
+			valid++;
+		}
+	}
+
+	if (!valid) {
+		WD_DEBUG("failed to get aead extend ops!\n");
+		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
@@ -439,15 +463,40 @@ static int wd_aead_sess_eops_init(struct wd_aead_sess *sess)
 
 static void wd_aead_sess_eops_uninit(struct wd_aead_sess *sess)
 {
-	if (sess->eops.eops_aiv_uninit) {
-		sess->eops.eops_aiv_uninit(wd_aead_setting.driver, &sess->mm_ops,
-					   sess->eops.params);
-		sess->eops.params = NULL;
+	struct wd_ctx_config_internal *config = &wd_aead_setting.config;
+	struct wd_aead_extend_ops *eops;
+	struct wd_alg_driver *drv;
+	int prev_idx;
+	__u32 i, j;
+
+	if (!sess->priv)
+		return;
+
+	for (i = 0; i < config->ctx_num; i++) {
+		drv = config->ctxs[i].drv;
+		/* check if this is a duplicate driver that was skipped. */
+		prev_idx = -1;
+		for (j = 0; j < i; j++) {
+			if (!strcmp(config->ctxs[j].drv->drv_name, drv->drv_name)) {
+				prev_idx = j;
+				break;
+			}
+		}
+		if (prev_idx >= 0 || !sess->priv[i] || !drv->extend_ops)
+			continue;
+
+		eops = drv->extend_ops;
+		if (eops->eops_aiv_uninit)
+			eops->eops_aiv_uninit(drv, &sess->mm_ops, sess->priv[i]);
 	}
+
+	free(sess->priv);
+	sess->priv = NULL;
 }
 
 handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 {
+	struct wd_sched_params params;
 	struct wd_aead_sess *sess;
 	int ret;
 
@@ -460,32 +509,30 @@ handle_t wd_aead_alloc_sess(struct wd_aead_sess_setup *setup)
 		return (handle_t)0;
 	}
 
-	if (wd_aead_setting.driver->get_extend_ops) {
-		ret = wd_aead_setting.driver->get_extend_ops(&sess->eops);
-		if (ret) {
-			WD_ERR("failed to get aead sess extend ops!\n");
-			goto sess_err;
-		}
-	}
-
 	ret = wd_aead_sess_eops_init(sess);
 	if (ret) {
 		WD_ERR("failed to init aead sess extend eops!\n");
-		goto sess_err;
+		goto clean_up;
 	}
 
 	sess->sched_key = (void *)wd_aead_setting.sched.sched_init(
 			  wd_aead_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto sched_key_err;
+		goto clean_up;
 	}
+
+	/* Set compat filtering parameters for session-ctx matching */
+	memset(&params, 0, sizeof(params));
+	params.alg_name = sess->alg_name;
+	params.ctxs = wd_aead_setting.config.ctxs;
+	wd_aead_setting.sched.set_param(wd_aead_setting.sched.h_sched_ctx,
+					sess->sched_key, &params);
 
 	return (handle_t)sess;
 
-sched_key_err:
+clean_up:
 	wd_aead_sess_eops_uninit(sess);
-sess_err:
 	cleanup_session(sess);
 	return (handle_t)0;
 }
@@ -502,8 +549,14 @@ void wd_aead_free_sess(handle_t h_sess)
 	wd_memset_zero(sess->ckey, sess->ckey_bytes);
 	wd_memset_zero(sess->akey, sess->akey_bytes);
 
-	if (sess->sched_key)
-		free(sess->sched_key);
+	if (sess->sched_key) {
+		if (wd_aead_setting.sched.sched_uninit)
+			wd_aead_setting.sched.sched_uninit(
+				wd_aead_setting.sched.h_sched_ctx,
+				(handle_t)sess->sched_key);
+		else
+			free(sess->sched_key);
+	}
 	wd_aead_sess_eops_uninit(sess);
 	cleanup_session(sess);
 }
@@ -572,6 +625,8 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 	return 0;
 }
 
+static bool wd_aead_atfork_registered;
+
 static void wd_aead_clear_status(void)
 {
 	wd_alg_clear_init(&wd_aead_setting.status);
@@ -602,15 +657,8 @@ static int wd_aead_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_aead_setting.config,
-					wd_aead_setting.driver);
-	if (ret)
-		goto out_clear_pool;
-
 	return 0;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_aead_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_aead_setting.sched);
 out_clear_ctx_config:
@@ -619,11 +667,21 @@ out_clear_ctx_config:
 	return ret;
 }
 
+static void wd_aead_uninit_nolock(void)
+{
+	wd_uninit_async_request_pool(&wd_aead_setting.pool);
+	wd_clear_sched(&wd_aead_setting.sched);
+}
+
 int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
+	__u32 drv_count;
 	int ret;
 
-	pthread_atfork(NULL, NULL, wd_aead_clear_status);
+	if (!wd_aead_atfork_registered) {
+		if (pthread_atfork(NULL, NULL, wd_aead_clear_status) == 0)
+			wd_aead_atfork_registered = true;
+	}
 
 	ret = wd_alg_try_init(&wd_aead_setting.status);
 	if (ret)
@@ -633,6 +691,14 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
+	/* init1 path is HW-only; CE/SVE drivers require init2 */
+	if (sched->sched_policy == SCHED_POLICY_NONE ||
+	    sched->sched_policy == SCHED_POLICY_SINGLE) {
+		WD_ERR("init1 does not support NONE/SINGLE schedulers, use init2\n");
+		ret = -WD_EINVAL;
+		goto out_clear_init;
+	}
+
 	ret = wd_aead_open_driver(WD_TYPE_V1);
 	if (ret)
 		goto out_clear_init;
@@ -641,10 +707,40 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_close_driver;
 
+	/* Driver discovery */
+	ret = wd_get_drv_array("aead", TASK_HW, "hisi_sec2",
+			       &wd_aead_setting.config.drv_array, &drv_count);
+	if (ret) {
+		WD_ERR("failed to get driver array!\n");
+		goto out_common_uninit;
+	}
+
+	/* RR bind drivers to internal ctxs */
+	wd_aead_setting.config.drv_count = drv_count;
+	ret = wd_ctx_bind_drivers(&wd_aead_setting.config, NULL, WD_TYPE_V1);
+	if (ret) {
+		WD_ERR("failed to bind drivers!\n");
+		goto out_free_drv_array;
+	}
+
+	ret = wd_alg_init_driver(&wd_aead_setting.config);
+	if (ret) {
+		WD_ERR("failed to init aead driver!\n");
+		goto out_unbind_drivers;
+	}
+
 	wd_alg_set_init(&wd_aead_setting.status);
 
-	return 0;
+	return ret;
 
+out_unbind_drivers:
+	wd_ctx_unbind_drivers(&wd_aead_setting.config);
+out_free_drv_array:
+	wd_put_drv_array(wd_aead_setting.config.drv_array, drv_count);
+	wd_aead_setting.config.drv_array = NULL;
+	wd_aead_setting.config.drv_count = 0;
+out_common_uninit:
+	wd_aead_uninit_nolock();
 out_close_driver:
 	wd_aead_close_driver(WD_TYPE_V1);
 out_clear_init:
@@ -652,30 +748,21 @@ out_clear_init:
 	return ret;
 }
 
-static int wd_aead_uninit_nolock(void)
+void wd_aead_uninit(void)
 {
 	enum wd_status status;
 
 	wd_alg_get_init(&wd_aead_setting.status, &status);
-	if (status == WD_UNINIT)
-		return -WD_EINVAL;
-
-	wd_uninit_async_request_pool(&wd_aead_setting.pool);
-	wd_clear_sched(&wd_aead_setting.sched);
-	wd_alg_uninit_driver(&wd_aead_setting.config,
-			     wd_aead_setting.driver);
-
-	return 0;
-}
-
-void wd_aead_uninit(void)
-{
-	int ret;
-
-	ret = wd_aead_uninit_nolock();
-	if (ret)
+	if (status != WD_INIT)
 		return;
 
+	wd_alg_uninit_driver(&wd_aead_setting.config);
+	wd_ctx_unbind_drivers(&wd_aead_setting.config);
+	wd_put_drv_array(wd_aead_setting.config.drv_array,
+			 wd_aead_setting.config.drv_count);
+	wd_aead_setting.config.drv_array = NULL;
+	wd_aead_setting.config.drv_count = 0;
+	wd_aead_uninit_nolock();
 	wd_aead_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
@@ -700,8 +787,12 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 	struct wd_ctx_nums aead_ctx_num[WD_DIGEST_CIPHER_DECRYPTION + 1] = {0};
 	struct wd_ctx_params aead_ctx_params = {0};
 	int state, ret = -WD_EINVAL;
+	int try_cnt = 0;
 
-	pthread_atfork(NULL, NULL, wd_aead_clear_status);
+	if (!wd_aead_atfork_registered) {
+		if (pthread_atfork(NULL, NULL, wd_aead_clear_status) == 0)
+			wd_aead_atfork_registered = true;
+	}
 
 	state = wd_alg_try_init(&wd_aead_setting.status);
 	if (state)
@@ -723,39 +814,32 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 		goto out_uninit;
 
 	while (ret != 0) {
-		memset(&wd_aead_setting.config, 0, sizeof(struct wd_ctx_config_internal));
-
-		/* Get alg driver and dev name */
-		wd_aead_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_aead_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
-			goto out_dlopen;
+		if (try_cnt++ >= WD_INIT2_MAX_RETRY) {
+			WD_ERR("failed to init2 after %d retries.\n",
+			       WD_INIT2_MAX_RETRY);
+			goto out_dlclose;
 		}
-
+		memset(&wd_aead_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+		/* Init ctx param and prepare for ctx request */
 		aead_ctx_params.ctx_set_num = aead_ctx_num;
 		ret = wd_ctx_param_init(&aead_ctx_params, ctx_params,
-					wd_aead_setting.driver, WD_AEAD_TYPE,
+					alg, WD_AEAD_TYPE,
 					WD_DIGEST_CIPHER_DECRYPTION + 1);
 		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_aead_setting.driver);
-				wd_alg_drv_unbind(wd_aead_setting.driver);
+			if (ret == -WD_EAGAIN)
 				continue;
-			}
-			goto out_driver;
+			goto out_dlclose;
 		}
 
 		(void)strcpy(wd_aead_init_attrs.alg, alg);
 		wd_aead_init_attrs.sched_type = sched_type;
-		wd_aead_init_attrs.driver = wd_aead_setting.driver;
+		wd_aead_init_attrs.task_type = task_type;
 		wd_aead_init_attrs.ctx_params = &aead_ctx_params;
 		wd_aead_init_attrs.alg_init = wd_aead_init_nolock;
 		wd_aead_init_attrs.alg_poll_ctx = wd_aead_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_aead_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_aead_setting.driver);
-				wd_alg_drv_unbind(wd_aead_setting.driver);
 				wd_ctx_param_uninit(&aead_ctx_params);
 				continue;
 			}
@@ -763,16 +847,36 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_params_uninit;
 		}
 	}
+
+	/* RR bind drivers */
+	ret = wd_ctx_bind_drivers(&wd_aead_setting.config,
+				  wd_aead_init_attrs.ctx_config_internal,
+				  WD_TYPE_V2);
+	if (ret) {
+		WD_ERR("failed to bind driver!\n");
+		goto out_common_uninit;
+	}
+
+	/* Driver initialization */
+	ret = wd_alg_init_driver(&wd_aead_setting.config);
+	if (ret) {
+		WD_ERR("failed to init driver!\n");
+		goto out_unbind_drivers;
+	}
+
 	wd_alg_set_init(&wd_aead_setting.status);
 	wd_ctx_param_uninit(&aead_ctx_params);
 
-	return 0;
+	return ret;
 
+out_unbind_drivers:
+	wd_ctx_unbind_drivers(&wd_aead_setting.config);
+out_common_uninit:
+	wd_aead_uninit_nolock();
+	wd_alg_attrs_uninit(&wd_aead_init_attrs);
 out_params_uninit:
 	wd_ctx_param_uninit(&aead_ctx_params);
-out_driver:
-	wd_alg_drv_unbind(wd_aead_setting.driver);
-out_dlopen:
+out_dlclose:
 	wd_aead_close_driver(WD_TYPE_V2);
 out_uninit:
 	wd_alg_clear_init(&wd_aead_setting.status);
@@ -781,14 +885,19 @@ out_uninit:
 
 void wd_aead_uninit2(void)
 {
-	int ret;
+	enum wd_status status;
 
-	ret = wd_aead_uninit_nolock();
-	if (ret)
+	wd_alg_get_init(&wd_aead_setting.status, &status);
+	if (status != WD_INIT)
 		return;
 
+	wd_alg_uninit_driver(&wd_aead_setting.config);
+	wd_ctx_unbind_drivers(&wd_aead_setting.config);
+	wd_aead_setting.config.drv_array = NULL;
+	wd_aead_setting.config.drv_count = 0;
+	wd_aead_uninit_nolock();
+
 	wd_alg_attrs_uninit(&wd_aead_init_attrs);
-	wd_alg_drv_unbind(wd_aead_setting.driver);
 	wd_aead_close_driver(WD_TYPE_V2);
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
@@ -861,7 +970,6 @@ static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 
 	msg->mm_ops = &sess->mm_ops;
 	msg->mm_type = sess->mm_type;
-	msg->drv_cfg = sess->eops.params;
 	fill_stream_msg(msg, req, sess);
 }
 
@@ -871,12 +979,12 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	struct wd_msg_handle msg_handle;
 	int ret;
 
-	msg_handle.send = wd_aead_setting.driver->send;
-	msg_handle.recv = wd_aead_setting.driver->recv;
+	msg_handle.send = ctx->drv->send;
+	msg_handle.recv = ctx->drv->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_aead_setting.driver, &msg_handle, ctx->ctx,
-				 msg, NULL, wd_aead_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
+			  wd_aead_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -905,6 +1013,9 @@ int wd_do_aead_sync(handle_t h_sess, struct wd_aead_req *req)
 	ret = wd_check_ctx(config, CTX_MODE_SYNC, idx);
 	if (unlikely(ret))
 		return ret;
+
+	/* Set drv_cfg from priv array like wd_agg */
+	msg.drv_cfg = sess->priv[idx];
 
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
@@ -943,15 +1054,14 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 
 	msg_id = wd_get_msg_from_pool(&wd_aead_setting.pool,
 				     idx, (void **)&msg);
-	if (unlikely(msg_id < 0)) {
-		WD_ERR("failed to get msg from pool!\n");
-		return msg_id;
-	}
+	if (unlikely(msg_id < 0))
+		return -WD_EBUSY;
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
+	msg->drv_cfg = sess->priv[idx];
 
-	ret = wd_alg_driver_send(wd_aead_setting.driver, ctx->ctx, msg);
+	ret = ctx->drv->send(ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -960,9 +1070,6 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 	}
 
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
-	ret = wd_add_task_to_async_queue(&wd_aead_env_config, idx);
-	if (ret)
-		goto fail_with_msg;
 
 	return 0;
 
@@ -1001,7 +1108,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_aead_setting.driver, ctx->ctx, &resp_msg);
+		ret = ctx->drv->recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
@@ -1042,15 +1149,10 @@ int wd_aead_poll(__u32 expt, __u32 *count)
 	return sched->poll_policy(h_ctx, expt, count);
 }
 
-static const struct wd_config_variable table[] = {
-	{ .name = "WD_AEAD_CTX_NUM",
-	  .def_val = "sync:2@0,async:2@0",
-	  .parse_fn = wd_parse_ctx_num
-	},
-	{ .name = "WD_AEAD_ASYNC_POLL_EN",
-	  .def_val = "0",
-	  .parse_fn = wd_parse_async_poll_en
-	}
+static const struct wd_config_variable table = {
+	.name = "WD_AEAD_CTX_NUM",
+	.def_val = "sync:2@0,async:2@0",
+	.parse_fn = wd_parse_ctx_num
 };
 
 static const struct wd_alg_ops wd_aead_ops = {
@@ -1065,8 +1167,8 @@ int wd_aead_env_init(struct wd_sched *sched)
 {
 	wd_aead_env_config.sched = sched;
 
-	return wd_alg_env_init(&wd_aead_env_config, table,
-			       &wd_aead_ops, ARRAY_SIZE(table), NULL);
+	return wd_alg_env_init(&wd_aead_env_config, &table,
+			       &wd_aead_ops, 1, NULL);
 }
 
 void wd_aead_env_uninit(void)
@@ -1083,8 +1185,8 @@ int wd_aead_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 	if (ret)
 		return ret;
 
-	return wd_alg_env_init(&wd_aead_env_config, table,
-			       &wd_aead_ops, ARRAY_SIZE(table), &ctx_attr);
+	return wd_alg_env_init(&wd_aead_env_config, &table,
+			       &wd_aead_ops, 1, &ctx_attr);
 }
 
 void wd_aead_ctx_num_uninit(void)

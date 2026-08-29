@@ -28,6 +28,7 @@
 #include <sys/eventfd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <time.h>
 #include "v1/wd_util.h"
 #include "v1/wd_comp.h"
 #include "v1/wd_cipher.h"
@@ -132,21 +133,27 @@ struct zip_fill_sqe_ops {
 	void (*fill_sqe_hw_info)(void *ssqe, struct wcrypto_comp_msg *msg);
 };
 
-static unsigned int g_err_print_enable = 1;
+static timer_t g_timerid;
+static sig_atomic_t g_err_print_enable = 1;
 
-static void zip_err_print_alarm_end(int sig)
+static void zip_err_print_alarm_end(union sigval sv)
 {
-	if (sig == SIGALRM) {
-		g_err_print_enable = 1;
-		alarm(0);
-	}
+	timer_delete(g_timerid);
+	g_err_print_enable = 1;
 }
 
 static void zip_err_print_time_start(void)
 {
-	g_err_print_enable = 0;
-	signal(SIGALRM, zip_err_print_alarm_end);
-	alarm(PRINT_TIME_INTERVAL);
+	struct itimerspec its = {0};
+	struct sigevent sev = {0};
+
+	sev.sigev_notify = SIGEV_THREAD;
+	sev.sigev_notify_function = zip_err_print_alarm_end;
+	sev.sigev_value.sival_ptr = &g_timerid;
+	timer_create(CLOCK_REALTIME, &sev, &g_timerid);
+
+	its.it_value.tv_sec = PRINT_TIME_INTERVAL;
+	timer_settime(g_timerid, 0, &its, NULL);
 }
 
 static void zip_err_bd_print(__u16 ctx_st, __u32 status, __u32 type)
@@ -155,6 +162,7 @@ static void zip_err_bd_print(__u16 ctx_st, __u32 status, __u32 type)
 		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 			ctx_st, status, type);
 	} else if (g_err_print_enable == 1) {
+		g_err_print_enable = 0;
 		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
 			ctx_st, status, type);
 		zip_err_print_time_start();
@@ -210,10 +218,10 @@ static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf
 		 * The end flag is cached. It can be output only
 		 * after the data is completely copied to the output.
 		 */
-		if (msg->status == WCRYPTO_DECOMP_END) {
-			buf->status = WCRYPTO_DECOMP_END;
-			msg->status = WCRYPTO_DECOMP_END_NOSPACE;
-		}
+		if (msg->status == WCRYPTO_DECOMP_END)
+			buf->status = msg->status;
+
+		msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 	}
 }
 
@@ -315,11 +323,9 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
-	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->avail_out > MAX_BUFFER_SIZE)) {
-		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-		       msg->avail_out);
+	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->avail_out > MAX_BUFFER_SIZE))
 		msg->avail_out = MAX_BUFFER_SIZE;
-	}
+
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
 
@@ -441,7 +447,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
 	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
-		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	return 1;
 }
@@ -500,11 +506,8 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 	}
 
 	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->avail_out > MAX_BUFFER_SIZE)) {
-		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-		       msg->avail_out);
+		     msg->avail_out > MAX_BUFFER_SIZE))
 		msg->avail_out = MAX_BUFFER_SIZE;
-	}
 
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
@@ -547,11 +550,8 @@ static int fill_zip_buffer_size_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 		/* fill the sequences output size */
 		sqe->dest_avail_out = zstd_out->seq_sz;
 	} else {
-		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE)) {
-			WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
-			       msg->avail_out);
-			msg->avail_out = MAX_BUFFER_SIZE;
-		}
+		if (unlikely(msg->avail_out > MAX_BUFFER_SIZE + lit_size))
+			msg->avail_out = MAX_BUFFER_SIZE + lit_size;
 
 		/*
 		 * For lz77_zstd, the hardware need 784 Bytes buffer to output
@@ -705,11 +705,10 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 			else
 				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
 				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
-
-			/* The literal length info of each bd needs to be cleared.  */
-			memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
-			       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 		}
+		/* The literal length info of each bd needs to be cleared. */
+		memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
+		       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
 	}
 
 	sqe->isize = msg->isize;
@@ -851,6 +850,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe_v3 *sqe = hw_msg;
+	__u16 ctx_core_status = sqe->isize & HZ_CTX_CORE_STATUS_MASK;
 	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
 	__u32 ctx_win_len = sqe->ctx_dw2 & CTX_WIN_LEN_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
@@ -913,7 +913,19 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
 	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
-		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
+
+	/*
+	 * The ctx_core_status reflects the hardware context state.
+	 * In stateful decompression, if it is non-zero while neither
+	 * input is consumed nor output produced, the hardware
+	 * needs the request to be resent with more input and output,
+	 * so report WD_EAGAIN to the user.
+	 */
+	if (!recv_msg->status && recv_msg->stream_mode == WCRYPTO_COMP_STATEFUL &&
+	    recv_msg->op_type == WCRYPTO_INFLATE && ctx_core_status &&
+	    !recv_msg->in_cons && !recv_msg->produced)
+		recv_msg->status = WD_EAGAIN;
 
 	/*
 	 * It need to analysis the data cache by hardware.

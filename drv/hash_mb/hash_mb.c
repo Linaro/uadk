@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hash_mb.h"
+#include "../wd_drv.h"
 
 #define MIN(a, b)		(((a) > (b)) ? (b) : (a))
 #define IPAD_VALUE		0x36
@@ -109,12 +110,20 @@ static void hash_mb_queue_uninit(struct wd_ctx_config_internal *config, int ctx_
 	int i;
 
 	for (i = 0; i < ctx_num; i++) {
+		if (strcmp(config->ctxs[i].drv->drv_name, "hash_mb") ||
+		    config->ctxs[i].drv->calc_type != UADK_ALG_SVE_INSTR)
+			continue;
+
 		ctx = (struct wd_soft_ctx *)config->ctxs[i].ctx;
 		mb_queue = ctx->priv;
+		if (!mb_queue)
+			continue;
+
 		pthread_spin_destroy(&mb_queue->r_lock);
 		hash_mb_uninit_poll_queue(&mb_queue->sm3_poll_queue);
 		hash_mb_uninit_poll_queue(&mb_queue->md5_poll_queue);
 		free(mb_queue);
+		ctx->priv = NULL;
 	}
 }
 
@@ -143,11 +152,16 @@ static int hash_mb_queue_init(struct wd_ctx_config_internal *config)
 	int i, ret;
 
 	for (i = 0; i < ctx_num; i++) {
-		mb_queue = calloc(1, sizeof(struct hash_mb_queue));
+		if (strcmp(config->ctxs[i].drv->drv_name, "hash_mb") ||
+		    config->ctxs[i].drv->calc_type != UADK_ALG_SVE_INSTR)
+			continue;
+
+		mb_queue = malloc(sizeof(struct hash_mb_queue));
 		if (!mb_queue) {
 			ret = -WD_ENOMEM;
 			goto free_mb_queue;
 		}
+		memset(mb_queue, 0, sizeof(struct hash_mb_queue));
 
 		mb_queue->ctx_mode = config->ctxs[i].ctx_mode;
 		ctx = (struct wd_soft_ctx *)config->ctxs[i].ctx;
@@ -168,9 +182,6 @@ static int hash_mb_queue_init(struct wd_ctx_config_internal *config)
 
 		mb_queue->sm3_poll_queue.ops = &sm3_ops;
 		mb_queue->md5_poll_queue.ops = &md5_ops;
-		mb_queue->recv_head = NULL;
-		mb_queue->recv_tail = NULL;
-		mb_queue->complete_cnt = 0;
 	}
 
 	return WD_SUCCESS;
@@ -186,46 +197,34 @@ free_mb_queue:
 	return ret;
 }
 
-static int hash_mb_init(struct wd_alg_driver *drv, void *conf)
+static int hash_mb_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct hash_mb_ctx *priv;
-	int ret;
+	struct hash_mb_ctx *mb_ctx = priv;
 
 	/* Fallback init is NULL */
-	if (!drv || !conf)
+	if (!conf || !priv)
 		return 0;
-
-	priv = malloc(sizeof(struct hash_mb_ctx));
-	if (!priv)
-		return -WD_ENOMEM;
 
 	/* multibuff does not use epoll. */
 	config->epoll_en = 0;
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
+	memcpy(&mb_ctx->config, config, sizeof(struct wd_ctx_config_internal));
 
-	ret = hash_mb_queue_init(config);
-	if (ret) {
-		free(priv);
-		return ret;
-	}
-
-	drv->priv = priv;
-
-	return WD_SUCCESS;
+	return hash_mb_queue_init(config);
 }
 
-static void hash_mb_exit(struct wd_alg_driver *drv)
+static void hash_mb_exit(void *priv)
 {
-	struct hash_mb_ctx *priv;
+	struct hash_mb_ctx *mb_ctx = priv;
+	struct wd_ctx_config_internal *config;
 
-	if (!drv || !drv->priv)
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
 		return;
+	}
 
-	priv = (struct hash_mb_ctx *)drv->priv;
-	hash_mb_queue_uninit(&priv->config, priv->config.ctx_num);
-	free(priv);
-	drv->priv = NULL;
+	config = &mb_ctx->config;
+	hash_mb_queue_uninit(config, config->ctx_num);
 }
 
 static void hash_mb_pad_data(struct hash_pad *hash_pad, __u8 *in, __u32 partial,
@@ -267,7 +266,7 @@ static inline void hash_xor(__u8 *key_out, __u8 *key_in, __u32 key_len, __u8 xor
 		if (i < key_len)
 			key_out[i] = key_in[i] ^ xor_value;
 		else
-			key_out[i] = xor_value;
+			key_out[i] = 0x0 ^ xor_value;
 	}
 }
 
@@ -555,7 +554,21 @@ static int hash_mb_check_param(struct hash_mb_queue *mb_queue, struct wd_digest_
 	return WD_SUCCESS;
 }
 
-static int hash_mb_send(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
+static void hash_mb_add_finish_job(struct hash_mb_queue *mb_queue, struct hash_job *job)
+{
+	pthread_spin_lock(&mb_queue->r_lock);
+	if (mb_queue->complete_cnt) {
+		mb_queue->recv_tail->next = job;
+		mb_queue->recv_tail = job;
+	} else {
+		mb_queue->recv_head = job;
+		mb_queue->recv_tail = job;
+	}
+	mb_queue->complete_cnt++;
+	pthread_spin_unlock(&mb_queue->r_lock);
+}
+
+static int hash_mb_send(handle_t ctx, void *drv_msg)
 {
 	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)ctx;
 	struct hash_mb_queue *mb_queue = s_ctx->priv;
@@ -597,8 +610,10 @@ static int hash_mb_send(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
 	/* If block not need process, return directly. */
 	ret = hash_do_partial(poll_queue, d_msg, hash_job);
 	if (ret == -WD_EAGAIN) {
-		if (mb_queue->ctx_mode == CTX_MODE_ASYNC)
-			free(hash_job);
+		if (mb_queue->ctx_mode == CTX_MODE_ASYNC) {
+			hash_job->msg = d_msg;
+			hash_mb_add_finish_job(mb_queue, hash_job);
+		}
 
 		d_msg->result = WD_SUCCESS;
 		return WD_SUCCESS;
@@ -691,20 +706,6 @@ static struct hash_job *hash_mb_get_job(struct hash_mb_poll_queue *poll_queue)
 	return job;
 }
 
-static void hash_mb_add_finish_job(struct hash_mb_queue *mb_queue, struct hash_job *job)
-{
-	pthread_spin_lock(&mb_queue->r_lock);
-	if (mb_queue->complete_cnt) {
-		mb_queue->recv_tail->next = job;
-		mb_queue->recv_tail = job;
-	} else {
-		mb_queue->recv_head = job;
-		mb_queue->recv_tail = job;
-	}
-	mb_queue->complete_cnt++;
-	pthread_spin_unlock(&mb_queue->r_lock);
-}
-
 static struct hash_mb_poll_queue *hash_get_poll_queue(struct hash_mb_queue *mb_queue)
 {
 	if (!mb_queue->sm3_poll_queue.job_num &&
@@ -776,7 +777,7 @@ static int hash_mb_do_jobs(struct hash_mb_queue *mb_queue)
 	return WD_SUCCESS;
 }
 
-static int hash_mb_recv(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg)
+static int hash_mb_recv(handle_t ctx, void *drv_msg)
 {
 	struct wd_soft_ctx *s_ctx = (struct wd_soft_ctx *)ctx;
 	struct hash_mb_queue *mb_queue = s_ctx->priv;
@@ -810,6 +811,7 @@ static int hash_mb_get_usage(void *param)
 	.alg_name = (hash_alg_name),\
 	.calc_type = UADK_ALG_SVE_INSTR,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hash_mb_ctx),\
 	.queue_num = 1,\
 	.op_type_num = 1,\
 	.fallback = 0,\
@@ -818,6 +820,8 @@ static int hash_mb_get_usage(void *param)
 	.send = hash_mb_send,\
 	.recv = hash_mb_recv,\
 	.get_usage = hash_mb_get_usage,\
+	.alloc_ctx = wd_soft_alloc_ctx,\
+	.free_ctx = wd_soft_free_ctx,\
 }
 
 static struct wd_alg_driver hash_mb_driver[] = {

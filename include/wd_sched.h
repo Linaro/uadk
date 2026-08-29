@@ -13,7 +13,8 @@
 extern "C" {
 #endif
 
-#define INVALID_POS	0xFFFFFFFF
+#define INVALID_POS	0xFFFF
+#define QUEUE_FULL_POS	0x1FFF
 
 /* The global policy type */
 enum sched_policy_type {
@@ -25,6 +26,12 @@ enum sched_policy_type {
 	SCHED_POLICY_SINGLE,
 	/* requests will be sent to ctxs and dev_id */
 	SCHED_POLICY_DEV,
+	/* Hard calculation and soft calculation interval loop call */
+	SCHED_POLICY_LOOP,
+	/* Perform heterogeneous calculations through ctx of session key */
+	SCHED_POLICY_HUNGRY,
+	/* Instructions to accelerate heterogeneous computing */
+	SCHED_POLICY_INSTR,
 	SCHED_POLICY_BUTT,
 };
 
@@ -35,6 +42,7 @@ struct sched_params {
 	__u32 begin;
 	__u32 end;
 	__u32 dev_id;
+	int ctx_prop;
 };
 
 typedef int (*user_poll_func)(__u32 pos, __u32 expect, __u32 *count);

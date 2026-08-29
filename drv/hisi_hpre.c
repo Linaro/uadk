@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include "hisi_qm_udrv.h"
+#include "wd_drv.h"
 #include "../include/wd_ecc_curve.h"
 #include "../include/drv/wd_rsa_drv.h"
 #include "../include/drv/wd_dh_drv.h"
@@ -130,12 +131,13 @@ struct hisi_hpre_sqe {
 };
 
 struct hisi_hpre_ctx {
-	struct wd_ctx_config_internal	config;
+	struct wd_ctx_internal **ctxs;
+	__u32 ctx_num;
 	struct wd_mm_ops *mm_ops;
 	handle_t rsv_mem_ctx;
 };
 
-struct hpre_ecc_ctx {
+struct hisi_hpre_eops_ctx {
 	__u32 enable_hpcore;
 };
 
@@ -599,7 +601,7 @@ static int rsa_prepare_key(struct wd_rsa_msg *msg, struct hisi_hpre_sqe *hw_msg,
 		return -WD_ENOMEM;
 	fill_hw_msg_addr(HW_MSG_KEY, hw_msg, addr);
 
-	return ret;
+	return WD_SUCCESS;
 }
 
 static int rsa_prepare_iot(struct wd_rsa_msg *msg, struct hisi_hpre_sqe *hw_msg,
@@ -647,44 +649,76 @@ static int hpre_init_qm_priv(struct wd_ctx_config_internal *config,
 			     struct hisi_hpre_ctx *hpre_ctx,
 			     struct hisi_qm_priv *qm_priv)
 {
-	handle_t h_ctx, h_qp;
-	__u32 i, j;
+	__u32 i, j, count;
+	bool *is_match;
+	handle_t h_qp;
 
-	memcpy(&hpre_ctx->config, config, sizeof(*config));
+	/* First pass: traverse and count the number of contexts supported by this driver. */
+	is_match = malloc(config->ctx_num * sizeof(bool));
+	if (!is_match)
+		return -WD_ENOMEM;
 
-	/* allocate qp for each context */
-	qm_priv->sqe_size = sizeof(struct hisi_hpre_sqe);
-
+	count = 0;
 	for (i = 0; i < config->ctx_num; i++) {
-		h_ctx = config->ctxs[i].ctx;
-		qm_priv->qp_mode = config->ctxs[i].ctx_mode;
-		/* Setting the epoll en to 0 for ASYNC ctx */
-		qm_priv->epoll_en = (qm_priv->qp_mode == CTX_MODE_SYNC) ?
-				   config->epoll_en : 0;
-		qm_priv->idx = i;
-		h_qp = hisi_qm_alloc_qp(qm_priv, h_ctx);
-		if (!h_qp) {
-			WD_ERR("failed to alloc qp!\n");
-			goto out;
+		if (config->ctxs[i].ctx &&
+		     strcmp(config->ctxs[i].drv->drv_name, "hisi_hpre") == 0) {
+			is_match[i] = true;
+			count++;
+		} else {
+			is_match[i] = false;
 		}
-		config->ctxs[i].sqn = qm_priv->sqn;
 	}
 
+	if (!count) {
+		free(is_match);
+		return -WD_EINVAL;
+	}
+
+	hpre_ctx->ctxs = calloc(count, sizeof(struct wd_ctx_internal *));
+	if (!hpre_ctx->ctxs) {
+		free(is_match);
+		return -WD_ENOMEM;
+	}
+	hpre_ctx->ctx_num = count;
+
+	/* Second pass: allocate QP and store context mirror. */
+	qm_priv->sqe_size = sizeof(struct hisi_hpre_sqe);
+	count = 0;
+	for (i = 0; i < config->ctx_num; i++) {
+		if (!is_match[i])
+			continue;
+
+		qm_priv->qp_mode = config->ctxs[i].ctx_mode;
+		qm_priv->epoll_en = (qm_priv->qp_mode == CTX_MODE_SYNC) ?
+				     config->epoll_en : 0;
+		qm_priv->idx = i;
+		h_qp = hisi_qm_alloc_qp(qm_priv, config->ctxs[i].ctx);
+		if (!h_qp)
+			goto out;
+
+		config->ctxs[i].sqn = qm_priv->sqn;
+		/* Store the queues allocated by your own driver. */
+		hpre_ctx->ctxs[count++] = &config->ctxs[i];
+	}
+
+	free(is_match);
 	return WD_SUCCESS;
+
 out:
-	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
+	for (j = 0; j < count; j++) {
+		h_qp = (handle_t)wd_ctx_get_priv(hpre_ctx->ctxs[j]->ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-
+	free(hpre_ctx->ctxs);
+	free(is_match);
 	return -WD_EINVAL;
 }
 
-static int hpre_rsa_dh_init(struct wd_alg_driver *drv, void *conf)
+static int hpre_rsa_dh_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_hpre_ctx *priv;
 	int ret;
 
 	if (!config->ctx_num) {
@@ -692,27 +726,19 @@ static int hpre_rsa_dh_init(struct wd_alg_driver *drv, void *conf)
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_hpre_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	qm_priv.op_type = HPRE_HW_V2_ALG_TYPE;
-	ret = hpre_init_qm_priv(config, priv, &qm_priv);
-	if (ret) {
-		free(priv);
+	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
+	if (ret)
 		return ret;
-	}
-
-	drv->priv = priv;
 
 	return WD_SUCCESS;
 }
 
-static int hpre_ecc_init(struct wd_alg_driver *drv, void *conf)
+static int hpre_ecc_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = (struct wd_ctx_config_internal *)conf;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_hpre_ctx *priv;
 	int ret;
 
 	if (!config->ctx_num) {
@@ -720,44 +746,33 @@ static int hpre_ecc_init(struct wd_alg_driver *drv, void *conf)
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_hpre_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	qm_priv.op_type = HPRE_HW_V3_ECC_ALG_TYPE;
-	ret = hpre_init_qm_priv(config, priv, &qm_priv);
-	if (ret) {
-		free(priv);
+	ret = hpre_init_qm_priv(config, hpre_ctx, &qm_priv);
+	if (ret)
 		return ret;
-	}
-
-	drv->priv = priv;
 
 	return WD_SUCCESS;
 }
 
-static void hpre_exit(struct wd_alg_driver *drv)
+static void hpre_exit(void *priv)
 {
-	struct wd_ctx_config_internal *config;
-	struct hisi_hpre_ctx *priv;
+	struct hisi_hpre_ctx *hpre_ctx = (struct hisi_hpre_ctx *)priv;
 	handle_t h_qp;
 	__u32 i;
 
-	if (!drv || !drv->priv)
-		return;
-
-	priv = (struct hisi_hpre_ctx *)drv->priv;
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
+	/* Only release the queues allocated by your own driver. */
+	for (i = 0; i < hpre_ctx->ctx_num; i++) {
+		h_qp = (handle_t)wd_ctx_get_priv(hpre_ctx->ctxs[i]->ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 
-	free(priv);
-	drv->priv = NULL;
+	if (hpre_ctx->ctxs) {
+		free(hpre_ctx->ctxs);
+		hpre_ctx->ctxs = NULL;
+	}
 }
 
-static int rsa_send(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
+static int rsa_send(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_rsa_msg *msg = rsa_msg;
@@ -829,7 +844,7 @@ static void hpre_result_check(struct hisi_hpre_sqe *hw_msg,
 	}
 }
 
-static int rsa_recv(struct wd_alg_driver *drv, handle_t ctx, void *rsa_msg)
+static int rsa_recv(handle_t ctx, void *rsa_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -949,7 +964,7 @@ static int dh_out_transfer(struct wd_dh_msg *msg, struct hisi_hpre_sqe *hw_msg,
 	return WD_SUCCESS;
 }
 
-static int dh_send(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
+static int dh_send(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct map_info_cache cache = {0};
@@ -1020,7 +1035,7 @@ dh_fail:
 	return ret;
 }
 
-static int dh_recv(struct wd_alg_driver *drv, handle_t ctx, void *dh_msg)
+static int dh_recv(handle_t ctx, void *dh_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -1168,19 +1183,26 @@ static bool big_than_one(const char *data, __u32 data_sz)
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 {
-	int ret, shift;
+	unsigned char *d_data, *n_data;
+	__u32 shift, i;
 
 	if (d->dsize > n->dsize)
 		return false;
 	else if (d->dsize < n->dsize)
 		return true;
 
+	/* d->dsize == n->dsize */
 	shift = n->bsize - n->dsize;
-	ret = memcmp(d->data + shift, n->data + shift, n->dsize);
-	if (ret < 0)
-		return true;
-	else
-		return false;
+	d_data = (unsigned char *)d->data + shift;
+	n_data = (unsigned char *)n->data + shift;
+	/* Task parameter data must be stored in big-endian format in DDR */
+	for (i = 0; i < d->dsize; i++) {
+		if (d_data[i] < n_data[i])
+			return true;
+		else if (d_data[i] > n_data[i])
+			return false;
+	}
+	return false;
 }
 
 static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
@@ -1601,7 +1623,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 static int ecc_prepare_in(struct wd_ecc_msg *msg,
 			  struct hisi_hpre_sqe *hw_msg, void **data)
 {
-	struct hpre_ecc_ctx *ecc_ctx = msg->drv_cfg;
+	struct hisi_hpre_eops_ctx *eops_ctx = (struct hisi_hpre_eops_ctx *)msg->priv;
 	int ret = -WD_EINVAL;
 
 	switch (msg->req.op_type) {
@@ -1614,11 +1636,11 @@ static int ecc_prepare_in(struct wd_ecc_msg *msg,
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
 		break;
 	case WD_ECXDH_GEN_KEY:
-		hw_msg->bd_rsv2 = ecc_ctx->enable_hpcore;
+		hw_msg->bd_rsv2 = eops_ctx->enable_hpcore;
 		ret = ecc_prepare_dh_gen_in(msg, hw_msg, data);
 		break;
 	case WD_ECXDH_COMPUTE_KEY:
-		hw_msg->bd_rsv2 = ecc_ctx->enable_hpcore;
+		hw_msg->bd_rsv2 = eops_ctx->enable_hpcore;
 		ret = ecc_prepare_dh_compute_in(msg, hw_msg, data);
 		if (!ret && (msg->curve_id == WD_X25519 ||
 		    msg->curve_id == WD_X448))
@@ -2147,7 +2169,7 @@ free_dst:
 	return ret;
 }
 
-static int ecc_send(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
+static int ecc_send(handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_ecc_msg *msg = ecc_msg;
@@ -2434,7 +2456,7 @@ static void sm2_xor(struct wd_dtb *val1, struct wd_dtb *val2)
 static int is_equal(struct wd_dtb *src, struct wd_dtb *dst)
 {
 	if (src->dsize == dst->dsize &&
-		!memcmp(src->data, dst->data, src->dsize)) {
+	    !memcmp_consttime(src->data, dst->data, src->dsize)) {
 		return 0;
 	}
 
@@ -2743,7 +2765,7 @@ fail:
 	return ret;
 }
 
-static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
+static int ecc_recv(handle_t ctx, void *ecc_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_ecc_msg *msg = ecc_msg;
@@ -2779,22 +2801,20 @@ static int ecc_recv(struct wd_alg_driver *drv, handle_t ctx, void *ecc_msg)
 
 static handle_t hpre_find_dev_qp(struct wd_alg_driver *drv, const char *dev_name)
 {
-	struct wd_ctx_config_internal *config;
 	struct hisi_hpre_ctx *priv;
 	char *ctx_dev_name;
 	handle_t ctx = 0;
 	handle_t qp = 0;
 	__u32 i;
 
-	priv = (struct hisi_hpre_ctx *)drv->priv;
+	priv = (struct hisi_hpre_ctx *)drv->drv_data;
 	if (!priv)
 		return 0;
 
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+	for (i = 0; i < priv->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(priv->ctxs[i]->ctx);
 		if (!strcmp(ctx_dev_name, dev_name)) {
-			ctx = config->ctxs[i].ctx;
+			ctx = priv->ctxs[i]->ctx;
 			break;
 		}
 	}
@@ -2841,9 +2861,24 @@ static int hpre_rsa_get_usage(void *param)
 	return -WD_EACCES;
 }
 
+static bool is_valid_hw_type(struct wd_alg_driver *drv)
+{
+	struct hisi_hpre_ctx *hpre_ctx;
+	struct hisi_qp *qp;
+
+	if (unlikely(!drv || !drv->drv_data))
+		return false;
+
+	hpre_ctx = (struct hisi_hpre_ctx *)drv->drv_data;
+	qp = (struct hisi_qp *)wd_ctx_get_priv(hpre_ctx->ctxs[0]->ctx);
+	if (!qp || qp->q_info.hw_type < HISI_QM_API_VER3_BASE)
+		return false;
+	return true;
+}
+
 static int ecc_sess_eops_init(struct wd_alg_driver *drv, void **params)
 {
-	struct hpre_ecc_ctx *ecc_ctx;
+	struct hisi_hpre_eops_ctx *eops_ctx;
 
 	if (!params) {
 		WD_ERR("invalid: extend ops init params address is NULL!\n");
@@ -2855,11 +2890,11 @@ static int ecc_sess_eops_init(struct wd_alg_driver *drv, void **params)
 		return -WD_EINVAL;
 	}
 
-	ecc_ctx = calloc(1, sizeof(struct hpre_ecc_ctx));
-	if (!ecc_ctx)
+	eops_ctx = calloc(1, sizeof(struct hisi_hpre_eops_ctx));
+	if (!eops_ctx)
 		return -WD_ENOMEM;
 
-	*params = ecc_ctx;
+	*params = eops_ctx;
 
 	return WD_SUCCESS;
 }
@@ -2874,34 +2909,19 @@ static void ecc_sess_eops_uninit(struct wd_alg_driver *drv, void *params)
 	free(params);
 }
 
-static bool is_valid_hw_type(struct wd_alg_driver *drv)
-{
-	struct hisi_hpre_ctx *hpre_ctx;
-	struct hisi_qp *qp;
-
-	if (unlikely(!drv || !drv->priv))
-		return false;
-
-	hpre_ctx = (struct hisi_hpre_ctx *)drv->priv;
-	qp = (struct hisi_qp *)wd_ctx_get_priv(hpre_ctx->config.ctxs[0].ctx);
-	if (!qp || qp->q_info.hw_type < HISI_QM_API_VER3_BASE)
-		return false;
-	return true;
-}
-
 static void ecc_sess_eops_params_cfg(struct wd_alg_driver *drv,
 				     struct wd_ecc_sess_setup *setup,
 				     struct wd_ecc_curve *cv, void *params)
 {
 	__u8 data[SECP256R1_PARAM_SIZE] = SECG_P256_R1_PARAM;
-	struct hpre_ecc_ctx *ecc_ctx = params;
+	struct hisi_hpre_eops_ctx *eops_ctx = params;
 	__u32 key_size;
 	int ret;
 
 	if (!is_valid_hw_type(drv))
 		return;
 
-	if (!ecc_ctx) {
+	if (!eops_ctx) {
 		WD_INFO("Info: eops config exits, but params is NULL!\n");
 		return;
 	}
@@ -2913,9 +2933,9 @@ static void ecc_sess_eops_params_cfg(struct wd_alg_driver *drv,
 	if (key_size != SECP256R1_KEY_SIZE)
 		return;
 
-	ret = memcmp(data, cv->p.data, SECP256R1_PARAM_SIZE);
+	ret = memcmp_consttime(data, cv->p.data, SECP256R1_PARAM_SIZE);
 	if (!ret)
-		ecc_ctx->enable_hpcore = 1;
+		eops_ctx->enable_hpcore = 1;
 }
 
 static int hpre_ecc_get_extend_ops(void *ops)
@@ -2925,7 +2945,6 @@ static int hpre_ecc_get_extend_ops(void *ops)
 	if (!ecc_ops)
 		return -WD_EINVAL;
 
-	ecc_ops->params = NULL;
 	ecc_ops->sess_init = ecc_sess_eops_init;
 	ecc_ops->eops_params_cfg = ecc_sess_eops_params_cfg;
 	ecc_ops->sess_uninit = ecc_sess_eops_uninit;
@@ -2938,8 +2957,12 @@ static int hpre_ecc_get_extend_ops(void *ops)
 	.alg_name = (hpre_alg_name),\
 	.calc_type = UADK_ALG_HW,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hisi_hpre_ctx),\
+	.ops_size = sizeof(struct wd_ecc_extend_ops),\
 	.queue_num = HPRE_CTX_Q_NUM_DEF,\
 	.op_type_num = 1,\
+	.drv_data = NULL, \
+	.extend_ops = NULL, \
 	.fallback = 0,\
 	.init = hpre_ecc_init,\
 	.exit = hpre_exit,\
@@ -2947,6 +2970,8 @@ static int hpre_ecc_get_extend_ops(void *ops)
 	.recv = ecc_recv,\
 	.get_usage = hpre_ecc_get_usage,\
 	.get_extend_ops = hpre_ecc_get_extend_ops,\
+	.alloc_ctx = wd_hw_alloc_ctx, \
+	.free_ctx = wd_hw_free_ctx, \
 }
 
 static struct wd_alg_driver hpre_ecc_driver[] = {
@@ -2962,14 +2987,18 @@ static struct wd_alg_driver hpre_rsa_driver = {
 	.alg_name = "rsa",
 	.calc_type = UADK_ALG_HW,
 	.priority = 100,
+	.priv_size = sizeof(struct hisi_hpre_ctx),
 	.queue_num = HPRE_CTX_Q_NUM_DEF,
 	.op_type_num = 1,
+	.drv_data = NULL,
 	.fallback = 0,
 	.init = hpre_rsa_dh_init,
 	.exit = hpre_exit,
 	.send = rsa_send,
 	.recv = rsa_recv,
 	.get_usage = hpre_rsa_get_usage,
+	.alloc_ctx = wd_hw_alloc_ctx,
+	.free_ctx = wd_hw_free_ctx,
 };
 
 static struct wd_alg_driver hpre_dh_driver = {
@@ -2977,14 +3006,18 @@ static struct wd_alg_driver hpre_dh_driver = {
 	.alg_name = "dh",
 	.calc_type = UADK_ALG_HW,
 	.priority = 100,
+	.priv_size = sizeof(struct hisi_hpre_ctx),
 	.queue_num = HPRE_CTX_Q_NUM_DEF,
 	.op_type_num = 1,
+	.drv_data = NULL,
 	.fallback = 0,
 	.init = hpre_rsa_dh_init,
 	.exit = hpre_exit,
 	.send = dh_send,
 	.recv = dh_recv,
 	.get_usage = hpre_rsa_get_usage,
+	.alloc_ctx = wd_hw_alloc_ctx,
+	.free_ctx = wd_hw_free_ctx,
 };
 
 #ifdef WD_STATIC_DRV

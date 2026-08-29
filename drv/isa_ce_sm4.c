@@ -12,14 +12,17 @@
  */
 
 #include "drv/wd_cipher_drv.h"
-#include "wd_cipher.h"
 #include "isa_ce_sm4.h"
+#include "wd_cipher.h"
+#include "wd_drv.h"
 
 #define SM4_ENCRYPT	1
 #define SM4_DECRYPT	0
 #define MSG_Q_DEPTH	1024
 #define INCREASE_BYTES	12
 #define SM4_BLOCK_SIZE	16
+/* CTS tail: last full block + partial block */
+#define SM4_CTS_TAIL_SIZE	32
 #define MAX_BLOCK_NUM	(1U << 28)
 #define CTR96_SHIFT_BITS	8
 #define SM4_BYTES2BLKS(nbytes)	((nbytes) >> 4)
@@ -31,36 +34,23 @@
 	((p)[0] = (__u8)((v) >> 24), (p)[1] = (__u8)((v) >> 16), \
 	 (p)[2] = (__u8)((v) >> 8), (p)[3] = (__u8)(v))
 
-static int isa_ce_init(struct wd_alg_driver *drv, void *conf)
+static int isa_ce_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct sm4_ce_drv_ctx *priv;
+	struct sm4_ce_drv_ctx *sctx = priv;
 
 	/* Fallback init is NULL */
-	if (!drv || !conf)
+	if (!conf || !priv)
 		return 0;
 
-	priv = malloc(sizeof(struct sm4_ce_drv_ctx));
-	if (!priv)
-		return -WD_EINVAL;
-
 	config->epoll_en = 0;
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
+	memcpy(&sctx->config, config, sizeof(struct wd_ctx_config_internal));
 
-	return WD_SUCCESS;
+	return 0;
 }
 
-static void isa_ce_exit(struct wd_alg_driver *drv)
+static void isa_ce_exit(void *priv)
 {
-	struct sm4_ce_drv_ctx *sctx;
-
-	if (!drv || !drv->priv)
-		return;
-
-	sctx = (struct sm4_ce_drv_ctx *)drv->priv;
-	free(sctx);
-	drv->priv = NULL;
 }
 
 /* increment upper 96 bits of 128-bit counter by 1 */
@@ -179,6 +169,8 @@ static void sm4_cts_cs1_mode_adapt(__u8 *cts_in, __u8 *cts_out,
 static void sm4_cts_cbc_crypt(struct wd_cipher_msg *msg,
 			      const struct SM4_KEY *rkey_enc, const int enc)
 {
+	/* Stack buffer for CS1 decrypt to avoid modifying caller's msg->in */
+	__u8 cts_in_buf[SM4_CTS_TAIL_SIZE] = {0};
 	enum wd_cipher_mode mode = msg->mode;
 	__u32 in_bytes = msg->in_bytes;
 	__u8 *cts_in, *cts_out;
@@ -204,10 +196,21 @@ static void sm4_cts_cbc_crypt(struct wd_cipher_msg *msg,
 		if (mode == WD_CIPHER_CBC_CS1)
 			sm4_cts_cs1_mode_adapt(cts_in, cts_out, cts_bytes, enc);
 	} else {
-		if (mode == WD_CIPHER_CBC_CS1)
-			sm4_cts_cs1_mode_adapt(cts_in, cts_out, cts_bytes, enc);
-
-		sm4_v8_cbc_cts_decrypt(cts_in, cts_out, cts_bytes, rkey_enc, msg->iv);
+		if (mode == WD_CIPHER_CBC_CS1) {
+			/*
+			 * CS1 decrypt: sm4_cts_cs1_mode_adapt swaps the CTS tail
+			 * from CS1 layout to CS3 layout so sm4_v8_cbc_cts_decrypt
+			 * can process it. Copy to a stack buffer first to avoid
+			 * modifying the caller's input buffer (msg->in), which
+			 * breaks verification tools that re-encrypt the decrypted
+			 * output and compare against the original ciphertext.
+			 */
+			memcpy(cts_in_buf, cts_in, cts_bytes);
+			sm4_cts_cs1_mode_adapt(cts_in_buf, cts_out, cts_bytes, enc);
+			sm4_v8_cbc_cts_decrypt(cts_in_buf, cts_out, cts_bytes, rkey_enc, msg->iv);
+		} else {
+			sm4_v8_cbc_cts_decrypt(cts_in, cts_out, cts_bytes, rkey_enc, msg->iv);
+		}
 	}
 }
 
@@ -334,16 +337,21 @@ static int sm4_xts_decrypt(struct wd_cipher_msg *msg, const struct SM4_KEY *rkey
 	return 0;
 }
 
-static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int isa_ce_cipher_send(handle_t ctx, void *wd_msg)
 {
+	struct wd_soft_ctx *sfctx = (struct wd_soft_ctx *)ctx;
 	struct wd_cipher_msg *msg = wd_msg;
 	struct SM4_KEY rkey;
 	int ret = 0;
 
-	if (!msg) {
+	if (!msg || !ctx) {
 		WD_ERR("invalid: input sm4 msg is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	ret = wd_queue_is_busy(sfctx);
+	if (ret)
+		return ret;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		WD_ERR("invalid: SM4 CE driver do not support sgl data format!\n");
@@ -397,22 +405,34 @@ static int isa_ce_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 		return -WD_EINVAL;
 	}
 
+	ret = wd_get_sqe_from_queue(sfctx, msg->tag);
+	if (ret)
+		return ret;
+
 	return ret;
 }
 
-static int isa_ce_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int isa_ce_cipher_recv(handle_t ctx, void *wd_msg)
 {
+	struct wd_soft_ctx *sfctx = (struct wd_soft_ctx *)ctx;
+	struct wd_cipher_msg *msg = wd_msg;
+	int ret;
+
+	ret = wd_put_sqe_to_queue(sfctx, &msg->tag, &msg->result);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
-static int cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int cipher_send(handle_t ctx, void *msg)
 {
-	return isa_ce_cipher_send(drv, ctx, msg);
+	return isa_ce_cipher_send(ctx, msg);
 }
 
-static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int cipher_recv(handle_t ctx, void *msg)
 {
-	return isa_ce_cipher_recv(drv, ctx, msg);
+	return isa_ce_cipher_recv(ctx, msg);
 }
 
 #define GEN_CE_ALG_DRIVER(ce_alg_name, alg_type) \
@@ -421,12 +441,16 @@ static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 	.alg_name = (ce_alg_name),\
 	.calc_type = UADK_ALG_CE_INSTR,\
 	.priority = 200,\
+	.priv_size = sizeof(struct sm4_ce_drv_ctx),\
+	.queue_num = 1,\
 	.op_type_num = 1,\
 	.fallback = 0,\
 	.init = isa_ce_init,\
 	.exit = isa_ce_exit,\
 	.send = alg_type##_send,\
 	.recv = alg_type##_recv,\
+	.alloc_ctx = wd_soft_alloc_ctx, \
+	.free_ctx = wd_soft_free_ctx, \
 }
 
 static struct wd_alg_driver cipher_alg_driver[] = {

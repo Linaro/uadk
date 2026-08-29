@@ -21,6 +21,9 @@
 /*----------------------------------------head struct--------------------------------------------------------*/
 static unsigned int g_run_state = 1;
 static struct acc_option *g_run_options;
+static __u64 g_total_sent;
+static __u64 g_total_recv;
+static __u64 g_send_stopped;
 static pthread_mutex_t acc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct _recv_data {
 	double pkg_len;
@@ -132,7 +135,7 @@ static struct acc_alg_item alg_options[] = {
 	{"ofb(sm4)",		"sm4-128-ofb",		SM4_128_OFB},
 	{"cfb(sm4)",		"sm4-128-cfb",		SM4_128_CFB},
 	{"xts(sm4)",		"sm4-128-xts",		SM4_128_XTS},
-	{"xts(sm4)",		"sm4-128-xts-gb",	SM4_128_XTS_GB},
+	{"xts-gb(sm4)",		"sm4-128-xts-gb",	SM4_128_XTS_GB},
 	{"ccm(aes)",		"aes-128-ccm",		AES_128_CCM},
 	{"ccm(aes)",		"aes-192-ccm",		AES_192_CCM},
 	{"ccm(aes)",		"aes-256-ccm",		AES_256_CCM},
@@ -188,6 +191,9 @@ void init_recv_data(void)
 	g_recv_data.pkg_len = 0.0;
 	g_recv_data.send_times = 0;
 	g_recv_data.recv_times = 0;
+	__atomic_store_n(&g_total_sent, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&g_total_recv, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&g_send_stopped, 0, __ATOMIC_RELEASE);
 }
 
 int get_run_state(void)
@@ -198,6 +204,36 @@ int get_run_state(void)
 void set_run_state(int state)
 {
 	g_run_state = state;
+}
+
+void add_total_sent(__u32 cnt)
+{
+	__atomic_add_fetch(&g_total_sent, cnt, __ATOMIC_RELEASE);
+}
+
+__u64 get_total_sent(void)
+{
+	return __atomic_load_n(&g_total_sent, __ATOMIC_ACQUIRE);
+}
+
+void add_total_recv(__u32 cnt)
+{
+	__atomic_add_fetch(&g_total_recv, cnt, __ATOMIC_RELEASE);
+}
+
+__u64 get_total_recv(void)
+{
+	return __atomic_load_n(&g_total_recv, __ATOMIC_ACQUIRE);
+}
+
+void add_send_stopped(void)
+{
+	__atomic_add_fetch(&g_send_stopped, 1, __ATOMIC_RELEASE);
+}
+
+__u64 get_send_stopped(void)
+{
+	return __atomic_load_n(&g_send_stopped, __ATOMIC_ACQUIRE);
 }
 
 int uadk_parse_dev_id(char *dev_name)
@@ -359,7 +395,7 @@ void get_rand_data(u8 *addr, u32 size)
 	}
 
 	for (i = 0; i < num_u64; i++) {
-		/* Use nrand48£¬it will auto update rand_state */
+		/* Use nrand48, it will auto update rand_state */
 		rand48_result = nrand48(rand_state);
 		 *((u64 *)addr + i) = rand48_result;
 	}
@@ -479,10 +515,17 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = ECDSA_TYPE;
 		} else if (option->algtype <= SM4_128_XTS_GB) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "cipher");
-			if (option->modetype == INSTR_MODE)
+			if (option->modetype == INSTR_MODE) {
 				option->subtype = CIPHER_INSTR_TYPE;
-			else
+				option->sched_type = SCHED_POLICY_NONE;
+				option->task_type = TASK_INSTR;
+			} else if (option->modetype == MULTIBUF_MODE) {
+				option->subtype = CIPHER_INSTR_TYPE;
+				option->sched_type = SCHED_POLICY_SINGLE;
+				option->task_type = TASK_INSTR;
+			} else {
 				option->subtype = CIPHER_TYPE;
+			}
 			option->acctype = SEC_TYPE;
 		} else if (option->algtype <= SM4_128_GCM) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "aead");
@@ -493,9 +536,11 @@ static void parse_alg_param(struct acc_option *option)
 			option->subtype = DIGEST_TYPE;
 			option->acctype = SEC_TYPE;
 			if (option->modetype == INSTR_MODE) {
+				option->subtype = DIGEST_INSTR_TYPE;
 				option->sched_type = SCHED_POLICY_NONE;
 				option->task_type = TASK_INSTR;
 			} else if (option->modetype == MULTIBUF_MODE) {
+				option->subtype = DIGEST_INSTR_TYPE;
 				option->sched_type = SCHED_POLICY_SINGLE;
 				option->task_type = TASK_INSTR;
 			}
@@ -611,6 +656,8 @@ static void dump_param(struct acc_option *option)
 	ACC_TST_PRT("    [--latency]: %u\n", option->latency);
 	ACC_TST_PRT("    [--init2]:   %u\n", option->inittype);
 	ACC_TST_PRT("    [--device]:  %s\n", option->device);
+	ACC_TST_PRT("    [--sched]:   %u\n", option->sched_type);
+	ACC_TST_PRT("    [--task]:    %u\n", option->task_type);
 }
 
 int acc_benchmark_run(struct acc_option *option)
@@ -620,8 +667,6 @@ int acc_benchmark_run(struct acc_option *option)
 	int i, ret = 0;
 	int status;
 
-	option->sched_type = SCHED_POLICY_RR;
-	option->task_type = TASK_HW;
 	parse_alg_param(option);
 	dump_param(option);
 	g_run_options = option;
@@ -694,6 +739,8 @@ int acc_default_case(struct acc_option *option)
 	option->multis = 1;
 	option->ctxnums = 2;
 	option->inittype = INIT_TYPE;
+	option->sched_type = SCHED_POLICY_RR;
+	option->task_type = TASK_HW;
 
 	return acc_benchmark_run(option);
 }
@@ -739,6 +786,12 @@ void print_benchmark_help(void)
 	ACC_TST_PRT("        select init2 mode in the init interface of UADK SVA\n");
 	ACC_TST_PRT("    [--device]:\n");
 	ACC_TST_PRT("        select device to do task\n");
+	ACC_TST_PRT("    [--memory]:\n");
+	ACC_TST_PRT("        set memory type to do task\n");
+	ACC_TST_PRT("    [--sched 0~6]:\n");
+	ACC_TST_PRT("        set scheduler policy (0:RR 1:NONE 2:SINGLE 3:DEV 4:LOOP 5:HUNGRY 6:INSTR)\n");
+	ACC_TST_PRT("    [--task 0~2]:\n");
+	ACC_TST_PRT("        set task type (0:MIX 1:HW 2:INSTR)\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
 	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
@@ -783,6 +836,8 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		{"device",	required_argument,	0, 18},
 		{"memory",	required_argument,	0, 19},
 		{"sgl",		no_argument,		0, 20},
+		{"sched",	required_argument,	0, 21},
+		{"task",	required_argument,	0, 22},
 		{0, 0, 0, 0}
 	};
 
@@ -859,6 +914,12 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 		case 20:
 			option->data_fmt = WD_SGL_BUF;
+			break;
+		case 21:
+			option->sched_type = strtol(optarg, NULL, 0);
+			break;
+		case 22:
+			option->task_type = strtol(optarg, NULL, 0);
 			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");
@@ -941,6 +1002,14 @@ int acc_option_convert(struct acc_option *option)
 		ACC_TST_PRT("uadk benchmark memory type set error!\n");
 		goto param_err;
 	}
+
+	if (option->sched_type >= SCHED_POLICY_BUTT) {
+		ACC_TST_PRT("uadk benchmark scheduler type set error!\n");
+		goto param_err;
+	}
+
+	if (option->task_type >= TASK_MAX_TYPE)
+		option->task_type = TASK_HW;
 
 	return 0;
 

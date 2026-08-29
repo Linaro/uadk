@@ -251,7 +251,8 @@ void wd_comp_ctx_num_uninit(void);
  * @type:	operation type.
  * @mode:	0: sync mode, 1: async mode
  * @num:	return ctx num.
- * @is_enable	return enable inner poll flag.
+ * @is_enable:  return enable inner poll flag, inner poll is not
+ *		supported, and is_enable will always be 0.
  *
  * If the current algorithm library does not require the type parameter,
  * the type parameter is invalid. The function returns 0 to indicate that

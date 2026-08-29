@@ -730,8 +730,9 @@ static int init_ctx_config(struct acc_option *options)
 
 	switch(subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, SEC_OP_TYPE_MAX,
+			g_sched = wd_sched_rr_alloc(options->sched_type, SEC_OP_TYPE_MAX,
 						    max_node, wd_cipher_poll_ctx);
 		else
 			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, SEC_OP_TYPE_MAX,
@@ -739,15 +740,16 @@ static int init_ctx_config(struct acc_option *options)
 		break;
 	case AEAD_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, SEC_OP_TYPE_MAX,
+			g_sched = wd_sched_rr_alloc(options->sched_type, SEC_OP_TYPE_MAX,
 						    max_node, wd_aead_poll_ctx);
 		else
 			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, SEC_OP_TYPE_MAX,
 						    max_node, wd_aead_poll_ctx);
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, SEC_OP_TYPE_MAX,
+			g_sched = wd_sched_rr_alloc(options->sched_type, SEC_OP_TYPE_MAX,
 						    max_node, wd_digest_poll_ctx);
 		else
 			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, SEC_OP_TYPE_MAX,
@@ -778,14 +780,19 @@ static int init_ctx_config(struct acc_option *options)
 	/* init */
 	switch(subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		ret = wd_cipher_init(&g_ctx_cfg, g_sched);
 		break;
 	case AEAD_TYPE:
 		ret = wd_aead_init(&g_ctx_cfg, g_sched);
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		ret = wd_digest_init(&g_ctx_cfg, g_sched);
 		break;
+	default:
+		SEC_TST_PRT("failed to parse alg subtype!\n");
+		goto free_sched;
 	}
 	if (ret) {
 		SEC_TST_PRT("failed to init sec ctx!\n");
@@ -814,12 +821,14 @@ static void uninit_ctx_config(int subtype)
 	/* uninit */
 	switch(subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		wd_cipher_uninit();
 		break;
 	case AEAD_TYPE:
 		wd_aead_uninit();
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		wd_digest_uninit();
 		break;
 	default:
@@ -845,6 +854,7 @@ static void uninit_ctx_config2(int subtype)
 		wd_aead_uninit2();
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		wd_digest_uninit2();
 		break;
 	default:
@@ -885,7 +895,12 @@ static int init_ctx_config2(struct acc_option *options)
 
 	numa_bitmask_setall(cparams.bmp);
 
-	if (mode == CTX_MODE_SYNC)
+	/* SINGLE scheduler hardcodes idx=0 for sync, idx=1 for async,
+	 * so both sync and async contexts must be allocated together */
+	if (options->sched_type == SCHED_POLICY_SINGLE) {
+		ctx_set_num->sync_ctx_num = g_ctxnum;
+		ctx_set_num->async_ctx_num = g_ctxnum;
+	} else if (mode == CTX_MODE_SYNC)
 		ctx_set_num->sync_ctx_num = g_ctxnum;
 	else
 		ctx_set_num->async_ctx_num = g_ctxnum;
@@ -894,32 +909,38 @@ static int init_ctx_config2(struct acc_option *options)
 	switch(subtype) {
 	case CIPHER_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			ret = wd_cipher_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+			ret = wd_cipher_init2_(alg_name, options->sched_type, options->task_type, &cparams);
 		else
 			ret = wd_cipher_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 		if (ret)
 			SEC_TST_PRT("failed to do cipher init2!\n");
 		break;
 	case CIPHER_INSTR_TYPE:
-		ret = wd_cipher_init2(alg_name, SCHED_POLICY_NONE, TASK_INSTR);
+		ret = wd_cipher_init2_(alg_name, options->sched_type, options->task_type, &cparams);
 		if (ret)
-			SEC_TST_PRT("failed to do cipher intruction init2!\n");
+			SEC_TST_PRT("failed to do cipher instruction init2!\n");
 		break;
 	case AEAD_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			ret = wd_aead_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+			ret = wd_aead_init2_(alg_name, options->sched_type, options->task_type, &cparams);
 		else
 			ret = wd_aead_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 		if (ret)
 			SEC_TST_PRT("failed to do aead init2!\n");
 		break;
 	case DIGEST_TYPE:
-		if (options->mem_type == UADK_AUTO)
-			ret = wd_digest_init2_(alg_name, SCHED_POLICY_RR, options->task_type, &cparams);
-		else
+		if (options->mem_type == UADK_AUTO) {
+			cparams.op_type_num = 1;
+			ret = wd_digest_init2_(alg_name, options->sched_type, options->task_type, &cparams);
+		} else
 			ret = wd_digest_init2_(alg_name, SCHED_POLICY_DEV, options->task_type, &cparams);
 		if (ret)
 			SEC_TST_PRT("failed to do digest init2!\n");
+		break;
+	case DIGEST_INSTR_TYPE:
+		ret = wd_digest_init2_(alg_name, options->sched_type, options->task_type, &cparams);
+		if (ret)
+			SEC_TST_PRT("failed to do digest instruction init2!\n");
 		break;
 	}
 	if (ret) {
@@ -931,7 +952,6 @@ out_freectx:
 	free(ctx_set_num);
 
 	return ret;
-
 }
 
 static void get_aead_data(u8 *addr, u32 size)
@@ -1662,12 +1682,14 @@ static void *sec_uadk_poll(void *data)
 
 	switch(pdata->subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		uadk_poll_ctx = wd_cipher_poll_ctx;
 		break;
 	case AEAD_TYPE:
 		uadk_poll_ctx = wd_aead_poll_ctx;
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		uadk_poll_ctx = wd_digest_poll_ctx;
 		break;
 	default:
@@ -1713,6 +1735,12 @@ static void *sec_uadk_poll2(void *data)
 		uadk_poll_policy = wd_aead_poll;
 		break;
 	case DIGEST_TYPE:
+		uadk_poll_policy = wd_digest_poll;
+		break;
+	case CIPHER_INSTR_TYPE:
+		uadk_poll_policy = wd_cipher_poll;
+		break;
+	case DIGEST_INSTR_TYPE:
 		uadk_poll_policy = wd_digest_poll;
 		break;
 	default:
@@ -2362,6 +2390,7 @@ int sec_uadk_sync_threads(struct acc_option *options)
 		uadk_sec_sync_run = sec_uadk_aead_sync;
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		uadk_sec_sync_run = sec_uadk_digest_sync;
 		break;
 	default:
@@ -2418,12 +2447,14 @@ int sec_uadk_async_threads(struct acc_option *options)
 
 	switch (options->subtype) {
 	case CIPHER_TYPE:
+	case CIPHER_INSTR_TYPE:
 		uadk_sec_async_run = sec_uadk_cipher_async;
 		break;
 	case AEAD_TYPE:
 		uadk_sec_async_run = sec_uadk_aead_async;
 		break;
 	case DIGEST_TYPE:
+	case DIGEST_INSTR_TYPE:
 		uadk_sec_async_run = sec_uadk_digest_async;
 		break;
 	}

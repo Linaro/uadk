@@ -78,7 +78,6 @@ struct wd_aead_aiv_addr {
 };
 
 struct wd_aead_extend_ops {
-	void *params;
 	int (*eops_aiv_init)(struct wd_alg_driver *drv,
 			     struct wd_mm_ops *mm_ops,
 			     void **params);

@@ -308,36 +308,60 @@ update_table:
 	return ret;
 }
 
-int dae_init(struct wd_alg_driver *drv, void *conf)
+int dae_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
+	struct hisi_dae_ctx *dae_ctx = priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_dae_ctx *priv;
-	handle_t h_qp = 0;
-	handle_t h_ctx;
-	__u32 i, j;
+	__u32 i, j, count = 0;
+	bool *is_match;
+	handle_t h_qp;
 	int ret;
 
 	if (!config || !config->ctx_num) {
-		WD_ERR("invalid: dae init config is null or ctx num is 0!\n");
+		WD_ERR("invalid: input config or ctx num is null!\n");
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_dae_ctx));
-	if (!priv)
+	is_match = malloc(config->ctx_num * sizeof(bool));
+	if (!is_match)
 		return -WD_ENOMEM;
+
+	for (i = 0; i < config->ctx_num; i++) {
+		if (config->ctxs[i].ctx && config->ctxs[i].drv &&
+		    !strcmp(config->ctxs[i].drv->drv_name, "hisi_zip")) {
+			is_match[i] = true;
+			count++;
+		} else {
+			is_match[i] = false;
+		}
+	}
+	if (!count) {
+		WD_ERR("invalid: valid driver number is zero!\n");
+		free(is_match);
+		return -WD_EINVAL;
+	}
+
+	dae_ctx->ctxs = calloc(count, sizeof(struct wd_ctx_internal *));
+	if (!dae_ctx->ctxs) {
+		free(is_match);
+		return -WD_ENOMEM;
+	}
+	dae_ctx->ctx_num = count;
 
 	qm_priv.op_type = DAE_SQC_ALG_TYPE;
 	qm_priv.sqe_size = sizeof(struct dae_sqe);
+	count = 0;
 	/* Allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
-		h_ctx = config->ctxs[i].ctx;
+		if (!is_match[i])
+			continue;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
 		/* Setting the epoll en to 0 for ASYNC ctx */
 		qm_priv.epoll_en = (qm_priv.qp_mode == CTX_MODE_SYNC) ?
 				   config->epoll_en : 0;
 		qm_priv.idx = i;
-		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
+		h_qp = hisi_qm_alloc_qp(&qm_priv, config->ctxs[i].ctx);
 		if (!h_qp) {
 			ret = -WD_ENOMEM;
 			goto out;
@@ -346,58 +370,57 @@ int dae_init(struct wd_alg_driver *drv, void *conf)
 		ret = dae_init_qp_priv(h_qp);
 		if (ret)
 			goto free_h_qp;
+		dae_ctx->ctxs[count++] = &config->ctxs[i];
 	}
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
 
+	free(is_match);
 	return WD_SUCCESS;
 
 free_h_qp:
 	hisi_qm_free_qp(h_qp);
 out:
-	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
+	for (j = 0; j < count; j++) {
+		h_qp = (handle_t)wd_ctx_get_priv(dae_ctx->ctxs[j]->ctx);
 		if (h_qp) {
 			dae_uninit_qp_priv(h_qp);
 			hisi_qm_free_qp(h_qp);
 		}
 	}
-	free(priv);
+	free(dae_ctx->ctxs);
+	free(is_match);
 	return ret;
 }
 
-void dae_exit(struct wd_alg_driver *drv)
+void dae_exit(void *priv)
 {
-	struct wd_ctx_config_internal *config;
-	struct hisi_dae_ctx *priv;
+	struct hisi_dae_ctx *dae_ctx = priv;
 	handle_t h_qp;
 	__u32 i;
 
-	if (!drv || !drv->priv)
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
 		return;
+	}
 
-	priv = (struct hisi_dae_ctx *)drv->priv;
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
+	for (i = 0; i < dae_ctx->ctx_num; i++) {
+		h_qp = (handle_t)wd_ctx_get_priv(dae_ctx->ctxs[i]->ctx);
 		if (h_qp) {
 			dae_uninit_qp_priv(h_qp);
 			hisi_qm_free_qp(h_qp);
 		}
 	}
-
-	free(priv);
-	drv->priv = NULL;
+	if (dae_ctx->ctxs) {
+		free(dae_ctx->ctxs);
+		dae_ctx->ctxs = NULL;
+	}
 }
 
 int dae_get_usage(void *param)
 {
 	struct hisi_dev_usage *dae_usage = (struct hisi_dev_usage *)param;
 	struct wd_alg_driver *drv = dae_usage->drv;
-	struct wd_ctx_config_internal *config;
-	struct hisi_dae_ctx *priv;
+	struct hisi_dae_ctx *dae_ctx;
 	char *ctx_dev_name;
-	handle_t ctx = 0;
 	handle_t qp = 0;
 	__u32 i;
 
@@ -406,24 +429,18 @@ int dae_get_usage(void *param)
 		return -WD_EINVAL;
 	}
 
-	priv = (struct hisi_dae_ctx *)drv->priv;
-	if (!priv)
+	dae_ctx = (struct hisi_dae_ctx *)drv->drv_data;
+	if (!dae_ctx)
 		return -WD_EACCES;
 
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+	for (i = 0; i < dae_ctx->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(dae_ctx->ctxs[i]->ctx);
 		if (!strcmp(dae_usage->dev_name, ctx_dev_name)) {
-			ctx = config->ctxs[i].ctx;
-			break;
+			qp = (handle_t)wd_ctx_get_priv(dae_ctx->ctxs[i]->ctx);
+			if (qp)
+				return hisi_qm_get_usage(qp, 0);
 		}
 	}
-
-	if (ctx)
-		qp = (handle_t)wd_ctx_get_priv(ctx);
-
-	if (qp)
-		return hisi_qm_get_usage(qp, DAE_SQC_ALG_TYPE);
 
 	return -WD_EACCES;
 }

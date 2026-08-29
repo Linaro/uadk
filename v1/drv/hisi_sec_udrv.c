@@ -2221,7 +2221,7 @@ static void set_aead_auth_iv(struct wcrypto_aead_msg *msg)
 	__u32 data_size = msg->in_bytes;
 	__u8 flags = 0x00;
 	__u8 *iv, *aiv;
-	__u8 cl, cm;
+	__u8 cl, cm, i;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
 		/* CCM need to cal a_iv, GCM same as c_iv */
@@ -2252,12 +2252,13 @@ static void set_aead_auth_iv(struct wcrypto_aead_msg *msg)
 		 * the last 32bit is counter's initial number,
 		 * but the nonce uses the first 16bit
 		 * the tail 16bit fill with the cipher length
+		 * When CL is 3, the tail 24bit fill with the cipher length.
 		 */
-		aiv[msg->iv_bytes - IV_LAST_BYTE1] =
-			data_size & IV_LAST_BYTE_MASK;
-		data_size >>= IV_BYTE_OFFSET;
-		aiv[msg->iv_bytes - IV_LAST_BYTE2] =
-			data_size & IV_LAST_BYTE_MASK;
+		for (i = 1; i <= cl + 1; i++) {
+			aiv[msg->iv_bytes - i] = data_size & IV_LAST_BYTE_MASK;
+			data_size >>= IV_BYTE_OFFSET;
+		}
+
 	}
 }
 

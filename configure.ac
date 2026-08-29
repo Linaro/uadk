@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.10], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.11], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -33,6 +33,16 @@ AC_ARG_ENABLE([debug-log],
 	],
 	[debug_log=false]
 )
+
+AC_ARG_ENABLE([debug],
+	AS_HELP_STRING([--enable-debug], [build with -g -O0 and no symbol stripping for full stack traces]),
+	[ AS_IF([test "x$enable_debug" = "xyes"],
+		[wd_debug=true],
+		[wd_debug=false])
+	],
+	[wd_debug=false]
+)
+AM_CONDITIONAL([WD_DEBUG], [test "x$wd_debug" = "xtrue"])
 
 AC_ARG_ENABLE([perf],
 	AS_HELP_STRING([--disble-perf], [enable measuring performance]),

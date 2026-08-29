@@ -13,13 +13,6 @@ offer process level WD configures.
 1. WD environment variables define
 ==================================
 
-WD_<alg>_ASYNC_POLL_EN
-----------------------
-
- Define if enble polling threads in WD. WD_<alg>_ASYNC_POLL_EN=1 means enable
- polling threads in WD, otherwise caller should poll finished request by
- WD APIs.
-
 WD_COMP_CTX_NUM
 -----------------
 

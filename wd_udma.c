@@ -21,7 +21,6 @@ static struct wd_udma_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
 	void *dlhandle;
 	void *dlh_list;
 } wd_udma_setting;
@@ -34,7 +33,6 @@ static void wd_udma_close_driver(void)
 	wd_dlclose_drv(wd_udma_setting.dlh_list);
 	wd_udma_setting.dlh_list = NULL;
 #else
-	wd_release_drv(wd_udma_setting.driver);
 	hisi_udma_remove();
 #endif
 }
@@ -67,14 +65,22 @@ void wd_udma_free_sess(handle_t sess)
 		return;
 	}
 
-	if (sess_t->sched_key)
-		free(sess_t->sched_key);
+	if (sess_t->sched_key) {
+		if (wd_udma_setting.sched.sched_uninit)
+			wd_udma_setting.sched.sched_uninit(
+				wd_udma_setting.sched.h_sched_ctx,
+				(handle_t)sess_t->sched_key);
+		else
+			free(sess_t->sched_key);
+	}
 	free(sess_t);
 }
 
 handle_t wd_udma_alloc_sess(struct wd_udma_sess_setup *setup)
 {
+	struct wd_sched_params params;
 	struct wd_udma_sess *sess;
+	int ret;
 
 	if (!setup) {
 		WD_ERR("invalid: alloc udma sess setup NULL!\n");
@@ -86,6 +92,12 @@ handle_t wd_udma_alloc_sess(struct wd_udma_sess_setup *setup)
 		return (handle_t)0;
 
 	sess->alg_name = "udma";
+	ret = wd_drv_alg_support(sess->alg_name, &wd_udma_setting.config);
+	if (!ret) {
+		WD_ERR("failed to support udma algorithm: %s!\n", sess->alg_name);
+		goto free_sess;
+	}
+
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_udma_setting.sched.sched_init(
 		     wd_udma_setting.sched.h_sched_ctx, setup->sched_param);
@@ -93,6 +105,11 @@ handle_t wd_udma_alloc_sess(struct wd_udma_sess_setup *setup)
 		WD_ERR("failed to init session schedule key!\n");
 		goto free_sess;
 	}
+	params.alg_name = sess->alg_name;
+	params.ctxs = wd_udma_setting.config.ctxs;
+	wd_udma_setting.sched.set_param(
+		wd_udma_setting.sched.h_sched_ctx,
+		sess->sched_key, &params);
 
 	return (handle_t)sess;
 
@@ -226,10 +243,10 @@ int wd_do_udma_sync(handle_t h_sess, struct wd_udma_req *req)
 
 	fill_udma_msg(&msg, req);
 
-	msg_handle.send = wd_udma_setting.driver->send;
-	msg_handle.recv = wd_udma_setting.driver->recv;
+	msg_handle.send = ctx->drv->send;
+	msg_handle.recv = ctx->drv->recv;
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(wd_udma_setting.driver, &msg_handle, ctx->ctx,
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx,
 				 &msg, NULL, wd_udma_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
@@ -276,7 +293,7 @@ int wd_do_udma_async(handle_t sess, struct wd_udma_req *req)
 	fill_udma_msg(msg, req);
 	msg->tag = mid;
 
-	ret = wd_alg_driver_send(wd_udma_setting.driver, ctx->ctx, msg);
+	ret = ctx->drv->send(ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send udma BD, hw is err!\n");
@@ -314,7 +331,7 @@ static int wd_udma_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_udma_setting.driver, ctx->ctx, &rcv_msg);
+		ret = ctx->drv->recv(ctx->ctx, &rcv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (unlikely(ret)) {
@@ -353,6 +370,8 @@ int wd_udma_poll(__u32 expt, __u32 *count)
 	return wd_udma_setting.sched.poll_policy(h_sched_ctx, expt, count);
 }
 
+static bool wd_udma_atfork_registered = false;
+
 static void wd_udma_clear_status(void)
 {
 	wd_alg_clear_init(&wd_udma_setting.status);
@@ -364,7 +383,6 @@ static void wd_udma_alg_uninit(void)
 	wd_uninit_async_request_pool(&wd_udma_setting.pool);
 	/* Unset config, sched, driver */
 	wd_clear_sched(&wd_udma_setting.sched);
-	wd_alg_uninit_driver(&wd_udma_setting.config, wd_udma_setting.driver);
 }
 
 void wd_udma_uninit(void)
@@ -372,12 +390,16 @@ void wd_udma_uninit(void)
 	enum wd_status status;
 
 	wd_alg_get_init(&wd_udma_setting.status, &status);
-	if (status == WD_UNINIT)
+	if (status != WD_INIT)
 		return;
 
+	wd_alg_uninit_driver(&wd_udma_setting.config);
+	wd_ctx_unbind_drivers(&wd_udma_setting.config);
+	wd_udma_setting.config.drv_array = NULL;
+	wd_udma_setting.config.drv_count = 0;
 	wd_udma_alg_uninit();
+
 	wd_alg_attrs_uninit(&wd_udma_init_attrs);
-	wd_alg_drv_unbind(wd_udma_setting.driver);
 	wd_udma_close_driver();
 	wd_alg_clear_init(&wd_udma_setting.status);
 }
@@ -405,14 +427,8 @@ static int wd_udma_alg_init(struct wd_ctx_config *config, struct wd_sched *sched
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_udma_setting.config, wd_udma_setting.driver);
-	if (ret)
-		goto out_clear_pool;
-
 	return WD_SUCCESS;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_udma_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_udma_setting.sched);
 out_clear_ctx_config:
@@ -426,8 +442,12 @@ int wd_udma_init(const char *alg, __u32 sched_type, int task_type,
 	struct wd_ctx_nums udma_ctx_num[WD_UDMA_OP_MAX] = {0};
 	struct wd_ctx_params udma_ctx_params = {0};
 	int state, ret = -WD_EINVAL;
+	int try_cnt = 0;
 
-	pthread_atfork(NULL, NULL, wd_udma_clear_status);
+	if (!wd_udma_atfork_registered) {
+		if (pthread_atfork(NULL, NULL, wd_udma_clear_status) == 0)
+			wd_udma_atfork_registered = true;
+	}
 
 	state = wd_alg_try_init(&wd_udma_setting.status);
 	if (state)
@@ -449,39 +469,30 @@ int wd_udma_init(const char *alg, __u32 sched_type, int task_type,
 		goto out_clear_init;
 
 	while (ret) {
-		memset(&wd_udma_setting.config, 0, sizeof(struct wd_ctx_config_internal));
-
-		/* Get alg driver and dev name */
-		wd_udma_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_udma_setting.driver) {
-			WD_ERR("fail to bind a valid driver.\n");
-			ret = -WD_EINVAL;
-			goto out_dlopen;
+		if (try_cnt++ >= WD_INIT2_MAX_RETRY) {
+			WD_ERR("failed to init2 after %d retries.\n",
+			       WD_INIT2_MAX_RETRY);
+			goto out_driver;
 		}
-
+		memset(&wd_udma_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 		udma_ctx_params.ctx_set_num = udma_ctx_num;
 		ret = wd_ctx_param_init(&udma_ctx_params, ctx_params,
-					wd_udma_setting.driver, WD_UDMA_TYPE, WD_UDMA_OP_MAX);
+					alg, WD_UDMA_TYPE, WD_UDMA_OP_MAX);
 		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_udma_setting.driver);
-				wd_alg_drv_unbind(wd_udma_setting.driver);
+			if (ret == -WD_EAGAIN)
 				continue;
-			}
 			goto out_driver;
 		}
 
 		(void)strcpy(wd_udma_init_attrs.alg, alg);
 		wd_udma_init_attrs.sched_type = sched_type;
-		wd_udma_init_attrs.driver = wd_udma_setting.driver;
+		wd_udma_init_attrs.task_type = task_type;
 		wd_udma_init_attrs.ctx_params = &udma_ctx_params;
 		wd_udma_init_attrs.alg_init = wd_udma_alg_init;
 		wd_udma_init_attrs.alg_poll_ctx = wd_udma_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_udma_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_udma_setting.driver);
-				wd_alg_drv_unbind(wd_udma_setting.driver);
 				wd_ctx_param_uninit(&udma_ctx_params);
 				continue;
 			}
@@ -489,17 +500,31 @@ int wd_udma_init(const char *alg, __u32 sched_type, int task_type,
 			goto out_params_uninit;
 		}
 	}
+	ret = wd_ctx_bind_drivers(&wd_udma_setting.config,
+				  wd_udma_init_attrs.ctx_config_internal,
+				  WD_TYPE_V2);
+	if (ret) {
+		WD_ERR("failed to bind driver for udma!\n");
+		goto out_common_uninit;
+	}
+
+	ret = wd_alg_init_driver(&wd_udma_setting.config);
+	if (ret)
+		goto out_unbind_drivers;
 
 	wd_alg_set_init(&wd_udma_setting.status);
 	wd_ctx_param_uninit(&udma_ctx_params);
 
 	return WD_SUCCESS;
 
+out_unbind_drivers:
+	wd_ctx_unbind_drivers(&wd_udma_setting.config);
+out_common_uninit:
+	wd_udma_alg_uninit();
+	wd_alg_attrs_uninit(&wd_udma_init_attrs);
 out_params_uninit:
 	wd_ctx_param_uninit(&udma_ctx_params);
 out_driver:
-	wd_alg_drv_unbind(wd_udma_setting.driver);
-out_dlopen:
 	wd_udma_close_driver();
 out_clear_init:
 	wd_alg_clear_init(&wd_udma_setting.status);

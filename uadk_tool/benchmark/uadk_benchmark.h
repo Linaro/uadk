@@ -117,6 +117,7 @@ enum alg_type {
 	X25519_TYPE,
 	X448_TYPE,
 	CIPHER_INSTR_TYPE,
+	DIGEST_INSTR_TYPE,
 };
 
 enum sync_type {
@@ -229,6 +230,12 @@ extern void get_rand_data(u8 *addr, u32 size);
 extern void add_recv_data(u32 cnt, u32 pkglen);
 extern void add_send_complete(void);
 extern u32 get_recv_time(void);
+extern void add_total_sent(u32 cnt);
+extern u64 get_total_sent(void);
+extern void add_total_recv(u32 cnt);
+extern u64 get_total_recv(void);
+extern void add_send_stopped(void);
+extern u64 get_send_stopped(void);
 extern void cal_avg_latency(u32 count);
 extern int get_alg_name(int alg, char *alg_name);
 extern void segmentfault_handler(int sig);

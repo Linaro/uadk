@@ -18,12 +18,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/poll.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -323,7 +323,7 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 
 	ret = access(buf, F_OK);
 	if (ret < 0) {
-		WD_ERR("failed to check file path %s, ret: %d\n", buf, ret);
+		dbg("failed to check file path %s, errno = %d, ret = %d !\n", buf, errno, ret);
 		return -WD_ENODEV;
 	}
 

@@ -33,14 +33,12 @@ struct wd_join_gather_msg {
 };
 
 struct wd_join_gather_ops {
-	int (*get_table_row_size)(struct wd_alg_driver *drv, void *priv);
-	int (*get_batch_row_size)(struct wd_alg_driver *drv, void *priv,
+	int (*get_table_row_size)(void *priv);
+	int (*get_batch_row_size)(void *priv,
 				  __u32 *batch_row_size, __u32 size);
-	int (*sess_init)(struct wd_alg_driver *drv,
-			 struct wd_join_gather_sess_setup *setup, void **priv);
-	void (*sess_uninit)(struct wd_alg_driver *drv, void *priv);
-	int (*hash_table_init)(struct wd_alg_driver *drv,
-			       struct wd_dae_hash_table *hash_table, void *priv);
+	int (*sess_init)(struct wd_join_gather_sess_setup *setup, void **priv);
+	void (*sess_uninit)(void *priv);
+	int (*hash_table_init)(struct wd_dae_hash_table *hash_table, void *priv);
 };
 
 struct wd_join_gather_msg *wd_join_gather_get_msg(__u32 idx, __u32 tag);

@@ -33,7 +33,7 @@ int wd_get_fail_num(void *pool, __u32 *fail_num);
 __u32 wd_get_bufsize(void *pool);
 
 handle_t wd_find_ctx(const char *alg_name);
-void wd_remove_ctx_list(void);
+void wd_remove_ctx_list(handle_t h_ctx);
 int wd_insert_ctx_list(handle_t h_ctx, char *alg_name);
 __u32 wd_get_dev_id(void *pool);
 

@@ -395,6 +395,8 @@ static inline uint32_t wd_reg_read(void *reg_addr)
 	return *((uint32_t *)reg_addr);
 }
 
+bool wd_adaptive_backoff_sleep(int balance, int threshold,
+			       __u32 cnt, __u64 *slept);
 void wd_spinlock(struct wd_lock *lock);
 void wd_unspinlock(struct wd_lock *lock);
 void wd_fair_init(struct wd_fair_lock *lock);

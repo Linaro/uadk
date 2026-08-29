@@ -1558,6 +1558,8 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 {
 	struct wcrypto_ecc_msg *resp;
 	__u32 rx_cnt = 0;
+	__u64 slept = 0;
+	bool is_timeout;
 	int ret;
 
 	resp = (void *)(uintptr_t)ctx->ctx_id;
@@ -1567,13 +1569,13 @@ static int ecc_sync_recv(struct wcrypto_ecc_ctx *ctx,
 		if (ret > 0) {
 			break;
 		} else if (!ret) {
-			if (rx_cnt++ >= ECC_RECV_MAX_CNT) {
-				WD_ERR("failed to recv: timeout!\n");
+			is_timeout = wd_adaptive_backoff_sleep(balance, ECC_BALANCE_THRHD,
+							       rx_cnt, &slept);
+			if (unlikely(rx_cnt++ >= ECC_RECV_MAX_CNT || is_timeout)) {
+				WD_ERR("ecc recv timeout: rx_cnt = %u, slept = %llu us\n",
+				       rx_cnt, slept);
 				return -WD_ETIMEDOUT;
 			}
-
-			if (balance > ECC_BALANCE_THRHD)
-				usleep(1);
 		} else {
 			WD_ERR("failed to recv: error = %d!\n", ret);
 			return ret;

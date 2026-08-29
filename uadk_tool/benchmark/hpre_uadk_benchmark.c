@@ -21,6 +21,7 @@
 #define SQE_SIZE		128
 #define POOL_MULTIPLY_FACTOR	2
 #define HPRE_OP_TYPE_MAX	6
+#define MAX_DRAIN_RETRY		10000
 
 struct hpre_rsa_key_in {
 	void *e;
@@ -503,7 +504,7 @@ static int init_hpre_ctx_config(struct acc_option *options)
 	switch(subtype) {
 	case RSA_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, HPRE_OP_TYPE_MAX,
+			g_sched = wd_sched_rr_alloc(options->sched_type, HPRE_OP_TYPE_MAX,
 						    max_node, wd_rsa_poll_ctx);
 		else
 			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, HPRE_OP_TYPE_MAX,
@@ -511,7 +512,7 @@ static int init_hpre_ctx_config(struct acc_option *options)
 		break;
 	case DH_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, HPRE_OP_TYPE_MAX,
+			g_sched = wd_sched_rr_alloc(options->sched_type, HPRE_OP_TYPE_MAX,
 						    max_node, wd_dh_poll_ctx);
 		else
 			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, HPRE_OP_TYPE_MAX,
@@ -523,7 +524,7 @@ static int init_hpre_ctx_config(struct acc_option *options)
 	case X25519_TYPE:
 	case X448_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, HPRE_OP_TYPE_MAX,
+			g_sched = wd_sched_rr_alloc(options->sched_type, HPRE_OP_TYPE_MAX,
 						    max_node, wd_ecc_poll_ctx);
 		else
 			g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, HPRE_OP_TYPE_MAX,
@@ -672,7 +673,10 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 
 	numa_bitmask_setall(cparams.bmp);
 
-	if (mode == CTX_MODE_SYNC)
+	if (options->sched_type == SCHED_POLICY_SINGLE) {
+		ctx_set_num->sync_ctx_num = g_ctxnum;
+		ctx_set_num->async_ctx_num = g_ctxnum;
+	} else if (mode == CTX_MODE_SYNC)
 		ctx_set_num->sync_ctx_num = g_ctxnum;
 	else
 		ctx_set_num->async_ctx_num = g_ctxnum;
@@ -681,26 +685,39 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 	switch (subtype) {
 	case RSA_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			return wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+			ret = wd_rsa_init2_(alg_name, options->sched_type,
+					    options->task_type, &cparams);
 		else
-			return wd_rsa_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+			ret = wd_rsa_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+		if (ret)
+			HPRE_TST_PRT("failed to do rsa init2!\n");
+		break;
 	case DH_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			return wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+			ret = wd_dh_init2_(alg_name, options->sched_type,
+					   options->task_type, &cparams);
 		else
-			return wd_dh_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+			ret = wd_dh_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+		if (ret)
+			HPRE_TST_PRT("failed to do dh init2!\n");
+		break;
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
 		if (options->mem_type == UADK_AUTO)
-			return wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+			ret = wd_ecc_init2_(alg_name, options->sched_type,
+					    options->task_type, &cparams);
 		else
-			return wd_ecc_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+			ret = wd_ecc_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
+		if (ret)
+			HPRE_TST_PRT("failed to do ecc init2!\n");
+		break;
 	default:
-		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
-		return -EINVAL;
+		HPRE_TST_PRT("failed to parse alg subtype on init2!\n");
+		ret = -EINVAL;
+		break;
 	}
 
 out_freectx:
@@ -820,9 +837,9 @@ void *hpre_uadk_poll(void *data)
 	thread_data *pdata = (thread_data *)data;
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
 	u32 id = pdata->td_id;
-	u32 last_time = 2; // poll need one more recv time
 	u32 count = 0;
 	u32 recv = 0;
+	u32 drain_retry = 0;
 	int  ret;
 
 	if (id > g_ctxnum)
@@ -847,17 +864,42 @@ void *hpre_uadk_poll(void *data)
 		return NULL;
 	}
 
-	while (last_time) {
+	while (1) {
 		ret = uadk_poll_ctx(id, expt, &recv);
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
 			HPRE_TST_PRT("poll ret: %d!\n", ret);
+			add_total_recv(count);
 			goto recv_error;
 		}
+		if (get_run_state() == 0) {
+			add_total_recv(count);
+			break;
+		}
+	}
 
-		if (get_run_state() == 0)
-			last_time--;
+	while (get_send_stopped() != g_thread_num ||
+	       get_total_recv() < get_total_sent()) {
+		ret = uadk_poll_ctx(id, expt, &recv);
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			HPRE_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+		if (recv == 0) {
+			usleep(SEND_USLEEP);
+			drain_retry++;
+		} else {
+			add_total_recv(recv);
+			drain_retry = 0;
+			recv = 0;
+		}
+		if (drain_retry >= MAX_DRAIN_RETRY) {
+			HPRE_TST_PRT("drain timeout: sent=%llu recv=%llu stopped=%llu/%u\n",
+				     get_total_sent(), get_total_recv(),
+				     get_send_stopped(), g_thread_num);
+			break;
+		}
 	}
 
 recv_error:
@@ -872,10 +914,10 @@ void *hpre_uadk_poll2(void *data)
 	thread_data *pdata = (thread_data *)data;
 	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
 	poll_ctx uadk_poll = NULL;
-	u32 last_time = 2; // poll need one more recv time
 	u32 count = 0;
 	u32 recv = 0;
-	int  ret;
+	u32 drain_retry = 0;
+	int ret;
 
 	switch (pdata->subtype) {
 	case RSA_TYPE:
@@ -896,17 +938,42 @@ void *hpre_uadk_poll2(void *data)
 		return NULL;
 	}
 
-	while (last_time) {
+	while (1) {
 		ret = uadk_poll(expt, &recv);
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
 			HPRE_TST_PRT("poll ret: %d!\n", ret);
+			add_total_recv(count);
 			goto recv_error;
 		}
+		if (get_run_state() == 0) {
+			add_total_recv(count);
+			break;
+		}
+	}
 
-		if (get_run_state() == 0)
-			last_time--;
+	while (get_send_stopped() != g_thread_num ||
+	       get_total_recv() < get_total_sent()) {
+		ret = uadk_poll(expt, &recv);
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			HPRE_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+		if (recv == 0) {
+			usleep(SEND_USLEEP);
+			drain_retry++;
+		} else {
+			add_total_recv(recv);
+			drain_retry = 0;
+			recv = 0;
+		}
+		if (drain_retry >= MAX_DRAIN_RETRY) {
+			HPRE_TST_PRT("drain timeout: sent=%llu recv=%llu stopped=%llu/%u\n",
+				     get_total_sent(), get_total_recv(),
+				     get_send_stopped(), g_thread_num);
+			break;
+		}
 	}
 
 recv_error:
@@ -1076,9 +1143,11 @@ static int get_rsa_key_from_sample(handle_t sess, char *privkey_file,
 		}
 
 		if (crt_privkey_file) {
-			memcpy(crt_privkey_file, wd_dq.data, (key_bits >> 4) * 5);
-			memcpy(crt_privkey_file + (key_bits >> 4) * 5,
-				   wd_e.data, (key_bits >> 2));
+			memcpy(crt_privkey_file, wd_dq.data,
+			       dq_bytes + dp_bytes + qinv_bytes + q_bytes + p_bytes);
+			memcpy(crt_privkey_file + dq_bytes + dp_bytes +
+			       qinv_bytes + q_bytes + p_bytes,
+			       wd_e.data, e_bytes);
 		}
 
 	} else {
@@ -1097,10 +1166,10 @@ static int get_rsa_key_from_sample(handle_t sess, char *privkey_file,
 
 
 		if (privkey_file) {
-			memcpy(privkey_file, wd_d.data, key_size);
-			memcpy(privkey_file + key_size, wd_n.data, key_size);
-			memcpy(privkey_file + 2 * key_size, wd_e.data, key_size);
-                        memcpy(privkey_file + 3 * key_size, wd_n.data, key_size);
+			memcpy(privkey_file, wd_d.data, d_bytes);
+			memcpy(privkey_file + key_size, wd_n.data, n_bytes);
+			memcpy(privkey_file + 2 * key_size, wd_e.data, e_bytes);
+			memcpy(privkey_file + 3 * key_size, wd_n.data, n_bytes);
 		}
 	}
 
@@ -1735,20 +1804,12 @@ static void *rsa_uadk_async_run(void *arg)
 		count++;
 	} while(true);
 
-	/* Release memory after all tasks are complete. */
+	add_total_sent(count);
+	add_send_stopped();
+
 	if (count) {
-		i = 0;
-		while (get_recv_time() != g_ctxnum) {
-			if (i++ >= MAX_TRY_CNT) {
-				HPRE_TST_PRT("failed to wait poll thread finish!\n");
-				break;
-			}
-
+		while (get_recv_time() != g_ctxnum)
 			usleep(SEND_USLEEP);
-		}
-
-		/* Wait for the device to complete the tasks. */
-		usleep(SEND_USLEEP * MAX_TRY_CNT);
 	}
 
 	if (req.op_type == WD_RSA_GENKEY) {
@@ -2021,20 +2082,12 @@ static void *dh_uadk_async_run(void *arg)
 		count++;
 	} while(true);
 
-	/* Release memory after all tasks are complete. */
+	add_total_sent(count);
+	add_send_stopped();
+
 	if (count) {
-		i = 0;
-		while (get_recv_time() != g_ctxnum) {
-			if (i++ >= MAX_TRY_CNT) {
-				HPRE_TST_PRT("failed to wait poll thread finish!\n");
-				break;
-			}
-
+		while (get_recv_time() != g_ctxnum)
 			usleep(SEND_USLEEP);
-		}
-
-		/* Wait for the device to complete the tasks. */
-		usleep(SEND_USLEEP * MAX_TRY_CNT);
 	}
 
 	free(tag);
@@ -2789,20 +2842,12 @@ static void *ecc_uadk_async_run(void *arg)
 		count++;
 	} while(true);
 
-	/* Release memory after all tasks are complete. */
+	add_total_sent(count);
+	add_send_stopped();
+
 	if (count) {
-		i = 0;
-		while (get_recv_time() != g_ctxnum) {
-			if (i++ >= MAX_TRY_CNT) {
-				HPRE_TST_PRT("failed to wait poll thread finish!\n");
-				break;
-			}
-
+		while (get_recv_time() != g_ctxnum)
 			usleep(SEND_USLEEP);
-		}
-
-		/* Wait for the device to complete the tasks. */
-		usleep(SEND_USLEEP * MAX_TRY_CNT);
 	}
 
 	free(tag);

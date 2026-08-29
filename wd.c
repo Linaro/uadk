@@ -21,9 +21,11 @@
 #include "wd.h"
 #include "wd_alg.h"
 #include "wd_internal.h"
+#include "wd_bmm.h"
 #define SYS_CLASS_DIR			"/sys/class/uacce"
 #define FILE_MAX_SIZE			(8 << 20)
 #define WD_DEV_USAGE_SIZE		256
+#define WD_DEFAULT_NUMA_DISTANCE	1024
 
 enum UADK_LOG_LEVEL {
 	WD_LOG_NONE = 0,
@@ -56,17 +58,31 @@ static const char * const zip_dae_algs[] = {
 	"gather",
 };
 
+/**
+ * Constant-time memory comparison function (primarily used for equality verification)
+ * It only supports equality/inequality results rather than full comparison results,
+ * the main goal is to provide timing-safe equality checks
+ */
+int memcmp_consttime(const void *s1, const void *s2, size_t n)
+{
+	const unsigned char *p1 = (const unsigned char *)s1;
+	const unsigned char *p2 = (const unsigned char *)s2;
+	unsigned char diff = 0;
+	size_t i;
+
+	/* Constant-time byte-wise XOR accumulation */
+	for (i = 0; i < n; i++)
+		diff |= p1[i] ^ p2[i];
+
+	return diff;
+}
+
 static int wd_check_ctx_type(handle_t h_ctx)
 {
-	struct wd_ctx_h	*ctx = (struct wd_ctx_h *)h_ctx;
+	if (h_ctx && (*(__u8 *)h_ctx == UADK_ALG_HW))
+		return 0;
 
-	/* A simple and efficient method to check the queue type */
-	if (ctx->fd < 0 || ctx->fd > MAX_FD_NUM) {
-		WD_INFO("Invalid: this ctx not HW ctx.\n");
-		return -WD_HW_EACCESS;
-	}
-
-	return 0;
+	return -WD_HW_EACCESS;
 }
 
 static void wd_parse_log_level(void)
@@ -174,6 +190,7 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 	if (ret < 0)
 		return ret;
 
+	errno = 0;
 	*val = strtol(buf, NULL, 10);
 	if (errno == ERANGE) {
 		WD_ERR("failed to strtol %s, out of range!\n", buf);
@@ -186,7 +203,7 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	__u32 ret;
+	int ret;
 	int size;
 
 	size = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
@@ -470,6 +487,7 @@ void wd_release_ctx(handle_t h_ctx)
 	if (!ctx || wd_check_ctx_type(h_ctx))
 		return;
 
+	wd_remove_ctx_list(h_ctx);
 	close(ctx->fd);
 	free(ctx->dev);
 	free(ctx->drv_name);
@@ -828,9 +846,9 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 {
 	struct uacce_dev_list *list, *head;
 	struct uacce_dev *dev = NULL, *target = NULL;
+	int dis = WD_DEFAULT_NUMA_DISTANCE;
 	unsigned int node;
 	int ctx_num, tmp;
-	int dis = 1024;
 	int max = 0;
 
 	/* Under default conditions in a VM, the node value is 0 */
@@ -896,7 +914,8 @@ struct bitmask *wd_create_device_nodemask(struct uacce_dev_list *list)
 
 	p = list;
 	while (p) {
-		numa_bitmask_setbit(bmp, p->dev->numa_id);
+		if (p->dev)
+			numa_bitmask_setbit(bmp, p->dev->numa_id);
 		p = p->next;
 	}
 
@@ -978,33 +997,43 @@ void wd_release_alg_cap(struct wd_capability *head)
 
 struct wd_capability *wd_get_alg_cap(void)
 {
-	struct wd_alg_list *head = wd_get_alg_head();
-	struct wd_alg_list *pnext = head->next;
+	struct wd_drv_node *head = wd_get_alg_head();
+	struct wd_drv_node *drv_node = head->next;
 	struct wd_capability *cap_head = NULL;
 	struct wd_capability *cap_pnext = NULL;
 	struct wd_capability *cap_node;
+	int i;
 
-	while (pnext) {
-		cap_node = calloc(1, sizeof(struct wd_capability));
-		if (!cap_node) {
-			WD_ERR("fail to alloc wd capability head\n");
-			goto alloc_err;
+	while (drv_node) {
+		/* Traverse the static algorithm array inside each driver node */
+		for (i = 0; i < drv_node->alg_count; i++) {
+			cap_node = calloc(1, sizeof(struct wd_capability));
+			if (!cap_node) {
+				WD_ERR("fail to alloc wd capability head\n");
+				goto alloc_err;
+			}
+			/* Flatten the secondary structure into the original binary-tuple format */
+			strncpy(cap_node->alg_name, drv_node->algs[i].alg_name,
+				CRYPTO_MAX_ALG_NAME - 1);
+			cap_node->alg_name[CRYPTO_MAX_ALG_NAME - 1] = '\0';
+			strncpy(cap_node->drv_name, drv_node->drv_name,
+				CRYPTO_MAX_ALG_NAME - 1);
+			cap_node->drv_name[CRYPTO_MAX_ALG_NAME - 1] = '\0';
+			cap_node->available = drv_node->algs[i].available;
+			cap_node->priority = drv_node->priority;
+			cap_node->calc_type = drv_node->calc_type;
+			cap_node->next = NULL;
+
+			/* Append to the capability linked list */
+			if (!cap_head) {
+				cap_head = cap_node;
+				cap_pnext = cap_node;
+			} else {
+				cap_pnext->next = cap_node;
+				cap_pnext = cap_node;
+			}
 		}
-
-		(void)strcpy(cap_node->alg_name, pnext->alg_name);
-		(void)strcpy(cap_node->drv_name, pnext->drv_name);
-		cap_node->available = pnext->available;
-		cap_node->priority = pnext->priority;
-		cap_node->calc_type = pnext->calc_type;
-		cap_node->next = NULL;
-
-		pnext = pnext->next;
-		if (!cap_pnext) {
-			cap_head = cap_node;
-			cap_pnext = cap_node;
-		}
-		cap_pnext->next = cap_node;
-		cap_pnext = cap_node;
+		drv_node = drv_node->next;
 	}
 
 	return cap_head;
@@ -1136,7 +1165,8 @@ int wd_get_dev_usage(struct uacce_dev *dev, const char *alg_name, __u8 alg_op_ty
 {
 	char *dev_name;
 	int ret;
-	if (!dev || !alg_name) {
+
+	if (!dev || !alg_name || !strlen(dev->algs)) {
 		WD_ERR("invalid: dev or alg name is NULL!\n");
 		return -WD_EINVAL;
 	}

@@ -39,6 +39,8 @@ enum alg_win_bits {
 static pthread_mutex_t wd_zlib_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int zlib_status;
 
+static bool wd_zlib_atfork_registered;
+
 static void wd_zlib_unlock(void)
 {
 	zlib_status = WD_ZLIB_UNINIT;
@@ -236,7 +238,10 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 /* ===   Compression   === */
 int wd_deflate_init(z_streamp strm, int level, int windowbits)
 {
-	pthread_atfork(NULL, NULL, wd_zlib_unlock);
+	if (!wd_zlib_atfork_registered) {
+		if (pthread_atfork(NULL, NULL, wd_zlib_unlock) == 0)
+			wd_zlib_atfork_registered = true;
+	}
 
 	return wd_zlib_init(strm, level, windowbits, WD_DIR_COMPRESS);
 }
@@ -270,7 +275,10 @@ int wd_deflate_end(z_streamp strm)
 /* ===   Decompression   === */
 int wd_inflate_init(z_streamp strm, int  windowbits)
 {
-	pthread_atfork(NULL, NULL, wd_zlib_unlock);
+	if (!wd_zlib_atfork_registered) {
+		if (pthread_atfork(NULL, NULL, wd_zlib_unlock) == 0)
+			wd_zlib_atfork_registered = true;
+	}
 
 	return wd_zlib_init(strm, 0, windowbits, WD_DIR_DECOMPRESS);
 }

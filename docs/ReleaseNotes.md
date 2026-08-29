@@ -1,3 +1,21 @@
+# UADK Release v2.11 June 2026
+
+## Features:
+- Device Monitoring: Support obtaining device bandwidth utilization through MMIO space, reducing sysfs file reads and system calls
+- uadk_tool: Support get device usage information
+- Compression: Support empty final block for raw DEFLATE in stream mode
+- DAE: hash agg 8B type adaptation chip supports 8 columns
+- Driver: Save algorithm type during driver registration for efficient driver lookup by algorithm type
+
+## Fixes:
+- Memory: Fixed memory leak when wd_get_alg_type() fails and update compression memory pool creation
+- HPRE: Fix big number comparison, parameter comparison method, and rsa_prepare_key() return value
+- ZIP: Fix compression status when store buffer is not cleared, LZ77 literal length, CRC error warning, context data clearing for ended streams, and lz77_zstd_price mininum output length calculation
+- DAE: Fix hashjoin key align size
+- Core: Optimize NUMA node acquisition performance, fix hw sgl, fix log limit, set fd for soft ctx, and add empty size for hash table row size
+- Build: Fix wd_alg.h compilation failure, include missing headers, and move library dependencies to LIBADD
+- Code Quality: Remove redundant check, delete redundant print messages, and clean code for wd_agg
+
 
 # UADK Release v2.10 Dec 2025
 

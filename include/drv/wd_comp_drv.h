@@ -66,6 +66,8 @@ struct wd_comp_msg {
 	__u32 checksum;
 	/* Request identifier */
 	__u32 tag;
+	/* Skip hardware reception */
+	bool skip_hw;
 };
 
 struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag);

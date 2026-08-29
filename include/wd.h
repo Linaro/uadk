@@ -104,11 +104,6 @@ typedef void (*wd_log)(const char *format, ...);
 #define WD_IS_ERR(h)			((uintptr_t)(h) > \
 					(uintptr_t)(-1000))
 
-enum wd_buff_type {
-	WD_FLAT_BUF,
-	WD_SGL_BUF,
-};
-
 enum wd_alg_type {
 	WD_CIPHER,
 	WD_DIGEST,

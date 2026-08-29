@@ -10,6 +10,7 @@
 #include "crypto/aes.h"
 #include "crypto/galois.h"
 #include "hisi_qm_udrv.h"
+#include "wd_drv.h"
 
 #define BIT(nr)			(1UL << (nr))
 #define SEC_DIGEST_ALG_OFFSET	11
@@ -205,7 +206,8 @@ enum sec_c_width {
 };
 
 struct hisi_sec_ctx {
-	struct wd_ctx_config_internal config;
+	struct wd_ctx_internal **ctxs;
+	__u32 ctx_num;
 };
 
 struct hisi_sec_sqe_type2 {
@@ -526,86 +528,84 @@ static __u32 g_sec_hmac_full_len[WD_DIGEST_TYPE_MAX] = {
 	SEC_HMAC_SHA512_MAC_LEN, SEC_HMAC_SHA512_224_MAC_LEN, SEC_HMAC_SHA512_256_MAC_LEN
 };
 
-static int hisi_sec_init(struct wd_alg_driver *drv, void *conf);
-static void hisi_sec_exit(struct wd_alg_driver *drv);
+static int hisi_sec_init(void *conf, void *priv);
+static void hisi_sec_exit(void *priv);
 
-static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_cipher_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_send(handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_recv(handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_send_v3(handle_t ctx, void *wd_msg);
+static int hisi_sec_cipher_recv_v3(handle_t ctx, void *wd_msg);
 
-static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_digest_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_digest_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_send(handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_recv(handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_send_v3(handle_t ctx, void *wd_msg);
+static int hisi_sec_digest_recv_v3(handle_t ctx, void *wd_msg);
 
-static int hisi_sec_aead_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
-static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_send(handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_recv(handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_send_v3(handle_t ctx, void *wd_msg);
+static int hisi_sec_aead_recv_v3(handle_t ctx, void *wd_msg);
 
-static int cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int cipher_send(handle_t ctx, void *msg)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
 	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
-		return hisi_sec_cipher_send(drv, ctx, msg);
-	return hisi_sec_cipher_send_v3(drv, ctx, msg);
+		return hisi_sec_cipher_send(ctx, msg);
+	return hisi_sec_cipher_send_v3(ctx, msg);
 }
 
-static int cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int cipher_recv(handle_t ctx, void *msg)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
 	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
-		return hisi_sec_cipher_recv(drv, ctx, msg);
-	return hisi_sec_cipher_recv_v3(drv, ctx, msg);
+		return hisi_sec_cipher_recv(ctx, msg);
+	return hisi_sec_cipher_recv_v3(ctx, msg);
 }
 
-static int digest_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int digest_send(handle_t ctx, void *msg)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
 	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
-		return hisi_sec_digest_send(drv, ctx, msg);
-	return hisi_sec_digest_send_v3(drv, ctx, msg);
+		return hisi_sec_digest_send(ctx, msg);
+	return hisi_sec_digest_send_v3(ctx, msg);
 }
 
-static int digest_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int digest_recv(handle_t ctx, void *msg)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
 	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
-		return hisi_sec_digest_recv(drv, ctx, msg);
-	return hisi_sec_digest_recv_v3(drv, ctx, msg);
+		return hisi_sec_digest_recv(ctx, msg);
+	return hisi_sec_digest_recv_v3(ctx, msg);
 }
 
-static int aead_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int aead_send(handle_t ctx, void *msg)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
 	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
-		return hisi_sec_aead_send(drv, ctx, msg);
-	return hisi_sec_aead_send_v3(drv, ctx, msg);
+		return hisi_sec_aead_send(ctx, msg);
+	return hisi_sec_aead_send_v3(ctx, msg);
 }
 
-static int aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+static int aead_recv(handle_t ctx, void *msg)
 {
 	struct hisi_qp *qp = (struct hisi_qp *)wd_ctx_get_priv(ctx);
 
 	if (qp->q_info.hw_type == HISI_QM_API_VER2_BASE)
-		return hisi_sec_aead_recv(drv, ctx, msg);
-	return hisi_sec_aead_recv_v3(drv, ctx, msg);
+		return hisi_sec_aead_recv(ctx, msg);
+	return hisi_sec_aead_recv_v3(ctx, msg);
 }
 
 static int hisi_sec_get_usage(void *param)
 {
 	struct hisi_dev_usage *sec_usage = (struct hisi_dev_usage *)param;
 	struct wd_alg_driver *drv = sec_usage->drv;
-	struct wd_ctx_config_internal *config;
-	struct hisi_sec_ctx *priv;
+	struct hisi_sec_ctx *sec_ctx;
 	char *ctx_dev_name;
-	handle_t ctx = 0;
 	handle_t qp = 0;
 	__u32 i;
 
@@ -614,32 +614,27 @@ static int hisi_sec_get_usage(void *param)
 		return -WD_EINVAL;
 	}
 
-	priv = (struct hisi_sec_ctx *)drv->priv;
-	if (!priv)
+	sec_ctx = (struct hisi_sec_ctx *)drv->drv_data;
+	if (!sec_ctx)
 		return -WD_EACCES;
 
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+	/* Only process the queues used by your own driver. */
+	for (i = 0; i < sec_ctx->ctx_num; i++) {
+		ctx_dev_name = wd_ctx_get_dev_name(sec_ctx->ctxs[i]->ctx);
 		if (!strcmp(sec_usage->dev_name, ctx_dev_name)) {
-			ctx = config->ctxs[i].ctx;
-			break;
+			qp = (handle_t)wd_ctx_get_priv(sec_ctx->ctxs[i]->ctx);
+			if (qp)
+				return hisi_qm_get_usage(qp, 0);
 		}
 	}
-
-	if (ctx)
-		qp = (handle_t)wd_ctx_get_priv(ctx);
-
-	if (qp)
-		return hisi_qm_get_usage(qp, 0);
 
 	return -WD_EACCES;
 }
 
 static int eops_param_check(struct wd_alg_driver *drv, struct wd_mm_ops *mm_ops)
 {
-	if (!drv || !drv->priv) {
-		WD_ERR("invalid: aead drv or priv is NULL!\n");
+	if (!drv || !drv->drv_data) {
+		WD_ERR("invalid: aead drv or data is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -680,8 +675,8 @@ static int aead_sess_eops_init(struct wd_alg_driver *drv,
 		return -WD_ENOMEM;
 	}
 
-	sec_ctx = (struct hisi_sec_ctx *)drv->priv;
-	qp = (struct hisi_qp *)wd_ctx_get_priv(sec_ctx->config.ctxs[0].ctx);
+	sec_ctx = (struct hisi_sec_ctx *)drv->drv_data;
+	qp = (struct hisi_qp *)wd_ctx_get_priv(sec_ctx->ctxs[0]->ctx);
 	sq_depth = qp->q_info.sq_depth;
 	aiv_addr->aiv = mm_ops->alloc(mm_ops->usr, (__u32)sq_depth << AEAD_AIV_OFFSET);
 	if (!aiv_addr->aiv) {
@@ -735,8 +730,8 @@ static void aead_sess_eops_uninit(struct wd_alg_driver *drv,
 		return;
 	}
 
-	sec_ctx = (struct hisi_sec_ctx *)drv->priv;
-	qp = (struct hisi_qp *)wd_ctx_get_priv(sec_ctx->config.ctxs[0].ctx);
+	sec_ctx = (struct hisi_sec_ctx *)drv->drv_data;
+	qp = (struct hisi_qp *)wd_ctx_get_priv(sec_ctx->ctxs[0]->ctx);
 	sq_depth = qp->q_info.sq_depth;
 
 	aiv_addr = (struct wd_aead_aiv_addr *)params;
@@ -780,7 +775,6 @@ static int sec_aead_get_extend_ops(void *ops)
 	if (!aead_ops)
 		return -WD_EINVAL;
 
-	aead_ops->params = NULL;
 	aead_ops->eops_aiv_init = aead_sess_eops_init;
 	aead_ops->eops_aiv_uninit = aead_sess_eops_uninit;
 
@@ -793,8 +787,11 @@ static int sec_aead_get_extend_ops(void *ops)
 	.alg_name = (sec_alg_name),\
 	.calc_type = UADK_ALG_HW,\
 	.priority = 100,\
+	.priv_size = sizeof(struct hisi_sec_ctx),\
+	.ops_size = sizeof(struct wd_aead_extend_ops),\
 	.queue_num = SEC_CTX_Q_NUM_DEF,\
 	.op_type_num = 1,\
+	.drv_data = NULL,\
 	.fallback = 0,\
 	.init = hisi_sec_init,\
 	.exit = hisi_sec_exit,\
@@ -802,6 +799,8 @@ static int sec_aead_get_extend_ops(void *ops)
 	.recv = alg_type##_recv,\
 	.get_usage = hisi_sec_get_usage,\
 	.get_extend_ops = sec_aead_get_extend_ops,\
+	.alloc_ctx = wd_hw_alloc_ctx, \
+	.free_ctx = wd_hw_free_ctx, \
 }
 
 static struct wd_alg_driver cipher_alg_driver[] = {
@@ -812,6 +811,8 @@ static struct wd_alg_driver cipher_alg_driver[] = {
 	GEN_SEC_ALG_DRIVER("cbc(sm4)", cipher),
 	GEN_SEC_ALG_DRIVER("ctr(sm4)", cipher),
 	GEN_SEC_ALG_DRIVER("xts(sm4)", cipher),
+	GEN_SEC_ALG_DRIVER("xts-gb(sm4)", cipher),
+
 	GEN_SEC_ALG_DRIVER("ecb(des)", cipher),
 	GEN_SEC_ALG_DRIVER("cbc(des)", cipher),
 	GEN_SEC_ALG_DRIVER("ecb(des3_ede)", cipher),
@@ -1400,7 +1401,7 @@ static int fill_cipher_bd2(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 	return 0;
 }
 
-static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int hisi_sec_cipher_send(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_cipher_msg *msg = wd_msg;
@@ -1456,7 +1457,7 @@ static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 	return 0;
 }
 
-static int hisi_sec_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+int hisi_sec_cipher_recv(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_cipher_msg *recv_msg = wd_msg;
@@ -1693,7 +1694,7 @@ static void fill_sec_prefetch(__u8 data_fmt, __u32 len, __u16 hw_type, struct hi
 		sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 }
 
-static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int hisi_sec_cipher_send_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -1800,7 +1801,7 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		dump_sec_msg(temp_msg, "cipher");
 }
 
-static int hisi_sec_cipher_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+int hisi_sec_cipher_recv_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_cipher_msg *recv_msg = wd_msg;
@@ -2132,7 +2133,7 @@ static int digest_len_check(struct wd_digest_msg *msg,  enum sec_bd_type type)
 	return 0;
 }
 
-static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int hisi_sec_digest_send(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_digest_msg *msg = wd_msg;
@@ -2209,7 +2210,7 @@ put_sgl:
 	return ret;
 }
 
-static int hisi_sec_digest_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+int hisi_sec_digest_recv(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_digest_msg *recv_msg = wd_msg;
@@ -2473,7 +2474,7 @@ map_err:
 	return -WD_ENOMEM;
 }
 
-static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int hisi_sec_digest_send_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -2587,7 +2588,7 @@ static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		dump_sec_msg(temp_msg, "digest");
 }
 
-static int hisi_sec_digest_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+int hisi_sec_digest_recv_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_digest_msg *recv_msg = wd_msg;
@@ -2751,7 +2752,7 @@ static void set_aead_auth_iv(struct wd_aead_msg *msg)
 
 	__u32 data_size = msg->in_bytes;
 	__u8 flags = 0x00;
-	__u8 cl, cm;
+	__u8 cl, cm, i;
 
 	/* CCM need to cal a_iv, GCM same as c_iv */
 	memcpy(msg->aiv, msg->iv, msg->iv_bytes);
@@ -2771,15 +2772,15 @@ static void set_aead_auth_iv(struct wd_aead_msg *msg)
 
 		msg->aiv[0] = flags;
 		/*
-		  * the last 32bit is counter's initial number,
-		  * but the nonce uses the first 16bit
-		  * the tail 16bit fill with the cipher length
-		  */
-		msg->aiv[msg->iv_bytes - IV_LAST_BYTE1] =
-			data_size & IV_LAST_BYTE_MASK;
-		data_size >>= IV_BYTE_OFFSET;
-		msg->aiv[msg->iv_bytes - IV_LAST_BYTE2] =
-			data_size & IV_LAST_BYTE_MASK;
+		 * the last 32bit is counter's initial number,
+		 * but the nonce uses the first 16bit
+		 * the tail 16bit fill with the cipher length
+		 * When CL is 3, the tail 24bit fill with the cipher length.
+		 */
+		for (i = 1; i <= cl + 1; i++) {
+			msg->aiv[msg->iv_bytes - i] = data_size & IV_LAST_BYTE_MASK;
+			data_size >>= IV_BYTE_OFFSET;
+		}
 	}
 }
 
@@ -2958,7 +2959,7 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 		msg->mac[i] = g[i] ^ ctr_r[i];
 
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST) {
-		ret = memcmp(msg->mac, msg->dec_mac, msg->auth_bytes);
+		ret = memcmp_consttime(msg->mac, msg->dec_mac, msg->auth_bytes);
 		if (ret) {
 			msg->result = WD_IN_EPARA;
 			WD_ERR("failed to do the gcm authentication!\n");
@@ -3216,7 +3217,7 @@ static int fill_aead_bd2_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe,
 	return aead_mem_nosva_map(msg, sqe, idx);
 }
 
-static int hisi_sec_aead_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int hisi_sec_aead_send(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -3347,7 +3348,7 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		dump_sec_msg(temp_msg, "aead");
 }
 
-static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+int hisi_sec_aead_recv(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_aead_msg *recv_msg = wd_msg;
@@ -3744,7 +3745,7 @@ static int fill_aead_bd3_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe
 	return aead_mem_nosva_map_v3(msg, sqe, idx);
 }
 
-static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+static int hisi_sec_aead_send_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
@@ -3863,7 +3864,7 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		dump_sec_msg(temp_msg, "aead");
 }
 
-static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
+int hisi_sec_aead_recv_v3(handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_aead_msg *recv_msg = wd_msg;
@@ -3888,73 +3889,105 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 	return 0;
 }
 
-static int hisi_sec_init(struct wd_alg_driver *drv, void *conf)
+static int hisi_sec_init(void *conf, void *priv)
 {
 	struct wd_ctx_config_internal *config = conf;
+	struct hisi_sec_ctx *sec_ctx = priv;
 	struct hisi_qm_priv qm_priv;
-	struct hisi_sec_ctx *priv;
-	handle_t h_qp = 0;
-	handle_t h_ctx;
-	__u32 i, j;
+	__u32 i, j, count = 0;
+	bool *is_match;
+	handle_t h_qp;
 
-	if (!config->ctx_num) {
-		WD_ERR("invalid: sec init config ctx num is 0!\n");
+	if (!config || !config->ctx_num) {
+		WD_ERR("invalid: input config or ctx num is null!\n");
+		return -WD_EINVAL;
+	}
+	/* traverse and count the number of contexts supported by this driver. */
+	is_match = malloc(config->ctx_num * sizeof(bool));
+	if (!is_match)
+		return -WD_ENOMEM;
+
+	for (i = 0; i < config->ctx_num; i++) {
+		if (config->ctxs[i].ctx && config->ctxs[i].drv &&
+		    !strcmp(config->ctxs[i].drv->drv_name, "hisi_sec2")) {
+			is_match[i] = true;
+			count++;
+		} else {
+			is_match[i] = false;
+		}
+	}
+
+	if (!count) {
+		WD_ERR("invalid: valid driver number is zero!\n");
+		free(is_match);
 		return -WD_EINVAL;
 	}
 
-	priv = malloc(sizeof(struct hisi_sec_ctx));
-	if (!priv)
-		return -WD_EINVAL;
+	sec_ctx->ctxs = calloc(count, sizeof(struct wd_ctx_internal *));
+	if (!sec_ctx->ctxs) {
+		free(is_match);
+		return -WD_ENOMEM;
+	}
+	sec_ctx->ctx_num = count;
 
+	/* allocate QP and store context mirror. */
 	qm_priv.sqe_size = sizeof(struct hisi_sec_sqe);
-	/* allocate qp for each context */
+	count = 0;
 	for (i = 0; i < config->ctx_num; i++) {
-		h_ctx = config->ctxs[i].ctx;
-		/* setting the type is 0 for sqc_type */
+		if (!is_match[i])
+			continue;
+
 		qm_priv.op_type = 0;
 		qm_priv.qp_mode = config->ctxs[i].ctx_mode;
-		/* Setting the epoll en to 0 for ASYNC ctx */
 		qm_priv.epoll_en = (qm_priv.qp_mode == CTX_MODE_SYNC) ?
 				   config->epoll_en : 0;
 		qm_priv.idx = i;
-		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
+		h_qp = hisi_qm_alloc_qp(&qm_priv, config->ctxs[i].ctx);
 		if (!h_qp)
 			goto out;
-		config->ctxs[i].sqn = qm_priv.sqn;
-	}
-	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
-	drv->priv = priv;
 
-	return 0;
+		config->ctxs[i].sqn = qm_priv.sqn;
+		/* Store the queues allocated by your own driver. */
+		sec_ctx->ctxs[count++] = &config->ctxs[i];
+	}
+
+	free(is_match);
+
+	return WD_SUCCESS;
 
 out:
-	for (j = 0; j < i; j++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
+	for (j = 0; j < count; j++) {
+		h_qp = (handle_t)wd_ctx_get_priv(sec_ctx->ctxs[j]->ctx);
 		hisi_qm_free_qp(h_qp);
 	}
-	free(priv);
+	free(sec_ctx->ctxs);
+	free(is_match);
 	return -WD_EINVAL;
 }
 
-static void hisi_sec_exit(struct wd_alg_driver *drv)
+static void hisi_sec_exit(void *priv)
 {
-	struct wd_ctx_config_internal *config;
-	struct hisi_sec_ctx *priv;
+	struct hisi_sec_ctx *sec_ctx = priv;
 	handle_t h_qp;
 	__u32 i;
 
-	if (!drv || !drv->priv)
+	if (!priv) {
+		WD_ERR("invalid: input parameter is NULL!\n");
 		return;
+	}
 
-	priv = (struct hisi_sec_ctx *)drv->priv;
-	config = &priv->config;
-
-	for (i = 0; i < config->ctx_num; i++) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
+	/* Only release the queues allocated by your own driver. */
+	for (i = 0; i < sec_ctx->ctx_num; i++) {
+		h_qp = (handle_t)wd_ctx_get_priv(sec_ctx->ctxs[i]->ctx);
+		if (!h_qp)
+			continue;
 		hisi_qm_free_qp(h_qp);
 	}
-	free(priv);
-	drv->priv = NULL;
+
+	if (sec_ctx->ctxs) {
+		free(sec_ctx->ctxs);
+		sec_ctx->ctxs = NULL;
+	}
 }
 
 #ifdef WD_STATIC_DRV

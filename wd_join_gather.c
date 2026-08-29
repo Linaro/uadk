@@ -32,8 +32,6 @@ struct wd_join_gather_setting {
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
-	struct wd_alg_driver *driver;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 };
@@ -56,7 +54,6 @@ struct wd_join_gather_sess {
 	enum multi_batch_index_type index_type;
 	enum wd_join_sess_state state;
 	enum wd_join_gather_alg alg;
-	struct wd_join_gather_ops ops;
 	struct wd_join_cols_conf join_conf;
 	struct wd_gather_tables_conf gather_conf;
 	struct wd_dae_hash_table hash_table;
@@ -79,7 +76,6 @@ static void wd_join_gather_close_driver(void)
 	wd_dlclose_drv(wd_join_gather_setting.dlh_list);
 	wd_join_gather_setting.dlh_list = NULL;
 #else
-	wd_release_drv(wd_join_gather_setting.driver);
 	hisi_dae_join_gather_remove();
 #endif
 }
@@ -217,7 +213,7 @@ static int check_key_cols_info(struct wd_join_gather_sess_setup *setup)
 		return -WD_EINVAL;
 	}
 
-	ret = memcmp(table->build_key_cols, table->probe_key_cols,
+	ret = memcmp_consttime(table->build_key_cols, table->probe_key_cols,
 		     table->build_key_cols_num * sizeof(struct wd_join_gather_col_info));
 	if (ret) {
 		WD_ERR("invalid: build and probe table key infomation is not same!\n");
@@ -404,70 +400,140 @@ free_join:
 	return -WD_ENOMEM;
 }
 
-static void wd_join_gather_uninit_sess(struct wd_join_gather_sess *sess)
+static void cleanup_partial_init(struct wd_join_gather_sess *sess)
 {
-	if (sess->gather_conf.batch_row_size)
-		free(sess->gather_conf.batch_row_size);
+	struct wd_ctx_config_internal *config = &wd_join_gather_setting.config;
+	struct wd_alg_driver *drv;
+	struct wd_join_gather_ops *eops;
 
-	if (sess->ops.sess_uninit)
-		sess->ops.sess_uninit(wd_join_gather_setting.driver, sess->priv);
+	if (!sess->priv)
+		return;
+
+	drv = config->ctxs[0].drv;
+	if (drv->extend_ops) {
+		eops = drv->extend_ops;
+		if (eops->sess_uninit)
+			eops->sess_uninit(sess->priv);
+	}
 }
 
-static int wd_join_gather_init_sess(struct wd_join_gather_sess *sess,
-				    struct wd_join_gather_sess_setup *setup)
+static void wd_join_gather_uninit_sess(struct wd_join_gather_sess *sess)
 {
-	struct wd_alg_driver *drv = wd_join_gather_setting.driver;
+	if (!sess)
+		return;
+
+	cleanup_partial_init(sess);
+	free(sess->gather_conf.batch_row_size);
+	sess->gather_conf.batch_row_size = NULL;
+}
+
+static int handle_algorithm_specific_init(struct wd_join_gather_ops *eops,
+					 struct wd_join_gather_sess *sess,
+					 struct wd_join_gather_sess_setup *setup)
+{
 	__u32 array_size;
 	int ret;
 
-	if (sess->ops.sess_init) {
-		if (!sess->ops.sess_uninit) {
+	if (!sess->priv)
+		return WD_SUCCESS;
+
+	if (eops->get_table_row_size && setup->alg != WD_GATHER) {
+		ret = eops->get_table_row_size(sess->priv);
+		if (ret <= 0) {
+			WD_ERR("failed to get hash table row size: %d!\n", ret);
+			return -WD_EINVAL;
+		}
+		sess->hash_table.table_row_size = ret;
+	}
+
+	if (eops->get_batch_row_size && setup->alg != WD_JOIN) {
+		array_size = setup->gather_table_num * sizeof(__u32);
+		if (!sess->gather_conf.batch_row_size) {
+			sess->gather_conf.batch_row_size = malloc(array_size);
+			if (!sess->gather_conf.batch_row_size)
+				return -WD_ENOMEM;
+			ret = eops->get_batch_row_size(sess->priv,
+						       sess->gather_conf.batch_row_size,
+						       array_size);
+			if (ret) {
+				free(sess->gather_conf.batch_row_size);
+				sess->gather_conf.batch_row_size = NULL;
+				WD_ERR("failed to get batch table row size!\n");
+				return -WD_EINVAL;
+			}
+		}
+	}
+
+	return WD_SUCCESS;
+}
+
+static int init_single_driver_session(struct wd_alg_driver *drv,
+				      struct wd_join_gather_sess *sess,
+				      struct wd_join_gather_sess_setup *setup)
+{
+	struct wd_join_gather_ops *eops;
+	int ret;
+
+	if (!drv->get_extend_ops || !drv->extend_ops)
+		return WD_SUCCESS;
+
+	ret = drv->get_extend_ops(drv->extend_ops);
+	if (ret) {
+		WD_ERR("failed to set session extend ops!\n");
+		return -WD_EINVAL;
+	}
+
+	eops = drv->extend_ops;
+
+	if (eops->sess_init) {
+		if (!eops->sess_uninit) {
 			WD_ERR("failed to get session uninit ops!\n");
 			return -WD_EINVAL;
 		}
-		ret = sess->ops.sess_init(drv, setup, &sess->priv);
+		ret = eops->sess_init(setup, &sess->priv);
 		if (ret) {
 			WD_ERR("failed to init session priv!\n");
 			return ret;
 		}
 	}
 
-	if (sess->ops.get_table_row_size && setup->alg != WD_GATHER) {
-		ret = sess->ops.get_table_row_size(drv, sess->priv);
-		if (ret <= 0) {
-			WD_ERR("failed to get hash table row size: %d!\n", ret);
-			goto uninit;
-		}
-		sess->hash_table.table_row_size = ret;
-	}
-
-	if (sess->ops.get_batch_row_size && setup->alg != WD_JOIN) {
-		array_size = setup->gather_table_num * sizeof(__u32);
-		sess->gather_conf.batch_row_size = malloc(array_size);
-		if (!sess->gather_conf.batch_row_size)
-			goto uninit;
-
-		ret = sess->ops.get_batch_row_size(drv, sess->priv,
-						   sess->gather_conf.batch_row_size,
-						   array_size);
-		if (ret) {
-			WD_ERR("failed to get batch table row size!\n");
-			goto free_batch;
-		}
+	ret = handle_algorithm_specific_init(eops, sess, setup);
+	if (ret != WD_SUCCESS) {
+		if (eops->sess_uninit)
+			eops->sess_uninit(sess->priv);
+		return ret;
 	}
 
 	return WD_SUCCESS;
+}
 
-free_batch:
-	free(sess->gather_conf.batch_row_size);
-uninit:
-	if (sess->ops.sess_uninit)
-		sess->ops.sess_uninit(drv, sess->priv);
-	return -WD_EINVAL;
+static int wd_join_gather_init_sess(struct wd_join_gather_sess *sess,
+				    struct wd_join_gather_sess_setup *setup)
+{
+	struct wd_ctx_config_internal *config = &wd_join_gather_setting.config;
+	struct wd_alg_driver *first_drv = NULL;
+	__u32 i;
+
+	/*
+	 * The algorithm always works in stream mode, so it supports only
+	 * the switchover between ctxs of the same driver type.
+	 */
+	for (i = 0; i < config->ctx_num; i++) {
+		if (!first_drv) {
+			first_drv = config->ctxs[i].drv;
+		} else if (config->ctxs[i].drv != first_drv) {
+			WD_ERR("incompatible driver: %s vs %s, only single driver type allowed!\n",
+			       config->ctxs[i].drv->drv_name, first_drv->drv_name);
+			return -WD_EINVAL;
+		}
+	}
+
+	return init_single_driver_session(first_drv, sess, setup);
 }
 
 handle_t wd_join_gather_alloc_sess(struct wd_join_gather_sess_setup *setup)
 {
+	struct wd_sched_params params;
 	struct wd_join_gather_sess *sess;
 	int ret;
 
@@ -486,7 +552,7 @@ handle_t wd_join_gather_alloc_sess(struct wd_join_gather_sess_setup *setup)
 	sess->index_type = setup->index_type;
 	sess->join_conf.key_output_enable = setup->join_table.key_output_enable;
 
-	ret = wd_drv_alg_support(wd_join_gather_alg[sess->alg], wd_join_gather_setting.driver);
+	ret = wd_drv_alg_support(wd_join_gather_alg[sess->alg], &wd_join_gather_setting.config);
 	if (!ret) {
 		WD_ERR("failed to check driver alg: %s!\n", wd_join_gather_alg[sess->alg]);
 		goto free_sess;
@@ -499,14 +565,11 @@ handle_t wd_join_gather_alloc_sess(struct wd_join_gather_sess_setup *setup)
 		WD_ERR("failed to init join_gather session schedule key!\n");
 		goto free_sess;
 	}
-
-	if (wd_join_gather_setting.driver->get_extend_ops) {
-		ret = wd_join_gather_setting.driver->get_extend_ops(&sess->ops);
-		if (ret) {
-			WD_ERR("failed to get join gather extend ops!\n");
-			goto free_key;
-		}
-	}
+	params.alg_name = wd_join_gather_alg[sess->alg];
+	params.ctxs = wd_join_gather_setting.config.ctxs;
+	wd_join_gather_setting.sched.set_param(
+		wd_join_gather_setting.sched.h_sched_ctx,
+		sess->sched_key, &params);
 
 	ret = wd_join_gather_init_sess(sess, setup);
 	if (ret)
@@ -523,7 +586,14 @@ handle_t wd_join_gather_alloc_sess(struct wd_join_gather_sess_setup *setup)
 uninit_sess:
 	wd_join_gather_uninit_sess(sess);
 free_key:
-	free(sess->sched_key);
+	if (sess->sched_key) {
+		if (wd_join_gather_setting.sched.sched_uninit)
+			wd_join_gather_setting.sched.sched_uninit(
+				wd_join_gather_setting.sched.h_sched_ctx,
+				(handle_t)sess->sched_key);
+		else
+			free(sess->sched_key);
+	}
 free_sess:
 	free(sess);
 	return (handle_t)0;
@@ -542,8 +612,14 @@ void wd_join_gather_free_sess(handle_t h_sess)
 
 	wd_join_gather_uninit_sess(sess);
 
-	if (sess->sched_key)
-		free(sess->sched_key);
+	if (sess->sched_key) {
+		if (wd_join_gather_setting.sched.sched_uninit)
+			wd_join_gather_setting.sched.sched_uninit(
+				wd_join_gather_setting.sched.h_sched_ctx,
+				(handle_t)sess->sched_key);
+		else
+			free(sess->sched_key);
+	}
 
 	free(sess);
 }
@@ -616,6 +692,8 @@ int wd_join_set_hash_table(handle_t h_sess, struct wd_dae_hash_table *info)
 {
 	struct wd_join_gather_sess *sess = (struct wd_join_gather_sess *)h_sess;
 	enum wd_join_sess_state expected;
+	struct wd_ctx_config_internal *config = &wd_join_gather_setting.config;
+	struct wd_join_gather_ops *eops;
 	int ret;
 
 	if (!sess || !info) {
@@ -655,9 +733,9 @@ int wd_join_set_hash_table(handle_t h_sess, struct wd_dae_hash_table *info)
 	if (!info->ext_table_row_num || !info->ext_table)
 		WD_INFO("info: extern hash table is NULL!\n");
 
-	if (sess->ops.hash_table_init) {
-		ret = sess->ops.hash_table_init(wd_join_gather_setting.driver,
-						info, sess->priv);
+	eops = config->ctxs[0].drv->extend_ops;
+	if (eops && eops->hash_table_init) {
+		ret = eops->hash_table_init(info, sess->priv);
 		if (ret)
 			goto out;
 	}
@@ -670,6 +748,8 @@ out:
 	__atomic_store_n(&sess->state, expected, __ATOMIC_RELEASE);
 	return ret;
 }
+
+static bool wd_join_gather_atfork_registered = false;
 
 static void wd_join_gather_clear_status(void)
 {
@@ -699,14 +779,8 @@ static int wd_join_gather_alg_init(struct wd_ctx_config *config, struct wd_sched
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_join_gather_setting.config, wd_join_gather_setting.driver);
-	if (ret)
-		goto out_clear_pool;
-
 	return WD_SUCCESS;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_join_gather_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_join_gather_setting.sched);
 out_clear_ctx_config:
@@ -714,23 +788,13 @@ out_clear_ctx_config:
 	return ret;
 }
 
-static int wd_join_gather_alg_uninit(void)
+static void wd_join_gather_alg_uninit(void)
 {
-	enum wd_status status;
-
-	wd_alg_get_init(&wd_join_gather_setting.status, &status);
-	if (status == WD_UNINIT)
-		return -WD_EINVAL;
-
 	/* Uninit async request pool */
 	wd_uninit_async_request_pool(&wd_join_gather_setting.pool);
 
 	/* Unset config, sched, driver */
 	wd_clear_sched(&wd_join_gather_setting.sched);
-
-	wd_alg_uninit_driver(&wd_join_gather_setting.config, wd_join_gather_setting.driver);
-
-	return WD_SUCCESS;
 }
 
 int wd_join_gather_init(char *alg, __u32 sched_type, int task_type,
@@ -739,16 +803,20 @@ int wd_join_gather_init(char *alg, __u32 sched_type, int task_type,
 	struct wd_ctx_params join_gather_ctx_params = {0};
 	struct wd_ctx_nums join_gather_ctx_num = {0};
 	int ret = -WD_EINVAL;
+	int try_cnt = 0;
 	int state;
 	bool flag;
 
-	pthread_atfork(NULL, NULL, wd_join_gather_clear_status);
+	if (!wd_join_gather_atfork_registered) {
+		if (pthread_atfork(NULL, NULL, wd_join_gather_clear_status) == 0)
+			wd_join_gather_atfork_registered = true;
+	}
 
 	state = wd_alg_try_init(&wd_join_gather_setting.status);
 	if (state)
 		return state;
 
-	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
+	if (!alg || sched_type >= SCHED_POLICY_BUTT || task_type == TASK_MIX ||
 	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
 		WD_ERR("invalid: join_gathe init input param is wrong!\n");
 		goto out_uninit;
@@ -765,39 +833,30 @@ int wd_join_gather_init(char *alg, __u32 sched_type, int task_type,
 		goto out_uninit;
 
 	while (ret != 0) {
-		memset(&wd_join_gather_setting.config, 0, sizeof(struct wd_ctx_config_internal));
-
-		/* Get alg driver and dev name */
-		wd_join_gather_setting.driver = wd_alg_drv_bind(task_type, alg);
-		if (!wd_join_gather_setting.driver) {
-			WD_ERR("failed to bind %s driver.\n", alg);
-			goto out_dlopen;
+		if (try_cnt++ >= WD_INIT2_MAX_RETRY) {
+			WD_ERR("failed to init2 after %d retries.\n",
+			       WD_INIT2_MAX_RETRY);
+			goto out_driver;
 		}
-
+		memset(&wd_join_gather_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 		join_gather_ctx_params.ctx_set_num = &join_gather_ctx_num;
-		ret = wd_ctx_param_init(&join_gather_ctx_params, ctx_params,
-					wd_join_gather_setting.driver,
+		ret = wd_ctx_param_init(&join_gather_ctx_params, ctx_params, alg,
 					WD_JOIN_GATHER_TYPE, 1);
 		if (ret) {
-			if (ret == -WD_EAGAIN) {
-				wd_disable_drv(wd_join_gather_setting.driver);
-				wd_alg_drv_unbind(wd_join_gather_setting.driver);
+			if (ret == -WD_EAGAIN)
 				continue;
-			}
 			goto out_driver;
 		}
 
 		(void)strcpy(wd_join_gather_init_attrs.alg, alg);
 		wd_join_gather_init_attrs.sched_type = sched_type;
-		wd_join_gather_init_attrs.driver = wd_join_gather_setting.driver;
+		wd_join_gather_init_attrs.task_type = task_type;
 		wd_join_gather_init_attrs.ctx_params = &join_gather_ctx_params;
 		wd_join_gather_init_attrs.alg_init = wd_join_gather_alg_init;
 		wd_join_gather_init_attrs.alg_poll_ctx = wd_join_gather_poll_ctx;
 		ret = wd_alg_attrs_init(&wd_join_gather_init_attrs);
 		if (ret) {
 			if (ret == -WD_ENODEV) {
-				wd_disable_drv(wd_join_gather_setting.driver);
-				wd_alg_drv_unbind(wd_join_gather_setting.driver);
 				wd_ctx_param_uninit(&join_gather_ctx_params);
 				continue;
 			}
@@ -806,16 +865,31 @@ int wd_join_gather_init(char *alg, __u32 sched_type, int task_type,
 		}
 	}
 
+	ret = wd_ctx_bind_drivers(&wd_join_gather_setting.config,
+				  wd_join_gather_init_attrs.ctx_config_internal,
+				  WD_TYPE_V2);
+	if (ret) {
+		WD_ERR("failed to bind driver for hashjoin!\n");
+		goto out_common_uninit;
+	}
+
+	ret = wd_alg_init_driver(&wd_join_gather_setting.config);
+	if (ret)
+		goto out_unbind_drivers;
+
 	wd_alg_set_init(&wd_join_gather_setting.status);
 	wd_ctx_param_uninit(&join_gather_ctx_params);
 
 	return WD_SUCCESS;
 
+out_unbind_drivers:
+	wd_ctx_unbind_drivers(&wd_join_gather_setting.config);
+out_common_uninit:
+	wd_join_gather_alg_uninit();
+	wd_alg_attrs_uninit(&wd_join_gather_init_attrs);
 out_params_uninit:
 	wd_ctx_param_uninit(&join_gather_ctx_params);
 out_driver:
-	wd_alg_drv_unbind(wd_join_gather_setting.driver);
-out_dlopen:
 	wd_join_gather_close_driver();
 out_uninit:
 	wd_alg_clear_init(&wd_join_gather_setting.status);
@@ -824,14 +898,19 @@ out_uninit:
 
 void wd_join_gather_uninit(void)
 {
-	int ret;
+	enum wd_status status;
 
-	ret = wd_join_gather_alg_uninit();
-	if (ret)
+	wd_alg_get_init(&wd_join_gather_setting.status, &status);
+	if (status != WD_INIT)
 		return;
 
+	wd_alg_uninit_driver(&wd_join_gather_setting.config);
+	wd_ctx_unbind_drivers(&wd_join_gather_setting.config);
+	wd_join_gather_setting.config.drv_array = NULL;
+	wd_join_gather_setting.config.drv_count = 0;
+	wd_join_gather_alg_uninit();
+
 	wd_alg_attrs_uninit(&wd_join_gather_init_attrs);
-	wd_alg_drv_unbind(wd_join_gather_setting.driver);
 	wd_join_gather_close_driver();
 	wd_alg_clear_init(&wd_join_gather_setting.status);
 }
@@ -871,7 +950,6 @@ static void fill_join_gather_msg(struct wd_join_gather_msg *msg, struct wd_join_
 				 struct wd_join_gather_sess *sess)
 {
 	memcpy(&msg->req, req, sizeof(struct wd_join_gather_req));
-	msg->priv = sess->priv;
 	msg->op_type = req->op_type;
 
 	switch (req->op_type) {
@@ -1211,11 +1289,12 @@ static int wd_join_gather_sync_job(struct wd_join_gather_sess *sess,
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
-	msg_handle.send = setting->driver->send;
-	msg_handle.recv = setting->driver->recv;
+	msg->priv = sess->priv;
+	msg_handle.send = ctx->drv->send;
+	msg_handle.recv = ctx->drv->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(setting->driver, &msg_handle, ctx->ctx,
+	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx,
 				 msg, NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
@@ -1304,14 +1383,13 @@ static int wd_join_gather_async_job(struct wd_join_gather_sess *sess,
 
 	ctx = config->ctxs + idx;
 	msg_id = wd_get_msg_from_pool(&setting->pool, idx, (void **)&msg);
-	if (msg_id < 0) {
-		WD_ERR("failed to get join gather msg from pool!\n");
-		return msg_id;
-	}
+	if (msg_id < 0)
+		return -WD_EBUSY;
 
 	fill_join_gather_msg(msg, req, sess);
+	msg->priv = sess->priv;
 	msg->tag = msg_id;
-	ret = wd_alg_driver_send(setting->driver, ctx->ctx, msg);
+	ret = ctx->drv->send(ctx->ctx, msg);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd join gather async send err!\n");
@@ -1781,7 +1859,7 @@ static int wd_join_gather_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_alg_driver_recv(wd_join_gather_setting.driver, ctx->ctx, &resp_msg);
+		ret = ctx->drv->recv(ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

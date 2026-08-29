@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include "wd.h"
+#include "wd_alg.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +20,7 @@ extern "C" {
 #define MAX_FD_NUM	65535
 
 struct wd_ctx_h {
+	__u8 ctx_type;
 	int fd;
 	char dev_path[MAX_DEV_NAME_LEN];
 	char *dev_name;
@@ -29,23 +31,15 @@ struct wd_ctx_h {
 	void *priv;
 };
 
-struct wd_soft_ctx {
-	int fd;
-	void *priv;
-};
-
-struct wd_ce_ctx {
-	int fd;
-	char *drv_name;
-	void *priv;
-};
-
 struct wd_ctx_internal {
-	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	__u8 ctx_type;
+	handle_t ctx;
 	__u16 sqn;
 	pthread_spinlock_t lock;
+	struct wd_alg_driver *drv;
+	__u32 hw_load;
 };
 
 struct wd_ctx_config_internal {
@@ -55,7 +49,10 @@ struct wd_ctx_config_internal {
 	void *priv;
 	bool epoll_en;
 	unsigned long *msg_cnt;
-	char *alg_name;
+	const char *alg_name;
+
+	struct wd_alg_driver **drv_array;
+	__u32 drv_count;
 };
 
 struct wd_datalist {
@@ -63,6 +60,19 @@ struct wd_datalist {
 	__u32 len;
 	struct wd_datalist *next;
 };
+
+struct wd_sched_params {
+	__u32 pkt_size;
+	/* block mode or stream mode */
+	__u16 data_mode;
+	__u16 prio_mode;
+
+	/* Compat filtering parameters for session-ctx matching */
+	const char *alg_name;
+	struct wd_ctx_internal *ctxs;
+};
+
+int memcmp_consttime(const void *s1, const void *s2, size_t n);
 
 #ifdef __cplusplus
 }

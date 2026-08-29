@@ -239,7 +239,8 @@ void wd_rsa_ctx_num_uninit(void);
  * @type:       operation type.
  * @mode:       0: sync mode, 1: async mode
  * @num:        return ctx num.
- * @is_enable   return enable inner poll flag.
+ * @is_enable:  return enable inner poll flag, inner poll is not
+ *		supported, and is_enable will always be 0.
  */
 int wd_rsa_get_env_param(__u32 node, __u32 type, __u32 mode,
 			 __u32 *num, __u8 *is_enable);

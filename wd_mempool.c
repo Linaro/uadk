@@ -943,7 +943,8 @@ void wd_mempool_destroy(handle_t mempool)
 	}
 
 	wd_atomic_sub(&mp->ref, 1);
-	while(wd_atomic_load(&mp->ref));
+	while (wd_atomic_load(&mp->ref))
+		sched_yield();
 	uninit_mempool(mp);
 	free_hugepage_mem(mp);
 	pthread_spin_destroy(&mp->lock);
