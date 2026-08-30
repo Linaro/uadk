@@ -45,7 +45,7 @@ AC_ARG_ENABLE([debug],
 AM_CONDITIONAL([WD_DEBUG], [test "x$wd_debug" = "xtrue"])
 
 AC_ARG_ENABLE([perf],
-	AS_HELP_STRING([--disble-perf], [enable measuring performance]),
+	AS_HELP_STRING([--enable-perf], [enable measuring performance]),
 	[ AS_IF([test "x$enable_perf" = "xyes"],
 		AC_DEFINE(HAVE_PERF, 1, [Support for measuring performance])
 		perf=true
