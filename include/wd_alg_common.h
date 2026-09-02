@@ -165,13 +165,13 @@ struct wd_sched {
 	const char *name;
 	int sched_policy;
 	handle_t (*sched_init)(handle_t h_sched_ctx, void *sched_param);
-	void (*sched_uninit)(handle_t h_sched_ctx, handle_t h_sched_key);
 	__u32 (*pick_next_ctx)(handle_t h_sched_ctx,
 				  void *sched_key,
 				  const int sched_mode);
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
-	void (*set_param)(handle_t h_sched_ctx,	void *sched_key, void *sched_param);
 	handle_t h_sched_ctx;
+	void (*sched_uninit)(handle_t h_sched_ctx, handle_t h_sched_key);
+	void (*set_param)(handle_t h_sched_ctx,	void *sched_key, void *sched_param);
 };
 
 typedef int (*wd_alg_init)(struct wd_ctx_config *config, struct wd_sched *sched);
