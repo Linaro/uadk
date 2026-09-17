@@ -1765,7 +1765,7 @@ static int wd_env_set_ctx_nums(const char *alg_name, const char *name, const cha
 {
 	char *left, *section, *start;
 	int is_comp;
-	int ret;
+	int ret = 0;
 
 	/* COMP environment variable's format is different, mark it */
 	is_comp = strncmp(name, "WD_COMP_CTX_NUM", sizeof("WD_COMP_CTX_NUM") - 1) ? 0 : 1;
@@ -1799,7 +1799,8 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 {
 	const char *env_name = wd_env_name[type];
 	const char *var_s;
-	int i, ret;
+	int ret = 0;
+	int i;
 
 	ctx_params->bmp = numa_allocate_nodemask();
 	if (!ctx_params->bmp) {

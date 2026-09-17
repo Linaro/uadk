@@ -203,7 +203,7 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	int ret;
+	size_t ret;
 	int size;
 
 	size = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
