@@ -930,7 +930,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 		(int)GEN_PARAMS_SZ(sess->key_size);
 	sess->pubkey = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!sess->pubkey) {
-		free(sess->prikey);
+		sess->mm_ops.free(sess->mm_ops.usr, sess->prikey);
 		WD_ERR("failed to alloc sess pubkey!\n");
 		return -WD_ENOMEM;
 	}
