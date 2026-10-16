@@ -11,6 +11,7 @@
 int wd_soft_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 {
 	struct wd_soft_ctx *sfctx;
+	int ret;
 
 	if (!params || !ctx) {
 		WD_ERR("invalid: params, or ctx is NULL!\n");
@@ -27,8 +28,19 @@ int wd_soft_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 	/* Initialize as software context */
 	sfctx->fd = -1;
 	sfctx->ctx_type = UADK_ALG_SOFT;
-	pthread_spin_init(&sfctx->slock, PTHREAD_PROCESS_PRIVATE);
-	pthread_spin_init(&sfctx->rlock, PTHREAD_PROCESS_PRIVATE);
+	ret = pthread_spin_init(&sfctx->slock, PTHREAD_PROCESS_PRIVATE);
+	if (ret) {
+		WD_ERR("failed to init slock!\n");
+		free(sfctx);
+		return -ret;
+	}
+	ret = pthread_spin_init(&sfctx->rlock, PTHREAD_PROCESS_PRIVATE);
+	if (ret) {
+		WD_ERR("failed to init rlock!\n");
+		pthread_spin_destroy(&sfctx->slock);
+		free(sfctx);
+		return -ret;
+	}
 
 	/* Return context handle */
 	*ctx = (handle_t)sfctx;
