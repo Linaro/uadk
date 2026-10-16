@@ -2786,11 +2786,10 @@ err_ctxs:
 }
 
 /*
- * SCHED_POLICY_DEV: open sync/async ctxs of (drv, op_type, numa) interleaved on
- * ONE device. The caller pins the device via dparams->preferred_dev_path.
- * Stop when both counts are met or the device is full. If both modes are
- * requested but only one could be opened, roll back and return -WD_ENODEV so
- * the caller can try the next device; partial within one mode is kept.
+ * SCHED_POLICY_DEV: open all sync ctxs then all async ctxs of
+ * (drv, op_type, numa) on ONE device pinned by dparams->preferred_dev_path.
+ * If the device cannot hold the whole group, roll back every ctx opened on
+ * it and return -WD_ENODEV so the caller tries the next device.
  */
 static int wd_alloc_dev_group(struct wd_init_attrs *attrs,
 			      struct wd_alg_driver *drv,
@@ -2801,58 +2800,44 @@ static int wd_alloc_dev_group(struct wd_init_attrs *attrs,
 	__u32 want[2] = {nums->sync_ctx_num, nums->async_ctx_num};
 	__u8 modes[2] = {CTX_MODE_SYNC, CTX_MODE_ASYNC};
 	__u32 group_start = *ctx_idx;
-	__u32 done[2] = {0, 0};
-	__u32 i;
+	__u32 i, j;
 	int ret;
 
-	while (done[0] < want[0] || done[1] < want[1]) {
-		for (i = 0; i < 2; i++) {
-			if (done[i] >= want[i])
-				continue;
-
-			dparams->ctx_mode = modes[i];
+	for (i = 0; i < 2; i++) {
+		dparams->ctx_mode = modes[i];
+		for (j = 0; j < want[i]; j++) {
 			ret = wd_alloc_one_ctx(attrs, drv, dparams, ctx_idx);
 			if (ret) {
+				wd_free_ctxs_batch_range(attrs, group_start, *ctx_idx);
+				*ctx_idx = group_start;
 				if (ret != -WD_EBUSY && ret != -WD_ENODEV)
 					return ret;
-				/*
-				 * Device full. If both modes were requested
-				 * but only one got ctxs, the empty domain
-				 * would cause idx 65535 at runtime. Roll back
-				 * this group so the caller tries another dev.
-				 */
-				if (want[0] && want[1] &&
-				    (!done[0] || !done[1])) {
-					wd_free_ctxs_batch_range(attrs, group_start, *ctx_idx);
-					*ctx_idx = group_start;
-					return -WD_ENODEV;
-				}
-				return WD_SUCCESS;
+				return -WD_ENODEV;
 			}
-			done[i]++;
 		}
 	}
 	return WD_SUCCESS;
 }
 
 /*
- * SCHED_POLICY_DEV: per (drv, op_type, numa) open sync/async on one device
- * (interleaved, partial allowed). Enumerates devices on each numa node and
- * pins each group to one device via preferred_dev_path, trying the next
- * device if the current one cannot hold both modes.
+ * SCHED_POLICY_DEV: per (drv, op_type, numa) open all sync+async ctxs on one
+ * device. Enumerates devices on each numa node and pins each group to one
+ * device via preferred_dev_path, trying the next device if the current one
+ * cannot hold the whole group. All devices exhausted => error out.
  */
 static int wd_alloc_ctxs_batch_dev(struct wd_init_attrs *attrs, __u32 *start_idx)
 {
 	struct wd_ctx_config_internal *internal_config = attrs->ctx_config_internal;
 	struct wd_ctx_params *ctx_params = attrs->ctx_params;
-	struct uacce_dev_list *dev_list, *p;
+	__u32 ctx_idx, drv_idx, start, group_start;
+	struct uacce_dev_list *dev_list = NULL;
 	int numa_nodes[UADK_MAX_NUMA_NODES];
 	char alg_type[CRYPTO_MAX_ALG_NAME];
 	struct wd_drv_ctx_params dparams;
-	__u32 ctx_idx, drv_idx, start;
 	struct wd_alg_driver *drv;
 	__u8 op_type, numa_count;
 	struct wd_ctx_nums *nums;
+	struct uacce_dev_list *p;
 	int n, ret;
 
 	memset(&dparams, 0, sizeof(dparams));
@@ -2894,10 +2879,16 @@ static int wd_alloc_ctxs_batch_dev(struct wd_init_attrs *attrs, __u32 *start_idx
 				continue;
 
 			dparams.op_type = op_type;
+			group_start = ctx_idx;
 			for (n = 0; n < numa_count; n++) {
 				dparams.numa_id = numa_nodes[n];
 				for (p = dev_list; p; p = p->next) {
 					if (!p->dev || p->dev->numa_id != numa_nodes[n])
+						continue;
+
+					/* Skip devices that cannot hold the whole group */
+					if (wd_get_avail_ctx(p->dev) < (int)(nums->sync_ctx_num +
+									     nums->async_ctx_num))
 						continue;
 
 					dparams.preferred_dev_path = p->dev->char_dev_path;
@@ -2909,6 +2900,11 @@ static int wd_alloc_ctxs_batch_dev(struct wd_init_attrs *attrs, __u32 *start_idx
 					if (ret != -WD_ENODEV)
 						goto err_ctxs;
 				}
+			}
+
+			if (ctx_idx == group_start) {
+				ret = -WD_ENODEV;
+				goto err_ctxs;
 			}
 		}
 		wd_free_list_accels(dev_list);
