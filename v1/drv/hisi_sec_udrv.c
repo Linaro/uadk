@@ -1827,7 +1827,17 @@ static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		return ret;
 
 	sqe->type = BD_TYPE3;
-	sqe->scene = is_storage ? SCENE_STORAGE : SCENE_IPSEC;
+
+	/*
+	 * GMAC is an IPSEC-specific auth algo (RFC4543); other digests use
+	 * stream scene for long-data hash processing.
+	 */
+	if (is_storage)
+		sqe->scene = SCENE_STORAGE;
+	else if (msg->alg == WCRYPTO_AES_GMAC)
+		sqe->scene = SCENE_IPSEC;
+	else
+		sqe->scene = SCENE_STREAM;
 
 	sqe->auth = AUTH_MAC_CALCULATE;
 	sqe->a_len = msg->in_bytes;
