@@ -181,12 +181,12 @@ int wd_hw_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 {
 	struct wd_drv_ctx_params *ctx_params = (struct wd_drv_ctx_params *)params;
 	struct uacce_dev_list *dev_list, *used_list = NULL;
+	struct uacce_dev_list *curr, *best = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
-	struct uacce_dev_list *curr;
+	int target_numa, best_avail = 0;
 	struct wd_ctx_h *ctx_h;
-	int target_numa;
+	int ret, avail;
 	handle_t hctx;
-	int ret;
 
 	if (!params || !ctx) {
 		WD_ERR("invalid: parameters are NULL!\n");
@@ -246,14 +246,35 @@ int wd_hw_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 		goto success;
 	}
 
-	curr = used_list;
-	while (curr) {
-		if (curr->dev) {
-			hctx = wd_request_ctx(curr->dev);
-			if (hctx)
-				goto success;
+	/* Pick the device with the most available contexts to balance load. */
+	for (curr = used_list; curr; curr = curr->next) {
+		if (!curr->dev)
+			continue;
+		avail = wd_get_avail_ctx(curr->dev);
+		if (avail > best_avail) {
+			best_avail = avail;
+			best = curr;
 		}
-		curr = curr->next;
+	}
+
+	if (!best) {
+		WD_ERR("failed to request ctx on NUMA node %d for %s\n",
+		       target_numa, alg_name);
+		ret = -WD_EBUSY;
+		goto out;
+	}
+
+	hctx = wd_request_ctx(best->dev);
+	if (hctx)
+		goto success;
+
+	/* Fall back to remaining devices if the best one fails to open */
+	for (curr = used_list; curr; curr = curr->next) {
+		if (curr == best || !curr->dev)
+			continue;
+		hctx = wd_request_ctx(curr->dev);
+		if (hctx)
+			goto success;
 	}
 
 	WD_ERR("failed to request ctx on NUMA node %d for %s\n",
