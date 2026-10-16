@@ -399,6 +399,8 @@ static int isa_ce_cipher_send(handle_t ctx, void *wd_msg)
 			ret = sm4_xts_encrypt(msg, &rkey);
 		else
 			ret = sm4_xts_decrypt(msg, &rkey);
+		if (ret)
+			return ret;
 		break;
 	default:
 		WD_ERR("The current block cipher mode is not supported!\n");
