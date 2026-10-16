@@ -337,8 +337,6 @@ static int wd_udma_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		} else if (unlikely(ret)) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_udma_setting.pool, idx,
-					   rcv_msg.tag);
 			return ret;
 		}
 		rcv_cnt++;

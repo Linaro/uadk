@@ -2713,6 +2713,8 @@ static int sm2_enc_parse(handle_t h_qp, struct wd_ecc_msg *msg,
 	ret = parse_second_sqe(h_qp, msg, &second);
 	if (unlikely(ret)) {
 		WD_ERR("failed to parse second BD, ret = %d!\n", ret);
+		if (second)
+			free_req(second);
 		goto free_first;
 	}
 

@@ -583,8 +583,6 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return ret;
 		} else if (ret < 0) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
-			wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
-					   recv_msg.tag);
 			return ret;
 		}
 		rcv_cnt++;

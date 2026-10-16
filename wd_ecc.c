@@ -2519,8 +2519,6 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		} else if (ret < 0) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
 			*count = rcv_cnt;
-			wd_put_msg_to_pool(&wd_ecc_setting.pool, idx,
-					   recv_msg.tag);
 			return ret;
 		}
 		rcv_cnt++;
