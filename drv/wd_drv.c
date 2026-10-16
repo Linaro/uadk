@@ -220,6 +220,32 @@ int wd_hw_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 		goto out;
 	}
 
+	/*
+	 * Preferred-device binding (SCHED_POLICY_DEV): open exactly this device
+	 * and fail strictly if unavailable, so the sync and async ctxs of one
+	 * (driver, op_type, numa) stay on the same device. No NUMA fallback.
+	 */
+	if (ctx_params->preferred_dev_path) {
+		for (curr = used_list; curr; curr = curr->next) {
+			if (curr->dev && !strcmp(curr->dev->char_dev_path,
+						 ctx_params->preferred_dev_path))
+				break;
+		}
+
+		if (!curr) {
+			ret = -WD_ENODEV;
+			goto out;
+		}
+
+		hctx = wd_request_ctx(curr->dev);
+		if (!hctx) {
+			ret = -WD_EBUSY;
+			goto out;
+		}
+
+		goto success;
+	}
+
 	curr = used_list;
 	while (curr) {
 		if (curr->dev) {
