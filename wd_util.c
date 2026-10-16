@@ -1566,9 +1566,7 @@ static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
 		return -WD_EINVAL;
 	}
 
-	fb_driver->init(NULL, NULL);
-
-	return 0;
+	return fb_driver->init(NULL, NULL);
 }
 
 static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)

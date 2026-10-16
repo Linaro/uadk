@@ -1500,7 +1500,9 @@ static int wd_agg_rehash_sync_inner(struct wd_agg_sess *sess, struct wd_agg_req 
 	}
 
 	out_req->real_out_row_count = msg.out_row_count;
-	wd_agg_set_col_size(sess, in_req, out_req->real_out_row_count);
+	ret = wd_agg_set_col_size(sess, in_req, out_req->real_out_row_count);
+	if (unlikely(ret))
+		return ret;
 	in_req->in_row_count = out_req->real_out_row_count;
 
 	fill_request_msg_input(&in_msg, in_req, sess, true);
