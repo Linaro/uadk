@@ -446,7 +446,7 @@ static int wd_agg_uninit_sess_priv(struct wd_agg_sess *sess)
 
 handle_t wd_agg_alloc_sess(struct wd_agg_sess_setup *setup)
 {
-	struct wd_sched_params params;
+	struct wd_sched_params params = {0};
 	struct wd_agg_sess *sess;
 	__u32 out_agg_cols_num = 0;
 	int ret;

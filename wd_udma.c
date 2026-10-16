@@ -78,7 +78,7 @@ void wd_udma_free_sess(handle_t sess)
 
 handle_t wd_udma_alloc_sess(struct wd_udma_sess_setup *setup)
 {
-	struct wd_sched_params params;
+	struct wd_sched_params params = {0};
 	struct wd_udma_sess *sess;
 	int ret;
 

@@ -533,7 +533,7 @@ static int wd_join_gather_init_sess(struct wd_join_gather_sess *sess,
 
 handle_t wd_join_gather_alloc_sess(struct wd_join_gather_sess_setup *setup)
 {
-	struct wd_sched_params params;
+	struct wd_sched_params params = {0};
 	struct wd_join_gather_sess *sess;
 	int ret;
 
