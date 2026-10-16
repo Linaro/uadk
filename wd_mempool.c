@@ -239,7 +239,7 @@ static unsigned long _find_next_bit(unsigned long *map, unsigned long bits,
 
 	while (!tmp) {
 		start += BITS_PER_LONG;
-		if (start > bits)
+		if (start >= bits)
 			return bits;
 
 		tmp = map[start / BITS_PER_LONG];
