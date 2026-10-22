@@ -823,11 +823,6 @@ static int fill_cipher_bd3_alg(struct wcrypto_cipher_msg *msg,
 		struct hisi_sec_bd3_sqe *sqe)
 {
 	int ret = WD_SUCCESS;
-
-	ret = cipher_param_check(msg);
-	if (unlikely(ret))
-		return ret;
-
 	__u8 c_key_len = 0;
 
 	switch (msg->alg) {
@@ -971,19 +966,72 @@ static int fill_cipher_bd3_mode(struct wcrypto_cipher_msg *msg,
 	return ret;
 }
 
+static void fill_cipher_bd3_dif(struct hisi_sec_bd3_sqe *sqe,
+		struct wd_sec_udata *udata)
+{
+	sqe->skip_data.gran_num = udata->gran_num;
+	sqe->skip_data.src_skip_data_len = udata->src_offset;
+	sqe->skip_data.dst_skip_data_len = udata->dst_offset;
+
+	sqe->storage_scene.gen_ver_val = udata->dif.ver;
+	sqe->storage_scene.gen_app_val = udata->dif.app;
+	sqe->storage_scene.gen_page_pad_ctrl = udata->dif.ctrl.gen.page_layout_gen_type;
+	sqe->storage_scene.gen_grd_ctrl = udata->dif.ctrl.gen.grd_gen_type;
+	sqe->storage_scene.gen_ver_ctrl = udata->dif.ctrl.gen.ver_gen_type;
+	sqe->storage_scene.gen_app_ctrl = udata->dif.ctrl.gen.app_gen_type;
+	sqe->storage_scene.gen_ref_ctrl = udata->dif.ctrl.gen.ref_gen_type;
+	sqe->storage_scene.page_pad_type = udata->dif.ctrl.gen.page_layout_pad_type;
+	sqe->storage_scene.block_size = udata->block_size;
+	sqe->storage_scene.private_info = udata->dif.priv_info;
+	sqe->storage_scene.chk_grd_ctrl = udata->dif.ctrl.verify.grd_verify_type;
+	sqe->storage_scene.chk_ref_ctrl = udata->dif.ctrl.verify.ref_verify_type;
+	sqe->storage_scene.lba_l = udata->dif.lba & QM_L32BITS_MASK;
+	sqe->storage_scene.lba_h = udata->dif.lba >> QM_HADDR_SHIFT;
+}
+
+static void fill_cipher_bd3_udata_addr(struct wcrypto_cipher_msg *msg,
+		struct hisi_sec_bd3_sqe *sqe, __u8 is_storage)
+{
+	uintptr_t phy;
+
+	phy = (uintptr_t)msg->in;
+	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->data_src_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->out;
+	sqe->data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->data_dst_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->key;
+	sqe->c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->c_key_addr_h = HI_U32(phy);
+	if (msg->iv_bytes) {
+		phy = (uintptr_t)msg->iv;
+		if (is_storage) {
+			sqe->skip_data.c_iv_a_key_l = (__u32)(phy & QM_L32BITS_MASK);
+			sqe->skip_data.c_iv_a_key_h = HI_U32(phy);
+		} else {
+			sqe->ipsec_scene.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+			sqe->ipsec_scene.c_ivin_addr_h = HI_U32(phy);
+		}
+	}
+}
+
 static int fill_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		struct wcrypto_cipher_msg *msg, struct wcrypto_cipher_tag *tag)
 {
+	struct wd_sec_udata *udata = tag ? tag->priv : NULL;
+	__u8 is_storage = udata && udata->gran_num != 0;
 	int ret;
 
+	if (!is_storage) {
+		ret = cipher_param_check(msg);
+		if (unlikely(ret))
+			return ret;
+	}
+
 	sqe->type = BD_TYPE3;
-	sqe->scene = SCENE_IPSEC;
+	sqe->scene = is_storage ? SCENE_STORAGE : SCENE_IPSEC;
 
 	sqe->de = DATA_DST_ADDR_ENABLE;
-	if (msg->in_bytes > MAX_CIPHER_LENGTH) {
-		WD_ERR("input data is too large.\n");
-		return -WD_EINVAL;
-	}
 	sqe->c_len = msg->in_bytes;
 
 	fill_bd3_addr_type(msg->data_fmt, sqe);
@@ -1000,10 +1048,19 @@ static int fill_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		return ret;
 	}
 
-	ret = fill_cipher_bd3_area(q, msg, sqe);
-	if (ret != WD_SUCCESS) {
-		WD_ERR("fail to fill_cipher_bd3_addr.\n");
-		return ret;
+	if (is_storage && msg->mode == WCRYPTO_CIPHER_XTS)
+		sqe->ci_gen = CI_GEN_BY_LBA;
+
+	if (udata) {
+		fill_cipher_bd3_udata_addr(msg, sqe, is_storage);
+		if (is_storage)
+			fill_cipher_bd3_dif(sqe, udata);
+	} else {
+		ret = fill_cipher_bd3_area(q, msg, sqe);
+		if (ret != WD_SUCCESS) {
+			WD_ERR("fail to fill_cipher_bd3_addr.\n");
+			return ret;
+		}
 	}
 
 	if (tag)
@@ -1129,10 +1186,8 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 {
 	struct wcrypto_cipher_msg *msg = message;
 	struct wcrypto_cipher_tag *tag = (void *)(uintptr_t)msg->usr_data;
-	struct wd_sec_udata *udata = tag->priv;
 	struct wd_queue *q = info->q;
 	struct hisi_sec_bd3_sqe *sqe3;
-	struct hisi_sec_sqe *sqe;
 	uintptr_t temp;
 	int ret;
 
@@ -1144,35 +1199,17 @@ int qm_fill_cipher_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
+	sqe3 = (struct hisi_sec_bd3_sqe *)temp;
+	memset(sqe3, 0, sizeof(struct hisi_sec_bd3_sqe));
 
-	/*
-	 * For user self-defined data with DIF scence, will fill BD1.
-	 * For user self-defined data without DIF scence, will fill BD2.
-	 * For non user self-defined data scence, will fill BD3.
-	 */
-	if (udata) {
-		sqe = (struct hisi_sec_sqe *)temp;
-		memset(sqe, 0, sizeof(struct hisi_sec_sqe));
-		if (udata->gran_num != 0)
-			ret = fill_cipher_bd1(q, sqe, msg, tag);
-		else
-			ret = fill_cipher_bd2(q, sqe, msg, tag);
-	} else {
-		sqe3 = (struct hisi_sec_bd3_sqe *)temp;
-		memset(sqe3, 0, sizeof(struct hisi_sec_bd3_sqe));
-		ret = fill_cipher_bd3(q, sqe3, msg, tag);
-	}
-
+	ret = fill_cipher_bd3(q, sqe3, msg, tag);
 	if (ret != WD_SUCCESS)
 		return ret;
 
 	info->req_cache[i] = msg;
 
 #ifdef DEBUG_LOG
-	if (udata)
-		sec_dump_bd((unsigned char *)sqe, SQE_BYTES_NUMS);
-	else
-		sec_dump_bd((unsigned char *)sqe3, SQE_BYTES_NUMS);
+	sec_dump_bd((unsigned char *)sqe3, SQE_BYTES_NUMS);
 #endif
 
 	return ret;
@@ -1707,24 +1744,45 @@ static int digest_param_check_v3(struct wcrypto_digest_msg *msg)
 	return WD_SUCCESS;
 }
 
-static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
-		struct wcrypto_digest_msg *msg, struct wcrypto_digest_tag *tag)
+static void fill_digest_bd3_udata_addr(struct wcrypto_digest_msg *msg,
+		struct hisi_sec_bd3_sqe *sqe)
+{
+	uintptr_t phy;
+
+	phy = (uintptr_t)msg->in;
+	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->data_src_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->out;
+	sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->mac_addr_h = HI_U32(phy);
+
+	if (msg->mode == WCRYPTO_DIGEST_HMAC) {
+		sqe->a_key_len = msg->key_bytes / SEC_SQE_LEN_RATE;
+		phy = (uintptr_t)msg->key;
+		sqe->auth_key_iv.a_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->auth_key_iv.a_key_addr_h = HI_U32(phy);
+	}
+}
+
+static void fill_digest_bd3_dif(struct hisi_sec_bd3_sqe *sqe,
+		struct wd_sec_udata *udata)
+{
+	sqe->skip_data.gran_num = udata->gran_num;
+	sqe->skip_data.src_skip_data_len = udata->src_offset;
+	sqe->storage_scene.block_size = udata->block_size;
+	sqe->storage_scene.private_info = udata->dif.priv_info;
+	sqe->storage_scene.chk_grd_ctrl = udata->dif.ctrl.verify.grd_verify_type;
+	sqe->storage_scene.chk_ref_ctrl = udata->dif.ctrl.verify.ref_verify_type;
+	sqe->storage_scene.lba_l = udata->dif.lba & QM_L32BITS_MASK;
+	sqe->storage_scene.lba_h = udata->dif.lba >> QM_HADDR_SHIFT;
+}
+
+static int fill_digest_bd3_map(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
+		struct wcrypto_digest_msg *msg)
 {
 	uintptr_t phy;
 	int ret;
 
-	ret = digest_param_check_v3(msg);
-	if (unlikely(ret))
-		return ret;
-
-	sqe->type = BD_TYPE3;
-	if (msg->alg == WCRYPTO_AES_GMAC)
-		sqe->scene = SCENE_IPSEC;
-	else
-		sqe->scene = SCENE_STREAM;
-
-	sqe->auth = AUTH_MAC_CALCULATE;
-	sqe->a_len = msg->in_bytes;
 	phy = (uintptr_t)drv_iova_map(q, msg->in, msg->in_bytes);
 	if (unlikely(!phy)) {
 		WD_ERR("Get message in dma address fail!\n");
@@ -1740,33 +1798,84 @@ static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		WD_ERR("Get digest bd3 message out dma address fail!\n");
 		goto map_out_error;
 	}
+
+	ret = set_hmac_mode_v3(msg, sqe, q);
+	if (unlikely(ret))
+		goto unmap_out;
+
+	return WD_SUCCESS;
+
+unmap_out:
+	unmap_addr(q, msg->out, msg->out_bytes, sqe->mac_addr_l,
+		   sqe->mac_addr_h, msg->data_fmt);
+map_out_error:
+	phy = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
+	drv_iova_unmap(q, msg->in, (void *)(uintptr_t)phy, msg->in_bytes);
+	return ret;
+}
+
+static int fill_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
+		struct wcrypto_digest_msg *msg, struct wcrypto_digest_tag *tag)
+{
+	struct wd_sec_udata *udata = tag ? tag->priv : NULL;
+	__u8 is_storage = udata && udata->gran_num != 0;
+	uintptr_t phy;
+	int ret;
+
+	ret = digest_param_check_v3(msg);
+	if (unlikely(ret))
+		return ret;
+
+	sqe->type = BD_TYPE3;
+
+	/*
+	 * GMAC is an IPSEC-specific auth algo (RFC4543); other digests use
+	 * stream scene for long-data hash processing.
+	 */
+	if (is_storage)
+		sqe->scene = SCENE_STORAGE;
+	else if (msg->alg == WCRYPTO_AES_GMAC)
+		sqe->scene = SCENE_IPSEC;
+	else
+		sqe->scene = SCENE_STREAM;
+
+	sqe->auth = AUTH_MAC_CALCULATE;
+	sqe->a_len = msg->in_bytes;
+
+	if (udata) {
+		fill_digest_bd3_udata_addr(msg, sqe);
+		if (is_storage)
+			fill_digest_bd3_dif(sqe, udata);
+	} else {
+		ret = fill_digest_bd3_map(q, sqe, msg);
+		if (unlikely(ret))
+			return ret;
+	}
+
 	sqe->mac_len = msg->out_bytes / WORD_BYTES;
 
 	ret = fill_digest_bd3_alg(msg, sqe);
 	if (ret != WD_SUCCESS) {
 		WD_ERR("fill_digest_bd3_alg fail!\n");
-		goto map_alg_error;
+		goto unmap;
 	}
 
 	ret = qm_fill_digest_long_bd3(msg, sqe);
 	if (ret)
-		goto map_alg_error;
-
-	ret = set_hmac_mode_v3(msg, sqe, q);
-	if (ret)
-		goto map_alg_error;
+		goto unmap;
 
 	if (tag)
 		sqe->tag_l = tag->wcrypto_tag.ctx_id;
 
 	return ret;
 
-map_alg_error:
-	unmap_addr(q, msg->out, msg->out_bytes, sqe->mac_addr_l,
-		   sqe->mac_addr_h, msg->data_fmt);
-map_out_error:
-	phy = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
-	drv_iova_unmap(q, msg->in, (void *)(uintptr_t)phy, msg->in_bytes);
+unmap:
+	if (!udata) {
+		unmap_addr(q, msg->out, msg->out_bytes, sqe->mac_addr_l,
+			   sqe->mac_addr_h, msg->data_fmt);
+		phy = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
+		drv_iova_unmap(q, msg->in, (void *)(uintptr_t)phy, msg->in_bytes);
+	}
 	return ret;
 }
 
@@ -1776,23 +1885,15 @@ int qm_fill_digest_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_digest_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_queue *q = info->q;
 	struct hisi_sec_bd3_sqe *sqe;
-	struct hisi_sec_sqe *sqe2;
 	uintptr_t temp;
 	int ret;
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
+	sqe = (struct hisi_sec_bd3_sqe *)temp;
+	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
+	fill_bd3_addr_type(msg->data_fmt, sqe);
 
-	if (tag->priv) {
-		sqe2 = (struct hisi_sec_sqe *)temp;
-		memset(sqe2, 0, sizeof(struct hisi_sec_sqe));
-		fill_bd_addr_type(msg->data_fmt, sqe2);
-		ret = fill_digest_bd_udata(q, sqe2, msg, tag);
-	} else {
-		sqe = (struct hisi_sec_bd3_sqe *)temp;
-		memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
-		fill_bd3_addr_type(msg->data_fmt, sqe);
-		ret = fill_digest_bd3(q, sqe, msg, tag);
-	}
+	ret = fill_digest_bd3(q, sqe, msg, tag);
 	if (ret != WD_SUCCESS)
 		return ret;
 
@@ -1890,7 +1991,7 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 
 	/* In user self-define data case, may not need addr map, just return */
 	tag = (void *)(uintptr_t)cipher_msg->usr_data;
-	if (tag->priv)
+	if (tag && tag->priv)
 		return;
 
 	dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
@@ -1919,15 +2020,23 @@ static void parse_cipher_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 static void parse_cipher_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		struct wcrypto_cipher_msg *cipher_msg)
 {
+	struct wcrypto_cipher_tag *tag;
 	__u64 dma_addr;
 
 	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
 		WD_ERR("Fail to parse SEC BD3 %s, done=0x%x, etype=0x%x\n", "cipher",
 		(__u32)sqe->done, (__u32)sqe->error_type);
 		cipher_msg->result = WD_IN_EPARA;
+	} else if (sqe->dc == DIF_VERIFY_FAIL) {
+		cipher_msg->result = WD_VERIFY_ERR;
 	} else {
 		cipher_msg->result = WD_SUCCESS;
 	}
+
+	/* In user self-define data case, may not need addr map, just return */
+	tag = (void *)(uintptr_t)cipher_msg->usr_data;
+	if (tag && tag->priv)
+		return;
 
 	dma_addr = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
 	drv_iova_unmap(q, cipher_msg->in, (void *)(uintptr_t)dma_addr,
@@ -1990,36 +2099,15 @@ int qm_parse_cipher_bd3_sqe(void *msg, const struct qm_queue_info *info,
 	struct wcrypto_cipher_msg *cipher_msg = info->req_cache[i];
 	struct hisi_sec_bd3_sqe *sqe3 = msg;
 	struct wd_queue *q = info->q;
-	struct hisi_sec_sqe *sqe;
 
 	if (unlikely(!cipher_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
+	if (unlikely(usr && sqe3->tag_l != usr))
+		return 0;
 
-	switch (sqe3->type) {
-	case BD_TYPE3:
-		if (unlikely(usr && sqe3->tag_l != usr))
-			return 0;
-		parse_cipher_bd3(q, sqe3, cipher_msg);
-		break;
-	case BD_TYPE2:
-		sqe = (struct hisi_sec_sqe *)sqe3;
-		if (usr && sqe->type2.tag != usr)
-			return 0;
-		parse_cipher_bd2(q, sqe, cipher_msg);
-		break;
-	case BD_TYPE1:
-		sqe = (struct hisi_sec_sqe *)sqe3;
-		if (usr && sqe->type1.tag != usr)
-			return 0;
-		parse_cipher_bd1(q, sqe, cipher_msg);
-		break;
-	default:
-		WD_ERR("SEC BD Type error\n");
-		cipher_msg->result = WD_IN_EPARA;
-		break;
-	}
+	parse_cipher_bd3(q, sqe3, cipher_msg);
 
 #ifdef DEBUG_LOG
 	sec_dump_bd((unsigned char *)msg, SQE_BYTES_NUMS);
@@ -2068,7 +2156,7 @@ static void parse_digest_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 		digest_msg->result = WD_SUCCESS;
 
 	tag = (void *)(uintptr_t)digest_msg->usr_data;
-	if (tag->priv)
+	if (tag && tag->priv)
 		return;
 
 	dma_addr = DMA_ADDR(sqe->type2.data_src_addr_h,
@@ -2674,16 +2762,80 @@ out:
 	return ret;
 }
 
+static int fill_aead_bd3_udata_addr(struct wcrypto_aead_msg *msg,
+		struct hisi_sec_bd3_sqe *sqe, struct wd_aead_udata *udata)
+{
+	uintptr_t phy;
+
+	sqe->auth_src_offset = udata->src_offset;
+	sqe->cipher_src_offset = udata->src_offset + msg->assoc_bytes;
+
+	phy = (uintptr_t)msg->in;
+	sqe->data_src_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->data_src_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->out;
+	sqe->data_dst_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->data_dst_addr_h = HI_U32(phy);
+	phy = (uintptr_t)msg->iv;
+	sqe->ipsec_scene.c_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->ipsec_scene.c_ivin_addr_h = HI_U32(phy);
+
+	phy = (uintptr_t)udata->ckey;
+	sqe->c_key_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->c_key_addr_h = HI_U32(phy);
+	phy = (uintptr_t)udata->mac;
+	sqe->mac_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+	sqe->mac_addr_h = HI_U32(phy);
+	if (msg->cmode == WCRYPTO_CIPHER_CCM || msg->cmode == WCRYPTO_CIPHER_GCM) {
+		if (unlikely(!udata->aiv)) {
+			WD_ERR("invalid aead udata: aiv is NULL!\n");
+			return -WD_EINVAL;
+		}
+		phy = (uintptr_t)udata->aiv;
+		sqe->auth_key_iv.a_ivin_addr_l = (__u32)(phy & QM_L32BITS_MASK);
+		sqe->auth_key_iv.a_ivin_addr_h = HI_U32(phy);
+	}
+
+	return WD_SUCCESS;
+}
+
+static int init_msg_with_udata(struct wcrypto_aead_msg *req, struct wd_aead_udata *udata)
+{
+	if (!udata->ckey || !udata->mac) {
+		WD_ERR("invalid udata para!\n");
+		return -WD_EINVAL;
+	}
+
+	if (req->cmode == WCRYPTO_CIPHER_CCM || req->cmode == WCRYPTO_CIPHER_GCM) {
+		req->ckey_bytes = udata->ckey_bytes;
+		req->auth_bytes = udata->mac_bytes;
+	} else {
+		WD_ERR("invalid cmode para!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
 static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
 {
+	struct wd_aead_udata *udata = tag ? tag->priv : NULL;
 	int ret;
+
+	if (udata) {
+		ret = init_msg_with_udata(msg, udata);
+		if (ret != WD_SUCCESS)
+			return ret;
+	}
 
 	sqe->type = BD_TYPE3;
 	sqe->scene = SCENE_IPSEC;
 	sqe->de = DATA_DST_ADDR_ENABLE;
 	sqe->c_len = msg->in_bytes;
-	sqe->cipher_src_offset = msg->assoc_bytes;
+	sqe->cipher_src_offset = udata ? udata->src_offset + msg->assoc_bytes
+				       : msg->assoc_bytes;
+	sqe->auth_src_offset = udata ? udata->src_offset : 0;
 	sqe->a_len = msg->in_bytes + msg->assoc_bytes;
 
 	ret = fill_aead_bd3_alg(msg, sqe);
@@ -2698,15 +2850,21 @@ static int fill_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		return ret;
 	}
 
-	ret = fill_aead_bd3_addr(q, msg, sqe);
-	if (ret != WD_SUCCESS) {
-		WD_ERR("fail to fill_aead_bd3_addr!\n");
-		return ret;
-	}
+	if (udata) {
+		ret = fill_aead_bd3_udata_addr(msg, sqe, udata);
+		if (unlikely(ret))
+			return ret;
+	} else {
+		ret = fill_aead_bd3_addr(q, msg, sqe);
+		if (ret != WD_SUCCESS) {
+			WD_ERR("fail to fill_aead_bd3_addr!\n");
+			return ret;
+		}
 
-	ret = fill_aead_stream_bd3(q, msg, sqe);
-	if (unlikely(ret))
-		return ret;
+		ret = fill_aead_stream_bd3(q, msg, sqe);
+		if (unlikely(ret))
+			return ret;
+	}
 
 	if (tag)
 		sqe->tag_l = tag->wcrypto_tag.ctx_id;
@@ -2777,7 +2935,6 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	struct wcrypto_aead_tag *tag = (void *)(uintptr_t)msg->usr_data;
 	struct wd_queue *q = info->q;
 	struct hisi_sec_bd3_sqe *sqe;
-	struct hisi_sec_sqe *sqe2;
 	uintptr_t temp;
 	int ret;
 
@@ -2789,17 +2946,11 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 	}
 
 	temp = (uintptr_t)info->sq_base + i * info->sqe_size;
-	if (tag->priv) {
-		sqe2 = (struct hisi_sec_sqe *)temp;
-		memset(sqe2, 0, sizeof(struct hisi_sec_sqe));
-		fill_bd_addr_type(msg->data_fmt, sqe2);
-		ret = fill_aead_bd_udata(q, sqe2, msg, tag);
-	} else {
-		sqe = (struct hisi_sec_bd3_sqe *)temp;
-		memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
-		fill_bd3_addr_type(msg->data_fmt, sqe);
-		ret = fill_aead_bd3(q, sqe, msg, tag);
-	}
+	sqe = (struct hisi_sec_bd3_sqe *)temp;
+	memset(sqe, 0, sizeof(struct hisi_sec_bd3_sqe));
+	fill_bd3_addr_type(msg->data_fmt, sqe);
+
+	ret = fill_aead_bd3(q, sqe, msg, tag);
 	if (ret != WD_SUCCESS)
 		return ret;
 
@@ -2815,6 +2966,7 @@ int qm_fill_aead_bd3_sqe(void *message, struct qm_queue_info *info, __u16 i)
 static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe3,
 			   struct wcrypto_aead_msg *msg)
 {
+	struct wcrypto_aead_tag *tag;
 	__u8 mac[AEAD_IV_MAX_BYTES] = { 0 };
 	__u64 dma_addr;
 	int ret;
@@ -2827,6 +2979,11 @@ static void parse_aead_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe3,
 	} else {
 		msg->result = WD_SUCCESS;
 	}
+
+	/* In user self-define data case, may not need addr map, just return */
+	tag = (void *)(uintptr_t)msg->usr_data;
+	if (tag && tag->priv)
+		return;
 
 	/*
 	 * We obtain a memory from IV SGL as a temporary address space for MAC，
@@ -2883,26 +3040,16 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_aead_msg *aead_msg = info->req_cache[i];
 	struct hisi_sec_bd3_sqe *sqe = msg;
-	struct hisi_sec_sqe *sqe2 = msg;
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!aead_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
+	if (unlikely(usr && sqe->tag_l != usr))
+		return 0;
 
-	if (sqe->type == BD_TYPE3) {
-		if (usr && sqe->tag_l != usr)
-			return 0;
-		parse_aead_bd3(q, sqe, aead_msg);
-	} else if (sqe->type == BD_TYPE2) {
-		if (usr && sqe2->type2.tag != usr)
-			return 0;
-		parse_aead_bd2(q, sqe2, aead_msg);
-	} else {
-		WD_ERR("SEC BD Type error\n");
-		aead_msg->result = WD_IN_EPARA;
-	}
+	parse_aead_bd3(q, sqe, aead_msg);
 
 #ifdef DEBUG_LOG
 	sec_dump_bd((unsigned char *)msg, SQE_BYTES_NUMS);
@@ -2914,15 +3061,23 @@ int qm_parse_aead_bd3_sqe(void *msg, const struct qm_queue_info *info,
 static void parse_digest_bd3(struct wd_queue *q, struct hisi_sec_bd3_sqe *sqe,
 		struct wcrypto_digest_msg *digest_msg)
 {
+	struct wcrypto_digest_tag *tag;
 	__u64 dma_addr;
 
 	if (sqe->done != SEC_HW_TASK_DONE || sqe->error_type) {
 		WD_ERR("SEC BD3 %s fail!done=0x%x, etype=0x%x\n", "digest",
 		(__u32)sqe->done, (__u32)sqe->error_type);
 		digest_msg->result = WD_IN_EPARA;
+	} else if (sqe->dc == DIF_VERIFY_FAIL) {
+		digest_msg->result = WD_VERIFY_ERR;
 	} else {
 		digest_msg->result = WD_SUCCESS;
 	}
+
+	/* In user self-define data case, may not need addr map, just return */
+	tag = (void *)(uintptr_t)digest_msg->usr_data;
+	if (tag && tag->priv)
+		return;
 
 	dma_addr = DMA_ADDR(sqe->data_src_addr_h, sqe->data_src_addr_l);
 	drv_iova_unmap(q, digest_msg->in, (void *)(uintptr_t)dma_addr,
@@ -2946,30 +3101,16 @@ int qm_parse_digest_bd3_sqe(void *msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_digest_msg *digest_msg = info->req_cache[i];
 	struct hisi_sec_bd3_sqe *sqe = msg;
-	struct hisi_sec_sqe *sqe2 = msg;
 	struct wd_queue *q = info->q;
 
 	if (unlikely(!digest_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
+	if (unlikely(usr && sqe->tag_l != usr))
+		return 0;
 
-	if (sqe->type == BD_TYPE3) {
-		if (usr && sqe->tag_l != usr)
-			return 0;
-		parse_digest_bd3(q, sqe, digest_msg);
-	} else if (sqe->type == BD_TYPE2) {
-		if (usr && sqe2->type2.tag != usr)
-			return 0;
-		parse_digest_bd2(q, sqe2, digest_msg);
-	} else if (sqe->type == BD_TYPE1) {
-		if (usr && sqe2->type1.tag != usr)
-			return 0;
-		parse_digest_bd1(q, sqe2, digest_msg);
-	} else {
-		WD_ERR("SEC Digest BD Type error\n");
-		digest_msg->result = WD_IN_EPARA;
-	}
+	parse_digest_bd3(q, sqe, digest_msg);
 
 #ifdef DEBUG_LOG
 	sec_dump_bd((unsigned char *)msg, SQE_BYTES_NUMS);
@@ -3332,24 +3473,6 @@ static int fill_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	return fill_aead_bd2_addr(q, msg, sqe);
 }
 
-static int init_msg_with_udata(struct wcrypto_aead_msg *req, struct wd_aead_udata *udata)
-{
-	if (!udata->ckey || !udata->mac) {
-		WD_ERR("invalid udata para!\n");
-		return -WD_EINVAL;
-	}
-
-	if (req->cmode == WCRYPTO_CIPHER_CCM || req->cmode == WCRYPTO_CIPHER_GCM) {
-		req->ckey_bytes = udata->ckey_bytes;
-		req->auth_bytes = udata->mac_bytes;
-	} else {
-		WD_ERR("invalid cmode para!\n");
-		return -WD_EINVAL;
-	}
-
-	return WD_SUCCESS;
-}
-
 static int fill_aead_bd2_udata(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 			       struct wcrypto_aead_msg *msg, struct wcrypto_aead_tag *tag)
 {
@@ -3433,7 +3556,7 @@ static void parse_aead_bd2(struct wd_queue *q, struct hisi_sec_sqe *sqe,
 	}
 
 	tag = (void *)(uintptr_t)msg->usr_data;
-	if (tag->priv)
+	if (tag && tag->priv)
 		return;
 
 	/*

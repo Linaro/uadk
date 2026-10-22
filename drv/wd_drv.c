@@ -11,6 +11,7 @@
 int wd_soft_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 {
 	struct wd_soft_ctx *sfctx;
+	int ret;
 
 	if (!params || !ctx) {
 		WD_ERR("invalid: params, or ctx is NULL!\n");
@@ -27,8 +28,19 @@ int wd_soft_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 	/* Initialize as software context */
 	sfctx->fd = -1;
 	sfctx->ctx_type = UADK_ALG_SOFT;
-	pthread_spin_init(&sfctx->slock, PTHREAD_PROCESS_PRIVATE);
-	pthread_spin_init(&sfctx->rlock, PTHREAD_PROCESS_PRIVATE);
+	ret = pthread_spin_init(&sfctx->slock, PTHREAD_PROCESS_PRIVATE);
+	if (ret) {
+		WD_ERR("failed to init slock!\n");
+		free(sfctx);
+		return -ret;
+	}
+	ret = pthread_spin_init(&sfctx->rlock, PTHREAD_PROCESS_PRIVATE);
+	if (ret) {
+		WD_ERR("failed to init rlock!\n");
+		pthread_spin_destroy(&sfctx->slock);
+		free(sfctx);
+		return -ret;
+	}
 
 	/* Return context handle */
 	*ctx = (handle_t)sfctx;
@@ -181,12 +193,12 @@ int wd_hw_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 {
 	struct wd_drv_ctx_params *ctx_params = (struct wd_drv_ctx_params *)params;
 	struct uacce_dev_list *dev_list, *used_list = NULL;
+	struct uacce_dev_list *curr, *best = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
-	struct uacce_dev_list *curr;
+	int target_numa, best_avail = 0;
 	struct wd_ctx_h *ctx_h;
-	int target_numa;
+	int ret, avail;
 	handle_t hctx;
-	int ret;
 
 	if (!params || !ctx) {
 		WD_ERR("invalid: parameters are NULL!\n");
@@ -220,14 +232,61 @@ int wd_hw_alloc_ctx(char *alg_name, void *params, handle_t *ctx)
 		goto out;
 	}
 
-	curr = used_list;
-	while (curr) {
-		if (curr->dev) {
-			hctx = wd_request_ctx(curr->dev);
-			if (hctx)
-				goto success;
+	/*
+	 * Preferred-device binding (SCHED_POLICY_DEV): open exactly this device
+	 * and fail strictly if unavailable, so the sync and async ctxs of one
+	 * (driver, op_type, numa) stay on the same device. No NUMA fallback.
+	 */
+	if (ctx_params->preferred_dev_path) {
+		for (curr = used_list; curr; curr = curr->next) {
+			if (curr->dev && !strcmp(curr->dev->char_dev_path,
+						 ctx_params->preferred_dev_path))
+				break;
 		}
-		curr = curr->next;
+
+		if (!curr) {
+			ret = -WD_ENODEV;
+			goto out;
+		}
+
+		hctx = wd_request_ctx(curr->dev);
+		if (!hctx) {
+			ret = -WD_EBUSY;
+			goto out;
+		}
+
+		goto success;
+	}
+
+	/* Pick the device with the most available contexts to balance load. */
+	for (curr = used_list; curr; curr = curr->next) {
+		if (!curr->dev)
+			continue;
+		avail = wd_get_avail_ctx(curr->dev);
+		if (avail > best_avail) {
+			best_avail = avail;
+			best = curr;
+		}
+	}
+
+	if (!best) {
+		WD_ERR("failed to request ctx on NUMA node %d for %s\n",
+		       target_numa, alg_name);
+		ret = -WD_EBUSY;
+		goto out;
+	}
+
+	hctx = wd_request_ctx(best->dev);
+	if (hctx)
+		goto success;
+
+	/* Fall back to remaining devices if the best one fails to open */
+	for (curr = used_list; curr; curr = curr->next) {
+		if (curr == best || !curr->dev)
+			continue;
+		hctx = wd_request_ctx(curr->dev);
+		if (hctx)
+			goto success;
 	}
 
 	WD_ERR("failed to request ctx on NUMA node %d for %s\n",
