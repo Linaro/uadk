@@ -239,7 +239,7 @@ static unsigned long _find_next_bit(unsigned long *map, unsigned long bits,
 
 	while (!tmp) {
 		start += BITS_PER_LONG;
-		if (start > bits)
+		if (start >= bits)
 			return bits;
 
 		tmp = map[start / BITS_PER_LONG];
@@ -561,7 +561,7 @@ handle_t wd_blockpool_create(handle_t mempool, size_t block_size,
 	bp->free_block_num = block_num;
 	bp->mp = mp;
 	ret = pthread_spin_init(&bp->lock, PTHREAD_PROCESS_PRIVATE);
-	if (ret < 0)
+	if (ret)
 		goto err_free_bp;
 
 	ret = alloc_mem_from_mempool(mp, bp);
@@ -910,7 +910,7 @@ handle_t wd_mempool_create(size_t size, int node)
 	mp->size = tmp;
 	mp->blk_size = WD_MEMPOOL_BLOCK_SIZE;
 	ret = pthread_spin_init(&mp->lock, PTHREAD_PROCESS_PRIVATE);
-	if (ret < 0)
+	if (ret)
 		goto free_pool;
 
 	ret = alloc_mem_from_hugepage(mp);

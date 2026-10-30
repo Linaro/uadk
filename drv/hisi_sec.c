@@ -1439,22 +1439,25 @@ static int hisi_sec_cipher_send(handle_t ctx, void *wd_msg)
 	ret = fill_cipher_bd2_addr(msg, &sqe);
 	if (ret < 0) {
 		WD_ERR("cipher map memory is err(%d)!\n", ret);
-		return ret;
+		goto put_sgl;
 	}
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("cipher send sqe is err(%d)!\n", ret);
-
-		if (msg->data_fmt == WD_SGL_BUF)
-			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
-					 msg->out, msg->mm_ops);
-		destroy_cipher_bd2_addr(msg, &sqe);
-		return ret;
+		goto destroy_addr;
 	}
 
 	return 0;
+
+destroy_addr:
+	destroy_cipher_bd2_addr(msg, &sqe);
+put_sgl:
+	if (msg->data_fmt == WD_SGL_BUF)
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
+				 msg->out, msg->mm_ops);
+	return ret;
 }
 
 int hisi_sec_cipher_recv(handle_t ctx, void *wd_msg)
@@ -1735,22 +1738,25 @@ static int hisi_sec_cipher_send_v3(handle_t ctx, void *wd_msg)
 	ret = fill_cipher_bd3_addr(msg, &sqe);
 	if (ret < 0) {
 		WD_ERR("cipher map memory is err(%d)!\n", ret);
-		return ret;
+		goto put_sgl;
 	}
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("cipher send sqe is err(%d)!\n", ret);
-
-		if (msg->data_fmt == WD_SGL_BUF)
-			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
-					 msg->out, msg->mm_ops);
-		destroy_cipher_bd3_addr(msg, &sqe);
-		return ret;
+		goto destroy_addr;
 	}
 
 	return 0;
+
+destroy_addr:
+	destroy_cipher_bd3_addr(msg, &sqe);
+put_sgl:
+	if (msg->data_fmt == WD_SGL_BUF)
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
+				 msg->out, msg->mm_ops);
+	return ret;
 }
 
 static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,

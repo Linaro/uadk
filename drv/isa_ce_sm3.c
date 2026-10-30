@@ -374,6 +374,8 @@ static int sm3_ce_drv_send(handle_t ctx, void *digest_msg)
 		WD_ERR("invalid digest mode!\n");
 		ret = -WD_EINVAL;
 	}
+	if (ret)
+		return ret;
 
 	ret = wd_get_sqe_from_queue(sfctx, msg->tag);
 	if (ret)

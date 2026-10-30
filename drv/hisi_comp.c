@@ -1555,8 +1555,13 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 	ops[alg_type].fill_alg(sqe);
 
 	ret = ops[alg_type].fill_comp_level(sqe, msg->comp_lv);
-	if (unlikely(ret))
+	if (unlikely(ret)) {
+		if (msg->mm_ops && !msg->mm_ops->sva_mode)
+			zip_mem_unmap(msg, sqe);
+		if (msg->req.data_fmt == WD_SGL_BUF)
+			free_hw_sgl((handle_t)qp, &msg->c_sgl, msg->mm_ops);
 		return ret;
+	}
 
 	ops[alg_type].fill_tag(sqe, msg->tag);
 

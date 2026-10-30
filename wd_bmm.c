@@ -707,7 +707,7 @@ static int wd_pool_init(struct wd_blkpool *p)
 	}
 
 	/* Allocate block array */
-	p->blk_array = (struct wd_blk_hd *)malloc(act_num * sizeof(struct wd_blk_hd));
+	p->blk_array = (struct wd_blk_hd *)calloc(act_num, sizeof(struct wd_blk_hd));
 	if (!p->blk_array) {
 		WD_ERR("Failed to allocate block array.\n");
 		return -WD_ENOMEM;

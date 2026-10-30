@@ -803,6 +803,10 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num, struct wd_mm_ops *
 
 		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i],
 							   sge_num, sgl_pool->mm_ops);
+		if (!sgl_pool->sgl_align[i]) {
+			sgl_pool->sgl_num = i + 1;
+			goto err_out;
+		}
 	}
 
 	sgl_pool->sgl_num = sgl_num;
@@ -999,11 +1003,18 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 				ret = WD_ERR_PTR(-WD_EBUSY);
 				goto err_out;
 			}
-			if (mm_ops)
+			if (mm_ops) {
 				cur->next_dma = (uintptr_t)mm_ops->iova_map(mm_ops->usr,
 									    next, sizeof(*next));
-			else
+				if (!cur->next_dma) {
+					WD_ERR("invalid: iova_map for sgl chain failed!\n");
+					hisi_qm_sgl_push(pool, next);
+					ret = WD_ERR_PTR(-WD_ENOMEM);
+					goto err_out;
+				}
+			} else {
 				cur->next_dma = (uintptr_t)next;
+			}
 			cur->next = next;
 			cur = next;
 			head->entry_sum_in_chain += pool->sge_num;

@@ -1566,9 +1566,7 @@ static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
 		return -WD_EINVAL;
 	}
 
-	fb_driver->init(NULL, NULL);
-
-	return 0;
+	return fb_driver->init(NULL, NULL);
 }
 
 static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
@@ -1765,7 +1763,7 @@ static int wd_env_set_ctx_nums(const char *alg_name, const char *name, const cha
 {
 	char *left, *section, *start;
 	int is_comp;
-	int ret;
+	int ret = 0;
 
 	/* COMP environment variable's format is different, mark it */
 	is_comp = strncmp(name, "WD_COMP_CTX_NUM", sizeof("WD_COMP_CTX_NUM") - 1) ? 0 : 1;
@@ -1799,7 +1797,8 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 {
 	const char *env_name = wd_env_name[type];
 	const char *var_s;
-	int i, ret;
+	int ret = 0;
+	int i;
 
 	ctx_params->bmp = numa_allocate_nodemask();
 	if (!ctx_params->bmp) {
@@ -2613,17 +2612,17 @@ static int wd_alg_sched_instance(struct wd_sched *sched,
 	return WD_SUCCESS;
 }
 
-static void wd_free_ctxs_batch(struct wd_init_attrs *attrs,
-			       __u32 allocated_count)
+static void wd_free_ctxs_batch_range(struct wd_init_attrs *attrs,
+				     __u32 start_idx, __u32 end_idx)
 {
 	struct wd_ctx_config_internal *internal_config = attrs->ctx_config_internal;
 	struct wd_alg_driver *drv;
 	__u32 i;
 
-	if (!internal_config || !internal_config->ctxs || !allocated_count)
+	if (!internal_config || !internal_config->ctxs || start_idx >= end_idx)
 		return;
 
-	for (i = 0; i < allocated_count; i++) {
+	for (i = start_idx; i < end_idx; i++) {
 		if (!internal_config->ctxs[i].ctx)
 			continue;
 
@@ -2635,20 +2634,75 @@ static void wd_free_ctxs_batch(struct wd_init_attrs *attrs,
 	}
 }
 
+static void wd_free_ctxs_batch(struct wd_init_attrs *attrs,
+			       __u32 allocated_count)
+{
+	wd_free_ctxs_batch_range(attrs, 0, allocated_count);
+}
+
+static void wd_collect_numa_nodes(struct bitmask *bmp, int *numa_nodes,
+				  __u8 *numa_count)
+{
+	int max_node, n;
+
+	max_node = numa_max_node() + 1;
+	if (max_node <= 0 || max_node > UADK_MAX_NUMA_NODES)
+		max_node = UADK_MAX_NUMA_NODES;
+
+	*numa_count = 0;
+
+	for (n = 0; n < max_node; n++) {
+		if (numa_bitmask_isbitset(bmp, n))
+			numa_nodes[(*numa_count)++] = n;
+	}
+
+	if (!*numa_count) {
+		numa_nodes[0] = 0;
+		*numa_count = 1;
+	}
+}
+
+static int wd_alloc_one_ctx(struct wd_init_attrs *attrs,
+			    struct wd_alg_driver *drv,
+			    struct wd_drv_ctx_params *dparams,
+			    __u32 *ctx_idx)
+{
+	struct wd_ctx_config_internal *internal_config = attrs->ctx_config_internal;
+	handle_t ctx;
+	int ret;
+
+	ret = drv->alloc_ctx(attrs->alg, dparams, &ctx);
+	if (ret < 0)
+		return ret;
+
+	if (!ctx)
+		return -WD_EINVAL;
+
+	internal_config->ctxs[*ctx_idx].ctx = ctx;
+	internal_config->ctxs[*ctx_idx].op_type = dparams->op_type;
+	internal_config->ctxs[*ctx_idx].ctx_mode = dparams->ctx_mode;
+	internal_config->ctxs[*ctx_idx].ctx_type = drv->calc_type;
+	internal_config->ctxs[*ctx_idx].drv = drv;
+	(*ctx_idx)++;
+	return WD_SUCCESS;
+}
+
 static int wd_alloc_single_drv_ctxs(struct wd_init_attrs *attrs,
 				     struct wd_alg_driver *drv,
 				     __u8 ctx_mode, __u8 op_type,
 				     __u32 *ctx_idx)
 {
-	struct wd_ctx_config_internal *internal_config = attrs->ctx_config_internal;
 	struct wd_ctx_params *ctx_params = attrs->ctx_params;
-	struct wd_drv_ctx_params dparams;
+	struct wd_drv_ctx_params dparams = {0};
 	int numa_nodes[UADK_MAX_NUMA_NODES];
-	__u32 mode_ctx_num, numa_count = 0;
-	__u32 numa_idx, j;
-	int max_node, n;
-	handle_t ctx;
+	__u32 mode_ctx_num, numa_idx, j;
+	__u8 numa_count;
 	int ret;
+
+	dparams.ctx_mode = ctx_mode;
+	dparams.op_type = op_type;
+	dparams.bmp = ctx_params->bmp;
+	dparams.epoll_en = false;
 
 	if (ctx_mode == CTX_MODE_SYNC)
 		mode_ctx_num = ctx_params->ctx_set_num[op_type].sync_ctx_num;
@@ -2661,46 +2715,26 @@ static int wd_alloc_single_drv_ctxs(struct wd_init_attrs *attrs,
 	     attrs->sched_type == SCHED_POLICY_SINGLE) && mode_ctx_num > 1)
 		mode_ctx_num = 1;
 
-	if (drv->calc_type == UADK_ALG_HW) {
-		max_node = numa_max_node() + 1;
-		if (max_node <= 0 || max_node > UADK_MAX_NUMA_NODES)
-			max_node = UADK_MAX_NUMA_NODES;
-		for (n = 0; n < max_node; n++) {
-			if (numa_bitmask_isbitset(ctx_params->bmp, n))
-				numa_nodes[numa_count++] = n;
-		}
+	if (drv->calc_type != UADK_ALG_HW) {
+		numa_nodes[0] = 0;
+		numa_count = 1;
 	} else {
-		numa_nodes[0] = 0;
-		numa_count = 1;
-	}
-	if (!numa_count) {
-		numa_nodes[0] = 0;
-		numa_count = 1;
+		wd_collect_numa_nodes(ctx_params->bmp, numa_nodes, &numa_count);
 	}
 
 	for (numa_idx = 0; numa_idx < numa_count; numa_idx++) {
+		dparams.numa_id = numa_nodes[numa_idx];
+
 		for (j = 0; j < mode_ctx_num; j++) {
-			memset(&dparams, 0, sizeof(dparams));
-			dparams.ctx_mode = ctx_mode;
-			dparams.op_type = op_type;
-			dparams.numa_id = numa_nodes[numa_idx];
-			dparams.bmp = ctx_params->bmp;
-			dparams.epoll_en = false;
-			ret = drv->alloc_ctx(attrs->alg, &dparams, &ctx);
-			if (!ctx || ret < 0) {
-				if (ret == -WD_ENODEV)
-					break;
+			ret = wd_alloc_one_ctx(attrs, drv, &dparams, ctx_idx);
+			if (ret == -WD_ENODEV)
+				break;
+
+			if (ret) {
 				WD_ERR("failed to alloc ctx %u from driver %s on numa %d!\n",
 				       *ctx_idx, drv->drv_name, numa_nodes[numa_idx]);
 				return ret;
 			}
-
-			internal_config->ctxs[*ctx_idx].ctx = ctx;
-			internal_config->ctxs[*ctx_idx].op_type = dparams.op_type;
-			internal_config->ctxs[*ctx_idx].ctx_mode = dparams.ctx_mode;
-			internal_config->ctxs[*ctx_idx].ctx_type = drv->calc_type;
-			internal_config->ctxs[*ctx_idx].drv = drv;
-			(*ctx_idx)++;
 		}
 	}
 
@@ -2745,6 +2779,142 @@ static int wd_alloc_ctxs_batch(struct wd_init_attrs *attrs,
 	return WD_SUCCESS;
 
 err_ctxs:
+	wd_free_ctxs_batch(attrs, ctx_idx);
+	return ret;
+}
+
+/*
+ * SCHED_POLICY_DEV: open all sync ctxs then all async ctxs of
+ * (drv, op_type, numa) on ONE device pinned by dparams->preferred_dev_path.
+ * If the device cannot hold the whole group, roll back every ctx opened on
+ * it and return -WD_ENODEV so the caller tries the next device.
+ */
+static int wd_alloc_dev_group(struct wd_init_attrs *attrs,
+			      struct wd_alg_driver *drv,
+			      struct wd_drv_ctx_params *dparams,
+			      __u32 *ctx_idx)
+{
+	struct wd_ctx_nums *nums = &attrs->ctx_params->ctx_set_num[dparams->op_type];
+	__u32 want[2] = {nums->sync_ctx_num, nums->async_ctx_num};
+	__u8 modes[2] = {CTX_MODE_SYNC, CTX_MODE_ASYNC};
+	__u32 group_start = *ctx_idx;
+	__u32 i, j;
+	int ret;
+
+	for (i = 0; i < 2; i++) {
+		dparams->ctx_mode = modes[i];
+		for (j = 0; j < want[i]; j++) {
+			ret = wd_alloc_one_ctx(attrs, drv, dparams, ctx_idx);
+			if (ret) {
+				wd_free_ctxs_batch_range(attrs, group_start, *ctx_idx);
+				*ctx_idx = group_start;
+				if (ret != -WD_EBUSY && ret != -WD_ENODEV)
+					return ret;
+				return -WD_ENODEV;
+			}
+		}
+	}
+	return WD_SUCCESS;
+}
+
+/*
+ * SCHED_POLICY_DEV: per (drv, op_type, numa) open all sync+async ctxs on one
+ * device. Enumerates devices on each numa node and pins each group to one
+ * device via preferred_dev_path, trying the next device if the current one
+ * cannot hold the whole group. All devices exhausted => error out.
+ */
+static int wd_alloc_ctxs_batch_dev(struct wd_init_attrs *attrs, __u32 *start_idx)
+{
+	struct wd_ctx_config_internal *internal_config = attrs->ctx_config_internal;
+	struct wd_ctx_params *ctx_params = attrs->ctx_params;
+	__u32 ctx_idx, drv_idx, start, group_start;
+	struct uacce_dev_list *dev_list = NULL;
+	int numa_nodes[UADK_MAX_NUMA_NODES];
+	char alg_type[CRYPTO_MAX_ALG_NAME];
+	struct wd_drv_ctx_params dparams;
+	struct wd_alg_driver *drv;
+	__u8 op_type, numa_count;
+	struct wd_ctx_nums *nums;
+	struct uacce_dev_list *p;
+	int n, ret;
+
+	memset(&dparams, 0, sizeof(dparams));
+	dparams.bmp = ctx_params->bmp;
+	dparams.epoll_en = false;
+
+	start = *start_idx;
+	ctx_idx = start;
+	for (drv_idx = 0; drv_idx < internal_config->drv_count; drv_idx++) {
+		drv = internal_config->drv_array[drv_idx];
+		if (!drv || !drv->alloc_ctx) {
+			WD_ERR("failed to check driver %s alloc_ctx!\n",
+			       drv ? drv->drv_name : "unknown");
+			ret = -WD_EINVAL;
+			goto err_ctxs;
+		}
+		if (drv->calc_type != UADK_ALG_HW)
+			continue;
+
+		ret = wd_get_alg_type(attrs->alg, alg_type);
+		if (ret) {
+			ret = -WD_EINVAL;
+			goto err_ctxs;
+		}
+		if (!strcmp(alg_type, "ecc"))
+			(void)strcpy(alg_type, "sm2");
+		if (!strcmp(alg_type, "comp"))
+			(void)strcpy(alg_type, "zlib");
+
+		dev_list = wd_get_accel_list(alg_type);
+		if (!dev_list)
+			continue;
+
+		wd_collect_numa_nodes(ctx_params->bmp, numa_nodes, &numa_count);
+
+		for (op_type = 0; op_type < ctx_params->op_type_num; op_type++) {
+			nums = &ctx_params->ctx_set_num[op_type];
+			if (!nums->sync_ctx_num && !nums->async_ctx_num)
+				continue;
+
+			dparams.op_type = op_type;
+			group_start = ctx_idx;
+			for (n = 0; n < numa_count; n++) {
+				dparams.numa_id = numa_nodes[n];
+				for (p = dev_list; p; p = p->next) {
+					if (!p->dev || p->dev->numa_id != numa_nodes[n])
+						continue;
+
+					/* Skip devices that cannot hold the whole group */
+					if (wd_get_avail_ctx(p->dev) < (int)(nums->sync_ctx_num +
+									     nums->async_ctx_num))
+						continue;
+
+					dparams.preferred_dev_path = p->dev->char_dev_path;
+					ret = wd_alloc_dev_group(attrs, drv,
+								 &dparams,
+								 &ctx_idx);
+					if (!ret)
+						break;
+					if (ret != -WD_ENODEV)
+						goto err_ctxs;
+				}
+			}
+
+			if (ctx_idx == group_start) {
+				ret = -WD_ENODEV;
+				goto err_ctxs;
+			}
+		}
+		wd_free_list_accels(dev_list);
+		dev_list = NULL;
+	}
+
+	*start_idx = ctx_idx;
+	return ctx_idx == start ? -WD_ENODEV : WD_SUCCESS;
+
+err_ctxs:
+	if (dev_list)
+		wd_free_list_accels(dev_list);
 	wd_free_ctxs_batch(attrs, ctx_idx);
 	return ret;
 }
@@ -2880,18 +3050,24 @@ int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 		return -WD_EINVAL;
 	}
 
-	/*
-	 * Ensure that contexts (ctx) with the same attributes are allocated first,
-	 * thereby maintaining queue continuity within the contexts.
-	 */
-	ret = wd_alloc_ctxs_batch(attrs, CTX_MODE_SYNC, &ctx_idx);
-	if (ret)
-		return -WD_EINVAL;
+	if (attrs->sched_type == SCHED_POLICY_DEV) {
+		ret = wd_alloc_ctxs_batch_dev(attrs, &ctx_idx);
+		/* DEV tolerates partial: only a truly empty result fails. */
+		if (ret == -WD_ENODEV)
+			return -WD_EINVAL;
 
-	/* wd_alloc_ctxs_batch already cleaned up via its internal err_ctxs. */
-	ret = wd_alloc_ctxs_batch(attrs, CTX_MODE_ASYNC, &ctx_idx);
-	if (ret)
-		return -WD_EINVAL;
+		if (ret)
+			return ret;
+	} else {
+		ret = wd_alloc_ctxs_batch(attrs, CTX_MODE_SYNC, &ctx_idx);
+		if (ret)
+			return -WD_EINVAL;
+
+		/* wd_alloc_ctxs_batch already cleaned up via its internal err_ctxs. */
+		ret = wd_alloc_ctxs_batch(attrs, CTX_MODE_ASYNC, &ctx_idx);
+		if (ret)
+			return -WD_EINVAL;
+	}
 
 	/* Backfill actual allocated count */
 	internal_config = attrs->ctx_config_internal;

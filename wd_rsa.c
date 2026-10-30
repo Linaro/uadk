@@ -583,8 +583,6 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 			return ret;
 		} else if (ret < 0) {
 			WD_ERR("failed to async recv, ret = %d!\n", ret);
-			wd_put_msg_to_pool(&wd_rsa_setting.pool, idx,
-					   recv_msg.tag);
 			return ret;
 		}
 		rcv_cnt++;
@@ -930,7 +928,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 		(int)GEN_PARAMS_SZ(sess->key_size);
 	sess->pubkey = sess->mm_ops.alloc(sess->mm_ops.usr, len);
 	if (!sess->pubkey) {
-		free(sess->prikey);
+		sess->mm_ops.free(sess->mm_ops.usr, sess->prikey);
 		WD_ERR("failed to alloc sess pubkey!\n");
 		return -WD_ENOMEM;
 	}

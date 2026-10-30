@@ -96,6 +96,8 @@ enum alg_drv_type {
  * @ctx_mode: CTX_MODE_SYNC or CTX_MODE_ASYNC
  * @op_type: Operation type
  * @bmp: NUMA node bitmask (optional, NULL if not needed)
+ * @preferred_dev_path: Preferred device char_dev_path; NULL/empty = auto-select,
+ *	non-empty = open only this device and fail strictly if unavailable
  */
 struct wd_drv_ctx_params {
 	__u8 ctx_mode;
@@ -103,6 +105,7 @@ struct wd_drv_ctx_params {
 	int numa_id;
 	bool epoll_en;
 	struct bitmask *bmp;
+	const char *preferred_dev_path;
 };
 
 /**

@@ -114,11 +114,12 @@ static void wd_parse_log_level(void)
 		goto close_file;
 	}
 
-	file_contents = malloc(file_info.st_size);
+	file_contents = malloc(file_info.st_size + 1);
 	if (!file_contents) {
 		WD_ERR("failed to get file contents memory.\n");
 		goto close_file;
 	}
+	file_contents[file_info.st_size] = '\0';
 
 	while (fscanf(in_file, " %[^\n ] ", file_contents) != EOF) {
 		if (!strcmp("local5.debug", file_contents))
@@ -203,7 +204,7 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	int ret;
+	size_t ret;
 	int size;
 
 	size = get_raw_attr(dev->dev_root, attr, buf, buf_sz);

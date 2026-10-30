@@ -156,14 +156,8 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_sched;
 
-	ret = wd_alg_init_driver(&wd_comp_setting.config);
-	if (ret)
-		goto out_clear_pool;
-
 	return 0;
 
-out_clear_pool:
-	wd_uninit_async_request_pool(&wd_comp_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_comp_setting.sched);
 out_clear_ctx_config:
