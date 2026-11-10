@@ -1828,6 +1828,11 @@ static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
 	return 0;
 }
 
+static const char * const zip_usage_channel_name[] = {
+	"COMPRESS: ",
+	"DECOMPRESS: ",
+};
+
 static int hisi_zip_get_usage(void *param)
 {
 	struct hisi_dev_usage *zip_usage = (struct hisi_dev_usage *)param;
@@ -1845,25 +1850,26 @@ static int hisi_zip_get_usage(void *param)
 	}
 
 	priv = (struct hisi_zip_ctx *)drv->drv_data;
-	if (!priv)
-		return -WD_EACCES;
-
-	config = &priv->config;
-	for (i = 0; i < config->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
-		if (!strcmp(zip_usage->dev_name, ctx_dev_name)) {
-			ctx = config->ctxs[i].ctx;
-			break;
+	if (priv) {
+		config = &priv->config;
+		for (i = 0; i < config->ctx_num; i++) {
+			ctx_dev_name = wd_ctx_get_dev_name(config->ctxs[i].ctx);
+			if (!strcmp(zip_usage->dev_name, ctx_dev_name)) {
+				ctx = config->ctxs[i].ctx;
+				break;
+			}
 		}
+
+		if (ctx)
+			qp = (handle_t)wd_ctx_get_priv(ctx);
+
+		if (qp)
+			return hisi_qm_get_usage(qp, zip_usage->alg_op_type);
 	}
 
-	if (ctx)
-		qp = (handle_t)wd_ctx_get_priv(ctx);
-
-	if (qp)
-		return hisi_qm_get_usage(qp, zip_usage->alg_op_type);
-
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, zip_usage->dev_name,
+					 zip_usage_channel_name[zip_usage->alg_op_type]);
 }
 
 #define GEN_ZIP_ALG_DRIVER(zip_alg_name) \

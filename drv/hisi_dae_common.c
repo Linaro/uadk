@@ -430,17 +430,18 @@ int dae_get_usage(void *param)
 	}
 
 	dae_ctx = (struct hisi_dae_ctx *)drv->drv_data;
-	if (!dae_ctx)
-		return -WD_EACCES;
-
-	for (i = 0; i < dae_ctx->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(dae_ctx->ctxs[i]->ctx);
-		if (!strcmp(dae_usage->dev_name, ctx_dev_name)) {
-			qp = (handle_t)wd_ctx_get_priv(dae_ctx->ctxs[i]->ctx);
-			if (qp)
-				return hisi_qm_get_usage(qp, 0);
+	if (dae_ctx) {
+		for (i = 0; i < dae_ctx->ctx_num; i++) {
+			ctx_dev_name = wd_ctx_get_dev_name(dae_ctx->ctxs[i]->ctx);
+			if (!strcmp(dae_usage->dev_name, ctx_dev_name)) {
+				qp = (handle_t)wd_ctx_get_priv(dae_ctx->ctxs[i]->ctx);
+				if (qp)
+					return hisi_qm_get_usage(qp, 0);
+			}
 		}
 	}
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, dae_usage->dev_name,
+					 "DAE: ");
 }
