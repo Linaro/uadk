@@ -28,6 +28,7 @@
 
 #define MAX_WAIT_CNT			10000000
 #define SM2_KEY_SIZE			32
+#define X448_KEY_BYTES			56
 #define MAX_HASH_LENS			BITS_TO_BYTES(521)
 #define HW_PLAINTEXT_BYTES_MAX		BITS_TO_BYTES(4096)
 
@@ -883,7 +884,7 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
-	__u32 bsize, dsize;
+	__u32 bsize;
 	char *dat;
 	int ret;
 
@@ -897,13 +898,8 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	if (unlikely(ret))
 		return ret;
 
-	/* X448 will do specific offset */
-	if (id != WCRYPTO_X448)
-		d->dsize = d->bsize;
-
 	dat = d->data;
 	bsize = d->bsize;
-	dsize = d->dsize;
 
 	/*
 	 * This is a pretreatment of X25519/X448, as described in RFC 7748:
@@ -922,9 +918,12 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 		dat[0] &= 127;
 		dat[0] |= 64;
 	} else if (id == WCRYPTO_X448) {
-		dat[55 + bsize - dsize] &= 252;
-		dat[0 + bsize - dsize] |= 128;
+		dat[bsize - 1] &= 252;
+		dat[bsize - X448_KEY_BYTES] |= 128;
 	}
+
+	/* Ensure dsize equals bsize to skip byte-swap in qm_crypto_bin_to_hpre_bin */
+	d->dsize = d->bsize;
 
 	*data = p->data;
 
