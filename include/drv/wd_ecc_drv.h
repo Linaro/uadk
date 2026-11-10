@@ -45,6 +45,8 @@ extern "C" {
 #define WD_X448				0x2
 #define WD_SM2P256			0x3
 
+#define X448_KEY_BYTES			56
+
 /* ECC message format */
 struct wd_ecc_msg {
 	struct wd_ecc_req req;
