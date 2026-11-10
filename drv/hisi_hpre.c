@@ -2840,7 +2840,9 @@ static int hpre_ecc_get_usage(void *param)
 	if (qp)
 		return hisi_qm_get_usage(qp, HPRE_HW_V3_ECC_ALG_TYPE);
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, hpre_usage->dev_name,
+					 "ECC: ");
 }
 
 static int hpre_rsa_get_usage(void *param)
@@ -2858,7 +2860,9 @@ static int hpre_rsa_get_usage(void *param)
 	if (qp)
 		return hisi_qm_get_usage(qp, HPRE_HW_V2_ALG_TYPE);
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, hpre_usage->dev_name,
+					 "RSA: ");
 }
 
 static bool is_valid_hw_type(struct wd_alg_driver *drv)
