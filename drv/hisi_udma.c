@@ -563,19 +563,20 @@ static int udma_get_usage(void *param)
 	}
 
 	uctx = (struct hisi_udma_ctx *)drv->drv_data;
-	if (!uctx)
-		return -WD_EACCES;
-
-	for (i = 0; i < uctx->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(uctx->ctxs[i]->ctx);
-		if (!strcmp(udma_usage->dev_name, ctx_dev_name)) {
-			qp = (handle_t)wd_ctx_get_priv(uctx->ctxs[i]->ctx);
-			if (qp)
-				return hisi_qm_get_usage(qp, 0);
+	if (uctx) {
+		for (i = 0; i < uctx->ctx_num; i++) {
+			ctx_dev_name = wd_ctx_get_dev_name(uctx->ctxs[i]->ctx);
+			if (!strcmp(udma_usage->dev_name, ctx_dev_name)) {
+				qp = (handle_t)wd_ctx_get_priv(uctx->ctxs[i]->ctx);
+				if (qp)
+					return hisi_qm_get_usage(qp, 0);
+			}
 		}
 	}
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, udma_usage->dev_name,
+					 "DAE: ");
 }
 
 static struct wd_alg_driver udma_driver = {

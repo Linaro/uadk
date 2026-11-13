@@ -5,12 +5,14 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 
 #include "hisi_qm_udrv.h"
 #include "wd_util.h"
 
 #define QM_DBELL_CMD_SQ		0
+#define DECIMAL_NUMBER		10
 #define QM_DBELL_CMD_CQ		1
 #define QM_DBELL_OFFSET		0x340
 #define QM_DBELL_OFFSET_V2	0x1000
@@ -47,6 +49,11 @@
 #define QM_CHANNEL_ADDR_INTRVL	0x4
 #define QM_MAX_DEV_USAGE	100
 #define QM_DEV_USAGE_RATE	100
+
+#define DEBUGFS_ROOT		"/sys/kernel/debug"
+#define UACCE_SYSFS_DIR		"/sys/class/uacce"
+#define QM_DEV_USAGE_BUF_SIZE	256
+#define QM_PCI_BDF_LEN		32
 
 struct hisi_qm_type {
 	__u16	qm_ver;
@@ -191,6 +198,125 @@ int hisi_qm_get_usage(handle_t h_qp, __u8 type)
 	usage = (int)((__u16)val) * QM_DEV_USAGE_RATE / count;
 
 	return usage;
+}
+
+
+static int qm_read_file(const char *path, char *buf, size_t sz)
+{
+	int saved_errno;
+	ssize_t rlen;
+	int fd;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		WD_ERR("failed to open %s, errno = %d!\n", path, errno);
+		return -WD_ENODEV;
+	}
+
+	rlen = read(fd, buf, sz - 1);
+	saved_errno = errno;
+	close(fd);
+	if (rlen <= 0) {
+		WD_ERR("failed to read %s, errno = %d!\n", path, saved_errno);
+		return -WD_EIO;
+	}
+
+	buf[rlen] = '\0';
+
+	return 0;
+}
+
+/*
+ * Resolve the PCI BDF from the uacce sysfs symlink for @dev_name.
+ * realpath() resolves /sys/class/uacce/{dev} to
+ * /sys/devices/pciXXX/.../{pci_bdf}/uacce/{dev}; strip the last
+ * three components to extract the BDF as the last segment.
+ */
+static int qm_get_pci_bdf(const char *dev_name, char *bdf, size_t sz)
+{
+	char sysfs_path[PATH_MAX];
+	char *resolved, *str;
+	int ret;
+
+	ret = snprintf(sysfs_path, sizeof(sysfs_path), "%s/%s",
+		       UACCE_SYSFS_DIR, dev_name);
+	if (ret < 0 || ret >= (int)sizeof(sysfs_path))
+		return -WD_EINVAL;
+
+	resolved = realpath(sysfs_path, NULL);
+	if (!resolved) {
+		WD_ERR("failed to realpath %s!\n", sysfs_path);
+		return -WD_ENODEV;
+	}
+
+	str = strrchr(resolved, '/');
+	if (!str)
+		goto err;
+	*str = '\0';
+	str = strrchr(resolved, '/');
+	if (!str)
+		goto err;
+	*str = '\0';
+	str = strrchr(resolved, '/');
+	if (!str)
+		goto err;
+
+	ret = snprintf(bdf, sz, "%s", str + 1);
+	if (ret < 0 || ret >= (int)sz)
+		goto err;
+
+	free(resolved);
+	return 0;
+
+err:
+	free(resolved);
+	return -WD_EINVAL;
+}
+
+int hisi_qm_get_usage_debugfs(const char *drv_name, const char *dev_name,
+			      const char *channel_name)
+{
+	char buf[QM_DEV_USAGE_BUF_SIZE];
+	char dbg_path[PATH_MAX];
+	char bdf[QM_PCI_BDF_LEN];
+	long usage;
+	char *str;
+	int ret;
+
+	if (!drv_name || !dev_name || !channel_name) {
+		WD_ERR("invalid: drv_name or dev_name or channel_name is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = qm_get_pci_bdf(dev_name, bdf, sizeof(bdf));
+	if (ret)
+		return ret;
+
+	ret = snprintf(dbg_path, sizeof(dbg_path), "%s/%s/%s/dev_usage",
+		       DEBUGFS_ROOT, drv_name, bdf);
+	if (ret < 0 || ret >= (int)sizeof(dbg_path)) {
+		WD_ERR("failed to snprintf dbg_path!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = qm_read_file(dbg_path, buf, sizeof(buf));
+	if (ret)
+		return ret;
+
+	str = strstr(buf, channel_name);
+	if (!str) {
+		WD_ERR("failed to find channel %s!\n", channel_name);
+		return -WD_EINVAL;
+	}
+
+	str += strlen(channel_name);
+	usage = strtol(str, NULL, DECIMAL_NUMBER);
+	if (usage < 0 || usage > QM_MAX_DEV_USAGE) {
+		WD_ERR("invalid: usage value %ld!\n", usage);
+		return -WD_EINVAL;
+	}
+
+	return (int)usage;
 }
 
 static void hisi_qm_fill_sqe(const void *sqe, struct hisi_qm_queue_info *info,

@@ -5,12 +5,16 @@
 
 #define _GNU_SOURCE
 #include <dirent.h>
+#include <dlfcn.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
 #include <sys/auxv.h>
+#include <sys/stat.h>
 
 #include "wd.h"
 #include "wd_alg_common.h"
@@ -554,26 +558,157 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, int drv_type)
 	return drv;
 }
 
-int wd_alg_get_dev_usage(const char *dev_name, const char *alg_type, __u8 alg_op_type)
+static struct wd_drv_node *wd_alg_find_drv_node(const char *dev_name,
+						const char *alg_type)
 {
-	struct wd_drv_node *node = alg_registry.head->next;
-	struct hisi_dev_usage dev_usage;
-	struct wd_alg_driver *drv;
+	struct wd_drv_node *node;
 
-	if (!dev_name || !alg_type) {
-		WD_ERR("invalid: dev_name or alg_type is NULL!\n");
-		return -WD_EINVAL;
-	}
-
+	pthread_mutex_lock(&alg_registry.mutex);
+	node = alg_registry.head->next;
 	while (node) {
-		/* Match dev_name and alg_type at the driver node level */
 		if (strstr(dev_name, node->drv_name) &&
 		    !strcmp(alg_type, node->alg_type))
 			break;
-
 		node = node->next;
 	}
+	pthread_mutex_unlock(&alg_registry.mutex);
+	return node;
+}
 
+/*
+ * wd_alg_scan_drv_dir() - dlopen each lib*.so in the uadk driver directory.
+ *
+ * Each driver .so uses __attribute__((constructor)) to auto-register its
+ * wd_alg_driver entries into alg_registry.  Stops as soon as a node
+ * matching @dev_name and @alg_type appears.
+ */
+static struct wd_drv_node *wd_alg_scan_drv_dir(const char *dev_name,
+					       const char *alg_type)
+{
+	struct wd_drv_node *node = NULL;
+	char lib_dir[PATH_MAX];
+	struct dirent *ent;
+	char *resolved, *p;
+	int len, dir_len;
+	Dl_info info;
+	void *handle;
+	DIR *dir;
+
+	if (!dladdr((void *)wd_alg_scan_drv_dir, &info) || !info.dli_fname)
+		return NULL;
+
+	resolved = realpath(info.dli_fname, lib_dir);
+	if (!resolved)
+		return NULL;
+
+	p = strrchr(lib_dir, '/');
+	if (!p)
+		return NULL;
+	*p = '\0';
+
+	len = (int)strlen(lib_dir);
+	if (len + (int)sizeof("/uadk") >= PATH_MAX)
+		return NULL;
+	strcat(lib_dir, "/uadk");
+
+	dir = opendir(lib_dir);
+	if (!dir)
+		return NULL;
+
+	dir_len = (int)strlen(lib_dir);
+
+	while ((ent = readdir(dir)) != NULL) {
+		size_t namelen = strlen(ent->d_name);
+
+		if (namelen < strlen("lib") + 1 + strlen(".so") ||
+		    strncmp(ent->d_name, "lib", strlen("lib")) ||
+		    strcmp(ent->d_name + namelen - strlen(".so"), ".so"))
+			continue;
+
+		if (dir_len + 1 + (int)namelen >= PATH_MAX)
+			continue;
+
+		lib_dir[dir_len] = '/';
+		memcpy(lib_dir + dir_len + 1, ent->d_name, namelen + 1);
+
+		handle = dlopen(lib_dir, RTLD_NODELETE | RTLD_NOW);
+		if (!handle) {
+			WD_ERR("failed to dlopen %s: %s\n", lib_dir, dlerror());
+			continue;
+		}
+
+		dlclose(handle);
+		node = wd_alg_find_drv_node(dev_name, alg_type);
+		if (node)
+			break;
+	}
+
+	closedir(dir);
+	return node;
+}
+
+/*
+ * wd_alg_load_drv() - Load driver libraries until the requested driver
+ * is found.  Fallback for paths that query alg_registry without having
+ * gone through wd_*_init() (e.g. uadk_tool dfx --usage).
+ */
+static struct wd_drv_node *wd_alg_load_drv(const char *dev_name,
+					   const char *alg_type)
+{
+	struct wd_drv_node *node;
+	static bool all_loaded;
+	static bool loading;
+
+	/*
+	 * dlopen must run outside alg_registry.mutex because driver
+	 * constructors call wd_alg_driver_register which acquires the
+	 * same mutex.
+	 */
+	pthread_mutex_lock(&alg_registry.mutex);
+	if (all_loaded || loading) {
+		pthread_mutex_unlock(&alg_registry.mutex);
+		return NULL;
+	}
+	loading = true;
+	pthread_mutex_unlock(&alg_registry.mutex);
+
+	node = wd_alg_scan_drv_dir(dev_name, alg_type);
+
+	pthread_mutex_lock(&alg_registry.mutex);
+	if (!node)
+		all_loaded = true;
+	loading = false;
+	pthread_mutex_unlock(&alg_registry.mutex);
+
+	return node;
+}
+
+int wd_alg_get_dev_usage(const char *dev_name, const char *alg_name, __u8 alg_op_type)
+{
+	struct hisi_dev_usage dev_usage = {0};
+	struct wd_alg_driver *drv;
+	char alg_type[ALG_NAME_SIZE];
+	struct wd_drv_node *node;
+	int ret;
+
+	if (!dev_name || !alg_name) {
+		WD_ERR("invalid: dev_name or alg_name is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	/*
+	 * Convert alg_name to alg_type for driver node matching.
+	 * If alg_name is already a generic alg_type (e.g. "cipher", "digest"),
+	 * wd_get_alg_type fails, fall back to using alg_name directly.
+	 */
+	ret = wd_get_alg_type(alg_name, alg_type);
+	if (ret)
+		snprintf(alg_type, ALG_NAME_SIZE, "%s", alg_name);
+
+	/* Load driver libraries if target driver node not found. */
+	node = wd_alg_find_drv_node(dev_name, alg_type);
+	if (!node)
+		node = wd_alg_load_drv(dev_name, alg_type);
 	if (!node)
 		return -WD_EACCES;
 

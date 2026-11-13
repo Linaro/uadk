@@ -615,20 +615,21 @@ static int hisi_sec_get_usage(void *param)
 	}
 
 	sec_ctx = (struct hisi_sec_ctx *)drv->drv_data;
-	if (!sec_ctx)
-		return -WD_EACCES;
-
-	/* Only process the queues used by your own driver. */
-	for (i = 0; i < sec_ctx->ctx_num; i++) {
-		ctx_dev_name = wd_ctx_get_dev_name(sec_ctx->ctxs[i]->ctx);
-		if (!strcmp(sec_usage->dev_name, ctx_dev_name)) {
-			qp = (handle_t)wd_ctx_get_priv(sec_ctx->ctxs[i]->ctx);
-			if (qp)
-				return hisi_qm_get_usage(qp, 0);
+	if (sec_ctx) {
+		/* Only process the queues used by your own driver. */
+		for (i = 0; i < sec_ctx->ctx_num; i++) {
+			ctx_dev_name = wd_ctx_get_dev_name(sec_ctx->ctxs[i]->ctx);
+			if (!strcmp(sec_usage->dev_name, ctx_dev_name)) {
+				qp = (handle_t)wd_ctx_get_priv(sec_ctx->ctxs[i]->ctx);
+				if (qp)
+					return hisi_qm_get_usage(qp, 0);
+			}
 		}
 	}
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, sec_usage->dev_name,
+					 "SEC: ");
 }
 
 static int eops_param_check(struct wd_alg_driver *drv, struct wd_mm_ops *mm_ops)
