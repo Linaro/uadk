@@ -211,6 +211,8 @@ int hisi_qm_get_free_sqe_num(handle_t h_qp);
 __u32 hisi_qm_get_list_size(struct wd_datalist *start_node,
 			    struct wd_datalist *end_node);
 int hisi_qm_get_usage(handle_t h_qp, __u8 type);
+int hisi_qm_get_usage_debugfs(const char *drv_name, const char *dev_name,
+			      const char *channel_name);
 
 #ifdef __cplusplus
 }

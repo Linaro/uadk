@@ -1213,7 +1213,7 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
-	__u32 bsize, dsize;
+	__u32 bsize;
 	char *dat;
 	int ret;
 
@@ -1226,10 +1226,6 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 	ret = trans_d_to_hpre_bin(d);
 	if (ret)
 		return ret;
-
-	/* X448 will do specific offset */
-	if (id != WD_X448)
-		d->dsize = d->bsize;
 
 	/*
 	 * This is a pretreatment of X25519/X448, as described in RFC 7748:
@@ -1245,15 +1241,17 @@ static int ecc_prepare_prikey(struct wd_ecc_key *key, void **data, int id)
 	 */
 	dat = d->data;
 	bsize = d->bsize;
-	dsize = d->dsize;
 	if (id == WD_X25519) {
 		dat[31] &= 248;
 		dat[0] &= 127;
 		dat[0] |= 64;
 	} else if (id == WD_X448) {
-		dat[55 + bsize - dsize] &= 252;
-		dat[0 + bsize - dsize] |= 128;
+		dat[bsize - 1] &= 252;
+		dat[bsize - X448_KEY_BYTES] |= 128;
 	}
+
+	/* Ensure dsize equals bsize to skip byte-swap in crypto_bin_to_hpre_bin */
+	d->dsize = d->bsize;
 
 	if (!big_than_one(dat, bsize)) {
 		WD_ERR("failed to prepare ecc prikey: d <= 1!\n");
@@ -2842,7 +2840,9 @@ static int hpre_ecc_get_usage(void *param)
 	if (qp)
 		return hisi_qm_get_usage(qp, HPRE_HW_V3_ECC_ALG_TYPE);
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, hpre_usage->dev_name,
+					 "ECC: ");
 }
 
 static int hpre_rsa_get_usage(void *param)
@@ -2860,7 +2860,9 @@ static int hpre_rsa_get_usage(void *param)
 	if (qp)
 		return hisi_qm_get_usage(qp, HPRE_HW_V2_ALG_TYPE);
 
-	return -WD_EACCES;
+	/* Fallback to debugfs when no qp is available for this device */
+	return hisi_qm_get_usage_debugfs(drv->drv_name, hpre_usage->dev_name,
+					 "RSA: ");
 }
 
 static bool is_valid_hw_type(struct wd_alg_driver *drv)

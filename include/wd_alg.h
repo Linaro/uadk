@@ -251,7 +251,7 @@ bool wd_drv_alg_support(const char *alg_name, void *param);
  */
 bool wd_alg_match_drv(struct wd_alg_driver *drv, const char *alg_name);
 
-int wd_alg_get_dev_usage(const char *dev_name, const char *alg_type, __u8 op_type);
+int wd_alg_get_dev_usage(const char *dev_name, const char *alg_name, __u8 op_type);
 int wd_get_alg_type(const char *alg_name, char *alg_type);
 
 struct wd_drv_node *wd_get_alg_head(void);
